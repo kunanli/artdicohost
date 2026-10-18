@@ -5,7 +5,7 @@ const cRows = agenda.filter((_, index) => [0,11,12,13,14].includes(index));
 <section class="ah-agenda ah-section" id="agenda" aria-labelledby="agenda-heading" data-agenda>
   <div class="ah-section-heading">
     <div><span class="ah-kicker">THE PROGRAM / 活动日程</span><h2 id="agenda-heading">三个空间。<br />不止一种相遇方式。</h2></div>
-    <span class="ah-outline-tag">{eventConfig.date.label} · {eventConfig.time.label} · 暂定</span>
+    <span class="ah-outline-tag" data-public-agenda-date>{eventConfig.date.label} · {eventConfig.time.label} · 暂定</span>
   </div>
   <div class="ah-agenda-layout">
     <div class="ah-agenda-aside">
@@ -13,7 +13,7 @@ const cRows = agenda.filter((_, index) => [0,11,12,13,14].includes(index));
       <div class="ah-zone-tabs" role="tablist" aria-label="场地日程" aria-orientation="vertical">
         {zones.map((zone, index) => <button type="button" id={`tab-${zone.id}`} data-zone={zone.id} role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-controls={`agenda-${zone.id}`} tabindex={index === 0 ? 0 : -1}><b>{zone.id}</b><span>{zone.name}<small>{zone.description}</small></span><span aria-hidden="true">↗</span></button>)}
       </div>
-      <p class="ah-agenda-caption">所有安排以最终发布为准。<br />讲者与主题仍待确认。</p>
+      <p class="ah-agenda-caption" data-public-content-status>所有安排以最终发布为准。<br />讲者与主题仍待确认。</p>
     </div>
     <div class="ah-agenda-main">
       {zones.map(zone => <div class="ah-agenda-panel" id={`agenda-${zone.id}`} data-agenda-panel={zone.id} role="tabpanel" aria-labelledby={`tab-${zone.id}`} tabindex="0">

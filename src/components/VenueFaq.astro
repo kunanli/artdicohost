@@ -3,7 +3,7 @@ import { eventConfig, faqItems } from '../config/event.mjs';
 import Icon from './Icon.astro';
 ---
 <section class="ah-bottom-grid ah-section" aria-label="地点与常见问题">
-  <div class="ah-venue" id="venue"><span class="ah-kicker">MEET IN QIANHAI / 活动地点</span><h2>{eventConfig.venue.city} · {eventConfig.venue.area}</h2><p class="ah-venue-name">{eventConfig.venue.name}</p><p>A 区阶梯展示厅 / B 区咖啡厅 / C 区外围展位区<br />{eventConfig.venue.addressStatus}。</p>{eventConfig.venue.mapUrl ? <a class="ah-secondary" href={eventConfig.venue.mapUrl} target="_blank" rel="noopener noreferrer"><Icon name="pin" />打开地图</a> : <button type="button" class="ah-secondary" disabled><Icon name="pin" />地图指引待确认</button>}</div>
+  <div class="ah-venue" id="venue"><span class="ah-kicker">MEET IN QIANHAI / 活动地点</span><h2>{eventConfig.venue.city} · {eventConfig.venue.area}</h2><p class="ah-venue-name" data-public-event-venue>{eventConfig.venue.name}</p><p>A 区阶梯展示厅 / B 区咖啡厅 / C 区外围展位区<br />{eventConfig.venue.addressStatus}。</p>{eventConfig.venue.mapUrl ? <a class="ah-secondary" href={eventConfig.venue.mapUrl} target="_blank" rel="noopener noreferrer"><Icon name="pin" />打开地图</a> : <button type="button" class="ah-secondary" disabled><Icon name="pin" />地图指引待确认</button>}</div>
   <div class="ah-faq" id="faq"><span class="ah-kicker">GOOD TO KNOW / 常见问题</span>{faqItems.map(item => <details><summary>{item.question}<span aria-hidden="true">+</span></summary><p>{item.answer}</p></details>)}</div>
 </section>
 <section class="ah-privacy ah-section" id="privacy" aria-labelledby="privacy-heading">

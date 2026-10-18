@@ -14,14 +14,17 @@ for (const root of document.querySelectorAll('[data-agenda]')) {
     }
     for (const panel of panels) {
       panel.hidden = panel.dataset.agendaPanel !== zone;
-      [...panel.querySelectorAll('.ah-agenda-row')].forEach((row, index) => {
-        row.hidden = panel.dataset.agendaPanel !== 'C' && !expanded && ![0, 2, 4, 11, 13].includes(index);
+      const rows = [...panel.querySelectorAll('.ah-agenda-row')];
+      rows.forEach((row, index) => {
+        const compact = rows.length === 15 ? [0, 2, 4, 11, 13].includes(index) : index < 6;
+        row.hidden = panel.dataset.agendaPanel !== 'C' && !expanded && !compact;
       });
     }
     if (expand) {
-      expand.hidden = zone === 'C';
+      const count = panels.find(panel => panel.dataset.agendaPanel === zone)?.querySelectorAll('.ah-agenda-row').length ?? 0;
+      expand.hidden = zone === 'C' || count <= 6;
       expand.setAttribute('aria-expanded', String(expanded));
-      expand.firstChild.textContent = expanded ? '收起完整日程 ' : '展开完整日程（15 段） ';
+      expand.firstChild.textContent = expanded ? '收起完整日程 ' : '展开完整日程（' + count + ' 段） ';
       expand.querySelector('span').textContent = expanded ? '↑' : '↓';
     }
     tablist?.setAttribute('aria-orientation', smallScreen.matches ? 'horizontal' : 'vertical');
@@ -46,5 +49,6 @@ for (const root of document.querySelectorAll('[data-agenda]')) {
   });
   expand?.addEventListener('click', () => { expanded = !expanded; render(); });
   smallScreen.addEventListener('change', render);
+  root.addEventListener('artdico:content-updated', render);
   render();
 }

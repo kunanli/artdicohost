@@ -7,11 +7,11 @@ const [, month, day] = eventConfig.date.value.split('-');
   <div class="ah-hero-copy">
     <div class="ah-eyebrow"><span class="ah-dot" aria-hidden="true"></span>GLOBAL GAME JAM × ARTDICO HOST</div>
     <h1 id="hero-heading">让创作相遇。<br />让<span>连接</span>发生。</h1>
-    <p class="ah-hero-sub">{eventConfig.title}</p>
+    <p class="ah-hero-sub" data-public-event-title>{eventConfig.title}</p>
     <p class="ah-hero-description">从一座站点，到下一个创作现场。<br />与游戏创作者、组织者和生态伙伴，一起聊聊未来。</p>
     <div class="ah-event-meta">
-      <span><Icon name="calendar" /><time datetime={eventConfig.date.value}>{Number(month)} 月 {Number(day)} 日</time>{eventConfig.date.status === 'tentative' && <em>暂定</em>}</span>
-      <span><Icon name="pin" />{eventConfig.venue.city} · {eventConfig.venue.area}</span>
+      <span><Icon name="calendar" /><time data-public-date-value datetime={eventConfig.date.value}>{Number(month)} 月 {Number(day)} 日</time>{eventConfig.date.status === 'tentative' && <em data-public-date-tentative>暂定</em>}</span>
+      <span><Icon name="pin" /><span data-public-hero-venue>{eventConfig.venue.city} · {eventConfig.venue.area}</span></span>
     </div>
     <div class="ah-hero-actions">
       <a class="ah-primary" href="#registration">{eventConfig.registration.ctaLabel} <span aria-hidden="true">↗</span></a>
@@ -22,11 +22,11 @@ const [, month, day] = eventConfig.date.value.split('-');
   <div class="ah-poster" role="img" aria-label={`蓝色几何创作主题海报，ARTDiCO HOST ${eventConfig.year}，活动日期暂定`}>
     <div class="ah-poster-grid" aria-hidden="true"></div>
     <span class="ah-poster-top">SHENZHEN<br />CREATIVE CONNECTIONS</span>
-    <span class="ah-poster-date">{month}<br /><span>{day}</span></span>
+    <span class="ah-poster-date" data-public-poster-date>{month}<br /><span>{day}</span></span>
     <div class="ah-orbit" aria-hidden="true"><span></span></div>
     <div class="ah-small-orbit" aria-hidden="true"></div>
     <div class="ah-poster-type">PLAY.<br />MEET.<br />CREATE.</div>
     <div class="ah-poster-bottom"><span>ARTDiCO<br />HOST {eventConfig.year}</span><span aria-hidden="true">↗</span></div>
-    <span class="ah-poster-tentative">活动日期暂定</span>
+    <span class="ah-poster-tentative" data-public-date-label>活动日期暂定</span>
   </div>
 </section>

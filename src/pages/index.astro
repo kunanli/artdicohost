@@ -4,6 +4,7 @@ import SiteHeader from '../components/SiteHeader.astro';
 import Hero from '../components/Hero.astro';
 import About from '../components/About.astro';
 import Agenda from '../components/Agenda.astro';
+import Booths from '../components/Booths.astro';
 import Guests from '../components/Guests.astro';
 import Recruitment from '../components/Recruitment.astro';
 import Registration from '../components/Registration.astro';
@@ -16,8 +17,11 @@ import { eventConfig } from '../config/event.mjs';
     <SiteHeader />
     <main id="main-content">
       <Hero />
-      <div class="ah-page-content"><About /><Agenda /><Guests /><Recruitment /><Registration /><VenueFaq /></div>
+      <div class="ah-page-content"><About /><Agenda /><Booths /><Guests /><Recruitment /><Registration /><VenueFaq /></div>
     </main>
     <SiteFooter />
   </div>
 </SiteLayout>
+<script>
+  import '../scripts/public-content.mjs';
+</script>

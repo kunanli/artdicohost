@@ -3,6 +3,7 @@ dist/
 .astro/
 .pnpm-store/
 coverage/
+.local-data/
 .env
 .env.*
 !.env.example

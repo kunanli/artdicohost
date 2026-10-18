@@ -5,6 +5,7 @@
 #artdico-host [hidden]{display:none!important}
 #artdico-host button,#artdico-host input,#artdico-host select{font:inherit}
 #artdico-host button{cursor:inherit}
+#artdico-host button:not(:disabled){cursor:pointer}
 #artdico-host.ah-product{container-type:inline-size;color-scheme:light;width:100%;margin-inline:auto;background:#fff;border:1px solid var(--ah-line);color:var(--ah-ink);font-size:14px;line-height:1.65}
 #artdico-host .ah-notice{background:var(--ah-pale);color:#4d648c;text-align:center;padding:8px 14px;font-size:11px;letter-spacing:.04em}
 #artdico-host .ah-header{padding:22px var(--ah-pad);display:flex;align-items:center;justify-content:space-between;gap:22px;border-bottom:1px solid var(--ah-line)}
@@ -106,7 +107,7 @@
 #artdico-host .ah-form-card{background:#fff;padding:25px;border-radius:var(--ah-radius);box-shadow:0 8px 28px #193c7410;min-height:438px}
 #artdico-host .ah-form-top{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;font-weight:600}
 #artdico-host .ah-demo-tag{font-size:11px;font-weight:400;background:#f1f4f8;color:#6b7890;padding:3px 7px;border-radius:3px;white-space:nowrap}
-#artdico-host .ah-form-progress{display:flex;align-items:center;gap:8px;margin:19px 0 25px;font-size:11px;color:#8490a6}
+#artdico-host .ah-form-progress{display:flex;align-items:center;gap:8px;margin:19px 0 25px;font-size:11px;color:var(--ah-muted)}
 #artdico-host .ah-form-progress>span:nth-child(even){height:1px;flex:1;background:var(--ah-line)}
 #artdico-host .ah-form-progress .ah-step-active{color:var(--ah-blue);font-weight:600}
 #artdico-host .ah-form-card h3{font-size:17px;margin:0 0 7px}
@@ -119,7 +120,7 @@
 #artdico-host .ah-identity-grid button[aria-pressed="true"]{background:var(--ah-pale);border-color:var(--ah-blue);color:var(--ah-blue)}
 #artdico-host .ah-identity-grid button[aria-pressed="true"]>b{color:var(--ah-blue)}
 #artdico-host .ah-full{width:100%}
-#artdico-host .ah-form-disclaimer{font-size:11px;line-height:1.7;color:#8490a4;margin:14px 0 0}
+#artdico-host .ah-form-disclaimer{font-size:11px;line-height:1.7;color:var(--ah-muted);margin:14px 0 0}
 #artdico-host .ah-form-error{font-size:11px;color:#ab2936;margin:0 0 12px}
 #artdico-host .ah-field{display:grid;gap:6px;margin-bottom:14px;font-size:11px}
 #artdico-host .ah-field>span>em{color:var(--ah-blue);font-style:normal}
@@ -156,6 +157,7 @@
 #artdico-host .ah-footer>span:first-child{font-size:14px;font-weight:800}
 #artdico-host .ah-footer b{font-size:11px;font-weight:400;letter-spacing:.05em;margin-left:4px}
 #artdico-host .ah-footer>p{font-size:11px;color:var(--ah-muted);margin:0}
+#artdico-host .ah-footer>p>small{display:block}
 #artdico-host .ah-footer>span:last-child{font-size:11px;color:#8b95a8}
 @container (max-width:700px){
   #artdico-host .ah-header{padding:20px 25px;gap:15px}

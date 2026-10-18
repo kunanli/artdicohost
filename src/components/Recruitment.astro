@@ -8,5 +8,5 @@ import Icon from './Icon.astro';
     <article id="speaker-recruitment"><span class="ah-feature-number">OPEN CALL / 讲者招募</span><Icon name="share" /><h3>{recruitment.speakers.title}</h3><p>{recruitment.speakers.description}</p><a class="ah-primary" href="#registration" data-recruit="speaker">{recruitment.speakers.ctaLabel}<span aria-hidden="true">↗</span></a></article>
     <article id="sponsor-recruitment"><span class="ah-feature-number">MAKE IT POSSIBLE / 赞助招募</span><Icon name="arrow" /><h3>{recruitment.sponsors.title}</h3><p>{recruitment.sponsors.description}</p><a class="ah-primary" href="#registration" data-recruit="sponsor">{recruitment.sponsors.ctaLabel}<span aria-hidden="true">↗</span></a></article>
   </div>
-  <p class="ah-recruitment-note">讲者内容与场次由筹备团队沟通安排；赞助形式、资源与具体合作另行商议。当前不公布未经确认的讲者、合作品牌、赞助价格或权益。</p>
+  <p class="ah-recruitment-note">{recruitment.speakers.notice} {recruitment.sponsors.notice}</p>
 </section>

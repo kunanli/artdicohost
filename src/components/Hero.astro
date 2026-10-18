@@ -14,7 +14,7 @@ const [, month, day] = eventConfig.date.value.split('-');
       <span><Icon name="pin" />{eventConfig.venue.city} · {eventConfig.venue.area}</span>
     </div>
     <div class="ah-hero-actions">
-      <a class="ah-primary" href="#registration">报名参加 <span aria-hidden="true">↗</span></a>
+      <a class="ah-primary" href="#registration">{eventConfig.registration.ctaLabel} <span aria-hidden="true">↗</span></a>
       <a class="ah-text-action" href="#agenda">查看活动日程 <span aria-hidden="true">↓</span></a>
     </div>
     <p class="ah-fine">正式报名成功保存后即可参加 · 当前为前端体验版</p>

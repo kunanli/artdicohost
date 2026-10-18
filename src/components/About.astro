@@ -1,5 +1,5 @@
 ---
-import { highlights } from '../config/event.mjs';
+import { eventConfig, highlights } from '../config/event.mjs';
 import Icon from './Icon.astro';
 const features = [
   {number:'01 / SHARE', icon:'share', title:'交换经验', description:'GGJ 主题分享、组织者圆桌、新站点申请咨询与交流。'},
@@ -13,7 +13,7 @@ const features = [
     <p>让站点经验、青年作品与产业资源在同一个现场相遇。<br />带着你的故事来，带着新的连接离开。</p>
   </div>
   <p class="ah-about-description">我们计划在深圳前海举办 GGJ 中国交流聚会，并与 ARTDiCO HOST 学生嘉年华同期举行。欢迎现任或曾任 GGJ 站点负责人（SO）、地区组织者（RO），以及有意建立新站点的团队报名，也欢迎游戏开发者、高校及产业生态伙伴。一起分享站点运营与创作经验，探讨未来合作的可能性。日期、嘉宾及合作署名待最终确认。</p>
-  <p class="ah-site-callout">已有站点负责人可登记组织经历；新站点筹备者可填写城市、场地、团队与支持需求。两类资料分别收集，可同时选择；活动报名不代表获得 GGJ 站点资格，正式资格仍依 GGJ 官方流程确认。</p>
+  <div class="ah-site-callout"><strong>{eventConfig.siteRegistration.existing.title}</strong><p>{eventConfig.siteRegistration.existing.description}</p><strong>{eventConfig.siteRegistration.prospective.title}</strong><p>{eventConfig.siteRegistration.prospective.description}</p><p>{eventConfig.siteRegistration.notice}</p></div>
   <div class="ah-highlights">
     {features.map(feature => <article><span class="ah-feature-number">{feature.number}</span><Icon name={feature.icon} /><h3>{feature.title}</h3><p>{feature.description}</p></article>)}
   </div>

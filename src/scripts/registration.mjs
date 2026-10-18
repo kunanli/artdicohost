@@ -17,7 +17,7 @@ for (const form of document.querySelectorAll('[data-registration-form]')) {
     const result = completeMockRegistration(read());
     if (!result.valid) {
       const first = Object.keys(result.errors)[0];
-      const control = form.elements.namedItem(first);
+      const control = [...form.querySelectorAll('[name]')].find(input => input.name === first);
       const section = control instanceof HTMLElement ? control.closest('[data-form-step]') : null;
       if (section) showStep(Number(section.dataset.formStep), false);
       showErrors(result.errors);

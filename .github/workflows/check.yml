@@ -46,8 +46,6 @@ jobs:
         run: pnpm test
       - name: Build the static site
         run: pnpm build
-      - name: Export public build for offline review
-        run: node scripts/export-review-data.mjs
       - name: Audit application and build dependencies
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm audit --audit-level=moderate

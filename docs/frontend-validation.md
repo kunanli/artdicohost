@@ -6,7 +6,7 @@
 
 [运行 39113786450](https://github.com/kunanli/artdicohost/actions/runs/39113786450) 在提交 [729fc4face2a6c2150f0ea75c9a3933ef6ba24a1](https://github.com/kunanli/artdicohost/commit/729fc4face2a6c2150f0ea75c9a3933ef6ba24a1) 通过。该次运行完成首次依赖解析、Astro 类型检查（0 错误）、15 项测试、静态构建与含构建工具的依赖审计（未报告已知漏洞）。该结果只反映所列提交与当时审计数据库，不保证未来没有漏洞。
 
-后续整合提交 [638a85c4165ae77eb0fb7896b7645d9a68959cd4](https://github.com/kunanli/artdicohost/commit/638a85c4165ae77eb0fb7896b7645d9a68959cd4) 的 [运行 39115597422](https://github.com/kunanli/artdicohost/actions/runs/39115597422) 已通过冻结安装、源码检查、Astro 检查（0 错误）、34 项测试（34 通过、0 失败、0 跳过）、静态构建和全量依赖审计。11 项内容 API 测试包含真实 loopback HTTP、静态边界与 CSP 验证，全部在 CI 实际执行。后续提交以 PR 最新检查为准。
+后续整合提交 [638a85c4165ae77eb0fb7896b7645d9a68959cd4](https://github.com/kunanli/artdicohost/commit/638a85c4165ae77eb0fb7896b7645d9a68959cd4) 的 [运行 39115597422](https://github.com/kunanli/artdicohost/actions/runs/39115597422) 已通过冻结安装、源码检查、Astro 检查（0 错误）、34 项测试（34 通过、0 失败、0 跳过）、静态构建和全量依赖审计。11 项内容 API 测试包含真实 loopback HTTP、静态边界与 CSP 验证，全部在 CI 实际执行。最终页面调整提交 [3a7b0a999facb8b22a36962f1e4e72a33537066c](https://github.com/kunanli/artdicohost/commit/3a7b0a999facb8b22a36962f1e4e72a33537066c) 的 [运行 39116362188](https://github.com/kunanli/artdicohost/actions/runs/39116362188) 再次全部通过，34 项测试无跳过，构建与审计通过。后续永久工作流仅移除临时公开产物导出步骤，应用源文件保持相同；PR 最新状态以检查为准。
 
 已从首次运行的只读审阅导出恢复 `pnpm-lock.yaml` 与实际 `dist/`，锁文件已核对并纳入本地工作目录。永久工作流现改用 `pnpm install --frozen-lockfile`，在 Astro 检查前增加 `pnpm check:source`。冻结安装已在上述整合运行中验证；临时公开构建导出仅用于检查实际产物，完成后移除。
 

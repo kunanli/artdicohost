@@ -1,0 +1,81 @@
+---
+import { eventConfig } from '../config/event.mjs';
+import { registrationSchema } from '../../shared/registration-schema.mjs';
+import FormField from './FormField.astro';
+import BranchFields from './BranchFields.astro';
+import Icon from './Icon.astro';
+const field = (name: string) => {
+  const definition = registrationSchema.baseFields.find(item => item.name === name);
+  if (!definition) throw new Error(`Missing form field: ${name}`);
+  return definition;
+};
+const identitySublabels: Record<string,string> = {so:'SITE ORGANIZER',ro:'REGIONAL ORGANIZER',new_site:'START A SITE',industry:'MAKE & PLAY',education:'LEARN & GROW',partner:'CONNECT & BUILD',sponsor:'SUPPORT CREATIVITY',other:'JUST CURIOUS'};
+const stayDate = (value: string) => { const [, month, day] = value.split('-'); return `${Number(month)} 月 ${Number(day)} 日`; };
+---
+<section class="ah-registration ah-section" id="registration" aria-labelledby="registration-heading">
+  <div class="ah-register-intro">
+    <span class="ah-kicker">YOUR NEXT CONNECTION / 从你开始</span>
+    <h2 id="registration-heading">把这一天，<br />留给新的连接。</h2>
+    <p>GGJ 现任或曾任站点负责人、RO、新站点筹备者、游戏创作者、教育工作者与合作伙伴，都欢迎报名。</p>
+    <div class="ah-register-steps" aria-label="正式报名流程"><span><b>01</b>填写资料</span><span><b>02</b>提交报名</span><span><b>03</b>报名参加</span></div>
+    <p class="ah-registration-policy">正式报名资料成功保存后即可报名参加。讲者安排、赞助合作和一晚住宿分别沟通，不影响普通参会报名。</p>
+    <div class="ah-stay-note"><Icon name="bed" /><p><strong>外地嘉宾一晚住宿支持</strong><br />{eventConfig.accommodation.notice}<br />入住 / 离店暂定为 {stayDate(eventConfig.accommodation.checkIn)}至 {stayDate(eventConfig.accommodation.checkOut)}。</p></div>
+    <p class="ah-register-demo-note">当前可体验完整填写流程。正式报名尚未开放，请使用虚构资料。</p>
+    <span class="ah-register-foot">ONE APPLICATION. MANY POSSIBILITIES.</span>
+  </div>
+  <div class="ah-form-card">
+    <div class="ah-form-top"><span>活动报名</span><span class="ah-demo-tag">本地体验 · 不提交</span></div>
+    <form data-registration-form data-registration-mode="mock" method="post" novalidate autocomplete="off">
+      <div class="ah-form-progress" aria-label="填写进度"><span data-step-dot="0" class="ah-step-active" aria-current="step">1 身份</span><span aria-hidden="true"></span><span data-step-dot="1">2 资料</span><span aria-hidden="true"></span><span data-step-dot="2">3 参与方式</span></div>
+      <p class="ah-form-error" data-form-error role="alert" tabindex="-1" hidden></p>
+      <section data-form-step="0" aria-labelledby="identity-heading">
+        <h3 id="identity-heading" tabindex="-1">你想以什么身份参与？</h3>
+        <p class="ah-form-hint">身份可以多选，仍是一份活动报名。GGJ SO、RO 与有意建立新站点的筹备者请分别勾选，填写对应资料。</p>
+        <fieldset class="ah-identity-field" data-field="categories" aria-describedby="categories-error">
+          <legend class="ah-sr-only">目前的参与身份（必填，可多选）</legend>
+          <div class="ah-identity-grid">
+            {registrationSchema.identityOptions.map(option => <label><input type="checkbox" name="categories" value={option.value} data-identity={option.value} /><span>{option.label}</span><small>{identitySublabels[option.value]}</small><b aria-hidden="true">+</b></label>)}
+          </div>
+          <p class="ah-form-error" id="categories-error" data-error-for="categories" hidden></p>
+        </fieldset>
+        <button type="button" data-next-step class="ah-primary ah-full">继续填写 <span aria-hidden="true">→</span></button>
+      </section>
+      <section data-form-step="1" hidden aria-labelledby="details-heading">
+        <h3 id="details-heading" tabindex="-1">先认识一下你。</h3>
+        <p class="ah-form-hint">带 * 为必填。体验时请填写虚构资料；资料仅留在当前页面内存。</p>
+        <div class="ah-fields-grid">{['name','city','organization','position','email','wechat','website'].map(name => <FormField field={field(name)} />)}</div>
+        <FormField field={field('background')} />
+        <FormField field={field('caseLinks')} />
+        <BranchFields name="soRo" />
+        <BranchFields name="newSite" />
+        <div class="ah-form-actions"><button type="button" data-prev-step class="ah-secondary">上一步</button><button type="button" data-next-step class="ah-primary">参与方式 <span aria-hidden="true">→</span></button></div>
+      </section>
+      <section data-form-step="2" hidden aria-labelledby="interests-heading">
+        <h3 id="interests-heading" tabindex="-1">你期待怎样的交流？</h3>
+        <p class="ah-form-hint">普通参会直接报名。演讲、展位、赞助合作与住宿安排另行沟通。</p>
+        <FormField field={field('participationInterests')} />
+        <BranchFields name="speaker" />
+        <BranchFields name="exhibitor" />
+        <BranchFields name="partner" />
+        <FormField field={field('attendance')} />
+        <FormField field={field('accommodationChoice')} />
+        <BranchFields name="accommodation" />
+        <FormField field={field('topics')} />
+        <FormField field={field('cooperationInterest')} />
+        <FormField field={field('cooperationForms')} />
+        <FormField field={field('consentAccepted')} />
+        <div class="ah-form-actions"><button type="button" data-prev-step class="ah-secondary">上一步</button><button type="submit" data-submit class="ah-primary" disabled>检查并完成体验 <span aria-hidden="true">↗</span></button></div>
+      </section>
+      <section data-form-step="3" class="ah-demo-complete" hidden aria-labelledby="complete-heading">
+        <div class="ah-complete-mark" aria-hidden="true">✓</div><h3 id="complete-heading" tabindex="-1">体验到这里，<br />连接才刚刚开始。</h3>
+        <p data-form-result role="status" aria-live="polite">{eventConfig.registration.completedNotice}</p>
+        <button type="button" data-reset-form class="ah-secondary">重新体验</button>
+      </section>
+      <p class="ah-form-disclaimer">本地体验不发送、不保存、不受理真实报名，不生成查询编号。正式报名将在隐私告知与服务准备完成后开放。</p>
+    </form>
+    <noscript><p class="ah-form-disclaimer">互动表单需要启用 JavaScript。当前没有开放真实报名；活动信息和全部日程仍可直接阅读。</p></noscript>
+  </div>
+</section>
+<script>
+  import '../scripts/registration.mjs';
+</script>

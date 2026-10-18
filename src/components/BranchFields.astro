@@ -1,0 +1,14 @@
+---
+import { registrationSchema } from '../../shared/registration-schema.mjs';
+import FormField from './FormField.astro';
+interface Props { name: 'soRo' | 'newSite' | 'speaker' | 'exhibitor' | 'partner' | 'accommodation'; }
+const { name } = Astro.props;
+const branch = registrationSchema.branches[name];
+---
+<fieldset class="ah-conditional ah-branch" data-branch={name} hidden disabled>
+  <legend>{branch.label}</legend>
+  {name === 'soRo' && <p class="ah-form-hint">服务经历及表彰需另行核验，不自动认定年资或奖项。</p>}
+  {name === 'newSite' && <p class="ah-form-hint">这里表达筹备意向，正式资格以 GGJ 官方申请流程为准。</p>}
+  {name === 'exhibitor' && <p class="ah-form-hint">先了解项目，完整布展材料将在获批后另行收集。</p>}
+  {branch.fields.map(field => <FormField field={field} prefix={name === 'accommodation' ? '' : name} />)}
+</fieldset>

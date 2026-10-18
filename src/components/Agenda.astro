@@ -1,0 +1,35 @@
+---
+import { eventConfig, agenda, zones } from '../config/event.mjs';
+const cRows = agenda.filter((_, index) => [0,11,12,13,14].includes(index));
+---
+<section class="ah-agenda ah-section" id="agenda" aria-labelledby="agenda-heading" data-agenda>
+  <div class="ah-section-heading">
+    <div><span class="ah-kicker">THE PROGRAM / 活动日程</span><h2 id="agenda-heading">三个空间。<br />不止一种相遇方式。</h2></div>
+    <span class="ah-outline-tag">{eventConfig.date.label} · {eventConfig.time.label} · 暂定</span>
+  </div>
+  <div class="ah-agenda-layout">
+    <div class="ah-agenda-aside">
+      <p>找到你感兴趣的现场</p>
+      <div class="ah-zone-tabs" role="tablist" aria-label="场地日程" aria-orientation="vertical">
+        {zones.map((zone, index) => <button type="button" id={`tab-${zone.id}`} data-zone={zone.id} role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-controls={`agenda-${zone.id}`} tabindex={index === 0 ? 0 : -1}><b>{zone.id}</b><span>{zone.name}<small>{zone.description}</small></span><span aria-hidden="true">↗</span></button>)}
+      </div>
+      <p class="ah-agenda-caption">所有安排以最终发布为准。<br />讲者与主题仍待确认。</p>
+    </div>
+    <div class="ah-agenda-main">
+      {zones.map(zone => <div class="ah-agenda-panel" id={`agenda-${zone.id}`} data-agenda-panel={zone.id} role="tabpanel" aria-labelledby={`tab-${zone.id}`} tabindex="0">
+        <h3 class="ah-panel-heading">{zone.id} 区 · {zone.name}</h3>
+        {zone.id === 'C' && <p class="ah-agenda-caption">展位全天开放（按活动时段），10:00–15:30 为展位体验。以下列出重点转场，15:30–17:00 优先保障学员作品展示与反馈。</p>}
+        <div class="ah-agenda-list">
+          {(zone.id === 'C' ? cRows : agenda).map((item, index) => <article class:list={['ah-agenda-row', {'ah-featured': item.start === '15:30' || item.start === '16:30'}]} data-agenda-extra={index >= 6 ? '' : undefined}>
+            <time datetime={`${eventConfig.date.value}T${item.start}:00+08:00`}>{item.time}</time>
+            <div><strong>{item[zone.id as 'A' | 'B' | 'C']}</strong>{(item.start === '11:15' || item.start === '14:30') && zone.id === 'B' && <small>{item.start === '14:30' ? '现场为咨询与初步审核，正式资格以 GGJ 流程为准' : '圆桌安排与参与人员待确认'}</small>}{item.start === '15:30' && zone.id === 'A' && <small>把时间留给青年创作者</small>}</div>
+          </article>)}
+        </div>
+      </div>)}
+      <button type="button" data-full-agenda class="ah-text-action" aria-expanded="false">展开完整日程 <span aria-hidden="true">↓</span></button>
+    </div>
+  </div>
+</section>
+<script>
+  import '../scripts/agenda.mjs';
+</script>

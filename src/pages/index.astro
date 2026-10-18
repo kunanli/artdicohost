@@ -1,4 +1,23 @@
 ---
+import SiteLayout from '../layouts/SiteLayout.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import Hero from '../components/Hero.astro';
+import About from '../components/About.astro';
+import Agenda from '../components/Agenda.astro';
+import Guests from '../components/Guests.astro';
+import Recruitment from '../components/Recruitment.astro';
+import Registration from '../components/Registration.astro';
+import VenueFaq from '../components/VenueFaq.astro';
+import SiteFooter from '../components/SiteFooter.astro';
 import { eventConfig } from '../config/event.mjs';
 ---
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>{eventConfig.title}</title></head><body><main><h1>{eventConfig.title}</h1><p>前端工程基础已建立；报名服务尚未开放。</p></main></body></html>
+<SiteLayout title={eventConfig.seo.title} description={eventConfig.seo.description}>
+  <div id="artdico-host" class="ah-product ah-creative">
+    <SiteHeader />
+    <main id="main-content">
+      <Hero />
+      <div class="ah-page-content"><About /><Agenda /><Guests /><Recruitment /><Registration /><VenueFaq /></div>
+    </main>
+    <SiteFooter />
+  </div>
+</SiteLayout>

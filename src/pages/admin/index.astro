@@ -39,7 +39,7 @@ import '../../styles/admin.css';
     <div class="ah-admin-dialog-heading"><div><span class="ah-admin-eyebrow">SESSION DETAILS</span><h2 id="session-dialog-title" data-session-dialog-title>新增场次</h2></div><button type="button" class="ah-admin-icon-button" data-close-dialog="session" aria-label="关闭场次编辑">×</button></div>
     <p class="ah-admin-alert" data-session-error role="alert" tabindex="-1" hidden></p>
     <form method="post" data-session-form>
-      <div class="ah-admin-field"><label for="session-id">场次编号</label><input id="session-id" name="id" readonly required /><small>编号用于识别同一场次，创建后保持不变。</small></div>
+      <input type="hidden" name="id" />
       <div class="ah-admin-field-row"><div class="ah-admin-field"><label for="session-start">开始时间</label><input id="session-start" name="start" type="time" required /></div><div class="ah-admin-field"><label for="session-end">结束时间</label><input id="session-end" name="end" type="time" required /></div><div class="ah-admin-field"><label for="session-zone">活动区域</label><select id="session-zone" name="zone" required><option value="A">A · 阶梯展示厅</option><option value="B">B · 咖啡厅</option><option value="C">C · 外围展位区</option></select></div></div>
       <div class="ah-admin-field"><label for="session-title">场次名称 / 主题</label><input id="session-title" name="title" required maxlength="200" /></div>
       <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="session-speaker-name">讲者姓名（可先留空）</label><input id="session-speaker-name" name="speakerName" maxlength="120" autocomplete="off" /></div><div class="ah-admin-field"><label for="session-speaker-status">讲者确认状态</label><select id="session-speaker-status" name="speakerStatus" required><option value="pending">待确认</option><option value="confirmed">已确认</option></select></div></div>
@@ -55,7 +55,7 @@ import '../../styles/admin.css';
     <div class="ah-admin-dialog-heading"><div><span class="ah-admin-eyebrow">BOOTH DETAILS</span><h2 id="booth-dialog-title" data-booth-dialog-title>新增展位</h2></div><button type="button" class="ah-admin-icon-button" data-close-dialog="booth" aria-label="关闭展位编辑">×</button></div>
     <p class="ah-admin-alert" data-booth-error role="alert" tabindex="-1" hidden></p>
     <form method="post" data-booth-form>
-      <div class="ah-admin-field"><label for="booth-id">展位记录编号</label><input id="booth-id" name="id" readonly required /><small>记录编号用于识别同一条资料，不是对外展位号。</small></div>
+      <input type="hidden" name="id" />
       <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="booth-code">展位编号</label><input id="booth-code" name="code" required maxlength="16" pattern="[A-Za-z0-9][A-Za-z0-9\-]{0,15}" placeholder="例如 C-01" /><small>以字母或数字开头，可含横线，不重复。</small></div><div class="ah-admin-field"><label for="booth-zone">活动区域</label><select id="booth-zone" name="zone" required><option value="C">C · 外围展位区</option></select></div></div>
       <div class="ah-admin-field"><label for="booth-organization">机构 / 团队</label><input id="booth-organization" name="organization" maxlength="160" autocomplete="off" /></div>
       <div class="ah-admin-field"><label for="booth-project">展示项目</label><input id="booth-project" name="project" maxlength="200" /></div>

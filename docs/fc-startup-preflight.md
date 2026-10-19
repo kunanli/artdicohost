@@ -1,6 +1,6 @@
 # 香港 FC 启动验收
 
-日期：2026-10-19（Asia/Taipei）。用户已建立香港函数 `artdicohost-api`，截图显示自定义运行时 Debian 11 / Python 3.12 示例，以及签名认证的 HTTP `defaultTrigger`。私有桶 `artdicohost-data-hk` 已创建，用户回报已保存 SSE-OSS / AES256；尚未验证函数身份或私有对象读写。
+日期：2026-10-19（Asia/Taipei）。用户已建立香港函数 `artdicohost-api`，初始截图为自定义运行时 Debian 11 / Python 3.12 示例及签名认证的 HTTP `defaultTrigger`；随后用户回报本文件要求的运行时启动设置、RAM 权限及 GitHub Variables 已保存，并已授权合并 PR #6 / #7 和首次发布。当前尚无本项目 FC 启动及签名健康检查的云端成功证据。私有桶 `artdicohost-data-hk` 已创建，用户回报已保存 SSE-OSS / AES256；尚未验证函数身份或私有对象读写。
 
 本阶段只替换示例码并验证 Node.js 可以启动。`/healthz` 的 200 只表示进程存活；报名、后台与存储就绪均保持关闭。不要把本机 `functions/content-api/server.mjs` 上传为云端后台。
 
@@ -38,9 +38,9 @@ node scripts/prepare-fc-bootstrap.mjs \
 
 ## 控制台操作
 
-用户现要求像 `artdico-deck` 一样自动更新 FC，日常发布采用[GitHub 自动更新操作单](automatic-fc-deployment.md)。以下手动 ZIP 上传仅作离线验收 / 回退备选；首次可完成启动设置与权限后，由获确认的 main 发布上传，不必先手动传包。
+用户要求像 `artdico-deck` 一样自动更新 FC，日常发布采用[GitHub 自动更新操作单](automatic-fc-deployment.md)。本次首次发布和后续正常发布均已获授权，检查及审阅完成后可合并到 main 并自动更新，无需逐次再申请发布确认。以下手动 ZIP 上传仅作离线验收 / 回退备选，不必先手动传包。
 
-以下是一组操作，界面文字如有差异，以实际配置页核对，不重建函数或改动其他项目。
+用户已回报运行时、RAM 与 Variables 设置完成；以下保留作核对与维护，实际配置仍由部署任务读取验证。界面文字如有差异，以实际配置页核对，不重建函数或改动其他项目。
 
 1. 在 `artdicohost-api → 弹性配置` 将**最小实例数设为 0** 并保存，允许空闲时缩至零；0.35 vCPU / 0.5 GB 内存 / 512 MB 磁盘先沿用。缩至零会有冷启动，不表示所有 FC 费用都为零。
 2. 在 **代码 → 上传代码 → 通过 ZIP 包上传** 选择已校验的 `artdicohost-fc-preflight.zip`。上传 ZIP 本身，里面的 bootstrap 位于根目录；不要再套一层目录或上传完整仓库 / `dist/`。
@@ -67,7 +67,7 @@ node scripts/prepare-fc-bootstrap.mjs \
 
 `tests/fc-runtime.test.mjs` 覆盖真实 loopback HTTP / HEAD、关闭的写入、未结束的流、畸形请求、标头上限、端口及版本投影；`tests/fc-package.test.mjs` 覆盖来源绑定与实际 ZIP 白名单 / 校验 / 执行权限。独立 Debian 11 容器验收使用实际交付包、无外网、只读 `/code`，检查 bootstrap、版本及上述响应；本机结果不能代替 FC 控制台测试。
 
-函数确认能启动后，下一阶段再建立专用运行角色与最小范围 OSS 临时凭据权限、合成资料读写验收及真实持久化服务。现有 GitHub 部署身份只授权公开网站桶，不扩大为私有数据访问身份。39 笔真实联系人继续本机保留；筛选 / 公开稿件 / 统计、真实报名、群码受限图片服务、Wallet 与邮件均未由此包接通。
+函数确认能启动后，下一阶段再建立专用运行角色与最小范围 OSS 临时凭据权限、合成资料读写验收及真实持久化服务。GitHub 部署身份沿用公开网站桶上传权限，并由用户回报已授予单一 FC 的更新与验收权限；它不作为 FC 运行角色，也没有因此获得私有数据访问权限。39 笔真实联系人继续本机保留；筛选 / 公开稿件 / 统计、真实报名、群码受限图片服务、Wallet 与邮件均未由此包接通。正常技术发布授权不替代公开稿件核准、真实资料迁移、个人信息公开 / 分享授权或正式隐私告知。
 
 ## 回退与数据生命周期
 

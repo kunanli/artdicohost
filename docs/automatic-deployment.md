@@ -2,7 +2,9 @@
 
 用户已创建独立网站桶 `artdicohost-web-hk`，地域为中国香港，并于 2026-10-19 确认 AccessKey 已保存于 GitHub Actions Secrets，由部署流程使用。日常发布通过 GitHub 自动更新，不再手动上传 ZIP。此流程的发布范围仅含静态前台及图片邀请函生成器；本机 39 笔真实联系人、真实报名、工作人员数据 API、Wallet 签名和邮件投递不随本流程上线。开发和验证只使用示范资料。
 
-用户现已建立香港 `artdicohost-api` 并要求参照 `artdico-deck` 自动更新 FC。本轮另准备[独立 FC 自动更新](automatic-fc-deployment.md)：只读 PR 验证与 main 发布分离，需先配置函数启动命令、精确 FC 权限及仓库开关，之后仍须取得本次发布确认。尚未合并或执行云端更新；FC 更新与本节公开 OSS 上传是两个独立任务，不将启动包或资料放进网站桶。
+用户现已建立香港 `artdicohost-api` 并要求参照 `artdico-deck` 自动更新 FC。本轮另准备[独立 FC 自动更新](automatic-fc-deployment.md)：只读 PR 验证与 main 发布分离。用户已回报运行时启动设置、精确 RAM 权限及 GitHub Variables 配置完成，并明确授权合并 PR #6 / #7 与本次首次发布；当前尚无本项目 FC 云端更新及健康检查成功的证据。FC 更新与本节公开 OSS 上传是两个独立任务，不将启动包或资料放进网站桶。
+
+用户已授权后续正常发布：完成检查和审阅后可合并到 main 并执行自动部署，无需逐次再申请发布确认。公开稿件核准、真实资料迁移与个人信息公开 / 分享授权仍按各自要求办理；正式隐私告知及 39 笔真实联系人保留本机的边界不变。
 
 ## 本次核对结果
 
@@ -35,7 +37,7 @@ PR 不取得部署金钥，也不上传 OSS。部署目标固定为本项目网�
 用户已完成 Secrets 设置，且上述 main 部署成功，不需要重新提供金钥。下列仅保留为维护和轮换说明，不是本阶段待办。当前开发环境没有阿里云或 DNS 控制台身份，GitHub 连接也不提供读取 Secret 值的能力。
 
 1. 在阿里云 RAM 创建本项目专用用户，例如 `artdicohost-github-deploy`，并为其建立 AccessKey。
-2. 创建自定义权限策略，使用仓库中的 [`deploy/oss-upload-policy.json`](../deploy/oss-upload-policy.json)，只授权本网站桶对象的 `oss:PutObject`。将策略授予这个专用用户。该身份没有其他项目、私有资料桶、IAM、DNS 或删除对象的权限。
+2. 创建自定义权限策略，使用仓库中的 [`deploy/oss-upload-policy.json`](../deploy/oss-upload-policy.json)，只授权本网站桶对象的 `oss:PutObject`。将策略授予这个专用用户。当前用户另已回报向同一身份授予[单一 FC 更新与验收权限](automatic-fc-deployment.md)；不授予其他项目、私有资料桶、IAM、DNS 或删除对象权限。
 3. 打开 [本仓库 Actions Secrets](https://github.com/kunanli/artdicohost/settings/secrets/actions)，新增以下两个 **Repository secrets**：
 
 | 名称 | 内容 |
@@ -43,7 +45,7 @@ PR 不取得部署金钥，也不上传 OSS。部署目标固定为本项目网�
 | `ARTDICO_OSS_ACCESS_KEY_ID` | 上述专用 RAM 用户的 AccessKey ID |
 | `ARTDICO_OSS_ACCESS_KEY_SECRET` | 对应的 AccessKey Secret |
 
-4. 用户决定将部署 PR 合并到 `main` 后，查看该次 **push** 运行中的部署 job，不能只看 workflow 总结为绿色。成功记录必须包含目标提交、实际上传及公开回读结果。今后合并更新自动重复同一流程。
+4. 按已授予的日常发布授权完成检查和审阅，合并到 `main` 后查看该次 **push** 运行中的部署 job，不能只看 workflow 总结为绿色。成功记录必须包含目标提交、实际上传及公开回读结果。今后合并更新自动重复同一流程，无需逐次再申请发布确认。
 
 金钥必须成对配置。不要复用 IGDA 正式环境身份或授予 `AliyunOSSFullAccess`。权限依据单文件 [PutObject 官方说明](https://help.aliyun.com/zh/oss/developer-reference/put-object)，GitHub 的保存方式见 [Actions Secrets 官方说明](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets)。
 

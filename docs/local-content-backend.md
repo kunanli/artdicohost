@@ -1,6 +1,6 @@
 # 本地工作人员内容后台
 
-此阶段提供可实际登录、保存草稿及发布的本地 Node.js API，用于安排场次和参展展位。它绑定 `127.0.0.1`，拒绝 `NODE_ENV=production` 或非 `local` 模式，不连接 FC、OSS、IGDA 身份或云资源。活动报名表继续为未提交资料的演示；此后台没有报名个人资料和名单管理接口。
+此阶段提供可实际登录、保存草稿及发布的本地 Node.js API，用于安排场次和参展展位。它绑定 `127.0.0.1`，拒绝 `NODE_ENV=production` 或非 `local` 模式，不连接 FC、OSS、IGDA 身份或云资源。活动报名表继续为未提交资料的演示；新增的[私密意向名单模块](local-contacts.md)在独立文件和权限下管理既有联系人，不是正式报名受理接口。静态预览发布不会同时上线此本地 API，部署边界见 [OSS 部署步骤](oss-deployment.md)。
 
 ## 账号和启动
 
@@ -18,7 +18,7 @@ Read-Host '本地账号密码' -MaskInput | node functions/content-api/hash-pass
 [{"id":"your-stable-id","username":"your-login","label":"工作人员名称","roles":["editor","publisher"],"passwordHash":"粘贴完整的 scrypt 摘要"}]
 ```
 
-在环境文件中用单引号包住整个 JSON 数组。ID、用户名不能重复；只接受 `editor`、`publisher` 角色和 `scrypt$16384$8$1$…` 格式摘要，不接受明文 `password` 字段。`editor` 可读取和保存草稿；`publisher` 可读取和发布，只有同时具有 `editor` 时才可保存。不要在前端 `PUBLIC_` 配置中设置这些账号。
+在环境文件中用单引号包住整个 JSON 数组。ID、用户名不能重复；只接受 `editor`、`publisher`、`outreach` 角色和 `scrypt$16384$8$1$…` 格式摘要，不接受明文 `password` 字段。`editor` 可读取和保存草稿；`publisher` 可读取和发布，只有同时具有 `editor` 时才可保存。`outreach` 专门授权私密联系人操作，内容编辑 / 发布角色不会自动继承名单权限。不要在前端 `PUBLIC_` 配置中设置这些账号。
 
 ```sh
 pnpm admin:local

@@ -6,7 +6,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const files = [];
 async function walk(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
-    if (['node_modules', '.git', '.astro', 'dist', '.local-data'].includes(entry.name) || entry.name === '.env.local') continue;
+    if (['node_modules', '.git', '.astro', 'dist', '.local-data', '.pnpm-store'].includes(entry.name) || entry.name === '.env.local') continue;
     const path = resolve(directory, entry.name);
     if (entry.isDirectory()) await walk(path); else files.push(path);
   }

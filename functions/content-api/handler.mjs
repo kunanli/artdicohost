@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { parseAdminUsers, publicUser, verifyPassword, equalToken } from './auth.mjs';
 import { ContentError } from './store.mjs';
+import { createPreviewCommunications } from './communications.mjs';
 
 export const MAX_BODY_BYTES = 1024 * 1024;
 export const SESSION_COOKIE = 'artdico_local_session';
@@ -38,7 +39,7 @@ async function body(request) {
 }
 
 /** Pure Request -> Response boundary. Sessions/rate limits are local to this process. */
-export function createContentApi({ store, users, allowedOrigin, mode = 'local', now = () => Date.now(), sessionTtlMs = 8 * 60 * 60 * 1000, loginLimit = 10, loginWindowMs = 15 * 60 * 1000 }) {
+export function createContentApi({ store, contactsStore, communications = createPreviewCommunications(), users, allowedOrigin, mode = 'local', now = () => Date.now(), sessionTtlMs = 8 * 60 * 60 * 1000, loginLimit = 10, loginWindowMs = 15 * 60 * 1000 }) {
   if (mode !== 'local') throw new TypeError('本内容 API 只支持本地模式，尚未接入生产鉴权或 OSS。');
   const origin = new URL(allowedOrigin);
   if (origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1' || origin.origin !== allowedOrigin) throw new TypeError('本地 API Origin 必须是 http://127.0.0.1:端口。');
@@ -99,6 +100,46 @@ export function createContentApi({ store, users, allowedOrigin, mode = 'local', 
       if (url.pathname === '/api/admin/logout' && request.method === 'POST') {
         sessions.delete(session.token);
         return json({ ok: true }, 200, { 'set-cookie': cookie('', 0) });
+      }
+      if (url.pathname === '/api/admin/communications' && request.method === 'GET') {
+        permit(session, 'outreach');
+        return json(communications.readiness());
+      }
+      if (url.pathname === '/api/admin/contacts' || url.pathname.startsWith('/api/admin/contacts/')) {
+        permit(session, 'outreach');
+        if (!contactsStore) throw new ContentError('CONTACTS_UNAVAILABLE', '私密联系人模块未配置。', 503);
+        if (url.pathname === '/api/admin/contacts' && request.method === 'GET') return json(await contactsStore.read());
+        if (url.pathname === '/api/admin/contacts/import/preview' && request.method === 'POST') {
+          const input = await body(request);
+          return json(await contactsStore.previewImport(input.sourceKey, input.rows, session.user.id));
+        }
+        if (url.pathname === '/api/admin/contacts/import' && request.method === 'POST') {
+          const input = await body(request);
+          return json(await contactsStore.importPreview(input.expectedRevision, input.previewToken, input.allowPossibleDuplicates, session.user.id));
+        }
+        const communicationRoute = url.pathname.match(/^\/api\/admin\/contacts\/([A-Za-z0-9][A-Za-z0-9_-]{0,79})\/(email|wallet)\/preview$/u);
+        if (communicationRoute && request.method === 'POST') {
+          const input = await body(request);
+          const { contacts } = await contactsStore.read();
+          const contact = contacts.find((item) => item.id === communicationRoute[1]);
+          return json(communicationRoute[2] === 'email'
+            ? communications.emailPreview(contact, input.settings)
+            : communications.walletPreview(contact, input.settings));
+        }
+        const contactRoute = url.pathname.match(/^\/api\/admin\/contacts\/([A-Za-z0-9][A-Za-z0-9_-]{0,79})(?:\/invitation\/(generated|sent))?$/u);
+        if (contactRoute && !contactRoute[2] && request.method === 'PUT') {
+          const input = await body(request);
+          return json(await contactsStore.saveOperations(contactRoute[1], input.expectedRevision, input.operations, session.user.id));
+        }
+        if (contactRoute?.[2] === 'generated' && request.method === 'POST') {
+          const input = await body(request);
+          return json(await contactsStore.recordGenerated(contactRoute[1], input.expectedRevision, input.settings, session.user.id));
+        }
+        if (contactRoute?.[2] === 'sent' && request.method === 'POST') {
+          const input = await body(request);
+          return json(await contactsStore.recordSent(contactRoute[1], input.expectedRevision, input.channel, input.generatedAt, input.settings, session.user.id));
+        }
+        throw new ContentError('NOT_FOUND', '联系人接口或方法不存在。', 404);
       }
       if (url.pathname === '/api/admin/content' && request.method === 'GET') return json(await store.read());
       if (url.pathname === '/api/admin/content' && request.method === 'PUT') {

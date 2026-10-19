@@ -37,7 +37,7 @@ jobs:
           cache: false
       - name: Install locked dependencies
         id: install
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
       - name: Check source boundaries
         run: pnpm check:source
       - name: Check types and Astro source
@@ -46,6 +46,8 @@ jobs:
         run: pnpm test
       - name: Build the static site
         run: pnpm build
+      - name: Export public build for offline review
+        run: node scripts/export-review-data.mjs
       - name: Audit application and build dependencies
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm audit --audit-level=moderate

@@ -35,7 +35,7 @@ export function parseAdminUsers(value) {
       || typeof user.label !== 'string' || !user.label.trim() || user.label.length > 120
       || !HASH_PATTERN.test(user.passwordHash ?? '') || 'password' in user
       || !Array.isArray(user.roles) || !user.roles.length
-      || user.roles.some((role) => !['editor', 'publisher'].includes(role))
+      || user.roles.some((role) => !['editor', 'publisher', 'outreach'].includes(role))
       || new Set(user.roles).size !== user.roles.length
       || ids.has(user.id) || names.has(user.username)) {
       throw new TypeError('本地账号的 ID、用户名、角色或 scrypt 摘要无效；不接受明文密码。');

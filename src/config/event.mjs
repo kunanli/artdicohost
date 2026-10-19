@@ -15,7 +15,7 @@ export const eventConfig = {
   hero: { title: '让创作相遇。让连接发生。', description: '从一座站点，到下一个创作现场。与游戏创作者、组织者和生态伙伴，一起聊聊未来。' },
   date: { value: '2026-12-05', label: '2026 年 12 月 5 日（暂定）', status: 'tentative' },
   time: { start: '09:30', end: '18:00', label: '09:30–18:00', timezone: 'Asia/Shanghai' },
-  venue: { name: '深圳前海深港青年梦工场', city: '深圳', area: '前海', addressStatus: '具体楼层、入口、交通及停车资讯确认后公布', mapUrl: null, confirmed: false },
+  venue: { name: '前海5号楼（Qianhai Block V）', city: '深圳', area: '前海', address: '深圳市前海合作区梦海大道5188号前海5号楼', addressEnglish: 'Qianhai Block V, No. 5188 Menhai Avenue, Qianhai, Shenzhen', addressStatus: '3F 楼层安排暂定，入口、交通及停车资讯确认后公布', mapUrl: null, confirmed: false },
   registration: {
     mode: 'mock', enabled: false, productionSubmissionEnabled: false,
     formTitle: '活动报名', ctaLabel: '报名参加', acceptancePolicy: 'after_successful_persistence', attendeeReviewRequired: false,

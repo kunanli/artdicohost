@@ -5,7 +5,9 @@ import { resolve, relative, extname, sep, isAbsolute } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createContentApi, MAX_BODY_BYTES } from './handler.mjs';
 import { createFileContentStore } from './store.mjs';
+import { createFileContactsStore } from './contacts-store.mjs';
 import { parseAdminUsers } from './auth.mjs';
+import { createPreviewCommunications } from './communications.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.avif': 'image/avif', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml; charset=utf-8' };
@@ -41,6 +43,7 @@ async function requestBody(request) {
 export async function startLocalContentServer({ env = process.env, users, port, distDirectory = resolve(ROOT, 'dist'), dataDirectory } = {}) {
   if (env.NODE_ENV === 'production' || (env.CONTENT_API_MODE ?? 'local') !== 'local') throw new TypeError('此服务仅限本地演示；生产 FC/OSS 和共享鉴权尚未接入。');
   const accounts = parseAdminUsers(users ?? env.ADMIN_USERS_JSON);
+  const communications = createPreviewCommunications({ env });
   const localPort = port ?? Number(env.CONTENT_API_PORT ?? 8787);
   if (!Number.isInteger(localPort) || localPort < 0 || localPort > 65535) throw new TypeError('本地端口无效。');
   const dist = await realpath(resolve(distDirectory));
@@ -49,6 +52,7 @@ export async function startLocalContentServer({ env = process.env, users, port, 
   await mkdir(data, { recursive: true, mode: 0o700 });
   if (inside(dist, await realpath(data))) throw new TypeError('内容数据目录不可通过链接指向 dist。');
   const store = createFileContentStore({ directory: data });
+  const contactsStore = createFileContactsStore({ directory: data, contentStore: store });
   let api;
   let origin;
   const server = createServer(async (request, response) => {
@@ -110,7 +114,7 @@ export async function startLocalContentServer({ env = process.env, users, port, 
   server.headersTimeout = 10_000;
   await new Promise((accept, reject) => { server.once('error', reject); server.listen(localPort, '127.0.0.1', accept); });
   origin = `http://127.0.0.1:${server.address().port}`;
-  api = createContentApi({ store, users: accounts, allowedOrigin: origin });
+  api = createContentApi({ store, contactsStore, communications, users: accounts, allowedOrigin: origin });
   return { server, origin, close: () => new Promise((accept, reject) => { server.closeAllConnections(); server.close((error) => error ? reject(error) : accept()); }) };
 }
 

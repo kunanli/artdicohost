@@ -2,14 +2,16 @@
 
 记录日期：2026-10-19（Asia/Taipei）。用户已在中国香港创建 `artdicohost-web-hk`，并确认 AccessKey 已存在 GitHub Actions Secrets。日常发布使用 [自动部署说明](automatic-deployment.md)，域名和证书按 [域名与 HTTPS 操作单](domain-https.md) 处理。无需再创建 bucket、索取金钥或手动上传旧 ZIP。
 
-接续开发时，PR #3 尚未合并。已核对的 [Actions 39212607866](https://github.com/kunanli/artdicohost/actions/runs/39212607866) 在提交 `35e85a0ed53b84b33100e55625eb659efb22babb` 上检查成功，部署 job 按 PR 规则跳过；没有 main push 发布记录。这些证据不能写成已完成 OSS 上传。
+最新状态：PR #3 已合并，main 提交为 `074826f1d9a218df1371b6bd0cf3ac74776ec2eb`。[Actions 39239493108](https://github.com/kunanli/artdicohost/actions/runs/39239493108) 的检查、部署及公开回读步骤均成功；用户确认 11 个公开文件通过 SHA-256 回读。后续截图显示阿里云 `@` CNAME 已启用、TTL 10 分钟，`artdico.host` 的 OSS 绑定生效且未开启 CDN；用户回报证书已配置，HTTPS 页面可正常显示。独立线上脚本、全部资源及跨浏览器验收尚未完成，证书签发者与到期日待记录。
+
+当前用户授权的双活动白蓝视觉升级仍在本地，不属于上述已发布版本；本轮没有触发新部署。
 
 ## 当前资源与发布范围
 
 | 资源 | 用途与状态 |
 | --- | --- |
 | `artdicohost-web-hk` / `cn-hongkong` | 用户已建立的独立公开静态桶；固定部署目标 |
-| 公开前台与 `/invitation/` | Astro 静态内容及浏览器图片预览；日期、时段与楼层仍按确认状态展示 |
+| 公开前台与 `/invitation/` | Astro 静态内容及浏览器图片预览；本地改版采用已确认日期、时段与场地，楼层及个别安排仍待确认；线上仍为上述已部署提交 |
 | `/admin/`、`/admin/contacts/` | 发布包替换为云端后台尚未开放说明，不包含本机登录表单 |
 | 本机内容 API / 39 笔真实联系人 | 保留本机；开发使用示范资料，不进入 Git、CI、公开对象或本次部署 |
 | 正式报名、云端工作人员后台 | 尚未接通；普通报名是明确标识的未提交演示 |
@@ -47,13 +49,11 @@ GITHUB_SHA="$(git rev-parse HEAD)" node scripts/prepare-oss-site.mjs .local-data
 
 该命令只在本机准备文件，不上传 OSS。目标目录已包含文件时程序会拒绝覆盖，应另选空目录；不要递归删除不明路径。审阅 `publication-manifest.json` 与公开页面后再决定发布。旧的 `artdico-oss-preview.zip` 只代表历史视觉快照，不能用于本次发布或证明新提交已上线。
 
-## 首次发布与域名接入
+## 已完成发布与后续独立验收
 
-1. 完成 PR #3 当前变更与对应检查，保留可审阅 diff。
-2. 用户决定合并后，由 main push 自动触发检查与部署；不以手动 workflow_dispatch 代替发布，后者只检查。
-3. 在部署 job 中确认准确提交、每个对象上传及公开 SHA-256 回读。缺失凭据、权限不足或回读失败必须显示失败。
-4. 依 [域名与 HTTPS 操作单](domain-https.md) 完成 `artdico.host` 的 OSS 绑定、权威 DNS 和证书托管；必要时可额外启用独立预览子域名。
-5. 使用无密钥的线上检查脚本核对域名、版本、路由和资源，再分别完成桌面、手机与微信真机体验检查。窄屏桌面浏览器不能代替微信真机验收。
+PR #3 合并和上述 main push 发布已完成，无需重建桶、重填 Secrets 或重跑部署。后续源码更新仍由 main push 自动检查、发布和回读；手动 workflow_dispatch 只检查。
+
+阿里云 DNS、OSS 绑定与证书配置已有截图或用户回报，不重复执行首次接入。后续依 [域名与 HTTPS 操作单](domain-https.md) 补齐证书详情，再使用无密钥的线上检查脚本核对域名、版本、路由和资源，分别记录桌面、手机与微信真机体验检查；窄屏桌面浏览器不能代替微信真机验收。若需要继续控制台操作，仍每次只指导一个步骤，等待用户完成后继续。
 
 原生 OSS endpoint 的公开读取校验只证明文件内容可读；浏览器可能下载 HTML，不能作为自定义域名已正常打开网页的证据。环境出口受限时记录「未能验证」，不推断网站故障。
 

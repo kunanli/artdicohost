@@ -135,6 +135,8 @@ for (const form of document.querySelectorAll('[data-registration-form]')) {
   form.addEventListener('change', syncBranches);
   for (const link of document.querySelectorAll('[data-recruit]')) {
     link.addEventListener('click', () => {
+      const preview = form.closest('[data-registration-preview]');
+      if (preview instanceof HTMLDetailsElement) preview.open = true;
       if (step === 3) form.reset();
       const choices = link.dataset.recruit === 'speaker'
         ? { participationInterests: 'talk' }

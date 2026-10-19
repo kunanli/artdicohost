@@ -1,5 +1,6 @@
 import { parseContactImport, WORKBOOK_SOURCE_KEY, sourceLabels } from '../../shared/contact-import.mjs';
 import { renderInvitation, invitationPngBlob, invitationFilename } from '../lib/invitation-renderer.mjs';
+import { eventConfig } from '../config/event.mjs';
 
 const $ = value => document.querySelector(value);
 const responses = { pending: '尚未确认', attending: '已确认出席', declined: '不出席' };
@@ -198,7 +199,7 @@ function openInvitation(item){
   if(!mayInvite(item)){announce('此对象未同意联络或授权尚未核对，不能生成邀请函。',true);return;}
   invitationContactId=item.id;renderedSettings=null;clearCommunicationPreviews();
   const form=$('[data-invitation-form]');form.reset();
-  const settings=item.invitation.settings||{recipientName:item.profile.displayName,date:'2026-12-05',time:'10:00–18:00',venue:"深圳市前海合作区梦海大道5188号 前海5号楼（Qianhai Block V）3F",confirmed:false};
+  const settings=item.invitation.settings||{recipientName:item.profile.displayName,date:eventConfig.date.value,time:eventConfig.time.label,venue:eventConfig.venue.address,confirmed:false};
   for(const key of ['recipientName','date','time','venue'])form.elements.namedItem(key).value=settings[key];
   form.elements.namedItem('confirmed').checked=settings.confirmed===true;
   $('[data-invitation-sent-confirm]').checked=false;

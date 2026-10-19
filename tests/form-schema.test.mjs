@@ -202,14 +202,24 @@ test('mock completion never claims a submission, emits personal data, or returns
   assert.equal(registrationSchema.submissionEnabled, false);
 });
 
-test('public event config keeps tentative facts, privacy, map and production registration disabled', () => {
-  assert.equal(eventConfig.status, 'tentative');
-  assert.equal(eventConfig.date.status, 'tentative');
+test('public event config confirms date, time and venue while independent arrangements and real submissions stay pending', () => {
+  assert.equal(eventConfig.status, 'confirmed');
+  assert.equal(eventConfig.date.value, '2026-12-05');
+  assert.equal(eventConfig.date.status, 'confirmed');
+  assert.equal(eventConfig.time.start, '09:30');
+  assert.equal(eventConfig.time.opening, '10:00');
+  assert.equal(eventConfig.time.end, '18:00');
+  assert.equal(eventConfig.venue.confirmed, true);
+  assert.match(eventConfig.title, /2026 GGJ 中国交流聚会 × ARTDiCO HOST 学生嘉年华/u);
+  assert.doesNotMatch(eventConfig.date.label + eventConfig.seo.description + eventConfig.registration.notice, /暂定|活动信息待确认/u);
+  assert.doesNotMatch(eventConfig.venue.name + eventConfig.venue.address, /3F/u);
   assert.equal(eventConfig.registration.productionSubmissionEnabled, false);
   assert.equal(eventConfig.registration.mode, 'mock');
   assert.equal(eventConfig.venue.mapUrl, null);
   assert.equal(eventConfig.privacy.contactEmail, null);
   assert.equal(eventConfig.accommodation.nights, 1);
+  assert.equal(eventConfig.accommodation.status, 'tentative');
+  assert.equal(eventConfig.exhibition.status, 'tentative');
   assert.deepEqual(eventConfig.guests.people, []);
   assert.equal(eventConfig.attribution.status, 'pending');
   assert.equal(JSON.stringify(eventConfig).includes('20 间'), false);

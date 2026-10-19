@@ -1,21 +1,22 @@
 ---
 import SiteLayout from '../../layouts/SiteLayout.astro';
+import { eventConfig } from '../../config/event.mjs';
 ---
-<SiteLayout title="图片邀请函生成器｜ARTDiCO HOST" description="在当前浏览器制作和保存图片邀请函，活动信息暂定。">
+<SiteLayout title="图片邀请函生成器｜ARTDiCO HOST" description="在当前浏览器制作和保存图片邀请函预览。">
   <main id="main-content" class="invitation-tool">
     <a href="/">← 返回活动首页</a>
     <p class="eyebrow">ARTDiCO HOST / INVITATION</p>
     <h1>邀请创作，一起相聚。</h1>
-    <p>填写称呼，预览并保存暂定图片。信息仅在当前页面处理；生成图片不会发送邀请、登记报名或更新后台，也不是入场凭证。</p>
+    <p>填写称呼，预览并保存图片。资料仅在当前页面处理，不会发送邀请或登记报名；预览不是入场凭证。</p>
     <div class="tool-grid">
       <form data-generator-form>
         <label>邀请函称呼<input name="recipientName" maxlength="80" required autocomplete="off" placeholder="请输入称呼" /></label>
-        <label>日期<input name="date" maxlength="30" value="2026/12/05（暂定）" /></label>
-        <label>时间<input name="time" maxlength="40" value="10:00–18:00（暂定）" /></label>
-        <label>地点<textarea name="venue" rows="3" maxlength="120">深圳市前海合作区梦海大道5188号 前海5号楼（Qianhai Block V）3F（楼层暂定）</textarea></label>
+        <label>日期<input name="date" maxlength="30" value={eventConfig.date.value.replaceAll('-', '/')} /></label>
+        <label>时间<input name="time" maxlength="40" value={eventConfig.time.label} /></label>
+        <label>地点<textarea name="venue" rows="3" maxlength="120">{eventConfig.venue.address}</textarea></label>
         <button type="submit" data-generator-submit disabled>生成预览</button>
         <button type="button" data-generator-download disabled>保存 PNG 图片</button>
-        <p data-generator-status role="status" aria-live="polite">日期、时间及楼层暂定。正式输出前请确认。</p>
+        <p data-generator-status role="status" aria-live="polite">日期、时间与场地已确认，楼层另行公布。公开预览仍保留暂定水印，正式邀请函由工作人员核对输出。</p>
         <noscript><p>请启用 JavaScript 后生成图片。本页面不会提交称呼或活动资料。</p></noscript>
       </form>
       <section aria-label="邀请函预览" class="preview">

@@ -3,10 +3,10 @@ import { recruitment } from '../config/event.mjs';
 import Icon from './Icon.astro';
 ---
 <section class="ah-recruitment ah-section" id="recruitment" aria-labelledby="recruitment-heading">
-  <div class="ah-section-heading"><div><span class="ah-kicker">BRING YOUR PERSPECTIVE / 一起创造现场</span><h2 id="recruitment-heading">带来你的经验。<br />也带来新的可能。</h2></div><p>讲座与场次的讲者尚未确定，现开放讲者与赞助合作招募。普通参会无需经过邀请审核。</p></div>
+  <div class="ah-section-heading"><h2 id="recruitment-heading">一起创造这个现场。</h2><p>讲者与合作伙伴招募中。</p></div>
   <div class="ah-recruitment-grid">
-    <article id="speaker-recruitment"><span class="ah-feature-number">OPEN CALL / 讲者招募</span><Icon name="share" /><h3>{recruitment.speakers.title}</h3><p>{recruitment.speakers.description}</p><a class="ah-primary" href="#registration" data-recruit="speaker">{recruitment.speakers.ctaLabel}<span aria-hidden="true">↗</span></a></article>
-    <article id="sponsor-recruitment"><span class="ah-feature-number">MAKE IT POSSIBLE / 赞助招募</span><Icon name="arrow" /><h3>{recruitment.sponsors.title}</h3><p>{recruitment.sponsors.description}</p><a class="ah-primary" href="#registration" data-recruit="sponsor">{recruitment.sponsors.ctaLabel}<span aria-hidden="true">↗</span></a></article>
+    <article id="speaker-recruitment"><span class="ah-feature-number">讲者招募</span><Icon name="share" /><h3>{recruitment.speakers.title}</h3><p>游戏创作、站点运营、技术或教育实践，欢迎带来你的主题。</p><a class="ah-primary" href="#registration" data-recruit="speaker">{recruitment.speakers.ctaLabel}<span aria-hidden="true">↗</span></a></article>
+    <article id="sponsor-recruitment"><span class="ah-feature-number">赞助合作</span><Icon name="arrow" /><h3>{recruitment.sponsors.title}</h3><p>工具、物资、资金、导师与社群资源，一起支持创作者。</p><a class="ah-primary" href="#registration" data-recruit="sponsor">{recruitment.sponsors.ctaLabel}<span aria-hidden="true">↗</span></a></article>
   </div>
-  <p class="ah-recruitment-note">{recruitment.speakers.notice} {recruitment.sponsors.notice}</p>
+  <details class="ah-highlights-detail"><summary>提案与合作说明 <span aria-hidden="true">＋</span></summary><p class="ah-recruitment-note">{recruitment.speakers.notice}</p><p class="ah-recruitment-note">{recruitment.sponsors.notice}</p></details>
 </section>

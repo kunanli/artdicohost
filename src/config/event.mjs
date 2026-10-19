@@ -2,7 +2,7 @@
 export const eventConfig = {
   id: 'ggj-cn-2026',
   year: 2026,
-  title: '2026 GGJ 中国交流聚会 × ARTDiCO HOST 学生嘉年华',
+  title: '2026 GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华',
   subtitle: '组织者交流 · 学生作品 · 游戏体验',
   siteRegistration: {
     existing: { title: '我已是 GGJ 站点负责人', categories: ['so', 'ro'], description: '登记现任或曾任 SO / RO 的站点、城市、组织年份、当前 / 历史角色与交流经历。' },
@@ -12,7 +12,7 @@ export const eventConfig = {
   status: 'confirmed',
   language: 'zh-CN',
   design: 'creative-connections',
-  hero: { title: '2026 GGJ 中国交流聚会 × ARTDiCO HOST 学生嘉年华', description: '组织者交流 · 学生作品 · 游戏体验' },
+  hero: { title: '2026 GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华', description: '组织者交流 · 学生作品 · 游戏体验' },
   date: { value: '2026-12-05', label: '2026 年 12 月 5 日', status: 'confirmed' },
   time: { start: '09:30', opening: '10:00', end: '18:00', label: '10:00–18:00', timezone: 'Asia/Shanghai' },
   venue: { name: '前海5号楼（Qianhai Block V）', city: '深圳', area: '前海', address: '深圳市前海合作区梦海大道5188号前海5号楼', addressEnglish: 'Qianhai Block V, No. 5188 Menhai Avenue, Qianhai, Shenzhen', addressStatus: '楼层、入口及交通资讯另行公布', mapUrl: null, confirmed: true },
@@ -29,7 +29,7 @@ export const eventConfig = {
   attribution: { status: 'pending', notice: '主办、承办、协办、赞助等署名待有关各方正式确认后展示。' },
   privacy: { status: 'pending', processor: null, contactEmail: null, storageRegion: null, retentionPeriod: null, notice: '正式报名开放前，将核定个人信息处理者、联系方式、收集目的、字段类别、存储地区、保留期限、分享对象及查阅、更正、撤回、删除方式。当前不收集真实报名。' },
   links: { map: null, contact: null, artdico: null },
-  seo: { title: '2026 GGJ 中国交流聚会 × ARTDiCO HOST 学生嘉年华', description: '2026 年 12 月 5 日，10:00–18:00，深圳前海5号楼。GGJ 组织者交流、学生作品分享与游戏体验。09:30 签到，报名尚未开放。' },
+  seo: { title: '2026 GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华', description: '2026 年 12 月 5 日，10:00–18:00，深圳前海5号楼。GlobalGameJam 组织者交流、学生作品分享与游戏体验。09:30 签到，报名尚未开放。' },
 };
 
 /** Recruitment requests are independent from ordinary event registration. */

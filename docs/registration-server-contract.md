@@ -1,12 +1,13 @@
 # 正式报名服务端契约准备
 
-日期：2026-10-19（Asia/Taipei）。本阶段是无 I/O 的配置与资料校验模块，供后续独立报名 API 使用。它不提供 HTTP 路由，不写 OSS，不发送邮件，不生成报名编号，也没有接入公开表单。网站仍为明确标识的报名预览，39 笔真实联系人保留本机。
+日期：2026-10-19（Asia/Taipei）。本阶段提供无 I/O 的配置 / 资料校验和未挂载的 HTTP 适配函数，供后续独立报名 API 使用。它不启动 HTTP 服务、不写 OSS、不发送邮件、不生成报名编号，也没有接入公开表单。网站仍为明确标识的报名预览，39 笔真实联系人保留本机。
 
 ## 模块与受理边界
 
 - `functions/registration-api/policy.mjs`：`validateRegistrationPolicy(config, {now})` 检查服务器配置及报名时间窗口。
 - `functions/registration-api/validation.mjs`：`validateRegistrationSubmission(payload, {policy, now})` 重新检查配置和完整请求，返回白名单业务资料与服务端生成的同意时间。
 - 两个函数仅返回 `{valid, errors, value?}`。无效结果不返回资料；`valid:true` 只表示通过校验，不能显示「报名成功」或作为正式受理凭证。只有后续确认私有持久化成功的接口才可返回正式结果。
+- `functions/registration-api/handler.mjs`：独立 HTTP 请求 / 回应适配函数；没有可信提交服务时拒绝处理，具体边界见下文。
 
 服务器配置由受控服务端提供，不能从请求正文取得。完整配置只表示语法及约定字段满足要求，不证明所填资料已经核实、隐私文字已核定、云权限正确、限流可用或数据已保存。本阶段不会读取环境凭据或创建资源。
 
@@ -77,8 +78,41 @@ const payload = {
 
 本阶段没有内存版「生产存储」、伪造 OSS 成功或可被配置值解锁的报名入口。不得把本机工作人员 API 直接暴露到公网。
 
+## HTTP 适配层准备
+
+`functions/registration-api/handler.mjs` 导出 `createRegistrationApi({allowedOrigins, submissionService})`，返回独立的 `Request → Promise<Response>` 处理函数。本模块不监听端口，不挂到本机内容服务、公开表单或 FC。`allowedOrigins` 是明确的 HTTPS 来源列表，逐个精确匹配，不接受通配、子域后缀或带路径的来源。没有可信提交服务时返回 `503`，没有生产默认实现。
+
+适配层只接收 `/api/registrations` 的 `POST` 与相应 `OPTIONS`。请求须为 JSON，在解析前按实际串流限制 128 KiB，拒绝损坏 UTF-8、无效 JSON、错误来源、方法与路由。提交使用以下请求头：
+
+| 请求头 | 格式及边界 |
+| --- | --- |
+| `Origin` | 与受控 HTTPS 来源完全一致 |
+| `Content-Type` | `application/json`；可用 UTF-8 字符集 |
+| `Idempotency-Key` | 32–128 个 base64url 字元；格式通过不证明随机强度 |
+| `X-Registration-Token` | 三段 base64url，最长 4096 字元；此层只检格式，签名、事件绑定与有效期由可信服务核验 |
+
+通过传输检查后调用 `submissionService.submit({payload, idempotencyKey, submissionToken, origin})`。这不是由客户端提供的函数，也不接受客户端提交的「已保存」字段。后续独立服务必须完成可信限流 / 令牌校验、既有提交查验、新申请字段和正式同意校验、条件创建及持久化确认；不能仅因为返回值符合格式就宣称生产能力已完成。
+
+已成功持久化的同键同内容重试必须先核对原结果，即使当前已截止，也可返回原收据；只有新写入或尚未保存的补写才重新检查开放窗口及正式同意。适配层不提前调用包含时间窗口的校验器，避免遮断已成功的重试，也不以单进程 Map 实现生产幂等。
+
+可信服务的结果为以下白名单之一：
+
+| `outcome` | HTTP 行为 |
+| --- | --- |
+| `created` / `replayed` | 必须同时带 `receipt: {committed: true, eventId, referenceCode, committedAt}`；事件须匹配请求、编号及时间格式有效，分别返回 `201` / `200` |
+| `invalid` | `422` 固定资料错误，不返回提交值或服务自带错误文字 |
+| `conflict` / `closed` | `409` 内容冲突或报名关闭 |
+| `forbidden` / `rate_limited` / `withdrawn` | 分别为 `403` / `429` / `410` |
+| `unavailable`、未知、缺收据或抛错 | `503`，不显示报名成功 |
+
+成功正文仅包含 `{status: 'registered', reference_code}`，不返回姓名、邮箱、存储键、堆栈或内部审核字段。所有结果使用 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`；CORS 仅响应已匹配的来源并设置 `Vary: Origin`，不开放跨域凭据。
+
+收据是可信服务对「已确认保存」的约定，本 HTTP 层没有自行回读 OSS，也没有完成真实签名、跨实例限流、容量控制、幂等或私有存储验收。测试中的合成服务只为证明传输边界与失败行为，不能被配置为生产默认值。
+
 ## 验证与回退
 
 `tests/registration-server-contract.test.mjs` 只使用合成配置及资料，覆盖配置拒绝、时间边界、正式同意、原始类型、条件分支、白名单、链接与长度等安全边界；不联网、不创建云资源、不处理真实名单。执行完整既有检查时也验证公开演示仍无传送或持久化。
+
+`tests/registration-http.test.mjs` 直接传递标准 Request / Response，不启动公网服务。覆盖拒绝边界、超量串流、编码、固定错误和不明保存结果；成功路径在测试隔离目录完成合成资料实际写入与同步后才产生收据，重试不重复写入。此验证不替代 OSS 防覆盖、跨实例并发或 FC 联调。
 
 本阶段模块未接入页面或运行中的 API，回退仅移除相应代码与文档，不涉及个人资料或云资源。后续生产适配器的回退与数据兼容须另行记录。

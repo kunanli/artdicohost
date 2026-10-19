@@ -68,19 +68,30 @@ async function loadPublishedContent(url) {
   for (const node of document.querySelectorAll('[data-public-date-value]')) { node.textContent = content.event.date; node.setAttribute('datetime', content.event.date); }
   for (const node of document.querySelectorAll('[data-public-date-tentative]')) node.hidden = content.event.dateStatus === 'confirmed';
   for (const node of document.querySelectorAll('[data-public-date-label]')) node.textContent = content.event.dateStatus === 'confirmed' ? '活动日期已确认' : '活动日期暂定';
+  // Keep the first brand written out when loading an older published event revision.
+  const knownTitle = /^(\d{4}) (?:GGJ|GlobalGameJam) 中国交流聚会 × ARTDiCO HOST 学生嘉年华$/u.exec(content.event.title);
+  const eventTitle = knownTitle ? `${knownTitle[1]} GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华` : content.event.title;
   for (const node of document.querySelectorAll('[data-public-event-title]')) {
-    if (node.tagName !== 'H1') { node.textContent = content.event.title; continue; }
-    node.setAttribute('aria-label', content.event.title);
-    if (content.event.title === (node.dataset.renderedEventTitle || node.dataset.initialEventTitle)) continue;
-    node.dataset.renderedEventTitle = content.event.title;
-    const titles = content.event.title.split(' × ');
+    if (node.tagName !== 'H1') { node.textContent = eventTitle; continue; }
+    node.setAttribute('aria-label', eventTitle);
+    if (eventTitle === (node.dataset.renderedEventTitle || node.dataset.initialEventTitle)) continue;
+    node.dataset.renderedEventTitle = eventTitle;
+    if (knownTitle) {
+      const first = element('span', undefined, 'ah-event-title-line');
+      first.append(element('span', 'GlobalGameJam', 'ah-event-brand'), element('span', '中国交流聚会', 'ah-event-chinese'));
+      const second = element('span', undefined, 'ah-event-title-line');
+      second.append(element('span', 'ARTDiCO HOST', 'ah-event-brand'), element('span', '学生嘉年华', 'ah-event-chinese'));
+      node.replaceChildren(first, element('span', '×', 'ah-event-title-cross'), second);
+      continue;
+    }
+    const titles = eventTitle.split(' × ');
     if (titles.length === 2) {
       node.replaceChildren(
         element('span', titles[0], 'ah-event-title-line'),
         element('span', '×', 'ah-event-title-cross'),
         element('span', titles[1], 'ah-event-title-line'),
       );
-    } else node.textContent = content.event.title;
+    } else node.textContent = eventTitle;
   }
   for (const node of document.querySelectorAll('[data-public-hero-venue]')) node.textContent = content.event.venue;
   for (const node of document.querySelectorAll('[data-public-poster-date]')) {
@@ -91,7 +102,7 @@ async function loadPublishedContent(url) {
     const [,month,day] = content.event.date.split('-');
     node.replaceChildren(element('span', month, 'ah-date-month'), element('span', '.', 'ah-date-dot'), element('span', day, 'ah-date-day'));
   }
-  document.title = content.event.title + '｜活动安排';
+  document.title = eventTitle + '｜活动安排';
   for (const node of document.querySelectorAll('[data-public-event-venue]')) node.textContent = content.event.venue + (content.event.venueStatus === 'confirmed' ? '' : '（暂定）');
   const notice = document.querySelector('[data-public-content-status]');
   if (notice) notice.textContent = content.event.status === 'cancelled' ? '本次活动已取消。' : '讲者与主题陆续公布。';

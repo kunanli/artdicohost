@@ -210,7 +210,7 @@ test('public event config confirms date, time and venue while independent arrang
   assert.equal(eventConfig.time.opening, '10:00');
   assert.equal(eventConfig.time.end, '18:00');
   assert.equal(eventConfig.venue.confirmed, true);
-  assert.match(eventConfig.title, /2026 GGJ 中国交流聚会 × ARTDiCO HOST 学生嘉年华/u);
+  assert.match(eventConfig.title, /2026 GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华/u);
   assert.doesNotMatch(eventConfig.date.label + eventConfig.seo.description + eventConfig.registration.notice, /暂定|活动信息待确认/u);
   assert.doesNotMatch(eventConfig.venue.name + eventConfig.venue.address, /3F/u);
   assert.equal(eventConfig.registration.productionSubmissionEnabled, false);

@@ -1,0 +1,284 @@
+/* The public festival page shares the original form and accessibility primitives. */
+#artdico-host.ah-festival {
+  --ah-blue: #3049e9;
+  --ah-ink: #192334;
+  --ah-muted: #626d80;
+  --ah-line: #e3e7ef;
+  --ah-pale: #eff3ff;
+  --ah-pad: clamp(24px, 5.5vw, 88px);
+  --ah-radius: 8px;
+  max-width: 1600px;
+  border: 0;
+  font-size: 16px;
+}
+#artdico-host.ah-festival .ah-header {
+  min-height: 112px;
+  padding: 25px var(--ah-pad);
+  border-bottom: 0;
+}
+#artdico-host.ah-festival .ah-dual-wordmark { gap: 23px; }
+#artdico-host.ah-festival .ah-lockup-brand { font-size: 24px; letter-spacing: -.045em; }
+#artdico-host.ah-festival .ah-host-word { margin-top: 7px; font-size: 9px; letter-spacing: .16em; }
+#artdico-host.ah-festival .ah-lockup-cross { color: #9ca6b8; font-size: 22px; font-weight: 400; }
+#artdico-host.ah-festival .ah-header nav { gap: 30px; }
+#artdico-host.ah-festival .ah-header nav a { font-size: 13px; }
+#artdico-host.ah-festival .ah-header .ah-desktop-nav .ah-nav-cta {
+  border: 1px solid var(--ah-line);
+  padding: 11px 18px;
+}
+#artdico-host.ah-festival .ah-hero {
+  position: relative;
+  grid-template-columns: 1.03fr 1fr;
+  gap: clamp(28px, 5vw, 76px);
+  align-items: center;
+  padding: 39px var(--ah-pad) 72px;
+  min-height: 680px;
+}
+#artdico-host.ah-festival .ah-hero-copy { padding-block: 15px; min-width: 0; }
+#artdico-host.ah-festival .ah-eyebrow { margin: 0 0 25px; font-size: 12px; letter-spacing: .12em; }
+#artdico-host.ah-festival .ah-dot { width: 6px; height: 6px; }
+#artdico-host.ah-festival .ah-hero h1 {
+  margin: 0;
+  font-size: clamp(32px, 4.5cqi, 66px);
+  line-height: 1.16;
+  letter-spacing: -.055em;
+  font-weight: 800;
+}
+#artdico-host.ah-festival .ah-event-title-line { display: block; color: var(--ah-ink); }
+#artdico-host.ah-festival .ah-event-brand {
+  display: block;
+  margin-bottom: 7px;
+  font-size: .64em;
+  line-height: 1.05;
+  letter-spacing: -.035em;
+  font-weight: 750;
+}
+#artdico-host.ah-festival .ah-event-chinese { display: block; }
+#artdico-host.ah-festival .ah-event-title-line:last-child { color: var(--ah-blue); }
+#artdico-host.ah-festival .ah-event-title-cross {
+  display: block;
+  width: max-content;
+  margin: 12px 0;
+  color: #8697cf;
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+#artdico-host.ah-festival .ah-hero-description {
+  margin: 28px 0 24px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #526078;
+}
+#artdico-host.ah-festival .ah-hero-description > span { padding-inline: 8px; color: #a0aac0; }
+#artdico-host.ah-festival .ah-event-meta { gap: 8px 24px; font-size: 13px; }
+#artdico-host.ah-festival .ah-meta-divider { margin-inline: 4px; color: #a0aac0; }
+#artdico-host.ah-festival .ah-primary { min-height: 50px; padding: 14px 22px; font-size: 13px; border-radius: 3px; }
+#artdico-host.ah-festival .ah-primary:hover { filter: brightness(.92); }
+#artdico-host.ah-festival .ah-text-action { font-size: 13px; min-height: 44px; }
+#artdico-host.ah-festival .ah-hero-actions { margin-top: 29px; gap: 26px; }
+#artdico-host.ah-festival .ah-fine { font-size: 11px; margin-top: 15px; }
+#artdico-host.ah-festival .ah-festival-art {
+  align-self: stretch;
+  min-height: 570px;
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(145deg, #f4f7ff, #e6edff 62%, #dce6ff);
+  overflow: hidden;
+}
+#artdico-host.ah-festival .ah-festival-art::before {
+  content: '';
+  position: absolute;
+  width: 70%;
+  aspect-ratio: 1;
+  top: 17%;
+  left: 16%;
+  border: 1px solid #c3cef2;
+  border-radius: 50%;
+  z-index: -1;
+}
+#artdico-host.ah-festival .ah-artwork-caption {
+  position: absolute;
+  top: 27px;
+  left: 29px;
+  right: 29px;
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  color: #5469a5;
+  font-size: 10px;
+  letter-spacing: .14em;
+}
+#artdico-host.ah-festival .ah-connection-sculpture {
+  width: 108%;
+  max-width: none;
+  position: absolute;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -43%);
+}
+#artdico-host.ah-festival .ah-artwork-footer {
+  position: absolute;
+  left: 28px;
+  right: 28px;
+  bottom: 28px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 15px;
+  color: var(--ah-blue);
+}
+#artdico-host.ah-festival .ah-artwork-date { font-size: clamp(58px, 7cqi, 98px); font-weight: 500; letter-spacing: -.08em; line-height: .82; }
+#artdico-host.ah-festival .ah-artwork-date > span { color: #8fa5f4; }
+#artdico-host.ah-festival .ah-artwork-place { font-size: 9px; line-height: 1.7; letter-spacing: .1em; margin-left: auto; }
+#artdico-host.ah-festival .ah-artwork-arrow { font-size: 45px; line-height: .9; font-weight: 300; }
+#artdico-host.ah-festival .ah-section { padding: 72px var(--ah-pad); }
+#artdico-host.ah-festival .ah-section-heading { margin-bottom: 32px; }
+#artdico-host.ah-festival .ah-kicker { font-size: 10px; letter-spacing: .16em; }
+#artdico-host.ah-festival h2 { font-size: clamp(27px, 3cqi, 41px); line-height: 1.3; margin-top: 12px; letter-spacing: -.045em; }
+#artdico-host.ah-festival h3 { letter-spacing: -.025em; }
+#artdico-host.ah-festival .ah-program-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+#artdico-host.ah-festival .ah-program-card { position: relative; padding: 32px; background: #f5f7fa; border: 1px solid #e9edf3; }
+#artdico-host.ah-festival .ah-program-card:nth-child(2) { background: #eff3ff; border-color: #e1e7fc; }
+#artdico-host.ah-festival .ah-program-number { display: flex; justify-content: space-between; align-items: center; color: var(--ah-blue); font-size: 11px; letter-spacing: .14em; }
+#artdico-host.ah-festival .ah-program-number svg { width: 27px; height: 27px; stroke-width: 1.3; }
+#artdico-host.ah-festival .ah-program-title { margin: 31px 0 15px; line-height: 1.35; }
+#artdico-host.ah-festival .ah-program-title > span { display: block; font-size: 16px; font-weight: 600; }
+#artdico-host.ah-festival .ah-program-title > strong { display: block; font-size: clamp(25px, 2.6cqi, 35px); font-weight: 650; }
+#artdico-host.ah-festival .ah-program-card > p { font-size: 14px; color: var(--ah-muted); margin: 0; }
+#artdico-host.ah-festival .ah-program-tags { list-style: none; padding: 0; margin: 28px 0 0; display: flex; gap: 8px 18px; flex-wrap: wrap; font-size: 12px; color: #566785; }
+#artdico-host.ah-festival .ah-program-tags li::before { content: '↗'; margin-right: 6px; color: var(--ah-blue); }
+#artdico-host.ah-festival .ah-program-detail { margin-top: 22px; font-size: 13px; color: var(--ah-muted); }
+#artdico-host.ah-festival details > summary { cursor: pointer; }
+#artdico-host.ah-festival .ah-program-detail > summary { color: var(--ah-ink); min-height: 44px; padding-block: 12px; }
+#artdico-host.ah-festival .ah-program-detail p { max-width: 760px; font-size: 13px; }
+#artdico-host.ah-festival .ah-agenda { background: #fafbfe; }
+#artdico-host.ah-festival .ah-outline-tag { border: 0; padding: 0; font-size: 12px; color: var(--ah-muted); }
+#artdico-host.ah-festival .ah-day-overview { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--ah-line); }
+#artdico-host.ah-festival .ah-day-overview li { display: grid; grid-template-columns: 160px 1fr 38px; gap: 25px; align-items: center; padding: 23px 0; border-bottom: 1px solid var(--ah-line); }
+#artdico-host.ah-festival .ah-day-overview time { color: #66738b; font-size: 13px; font-variant-numeric: tabular-nums; }
+#artdico-host.ah-festival .ah-day-overview strong { font-size: 16px; font-weight: 500; }
+#artdico-host.ah-festival .ah-day-overview li > span { font-size: 11px; letter-spacing: .1em; color: #8995aa; text-align: right; }
+#artdico-host.ah-festival .ah-day-overview .ah-day-student strong { color: var(--ah-blue); font-weight: 600; }
+#artdico-host.ah-festival .ah-day-overview .ah-day-student > span { color: var(--ah-blue); }
+#artdico-host.ah-festival .ah-agenda-details { margin-top: 15px; }
+#artdico-host.ah-festival .ah-agenda-details > summary { display: flex; justify-content: space-between; align-items: center; padding: 17px 0; min-height: 52px; color: var(--ah-blue); font-size: 13px; list-style: none; }
+#artdico-host.ah-festival .ah-agenda-details > summary::-webkit-details-marker { display: none; }
+#artdico-host.ah-festival .ah-agenda-details > summary > span { font-size: 24px; line-height: 1; }
+#artdico-host.ah-festival .ah-agenda-details[open] > summary > span { transform: rotate(45deg); }
+#artdico-host.ah-festival .ah-agenda-details .ah-agenda-layout { padding-top: 24px; }
+#artdico-host.ah-festival .ah-zone-tabs button { border-radius: 3px; }
+#artdico-host.ah-festival .ah-agenda-row { padding-block: 19px; }
+#artdico-host.ah-festival .ah-agenda-caption { font-size: 12px; }
+#artdico-host.ah-festival .ah-guest-status { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 30px; padding-block: 40px; }
+#artdico-host.ah-festival .ah-guest-status h2 { margin: 0; font-size: 23px; }
+#artdico-host.ah-festival .ah-guest-status p { grid-column: 1; margin: 9px 0 0; font-size: 13px; color: var(--ah-muted); }
+#artdico-host.ah-festival .ah-guest-status > a { grid-column: 2; grid-row: 1 / 3; color: var(--ah-blue); }
+#artdico-host.ah-festival .ah-booths h2 { font-size: 28px; }
+#artdico-host.ah-festival .ah-booths > p { color: var(--ah-muted); font-size: 14px; }
+#artdico-host.ah-festival .ah-recruitment-grid article { padding: 31px; border-radius: 0; }
+#artdico-host.ah-festival .ah-recruitment-grid h3 { margin-top: 24px; font-size: 25px; }
+#artdico-host.ah-festival .ah-recruitment-grid details { font-size: 12px; color: var(--ah-muted); margin-top: 17px; }
+#artdico-host.ah-festival .ah-recruitment-grid details p { margin-top: 10px; font-size: 12px; }
+#artdico-host.ah-festival .ah-registration { grid-template-columns: 1fr 1fr; gap: 56px; background: #eef2fc; }
+#artdico-host.ah-festival .ah-register-intro { padding: 0; }
+#artdico-host.ah-festival .ah-register-intro > h2 { font-size: 36px; }
+#artdico-host.ah-festival .ah-register-intro > p { max-width: 420px; font-size: 14px; margin: 21px 0 0; }
+#artdico-host.ah-festival .ah-registration-preview { align-self: start; background: #fff; border: 1px solid #dce3f2; }
+#artdico-host.ah-festival .ah-registration-preview > summary { min-height: 140px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; position: relative; gap: 9px; padding: 26px 30px; list-style: none; }
+#artdico-host.ah-festival .ah-registration-preview > summary::-webkit-details-marker { display: none; }
+#artdico-host.ah-festival .ah-registration-preview > summary strong { font-size: 20px; font-weight: 600; }
+#artdico-host.ah-festival .ah-registration-preview > summary small { font-size: 12px; color: var(--ah-muted); }
+#artdico-host.ah-festival .ah-registration-preview > summary > span { position: absolute; right: 28px; top: 35px; font-size: 29px; font-weight: 300; color: var(--ah-blue); }
+#artdico-host.ah-festival .ah-registration-preview[open] > summary { border-bottom: 1px solid var(--ah-line); min-height: 110px; }
+#artdico-host.ah-festival .ah-registration-preview[open] > summary > span { transform: rotate(45deg); }
+#artdico-host.ah-festival .ah-form-card { box-shadow: none; border-radius: 0; }
+#artdico-host.ah-festival .ah-stay-details { font-size: 12px; color: var(--ah-muted); margin-top: 25px; }
+#artdico-host.ah-festival .ah-stay-details summary { min-height: 44px; padding-block: 10px; color: var(--ah-ink); }
+#artdico-host.ah-festival .ah-stay-details p { max-width: 420px; }
+#artdico-host.ah-festival .ah-bottom-grid { gap: 80px; }
+#artdico-host.ah-festival .ah-venue h2 { font-size: 32px; }
+#artdico-host.ah-festival .ah-venue-name { font-size: 18px; }
+#artdico-host.ah-festival .ah-venue > p:not(.ah-venue-name) { font-size: 14px; }
+#artdico-host.ah-festival .ah-faq summary { font-size: 14px; min-height: 60px; }
+#artdico-host.ah-festival .ah-faq details > p { font-size: 13px; }
+#artdico-host.ah-festival .ah-privacy { padding-block: 28px; }
+#artdico-host.ah-festival .ah-privacy details { font-size: 13px; color: var(--ah-muted); }
+#artdico-host.ah-festival .ah-privacy summary { min-height: 44px; padding-block: 10px; color: var(--ah-ink); }
+#artdico-host.ah-festival .ah-footer { padding: 32px var(--ah-pad); }
+#artdico-host.ah-festival .ah-footer > span:first-child { font-size: 13px; }
+@container (max-width: 1100px) {
+  #artdico-host.ah-festival .ah-hero { gap: 30px; }
+  #artdico-host.ah-festival .ah-festival-art { min-height: 525px; }
+  #artdico-host.ah-festival .ah-event-meta { flex-direction: column; align-items: flex-start; }
+  #artdico-host.ah-festival .ah-hero h1 { font-size: 46px; }
+  #artdico-host.ah-festival .ah-hero-description > span { padding-inline: 4px; }
+}
+@container (max-width: 900px) {
+  #artdico-host.ah-festival .ah-header { min-height: 90px; padding-block: 20px; }
+  #artdico-host.ah-festival .ah-hero { padding-top: 25px; min-height: 0; gap: 25px; }
+  #artdico-host.ah-festival .ah-hero h1 { font-size: 38px; }
+  #artdico-host.ah-festival .ah-hero-description { font-size: 12px; }
+  #artdico-host.ah-festival .ah-hero-description > span { padding-inline: 2px; }
+  #artdico-host.ah-festival .ah-festival-art { min-height: 480px; }
+  #artdico-host.ah-festival .ah-artwork-caption { left: 20px; right: 20px; font-size: 8px; }
+  #artdico-host.ah-festival .ah-artwork-footer { left: 20px; right: 20px; bottom: 23px; }
+  #artdico-host.ah-festival .ah-artwork-place { font-size: 8px; }
+  #artdico-host.ah-festival .ah-artwork-arrow { display: none; }
+  #artdico-host.ah-festival .ah-program-card { padding: 25px; }
+  #artdico-host.ah-festival .ah-registration { gap: 30px; grid-template-columns: 1fr 1fr; }
+}
+@container (max-width: 700px) {
+  #artdico-host.ah-festival .ah-header { padding-inline: 24px; gap: 10px; min-height: 84px; }
+  #artdico-host.ah-festival .ah-dual-wordmark { gap: 14px; }
+  #artdico-host.ah-festival .ah-lockup-brand { font-size: 20px; }
+  #artdico-host.ah-festival .ah-host-word { font-size: 7px; margin-top: 6px; }
+  #artdico-host.ah-festival .ah-lockup-cross { font-size: 18px; }
+  #artdico-host.ah-festival .ah-mobile-nav summary { gap: 10px; padding-inline: 10px; border: 0; font-size: 12px; }
+  #artdico-host.ah-festival .ah-hero { grid-template-columns: 1fr; padding: 26px 24px 40px; gap: 30px; }
+  #artdico-host.ah-festival .ah-hero-copy { padding: 0; }
+  #artdico-host.ah-festival .ah-eyebrow { margin-bottom: 25px; font-size: 11px; }
+  #artdico-host.ah-festival .ah-hero h1 { font-size: clamp(36px, 10.7cqi, 58px); }
+  #artdico-host.ah-festival .ah-event-brand { font-size: .65em; margin-bottom: 5px; }
+  #artdico-host.ah-festival .ah-event-title-cross { font-size: 20px; margin-block: 10px; }
+  #artdico-host.ah-festival .ah-hero-description { margin: 24px 0 20px; font-size: 13px; }
+  #artdico-host.ah-festival .ah-hero-description > span { padding-inline: 3px; }
+  #artdico-host.ah-festival .ah-event-meta { gap: 8px; font-size: 12px; }
+  #artdico-host.ah-festival .ah-hero-actions { margin-top: 24px; gap: 23px; }
+  #artdico-host.ah-festival .ah-primary { padding-inline: 19px; font-size: 12px; min-height: 48px; }
+  #artdico-host.ah-festival .ah-text-action { font-size: 12px; }
+  #artdico-host.ah-festival .ah-fine { font-size: 10px; margin-top: 13px; }
+  #artdico-host.ah-festival .ah-festival-art { min-height: 0; height: auto; aspect-ratio: 1.02; }
+  #artdico-host.ah-festival .ah-artwork-caption { top: 18px; font-size: 8px; }
+  #artdico-host.ah-festival .ah-connection-sculpture { width: 99%; top: 41%; }
+  #artdico-host.ah-festival .ah-artwork-footer { bottom: 22px; }
+  #artdico-host.ah-festival .ah-artwork-date { font-size: 65px; }
+  #artdico-host.ah-festival .ah-section { padding: 45px 24px; }
+  #artdico-host.ah-festival h2 { font-size: 28px; }
+  #artdico-host.ah-festival .ah-section-heading { margin-bottom: 27px; gap: 16px; }
+  #artdico-host.ah-festival .ah-program-grid { grid-template-columns: 1fr; gap: 16px; }
+  #artdico-host.ah-festival .ah-program-card { padding: 25px; }
+  #artdico-host.ah-festival .ah-program-title { margin-top: 24px; }
+  #artdico-host.ah-festival .ah-program-title > strong { font-size: 29px; }
+  #artdico-host.ah-festival .ah-program-title > span { font-size: 15px; }
+  #artdico-host.ah-festival .ah-program-card > p { font-size: 13px; }
+  #artdico-host.ah-festival .ah-program-tags { margin-top: 22px; gap: 7px 13px; font-size: 11px; }
+  #artdico-host.ah-festival .ah-day-overview li { grid-template-columns: 92px 1fr; gap: 15px; padding-block: 19px; }
+  #artdico-host.ah-festival .ah-day-overview time { font-size: 11px; }
+  #artdico-host.ah-festival .ah-day-overview strong { font-size: 14px; }
+  #artdico-host.ah-festival .ah-day-overview li > span { display: none; }
+  #artdico-host.ah-festival .ah-guest-status { display: block; padding-block: 30px; }
+  #artdico-host.ah-festival .ah-guest-status h2 { font-size: 22px; }
+  #artdico-host.ah-festival .ah-guest-status > a { margin-top: 10px; }
+  #artdico-host.ah-festival .ah-registration { grid-template-columns: 1fr; gap: 25px; }
+  #artdico-host.ah-festival .ah-register-intro > h2 { font-size: 30px; }
+  #artdico-host.ah-festival .ah-register-intro > p { font-size: 13px; }
+  #artdico-host.ah-festival .ah-registration-preview > summary { min-height: 125px; padding: 24px; }
+  #artdico-host.ah-festival .ah-registration-preview > summary > span { right: 24px; }
+  #artdico-host.ah-festival .ah-bottom-grid { gap: 42px; }
+  #artdico-host.ah-festival .ah-venue h2 { font-size: 29px; }
+  #artdico-host.ah-festival .ah-faq summary { font-size: 13px; }
+  #artdico-host.ah-festival .ah-privacy { padding-block: 22px; }
+  #artdico-host.ah-festival .ah-footer { padding: 27px 24px; gap: 18px; }
+}

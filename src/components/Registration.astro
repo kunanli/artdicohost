@@ -3,7 +3,6 @@ import { eventConfig } from '../config/event.mjs';
 import { registrationSchema } from '../../shared/registration-schema.mjs';
 import FormField from './FormField.astro';
 import BranchFields from './BranchFields.astro';
-import Icon from './Icon.astro';
 const field = (name: string) => {
   const definition = registrationSchema.baseFields.find(item => item.name === name);
   if (!definition) throw new Error(`Missing form field: ${name}`);
@@ -14,23 +13,21 @@ const stayDate = (value: string) => { const [, month, day] = value.split('-'); r
 ---
 <section class="ah-registration ah-section" id="registration" aria-labelledby="registration-heading">
   <div class="ah-register-intro">
-    <span class="ah-kicker">YOUR NEXT CONNECTION / 从你开始</span>
-    <h2 id="registration-heading">把这一天，<br />留给新的连接。</h2>
-    <p>GGJ 现任或曾任站点负责人、RO、新站点筹备者、游戏创作者、教育工作者与合作伙伴，都欢迎报名。</p>
-    <div class="ah-register-steps" aria-label="正式报名流程"><span><b>01</b>填写资料</span><span><b>02</b>提交报名</span><span><b>03</b>报名参加</span></div>
-    <p class="ah-registration-policy">{eventConfig.registration.participationNotice}</p>
-    <div class="ah-stay-note"><Icon name="bed" /><p><strong>外地嘉宾一晚住宿支持</strong><br />{eventConfig.accommodation.notice}<br />入住 / 离店暂定为 {stayDate(eventConfig.accommodation.checkIn)}至 {stayDate(eventConfig.accommodation.checkOut)}。</p></div>
-    <p class="ah-register-demo-note">当前可体验完整填写流程。正式报名尚未开放，请使用虚构资料。</p>
-    <span class="ah-register-foot">ONE APPLICATION. MANY POSSIBILITIES.</span>
+    <span class="ah-kicker">JOIN THE DAY</span>
+    <h2 id="registration-heading">一起参与这一天。</h2>
+    <p>欢迎组织者、学生、游戏创作者与合作伙伴。报名尚未开放，可先用虚构资料预览流程；内容不会发送或保存。</p>
+    <details class="ah-stay-details"><summary>外地嘉宾住宿支持</summary><p>{eventConfig.accommodation.notice}入住 / 离店暂定为 {stayDate(eventConfig.accommodation.checkIn)}至 {stayDate(eventConfig.accommodation.checkOut)}。</p></details>
   </div>
-  <div class="ah-form-card">
-    <div class="ah-form-top"><span>{eventConfig.registration.formTitle}</span><span class="ah-demo-tag">本地体验 · 不提交</span></div>
+  <details class="ah-registration-preview" data-registration-preview>
+    <summary><strong>预览报名表</strong><small>了解参与身份与填写内容</small><span aria-hidden="true">＋</span></summary>
+    <div class="ah-form-card">
+    <div class="ah-form-top"><span>{eventConfig.registration.formTitle}</span><span class="ah-demo-tag">预览 · 不提交</span></div>
     <form data-registration-form data-registration-mode="mock" method="post" novalidate autocomplete="off">
       <div class="ah-form-progress" aria-label="填写进度"><span data-step-dot="0" class="ah-step-active" aria-current="step">1 身份</span><span aria-hidden="true"></span><span data-step-dot="1">2 资料</span><span aria-hidden="true"></span><span data-step-dot="2">3 参与方式</span></div>
       <p class="ah-form-error" data-form-error role="alert" tabindex="-1" hidden></p>
       <section data-form-step="0" aria-labelledby="identity-heading">
         <h3 id="identity-heading" tabindex="-1">你想以什么身份参与？</h3>
-        <p class="ah-form-hint">身份可以多选，仍是一份活动报名。GGJ SO、RO 与有意建立新站点的筹备者请分别勾选，填写对应资料。</p>
+        <p class="ah-form-hint">可多选，现有 GGJ 站点负责人和新站点筹备者分别登记。</p>
         <fieldset class="ah-identity-field" data-field="categories" aria-describedby="categories-error">
           <legend class="ah-sr-only">目前的参与身份（必填，可多选）</legend>
           <div class="ah-identity-grid">
@@ -71,10 +68,11 @@ const stayDate = (value: string) => { const [, month, day] = value.split('-'); r
         <p data-form-result role="status" aria-live="polite">{eventConfig.registration.completedNotice}</p>
         <button type="button" data-reset-form class="ah-secondary">重新体验</button>
       </section>
-      <p class="ah-form-disclaimer">本地体验不发送、不保存、不受理真实报名，不生成查询编号。正式报名将在隐私告知与服务准备完成后开放。</p>
+      <p class="ah-form-disclaimer">报名预览不会受理真实资料或生成报名编号。</p>
     </form>
     <noscript><p class="ah-form-disclaimer">互动表单需要启用 JavaScript。当前没有开放真实报名；活动信息和全部日程仍可直接阅读。</p></noscript>
-  </div>
+    </div>
+  </details>
 </section>
 <script>
   import '../scripts/registration.mjs';

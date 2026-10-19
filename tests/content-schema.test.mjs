@@ -32,8 +32,9 @@ test('seed contains the full fifteen-slot schedule, with stable IDs, no empty B 
   assert.equal(content.sessions.filter((item) => item.zone === 'C').length, 15);
   assert.ok(content.sessions.every((item) => item.title !== '—' && item.speakerName === '' && item.speakerStatus === 'pending'));
   assert.deepEqual(content.booths, []);
-  assert.equal(content.event.dateStatus, 'tentative');
-  assert.equal(content.event.venueStatus, 'tentative');
+  assert.equal(content.event.status, 'confirmed');
+  assert.equal(content.event.dateStatus, 'confirmed');
+  assert.equal(content.event.venueStatus, 'confirmed');
   assert.deepEqual(content.sessions.map((item) => item.id), createInitialContent().sessions.map((item) => item.id));
   const second = createInitialContent();
   second.sessions[0].title = '本次独立编辑';

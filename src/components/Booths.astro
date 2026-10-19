@@ -1,10 +1,12 @@
 ---
 import Icon from './Icon.astro';
+import { eventConfig } from '../config/event.mjs';
 ---
 <section class="ah-booths ah-section" id="booths" aria-labelledby="booths-heading">
-  <div class="ah-section-heading"><div><span class="ah-kicker">DISCOVER WHAT'S NEXT / 现场展示</span><h2 id="booths-heading">走近作品，<br />遇见创作的人。</h2></div><p>公开展位名单将在项目与展位确认后更新。没有确认的项目暂不展示。</p></div>
-  <div class="ah-booths-empty" data-public-booths-empty><Icon name="gamepad" /><p>展位及展示项目确认中。<br />欢迎先来聊聊你想带到现场的作品。</p><a class="ah-text-action" href="#registration">表达展示需求 <span aria-hidden="true">↗</span></a></div>
+  <div class="ah-section-heading" id="exhibition"><h2 id="booths-heading">走近作品，遇见创作者。</h2><p>游戏试玩与开放展示 · C 区展位</p></div>
+  <div class="ah-booths-empty" data-public-booths-empty><Icon name="gamepad" /><p>展位与作品名单确认后公布。</p><a class="ah-text-action" href="#registration">我有作品想展示 <span aria-hidden="true">↗</span></a></div>
   <div class="ah-public-booths" data-public-booths></div>
+  <details class="ah-highlights-detail"><summary>展位申请说明 <span aria-hidden="true">＋</span></summary><p class="ah-agenda-caption">{eventConfig.exhibition.description}</p></details>
 </section>
 <style>
   .ah-booths-empty{padding:29px;background:#f5f7fb;border:1px solid #e4e8ef;border-radius:14px;color:#667187;text-align:center;font-size:13px}

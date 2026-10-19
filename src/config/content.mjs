@@ -15,9 +15,9 @@ export function createInitialContent() {
       date: eventConfig.date.value,
       timezone: eventConfig.time.timezone,
       venue: eventConfig.venue.name,
-      status: 'tentative',
-      dateStatus: 'tentative',
-      venueStatus: 'tentative',
+      status: eventConfig.status,
+      dateStatus: eventConfig.date.status,
+      venueStatus: eventConfig.venue.confirmed ? 'confirmed' : 'tentative',
     },
     sessions: agenda.flatMap((slot) => ['A', 'B', 'C'].flatMap((zone) => {
       const title = slot[/** @type {'A'|'B'|'C'} */ (zone)];

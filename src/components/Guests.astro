@@ -1,9 +1,5 @@
----
-import Icon from './Icon.astro';
-import { eventConfig } from '../config/event.mjs';
----
-<section class="ah-guests ah-section" id="guests" aria-labelledby="guests-heading">
-  <div><span class="ah-kicker">PEOPLE & PROJECTS / 人与作品</span><h2 id="guests-heading">新的面孔，<br />新的灵感。</h2><p>{eventConfig.guests.description}</p></div>
-  <div class="ah-guest-placeholder"><div class="ah-guest-shapes" aria-hidden="true"><span></span><span></span><span></span></div><span>{eventConfig.guests.title}</span></div>
-  <div class="ah-exhibition" id="exhibition"><Icon name="gamepad" /><h3>把作品带到现场</h3><p>{eventConfig.exhibition.description}</p><a href="#registration" class="ah-text-action">表达展示意向 <span aria-hidden="true">↗</span></a></div>
+<section class="ah-guest-status ah-section" id="guests" aria-labelledby="guests-heading">
+  <h2 id="guests-heading">讲者与主题</h2>
+  <p>正在招募，确认后公布。</p>
+  <a href="#speaker-recruitment" class="ah-text-action">带来你的分享 <span aria-hidden="true">↗</span></a>
 </section>

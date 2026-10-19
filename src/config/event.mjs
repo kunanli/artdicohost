@@ -1,26 +1,26 @@
-/** Public, proposed event content only; contains no private allocation or attendee data. */
+/** Public event content only; contains no private allocation or attendee data. */
 export const eventConfig = {
   id: 'ggj-cn-2026',
   year: 2026,
-  title: 'GGJ 中国交流聚会 × ARTDiCO HOST 2026',
-  subtitle: '连接游戏创作者、站点组织者与产业生态伙伴',
+  title: '2026 GGJ 中国交流聚会 × ARTDiCO HOST 学生嘉年华',
+  subtitle: '组织者交流 · 学生作品 · 游戏体验',
   siteRegistration: {
     existing: { title: '我已是 GGJ 站点负责人', categories: ['so', 'ro'], description: '登记现任或曾任 SO / RO 的站点、城市、组织年份、当前 / 历史角色与交流经历。' },
     prospective: { title: '我有意成为 GGJ 站点', categories: ['new_site'], description: '登记筹备城市、机构、场地与团队准备、2027 GGJ 计划和支持需求。' },
     notice: '两种身份可以同时选择；活动报名成功不代表 GGJ 官方站点资格获批，也不自动认定服务年资。',
   },
-  status: 'tentative',
+  status: 'confirmed',
   language: 'zh-CN',
   design: 'creative-connections',
-  hero: { title: '让创作相遇。让连接发生。', description: '从一座站点，到下一个创作现场。与游戏创作者、组织者和生态伙伴，一起聊聊未来。' },
-  date: { value: '2026-12-05', label: '2026 年 12 月 5 日（暂定）', status: 'tentative' },
-  time: { start: '09:30', end: '18:00', label: '09:30–18:00', timezone: 'Asia/Shanghai' },
-  venue: { name: '前海5号楼（Qianhai Block V）', city: '深圳', area: '前海', address: '深圳市前海合作区梦海大道5188号前海5号楼', addressEnglish: 'Qianhai Block V, No. 5188 Menhai Avenue, Qianhai, Shenzhen', addressStatus: '3F 楼层安排暂定，入口、交通及停车资讯确认后公布', mapUrl: null, confirmed: false },
+  hero: { title: '2026 GGJ 中国交流聚会 × ARTDiCO HOST 学生嘉年华', description: '组织者交流 · 学生作品 · 游戏体验' },
+  date: { value: '2026-12-05', label: '2026 年 12 月 5 日', status: 'confirmed' },
+  time: { start: '09:30', opening: '10:00', end: '18:00', label: '10:00–18:00', timezone: 'Asia/Shanghai' },
+  venue: { name: '前海5号楼（Qianhai Block V）', city: '深圳', area: '前海', address: '深圳市前海合作区梦海大道5188号前海5号楼', addressEnglish: 'Qianhai Block V, No. 5188 Menhai Avenue, Qianhai, Shenzhen', addressStatus: '楼层、入口及交通资讯另行公布', mapUrl: null, confirmed: true },
   registration: {
     mode: 'mock', enabled: false, productionSubmissionEnabled: false,
     formTitle: '活动报名', ctaLabel: '报名参加', acceptancePolicy: 'after_successful_persistence', attendeeReviewRequired: false,
-    notice: '前端体验版 · 活动信息待确认 · 不提交或保存真实资料',
-    participationNotice: '正式报名资料成功保存后即可报名参加。讲者、赞助合作及一晚住宿分别沟通或审核。当前仅为体验版，不受理真实报名。',
+    notice: '报名尚未开放 · 表单仅供体验，不发送或保存资料',
+    participationNotice: '报名尚未开放。讲者、合作与住宿申请分别确认。',
     completedNotice: '演示完成。没有发送或保存任何报名资料，尚未受理报名。',
   },
   accommodation: { nights: 1, checkIn: '2026-12-05', checkOut: '2026-12-06', status: 'tentative', notice: '一晚住宿支持须单独申请和审核；不影响普通参会报名，报名成功不代表获得住宿。' },
@@ -29,7 +29,7 @@ export const eventConfig = {
   attribution: { status: 'pending', notice: '主办、承办、协办、赞助等署名待有关各方正式确认后展示。' },
   privacy: { status: 'pending', processor: null, contactEmail: null, storageRegion: null, retentionPeriod: null, notice: '正式报名开放前，将核定个人信息处理者、联系方式、收集目的、字段类别、存储地区、保留期限、分享对象及查阅、更正、撤回、删除方式。当前不收集真实报名。' },
   links: { map: null, contact: null, artdico: null },
-  seo: { title: 'GGJ 中国交流聚会 × ARTDiCO HOST 2026｜活动报名与讲者、赞助招募', description: '2026 年 12 月 5 日（暂定），深圳前海。活动报名、讲者主题提案与赞助合作招募。当前为前端体验版，不提交真实报名。' },
+  seo: { title: '2026 GGJ 中国交流聚会 × ARTDiCO HOST 学生嘉年华', description: '2026 年 12 月 5 日，10:00–18:00，深圳前海5号楼。GGJ 组织者交流、学生作品分享与游戏体验。09:30 签到，报名尚未开放。' },
 };
 
 /** Recruitment requests are independent from ordinary event registration. */
@@ -79,13 +79,10 @@ export const highlights = [
 ];
 
 export const faqItems = [
-  { question: '填好报名表就可以参加吗？', answer: '可以。正式报名开放后，资料校验通过并成功保存即完成参会报名，无需等待普通参会邀请审核。当前仅为前端体验版，没有提交或保存报名。' },
-  { question: '我不是 GGJ 组织者也可以报名吗？', answer: '可以。欢迎行业嘉宾、高校、开发者及生态伙伴报名参加，不需要先申请讲者或合作身份。' },
-  { question: '已经是站点负责人和想建立新站点，都能登记吗？', answer: '可以。已有负责人请选择 GGJ SO 或 RO，填写站点与组织经历；有意成为 GGJ 站点请选择新站点筹备，填写城市、机构、场地、团队及支持需求。身份可多选，仍是一份活动报名。' },
-  { question: '新站点现场咨询代表已通过申请吗？', answer: '不代表。现场仅为申请咨询与初步审核，正式资格以 GGJ 官方流程和审核结果为准。' },
-  { question: '场次讲者确定了吗？可以报名分享吗？', answer: '讲者尚未确定，正在招募。你可以提交主题提案；讲者身份与具体场次另行沟通，不影响普通参会报名。' },
-  { question: '如何成为赞助方？', answer: '欢迎提交赞助合作咨询，交流资金、物资、技术工具或其他支持方式。赞助方、价格与权益尚未确定，具体合作需双方另行确认。' },
-  { question: '可以申请展位吗？', answer: '可以表达展示需求；名额、布展与具体安排另行确认。展位未获确认不影响普通参会报名。' },
-  { question: '报名成功就有住宿吗？', answer: '不是。一晚住宿支持需要单独申请和审核，资源有限；报名成功不代表获得住宿。' },
-  { question: '如何修改或撤回资料？', answer: '正式网站将提供筹备团队联系邮箱及隐私处理流程；相关信息核定后才开放报名。当前演示没有保存或发送资料。' },
+  { question: '现在可以报名吗？', answer: '报名尚未开放，当前表单不会发送或保存资料。正式开放后，资料校验通过并成功保存即完成参会报名。' },
+  { question: '不是 GGJ 组织者也能参加吗？', answer: '可以，欢迎学生、开发者、高校、行业与生态伙伴参加。' },
+  { question: '已经是站点负责人，或想建立新站点，怎么登记？', answer: '正式报名开放后，可同时选择 GGJ SO / RO 与新站点筹备身份，填写对应资料。' },
+  { question: '新站点现场咨询代表已通过申请吗？', answer: '不代表。现场为咨询与初步审核，正式资格以 GGJ 官方流程和结果为准。' },
+  { question: '报名成功就有住宿吗？', answer: '一晚住宿须单独申请、审核；报名成功不代表获得住宿。' },
+  { question: '如何修改或撤回资料？', answer: '正式报名开放前将公布联系渠道与隐私流程。当前演示不保存资料。' },
 ];

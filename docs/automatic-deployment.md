@@ -1,21 +1,24 @@
 # GitHub 自动更新香港 OSS
 
-用户已创建独立网站桶 `artdicohost-web-hk`，地域为中国香港，并于 2026-10-19 确认 AccessKey 已保存于 GitHub Actions Secrets，由部署流程使用。日常发布通过 GitHub 自动更新，不再手动上传 ZIP。本阶段只发布静态前台及图片邀请函生成器；本机 39 笔真实联系人、真实报名、工作人员数据 API、Wallet 签名和邮件投递不随本流程上线。开发和验证只使用示范资料。
+用户已创建独立网站桶 `artdicohost-web-hk`，地域为中国香港，并于 2026-10-19 确认 AccessKey 已保存于 GitHub Actions Secrets，由部署流程使用。日常发布通过 GitHub 自动更新，不再手动上传 ZIP。此流程的发布范围仅含静态前台及图片邀请函生成器；本机 39 笔真实联系人、真实报名、工作人员数据 API、Wallet 签名和邮件投递不随本流程上线。开发和验证只使用示范资料。
 
 ## 本次核对结果
 
-核对日期：2026-10-19（Asia/Taipei）。这是接续开发开始时的快照，后续提交须以对应 Actions 结果为准。
+核对日期：2026-10-19（Asia/Taipei）。本节更新此前「PR 未合并、部署待触发」的历史快照；后续提交仍须以对应 Actions 结果为准。
 
 | 项目 | 已取得的证据 |
 | --- | --- |
-| [PR #3](https://github.com/kunanli/artdicohost/pull/3) | open、尚未合并；分支 `feat/creative-gathering-frontend` |
-| 已核对的分支提交 | `35e85a0ed53b84b33100e55625eb659efb22babb` |
-| [Actions 39212607866](https://github.com/kunanli/artdicohost/actions/runs/39212607866) | `check` 成功；`Publish public site to Hong Kong OSS` 为 `skipped` |
-| main 自动发布记录 | 当时仓库 Actions 共 9 次，全部由 `pull_request` 触发，没有 main push 部署记录 |
-| AccessKey | 用户确认已配置；不读取、不复制到本机，也不以 Secrets 存在推断 RAM 权限已验证 |
-| OSS 对象上传 / 自定义域名 / HTTPS | 尚无本流程部署成功的证据；本环境的目标域名请求受出口代理限制，不能据此判定站点故障或可用 |
+| [PR #3](https://github.com/kunanli/artdicohost/pull/3) | 已合并；GitHub API 已核对合并提交 |
+| 已部署的 main 提交 | `074826f1d9a218df1371b6bd0cf3ac74776ec2eb` |
+| [Actions 39239493108](https://github.com/kunanli/artdicohost/actions/runs/39239493108) | `push` / `main`；`check` 和 `Publish public site to Hong Kong OSS` 均成功，含 `Upload and verify public website objects` 步骤 |
+| 公开文件 | 用户确认 11 个文件已部署至 `artdicohost-web-hk`，并通过 SHA-256 回读；API 核对上传及验证步骤成功 |
+| AccessKey | 已在 GitHub Secrets，由成功部署使用；无需重新提供，不读取或复制到本机 |
+| 自定义域名 / DNS | 用户截图显示阿里云 DNS 正确、初次查看为 0 条记录；后续 `artdico.host` 的 OSS 绑定已生效，根域名 `@` CNAME 已启用，TTL 为 10 分钟；未开启 CDN |
+| HTTPS | 用户回报证书已配置，`https://artdico.host/` 可正常显示；尚未运行独立线上检查，证书签发者、覆盖范围和到期日待记录 |
 
-所以当前状态是「PR 检查通过、自动部署待合并触发」，不是部署失败，也不是已经上线。首次合并属于公开发布的最后决策；保持 PR 未合并，完成可审阅变更后再由用户决定。
+当前状态是「静态公开文件已部署并回读通过，域名已绑定，用户回报 HTTPS 页面可显示」。不需要再次合并 PR #3、重建 bucket 或重填 Secrets。该回报不代表版本、全部资源、证书链或所有浏览器已通过独立验收。
+
+当前另有用户授权的本地视觉升级：并列呈现「2026 GGJ 中国交流聚会」与「ARTDiCO HOST 学生嘉年华」，减少文字、强化白蓝视觉。该轮变更尚未部署，不能将本地改版视为上述线上提交的内容。
 
 ## 更新流程
 
@@ -27,7 +30,7 @@ PR 不取得部署金钥，也不上传 OSS。部署目标固定为本项目网�
 
 ## 一次性授权
 
-用户已完成 Secrets 设置，不需要重新提供金钥。下列保留为维护和轮换说明；部署是否有足够权限，应由首次获授权的 main 部署实际验证。当前开发环境没有阿里云或 DNS 控制台身份，GitHub 连接也不提供读取 Secret 值的能力。
+用户已完成 Secrets 设置，且上述 main 部署成功，不需要重新提供金钥。下列仅保留为维护和轮换说明，不是本阶段待办。当前开发环境没有阿里云或 DNS 控制台身份，GitHub 连接也不提供读取 Secret 值的能力。
 
 1. 在阿里云 RAM 创建本项目专用用户，例如 `artdicohost-github-deploy`，并为其建立 AccessKey。
 2. 创建自定义权限策略，使用仓库中的 [`deploy/oss-upload-policy.json`](../deploy/oss-upload-policy.json)，只授权本网站桶对象的 `oss:PutObject`。将策略授予这个专用用户。该身份没有其他项目、私有资料桶、IAM、DNS 或删除对象的权限。
@@ -53,9 +56,9 @@ PR 不取得部署金钥，也不上传 OSS。部署目标固定为本项目网�
 | 对象读取 | 网站桶公共读；部署程序继承现有 ACL，不修改权限 |
 | 静态页面 | `index.html`；子目录首页开启；文件 404 规则 `Index`；错误页面 `404.html`、状态码 `404` |
 
-以上桶和控制台状态由用户提供的截图确认，不表示首次自动部署已执行成功。Secrets 缺失、RAM 无权限、上传失败或读取内容校验失败均应明确失败，不能写成已上线。上传失败时先核对 job 的安全错误说明与受控控制台，不输出完整 CLI 原始诊断或 Secret 值。
+以上桶和静态托管配置由用户提供的截图确认，实际部署证据见本次核对结果。今后 Secrets 缺失、RAM 无权限、上传失败或读取内容校验失败均应明确失败；先核对 job 的安全错误说明与受控控制台，不输出完整 CLI 原始诊断或 Secret 值。
 
-OSS 原生桶域名可能让浏览器下载 HTML；上传成功后仍需将 `artdico.host` 绑定到 OSS 并配置 HTTPS，才能正常浏览。DNS 与证书属于首次接入，后续修改网页不用重复设置。见 [OSS 自定义域名官方说明](https://www.alibabacloud.com/help/en/oss/user-guide/access-buckets-via-custom-domain-names)及 [域名和 HTTPS 操作单](domain-https.md)。
+OSS 原生桶域名可能让浏览器下载 HTML；目前 `artdico.host` 已绑定 OSS，用户回报配置证书后 HTTPS 可正常显示。DNS 与证书属于首次接入，后续修改网页不用重复设置；独立验收与证书续期仍须记录。见 [OSS 自定义域名官方说明](https://www.alibabacloud.com/help/en/oss/user-guide/access-buckets-via-custom-domain-names)及 [域名和 HTTPS 操作单](domain-https.md)。
 
 ## 发布成功后的独立验证
 

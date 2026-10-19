@@ -1,0 +1,18 @@
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["fc:GetFunction", "fc:UpdateFunction", "fc:InvokeFunction"],
+      "Resource": [
+        "acs:fc:cn-hongkong:<ALIYUN_ACCOUNT_ID>:functions/artdicohost-api",
+        "acs:fc:cn-hongkong:<ALIYUN_ACCOUNT_ID>:functions/artdicohost-api/LATEST"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["fc:GetTrigger"],
+      "Resource": ["acs:fc:cn-hongkong:<ALIYUN_ACCOUNT_ID>:functions/artdicohost-api/triggers/defaultTrigger"]
+    }
+  ]
+}

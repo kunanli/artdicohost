@@ -8,17 +8,17 @@
 
 | 项目 | 已取得的证据 |
 | --- | --- |
-| [PR #3](https://github.com/kunanli/artdicohost/pull/3) | 已合并；GitHub API 已核对合并提交 |
-| 已部署的 main 提交 | `074826f1d9a218df1371b6bd0cf3ac74776ec2eb` |
-| [Actions 39239493108](https://github.com/kunanli/artdicohost/actions/runs/39239493108) | `push` / `main`；`check` 和 `Publish public site to Hong Kong OSS` 均成功，含 `Upload and verify public website objects` 步骤 |
-| 公开文件 | 用户确认 11 个文件已部署至 `artdicohost-web-hk`，并通过 SHA-256 回读；API 核对上传及验证步骤成功 |
+| [PR #5](https://github.com/kunanli/artdicohost/pull/5) | 已获用户授权合并；GGJ 蓝与 ARTDiCO 橙融合版 |
+| 已部署的 main 提交 | `954e12dd2aaee67d6deea5e8bbd0a5b72451d96b` |
+| [Actions 39262917095](https://github.com/kunanli/artdicohost/actions/runs/39262917095) | `push` / `main`；检查与部署均成功，部署日志核对 12 个公开对象回读通过 |
+| 公开文件 | 12 个公开文件已部署至 `artdicohost-web-hk`，含最后上传的 `release.json`，全部通过 SHA-256 回读 |
 | AccessKey | 已在 GitHub Secrets，由成功部署使用；无需重新提供，不读取或复制到本机 |
 | 自定义域名 / DNS | 用户截图显示阿里云 DNS 正确、初次查看为 0 条记录；后续 `artdico.host` 的 OSS 绑定已生效，根域名 `@` CNAME 已启用，TTL 为 10 分钟；未开启 CDN |
 | HTTPS | 用户回报证书已配置，`https://artdico.host/` 可正常显示；尚未运行独立线上检查，证书签发者、覆盖范围和到期日待记录 |
 
 当前状态是「静态公开文件已部署并回读通过，域名已绑定，用户回报 HTTPS 页面可显示」。不需要再次合并 PR #3、重建 bucket 或重填 Secrets。该回报不代表版本、全部资源、证书链或所有浏览器已通过独立验收。
 
-当前另有用户授权的本地视觉升级：并列呈现「2026 GGJ 中国交流聚会」与「ARTDiCO HOST 学生嘉年华」，减少文字、强化白蓝视觉。该轮变更尚未部署，不能将本地改版视为上述线上提交的内容。
+上述线上版本并列呈现「2026 GGJ 中国交流聚会」与「ARTDiCO HOST 学生嘉年华」，采用蓝橙视觉与按需展开的精简内容。本轮按用户要求将首屏品牌展开为 `GlobalGameJam`，并继续无公网接入的正式报名准备；这些接续变更尚未部署。
 
 ## 更新流程
 

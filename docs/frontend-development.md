@@ -10,7 +10,7 @@
 - pnpm：`11.25.0`，与根目录 `package.json` 的 `packageManager` 保持一致。
 - 安装依赖需要可用的 npm registry 网络；离线环境不能把未完成安装记作验证通过。
 
-依赖锁文件已从通过的 [CI 运行 39113786450](https://github.com/kunanli/artdicohost/actions/runs/39113786450) 恢复并核对；标准安装使用 `--frozen-lockfile`。当前本地环境无法访问 registry，本地安装和构建仍未验证；已完成的类型检查、15 项测试、构建和全量依赖审计来自该次 GitHub CI。此次恢复冻结安装并增加源码边界检查后的最终运行尚待完成，以对应 PR 最新检查为准。
+标准安装使用 `--frozen-lockfile`，不要重新解析或升级依赖以替代冻结安装。2026-10-19 的接续环境已成功安装并完成类型检查、测试、构建和依赖审计；具体版本与结果见 [前端验证记录](frontend-validation.md)。先前 CI 结果保留为历史证据，最新提交以对应检查为准。
 
 在仓库根目录执行：
 
@@ -46,8 +46,10 @@ pnpm audit --audit-level=moderate
 
 ## PR 检查和发布边界
 
-[Frontend checks](../.github/workflows/check.yml) 在 PR、`main` 推送或手动触发时，以 Node.js `24.19.0` 和 pnpm `11.25.0` 执行冻结安装、源码边界检查、Astro 检查、测试、构建和全部依赖审计（含构建工具）。任务只有 `contents: read` 权限，不持久保存 checkout 凭据，不使用云端 secrets，也没有发布步骤；Action 版本固定至已核对的提交。`frontend-check-output` artifact 仅保留 `package.json`、`pnpm-lock.yaml`、`dist/` 三类文件，期限 3 天。检查失败时修复或明确记录阻塞项，artifact 存在不代表检查通过。
+[Frontend checks and OSS deployment](../.github/workflows/check.yml) 在 PR、`main` 推送或手动触发时，以 Node.js `24.19.0` 和 pnpm `11.25.0` 执行冻结安装、源码边界检查、Astro 检查、测试、构建和全部依赖审计（含构建工具）。检查任务只有 `contents: read` 权限，不持久保存 checkout 凭据，不使用云端 secrets；Action 版本固定至已核对的提交。`frontend-check-output` artifact 保留 `package.json`、`pnpm-lock.yaml`、完整 `dist/`，期限 3 天，仅供开发审阅。另行生成的公开发布包为 `oss-publication-<SHA>`，期限 14 天。检查失败时修复或明确记录阻塞项，artifact 存在不代表检查通过。
 
-本地前端回退通过切换到先前已验证的代码提交并重建完成，不涉及用户资料。云端初始化、staging/production 部署与回滚、私有数据备份及删除操作尚未实现，后续按实施计划 P4–P7 编写操作步骤并验证；本文件不是生产运行手册。
+只有本仓库 `main` 的 **push** 会在检查通过后启动独立部署任务，使用 GitHub Secrets 上传 `artdicohost-web-hk`；PR 和手动触发不会部署。完整 `dist/` 含本机管理页面，不可直接上传；公开包会替换这些页面并排除私密模块。步骤和失败重试见 [自动部署说明](automatic-deployment.md)。
+
+本地前端回退通过切换到先前已验证的代码提交并重建完成，不涉及用户资料。公开静态站回退通过新的修复 / 回退 PR 合并到 main，重新构建与发布。真实报名、私有云端后台与数据备份 / 删除仍须按 P4–P7 独立实现和验证。
 
 FC 仍须独立完成账号/地域和自定义运行时预检；OSS 仍须完成私有权限、从未启用版本控制的数据桶、防覆盖、跨实例并发及恢复验证。生产发布、购买云资源和 DNS 修改继续遵守原授权门槛，本次前端工作不会触发这些操作。

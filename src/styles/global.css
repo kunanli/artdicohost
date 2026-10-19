@@ -8,7 +8,7 @@
 #artdico-host button:not(:disabled){cursor:pointer}
 #artdico-host.ah-product{container-type:inline-size;color-scheme:light;width:100%;margin-inline:auto;background:#fff;border:1px solid var(--ah-line);color:var(--ah-ink);font-size:14px;line-height:1.65}
 #artdico-host .ah-notice{background:var(--ah-pale);color:#4d648c;text-align:center;padding:8px 14px;font-size:11px;letter-spacing:.04em}
-#artdico-host .ah-header{padding:22px var(--ah-pad);display:flex;align-items:center;justify-content:space-between;gap:22px;border-bottom:1px solid var(--ah-line)}
+#artdico-host .ah-header{position:relative;padding:22px var(--ah-pad);display:flex;align-items:center;justify-content:space-between;gap:22px;border-bottom:1px solid var(--ah-line)}
 #artdico-host .ah-wordmark{display:flex;align-items:center;gap:10px;text-align:left;padding:0;background:none;border:0;color:var(--ah-ink);font-weight:800;font-size:20px;line-height:1.05}
 #artdico-host .ah-brand-mark{width:36px;height:38px;position:relative;color:var(--ah-blue);font-size:49px;letter-spacing:-5px;line-height:.75}
 #artdico-host .ah-brand-mark>span{position:absolute;right:-2px;top:-2px;font-size:16px;letter-spacing:0}
@@ -59,7 +59,7 @@
 #artdico-host .ah-highlights article>svg{position:absolute;top:18px;right:0;color:var(--ah-blue);width:22px;height:22px;stroke-width:1.5}
 #artdico-host h3{font-size:17px;font-weight:600;line-height:1.5;margin:12px 0 8px}
 #artdico-host .ah-highlights p{color:var(--ah-muted);font-size:11px;line-height:1.85;margin:0}
-#artdico-host .ah-outline-tag{font-size:11px;border:1px solid var(--ah-line);border-radius:4px;padding:7px 10px;white-space:nowrap}
+#artdico-host .ah-outline-tag{font-size:11px;border:1px solid var(--ah-line);border-radius:4px;padding:7px 10px;max-width:100%;text-wrap:pretty}
 #artdico-host .ah-agenda-layout{display:grid;grid-template-columns:230px 1fr;gap:37px}
 #artdico-host .ah-agenda-aside>p:first-child{font-size:11px;color:var(--ah-muted);margin:0 0 12px}
 #artdico-host .ah-zone-tabs{display:grid;gap:8px}
@@ -245,6 +245,15 @@ button:not(:disabled),a,label:has(input[type="checkbox"]){cursor:pointer}
 #artdico-host .ah-primary{color:#fff}
 #artdico-host .ah-header nav a{font-size:13px;white-space:nowrap;padding-block:10px}
 #artdico-host .ah-header nav .ah-nav-cta{color:var(--ah-blue);font-weight:600}
+#artdico-host .ah-mobile-nav{display:none}
+#artdico-host .ah-mobile-nav summary{display:flex;align-items:center;justify-content:center;gap:15px;min-height:44px;padding:8px 12px;border:1px solid var(--ah-line);border-radius:5px;list-style:none;font-size:13px;cursor:pointer}
+#artdico-host .ah-mobile-nav summary::-webkit-details-marker{display:none}
+#artdico-host .ah-mobile-nav summary>span{font-size:22px;color:var(--ah-blue);line-height:1}
+#artdico-host .ah-mobile-nav[open] summary>span{transform:rotate(45deg)}
+#artdico-host .ah-mobile-nav nav{position:absolute;inset:100% 0 auto;z-index:5;display:grid;gap:0;padding:10px var(--ah-pad) 18px;background:#fff;border-bottom:1px solid var(--ah-line);box-shadow:0 12px 18px #15243b0d}
+#artdico-host .ah-mobile-nav nav a{display:flex;align-items:center;justify-content:space-between;gap:15px;min-height:48px;padding-block:12px;border-bottom:1px solid var(--ah-line);white-space:normal}
+#artdico-host .ah-mobile-nav nav a:last-child{border:0}
+#artdico-host .ah-mobile-nav nav a>span{color:var(--ah-blue)}
 #artdico-host .ah-wordmark{min-height:44px}
 #artdico-host .ah-hero h1{font-size:clamp(38px,4.8cqi,61px)}
 #artdico-host .ah-notice{font-size:12px;line-height:1.7}
@@ -301,6 +310,10 @@ button:not(:disabled),a,label:has(input[type="checkbox"]){cursor:pointer}
 #artdico-host .ah-consent-field .ah-field-hint{margin-top:8px}
 #artdico-host .ah-form-hint,#artdico-host .ah-form-disclaimer{font-size:12px}
 #artdico-host .ah-form-error{font-size:12px;line-height:1.8;margin:5px 0 13px}
+#artdico-host .ah-form-error-list{margin:0 0 20px;padding:10px 14px 10px 30px;background:#fff4f5;border:1px solid #ebc6cb;border-radius:5px;color:#ab2936}
+#artdico-host .ah-form-error-list button{min-height:44px;padding:8px 0;text-align:left;border:0;background:none;color:inherit;font-size:12px;line-height:1.8;text-decoration:underline;text-underline-offset:3px}
+/* Only enable the interactive demo after its no-submission handler is ready. */
+#artdico-host [data-registration-form]:not([data-enhanced="true"]){display:none}
 #artdico-host [aria-invalid="true"]{border-color:#b63242!important}
 #artdico-host .ah-primary:disabled{opacity:.5;cursor:not-allowed}
 #artdico-host .ah-form-actions>.ah-primary{min-width:0;font-size:13px;gap:10px}
@@ -315,9 +328,9 @@ button:not(:disabled),a,label:has(input[type="checkbox"]){cursor:pointer}
 #artdico-host .ah-footer-links a{color:var(--ah-blue)}
 .ah-sr-only,.ah-skip-link:not(:focus){position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .ah-skip-link:focus{display:block;padding:12px 20px;background:#1448ef;color:#fff}
-@container(max-width:900px){#artdico-host .ah-registration{gap:28px;grid-template-columns:.8fr 1.2fr}#artdico-host .ah-fields-grid{grid-template-columns:1fr}#artdico-host .ah-zone-tabs button{padding-inline:10px}#artdico-host .ah-agenda-layout{grid-template-columns:210px 1fr;gap:25px}}
+@container(max-width:900px){#artdico-host .ah-header .ah-desktop-nav{display:none}#artdico-host .ah-mobile-nav{display:block}#artdico-host .ah-registration{gap:28px;grid-template-columns:.8fr 1.2fr}#artdico-host .ah-fields-grid{grid-template-columns:1fr}#artdico-host .ah-zone-tabs button{padding-inline:10px}#artdico-host .ah-agenda-layout{grid-template-columns:210px 1fr;gap:25px}}
 @container(max-width:700px){
-  #artdico-host .ah-header nav a:not(.ah-nav-cta){display:none}
+  #artdico-host .ah-mobile-nav nav{padding-inline:25px}
   #artdico-host .ah-header nav .ah-nav-cta{font-size:12px}
   #artdico-host .ah-poster-tentative{top:100px;bottom:auto}
   #artdico-host.ah-creative .ah-hero{grid-template-columns:1fr;gap:30px}

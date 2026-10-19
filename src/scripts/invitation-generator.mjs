@@ -6,6 +6,7 @@ const image = document.querySelector('[data-generator-image]');
 const empty = document.querySelector('[data-generator-empty]');
 const status = document.querySelector('[data-generator-status]');
 const download = document.querySelector('[data-generator-download]');
+const generate = document.querySelector('[data-generator-submit]');
 let previewUrl = null;
 let filename = '';
 let revision = 0;
@@ -30,6 +31,7 @@ form?.addEventListener('submit', async event => {
   invalidate();
   const generation = revision;
   busy = true;
+  generate.disabled = true;
   status.textContent = '正在生成图片…';
   try {
     const data = Object.fromEntries(new FormData(form));
@@ -49,6 +51,7 @@ form?.addEventListener('submit', async event => {
     status.textContent = error instanceof Error ? error.message : '生成失败，请重试。';
   } finally {
     busy = false;
+    generate.disabled = false;
   }
 });
 download?.addEventListener('click', () => {
@@ -62,3 +65,5 @@ download?.addEventListener('click', () => {
   status.textContent = '已请求保存图片；若浏览器未下载，请长按或右键保存预览图。尚未发送邀请。';
 });
 window.addEventListener('pagehide', invalidate);
+// Enable only after the local-only submit handler is installed.
+if (generate) generate.disabled = false;

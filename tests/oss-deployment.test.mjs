@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, dirname, basename } from 'node:path';
-import { prepareOssSite, referencedAssets, validatePublicPath } from '../scripts/prepare-oss-site.mjs';
+import { prepareOssSite, referencedAssets, validatePublicPath, sha256 } from '../scripts/prepare-oss-site.mjs';
 import { requireDeploymentContext, verifyPublication, deploy, putObjectArgs, uploadOrder, contentType, assertCurrentMainHead } from '../scripts/deploy-oss.mjs';
 
 const commit = 'a'.repeat(40);
@@ -33,7 +33,11 @@ async function fixture(t) {
 test('publication selects reachable public assets and replaces local admin with notices', async t => {
   const { dist, output } = await fixture(t);
   const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
-  assert.equal(manifest.files.length, 8);
+  assert.equal(manifest.files.length, 9);
+  const receipt = JSON.parse(await readFile(resolve(output, 'release.json'), 'utf8'));
+  assert.equal(receipt.commit, commit);
+  assert.deepEqual(receipt.files, manifest.files.filter(item => item.path !== 'release.json'));
+  assert.deepEqual(Object.keys(receipt), ['schemaVersion', 'commit', 'files']);
   assert.equal(manifest.files.some(item => /private|contacts\.json/.test(item.path)), false);
   assert.match(await readFile(resolve(output, 'admin/contacts/index.html'), 'utf8'), /云端工作人员后台尚未开放/);
   assert.doesNotMatch(await readFile(resolve(output, 'admin/contacts/index.html'), 'utf8'), /<form|private-admin-form/);
@@ -70,10 +74,11 @@ test('direct PutObject arguments pin destination, content type, cache and avoid 
   assert.ok(args.includes('public,no-cache'));
   assert.equal(args.some(item => /--acl|delete|sync|test-secret|access-key/.test(item)), false);
   assert.equal(contentType('font.woff2'), 'font/woff2');
-  assert.deepEqual(uploadOrder([{ path: 'index.html' }, { path: '404.html' }, { path: '_astro/a.js' }]).map(item => item.path), ['_astro/a.js', '404.html', 'index.html']);
+  assert.equal(contentType('release.json'), 'application/json; charset=utf-8');
+  assert.deepEqual(uploadOrder([{ path: 'release.json' }, { path: 'index.html' }, { path: '404.html' }, { path: '_astro/a.js' }]).map(item => item.path), ['_astro/a.js', '404.html', 'index.html', 'release.json']);
 });
 
-test('upload verifies each object, commits root index last and stops before index after an asset failure', async t => {
+test('upload verifies every object, writes the receipt after the homepage and stops after an asset failure', async t => {
   const { dist, output } = await fixture(t);
   const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
   const calls = [];
@@ -81,10 +86,23 @@ test('upload verifies each object, commits root index last and stops before inde
   const fetchObject = async url => ({ ok: true, arrayBuffer: () => readFile(resolve(output, new URL(url).pathname.slice(1))) });
   const result = await deploy({ directory: output, binary: 'fixture-ossutil', env: context, execute, fetchObject, fetchHead });
   assert.equal(result.files, manifest.files.length);
-  assert.equal(calls.at(-1), 'index.html');
+  assert.equal(calls.at(-2), 'index.html');
+  assert.equal(calls.at(-1), 'release.json');
   let attempts = 0;
   await assert.rejects(deploy({ directory: output, binary: 'fixture-ossutil', env: context, execute: () => { attempts++; return { status: 1, stderr: 'secret must never be echoed' }; }, fetchObject, fetchHead }), /OSS upload failed/);
   assert.equal(attempts, 1);
+});
+
+test('a receipt cannot claim a different release even if its own manifest checksum is updated', async t => {
+  const { dist, output } = await fixture(t);
+  const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
+  const receipt = JSON.parse(await readFile(resolve(output, 'release.json'), 'utf8'));
+  receipt.commit = 'b'.repeat(40);
+  const data = Buffer.from(JSON.stringify(receipt));
+  await writeFile(resolve(output, 'release.json'), data);
+  Object.assign(manifest.files.find(file => file.path === 'release.json'), { bytes: data.length, sha256: sha256(data) });
+  await writeFile(resolve(output, 'publication-manifest.json'), JSON.stringify(manifest));
+  await assert.rejects(verifyPublication(output, commit), /receipt differs/);
 });
 
 test('public readback mismatch aborts deployment before switching the homepage', async t => {

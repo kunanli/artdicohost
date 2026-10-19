@@ -1,81 +1,66 @@
-# 阿里云 OSS 创建与预览部署步骤
+# 阿里云 OSS 静态预览发布
 
-记录日期：2026-10-19（Asia/Taipei）。用户已在中国香港创建 `artdicohost-web-hk`，截图显示静态网站设置及公共读已配置。最新要求改为通过 GitHub 自动更新，日常发布请使用 [自动部署说明](automatic-deployment.md)，不再手动上传 ZIP。本文件保留首次 Bucket、域名及 HTTPS 接入步骤；尚无已验证的自动部署或可用自定义域名。
+记录日期：2026-10-19（Asia/Taipei）。用户已在中国香港创建 `artdicohost-web-hk`，并确认 AccessKey 已存在 GitHub Actions Secrets。日常发布使用 [自动部署说明](automatic-deployment.md)，域名和证书按 [域名与 HTTPS 操作单](domain-https.md) 处理。无需再创建 bucket、索取金钥或手动上传旧 ZIP。
 
-## 两个阶段与资源边界
+接续开发时，PR #3 尚未合并。已核对的 [Actions 39212607866](https://github.com/kunanli/artdicohost/actions/runs/39212607866) 在提交 `35e85a0ed53b84b33100e55625eb659efb22babb` 上检查成功，部署 job 按 PR 规则跳过；没有 main push 发布记录。这些证据不能写成已完成 OSS 上传。
 
-第一阶段先上线可查看和迭代的静态前台及不含联系人名单的图片邀请函生成器。普通报名表维持明确的未提交演示，不显示报名成功。本地工作人员登录、保存草稿和联系人管理依赖本机 Node API，OSS 静态托管不会运行该服务；预览站应明确说明或移除不适用的后台入口。OSS 仅承担静态托管，服务端逻辑需要独立服务，例如 FC，见 [OSS 静态网站说明](https://www.alibabacloud.com/help/en/oss/user-guide/hosting-static-websites)。
+## 当前资源与发布范围
 
-第二阶段再部署真实报名和异地工作人员后台。保持原规范的资源隔离：
+| 资源 | 用途与状态 |
+| --- | --- |
+| `artdicohost-web-hk` / `cn-hongkong` | 用户已建立的独立公开静态桶；固定部署目标 |
+| 公开前台与 `/invitation/` | Astro 静态内容及浏览器图片预览；日期、时段与楼层仍按确认状态展示 |
+| `/admin/`、`/admin/contacts/` | 发布包替换为云端后台尚未开放说明，不包含本机登录表单 |
+| 本机内容 API / 39 笔真实联系人 | 保留本机；开发使用示范资料，不进入 Git、CI、公开对象或本次部署 |
+| 正式报名、云端工作人员后台 | 尚未接通；普通报名是明确标识的未提交演示 |
+| Apple Wallet / EmailJS | 接入准备与预览；没有签发 `.pkpass` 或实际投递 |
 
-| 资源 | 用途 | 访问边界 |
-| --- | --- | --- |
-| 独立静态 OSS bucket | 校验通过的 `dist/`、获准图片和静态邀请函生成器 | 仅存可向公众提供的文件；按实际托管方案配置匿名读取 |
-| 独立私有 OSS bucket | 联系人、正式报名、内部跟进和审计 | 禁止匿名读取；仅独立 FC 服务及获授权运维角色访问 |
-| 独立 FC API | 服务端校验、真实保存、登录、角色和内部操作 | 不继承 IGDA 账号、桶或凭据；API 执行授权 |
+静态桶不会运行本机 Node 服务，见 [OSS 静态网站说明](https://www.alibabacloud.com/help/en/oss/user-guide/hosting-static-websites)。未来真实报名和异地后台仍须使用独立 FC 与独立私有 OSS 数据桶，不能将公开桶的 `private/` 前缀当作数据隔离，也不能直接公开转发本机后台。
 
-静态桶与私有桶必须是不同 bucket，不能用同一个公开桶下的 `private/` 前缀代替隔离。实际联系人、原始工作簿、私人邀请图片、账号摘要、环境文件和备份不进入静态桶、Git 或 CI 日志。
+## 已有 bucket 的核对单
 
-## 先在控制台创建静态 bucket
+以下是配置核对，不是再次创建资源或自动修改控制台：
 
-1. 登录用户自己的阿里云账号，进入 OSS 控制台。先核对付费方式、所选地域、访问需求和预算；本指南不自动购买或开通资源。
-2. 选择网站静态桶的地域。映射至中国内地 OSS bucket 的自有域名须满足 ICP 备案要求；香港、新加坡 bucket 的 OSS 域名绑定不要求 ICP 备案，但从中国内地访问的跨境延迟仍须实际检查，见 [OSS 自定义域名要求](https://www.alibabacloud.com/help/en/oss/user-guide/access-buckets-via-custom-domain-names)。若尚未备案，可先考虑香港的纯静态预览，地域仍由用户最终选择；此选择不包含真实个人资料的云端迁移。
-3. 创建本项目独立 bucket，例如使用 `artdico-host-preview-*` 形式并由控制台确认唯一名称，不复用 IGDA 正式桶。记录实际 bucket 名称与地域。预览可采用标准存储、本地冗余 LRS；最终按控制台显示的产品名称和费用核对，不额外启用未核对必要性与费用的功能。
-4. 为只含公开文件的静态预览桶配置公共读（Public Read），不允许匿名写入。控制台如提示阻止公共访问或权限冲突，先核对目标确为该静态桶，再按官方流程处理；绝不对私有数据桶套用这些设置。
-5. 在静态页面设置中配置默认首页 `index.html`，启用子目录首页支持。404 / 错误页只有在对应文件实际存在并已上传时才配置，错误响应保持 HTTP 404，不使用 SPA 的 200 回退。检查 Astro 生成的子目录路径，例如访问 `/path/` 时能读取其 `index.html`，不能仅验证根目录首页。
-6. 上传前再检查该桶为空或只包含本项目已知的静态文件。部署过程仅更新已知网站文件，不删除媒体、其他项目文件或任何私密数据。
+1. 核对当前 bucket 确为 `artdicohost-web-hk`、地域 `cn-hongkong`，与 IGDA 正式站完全独立。
+2. 仅公开静态桶允许匿名读，不允许匿名写。部署程序继承现有 ACL，不修改桶权限；私有数据桶绝不套用公共读。
+3. 静态首页为 `index.html`，启用子目录首页支持。错误页为实际发布的 `404.html`，错误响应保持 HTTP 404；不使用 SPA 的 200 回退。核对 `/invitation/` 能读取对应 `index.html`。
+4. 只更新本项目发布清单中的文件，不执行全桶同步删除。发现未知对象时先核实归属，不将其当成可清理的旧构建。
+5. 部署 RAM 身份仅获该网站桶对象的 `oss:PutObject`，策略见 [oss-upload-policy.json](../deploy/oss-upload-policy.json)。DNS、证书和私有数据不由这套上传凭据管理。
 
-不要把云访问密钥贴到聊天或提交仓库。如后续使用 CLI / CI 部署，创建仅针对本项目静态桶所需权限的独立 RAM 身份，通过受控环境或 GitHub Actions secrets 提供配置；前端 `PUBLIC_` 变量只能保存公开配置。
+香港 OSS 域名绑定的接入条件见 [官方说明](https://www.alibabacloud.com/help/en/oss/user-guide/access-buckets-via-custom-domain-names)；本次纯静态预览不包含个人资料上云，未来数据地区和个人资料处理须独立核定。
 
-## 可立即使用的静态预览包
+## 准备可审阅的公开产物
 
-本次另提供 `artdico-oss-preview.zip`，包含 7 个静态文件：活动前台及其 CSS / JavaScript、404 页面、后台未上线说明和独立邀请函生成器。活动前台直接来自提交 `1638feda444d302ce7bda28a8c707a78321fdc5a` 的 [CI 构建](https://github.com/kunanli/artdicohost/actions/runs/39199349634)，其中源码检查、Astro 类型检查、73 项测试（0 失败、0 跳过）、构建与依赖审计均已通过。发布包仅提供静态页面，不包含可运行的云端后台。
+源码检查、类型检查、测试、构建和依赖审计全部通过后，CI 执行 `scripts/prepare-oss-site.mjs`：
 
-下载后先解压，再将**解压所得内容**上传到静态 bucket 根目录，让根目录直接出现 `index.html`、`404.html` 等文件。不要只上传 ZIP 对象，也不要多套一层压缩包文件夹。该包的报名表仍是未提交演示，后台入口仅说明本机功能尚未部署，实际联系人不会随包上传。
+- 仅选取活动前台、邀请函页面及它们引用的公开素材。
+- 替换本机管理路由；拒绝意外路径、符号链接及部分可识别的秘密格式。
+- 生成文件清单和 SHA-256；部署时再次检查提交、目标桶、路径、大小及校验值。
 
-后续源码迭代应使用下节的准确构建流程重新生成发布包；不能以这个可查看视觉的静态包证明新增后端已上线。
+部署任务下载本次运行的 `oss-publication-<完整提交 SHA>` artifact；不会重新安装构建依赖或上传仓库根目录。`frontend-check-output` 中的完整 `dist/` 仅供开发检查，不能直接当公开发布包。
 
-## 后续准备和上传准确构建
-
-在 `kunanli/artdicohost` 的目标提交完成以下检查，记录准确源码提交和运行结果：
+需要本地查看公开包时，在目标提交成功完成构建后，为每次检查选择一个新的空输出目录：
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm check:source
-pnpm check
-pnpm test
-pnpm build
-pnpm audit --audit-level=moderate
+GITHUB_SHA="$(git rev-parse HEAD)" node scripts/prepare-oss-site.mjs .local-data/oss-review
 ```
 
-这些命令是部署前步骤，不表示当前变更已经全部通过。安装、类型检查或构建失败时先处理原因，不能上传旧构建后声称最新功能已上线。
+该命令只在本机准备文件，不上传 OSS。目标目录已包含文件时程序会拒绝覆盖，应另选空目录；不要递归删除不明路径。审阅 `publication-manifest.json` 与公开页面后再决定发布。旧的 `artdico-oss-preview.zip` 只代表历史视觉快照，不能用于本次发布或证明新提交已上线。
 
-只上传本次校验后的静态产物以及明确加入发布清单的公开素材。上传 `dist/` 内的内容到网站根目录，避免把外层 `dist` 目录当作根路径。独立邀请函生成器应使用实际构建 / 打包文件并检查素材路径，不能将含姓名的生成示例一并发布。
+## 首次发布与域名接入
 
-上传后核对 HTML、CSS、JavaScript、图片、嵌套路由和响应类型。OSS 默认 bucket 域名访问 HTML 会触发下载，应通过实际绑定的自定义域名访问网页，见 [OSS 自定义域名说明](https://www.alibabacloud.com/help/en/oss/user-guide/access-buckets-via-custom-domain-names)。缓存更新应按实际缓存策略验证，不能只看控制台上传成功提示。
+1. 完成 PR #3 当前变更与对应检查，保留可审阅 diff。
+2. 用户决定合并后，由 main push 自动触发检查与部署；不以手动 workflow_dispatch 代替发布，后者只检查。
+3. 在部署 job 中确认准确提交、每个对象上传及公开 SHA-256 回读。缺失凭据、权限不足或回读失败必须显示失败。
+4. 依 [域名与 HTTPS 操作单](domain-https.md) 完成 `artdico.host` 的 OSS 绑定、权威 DNS 和证书托管；必要时可额外启用独立预览子域名。
+5. 使用无密钥的线上检查脚本核对域名、版本、路由和资源，再分别完成桌面、手机与微信真机体验检查。窄屏桌面浏览器不能代替微信真机验收。
 
-## 先绑定 preview.artdico.host 与 Namecheap DNS
+原生 OSS endpoint 的公开读取校验只证明文件内容可读；浏览器可能下载 HTML，不能作为自定义域名已正常打开网页的证据。环境出口受限时记录「未能验证」，不推断网站故障。
 
-建议先使用 `preview.artdico.host` 查看和迭代，待验证后再处理根域名。这样可以先配置独立的 `preview` 网页记录，同时保留现有根域名及邮件记录。
+## 回滚与私密数据
 
-1. 在实际静态桶的域名管理中添加 `preview.artdico.host`。准确 CNAME 目标、所有权验证和接入条件以本 bucket 的控制台及官方文档为准；不要猜测 OSS endpoint、复制其他项目地址或预填示例 IP。
-2. 在 Namecheap 打开 **Domain List → artdico.host → Manage → Advanced DNS**。先查看 Nameservers；若权威 DNS 由其他服务商托管，应到实际服务商配置。
-3. 保存现有 DNS 记录。新增 CNAME，Host 为 `preview`，Value / Target 为 OSS 控制台提供的**准确绑定目标**，TTL 按当前设置或服务要求填写；如要求验证记录，也逐条照控制台填写。这个目标只能在实际 bucket 建立后取得。
-4. 只处理已核对的同 Host 冲突网页记录，保留邮件的 MX、SPF、DKIM、DMARC 及其他无冲突 TXT。以后接入 `artdico.host` 根域名时，应另行核对 [Namecheap ALIAS](https://www.namecheap.com/support/knowledgebase/article.aspx/10128/2237/how-to-create-an-alias-record/) 或其他受支持接入方式，不直接把 `@` 改为 CNAME；`www` 也须单独绑定和验证。
-5. 查询权威 DNS 并回到 OSS 检查域名验证 / 绑定状态。缓存尚未更新时记录待生效；“已经保存 DNS”不代表域名已可访问。
+网站回滚通过修复 / 回退 PR 合并到 main，由同一流程重新构建、上传和验证；旧提交的运行不能在 main 已更新后重新覆盖当前版本。发布不删除未知旧对象，若曾公开了必须撤回的独立文件，另按准确清单处理，不清空整个桶。
 
-上述步骤尚无可填写的真实 DNS 值。取得实际 bucket、地域和绑定控制台结果后，才能形成最终记录表并核对现有冲突项。
+DNS 回退只恢复本次修改的网页 / 验证项，保留邮件及其他记录，重新检查解析与证书。代码回滚不覆盖本机数据。联系人受限备份、删除和恢复按 [本地联系人](local-contacts.md#备份删除和恢复) 执行，内容恢复见 [本地内容后台](local-content-backend.md#本地恢复和删除)；恢复旧数据后仍须重放后续已确认的撤回 / 删除要求。
 
-## HTTPS 与上线验证
-
-为实际访问的 `preview.artdico.host` 配置有效 HTTPS，证书应覆盖该主机名；以后启用根域名时，证书也须覆盖根域名。按 [OSS HTTPS 接入说明](https://www.alibabacloud.com/help/en/oss/user-guide/access-oss-by-https-protocol)及控制台指引完成证书配置；如采用 CDN 等额外资源，应先核对其必要性、费用和所需授权。证书、域名绑定和 DNS 分别验证，不能因为已添加 CNAME 就宣称 HTTPS 已就绪。
-
-实际检查桌面和手机宽度、日程、暂定标记、报名演示提示、静态资源、邀请函预览和下载交互。核对无真实名单或环境配置泄露；窄屏桌面浏览器结果不能写成微信真机验收。记录目标提交、构建、实际域名、HTTPS 状态、检查时间和未完成项。
-
-## 回滚与私密数据处理
-
-发布前在本机受控位置保留上一已验证的静态产物及文件清单。页面出现问题时只恢复该项目已知网站文件，必要时删除本次新增且清单明确的失效构建文件；不清空整个桶。恢复后复核页面和资源，记录实际恢复版本。若需要回退域名配置，只恢复本次修改的网页 / 验证项，保留其他 DNS，并验证解析及证书。
-
-静态发布包不包含私密数据备份。现有本机内容和联系人按 [本地内容后台](local-content-backend.md#本地恢复和删除)及 [私密意向名单](local-contacts.md#备份删除和恢复)进行受限备份、更正、删除和恢复。代码回滚不覆盖数据；恢复旧备份后仍需重放其后已确认的删除 / 撤回请求，并核对原始 Excel、下载图片和其他受控副本。
-
-未来私有桶和 FC 接通后，另行验证生产鉴权、服务端字段校验、幂等、防覆盖、跨实例并发、备份与删除，不直接把本机文件服务公开转发。Wallet 签名及 EmailJS 发信也分别验收；账号未设置时继续保持准备 / 预览状态。
+未来私有桶和 FC 接通后，另行验收鉴权、服务端校验、幂等、防覆盖、跨实例并发、备份与删除。Wallet 签名和 EmailJS 实际发信分别验收，不随静态站上线而改变准备状态。

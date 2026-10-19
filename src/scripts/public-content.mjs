@@ -32,6 +32,7 @@ async function loadPublishedContent(url) {
     list.replaceChildren();
     for (const item of rows) {
       const row = element('article', undefined, 'ah-agenda-row');
+      row.dataset.agendaStart = item.start;
       row.append(element('time', item.start + '–' + item.end));
       const detail = element('div');
       detail.append(element('strong', item.title));

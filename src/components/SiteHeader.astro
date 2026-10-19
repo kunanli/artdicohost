@@ -1,5 +1,10 @@
 ---
 import { eventConfig } from '../config/event.mjs';
+const links = [
+  { href: '#about', label: '关于活动' },
+  { href: '#agenda', label: '活动日程' },
+  { href: '#recruitment', label: '讲者与赞助招募' },
+];
 ---
 <div class="ah-notice">本地前端体验 · 活动安排暂定 · 表单不发送或保存资料</div>
 <header class="ah-header">
@@ -7,10 +12,27 @@ import { eventConfig } from '../config/event.mjs';
     <span class="ah-brand-mark" aria-hidden="true">a<span>↗</span></span>
     <span>ARTDiCO<span class="ah-host-word">HOST / {eventConfig.year}</span></span>
   </a>
-  <nav aria-label="主导航">
-    <a href="#about">关于活动</a>
-    <a href="#agenda">活动日程</a>
-    <a href="#recruitment">讲者与赞助招募</a>
+  <nav class="ah-desktop-nav" aria-label="主导航">
+    {links.map(link => <a href={link.href}>{link.label}</a>)}
     <a href="#registration" class="ah-nav-cta">{eventConfig.registration.ctaLabel} <span aria-hidden="true">↗</span></a>
   </nav>
+  <details class="ah-mobile-nav" data-mobile-nav>
+    <summary>菜单 <span aria-hidden="true">+</span></summary>
+    <nav aria-label="手机主导航">
+      {links.map(link => <a href={link.href}>{link.label}<span aria-hidden="true">↗</span></a>)}
+      <a href="#venue">地点与常见问题<span aria-hidden="true">↗</span></a>
+      <a href="#registration" class="ah-nav-cta">{eventConfig.registration.ctaLabel}<span aria-hidden="true">↗</span></a>
+    </nav>
+  </details>
 </header>
+<script>
+  for (const menu of document.querySelectorAll<HTMLDetailsElement>('[data-mobile-nav]')) {
+    menu.querySelectorAll('a').forEach(link => link.addEventListener('click', () => { menu.open = false; }));
+    menu.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && menu.open) {
+        menu.open = false;
+        menu.querySelector('summary')?.focus();
+      }
+    });
+  }
+</script>

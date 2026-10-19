@@ -12,6 +12,10 @@ for (const form of document.querySelectorAll('[data-registration-form]')) {
   // Intercept before enabling controls; there is deliberately no submission transport.
   form.addEventListener('submit', event => {
     event.preventDefault();
+    if (step < 2) {
+      if (checkStep()) showStep(step + 1);
+      return;
+    }
     if (step !== 2) return;
     syncBranches();
     const result = completeMockRegistration(read());
@@ -29,9 +33,12 @@ for (const form of document.querySelectorAll('[data-registration-form]')) {
     form.querySelector('[data-form-result]').textContent = result.message;
     showStep(3);
   });
-  form.dataset.enhanced = 'true';
   let step = 0;
   const summary = form.querySelector('[data-form-error]');
+  const errorList = document.createElement('ul');
+  errorList.className = 'ah-form-error-list';
+  errorList.hidden = true;
+  summary.after(errorList);
   const steps = [...form.querySelectorAll('[data-form-step]')];
   const submit = form.querySelector('[data-submit]');
   const branchSets = [...form.querySelectorAll('[data-branch]')];
@@ -48,6 +55,8 @@ for (const form of document.querySelectorAll('[data-registration-form]')) {
     form.querySelectorAll('[aria-invalid]').forEach(el => el.removeAttribute('aria-invalid'));
     summary.hidden = true;
     summary.textContent = '';
+    errorList.hidden = true;
+    errorList.replaceChildren();
   }
   function showStep(next, focus = true) {
     step = next;
@@ -86,9 +95,24 @@ for (const form of document.querySelectorAll('[data-registration-form]')) {
       const output = [...form.querySelectorAll('[data-error-for]')].find(el => el.dataset.errorFor === name);
       if (output) { output.textContent = message; output.hidden = false; }
       for (const input of form.querySelectorAll('[name]')) if (input.name === name) input.setAttribute('aria-invalid', 'true');
+      const control = [...form.querySelectorAll('[name]')].find(input => input.name === name);
+      if (control) {
+        const item = document.createElement('li');
+        const link = document.createElement('button');
+        link.type = 'button';
+        link.textContent = message;
+        link.addEventListener('click', () => {
+          const section = control.closest('[data-form-step]');
+          if (section) showStep(Number(section.dataset.formStep), false);
+          control.focus();
+        });
+        item.append(link);
+        errorList.append(item);
+      }
     }
     summary.textContent = '请检查 ' + entries.length + ' 项标记的字段。当前没有提交报名。';
     summary.hidden = false;
+    errorList.hidden = !errorList.childElementCount;
     summary.focus();
   }
   function checkStep() {
@@ -125,4 +149,5 @@ for (const form of document.querySelectorAll('[data-registration-form]')) {
   submit.disabled = false;
   syncBranches();
   showStep(0, false);
+  form.dataset.enhanced = 'true';
 }

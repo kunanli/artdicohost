@@ -15,11 +15,11 @@ export function requireDeploymentContext(env) {
 
 export function contentType(path) {
   const extension = path.split('.').pop().toLowerCase();
-  return { html: 'text/html; charset=utf-8', css: 'text/css; charset=utf-8', js: 'text/javascript; charset=utf-8', mjs: 'text/javascript; charset=utf-8', png: 'image/png', svg: 'image/svg+xml', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', avif: 'image/avif', woff: 'font/woff', woff2: 'font/woff2', ico: 'image/x-icon' }[extension];
+  return { html: 'text/html; charset=utf-8', json: 'application/json; charset=utf-8', css: 'text/css; charset=utf-8', js: 'text/javascript; charset=utf-8', mjs: 'text/javascript; charset=utf-8', png: 'image/png', svg: 'image/svg+xml', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', avif: 'image/avif', woff: 'font/woff', woff2: 'font/woff2', ico: 'image/x-icon' }[extension];
 }
 
 export function uploadOrder(files) {
-  const rank = path => path === 'index.html' ? 2 : path.endsWith('.html') ? 1 : 0;
+  const rank = path => path === 'release.json' ? 3 : path === 'index.html' ? 2 : path.endsWith('.html') ? 1 : 0;
   return [...files].sort((a, b) => rank(a.path) - rank(b.path) || a.path.localeCompare(b.path));
 }
 
@@ -43,7 +43,9 @@ export async function verifyPublication(directory, expectedCommit) {
     const stat = await lstat(resolve(directory, item.path));
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_FILE_BYTES || stat.size !== item.bytes || sha256(await readFile(resolve(directory, item.path))) !== item.sha256) throw new Error('Publication checksum mismatch');
   }
-  for (const path of ['index.html', '404.html', 'invitation/index.html', 'admin/index.html', 'admin/contacts/index.html', 'invitations/template-blank.png']) if (!expected.includes(path)) throw new Error('Required public route missing');
+  for (const path of ['index.html', '404.html', 'invitation/index.html', 'admin/index.html', 'admin/contacts/index.html', 'invitations/template-blank.png', 'release.json']) if (!expected.includes(path)) throw new Error('Required public route missing');
+  const release = JSON.parse(await readFile(resolve(directory, 'release.json'), 'utf8'));
+  if (release.schemaVersion !== 1 || release.commit !== expectedCommit || JSON.stringify(release.files) !== JSON.stringify(manifest.files.filter(item => item.path !== 'release.json'))) throw new Error('Public release receipt differs from publication');
   return manifest;
 }
 

@@ -19,17 +19,17 @@ export const eventConfig = {
   registration: {
     mode: 'mock', enabled: false, productionSubmissionEnabled: false,
     formTitle: '活动报名', ctaLabel: '报名参加', acceptancePolicy: 'after_successful_persistence', attendeeReviewRequired: false,
-    notice: '报名尚未开放 · 表单仅供体验，不发送或保存资料',
-    participationNotice: '报名尚未开放。讲者、合作与住宿申请分别确认。',
+    notice: '活动报名已开放 · 本页表单仅供预览，不发送或保存资料',
+    participationNotice: '欢迎报名参加。讲者、合作与住宿申请分别确认。',
     completedNotice: '演示完成。没有发送或保存任何报名资料，尚未受理报名。',
   },
   accommodation: { nights: 1, checkIn: '2026-12-05', checkOut: '2026-12-06', status: 'tentative', notice: '一晚住宿支持须单独申请和审核；不影响普通参会报名，报名成功不代表获得住宿。' },
   exhibition: { plannedBooths: 15, status: 'tentative', description: '咖啡厅外围计划设置约 15 个展位，涵盖游戏、技术工具、高校或社群项目。展位名额及配置由筹备团队确认，申请不代表获得展位。' },
   guests: { status: 'recruiting', title: '讲者招募中 · 名单待公布', description: '场次讲座的讲者尚未确定，欢迎提交主题提案。讲者及主题确认后另行公布；只展示已确认资料和授权照片。', people: [] },
   attribution: { status: 'pending', notice: '主办、承办、协办、赞助等署名待有关各方正式确认后展示。' },
-  privacy: { status: 'pending', processor: null, contactEmail: null, storageRegion: null, retentionPeriod: null, notice: '正式报名开放前，将核定个人信息处理者、联系方式、收集目的、字段类别、存储地区、保留期限、分享对象及查阅、更正、撤回、删除方式。当前不收集真实报名。' },
+  privacy: { status: 'pending', processor: null, contactEmail: null, storageRegion: null, retentionPeriod: null, notice: '本页表单仅供预览，不收集真实报名。本站正式表单启用前，将公布个人信息处理告知及查阅、更正、撤回、删除方式。' },
   links: { map: null, contact: null, artdico: null },
-  seo: { title: '2026 GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华', description: '2026 年 12 月 5 日，10:00–18:00，深圳前海5号楼。GlobalGameJam 组织者交流、学生作品分享与游戏体验。09:30 签到，报名尚未开放。' },
+  seo: { title: '2026 GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华', description: '2026 年 12 月 5 日，10:00–18:00，深圳前海5号楼。GlobalGameJam 组织者交流、学生作品分享与游戏体验。09:30 签到，报名已开放。' },
 };
 
 /** Recruitment requests are independent from ordinary event registration. */
@@ -79,10 +79,10 @@ export const highlights = [
 ];
 
 export const faqItems = [
-  { question: '现在可以报名吗？', answer: '报名尚未开放，当前表单不会发送或保存资料。正式开放后，资料校验通过并成功保存即完成参会报名。' },
+  { question: '现在可以报名吗？', answer: '可以，活动报名已开放。本页表单仅供预览，不发送或保存资料。' },
   { question: '不是 GGJ 组织者也能参加吗？', answer: '可以，欢迎学生、开发者、高校、行业与生态伙伴参加。' },
-  { question: '已经是站点负责人，或想建立新站点，怎么登记？', answer: '正式报名开放后，可同时选择 GGJ SO / RO 与新站点筹备身份，填写对应资料。' },
+  { question: '已经是站点负责人，或想建立新站点，怎么登记？', answer: '欢迎现任或曾任 GGJ SO / RO，以及新站点筹备者参与。请在报名时注明身份与相关经历。' },
   { question: '新站点现场咨询代表已通过申请吗？', answer: '不代表。现场为咨询与初步审核，正式资格以 GGJ 官方流程和结果为准。' },
   { question: '报名成功就有住宿吗？', answer: '一晚住宿须单独申请、审核；报名成功不代表获得住宿。' },
-  { question: '如何修改或撤回资料？', answer: '正式报名开放前将公布联系渠道与隐私流程。当前演示不保存资料。' },
+  { question: '如何修改或撤回资料？', answer: '本页预览表单不保存资料。本站正式表单启用前，将公布相关联系方式与申请流程。' },
 ];

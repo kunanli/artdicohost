@@ -1,0 +1,41 @@
+#artdico-host .ah-registration-success {
+  position: relative;
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: 100%;
+  max-width: 640px;
+  min-width: 0;
+  padding: clamp(24px, 4cqi, 40px);
+  overflow: hidden;
+  border: 1px solid var(--ah-line, #e3e7ef);
+  background: #fff;
+  color: var(--ah-ink, #17233a);
+}
+#artdico-host .ah-registration-success[hidden] { display: none; }
+#artdico-host .ah-registration-success::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, var(--ah-blue, #2154c8) 0 50%, var(--ah-orange, #f47b20) 50% 100%);
+  content: '';
+}
+#artdico-host .ah-registration-success-label { color: var(--ah-muted, #626d80); font-size: 10px; letter-spacing: .14em; }
+#artdico-host .ah-registration-success h3 { margin: 14px 0 20px; font-size: clamp(22px, 3cqi, 28px); line-height: 1.4; overflow-wrap: anywhere; }
+#artdico-host .ah-registration-success-reference-label { margin: 0 0 8px; color: var(--ah-muted, #626d80); font-size: 13px; }
+#artdico-host .ah-registration-success-reference {
+  display: block;
+  max-width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--ah-line, #e3e7ef);
+  background: #f7f9fc;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  user-select: all;
+}
+#artdico-host .ah-registration-group-image { width: min(240px, 100%); margin: 24px auto 0; padding: 12px; border: 1px solid var(--ah-line, #e3e7ef); background: #fff; }
+#artdico-host .ah-registration-group-image img { display: block; width: 100%; height: auto; }
+#artdico-host .ah-registration-group-status,
+#artdico-host .ah-registration-group-help { margin: 20px 0 0; color: var(--ah-muted, #626d80); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }

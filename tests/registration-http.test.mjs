@@ -173,7 +173,8 @@ test('201 follows an actual synced synthetic file; saved retries after closing r
   const created = await handle(request());
   assert.equal(created.status, 201);
   const body = await created.json();
-  assert.deepEqual(Object.keys(body), ['status', 'reference_code']);
+  assert.deepEqual(Object.keys(body), ['status', 'reference_code', 'groupInvite']);
+  assert.equal(body.groupInvite, null);
   assert.equal(body.status, 'registered');
   assert.match(body.reference_code, /^[A-Za-z0-9_-]{32}$/u);
   assert.equal(JSON.stringify(body).includes('PRIVATE-'), false);
@@ -206,4 +207,87 @@ test('disabled or incomplete policies and invalid business fields never produce 
   await error(await handle(request({ body: JSON.stringify(invalid) })), 422, 'INVALID_SUBMISSION');
   assert.equal(service.state.writes, 0);
   assert.deepEqual(await readdir(service.directory), []);
+});
+
+const inviteOrigin = 'https://qr.example.invalid';
+function invite(overrides = {}) {
+  return { platform: 'wechat', qrImageUrl: inviteOrigin + '/group.png?signature=synthetic', expiresAt: '2026-10-20T00:00:00+08:00', ...overrides };
+}
+function inviteResult(overrides = {}) {
+  return { outcome: 'created', receipt: { committed: true, eventId: 'synthetic-2026', referenceCode: key, committedAt: now }, groupInvite: invite(), ...overrides };
+}
+function inviteApi(result, options = {}) {
+  return createRegistrationApi({ allowedOrigins: [origin], submissionService: { async submit() { return result; } }, allowedGroupInviteOrigins: [inviteOrigin], clock: () => now, ...options });
+}
+
+test('committed creation and saved retries project only the current unexpired service invite', async t => {
+  const stored = await fileService(t);
+  let currentInvite = invite({ privateContact: 'PRIVATE-SYNTHETIC', instructionsHtml: '<b>PRIVATE-SYNTHETIC</b>' });
+  const service = { async submit(input) { return { ...await stored.submit(input), groupInvite: currentInvite }; } };
+  const handle = createRegistrationApi({ allowedOrigins: [origin], submissionService: service, allowedGroupInviteOrigins: [inviteOrigin], clock: () => stored.state.now });
+  const created = await handle(request());
+  assert.equal(created.status, 201);
+  const first = await created.json();
+  assert.deepEqual(first.groupInvite, invite());
+  assert.deepEqual(Object.keys(first.groupInvite), ['platform', 'qrImageUrl', 'expiresAt']);
+  assert.equal(JSON.stringify(first).includes('PRIVATE-'), false);
+  stored.state.now = '2026-12-06T00:00:00+08:00';
+  const expired = await handle(request());
+  assert.equal(expired.status, 200);
+  assert.equal((await expired.json()).groupInvite, null);
+  currentInvite = invite({ qrImageUrl: inviteOrigin + '/new.png?signature=synthetic-new', expiresAt: '2026-12-07T00:00:00+08:00' });
+  const replayed = await handle(request());
+  assert.equal(replayed.status, 200);
+  const replay = await replayed.json();
+  assert.equal(replay.reference_code, first.reference_code);
+  assert.deepEqual(replay.groupInvite, currentInvite);
+  assert.equal(stored.state.writes, 1);
+});
+
+test('missing, malformed and expired invites do not reverse a committed registration', async () => {
+  const invalidInvites = [undefined, null, false, invite({ platform: 'other' }), invite({ qrImageUrl: 123 }),
+    ...['http://qr.example.invalid/group.png', 'https:qr.example.invalid/group.png', 'javascript:alert(1)', 'data:image/png;base64,synthetic', '/group.png', 'https://qr.example.invalid.attacker.invalid/group.png', 'https://user:password@qr.example.invalid/group.png', inviteOrigin + '/group.png#', inviteOrigin + '/group.png#PRIVATE-SYNTHETIC', inviteOrigin + '/group image.png', inviteOrigin + '/group\n.png', 'https:\\qr.example.invalid/group.png', inviteOrigin + ':8443/group.png', inviteOrigin + '/' + 'x'.repeat(4096)].map(qrImageUrl => invite({ qrImageUrl })),
+    ...[null, 123, '2026-02-30T00:00:00Z', '2026-10-20T00:00:00', now, '2026-10-18T00:00:00Z'].map(expiresAt => invite({ expiresAt })),
+  ];
+  for (const groupInvite of invalidInvites) {
+    const response = await inviteApi(inviteResult({ groupInvite }))(request());
+    assert.equal(response.status, 201);
+    const body = await response.json();
+    assert.equal(body.status, 'registered');
+    assert.equal(body.reference_code, key);
+    assert.equal(body.groupInvite, null);
+  }
+});
+
+test('invite clock and exact HTTPS allowlist failures omit the QR without changing successful status', async () => {
+  for (const options of [{ clock: undefined }, { clock: null }, { clock: () => null }, { clock: () => NaN }, { clock: () => '2026-10-19T12:00:00' }, { clock() { throw new Error('PRIVATE-CLOCK'); } }, { clock: async () => { throw new Error('PRIVATE-ASYNC-CLOCK'); } },
+    ...[undefined, [], ['http://qr.example.invalid'], ['https://*.example.invalid'], [inviteOrigin + '/']].map(allowedGroupInviteOrigins => ({ allowedGroupInviteOrigins }))]) {
+    const response = await inviteApi(inviteResult(), options)(request());
+    assert.equal(response.status, 201);
+    assert.equal((await response.json()).groupInvite, null);
+  }
+  const numericClock = await inviteApi(inviteResult(), { clock: () => Date.parse(now) })(request());
+  assert.deepEqual((await numericClock.json()).groupInvite, invite());
+});
+
+test('failure outcomes, invalid receipts and client-provided group codes never release an invite', async t => {
+  let clockCalls = 0;
+  const clock = () => { clockCalls++; return now; };
+  for (const result of [inviteResult({ outcome: 'unavailable' }), inviteResult({ receipt: { committed: false } }), inviteResult({ outcome: 'invalid' })]) {
+    const response = await inviteApi(result, { clock })(request());
+    assert.ok([422, 503].includes(response.status));
+    const body = await response.json();
+    assert.equal(Object.hasOwn(body, 'groupInvite'), false);
+    assert.equal(JSON.stringify(body).includes(inviteOrigin), false);
+  }
+  assert.equal(clockCalls, 0);
+  const stored = await fileService(t);
+  const service = { async submit(input) { const result = await stored.submit(input); return { ...result, receipt: { ...result.receipt, groupInvite: invite() } }; } };
+  const handle = createRegistrationApi({ allowedOrigins: [origin], submissionService: service, allowedGroupInviteOrigins: [inviteOrigin], clock });
+  const forged = payload(); forged.groupInvite = invite(); forged.fields.groupInvite = invite();
+  const response = await handle(request({ body: JSON.stringify(forged) }));
+  assert.equal(response.status, 201);
+  assert.equal((await response.json()).groupInvite, null);
+  assert.equal(stored.state.writes, 1);
+  assert.equal(clockCalls, 0);
 });

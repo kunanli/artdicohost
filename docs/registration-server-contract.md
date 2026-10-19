@@ -105,9 +105,29 @@ const payload = {
 | `forbidden` / `rate_limited` / `withdrawn` | 分别为 `403` / `429` / `410` |
 | `unavailable`、未知、缺收据或抛错 | `503`，不显示报名成功 |
 
-成功正文仅包含 `{status: 'registered', reference_code}`，不返回姓名、邮箱、存储键、堆栈或内部审核字段。所有结果使用 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`；CORS 仅响应已匹配的来源并设置 `Vary: Origin`，不开放跨域凭据。
+成功正文仅包含 `{status: 'registered', reference_code, groupInvite}`，不返回姓名、邮箱、存储键、堆栈或内部审核字段。所有结果使用 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`；CORS 仅响应已匹配的来源并设置 `Vary: Origin`，不开放跨域凭据。
 
 收据是可信服务对「已确认保存」的约定，本 HTTP 层没有自行回读 OSS，也没有完成真实签名、跨实例限流、容量控制、幂等或私有存储验收。测试中的合成服务只为证明传输边界与失败行为，不能被配置为生产默认值。
+
+## 报名成功后的微信群入口
+
+用户指定「报名后提供微信群二维码」。活动报名状态的宣传文案依用户确认改为已开放；本站内建表单仍是明确标识的无传送预览，不能把演示完成当作真实报名。正式流程须先完成私有持久化，再返回成功收据与入群信息。
+
+HTTP 适配器只在 `created/replayed` 的 committed 收据已核对后，读取可信服务当次结果的 `groupInvite`，不接受请求正文伪造。新增配置 `allowedGroupInviteOrigins` 为服务器控制的 HTTPS 精确来源白名单，`clock` 为读取当前服务器时间的函数；群码资料格式如下：
+
+```js
+groupInvite: {
+  platform: 'wechat',
+  qrImageUrl: 'https://受控图片来源/短效图片地址',
+  expiresAt: '含时差的 ISO 到期时间',
+}
+```
+
+仅投影上述三项。图片网址必须为允许来源的 HTTPS，不能包含帐号密码、fragment、空白、控制字元或反斜线；到期时间须晚于受控当前时间。来源配置、时钟、网址或有效期缺失 / 错误时返回 `groupInvite:null`，不撤销已经保存的报名，也不提示重新提交。截止后重放使用当前有效群码，不能以旧收据的提交时间判断群码是否过期。
+
+真实群码待用户提供，不进入公开 `eventConfig`、Git 静态素材或演示完成页。将来图片服务须在登记成功后提供受限、短效图片访问，并核验实际 PNG / JPEG / WebP 内容；这一图片服务、保存及 FC 接入均未在本阶段实现，不能把 URL 白名单校验当成图片权限验证。
+
+`RegistrationSuccess.astro` 是独立、初始隐藏的正式成功卡片。`registration-success.mjs` 只在未来传输层提供 `200/201`、`status:'registered'` 及有效编号后显示；当前 mock 不调用它。有效且未过期的群码才设置图片来源；缺失、过期或图片载入失败时保留报名编号，显示入群码暂时无法显示及无需重复报名，不承诺自动发送通知。所有说明以文字节点输出，预览不读取或请求真实群码。
 
 ## 验证与回退
 

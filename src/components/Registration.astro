@@ -3,6 +3,8 @@ import { eventConfig } from '../config/event.mjs';
 import { registrationSchema } from '../../shared/registration-schema.mjs';
 import FormField from './FormField.astro';
 import BranchFields from './BranchFields.astro';
+import RegistrationSuccess from './RegistrationSuccess.astro';
+import '../styles/registration-success.css';
 const field = (name: string) => {
   const definition = registrationSchema.baseFields.find(item => item.name === name);
   if (!definition) throw new Error(`Missing form field: ${name}`);
@@ -15,7 +17,7 @@ const stayDate = (value: string) => { const [, month, day] = value.split('-'); r
   <div class="ah-register-intro">
     <span class="ah-kicker">JOIN THE DAY</span>
     <h2 id="registration-heading">一起参与这一天。</h2>
-    <p>欢迎组织者、学生、游戏创作者与合作伙伴。报名尚未开放，可先用虚构资料预览流程；内容不会发送或保存。</p>
+    <p>活动报名已开放，欢迎组织者、学生、游戏创作者与合作伙伴。本页表单仅供流程预览，不发送或保存资料。</p>
     <details class="ah-stay-details"><summary>外地嘉宾住宿支持</summary><p>{eventConfig.accommodation.notice}入住 / 离店暂定为 {stayDate(eventConfig.accommodation.checkIn)}至 {stayDate(eventConfig.accommodation.checkOut)}。</p></details>
   </div>
   <details class="ah-registration-preview" data-registration-preview>
@@ -70,9 +72,10 @@ const stayDate = (value: string) => { const [, month, day] = value.split('-'); r
       </section>
       <p class="ah-form-disclaimer">报名预览不会受理真实资料或生成报名编号。</p>
     </form>
-    <noscript><p class="ah-form-disclaimer">互动表单需要启用 JavaScript。当前没有开放真实报名；活动信息和全部日程仍可直接阅读。</p></noscript>
+    <noscript><p class="ah-form-disclaimer">本页互动预览需要启用 JavaScript，不发送或保存资料。活动信息和全部日程仍可直接阅读。</p></noscript>
     </div>
   </details>
+  <RegistrationSuccess />
 </section>
 <script>
   import '../scripts/registration.mjs';

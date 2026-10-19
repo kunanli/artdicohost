@@ -1,5 +1,5 @@
 import { MAX_REGISTRATION_BYTES } from './validation.mjs';
-import { own, plainObject, parseTimestamp } from './policy.mjs';
+import { own, plainObject, parseTimestamp, clockTime } from './policy.mjs';
 
 const HEADER_NAMES = ['content-type', 'idempotency-key', 'x-registration-token'];
 const KEY_PATTERN = /^[A-Za-z0-9_-]{32,128}$/u;
@@ -68,13 +68,33 @@ function committedReceipt(result, payload) {
     && parseTimestamp(own(receipt, 'committedAt')) !== null ? { referenceCode } : null;
 }
 
+/** Optional post-commit information; an unavailable invite never reverses a saved registration. */
+function groupInvite(result, origins, clock) {
+  try {
+    const invite = own(result, 'groupInvite');
+    if (!origins || typeof clock !== 'function' || own(invite, 'platform') !== 'wechat') return null;
+    const qrImageUrl = own(invite, 'qrImageUrl');
+    const expiresAt = own(invite, 'expiresAt');
+    const expiry = parseTimestamp(expiresAt);
+    if (typeof qrImageUrl !== 'string' || !qrImageUrl.startsWith('https://') || qrImageUrl.length > 4096 || /[\s\\#\u0000-\u001f\u007f]/u.test(qrImageUrl) || expiry === null) return null;
+    const url = new URL(qrImageUrl);
+    if (url.protocol !== 'https:' || !origins.has(url.origin) || url.username || url.password) return null;
+    const reading = clock();
+    if (reading && typeof reading.then === 'function') { Promise.resolve(reading).catch(() => {}); return null; }
+    const current = clockTime(reading);
+    if (current === null || expiry <= current) return null;
+    return { platform: 'wechat', qrImageUrl, expiresAt };
+  } catch { return null; }
+}
+
 /**
  * Standalone Request -> Response adapter. It never listens, creates storage, or opens the frontend.
  * The required injected service owns policy, trusted clock, token/rate verification and durable
  * idempotent commits. It must resolve saved retries before applying new-registration time gates.
  */
-export function createRegistrationApi({ allowedOrigins, submissionService } = {}) {
+export function createRegistrationApi({ allowedOrigins, submissionService, allowedGroupInviteOrigins, clock } = {}) {
   const origins = originSet(allowedOrigins);
+  const inviteOrigins = originSet(allowedGroupInviteOrigins);
   let submit;
   try { if (typeof submissionService?.submit === 'function') submit = submissionService.submit.bind(submissionService); }
   catch { /* Invalid trusted dependency remains unavailable. */ }
@@ -111,7 +131,8 @@ export function createRegistrationApi({ allowedOrigins, submissionService } = {}
       const outcome = own(result, 'outcome');
       if (outcome === 'created' || outcome === 'replayed') {
         const receipt = committedReceipt(result, payload);
-        return receipt ? reply({ status: 'registered', reference_code: receipt.referenceCode }, outcome === 'created' ? 201 : 200) : failure('UNAVAILABLE');
+        if (!receipt) return failure('UNAVAILABLE');
+        return reply({ status: 'registered', reference_code: receipt.referenceCode, groupInvite: groupInvite(result, inviteOrigins, clock) }, outcome === 'created' ? 201 : 200);
       }
       return failure(Object.hasOwn(OUTCOMES, outcome) ? OUTCOMES[outcome] : 'UNAVAILABLE');
     } catch (error) { return failure(error instanceof HttpError ? error.code : 'UNAVAILABLE'); }

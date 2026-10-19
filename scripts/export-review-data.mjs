@@ -19,6 +19,3 @@ async function walk(directory) {
 }
 await walk(dist);
 
-const lockData = (await readFile(resolve(root, 'pnpm-lock.yaml'))).toString('base64');
-const lockTotal = Math.ceil(lockData.length / 12000);
-for(let index = 0; index < lockTotal; index += 1) console.log('ARTDICO_REVIEW ' + JSON.stringify({path:'pnpm-lock.yaml',index,total:lockTotal,data:lockData.slice(index*12000,(index+1)*12000)}));

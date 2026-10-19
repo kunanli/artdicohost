@@ -89,7 +89,7 @@ async function loadPublishedContent(url) {
   }
   for (const node of document.querySelectorAll('[data-public-artwork-date]')) {
     const [,month,day] = content.event.date.split('-');
-    node.replaceChildren(document.createTextNode(month), element('span', '.'), document.createTextNode(day));
+    node.replaceChildren(element('span', month, 'ah-date-month'), element('span', '.', 'ah-date-dot'), element('span', day, 'ah-date-day'));
   }
   document.title = content.event.title + '｜活动安排';
   for (const node of document.querySelectorAll('[data-public-event-venue]')) node.textContent = content.event.venue + (content.event.venueStatus === 'confirmed' ? '' : '（暂定）');

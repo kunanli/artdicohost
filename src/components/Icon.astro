@@ -1,0 +1,13 @@
+---
+interface Props { name: 'calendar' | 'pin' | 'share' | 'shapes' | 'arrow' | 'gamepad' | 'bed'; }
+const { name } = Astro.props;
+---
+<svg class="ah-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+  {name === 'calendar' && <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18M8 15h2M14 15h2"/></>}
+  {name === 'pin' && <><path d="M20 10c0 6-8 11-8 11S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>}
+  {name === 'share' && <><path d="M3 3h14v10H8l-5 4V3ZM10 17h6l5 4V10h-1"/></>}
+  {name === 'shapes' && <><path d="m7 3 4 7H3l4-7Z"/><rect x="3" y="14" width="8" height="7"/><circle cx="17.5" cy="16.5" r="4.5"/></>}
+  {name === 'arrow' && <><path d="M5 19 19 5M5 5h14v14"/></>}
+  {name === 'gamepad' && <><path d="M7 7h10c3 0 4 3 4 7s-2 5-4 3l-2-2H9l-2 2c-2 2-4 1-4-3S4 7 7 7Z"/><path d="M7 10v4M5 12h4M16 11h.01M18 13h.01"/></>}
+  {name === 'bed' && <><path d="M3 18V6M21 18V9M3 14h18M3 9h18M8 9V6h9v3M3 18v3M21 18v3"/></>}
+</svg>

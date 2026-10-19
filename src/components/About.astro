@@ -1,0 +1,24 @@
+---
+import { eventConfig, highlights } from '../config/event.mjs';
+import Icon from './Icon.astro';
+const features = [
+  {number:'01 / SHARE', icon:'share', title:'交换经验', description:'GGJ 主题分享、组织者圆桌、新站点申请咨询与交流。'},
+  {number:'02 / DISCOVER', icon:'shapes', title:'发现作品', description:'ARTDiCO 学员创作现场，游戏试玩与开放展示。'},
+  {number:'03 / CONNECT', icon:'arrow', title:'连接彼此', description:'产业技术与专题交流，探索社群及生态合作。'},
+] as const;
+---
+<section class="ah-about ah-section" id="about" aria-labelledby="about-heading">
+  <div class="ah-section-heading">
+    <div><span class="ah-kicker">A DAY OF CONNECTIONS / 相遇的一天</span><h2 id="about-heading">不只聊游戏，<br />也聊一起创造的可能。</h2></div>
+    <p>让站点经验、青年作品与产业资源在同一个现场相遇。<br />带着你的故事来，带着新的连接离开。</p>
+  </div>
+  <p class="ah-about-description">我们计划在深圳前海举办 GGJ 中国交流聚会，并与 ARTDiCO HOST 学生嘉年华同期举行。欢迎现任或曾任 GGJ 站点负责人（SO）、地区组织者（RO），以及有意建立新站点的团队报名，也欢迎游戏开发者、高校及产业生态伙伴。一起分享站点运营与创作经验，探讨未来合作的可能性。日期、嘉宾及合作署名待最终确认。</p>
+  <div class="ah-site-callout"><strong>{eventConfig.siteRegistration.existing.title}</strong><p>{eventConfig.siteRegistration.existing.description}</p><strong>{eventConfig.siteRegistration.prospective.title}</strong><p>{eventConfig.siteRegistration.prospective.description}</p><p>{eventConfig.siteRegistration.notice}</p></div>
+  <div class="ah-highlights">
+    {features.map(feature => <article><span class="ah-feature-number">{feature.number}</span><Icon name={feature.icon} /><h3>{feature.title}</h3><p>{feature.description}</p></article>)}
+  </div>
+  <details class="ah-highlights-detail">
+    <summary>看看这一天可以聊什么 <span aria-hidden="true">＋</span></summary>
+    <div class="ah-highlight-list">{highlights.map(item => <article><h3>{item.title}</h3><p>{item.description}</p></article>)}</div>
+  </details>
+</section>

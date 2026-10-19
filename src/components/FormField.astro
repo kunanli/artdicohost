@@ -1,0 +1,34 @@
+---
+interface Field {
+  name: string; label: string; type: string; required: boolean;
+  minLength?: number; maxLength?: number; min?: number; max?: number;
+  options?: { value: string; label: string }[]; hint?: string;
+}
+interface Props { field: Field; prefix?: string; }
+const { field, prefix = '' } = Astro.props;
+const name = prefix ? `${prefix}.${field.name}` : field.name;
+const id = `field-${name.replaceAll('.', '-')}`;
+const describedBy = `${field.hint ? `${id}-hint ` : ''}${id}-error`;
+const isLongText = field.type === 'textarea' || field.type === 'url-list';
+const inputType: 'email' | 'url' | 'number' | 'text' = field.type === 'email' ? 'email' : field.type === 'url' ? 'url' : field.type === 'number' ? 'number' : 'text';
+---
+{field.type === 'checkbox-group' ? <fieldset class="ah-option-field" data-field={name} aria-describedby={describedBy} data-required={field.required ? 'true' : undefined}>
+  <legend>{field.label}{field.required && <em aria-label="必填"> *</em>}</legend>
+  <div class="ah-interest-options">
+    {field.options?.map(option => <label><input type="checkbox" name={name} value={option.value} data-interest={name === 'participationInterests' ? option.value : undefined} /><span>{option.label}</span></label>)}
+  </div>
+  {field.hint && <small id={`${id}-hint`} class="ah-field-hint">{field.hint}</small>}
+  <p class="ah-form-error" id={`${id}-error`} data-error-for={name} hidden></p>
+</fieldset> : field.type === 'checkbox' ? <div class="ah-consent-field" data-field={name}>
+  <label class="ah-demo-consent" for={id}><input type="checkbox" id={id} name={name} value="true" required={field.required} aria-describedby={describedBy} /><span>{field.label}。<a href="#privacy">查看隐私告知准备情况</a></span></label>
+  {field.hint && <small id={`${id}-hint`} class="ah-field-hint">{field.hint}</small>}
+  <p class="ah-form-error" id={`${id}-error`} data-error-for={name} hidden></p>
+</div> : <div class:list={['ah-field', {'ah-field-long': isLongText}]} data-field={name}>
+  <label for={id}>{field.label}{field.required ? <em aria-label="必填"> *</em> : <span class="ah-optional">（选填）</span>}</label>
+  {field.type === 'select' ? <select id={id} name={name} required={field.required} aria-describedby={describedBy}>
+    <option value="">请选择</option>
+    {field.options?.map(option => <option value={option.value}>{option.label}</option>)}
+  </select> : isLongText ? <textarea id={id} name={name} rows={field.type === 'url-list' ? 2 : 3} required={field.required} minlength={field.minLength} maxlength={field.maxLength} aria-describedby={describedBy} autocomplete="off" placeholder={field.type === 'url-list' ? 'https://example.com/project' : undefined}></textarea> : <input id={id} name={name} type={inputType} required={field.required} minlength={field.minLength} maxlength={field.maxLength} min={field.min} max={field.max} step={inputType === 'number' ? 1 : undefined} inputmode={inputType === 'number' ? 'numeric' : undefined} autocomplete="off" aria-describedby={describedBy} placeholder={inputType === 'url' ? 'https://example.com' : inputType === 'email' ? 'name@example.com' : undefined} />}
+  {field.hint && <small id={`${id}-hint`} class="ah-field-hint">{field.hint}</small>}
+  <p class="ah-form-error" id={`${id}-error`} data-error-for={name} hidden></p>
+</div>}

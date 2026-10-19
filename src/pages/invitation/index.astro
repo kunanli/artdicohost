@@ -1,0 +1,32 @@
+---
+import SiteLayout from '../../layouts/SiteLayout.astro';
+---
+<SiteLayout title="图片邀请函生成器｜ARTDiCO HOST" description="在当前浏览器制作和保存图片邀请函，活动信息暂定。">
+  <main id="main-content" class="invitation-tool">
+    <a href="/">← 返回活动首页</a>
+    <p class="eyebrow">ARTDiCO HOST / INVITATION</p>
+    <h1>邀请创作，一起相聚。</h1>
+    <p>填写称呼，预览并保存暂定图片。信息仅在当前页面处理；生成图片不会发送邀请、登记报名或更新后台，也不是入场凭证。</p>
+    <div class="tool-grid">
+      <form data-generator-form>
+        <label>邀请函称呼<input name="recipientName" maxlength="80" required autocomplete="off" placeholder="请输入称呼" /></label>
+        <label>日期<input name="date" maxlength="30" value="2026/12/05（暂定）" /></label>
+        <label>时间<input name="time" maxlength="40" value="10:00–18:00（暂定）" /></label>
+        <label>地点<textarea name="venue" rows="3" maxlength="120">深圳市前海合作区梦海大道5188号 前海5号楼（Qianhai Block V）3F（楼层暂定）</textarea></label>
+        <button type="submit" data-generator-submit disabled>生成预览</button>
+        <button type="button" data-generator-download disabled>保存 PNG 图片</button>
+        <p data-generator-status role="status" aria-live="polite">日期、时间及楼层暂定。正式输出前请确认。</p>
+        <noscript><p>请启用 JavaScript 后生成图片。本页面不会提交称呼或活动资料。</p></noscript>
+      </form>
+      <section aria-label="邀请函预览" class="preview">
+        <p data-generator-empty>生成后可在这里查看，也可以长按图片保存。</p>
+        <img data-generator-image hidden alt="邀请函预览" />
+        <canvas data-generator-canvas hidden></canvas>
+      </section>
+    </div>
+  </main>
+</SiteLayout>
+<script>import '../../scripts/invitation-generator.mjs';</script>
+<style>
+  .invitation-tool{max-width:1180px;margin:auto;padding:40px 24px 80px;color:#10203c}.invitation-tool>a{color:#1448ef}.eyebrow{margin-top:48px;color:#1448ef;font-weight:700;letter-spacing:.1em}h1{font-size:clamp(32px,5vw,60px);line-height:1.15;margin:14px 0 24px}.tool-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:40px;margin-top:32px}form{padding:24px;background:#f4f6fb;border-radius:16px}label{display:block;margin-bottom:20px;font-weight:600}input,textarea{display:block;width:100%;margin-top:8px;padding:12px;border:1px solid #a9b4c9;background:white;color:#10203c;border-radius:6px;font:inherit;box-sizing:border-box}.confirmation{display:flex;gap:10px;font-size:14px;align-items:flex-start}.confirmation input{width:auto;flex-shrink:0;margin-top:4px}button{width:100%;padding:14px;margin-bottom:12px;background:#1448ef;color:white;border:0;border-radius:6px;font:inherit;font-weight:700;cursor:pointer}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #ffb200;outline-offset:3px}.preview{min-width:0;background:#edf0f7;padding:16px;border-radius:16px;align-self:start}.preview img{width:100%;height:auto;display:block}.preview img[hidden]{display:none}form p{font-size:14px;overflow-wrap:anywhere}@media(max-width:700px){.tool-grid{grid-template-columns:1fr;gap:24px}.invitation-tool{padding:24px 16px 48px}form{padding:18px}}
+</style>

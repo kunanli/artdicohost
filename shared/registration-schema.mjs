@@ -53,7 +53,7 @@ const baseFields = [
   { name: 'participationInterests', label: '参与方式与可选合作咨询', type: 'checkbox-group', required: true, options: participationOptions, hint: '普通参会可选「仅出席」。讲者、展位及赞助合作另行沟通，不影响普通报名。' },
   { name: 'background', label: '相关经历或机构简介', type: 'textarea', required: true, maxLength: 1000, hint: '建议 30–1000 字；演示不设 30 字硬性下限。' },
   { name: 'caseLinks', label: '相关站点 / 案例 / 作品链接', type: 'url-list', required: false, maxLength: 8192, hint: '选填，每行一个 http/https 链接，最多 5 个。' },
-  { name: 'attendance', label: '12 月 5 日到场安排（日期暂定）', type: 'select', required: true, options: [
+  { name: 'attendance', label: '12 月 5 日到场安排', type: 'select', required: true, options: [
     { value: 'expected', label: '预计可到场' }, { value: 'uncertain', label: '尚待确定' }, { value: 'unavailable', label: '暂无法出席' },
   ] },
   { name: 'accommodationChoice', label: '是否申请一晚住宿支持', type: 'select', required: true, options: [

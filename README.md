@@ -20,6 +20,7 @@
 - `docs/08-deployment.md`：部署环境和上线清单
 - `docs/automatic-deployment.md`、`docs/domain-https.md`：当前阿里云静态部署及域名操作记录
 - `docs/registration-server-contract.md`：正式报名服务端校验准备及接入边界
+- `docs/fc-startup-preflight.md`：香港 FC 启动包、控制台验收及回退；业务写入保持关闭
 
 ## 第一版范围
 前端、一页内容、表单持久化、独立管理员登录、筛选/备注/导出、隐私告知、基础测试与部署方案。电子票、二维码签到、邮件批量营销、支付、自动奖项评定均不在首版范围。

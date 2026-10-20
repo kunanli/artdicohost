@@ -115,3 +115,18 @@ test('guest display fields reject raw single-line controls, while private notes 
   assert.equal(validateContent(content).valid, true);
   assert.equal(JSON.stringify(toPublicContent(content)).includes('内部'), false);
 });
+
+test('guest contact links are optional, private and unique to prevent duplicate invitee profiles', () => {
+  const content = fixture();
+  content.guests[0].contactId = 'synthetic-contact';
+  assert.equal(validateContent(content).valid, true);
+  assert.equal(validateContent(content).value.guests[0].contactId, 'synthetic-contact');
+  assert.equal(JSON.stringify(toPublicContent(content)).includes('synthetic-contact'), false);
+  assert.equal(JSON.stringify(toPublicContent(content)).includes('contactId'), false);
+  content.guests.push(guest({ id: 'second-guest', contactId: 'synthetic-contact' }));
+  assert.ok(validateContent(content).errors['guests.1.contactId']);
+  for (const contactId of [12, {}, '../contact', '']) {
+    content.guests = [guest({ contactId })];
+    assert.equal(validateContent(content).valid, contactId === '');
+  }
+});

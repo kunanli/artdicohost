@@ -3,6 +3,7 @@ import { createObjectJournal } from './object-journal.mjs';
 import { createCloudAuth } from './auth.mjs';
 import { createOssContentStore } from './store.mjs';
 import { createOssPortraitStore } from './portrait-store.mjs';
+import { createOssContactsStore } from './contacts-store.mjs';
 import { createCloudContentApi, CLOUD_API_ORIGIN, PUBLIC_SITE_ORIGIN } from './handler.mjs';
 
 const credentialFields = ['ALIBABA_CLOUD_ACCESS_KEY_ID', 'ALIBABA_CLOUD_ACCESS_KEY_SECRET', 'ALIBABA_CLOUD_SECURITY_TOKEN'];
@@ -27,7 +28,8 @@ export function createCloudContentRuntime({ env = process.env, fetchFn, now = ()
     const portraitStore = createOssPortraitStore({ objects });
     const journalFor = prefix => createObjectJournal({ objects, prefix });
     const store = createOssContentStore({ journal: journalFor('cms/v1/content'), portraitStore, now });
+    const contactsStore = createOssContactsStore({ journal: journalFor('cms/v1/contacts'), contentStore: store, now });
     const auth = createCloudAuth({ users: env.ADMIN_USERS_JSON, journalFor, now });
-    return { handle: createCloudContentApi({ enabled: true, store, portraitStore, auth }), configured: true, storageVerified: false, registrationEnabled: false };
+    return { handle: createCloudContentApi({ enabled: true, store, portraitStore, auth, contactsStore }), configured: true, storageVerified: false, registrationEnabled: false };
   } catch { return unavailable(); }
 }

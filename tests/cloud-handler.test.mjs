@@ -72,13 +72,14 @@ test('cloud body limits, invalid encodings and opaque storage failures never cla
   assert.equal(response.status, 503); assert.doesNotMatch(await response.text(), /SYNTHETIC_PRIVATE_PROVIDER_DETAIL|cms\/v1|passwordHash/u);
 });
 
-test('configuration gates remain closed and registration, contacts, mail and wallet are not exposed', async () => {
+test('configuration gates remain closed and private contacts and preview readiness require outreach', async () => {
   const disabled = createCloudContentApi();
   assert.equal((await disabled(request('/api/admin/login', { method: 'POST', body: {} }))).status, 503);
   assert.throws(() => createCloudContentApi({ enabled: 'false' }), TypeError);
   const { api } = setup(); const headers = await login(api);
   assert.equal((await api(request('/api/registrations', { method: 'POST', body: {} }))).status, 503);
-  for (const path of ['/api/admin/contacts', '/api/admin/communications', '/api/admin/wallet', '/healthz']) assert.equal((await api(request(path, { headers }))).status, 404);
+  for (const path of ['/api/admin/contacts', '/api/admin/communications']) assert.equal((await api(request(path, { headers }))).status, 403);
+  for (const path of ['/api/admin/wallet', '/healthz']) assert.equal((await api(request(path, { headers }))).status, 404);
 });
 
 test('aborted streams and mismatched body lengths cannot consume a login or commit content', async () => {

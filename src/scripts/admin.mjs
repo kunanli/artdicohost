@@ -1,4 +1,5 @@
 import { validateContent, toPublicContent } from '../../shared/content-schema.mjs';
+import { showcaseSummary } from '../../shared/showcase-display.mjs';
 
 const $ = selector => document.querySelector(selector);
 const status = $('[data-admin-status]');
@@ -14,12 +15,25 @@ let busy = false;
 let editingSession = null;
 let editingBooth = null;
 let editingGuest = null;
+let editingShowcase = null;
+let showcaseFormDirty = false;
+let coverUploading = false;
+let coverGeneration = 0;
+let coverController = null;
 let portraitUploading = false;
 let portraitGeneration = 0;
 let portraitController = null;
+let guestFormDirty = false;
+let pendingInvitee = takeInvitee();
+function takeInvitee(){
+  if(!location.hash.startsWith('#invitee='))return null;
+  const raw=location.hash.slice(9);
+  history.replaceState(null,'',location.pathname+location.search);
+  return /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(raw)?raw:null;
+}
 const portraitIdPattern = /^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
-const contentKey = type => ({ session: 'sessions', booth: 'booths', guest: 'guests' })[type];
-const typeLabel = type => ({ session: '活动场次', booth: '出席展位', guest: '嘉宾资料' })[type];
+const contentKey = type => ({ session: 'sessions', booth: 'booths', guest: 'guests', showcase: 'showcases' })[type];
+const typeLabel = type => ({ session: '活动场次', booth: '出席展位', guest: '嘉宾资料', showcase: '学生作品' })[type];
 
 function announce(message, error = false) {
   status.textContent = error ? '' : message;
@@ -30,15 +44,18 @@ function canEdit() { return user?.roles.includes('editor'); }
 function canPublish() { return user?.roles.includes('publisher'); }
 function lockControls() {
   $('[data-admin-login-submit]').disabled = busy || location.protocol === 'file:';
-  $('[data-session-submit]').disabled = busy || portraitUploading || !canEdit();
-  $('[data-booth-submit]').disabled = busy || portraitUploading || !canEdit();
-  $('[data-guest-submit]').disabled = busy || portraitUploading || !canEdit();
+  $('[data-session-submit]').disabled = busy || portraitUploading || coverUploading || !canEdit();
+  $('[data-showcase-submit]').disabled = busy || portraitUploading || coverUploading || !canEdit();
+  $('[data-showcase-cover-file]').disabled = busy || !canEdit();
+  $('[data-showcase-cover-remove]').disabled = busy || !canEdit();
+  $('[data-booth-submit]').disabled = busy || portraitUploading || coverUploading || !canEdit();
+  $('[data-guest-submit]').disabled = busy || portraitUploading || coverUploading || !canEdit();
   $('[data-guest-portrait-file]').disabled = busy || !canEdit();
   $('[data-guest-portrait-remove]').disabled = busy || !canEdit();
-  for (const node of document.querySelectorAll('[data-admin-save],[data-admin-add-session],[data-admin-add-booth],[data-admin-add-guest],[data-row-action]')) node.disabled = busy || portraitUploading || !canEdit();
-  $('[data-admin-publish]').disabled = busy || portraitUploading || !canPublish() || dirty;
+  for (const node of document.querySelectorAll('[data-admin-save],[data-admin-add-session],[data-admin-add-booth],[data-admin-add-guest],[data-admin-add-showcase],[data-row-action]')) node.disabled = busy || portraitUploading || coverUploading || !canEdit();
+  $('[data-admin-publish]').disabled = busy || portraitUploading || coverUploading || !canPublish() || dirty;
   $('[data-admin-preview]').disabled = busy || !draft;
-  $('[data-admin-logout]').disabled = busy || portraitUploading;
+  $('[data-admin-logout]').disabled = busy || portraitUploading || coverUploading;
 }
 function setDirty(value) {
   dirty = value;
@@ -63,10 +80,11 @@ async function action(callback) {
   busy = true;
   lockControls();
   try { await callback(); } catch (error) { announce(error.message || '操作未完成。', true); }
-  finally { busy = false; lockControls(); }
+  finally { busy = false; lockControls(); if(pendingInvitee&&user&&draft)queueMicrotask(()=>action(prepareInvitedGuest)); }
 }
 function showLogin() {
   clearPortrait();
+  clearCover();
   user = null;
   csrfToken = '';
   draft = null;
@@ -77,18 +95,26 @@ function showLogin() {
   $('[data-admin-sessions]').replaceChildren();
   $('[data-admin-booths]').replaceChildren();
   $('[data-admin-guests]').replaceChildren();
+  $('[data-admin-showcases]').replaceChildren();
+  for (const field of ['sessionId', 'boothId']) $('[data-showcase-form]').elements.namedItem(field).replaceChildren();
   $('[data-admin-public-preview]').replaceChildren();
   $('[data-admin-preview-panel]').hidden = true;
   for (const dialog of document.querySelectorAll('dialog')) if (dialog.open) dialog.close();
-  for (const type of ['session', 'booth', 'guest']) {
+  for (const type of ['session', 'booth', 'guest', 'showcase']) {
     $('[data-' + type + '-form]').reset();
     const error = $('[data-' + type + '-error]');
     error.textContent = '';
     error.hidden = true;
   }
+  const guestSelect=$('[data-session-form]').elements.namedItem('guestId');
+  guestSelect.replaceChildren();
+  const unlinked=node('option','手动维护讲者 · 未关联嘉宾');unlinked.value='';guestSelect.append(unlinked);
   editingSession = null;
   editingBooth = null;
   editingGuest = null;
+  guestFormDirty = false;
+  showcaseFormDirty = false;
+  editingShowcase = null;
 }
 function node(tag, value, className) {
   const result = document.createElement(tag);
@@ -115,6 +141,10 @@ function rowActions(row, type, item) {
       else {
         if (type === 'guest' && draft.content.sessions.some(session => session.guestId === item.id)) {
           announce('此嘉宾仍关联活动场次，请先在相关场次解除关联，再删除嘉宾。', true);
+          return;
+        }
+        if (['session', 'booth'].includes(type) && (draft.content.showcases ?? []).some(showcase => showcase[type === 'session' ? 'sessionId' : 'boothId'] === item.id)) {
+          announce('此记录仍关联学生作品，请先在作品安排中解除关联，再删除。', true);
           return;
         }
         const key = contentKey(type);
@@ -188,19 +218,21 @@ function render() {
     guests.append(row);
   }
   $('[data-admin-guests-empty]').hidden = (draft.content.guests?.length ?? 0) > 0;
+  renderShowcases();
   lockControls();
 }
-function openEditor(type, item = null) {
-  if (!canEdit() || busy || !draft) return;
+function openEditor(type, item = null, allowBusy = false) {
+  if (!canEdit() || (busy && !allowBusy) || !draft) return;
+  if (type === 'showcase') { openShowcaseEditor(item); return; }
   const form = $('[data-' + type + '-form]');
   form.reset();
   const localError = $('[data-' + type + '-error]');
   localError.textContent = '';
   localError.hidden = true;
-  if (type === 'guest') clearPortrait();
+  if (type === 'guest') { clearPortrait(); guestFormDirty=false; $('[data-guest-consent-note]').textContent='确认状态与公开授权分别记录。更改资料或照片后，请重新核对授权；保存草稿不会自动公开。'; }
   if (type === 'session') fillSessionGuests();
   const id = type + '-' + [...crypto.getRandomValues(new Uint8Array(16))].map(value => value.toString(16).padStart(2, '0')).join('');
-  const value = item || (type === 'session' ? { id, start: '09:30', end: '10:00', zone: 'A', title: '', speakerName: '', speakerStatus: 'pending', guestId: '', status: 'draft', internalNotes: '' } : type === 'booth' ? { id, code: '', organization: '', project: '', zone: 'C', status: 'pending', internalNotes: '' } : { id, name: '', company: '', ggjRole: '', portraitId: '', status: 'pending', publicConsent: false, internalNotes: '' });
+  const value = item || (type === 'session' ? { id, start: '09:30', end: '10:00', zone: 'A', title: '', speakerName: '', speakerStatus: 'pending', guestId: '', status: 'draft', internalNotes: '' } : type === 'booth' ? { id, code: '', organization: '', project: '', zone: 'C', status: 'pending', internalNotes: '' } : { id, name: '', company: '', ggjRole: '', portraitId: '', contactId: '', status: 'pending', publicConsent: false, internalNotes: '' });
   for (const [key,valueText] of Object.entries(value)) {
     const field = form.elements.namedItem(key);
     if (field?.type === 'checkbox') field.checked = valueText === true;
@@ -212,18 +244,54 @@ function openEditor(type, item = null) {
   $('[data-' + type + '-dialog-title]').textContent = (item ? '编辑' : '新增') + typeLabel(type);
   $('[data-' + type + '-dialog]').showModal();
 }
+async function prepareInvitedGuest(){
+  if(!pendingInvitee)return false;
+  const id=pendingInvitee;pendingInvitee=null;
+  if(guestFormDirty&&!confirm('准备新的嘉宾资料会放弃本次尚未应用的修改，继续吗？'))return false;
+  if(!canEdit()||!user?.roles.includes('outreach'))throw new Error('准备邀约对象的嘉宾草稿需要同时具备人员邀约与活动编辑权限。');
+  const result=await request('/api/admin/contacts/'+encodeURIComponent(id)+'/guest-prefill');
+  const prefill=result.prefill;
+  if(!prefill||!['name','company','ggjRole','contactId'].every(key=>typeof prefill[key]==='string')||Object.keys(prefill).some(key=>!['name','company','ggjRole','contactId'].includes(key))||prefill.contactId!==id)throw new Error('嘉宾预填资料无效，请返回人员工作区重新核对。');
+  const existing=(draft.content.guests??[]).find(guest=>guest.contactId===prefill.contactId);
+  openEditor('guest',existing??null,true);
+  const form=$('[data-guest-form]');
+  if(existing){
+    $('[data-guest-consent-note]').textContent='已打开该邀约对象关联的嘉宾资料。名单回复与嘉宾公开状态分别维护；请核实当前回复，再决定是否发布。';
+    announce('已打开关联嘉宾，未重复新增。现有照片、资料与授权保持原记录。');
+  }else{
+    for(const key of ['name','company','ggjRole','contactId'])form.elements.namedItem(key).value=prefill[key];
+    form.elements.namedItem('status').value='pending';form.elements.namedItem('publicConsent').checked=false;
+    form.elements.namedItem('portraitId').value='';showPortrait('');guestFormDirty=true;
+    $('[data-guest-consent-note]').textContent='已从邀约名单预填资料，实际回复：'+({pending:'待回复',attending:'确认参加',declined:'不参加'}[result.responseStatus]??'待核实')+'。请另行核实资料、出席与公开授权；尚未保存或公开。';
+    announce('已准备关联嘉宾资料表，尚未保存。请核实职务、照片与公开同意，再应用修改。');
+  }
+  return true;
+}
+function closeGuestEditor(){
+  if(busy||portraitUploading)return;
+  if(guestFormDirty&&!confirm('关闭将放弃本次尚未应用的嘉宾资料，继续吗？'))return;
+  $('[data-guest-dialog]').close();
+}
 function submitEditor(type, event) {
   event.preventDefault();
-  if (!canEdit() || busy || portraitUploading || !draft) return;
+  if (!canEdit() || busy || portraitUploading || coverUploading || !draft) return;
   const form = event.currentTarget;
   if (!form.reportValidity()) return;
   const candidate = structuredClone(draft.content);
   const key = contentKey(type);
-  const editingId = ({ session: editingSession, booth: editingBooth, guest: editingGuest })[type];
+  const editingId = ({ session: editingSession, booth: editingBooth, guest: editingGuest, showcase: editingShowcase })[type];
   const value = Object.fromEntries(new FormData(form));
   if (type === 'guest') {
     delete value.portraitFile;
     value.publicConsent = form.elements.namedItem('publicConsent').checked;
+  }
+  if (type === 'showcase') {
+    delete value.coverFile;
+    value.memberCount = Number(form.elements.namedItem('memberCount').value);
+    value.participationForms = new FormData(form).getAll('participationForms');
+    value.publicConsent = form.elements.namedItem('publicConsent').checked;
+    value.sessionId = form.elements.namedItem('sessionId').value;
+    value.boothId = form.elements.namedItem('boothId').value;
   }
   if (type === 'session' && value.guestId) {
     value.speakerName = '';
@@ -245,6 +313,8 @@ function submitEditor(type, event) {
   const localError = $('[data-' + type + '-error]');
   if (localError) { localError.textContent = ''; localError.hidden = true; }
   draft.content = result.value;
+  if(type==='guest')guestFormDirty=false;
+  if(type==='showcase')showcaseFormDirty=false;
   $('[data-' + type + '-dialog]').close();
   setDirty(true);
   render();
@@ -362,6 +432,136 @@ $('[data-guest-portrait-preview]').addEventListener('error', event => {
   $('[data-guest-form]').elements.namedItem('portraitId').value = '';
   revokeGuestConsent();
 });
+function showcaseAssignment(item) {
+  const parts=[];
+  for (const [field,entries,label] of [['sessionId',draft.content.sessions,'分享'],['boothId',draft.content.booths,'展位']]) {
+    if (!item[field]) continue;
+    const entry=entries.find(candidate=>candidate.id===item[field]);
+    parts.push(!entry ? label+'记录已失效' : entry.status==='cancelled' ? label+'已取消' : field==='sessionId' ? entry.start+'–'+entry.end+' / '+entry.zone+'区 · '+entry.title : entry.code+' / '+entry.zone+'区');
+  }
+  return parts.join('；') || '尚未分配场次或展位';
+}
+function renderShowcases() {
+  if (!draft) return;
+  const records=draft.content.showcases??[];
+  const summary=showcaseSummary(records,draft.content);
+  $('[data-showcase-confirmed-teams]').textContent=String(summary.confirmedTeams);
+  $('[data-showcase-confirmed-students]').textContent=String(summary.confirmedStudents);
+  $('[data-showcase-assigned-count]').textContent=summary.shareTeams+' / '+summary.boothTeams;
+  $('[data-showcase-public-count]').textContent=String(summary.readyToPublishTeams);
+  const filter=$('[data-showcase-filter]').value;
+  const filtered=records.filter(item=>!filter||item.responseStatus===filter);
+  $('[data-showcase-result-count]').textContent='显示 '+filtered.length+' / '+records.length+' 组';
+  const output=$('[data-admin-showcases]');output.replaceChildren();
+  for(const item of filtered){
+    const card=node('article',undefined,'ah-admin-showcase-card');
+    if(portraitIdPattern.test(item.coverId)){
+      const image=node('img');image.src='/api/admin/portraits/'+item.coverId;image.alt=item.title+'作品图（内部预览）';image.width=320;image.height=180;image.loading='lazy';image.addEventListener('error',()=>image.remove(),{once:true});card.append(image);
+    }
+    const body=node('div',undefined,'ah-admin-showcase-body');
+    body.append(node('h3',item.title||'未命名作品'),node('p',item.teamName||'团队名称待填写','ah-admin-showcase-team'));
+    const badge=node('span',({pending:'待回复',attending:'确认参加',declined:'不参加'})[item.responseStatus]??'待回复','ah-admin-badge');badge.dataset.status=item.responseStatus;body.append(badge);
+    body.append(node('p',(item.school||'学校待填写')+' · '+(item.contactName||'负责人待填写')+' · '+item.memberCount+' 人（填报）'));
+    const forms=(item.participationForms??[]).map(form=>({booth:'展位试玩',share:'上台分享'})[form]).join(' / ')||'参与形式待选';
+    body.append(node('p',forms),node('p',showcaseAssignment(item),'ah-admin-showcase-arrangement'));
+    const materials=(item.materialLinks??'').split(/\r?\n/u).filter(value=>value.trim()).length;
+    body.append(node('p','材料链接 '+materials+' 条 · '+(item.status==='confirmed'?'资料已核准':'资料待核准')+' · '+(item.publicConsent?'已获公开授权':'未获公开授权'),'ah-admin-small'));
+    const actions=node('div',undefined,'ah-admin-showcase-actions');
+    for(const [label,actionName]of [['编辑作品与安排','edit'],['删除','delete']]){
+      const button=node('button',label,'ah-admin-button');button.type='button';button.dataset.rowAction=actionName;button.setAttribute('aria-label',label+' '+item.title);
+      button.addEventListener('click',()=>{if(!canEdit()||busy||portraitUploading||coverUploading)return;if(actionName==='edit')openEditor('showcase',item);else if(confirm('从草稿移除此作品记录？保存并发布前，公开页面不会改变。')){draft.content.showcases=records.filter(entry=>entry.id!==item.id);setDirty(true);render();announce('已从本页草稿移除作品；仍需保存草稿并发布，才会改变公开页。');}});actions.append(button);
+    }
+    body.append(actions);card.append(body);output.append(card);
+  }
+  $('[data-admin-showcases-empty]').hidden=filtered.length>0;
+  $('[data-admin-showcases-empty]').textContent=records.length?'此筛选下没有作品记录。':'还没有学生作品记录。新增资料后，再确认出席、收齐材料并安排展示。';
+  lockControls();
+}
+function fillShowcaseAssignments() {
+  const form=$('[data-showcase-form]');
+  for(const[field,entries,label]of[['sessionId',draft.content.sessions,'场次'],['boothId',draft.content.booths,'展位']]){
+    const select=form.elements.namedItem(field);select.replaceChildren();const empty=node('option','尚未安排');empty.value='';select.append(empty);
+    for(const item of entries){
+      const title=field==='sessionId'?item.start+'–'+item.end+' · '+item.zone+'区 · '+item.title:item.code+' · '+(item.organization||'待确认团队');
+      const option=node('option',title+(item.status==='cancelled'?'（已取消）':''));option.value=item.id;select.append(option);
+    }
+  }
+}
+function openShowcaseEditor(item=null) {
+  const form=$('[data-showcase-form]');clearCover();form.reset();fillShowcaseAssignments();
+  const localError=$('[data-showcase-error]');localError.textContent='';localError.hidden=true;
+  const id='showcase-'+[...crypto.getRandomValues(new Uint8Array(16))].map(value=>value.toString(16).padStart(2,'0')).join('');
+  const value=item??{id,title:'',teamName:'',school:'',contactName:'',email:'',wechat:'',memberCount:1,participationForms:[],responseStatus:'pending',materialLinks:'',summary:'',coverId:'',status:'pending',publicConsent:false,sessionId:'',boothId:'',internalNotes:''};
+  for(const[key,valueText]of Object.entries(value)){
+    if(key==='participationForms')continue;
+    const field=form.elements.namedItem(key);
+    if(field?.type==='checkbox')field.checked=valueText===true;
+    else if(field){
+      if(['sessionId','boothId'].includes(key)&&valueText&&!Array.from(field.options).some(option=>option.value===valueText)){const missing=node('option','原分配记录已失效，请重新安排');missing.value=valueText;field.append(missing);}
+      field.value=valueText;
+    }
+  }
+  for(const field of form.querySelectorAll('[name=participationForms]'))field.checked=value.participationForms?.includes(field.value)??false;
+  editingShowcase=item?.id??null;showcaseFormDirty=false;showCover(value.coverId);syncShowcaseForms();
+  $('[data-showcase-consent-note]').textContent='公开授权与参加回复分别记录。学生基础资料、联系方式、材料链接及内部备注不进入公开作品页。';
+  $('[data-showcase-dialog-title]').textContent=(item?'编辑':'新增')+'学生作品';$('[data-showcase-dialog]').showModal();
+}
+function syncShowcaseForms() {
+  const form=$('[data-showcase-form]');
+  for(const[field,type]of[['sessionId','share'],['boothId','booth']])form.elements.namedItem(field).disabled=!form.querySelector('[name=participationForms][value='+type+']').checked;
+}
+function revokeShowcaseConsent() {
+  $('[data-showcase-form]').elements.namedItem('publicConsent').checked=false;
+  $('[data-showcase-consent-note]').textContent='作品介绍或图片已变更，请重新核实这份内容的公开授权。私人材料不会随作品图公开。';
+}
+function showCover(id) {
+  const image=$('[data-showcase-cover-preview]');image.hidden=true;image.removeAttribute('src');
+  if(typeof id!=='string'||!portraitIdPattern.test(id))return;
+  image.src='/api/admin/portraits/'+id;image.hidden=false;
+}
+function clearCover() {
+  coverGeneration+=1;coverController?.abort();coverController=null;coverUploading=false;
+  $('[data-showcase-form]').elements.namedItem('coverId').value='';$('[data-showcase-cover-file]').value='';$('[data-showcase-cover-status]').textContent='';showCover('');lockControls();
+}
+function closeShowcaseEditor() {
+  if(busy||coverUploading)return;
+  if(showcaseFormDirty&&!confirm('关闭将放弃本次尚未应用的作品资料，继续吗？'))return;
+  $('[data-showcase-dialog]').close();
+}
+async function uploadCover(event) {
+  const file=event.currentTarget.files?.[0];clearCover();revokeShowcaseConsent();showcaseFormDirty=true;
+  const localError=$('[data-showcase-error]');localError.textContent='';localError.hidden=true;
+  if(!file||!canEdit()||busy||!draft||!$('[data-showcase-dialog]').open)return;
+  const generation=coverGeneration;const controller=new AbortController();coverController=controller;coverUploading=true;lockControls();
+  $('[data-showcase-cover-status]').textContent='正在处理并上传作品图…';
+  try{
+    const payload=await portraitBytes(file);
+    if(generation!==coverGeneration||controller.signal.aborted)return;
+    const result=await request('/api/admin/portraits',{method:'POST',body:JSON.stringify(payload),signal:controller.signal});
+    if(generation!==coverGeneration||controller.signal.aborted||!$('[data-showcase-dialog]').open)return;
+    if(!portraitIdPattern.test(result.portrait?.id)||result.portrait.contentType!==payload.contentType||!Number.isSafeInteger(result.portrait.bytes)||result.portrait.bytes<1||result.portrait.bytes>512*1024)throw new Error('图片上传结果无效，请重试。');
+    $('[data-showcase-form]').elements.namedItem('coverId').value=result.portrait.id;showCover(result.portrait.id);
+    $('[data-showcase-cover-status]').textContent='作品图已上传；应用并保存后才会关联，尚未公开。';
+  }catch(error){
+    if(generation!==coverGeneration||controller.signal.aborted)return;
+    $('[data-showcase-form]').elements.namedItem('coverId').value='';showCover('');$('[data-showcase-cover-status]').textContent='作品图上传未完成，未关联新图片。';localError.textContent=error.message||'图片上传失败。';localError.hidden=false;
+  }finally{if(generation===coverGeneration){coverUploading=false;coverController=null;lockControls();}}
+}
+$('[data-showcase-cover-file]').addEventListener('change',uploadCover);
+$('[data-showcase-cover-remove]').addEventListener('click',()=>{clearCover();revokeShowcaseConsent();showcaseFormDirty=true;});
+$('[data-showcase-cover-preview]').addEventListener('error',event=>{
+  const id=$('[data-showcase-form]').elements.namedItem('coverId').value;
+  if(!$('[data-showcase-dialog]').open||!portraitIdPattern.test(id)||event.currentTarget.src!==location.origin+'/api/admin/portraits/'+id)return;
+  showCover('');$('[data-showcase-form]').elements.namedItem('coverId').value='';revokeShowcaseConsent();$('[data-showcase-cover-status]').textContent='作品图预览不可用，请重新上传。';
+});
+$('[data-showcase-dialog]').addEventListener('close',()=>{clearCover();$('[data-showcase-form]').reset();editingShowcase=null;showcaseFormDirty=false;});
+$('[data-showcase-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeShowcaseEditor();});
+$('[data-showcase-form]').addEventListener('input',()=>{showcaseFormDirty=true;});
+$('[data-showcase-form]').addEventListener('change',()=>{showcaseFormDirty=true;});
+for(const name of ['title','teamName','summary'])$('[data-showcase-form]').elements.namedItem(name).addEventListener('input',revokeShowcaseConsent);
+for(const field of $('[data-showcase-form]').querySelectorAll('[name=participationForms]'))field.addEventListener('change',()=>{
+  if(!field.checked)$('[data-showcase-form]').elements.namedItem(field.value==='share'?'sessionId':'boothId').value='';syncShowcaseForms();
+});
 function previewPublic() {
   if (!draft) return;
   const content = toPublicContent(draft.content);
@@ -388,7 +588,15 @@ function previewPublic() {
     if (item.ggjRole) card.append(node('p', item.ggjRole));
     guestGrid.append(card);
   }
-  output.append(guestGrid, node('h3', '出席展位'));
+  output.append(guestGrid, node('h3', '公开学生作品'));
+  if (!content.showcases?.length) output.append(node('p', '符合公开门槛的学生作品将在这里展示。'));
+  const showcaseGrid = node('div', undefined, 'ah-admin-showcase-preview-grid');
+  for (const item of content.showcases ?? []) {
+    const card = node('article'); const image = node('img');
+    image.src='/api/admin/portraits/'+item.coverId;image.alt=item.title+'作品图';image.width=320;image.height=180;
+    card.append(image,node('h4',item.title),node('p',item.teamName),node('p',item.summary));showcaseGrid.append(card);
+  }
+  output.append(showcaseGrid, node('h3', '出席展位'));
   if (!content.booths.length) output.append(node('p', '确认后的展位将在这里公布。'));
   for (const item of content.booths) output.append(node('p', item.code + ' · ' + item.organization + ' · ' + item.project));
   $('[data-admin-preview-panel]').hidden = false;
@@ -414,7 +622,7 @@ $('[data-admin-login]').addEventListener('submit', event => {
     workspace.hidden = false;
     setDirty(false);
     render();
-    announce('已登录。修改草稿后，需要发布才会显示到前台。');
+    if(!await prepareInvitedGuest())announce('已登录。修改草稿后，需要发布才会显示到前台。');
   });
 });
 $('[data-admin-save]').addEventListener('click', () => action(async () => {
@@ -438,22 +646,29 @@ $('[data-admin-preview-close]').addEventListener('click', () => { $('[data-admin
 $('[data-admin-add-session]').addEventListener('click', () => openEditor('session'));
 $('[data-admin-add-booth]').addEventListener('click', () => openEditor('booth'));
 $('[data-admin-add-guest]').addEventListener('click', () => openEditor('guest'));
+$('[data-admin-add-showcase]').addEventListener('click', () => openEditor('showcase'));
+$('[data-showcase-form]').addEventListener('submit', event => submitEditor('showcase', event));
+$('[data-showcase-filter]').addEventListener('change',renderShowcases);
 $('[data-session-form]').addEventListener('submit', event => submitEditor('session', event));
 $('[data-booth-form]').addEventListener('submit', event => submitEditor('booth', event));
 $('[data-guest-form]').addEventListener('submit', event => submitEditor('guest', event));
 $('[name=guestId]').addEventListener('change', syncSessionGuest);
 $('[data-guest-portrait-file]').addEventListener('change', uploadPortrait);
-$('[data-guest-portrait-remove]').addEventListener('click', () => { clearPortrait(); revokeGuestConsent(); });
-$('[data-guest-dialog]').addEventListener('close', clearPortrait);
+$('[data-guest-portrait-remove]').addEventListener('click', () => { clearPortrait(); revokeGuestConsent(); guestFormDirty=true; });
+$('[data-guest-dialog]').addEventListener('close',()=>{clearPortrait();$('[data-guest-form]').reset();editingGuest=null;guestFormDirty=false;});
+$('[data-guest-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeGuestEditor();});
+$('[data-guest-form]').addEventListener('input',()=>{guestFormDirty=true;});
+$('[data-guest-form]').addEventListener('change',()=>{guestFormDirty=true;});
 for (const name of ['name', 'company', 'ggjRole']) $('[data-guest-form]').elements.namedItem(name).addEventListener('input', revokeGuestConsent);
-for (const button of document.querySelectorAll('[data-close-dialog]')) button.addEventListener('click', () => $('[data-' + button.dataset.closeDialog + '-dialog]').close());
+for (const button of document.querySelectorAll('[data-close-dialog]')) button.addEventListener('click', () => {if(button.dataset.closeDialog==='guest')closeGuestEditor();else if(button.dataset.closeDialog==='showcase')closeShowcaseEditor();else if(!busy)$('[data-' + button.dataset.closeDialog + '-dialog]').close();});
 $('[data-admin-logout]').addEventListener('click', () => action(async () => {
-  if (dirty && !confirm('还有未保存的修改，确定退出并放弃这些修改吗？')) return;
+  if ((dirty||guestFormDirty||showcaseFormDirty) && !confirm('还有未保存的修改，确定退出并放弃这些修改吗？')) return;
   await request('/api/admin/logout', { method: 'POST' });
-  showLogin();
+  pendingInvitee=null;showLogin();
   announce('已退出。');
 }));
-window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('hashchange',()=>{const id=takeInvitee();if(!id)return;pendingInvitee=id;if(user&&draft)action(prepareInvitedGuest);});
+window.addEventListener('beforeunload', event => { if (dirty||guestFormDirty||showcaseFormDirty) { event.preventDefault(); event.returnValue = ''; } });
 if (location.protocol === 'file:') {
   announce('这是离线界面预览。请启动本地内容服务并配置工作人员账号后登录。');
   $('[data-admin-login] button[type="submit"]').disabled = true;
@@ -472,6 +687,6 @@ if (location.protocol === 'file:') {
     workspace.hidden = false;
     setDirty(false);
     render();
-    announce('已恢复工作人员会话。');
+    if(!await prepareInvitedGuest())announce('已恢复工作人员会话。');
   });
 }

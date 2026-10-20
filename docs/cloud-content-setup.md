@@ -2,7 +2,7 @@
 
 2026-10-20。用户确认 `artdicohost-api` 尚未配置执行角色。本文件提供可审阅的专用角色与接入步骤；本轮没有创建角色、授权、绑定函数、修改 DNS、证书、触发器或上传云端业务包。现有 GitHub 部署身份及其他项目的权限不变。
 
-本阶段只准备工作人员登录、嘉宾头像、场次及展位的草稿和明确发布。使用既有香港 FC 与私有 OSS，不新增数据库。正式报名、学生申请和排位、报名统计、历史联系人、群码、邮件及 Wallet 没有因此接通；39 笔联系人仍留本机，原群码与更换提醒不变。
+本阶段准备工作人员登录、嘉宾头像、场次／展位、私密人员邀约及工作人员登记学生展示的草稿和明确发布。学生基础资料与材料链接留在私有内容快照，公开只输出获授权作品字段；作品封面沿用同一内容定址图片前缀。使用既有香港 FC 与私有 OSS，不新增数据库。正式报名、学生自行申请／双审、报名统计、历史联系人云迁移、群码、邮件及 Wallet 没有因此接通；39 笔联系人仍留本机，原群码与更换提醒不变。
 
 ## 1. 由用户建立专用执行角色
 
@@ -52,7 +52,7 @@ GitHub Repository Secrets 是部署身份，不是 FC 执行角色，也不是�
 5. 返回新角色 **权限管理 → 新增授权**，只附加这份自定义策略。若界面要求资源范围，选择当前账号；实际允许的对象仍受 JSON 中唯一的 bucket／前缀限制。核对没有附加 `AliyunOSSFullAccess`、`AliyunFCFullAccess`、默认宽权限角色或其他策略。
 6. 记录新角色 ARN，应为 `acs:ram::1954121651395178:role/artdicohost-content-runtime`。这是角色标识，可以回报给维护人员；不要回报任何临时凭据或账号配置。
 
-上述对象权限覆盖 `cms/v1/content/` 的快照及提交日志、`cms/v1/portraits/` 的内容定址头像、`cms/v1/sessions/` 的会话，以及 `cms/v1/limits/` 的共享登录额度。应用只按确定的对象 key 读写，不需要列举 bucket。
+上述对象权限覆盖 `cms/v1/content/` 的快照及提交日志、`cms/v1/contacts/` 的独立私密名单日志、`cms/v1/portraits/` 的内容定址头像、`cms/v1/sessions/` 的会话，以及 `cms/v1/limits/` 的共享登录额度。应用只按确定的对象 key 读写，不需要列举 bucket。
 
 [OSS AppendObject 官方权限表](https://help.aliyun.com/zh/oss/developer-reference/appendobject/)明确将追加写入映射为 `oss:PutObject`；只有带对象标签或相应加密模式时才涉及其他权限。本实现不带标签，采用 SSE-OSS／AES256，不使用 KMS。因此不增加 List、Delete、ACL、标签、KMS、其他 bucket 或 FC 管理权限。
 
@@ -92,9 +92,12 @@ FC 3.0 的自定义域名独立于 HTTP Trigger；应保留当前 `defaultTrigge
 | `/api/admin/portraits/*` | GET | 已登录、有内容权限的私有头像读取 |
 | `/api/admin/login`、`/api/admin/logout`、`/api/admin/portraits`、`/api/admin/content/publish` | POST | 登录、退出、上传、明确发布 |
 | `/api/admin/content` | PUT | 带预期修订号保存草稿 |
+| `/api/admin/planning`、`/api/admin/communications` | GET | outreach 的最小排程／功能标记及准备状态 |
+| `/api/admin/contacts` | GET、POST | 私密名单读取与手动新增，仅 outreach |
+| `/api/admin/contacts/*` | GET、PUT、POST | 应用精确匹配的修正、跟进、生成／人工发出与双角色最小预填；不提供匿名名单 |
 | `/api/public/content`、`/api/public/portraits/*` | GET、HEAD、OPTIONS | 只读公开发布内容与当前授权头像 |
 
-不为 `/healthz`、`/api/registrations`、联系人、邮件或 Wallet 添加自定义域名路由。域名的基础入口无需云端签名才能到达登录页面；实际管理访问由应用账号、会话和权限控制。任何平台鉴权／路由选项都须在独立自定义域名上核对，不能改变原签名触发器来绕过验证。
+不为 `/healthz`、`/api/registrations`、匿名联系人、实际消息发送或 Wallet 签发添加自定义域名路由。私密名单及原有邮件／Wallet 内容预览只接受名单角色；后者仅预览，不发送。域名的基础入口无需云端签名才能到达登录页面，实际管理访问由应用账号、会话和权限控制。任何平台鉴权／路由选项都须在独立自定义域名上核对，不能改变原签名触发器来绕过验证。
 
 ## 4. 发布与验收尚未完成的部分
 

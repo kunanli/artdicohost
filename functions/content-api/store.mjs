@@ -39,14 +39,18 @@ export function createFileContentStore({ directory, portraitStore, initialConten
 
   async function verifyPortraits(content) {
     const checked = new Set();
-    for (const [index, guest] of content.guests.entries()) {
-      if (!guest.portraitId || checked.has(guest.portraitId)) continue;
+    const images = [
+      ...content.guests.map((guest, index) => ({ id: guest.portraitId, field: `guests.${index}.portraitId` })),
+      ...(content.showcases ?? []).map((showcase, index) => ({ id: showcase.coverId, field: `showcases.${index}.coverId` })),
+    ];
+    for (const image of images) {
+      if (!image.id || checked.has(image.id)) continue;
       if (!portraitStore?.verify) throw new ContentError('PORTRAITS_UNAVAILABLE', '本地头像存储未配置。', 503);
-      try { await portraitStore.verify(guest.portraitId); }
+      try { await portraitStore.verify(image.id); }
       catch {
-        throw new ContentError('VALIDATION_ERROR', '嘉宾头像不存在或不可读取，请重新上传。', 422, { [`guests.${index}.portraitId`]: '请选择已成功上传且仍可读取的头像。' });
+        throw new ContentError('VALIDATION_ERROR', '头像或作品图不存在或不可读取，请重新上传。', 422, { [image.field]: '请选择已成功上传且仍可读取的图片。' });
       }
-      checked.add(guest.portraitId);
+      checked.add(image.id);
     }
   }
 
@@ -100,6 +104,9 @@ export function createFileContentStore({ directory, portraitStore, initialConten
       // erase guests that are already present in this revision.
       if (state.draft.content.guests.length && (input === null || typeof input !== 'object' || !Object.hasOwn(input, 'guests'))) {
         throw new ContentError('VALIDATION_ERROR', '现有嘉宾资料不可因字段缺失被清空，请重新载入完整草稿。', 422, { guests: '请保留完整嘉宾数组；删除须明确提交修改。' });
+      }
+      if (state.draft.content.showcases?.length && (input === null || typeof input !== 'object' || !Object.hasOwn(input, 'showcases'))) {
+        throw new ContentError('VALIDATION_ERROR', '现有学生展示不可因字段缺失被清空，请重新载入完整草稿。', 422, { showcases: '请保留完整展示数组；删除须明确提交修改。' });
       }
       const content = checkedContent(input);
       if (content.eventId !== state.draft.content.eventId) throw new ContentError('VALIDATION_ERROR', '本后台只维护当前活动。', 422, { eventId: '活动 ID 不可更改。' });

@@ -7,6 +7,7 @@ import {
   validateImportedContact, validateContactOperations, validateInvitationSettings,
   validateStoredContact, createEmptyContactOperations,
 } from '../../shared/contacts-schema.mjs';
+import { validateManualContactProfile, validateContactProfileEdit, guestPrefillFromContact } from '../../shared/contact-editor.mjs';
 
 const queues = new Map();
 const PREVIEW_TTL_MS = 15 * 60 * 1000;
@@ -55,10 +56,12 @@ export function createFileContactsStore({ directory, contentStore, now = () => D
       const identities = new Set();
       for (const item of state.contacts) {
         const identity = sourceIdentity(item?.source?.key, item?.source?.rowId);
-        if (!validateStoredContact(item) || ids.has(item.id) || identities.has(identity)) throw new Error('Invalid contact');
+        if (!validateStoredContact(item) || Object.hasOwn(item, 'sourceProfile') && digest(item.sourceProfile) !== item.sourceProfileDigest
+          || ids.has(item.id) || identities.has(identity)) throw new Error('Invalid contact');
         // Older private files have no verified choice labels. Normalize them to
         // unknown without inferring permission or replacing staff operations.
         item.profile = profileFrom(validateImportedContact({ ...item.profile, sourceRowId: item.source.rowId }).value);
+        item.operations = validateContactOperations(item.operations).value;
         ids.add(item.id);
         identities.add(identity);
       }
@@ -109,6 +112,53 @@ export function createFileContactsStore({ directory, contentStore, now = () => D
 
   return {
     read: () => serial(async () => contactEnvelope(await load())),
+    createContact: (expectedRevision, profileInput, actorId) => serial(async () => {
+      const state = await load();
+      checkRevision(expectedRevision, state.revision);
+      if (state.contacts.length >= MAX_CONTACTS) throw new ContentError('CONTACT_LIMIT', '本地联系人数量已达上限。', 422);
+      const profile = validationError(validateManualContactProfile(profileInput), '手动联系人资料未通过校验。');
+      const rowId = randomBytes(16).toString('hex'), key = 'manual';
+      const timestamp = new Date(now()).toISOString();
+      const contact = {
+        id: contactId(key, rowId),
+        source: { key, rowId, digest: digest(profile), importedAt: timestamp },
+        profile, sourceProfile: structuredClone(profile), sourceProfileDigest: digest(profile), operations: createEmptyContactOperations(),
+        invitation: { generatedAt: null, settings: null, sentAt: null, channel: null, sentGenerationAt: null },
+        createdAt: timestamp, updatedAt: timestamp,
+      };
+      if (state.contacts.some(item => item.id === contact.id) || !validateStoredContact(contact)) throw new ContentError('CONTACT_STORAGE_ERROR', '手动联系人未能建立，请重新载入后核对。', 503);
+      state.contacts.push(contact);
+      state.revision += 1;
+      audit(state, 'create_contact', actorId, { contactId: contact.id, consentSource: 'staff_assertion', contactConsent: profile.contactConsent });
+      await commit(state);
+      return contactResult(state, contact);
+    }),
+    saveProfile: (id, expectedRevision, profileInput, actorId) => serial(async () => {
+      const state = await load();
+      checkRevision(expectedRevision, state.revision);
+      const contact = findContact(state, id);
+      const profile = validationError(validateContactProfileEdit(profileInput, contact.profile), '基本资料修正未通过校验。');
+      // The first correction retains the original source answers. Its stable
+      // identity/digest continue to drive reimport matching, never this patch.
+      if (!Object.hasOwn(contact, 'sourceProfile')) {
+        contact.sourceProfile = structuredClone(contact.profile);
+        contact.sourceProfileDigest = digest(contact.sourceProfile);
+      }
+      contact.profile = profile;
+      contact.updatedAt = new Date(now()).toISOString();
+      if (!validateStoredContact(contact)) throw new ContentError('CONTACT_STORAGE_ERROR', '原始来源资料未通过校验，不能覆盖。', 503);
+      state.revision += 1;
+      audit(state, 'save_contact_profile', actorId, { contactId: id });
+      await commit(state);
+      return contactResult(state, contact);
+    }),
+    guestPrefill: id => serial(async () => {
+      const state = await load();
+      const result = guestPrefillFromContact(findContact(state, id));
+      if (!result.valid && result.errors.contactConsent) throw new ContentError('CONTACT_NOT_CONSENTED', '对象未明确同意联络，不能准备嘉宾草稿。', 422);
+      if (!result.valid && result.errors.responseStatus) throw new ContentError('CONTACT_DECLINED', '对象已婉拒参加，不能准备本次嘉宾草稿。', 422);
+      return { prefill: structuredClone(validationError(result, '嘉宾预填资料未通过校验，请先核对基本资料。')), contactRevision: state.revision, responseStatus: result.responseStatus };
+    }),
     previewImport: (keyInput, rows, actorId) => serial(async () => {
       const key = sourceKey(keyInput);
       if (!Array.isArray(rows) || !rows.length || rows.length > MAX_IMPORT_ROWS) throw new ContentError('INVALID_IMPORT', '每批请提供 1–' + MAX_IMPORT_ROWS + ' 条来源资料。', 422);
@@ -188,7 +238,9 @@ export function createFileContactsStore({ directory, contentStore, now = () => D
       checkRevision(expectedRevision, state.revision);
       const contact = findContact(state, id);
       const { draft } = await contentStore.read();
-      const operations = validationError(validateContactOperations(input, draft.content), '跟进资料或安排未通过校验。');
+      const inputWithForms = input !== null && typeof input === 'object' && !Array.isArray(input) && !Object.hasOwn(input, 'participationForms')
+        ? { ...input, participationForms: contact.operations.participationForms } : input;
+      const operations = validationError(validateContactOperations(inputWithForms, draft.content), '跟进资料或安排未通过校验。');
       contact.operations = operations;
       contact.updatedAt = new Date(now()).toISOString();
       state.revision += 1;

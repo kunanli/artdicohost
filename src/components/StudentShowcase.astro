@@ -12,13 +12,19 @@ const feedback = agenda.find(item => item.id === 'student-feedback');
     <div><span class="ah-kicker">ARTDiCO HOST 学生嘉年华</span><h2 id="students-heading">把作品带到现场。</h2></div>
     <p>让大家玩到你的作品，也听见你的想法。</p>
   </div>
-  <figure class="ah-showcase-media">
+  <figure class="ah-showcase-media" data-public-showcases-concept>
     <Image src={studentShowcaseConcept} alt="学生嘉年华创作概念视觉" width={1600} height={900} fit="cover" format="webp" quality={85} loading="lazy" decoding="async" />
     <figcaption>
       <h3>下一个被玩到的想法，会是你的吗？</h3>
       <p>创作概念视觉 · 学生作品陆续公布</p>
     </figcaption>
   </figure>
+  <ul class="ah-showcase-grid" data-public-showcases aria-label="已公布的学生作品" hidden></ul>
+  <div class="ah-showcase-empty" data-public-showcases-empty hidden>
+    <span class="ah-kicker">作品现场</span>
+    <h3>下一个被玩到的想法，会是你的吗？</h3>
+    <p>学生作品陆续公布。</p>
+  </div>
   <div class="ah-showcase-timeline" aria-label="学生作品参与方式与现场时段">
     <article><span class="ah-showcase-time">现场体验</span><h3>展位试玩</h3><p>C 区 · 外围展位区</p></article>
     <article data-public-static-hours><time>{sharing?.time}</time><h3>作品分享</h3><p>A 区 · 阶梯展示厅</p></article>

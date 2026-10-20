@@ -108,16 +108,20 @@ export function createOssContentStore({ journal, portraitStore, initialContent =
   }
   async function verifyPortraits(content) {
     const verified = new Set();
-    for (const [index, guest] of content.guests.entries()) {
-      if (!guest.portraitId || verified.has(guest.portraitId)) continue;
+    const images = [
+      ...content.guests.map((guest, index) => ({ id: guest.portraitId, field: `guests.${index}.portraitId` })),
+      ...(content.showcases ?? []).map((showcase, index) => ({ id: showcase.coverId, field: `showcases.${index}.coverId` })),
+    ];
+    for (const image of images) {
+      if (!image.id || verified.has(image.id)) continue;
       if (!portraitStore || typeof portraitStore.verify !== 'function') throw new CloudContentError('PORTRAITS_UNAVAILABLE', '云端头像存储未配置。', 503);
       try {
-        const proof = await portraitStore.verify(guest.portraitId);
-        if (proof?.id !== guest.portraitId) throw unavailable();
+        const proof = await portraitStore.verify(image.id);
+        if (proof?.id !== image.id) throw unavailable();
       } catch {
-        throw new CloudContentError('VALIDATION_ERROR', '嘉宾头像不存在或不可读取，请重新上传。', 422, { [`guests.${index}.portraitId`]: '请选择已成功上传且仍可读取的头像。' });
+        throw new CloudContentError('VALIDATION_ERROR', '头像或作品图不存在或不可读取，请重新上传。', 422, { [image.field]: '请选择已成功上传且仍可读取的图片。' });
       }
-      verified.add(guest.portraitId);
+      verified.add(image.id);
     }
   }
   return {
@@ -128,6 +132,9 @@ export function createOssContentStore({ journal, portraitStore, initialContent =
       checkRevision(expectedRevision, state.draft.revision);
       if (state.draft.content.guests.length && (!record(input) || !Object.hasOwn(input, 'guests'))) {
         throw new CloudContentError('VALIDATION_ERROR', '现有嘉宾资料不可因字段缺失被清空，请重新载入完整草稿。', 422, { guests: '请保留完整嘉宾数组；删除须明确提交修改。' });
+      }
+      if (state.draft.content.showcases?.length && (!record(input) || !Object.hasOwn(input, 'showcases'))) {
+        throw new CloudContentError('VALIDATION_ERROR', '现有学生展示不可因字段缺失被清空，请重新载入完整草稿。', 422, { showcases: '请保留完整展示数组；删除须明确提交修改。' });
       }
       const content = checkedContent(input);
       if (content.eventId !== seed.eventId) throw new CloudContentError('VALIDATION_ERROR', '本后台只维护当前活动。', 422, { eventId: '活动 ID 不可更改。' });

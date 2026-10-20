@@ -16,6 +16,7 @@ const users = [
   { id: 'test-second', username: 'test-second', label: '合成另一联络账号', roles: ['outreach'], passwordHash },
   { id: 'test-editor', username: 'test-editor', label: '合成编辑账号', roles: ['editor'], passwordHash },
   { id: 'test-publisher', username: 'test-publisher', label: '合成发布账号', roles: ['publisher'], passwordHash },
+  { id: 'test-combined', username: 'test-combined', label: '合成邀约编辑账号', roles: ['outreach', 'editor'], passwordHash },
 ];
 const ORIGIN = 'http://127.0.0.1:8787';
 const TEST_ROOT = fileURLToPath(new URL('../.local-data/', import.meta.url));
@@ -103,6 +104,152 @@ test('contacts require explicit outreach role, authentication, origin and CSRF c
   assert.equal((await request(api, '/api/admin/contacts/import/preview', { method: 'POST', session, csrf: 'wrong', payload: {} })).status, 403);
   assert.equal((await request(api, '/api/admin/contacts', { session, origin: 'https://example.invalid' })).status, 403);
   assert.equal((await request(api, '/api/admin/content/publish', { method: 'POST', session, payload: { expectedRevision: 0 } })).status, 403);
+});
+
+test('outreach planning is minimal without granting access to private content drafts', async t => {
+  const { api, contentStore } = await fixture(t), session = await login(api);
+  const { draft } = await contentStore.read();
+  draft.content.sessions[0].speakerName = 'SYNTHETIC_PRIVATE_SPEAKER';
+  draft.content.sessions[0].internalNotes = 'SYNTHETIC_PRIVATE_NOTE';
+  draft.content.booths.push({ id: 'synthetic-planning-booth', code: 'C-99', zone: 'C', organization: '合成展位团队', project: '合成作品', status: 'pending', internalNotes: 'SYNTHETIC_PRIVATE_BOOTH' });
+  await contentStore.save(0, draft.content, 'test-editor');
+  const response = await request(api, '/api/admin/planning', { session });
+  assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store');
+  const planning = await response.json();
+  assert.deepEqual(planning.features, { contactImport: true, communicationsPreview: true });
+  assert.deepEqual(Object.keys(planning.content.sessions[0]).sort(), ['id', 'start', 'end', 'zone', 'title', 'status'].sort());
+  assert.deepEqual(planning.content.booths[0], { id: 'synthetic-planning-booth', code: 'C-99', zone: 'C', organization: '合成展位团队', project: '合成作品', status: 'pending' });
+  assert.equal(JSON.stringify(planning).includes('SYNTHETIC_PRIVATE'), false);
+  assert.equal((await request(api, '/api/admin/content', { session })).status, 403);
+  assert.equal((await request(api, '/api/admin/planning')).status, 401);
+  assert.equal((await request(api, '/api/admin/planning', { session: await login(api, 'test-editor') })).status, 403);
+});
+
+test('manual create and basic corrections preserve source, consent, operations and invitation across restarts', async t => {
+  const { api, directory, contentStore } = await fixture(t), session = await login(api);
+  const profile = { name: '合成手动对象', organization: '合成组织', email: 'synthetic-manual@example.invalid' };
+  const createdResponse = await request(api, '/api/admin/contacts', { method: 'POST', session, payload: { expectedRevision: 0, profile } });
+  assert.equal(createdResponse.status, 201);
+  const created = await createdResponse.json();
+  assert.equal(created.revision, 1); assert.equal(created.contact.source.key, 'manual');
+  assert.match(created.contact.source.rowId, /^[a-f0-9]{32}$/u);
+  assert.equal(created.contact.profile.contactConsent, 'unknown');
+  assert.equal(created.contact.operations.responseStatus, 'pending');
+  const sameEmail = await (await request(api, '/api/admin/contacts', { method: 'POST', session, payload: { expectedRevision: 1, profile } })).json();
+  assert.notEqual(sameEmail.contact.id, created.contact.id); // Matching personal fields never merge identities.
+  const editedResponse = await request(api, '/api/admin/contacts/' + created.contact.id + '/profile', { method: 'PUT', session, payload: { expectedRevision: 2, profile: { name: '合成修正', email: 'synthetic-corrected@example.invalid' } } });
+  assert.equal(editedResponse.status, 200);
+  const edited = await editedResponse.json();
+  assert.deepEqual(edited.contact.source, created.contact.source);
+  assert.deepEqual(edited.contact.sourceProfile, created.contact.profile);
+  assert.match(edited.contact.sourceProfileDigest, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(edited.contact.operations, created.contact.operations);
+  assert.deepEqual(edited.contact.invitation, created.contact.invitation);
+  assert.equal(edited.contact.profile.contactConsent, 'unknown');
+  const restarted = createFileContactsStore({ directory, contentStore });
+  assert.deepEqual((await restarted.read()).contacts[0], edited.contact);
+  const audit = JSON.parse(await readFile(join(directory, 'contacts.json'), 'utf8')).audit;
+  assert.equal(audit[0].action, 'create_contact'); assert.equal(audit[0].consentSource, 'staff_assertion');
+  assert.equal(audit[0].contactConsent, 'unknown'); assert.doesNotMatch(JSON.stringify(audit), /example.invalid|合成手动对象/u);
+});
+
+test('imported correction retains first original snapshot and exact source reimport remains unchanged', async t => {
+  const { api, directory } = await fixture(t), session = await login(api);
+  const imported = await importOne(api, session), original = imported.contacts[0];
+  const operations = { ...original.operations, notes: '合成跟进保留', responseStatus: 'attending' };
+  assert.equal((await request(api, '/api/admin/contacts/' + original.id, { method: 'PUT', session, payload: { expectedRevision: 1, operations } })).status, 200);
+  const first = await (await request(api, '/api/admin/contacts/' + original.id + '/profile', { method: 'PUT', session, payload: { expectedRevision: 2, profile: { name: '合成修正甲', organization: '合成修正组织' } } })).json();
+  const second = await (await request(api, '/api/admin/contacts/' + original.id + '/profile', { method: 'PUT', session, payload: { expectedRevision: 3, profile: { name: '合成修正乙' } } })).json();
+  assert.deepEqual(first.contact.sourceProfile, original.profile); assert.deepEqual(second.contact.sourceProfile, original.profile);
+  assert.deepEqual(second.contact.source, original.source); assert.deepEqual(second.contact.operations, operations);
+  const plan = await preview(api, session); assert.equal(plan.summary.unchanged, 1);
+  const before = await readFile(join(directory, 'contacts.json'), 'utf8');
+  const repeated = await (await commitImport(api, session, plan, 4)).json();
+  assert.equal(repeated.revision, 4); assert.equal(repeated.contacts[0].profile.name, '合成修正乙');
+  assert.equal(await readFile(join(directory, 'contacts.json'), 'utf8'), before);
+  for (const change of [
+    item => { item.profile.contactConsent = 'declined'; },
+    item => { item.sourceProfile.name = '合成腐败快照'; },
+    item => { item.sourceProfileDigest = 'b'.repeat(64); },
+    item => { delete item.sourceProfileDigest; },
+  ]) {
+    const corrupted = JSON.parse(before); change(corrupted.contacts[0]);
+    await writeFile(join(directory, 'contacts.json'), JSON.stringify(corrupted));
+    assert.equal((await request(api, '/api/admin/contacts', { session })).status, 503);
+  }
+});
+
+test('profile routes reject missing roles, Origin, CSRF, stale revisions and hidden-field mass assignment', async t => {
+  const { api } = await fixture(t), session = await login(api), editor = await login(api, 'test-editor');
+  const payload = { expectedRevision: 0, profile: { name: '合成新对象', contactConsent: 'consented' } };
+  for (const options of [{}, { session: editor }, { session, origin: null }, { session, origin: 'https://foreign.invalid' }, { session, csrf: 'wrong' }]) assert.ok([401, 403].includes((await request(api, '/api/admin/contacts', { method: 'POST', payload, ...options })).status));
+  const created = await (await request(api, '/api/admin/contacts', { method: 'POST', session, payload })).json();
+  assert.equal(created.contact.profile.contactConsent, 'consented');
+  const path = '/api/admin/contacts/' + created.contact.id + '/profile';
+  assert.equal((await request(api, path, { method: 'PUT', session, payload: { expectedRevision: 0, profile: { name: '合成旧版本' } } })).status, 409);
+  for (const profile of [{ name: '合成', contactConsent: 'declined' }, { name: '合成', source: {} }, { name: '合成', invitation: { sentAt: 'now' } }, { name: '合成', operations: { responseStatus: 'attending' } }]) assert.equal((await request(api, path, { method: 'PUT', session, payload: { expectedRevision: 1, profile } })).status, 422);
+  assert.equal((await request(api, '/api/admin/contacts/missing/profile', { method: 'PUT', session, payload: { expectedRevision: 1, profile: { name: '合成' } } })).status, 404);
+  const stored = await (await request(api, '/api/admin/contacts', { session })).json();
+  assert.equal(stored.revision, 1); assert.equal(stored.contacts[0].profile.contactConsent, 'consented');
+});
+
+test('guest prefill needs outreach plus editor, supports pending invitees, and never writes or grants public consent', async t => {
+  const { api, contactsStore, contentStore, directory } = await fixture(t), outreach = await login(api), combined = await login(api, 'test-combined'), editor = await login(api, 'test-editor');
+  const imported = await importOne(api, outreach), item = imported.contacts[0], path = '/api/admin/contacts/' + item.id + '/guest-prefill';
+  assert.equal((await request(api, path)).status, 401);
+  assert.equal((await request(api, path, { session: outreach })).status, 403);
+  assert.equal((await request(api, path, { session: editor })).status, 403);
+  const beforePending = await readFile(join(directory, 'contacts.json'), 'utf8');
+  const pending = await request(api, path, { session: combined });
+  assert.equal(pending.status, 200);
+  assert.deepEqual(await pending.json(), { prefill: { name: item.profile.displayName, company: item.profile.organization, ggjRole: '', contactId: item.id }, contactRevision: 1, responseStatus: 'pending' });
+  assert.equal(await readFile(join(directory, 'contacts.json'), 'utf8'), beforePending);
+  await contactsStore.saveOperations(item.id, 1, { ...item.operations, responseStatus: 'attending' }, 'test-outreach');
+  const before = await readFile(join(directory, 'contacts.json'), 'utf8'), contentBefore = await contentStore.read();
+  const response = await request(api, path, { session: combined });
+  assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await response.json(), { prefill: { name: item.profile.displayName, company: item.profile.organization, ggjRole: '', contactId: item.id }, contactRevision: 2, responseStatus: 'attending' });
+  assert.equal(await readFile(join(directory, 'contacts.json'), 'utf8'), before); assert.deepEqual(await contentStore.read(), contentBefore);
+  assert.equal((await request(api, path, { session: combined, origin: 'https://foreign.invalid' })).status, 403);
+  await contactsStore.saveOperations(item.id, 2, { ...item.operations, responseStatus: 'declined' }, 'test-outreach');
+  const declined = await request(api, path, { session: combined });
+  assert.equal(declined.status, 422); assert.equal((await declined.json()).error.code, 'CONTACT_DECLINED');
+});
+
+test('participation forms survive restarts and legacy saves without rewriting original intent or reply', async t => {
+  const { api, contactsStore, contentStore, directory } = await fixture(t), outreach = await login(api);
+  const imported = await importOne(api, outreach), original = imported.contacts[0];
+  const path = '/api/admin/contacts/' + original.id;
+  const operations = { ...original.operations, participationForms: ['speaker', 'panelist', 'booth'] };
+  const savedResponse = await request(api, path, { method: 'PUT', session: outreach, payload: { expectedRevision: 1, operations } });
+  assert.equal(savedResponse.status, 200); const saved = await savedResponse.json();
+  assert.deepEqual(saved.contact.operations.participationForms, ['speaker', 'panelist', 'booth']);
+  assert.equal(saved.contact.operations.responseStatus, 'pending');
+  assert.deepEqual(saved.contact.profile, original.profile); assert.deepEqual(saved.contact.source, original.source);
+  const restarted = createFileContactsStore({ directory, contentStore });
+  assert.deepEqual((await restarted.read()).contacts[0].operations.participationForms, operations.participationForms);
+  const legacyInput = { ...saved.contact.operations, notes: '合成旧客户端跟进' }; delete legacyInput.participationForms;
+  const legacy = await contactsStore.saveOperations(original.id, 2, legacyInput, 'test-outreach');
+  assert.deepEqual(legacy.contact.operations.participationForms, operations.participationForms);
+  const cleared = await contactsStore.saveOperations(original.id, 3, { ...legacy.contact.operations, participationForms: [] }, 'test-outreach');
+  assert.deepEqual(cleared.contact.operations.participationForms, []);
+  const persisted = JSON.parse(await readFile(join(directory, 'contacts.json'), 'utf8'));
+  delete persisted.contacts[0].operations.participationForms;
+  await writeFile(join(directory, 'contacts.json'), JSON.stringify(persisted));
+  const before = await readFile(join(directory, 'contacts.json'), 'utf8');
+  assert.deepEqual((await restarted.read()).contacts[0].operations.participationForms, []);
+  assert.equal(await readFile(join(directory, 'contacts.json'), 'utf8'), before); // Read-time compatibility is not a new write.
+});
+
+test('attending does not override unknown or declined contact permission during guest prefill', async t => {
+  const { api, contactsStore } = await fixture(t), outreach = await login(api), combined = await login(api, 'test-combined');
+  for (const [index, contactConsent] of ['unknown', 'declined'].entries()) {
+    const revision = index * 2;
+    const created = await (await request(api, '/api/admin/contacts', { method: 'POST', session: outreach, payload: { expectedRevision: revision, profile: { name: '合成未授权', organization: '合成团队', contactConsent } } })).json();
+    await contactsStore.saveOperations(created.contact.id, revision + 1, { ...created.contact.operations, responseStatus: 'attending' }, 'test-outreach');
+    const response = await request(api, '/api/admin/contacts/' + created.contact.id + '/guest-prefill', { session: combined });
+    assert.equal(response.status, 422); assert.equal((await response.json()).error.code, 'CONTACT_NOT_CONSENTED');
+  }
 });
 
 test('preview does not persist, exact source reimport is idempotent and source data survives restart privately', async (t) => {

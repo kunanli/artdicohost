@@ -1,8 +1,10 @@
 ---
 import '../styles/global.css';
 import '../styles/festival.css';
+import { publicContentEndpoint } from '../../shared/public-content-source.mjs';
 interface Props { title: string; description: string; }
 const { title, description } = Astro.props;
+const contentEndpoint = publicContentEndpoint(import.meta.env.PUBLIC_CONTENT_API_ORIGIN);
 ---
 <!doctype html>
 <html lang="zh-CN">
@@ -11,6 +13,7 @@ const { title, description } = Astro.props;
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
     <meta name="theme-color" content="#191a1c" />
+    {contentEndpoint && <meta name="artdico-content-api" content={contentEndpoint} />}
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23191a1c'/%3E%3Cpath d='M35 15a17 17 0 1 0-7 31' fill='none' stroke='%23eeede9' stroke-width='9'/%3E%3Cpath d='M29 49a17 17 0 1 0 7-31' fill='none' stroke='%238f959f' stroke-width='9'/%3E%3C/svg%3E" />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="zh_CN" />

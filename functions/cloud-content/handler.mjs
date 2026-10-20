@@ -2,6 +2,8 @@ import { equalToken } from '../content-api/auth.mjs';
 import { ContentError } from '../content-api/store.mjs';
 import { PORTRAIT_ID_PATTERN } from '../../shared/content-schema.mjs';
 import { CloudContentError } from './errors.mjs';
+import { createPreviewCommunications } from '../content-api/communications.mjs';
+import { toContactPlanningContent } from '../../shared/contact-editor.mjs';
 
 export const CLOUD_API_ORIGIN = 'https://api.artdico.host';
 export const PUBLIC_SITE_ORIGIN = 'https://artdico.host';
@@ -62,11 +64,12 @@ function requireRole(session, roles) {
 }
 
 /** Production Request boundary. The caller must supply shared, persistent implementations. */
-export function createCloudContentApi({ enabled = false, store, portraitStore, auth } = {}) {
+export function createCloudContentApi({ enabled = false, store, portraitStore, auth, contactsStore, communications = createPreviewCommunications() } = {}) {
   if (typeof enabled !== 'boolean') throw new TypeError('云端内容服务开关必须为布尔值。');
   if (enabled && (!['read', 'save', 'publish', 'recordPortraitUpload'].every(key => typeof store?.[key] === 'function')
     || !['read', 'upload'].every(key => typeof portraitStore?.[key] === 'function')
     || !['login', 'authenticate', 'logout'].every(key => typeof auth?.[key] === 'function'))) throw new TypeError('云端内容服务依赖未配置。');
+  if (contactsStore && !['read', 'createContact', 'saveProfile', 'saveOperations', 'recordGenerated', 'recordSent', 'guestPrefill'].every(key => typeof contactsStore[key] === 'function')) throw new TypeError('云端私密名单依赖未配置。');
   return async function handle(request) {
     let cors = {}, head = false;
     try {
@@ -93,11 +96,13 @@ export function createCloudContentApi({ enabled = false, store, portraitStore, a
       const publicPortrait = url.pathname.startsWith('/api/public/portraits/') ? url.pathname.slice('/api/public/portraits/'.length) : '';
       if (publicPortrait && ['GET', 'HEAD'].includes(request.method) && PORTRAIT_ID_PATTERN.test(publicPortrait)) {
         const { published } = await store.read();
-        if (!published?.content.guests.some(guest => guest.portraitId === publicPortrait && guest.status === 'confirmed' && guest.publicConsent === true)) throw new CloudContentError('NOT_FOUND', '头像不存在。', 404);
+        const inGuest = published?.content.guests.some(guest => guest.portraitId === publicPortrait && guest.status === 'confirmed' && guest.publicConsent === true);
+        const inShowcase = published?.content.showcases?.some(showcase => showcase.coverId === publicPortrait && showcase.status === 'confirmed' && showcase.responseStatus === 'attending' && showcase.publicConsent === true);
+        if (!inGuest && !inShowcase) throw new CloudContentError('NOT_FOUND', '图片不存在。', 404);
         const portrait = await portraitStore.read(publicPortrait);
         return new Response(head ? null : portrait.data, { headers: { ...SECURITY, ...cors, 'content-type': portrait.contentType, 'content-length': String(portrait.bytes) } });
       }
-      if (url.pathname === '/api/admin/environment' && request.method === 'GET') return json({ mode: 'cloud', scope: 'content-only', registration: 'closed' });
+      if (url.pathname === '/api/admin/environment' && request.method === 'GET') return json({ mode: 'cloud', scope: contactsStore ? 'content-and-outreach' : 'content-only', registration: 'closed' });
       if (url.pathname === '/api/admin/login' && request.method === 'POST') {
         const input = await inputBody(request);
         const login = await auth.login({ identifier: input.username, password: input.password });
@@ -111,6 +116,53 @@ export function createCloudContentApi({ enabled = false, store, portraitStore, a
       if (url.pathname === '/api/admin/logout' && request.method === 'POST') {
         const logout = await auth.logout(session);
         return json({ ok: true }, 200, { 'set-cookie': logout.cookie });
+      }
+      if (url.pathname === '/api/admin/planning' && request.method === 'GET') {
+        requireRole(session, ['outreach']);
+        const { draft } = await store.read();
+        return json({ content: toContactPlanningContent(draft.content), features: { contactImport: false, communicationsPreview: true } });
+      }
+      if (url.pathname === '/api/admin/communications' && request.method === 'GET') {
+        requireRole(session, ['outreach']);
+        return json(communications.readiness());
+      }
+      if (url.pathname === '/api/admin/contacts' || url.pathname.startsWith('/api/admin/contacts/')) {
+        requireRole(session, ['outreach']);
+        if (!contactsStore) throw new CloudContentError('CONTACTS_UNAVAILABLE', '私密联系人模块尚未配置。', 503);
+        if (url.pathname === '/api/admin/contacts' && request.method === 'GET') return json(await contactsStore.read());
+        if (url.pathname === '/api/admin/contacts' && request.method === 'POST') {
+          const input = await inputBody(request);
+          return json(await contactsStore.createContact(input.expectedRevision, input.profile, session.user.id), 201);
+        }
+        if (['/api/admin/contacts/import', '/api/admin/contacts/import/preview'].includes(url.pathname)) throw new CloudContentError('CONTACT_IMPORT_UNAVAILABLE', '云端 Excel 导入尚未开放，请勿上传来源文件。', 503);
+        const contactRoute = url.pathname.match(/^\/api\/admin\/contacts\/([A-Za-z0-9][A-Za-z0-9_-]{0,79})(?:\/(profile|guest-prefill|invitation\/(?:generated|sent)|(?:email|wallet)\/preview))?$/u);
+        const id = contactRoute?.[1], action = contactRoute?.[2];
+        if (id && action === 'guest-prefill' && request.method === 'GET') {
+          requireRole(session, ['editor']);
+          return json(await contactsStore.guestPrefill(id));
+        }
+        if (id && action === 'profile' && request.method === 'PUT') {
+          const input = await inputBody(request);
+          return json(await contactsStore.saveProfile(id, input.expectedRevision, input.profile, session.user.id));
+        }
+        if (id && !action && request.method === 'PUT') {
+          const input = await inputBody(request);
+          return json(await contactsStore.saveOperations(id, input.expectedRevision, input.operations, session.user.id));
+        }
+        if (id && action === 'invitation/generated' && request.method === 'POST') {
+          const input = await inputBody(request);
+          return json(await contactsStore.recordGenerated(id, input.expectedRevision, input.settings, session.user.id));
+        }
+        if (id && action === 'invitation/sent' && request.method === 'POST') {
+          const input = await inputBody(request);
+          return json(await contactsStore.recordSent(id, input.expectedRevision, input.channel, input.generatedAt, input.settings, session.user.id));
+        }
+        if (id && ['email/preview', 'wallet/preview'].includes(action) && request.method === 'POST') {
+          const input = await inputBody(request), { contacts } = await contactsStore.read();
+          const contact = contacts.find(item => item.id === id);
+          return json(action === 'email/preview' ? communications.emailPreview(contact, input.settings) : communications.walletPreview(contact, input.settings));
+        }
+        throw new CloudContentError('NOT_FOUND', '联系人接口或方法不存在。', 404);
       }
       if (url.pathname === '/api/admin/content' && request.method === 'GET') {
         requireRole(session, ['editor', 'publisher']);

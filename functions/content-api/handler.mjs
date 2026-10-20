@@ -3,6 +3,7 @@ import { parseAdminUsers, findAdminUser, publicUser, verifyPassword, equalToken 
 import { ContentError } from './store.mjs';
 import { createPreviewCommunications } from './communications.mjs';
 import { PORTRAIT_ID_PATTERN } from '../../shared/content-schema.mjs';
+import { toContactPlanningContent } from '../../shared/contact-editor.mjs';
 
 export const MAX_BODY_BYTES = 1024 * 1024;
 export const SESSION_COOKIE = 'artdico_local_session';
@@ -79,7 +80,9 @@ export function createContentApi({ store, contactsStore, portraitStore, communic
       if (publicPortrait && request.method === 'GET' && !url.search && PORTRAIT_ID_PATTERN.test(publicPortrait)) {
         if (!portraitStore) throw new ContentError('NOT_FOUND', '头像不存在。', 404);
         const { published } = await store.read();
-        if (!published?.content.guests.some(guest => guest.portraitId === publicPortrait && guest.status === 'confirmed' && guest.publicConsent === true)) throw new ContentError('NOT_FOUND', '头像不存在。', 404);
+        const inGuest = published?.content.guests.some(guest => guest.portraitId === publicPortrait && guest.status === 'confirmed' && guest.publicConsent === true);
+        const inShowcase = published?.content.showcases?.some(showcase => showcase.coverId === publicPortrait && showcase.status === 'confirmed' && showcase.responseStatus === 'attending' && showcase.publicConsent === true);
+        if (!inGuest && !inShowcase) throw new ContentError('NOT_FOUND', '图片不存在。', 404);
         const portrait = await portraitStore.read(publicPortrait);
         return new Response(portrait.data, { headers: { 'content-type': portrait.contentType, 'content-length': String(portrait.bytes), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
       }
@@ -110,6 +113,11 @@ export function createContentApi({ store, contactsStore, portraitStore, communic
         sessions.delete(session.token);
         return json({ ok: true }, 200, { 'set-cookie': cookie('', 0) });
       }
+      if (url.pathname === '/api/admin/planning' && request.method === 'GET') {
+        permit(session, 'outreach');
+        const { draft } = await store.read();
+        return json({ content: toContactPlanningContent(draft.content), features: { contactImport: true, communicationsPreview: true } });
+      }
       if (url.pathname === '/api/admin/portraits' && request.method === 'POST') {
         permit(session, 'editor');
         if (!portraitStore || !store.recordPortraitUpload) throw new ContentError('PORTRAITS_UNAVAILABLE', '本地头像存储未配置。', 503);
@@ -133,6 +141,19 @@ export function createContentApi({ store, contactsStore, portraitStore, communic
         permit(session, 'outreach');
         if (!contactsStore) throw new ContentError('CONTACTS_UNAVAILABLE', '私密联系人模块未配置。', 503);
         if (url.pathname === '/api/admin/contacts' && request.method === 'GET') return json(await contactsStore.read());
+        if (url.pathname === '/api/admin/contacts' && request.method === 'POST') {
+          const input = await body(request);
+          return json(await contactsStore.createContact(input.expectedRevision, input.profile, session.user.id), 201);
+        }
+        const profileRoute = url.pathname.match(/^\/api\/admin\/contacts\/([A-Za-z0-9][A-Za-z0-9_-]{0,79})\/(profile|guest-prefill)$/u);
+        if (profileRoute?.[2] === 'profile' && request.method === 'PUT') {
+          const input = await body(request);
+          return json(await contactsStore.saveProfile(profileRoute[1], input.expectedRevision, input.profile, session.user.id));
+        }
+        if (profileRoute?.[2] === 'guest-prefill' && request.method === 'GET') {
+          permit(session, 'editor');
+          return json(await contactsStore.guestPrefill(profileRoute[1]));
+        }
         if (url.pathname === '/api/admin/contacts/import/preview' && request.method === 'POST') {
           const input = await body(request);
           return json(await contactsStore.previewImport(input.sourceKey, input.rows, session.user.id));

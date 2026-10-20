@@ -36,5 +36,6 @@ export function createInitialContent() {
     })),
     booths: [],
     guests: [],
+    showcases: [],
   };
 }

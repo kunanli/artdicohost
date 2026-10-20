@@ -1,10 +1,12 @@
 import { publicGuestCards } from '../../shared/guest-display.mjs';
+import { publicShowcaseCards } from '../../shared/showcase-display.mjs';
+import { resolvePublicContentSource } from '../../shared/public-content-source.mjs';
 
 // Public content is a separate, read-only endpoint. Registration remains a no-I/O demo.
 const endpoint = document.querySelector('meta[name="artdico-content-api"]')?.getAttribute('content');
 if (endpoint) {
-  const target = new URL(endpoint, location.href);
-  if (target.origin === location.origin && /^https?:$/.test(target.protocol)) {
+  const target = resolvePublicContentSource(endpoint, location.origin);
+  if (target) {
     loadPublishedContent(target).catch(() => {
       const notice = document.querySelector('[data-public-content-status]');
       if (notice) notice.textContent = '暂时无法读取最新安排，以下显示网站日程。';
@@ -78,7 +80,9 @@ async function loadPublishedContent(url) {
       photo.width = 116; photo.height = 116;
       photo.alt = guest.name + '的头像'; photo.loading = 'lazy'; photo.decoding = 'async';
       photo.addEventListener('error', () => { photo.hidden = true; });
-      photo.src = guest.portraitUrl;
+      if (url.origin !== location.origin) photo.crossOrigin = 'anonymous';
+      photo.referrerPolicy = 'no-referrer';
+      photo.src = new URL(guest.portraitUrl, url.origin).href;
       portrait.append(initial, photo);
       card.append(portrait, element('h3', guest.name, 'ah-guest-name'), element('p', guest.company, 'ah-guest-company'));
       if (guest.ggjRole) card.append(element('p', guest.ggjRole, 'ah-guest-role'));
@@ -99,6 +103,9 @@ async function loadPublishedContent(url) {
     const empty = document.querySelector('[data-public-booths-empty]');
     if (empty) empty.hidden = booths.childElementCount > 0;
   }
+  // Older published revisions do not contain a showcase list. Keep the labelled
+  // concept image for those revisions; an explicit empty list has no public work.
+  if (Object.hasOwn(content, 'showcases')) renderShowcases(content, url);
   const dateText = content.event.date + (content.event.dateStatus === 'confirmed' ? '' : ' · 日期暂定');
   for (const node of document.querySelectorAll('[data-public-agenda-date]')) node.textContent = dateText;
   for (const node of document.querySelectorAll('[data-public-date-value]')) { node.textContent = content.event.date; node.setAttribute('datetime', content.event.date); }
@@ -142,4 +149,45 @@ async function loadPublishedContent(url) {
   for (const node of document.querySelectorAll('[data-public-event-venue]')) node.textContent = content.event.venue + (content.event.venueStatus === 'confirmed' ? '' : '（暂定）');
   const notice = document.querySelector('[data-public-content-status]');
   if (notice) notice.textContent = content.event.status === 'cancelled' ? '本次活动已取消。' : '讲者与主题陆续公布。';
+}
+
+function renderShowcases(content, sourceUrl) {
+  const grid = document.querySelector('[data-public-showcases]');
+  if (!grid) return;
+  const cards = publicShowcaseCards(content.showcases);
+  grid.replaceChildren();
+  for (const work of cards) {
+    const card = element('li', undefined, 'ah-showcase-card');
+    const photo = document.createElement('img');
+    photo.width = 960; photo.height = 540;
+    photo.alt = work.title + '的作品图';
+    photo.loading = 'lazy'; photo.decoding = 'async';
+    photo.referrerPolicy = 'no-referrer';
+    if (sourceUrl.origin !== location.origin) photo.crossOrigin = 'anonymous';
+    // The helper constructs this path from a content-addressed image ID, never
+    // an external URL or a private materials link from the admin record.
+    photo.src = new URL(work.coverUrl, sourceUrl.origin).href;
+    photo.addEventListener('error', () => { photo.hidden = true; });
+    const detail = element('div', undefined, 'ah-showcase-card-body');
+    detail.append(element('h3', work.title), element('p', work.teamName, 'ah-showcase-team'));
+    if (work.summary) detail.append(element('p', work.summary));
+    const arrangement = [];
+    const session = content.sessions.find(item => item.id === work.sessionId && item.status === 'scheduled');
+    if (session && /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(session.start)
+      && /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(session.end) && ['A', 'B', 'C'].includes(session.zone)) {
+      arrangement.push('作品分享 · ' + session.start + '–' + session.end + ' · ' + session.zone + ' 区');
+    }
+    const booth = content.booths.find(item => item.id === work.boothId && item.status === 'confirmed');
+    if (booth && typeof booth.code === 'string' && /^[A-Z0-9][A-Z0-9-]{0,15}$/u.test(booth.code) && booth.zone === 'C') {
+      arrangement.push('展位试玩 · C 区 ' + booth.code);
+    }
+    if (arrangement.length) detail.append(element('p', arrangement.join(' / '), 'ah-showcase-arrangement'));
+    card.append(photo, detail);
+    grid.append(card);
+  }
+  grid.hidden = cards.length === 0;
+  const concept = document.querySelector('[data-public-showcases-concept]');
+  if (concept) concept.hidden = true;
+  const empty = document.querySelector('[data-public-showcases-empty]');
+  if (empty) empty.hidden = cards.length > 0;
 }

@@ -49,7 +49,7 @@ const handle = createRegistrationApi({
 
 生产组合必须注入审核服务的 `isWithdrawn(id)`。已撤回或待删除的记录返回 withdrawn，不再重放公开收据／群码；审核读取失败或非布尔结果保持 unavailable。创建前不查询尚不存在的审核记录；已提交后才读取并决定响应。测试与未组合模块可省略此接口，但不能据此宣称生产撤回边界已接通。
 
-`service.repository.list()` 返回 `{registrations,revision}`，每项含 id、referenceCode、eventId、submittedAt、fields、consent、provenance，供已授权审核服务注入。不能挂成匿名列表。审核、内部备注及通知状态使用独立日志，不覆盖原申请。
+`service.repository.list()` 返回 `{registrations,revision}`，每项含 id、referenceCode、eventId、submittedAt、fields、consent、provenance，供已授权审核服务注入。不能挂成匿名列表。列表最多八个并行对象读取，保留索引顺序且逐一验证 hash；任何一条损坏都不返回部分名单。整次读取默认十二秒期限，可传入更短的 timeoutMs 或 AbortSignal；停止后不继续排队，至多八个已发出的对象请求按底层客户端期限结束。每次重新读取，无跨请求个人资料缓存；超过一千条或不合法的恢复索引在启动对象请求前失败。审核、内部备注及通知状态使用独立日志，不覆盖原申请。
 
 ## 工作人员从既有联系人登记
 

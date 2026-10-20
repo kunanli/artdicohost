@@ -4,6 +4,8 @@ import { CloudContentError } from '../cloud-content/errors.mjs';
 import { own, plainObject, parseTimestamp } from './policy.mjs';
 
 export const MAX_REGISTRATIONS = 1000;
+const LIST_READ_CONCURRENCY = 8;
+const LIST_TIMEOUT_MS = 12000;
 const HASH = /^[a-f0-9]{64}$/u;
 const ID = /^[A-Za-z0-9_-]{43}$/u;
 const EVENT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
@@ -43,6 +45,8 @@ export function registrationJson(value, { maxBytes = 128 * 1024 } = {}) {
 }
 
 function indexValue(value, eventId, cursor) {
+  if (!plainObject(cursor) || !Number.isSafeInteger(cursor.version) || cursor.version < 0 || !Number.isSafeInteger(cursor.position) || cursor.position < 0
+    || (cursor.version === 0 ? cursor.position !== 0 || cursor.hash !== null : cursor.position < 1 || typeof cursor.hash !== 'string' || !HASH.test(cursor.hash))) throw unavailable();
   if (value === null) {
     if (cursor?.version !== 0 || cursor.position !== 0 || cursor.hash !== null) throw unavailable();
     return { schemaVersion: 1, kind: 'registration_index', eventId, revision: 0, entries: [] };
@@ -113,14 +117,41 @@ export function createRegistrationRepository({ objects, journalFor, eventId } = 
   }
   return Object.freeze({
     prefix, readIndex, readRecord,
-    async list() {
-      const state = await readIndex();
-      const registrations = [];
-      for (const entry of state.value.entries) {
-        const value = await readRecord(entry);
-        registrations.push({ id: value.id, referenceCode: value.id, eventId: value.eventId, submittedAt: value.submittedAt, fields: value.fields, consent: value.consent, provenance: value.provenance });
-      }
-      return { registrations, revision: state.value.revision };
+    async list(options = {}) {
+      const timeoutMs = own(options, 'timeoutMs') ?? LIST_TIMEOUT_MS, signal = own(options, 'signal');
+      if (!plainObject(options) || Object.keys(options).some(key => !['timeoutMs', 'signal'].includes(key))
+        || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > LIST_TIMEOUT_MS
+        || signal !== undefined && !(signal instanceof AbortSignal)) throw unavailable();
+      let stopped = false, rejectStopped;
+      const interrupted = new Promise((_, reject) => { rejectStopped = reject; });
+      const stop = () => { stopped = true; rejectStopped(unavailable()); };
+      const timer = setTimeout(stop, timeoutMs);
+      signal?.addEventListener('abort', stop, { once: true });
+      const operation = async () => {
+        if (stopped) throw unavailable();
+        const state = await readIndex();
+        if (stopped) throw unavailable();
+        const registrations = Array(state.value.entries.length);
+        let position = 0;
+        async function worker() {
+          while (!stopped && position < state.value.entries.length) {
+            const index = position++;
+            let value;
+            try { value = await readRecord(state.value.entries[index]); }
+            catch { stopped = true; throw unavailable(); }
+            if (stopped) throw unavailable();
+            registrations[index] = { id: value.id, referenceCode: value.id, eventId: value.eventId, submittedAt: value.submittedAt, fields: value.fields, consent: value.consent, provenance: value.provenance };
+          }
+        }
+        await Promise.all(Array.from({ length: Math.min(LIST_READ_CONCURRENCY, registrations.length) }, () => worker()));
+        if (stopped) throw unavailable();
+        return { registrations, revision: state.value.revision };
+      };
+      try {
+        if (signal?.aborted) stop();
+        return await Promise.race([operation(), interrupted]);
+      } catch { throw unavailable(); }
+      finally { stopped = true; clearTimeout(timer); signal?.removeEventListener('abort', stop); }
     },
     async find(keyHash, payloadHash) {
       if (!HASH.test(keyHash ?? '') || !HASH.test(payloadHash ?? '')) throw unavailable();

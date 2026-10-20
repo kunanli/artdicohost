@@ -787,13 +787,13 @@ $('[data-guest-form]').addEventListener('change',()=>{guestFormDirty=true;});
 for (const name of ['name', 'company', 'ggjRole']) $('[data-guest-form]').elements.namedItem(name).addEventListener('input', revokeGuestConsent);
 for (const button of document.querySelectorAll('[data-close-dialog]')) button.addEventListener('click', () => {if(button.dataset.closeDialog==='guest')closeGuestEditor();else if(button.dataset.closeDialog==='showcase')closeShowcaseEditor();else if(!busy)$('[data-' + button.dataset.closeDialog + '-dialog]').close();});
 $('[data-admin-logout]').addEventListener('click', () => action(async () => {
-  if ((dirty||eventFormDirty||guestFormDirty||showcaseFormDirty) && !confirm('还有未保存的修改，确定退出并放弃这些修改吗？')) return;
+  if ((dirty||eventFormDirty||guestFormDirty||showcaseFormDirty||planner?.hasUnapplied()) && !confirm('还有未保存的修改，确定退出并放弃这些修改吗？')) return;
   await request('/api/admin/logout', { method: 'POST' });
   pendingInvitee=null;showLogin();
   announce('已退出。');
 }));
 window.addEventListener('hashchange',()=>{const booth=takeBoothLink();if(booth){pendingBooth=booth;if(user&&draft&&!busy&&!plannerBusy){pendingBooth=null;planner.open('booth',booth);}return;}const id=takeInvitee();if(!id)return;pendingInvitee=id;if(user&&draft)action(prepareInvitedGuest);});
-window.addEventListener('beforeunload', event => { if (dirty||eventFormDirty||guestFormDirty||showcaseFormDirty) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (dirty||eventFormDirty||guestFormDirty||showcaseFormDirty||planner?.hasUnapplied()) { event.preventDefault(); event.returnValue = ''; } });
 if (location.protocol === 'file:') {
   announce('这是离线界面预览。请启动本地内容服务并配置工作人员账号后登录。');
   $('[data-admin-login] button[type="submit"]').disabled = true;

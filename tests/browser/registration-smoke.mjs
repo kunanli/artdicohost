@@ -26,12 +26,13 @@ async function publicScenario(mode){
   calls.push({path:url.pathname,method:req.method(),body:req.postData(),cookie:req.headers().cookie||''});
   assert.equal(req.headers().cookie,undefined,'public request must omit staff cookie');
   if(req.method()==='OPTIONS')return route.fulfill({status:204,headers:{'access-control-allow-origin':'https://artdico.host','access-control-allow-methods':'GET,POST,OPTIONS','access-control-allow-headers':'Content-Type,Idempotency-Key,X-Registration-Token'}});
-  if(url.pathname.endsWith('/config'))return route.fulfill(json({enabled:mode!=='closed',...(mode==='closed'?{reason:'closed'}:{}),eventId:'synthetic-event',opensAt:'2026-01-01T00:00:00Z',closesAt:'2026-12-05T04:00:00Z',capacity:300,privacy:notice}));
+  if(url.pathname.endsWith('/config'))return route.fulfill(json({enabled:mode!=='closed',...(mode==='closed'?{reason:'closed'}:{}),eventId:'synthetic-event',opensAt:'2026-01-01T00:00:00Z',closesAt:'2026-12-05T04:00:00Z',capacity:300,privacy:notice,
+   admissions:{capacity:300,staffReserve:0,waitlistEnabled:true,confirmedCount:mode==='waitlist'?300:2,attendeeConfirmedCount:mode==='waitlist'?300:2,crewConfirmedCount:0,waitlistCount:0,remainingPublic:mode==='waitlist'?0:298,remainingTotal:mode==='waitlist'?0:298}}));
   if(url.pathname.endsWith('/token'))return route.fulfill(json({eventId:'synthetic-event',submissionToken:'synthetic.payload.signature',expiresAt:new Date(Date.now()+300000).toISOString()}));
   if(url.pathname.endsWith('/submit')){
    const sent=calls.filter(item=>item.path.endsWith('/submit'));
    if(mode==='retry'&&sent.length===1)return route.fulfill({...json({error:{code:'UNAVAILABLE'}}),status:503});
-   return route.fulfill({...json({status:'registered',reference_code:'r'.repeat(43),groupInvite:{platform:'wechat',qrImageUrl:'https://api.artdico.host/api/admin/registration/group-invite/synthetic-token',expiresAt:new Date(Date.now()+300000).toISOString()}}),status:201});
+   return route.fulfill({...json({status:mode==='waitlist'?'waitlisted':'registered',admissionStatus:mode==='waitlist'?'waitlisted':'confirmed',admissionKind:'attendee',admissionRevision:3,reference_code:'r'.repeat(43),groupInvite:{platform:'wechat',qrImageUrl:'https://api.artdico.host/api/admin/registration/group-invite/synthetic-token',expiresAt:new Date(Date.now()+300000).toISOString()}}),status:201});
   }
   if(url.pathname.includes('/group-invite/'))return route.fulfill({status:200,contentType:'image/png',body:png,headers:{'access-control-allow-origin':'https://artdico.host'}});
   return route.fulfill({status:404,body:''});
@@ -49,11 +50,24 @@ async function publicScenario(mode){
   await page.locator('[data-registration-preview]>summary').click();
   await page.locator('input[name=categories][value=other]').check();
   await page.locator('[data-form-step="0"] [data-next-step]').click();
-  for(const[name,value]of Object.entries({name:'合成访客',city:'合成城市',organization:'合成机构',position:'合成角色',email:'guest@example.invalid',background:'这是一段仅用于浏览器验收的合成资料。'}))await form.locator(`[name="${name}"]`).fill(value);
+  for(const[name,value]of Object.entries({name:'合成访客',city:'合成城市',email:'guest@example.invalid'}))await form.locator(`[name="${name}"]`).fill(value);
   await page.locator('[data-form-step="1"] [data-next-step]').click();
-  await form.locator('input[name=participationInterests][value=attend]').check();
+  if(mode==='speaker'){
+   await form.locator('input[name=participationInterests][value=talk]').check();
+   assert.equal(await form.locator('[data-registration-profile]').getAttribute('open'),'');
+   for(const name of ['organization','position','background'])assert.equal(await form.locator(`[name="${name}"]`).getAttribute('required'),'');
+  }else{
+   await form.locator('input[name=participationInterests][value=attend]').check();
+   for(const name of ['organization','position','background'])assert.equal(await form.locator(`[name="${name}"]`).getAttribute('required'),null);
+  }
   for(const[name,value]of Object.entries({attendance:'expected',accommodationChoice:'not_needed',cooperationInterest:'none'}))await form.locator(`[name="${name}"]`).selectOption(value);
   await form.locator('[name=consentAccepted]').check();
+  if(mode==='speaker'){
+   await page.locator('[data-submit]').click();
+   for(const name of ['organization','position','background'])assert.notEqual((await form.locator(`[data-error-for="${name}"]`).textContent()).trim(),'');
+   assert.equal(calls.filter(item=>item.path.endsWith('/submit')).length,0);
+   for(const[name,value]of Object.entries({organization:'合成机构',position:'合成角色',background:'这是一段仅用于浏览器验收的合成资料。','speaker.topic':'合成主题','speaker.summary':'合成摘要','speaker.language':'中文'}))await form.locator(`[name="${name}"]`).fill(value);
+  }
   await page.locator('[data-submit]').click();
   if(mode==='retry'){
    await page.locator('[data-submit]').filter({hasText:'再次确认报名结果'}).waitFor();
@@ -65,10 +79,21 @@ async function publicScenario(mode){
   assert.equal(await form.isVisible(),false);
   const writes=calls.filter(item=>item.path.endsWith('/submit'));
   if(mode==='retry'){assert.equal(writes.length,2);assert.equal(writes[0].body,writes[1].body);}
+  if(mode==='waitlist'){
+   assert.equal(await page.locator('[data-registration-success-heading]').textContent(),'候补登记已保存');
+   assert.match(await page.locator('[data-registration-group-status]').textContent(),/尚未确认参会名额/u);
+   assert.equal(await page.locator('[data-registration-group-image]').isVisible(),false);
+   assert.equal(await page.locator('[data-registration-group-help]').isVisible(),false);
+   assert.equal(calls.filter(item=>item.path.includes('/group-invite/')).length,0);
+  }
+  if(mode!=='speaker'){
+   const fields=JSON.parse(writes[0].body).fields;
+   for(const name of ['organization','position','background'])assert.equal(fields[name]??'','');
+  }
   await page.locator('#registration').screenshot({path:evidence+'/'+mode+'-mobile.png'});
   reports.push({scenario:mode,passed:true,writes:writes.length,publicCookieOmitted:true});
  }
  await context.close();
 }
-try{await publicScenario('closed');await publicScenario('success');await publicScenario('retry');assert.deepEqual(errors,[]);console.log(JSON.stringify({reports,pageErrors:errors},null,2));}
+try{await publicScenario('closed');await publicScenario('success');await publicScenario('retry');await publicScenario('waitlist');await publicScenario('speaker');assert.deepEqual(errors,[]);console.log(JSON.stringify({reports,pageErrors:errors},null,2));}
 finally{await browser.close();}

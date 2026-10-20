@@ -4,6 +4,7 @@ import { createRegistrationReviewStore, defaultRegistrationReview } from '../fun
 import { createRegistrationAdminApi } from '../functions/registration-admin/handler.mjs';
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
 import { parseAdminUsers } from '../functions/content-api/auth.mjs';
+import { createRegistrationService } from '../functions/registration-api/service.mjs';
 import { memoryObjects } from './helpers/cloud-memory-objects.mjs';
 
 const AT = '2026-10-20T07:00:00.000Z', EVENT = 'ggj-cn-2026';
@@ -158,4 +159,53 @@ test('staff-assisted provenance remains distinct and malformed stored consent or
     const corrupted = createRegistrationReviewStore({ eventId: EVENT, journal: { read: async () => changed, commit() {} }, loadRegistrations: async () => ({ registrations: [source], revision: 1 }) });
     await rejects(corrupted.list(), 'STORAGE_UNAVAILABLE');
   }
+});
+
+test('sparse staff intake composes with withdrawal checks and preserves unknown applicant answers through review and export', async () => {
+  const objects = memoryObjects(), journalFor = prefix => createObjectJournal({ objects, prefix });
+  let reviews;
+  const service = createRegistrationService({ objects, journalFor, capacity: 300, tokenSecret: 'PRIVATE-SYNTHETIC-REGISTRATION-COMPOSITION-KEY',
+    allowedOrigins: ['https://artdico.host'], clock: () => Date.parse(AT), isWithdrawn: id => reviews.isWithdrawn(id), policy: {
+      enabled: true, eventId: EVENT, opensAt: '2026-10-19T00:00:00+08:00', closesAt: '2026-12-05T12:00:00+08:00',
+      privacy: { version: 'synthetic-policy-v1', processor: '合成处理者', contactEmail: 'privacy@example.invalid', purpose: '合成参会登记', storageRegion: '合成地区', retention: '合成期限', rightsRequest: '通过合成邮箱申请查阅、更正及删除', sharing: '合成资料不对外分享' },
+    } });
+  reviews = createRegistrationReviewStore({ journal: journalFor('cms/v1/registration-reviews/' + EVENT), loadRegistrations: () => service.repository.list(), eventId: EVENT, clock: () => Date.parse(AT) });
+  const fields = { name: '合成意向来宾', email: 'sparse@example.invalid' };
+  const input = { sourceContactId: 'synthetic-intent', actor: { id: 'synthetic-staff', roles: ['superadmin'] }, input: { fields, permissionReference: '合成联络授权记录' } };
+  const created = await service.submitStaffRegistration(input);
+  assert.equal(created.outcome, 'created');
+  const id = created.receipt.registrationId;
+  assert.equal(await reviews.isWithdrawn(id), false);
+  const detail = await reviews.detail(id);
+  assert.deepEqual(detail.registration.fields, fields); assert.equal(detail.registration.consent.accepted, false);
+  const listed = await reviews.list();
+  assert.deepEqual(listed.registrations[0].fields, { name: fields.name });
+  assert.equal(listed.stats.byAttendance.unknown, 1); assert.equal(listed.stats.byCategory.unknown, 1);
+  assert.equal((await reviews.list({ filters: { city: '深圳' } })).total, 0);
+  assert.equal((await reviews.list({ filters: { category: 'industry' } })).total, 0);
+  const exported = await reviews.exportCsv(0, {}, 'synthetic-staff'); assert.doesNotMatch(exported.csv, /undefined|null/u);
+  const updated = editable((await reviews.detail(id)).review); updated.status = 'withdrawn';
+  await reviews.saveReview(id, 1, updated, 'synthetic-staff');
+  assert.equal(await reviews.isWithdrawn(id), true);
+  assert.equal((await service.submitStaffRegistration(input)).outcome, 'withdrawn');
+  assert.deepEqual((await reviews.detail(id)).registration.fields, fields);
+  const incompletePublic = fixture([{ ...record(A), fields }]);
+  await rejects(incompletePublic.store().list(), 'STORAGE_UNAVAILABLE');
+});
+
+test('withdrawal guard reads only validated review state and fails closed on malformed tombstones or storage errors', async () => {
+  const f = fixture(), full = f.store(); let applicationReads = 0;
+  const fast = createRegistrationReviewStore({ journal: f.journal(), eventId: EVENT, loadRegistrations: async () => { applicationReads++; throw new Error(PRIVATE); } });
+  assert.equal(await fast.isWithdrawn(A), false); assert.equal(await fast.isWithdrawn(C), false);
+  await full.requestDeletion(A, 0, 'request', 'synthetic-admin');
+  const before = f.objects.calls.length;
+  assert.equal(await fast.isWithdrawn(A), true); assert.equal(applicationReads, 0);
+  const reads = f.objects.calls.slice(before); assert.equal(reads.length, 2); assert.ok(reads.every(call => call.key.startsWith('cms/v1/registration-reviews/')));
+  const saved = await f.journal().read();
+  for (const change of [state => { state.value.reviews[A].deletionRequested.status = 'cleared'; }, state => { state.value.reviews[A].status = 'invalid'; }, state => { state.value.audit[0].metadata.reason = PRIVATE; }]) {
+    const altered = clone(saved); change(altered);
+    const corrupted = createRegistrationReviewStore({ eventId: EVENT, journal: { read: async () => altered, commit() {} }, loadRegistrations: async () => { throw new Error('must not read'); } });
+    await rejects(corrupted.isWithdrawn(A), 'STORAGE_UNAVAILABLE');
+  }
+  f.objects.setFailure('get'); await rejects(fast.isWithdrawn(A), 'STORAGE_UNAVAILABLE'); assert.equal(applicationReads, 0);
 });

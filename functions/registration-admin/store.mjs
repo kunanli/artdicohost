@@ -38,6 +38,13 @@ export function defaultRegistrationReview(registration) {
 }
 
 export function validateRegistrationReview(value, registration) {
+  const result = editableReview(value);
+  if (registration.fields.accommodationChoice !== 'needed' && result.accommodationStatus !== 'not_requested'
+    || registration.fields.accommodationChoice === 'needed' && result.accommodationStatus === 'not_requested') fail('INVALID_REVIEW');
+  return result;
+}
+
+function editableReview(value) {
   if (!ownValues(value) || Reflect.ownKeys(value).some(key => !REVIEW_KEYS.includes(key)) || REVIEW_KEYS.some(key => !Object.hasOwn(value, key))) fail('INVALID_REVIEW');
   const result = {
     status: enumValue(value.status, REVIEW_STATUSES), accommodationStatus: enumValue(value.accommodationStatus, ACCOMMODATION_STATUSES),
@@ -46,8 +53,6 @@ export function validateRegistrationReview(value, registration) {
     lastContactDate: date(value.lastContactDate), nextStep: safeText(value.nextStep, TEXT_LIMITS.nextStep), mariaReviewDate: date(value.mariaReviewDate),
     mariaFeedback: safeText(value.mariaFeedback, TEXT_LIMITS.mariaFeedback), mariaDecision: enumValue(value.mariaDecision, MARIA_DECISIONS), invitationStatus: enumValue(value.invitationStatus, INVITATION_STATUSES),
   };
-  if (registration.fields.accommodationChoice !== 'needed' && result.accommodationStatus !== 'not_requested'
-    || registration.fields.accommodationChoice === 'needed' && result.accommodationStatus === 'not_requested') fail('INVALID_REVIEW');
   return result;
 }
 
@@ -69,8 +74,8 @@ function matches(item, filters) {
   const fields = item.fields, review = item.review;
   const text = [fields.name, fields.city, fields.organization, fields.position, item.referenceCode].filter(value => typeof value === 'string').join('\n').toLocaleLowerCase('zh-CN');
   return (!filters.query || text.includes(filters.query.toLocaleLowerCase('zh-CN')))
-    && (!filters.city || fields.city.toLocaleLowerCase('zh-CN') === filters.city.toLocaleLowerCase('zh-CN'))
-    && (!filters.category || fields.categories.includes(filters.category)) && (!filters.status || review.status === filters.status)
+    && (!filters.city || (fields.city ?? '').toLocaleLowerCase('zh-CN') === filters.city.toLocaleLowerCase('zh-CN'))
+    && (!filters.category || (fields.categories ?? []).includes(filters.category)) && (!filters.status || review.status === filters.status)
     && (!filters.accommodation || review.accommodationStatus === filters.accommodation) && (!filters.attendance || fields.attendance === filters.attendance);
 }
 function stats(items) {
@@ -80,14 +85,15 @@ function stats(items) {
   for (const item of items) {
     result.byStatus[item.review.status]++;
     result.byAccommodation[item.review.accommodationStatus]++;
-    for (const category of new Set(item.fields.categories)) result.byCategory[category] = (result.byCategory[category] ?? 0) + 1;
-    result.byAttendance[item.fields.attendance] = (result.byAttendance[item.fields.attendance] ?? 0) + 1;
+    for (const category of new Set(item.fields.categories?.length ? item.fields.categories : ['unknown'])) result.byCategory[category] = (result.byCategory[category] ?? 0) + 1;
+    const attendance = item.fields.attendance || 'unknown';
+    result.byAttendance[attendance] = (result.byAttendance[attendance] ?? 0) + 1;
   }
   return result;
 }
 function summary(item) {
   const fields = {};
-  for (const key of ['name', 'city', 'organization', 'position', 'categories', 'participationInterests', 'attendance', 'accommodationChoice']) fields[key] = clone(item.fields[key]);
+  for (const key of ['name', 'city', 'organization', 'position', 'categories', 'participationInterests', 'attendance', 'accommodationChoice']) if (Object.hasOwn(item.fields, key)) fields[key] = clone(item.fields[key]);
   const provenance = item.provenance?.kind === 'staff_assisted' ? { kind: 'staff_assisted', sourceContactId: item.provenance.sourceContactId } : { kind: 'public' };
   return { id: item.id, eventId: item.eventId, submittedAt: item.submittedAt, referenceCode: item.referenceCode, fields, review: clone(item.review), provenance };
 }
@@ -100,8 +106,8 @@ function csvCell(value) {
 function csv(items, includeContact) {
   const headers = ['报名编号', '姓名', '机构', '城市', '身份', '参与意向', '到场安排', '候选审核', '住宿审核', '内部推荐', '推荐角色', 'Maria意见', '邀请状态', ...(includeContact ? ['邮箱', '微信'] : [])];
   const lines = [headers];
-  for (const item of items) lines.push([item.referenceCode, item.fields.name, item.fields.organization, item.fields.city, item.fields.categories.join(' / '),
-    item.fields.participationInterests.join(' / '), item.fields.attendance, item.review.status, item.review.accommodationStatus, item.review.recommendation,
+  for (const item of items) lines.push([item.referenceCode, item.fields.name, item.fields.organization, item.fields.city, (item.fields.categories ?? []).join(' / '),
+    (item.fields.participationInterests ?? []).join(' / '), item.fields.attendance, item.review.status, item.review.accommodationStatus, item.review.recommendation,
     item.review.proposedRole, item.review.mariaDecision, item.review.invitationStatus, ...(includeContact ? [item.fields.email, item.fields.wechat] : [])]);
   return '\uFEFF' + lines.map(line => line.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
@@ -115,44 +121,27 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
     try { return await action(); }
     catch (error) { if (isRegistrationAdminError(error)) throw error; if (error?.code === 'WRITE_CONFLICT' && error.status === 409) fail('REVISION_CONFLICT'); fail('STORAGE_UNAVAILABLE'); }
   }
-  async function snapshot() {
-    const [stored, source] = await Promise.all([journal.read(), loadRegistrations()]);
-    if (!stored || !ownValues(source) || !Array.isArray(source.registrations) || source.registrations.length > 1000 || !Number.isSafeInteger(source.revision) || source.revision < 0) fail('STORAGE_UNAVAILABLE');
+  function reviewState(stored) {
+    if (!stored) fail('STORAGE_UNAVAILABLE');
     const state = stored.value ?? initial();
     if (!ownValues(state) || Object.keys(state).sort().join(',') !== 'audit,eventId,kind,reviews,revision,schemaVersion'
       || state.schemaVersion !== 1 || state.kind !== 'registration_reviews' || state.eventId !== eventId || !Number.isSafeInteger(state.revision) || state.revision < 0
       || !ownValues(state.reviews) || !Array.isArray(state.audit) || state.audit.length > MAX_REGISTRATION_REVIEW_AUDIT || state.revision !== state.audit.length
       || stored.cursor?.version !== state.revision
       || Buffer.byteLength(JSON.stringify(state)) > 1024 * 1024) fail('STORAGE_UNAVAILABLE');
-    const seen = new Set();
-    const registrations = source.registrations.map(record => {
-      if (!ownValues(record) || typeof record.id !== 'string' || !RECORD_ID.test(record.id) || seen.has(record.id) || record.eventId !== eventId || !validTime(record.submittedAt)
-        || !ownValues(record.fields) || !['name', 'city', 'organization', 'position', 'attendance', 'accommodationChoice'].every(key => typeof record.fields[key] === 'string')
-        || !Array.isArray(record.fields.categories) || record.fields.categories.some(value => typeof value !== 'string')
-        || !Array.isArray(record.fields.participationInterests) || record.fields.participationInterests.some(value => typeof value !== 'string')
-        || !ownValues(record.provenance) || !['public', 'staff_assisted'].includes(record.provenance.kind) || !ownValues(record.consent)
-        || record.provenance.kind === 'public' && record.consent.accepted !== true
-        || record.provenance.kind === 'staff_assisted' && (record.consent.accepted !== false || typeof record.provenance.sourceContactId !== 'string' || !ID.test(record.provenance.sourceContactId))) fail('STORAGE_UNAVAILABLE');
-      seen.add(record.id);
-      const review = Object.hasOwn(state.reviews, record.id) ? state.reviews[record.id] : defaultRegistrationReview(record);
-      if (!ownValues(review) || Object.keys(review).sort().join(',') !== [...REVIEW_KEYS, 'deletionRequested'].sort().join(',')) fail('STORAGE_UNAVAILABLE');
-      try {
-        const editable = { ...review }; delete editable.deletionRequested;
-        validateRegistrationReview(editable, record);
-      } catch { fail('STORAGE_UNAVAILABLE'); }
+    for (const [id, review] of Object.entries(state.reviews)) {
+      if (!RECORD_ID.test(id) || !ownValues(review) || Object.keys(review).sort().join(',') !== [...REVIEW_KEYS, 'deletionRequested'].sort().join(',')) fail('STORAGE_UNAVAILABLE');
+      try { const editable = { ...review }; delete editable.deletionRequested; editableReview(editable); } catch { fail('STORAGE_UNAVAILABLE'); }
       if (review.deletionRequested !== null && (!ownValues(review.deletionRequested) || Object.keys(review.deletionRequested).sort().join(',') !== 'reason,requestedAt,requestedBy,status'
         || !['request', 'retention', 'duplicate', 'other'].includes(review.deletionRequested.reason) || review.deletionRequested.status !== 'pending'
         || !validTime(review.deletionRequested.requestedAt) || typeof review.deletionRequested.requestedBy !== 'string' || !ID.test(review.deletionRequested.requestedBy))) fail('STORAGE_UNAVAILABLE');
-      return { ...clone(record), referenceCode: record.referenceCode ?? record.id, review: clone(review) };
-    }).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt) || a.id.localeCompare(b.id));
-    // A missing application must not silently drop a review or be re-created from its audit.
-    if (Object.keys(state.reviews).some(id => !RECORD_ID.test(id) || !seen.has(id))) fail('STORAGE_UNAVAILABLE');
+    }
     let previousAt = '';
     for (let index = 0; index < state.audit.length; index++) {
       const entry = state.audit[index];
       if (!ownValues(entry) || Object.keys(entry).sort().join(',') !== 'action,actor,at,metadata,registrationId,revision'
         || typeof entry.actor !== 'string' || !ID.test(entry.actor) || !validTime(entry.at) || entry.at < previousAt || entry.revision !== index + 1 || !['update_review', 'export', 'deletion_requested'].includes(entry.action)
-        || entry.registrationId !== null && !seen.has(entry.registrationId) || !ownValues(entry.metadata)) fail('STORAGE_UNAVAILABLE');
+        || entry.registrationId !== null && !Object.hasOwn(state.reviews, entry.registrationId) || !ownValues(entry.metadata)) fail('STORAGE_UNAVAILABLE');
       const meta = entry.metadata;
       if (entry.action === 'update_review' && (Object.keys(meta).join(',') !== 'changedFields' || !Array.isArray(meta.changedFields) || meta.changedFields.some(key => !REVIEW_KEYS.includes(key)) || new Set(meta.changedFields).size !== meta.changedFields.length)
         || entry.action === 'export' && (entry.registrationId !== null || Object.keys(meta).sort().join(',') !== 'contactIncluded,count,filterNames' || !Number.isSafeInteger(meta.count) || meta.count < 0 || meta.count > 1000 || typeof meta.contactIncluded !== 'boolean'
@@ -160,6 +149,32 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
         || entry.action === 'deletion_requested' && (Object.keys(meta).join(',') !== 'reason' || !['request', 'retention', 'duplicate', 'other'].includes(meta.reason))) fail('STORAGE_UNAVAILABLE');
       previousAt = entry.at;
     }
+    return state;
+  }
+  async function snapshot() {
+    const [stored, source] = await Promise.all([journal.read(), loadRegistrations()]);
+    if (!ownValues(source) || !Array.isArray(source.registrations) || source.registrations.length > 1000 || !Number.isSafeInteger(source.revision) || source.revision < 0) fail('STORAGE_UNAVAILABLE');
+    const state = reviewState(stored);
+    const seen = new Set();
+    const registrations = source.registrations.map(record => {
+      if (!ownValues(record) || typeof record.id !== 'string' || !RECORD_ID.test(record.id) || seen.has(record.id) || record.eventId !== eventId || !validTime(record.submittedAt)
+        || !ownValues(record.fields) || typeof record.fields.name !== 'string'
+        || !ownValues(record.provenance) || !['public', 'staff_assisted'].includes(record.provenance.kind) || !ownValues(record.consent)
+        || record.provenance.kind === 'public' && record.consent.accepted !== true
+        || record.provenance.kind === 'staff_assisted' && (record.consent.accepted !== false || typeof record.provenance.sourceContactId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(record.provenance.sourceContactId))) fail('STORAGE_UNAVAILABLE');
+      const full = record.provenance.kind === 'public';
+      if (['city', 'organization', 'position', 'attendance', 'accommodationChoice'].some(key => (full || Object.hasOwn(record.fields, key)) && typeof record.fields[key] !== 'string')
+        || ['categories', 'participationInterests'].some(key => (full || Object.hasOwn(record.fields, key)) && (!Array.isArray(record.fields[key]) || record.fields[key].some(value => typeof value !== 'string')))) fail('STORAGE_UNAVAILABLE');
+      seen.add(record.id);
+      const review = Object.hasOwn(state.reviews, record.id) ? state.reviews[record.id] : defaultRegistrationReview(record);
+      try {
+        const editable = { ...review }; delete editable.deletionRequested;
+        validateRegistrationReview(editable, record);
+      } catch { fail('STORAGE_UNAVAILABLE'); }
+      return { ...clone(record), referenceCode: record.referenceCode ?? record.id, review: clone(review) };
+    }).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt) || a.id.localeCompare(b.id));
+    // A missing application must not silently drop a review or be re-created from its audit.
+    if (Object.keys(state.reviews).some(id => !RECORD_ID.test(id) || !seen.has(id))) fail('STORAGE_UNAVAILABLE');
     return { state: clone(state), cursor: stored.cursor, registrations, applicationRevision: source.revision };
   }
   async function mutation(expectedRevision, actor, action) {
@@ -178,6 +193,13 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
     return { ...result.value, revision: next.revision };
   }
   return Object.freeze({
+    /** Call only after a committed receipt or signed ID is proven; never reads the application repository. */
+    async isWithdrawn(id) { return guarded(async () => {
+      if (typeof id !== 'string' || !RECORD_ID.test(id)) fail('INVALID_REQUEST');
+      const state = reviewState(await journal.read());
+      if (!Object.hasOwn(state.reviews, id)) return false;
+      return state.reviews[id].status === 'withdrawn' || state.reviews[id].deletionRequested !== null;
+    }); },
     async list({ filters: input = {}, cursor = '', limit = 25 } = {}) { return guarded(async () => {
       const filters = registrationFilters(input);
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 || typeof cursor !== 'string' || cursor.length > 1024) fail('INVALID_REQUEST');

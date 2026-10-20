@@ -1,0 +1,36 @@
+name: Read-only Hong Kong FC observation
+
+on:
+  push:
+    branches: [diag/fc-observe-61ff]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fc-read-only-observation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  observe:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/diag/fc-observe-61ff' && github.repository == 'kunanli/artdicohost' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check out this exact diagnostic source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up the pinned Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.19.0"
+          package-manager-cache: false
+      - name: Observe the existing function without changing any resource
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ARTDICO_FC_ACCOUNT_ID: ${{ vars.ARTDICO_FC_ACCOUNT_ID }}
+          FC_ACCESS_KEY_ID: ${{ secrets.ARTDICO_OSS_ACCESS_KEY_ID }}
+          FC_ACCESS_KEY_SECRET: ${{ secrets.ARTDICO_OSS_ACCESS_KEY_SECRET }}
+        run: node scripts/observe-fc.mjs

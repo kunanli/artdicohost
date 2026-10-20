@@ -3,10 +3,10 @@ import { recruitment } from '../config/event.mjs';
 import Icon from './Icon.astro';
 ---
 <section class="ah-recruitment ah-section" id="recruitment" aria-labelledby="recruitment-heading">
-  <div class="ah-section-heading"><h2 id="recruitment-heading">一起创造这个现场。</h2><p>讲者与合作伙伴招募中。</p></div>
+  <div class="ah-section-heading"><h2 id="recruitment-heading">把经验带来，让创作相遇。</h2><p>分享实践，也为下一次 GGJ 做准备。</p></div>
   <div class="ah-recruitment-grid">
     <article id="speaker-recruitment"><span class="ah-feature-number">讲者招募</span><Icon name="share" /><h3>{recruitment.speakers.title}</h3><p>游戏创作、站点运营、技术或教育实践，欢迎带来你的主题。</p><a class="ah-primary" href="#registration" data-recruit="speaker">{recruitment.speakers.ctaLabel}<span aria-hidden="true">↗</span></a></article>
-    <article id="sponsor-recruitment"><span class="ah-feature-number">赞助合作</span><Icon name="arrow" /><h3>{recruitment.sponsors.title}</h3><p>工具、物资、资金、导师与社群资源，一起支持创作者。</p><a class="ah-primary" href="#registration" data-recruit="sponsor">{recruitment.sponsors.ctaLabel}<span aria-hidden="true">↗</span></a></article>
+    <article id="site-guide"><span class="ah-feature-number">组织站点</span><Icon name="arrow" /><h3>{recruitment.sites.title}</h3><p>{recruitment.sites.description}</p><a class="ah-primary" href={recruitment.sites.guideUrl} target="_blank" rel="noopener noreferrer">{recruitment.sites.ctaLabel}<span aria-hidden="true">↗</span></a><a class="ah-text-action" href="#registration" data-recruit="site">了解现场站点咨询 <span aria-hidden="true">↗</span></a></article>
   </div>
-  <details class="ah-highlights-detail"><summary>提案与合作说明 <span aria-hidden="true">＋</span></summary><p class="ah-recruitment-note">{recruitment.speakers.notice}</p><p class="ah-recruitment-note">{recruitment.sponsors.notice}</p></details>
+  <details class="ah-highlights-detail"><summary>讲者提案与站点说明 <span aria-hidden="true">＋</span></summary><p class="ah-recruitment-note">{recruitment.speakers.notice}</p><p class="ah-recruitment-note">{recruitment.sites.notice}</p></details>
 </section>

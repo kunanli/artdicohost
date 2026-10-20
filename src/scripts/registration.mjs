@@ -1,9 +1,9 @@
 import {
-  registrationSchema,
   getActiveBranches,
   validateRegistration,
   completeMockRegistration,
 } from '../../shared/registration-schema.mjs';
+import { publicRegistrationSchema as registrationSchema, getRecruitmentChoices } from '../../shared/public-registration-schema.mjs';
 
 const multipleFields = registrationSchema.baseFields.filter(field => field.type === 'checkbox-group').map(field => field.name);
 
@@ -135,15 +135,16 @@ for (const form of document.querySelectorAll('[data-registration-form]')) {
   form.addEventListener('change', syncBranches);
   for (const link of document.querySelectorAll('[data-recruit]')) {
     link.addEventListener('click', () => {
+      const choices = getRecruitmentChoices(link.dataset.recruit);
+      if (!choices) return;
       const preview = form.closest('[data-registration-preview]');
       if (preview instanceof HTMLDetailsElement) preview.open = true;
       if (step === 3) form.reset();
-      const choices = link.dataset.recruit === 'speaker'
-        ? { participationInterests: 'talk' }
-        : { categories: 'sponsor', participationInterests: 'sponsorship' };
-      for (const [name, value] of Object.entries(choices)) {
-        const input = [...form.querySelectorAll('input')].find(el => el.name === name && el.value === value);
-        if (input) input.checked = true;
+      for (const [name, values] of Object.entries(choices)) {
+        for (const value of values) {
+          const input = [...form.querySelectorAll('input')].find(el => el.name === name && el.value === value);
+          if (input) input.checked = true;
+        }
       }
       clearErrors(); syncBranches(); showStep(0, false);
     });

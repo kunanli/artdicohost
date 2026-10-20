@@ -1,6 +1,6 @@
 ---
 import { eventConfig } from '../config/event.mjs';
-import { registrationSchema } from '../../shared/registration-schema.mjs';
+import { publicRegistrationSchema as registrationSchema } from '../../shared/public-registration-schema.mjs';
 import FormField from './FormField.astro';
 import BranchFields from './BranchFields.astro';
 import RegistrationSuccess from './RegistrationSuccess.astro';
@@ -10,14 +10,14 @@ const field = (name: string) => {
   if (!definition) throw new Error(`Missing form field: ${name}`);
   return definition;
 };
-const identitySublabels: Record<string,string> = {so:'SITE ORGANIZER',ro:'REGIONAL ORGANIZER',new_site:'START A SITE',industry:'MAKE & PLAY',education:'LEARN & GROW',partner:'CONNECT & BUILD',sponsor:'SUPPORT CREATIVITY',other:'JUST CURIOUS'};
+const identitySublabels: Record<string,string> = {so:'SITE ORGANIZER',ro:'REGIONAL ORGANIZER',new_site:'START A SITE',industry:'MAKE & PLAY',education:'LEARN & GROW',partner:'COMMUNITY',other:'JUST CURIOUS'};
 const stayDate = (value: string) => { const [, month, day] = value.split('-'); return `${Number(month)} 月 ${Number(day)} 日`; };
 ---
 <section class="ah-registration ah-section" id="registration" aria-labelledby="registration-heading">
   <div class="ah-register-intro">
     <span class="ah-kicker">JOIN THE DAY</span>
     <h2 id="registration-heading">一起参与这一天。</h2>
-    <p>活动报名已开放，欢迎组织者、学生、游戏创作者与合作伙伴。本页表单仅供流程预览，不发送或保存资料。</p>
+    <p>活动报名已开放，欢迎组织者、学生、游戏创作者与社群伙伴。本页表单仅供流程预览，不发送或保存资料。</p>
     <details class="ah-stay-details"><summary>外地嘉宾住宿支持</summary><p>{eventConfig.accommodation.notice}入住 / 离店暂定为 {stayDate(eventConfig.accommodation.checkIn)}至 {stayDate(eventConfig.accommodation.checkOut)}。</p></details>
   </div>
   <details class="ah-registration-preview" data-registration-preview>
@@ -51,7 +51,7 @@ const stayDate = (value: string) => { const [, month, day] = value.split('-'); r
       </section>
       <section data-form-step="2" hidden aria-labelledby="interests-heading">
         <h3 id="interests-heading" tabindex="-1">你期待怎样的交流？</h3>
-        <p class="ah-form-hint">普通参会直接报名。演讲、展位、赞助合作与住宿安排另行沟通。</p>
+        <p class="ah-form-hint">普通参会直接报名。讲者、展位、站点咨询与住宿安排另行沟通。</p>
         <FormField field={field('participationInterests')} />
         <BranchFields name="speaker" />
         <BranchFields name="exhibitor" />

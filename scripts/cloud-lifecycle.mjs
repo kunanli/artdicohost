@@ -12,7 +12,7 @@ import { deployCloudContent, requireCloudContentDeploymentContext } from './depl
 import { verifyCloudContentCandidate } from './verify-cloud-content-package.mjs';
 import { CANDIDATE_KIND, CANDIDATE_ARCHIVE } from './cloud-content-package.mjs';
 import { assertFcCodeRequestFits } from './fc-upload-limits.mjs';
-import { approvedRegistrationPolicy } from './approved-registration-policy.mjs';
+import { approvedRegistrationPolicy, approvedAdmissionDefaults } from './approved-registration-policy.mjs';
 import { parseAdminUsers, verifyPassword } from '../functions/content-api/auth.mjs';
 
 const STAGES = ['object-readback', 'atomic-conflict', 'login-permissions', 'private-contacts', 'content-portrait', 'lost-ack', 'registration-intake', 'registration-review', 'session-revocation', 'shared-login-budget'];
@@ -106,6 +106,14 @@ export async function verifyPublicRegistrationAlias(fetchFn, policy, externalSig
     if (value?.enabled !== true || value.eventId !== policy.eventId || value.capacity !== policy.capacity
       || value.opensAt !== new Date(policy.opensAt).toISOString() || value.closesAt !== new Date(policy.closesAt).toISOString()
       || !isDeepStrictEqual(value.privacy, policy.privacy)) throw failure('PUBLIC_REGISTRATION_NOT_VERIFIED');
+    if (value.admissions !== undefined) {
+      const summary = value.admissions;
+      const counts = ['confirmedCount', 'attendeeConfirmedCount', 'crewConfirmedCount', 'waitlistCount', 'remainingPublic', 'remainingTotal'];
+      if (!plain(summary) || Object.keys(summary).sort().join(',') !== ['capacity', 'staffReserve', 'waitlistEnabled', ...counts].sort().join(',')
+        || summary.capacity !== policy.capacity || typeof summary.waitlistEnabled !== 'boolean'
+        || !Number.isSafeInteger(summary.staffReserve) || summary.staffReserve < 0 || summary.staffReserve > policy.capacity
+        || counts.some(key => !Number.isSafeInteger(summary[key]) || summary[key] < 0 || summary[key] > (key === 'waitlistCount' ? 1000 : policy.capacity))) throw failure('PUBLIC_REGISTRATION_NOT_VERIFIED');
+    }
     return true;
   } catch { throw failure('PUBLIC_REGISTRATION_NOT_VERIFIED'); }
   finally {
@@ -242,7 +250,7 @@ export async function deployCloudLifecycle(options = {}) {
         const variables = configuredSnapshot.variables;
         const owned = ['NODE_ENV', CONTENT_KEY, 'ARTDICO_CONTENT_API_ORIGIN', 'ARTDICO_PUBLIC_SITE_ORIGIN', 'ARTDICO_CONTENT_BUCKET',
           'ARTDICO_CONTENT_REGION', 'ADMIN_USERS_JSON', 'ARTDICO_REGISTRATION_TOKEN_SECRET', 'ARTDICO_REGISTRATION_POLICY_JSON',
-          'ARTDICO_REGISTRATION_CAPACITY', 'ARTDICO_REGISTRATION_ENABLED'];
+          'ARTDICO_REGISTRATION_CAPACITY', 'ARTDICO_REGISTRATION_ENABLED', 'ARTDICO_REGISTRATION_WAITLIST_ENABLED'];
         const unrelated = value => Object.fromEntries(Object.entries(value).filter(([key]) => !owned.includes(key)));
         if (!isDeepStrictEqual(unrelated(beforeSetup.variables), unrelated(variables))) throw failure('UNEXPECTED_ENVIRONMENT_CHANGE');
         const enabled = env.ARTDICO_REGISTRATION_SETUP_ENABLED === 'true';
@@ -257,6 +265,7 @@ export async function deployCloudLifecycle(options = {}) {
           || beforeSetup.variables.ARTDICO_REGISTRATION_TOKEN_SECRET !== undefined && secret !== beforeSetup.variables.ARTDICO_REGISTRATION_TOKEN_SECRET
           || !isDeepStrictEqual(JSON.parse(variables.ARTDICO_REGISTRATION_POLICY_JSON), policy)
           || variables.ARTDICO_REGISTRATION_CAPACITY !== String(policy.capacity) || variables.ARTDICO_REGISTRATION_ENABLED !== String(enabled)
+          || variables.ARTDICO_REGISTRATION_WAITLIST_ENABLED !== String(approvedAdmissionDefaults({ enabled }).waitlistEnabled)
           || variables.NODE_ENV !== 'production' || variables.ARTDICO_CONTENT_API_ORIGIN !== 'https://api.artdico.host'
           || variables.ARTDICO_PUBLIC_SITE_ORIGIN !== 'https://artdico.host' || variables.ARTDICO_CONTENT_BUCKET !== 'artdicohost-data-hk'
           || variables.ARTDICO_CONTENT_REGION !== 'cn-hongkong') throw failure('CLOSED_CONFIGURATION_NOT_VERIFIED');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { approvedRegistrationPolicy } from '../scripts/approved-registration-policy.mjs';
+import { approvedRegistrationPolicy, approvedAdmissionDefaults } from '../scripts/approved-registration-policy.mjs';
 import { validateRegistrationPolicy } from '../functions/registration-api/policy.mjs';
 
 test('approved policy uses the confirmed noon cutoff, event capacity and protected contact', () => {
@@ -11,4 +11,6 @@ test('approved policy uses the confirmed noon cutoff, event capacity and protect
   assert.equal(validateRegistrationPolicy(policy, { now: '2026-12-05T04:00:00Z' }).valid, false);
   for (const contactEmail of [undefined, '', 'synthetic@example.invalid', 'bad\n@artdico.co']) assert.throws(() => approvedRegistrationPolicy({ contactEmail }));
   assert.equal(approvedRegistrationPolicy({ contactEmail: 'synthetic@artdico.co', enabled: false }).enabled, false);
+  assert.deepEqual(approvedAdmissionDefaults(), { staffReserve: 0, waitlistEnabled: true });
+  assert.deepEqual(approvedAdmissionDefaults({ enabled: false }), { staffReserve: 0, waitlistEnabled: false });
 });

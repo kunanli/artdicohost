@@ -237,6 +237,17 @@ test('waitlisted durable receipts retain creation/replay semantics while suppres
   }
 });
 
+test('public admissions metadata projects only bounded aggregate counts and never people or teams', async () => {
+  const admissions = { capacity: 3, staffReserve: 1, waitlistEnabled: true, confirmedCount: 2, attendeeConfirmedCount: 1, crewConfirmedCount: 1, waitlistCount: 4, remainingPublic: 1, remainingTotal: 1 };
+  const metadata = { ...policy(), capacity: 3, admissions: { ...admissions, people: ['PRIVATE-SYNTHETIC'], teams: ['PRIVATE-SYNTHETIC'] } };
+  const handle = createRegistrationApi({ allowedOrigins: [origin], submissionService: { metadata: async () => metadata } });
+  const response = await handle(request({ url: endpoint.replace('/api/registrations', '/api/registration/config'), method: 'GET' }));
+  assert.equal(response.status, 200); const value = await response.json();
+  assert.deepEqual(value.admissions, admissions); assert.doesNotMatch(JSON.stringify(value), /PRIVATE-SYNTHETIC|people|teams/u);
+  metadata.admissions.confirmedCount = 'PRIVATE-SYNTHETIC';
+  await error(await handle(request({ url: endpoint.replace('/api/registrations', '/api/registration/config'), method: 'GET' })), 503, 'UNAVAILABLE');
+});
+
 test('committed creation and saved retries project only the current unexpired service invite', async t => {
   const stored = await fileService(t);
   let currentInvite = invite({ privateContact: 'PRIVATE-SYNTHETIC', instructionsHtml: '<b>PRIVATE-SYNTHETIC</b>' });

@@ -416,3 +416,19 @@ CSV 和 Excel 导出先通过事件授权、字段白名单及用途检查，在
 - [部署工作流](https://github.com/kunanli/igda_shenzhen/blob/954c792aa3c20e8dd5870b7fa5dbedf4780ef2b1/.github/workflows/deploy.yml)、[FC 配置](https://github.com/kunanli/igda_shenzhen/blob/954c792aa3c20e8dd5870b7fa5dbedf4780ef2b1/s.yaml)、[部署脚本](https://github.com/kunanli/igda_shenzhen/blob/954c792aa3c20e8dd5870b7fa5dbedf4780ef2b1/scripts/deploy-api.mjs)
 - [Node.js 发布与支持计划](https://github.com/nodejs/Release/blob/main/README.md)、[FC 内置运行时](https://www.alibabacloud.com/help/en/functioncompute/runtime-intro)、[CreateFunction API](https://api.alibabacloud.com/document/FC/2023-03-30/CreateFunction)、[FC 自定义运行时](https://www.alibabacloud.com/help/en/functioncompute/custom-runtime/)
 - [OSS PutObject](https://www.alibabacloud.com/help/en/oss/developer-reference/putobject)、[OSS ListObjectsV2](https://www.alibabacloud.com/help/en/oss/developer-reference/listobjectsv2)
+
+## 2026-10-20：籌備工作流程第二階段（用戶已授權實作）
+
+正式功能基準 main `2d84d8b74ece04cc4cc9fa95e6847abf06de116c`，十項實際 OSS／589 測試／13 組瀏覽器／18 個正式 HTTPS 物件均已驗證；本階段帶入已保存的發布證據文件，再完成以下五項。
+
+1. 統一每日待辦及人員進度，修正新版報名邀請未計入舊發出統計；保持人工發出、服務商接受及實際回覆分開，不虛報送達。
+2. 已核對對象可批次準備個人邀請 PNG ZIP 及逐人結果，預檢同意、有效報名與資料；下載不視為發出，不新增自動發信。私密下載與原件不進公開桶或 Git。
+3. 既有 15 格展位總覽支援直接編輯與人員配置，場次時間軸支援分配；保留草稿／私密安排／公開發布的明確界線，保存前顯示衝突及缺資料。
+4. 一般參會減少必填，講者／展商保留所需詳情；前後端共用規則，既有紀錄與同一 payload 幂等重播保持有效。
+5. 實際每人一筆與團隊成員關聯、工作人員預留額度（預設 0，由管理員自行設定）、滿額候補及取消釋出。300 是所有人員的共同上限；團隊預估人數不冒充已登記成員，不替他人偽造網站同意。名額的 CAS 判斷、候補轉正、重試與撤回需可稽核且不超賣；舊索引只讀相容，遷移不覆寫既有不可變紀錄。
+
+架構仍為 Astro＋現有香港 OSS／FC，不購買新服務、不擴充 IAM、不改 DNS／trigger、不共享 IGDA 身份或資料。新增資料限定原有 cms/v1 私密範圍；角色、準確 Origin、CSRF、未知 ACK 保護及恢復清單必須一併更新。估計資源僅增加私密小型 journal／靜態程式，無新增常駐服務。
+
+分工：報名名額服務（registration_service）；精簡表單與名額管理介面（registration_review）；人員進度／待辦及 contacts 整合（admin_completion）；批次邀請與 ZIP（docs_recovery）；總覽直接編排（reference_review）；HTTP／runtime／受控設定／包與合成驗收（cloud_acceptance）；主 agent 負責契約協調、集成、回歸、文件、PR 與實際發布。
+
+各工作使用獨立 worktree，主分支逐項集成。階段完成條件：有意義的並發／撤回／幂等／角色與統計測試、前後端與包檢查、手機及桌面端到端、準確 main 的實際隔離 OSS 驗收、公開網域逐檔驗證。真實 39 行名單及外部發信不作測試，不宣稱已代入或送達。新增候補及額度語義須在實作前由服務與 UI 維護者確認契約，日誌保留更新及復原方法。

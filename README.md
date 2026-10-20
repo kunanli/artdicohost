@@ -15,6 +15,7 @@
 - `docs/03-agenda.md`：三场地日程
 - `docs/04-form.md`：报名字段、分支与提示语
 - `docs/05-admin.md`：后台审核与 Maria 导出
+- `docs/backend-readiness.md`：后台账号、编辑及报名统计的本机实现和云端待办
 - `docs/06-architecture-data.md`：存储结构及 API 契约
 - `docs/07-security-privacy.md`：隐私和安全红线
 - `docs/08-deployment.md`：部署环境和上线清单

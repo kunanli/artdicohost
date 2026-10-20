@@ -12,13 +12,14 @@ import Registration from '../components/Registration.astro';
 import VenueFaq from '../components/VenueFaq.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import { eventConfig } from '../config/event.mjs';
+import '../styles/section-blocks.css';
 ---
 <SiteLayout title={eventConfig.seo.title} description={eventConfig.seo.description}>
-  <div id="artdico-host" class="ah-product ah-creative ah-festival">
+  <div id="artdico-host" class="ah-product ah-creative ah-festival ah-section-blocks">
     <SiteHeader />
     <main id="main-content">
       <Hero />
-      <div class="ah-page-content"><About /><Guests /><Agenda /><StudentShowcase /><Booths /><Recruitment /><Registration /><VenueFaq /></div>
+      <div class="ah-page-content"><About /><Guests /><Booths /><StudentShowcase /><Agenda /><Recruitment /><Registration /><VenueFaq /></div>
     </main>
     <SiteFooter />
   </div>

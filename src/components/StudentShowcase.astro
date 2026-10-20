@@ -1,24 +1,32 @@
 ---
 import { agenda } from '../config/event.mjs';
+import { Image } from 'astro:assets';
+import studentShowcaseConcept from '../assets/student-showcase-concept.png';
+import '../styles/students-showcase.css';
 
 const sharing = agenda.find(item => item.id === 'student-showcase');
 const feedback = agenda.find(item => item.id === 'student-feedback');
 ---
-<section class="ah-students ah-section" id="students" aria-labelledby="students-heading">
+<section class="ah-students ah-students-showcase ah-section" id="students" aria-labelledby="students-heading">
   <div class="ah-section-heading">
     <div><span class="ah-kicker">ARTDiCO HOST 学生嘉年华</span><h2 id="students-heading">把作品带到现场。</h2></div>
     <p>让大家玩到你的作品，也听见你的想法。</p>
   </div>
-  <div class="ah-student-layout">
-    <p class="ah-student-count" aria-label="计划约8组学生作品"><span>计划约</span><strong>8</strong><span>组学生作品</span></p>
-    <div class="ah-student-formats">
-      <article><span class="ah-feature-number">01</span><h3>展位试玩</h3><p>带上可体验的作品。</p><span class="ah-student-time">C 区 · 展位另行分配</span></article>
-      <article><span class="ah-feature-number">02</span><h3>作品分享</h3><p>讲讲创作背后的想法。</p><span class="ah-student-time" data-public-static-hours>{sharing?.time}</span></article>
-      <article><span class="ah-feature-number">03</span><h3>现场反馈</h3><p>边玩边聊，收获新建议。</p><span class="ah-student-time" data-public-static-hours>{feedback?.time}</span></article>
-    </div>
+  <figure class="ah-showcase-media">
+    <Image src={studentShowcaseConcept} alt="学生嘉年华创作概念视觉" width={1600} height={900} fit="cover" format="webp" quality={85} loading="lazy" decoding="async" />
+    <figcaption>
+      <h3>下一个被玩到的想法，会是你的吗？</h3>
+      <p>创作概念视觉 · 学生作品陆续公布</p>
+    </figcaption>
+  </figure>
+  <div class="ah-showcase-timeline" aria-label="学生作品参与方式与现场时段">
+    <article><span class="ah-showcase-time">现场体验</span><h3>展位试玩</h3><p>C 区 · 外围展位区</p></article>
+    <article data-public-static-hours><time>{sharing?.time}</time><h3>作品分享</h3><p>A 区 · 阶梯展示厅</p></article>
+    <article data-public-static-hours><time>{feedback?.time}</time><h3>试玩与反馈</h3><p>C 区 · 外围展位区</p></article>
   </div>
   <div class="ah-student-actions">
     <a class="ah-primary" href="#registration" data-recruit="student">学员作品展示与分享申请 <span aria-hidden="true">↗</span></a>
+    <a href="#agenda" class="ah-text-action">查看全天日程 <span aria-hidden="true">↗</span></a>
     <small>入选与时段另行确认 · 本页表单仅供预览，不发送或保存资料</small>
   </div>
 </section>

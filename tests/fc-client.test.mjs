@@ -48,7 +48,7 @@ test('ACS3 GetFunction matches an independently computed Python HMAC fixture and
   assert.ok(settings.signal instanceof AbortSignal);
 });
 
-test('STS participates in ACS3 signing and fixed health v1 signing, including the empty-query trailing newline', async () => {
+test('STS uses separate management and HTTP trigger ACS3 contracts with an official SDK health vector', async () => {
   const { client, calls } = fakeClient(url => url.startsWith(FC_API_ENDPOINT) ? json({ httpTrigger: { urlInternet: triggerUrl } }) : json({ status: 'ok', scope: 'process-only' }), { credentials: { ...credentials, accessKeyId: 'STS.SYNTHETICKEY', securityToken: 'synthetic-security-token' } });
   await client.getFunction();
   assert.equal(calls[0].settings.headers.authorization, 'ACS3-HMAC-SHA256 Credential=STS.SYNTHETICKEY,SignedHeaders=content-type;host;x-acs-action;x-acs-content-sha256;x-acs-date;x-acs-security-token;x-acs-signature-nonce;x-acs-version,Signature=2669e50eb9531f9d2db8463a02bba50a99cfa992253b68859b188f8bd601383c');
@@ -58,9 +58,14 @@ test('STS participates in ACS3 signing and fixed health v1 signing, including th
   const health = calls.at(-1);
   assert.equal(health.url, triggerUrl + '/healthz');
   assert.equal(health.settings.method, 'GET');
-  assert.equal(health.settings.headers.date, 'Mon, 19 Oct 2026 04:00:00 GMT');
-  assert.equal(health.settings.headers.authorization, 'FC STS.SYNTHETICKEY:cStXtJBTr19N6Gr7fr1lU7JFr1l464JVI1bGwJr1pTs=');
-  assert.equal(health.settings.headers['x-fc-security-token'], 'synthetic-security-token');
+  // Generated independently with @alicloud/openapi-util@0.3.3 getAuthorization:
+  // GET /healthz, query {}, headers below, payload argument '', synthetic keys.
+  // https://help.aliyun.com/zh/functioncompute/configure-signature-authentication-for-http-triggers
+  assert.deepEqual(health.settings.headers, {
+    'x-acs-date': '2026-10-19T04:00:00Z',
+    'x-acs-security-token': 'synthetic-security-token',
+    authorization: 'ACS3-HMAC-SHA256 Credential=STS.SYNTHETICKEY,SignedHeaders=x-acs-date;x-acs-security-token,Signature=b581401144e8a65d9eb562ab10617f109cc52b0483c410052a8881d2dc8ab010',
+  });
   assert.equal(health.settings.body, undefined);
 });
 
@@ -100,7 +105,7 @@ test('over-budget and invalid byte lengths fail as opaque input errors before co
   assert.deepEqual(calls, []);
 });
 
-test('health signing requires this client to fetch and bind the exact fixed function trigger first', async () => {
+test('HTTP trigger health binds the fixed trigger and matches the official SDK empty-payload vector', async () => {
   const { client, calls } = fakeClient(url => url.startsWith(FC_API_ENDPOINT) ? json({ httpTrigger: { urlInternet: triggerUrl } }) : json({ status: 'ok' }));
   await safelyRejected(() => client.checkHealth(triggerUrl));
   assert.equal(calls.length, 0);
@@ -110,7 +115,27 @@ test('health signing requires this client to fetch and bind the exact fixed func
   await safelyRejected(() => client.checkHealth(triggerUrl + '/api/registrations'));
   assert.equal(calls.length, 1);
   await client.checkHealth();
-  assert.equal(calls[1].settings.headers.authorization, 'FC SYNTHETICKEY:NOOOKouT+WVgq+o2DEi3AopqOdT0dnc9eGJF1UFQGQA=');
+  // Same independent official SDK 0.3.3 input as the STS vector, without STS.
+  // Exact headers exclude legacy Date/x-fc-* and management API signing fields.
+  assert.deepEqual(calls[1].settings.headers, {
+    'x-acs-date': '2026-10-19T04:00:00Z',
+    authorization: 'ACS3-HMAC-SHA256 Credential=SYNTHETICKEY,SignedHeaders=x-acs-date,Signature=a8721aee3710d3564e9f3a7a7818fd0af3f6e3b128bd02018a1bb23422c323d7',
+  });
+  assert.equal(calls[1].url, triggerUrl + '/healthz');
+  assert.equal(calls[1].settings.method, 'GET');
+  assert.equal(calls[1].settings.body, undefined);
+});
+
+test('HTTP trigger clock failures stay opaque and stop before fetching a signed request', async () => {
+  for (const invalidClock of [() => new Date(NaN), () => '2026-02-30T00:00:00Z', () => { throw new Error('PRIVATE-REMOTE synthetic-access-secret'); }]) {
+    let invalid = false;
+    const { client, calls } = fakeClient(() => json({ httpTrigger: { urlInternet: triggerUrl } }), { clock: () => invalid ? invalidClock() : clock() });
+    await client.getTrigger();
+    invalid = true;
+    const error = await safelyRejected(() => client.checkHealth());
+    assert.equal(summarizeFcError(error), 'operation=CheckHealth phase=signing');
+    assert.equal(calls.length, 1);
+  }
 });
 
 test('trigger URL rejects credentials, non-Hong-Kong hosts, alternate ports, paths and URL normalization tricks', async () => {

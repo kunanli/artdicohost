@@ -1,6 +1,6 @@
 # 香港 FC 启动验收
 
-日期：2026-10-20（Asia/Taipei）。用户已建立香港函数 `artdicohost-api`，初始截图为自定义运行时 Debian 11 / Python 3.12 示例及签名认证的 HTTP `defaultTrigger`；随后用户回报本文件要求的运行时启动设置、RAM 权限及 GitHub Variables 已保存，并已授权正常发布。PR #12 已合并为 `8c6398d8cf337e8d7d5f12d0634aa71a9c8a1a7b`；[Actions 39355862651](https://github.com/kunanli/artdicohost/actions/runs/39355862651) 的 195 项检查、紧凑包离线启动及公开 OSS 回读通过，但 FC UpdateFunction 达到原 20 秒请求期限而超时。不能判断前次是否已更新，尚无本项目 FC 启动及三次签名健康检查的云端成功证据。私有桶 `artdicohost-data-hk` 已创建，用户回报已保存 SSE-OSS / AES256；尚未验证函数身份或私有对象读写。
+日期：2026-10-20（Asia/Taipei）。用户已建立香港函数 `artdicohost-api`，初始截图为自定义运行时 Debian 11 / Python 3.12 示例及签名认证的 HTTP `defaultTrigger`；随后用户回报本文件要求的运行时启动设置、RAM 权限及 GitHub Variables 已保存，并已授权正常发布。最新 main 为 `dff3c897bdadfbe555459366183ccab1fbca0195`；[Actions 39357108387](https://github.com/kunanli/artdicohost/actions/runs/39357108387) 的 check `118414315427` 完成 203 项测试及 6.395 秒离线 ZIP smoke，OSS `118414977033` 于 02:08:57–02:09:10 UTC 完成 12 个公开对象 SHA-256 回读。FC `118414977011` 的更新前 state / update 为 `unknown`，签名 health 为 400 `InvalidArgument`；UpdateFunction 等待 120 秒后于 02:10:56 UTC 超时。不能判断代码是否已更新，尚无本项目 FC 启动及三次签名健康检查的云端成功证据，不直接重送该次或更旧提交的 PUT。私有桶 `artdicohost-data-hk` 已创建，用户回报已保存 SSE-OSS / AES256；尚未验证函数身份或私有对象读写。
 
 本阶段只替换示例码并验证 Node.js 可以启动。`/healthz` 的 200 只表示进程存活；报名、后台与存储就绪均保持关闭。不要把本机 `functions/content-api/server.mjs` 上传为云端后台。
 
@@ -41,7 +41,11 @@ node scripts/prepare-fc-bootstrap.mjs \
 
 原始 Node 的已测 XZ 大小为 29,494,612 bytes，PR #12 实际 ZIP 为 29,507,159 bytes，完整 Base64 JSON 请求体为 39,342,903 bytes。打包、artifact 验证及上传端共同执行 **48,000,000 bytes 完整 JSON body** 的固定工程预算，按 Base64 膨胀与 JSON 包装精确计算，超出时不发请求。此预算是为处理已观察的 413 保留余量，不是阿里云精确上限或上传成功保证；不使用未验证的请求 gzip 编码绕过限制。
 
-本轮只调整客户端等待与观测：PUT 前先以 GetFunction 和签名 health 观察旧状态，不把观察作为成功；重新核对当前 main 后，对新提交执行一次代码更新。UpdateFunction 等待期限为 120 秒，GET / health 保持 20 秒，总期限 240 秒；不重试 PUT、不改变 FC 执行超时、IAM、`/code/bootstrap` 或签名触发器。更新后仍要求三次连续匹配本次完整提交的签名 health；详细日志与失败处理见[自动更新说明](automatic-fc-deployment.md)。
+本轮修正独立客户端与部署观测，不改六文件 runtime 源码。健康检查按[现行 fcapp.run 官方契约](https://help.aliyun.com/zh/functioncompute/configure-signature-authentication-for-http-triggers)使用 ACS3、`x-acs-date`、选用 `x-acs-security-token`，payload 参数为空字串；旧 FC scheme 来自 2016 API / proxy 范围。隔离的官方 SDK `0.3.3` AK / STS 固定向量已纳入测试，没有新增项目依赖；不能把旧算法测试当成服务规格证明，也不能在实测前断言此为 400 唯一原因。
+
+PUT 前仍以 GetFunction 和签名 health 观察旧状态，不把观察作为成功；枚举值未知时只投影 `unknown`，presence 仅区分 `absent` / `null` / `recognized` / `unrecognized`，不回显任意内容。官方 state 使用 `Pending`，`Creating` 属 reason code；补上 Pending 阻挡并保留旧 Creating 的保守阻挡，更新 `InProgress` 时也不上传。重新核对当前 main 后，native HTTPS 对同一固定香港端点发送一次同 method / JSON bytes 的代码 PUT，保留 TLS 验证，明确 UTF-8 `Content-Length`，无 redirect / retry。私有 WeakMap 只投影可信 Promise 的 `uploadBodyWritten` / `responseStarted` 两个布林；`finish` 只表示本机写完，不是 FC 已接收或确认。没有证据显示原 fetch 的 Content-Length 错误，也未证明新传输已解决超时。
+
+UpdateFunction 等待期限保持 120 秒，GET / health 为 20 秒，总期限 240 秒；不改变 FC 执行超时、IAM、`/code/bootstrap` 或签名触发器。更新后须 HTTP 200 更新确认、配置保持，以及三次连续匹配本次完整提交的签名 health；生命周期字段存在时要求 Active / Successful，仅两字段各为 own absent/null 时可依同样的三次实测来源验证并明确标记 metadata 未提供，绝不从字段缺失推定就绪；详细日志与失败处理见[自动更新说明](automatic-fc-deployment.md)。
 
 ## 控制台操作
 
@@ -74,7 +78,7 @@ node scripts/prepare-fc-bootstrap.mjs \
 
 `tests/fc-runtime.test.mjs` 覆盖真实 loopback HTTP / HEAD、关闭的业务写入、未结束的流、畸形请求、标头上限、端口及版本投影；包测试覆盖来源绑定与六文件 ZIP 白名单、原始及压缩校验、损坏解压与执行权限，上传预算另有精确边界测试。本轮容器夹具由固定 Python `3.12.4` / Debian bullseye 镜像模拟官方列明的解释器路径，使用实际交付 ZIP，在无网络、只读 `/code`、可执行 `/tmp` tmpfs 192 MiB、512 MB 内存及 0.35 CPU 下检查冷启动和响应。该夹具不是阿里云实际 FC 镜像，本机或 CI 结果不能代替真实 FC 的解释器 / `_lzma` 可用性及三次签名健康检查。
 
-前阶段本机来源 `d52ef96a40fe5a10538f92ad0d2911f813d449fa` 的实际 ZIP 离线夹具为 10.999 秒，PR #12 合并提交 CI 为 5.506 秒，均只代表各自夹具结果。该本机 ZIP 的 SHA-256 为 `723953ef90b0f3bbff98cd769b518f3f96006b31d79935a63071bbf84d25f972`；这不是 FC 远端回读或 CRC64。新期限 / 观测修复的本机 203 项测试、源码 / Astro 检查、四页构建及依赖审计通过；云端验收仍需对应 main 运行的实际证据。
+前阶段本机来源 `d52ef96a40fe5a10538f92ad0d2911f813d449fa` 的实际 ZIP 离线夹具为 10.999 秒，PR #12 合并提交 CI 为 5.506 秒，最新 main 的 CI 为 6.395 秒，均只代表各自夹具结果。该前阶段本机 ZIP 的 SHA-256 为 `723953ef90b0f3bbff98cd769b518f3f96006b31d79935a63071bbf84d25f972`；这不是 FC 远端回读或 CRC64。前次期限 / 观测修复的本机与最新 main CI 均为 203 项测试通过；本轮签名 / 上传诊断的本机 221 项测试、源码 / Astro 检查、四页构建及依赖审计通过，独立安全审阅无阻挡问题；其中健康签名 client 测试 19 项及独立官方 SDK 向量已通过。云端验收仍需对应 main 运行的实际证据，不从本地通过推断上传、启动或业务已成功。
 
 函数确认能启动后，下一阶段再建立专用运行角色与最小范围 OSS 临时凭据权限、合成资料读写验收及真实持久化服务。GitHub 部署身份沿用公开网站桶上传权限，并由用户回报已授予单一 FC 的更新与验收权限；它不作为 FC 运行角色，也没有因此获得私有数据访问权限。39 笔真实联系人继续本机保留；筛选 / 公开稿件 / 统计、真实报名、群码受限图片服务、Wallet 与邮件均未由此包接通。正常技术发布授权不替代公开稿件核准、真实资料迁移、个人信息公开 / 分享授权或正式隐私告知。
 

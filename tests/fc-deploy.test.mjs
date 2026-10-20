@@ -166,8 +166,9 @@ test('pre-update reports retain an old full commit and only verified publication
   assert.equal(value.calls.filter(item => item === 'health').length, 3);
   assert.equal(value.calls.filter(item => item === 'update').length, 1);
   assert.deepEqual(value.reports, [
-    'FC pre-update observation: ' + JSON.stringify({ state: 'Active', update: 'Successful', signedHealth: 'process-only', sourceCommit: oldCommit }),
+    'FC pre-update observation: ' + JSON.stringify({ state: 'Active', update: 'Successful', statePresence: 'recognized', updatePresence: 'recognized', signedHealth: 'process-only', sourceCommit: oldCommit }),
     'FC publication verified: ' + JSON.stringify({ sourceCommit: commit, zipBytes: archive.byteLength, jsonRequestBytes: fcCodeRequestBytes(archive.byteLength), packageSha256: archiveHash }),
+    'FC post-update metadata: ' + JSON.stringify({ state: 'Active', update: 'Successful', statePresence: 'recognized', updatePresence: 'recognized' }),
     ...[1, 2, 3].map(count => `FC signed /healthz match ${count}/3: ${commit}`),
   ]);
   assert.doesNotMatch(value.reports.join('\n'), /PRIVATE-|https?:|acs:fc|Message|unknown|environment|role|url/u);
@@ -184,16 +185,126 @@ test('a matching pre-update observation cannot replace any of the three post-upd
 });
 
 test('an initial FC update in progress is observed safely before refusing another code mutation', async () => {
-  for (const patch of [{ lastUpdateStatus: 'InProgress' }, { state: 'Creating' }]) {
+  for (const patch of [{ lastUpdateStatus: 'InProgress' }, { state: 'Pending' }, { state: 'Creating' }]) {
     const value = fixture({ functionInfo: () => ({ ...functionInfo(), ...patch }) });
     await assert.rejects(deployFc(value.options), error => error.message === 'FC reports an update still in progress; no new code was uploaded.');
     assert.deepEqual(value.calls, ['verify', 'head', 'function', 'trigger', 'health-before']);
     assert.equal(value.reports.length, 1);
     assert.deepEqual(JSON.parse(value.reports[0].slice('FC pre-update observation: '.length)), {
-      state: patch.state ?? 'Active', update: patch.lastUpdateStatus ?? 'Successful', signedHealth: 'process-only', sourceCommit: commit,
+      state: patch.state ?? 'Active', update: patch.lastUpdateStatus ?? 'Successful', statePresence: 'recognized', updatePresence: 'recognized', signedHealth: 'process-only', sourceCommit: commit,
     });
     assert.doesNotMatch(value.reports[0], /PRIVATE-|https?:|acs:fc|Message|role|environment/u);
   }
+});
+
+test('pre-update metadata distinguishes own missing, null and unrecognized fields without serializing their values', async () => {
+  const cases = [
+    [value => { delete value.state; delete value.lastUpdateStatus; }, 'unknown', 'unknown', 'absent', 'absent'],
+    [value => { value.state = null; value.lastUpdateStatus = null; }, 'unknown', 'unknown', 'null', 'null'],
+    [value => { value.state = 'PRIVATE-SYNTHETIC-STATE'; value.lastUpdateStatus = 'PRIVATE-SYNTHETIC-UPDATE'; }, 'unknown', 'unknown', 'unrecognized', 'unrecognized'],
+    [value => { value.state = ['Active', 'PRIVATE-SYNTHETIC-STATE']; value.lastUpdateStatus = { status: 'Successful', secret: 'PRIVATE-SYNTHETIC-UPDATE' }; }, 'unknown', 'unknown', 'unrecognized', 'unrecognized'],
+    [value => { value.state = undefined; value.lastUpdateStatus = false; }, 'unknown', 'unknown', 'unrecognized', 'unrecognized'],
+    [value => { delete value.state; }, 'unknown', 'Successful', 'absent', 'recognized'],
+    [value => { value.lastUpdateStatus = null; }, 'Active', 'unknown', 'recognized', 'null'],
+  ];
+  for (const [mutate, state, update, statePresence, updatePresence] of cases) {
+    const value = fixture({ functionInfo: count => { const info = functionInfo(); if (count === 1) mutate(info); return info; } });
+    await deployFc(value.options);
+    const observation = JSON.parse(value.reports[0].slice('FC pre-update observation: '.length));
+    assert.deepEqual(observation, { state, update, statePresence, updatePresence, signedHealth: 'process-only', sourceCommit: commit });
+    assert.doesNotMatch(value.reports.join('\n'), /PRIVATE-|secret|https?:|acs:fc/u);
+    assert.equal(value.calls.filter(item => item === 'update').length, 1);
+    assert.equal(value.calls.filter(item => item === 'health').length, 3);
+  }
+});
+
+test('partial, unrecognized or in-progress metadata never enables the absence verification path', async () => {
+  for (const mutate of [value => { delete value.state; }, value => { delete value.lastUpdateStatus; },
+    value => { value.state = null; }, value => { value.lastUpdateStatus = null; },
+    value => { value.state = undefined; value.lastUpdateStatus = undefined; },
+    value => { value.state = ['Active']; value.lastUpdateStatus = { value: 'Successful' }; },
+    value => { value.state = 'PRIVATE-SYNTHETIC-STATE'; delete value.lastUpdateStatus; },
+    value => { value.state = 'Pending'; }, value => { value.state = 'Creating'; }, value => { value.lastUpdateStatus = 'InProgress'; }]) {
+    const value = fixture({ functionInfo: count => { const info = functionInfo(); if (count > 1) mutate(info); return info; } });
+    await assert.rejects(deployFc(value.options), /three consecutive/u);
+    assert.equal(value.calls.filter(item => item === 'update').length, 1);
+    assert.equal(value.calls.filter(item => item === 'health-before').length, 1);
+    assert.equal(value.calls.filter(item => item === 'health').length, 0);
+    assert.equal(value.reports.some(line => line.startsWith('FC signed /healthz match ')), false);
+    const metadata = value.reports.filter(line => line.startsWith('FC post-update metadata: '));
+    assert.equal(metadata.length, 1);
+    assert.doesNotMatch(metadata[0], /PRIVATE-|https?:|acs:fc|value/u);
+  }
+});
+
+test('only two absent or null metadata fields allow three signed exact-source proofs after a single update', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'artdico-fc-deploy-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  for (const [index, [stateNull, updateNull]] of [[false, false], [false, true], [true, false], [true, true]].entries()) {
+    const value = fixture({ functionInfo: () => {
+      const info = functionInfo();
+      if (stateNull) info.state = null; else delete info.state;
+      if (updateNull) info.lastUpdateStatus = null; else delete info.lastUpdateStatus;
+      return info;
+    } });
+    const summary = join(directory, `summary-${index}.md`);
+    const result = await deployFc({ ...value.options, env: { ...env, GITHUB_STEP_SUMMARY: summary } });
+    assert.deepEqual(result, { functionName: 'artdicohost-api', commit, packageSha256: archiveHash, preflight: 'verified', businessReady: false, functionMetadata: 'not-reported' });
+    assert.equal(value.calls.filter(item => item === 'update').length, 1);
+    assert.equal(value.calls.filter(item => item === 'health').length, 3);
+    const metadata = value.reports.filter(line => line.startsWith('FC post-update metadata: '));
+    assert.deepEqual(metadata, ['FC post-update metadata: ' + JSON.stringify({ state: 'unknown', update: 'unknown', statePresence: stateNull ? 'null' : 'absent', updatePresence: updateNull ? 'null' : 'absent' })]);
+    assert.deepEqual(value.reports.filter(line => line.startsWith('FC signed /healthz match ')), [1, 2, 3].map(count => `FC signed /healthz match ${count}/3: ${commit}`));
+    const text = await readFile(summary, 'utf8');
+    assert.match(text, /Function state\/update metadata was not reported/u);
+    assert.match(text, /Active\/Successful was not inferred/u);
+    assert.match(text, /Three consecutive signed process-only health checks matched this commit/u);
+    assert.match(text, /Registration remains closed/u);
+    assert.doesNotMatch(text, /PRIVATE-|https?:|acs:fc/u);
+  }
+});
+
+test('absent metadata never substitutes for exact signed health, unchanged settings or the final trigger', async () => {
+  const absentInfo = () => { const info = functionInfo(); delete info.state; delete info.lastUpdateStatus; return info; };
+  const badHealth = [
+    () => ({ ...goodHealth(), status: 503 }),
+    () => ({ ...goodHealth(), body: { ...goodHealth().body, status: 'error' } }),
+    () => ({ ...goodHealth(), body: { ...goodHealth().body, scope: 'business-ready' } }),
+    () => ({ ...goodHealth(), body: { ...goodHealth().body, sourceCommit: 'b'.repeat(40) } }),
+    () => { throw new Error('PRIVATE-SYNTHETIC-PROBE'); },
+  ];
+  for (const health of badHealth) {
+    const value = fixture({ functionInfo: absentInfo, health });
+    await assert.rejects(deployFc(value.options), error => /three consecutive/u.test(error.message) && !error.message.includes('PRIVATE-'));
+    assert.equal(value.calls.filter(item => item === 'update').length, 1);
+    assert.equal(value.calls.filter(item => item === 'health').length, 16);
+    assert.equal(value.reports.some(line => line.startsWith('FC signed /healthz match ')), false);
+  }
+  const changedSettings = fixture({ functionInfo: count => count > 1 ? { ...absentInfo(), role: 'PRIVATE-SYNTHETIC-CHANGED-ROLE' } : absentInfo() });
+  await assert.rejects(deployFc(changedSettings.options), /runtime, environment or role changed/u);
+  assert.equal(changedSettings.calls.filter(item => item === 'health').length, 0);
+  const changedTrigger = fixture({ functionInfo: absentInfo, triggerInfo: count => count > 1 ? { ...triggerInfo(), qualifier: 'production' } : triggerInfo() });
+  await assert.rejects(deployFc(changedTrigger.options), /FC HTTP trigger/u);
+  assert.equal(changedTrigger.calls.filter(item => item === 'update').length, 1);
+  assert.equal(changedTrigger.calls.filter(item => item === 'health').length, 3);
+  for (const patch of [{ state: 'Failed', lastUpdateStatus: null }, { state: null, lastUpdateStatus: 'Failed' }]) {
+    const failed = fixture({ functionInfo: count => count > 1 ? { ...functionInfo(), ...patch } : functionInfo() });
+    await assert.rejects(deployFc(failed.options), /reported a failed code update/u);
+    assert.equal(failed.calls.filter(item => item === 'update').length, 1);
+    assert.equal(failed.calls.filter(item => item === 'health').length, 0);
+  }
+});
+
+test('absence metadata is reported only when used in the final uninterrupted success streak', async () => {
+  const value = fixture({ functionInfo: count => {
+    const info = functionInfo();
+    if (count === 2) { delete info.state; delete info.lastUpdateStatus; }
+    return info;
+  }, health: count => count === 1 ? { ...goodHealth(), body: { ...goodHealth().body, sourceCommit: 'b'.repeat(40) } } : goodHealth() });
+  const result = await deployFc(value.options);
+  assert.equal(Object.hasOwn(result, 'functionMetadata'), false);
+  assert.equal(value.calls.filter(item => item === 'update').length, 1);
+  assert.equal(value.calls.filter(item => item === 'health').length, 4);
 });
 
 test('failed or malformed pre-update health is only an observation and never exposes arbitrary error metadata', async () => {
@@ -214,7 +325,7 @@ test('failed or malformed pre-update health is only an observation and never exp
     const value = fixture({ beforeHealth, functionInfo: count => count === 1 ? { ...functionInfo(), state: 'PRIVATE-SYNTHETIC-STATE', lastUpdateStatus: 'PRIVATE-SYNTHETIC-UPDATE' } : functionInfo() });
     await deployFc(value.options);
     const observation = JSON.parse(value.reports[0].slice('FC pre-update observation: '.length));
-    assert.deepEqual(observation, { state: 'unknown', update: 'unknown', signedHealth: 'not-verified', ...(diagnostic ? { diagnostic } : {}) });
+    assert.deepEqual(observation, { state: 'unknown', update: 'unknown', statePresence: 'unrecognized', updatePresence: 'unrecognized', signedHealth: 'not-verified', ...(diagnostic ? { diagnostic } : {}) });
     assert.equal(value.calls.filter(item => item === 'update').length, 1);
     assert.equal(value.calls.filter(item => item === 'health-before').length, 1);
     assert.equal(value.calls.filter(item => item === 'health').length, 3);

@@ -16,6 +16,16 @@ const DEPLOYMENT_TIMEOUT = 240_000;
 const MAX_ATTEMPTS = 16;
 const defaultWait = (milliseconds, { signal } = {}) => delay(milliseconds, undefined, { signal });
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const OBSERVED_STATES = ['Active', 'Pending', 'Creating', 'Inactive', 'Failed'];
+const OBSERVED_UPDATES = ['Successful', 'InProgress', 'Failed'];
+
+function observedField(value, key, allowed) {
+  if (!Object.hasOwn(value, key)) return { value: 'unknown', presence: 'absent' };
+  const field = value[key];
+  if (field === null) return { value: 'unknown', presence: 'null' };
+  if (typeof field === 'string' && allowed.includes(field)) return { value: field, presence: 'recognized' };
+  return { value: 'unknown', presence: 'unrecognized' };
+}
 
 export function requireFcDeploymentContext(env) {
   if (!record(env) || env.GITHUB_ACTIONS !== 'true' || env.GITHUB_EVENT_NAME !== 'push' || env.GITHUB_REF !== 'refs/heads/main'
@@ -115,14 +125,16 @@ export async function deployFc({ directory, repositoryDirectory, env = process.e
     const priorMatches = priorHealth?.status === 200 && priorHealth.body?.status === 'ok'
       && priorHealth.body.scope === 'process-only' && typeof priorHealth.body.sourceCommit === 'string'
       && /^[a-f0-9]{40}$/u.test(priorHealth.body.sourceCommit);
+    const observedState = observedField(before, 'state', OBSERVED_STATES);
+    const observedUpdate = observedField(before, 'lastUpdateStatus', OBSERVED_UPDATES);
     report('FC pre-update observation: ' + JSON.stringify({
-      state: ['Active', 'Creating', 'Inactive', 'Failed'].includes(before.state) ? before.state : 'unknown',
-      update: ['Successful', 'InProgress', 'Failed'].includes(before.lastUpdateStatus) ? before.lastUpdateStatus : 'unknown',
+      state: observedState.value, update: observedUpdate.value,
+      statePresence: observedState.presence, updatePresence: observedUpdate.presence,
       signedHealth: priorMatches ? 'process-only' : 'not-verified',
       ...(priorMatches ? { sourceCommit: priorHealth.body.sourceCommit } : {}),
       ...(priorDiagnostic ? { diagnostic: priorDiagnostic } : {}),
     }));
-    if (before.lastUpdateStatus === 'InProgress' || before.state === 'Creating') {
+    if (before.lastUpdateStatus === 'InProgress' || ['Pending', 'Creating'].includes(before.state)) {
       throw new Error('FC reports an update still in progress; no new code was uploaded.');
     }
     // Metadata inspection can take time. Recheck main immediately before the only mutation.
@@ -132,31 +144,45 @@ export async function deployFc({ directory, repositoryDirectory, env = process.e
       jsonRequestBytes: fcCodeRequestBytes(zipBytes.byteLength), packageSha256: manifest.archive.sha256 }));
     await bounded(signal => client.updateCode(zipBytes, { signal }), 'FC code update failed; deployment was not verified.');
     let consecutive = 0;
+    let streakWithoutMetadata = false;
+    let reportedPostMetadata = false;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       let state;
+      let metadataNotReported = false;
       try { state = await bounded(signal => client.getFunction({ signal }), 'FC update state could not be verified.'); }
       catch (error) { if (controller.signal.aborted) throw error; }
       if (state) {
         if (state.lastUpdateStatus === 'Failed' || state.state === 'Failed') throw new Error('FC reported a failed code update; no success was recorded.');
         const after = functionSnapshot(state, env.ARTDICO_FC_ACCOUNT_ID);
         if (!isDeepStrictEqual(snapshot, after)) throw new Error('FC runtime, environment or role changed; deployment was not verified.');
+        const observedState = observedField(state, 'state', OBSERVED_STATES);
+        const observedUpdate = observedField(state, 'lastUpdateStatus', OBSERVED_UPDATES);
+        if (!reportedPostMetadata) {
+          report('FC post-update metadata: ' + JSON.stringify({ state: observedState.value, update: observedUpdate.value,
+            statePresence: observedState.presence, updatePresence: observedUpdate.presence }));
+          reportedPostMetadata = true;
+        }
+        metadataNotReported = [observedState, observedUpdate].every(field => field.presence === 'absent' || field.presence === 'null');
       }
       let matches = false;
-      if (state?.lastUpdateStatus === 'Successful' && state.state === 'Active') {
+      if ((state?.lastUpdateStatus === 'Successful' && state.state === 'Active') || metadataNotReported) {
         try {
           const health = await bounded(signal => client.checkHealth(healthUrl, { signal }), 'FC process health could not be verified.');
           matches = health?.status === 200 && health.body?.status === 'ok' && health.body.scope === 'process-only' && health.body.sourceCommit === env.GITHUB_SHA;
         } catch (error) { if (controller.signal.aborted) throw error; }
       }
       consecutive = matches ? consecutive + 1 : 0;
+      streakWithoutMetadata = matches && (streakWithoutMetadata || metadataNotReported);
       if (matches) report(`FC signed /healthz match ${consecutive}/3: ${env.GITHUB_SHA}`);
       if (consecutive === 3) {
         const finalTrigger = await bounded(signal => client.getTrigger({ signal }), 'FC trigger could not be rechecked; deployment was not verified.');
         const finalHealthUrl = triggerUrl(finalTrigger);
         if (finalHealthUrl !== healthUrl || !isDeepStrictEqual(triggerSnapshot, { triggerType: finalTrigger.triggerType, qualifier: finalTrigger.qualifier, config: JSON.parse(finalTrigger.triggerConfig) })) throw new Error('FC HTTP trigger changed; deployment was not verified.');
-        const summary = `Updated closed FC startup preflight \`${FC_FUNCTION_NAME}\` from commit \`${env.GITHUB_SHA}\`. Package SHA-256: \`${manifest.archive.sha256}\`. Three consecutive signed process-only health checks matched this commit. Registration remains closed; business and private storage readiness are not verified.\n`;
+        const metadataNote = streakWithoutMetadata ? 'Function state/update metadata was not reported for at least one matching check; Active/Successful was not inferred for that check. ' : '';
+        const summary = `Updated closed FC startup preflight \`${FC_FUNCTION_NAME}\` from commit \`${env.GITHUB_SHA}\`. Package SHA-256: \`${manifest.archive.sha256}\`. ${metadataNote}Three consecutive signed process-only health checks matched this commit. Registration remains closed; business and private storage readiness are not verified.\n`;
         if (env.GITHUB_STEP_SUMMARY) await bounded(() => appendFile(env.GITHUB_STEP_SUMMARY, summary), 'FC verification passed but its summary could not be recorded.');
-        return { functionName: FC_FUNCTION_NAME, commit: env.GITHUB_SHA, packageSha256: manifest.archive.sha256, preflight: 'verified', businessReady: false };
+        return { functionName: FC_FUNCTION_NAME, commit: env.GITHUB_SHA, packageSha256: manifest.archive.sha256, preflight: 'verified', businessReady: false,
+          ...(streakWithoutMetadata ? { functionMetadata: 'not-reported' } : {}) };
       }
       if (attempt < MAX_ATTEMPTS - 1) await bounded(signal => wait(2000, { signal }), 'FC verification wait failed; no success was recorded.');
     }

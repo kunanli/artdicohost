@@ -4,6 +4,7 @@ export const MAX_IMPORT_ROWS = 500;
 export const MAX_CONTACTS = 5000;
 export const CONTACT_PRIORITIES = Object.freeze(['normal', 'high']);
 export const RESPONSE_STATUSES = Object.freeze(['pending', 'attending', 'declined']);
+export const PARTICIPATION_FORMS = Object.freeze(['guest', 'speaker', 'panelist', 'host', 'booth', 'student_showcase', 'attendee']);
 export const INVITATION_CHANNELS = Object.freeze(['wechat', 'email', 'other']);
 export const CONTACT_CATEGORIES = Object.freeze(['so', 'ro', 'prospective_site', 'industry', 'developer', 'university', 'education', 'partner', 'other']);
 export const CONTACT_INTERESTS = Object.freeze(['site_experience', 'talk', 'technical_share', 'roundtable', 'industry_networking', 'exhibition', 'product_demo', 'site_resources', 'sponsorship_partnership', 'attend_only']);
@@ -21,6 +22,10 @@ export const PROFILE_FIELDS = Object.freeze({
   contactConsentCode: 100, futureCooperationCode: 100,
   contactConsentLabel: 300, attendanceIntentLabel: 300, accommodationIntentLabel: 300, futureCooperationLabel: 300,
 });
+export const EDITABLE_CONTACT_FIELDS = Object.freeze([
+  'name', 'displayName', 'city', 'organization', 'position', 'email', 'wechat', 'phone',
+  'website', 'siteName', 'siteRole', 'topics', 'background',
+]);
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u;
 
@@ -39,7 +44,7 @@ function validDate(value) {
 }
 function choiceList(input, errors, key, max = 30, itemMax = 160) {
   if (!Array.isArray(input)) { errors[key] = '请提供选项数组。'; return []; }
-  const values = input.slice(0, max + 1).map(text);
+  const values = Array.from(input.slice(0, max + 1), text);
   if (input.length > max || values.some((value, index) => typeof input[index] !== 'string' || !value || [...value].length > itemMax || CONTROL.test(value)) || new Set(values).size !== values.length) {
     errors[key] = '选项数量、内容或重复值无效。';
   }
@@ -76,7 +81,7 @@ export function validateImportedContact(input) {
 }
 
 export function createEmptyContactOperations() {
-  return { owner: '', priority: 'normal', followUpAt: '', notes: '', responseStatus: 'pending', sessionIds: [], boothIds: [] };
+  return { owner: '', priority: 'normal', followUpAt: '', notes: '', responseStatus: 'pending', participationForms: [], sessionIds: [], boothIds: [] };
 }
 
 /**
@@ -89,6 +94,7 @@ export function validateContactOperations(input, content) {
   const value = {
     owner: text(source.owner), priority: text(source.priority), followUpAt: text(source.followUpAt),
     notes: text(source.notes), responseStatus: text(source.responseStatus),
+    participationForms: choiceList(source.participationForms === undefined ? [] : source.participationForms, errors, 'participationForms', PARTICIPATION_FORMS.length, 40),
     sessionIds: choiceList(source.sessionIds, errors, 'sessionIds', 50, 80),
     boothIds: choiceList(source.boothIds, errors, 'boothIds', 50, 80),
   };
@@ -96,6 +102,7 @@ export function validateContactOperations(input, content) {
   field(errors, 'notes', value.notes, 6000);
   if (!CONTACT_PRIORITIES.includes(value.priority)) errors.priority = '请选择正常或优先跟进。';
   if (!RESPONSE_STATUSES.includes(value.responseStatus)) errors.responseStatus = '请选择待回复、确认参加或婉拒。';
+  if (value.participationForms.some(form => !PARTICIPATION_FORMS.includes(form))) errors.participationForms = '请选择本活动支持的参与形式。';
   if (value.followUpAt && !validDate(value.followUpAt)) errors.followUpAt = '请提供有效的 YYYY-MM-DD 日期。';
   const sessions = Array.isArray(content?.sessions) ? content.sessions : [];
   const booths = Array.isArray(content?.booths) ? content.booths : [];
@@ -139,6 +146,21 @@ export function validateStoredContact(input) {
   const source = object(input);
   const profileResult = validateImportedContact({ ...object(source.profile), sourceRowId: source.source?.rowId });
   if (!profileResult.valid || !ID.test(source.id ?? '') || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(source.source?.key ?? '') || !/^[a-f0-9]{64}$/u.test(source.source?.digest ?? '')) return false;
+  if (Object.hasOwn(source, 'sourceProfile')) {
+    const snapshot = source.sourceProfile;
+    const fields = [...Object.keys(PROFILE_FIELDS), ...Object.keys(CONTACT_SOURCE_CHOICES), 'categories', 'interests'];
+    if (typeof source.sourceProfileDigest !== 'string' || !/^[a-f0-9]{64}$/u.test(source.sourceProfileDigest)
+      || snapshot === null || typeof snapshot !== 'object' || Array.isArray(snapshot)
+      || ![Object.prototype, null].includes(Object.getPrototypeOf(snapshot)) || Object.getOwnPropertySymbols(snapshot).length
+      || Object.getOwnPropertyNames(snapshot).length !== fields.length
+      || fields.some(key => { const descriptor = Object.getOwnPropertyDescriptor(snapshot, key); return !descriptor || !('value' in descriptor) || !descriptor.enumerable; })) return false;
+    const original = validateImportedContact({ ...snapshot, sourceRowId: source.source.rowId });
+    if (!original.valid || fields.some(key => JSON.stringify(snapshot[key]) !== JSON.stringify(original.value[key]))) return false;
+    // Corrections may change basic contact fields, never historic questionnaire
+    // choices, original answer codes/labels or consent captured in the snapshot.
+    if (fields.some(key => !EDITABLE_CONTACT_FIELDS.includes(key)
+      && JSON.stringify(original.value[key]) !== JSON.stringify(profileResult.value[key]))) return false;
+  } else if (Object.hasOwn(source, 'sourceProfileDigest')) return false;
   for (const date of [source.source?.importedAt, source.createdAt, source.updatedAt]) if (typeof date !== 'string' || !Number.isFinite(Date.parse(date))) return false;
   const operations = object(source.operations);
   if (!validateContactOperations(operations).valid) return false;

@@ -33,7 +33,9 @@ test('valid configuration is never described as verified persistence or registra
   assert.equal(runtime.registrationEnabled, false);
   assert.equal(calls, 0);
   const status = await runtime.handle(new Request('https://api.artdico.host/api/admin/environment'));
-  assert.deepEqual(await status.json(), { mode: 'cloud', scope: 'content-only', registration: 'closed' });
+  assert.deepEqual(await status.json(), { mode: 'cloud', scope: 'content-and-outreach', registration: 'closed' });
+  assert.equal(runtime.storageVerified, false);
+  assert.equal(runtime.registrationEnabled, false);
   assert.equal((await runtime.handle(new Request('https://api.artdico.host/api/registrations', { method: 'POST', headers: { Origin: 'https://api.artdico.host' } }))).status, 503);
   assert.equal(calls, 0);
 });

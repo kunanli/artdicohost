@@ -17,6 +17,7 @@
 - `docs/05-admin.md`：后台审核与 Maria 导出
 - `docs/backend-readiness.md`：后台账号、编辑及报名统计的本机实现和云端待办
 - `docs/cloud-content-setup.md`：云端内容内核、专用 FC 执行角色与尚待完成的接入验收
+- `docs/invitation-planning-workflow.md`：人员安排、微信邀请图、基本资料修正与嘉宾草稿交接
 - `docs/06-architecture-data.md`：存储结构及 API 契约
 - `docs/07-security-privacy.md`：隐私和安全红线
 - `docs/08-deployment.md`：部署环境和上线清单

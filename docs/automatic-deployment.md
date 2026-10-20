@@ -8,13 +8,13 @@
 
 ## 本次核对结果
 
-核对日期：2026-10-20（Asia/Taipei）。本节以 PR #7 的实际日志更新历史快照；后续提交仍须以对应 Actions 结果为准。
+核对日期：2026-10-20（Asia/Taipei）。本节以 PR #9 的实际日志更新历史快照；后续提交仍须以对应 Actions 结果为准。
 
 | 项目 | 已取得的证据 |
 | --- | --- |
-| [PR #7](https://github.com/kunanli/artdicohost/pull/7) | 已合并；沿用正常发布授权及独立 FC 发布准备 |
-| 已部署的 main 提交 | `73a1e5479721e0381e2a3150dc00d65bd3aba8b2` |
-| [Actions 39279414370](https://github.com/kunanli/artdicohost/actions/runs/39279414370) | `push` / `main`；检查与 OSS 成功；FC job skipped，不能视为完成 FC 部署 |
+| [PR #9](https://github.com/kunanli/artdicohost/pull/9) | 已合并；用户名 / 公司邮箱登录及寄件设置准备，本地功能未作为云端服务开放 |
+| 已部署的 main 提交 | `2e90103f7756acdb49cc5433a5dd6ab22500a6f2` |
+| [Actions 39349541751](https://github.com/kunanli/artdicohost/actions/runs/39349541751) | `push` / `main`；检查与 OSS 成功；FC job skipped，不能视为完成 FC 部署 |
 | 公开文件 | 12 个公开文件已部署至 `artdicohost-web-hk`，含最后上传的 `release.json`，全部通过 SHA-256 回读 |
 | AccessKey | 已在 GitHub Secrets，由成功部署使用；无需重新提供，不读取或复制到本机 |
 | 自定义域名 / DNS | 用户截图显示阿里云 DNS 正确、初次查看为 0 条记录；后续 `artdico.host` 的 OSS 绑定已生效，根域名 `@` CNAME 已启用，TTL 为 10 分钟；未开启 CDN |

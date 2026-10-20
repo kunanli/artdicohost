@@ -1,8 +1,8 @@
 # artdico.host 域名与 HTTPS 操作单
 
-日期：2026-10-19（Asia/Taipei）。香港 OSS 网站桶 `artdicohost-web-hk` 直接托管 `https://artdico.host/`。最新获授权部署为 PR #5 合并提交 `954e12dd2aaee67d6deea5e8bbd0a5b72451d96b`，[Actions 39262917095](https://github.com/kunanli/artdicohost/actions/runs/39262917095) 完成 12 个公开文件上传及 SHA-256 回读。首次接入时的控制台截图显示阿里云 DNS 正确，初次查看为 0 条解析记录；现已完成 OSS 域名绑定，状态生效，未开启 CDN，根域名 `@` 的 CNAME 已启用，TTL 为 10 分钟。用户随后回报证书已配置，HTTPS 页面可正常显示。
+日期：2026-10-20（Asia/Taipei）。香港 OSS 网站桶 `artdicohost-web-hk` 直接托管 `https://artdico.host/`。最新已验公开部署为 PR #9 合并提交 `2e90103f7756acdb49cc5433a5dd6ab22500a6f2`，[Actions 39349541751](https://github.com/kunanli/artdicohost/actions/runs/39349541751) 完成 12 个公开文件上传及 SHA-256 回读。首次接入时的控制台截图显示阿里云 DNS 正确，初次查看为 0 条解析记录；现已完成 OSS 域名绑定，状态生效，未开启 CDN，根域名 `@` 的 CNAME 已启用，TTL 为 10 分钟。用户随后回报证书已配置，HTTPS 页面可正常显示。
 
-以上浏览器成功为用户回报；独立线上脚本、版本与完整资源检查尚未执行，证书签发者、覆盖范围及到期日尚待记录。本环境没有阿里云 / DNS 控制台身份，控制台操作由用户完成；此前出口代理受限的结果不能用来判定站点故障或可用。蓝橙双活动版已完成部署；本轮 `GlobalGameJam` 首屏更名及报名准备尚未部署。
+以上浏览器成功为用户回报；独立线上脚本、版本与完整资源检查尚未执行，证书签发者、覆盖范围及到期日尚待记录。本环境没有阿里云 / DNS 控制台身份，控制台操作由用户完成；此前出口代理受限的结果不能用来判定站点故障或可用。蓝橙双活动版已完成部署；`GlobalGameJam` 首屏更名及报名准备已随上述公开提交部署；内建报名保持无传送预览，云端后台仍未开放。
 
 GitHub Actions Secrets 仅供上传工作流使用，不需要把 AccessKey 取回本机，也不能用现有 `oss:PutObject` 身份管理 DNS 或证书。上线顺序与准确部署证据见 [自动部署说明](automatic-deployment.md)。
 
@@ -58,7 +58,7 @@ HTTPS 可用与 HTTP 自动跳转是两项不同配置。直接 OSS 不提供原
 已确认本次 main **push** 的部署 job 成功，用户回报域名的 HTTPS 页面可显示。独立检查尚未运行；在可访问目标站点的环境使用本仓库无密钥检查脚本，核对此次已部署的完整 SHA；若期间有新的 main 部署，先更新为最新成功部署的 40 字符 SHA：
 
 ```sh
-node scripts/check-live-site.mjs https://artdico.host 954e12dd2aaee67d6deea5e8bbd0a5b72451d96b
+node scripts/check-live-site.mjs https://artdico.host 2e90103f7756acdb49cc5433a5dd6ab22500a6f2
 ```
 
 脚本严格验证 TLS，拒绝转址和 HTML 强制下载，核对 `release.json` 中的提交、白名单公开文件的 SHA-256 / MIME、子目录路由与随机不存在路径的 404；结束时再次确认版本凭证未改变。`release.json` 在首页更新后最后写入，只含提交和公开文件校验值。脚本不读取部署凭据。
@@ -78,7 +78,7 @@ node scripts/check-live-site.mjs https://artdico.host 954e12dd2aaee67d6deea5e8bb
 
 | 项目 | 实际结果 |
 | --- | --- |
-| 公开部署提交 / Actions URL | `954e12dd2aaee67d6deea5e8bbd0a5b72451d96b` / [39262917095](https://github.com/kunanli/artdicohost/actions/runs/39262917095)，12 个公开对象部署及回读成功 |
+| 公开部署提交 / Actions URL | `2e90103f7756acdb49cc5433a5dd6ab22500a6f2` / [39349541751](https://github.com/kunanli/artdicohost/actions/runs/39349541751)，12 个公开对象部署及回读成功 |
 | 权威 DNS / 初始记录 | 用户截图显示阿里云 DNS 正确、初次查看 0 条记录；准确 Nameservers 与修改时间待留存 |
 | 根域名实际 CNAME 目标 / TTL | `@` CNAME 已启用；TTL 10 分钟；目标完整值待从控制台复制留存 |
 | OSS 域名绑定 / CDN | 用户截图显示 `artdico.host` 绑定生效；未开启 CDN |

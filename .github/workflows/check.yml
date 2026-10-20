@@ -86,6 +86,10 @@ jobs:
           path: .local-data/cloud-content-build/publication/
           if-no-files-found: error
           retention-days: 14
+      - name: Observe the fixed public content endpoint without credentials
+        timeout-minutes: 1
+        continue-on-error: true
+        run: node scripts/probe-content-endpoint.mjs
       - name: Report that FC updates still need one-time setup
         # The candidate artifact above is deliberately not consumed by deploy-fc.
         if: ${{ vars.ARTDICO_FC_DEPLOY_ENABLED != 'true' }}

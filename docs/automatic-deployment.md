@@ -8,13 +8,13 @@
 
 ## 本次核对结果
 
-核对日期：2026-10-19（Asia/Taipei）。本节更新此前「PR 未合并、部署待触发」的历史快照；后续提交仍须以对应 Actions 结果为准。
+核对日期：2026-10-20（Asia/Taipei）。本节以 PR #7 的实际日志更新历史快照；后续提交仍须以对应 Actions 结果为准。
 
 | 项目 | 已取得的证据 |
 | --- | --- |
-| [PR #5](https://github.com/kunanli/artdicohost/pull/5) | 已获用户授权合并；GGJ 蓝与 ARTDiCO 橙融合版 |
-| 已部署的 main 提交 | `954e12dd2aaee67d6deea5e8bbd0a5b72451d96b` |
-| [Actions 39262917095](https://github.com/kunanli/artdicohost/actions/runs/39262917095) | `push` / `main`；检查与部署均成功，部署日志核对 12 个公开对象回读通过 |
+| [PR #7](https://github.com/kunanli/artdicohost/pull/7) | 已合并；沿用正常发布授权及独立 FC 发布准备 |
+| 已部署的 main 提交 | `73a1e5479721e0381e2a3150dc00d65bd3aba8b2` |
+| [Actions 39279414370](https://github.com/kunanli/artdicohost/actions/runs/39279414370) | `push` / `main`；检查与 OSS 成功；FC job skipped，不能视为完成 FC 部署 |
 | 公开文件 | 12 个公开文件已部署至 `artdicohost-web-hk`，含最后上传的 `release.json`，全部通过 SHA-256 回读 |
 | AccessKey | 已在 GitHub Secrets，由成功部署使用；无需重新提供，不读取或复制到本机 |
 | 自定义域名 / DNS | 用户截图显示阿里云 DNS 正确、初次查看为 0 条记录；后续 `artdico.host` 的 OSS 绑定已生效，根域名 `@` CNAME 已启用，TTL 为 10 分钟；未开启 CDN |
@@ -22,7 +22,7 @@
 
 当前状态是「静态公开文件已部署并回读通过，域名已绑定，用户回报 HTTPS 页面可显示」。不需要再次合并 PR #3、重建 bucket 或重填 Secrets。该回报不代表版本、全部资源、证书链或所有浏览器已通过独立验收。
 
-上述线上版本并列呈现「2026 GGJ 中国交流聚会」与「ARTDiCO HOST 学生嘉年华」，采用蓝橙视觉与按需展开的精简内容。本轮按用户要求将首屏品牌展开为 `GlobalGameJam`，并继续无公网接入的正式报名准备；这些接续变更尚未部署。
+上述线上版本并列呈现「2026 GGJ 中国交流聚会」与「ARTDiCO HOST 学生嘉年华」，采用蓝橙视觉与按需展开的精简内容。首屏 `GlobalGameJam` 更名与无公网接入的正式报名准备已随上述提交发布；内建表单仍不发送或保存资料。FC 的独立首次验收状态见[实际结果](automatic-fc-deployment.md)。
 
 ## 更新流程
 

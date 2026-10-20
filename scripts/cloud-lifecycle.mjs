@@ -58,6 +58,21 @@ export function acceptanceMatches(value, runId, commit) {
     && Number.isSafeInteger(proof.touchedObjects) && proof.touchedObjects > 0 && proof.touchedObjects <= 1000;
 }
 
+// Never serialize the health response or provider error. Stage names come from
+// this controller's fixed list after checking an exact ordered prefix.
+function acceptanceDiagnostic(value, runId, commit) {
+  const proof = value?.body?.acceptance;
+  if (!healthMatches(value, commit) || !plain(proof) || proof.schemaVersion !== 1 || proof.runId !== runId || proof.sourceCommit !== commit
+    || !['running', 'passed', 'failed', 'rejected'].includes(proof.status)
+    || !Array.isArray(proof.completed) || proof.completed.length > STAGES.length
+    || Array.from(proof.completed).some((stage, index) => stage !== STAGES[index])
+    || !Number.isSafeInteger(proof.requests) || proof.requests < 0 || proof.requests > 1000
+    || !Number.isSafeInteger(proof.touchedObjects) || proof.touchedObjects < 0 || proof.touchedObjects > 1000) return undefined;
+  const stage = proof.status === 'rejected' ? 'configuration' : STAGES[proof.completed.length] ?? 'complete';
+  return 'status=' + proof.status + ' stage=' + stage + ' completed=' + proof.completed.length
+    + ' requests=' + proof.requests + ' touched=' + proof.touchedObjects;
+}
+
 /** Credential-free probe of the exact public alias used by the production form. Never returns its body. */
 export async function verifyPublicRegistrationAlias(fetchFn, policy, externalSignal) {
   const url = 'https://api.artdico.host/api/admin/registration/config';
@@ -251,19 +266,21 @@ export async function deployCloudLifecycle(options = {}) {
       const armedVariables = { ...configuredSnapshot.variables, [RUN_KEY]: runId };
       const armed = await mutate(configured, armedVariables, env.GITHUB_SHA, 'acceptance-armed');
       const armedSnapshot = snapshot(armed);
-      let accepted = false;
+      let accepted = false, lastAcceptanceDiagnostic;
       for (let attempt = 0; attempt < 60; attempt++) {
         const observed = await inspect();
         if (!stable(observed) || !isDeepStrictEqual(armedSnapshot, snapshot(observed))) throw failure('ACCEPTANCE_CONFIGURATION_CHANGED');
         let health;
         try { health = await signedHealth(); } catch (error) { if (controller.signal.aborted) throw error; }
         if (acceptanceMatches(health, runId, env.GITHUB_SHA)) { accepted = true; break; }
+        const diagnostic = acceptanceDiagnostic(health, runId, env.GITHUB_SHA);
+        if (diagnostic !== undefined) lastAcceptanceDiagnostic = diagnostic;
         const proof = health?.body?.acceptance;
         if (healthMatches(health, env.GITHUB_SHA) && proof?.runId === runId && proof.sourceCommit === env.GITHUB_SHA
-          && ['failed', 'rejected'].includes(proof.status)) throw failure('ACCEPTANCE_FAILED');
+          && ['failed', 'rejected'].includes(proof.status)) throw failure('ACCEPTANCE_FAILED', diagnostic);
         if (attempt + 1 < 60) await bounded(signal => wait(2000, { signal }), 'ACCEPTANCE_WAIT_FAILED');
       }
-      if (!accepted) throw failure('ACCEPTANCE_NOT_VERIFIED');
+      if (!accepted) throw failure('ACCEPTANCE_NOT_VERIFIED', lastAcceptanceDiagnostic);
       await unchangedTrigger();
       await currentMain();
       const activeVariables = { ...armedVariables, [CONTENT_KEY]: 'true' };

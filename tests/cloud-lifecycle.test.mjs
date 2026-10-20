@@ -142,6 +142,23 @@ test('failed or malformed acceptance remains closed and never attempts activatio
   }
 });
 
+test('acceptance failure diagnostics expose only validated fixed stages and bounded counters', async () => {
+  const failed = fixture({ proof: p => ({ ...p, status: 'failed', completed: STAGES.slice(0, 2), requests: 29, touchedObjects: 11, providerBody: PRIVATE }) });
+  await safeFailure(failed, /ACCEPTANCE_FAILED \[status=failed stage=login-permissions completed=2 requests=29 touched=11\]/u);
+  const rejected = fixture({ proof: p => ({ ...p, status: 'rejected', completed: [], requests: 0, touchedObjects: 0 }) });
+  await safeFailure(rejected, /status=rejected stage=configuration completed=0 requests=0 touched=0/u);
+  const running = fixture({ proof: p => ({ ...p, status: 'running', completed: STAGES.slice(0, 7), requests: 900, touchedObjects: 80 }) });
+  await safeFailure(running, /ACCEPTANCE_NOT_VERIFIED \[status=running stage=registration-review completed=7 requests=900 touched=80\]/u);
+  for (const patch of [{ completed: [PRIVATE] }, { completed: Array(2) }, { requests: PRIVATE }, { touchedObjects: 1001 }, { sourceCommit: OLD }]) {
+    const invalid = fixture({ proof: p => ({ ...p, status: 'failed', ...patch, privateDetails: PRIVATE }) });
+    await assert.rejects(deployCloudLifecycle(invalid.options), error => {
+      assert.match(error.message, /ACCEPTANCE_(?:FAILED|NOT_VERIFIED)/u);
+      assert.doesNotMatch(error.message, /status=|stage=|completed=|requests=|touched=|PRIVATE/u);
+      return true;
+    });
+  }
+});
+
 test('rerun attempts and repeated same-attempt invocations cannot reuse a cached acceptance proof', async () => {
   const first = fixture(); const original = await deployCloudLifecycle(first.options);
   const nextAttempt = fixture(); nextAttempt.options.env = { ...ENV, GITHUB_RUN_ATTEMPT: '2' };

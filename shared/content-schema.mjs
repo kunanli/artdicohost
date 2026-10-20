@@ -25,7 +25,8 @@ export const contentSchema = Object.freeze({
 /** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string,slotNumber:number}} Booth */
 /** @typedef {{id:string,name:string,company:string,ggjRole:string,portraitId:string,status:string,publicConsent:boolean,internalNotes:string,contactId:string}} Guest */
 /** @typedef {{id:string,title:string,teamName:string,school:string,contactName:string,email:string,wechat:string,memberCount:number,participationForms:string[],responseStatus:string,materialLinks:string,summary:string,coverId:string,status:string,publicConsent:boolean,sessionId:string,boothId:string,internalNotes:string}} Showcase */
-/** @typedef {{schemaVersion:number,eventId:string,event:{title:string,date:string,timezone:string,venue:string,status:string,dateStatus:string,venueStatus:string},sessions:Session[],booths:Booth[],guests:Guest[],showcases:Showcase[]}} Content */
+/** @typedef {{heroDescription:string,aboutTitle:string,aboutText:string,faqItems:{question:string,answer:string}[],contactEmail:string,mapUrl:string,openingTime:string,endTime:string,checkInTime:string}} EventPresentation */
+/** @typedef {{schemaVersion:number,eventId:string,event:{title:string,date:string,timezone:string,venue:string,status:string,dateStatus:string,venueStatus:string,presentation?:EventPresentation},sessions:Session[],booths:Booth[],guests:Guest[],showcases:Showcase[]}} Content */
 
 /** Only server-created content-addressed portraits are accepted; no external URLs. */
 export const PORTRAIT_ID_PATTERN = /^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
@@ -169,6 +170,39 @@ export function validateContent(input) {
   enumField('event.status', value.event.status, contentSchema.eventStatuses);
   enumField('event.dateStatus', value.event.dateStatus, contentSchema.factStatuses);
   enumField('event.venueStatus', value.event.venueStatus, contentSchema.factStatuses);
+  if (rawEvent.presentation !== undefined) {
+    const raw = object(rawEvent.presentation);
+    if (rawEvent.presentation === null || typeof rawEvent.presentation !== 'object' || Array.isArray(rawEvent.presentation)) errors['event.presentation'] = '页面内容须为对象。';
+    const presentation = {
+      heroDescription: text(raw.heroDescription), aboutTitle: text(raw.aboutTitle), aboutText: text(raw.aboutText),
+      contactEmail: text(raw.contactEmail).toLowerCase(), mapUrl: text(raw.mapUrl),
+      openingTime: text(raw.openingTime), endTime: text(raw.endTime), checkInTime: text(raw.checkInTime),
+      faqItems: Array.isArray(raw.faqItems) ? raw.faqItems.slice(0, 21).map(item => ({ question: text(object(item).question), answer: text(object(item).answer) })) : [],
+    };
+    for (const [name, maximum] of Object.entries({ heroDescription: 300, aboutTitle: 120, aboutText: 4000, contactEmail: 254, mapUrl: 2000, openingTime: 5, endTime: 5, checkInTime: 5 })) {
+      stringField('event.presentation.' + name, presentation[name], maximum, false);
+      if (raw[name] !== undefined && (typeof raw[name] !== 'string' || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(raw[name]))) errors['event.presentation.' + name] = '请填写有效文字。';
+    }
+    if (presentation.contactEmail && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(presentation.contactEmail)) errors['event.presentation.contactEmail'] = '邮箱格式无效。';
+    if (presentation.mapUrl) {
+      try {
+        const url = new URL(presentation.mapUrl);
+        if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || /[\s\\\u0000-\u001f\u007f]/u.test(presentation.mapUrl)) throw new Error();
+      } catch { errors['event.presentation.mapUrl'] = '地图链接须为有效的 HTTP 或 HTTPS 网址。'; }
+    }
+    for (const name of ['openingTime', 'endTime', 'checkInTime']) if (presentation[name] && !validTime(presentation[name])) errors['event.presentation.' + name] = '请填写 HH:mm 格式。';
+    if (presentation.openingTime && presentation.endTime && presentation.endTime <= presentation.openingTime) errors['event.presentation.endTime'] = '结束时间须晚于开场时间。';
+    if (presentation.checkInTime && presentation.openingTime && presentation.checkInTime > presentation.openingTime) errors['event.presentation.checkInTime'] = '签到时间不可晚于开场时间。';
+    if (raw.faqItems !== undefined && !Array.isArray(raw.faqItems) || presentation.faqItems.length > 20) errors['event.presentation.faqItems'] = '常见问题最多 20 项。';
+    for (const [index, item] of presentation.faqItems.entries()) {
+      const input = object(raw.faqItems[index]);
+      for (const [name, maximum] of [['question', 200], ['answer', 1500]]) {
+        stringField(`event.presentation.faqItems.${index}.${name}`, item[name], maximum);
+        if (typeof input[name] !== 'string' || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(input[name])) errors[`event.presentation.faqItems.${index}.${name}`] = '请填写有效文字。';
+      }
+    }
+    value.event.presentation = presentation;
+  }
   if (!Array.isArray(source.sessions)) errors.sessions = '场次数组不可缺少。';
   else if (rawSessions.length > MAX_CONTENT_ITEMS) errors.sessions = `场次最多 ${MAX_CONTENT_ITEMS} 个。`;
   if (!Array.isArray(source.booths)) errors.booths = '展位数组不可缺少。';

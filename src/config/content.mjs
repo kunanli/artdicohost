@@ -1,5 +1,19 @@
 import { CONTENT_SCHEMA_VERSION } from '../../shared/content-schema.mjs';
-import { eventConfig, agenda } from './event.mjs';
+import { eventConfig, agenda, faqItems } from './event.mjs';
+
+export function createInitialPresentation() {
+  return {
+    heroDescription: eventConfig.hero.description,
+    aboutTitle: '一场聚会，两种精彩。',
+    aboutText: '组织者与青年创作者，在同一个现场相遇。',
+    checkInTime: eventConfig.time.start,
+    openingTime: eventConfig.time.opening,
+    endTime: eventConfig.time.end,
+    contactEmail: '',
+    mapUrl: eventConfig.venue.mapUrl || '',
+    faqItems: faqItems.map(item => ({...item})),
+  };
+}
 
 /**
  * Fresh editable seed each time, with stable IDs derived from the documented
@@ -18,6 +32,7 @@ export function createInitialContent() {
       status: eventConfig.status,
       dateStatus: eventConfig.date.status,
       venueStatus: eventConfig.venue.confirmed ? 'confirmed' : 'tentative',
+      presentation: createInitialPresentation(),
     },
     sessions: agenda.flatMap((slot) => ['A', 'B', 'C'].flatMap((zone) => {
       const title = slot[/** @type {'A'|'B'|'C'} */ (zone)];

@@ -6,7 +6,7 @@ import '../../styles/guests.css';
 ---
 <SiteLayout title="工作人员后台｜ARTDiCO HOST" description="ARTDiCO HOST 工作人员嘉宾、场次、展位及学生作品管理。">
   <div id="artdico-admin" class="ah-admin">
-    <header class="ah-admin-header"><a class="ah-admin-brand" href="https://artdico.host">ARTDiCO <span>HOST / STAFF</span></a><nav class="ah-admin-account"><a class="ah-admin-back" href="/admin/contacts/">人员 / 邀约</a><a class="ah-admin-back" href="https://artdico.host">查看活动页面 <span aria-hidden="true">↗</span></a></nav></header>
+    <header class="ah-admin-header"><a class="ah-admin-brand" href="https://artdico.host">ARTDiCO <span>HOST / STAFF</span></a><nav class="ah-admin-account"><a class="ah-admin-back" href="/admin/registrations/">报名 / 审核</a><a class="ah-admin-back" href="/admin/contacts/">人员 / 邀约</a><a class="ah-admin-back" href="https://artdico.host">查看活动页面 <span aria-hidden="true">↗</span></a></nav></header>
     <main id="main-content" class="ah-admin-main">
       <div class="ah-admin-environment" data-admin-environment><span class="ah-admin-dot" aria-hidden="true"></span><p><strong>活动 / 嘉宾 / 学生作品</strong>保存草稿与公开发布分别执行；人员联系方式在独立邀约工作区维护。</p></div>
       <p class="ah-admin-alert" data-admin-error role="alert" tabindex="-1" hidden></p>
@@ -29,6 +29,23 @@ import '../../styles/guests.css';
         <div class="ah-admin-toolbar"><div><strong data-admin-unsaved>尚未载入草稿</strong><span>草稿版本 <span data-admin-revision>—</span></span></div><div class="ah-admin-toolbar-actions"><button class="ah-admin-button" type="button" data-admin-preview>预览公开内容</button><button class="ah-admin-button" type="button" data-admin-save>保存草稿</button><button class="ah-admin-button ah-admin-primary" type="button" data-admin-publish disabled>发布到公开页 <span aria-hidden="true">↗</span></button></div></div>
         <p class="ah-admin-small">先保存，再发布。发布需具备发布权限；其他工作人员可继续维护草稿。未确认或未获公开授权的嘉宾、照片与内部备注不会出现在公开页。</p>
 
+        <section class="ah-admin-panel" aria-labelledby="event-editor-title">
+          <div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">THE ESSENTIALS</span><h2 id="event-editor-title">活动基本资料</h2><p>确认状态分别维护。应用后先保存草稿，再预览与发布。</p></div></div>
+          <form class="ah-admin-event-form" data-event-form>
+            <p class="ah-admin-alert" data-event-error role="alert" tabindex="-1" hidden></p>
+            <div class="ah-admin-field"><label for="event-title">活动名称</label><input id="event-title" name="title" maxlength="200" required /></div>
+            <div class="ah-admin-field-row"><div class="ah-admin-field"><label for="event-date">活动日期</label><input id="event-date" name="date" type="date" required /></div><div class="ah-admin-field"><label for="event-date-status">日期确认</label><select id="event-date-status" name="dateStatus"><option value="tentative">暂定</option><option value="confirmed">已确认</option></select></div><div class="ah-admin-field"><label for="event-timezone">活动时区</label><input id="event-timezone" name="timezone" maxlength="100" required placeholder="Asia/Shanghai" /></div></div>
+            <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="event-venue">场地名称</label><input id="event-venue" name="venue" maxlength="300" required /></div><div class="ah-admin-field"><label for="event-venue-status">场地确认</label><select id="event-venue-status" name="venueStatus"><option value="tentative">暂定</option><option value="confirmed">已确认</option></select></div></div>
+            <div class="ah-admin-field"><label for="event-status">活动状态</label><select id="event-status" name="status"><option value="tentative">暂定</option><option value="confirmed">已确认</option><option value="cancelled">已取消</option></select><small>更改活动日期或时区后，旧的开场倒数不会继续显示；具体场次请在下方分别更新。</small></div>
+            <div class="ah-admin-field-row"><div class="ah-admin-field"><label for="event-checkin">签到开始</label><input id="event-checkin" type="time" name="checkInTime" required /></div><div class="ah-admin-field"><label for="event-opening">正式开场</label><input id="event-opening" type="time" name="openingTime" required /></div><div class="ah-admin-field"><label for="event-end">活动结束</label><input id="event-end" type="time" name="endTime" required /></div></div>
+            <div class="ah-admin-field"><label for="event-description">首页活动短介绍</label><input id="event-description" name="heroDescription" maxlength="300" /></div>
+            <div class="ah-admin-field"><label for="event-about-title">活动介绍标题</label><input id="event-about-title" name="aboutTitle" maxlength="120" /></div>
+            <div class="ah-admin-field"><label for="event-about-text">活动介绍</label><textarea id="event-about-text" name="aboutText" maxlength="4000" rows="4"></textarea></div>
+            <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="event-contact-email">公开联络邮箱（选填）</label><input id="event-contact-email" type="email" name="contactEmail" maxlength="254" /></div><div class="ah-admin-field"><label for="event-map">地图链接（选填）</label><input id="event-map" type="url" name="mapUrl" maxlength="2048" placeholder="https://" /><small>仅填写已核对且不含账号密码的 HTTPS 链接。</small></div></div>
+            <div class="ah-admin-event-faq-heading"><h3>常见问题</h3><button type="button" class="ah-admin-button" data-event-add-faq>新增问题</button></div><div data-event-faq></div>
+            <button class="ah-admin-button" type="submit" data-event-submit disabled>应用基本资料修改</button>
+          </form>
+        </section>
         <section class="ah-admin-panel ah-arrangements" data-arrangements aria-labelledby="arrangements-title">
           <div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">THE WHOLE DAY, TOGETHER</span><h2 id="arrangements-title">现场配置总览</h2><p>从十五个展位到各区场次，一起核对参与人、实际回复与学生团队。</p></div><button type="button" class="ah-admin-button" data-arrangements-refresh disabled>刷新已保存安排</button></div>
           <p class="ah-arrangements-notice" data-arrangements-access>查看人员配置需同时具备活动编辑与人员邀约权限。</p>

@@ -1,0 +1,6 @@
+#artdico-host .ah-registration-policy{border:1px solid #dce4f0;background:#f7f9fd;border-radius:8px;padding:20px;margin:24px 0;font-size:13px;line-height:1.8}
+#artdico-host .ah-registration-policy h4{font-size:17px;margin:0 0 10px;color:#15243b}
+#artdico-host .ah-registration-policy dl{display:grid;grid-template-columns:110px minmax(0,1fr);gap:9px 16px;margin:15px 0 0}
+#artdico-host .ah-registration-policy dt{font-weight:600;color:#304b75}
+#artdico-host .ah-registration-policy dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:580px){#artdico-host .ah-registration-policy dl{grid-template-columns:1fr;gap:3px}#artdico-host .ah-registration-policy dd{margin-bottom:12px}}

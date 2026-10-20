@@ -90,6 +90,7 @@ export function renderRegistrationSuccess(container, response = {}) {
   const image = container.ownerDocument.createElement('img');
   image.alt = '活动微信群入群二维码';
   image.referrerPolicy = 'no-referrer';
+  image.crossOrigin = 'anonymous';
   image.decoding = 'async';
   image.addEventListener('error', () => {
     if (imageHolder.firstElementChild !== image) return;

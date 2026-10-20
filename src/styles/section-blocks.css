@@ -1,0 +1,207 @@
+/* Public homepage only: full-width editorial bands around the unified dark hero. */
+#artdico-host.ah-festival.ah-section-blocks :is(.ah-about,.ah-agenda,.ah-booths,.ah-registration){
+  --ah-ink:#22272e;
+  --ah-muted:#515b68;
+  --ah-line:#b9bec4;
+  --ah-surface:#f7f7f5;
+  --ah-pale:#e0e4e9;
+  --ah-blue:#315bac;
+  --ah-orange:#98572e;
+  --ah-orange-text:#98572e;
+  --ah-control-border:#79828e;
+  color:var(--ah-ink);
+  color-scheme:light;
+  border-top-color:transparent;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-about{
+  --ah-line:#bab8b1;
+  --ah-surface:#f4f1ea;
+  background:#e9e6df;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-guests{
+  background:#24272b;
+  border-top-color:transparent;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-agenda{
+  --ah-muted:#4e5b6c;
+  --ah-line:#b2bbc8;
+  --ah-surface:#f7f8fa;
+  background:#e7ebf2;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-students{
+  --ah-muted:#c0b8af;
+  --ah-line:#5c534a;
+  background:#302b27;
+  border-top-color:transparent;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-booths{
+  --ah-line:#bab8b1;
+  --ah-surface:#f4f1ea;
+  background:#e9e6df;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-recruitment{
+  --ah-surface:#2c3035;
+  --ah-line:#50565f;
+  background:#22262b;
+  border-top-color:transparent;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration{
+  --ah-surface:#fafbfc;
+  background:#e9ecef;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-bottom-grid{
+  background:#1b1e22;
+  border-top-color:transparent;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-privacy{
+  --ah-line:#4b5058;
+  background:#2b2f34;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-footer{
+  background:#15171a;
+  border-top-color:transparent;
+}
+
+/* Shared light-band text, actions and keyboard focus. */
+#artdico-host.ah-festival.ah-section-blocks :is(.ah-about,.ah-agenda,.ah-booths,.ah-registration) :is(.ah-kicker,.ah-highlights-detail,.ah-highlights-detail>summary,.ah-text-action>span){color:var(--ah-muted)}
+#artdico-host.ah-festival.ah-section-blocks :is(.ah-about,.ah-agenda,.ah-booths,.ah-registration) :is(a,button,input,select,textarea,summary):focus-visible{
+  outline:2px solid var(--ah-blue);
+  outline-offset:5px;
+}
+#artdico-host.ah-festival.ah-section-blocks :is(.ah-about,.ah-agenda,.ah-booths,.ah-registration) .ah-primary{
+  background:#252a31;
+  border-color:#252a31;
+  color:#fff;
+}
+#artdico-host.ah-festival.ah-section-blocks :is(.ah-about,.ah-agenda,.ah-booths,.ah-registration) .ah-primary:hover{
+  background:#101419;
+  border-color:#101419;
+}
+#artdico-host.ah-festival.ah-section-blocks :is(.ah-about,.ah-agenda,.ah-booths,.ah-registration) .ah-secondary{
+  background:transparent;
+  color:var(--ah-ink);
+  border-color:var(--ah-control-border);
+}
+#artdico-host.ah-festival.ah-section-blocks :is(.ah-about,.ah-agenda,.ah-booths,.ah-registration) .ah-secondary:hover{background:#dce1e6}
+#artdico-host.ah-festival.ah-section-blocks :is(.ah-about,.ah-agenda,.ah-booths,.ah-registration) :is(.ah-primary,.ah-secondary):disabled{
+  background:#dce0e5;
+  color:#606975;
+  border-color:#a6aeb8;
+  opacity:1;
+}
+
+/* Programme introduction and public exhibition cards share the stone palette. */
+#artdico-host.ah-festival.ah-section-blocks .ah-about :is(.ah-program-number,.ah-program-title>span,.ah-program-tags){color:var(--ah-muted)}
+#artdico-host.ah-festival.ah-section-blocks .ah-booths-empty svg{color:#5f6976}
+#artdico-host.ah-festival.ah-section-blocks .ah-booths .ah-public-booths :is(article,.ah-booth-card){
+  background:var(--ah-surface);
+  border-color:var(--ah-line);
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-booths .ah-public-booths :is(p,small,.ah-booth-card>span){color:var(--ah-muted)}
+#artdico-host.ah-festival.ah-section-blocks .ah-students :is(.ah-student-count,.ah-student-formats>li,.ah-student-formats>article,.ah-student-formats>div){border-color:var(--ah-line)}
+#artdico-host.ah-festival.ah-section-blocks .ah-students :is(.ah-kicker,.ah-student-count>span:last-child,.ah-student-time,time){color:#d0c7bc}
+
+/* Time-first schedule keeps its structure, with dark active tabs and pale cards. */
+#artdico-host.ah-festival.ah-section-blocks .ah-program :is(.ah-program-datebar,.ah-agenda-row>div){border-color:var(--ah-line)}
+#artdico-host.ah-festival.ah-section-blocks .ah-program :is(.ah-program-date,.ah-program-divider,.ah-agenda-row>time,.ah-agenda-row strong){color:var(--ah-ink)}
+#artdico-host.ah-festival.ah-section-blocks .ah-program :is(.ah-program-timezone,.ah-program-period,.ah-program-notice,.ah-program-divider>span,.ah-agenda-row small){color:var(--ah-muted)}
+#artdico-host.ah-festival.ah-section-blocks .ah-program-divider::after{background:var(--ah-line)}
+#artdico-host.ah-festival.ah-section-blocks .ah-program :is(.ah-zone-tabs button,.ah-program-period select){
+  background:var(--ah-surface);
+  color:var(--ah-ink);
+  border-color:var(--ah-control-border);
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-program .ah-zone-tabs button small{color:var(--ah-muted)}
+#artdico-host.ah-festival.ah-section-blocks .ah-program .ah-zone-tabs button:hover{background:#dce2eb}
+#artdico-host.ah-festival.ah-section-blocks .ah-program .ah-zone-tabs button[aria-selected="true"]{
+  background:#292f38;
+  border-color:#292f38;
+  color:#fff;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-program .ah-zone-tabs button[aria-selected="true"] small{color:#d5dce7}
+#artdico-host.ah-festival.ah-section-blocks .ah-program :is(.ah-agenda-row,.ah-program-empty){
+  background:var(--ah-surface);
+  border-color:var(--ah-line);
+  color:var(--ah-muted);
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-program .ah-session-category{
+  color:#475666;
+  border-color:#9aa7b8;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-program .ah-agenda-row.ah-featured{
+  background:#faf5ed;
+  border-left-color:#a86535;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-program .ah-agenda-row.ah-featured .ah-session-category{
+  color:#8b4e25;
+  border-color:#bb916e;
+}
+
+/* Registration remains a labelled preview; its light controls cover every state. */
+#artdico-host.ah-festival.ah-section-blocks .ah-registration :is(.ah-register-intro>p,.ah-stay-details,.ah-registration-preview>summary small){color:var(--ah-muted)}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration :is(.ah-register-demo-note,.ah-registration-preview){
+  background:var(--ah-surface);
+  border-color:var(--ah-control-border);
+  color:var(--ah-ink);
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration :is(.ah-form-card,.ah-registration-success){
+  background:var(--ah-surface);
+  color:var(--ah-ink);
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration :is(.ah-registration-preview>summary>span,.ah-form-progress .ah-step-active,.ah-branch>legend){color:var(--ah-ink)}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration .ah-demo-tag{
+  background:#e8ecf1;
+  color:#4f5b6b;
+  border-color:#b4bdca;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration .ah-identity-grid>label{
+  background:#fff;
+  color:var(--ah-ink);
+  border-color:var(--ah-control-border);
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration .ah-identity-grid>label>b{color:#5d6876}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration .ah-identity-grid>label:has(input:checked){
+  background:#e2e8f0;
+  color:#222e40;
+  border-color:#526b91;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration .ah-identity-grid>label:has(input:checked)>b{color:#315bac}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration .ah-identity-grid>label:has(input:focus-visible){
+  outline:2px solid var(--ah-blue);
+  outline-offset:4px;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration .ah-field :is(input,select,textarea){
+  background:#fff;
+  color:var(--ah-ink);
+  border-color:var(--ah-control-border);
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration .ah-field :is(input,textarea)::placeholder{color:#687585}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration .ah-field input:autofill{
+  box-shadow:0 0 0 1000px #edf2f8 inset;
+  -webkit-text-fill-color:#22272e;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration .ah-field :is(input,select,textarea):disabled{
+  background:#e1e5ea;
+  color:#606975;
+  border-color:#a6aeb8;
+  opacity:1;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration :is(.ah-field,.ah-option-field) em{color:#465a79}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration .ah-branch{border-color:#aeb9c7}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration input[type="checkbox"]{accent-color:#315bac}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration :is(.ah-demo-consent a,.ah-form-title-row>.ah-text-action){color:#315bac}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration .ah-form-error{color:#a02738}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration .ah-form-error-list{
+  color:#a02738;
+  background:#fff0f1;
+  border-color:#b56774;
+}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration [aria-invalid="true"]{border-color:#ac394b!important}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration .ah-complete-mark{background:#e1e7ee;color:#364f72}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration-success{border-color:var(--ah-control-border)}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration-success::before{background:#617b9f}
+#artdico-host.ah-festival.ah-section-blocks .ah-registration-success-reference{
+  color:#22272e;
+  background:#edf0f4;
+  border-color:#aeb9c7;
+}

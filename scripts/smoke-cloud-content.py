@@ -19,9 +19,11 @@ expected_health = {
 assets = {asset['url']: asset for asset in release['assets']}
 
 
-def request(path, method='GET', host='api.artdico.host'):
+def request(path, method='GET', host='api.artdico.host', origin=None):
     data = b'{}' if method == 'POST' else None
     headers = {'Host': host}
+    if origin is not None:
+        headers['Origin'] = origin
     if data is not None:
         headers.update({'Origin': 'https://api.artdico.host',
                         'Content-Type': 'application/json'})
@@ -112,13 +114,14 @@ for configured in [False, True]:
         if not configured:
             for path, method in [('/admin/', 'GET'),
                                  ('/admin/contacts/', 'GET'),
+                                 ('/admin/registrations/', 'GET'),
                                  ('/api/admin/login', 'POST'),
                                  ('/api/registrations', 'POST')]:
                 status, headers, body = request(path, method)
                 assert status == 503 and headers.get('cache-control') == 'no-store'
                 assert json.loads(body)['error']['code'] == 'CONTENT_NOT_READY'
         else:
-            for path in ['/admin/', '/admin/contacts/']:
+            for path in ['/admin/', '/admin/contacts/', '/admin/registrations/']:
                 status, headers, body = request(path)
                 assert status == 200 and 'text/html' in headers['content-type']
                 assert headers.get('cache-control') == 'no-store'
@@ -141,7 +144,12 @@ for configured in [False, True]:
             assert status == 401 and headers.get('cache-control') == 'no-store'
             status, headers, body = request('/api/registrations', 'POST')
             assert status == 503
-            assert json.loads(body)['error']['code'] == 'REGISTRATION_CLOSED'
+            assert json.loads(body)['error']['code'] == 'UNAVAILABLE'
+            for path in ['/api/admin/registration/config', '/api/registration/config']:
+                status, headers, body = request(path, origin='https://artdico.host')
+                assert status == 200 and headers.get('cache-control') == 'no-store'
+                assert headers.get('access-control-allow-origin') == 'https://artdico.host'
+                assert json.loads(body) == {'enabled': False, 'reason': 'unavailable'}
             for path in ['/release.json', '/.env',
                          '/functions/cloud-content/server.mjs']:
                 assert request(path)[0] == 404

@@ -68,10 +68,15 @@ function sessionValue(value) {
 }
 
 /** Shared journals provide persistence and CAS; this module has no session or rate-limit cache. */
-export function createCloudAuth({ users, journalFor, now = () => Date.now(),
+export function createCloudAuth({ users, usersProvider, journalFor, now = () => Date.now(),
   sessionTtlMs = 8 * 60 * 60 * 1000, loginLimit = 10, globalLoginLimit = 60,
   loginWindowMs = 15 * 60 * 1000 } = {}) {
-  const accounts = configuredAccounts(users);
+  const bootstrapAccounts = configuredAccounts(users);
+  if (usersProvider !== undefined && typeof usersProvider !== 'function') throw new TypeError('云端账号目录无效。');
+  async function loadAccounts() {
+    if (!usersProvider) return bootstrapAccounts;
+    try { return configuredAccounts(await usersProvider()); } catch { throw unavailable(); }
+  }
   if (typeof journalFor !== 'function' || typeof now !== 'function'
     || !Number.isSafeInteger(sessionTtlMs) || sessionTtlMs < 1 || sessionTtlMs > MAX_TTL_MS
     || !Number.isSafeInteger(loginWindowMs) || loginWindowMs < 1 || loginWindowMs > MAX_TTL_MS
@@ -167,6 +172,7 @@ export function createCloudAuth({ users, journalFor, now = () => Date.now(),
       // storage path; account-specific buckets would reveal whether a name exists.
       // All aliases and failed attempts conservatively consume the same allowance.
       await reserve(at);
+      const accounts = await loadAccounts();
       const account = findAdminUser(accounts, identifier);
       const validPassword = typeof password === 'string' && Buffer.byteLength(password) <= 1024;
       let verified;
@@ -194,6 +200,7 @@ export function createCloudAuth({ users, journalFor, now = () => Date.now(),
       if (state.value === null) throw required();
       const value = sessionValue(state.value);
       const at = clock();
+      const accounts = await loadAccounts();
       const account = accounts.find(user => user.id === value.userId);
       if (value.revoked || value.createdAt > at || value.expiresAt <= at
         || value.expiresAt - value.createdAt > sessionTtlMs || !account

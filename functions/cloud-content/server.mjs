@@ -5,10 +5,11 @@ import { dirname, parse, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCloudContentRuntime } from './runtime.mjs';
 import { createCloudContentServer, isCloudAdminAssetUrl } from './http-server.mjs';
+import { startCloudAcceptance } from './acceptance.mjs';
 
 const MiB = 1024 * 1024;
 const NODE = Object.freeze({ version: 'v24.19.0', platform: 'linux', arch: 'x64', sha256: 'bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12' });
-const REQUIRED = ['/admin/', '/admin/contacts/', '/invitations/template-blank.png'];
+const REQUIRED = ['/admin/', '/admin/contacts/', '/admin/registrations/', '/invitations/template-blank.png'];
 const failure = () => new Error('Cloud content package verification failed.');
 const exactKeys = (value, keys) => value !== null && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
@@ -45,6 +46,7 @@ async function regularBytes(path, limit, mode) {
 function assetPath(url) {
   if (url === '/admin/') return 'admin-assets/admin/index.html';
   if (url === '/admin/contacts/') return 'admin-assets/admin/contacts/index.html';
+  if (url === '/admin/registrations/') return 'admin-assets/admin/registrations/index.html';
   return 'admin-assets' + url;
 }
 
@@ -81,8 +83,12 @@ export async function loadCloudContentRelease({ codeDirectory } = {}) {
 /** Factory only: importing this module never reads files, creates credentials or opens a port. */
 export async function createProductionCloudServer({ codeDirectory, env = process.env, fetchFn } = {}) {
   const { sourceCommit, assets } = await loadCloudContentRelease({ codeDirectory });
-  const runtime = createCloudContentRuntime({ env, fetchFn });
-  return createCloudContentServer({ runtime, sourceCommit, assets });
+  // An acceptance setting can only keep the business runtime closed. Its work
+  // starts once here, never from a health request or other visitor request.
+  const acceptanceRequested = env.ARTDICO_CLOUD_ACCEPTANCE_RUN_ID !== undefined && env.ARTDICO_CLOUD_ACCEPTANCE_RUN_ID !== '';
+  const runtime = createCloudContentRuntime({ env: acceptanceRequested ? { ...env, ARTDICO_CLOUD_CONTENT_ENABLED: 'false' } : env, fetchFn });
+  const acceptance = startCloudAcceptance({ env, sourceCommit, fetchFn });
+  return createCloudContentServer({ runtime, sourceCommit, assets, readAcceptance: acceptance.snapshot });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

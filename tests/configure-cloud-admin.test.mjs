@@ -135,7 +135,7 @@ test('the setup derives a runtime-valid owner only in memory, preserves unrelate
   assert.equal(users.length, 1);
   assert.equal(users[0].username, ENV.ARTDICO_ADMIN_USERNAME);
   assert.equal(users[0].email, ENV.ARTDICO_ADMIN_EMAIL);
-  assert.deepEqual(users[0].roles, ['editor', 'publisher', 'outreach']);
+  assert.deepEqual(users[0].roles, ['superadmin', 'editor', 'publisher', 'outreach']);
   assert.equal(await verifyPassword(PASSWORD, users[0].passwordHash), true);
   assert.equal(variables.ADMIN_USERS_JSON.includes(PASSWORD), false);
   assert.equal(JSON.stringify(result).includes('scrypt$'), false);
@@ -157,6 +157,43 @@ test('known owner setup is idempotent and preserves the existing salted hash and
   assert.equal(result.updated, false);
   assert.equal(second.updates(), 0);
   assert.equal(second.current().environmentVariables.ADMIN_USERS_JSON, bytes);
+});
+
+test('only the exact legacy owner can receive superadmin while retaining its password hash', async () => {
+  const first = fixture(); await configureCloudAdmin(first.options);
+  const current = first.current();
+  const original = JSON.parse(current.environmentVariables.ADMIN_USERS_JSON)[0];
+  const legacy = { ...original, roles: ['editor', 'publisher', 'outreach'] };
+  current.environmentVariables.ADMIN_USERS_JSON = JSON.stringify([legacy]);
+  const next = fixture({ before: () => structuredClone(current) });
+  assert.equal((await configureCloudAdmin(next.options)).updated, true);
+  const upgraded = JSON.parse(next.current().environmentVariables.ADMIN_USERS_JSON)[0];
+  assert.equal(upgraded.passwordHash, original.passwordHash);
+  assert.deepEqual(upgraded.roles, ['superadmin', 'editor', 'publisher', 'outreach']);
+  const foreign = fixture({ before: () => ({ ...current, environmentVariables: { ...current.environmentVariables,
+    ADMIN_USERS_JSON: JSON.stringify([{ ...legacy, roles: ['reviewer'] }]) } }) });
+  await opaqueFailure(configureCloudAdmin(foreign.options), /EXISTING_ACCOUNT_REQUIRES_REVIEW/u);
+  assert.equal(foreign.updates(), 0);
+});
+
+test('registration policy and independent token secret are configured privately with explicit enabling', async () => {
+  const first = fixture(); await configureCloudAdmin(first.options);
+  const variables = first.current().environmentVariables;
+  assert.match(variables.ARTDICO_REGISTRATION_TOKEN_SECRET, /^[A-Za-z0-9_-]{64}$/u);
+  assert.equal(variables.ARTDICO_REGISTRATION_ENABLED, 'false');
+  assert.equal(JSON.parse(variables.ARTDICO_REGISTRATION_POLICY_JSON).enabled, false);
+  assert.equal(variables.ARTDICO_REGISTRATION_CAPACITY, '300');
+  const enabled = fixture({ before: () => first.current() });
+  await configureCloudAdmin({ ...enabled.options, env: { ...ENV, ARTDICO_REGISTRATION_SETUP_ENABLED: 'true' } });
+  assert.equal(enabled.current().environmentVariables.ARTDICO_REGISTRATION_TOKEN_SECRET, variables.ARTDICO_REGISTRATION_TOKEN_SECRET);
+  assert.equal(enabled.current().environmentVariables.ARTDICO_REGISTRATION_ENABLED, 'true');
+  assert.equal(JSON.parse(enabled.current().environmentVariables.ARTDICO_REGISTRATION_POLICY_JSON).enabled, true);
+  assert.equal(enabled.current().environmentVariables.ARTDICO_CLOUD_CONTENT_ENABLED, 'false');
+  for (const secret of ['', 'short', ENV.ARTDICO_ADMIN_PASSWORD]) {
+    const failed = fixture({ before: value => ({ ...value, environmentVariables: { ARTDICO_REGISTRATION_TOKEN_SECRET: secret } }) });
+    await opaqueFailure(configureCloudAdmin(failed.options), /REGISTRATION_SECRET_REQUIRES_REVIEW/u);
+    assert.equal(failed.updates(), 0);
+  }
 });
 
 test('unknown existing staff, changed owner passwords and invalid identity metadata never write', async () => {

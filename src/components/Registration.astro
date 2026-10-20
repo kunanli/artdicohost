@@ -5,6 +5,7 @@ import FormField from './FormField.astro';
 import BranchFields from './BranchFields.astro';
 import RegistrationSuccess from './RegistrationSuccess.astro';
 import '../styles/registration-success.css';
+import '../styles/registration-policy.css';
 const field = (name: string) => {
   const definition = registrationSchema.baseFields.find(item => item.name === name);
   if (!definition) throw new Error(`Missing form field: ${name}`);
@@ -12,18 +13,20 @@ const field = (name: string) => {
 };
 const identitySublabels: Record<string,string> = {so:'SITE ORGANIZER',ro:'REGIONAL ORGANIZER',new_site:'START A SITE',industry:'MAKE & PLAY',education:'LEARN & GROW',partner:'COMMUNITY',other:'JUST CURIOUS'};
 const stayDate = (value: string) => { const [, month, day] = value.split('-'); return `${Number(month)} 月 ${Number(day)} 日`; };
+const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
+if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('报名 API 必须使用指定的 HTTPS 来源。');
 ---
-<section class="ah-registration ah-section" id="registration" aria-labelledby="registration-heading">
+<section class="ah-registration ah-section" id="registration" aria-labelledby="registration-heading" data-registration-api-origin={apiOrigin || undefined}>
   <div class="ah-register-intro">
     <span class="ah-kicker">JOIN THE DAY</span>
     <h2 id="registration-heading">一起参与这一天。</h2>
-    <p>活动报名已开放，欢迎组织者、学生、游戏创作者与社群伙伴。本页表单仅供流程预览，不发送或保存资料。</p>
+    <p data-registration-notice>活动报名已开放，欢迎组织者、学生、游戏创作者与社群伙伴。本页表单仅供流程预览，不发送或保存资料。</p>
     <details class="ah-stay-details"><summary>外地嘉宾住宿支持</summary><p>{eventConfig.accommodation.notice}入住 / 离店暂定为 {stayDate(eventConfig.accommodation.checkIn)}至 {stayDate(eventConfig.accommodation.checkOut)}。</p></details>
   </div>
   <details class="ah-registration-preview" data-registration-preview>
-    <summary><strong>预览报名表</strong><small>了解参与身份与填写内容</small><span aria-hidden="true">＋</span></summary>
+    <summary><strong data-registration-open-label>预览报名表</strong><small>了解参与身份与填写内容</small><span aria-hidden="true">＋</span></summary>
     <div class="ah-form-card">
-    <div class="ah-form-top"><span>{eventConfig.registration.formTitle}</span><span class="ah-demo-tag">预览 · 不提交</span></div>
+    <div class="ah-form-top"><span>{eventConfig.registration.formTitle}</span><span class="ah-demo-tag" data-registration-mode-label>预览 · 不提交</span></div>
     <form data-registration-form data-registration-mode="mock" method="post" novalidate autocomplete="off">
       <div class="ah-form-progress" aria-label="填写进度"><span data-step-dot="0" class="ah-step-active" aria-current="step">1 身份</span><span aria-hidden="true"></span><span data-step-dot="1">2 资料</span><span aria-hidden="true"></span><span data-step-dot="2">3 参与方式</span></div>
       <p class="ah-form-error" data-form-error role="alert" tabindex="-1" hidden></p>
@@ -41,7 +44,7 @@ const stayDate = (value: string) => { const [, month, day] = value.split('-'); r
       </section>
       <section data-form-step="1" hidden aria-labelledby="details-heading">
         <h3 id="details-heading" tabindex="-1">先认识一下你。</h3>
-        <p class="ah-form-hint">带 * 为必填。体验时请填写虚构资料；资料仅留在当前页面内存。</p>
+        <p class="ah-form-hint" data-registration-data-hint>带 * 为必填。体验时请填写虚构资料；资料仅留在当前页面内存。</p>
         <div class="ah-fields-grid">{['name','city','organization','position','email','wechat','website'].map(name => <FormField field={field(name)} />)}</div>
         <FormField field={field('background')} />
         <FormField field={field('caseLinks')} />
@@ -62,6 +65,7 @@ const stayDate = (value: string) => { const [, month, day] = value.split('-'); r
         <FormField field={field('topics')} />
         <FormField field={field('cooperationInterest')} />
         <FormField field={field('cooperationForms')} />
+        <section class="ah-registration-policy" data-registration-policy hidden aria-labelledby="registration-policy-title"><h4 id="registration-policy-title">个人信息处理告知</h4><p>请阅读以下说明，再决定是否提交。住宿、讲者及展位申请分别审核。</p><dl data-registration-policy-details></dl></section>
         <FormField field={field('consentAccepted')} />
         <div class="ah-form-actions"><button type="button" data-prev-step class="ah-secondary">上一步</button><button type="submit" data-submit class="ah-primary" disabled>检查并完成体验 <span aria-hidden="true">↗</span></button></div>
       </section>
@@ -70,7 +74,7 @@ const stayDate = (value: string) => { const [, month, day] = value.split('-'); r
         <p data-form-result role="status" aria-live="polite">{eventConfig.registration.completedNotice}</p>
         <button type="button" data-reset-form class="ah-secondary">重新体验</button>
       </section>
-      <p class="ah-form-disclaimer">报名预览不会受理真实资料或生成报名编号。</p>
+      <p class="ah-form-disclaimer" data-registration-disclaimer>报名预览不会受理真实资料或生成报名编号。</p>
     </form>
     <noscript><p class="ah-form-disclaimer">本页互动预览需要启用 JavaScript，不发送或保存资料。活动信息和全部日程仍可直接阅读。</p></noscript>
     </div>
@@ -79,4 +83,5 @@ const stayDate = (value: string) => { const [, month, day] = value.split('-'); r
 </section>
 <script>
   import '../scripts/registration.mjs';
+  import '../scripts/registration-production.mjs';
 </script>

@@ -1,6 +1,8 @@
 import { validateContent, toPublicContent } from '../../shared/content-schema.mjs';
 import { showcaseSummary } from '../../shared/showcase-display.mjs';
 import { createArrangementsView } from './arrangements-view.mjs';
+import { createInitialPresentation } from '../config/content.mjs';
+import { completeBoothSlots } from '../lib/booth-slots.mjs';
 
 const $ = selector => document.querySelector(selector);
 const status = $('[data-admin-status]');
@@ -12,6 +14,7 @@ let csrfToken = '';
 let draft = null;
 let published = null;
 let dirty = false;
+let eventFormDirty = false;
 let busy = false;
 let editingSession = null;
 let editingBooth = null;
@@ -55,6 +58,8 @@ function announce(message, error = false) {
 function canEdit() { return user?.roles.includes('editor'); }
 function canPublish() { return user?.roles.includes('publisher'); }
 function lockControls() {
+  $('[data-event-submit]').disabled = busy || portraitUploading || coverUploading || !canEdit();
+  for (const field of $('[data-event-form]').querySelectorAll('input,select,textarea,[data-event-add-faq],[data-event-faq-remove]')) field.disabled = busy || !canEdit();
   $('[data-admin-login-submit]').disabled = busy || location.protocol === 'file:';
   $('[data-session-submit]').disabled = busy || portraitUploading || coverUploading || !canEdit();
   $('[data-showcase-submit]').disabled = busy || portraitUploading || coverUploading || !canEdit();
@@ -64,7 +69,7 @@ function lockControls() {
   $('[data-guest-submit]').disabled = busy || portraitUploading || coverUploading || !canEdit();
   $('[data-guest-portrait-file]').disabled = busy || !canEdit();
   $('[data-guest-portrait-remove]').disabled = busy || !canEdit();
-  for (const node of document.querySelectorAll('[data-admin-save],[data-admin-add-session],[data-admin-add-booth],[data-admin-add-guest],[data-admin-add-showcase],[data-row-action]')) node.disabled = busy || portraitUploading || coverUploading || !canEdit();
+  for (const node of document.querySelectorAll('[data-admin-save],[data-admin-add-session],[data-admin-add-booth],[data-admin-fill-booths],[data-admin-add-guest],[data-admin-add-showcase],[data-row-action]')) node.disabled = busy || portraitUploading || coverUploading || !canEdit();
   $('[data-admin-publish]').disabled = busy || portraitUploading || coverUploading || !canPublish() || dirty;
   $('[data-admin-preview]').disabled = busy || !draft;
   $('[data-admin-logout]').disabled = busy || portraitUploading || coverUploading;
@@ -104,6 +109,8 @@ function showLogin() {
   draft = null;
   published = null;
   dirty = false;
+  eventFormDirty = false;
+  $('[data-event-form]').reset();
   workspace.hidden = true;
   loginPanel.hidden = false;
   $('[data-admin-sessions]').replaceChildren();
@@ -173,6 +180,15 @@ function rowActions(row, type, item) {
 }
 function render() {
   if (!draft) return;
+  if (!eventFormDirty) for (const [name,value] of Object.entries(draft.content.event)) {
+    const field = $('[data-event-form]').elements.namedItem(name);
+    if (field) field.value = value;
+  }
+  if (!eventFormDirty) {
+    const presentation = draft.content.event.presentation ?? createInitialPresentation();
+    for (const name of ['heroDescription','aboutTitle','aboutText','checkInTime','openingTime','endTime','contactEmail','mapUrl']) $('[data-event-form]').elements.namedItem(name).value = presentation[name] ?? '';
+    renderFaqFields(presentation.faqItems ?? []);
+  }
   $('[data-admin-user]').textContent = user.label || user.id;
   $('[data-admin-role]').textContent = canPublish() ? '可编辑与发布' : canEdit() ? '可编辑草稿' : '只读';
   if (canPublish() && !canEdit()) $('[data-admin-role]').textContent = '可预览与发布';
@@ -206,7 +222,10 @@ function render() {
     const codeCell = cell(row, '编号', item.code);
     codeCell.append(node('small', item.slotNumber ? String(item.slotNumber).padStart(2,'0')+' 号位置' : '未指定位置', 'ah-admin-row-format'));
     cell(row, '出席单位', item.organization || '待确认');
-    cell(row, '展示内容', item.project || '待确认');
+    const projectCell=cell(row, '展示内容', item.project || '待确认');
+    if(item.description)projectCell.append(node('small',item.description));
+    const contactCell=cell(row,'负责人 / 联系方式',item.contactName||'负责人待填写');
+    contactCell.append(node('small',item.contactMethods||'联系方式待填写 · 不公开'));
     cell(row, '场地', item.zone + ' 区');
     cell(row, '状态', { pending: '待确认', confirmed: '已确认', cancelled: '已取消' }[item.status]);
     rowActions(row, 'booth', item);
@@ -646,7 +665,46 @@ $('[data-admin-login]').addEventListener('submit', event => {
     if(!await prepareInvitedGuest())announce('已登录。修改草稿后，需要发布才会显示到前台。');
   });
 });
+function renderFaqFields(items) {
+  const output = $('[data-event-faq]'); output.replaceChildren();
+  for (const item of items) addFaqFields(item);
+}
+function addFaqFields(item = {question:'',answer:''}) {
+  const row = node('fieldset',undefined,'ah-admin-faq-row');
+  row.append(node('legend','常见问题'));
+  const questionLabel = node('label','问题');
+  const question = node('input'); question.name = 'faqQuestion'; question.maxLength = 200; question.required = true; question.value = item.question; questionLabel.append(question);
+  const answerLabel = node('label','回答');
+  const answer = node('textarea'); answer.name = 'faqAnswer'; answer.maxLength = 1500; answer.required = true; answer.rows = 3; answer.value = item.answer; answerLabel.append(answer);
+  const remove = node('button','移除此问题','ah-admin-text-button'); remove.type = 'button'; remove.dataset.eventFaqRemove = ''; remove.addEventListener('click',() => { row.remove();eventFormDirty = true; });
+  row.append(questionLabel,answerLabel,remove); $('[data-event-faq]').append(row);
+}
+$('[data-event-add-faq]').addEventListener('click',() => {
+  if (!canEdit() || busy) return;
+  if ($('[data-event-faq]').children.length >= 20) { announce('常见问题最多 20 条。',true);return; }
+  addFaqFields();eventFormDirty = true;
+});
+$('[data-event-form]').addEventListener('input', () => { eventFormDirty = true; });
+$('[data-event-form]').addEventListener('change', () => { eventFormDirty = true; });
+$('[data-event-form]').addEventListener('submit', event => {
+  event.preventDefault();
+  if (!draft || busy || !canEdit()) return;
+  const candidate = structuredClone(draft.content);
+  const form = event.currentTarget;
+  for (const name of ['title','date','timezone','venue','status','dateStatus','venueStatus']) candidate.event[name] = form.elements.namedItem(name).value;
+  candidate.event.presentation = {};
+  for (const name of ['heroDescription','aboutTitle','aboutText','checkInTime','openingTime','endTime','contactEmail','mapUrl']) candidate.event.presentation[name] = form.elements.namedItem(name).value;
+  candidate.event.presentation.faqItems = [...$('[data-event-faq]').children].map(row => ({question:row.querySelector('[name=faqQuestion]').value,answer:row.querySelector('[name=faqAnswer]').value}));
+  const result = validateContent(candidate);
+  const error = $('[data-event-error]');
+  if (!result.valid) { error.textContent = [...new Set(Object.values(result.errors))].join(' '); error.hidden = false; error.focus(); return; }
+  error.hidden = true; error.textContent = '';
+  draft.content = result.value; eventFormDirty = false;
+  setDirty(true); render();
+  announce('活动基本资料已应用到本页草稿。请保存草稿，再预览与发布。');
+});
 $('[data-admin-save]').addEventListener('click', () => action(async () => {
+  if (eventFormDirty) throw new Error('活动基本资料尚未应用。请先点击“应用基本资料修改”，再保存草稿。');
   const validation = validateContent(draft.content);
   if (!validation.valid) throw new Error([...new Set(Object.values(validation.errors))].join(' '));
   const result = await request('/api/admin/content', { method: 'PUT', body: JSON.stringify({ expectedRevision: draft.revision, content: validation.value }) });
@@ -669,6 +727,16 @@ $('[data-admin-preview]').addEventListener('click', () => { try { previewPublic(
 $('[data-admin-preview-close]').addEventListener('click', () => { $('[data-admin-preview-panel]').hidden = true; });
 $('[data-admin-add-session]').addEventListener('click', () => openEditor('session'));
 $('[data-admin-add-booth]').addEventListener('click', () => openEditor('booth'));
+$('[data-admin-fill-booths]').addEventListener('click',()=>{
+  if(!canEdit()||busy||portraitUploading||coverUploading||!draft)return;
+  try{
+    const result=completeBoothSlots(draft.content.booths);
+    if(!result.created){announce('十五个位置已有待确认或已确认展位，未新增重复记录。');return;}
+    const candidate={...draft.content,booths:result.booths};const validation=validateContent(candidate);
+    if(!validation.valid)throw new Error([...new Set(Object.values(validation.errors))].join(' '));
+    draft.content=validation.value;setDirty(true);render();announce('已在本页草稿补齐 '+result.created+' 个待确认展位位置。机构、负责人、联系方式与展示内容仍待填写，请核对后保存。');
+  }catch(error){announce(error.message||'展位位置未补齐，请核对资料。',true);}
+});
 $('[data-admin-add-guest]').addEventListener('click', () => openEditor('guest'));
 $('[data-admin-add-showcase]').addEventListener('click', () => openEditor('showcase'));
 $('[data-showcase-form]').addEventListener('submit', event => submitEditor('showcase', event));
@@ -686,13 +754,13 @@ $('[data-guest-form]').addEventListener('change',()=>{guestFormDirty=true;});
 for (const name of ['name', 'company', 'ggjRole']) $('[data-guest-form]').elements.namedItem(name).addEventListener('input', revokeGuestConsent);
 for (const button of document.querySelectorAll('[data-close-dialog]')) button.addEventListener('click', () => {if(button.dataset.closeDialog==='guest')closeGuestEditor();else if(button.dataset.closeDialog==='showcase')closeShowcaseEditor();else if(!busy)$('[data-' + button.dataset.closeDialog + '-dialog]').close();});
 $('[data-admin-logout]').addEventListener('click', () => action(async () => {
-  if ((dirty||guestFormDirty||showcaseFormDirty) && !confirm('还有未保存的修改，确定退出并放弃这些修改吗？')) return;
+  if ((dirty||eventFormDirty||guestFormDirty||showcaseFormDirty) && !confirm('还有未保存的修改，确定退出并放弃这些修改吗？')) return;
   await request('/api/admin/logout', { method: 'POST' });
   pendingInvitee=null;showLogin();
   announce('已退出。');
 }));
 window.addEventListener('hashchange',()=>{const id=takeInvitee();if(!id)return;pendingInvitee=id;if(user&&draft)action(prepareInvitedGuest);});
-window.addEventListener('beforeunload', event => { if (dirty||guestFormDirty||showcaseFormDirty) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (dirty||eventFormDirty||guestFormDirty||showcaseFormDirty) { event.preventDefault(); event.returnValue = ''; } });
 if (location.protocol === 'file:') {
   announce('这是离线界面预览。请启动本地内容服务并配置工作人员账号后登录。');
   $('[data-admin-login] button[type="submit"]').disabled = true;

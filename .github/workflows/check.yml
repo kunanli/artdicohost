@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 15
     env:
       ASTRO_TELEMETRY_DISABLED: "1"
+      PUBLIC_API_BASE: "https://api.artdico.host"
+      PUBLIC_CONTENT_API_ORIGIN: "https://api.artdico.host"
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -119,7 +121,7 @@ jobs:
 
   deploy:
     name: Publish public site to Hong Kong OSS
-    needs: check
+    needs: [check, deploy-fc]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'kunanli/artdicohost' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -151,11 +153,11 @@ jobs:
         run: node scripts/deploy-oss.mjs .local-data/oss-publish "$RUNNER_TEMP/artdico-ossutil/ossutil-2.4.0-linux-amd64/ossutil"
 
   deploy-fc:
-    name: Publish closed cloud-content code to Hong Kong FC
+    name: Publish and verify the complete Hong Kong cloud lifecycle
     needs: check
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'kunanli/artdicohost' && vars.ARTDICO_FC_DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     concurrency:
       group: artdicohost-production-fc
       cancel-in-progress: false
@@ -177,46 +179,17 @@ jobs:
         with:
           name: cloud-content-candidate-${{ github.sha }}
           path: .local-data/cloud-content-publication/
-      - name: Update only this function's code and verify the signed health response
+      - name: Quiesce, publish, configure, prove private storage and activate the exact checked source
         env:
           GITHUB_TOKEN: ${{ github.token }}
           ARTDICO_FC_DEPLOY_ENABLED: ${{ vars.ARTDICO_FC_DEPLOY_ENABLED }}
           ARTDICO_FC_ACCOUNT_ID: ${{ vars.ARTDICO_FC_ACCOUNT_ID }}
-          FC_ACCESS_KEY_ID: ${{ secrets.ARTDICO_OSS_ACCESS_KEY_ID }}
-          FC_ACCESS_KEY_SECRET: ${{ secrets.ARTDICO_OSS_ACCESS_KEY_SECRET }}
-        run: node scripts/deploy-cloud-content.mjs .local-data/cloud-content-publication
-
-
-  configure-cloud-admin:
-    name: Configure the isolated owner account with cloud business closed
-    needs: deploy-fc
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'kunanli/artdicohost' && vars.ARTDICO_FC_DEPLOY_ENABLED == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    concurrency:
-      group: artdicohost-production-fc
-      cancel-in-progress: false
-    permissions:
-      contents: read
-    steps:
-      - name: Check out the exact accepted source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Set up the pinned Node.js without build dependencies
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "24.19.0"
-          package-manager-cache: false
-      - name: Configure only approved owner and content environment with business closed
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+          ARTDICO_CLOUD_LIFECYCLE_ENABLED: "true"
           ARTDICO_CLOUD_ADMIN_SETUP_ENABLED: "true"
-          ARTDICO_FC_ACCOUNT_ID: ${{ vars.ARTDICO_FC_ACCOUNT_ID }}
+          ARTDICO_REGISTRATION_SETUP_ENABLED: "true"
           FC_ACCESS_KEY_ID: ${{ secrets.ARTDICO_OSS_ACCESS_KEY_ID }}
           FC_ACCESS_KEY_SECRET: ${{ secrets.ARTDICO_OSS_ACCESS_KEY_SECRET }}
           ARTDICO_ADMIN_PASSWORD: ${{ secrets.ARTDICO_ADMIN_PASSWORD }}
           ARTDICO_ADMIN_USERNAME: ${{ vars.ARTDICO_ADMIN_USERNAME }}
           ARTDICO_ADMIN_EMAIL: ${{ vars.ARTDICO_ADMIN_EMAIL }}
-        run: node scripts/configure-cloud-admin.mjs
+        run: node scripts/cloud-lifecycle.mjs .local-data/cloud-content-publication

@@ -1,8 +1,9 @@
 import { publicGuestCards } from '../../shared/guest-display.mjs';
 import { publicShowcaseCards } from '../../shared/showcase-display.mjs';
 import { resolvePublicContentSource } from '../../shared/public-content-source.mjs';
+import { eventTimeInstant } from '../lib/event-presentation.mjs';
 
-// Public content is a separate, read-only endpoint. Registration remains a no-I/O demo.
+// Published event content is independent from registration readiness and staff cookies.
 const endpoint = document.querySelector('meta[name="artdico-content-api"]')?.getAttribute('content');
 if (endpoint) {
   const target = resolvePublicContentSource(endpoint, location.origin);
@@ -98,6 +99,7 @@ async function loadPublishedContent(url) {
     for (const item of content.booths.filter(item => item.status === 'confirmed')) {
       const card = element('article', undefined, 'ah-booth-card');
       card.append(element('span', item.code + ' · ' + item.zone + ' 区', 'ah-kicker'), element('h3', item.organization), element('p', item.project));
+      if(typeof item.description==='string'&&item.description)card.append(element('p',item.description));
       booths.append(card);
     }
     const empty = document.querySelector('[data-public-booths-empty]');
@@ -147,8 +149,40 @@ async function loadPublishedContent(url) {
   }
   document.title = eventTitle + '｜活动安排';
   for (const node of document.querySelectorAll('[data-public-event-venue]')) node.textContent = content.event.venue + (content.event.venueStatus === 'confirmed' ? '' : '（暂定）');
+  renderPresentation(content.event);
   const notice = document.querySelector('[data-public-content-status]');
   if (notice) notice.textContent = content.event.status === 'cancelled' ? '本次活动已取消。' : '讲者与主题陆续公布。';
+  document.dispatchEvent(new Event('artdico:public-content-updated'));
+}
+
+function renderPresentation(event) {
+  const presentation=event.presentation;
+  if(!presentation||typeof presentation!=='object')return;
+  for(const [field,selector]of Object.entries({heroDescription:'[data-public-hero-description]',aboutTitle:'[data-public-about-title]',aboutText:'[data-public-about-text]'})){
+    if(typeof presentation[field]==='string')for(const element of document.querySelectorAll(selector))element.textContent=presentation[field];
+  }
+  const faq=document.querySelector('[data-public-faq]');
+  if(faq&&Array.isArray(presentation.faqItems)&&presentation.faqItems.length<=20){
+    faq.replaceChildren();
+    for(const item of presentation.faqItems){
+      if(typeof item?.question!=='string'||typeof item?.answer!=='string')continue;
+      const row=element('details');const heading=element('summary',item.question);heading.append(element('span','+'));row.append(heading,element('p',item.answer));faq.append(row);
+    }
+  }
+  const contact=document.querySelector('[data-public-contact-email]');
+  if(contact){contact.hidden=true;contact.removeAttribute('href');if(typeof presentation.contactEmail==='string'&&/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(presentation.contactEmail)){contact.textContent='联络筹备团队 · '+presentation.contactEmail;contact.href='mailto:'+encodeURIComponent(presentation.contactEmail);contact.hidden=false;}}
+  const map=document.querySelector('[data-public-map]');
+  if(map){map.hidden=true;map.removeAttribute('href');try{const url=new URL(presentation.mapUrl);if(url.protocol==='https:'&&!url.username&&!url.password&&!url.hash){map.href=url.href;map.hidden=false;}}catch{}}
+  const start=eventTimeInstant(event.date,presentation.openingTime,event.timezone);
+  const end=eventTimeInstant(event.date,presentation.endTime,event.timezone);
+  const confirmed=event.dateStatus==='confirmed'&&event.status!=='cancelled'&&start!==null&&end!==null&&end>start;
+  const countdown=document.querySelector('[data-event-countdown]');
+  if(countdown){
+    countdown.hidden=!confirmed;
+    if(confirmed){countdown.dataset.startsAt=new Date(start).toISOString();countdown.dataset.endsAt=new Date(end).toISOString();const fallback=countdown.querySelector('[data-countdown-fallback]');if(fallback)fallback.textContent=event.date+' '+presentation.openingTime+' · '+event.timezone+' 开场';}
+  }
+  for(const hours of document.querySelectorAll('span[data-public-static-hours]')){hours.hidden=!confirmed;if(confirmed)hours.textContent=' · '+presentation.openingTime+'–'+presentation.endTime;}
+  for(const checkin of document.querySelectorAll('[data-public-static-checkin]')){checkin.hidden=!confirmed;if(confirmed)checkin.textContent=presentation.checkInTime+' 开始签到 · ';}
 }
 
 function renderShowcases(content, sourceUrl) {

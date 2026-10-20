@@ -3,17 +3,20 @@ import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
 import { hashPassword, parseAdminUsers, verifyPassword } from '../functions/content-api/auth.mjs';
 import { assertCurrentMainHead } from './deploy-oss.mjs';
 import { createFcConfigClient, summarizeFcConfigError, assertFcEnvironmentMap } from './fc-config-client.mjs';
 import { summarizeFcError, validateFcTriggerUrl } from './fc-client.mjs';
+import { approvedRegistrationPolicy } from './approved-registration-policy.mjs';
 
 const ACCOUNT = '1954121651395178';
 const FUNCTION = `acs:fc:cn-hongkong:${ACCOUNT}:functions/artdicohost-api`;
 const ROLE = `acs:ram::${ACCOUNT}:role/artdicohost-content-runtime`;
 const OWNER_ID = 'staff-owner';
 const OWNER_LABEL = '站点管理员';
-const ROLES = ['editor', 'publisher', 'outreach'];
+const LEGACY_ROLES = ['editor', 'publisher', 'outreach'];
+const ROLES = ['superadmin', ...LEGACY_ROLES];
 const OWNED = Object.freeze({ NODE_ENV: 'production', ARTDICO_CLOUD_CONTENT_ENABLED: 'false',
   ARTDICO_CONTENT_API_ORIGIN: 'https://api.artdico.host', ARTDICO_PUBLIC_SITE_ORIGIN: 'https://artdico.host',
   ARTDICO_CONTENT_BUCKET: 'artdicohost-data-hk', ARTDICO_CONTENT_REGION: 'cn-hongkong' });
@@ -37,7 +40,7 @@ function setupEnvironment(value) {
     const copy = {};
     for (const key of ['GITHUB_ACTIONS', 'GITHUB_EVENT_NAME', 'GITHUB_REF', 'GITHUB_REPOSITORY', 'GITHUB_SHA', 'GITHUB_TOKEN',
       'ARTDICO_CLOUD_ADMIN_SETUP_ENABLED', 'ARTDICO_FC_ACCOUNT_ID', 'FC_ACCESS_KEY_ID', 'FC_ACCESS_KEY_SECRET', 'FC_SECURITY_TOKEN',
-      'ARTDICO_ADMIN_PASSWORD', 'ARTDICO_ADMIN_USERNAME', 'ARTDICO_ADMIN_EMAIL']) {
+      'ARTDICO_ADMIN_PASSWORD', 'ARTDICO_ADMIN_USERNAME', 'ARTDICO_ADMIN_EMAIL', 'ARTDICO_REGISTRATION_SETUP_ENABLED']) {
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (descriptor && !Object.hasOwn(descriptor, 'value')) throw stage('CONTEXT_INVALID');
       copy[key] = descriptor?.value;
@@ -58,6 +61,8 @@ export function requireCloudAdminSetupContext(input) {
   }
   if (typeof env.ARTDICO_ADMIN_PASSWORD !== 'string' || !env.ARTDICO_ADMIN_PASSWORD.length) throw stage('MISSING_REPOSITORY_SECRET_ARTDICO_ADMIN_PASSWORD');
   if (Buffer.byteLength(env.ARTDICO_ADMIN_PASSWORD) < 12 || Buffer.byteLength(env.ARTDICO_ADMIN_PASSWORD) > 1024) throw stage('ACCOUNT_INPUT_INVALID');
+  if (env.ARTDICO_REGISTRATION_SETUP_ENABLED !== undefined
+    && !['true', 'false'].includes(env.ARTDICO_REGISTRATION_SETUP_ENABLED)) throw stage('CONTEXT_INVALID');
 }
 
 function environmentFrom(value) {
@@ -120,13 +125,28 @@ async function accountJson(env, existing) {
       || fields.some(key => !Object.hasOwn(input[0], key))) throw stage('EXISTING_ACCOUNT_REQUIRES_REVIEW');
     let current;
     try { current = parseAdminUsers(input)[0]; } catch { throw stage('EXISTING_ACCOUNT_REQUIRES_REVIEW'); }
+    const currentRoles = [...current.roles].sort();
+    const legacy = isDeepStrictEqual(currentRoles, [...LEGACY_ROLES].sort());
     if (['id', 'username', 'email', 'label'].some(key => current[key] !== identity[key])
-      || !isDeepStrictEqual([...current.roles].sort(), [...ROLES].sort())
+      || !legacy && !isDeepStrictEqual(currentRoles, [...ROLES].sort())
       || !await verifyPassword(env.ARTDICO_ADMIN_PASSWORD, current.passwordHash)) throw stage('EXISTING_ACCOUNT_REQUIRES_REVIEW');
-    return { json: existing, existingAccount: true };
+    return { json: legacy ? JSON.stringify([{ ...current, roles: ROLES }]) : existing, existingAccount: true };
   }
   const result = parseAdminUsers([{ ...identity, passwordHash }]);
   return { json: JSON.stringify(result), existingAccount: false };
+}
+
+function registrationEnvironment(env, previous) {
+  let secret = previous.ARTDICO_REGISTRATION_TOKEN_SECRET;
+  if (secret === undefined) secret = randomBytes(48).toString('base64url');
+  if (typeof secret !== 'string' || !/^[A-Za-z0-9_-]{32,256}$/u.test(secret)
+    || secret === env.ARTDICO_ADMIN_PASSWORD || secret === env.FC_ACCESS_KEY_SECRET) throw stage('REGISTRATION_SECRET_REQUIRES_REVIEW');
+  const enabled = env.ARTDICO_REGISTRATION_SETUP_ENABLED === 'true';
+  let policy;
+  try { policy = approvedRegistrationPolicy({ contactEmail: env.ARTDICO_ADMIN_EMAIL, enabled }); }
+  catch { throw stage('REGISTRATION_POLICY_INVALID'); }
+  return { ARTDICO_REGISTRATION_TOKEN_SECRET: secret, ARTDICO_REGISTRATION_POLICY_JSON: JSON.stringify(policy),
+    ARTDICO_REGISTRATION_CAPACITY: String(policy.capacity), ARTDICO_REGISTRATION_ENABLED: String(enabled) };
 }
 
 /** Trusted one-time account configuration only. No business activation, storage probe, filesystem output or secret return. */
@@ -167,7 +187,7 @@ export async function configureCloudAdmin(options = {}) {
       const preHealth = await bounded(signal => client.checkHealth(trigger.origin, { signal }), 'PRE_UPDATE_HEALTH_NOT_VERIFIED');
       if (!healthMatches(preHealth, env.GITHUB_SHA)) throw stage('PRE_UPDATE_HEALTH_NOT_VERIFIED');
       const owner = await bounded(() => accountJson(env, previous.ADMIN_USERS_JSON), 'ACCOUNT_INPUT_INVALID');
-      const expected = { ...previous, ...OWNED, ADMIN_USERS_JSON: owner.json };
+      const expected = { ...previous, ...OWNED, ...registrationEnvironment(env, previous), ADMIN_USERS_JSON: owner.json };
       try { assertFcEnvironmentMap(expected); } catch { throw stage('CONFIGURATION_INPUT_INVALID'); }
       const changed = !isDeepStrictEqual(previous, expected);
       // A second inspection prevents overwriting a configuration modified during account preparation.
@@ -216,6 +236,10 @@ export async function configureCloudAdmin(options = {}) {
     } finally { clearTimeout(timer); controller.abort(); }
   } catch (error) { throw safeErrors.has(error) ? error : stage('SETUP_FAILED'); }
 }
+
+// Shared read-only validation for the lifecycle controller; these never return credentials to logs.
+export { environmentFrom as cloudAdminEnvironment, functionSnapshot as cloudAdminFunctionSnapshot,
+  triggerSnapshot as cloudAdminTriggerSnapshot };
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {

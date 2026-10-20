@@ -2,12 +2,13 @@ import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { handleFcRequest } from '../fc-api/handler.mjs';
 import { CLOUD_API_ORIGIN, MAX_CLOUD_BODY_BYTES } from './handler.mjs';
+import { acceptanceHealthProof } from './acceptance.mjs';
 
 const SECURITY = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' };
 const MIME = { '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.woff': 'font/woff', '.woff2': 'font/woff2' };
 
 export function isCloudAdminAssetUrl(path) {
-  return ['/admin/', '/admin/contacts/', '/invitations/template-blank.png'].includes(path)
+  return ['/admin/', '/admin/contacts/', '/admin/registrations/', '/invitations/template-blank.png'].includes(path)
     || typeof path === 'string' && /^\/_astro\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,200}\.(?:css|js|mjs|woff|woff2)$/u.test(path) && !path.includes('..');
 }
 
@@ -15,7 +16,7 @@ function staticAssets(input) {
   if (!(input instanceof Map) || input.size > 40) throw new TypeError('后台静态资源清单无效。');
   const result = new Map(); let total = 0;
   for (const [path, bytes] of input) {
-    const html = path === '/admin/' || path === '/admin/contacts/';
+    const html = ['/admin/', '/admin/contacts/', '/admin/registrations/'].includes(path);
     const invitation = path === '/invitations/template-blank.png';
     const suffix = typeof path === 'string' ? /\.[a-z0-9]+$/u.exec(path)?.[0] : null;
     if (!isCloudAdminAssetUrl(path)) throw new TypeError('后台静态资源路径无效。');
@@ -43,8 +44,9 @@ function fixedError(response, status, code, message) {
 /** Unbound HTTP adapter. A verified candidate package supplies the explicit admin asset map.
  * It never reads a filesystem, discovers routes, opens a port on import or trusts proxy headers.
  */
-export function createCloudContentServer({ runtime, sourceCommit = null, assets = new Map() } = {}) {
+export function createCloudContentServer({ runtime, sourceCommit = null, assets = new Map(), readAcceptance = () => null } = {}) {
   if (!runtime || typeof runtime.handle !== 'function' || typeof runtime.configured !== 'boolean') throw new TypeError('云端 HTTP 服务需要明确的运行时。');
+  if (typeof readAcceptance !== 'function') throw new TypeError('云端验收状态读取无效。');
   const knownAssets = staticAssets(assets);
   const server = createServer({ maxHeaderSize: 8192, requestTimeout: 15_000, headersTimeout: 5_000, keepAliveTimeout: 1_000, connectionsCheckingInterval: 1_000 }, async (incoming, outgoing) => {
     incoming.on('error', () => outgoing.destroy());
@@ -58,15 +60,21 @@ export function createCloudContentServer({ runtime, sourceCommit = null, assets 
       // This path remains behind the unchanged signed FC trigger. Custom domain
       // routes must explicitly exclude it; it never proves business readiness.
       if (url.pathname === '/healthz') {
-        const result = handleFcRequest({ method, url: url.href }, { sourceCommit });
+        const result = handleFcRequest({ method: method === 'HEAD' ? 'GET' : method, url: url.href }, { sourceCommit });
+        let body = await result.text();
+        if (result.status === 200) {
+          const acceptance = acceptanceHealthProof(readAcceptance());
+          if (acceptance !== null) body = JSON.stringify({ ...JSON.parse(body), acceptance });
+        }
         result.headers.forEach((value, key) => outgoing.setHeader(key, value)); outgoing.statusCode = result.status;
-        outgoing.end(method === 'HEAD' ? undefined : await result.text()); return;
+        outgoing.setHeader('content-length', String(Buffer.byteLength(body)));
+        outgoing.end(method === 'HEAD' ? undefined : body); return;
       }
       if (incoming.headers.host !== new URL(CLOUD_API_ORIGIN).host) return fixedError(outgoing, 421, 'HOST_REJECTED', '请使用指定的后台地址。');
       if (!url.pathname.startsWith('/api/')) {
         if (!runtime.configured) return fixedError(outgoing, 503, 'CONTENT_NOT_READY', '云端内容后台尚未开放。');
         if (!['GET', 'HEAD'].includes(method)) return fixedError(outgoing, 405, 'METHOD_NOT_ALLOWED', '页面只接受读取。');
-        if (['/admin', '/admin/contacts'].includes(url.pathname) && !url.search) { outgoing.writeHead(308, { ...SECURITY, location: url.pathname + '/' }); outgoing.end(); return; }
+        if (['/admin', '/admin/contacts', '/admin/registrations'].includes(url.pathname) && !url.search) { outgoing.writeHead(308, { ...SECURITY, location: url.pathname + '/' }); outgoing.end(); return; }
         const file = !url.search && knownAssets.get(url.pathname);
         if (!file) return fixedError(outgoing, 404, 'NOT_FOUND', '页面不存在。');
         outgoing.writeHead(200, file.headers); outgoing.end(method === 'HEAD' ? undefined : file.data); return;
@@ -74,10 +82,12 @@ export function createCloudContentServer({ runtime, sourceCommit = null, assets 
       const headers = new Headers();
       for (const [key, value] of Object.entries(incoming.headers)) if (value !== undefined) headers.set(key, Array.isArray(value) ? value.join(', ') : value);
       const rawLength = headers.get('content-length');
-      if (rawLength !== null && (!/^\d+$/u.test(rawLength) || !Number.isSafeInteger(Number(rawLength)) || Number(rawLength) > MAX_CLOUD_BODY_BYTES)) return fixedError(outgoing, 413, 'BODY_TOO_LARGE', '请求内容过大。');
+      const bodyLimit = ['/api/admin/contacts/import', '/api/admin/contacts/import/preview'].includes(url.pathname) ? 3 * 1024 * 1024
+        : url.pathname === '/api/admin/maintenance/restore' ? 2 * 1024 * 1024 : MAX_CLOUD_BODY_BYTES;
+      if (rawLength !== null && (!/^\d+$/u.test(rawLength) || !Number.isSafeInteger(Number(rawLength)) || Number(rawLength) > bodyLimit)) return fixedError(outgoing, 413, 'BODY_TOO_LARGE', '请求内容过大。');
       const parts = []; let length = 0;
       if (!['GET', 'HEAD'].includes(method)) for await (const chunk of incoming) {
-        if ((length += chunk.length) > MAX_CLOUD_BODY_BYTES) return fixedError(outgoing, 413, 'BODY_TOO_LARGE', '请求内容过大。');
+        if ((length += chunk.length) > bodyLimit) return fixedError(outgoing, 413, 'BODY_TOO_LARGE', '请求内容过大。');
         parts.push(chunk);
       }
       const request = new Request(url, { method, headers, ...(!['GET', 'HEAD'].includes(method) ? { body: Buffer.concat(parts, length) } : {}) });

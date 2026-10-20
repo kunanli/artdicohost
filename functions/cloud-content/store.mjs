@@ -48,10 +48,13 @@ function preserveArrangementFields(input, current) {
     if (!Array.isArray(result[collection])) continue;
     result[collection] = result[collection].map(item => {
       const row = copy(item, collection);
+      const id = typeof row.id === 'string' ? row.id.normalize('NFC').trim() : '';
+      const existing = current[collection].find(candidate => candidate.id === id);
       if (row[field] === undefined) {
-        const id = typeof row.id === 'string' ? row.id.normalize('NFC').trim() : '';
-        const existing = current[collection].find(candidate => candidate.id === id);
         row[field] = existing?.[field] ?? fallback;
+      }
+      if (collection === 'booths' && existing) for (const name of ['contactName', 'contactMethods', 'description']) {
+        if (!Object.hasOwn(row, name) && Object.hasOwn(existing, name)) row[name] = existing[name];
       }
       return row;
     });

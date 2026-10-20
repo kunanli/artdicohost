@@ -82,9 +82,17 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
   const booths = list(own(content, 'booths'), 200).map(item => {
     const suppliedSlot = own(item, 'slotNumber'), slotNumber = suppliedSlot === undefined ? 0 : suppliedSlot;
     if (!Number.isInteger(slotNumber) || slotNumber < 0 || slotNumber > CAPACITY) throw new TypeError('展位位置无效。');
-    return { id: id(own(item, 'id')), code: text(own(item, 'code'), 16), zone: status(own(item, 'zone'), ['C']),
+    const projection = { id: id(own(item, 'id')), code: text(own(item, 'code'), 16), zone: status(own(item, 'zone'), ['C']),
       organization: text(own(item, 'organization'), 160), project: text(own(item, 'project'), 200),
       status: status(own(item, 'status'), contentSchema.boothStatuses), slotNumber };
+    for (const [name, maximum] of Object.entries({ contactName: 120, contactMethods: 500, description: 2000 })) {
+      if (!Object.hasOwn(item, name)) continue;
+      const value = own(item, name);
+      const controls = name === 'contactName' ? /[\u0000-\u001f\u007f]/u : /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u;
+      if (typeof value !== 'string' || controls.test(value)) throw new TypeError('展位负责人与内容资料无效。');
+      projection[name] = text(value, maximum);
+    }
+    return projection;
   });
   const guests = list(own(content, 'guests'), 200, true).map(item => ({ id: id(own(item, 'id')), name: text(own(item, 'name'), 120),
     company: text(own(item, 'company'), 160), status: status(own(item, 'status'), contentSchema.guestStatuses, 'pending'), contactId: id(own(item, 'contactId'), true) }));

@@ -15,7 +15,7 @@ const endsAt = `${eventConfig.date.value}T${eventConfig.time.end}:00+08:00`;
       <span class="ah-event-title-cross" aria-hidden="true">×</span>
       <span class="ah-event-title-line"><span class="ah-event-brand">ARTDiCO HOST</span><span class="ah-event-chinese">学生嘉年华</span></span>
     </h1>
-    <p class="ah-hero-description">组织者交流<span aria-hidden="true"> / </span>学生作品<span aria-hidden="true"> / </span>游戏体验</p>
+    <p class="ah-hero-description" data-public-hero-description>组织者交流<span aria-hidden="true"> / </span>学生作品<span aria-hidden="true"> / </span>游戏体验</p>
     <div class="ah-event-meta">
       <span><Icon name="calendar" /><time data-public-date-value datetime={eventConfig.date.value}>{Number(month)} 月 {Number(day)} 日</time><em data-public-date-tentative hidden={eventConfig.date.status !== 'tentative'}>暂定</em><span data-public-static-hours><span class="ah-meta-divider" aria-hidden="true">·</span>{eventConfig.time.label}</span></span>
       <span><Icon name="pin" /><span data-public-hero-venue>{eventConfig.venue.name}</span></span>
@@ -24,7 +24,7 @@ const endsAt = `${eventConfig.date.value}T${eventConfig.time.end}:00+08:00`;
       <a class="ah-primary" href="#agenda">查看活动日程 <span aria-hidden="true">↗</span></a>
       <a class="ah-text-action" href="#registration">了解参与方式 <span aria-hidden="true">→</span></a>
     </div>
-    <p class="ah-fine"><span data-public-static-checkin>09:30 开始签到<span aria-hidden="true"> · </span></span>报名已开放</p>
+    <p class="ah-fine"><span data-public-static-checkin>09:30 开始签到<span aria-hidden="true"> · </span></span><span data-registration-availability>报名已开放</span></p>
     <div class="ah-event-countdown" data-event-countdown data-countdown-source-date={eventConfig.date.value} data-countdown-source-timezone={eventConfig.time.timezone} data-starts-at={startsAt} data-ends-at={endsAt} data-public-static-hours>
       <p class="ah-countdown-label" data-countdown-label hidden>距离活动开场</p>
       <div class="ah-countdown-timer" data-countdown-timer role="timer" aria-live="off" aria-label="距离活动开场" hidden>

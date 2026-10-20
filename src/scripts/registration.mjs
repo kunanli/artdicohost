@@ -9,9 +9,12 @@ const multipleFields = registrationSchema.baseFields.filter(field => field.type 
 
 for (const form of document.querySelectorAll('[data-registration-form]')) {
   if (!(form instanceof HTMLFormElement) || form.dataset.enhanced) continue;
-  // Intercept before enabling controls; there is deliberately no submission transport.
+  // Intercept before enabling controls. The default preview has no submission transport;
+  // verified production mode hands validated fields to its separate controller.
   form.addEventListener('submit', event => {
     event.preventDefault();
+    if (['closed','unavailable'].includes(form.dataset.registrationMode)) return;
+    if (form.dataset.submitting === 'true') return;
     if (step < 2) {
       if (checkStep()) showStep(step + 1);
       return;
@@ -20,11 +23,16 @@ for (const form of document.querySelectorAll('[data-registration-form]')) {
     syncBranches();
     const result = completeMockRegistration(read());
     if (!result.valid) {
+      if (form.dataset.registrationMode === 'production' && result.errors.consentAccepted) result.errors.consentAccepted = '请主动阅读并同意个人信息处理告知。';
       const first = Object.keys(result.errors)[0];
       const control = [...form.querySelectorAll('[name]')].find(input => input.name === first);
       const section = control instanceof HTMLElement ? control.closest('[data-form-step]') : null;
       if (section) showStep(Number(section.dataset.formStep), false);
       showErrors(result.errors);
+      return;
+    }
+    if (form.dataset.registrationMode === 'production') {
+      form.dispatchEvent(new CustomEvent('artdico:registration-submit', { detail: { fields: validateRegistration(read()).value } }));
       return;
     }
     form.reset();
@@ -131,6 +139,9 @@ for (const form of document.querySelectorAll('[data-registration-form]')) {
   form.querySelectorAll('[data-prev-step]').forEach(button => button.addEventListener('click', () => { clearErrors(); showStep(Math.max(0, step - 1)); }));
   form.querySelector('[data-reset-form]')?.addEventListener('click', () => {
     form.reset(); clearErrors(); syncBranches(); showStep(0);
+  });
+  form.addEventListener('artdico:registration-saved', () => {
+    form.reset(); clearErrors(); syncBranches(); form.hidden = true;
   });
   form.addEventListener('change', syncBranches);
   for (const link of document.querySelectorAll('[data-recruit]')) {

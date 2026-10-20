@@ -20,7 +20,7 @@ const inputType: 'email' | 'url' | 'number' | 'text' = field.type === 'email' ? 
   {field.hint && <small id={`${id}-hint`} class="ah-field-hint">{field.hint}</small>}
   <p class="ah-form-error" id={`${id}-error`} data-error-for={name} hidden></p>
 </fieldset> : field.type === 'checkbox' ? <div class="ah-consent-field" data-field={name}>
-  <label class="ah-demo-consent" for={id}><input type="checkbox" id={id} name={name} value="true" required={field.required} aria-describedby={describedBy} /><span>{field.label}。<a href="#privacy">查看隐私告知准备情况</a></span></label>
+  <label class="ah-demo-consent" for={id}><input type="checkbox" id={id} name={name} value="true" required={field.required} aria-describedby={describedBy} /><span data-registration-consent-copy={name === 'consentAccepted' ? '' : undefined}>{field.label}。<a href="#privacy">查看隐私告知准备情况</a></span></label>
   {field.hint && <small id={`${id}-hint`} class="ah-field-hint">{field.hint}</small>}
   <p class="ah-form-error" id={`${id}-error`} data-error-for={name} hidden></p>
 </div> : <div class:list={['ah-field', {'ah-field-long': isLongText}]} data-field={name}>

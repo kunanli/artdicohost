@@ -1,5 +1,13 @@
 # 技术架构、OSS 数据契约与 API
 
+## 十五个展位的组织与负责人
+
+内容草稿的 booths 每条保留稳定 id、项目标题 project、组织 organization 与明确的 slotNumber（1–15，0 表示尚未分配）。有效 pending／confirmed 记录不可重复占用同一位置；cancelled 的历史记录可保留原位置，不阻止另行安排。初始 booths 仍为空，不自动编造参展组织；后台可明确建立十五条待安排空记录。
+
+新增可选字段 contactName（负责人单行文字，最多 120 字）、contactMethods（联系方式，可多行，最多 500 字）、description（展位内容，可多行，最多 2000 字）。仅明确提供才规范化；旧快照不补空键。负责人姓名与联系方式始终留在私有草稿和 editor＋outreach 授权的安排总览，绝不进入公开快照。只有 confirmed 展位在明确发布后才可公开 description，原 project 标题继续保留。联系方式不得填进准备公开的 description。
+
+本机与 OSS 保存都按同一稳定展位 id 保留旧客户端遗漏的新字段；清空须明确提交空字符串。原修订冲突与位置校验继续执行，不因填入负责人就自动确认展位、公开联系人或替代真实出席回复。
+
 ## 可复用基础
 参考仓库 `kunanli/igda_shenzhen` 的 Astro 静态页面、阿里 FC API、私有 OSS 数据、管理员登录与角色、活动报名、GitHub Actions 部署。它的文档说明活动报名为 `registrations/{eventId}/{record}.json`，OSS 数据与站点内容分离。需要针对本项目独立复制架构和测试，不能共享生产凭据。
 

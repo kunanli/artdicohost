@@ -25,4 +25,4 @@ for (const path of files) {
   }
   count++;
 }
-console.log('Source syntax and registration no-transport scan passed (' + count + ' files).');
+console.log('Source syntax and registration transport boundary scan passed (' + count + ' files).');

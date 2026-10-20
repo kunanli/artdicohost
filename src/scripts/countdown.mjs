@@ -2,8 +2,6 @@ import { eventCountdown } from '../../shared/event-countdown.mjs';
 
 for (const root of document.querySelectorAll('[data-event-countdown]')) {
   if (!(root instanceof HTMLElement) || root.dataset.countdownEnhanced) continue;
-  const startsAt = Date.parse(root.dataset.startsAt ?? '');
-  const endsAt = Date.parse(root.dataset.endsAt ?? '');
   const timer = root.querySelector('[data-countdown-timer]');
   const fallback = root.querySelector('[data-countdown-fallback]');
   const status = root.querySelector('[data-countdown-status]');
@@ -17,7 +15,7 @@ for (const root of document.querySelectorAll('[data-event-countdown]')) {
     // Published content hides this widget if its date/timezone differs from
     // the confirmed target, or the event is cancelled; stop the old timer then.
     if (root.hidden || document.hidden) return;
-    const current = eventCountdown(Date.now(), startsAt, endsAt);
+    const current = eventCountdown(Date.now(), Date.parse(root.dataset.startsAt ?? ''), Date.parse(root.dataset.endsAt ?? ''));
     timer.hidden = current.phase !== 'upcoming';
     fallback.hidden = current.phase !== 'unavailable';
     label.hidden = current.phase !== 'upcoming';
@@ -40,7 +38,7 @@ for (const root of document.querySelectorAll('[data-event-countdown]')) {
   }
   document.addEventListener('visibilitychange', render);
   const observer = new MutationObserver(render);
-  observer.observe(root, { attributes: true, attributeFilter: ['hidden'] });
+  observer.observe(root, { attributes: true, attributeFilter: ['hidden','data-starts-at','data-ends-at'] });
   root.dataset.countdownEnhanced = 'true';
   render();
 }

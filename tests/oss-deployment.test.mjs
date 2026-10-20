@@ -33,13 +33,14 @@ async function fixture(t) {
 test('publication selects reachable public assets and replaces local admin with notices', async t => {
   const { dist, output } = await fixture(t);
   const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
-  assert.equal(manifest.files.length, 9);
+  assert.equal(manifest.files.length, 10);
   const receipt = JSON.parse(await readFile(resolve(output, 'release.json'), 'utf8'));
   assert.equal(receipt.commit, commit);
   assert.deepEqual(receipt.files, manifest.files.filter(item => item.path !== 'release.json'));
   assert.deepEqual(Object.keys(receipt), ['schemaVersion', 'commit', 'files']);
   assert.equal(manifest.files.some(item => /private|contacts\.json/.test(item.path)), false);
-  assert.match(await readFile(resolve(output, 'admin/contacts/index.html'), 'utf8'), /云端工作人员后台尚未开放/);
+  assert.match(await readFile(resolve(output, 'admin/contacts/index.html'), 'utf8'), /https:\/\/api\.artdico\.host\/admin\//);
+  assert.match(await readFile(resolve(output, 'admin/registrations/index.html'), 'utf8'), /工作人员后台入口/);
   assert.doesNotMatch(await readFile(resolve(output, 'admin/contacts/index.html'), 'utf8'), /<form|private-admin-form/);
   assert.equal((await verifyPublication(output, commit)).commit, commit);
   await assert.rejects(prepareOssSite({ distDirectory: dist, outputDirectory: output, commit }), /must be empty/);

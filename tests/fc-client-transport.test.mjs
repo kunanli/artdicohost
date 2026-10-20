@@ -64,7 +64,7 @@ test('a native upload timeout reports only trusted write/response progress and n
   });
   const deadline = new AbortController();
   t.mock.method(AbortSignal, 'timeout', milliseconds => {
-    assert.equal(milliseconds, 120_000);
+    assert.equal(milliseconds, 180_000);
     return deadline.signal;
   });
   t.mock.method(globalThis, 'fetch', () => { assert.fail('Upload must use the native transport'); });

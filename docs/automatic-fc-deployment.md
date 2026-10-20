@@ -74,7 +74,9 @@ PR #12 历史基线为 `8c6398d8cf337e8d7d5f12d0634aa71a9c8a1a7b`。[Actions 393
 
 上传前先读取 GetFunction，并对既有签名 `/healthz` 进行一次有界的只读观察；仅投影枚举状态、通过完整格式校验的旧 `sourceCommit` 或固定诊断，不输出 URL、环境、角色、凭证或原始回应。状态字段 presence 只可为 `absent`、`null`、`recognized`、`unrecognized`，任意未知值不回显。官方 function state 的处理中值为 `Pending`，`Creating` 属 reason code；本轮补上 `Pending` 阻挡，并保守保留对旧 `Creating` 值的阻挡，`InProgress` 更新也拒绝新上传。观察不代表前次已完整验收，也不计入新版本成功。随后重新核对当前 main，为该次新提交上传一次已验收包，禁止自动重试 PUT。
 
-UpdateFunction 的请求期限固定为 **120 秒**；GetFunction、GetTrigger 与签名 health 保持 **20 秒**，总部署期限固定为 **240 秒**。这些是客户端等待期限，不改变 FC 函数执行超时或其他控制台设置。延长上传等待不放宽成功状态、配置保持与源码一致条件，也不增加调用权限。
+UpdateFunction 的请求期限固定为 **180 秒**；GetFunction、GetTrigger 与签名 health 保持 **20 秒**，总部署期限固定为 **240 秒**。最慢上传完成后仅剩约 60 秒供检查，仍受总部署硬上限约束，不续延或放宽验收。这些是客户端等待期限，不改变 FC 函数执行超时或其他控制台设置。延长上传等待不放宽成功状态、配置保持与源码一致条件，也不增加调用权限。
+
+2026-10-20：[发布 39385459715](https://github.com/kunanli/artdicohost/actions/runs/39385459715) 的 `61ffff501b87271ce5e1e5df5f6374078865b1ab` 已通过 305 项检查与 15 个公开 OSS SHA-256 回读，但约 39.3 MB 更新在旧 120 秒期限失败，`uploadBodyWritten:false / responseStarted:false`。随后[只读运行 39386185017](https://github.com/kunanli/artdicohost/actions/runs/39386185017)三次签名均为上一提交 `9900c15a9c0dbae0187661b71006ff7362e5a15e`，CRC64 前后相同，因此该次 FC 验收明确失败。`false` 不代表零字节送出，也没有证明 FC 端根因。新版本使用 64 KiB 固定分段和 writable 背压，保留签名字节、Content-Length 与单一 PUT，配合上述固定等待预算改善大型上传；中止或提前完整响应后停止继续排队。后续必须由正常新 main 运行实测，不能将本机测试称为修复已经在线生效，也不盲重跑该旧运行。
 
 本轮仅将代码 PUT 的默认传输改为 native HTTPS，端点、method 与已签名的 JSON bytes 保持一致，继续验证 TLS，并明确设置按 UTF-8 bytes 计算的 `Content-Length`；不跟随 redirect、不重试、不增加第二次 PUT。仅对该 transport 自建 Promise 的私有 WeakMap 记录两个布林：`uploadBodyWritten` 表示本机 `finish` 已发生，`responseStarted` 表示响应已开始；前者不是 FC 接收或确认。没有证据显示原 fetch 的 Content-Length 错误，后续基线已取得单次 native PUT 成功确认及签名健康结果；这不改变本机写完与服务端确认的区别。
 

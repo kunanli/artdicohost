@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer, request as httpRequest } from 'node:http';
 import { createServer as createRawServer } from 'node:net';
 import { createHash } from 'node:crypto';
+import { Writable } from 'node:stream';
 import { uploadFcCode, fcUploadState } from '../scripts/fc-upload-transport.mjs';
 import { MAX_FC_REQUEST_BYTES } from '../scripts/fc-upload-limits.mjs';
 
@@ -70,6 +71,75 @@ test('one fixed PUT transmits exact code-only JSON bytes and native Content-Leng
   assert.deepEqual(fcUploadState(pending), { uploadBodyWritten: true, responseStarted: true });
   assert.equal(fixture.calls.length, 1);
   assert.equal(fixture.calls[0].settings.rejectUnauthorized, true, 'caller options cannot relax TLS verification');
+});
+
+test('a throttled receiver gets the exact signed snapshot through bounded writes that wait for drain', { timeout: 5000 }, async t => {
+  const original = JSON.stringify({ code: { zipFile: Buffer.alloc(2 * 1024 * 1024, 80).toString('base64') } });
+  const configuration = options({ body: original, headers: { ...options().headers, 'x-acs-content-sha256': hash(original) } });
+  const received = deferred();
+  const fixture = await loopback(t, async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) {
+      chunks.push(chunk);
+      // Later caller mutation must not replace any bytes in this signed request.
+      configuration.body = body;
+      await new Promise(resolve => setTimeout(resolve, 2));
+    }
+    const bytes = Buffer.concat(chunks);
+    received.resolve({ bytes, headers: request.headers });
+    response.writeHead(200, { 'content-type': 'application/json' }); response.end('{}');
+  });
+  let writes = 0, drains = 0, waiting = false, request;
+  const requestFn = (url, settings, listener) => {
+    request = fixture.requestFn(url, settings, listener);
+    const nativeWrite = request.write;
+    request.on('drain', () => { waiting = false; drains++; });
+    request.write = function(chunk, encoding, ...rest) {
+      assert.equal(waiting, false, 'another write must not be queued before drain');
+      assert.ok(Buffer.byteLength(chunk, encoding) <= 64 * 1024, 'each queued write is bounded');
+      writes++;
+      const result = nativeWrite.call(this, chunk, encoding, ...rest);
+      waiting = !result;
+      assert.ok(this.writableLength <= this.writableHighWaterMark + 64 * 1024 + 4096, 'the application does not queue the complete body');
+      return result;
+    };
+    return request;
+  };
+  const pending = uploadFcCode(ENDPOINT, configuration, { requestFn });
+  assert.deepEqual(await (await pending).json(), {});
+  const actual = await received.promise;
+  assert.equal(actual.bytes.toString('utf8'), original);
+  assert.equal(actual.headers['content-length'], String(Buffer.byteLength(original)));
+  assert.equal(actual.headers['x-acs-content-sha256'], hash(actual.bytes));
+  assert.equal(actual.headers['transfer-encoding'], undefined);
+  assert.ok(writes > 2); assert.ok(drains > 1);
+  assert.deepEqual(fcUploadState(pending), { uploadBodyWritten: true, responseStarted: true });
+  assert.equal(fixture.calls.length, 1);
+});
+
+test('abort during an unresolved backpressured write destroys the request and cannot queue late chunks', async () => {
+  const controller = new AbortController();
+  const configuration = options({ body: JSON.stringify({ code: { zipFile: Buffer.alloc(1024 * 1024, 80).toString('base64') } }), signal: controller.signal });
+  const chunks = []; let flush, request, attempts = 0;
+  const pending = uploadFcCode(ENDPOINT, configuration, { requestFn() {
+    attempts++;
+    request = new Writable({ highWaterMark: 1, write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); flush = callback; } });
+    return request;
+  } });
+  assert.equal(chunks.length, 1);
+  assert.equal(chunks[0].length, 64 * 1024);
+  assert.equal(request.writableNeedDrain, true);
+  controller.abort(new Error('SYNTHETIC-PRIVATE backpressured cancellation'));
+  await assert.rejects(pending, opaque);
+  assert.equal(request.destroyed, true);
+  assert.equal(request.listenerCount('drain'), 0);
+  // A queued callback or late drain cannot resume the stopped application writer.
+  flush(); request.emit('drain');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(chunks.length, 1);
+  assert.equal(request.writableFinished, false);
+  assert.deepEqual(fcUploadState(pending), { uploadBodyWritten: false, responseStarted: false });
+  assert.equal(attempts, 1);
 });
 
 test('a redirect is returned as a response and is never followed', { timeout: 5000 }, async t => {
@@ -217,14 +287,21 @@ test('an early complete response closes an unfinished large PUT instead of leavi
   });
   const largeBody = JSON.stringify({ code: { zipFile: Buffer.alloc(12 * 1024 * 1024, 80).toString('base64') } });
   const closed = deferred();
-  let request, unfinishedAtHeaders, attempts = 0;
+  let request, unfinishedAtHeaders, writesAtHeaders, writes = 0, attempts = 0;
   const requestFn = (url, settings, listener) => {
     assert.equal(url, ENDPOINT);
     attempts++;
     request = httpRequest(`http://127.0.0.1:${server.address().port}/2023-03-30/functions/artdicohost-api`, settings, response => {
       unfinishedAtHeaders = !request.writableFinished;
+      writesAtHeaders = writes;
       listener(response);
     });
+    const nativeWrite = request.write;
+    request.write = function(chunk, encoding, ...rest) {
+      assert.ok(Buffer.byteLength(chunk, encoding) <= 64 * 1024);
+      writes++;
+      return nativeWrite.call(this, chunk, encoding, ...rest);
+    };
     request.once('close', closed.resolve);
     return request;
   };
@@ -236,6 +313,11 @@ test('an early complete response closes an unfinished large PUT instead of leavi
   assert.equal(unfinishedAtHeaders, true, 'the fixture returns a complete response before upload completion');
   assert.equal(request.destroyed, true);
   assert.equal(request.socket.destroyed, true);
+  assert.equal(writes, writesAtHeaders, 'response headers stop the application writer');
+  assert.ok(writes * 64 * 1024 < Buffer.byteLength(largeBody), 'the complete upload was not queued before the early response');
+  assert.equal(request.listenerCount('drain'), 0);
+  request.emit('drain');
+  assert.equal(writes, writesAtHeaders, 'late drain cannot restart an early-completed request');
   assert.deepEqual(fcUploadState(pending), { uploadBodyWritten: false, responseStarted: true });
   controller.abort(new Error('SYNTHETIC-PRIVATE late abort reason'));
   assert.equal(request.destroyed, true);

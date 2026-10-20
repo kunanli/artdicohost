@@ -69,7 +69,29 @@ jobs:
           path: .local-data/fc-publication/
           if-no-files-found: error
           retention-days: 14
+      - name: Prepare and verify the separate cloud content candidate
+        run: |
+          artdico_candidate_node="$(node -p 'process.execPath')"
+          node scripts/prepare-cloud-content.mjs --node-binary "$artdico_candidate_node" --node-sha256 bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12 --source-commit "$GITHUB_SHA" --out .local-data/cloud-content-build
+          node scripts/verify-cloud-content-package.mjs .local-data/cloud-content-build/publication "$GITHUB_SHA"
+      - name: Smoke test the candidate ZIP offline without real accounts or storage
+        run: |
+          mkdir -m 755 "$RUNNER_TEMP/artdico-cloud-content-smoke"
+          unzip -q .local-data/cloud-content-build/publication/artdicohost-cloud-content-candidate.zip -d "$RUNNER_TEMP/artdico-cloud-content-smoke"
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 --memory 512m --cpus 0.35 --user 1000:1000 --tmpfs /tmp:rw,nosuid,nodev,exec,size=192m,mode=1777 --mount "type=bind,src=$RUNNER_TEMP/artdico-cloud-content-smoke,dst=/code,readonly" --mount "type=bind,src=$GITHUB_WORKSPACE/scripts/smoke-cloud-content.py,dst=/verify.py,readonly" artdicohost-fc-smoke python3 -I -S /verify.py
+      - name: Retain the reviewed cloud content candidate without deploying it
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cloud-content-candidate-${{ github.sha }}
+          path: .local-data/cloud-content-build/publication/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Observe the fixed public content endpoint without credentials
+        timeout-minutes: 1
+        continue-on-error: true
+        run: node scripts/probe-content-endpoint.mjs
       - name: Report that FC updates still need one-time setup
+        # The candidate artifact above is deliberately not consumed by deploy-fc.
         if: ${{ vars.ARTDICO_FC_DEPLOY_ENABLED != 'true' }}
         run: echo 'FC automatic deployment is disabled. The startup package was checked; artdicohost-api was not updated.' >> "$GITHUB_STEP_SUMMARY"
       - name: Verify the pinned official deployment tool without credentials

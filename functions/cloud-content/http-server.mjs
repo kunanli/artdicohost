@@ -6,16 +6,22 @@ import { CLOUD_API_ORIGIN, MAX_CLOUD_BODY_BYTES } from './handler.mjs';
 const SECURITY = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' };
 const MIME = { '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.woff': 'font/woff', '.woff2': 'font/woff2' };
 
+export function isCloudAdminAssetUrl(path) {
+  return ['/admin/', '/admin/contacts/', '/invitations/template-blank.png'].includes(path)
+    || typeof path === 'string' && /^\/_astro\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,200}\.(?:css|js|mjs|woff|woff2)$/u.test(path) && !path.includes('..');
+}
+
 function staticAssets(input) {
   if (!(input instanceof Map) || input.size > 40) throw new TypeError('后台静态资源清单无效。');
   const result = new Map(); let total = 0;
   for (const [path, bytes] of input) {
-    const html = path === '/admin/';
+    const html = path === '/admin/' || path === '/admin/contacts/';
+    const invitation = path === '/invitations/template-blank.png';
     const suffix = typeof path === 'string' ? /\.[a-z0-9]+$/u.exec(path)?.[0] : null;
-    if (!html && !(typeof path === 'string' && /^\/_astro\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,200}$/u.test(path) && !path.includes('..') && MIME[suffix])) throw new TypeError('后台静态资源路径无效。');
+    if (!isCloudAdminAssetUrl(path)) throw new TypeError('后台静态资源路径无效。');
     if (!(bytes instanceof Uint8Array) || !bytes.byteLength || bytes.byteLength > 2 * 1024 * 1024 || (total += bytes.byteLength) > 8 * 1024 * 1024) throw new TypeError('后台静态资源容量无效。');
     const data = Buffer.from(bytes);
-    const headers = { ...SECURITY, 'content-type': html ? 'text/html; charset=utf-8' : MIME[suffix], 'content-length': String(data.length) };
+    const headers = { ...SECURITY, 'content-type': html ? 'text/html; charset=utf-8' : invitation ? 'image/png' : MIME[suffix], 'content-length': String(data.length) };
     if (html) {
       const hashes = new Set();
       for (const script of data.toString('utf8').matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/giu)) {
@@ -34,7 +40,7 @@ function fixedError(response, status, code, message) {
   response.end(JSON.stringify({ error: { code, message } }));
 }
 
-/** Unbound HTTP adapter. Only a future reviewed package supplies the explicit admin asset map.
+/** Unbound HTTP adapter. A verified candidate package supplies the explicit admin asset map.
  * It never reads a filesystem, discovers routes, opens a port on import or trusts proxy headers.
  */
 export function createCloudContentServer({ runtime, sourceCommit = null, assets = new Map() } = {}) {
@@ -60,7 +66,7 @@ export function createCloudContentServer({ runtime, sourceCommit = null, assets 
       if (!url.pathname.startsWith('/api/')) {
         if (!runtime.configured) return fixedError(outgoing, 503, 'CONTENT_NOT_READY', '云端内容后台尚未开放。');
         if (!['GET', 'HEAD'].includes(method)) return fixedError(outgoing, 405, 'METHOD_NOT_ALLOWED', '页面只接受读取。');
-        if (url.pathname === '/admin' && !url.search) { outgoing.writeHead(308, { ...SECURITY, location: '/admin/' }); outgoing.end(); return; }
+        if (['/admin', '/admin/contacts'].includes(url.pathname) && !url.search) { outgoing.writeHead(308, { ...SECURITY, location: url.pathname + '/' }); outgoing.end(); return; }
         const file = !url.search && knownAssets.get(url.pathname);
         if (!file) return fixedError(outgoing, 404, 'NOT_FOUND', '页面不存在。');
         outgoing.writeHead(200, file.headers); outgoing.end(method === 'HEAD' ? undefined : file.data); return;

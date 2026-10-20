@@ -5,7 +5,7 @@ const ORIGIN = 'https://api.artdico.host';
 const SECURITY = { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8', 'x-content-type-options': 'nosniff' };
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: SECURITY });
 export function isIntentInvitationPath(path) {
-  return path === '/api/admin/contacts/convert' || path === '/api/admin/intent-invitations'
+  return path === '/api/admin/contacts/convert' || path === '/api/admin/contacts/convert/preview' || path === '/api/admin/intent-invitations'
     || /^\/api\/admin\/contacts\/[A-Za-z0-9][A-Za-z0-9_-]{0,79}\/(?:invitation|assignments)$/u.test(path)
     || /^\/api\/admin\/intent-invitations\/[A-Za-z0-9][A-Za-z0-9_-]{0,99}\/manual-sent$/u.test(path);
 }
@@ -51,9 +51,9 @@ export function createIntentInvitationApi({ service, authenticate, permissionRef
       if (url.pathname === '/api/admin/intent-invitations' && request.method === 'GET') return json(await service.read({ actor }));
       if (request.method !== 'POST') return json({ error: { code: 'METHOD_NOT_ALLOWED', message: '此操作只接受明确提交。' } }, 405);
       const input = await readIntentBody(request);
-      if (url.pathname === '/api/admin/contacts/convert') {
+      if (['/api/admin/contacts/convert', '/api/admin/contacts/convert/preview'].includes(url.pathname)) {
         shape(input, ['contactIds', 'expectedContactRevision']);
-        return json(await service.convertContacts({ ...input, actor, permissionReference }));
+        return json(await service[url.pathname.endsWith('/preview') ? 'previewConversions' : 'convertContacts']({ ...input, actor, permissionReference }));
       }
       const match = url.pathname.match(/^\/api\/admin\/contacts\/([A-Za-z0-9][A-Za-z0-9_-]{0,79})\/(invitation|assignments)$/u);
       if (match) {

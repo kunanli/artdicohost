@@ -15,11 +15,13 @@ function stateValue(value) {
     || value.audit.length !== value.revision || Buffer.byteLength(JSON.stringify(value)) > MAX_BYTES) throw failure();
   const sources = new Set(), invitations = new Set();
   for (const item of value.conversions) {
-    if (!exact(item, ['sourceContactId', 'registrationId', 'referenceCode', 'sourceDigest', 'sourceKey', 'sourceRowId', 'permissionReference', 'recordedAt', 'actorId'])
+    const optional = Object.hasOwn(item ?? {}, 'projectionWarnings') ? ['projectionWarnings'] : [];
+    if (!exact(item, ['sourceContactId', 'registrationId', 'referenceCode', 'sourceDigest', 'sourceKey', 'sourceRowId', 'permissionReference', 'recordedAt', 'actorId', ...optional])
       || !identifier(item.sourceContactId) || !identifier(item.registrationId) || !identifier(item.referenceCode) || !HASH.test(item.sourceDigest)
       || !identifier(item.sourceKey) || typeof item.sourceRowId !== 'string' || !item.sourceRowId.length || item.sourceRowId.length > 100
       || typeof item.permissionReference !== 'string' || !item.permissionReference.trim() || item.permissionReference.length > 1000
-      || !iso(item.recordedAt) || !identifier(item.actorId) || sources.has(item.sourceContactId)) throw failure();
+      || !iso(item.recordedAt) || !identifier(item.actorId) || sources.has(item.sourceContactId)
+      || optional.length && (!Array.isArray(item.projectionWarnings) || item.projectionWarnings.some(field => !['website', 'caseLinks'].includes(field)) || new Set(item.projectionWarnings).size !== item.projectionWarnings.length)) throw failure();
     sources.add(item.sourceContactId);
   }
   for (const item of value.invitations) {
@@ -38,10 +40,13 @@ function stateValue(value) {
   }
   let previous = '';
   for (const [index, entry] of value.audit.entries()) {
-    if (!exact(entry, ['revision', 'action', 'actorId', 'sourceContactId', 'invitationId', 'at']) || entry.revision !== index + 1
+    const optional = entry?.action === 'convert_contact' && Object.hasOwn(entry, 'projectionWarnings') ? ['projectionWarnings'] : [];
+    if (!exact(entry, ['revision', 'action', 'actorId', 'sourceContactId', 'invitationId', 'at', ...optional]) || entry.revision !== index + 1
       || !['convert_contact', 'prepare_invitation', 'reserve_email', 'email_result', 'manual_sent'].includes(entry.action)
       || !identifier(entry.actorId) || !identifier(entry.sourceContactId) || !sources.has(entry.sourceContactId)
-      || !(entry.invitationId === null || invitations.has(entry.invitationId)) || !iso(entry.at) || entry.at < previous) throw failure();
+      || !(entry.invitationId === null || invitations.has(entry.invitationId)) || !iso(entry.at) || entry.at < previous
+      || optional.length && (!Array.isArray(entry.projectionWarnings) || entry.projectionWarnings.some(field => !['website', 'caseLinks'].includes(field))
+        || !isDeepStrictEqual(entry.projectionWarnings, value.conversions.find(item => item.sourceContactId === entry.sourceContactId)?.projectionWarnings))) throw failure();
     previous = entry.at;
   }
   return structuredClone(value);

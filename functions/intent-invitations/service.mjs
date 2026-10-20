@@ -8,8 +8,24 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const CATEGORY = { prospective_site: 'new_site', developer: 'industry', university: 'education' };
 const INTEREST = { site_experience: 'roundtable', technical_share: 'workshop', industry_networking: 'attend',
   product_demo: 'exhibition', site_resources: 'site_support', sponsorship_partnership: 'partnership', attend_only: 'attend' };
+function httpUrl(value) {
+  if (typeof value !== 'string' || /\s/u.test(value)) return false;
+  try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !!url.hostname && !url.username && !url.password; }
+  catch { return false; }
+}
+function optionalProjectionWarnings(profile) {
+  const warnings = [];
+  if (profile.website && !httpUrl(profile.website)) warnings.push('website');
+  if (profile.caseLinks) {
+    const lines = profile.caseLinks.split(/\r?\n/u).map(line => line.trim()).filter(Boolean);
+    if (lines.length > 5 || lines.some(line => !httpUrl(line))) warnings.push('caseLinks');
+  }
+  return warnings;
+}
 const fields = profile => ({ name: profile.name, city: profile.city, organization: profile.organization, position: profile.position,
-  email: profile.email, wechat: profile.wechat, website: profile.website, background: profile.background, caseLinks: profile.caseLinks,
+  email: profile.email, wechat: profile.wechat, background: profile.background,
+  ...(!optionalProjectionWarnings(profile).includes('website') ? { website: profile.website } : {}),
+  ...(!optionalProjectionWarnings(profile).includes('caseLinks') ? { caseLinks: profile.caseLinks } : {}),
   categories: [...new Set(profile.categories.map(category => CATEGORY[category] ?? category))],
   participationInterests: [...new Set(profile.interests.map(interest => INTEREST[interest] ?? interest))],
   // Historical answers remain historical. No attendance or lodging approval is inferred.
@@ -17,6 +33,9 @@ const fields = profile => ({ name: profile.name, city: profile.city, organizatio
   ...(profile.accommodationIntent !== 'unknown' ? { accommodationChoice: ({ needed: 'needed', not_needed: 'not_needed', uncertain: 'uncertain' })[profile.accommodationIntent] } : {}),
   ...(profile.futureCooperation !== 'unknown' ? { cooperationInterest: profile.futureCooperation === 'interested' ? 'interested' : 'none' } : {}), topics: profile.topics,
 });
+// The same pure mapping is available to protected import-readiness tooling; it
+// never writes records, grants applicant consent or creates a session.
+export { fields as staffRegistrationFieldsFromContactProfile };
 function actorValue(actor, registration = false) {
   if (!plainData(actor) || !identifier(actor.id) || !Array.isArray(actor.roles) || actor.roles.some(role => typeof role !== 'string')
     || !actor.roles.some(role => ['outreach', 'superadmin'].includes(role))
@@ -27,13 +46,18 @@ function reference(value) {
   if (typeof value !== 'string' || !value.trim() || value.length > 1000 || /[\u0000-\u001f\u007f]/u.test(value)) throw failure('INVALID_INPUT', 400);
   return value.trim();
 }
-function contactValue(roster, id) {
+function contactValue(roster, id, allowDeclined = false) {
   if (!identifier(id) || !plainData(roster) || !revision(roster.revision) || !Array.isArray(roster.contacts)) throw failure();
   const contact = roster.contacts.find(item => item.id === id);
   if (!contact) throw failure('CONTACT_NOT_FOUND', 404);
   if (!validateStoredContact(contact)) throw failure();
-  if (contact.profile.contactConsent === 'declined' || contact.operations.responseStatus === 'declined') throw failure('CONTACT_DECLINED', 422);
+  if (!allowDeclined && declined(contact)) throw failure('CONTACT_DECLINED', 422);
   return structuredClone(contact);
+}
+const declined = contact => contact.profile.contactConsent === 'declined' || contact.operations.responseStatus === 'declined';
+function selectedContacts(roster, contactIds) {
+  if (!Array.isArray(contactIds) || !contactIds.length || contactIds.length > 100 || contactIds.some(id => !identifier(id)) || new Set(contactIds).size !== contactIds.length) throw failure('INVALID_INPUT', 400);
+  return contactIds.map(id => contactValue(roster, id, true));
 }
 
 /** Confirmed event facts, without granting a speaker, booth, lodging or GGJ credential. */
@@ -82,11 +106,11 @@ export function createIntentInvitationService({ registrationService, contactsSto
     if (roster.revision !== expected) throw failure('REVISION_CONFLICT', 409);
     return roster;
   }
-  async function record(state, action, actorId, sourceContactId, invitationId = null) {
+  async function record(state, action, actorId, sourceContactId, invitationId = null, detail = {}) {
     const at = timestamp();
     if (state.value.audit.length && at < state.value.audit.at(-1).at) throw failure();
     state.value.revision++;
-    state.value.audit.push({ revision: state.value.revision, action, actorId, sourceContactId, invitationId, at });
+    state.value.audit.push({ revision: state.value.revision, action, actorId, sourceContactId, invitationId, at, ...detail });
     try { return await repository.commit(state.cursor, state.value); }
     catch (error) { if (error instanceof IntentInvitationError) throw error; throw failure(); }
   }
@@ -104,17 +128,29 @@ export function createIntentInvitationService({ registrationService, contactsSto
       return { revision: state.value.revision, conversions: structuredClone(state.value.conversions),
         invitations: state.value.invitations.map(invitationProjection), email: emailProvider?.readiness?.() ?? { ready: false, reason: 'EMAIL_NOT_READY' } };
     },
+    async previewConversions({ contactIds, expectedContactRevision, actor } = {}) {
+      actorValue(actor, true);
+      const roster = await rosterAt(expectedContactRevision);
+      const entries = selectedContacts(roster, contactIds).map(contact => ({ contactId: contact.id, eligible: !declined(contact),
+        reason: declined(contact) ? 'CONTACT_DECLINED' : null, warnings: declined(contact) ? [] : optionalProjectionWarnings(contact.profile) }));
+      return { contactRevision: roster.revision, entries, summary: { selected: entries.length, eligible: entries.filter(entry => entry.eligible).length,
+        skipped: entries.filter(entry => !entry.eligible).length, optionalFieldsOmitted: entries.reduce((count, entry) => count + entry.warnings.length, 0) } };
+    },
     async convertContacts({ contactIds, expectedContactRevision, actor, permissionReference } = {}) {
       const staff = actorValue(actor, true), permission = reference(permissionReference);
-      if (!Array.isArray(contactIds) || !contactIds.length || contactIds.length > 100 || contactIds.some(id => !identifier(id)) || new Set(contactIds).size !== contactIds.length) throw failure('INVALID_INPUT', 400);
       const roster = await rosterAt(expectedContactRevision);
       // Validate the entire selection before the first registration write.
-      const selected = contactIds.map(id => contactValue(roster, id));
-      const registrations = [], failures = [];
+      const selection = selectedContacts(roster, contactIds), selected = selection.filter(contact => !declined(contact));
+      const skipped = selection.filter(declined).map(contact => ({ contactId: contact.id, reason: 'CONTACT_DECLINED' }));
+      const registrations = [], failures = [], warnings = [];
       for (const contact of selected) {
         try {
           const state = await readState(), existing = conversionFor(state, contact.id);
-          if (existing) { registrations.push({ contactId: contact.id, registrationId: existing.registrationId, referenceCode: existing.referenceCode, outcome: 'replayed' }); continue; }
+          if (existing) {
+            registrations.push({ contactId: contact.id, registrationId: existing.registrationId, referenceCode: existing.referenceCode, outcome: 'replayed' });
+            if (existing.projectionWarnings?.length) warnings.push({ contactId: contact.id, fields: existing.projectionWarnings });
+            continue;
+          }
           // Recheck the selected roster before each independent registration. This is
           // an explicit partial batch, not a transaction across two private journals.
           await rosterAt(expectedContactRevision);
@@ -133,12 +169,14 @@ export function createIntentInvitationService({ registrationService, contactsSto
             failures.push({ contactId: contact.id, code: ({ invalid: 'REGISTRATION_INVALID', conflict: 'REGISTRATION_CONFLICT', closed: 'REGISTRATION_CLOSED', forbidden: 'FORBIDDEN' })[outcome?.outcome] ?? 'REGISTRATION_UNAVAILABLE', ...(fieldErrors.length ? { fields: fieldErrors } : {}) });
             continue;
           }
+          const projectionWarnings = optionalProjectionWarnings(contact.profile);
           const item = { sourceContactId: contact.id, registrationId: outcome.receipt.registrationId, referenceCode: outcome.receipt.referenceCode,
             sourceDigest: contact.source.digest, sourceKey: contact.source.key, sourceRowId: contact.source.rowId,
-            permissionReference: permission, recordedAt: timestamp(), actorId: staff.id };
+            permissionReference: permission, recordedAt: timestamp(), actorId: staff.id, projectionWarnings };
           state.value.conversions.push(item);
-          await record(state, 'convert_contact', staff.id, contact.id);
+          await record(state, 'convert_contact', staff.id, contact.id, null, { projectionWarnings });
           registrations.push({ contactId: contact.id, registrationId: item.registrationId, referenceCode: item.referenceCode, outcome: outcome.outcome });
+          if (projectionWarnings.length) warnings.push({ contactId: contact.id, fields: projectionWarnings });
         } catch (error) {
           failures.push({ contactId: contact.id, code: error instanceof IntentInvitationError ? error.code : 'STORAGE_UNAVAILABLE' });
           // Unknown registration or ledger outcomes are resolved by explicit read or
@@ -147,7 +185,7 @@ export function createIntentInvitationService({ registrationService, contactsSto
         }
       }
       return { status: failures.length ? registrations.length ? 'partial' : 'unavailable' : 'completed',
-        contactRevision: roster.revision, registrations, failures };
+        contactRevision: roster.revision, registrations, failures, skipped, warnings };
     },
     async assignContact({ contactId, expectedContactRevision, sessionIds, boothIds, actor } = {}) {
       const staff = actorValue(actor), roster = await rosterAt(expectedContactRevision), contact = contactValue(roster, contactId);

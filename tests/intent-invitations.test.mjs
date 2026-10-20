@@ -62,8 +62,33 @@ test('stale revision, malformed selections, unauthorized users and opted-out sou
   }
   assert.equal(f.submitted.length, 0);
   const updated = await f.contactsStore.saveOperations(f.contact.id, 1, { ...f.contact.operations, responseStatus: 'declined' }, actor.id);
-  await assert.rejects(f.service.convertContacts({ contactIds: [f.contact.id], expectedContactRevision: updated.revision, actor, permissionReference: '合成授权。' }), { code: 'CONTACT_DECLINED' });
+  const skipped = await f.service.convertContacts({ contactIds: [f.contact.id], expectedContactRevision: updated.revision, actor, permissionReference: '合成授权。' });
+  assert.deepEqual(skipped.skipped, [{ contactId: f.contact.id, reason: 'CONTACT_DECLINED' }]);
   assert.equal(f.submitted.length, 0);
+});
+
+test('conversion preview skips opt-outs and audits omitted optional free-text links without changing original answers', async () => {
+  const f = await fixture(), contact = structuredClone(f.contact);
+  Object.assign(contact.profile, { website: '合成非网址答案', caseLinks: '合成暂无链接' });
+  contact.sourceProfile = structuredClone(contact.profile); contact.sourceProfileDigest = hash(JSON.stringify(contact.sourceProfile)); contact.source.digest = contact.sourceProfileDigest;
+  const declinedContact = structuredClone(contact); declinedContact.source.rowId = 'another-synthetic-row';
+  declinedContact.id = 'c_' + hash('manual\0' + declinedContact.source.rowId).slice(0, 32);
+  declinedContact.profile.contactConsent = 'declined'; declinedContact.sourceProfile = structuredClone(declinedContact.profile);
+  declinedContact.sourceProfileDigest = hash(JSON.stringify(declinedContact.sourceProfile)); declinedContact.source.digest = declinedContact.sourceProfileDigest;
+  const roster = { revision: 1, contacts: [contact, declinedContact] }, before = structuredClone(roster);
+  const service = createIntentInvitationService({ ...f.dependencies, contactsStore: { ...f.contactsStore, read: async () => structuredClone(roster) } });
+  const input = { contactIds: [contact.id, declinedContact.id], expectedContactRevision: 1, actor };
+  const preview = await service.previewConversions(input);
+  assert.deepEqual(preview.summary, { selected: 2, eligible: 1, skipped: 1, optionalFieldsOmitted: 2 }); assert.equal(f.submitted.length, 0);
+  const result = await service.convertContacts({ ...input, permissionReference: '合成授权转换。' });
+  assert.equal(result.registrations.length, 1); assert.equal(result.skipped.length, 1);
+  assert.deepEqual(result.warnings, [{ contactId: contact.id, fields: ['website', 'caseLinks'] }]);
+  assert.equal(Object.hasOwn(f.submitted[0].input.fields, 'website'), false); assert.equal(Object.hasOwn(f.submitted[0].input.fields, 'caseLinks'), false);
+  assert.deepEqual(roster, before);
+  const durable = (await f.repository.read()).value;
+  assert.deepEqual(durable.conversions[0].projectionWarnings, ['website', 'caseLinks']);
+  assert.deepEqual(durable.audit[0].projectionWarnings, ['website', 'caseLinks']);
+  assert.equal(JSON.stringify(durable).includes('合成非网址答案'), false);
 });
 
 test('manual invitation uses confirmed real event facts, prepares PNG settings and records sending only by explicit separate action', async () => {

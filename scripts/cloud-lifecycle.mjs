@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -30,7 +30,7 @@ function environment(value) {
   try {
     if (!plain(value) && value !== process.env) throw failure('CONTEXT_INVALID');
     const copy = {};
-    for (const key of ['GITHUB_ACTIONS', 'GITHUB_EVENT_NAME', 'GITHUB_REF', 'GITHUB_REPOSITORY', 'GITHUB_SHA', 'GITHUB_TOKEN', 'GITHUB_RUN_ID',
+    for (const key of ['GITHUB_ACTIONS', 'GITHUB_EVENT_NAME', 'GITHUB_REF', 'GITHUB_REPOSITORY', 'GITHUB_SHA', 'GITHUB_TOKEN', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT',
       'ARTDICO_FC_DEPLOY_ENABLED', 'ARTDICO_CLOUD_LIFECYCLE_ENABLED', 'ARTDICO_CLOUD_ADMIN_SETUP_ENABLED', 'ARTDICO_FC_ACCOUNT_ID',
       'FC_ACCESS_KEY_ID', 'FC_ACCESS_KEY_SECRET', 'FC_SECURITY_TOKEN', 'ARTDICO_ADMIN_PASSWORD', 'ARTDICO_ADMIN_USERNAME',
       'ARTDICO_ADMIN_EMAIL', 'ARTDICO_REGISTRATION_SETUP_ENABLED']) {
@@ -107,8 +107,11 @@ export async function deployCloudLifecycle(options = {}) {
     const env = environment(own(options, 'env') === undefined ? process.env : own(options, 'env'));
     try { requireCloudContentDeploymentContext(env); requireCloudAdminSetupContext(env); } catch { throw failure('CONTEXT_INVALID'); }
     if (env.ARTDICO_CLOUD_LIFECYCLE_ENABLED !== 'true' || typeof env.GITHUB_RUN_ID !== 'string'
-      || !/^[1-9][0-9]{0,19}$/u.test(env.GITHUB_RUN_ID)) throw failure('CONTEXT_INVALID');
-    const runId = 'r' + env.GITHUB_RUN_ID + '-' + env.GITHUB_SHA;
+      || !/^[1-9][0-9]{0,19}$/u.test(env.GITHUB_RUN_ID) || typeof env.GITHUB_RUN_ATTEMPT !== 'string'
+      || !/^[1-9][0-9]{0,9}$/u.test(env.GITHUB_RUN_ATTEMPT)) throw failure('CONTEXT_INVALID');
+    // A retry of the same Actions run/source must not accept a cached proof from
+    // a previous invocation or an old FC instance still completing its drain.
+    const runId = 'r' + env.GITHUB_RUN_ID + '-a' + env.GITHUB_RUN_ATTEMPT + '-' + randomBytes(8).toString('hex') + '-' + env.GITHUB_SHA;
     const fetchHead = own(options, 'fetchHead') ?? fetch;
     const fetchPublic = own(options, 'fetchPublic') ?? fetch;
     const wait = own(options, 'wait') ?? ((ms, { signal }) => delay(ms, undefined, { signal }));

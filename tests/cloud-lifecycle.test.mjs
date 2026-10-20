@@ -8,10 +8,10 @@ import { approvedRegistrationPolicy } from '../scripts/approved-registration-pol
 const COMMIT = 'a'.repeat(40), OLD = 'b'.repeat(40);
 const PRIVATE = 'PRIVATE-SYNTHETIC-ENVIRONMENT';
 const URL = 'https://synthetic-artdicohost-api.cn-hongkong.fcapp.run';
-const RUN = 'r123-' + COMMIT;
+const RUN = 'r123-a1-' + 'd'.repeat(16) + '-' + COMMIT;
 const STAGES = ['object-readback', 'atomic-conflict', 'login-permissions', 'private-contacts', 'content-portrait', 'lost-ack', 'registration-intake', 'registration-review', 'session-revocation', 'shared-login-budget'];
 const ENV = { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/main', GITHUB_REPOSITORY: 'kunanli/artdicohost',
-  GITHUB_SHA: COMMIT, GITHUB_RUN_ID: '123', GITHUB_TOKEN: 'synthetic-github-token', ARTDICO_FC_DEPLOY_ENABLED: 'true',
+  GITHUB_SHA: COMMIT, GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', GITHUB_TOKEN: 'synthetic-github-token', ARTDICO_FC_DEPLOY_ENABLED: 'true',
   ARTDICO_CLOUD_LIFECYCLE_ENABLED: 'true', ARTDICO_CLOUD_ADMIN_SETUP_ENABLED: 'true', ARTDICO_FC_ACCOUNT_ID: '1954121651395178',
   FC_ACCESS_KEY_ID: 'SYNTHETICKEY', FC_ACCESS_KEY_SECRET: 'synthetic-deployment-secret', ARTDICO_ADMIN_PASSWORD: 'synthetic-owner-password-123',
   ARTDICO_ADMIN_USERNAME: 'synthetic.owner', ARTDICO_ADMIN_EMAIL: 'synthetic.owner@artdico.co', ARTDICO_REGISTRATION_SETUP_ENABLED: 'false' };
@@ -48,7 +48,8 @@ function fixture(change = {}) {
       calls.push('health'); assert.equal(url, URL);
       const body = { status: 'ok', scope: 'process-only', sourceCommit: source };
       if (state.environmentVariables.ARTDICO_CLOUD_ACCEPTANCE_RUN_ID) {
-        body.acceptance = change.proof ? change.proof(proof()) : proof();
+        const currentProof = { ...proof(), runId: state.environmentVariables.ARTDICO_CLOUD_ACCEPTANCE_RUN_ID };
+        body.acceptance = change.proof ? change.proof(currentProof) : currentProof;
         if (body.acceptance.status === 'passed') proofObserved = true;
       }
       const health = { status: 200, body };
@@ -93,7 +94,8 @@ async function safeFailure(f, expected) {
 test('lifecycle requires the protected current-main setup intent and exact run identity before package or network', async () => {
   for (const patch of [{ GITHUB_ACTIONS: 'false' }, { GITHUB_EVENT_NAME: 'workflow_dispatch' }, { GITHUB_REF: 'refs/heads/foreign' },
     { GITHUB_REPOSITORY: 'foreign/artdicohost' }, { GITHUB_SHA: 'main' }, { GITHUB_RUN_ID: '0' }, { GITHUB_RUN_ID: '1-2' },
-    { GITHUB_RUN_ID: '1'.repeat(21) }, { ARTDICO_CLOUD_LIFECYCLE_ENABLED: 'false' }, { ARTDICO_FC_DEPLOY_ENABLED: 'false' },
+    { GITHUB_RUN_ID: '1'.repeat(21) }, { GITHUB_RUN_ATTEMPT: undefined }, { GITHUB_RUN_ATTEMPT: '0' }, { GITHUB_RUN_ATTEMPT: '1-2' },
+    { GITHUB_RUN_ATTEMPT: '1'.repeat(11) }, { ARTDICO_CLOUD_LIFECYCLE_ENABLED: 'false' }, { ARTDICO_FC_DEPLOY_ENABLED: 'false' },
     { ARTDICO_CLOUD_ADMIN_SETUP_ENABLED: 'false' }, { ARTDICO_FC_ACCOUNT_ID: '0000000000' }, { FC_ACCESS_KEY_SECRET: '' }, { ARTDICO_ADMIN_PASSWORD: '' }]) {
     const f = fixture(); f.options.env = { ...ENV, ...patch };
     await safeFailure(f, /CONTEXT_INVALID/u); assert.deepEqual(f.calls, []);
@@ -118,7 +120,7 @@ test('enabled code is quiesced before code-only deployment, owner setup and sign
   assert.deepEqual(f.updates[0], { ARTDICO_CLOUD_CONTENT_ENABLED: 'false', SYNTHETIC_PRIVATE_SETTING: PRIVATE });
   assert.ok(f.calls.indexOf('update') < f.calls.indexOf('code'));
   assert.equal(f.updates[1].ARTDICO_CLOUD_ACCEPTANCE_RUN_ID, undefined);
-  assert.equal(f.updates[2].ARTDICO_CLOUD_ACCEPTANCE_RUN_ID, RUN);
+  assert.match(f.updates[2].ARTDICO_CLOUD_ACCEPTANCE_RUN_ID, new RegExp('^r123-a1-[a-f0-9]{16}-' + COMMIT + '$', 'u'));
   assert.equal(f.updates[2].ARTDICO_CLOUD_CONTENT_ENABLED, 'false');
   assert.equal(f.updates[3].ARTDICO_CLOUD_CONTENT_ENABLED, 'true');
   assert.equal(Object.hasOwn(f.updates[3], 'ARTDICO_CLOUD_ACCEPTANCE_RUN_ID'), false);
@@ -127,7 +129,7 @@ test('enabled code is quiesced before code-only deployment, owner setup and sign
   assert.deepEqual(users[0].roles, ['superadmin', 'editor', 'publisher', 'outreach']);
   assert.equal(f.updates[3].ARTDICO_REGISTRATION_ENABLED, 'false');
   assert.deepEqual(result, { sourceCommit: COMMIT, contentEnabled: true, registrationEnabled: false,
-    acceptanceRunId: RUN, privateOssAcceptance: 'passed', independentClients: 2, fcProcesses: 1 });
+    acceptanceRunId: f.updates[2].ARTDICO_CLOUD_ACCEPTANCE_RUN_ID, privateOssAcceptance: 'passed', independentClients: 2, fcProcesses: 1 });
   assert.equal(JSON.stringify(f.reports).includes(PRIVATE), false);
 });
 
@@ -138,6 +140,21 @@ test('failed or malformed acceptance remains closed and never attempts activatio
     const f = fixture({ proof: mutate }); await safeFailure(f, /ACCEPTANCE_(?:FAILED|NOT_VERIFIED)/u);
     assert.equal(f.updates.length, 3); assert.equal(f.current().environmentVariables.ARTDICO_CLOUD_CONTENT_ENABLED, 'false');
   }
+});
+
+test('rerun attempts and repeated same-attempt invocations cannot reuse a cached acceptance proof', async () => {
+  const first = fixture(); const original = await deployCloudLifecycle(first.options);
+  const nextAttempt = fixture(); nextAttempt.options.env = { ...ENV, GITHUB_RUN_ATTEMPT: '2' };
+  const rerun = await deployCloudLifecycle(nextAttempt.options);
+  assert.match(rerun.acceptanceRunId, new RegExp('^r123-a2-[a-f0-9]{16}-' + COMMIT + '$', 'u'));
+  assert.notEqual(rerun.acceptanceRunId, original.acceptanceRunId);
+  const sameAttempt = fixture(); const repeated = await deployCloudLifecycle(sameAttempt.options);
+  assert.notEqual(repeated.acceptanceRunId, original.acceptanceRunId);
+  const stale = fixture({ proof: value => ({ ...value, runId: original.acceptanceRunId }) });
+  stale.options.env = { ...ENV, GITHUB_RUN_ATTEMPT: '2' };
+  await safeFailure(stale, /ACCEPTANCE_NOT_VERIFIED/u);
+  assert.equal(stale.updates.length, 3);
+  assert.equal(stale.current().environmentVariables.ARTDICO_CLOUD_CONTENT_ENABLED, 'false');
 });
 
 test('unknown configuration acknowledgements only perform readback and never repeat a phase PUT', async () => {

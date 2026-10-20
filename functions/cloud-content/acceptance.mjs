@@ -7,6 +7,7 @@ import { CLOUD_API_ORIGIN, PUBLIC_SITE_ORIGIN } from './handler.mjs';
 import { hashPassword } from '../content-api/auth.mjs';
 import { createInitialContent } from '../../src/config/content.mjs';
 import { createCloudApplication } from './runtime.mjs';
+import { inspectEncryptedObjectBackup } from '../registration-admin/maintenance.mjs';
 
 const DEADLINE_MS = 90_000;
 const REQUEST_LIMIT = 1000;
@@ -234,6 +235,27 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         const item = await detail.json(), review = { ...item.review, status: 'in_review' }; delete review.deletionRequested;
         await call(second.api, '/api/admin/registrations/' + registrationId + '/review', { method: 'PATCH', headers: { Cookie: owner.Cookie }, body: { expectedRevision: 0, review } }, 403);
         await call(second.api, '/api/admin/registrations/' + registrationId + '/review', { method: 'PATCH', headers: owner, body: { expectedRevision: 0, review } }, 200);
+        const encryptionKey = randomBytes(32);
+        try {
+          const backup = await call(first.api, '/api/admin/maintenance/backup', { method: 'POST', headers: owner,
+            body: { encryptionKey: encryptionKey.toString('base64url'), confirmation: 'CREATE_ENCRYPTED_BACKUP' } }, 200);
+          const bundle = Buffer.from(await backup.arrayBuffer());
+          requireThat(backup.headers.get('content-type') === 'application/octet-stream' && backup.headers.get('x-backup-sha256') === hash(bundle));
+          const inspection = inspectEncryptedObjectBackup({ bundle, key: encryptionKey, includeObjects: true });
+          requireThat(inspection.objects.some(value => value.key.startsWith('cms/v1/registrations/'))
+            && !inspection.objects.some(value => /^cms\/v1\/(?:users|sessions|limits)\//u.test(value.key)));
+          const restoreId = 'synthetic-' + randomBytes(16).toString('hex');
+          const restored = await call(second.api, '/api/admin/maintenance/restore', { method: 'POST', headers: alias,
+            body: { encryptionKey: encryptionKey.toString('base64url'), bundleBase64: bundle.toString('base64'), restoreId, confirmation: 'RESTORE_TO_ISOLATED_NAMESPACE' } }, 200);
+          const recovery = await restored.json();
+          requireThat(recovery.restored === true && recovery.active === false && recovery.sessionsRestored === false
+            && recovery.namespace === 'cms/v1/restores/' + restoreId && recovery.objectCount === inspection.objectCount);
+          const recoveredReview = await createObjectJournal({ objects: bObjects, prefix: recovery.namespace + '/registration-reviews/' + eventId }).read();
+          requireThat(recoveredReview.cursor.version === 1 && recoveredReview.value.revision === 1);
+          const maintenance = await call(first.api, '/api/admin/maintenance', { headers: owner }, 200);
+          const readiness = await maintenance.json();
+          requireThat(readiness.audit.count === 3 && readiness.audit.incompleteRestoreCount === 0 && readiness.audit.lastRestoreAt !== null);
+        } finally { encryptionKey.fill(0); }
         const exported = await call(first.api, '/api/admin/registrations/export', { method: 'POST', headers: alias, body: { expectedRevision: 1, includeContact: false } }, 200);
         requireThat(exported.headers.get('x-review-revision') === '2' && !(await exported.text()).includes('example.invalid'));
         await call(second.api, '/api/admin/registrations/' + registrationId + '/review', { method: 'PATCH', headers: owner, body: { expectedRevision: 2, review: { ...review, status: 'withdrawn' } } }, 200);

@@ -2,7 +2,7 @@ import { validObjectKey } from './oss-client.mjs';
 
 export const ACCEPTANCE_RUN_PATTERN = /^r[1-9][0-9]{0,19}-a[1-9][0-9]{0,9}-[a-f0-9]{16}-[a-f0-9]{40}$/u;
 const INSTANCE = /^[a-f0-9]{32}$/u;
-const LOGICAL = /^cms\/v1\/(?:content|contacts|portraits|sessions|limits|probes|registrations|registration-reviews|intent-invitations|group-invites|users|maintenance)\//u;
+const LOGICAL = /^cms\/v1\/(?:content|contacts|portraits|sessions|limits|probes|registrations|registration-reviews|intent-invitations|group-invites|users|maintenance|restores)\//u;
 const invalid = () => new TypeError('Acceptance object scope is invalid.');
 
 /** Application-level isolation inside the existing private role prefix.

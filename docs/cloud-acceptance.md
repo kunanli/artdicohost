@@ -14,7 +14,7 @@
 
 ## 隔离与储存范围
 
-每个进程随机生成 128 位标识，将全部 logical `cms/v1/{content,contacts,portraits,sessions,limits,probes,registrations,registration-reviews,intent-invitations,group-invites,users,maintenance}/...` 映射到 `cms/v1/acceptance/<run-id>/<instance-id>/...`。适配器拒绝不认识的类别、已经 scope 的 key、路径穿越、重复分隔及不合法 run ID。正式运行路径不变；会话、全局登录额度及照片与内容一起隔离，不消耗正式工作人员的额度或读写其资料。
+每个进程随机生成 128 位标识，将全部 logical `cms/v1/{content,contacts,portraits,sessions,limits,probes,registrations,registration-reviews,intent-invitations,group-invites,users,maintenance,restores}/...` 映射到 `cms/v1/acceptance/<run-id>/<instance-id>/...`。适配器拒绝不认识的类别、已经 scope 的 key、路径穿越、重复分隔及不合法 run ID。正式运行路径不变；会话、全局登录额度及照片与内容一起隔离，不消耗正式工作人员的额度或读写其资料。隔离恢复也只能写入相同 acceptance 前缀。
 
 这一前缀位于现有专用角色的 `cms/v1/*` GetObject／PutObject 范围，不需要新增 IAM；它是应用层隔离，并非 RAM 强制隔离。没有列举或删除 API，不建立新 bucket、函数或其他云服务。
 
@@ -27,7 +27,7 @@
 5. 合成图片上传、内容保存及发布；公开投影无备注、身份凭据或联系人；相同修订竞争只有一个胜者；重建组件读回，撤回同意并发布后旧公开照片 URL 返回 404，私有保留独立处理。
 6. 真实 append 后以受控 shim 丢弃 ACK，写入调用必须失败且不能重送；独立只读回查证明实际版本。该案例是受控 ACK 故障注入，不能称为观察到了真实网络丢包。
 7. 正式报名合成政策及容量三位，公开别名／CORS、短效提交令牌、同键竞争与重放、内容冲突、明确的容量关闭；既有合成联系人转换后保留 staff_assisted 来源，绝不伪造公开同意。
-8. 审核角色拒绝、最小导出与审计、撤回后收据及旧群码拒绝；删除待办准确回报未擦除；附加工作人员建立及停用后旧会话立即失效，bootstrap 账号不可被覆盖。
+8. 审核角色拒绝、最小导出与审计、撤回后收据及旧群码拒绝；删除待办准确回报未擦除；附加工作人员建立及停用后旧会话立即失效，bootstrap 账号不可被覆盖。通过同一生产维护 API 创建合成资料的 AES-GCM 加密备份、核对 hash 与不含账号／会话／额度，再以原子 claim 恢复至隔离位置、读回审核修订并确认审计完成；不切换活动资料，也不声称备份已独立保存。
 9. 另一 auth／API 组件执行退出，原组件不能继续使用旧 Cookie；两种登录标识的会话均持久撤销。
 10. 不存在账号的失败尝试耗尽共享登录额度后，正确邮箱及密码也返回 429 和 Retry-After。
 
@@ -37,7 +37,7 @@
 
 ## 验证、保留与回退
 
-`node --test tests/cloud-acceptance.test.mjs tests/cloud-http-server.test.mjs tests/cloud-production-entry.test.mjs` 使用隔离合成 OSS HTTP fixture。早期仅内容的 fixture 为 323 次请求、37 个触及 key；扩展至报名／审核的十项 fixture 为 734 次请求、68 个触及 key，均不是线上证据。测试同时覆盖越界拒绝、源码／配置门禁、不会执行的配置、故障及全局期限、健康投影不泄露敏感额外字段、健康读取不重跑、生产 factory 遇验收标识强制关闭，以及原 HTTP／生产入口回归。
+`node --test tests/cloud-acceptance.test.mjs tests/cloud-http-server.test.mjs tests/cloud-production-entry.test.mjs` 使用隔离合成 OSS HTTP fixture。早期仅内容的 fixture 为 323 次请求、37 个触及 key；扩展至报名／审核／加密维护的十项 fixture 为 965 次请求、97 个触及 key，均不是线上证据。测试同时覆盖越界拒绝、源码／配置门禁、不会执行的配置、故障及全局期限、健康投影不泄露敏感额外字段、健康读取不重跑、生产 factory 遇验收标识强制关闭，以及原 HTTP／生产入口回归。
 
 验收对象含合成会话、已撤销会话、照片、快照和审计；全部留在私有 acceptance 前缀，结果精确记录 `cleanupPerformed: false`。没有删除权限也没有假清理承诺；保留、清理与独立备份维护流程须由运维工具覆盖，不能只删除当前日志破坏引用。
 

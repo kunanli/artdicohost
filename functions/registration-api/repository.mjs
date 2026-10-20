@@ -2,6 +2,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { own, plainObject, parseTimestamp } from './policy.mjs';
+import { AdmissionError, admissionDefaults, admissionView, validateAdmissions, admissionSnapshot, admissionFor,
+  transitionAdmission, appendAdmissionAudit, addAdmission, releaseWithdrawn, promoteEligible, operationResult, validAdmissionOperation } from './admissions.mjs';
 
 export const MAX_REGISTRATIONS = 1000;
 const LIST_READ_CONCURRENCY = 8;
@@ -22,7 +24,7 @@ export function registrationJson(value, { maxBytes = 128 * 1024 } = {}) {
   const seen = new Set();
   let nodes = 0;
   function copy(item, depth) {
-    if (++nodes > 20_000 || depth > 20) throw unavailable();
+    if (++nodes > 200_000 || depth > 20) throw unavailable();
     if (item === null || typeof item === 'boolean' || typeof item === 'string') return item;
     if (typeof item === 'number' && Number.isFinite(item)) return item;
     if (!Array.isArray(item) && !plainObject(item) || seen.has(item)) throw unavailable();
@@ -44,16 +46,16 @@ export function registrationJson(value, { maxBytes = 128 * 1024 } = {}) {
   return bytes;
 }
 
-function indexValue(value, eventId, cursor) {
+function indexValue(value, eventId, cursor, defaults) {
   if (!plainObject(cursor) || !Number.isSafeInteger(cursor.version) || cursor.version < 0 || !Number.isSafeInteger(cursor.position) || cursor.position < 0
     || (cursor.version === 0 ? cursor.position !== 0 || cursor.hash !== null : cursor.position < 1 || typeof cursor.hash !== 'string' || !HASH.test(cursor.hash))) throw unavailable();
   if (value === null) {
     if (cursor?.version !== 0 || cursor.position !== 0 || cursor.hash !== null) throw unavailable();
     return { schemaVersion: 1, kind: 'registration_index', eventId, revision: 0, entries: [] };
   }
-  if (!fieldsEqual(value, ['schemaVersion', 'kind', 'eventId', 'revision', 'entries']) || value.schemaVersion !== 1 || value.kind !== 'registration_index'
+  if (!fieldsEqual(value, value.schemaVersion === 2 ? ['schemaVersion', 'kind', 'eventId', 'revision', 'entries', 'admissions'] : ['schemaVersion', 'kind', 'eventId', 'revision', 'entries']) || ![1, 2].includes(value.schemaVersion) || value.kind !== 'registration_index'
     || value.eventId !== eventId || !Array.isArray(value.entries) || value.entries.length > MAX_REGISTRATIONS
-    || value.revision !== value.entries.length || cursor?.version !== value.revision) throw unavailable();
+    || !Number.isSafeInteger(value.revision) || value.revision < value.entries.length || value.schemaVersion === 1 && value.revision !== value.entries.length || cursor?.version !== value.revision) throw unavailable();
   const ids = new Set(), keys = new Set();
   for (const entry of value.entries) {
     if (!fieldsEqual(entry, ['id', 'keyHash', 'payloadHash', 'recordHash', 'committedAt']) || typeof entry.id !== 'string' || !ID.test(entry.id)
@@ -61,6 +63,7 @@ function indexValue(value, eventId, cursor) {
       || parseTimestamp(entry.committedAt) === null || ids.has(entry.id) || keys.has(entry.keyHash)) throw unavailable();
     ids.add(entry.id); keys.add(entry.keyHash);
   }
+  if (value.schemaVersion === 2) validateAdmissions(value, defaults);
   registrationJson(value, { maxBytes: 1024 * 1024 });
   return value;
 }
@@ -74,10 +77,11 @@ function checkedRecord(value, entry, eventId) {
     if (!fieldsEqual(value.provenance, ['kind']) || value.consent.accepted !== true
       || typeof value.consent.version !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(value.consent.version)
       || value.consent.acceptedAt !== value.submittedAt) throw unavailable();
-  } else if (value.provenance.kind === 'staff_assisted') {
+  } else if (['staff_assisted', 'staff_entry'].includes(value.provenance.kind)) {
     const source = value.provenance;
-    if (!fieldsEqual(source, ['kind', 'sourceContactId', 'actorId', 'recordedAt', 'permissionReference'])
-      || typeof source.sourceContactId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(source.sourceContactId)
+    if (!fieldsEqual(source, source.kind === 'staff_entry' ? ['kind', 'actorId', 'recordedAt', 'permissionReference', 'operationId'] : ['kind', 'sourceContactId', 'actorId', 'recordedAt', 'permissionReference'])
+      || source.kind === 'staff_assisted' && (typeof source.sourceContactId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(source.sourceContactId))
+      || source.kind === 'staff_entry' && !validAdmissionOperation(source.operationId)
       || typeof source.actorId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/u.test(source.actorId) || source.recordedAt !== value.submittedAt
       || typeof source.permissionReference !== 'string' || !source.permissionReference.trim() || source.permissionReference.length > 1000
       || /[\u0000-\u001f\u007f]/u.test(source.permissionReference)
@@ -88,10 +92,12 @@ function checkedRecord(value, entry, eventId) {
 }
 
 /** One index append is the atomic acceptance/capacity point; records are immutable private blobs. */
-export function createRegistrationRepository({ objects, journalFor, eventId } = {}) {
+export function createRegistrationRepository({ objects, journalFor, eventId, capacity, staffReserve = 0, waitlistEnabled = false } = {}) {
   if (!objects || typeof objects.get !== 'function' || typeof objects.putImmutable !== 'function' || typeof journalFor !== 'function'
     || typeof eventId !== 'string' || !EVENT.test(eventId)) throw unavailable();
   const prefix = `cms/v1/registrations/${eventId}`;
+  const defaults = admissionDefaults({ capacity: capacity ?? MAX_REGISTRATIONS, staffReserve, waitlistEnabled });
+  const pinned = capacity === undefined ? undefined : { capacity };
   async function target() {
     try {
       const value = await journalFor(prefix + '/index');
@@ -102,7 +108,7 @@ export function createRegistrationRepository({ objects, journalFor, eventId } = 
   async function readIndex() {
     try {
       const journal = await target(), state = await journal.read();
-      const value = indexValue(state?.value, eventId, state?.cursor);
+      const value = indexValue(state?.value, eventId, state?.cursor, pinned);
       return { value: structuredClone(value), cursor: state.cursor };
     } catch { throw unavailable(); }
   }
@@ -115,8 +121,60 @@ export function createRegistrationRepository({ objects, journalFor, eventId } = 
       return structuredClone(checkedRecord(value, entry, eventId));
     } catch { throw unavailable(); }
   }
+  const view = index => admissionView(index, defaults);
+  const snapshot = index => admissionSnapshot(index, defaults);
+  function receipt(index, entry) {
+    const admission = admissionFor(index, entry.id, defaults);
+    return { committed: true, eventId, registrationId: entry.id, referenceCode: entry.id, committedAt: entry.committedAt,
+      admissionStatus: admission.status, admissionKind: admission.kind, admissionRevision: admission.revision };
+  }
+  async function saved(index, entry, outcome, operationId = null) {
+    await readRecord(entry);
+    const operation = operationId === null ? null : view(index).admissions.audit.find(item => item.operationId === operationId);
+    return { outcome, receipt: receipt(index, entry), ...(operation ? { promotedIds: operation.result.promotedIds, releasedIds: operation.result.releasedIds } : {}) };
+  }
+  async function exclusions(index, getExcluded) {
+    if (getExcluded === undefined) return [];
+    if (typeof getExcluded !== 'function') throw unavailable();
+    return await getExcluded(index.entries.filter(entry => index.admissions.people[entry.id].status === 'waitlisted').map(entry => entry.id));
+  }
+  const safeAdmissionFailure = error => error instanceof AdmissionError && ['invalid', 'conflict', 'forbidden', 'not_found', 'capacity_conflict'].includes(error.code)
+    ? { outcome: error.code } : { outcome: 'unavailable' };
   return Object.freeze({
     prefix, readIndex, readRecord,
+    async getAdmissions() { return snapshot((await readIndex()).value); },
+    async getAdmissionStatus(id) {
+      try {
+        const index = (await readIndex()).value, entry = index.entries.find(item => item.id === id);
+        if (!entry) throw unavailable();
+        await readRecord(entry);
+        return admissionFor(index, id, defaults);
+      } catch { throw unavailable(); }
+    },
+    async mutateAdmission({ action, input, actorId, expectedRevision, operationId, requestHash, at, getExcluded }) {
+      try {
+        if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || !validAdmissionOperation(operationId) || !HASH.test(requestHash ?? '')
+          || !/^[A-Za-z0-9_-]{1,80}$/u.test(actorId ?? '') || parseTimestamp(at) === null) return { outcome: 'invalid' };
+        const current = await readIndex(), next = view(current.value);
+        const previous = next.admissions.audit.find(entry => entry.operationId === operationId);
+        if (previous) return previous.action === action && previous.actorId === actorId && previous.requestHash === requestHash
+          ? { outcome: 'replayed', ...snapshot(next), ...previous.result } : { outcome: 'conflict' };
+        if (current.value.revision !== expectedRevision) return { outcome: 'conflict' };
+        const change = transitionAdmission(next, action, input, at, await exclusions(next, getExcluded));
+        appendAdmissionAudit(next, { action, actorId, at, operationId, requestHash, ...change });
+        validateAdmissions(next, pinned); registrationJson(next, { maxBytes: 1024 * 1024 });
+        try {
+          const ack = await (await target()).commit(current.cursor, next);
+          if (!isDeepStrictEqual(ack?.value, next) || ack?.cursor?.version !== next.revision) throw unavailable();
+        } catch (error) {
+          if (error instanceof CloudContentError && error.code === 'WRITE_CONFLICT' && error.status === 409) return { outcome: 'conflict' };
+          throw unavailable();
+        }
+        const after = await readIndex(), verified = view(after.value).admissions.audit.find(entry => entry.operationId === operationId);
+        if (!isDeepStrictEqual(verified, next.admissions.audit.at(-1))) throw unavailable();
+        return { outcome: 'updated', ...snapshot(after.value), ...verified.result };
+      } catch (error) { return safeAdmissionFailure(error); }
+    },
     async list(options = {}) {
       const timeoutMs = own(options, 'timeoutMs') ?? LIST_TIMEOUT_MS, signal = own(options, 'signal');
       if (!plainObject(options) || Object.keys(options).some(key => !['timeoutMs', 'signal'].includes(key))
@@ -153,19 +211,20 @@ export function createRegistrationRepository({ objects, journalFor, eventId } = 
       } catch { throw unavailable(); }
       finally { stopped = true; clearTimeout(timer); signal?.removeEventListener('abort', stop); }
     },
-    async find(keyHash, payloadHash) {
+    async find(keyHash, payloadHash, { operationId = null } = {}) {
       if (!HASH.test(keyHash ?? '') || !HASH.test(payloadHash ?? '')) throw unavailable();
       const state = await readIndex(), entry = state.value.entries.find(item => item.keyHash === keyHash);
       if (!entry) return null;
       if (entry.payloadHash !== payloadHash) return { outcome: 'conflict' };
-      await readRecord(entry);
-      return { outcome: 'replayed', receipt: { committed: true, eventId, registrationId: entry.id, referenceCode: entry.id, committedAt: entry.committedAt } };
+      return saved(state.value, entry, 'replayed', operationId);
     },
-    async accept({ value, keyHash, payloadHash, capacity, beforeCommit }) {
+    async accept({ value, keyHash, payloadHash, capacity: requestedCapacity = defaults.capacity, beforeCommit, admissionKind = 'attendee', actorId = 'public', operationId = null, expectedRevision, requestHash = payloadHash, getExcluded }) {
+      const capacity = requestedCapacity;
       if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > MAX_REGISTRATIONS || !HASH.test(keyHash ?? '') || !HASH.test(payloadHash ?? '')
         || !plainObject(value) || value.eventId !== eventId || !plainObject(value.fields) || !plainObject(value.consent)
         || beforeCommit !== undefined && typeof beforeCommit !== 'function') throw unavailable();
-      const submittedAt = value.provenance?.kind === 'staff_assisted' ? value.submittedAt : value.consent.acceptedAt;
+      if (pinned && capacity !== defaults.capacity) throw unavailable();
+      const submittedAt = ['staff_assisted', 'staff_entry'].includes(value.provenance?.kind) ? value.submittedAt : value.consent.acceptedAt;
       if (parseTimestamp(submittedAt) === null) throw unavailable();
       const id = randomBytes(32).toString('base64url');
       const record = { schemaVersion: 1, kind: 'registration', id, eventId, submittedAt, fields: value.fields, consent: value.consent, provenance: value.provenance ?? { kind: 'public' } };
@@ -177,15 +236,24 @@ export function createRegistrationRepository({ objects, journalFor, eventId } = 
         const current = await readIndex(), previous = current.value.entries.find(item => item.keyHash === keyHash);
         if (previous) {
           if (previous.payloadHash !== payloadHash) return { outcome: 'conflict' };
-          await readRecord(previous);
-          return { outcome: 'replayed', receipt: { committed: true, eventId, registrationId: previous.id, referenceCode: previous.id, committedAt: previous.committedAt } };
+          return saved(current.value, previous, 'replayed', operationId);
         }
-        if (current.value.entries.length >= capacity) return { outcome: 'closed' };
+        const next = admissionView(current.value, { ...defaults, capacity });
+        if (operationId !== null && (!validAdmissionOperation(operationId) || next.admissions.audit.some(item => item.operationId === operationId))) return { outcome: 'conflict' };
+        if (expectedRevision !== undefined && expectedRevision !== current.value.revision) return { outcome: 'conflict' };
+        if (current.value.entries.length >= MAX_REGISTRATIONS) return { outcome: 'closed' };
+        const changedAt = new Date(Math.max(parseTimestamp(submittedAt), parseTimestamp(next.admissions.audit.at(-1)?.at) ?? -Infinity)).toISOString();
+        const releasedIds = releaseWithdrawn(next, await exclusions(next, getExcluded), changedAt);
+        const promotedIds = promoteEligible(next, changedAt);
+        const status = addAdmission(next, entry, admissionKind, changedAt);
+        if (status === null) return { outcome: 'closed' };
         try {
           await objects.putImmutable(`${prefix}/records/${recordHash}.json`, bytes, { contentType: 'application/json' });
           await readRecord(entry);
         } catch { throw unavailable(); }
-        const next = { ...current.value, revision: current.value.revision + 1, entries: [...current.value.entries, entry] };
+        appendAdmissionAudit(next, { action: value.provenance?.kind === 'public' ? 'intake' : 'staff_intake', actorId, at: changedAt,
+          operationId, requestHash, details: { kind: admissionKind, status }, result: operationResult({ registrationId: id, promotedIds, releasedIds }) });
+        validateAdmissions(next, pinned); registrationJson(next, { maxBytes: 1024 * 1024 });
         // Slow record staging must not silently extend the accepted registration window.
         if (beforeCommit !== undefined && await beforeCommit() !== true) return { outcome: 'closed' };
         try {
@@ -193,13 +261,12 @@ export function createRegistrationRepository({ objects, journalFor, eventId } = 
           if (!isDeepStrictEqual(saved?.value, next) || saved?.cursor?.version !== current.cursor.version + 1) throw unavailable();
         } catch (error) {
           // Only a definitive CAS rejection may retry. A lost ACK must be retried by the caller with the same key.
-          if (error instanceof CloudContentError && error.code === 'WRITE_CONFLICT' && error.status === 409) continue;
+          if (error instanceof CloudContentError && error.code === 'WRITE_CONFLICT' && error.status === 409) { if (expectedRevision !== undefined) return { outcome: 'conflict' }; continue; }
           throw unavailable();
         }
         const after = await readIndex(), verified = after.value.entries.find(item => item.keyHash === keyHash);
         if (!verified || !isDeepStrictEqual(verified, entry)) throw unavailable();
-        await readRecord(verified);
-        return { outcome: 'created', receipt: { committed: true, eventId, registrationId: id, referenceCode: id, committedAt: entry.committedAt } };
+        return saved(after.value, verified, 'created', operationId);
       }
       throw unavailable();
     },

@@ -95,8 +95,12 @@ function groupInvite(result, origins, clock) {
 export function createRegistrationApi({ allowedOrigins, submissionService, allowedGroupInviteOrigins, clock } = {}) {
   const origins = originSet(allowedOrigins);
   const inviteOrigins = originSet(allowedGroupInviteOrigins);
-  let submit;
-  try { if (typeof submissionService?.submit === 'function') submit = submissionService.submit.bind(submissionService); }
+  let submit, metadata, issueToken;
+  try {
+    if (typeof submissionService?.submit === 'function') submit = submissionService.submit.bind(submissionService);
+    if (typeof submissionService?.metadata === 'function') metadata = submissionService.metadata.bind(submissionService);
+    if (typeof submissionService?.issueToken === 'function') issueToken = submissionService.issueToken.bind(submissionService);
+  }
   catch { /* Invalid trusted dependency remains unavailable. */ }
   return async function handle(request) {
     const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', vary: 'Origin' };
@@ -105,9 +109,52 @@ export function createRegistrationApi({ allowedOrigins, submissionService, allow
     try {
       const origin = request.headers.get('origin');
       if (origins?.has(origin)) headers['access-control-allow-origin'] = origin;
-      if (!origins || !submit) return failure('UNAVAILABLE');
+      if (!origins) return failure('UNAVAILABLE');
       const url = new URL(request.url);
-      if (url.pathname !== '/api/registrations' || url.search || url.hash) return failure('NOT_FOUND');
+      const configRoute = url.pathname === '/api/registration/config', tokenRoute = url.pathname === '/api/registration/token';
+      if ((!configRoute && !tokenRoute && url.pathname !== '/api/registrations') || url.search || url.hash) return failure('NOT_FOUND');
+      if (configRoute || tokenRoute) {
+        if (url.protocol !== 'https:' || !origins.has(origin)) return failure('ORIGIN_REJECTED');
+        const allowedMethod = configRoute ? 'GET' : 'POST';
+        if (!['OPTIONS', allowedMethod].includes(request.method)) { headers.allow = `${allowedMethod}, OPTIONS`; return failure('METHOD_NOT_ALLOWED'); }
+        if (request.method === 'OPTIONS') {
+          const names = (request.headers.get('access-control-request-headers') ?? '').split(',').map(value => value.trim().toLowerCase());
+          if (request.headers.get('access-control-request-method') !== allowedMethod || names.some(value => value && value !== 'content-type')) return failure('PREFLIGHT_REJECTED');
+          headers['access-control-allow-methods'] = allowedMethod;
+          if (tokenRoute) headers['access-control-allow-headers'] = 'Content-Type';
+          return reply(null, 204);
+        }
+        if (configRoute) {
+          if (!metadata) return reply({ enabled: false, reason: 'unavailable' }, 200);
+          const value = await metadata();
+          if (own(value, 'enabled') === false) return reply({ enabled: false, reason: own(value, 'reason') === 'closed' ? 'closed' : 'unavailable' }, 200);
+          // Only the server-owned public notice/configuration projection can leave this endpoint.
+          const checked = { enabled: true, eventId: own(value, 'eventId'), opensAt: own(value, 'opensAt'), closesAt: own(value, 'closesAt'), capacity: own(value, 'capacity'), privacy: {} };
+          if (own(value, 'enabled') !== true || typeof checked.eventId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(checked.eventId)
+            || parseTimestamp(checked.opensAt) === null || parseTimestamp(checked.closesAt) === null || !Number.isSafeInteger(checked.capacity) || checked.capacity < 1 || checked.capacity > 1000) return failure('UNAVAILABLE');
+          for (const key of ['version', 'processor', 'contactEmail', 'purpose', 'storageRegion', 'retention', 'rightsRequest', 'sharing']) {
+            const text = own(own(value, 'privacy'), key);
+            if (typeof text !== 'string' || !text || text.length > 4000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)) return failure('UNAVAILABLE');
+            checked.privacy[key] = text;
+          }
+          return reply(checked, 200);
+        }
+        if (!issueToken) return failure('UNAVAILABLE');
+        if (!/^application\/json(?:\s*;\s*charset\s*=\s*(?:utf-8|"utf-8"))?\s*$/iu.test(request.headers.get('content-type') ?? '')
+          || ![null, 'identity'].includes(request.headers.get('content-encoding'))) return failure('UNSUPPORTED_MEDIA_TYPE');
+        const payload = await readPayload(request);
+        if (Object.keys(payload).sort().join(',') !== 'eventId,idempotencyKey' || !KEY_PATTERN.test(own(payload, 'idempotencyKey') ?? '')) return failure('INVALID_HEADERS');
+        const value = await issueToken({ eventId: own(payload, 'eventId'), idempotencyKey: own(payload, 'idempotencyKey'), origin });
+        if (request.signal.aborted) return failure('UNAVAILABLE');
+        if (own(value, 'outcome') !== 'issued') {
+          if (own(value, 'outcome') === 'rate_limited' && Number.isSafeInteger(own(value, 'retryAfter')) && own(value, 'retryAfter') >= 1 && own(value, 'retryAfter') <= 86400) headers['retry-after'] = String(own(value, 'retryAfter'));
+          return failure(Object.hasOwn(OUTCOMES, own(value, 'outcome')) ? OUTCOMES[own(value, 'outcome')] : 'UNAVAILABLE');
+        }
+        const token = own(value, 'submissionToken'), expiresAt = own(value, 'expiresAt');
+        if (own(value, 'eventId') !== own(payload, 'eventId') || typeof token !== 'string' || token.length > 4096 || !TOKEN_PATTERN.test(token) || parseTimestamp(expiresAt) === null) return failure('UNAVAILABLE');
+        return reply({ eventId: own(value, 'eventId'), submissionToken: token, expiresAt }, 200);
+      }
+      if (!submit) return failure('UNAVAILABLE');
       if (!['POST', 'OPTIONS'].includes(request.method)) { headers.allow = 'POST, OPTIONS'; return failure('METHOD_NOT_ALLOWED'); }
       if (url.protocol !== 'https:' || !origins.has(origin)) return failure('ORIGIN_REJECTED');
       if (request.method === 'OPTIONS') {
@@ -134,6 +181,7 @@ export function createRegistrationApi({ allowedOrigins, submissionService, allow
         if (!receipt) return failure('UNAVAILABLE');
         return reply({ status: 'registered', reference_code: receipt.referenceCode, groupInvite: groupInvite(result, inviteOrigins, clock) }, outcome === 'created' ? 201 : 200);
       }
+      if (outcome === 'rate_limited' && Number.isSafeInteger(own(result, 'retryAfter')) && own(result, 'retryAfter') >= 1 && own(result, 'retryAfter') <= 86400) headers['retry-after'] = String(own(result, 'retryAfter'));
       return failure(Object.hasOwn(OUTCOMES, outcome) ? OUTCOMES[outcome] : 'UNAVAILABLE');
     } catch (error) { return failure(error instanceof HttpError ? error.code : 'UNAVAILABLE'); }
   };

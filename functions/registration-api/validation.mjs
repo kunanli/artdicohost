@@ -105,3 +105,26 @@ export function validateRegistrationSubmission(payload, { policy, now } = {}) {
   if (Object.keys(errors).length) return { valid: false, errors };
   return { valid: true, errors, value: { eventId: configured.eventId, fields, consent: { accepted: true, version: configured.privacy.version, acceptedAt: new Date(clockTime(now)).toISOString() } } };
 }
+
+/** Existing permission plus staff provenance is a distinct intake route, never public consent. */
+export function validateStaffRegistrationFields(source) {
+  if (!plainObject(source) || !boundedJson(source)) return { valid: false, errors: { fields: '请提供有效的已有联络资料。' } };
+  const errors = {}, fields = {};
+  function read(input, field, target, key) {
+    if (own(input, field.name) === undefined && field.name !== 'name') return;
+    const checked = fieldValue(input, { ...field, required: field.name === 'name' });
+    if (checked.error) errors[key] = checked.error;
+    else target[field.name] = checked.value;
+  }
+  for (const field of registrationSchema.baseFields) if (field.name !== 'consentAccepted') read(source, field, fields, `fields.${field.name}`);
+  if (!fields.email && !fields.wechat) errors['fields.contact'] = '至少保留邮箱或微信联络方式。';
+  for (const name of getActiveBranches(fields).filter(name => name !== 'accommodation')) {
+    const branch = own(source, name);
+    if (branch === undefined) continue;
+    if (!plainObject(branch)) { errors[`fields.${name}`] = '请提供有效的已知分支资料。'; continue; }
+    fields[name] = {};
+    for (const field of registrationSchema.branches[name].fields) read(branch, field, fields[name], `fields.${name}.${field.name}`);
+  }
+  if (Object.hasOwn(fields, 'accommodationChoice')) fields.accommodationNights = fields.accommodationChoice === 'needed' ? 1 : 0;
+  return Object.keys(errors).length ? { valid: false, errors } : { valid: true, errors, value: fields };
+}

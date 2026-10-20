@@ -16,9 +16,11 @@
 
 首次实际更新重试：[Actions 39350373144 / attempt 2](https://github.com/kunanli/artdicohost/actions/runs/39350373144/attempts/2)，来源 `94d7791fe738e3b1167a831aae156dc4ef48b93d`。check job `118401813150` 的 175 项检查与 Debian 11 ZIP 启动验证成功，disabled 提示略过，已确认启用值被读取；OSS job `118402041101` 实际完成 12 个公开对象上传与 SHA-256 回读。FC job `118402041213` 实际执行，在代码更新步骤失败，固定错误为 `FC code update failed; deployment was not verified.`。这不是开关再次略过，亦尚无三次签名健康检查成功结果；不能由更新请求报错推断云端未改变。
 
-最新已验 main 为 `9ea9482ce54f8fb30a34d8ecc928ec4fc9a76966`。[Actions 39354134071](https://github.com/kunanli/artdicohost/actions/runs/39354134071) 的 181 项检查通过，OSS 12 个公开对象 SHA-256 回读通过；FC job `118405168647` 明确记录 `operation=UpdateFunction phase=response_type status=413`，响应类型不是 JSON。由此已确认实际上传路径拒绝过大的请求体；这不是 IAM 失败，不以增加权限处理。本轮改用紧凑 XZ 启动包，尚未取得新包的 FC 更新及三次签名健康检查结果。
+413 历史基线为 `9ea9482ce54f8fb30a34d8ecc928ec4fc9a76966`。[Actions 39354134071](https://github.com/kunanli/artdicohost/actions/runs/39354134071) 的 181 项检查通过，OSS 12 个公开对象 SHA-256 回读通过；FC job `118405168647` 明确记录 `operation=UpdateFunction phase=response_type status=413`，响应类型不是 JSON。该上传路径拒绝过大的请求体；这不是 IAM 失败，不以增加权限处理。
 
-失败诊断只允许固定操作 / 阶段、HTTP 状态与白名单服务错误码；不记录远端正文、任意 Message、headers、环境、角色、凭证或原始 cause。未知服务码仅作为未分类错误处理。已确认的 413 按请求体大小处理，不放宽成功校验、不自动重送 PUT，也不扩大 IAM。
+最新已验 main 为 PR #12 合并提交 `8c6398d8cf337e8d7d5f12d0634aa71a9c8a1a7b`。[Actions 39355862651](https://github.com/kunanli/artdicohost/actions/runs/39355862651) 的 check job `118410359292` 完成 195 项测试、构建、依赖审计及紧凑 ZIP 检查；该次 ZIP 为 29,507,159 bytes，Python 离线夹具启动为 5.506 秒。OSS job `118411101002` 于 09:55:44–09:55:56（Asia/Taipei；日志为 01:55:44–01:55:56 UTC）完成 12 个公开对象 SHA-256 回读。FC job `118411100920` 实际执行，报告 `operation=UpdateFunction phase=timeout`，达到原 20 秒请求期限后失败；无法判断前次代码是否已更新，尚无三次签名健康检查成功证据。
+
+失败诊断只允许固定操作 / 阶段、HTTP 状态与白名单服务错误码；不记录远端正文、任意 Message、headers、环境、角色、凭证或原始 cause。未知服务码仅作为未分类错误处理。针对 413 已完成紧凑包准备及离线验收，最新上传超时仍保留请求结果不明状态；不放宽成功校验、不自动重送 PUT，也不扩大 IAM。
 
 下一次运行须分别取得公开 OSS 回读及 FC 实际更新、连续三次签名 `/healthz` 返回该次完整提交标记的证据；artifact 存在或整体绿色不能代替。部署仍为业务关闭的启动包，没有管理员云端登录、真实报名、私有 OSS 读写或统计能力。
 
@@ -30,7 +32,7 @@
 
 紧凑包保留 `/code/bootstrap` 外部设置，调用 `custom.debian11` 内置 Python 3.12，在私有 `/tmp` 目录离线解压并核对 Node 后执行；原始 Node bytes 未修改。不会在运行时下载二进制、把包放到公开 OSS、创建私有 artifact 桶或增加 layer。当前 CI 夹具采用固定 Python `3.12.4` / Debian bullseye 模拟文档中的解释器路径，以非 root、无网络、只读 `/code`、可执行 `/tmp` tmpfs 192 MiB、512 MB 内存及 0.35 CPU 验证实际 ZIP；它不是阿里云实际 FC 镜像，仍须真实账号验收。
 
-上传前固定检查完整 Base64 JSON 请求体不超过 **48,000,000 bytes**。这是针对观察到的 413 所设工程预算，不是阿里云精确上限；官方[限制文档](https://help.aliyun.com/zh/functioncompute/limits-of-usage)当前写为 Base64 及其他 body 总量小于 100 MB，但本次约 59.1 MB 请求已经被拒绝。本轮已测 Node XZ 为 29,494,612 bytes，最终 ZIP 与完整请求大小待验；预算通过不能代替云端上传和健康验证。
+上传前固定检查完整 Base64 JSON 请求体不超过 **48,000,000 bytes**。这是针对观察到的 413 所设工程预算，不是阿里云精确上限；官方[限制文档](https://help.aliyun.com/zh/functioncompute/limits-of-usage)当前写为 Base64 及其他 body 总量小于 100 MB，但原约 59.1 MB 请求已被拒绝。紧凑 Node XZ 为 29,494,612 bytes，PR #12 ZIP 为 29,507,159 bytes，完整 JSON 请求为 39,342,903 bytes；预算通过不能代替云端上传和健康验证。
 
 网站 OSS 与 FC 是独立 job、独立验收，不是联合原子部署；一方失败不代表另一方已回退。原网站部署保持既有目标与权限。PR、手动 `workflow_dispatch`、错误仓库 / 分支、缺少开关或过时 main 运行都不能执行 FC 更新。
 
@@ -58,7 +60,11 @@
 
 管理请求使用固定香港端点 `https://fcv3.cn-hongkong.aliyuncs.com`、FC `2023-03-30` API 和 ACS3 签名。读取到的完整函数环境设置仅留在内存中比较，不输出到日志、artifact 或摘要。函数 ARN 必须精确匹配配置 UID、地域与 `artdicohost-api`，并在写入前检查当前 main 仍为本运行提交。
 
-更新后等待 FC 完成，再用原签名认证触发器检查 `GET /healthz`，连续三次确认 HTTP 200、`status:ok`、`scope:process-only` 和准确 `sourceCommit`。签名错误、权限不足、旧实例、错误状态或配置改变均不能报告发布成功。模板中的 `InvokeFunction` 供签名 HTTP 健康检查使用。FC 的 `codeChecksum` 是 CRC64，本流程不把它称为 SHA-256 回读；实际 ZIP 在本机及 artifact 核对 SHA-256，线上验证为签名请求返回的进程源码标记。
+本轮超时修复先读取 GetFunction，并对既有签名 `/healthz` 进行一次有界的只读观察；仅投影枚举状态、通过完整格式校验的旧 `sourceCommit` 或固定诊断，不输出 URL、环境、角色、凭证或原始回应。观察不代表前次已完整验收，也不计入新版本成功。随后重新核对当前 main，为该次新提交上传一次已验收包，禁止自动重试 PUT。
+
+UpdateFunction 的请求期限固定为 **120 秒**；GetFunction、GetTrigger 与签名 health 保持 **20 秒**，总部署期限固定为 **240 秒**。这些是客户端等待期限，不改变 FC 函数执行超时或其他控制台设置。延长上传等待不放宽成功状态、配置保持与源码一致条件，也不增加调用权限。
+
+更新后等待 FC 完成，再用原签名认证触发器检查 `GET /healthz`，连续三次确认 HTTP 200、`status:ok`、`scope:process-only` 和准确 `sourceCommit`；每次符合时输出固定的 `match N/3` 日志与本次完整提交，不匹配即重置连续计数。签名错误、权限不足、旧实例、错误状态或配置改变均不能报告发布成功。模板中的 `InvokeFunction` 供签名 HTTP 健康检查使用。FC 的 `codeChecksum` 是 CRC64，本流程不把它称为 SHA-256 回读；实际 ZIP 在本机及 artifact 核对 SHA-256，线上验证为签名请求返回的进程源码标记。
 
 开关未启用时，发布 job 跳过，摘要明确写为未更新 FC；不能仅凭工作流整体绿色就说 API 已部署。启用后查看 **Update the isolated Hong Kong FC startup code** job 及其摘要，不以网站 OSS job 成功替代。当前尚无该 job 的实际云端成功证据。
 
@@ -68,7 +74,8 @@
 
 - 初版历史记录：165 项测试、源码检查、Astro 检查及四页静态构建通过，依赖审计无已知漏洞；不作为紧凑包当前测试结果。
 - 初版历史 ZIP 的源码提交为 `56f22f4b47720e2ba128d34c014b8c24e55734dc`，大小 44,329,599 bytes，SHA-256 `945bca020392863bece7c1cd5c88ebd585dff9d7d5dd2b3dabc6f73b3311c67e`。该版直接携带未压缩 Node，在固定 Debian 11 镜像 `debian@sha256:e5b6442dd2e9684cf5e87d8338b5968f3b348636fc0be6d7850a381e3731a2bd` 中启动成功；它不是本轮六文件 XZ 包，也不是 FC 云端验收证据。
-- 最新已发布源码 `9ea9482` 的 CI 为 181 项检查与原包 smoke 通过。本轮本机 195 项测试、源码与 Astro 检查、四页构建通过，依赖审计无已知漏洞；紧凑包的实际 ZIP / 请求大小及容器启动结果另行记录。新包使用 Python 夹具验收，允许仅在私有 `/tmp` 写入解压后的 Node，正式业务路由继续 503。
+- PR #12 前阶段本机来源 `d52ef96a40fe5a10538f92ad0d2911f813d449fa`：195 项测试、源码与 Astro 检查、四页构建及依赖审计通过。准确 ZIP 为 29,507,159 bytes，JSON 请求为 39,342,903 bytes，本机 ZIP SHA-256 为 `723953ef90b0f3bbff98cd769b518f3f96006b31d79935a63071bbf84d25f972`，Python 离线夹具为 10.999 秒。这个 hash 只描述该本机来源的包，不能当作合并提交包的 hash、远端 SHA-256 回读或 FC CRC64。
+- PR #12 合并提交的 CI 为 195 项检查及实际 ZIP smoke 通过，夹具为 5.506 秒；本轮 120 秒上传期限与只读观察修复的本机 203 项测试、源码 / Astro 检查、四页构建及依赖审计通过，独立安全审阅无阻挡问题。夹具仅模拟 FC 文档中的解释器路径，允许仅在私有 `/tmp` 写入解压后的 Node，不能替代实际 FC 签名验收；正式业务路由继续 503。
 - 本节记录的本地验证未使用阿里云凭据、执行 FC 更新或验证实际账号的签名 / RAM 相容性。用户已授权首次发布，线上结果须另行记录，不以本机或合成测试替代。
 
 ## 失败、并发与回退

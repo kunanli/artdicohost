@@ -200,7 +200,20 @@ export async function restoreEncryptedBackupIsolated({ objects, bundle, key, res
     const checked = inspectEncryptedObjectBackup({ bundle, key, includeObjects: true });
     const namespace = `cms/v1/restores/${restoreId}`;
     const entries = checked.objects.map(item => ({ ...item, destination: namespace + '/' + item.key.slice('cms/v1/'.length) }));
+    const claimKey = namespace + '/claim';
+    if (await objects.get(claimKey, { maxBytes: 1024 }) !== null) fail('RESTORE_NOT_EMPTY');
     for (const item of entries) if (await objects.get(item.destination, { maxBytes: MAX_OSS_OBJECT_BYTES }) !== null) fail('RESTORE_NOT_EMPTY');
+    // The namespace is the recovery point, not merely this bundle's object set.
+    // A unique append at position zero prevents disjoint or simultaneous bundles
+    // from ever sharing one recovery point. An unknown ACK never retries the claim.
+    const claim = Buffer.from(JSON.stringify({ schemaVersion: 1, kind: 'artdico-isolated-restore-claim', manifestHash: checked.manifestHash,
+      backupHash: checked.backupHash, operationNonce: randomBytes(32).toString('base64url') }) + '\n');
+    let acknowledged;
+    try { acknowledged = await objects.append(claimKey, 0, claim); }
+    catch (error) { if (error?.code === 'WRITE_CONFLICT' && error.status === 409) fail('RESTORE_NOT_EMPTY'); throw error; }
+    if (acknowledged?.nextPosition !== claim.length) fail();
+    const claimed = await objects.get(claimKey, { maxBytes: 1024 });
+    if (!claimed || claimed.objectType !== 'Appendable' || !(claimed.data instanceof Uint8Array) || !Buffer.from(claimed.data).equals(claim)) fail();
     // Immutable snapshots first; append logs commit the restored view last.
     entries.sort((a, b) => Number(a.objectType === 'Appendable') - Number(b.objectType === 'Appendable') || a.destination.localeCompare(b.destination));
     for (const item of entries) {

@@ -75,7 +75,7 @@ test('changing source objects during backup and unknown restore acknowledgements
   const unstable = { async get(...args) { const value = await f.objects.get(...args); if (++reads > f.keys.length && value) return { ...value, contentType: 'application/changed' }; return value; } };
   await rejects(createEncryptedObjectBackup({ ...f, objects: unstable, clock: now }), 'BACKUP_INVALID');
   const backup = await createEncryptedObjectBackup({ ...f, clock: now }), target = memoryObjects(); let appends = 0;
-  const lost = { get: target.get, putImmutable: target.putImmutable, async append(...args) { appends++; await target.append(...args); throw new Error(PRIVATE); } };
+  const lost = { get: target.get, putImmutable: target.putImmutable, async append(...args) { if (args[0].endsWith('/claim')) return target.append(...args); appends++; await target.append(...args); throw new Error(PRIVATE); } };
   await rejects(restoreEncryptedBackupIsolated({ objects: lost, bundle: backup.bundle, key: f.key, restoreId: 'synthetic-restore-02' }), 'MAINTENANCE_FAILED');
   assert.equal(appends, 1);
   const restored = createObjectJournal({ objects: target, prefix: 'cms/v1/restores/synthetic-restore-02/registration-reviews/ggj-cn-2026' });
@@ -119,4 +119,35 @@ test('group-invite backup follows current and historical private image IDs witho
   assert.equal(keys.length, 4); assert.ok(keys.includes(prefix + '/images/' + ids[0])); assert.ok(keys.includes(prefix + '/images/' + ids[1]));
   const key = generateBackupKey(); assert.equal((await createEncryptedObjectBackup({ objects, keys, key, clock: now })).objectCount, 4);
   await rejects(createEncryptedObjectBackup({ objects, keys: keys.filter(value => !value.endsWith(ids[0])), key, clock: now }), 'BACKUP_INVALID');
+});
+
+test('one restore ID atomically belongs to a single bundle even when object sets are disjoint or both restores race', async () => {
+  const source = memoryObjects(), key = generateBackupKey();
+  await source.putImmutable('cms/v1/content/first.json', Buffer.from('FIRST-SYNTHETIC-RECOVERY'), { contentType: 'application/json' });
+  await source.putImmutable('cms/v1/contacts/second.json', Buffer.from('SECOND-SYNTHETIC-RECOVERY'), { contentType: 'application/json' });
+  const first = await createEncryptedObjectBackup({ objects: source, keys: ['cms/v1/content/first.json'], key, clock: now });
+  const second = await createEncryptedObjectBackup({ objects: source, keys: ['cms/v1/contacts/second.json'], key, clock: now });
+  const target = memoryObjects(), restoreId = 'synthetic-disjoint-recovery';
+  await restoreEncryptedBackupIsolated({ objects: target, bundle: first.bundle, key, restoreId });
+  const mutations = target.calls.filter(call => call.operation !== 'get').length;
+  await rejects(restoreEncryptedBackupIsolated({ objects: target, bundle: second.bundle, key, restoreId }), 'RESTORE_NOT_EMPTY');
+  assert.equal(target.calls.filter(call => call.operation !== 'get').length, mutations);
+  assert.equal(target.files.has(`cms/v1/restores/${restoreId}/contacts/second.json`), false);
+  const racing = memoryObjects();
+  const results = await Promise.allSettled([first, second].map(backup => restoreEncryptedBackupIsolated({ objects: racing, bundle: backup.bundle, key, restoreId: 'synthetic-concurrent-recovery' })));
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(results.find(result => result.status === 'rejected').reason.code, 'RESTORE_NOT_EMPTY');
+  assert.equal([...racing.files.keys()].filter(name => !name.endsWith('/claim')).length, 1);
+  assert.equal(racing.calls.filter(call => call.operation === 'append' && call.key.endsWith('/claim')).length, 2);
+});
+
+test('a lost namespace-claim ACK leaves only the claim and never retries or reports recovery success', async () => {
+  const f = await fixture(), backup = await createEncryptedObjectBackup({ ...f, clock: now }), target = memoryObjects();
+  let claims = 0;
+  const ambiguous = { ...target, async append(...args) { if (args[0].endsWith('/claim')) { claims++; await target.append(...args); throw new Error(PRIVATE); } return target.append(...args); } };
+  const options = { objects: ambiguous, bundle: backup.bundle, key: f.key, restoreId: 'synthetic-claim-unknown' };
+  await rejects(restoreEncryptedBackupIsolated(options), 'MAINTENANCE_FAILED');
+  assert.equal(claims, 1); assert.equal(target.files.size, 1); assert.ok([...target.files.keys()][0].endsWith('/claim'));
+  assert.equal(target.calls.some(call => call.operation === 'putImmutable'), false);
+  await rejects(restoreEncryptedBackupIsolated(options), 'RESTORE_NOT_EMPTY'); assert.equal(claims, 1);
 });

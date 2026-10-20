@@ -53,6 +53,7 @@ function announce(message, error = false) {
 function contactById(id) { return contacts.find(item => item.id === id); }
 function permitted() { return user?.roles.includes('outreach'); }
 function mayInvite(item) { return item?.profile.contactConsent === 'consented'; }
+function mayConvert(item) { return Boolean(item)&&permitted()&&user.roles.some(role=>['reviewer','superadmin'].includes(role))&&item.profile.contactConsent!=='declined'&&item.operations.responseStatus!=='declined'; }
 function requireInviteConsent() { if (!mayInvite(contactById(invitationContactId))) throw new Error('此对象未同意联络或授权尚未核对，不能生成或记录发出邀请。'); }
 function lock() {
   $('[data-contacts-login-submit]').disabled = busy || location.protocol === 'file:';
@@ -75,7 +76,7 @@ function lock() {
   $('[data-contacts-logout]').disabled = busy;
   $('[data-contacts-convert]').disabled = busy || !permitted() || !features.intentInvitations || !intentState || selectedContacts.size === 0;
   $('[data-contacts-select-visible]').disabled = busy || !permitted() || !features.intentInvitations || !intentState;
-  for (const input of document.querySelectorAll('[data-contact-selection]')) input.disabled = busy || !permitted() || !features.intentInvitations;
+  for (const input of document.querySelectorAll('[data-contact-selection]')) input.disabled = busy || !features.intentInvitations || !mayConvert(contactById(input.dataset.contactSelection));
   $('[data-contacts-selected]').textContent = '已选 '+selectedContacts.size+' 位';
 }
 async function request(path, options = {}) {
@@ -156,7 +157,7 @@ async function loadWorkspace() {
   if (!permitted()) throw new Error('此账号没有邀约管理权限，请由维护人员为账号配置 outreach 权限。');
   const state = await request('/api/admin/contacts');
   const program = await request('/api/admin/planning');
-  const nextFeatures = { contactImport: program.features?.contactImport === true, communicationsPreview: program.features?.communicationsPreview === true, intentInvitations: program.features?.intentInvitations === true };
+  const nextFeatures = { contactImport: program.features?.contactImport === true, communicationsPreview: program.features?.communicationsPreview === true, intentInvitations: program.features?.intentInvitations === true, protectedContactImport: program.features?.protectedContactImport === true };
   const nextCommunications = nextFeatures.communicationsPreview ? await request('/api/admin/communications') : null;
   revision = state.revision; contacts = state.contacts; content = program.content;
   features = nextFeatures; communications = nextCommunications;
@@ -199,11 +200,13 @@ function render() {
     return matchesParticipation&&matchesArrangement&&(!search||[p.name,p.displayName,p.organization,p.city,p.email,p.wechat].some(value=>value.toLowerCase().includes(search)))&&(!response||item.operations.responseStatus===response)&&(!onlyDue||due(item))&&(!type||(type.startsWith('category:')?p.categories.includes(type.slice(9)):p.interests.includes(type.slice(9))));
   });
   const body=$('[data-contacts-rows]');body.replaceChildren();
-  visibleContactIds=matches.map(item=>item.id);
+  for(const id of selectedContacts)if(!mayConvert(contactById(id)))selectedContacts.delete(id);
+  visibleContactIds=matches.filter(mayConvert).map(item=>item.id);
   for(const item of matches){
     const row=node('tr');
     const identity=node('td');
     const choice=node('input');choice.type='checkbox';choice.dataset.contactSelection=item.id;choice.checked=selectedContacts.has(item.id);choice.setAttribute('aria-label','选择 '+item.profile.displayName+' 进行代登记');choice.addEventListener('change',()=>{if(choice.checked)selectedContacts.add(item.id);else selectedContacts.delete(item.id);lock();});identity.append(choice,node('strong',item.profile.displayName),node('small',[item.profile.organization,item.profile.city].filter(Boolean).join(' · ')));row.append(identity);
+    if(item.profile.contactConsent==='declined'||item.operations.responseStatus==='declined')identity.append(node('small','已拒绝联络或出席 · 不转换、不邀请','contacts-conversion-blocked'));
     const tags=node('td');
     for(const value of item.profile.categories)tags.append(node('span',categoryLabels.get(value)||value,'contacts-tag'));
     for(const value of item.profile.interests)tags.append(node('span',interestLabels.get(value)||value,'contacts-tag'));
@@ -352,12 +355,18 @@ $('[data-contacts-clear-selection]').addEventListener('click',()=>{selectedConta
 $('[data-contacts-convert]').addEventListener('click',()=>action(async()=>{
   if(!intentState||!selectedContacts.size)throw new Error('请先选择要代登记的对象。');
   if(selectedContacts.size>100)throw new Error('每次最多代登记 100 位，请分批核对。');
-  if(!confirm('将所选 '+selectedContacts.size+' 位既有意向登记为工作人员代登记？保留原始来源，不会代替本人完成网站隐私同意，也不会发送消息。'))return;
-  const result=await request('/api/admin/contacts/convert',{method:'POST',body:JSON.stringify({contactIds:[...selectedContacts],expectedContactRevision:revision})});
+  const preview=await request('/api/admin/contacts/convert/preview',{method:'POST',body:JSON.stringify({contactIds:[...selectedContacts],expectedContactRevision:revision})});
+  if(!Array.isArray(preview.entries)||!preview.summary)throw new Error('转换预览尚未完成，未登记任何新报名。');
+  const eligible=preview.entries.filter(item=>item.eligible===true).map(item=>item.contactId);
+  if(!eligible.length)throw new Error('所选对象目前没有可转换记录，拒绝联络或出席的对象不会转换或邀请。');
+  const omissions=Number.isSafeInteger(preview.summary.optionalFieldsOmitted)?preview.summary.optionalFieldsOmitted:0;
+  if(!confirm('已核对 '+eligible.length+' 位可代登记对象。'+(omissions?'其中 '+omissions+' 项无效选填网站／案例链接不会写入新报名，原始来源仍保留。':'')+'保留原始来源，不代替本人完成网站隐私同意，也不发送消息。确认转换吗？'))return;
+  const result=await request('/api/admin/contacts/convert',{method:'POST',body:JSON.stringify({contactIds:eligible,expectedContactRevision:revision})});
   intentState=await request('/api/admin/intent-invitations');
   const success=Array.isArray(result.registrations)?result.registrations.length:0,failed=Array.isArray(result.failures)?result.failures.length:0;
   for(const record of result.registrations??[])selectedContacts.delete(record.contactId);
-  render();announce('已确认代登记 '+success+' 位'+(failed?'；另有 '+failed+' 位未完成，请核对后重试。':'。')+'没有自动发出邀请或确认出席。',failed>0);
+  const skipped=Array.isArray(result.skipped)?result.skipped.length:0;
+  render();announce('已确认代登记 '+success+' 位'+(skipped?'；跳过 '+skipped+' 位拒绝联络或出席对象。':'。')+(failed?'另有 '+failed+' 位未完成，请核对后重试。':'')+'没有自动发出邀请或确认出席。',failed>0);
 }));
 for(const selector of ['[data-contacts-search]','[data-contacts-category]','[data-contacts-response]','[data-contacts-arrangement]','[data-contacts-participation]','[data-contacts-due]'])$(selector).addEventListener('input',render);
 for(const [prefix,items,label]of[['category:',sourceLabels.categories,'身份'],['interest:',sourceLabels.interests,'参与意向']]){const group=node('optgroup');group.label=label;for(const item of items){const option=node('option',item.label);option.value=prefix+item.value;group.append(option);}$('[data-contacts-category]').append(group);}
@@ -372,7 +381,7 @@ $('[data-contacts-file]').addEventListener('change',event=>{
     const originalSha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),value=>value.toString(16).padStart(2,'0')).join('');
     let parsed=null;
     if(file.name.toLowerCase().endsWith('.json')){
-      if(!features.intentInvitations)throw new Error('此旧版本本机服务只支持 Excel 问卷；JSON 快照须使用已完成配置的云端后台。');
+      if(!features.protectedContactImport)throw new Error('此旧版本本机服务只支持 Excel 问卷；JSON 快照须使用已完成配置的云端后台。');
       let snapshot;try{snapshot=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{throw new Error('请选择 UTF-8 编码的原始 contacts.json。');}
       importSource={kind:'snapshot',snapshot,originalSha256};
     }else{
@@ -381,7 +390,7 @@ $('[data-contacts-file]').addEventListener('change',event=>{
       let binary='';for(let offset=0;offset<bytes.length;offset+=32768)binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));
       importSource={kind:'rows',sourceKey:WORKBOOK_SOURCE_KEY,rows:parsed.rows,sourceFileBase64:btoa(binary),originalSha256};
     }
-    const payload=features.intentInvitations?importSource:{sourceKey:WORKBOOK_SOURCE_KEY,rows:parsed.rows};
+    const payload=features.protectedContactImport?importSource:{sourceKey:WORKBOOK_SOURCE_KEY,rows:parsed.rows};
     importPreview=await request('/api/admin/contacts/import/preview',{method:'POST',body:JSON.stringify(payload)});
     $('[data-contacts-file-name]').textContent=file.name;const summary=importPreview.summary;
     $('[data-import-summary]').textContent='共 '+summary.total+' 位：新增 '+summary.new+'，已存在 '+summary.unchanged+'，来源变更 '+summary.conflicts+'，无效 '+summary.invalid+'，可能重复 '+summary.possibleDuplicates+'。';
@@ -397,7 +406,7 @@ $('[data-import-cancel]').addEventListener('click',()=>{clearImport();lock();ann
 $('[data-import-source-confirm]').addEventListener('change',lock);
 $('[data-import-confirm]').addEventListener('click',()=>action(async()=>{
   if(!permitted()||!features.contactImport||!importPreview?.canCommit||!$('[data-import-source-confirm]').checked)throw new Error('请先核对有效预览、原始文件与导入授权。');
-  const payload=features.intentInvitations?{...importSource,expectedRevision:importPreview.expectedRevision,previewToken:importPreview.previewToken,allowPossibleDuplicates:$('[data-import-duplicates]').checked,confirmSource:true}:{expectedRevision:revision,previewToken:importPreview.previewToken,allowPossibleDuplicates:$('[data-import-duplicates]').checked};
+  const payload=features.protectedContactImport?{...importSource,expectedRevision:importPreview.expectedRevision,previewToken:importPreview.previewToken,allowPossibleDuplicates:$('[data-import-duplicates]').checked,confirmSource:true}:{expectedRevision:revision,previewToken:importPreview.previewToken,allowPossibleDuplicates:$('[data-import-duplicates]').checked};
   const result=await request('/api/admin/contacts/import',{method:'POST',body:JSON.stringify(payload)});
   revision=result.revision;contacts=result.contacts;const summary=result.summary;clearImport();render();
   announce('已确认写入 '+summary.new+' 位，已有 '+summary.unchanged+' 位保持不变。尚未自动代登记、生成邀请或确认出席。');

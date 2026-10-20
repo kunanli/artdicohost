@@ -30,6 +30,7 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
   const trackedControls = () => [...form.querySelectorAll('input,select,textarea,[data-next-step],[data-prev-step]')];
   let frozen = false;
   let config = null;
+  let pendingFields = null;
   function unavailable(reason) {
     const closed=reason==='closed';
     form.dataset.registrationMode=closed?'closed':'unavailable';
@@ -56,28 +57,37 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
     }
     submit.textContent = value ? '正在确认保存结果…' : frozen ? '再次确认报名结果' : '确认并提交报名';
   }
-  form.addEventListener('artdico:registration-submit', async event => {
-    if (!config || form.dataset.submitting === 'true' || event.detail?.fields?.consentAccepted !== true) return;
-    const fields = registrationFields(event.detail.fields);
+  async function submitFields(fields) {
+    if (!config || form.dataset.submitting === 'true') return;
     lock(true); summary.hidden = true;
     try {
       const result = await client.submit(fields);
-      if (!renderRegistrationSuccess(receipt,result)) throw new Error('保存结果无法确认，请保留本页并再次确认。');
+      if (!renderRegistrationSuccess(receipt,result)) {
+        const fallback=node('p','报名已完成，编号：'+result.body.reference_code+'。请保留编号，无需重复报名。');
+        fallback.setAttribute('role','status');section.append(fallback);
+      }
       frozen = false;
+      pendingFields = null;
       form.dispatchEvent(new Event('artdico:registration-saved'));
-      receipt.querySelector('h3,h2')?.focus();
+      receipt?.querySelector('h3,h2')?.focus();
     } catch (error) {
       frozen = client.pending;
+      if (!frozen) pendingFields = null;
       announce(error.message || '报名尚未确认保存，请保留本页并重试。');
     } finally { lock(false); }
+  }
+  form.addEventListener('artdico:registration-submit', event => {
+    if(event.detail?.fields?.consentAccepted!==true)return;
+    pendingFields=registrationFields(event.detail.fields);
+    void submitFields(pendingFields);
   });
   // Disabled controls are absent from FormData. Retry uses the original in-memory
   // fields through the controller, while the visible inputs remain protected.
   form.addEventListener('submit', event => {
     if (!frozen || form.dataset.submitting === 'true') return;
     event.preventDefault();
-    for (const control of trackedControls()) if (control.dataset.registrationLocked) control.disabled = false;
-    queueMicrotask(() => { if (frozen) for (const control of trackedControls()) if (control.dataset.registrationLocked) control.disabled = true; });
+    event.stopImmediatePropagation();
+    if(pendingFields)void submitFields(pendingFields);
   },true);
   window.addEventListener('beforeunload', event => { if (client.pending) {event.preventDefault();event.returnValue='';} });
   client.configure().then(value => {

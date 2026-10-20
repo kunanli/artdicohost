@@ -14,7 +14,7 @@ const FUNCTION_PATH = `/${VERSION}/functions/${FC_FUNCTION_NAME}`;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MAX_ERROR_BYTES = 16 * 1024;
 const READ_REQUEST_DEADLINE_MS = 20_000;
-const CODE_UPDATE_DEADLINE_MS = 120_000;
+const CODE_UPDATE_DEADLINE_MS = 180_000;
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const diagnostics = new WeakMap();

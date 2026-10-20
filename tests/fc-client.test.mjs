@@ -246,7 +246,7 @@ test('network, external abort and the fixed request timeout have separate safe c
   assert.equal(timedOut.calls.length, 0);
 });
 
-test('only a code update receives the fixed 120-second deadline while reads and health keep 20 seconds', async t => {
+test('only a code update receives the fixed 180-second deadline while reads and health keep 20 seconds', async t => {
   const deadlines = [];
   t.mock.method(AbortSignal, 'timeout', milliseconds => {
     deadlines.push(milliseconds);
@@ -258,15 +258,41 @@ test('only a code update receives the fixed 120-second deadline while reads and 
   await client.getTrigger(options);
   await client.checkHealth(triggerUrl, options);
   await client.updateCode(new Uint8Array([80, 75]), options);
-  assert.deepEqual(deadlines, [20_000, 20_000, 20_000, 120_000]);
+  assert.deepEqual(deadlines, [20_000, 20_000, 20_000, 180_000]);
   assert.equal(calls.filter(call => call.settings.method === 'PUT').length, 1);
   assert.equal(calls.length, 4);
+});
+
+test('one upload may finish after the previous 120-second budget while the new fixed deadline remains active', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const signals = [];
+  t.mock.method(AbortSignal, 'timeout', milliseconds => {
+    const controller = new AbortController(); signals.push(controller.signal);
+    setTimeout(() => controller.abort(), milliseconds);
+    return controller.signal;
+  });
+  let release;
+  const { client, calls } = fakeClient(() => new Promise(resolve => { release = resolve; }));
+  let finished = false;
+  const pending = client.updateCode(new Uint8Array([80, 75]));
+  pending.then(() => { finished = true; }, () => { finished = true; });
+  t.mock.timers.tick(121_000);
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(signals[0].aborted, false);
+  assert.equal(finished, false);
+  t.mock.timers.tick(29_000);
+  release(json({ functionName: 'artdicohost-api' }));
+  assert.deepEqual(await pending, { functionName: 'artdicohost-api' });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].settings.method, 'PUT');
+  t.mock.timers.tick(30_000);
+  assert.equal(signals[0].aborted, true, 'the deadline is fixed rather than renewed by progress');
 });
 
 test('a code upload timing out in transport remains opaque and never retries its PUT', async t => {
   const deadline = new AbortController();
   t.mock.method(AbortSignal, 'timeout', milliseconds => {
-    assert.equal(milliseconds, 120_000);
+    assert.equal(milliseconds, 180_000);
     return deadline.signal;
   });
   const { client, calls } = fakeClient(() => new Promise(() => {}));
@@ -286,7 +312,7 @@ test('a code update timing out while reading its response cancels that body with
   const originalGetReader = response.body.getReader;
   t.mock.method(response.body, 'getReader', function(...args) { reading(); return originalGetReader.apply(this, args); });
   t.mock.method(AbortSignal, 'timeout', milliseconds => {
-    assert.equal(milliseconds, 120_000);
+    assert.equal(milliseconds, 180_000);
     return deadline.signal;
   });
   const { client, calls } = fakeClient(() => response);
@@ -302,7 +328,7 @@ test('a code update timing out while reading its response cancels that body with
 test('external code-upload cancellation wins over its deadline and never causes a retry', async t => {
   let deadline;
   t.mock.method(AbortSignal, 'timeout', milliseconds => {
-    assert.equal(milliseconds, 120_000);
+    assert.equal(milliseconds, 180_000);
     return deadline.signal;
   });
   for (const simultaneousTimeout of [false, true]) {

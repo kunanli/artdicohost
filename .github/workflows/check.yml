@@ -151,6 +151,8 @@ jobs:
           OSS_ACCESS_KEY_ID: ${{ secrets.ARTDICO_OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.ARTDICO_OSS_ACCESS_KEY_SECRET }}
         run: node scripts/deploy-oss.mjs .local-data/oss-publish "$RUNNER_TEMP/artdico-ossutil/ossutil-2.4.0-linux-amd64/ossutil"
+      - name: Verify the exact release through the public HTTPS domain without credentials
+        run: node scripts/verify-public-domain.mjs .local-data/oss-publish
 
   deploy-fc:
     name: Publish and verify the complete Hong Kong cloud lifecycle

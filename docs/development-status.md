@@ -14,7 +14,7 @@
 
 ## 已集成交付与生产基准
 
-当前交接基准为主集成分支 `feat/full-site-completion` 的 **`5e5ea84`**。所有本阶段模块已合并，完整 **581 项测试通过**，真实 Chromium 核心报名流程检查通过；其合成网络响应不代表真实云端业务已执行。[PR #26](https://github.com/kunanli/artdicohost/pull/26) 仍为 draft，待最终 CI、合并和 main 发布。下列模块无需再次从原工作分支合并。
+当前交接基准为主集成分支 `feat/full-site-completion` 的 **`5e5ea84`**。所有本阶段模块已合并，完整 **581 项测试通过**，真实 Chromium 核心报名流程检查通过；其合成网络响应不代表真实云端业务已执行。[PR #26](https://github.com/kunanli/artdicohost/pull/26) 已转可审阅，待最终 CI、合并和 main 发布。下列模块无需再次从原工作分支合并。
 
 | 工作 | 集成记录／文档 | 当前状态 |
 | --- | --- | --- |
@@ -89,3 +89,7 @@ HTTP 路由均在 `https://api.artdico.host`，需要可信会话、服务端角
 - 完整回归 581/581 通过；其后部署安全诊断 12/12 定向检查通过。Astro 检查零错误／警告、五页构建成功。
 - 集成运行时与纯合成私有 OSS 的真实 Chromium 端到端 **13/13 通过**：桌面／手机报名与收据群码、审核与住宿／私密 CSV、内容发布与 15 展位私隐投影、意向转换／安排／人工邀请、真实浏览器 XLSX 导入和重导幂等、账号及会话撤销、嘉宾肖像／关联场次／学生作品、加密备份／隔离恢复、手机布局及 Secure Cookie。零页面异常、零非预期控制台错误。合成验收不代表云端或真实名单已迁移。
 - 最终候选修复未知结果后的原内容／幂等键重试、Chromium 恢复名称 pattern、离线候选包旧错误码断言；[PR #26](https://github.com/kunanli/artdicohost/pull/26) 已转可审阅。准确提交的 CI、main 生命周期及公开 OSS 读回仍须跟进；不得据本段宣称正式启用。
+
+## 首次正式云端运行与修复接续
+
+[PR #26](https://github.com/kunanli/artdicohost/pull/26) 已合并为 main `8d17a700b78f430a3b3a9b337134a18b7abbed48`。最终 PR CI 及 main 检查均通过（582 项测试、类型／构建／依赖稽核、两包离线 smoke）。[main 39455839350](https://github.com/kunanli/artdicohost/actions/runs/39455839350) 的实际私有 OSS 验收完成 object-readback、atomic-conflict、login-permissions，在 private-contacts 停止：108 次请求、19 个触及对象，第一笔较大 JSON blob 写入后的读回未获验证。内容和正式报名仍关闭，公开 OSS 发布被依赖门禁跳过；没有宣称扩展功能已正式开放。下一批针对 HTTP 压缩协商与严格字节读回修正，须经新 CI 和准确 main 的实际验收后才能启用。最新运行证据继续记于对应 PR，恢复时先查看 main 最新 Actions。

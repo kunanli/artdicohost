@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createOssObjectClient, OSS_ORIGIN, MAX_OSS_OBJECT_BYTES } from '../functions/cloud-content/oss-client.mjs';
 import { CloudContentError } from '../functions/cloud-content/errors.mjs';
+import { createServer } from 'node:http';
+import { gzipSync } from 'node:zlib';
 import { fakeCredentials, fixedClock, objectFixture, objectResponse, xmlError, sha256 } from './cloud-oss-fixture.mjs';
 
 const logKey = 'cms/v1/content/commits.jsonl';
@@ -68,6 +70,35 @@ test('immutable creation verifies bytes, deduplicates same bytes and refuses cor
   assert.deepEqual((await once.putImmutable(key, data)).data, data);
   let getCount = 0;
   await assert.rejects(make({ fetchFn: async (_url, options) => options.method === 'GET' ? (++getCount === 1 ? xmlError(404, 'NoSuchKey') : objectResponse(Buffer.from('other'))) : new Response(null) }).putImmutable(key, data), opaque);
+});
+
+test('fetch requests identity bytes when an object server negotiates compression for larger multilingual JSON', async t => {
+  const data = Buffer.from(JSON.stringify({ name: '合成验收联络人', notes: '仅用于隔离的储存回读。'.repeat(120) }));
+  const compressed = gzipSync(data), encodings = [];
+  const server = createServer((request, response) => {
+    encodings.push(request.headers['accept-encoding']);
+    const identity = request.headers['accept-encoding'] === 'identity';
+    const bytes = identity ? data : compressed;
+    response.writeHead(200, { 'content-type': 'application/json', 'x-oss-object-type': 'Normal', 'content-length': String(bytes.length),
+      ...(identity ? {} : { 'content-encoding': 'gzip' }) });
+    response.end(bytes);
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
+  const local = 'http://127.0.0.1:' + server.address().port;
+  // This first request proves the real fetch transport decodes the bytes while
+  // preserving headers that cannot be used as the decoded byte count.
+  const negotiated = await fetch(local);
+  assert.equal(negotiated.headers.get('content-encoding'), 'gzip');
+  assert.equal(negotiated.headers.get('content-length'), String(compressed.length));
+  assert.deepEqual(Buffer.from(await negotiated.arrayBuffer()), data);
+  const client = make({ fetchFn: async (url, options) => {
+    assert.equal(new URL(url).origin, OSS_ORIGIN);
+    const fetched = await fetch(local, options);
+    return new Response(fetched.body, { status: fetched.status, headers: fetched.headers });
+  } });
+  assert.deepEqual((await client.get(logKey, { maxBytes: data.length })).data, data);
+  assert.deepEqual(encodings, ['gzip, deflate', 'identity']);
 });
 
 test('only exact append-position conflicts become safe conflict errors; writes are never retried', async () => {

@@ -221,6 +221,85 @@ test('network, external abort and the fixed request timeout have separate safe c
   assert.equal(timedOut.calls.length, 0);
 });
 
+test('only a code update receives the fixed 120-second deadline while reads and health keep 20 seconds', async t => {
+  const deadlines = [];
+  t.mock.method(AbortSignal, 'timeout', milliseconds => {
+    deadlines.push(milliseconds);
+    return new AbortController().signal;
+  });
+  const { client, calls } = fakeClient(url => url.endsWith('/triggers/defaultTrigger') ? json({ httpTrigger: { urlInternet: triggerUrl } }) : json({ status: 'ok' }));
+  const options = { timeoutMs: 1, deadlineMs: 1 };
+  await client.getFunction(options);
+  await client.getTrigger(options);
+  await client.checkHealth(triggerUrl, options);
+  await client.updateCode(new Uint8Array([80, 75]), options);
+  assert.deepEqual(deadlines, [20_000, 20_000, 20_000, 120_000]);
+  assert.equal(calls.filter(call => call.settings.method === 'PUT').length, 1);
+  assert.equal(calls.length, 4);
+});
+
+test('a code upload timing out in transport remains opaque and never retries its PUT', async t => {
+  const deadline = new AbortController();
+  t.mock.method(AbortSignal, 'timeout', milliseconds => {
+    assert.equal(milliseconds, 120_000);
+    return deadline.signal;
+  });
+  const { client, calls } = fakeClient(() => new Promise(() => {}));
+  const pending = client.updateCode(new Uint8Array([80, 75]));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].settings.method, 'PUT');
+  deadline.abort(new Error('PRIVATE-REMOTE synthetic-access-secret'));
+  assert.equal(summarizeFcError(await safelyRejected(() => pending)), 'operation=UpdateFunction phase=timeout');
+  assert.equal(calls.length, 1, 'an ambiguous timeout must never resend the code update');
+});
+
+test('a code update timing out while reading its response cancels that body without a second PUT', async t => {
+  const deadline = new AbortController();
+  let reading, cancelled = false;
+  const bodyStarted = new Promise(resolve => { reading = resolve; });
+  const response = new Response(new ReadableStream({ start() {}, cancel() { cancelled = true; } }), { headers: { 'content-type': 'application/json' } });
+  const originalGetReader = response.body.getReader;
+  t.mock.method(response.body, 'getReader', function(...args) { reading(); return originalGetReader.apply(this, args); });
+  t.mock.method(AbortSignal, 'timeout', milliseconds => {
+    assert.equal(milliseconds, 120_000);
+    return deadline.signal;
+  });
+  const { client, calls } = fakeClient(() => response);
+  const pending = client.updateCode(new Uint8Array([80, 75]));
+  await bodyStarted;
+  deadline.abort(new Error('PRIVATE-REMOTE'));
+  assert.equal(summarizeFcError(await safelyRejected(() => pending)), 'operation=UpdateFunction phase=timeout status=200');
+  assert.equal(cancelled, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].settings.method, 'PUT');
+});
+
+test('external code-upload cancellation wins over its deadline and never causes a retry', async t => {
+  let deadline;
+  t.mock.method(AbortSignal, 'timeout', milliseconds => {
+    assert.equal(milliseconds, 120_000);
+    return deadline.signal;
+  });
+  for (const simultaneousTimeout of [false, true]) {
+    deadline = new AbortController();
+    const external = new AbortController();
+    const { client, calls } = fakeClient(() => new Promise(() => {}));
+    const pending = client.updateCode(new Uint8Array([80, 75]), { signal: external.signal });
+    assert.equal(calls.length, 1);
+    if (simultaneousTimeout) deadline.abort(new Error('PRIVATE-REMOTE'));
+    external.abort(new Error('PRIVATE-REMOTE synthetic-access-secret'));
+    assert.equal(summarizeFcError(await safelyRejected(() => pending)), 'operation=UpdateFunction phase=aborted');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].settings.method, 'PUT');
+  }
+  deadline = new AbortController();
+  const external = new AbortController();
+  external.abort(new Error('PRIVATE-REMOTE'));
+  const { client, calls } = fakeClient();
+  assert.equal(summarizeFcError(await safelyRejected(() => client.updateCode(new Uint8Array([80, 75]), { signal: external.signal }))), 'operation=UpdateFunction phase=aborted');
+  assert.equal(calls.length, 0, 'an already cancelled upload never starts');
+});
+
 test('error names, copied properties, wrappers and causes cannot manufacture trusted diagnostics', async () => {
   const { client } = fakeClient(() => json({ Code: 'Forbidden' }, { status: 403 }));
   const trusted = await safelyRejected(() => client.getFunction());

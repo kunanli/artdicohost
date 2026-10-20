@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deployFc } from '../scripts/deploy-fc.mjs';
 import { createFcClient, FC_API_ENDPOINT } from '../scripts/fc-client.mjs';
-import { MAX_FC_ZIP_BYTES, MAX_FC_REQUEST_BYTES } from '../scripts/fc-upload-limits.mjs';
+import { MAX_FC_ZIP_BYTES, MAX_FC_REQUEST_BYTES, fcCodeRequestBytes } from '../scripts/fc-upload-limits.mjs';
 
 const commit = 'a'.repeat(40);
 const env = { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/main', GITHUB_REPOSITORY: 'kunanli/artdicohost', GITHUB_SHA: commit,
@@ -23,20 +23,28 @@ const goodHealth = () => ({ status: 200, body: { status: 'ok', scope: 'process-o
 function fixture(changes = {}) {
   const calls = [];
   const signals = [];
+  const reports = [];
   let reads = 0;
   const client = {
     async getFunction({ signal }) { calls.push('function'); signals.push(signal); reads++; return changes.functionInfo ? changes.functionInfo(reads) : functionInfo(); },
     async getTrigger({ signal }) { calls.push('trigger'); signals.push(signal); return changes.triggerInfo ? changes.triggerInfo(calls.filter(item => item === 'trigger').length) : triggerInfo(); },
     async updateCode(bytes, { signal }) { calls.push('update'); signals.push(signal); assert.equal(bytes, archive); if (changes.updateError) throw new Error('PRIVATE-SYNTHETIC-UPDATE-ERROR'); },
-    async checkHealth(url, { signal }) { calls.push('health'); signals.push(signal); assert.equal(url, triggerInfo().httpTrigger.urlInternet); return changes.health ? changes.health(calls.filter(item => item === 'health').length) : goodHealth(); },
+    async checkHealth(url, { signal }) {
+      const before = !calls.includes('update');
+      calls.push(before ? 'health-before' : 'health'); signals.push(signal);
+      assert.equal(url, triggerInfo().httpTrigger.urlInternet);
+      return before ? changes.beforeHealth ? changes.beforeHealth() : goodHealth()
+        : changes.health ? changes.health(calls.filter(item => item === 'health').length) : goodHealth();
+    },
   };
   const options = {
     directory: '/synthetic-publication', repositoryDirectory: '/synthetic-repository', env,
     client, async verifyPackage(input) { calls.push('verify'); assert.deepEqual(input, { directory: '/synthetic-publication', expectedCommit: commit, repositoryDirectory: '/synthetic-repository' }); return { zipBytes: archive, manifest: { sourceCommit: commit, archive: { sha256: archiveHash } } }; },
     async fetchHead(url, settings) { calls.push('head'); signals.push(settings.signal); assert.equal(url, 'https://api.github.com/repos/kunanli/artdicohost/git/ref/heads/main'); return { ok: true, async json() { return { object: { sha: changes.head ? changes.head(calls.filter(item => item === 'head').length) : commit } }; } }; },
     async wait(milliseconds, { signal }) { calls.push('wait'); signals.push(signal); assert.equal(milliseconds, 2000); },
+    report(line) { reports.push(line); },
   };
-  return { calls, signals, client, options };
+  return { calls, signals, reports, client, options };
 }
 
 test('only an explicitly enabled authenticated main push in the exact repository can begin FC work', async () => {
@@ -75,7 +83,7 @@ test('the request budget is rechecked immediately before the only FC code write'
   Object.defineProperty(changing, 'byteLength', { get: () => length });
   const value = fixture({ head: count => { if (count === 2) length = MAX_FC_ZIP_BYTES + 1; return commit; } });
   await assert.rejects(deployFc({ ...value.options, verifyPackage: async () => ({ zipBytes: changing, manifest: { sourceCommit: commit, archive: { sha256: archiveHash } } }) }), /fixed request budget/u);
-  assert.deepEqual(value.calls, ['head', 'function', 'trigger', 'head']);
+  assert.deepEqual(value.calls, ['head', 'function', 'trigger', 'health-before', 'head']);
   assert.equal(value.calls.includes('update'), false);
 });
 
@@ -131,7 +139,7 @@ test('success uploads exact verified bytes once, preserves settings and requires
   assert.deepEqual(result, { functionName: 'artdicohost-api', commit, packageSha256: archiveHash, preflight: 'verified', businessReady: false });
   assert.equal(value.calls.filter(item => item === 'update').length, 1);
   assert.equal(value.calls.filter(item => item === 'health').length, 3);
-  assert.deepEqual(value.calls.slice(0, 6), ['verify', 'head', 'function', 'trigger', 'head', 'update']);
+  assert.deepEqual(value.calls.slice(0, 7), ['verify', 'head', 'function', 'trigger', 'health-before', 'head', 'update']);
   assert.ok(value.signals.every(signal => signal instanceof AbortSignal && signal.aborted));
   const text = await readFile(summary, 'utf8');
   assert.match(text, /Registration remains closed/);
@@ -144,6 +152,75 @@ test('old instances and transient health errors reset the consecutive source-com
   await deployFc(value.options);
   assert.equal(value.calls.filter(item => item === 'health').length, 6);
   assert.equal(value.calls.filter(item => item === 'update').length, 1);
+  assert.deepEqual(value.reports.filter(line => line.startsWith('FC signed /healthz match ')), [1, 1, 2, 3].map(count => `FC signed /healthz match ${count}/3: ${commit}`));
+});
+
+test('pre-update reports retain an old full commit and only verified publication facts without remote or configuration data', async () => {
+  const oldCommit = 'b'.repeat(40);
+  const value = fixture({
+    functionInfo: () => ({ ...functionInfo(), Message: 'PRIVATE-SYNTHETIC-MESSAGE', unknown: 'PRIVATE-SYNTHETIC-UNKNOWN' }),
+    beforeHealth: () => ({ ...goodHealth(), body: { ...goodHealth().body, sourceCommit: oldCommit, Message: 'PRIVATE-SYNTHETIC-MESSAGE', environmentVariables: env, role: 'PRIVATE-SYNTHETIC-ROLE', url: triggerInfo().httpTrigger.urlInternet, unknown: 'PRIVATE-SYNTHETIC-UNKNOWN' } }),
+  });
+  await deployFc(value.options);
+  assert.equal(value.calls.filter(item => item === 'health-before').length, 1);
+  assert.equal(value.calls.filter(item => item === 'health').length, 3);
+  assert.equal(value.calls.filter(item => item === 'update').length, 1);
+  assert.deepEqual(value.reports, [
+    'FC pre-update observation: ' + JSON.stringify({ state: 'Active', update: 'Successful', signedHealth: 'process-only', sourceCommit: oldCommit }),
+    'FC publication verified: ' + JSON.stringify({ sourceCommit: commit, zipBytes: archive.byteLength, jsonRequestBytes: fcCodeRequestBytes(archive.byteLength), packageSha256: archiveHash }),
+    ...[1, 2, 3].map(count => `FC signed /healthz match ${count}/3: ${commit}`),
+  ]);
+  assert.doesNotMatch(value.reports.join('\n'), /PRIVATE-|https?:|acs:fc|Message|unknown|environment|role|url/u);
+});
+
+test('a matching pre-update observation cannot replace any of the three post-update health matches', async () => {
+  const value = fixture({ health: count => count <= 2 ? goodHealth() : { ...goodHealth(), body: { ...goodHealth().body, sourceCommit: 'b'.repeat(40) } } });
+  await assert.rejects(deployFc(value.options), /three consecutive/u);
+  assert.equal(value.calls.filter(item => item === 'health-before').length, 1);
+  assert.equal(value.calls.filter(item => item === 'health').length, 16);
+  assert.equal(value.calls.filter(item => item === 'update').length, 1);
+  assert.deepEqual(value.reports.filter(line => line.startsWith('FC signed /healthz match ')), [1, 2].map(count => `FC signed /healthz match ${count}/3: ${commit}`));
+  assert.equal(value.reports.some(line => line.startsWith('FC signed /healthz match 3/3:')), false);
+});
+
+test('an initial FC update in progress is observed safely before refusing another code mutation', async () => {
+  for (const patch of [{ lastUpdateStatus: 'InProgress' }, { state: 'Creating' }]) {
+    const value = fixture({ functionInfo: () => ({ ...functionInfo(), ...patch }) });
+    await assert.rejects(deployFc(value.options), error => error.message === 'FC reports an update still in progress; no new code was uploaded.');
+    assert.deepEqual(value.calls, ['verify', 'head', 'function', 'trigger', 'health-before']);
+    assert.equal(value.reports.length, 1);
+    assert.deepEqual(JSON.parse(value.reports[0].slice('FC pre-update observation: '.length)), {
+      state: patch.state ?? 'Active', update: patch.lastUpdateStatus ?? 'Successful', signedHealth: 'process-only', sourceCommit: commit,
+    });
+    assert.doesNotMatch(value.reports[0], /PRIVATE-|https?:|acs:fc|Message|role|environment/u);
+  }
+});
+
+test('failed or malformed pre-update health is only an observation and never exposes arbitrary error metadata', async () => {
+  const healthClient = createFcClient({ credentials: { accessKeyId: env.FC_ACCESS_KEY_ID, accessKeySecret: env.FC_ACCESS_KEY_SECRET },
+    fetchFn: async url => new Response(JSON.stringify(url.startsWith(FC_API_ENDPOINT) ? triggerInfo() : { Code: 'Forbidden', Message: 'PRIVATE-SYNTHETIC-MESSAGE' }),
+      { status: url.startsWith(FC_API_ENDPOINT) ? 200 : 403, headers: { 'content-type': 'application/json' } }) });
+  await healthClient.getTrigger();
+  let trusted;
+  try { await healthClient.checkHealth(); } catch (error) { trusted = error; }
+  assert.ok(trusted instanceof Error);
+  const cases = [
+    [() => { throw Object.assign(new Error('PRIVATE-SYNTHETIC-ERROR'), { operation: 'CheckHealth', status: 403, code: 'Forbidden', phase: 'http', cause: trusted }); }, undefined],
+    [() => { throw trusted; }, 'operation=CheckHealth phase=http status=403 code=Forbidden'],
+    [() => ({ ...goodHealth(), status: 503, body: { ...goodHealth().body, sourceCommit: 'PRIVATE-SYNTHETIC-COMMIT' } }), undefined],
+    ...[null, ['b'.repeat(40)], { value: 'b'.repeat(40) }, 'PRIVATE-SYNTHETIC-COMMIT'].map(sourceCommit => [() => ({ ...goodHealth(), body: { ...goodHealth().body, sourceCommit } }), undefined]),
+  ];
+  for (const [beforeHealth, diagnostic] of cases) {
+    const value = fixture({ beforeHealth, functionInfo: count => count === 1 ? { ...functionInfo(), state: 'PRIVATE-SYNTHETIC-STATE', lastUpdateStatus: 'PRIVATE-SYNTHETIC-UPDATE' } : functionInfo() });
+    await deployFc(value.options);
+    const observation = JSON.parse(value.reports[0].slice('FC pre-update observation: '.length));
+    assert.deepEqual(observation, { state: 'unknown', update: 'unknown', signedHealth: 'not-verified', ...(diagnostic ? { diagnostic } : {}) });
+    assert.equal(value.calls.filter(item => item === 'update').length, 1);
+    assert.equal(value.calls.filter(item => item === 'health-before').length, 1);
+    assert.equal(value.calls.filter(item => item === 'health').length, 3);
+    assert.deepEqual(value.reports.filter(line => line.startsWith('FC signed /healthz match ')), [1, 2, 3].map(count => `FC signed /healthz match ${count}/3: ${commit}`));
+    assert.doesNotMatch(value.reports.join('\n'), /PRIVATE-|https?:|acs:fc|Message|cause/u);
+  }
 });
 
 test('unset runtime args may be omitted or null while their original snapshot remains preserved', async () => {
@@ -196,9 +273,10 @@ test('trusted UpdateFunction diagnostics survive the client and deployment bound
     clock: () => new Date('2026-10-20T00:00:00Z'), nonce: () => '0123456789abcdef0123456789abcdef',
     async fetchFn(url, options) {
       requests.push({ url, method: options.method });
-      assert.ok(url.startsWith(FC_API_ENDPOINT + '/2023-03-30/functions/artdicohost-api'));
+      const health = url === new URL('/healthz', triggerInfo().httpTrigger.urlInternet).href;
+      assert.ok(health || url.startsWith(FC_API_ENDPOINT + '/2023-03-30/functions/artdicohost-api'));
       const body = options.method === 'PUT' ? { ErrorCode: 'AccessDenied', Message: 'PRIVATE-SYNTHETIC-MESSAGE', RequestId: 'PRIVATE-SYNTHETIC-REQUEST', details: env }
-        : url.endsWith('/triggers/defaultTrigger') ? triggerInfo() : functionInfo();
+        : health ? goodHealth().body : url.endsWith('/triggers/defaultTrigger') ? triggerInfo() : functionInfo();
       return new Response(JSON.stringify(body), { status: options.method === 'PUT' ? 403 : 200, headers: { 'content-type': 'application/json' } });
     } });
   await assert.rejects(deployFc({ ...value.options, client }), error => {
@@ -208,7 +286,7 @@ test('trusted UpdateFunction diagnostics survive the client and deployment bound
     return true;
   });
   assert.equal(requests.filter(request => request.method === 'PUT').length, 1);
-  assert.equal(requests.length, 3);
+  assert.equal(requests.length, 4);
   assert.deepEqual(value.calls, ['verify', 'head', 'head']);
 });
 

@@ -12,6 +12,8 @@ const VERSION = '2023-03-30';
 const FUNCTION_PATH = `/${VERSION}/functions/${FC_FUNCTION_NAME}`;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MAX_ERROR_BYTES = 16 * 1024;
+const READ_REQUEST_DEADLINE_MS = 20_000;
+const CODE_UPDATE_DEADLINE_MS = 120_000;
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const diagnostics = new WeakMap();
@@ -84,7 +86,7 @@ export function createFcClient({ region = FC_REGION, credentials, fetchFn = fetc
     let reader, response, timeoutSignal, signal, status;
     let phase = 'network';
     try {
-      timeoutSignal = AbortSignal.timeout(20_000);
+      timeoutSignal = AbortSignal.timeout(operation === 'UpdateFunction' ? CODE_UPDATE_DEADLINE_MS : READ_REQUEST_DEADLINE_MS);
       signal = externalSignal ? AbortSignal.any([externalSignal, timeoutSignal]) : timeoutSignal;
       if (signal.aborted) throw failure();
       response = await abortable(fetchFn(url, { ...options, redirect: 'error', cache: 'no-store', signal }), signal);

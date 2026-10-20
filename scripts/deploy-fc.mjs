@@ -8,11 +8,11 @@ import { fileURLToPath } from 'node:url';
 import { assertCurrentMainHead } from './deploy-oss.mjs';
 import { verifyFcPublication } from './verify-fc-package.mjs';
 import { summarizeFcError } from './fc-client.mjs';
-import { MAX_FC_ZIP_BYTES, assertFcCodeRequestFits } from './fc-upload-limits.mjs';
+import { MAX_FC_ZIP_BYTES, assertFcCodeRequestFits, fcCodeRequestBytes } from './fc-upload-limits.mjs';
 
 export const FC_FUNCTION_NAME = 'artdicohost-api';
 export const FC_REGION = 'cn-hongkong';
-const DEPLOYMENT_TIMEOUT = 90_000;
+const DEPLOYMENT_TIMEOUT = 240_000;
 const MAX_ATTEMPTS = 16;
 const defaultWait = (milliseconds, { signal } = {}) => delay(milliseconds, undefined, { signal });
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -55,7 +55,7 @@ function triggerUrl(value) {
 }
 
 /** Code-only update of an already configured closed preflight; never creates or opens a service. */
-export async function deployFc({ directory, repositoryDirectory, env = process.env, client, verifyPackage = verifyFcPublication, fetchHead = fetch, wait = defaultWait } = {}) {
+export async function deployFc({ directory, repositoryDirectory, env = process.env, client, verifyPackage = verifyFcPublication, fetchHead = fetch, wait = defaultWait, report = line => console.log(line) } = {}) {
   requireFcDeploymentContext(env);
   const controller = new AbortController();
   const deadline = performance.now() + DEPLOYMENT_TIMEOUT;
@@ -102,9 +102,34 @@ export async function deployFc({ directory, repositoryDirectory, env = process.e
     const trigger = await bounded(signal => client.getTrigger({ signal }), 'FC trigger could not be inspected; no code was updated.');
     const healthUrl = triggerUrl(trigger);
     const triggerSnapshot = { triggerType: trigger.triggerType, qualifier: trigger.qualifier, config: JSON.parse(trigger.triggerConfig) };
+    // A previous upload may have reached FC despite a transport timeout. Observe
+    // it read-only before this new release; this response never counts for success.
+    let priorHealth, priorDiagnostic;
+    await bounded(async signal => {
+      try { priorHealth = await client.checkHealth(healthUrl, { signal }); }
+      catch (error) {
+        const diagnostic = summarizeFcError(error);
+        if (diagnostic?.startsWith('operation=CheckHealth ')) priorDiagnostic = diagnostic;
+      }
+    }, 'FC pre-update observation could not finish; no code was updated.');
+    const priorMatches = priorHealth?.status === 200 && priorHealth.body?.status === 'ok'
+      && priorHealth.body.scope === 'process-only' && typeof priorHealth.body.sourceCommit === 'string'
+      && /^[a-f0-9]{40}$/u.test(priorHealth.body.sourceCommit);
+    report('FC pre-update observation: ' + JSON.stringify({
+      state: ['Active', 'Creating', 'Inactive', 'Failed'].includes(before.state) ? before.state : 'unknown',
+      update: ['Successful', 'InProgress', 'Failed'].includes(before.lastUpdateStatus) ? before.lastUpdateStatus : 'unknown',
+      signedHealth: priorMatches ? 'process-only' : 'not-verified',
+      ...(priorMatches ? { sourceCommit: priorHealth.body.sourceCommit } : {}),
+      ...(priorDiagnostic ? { diagnostic: priorDiagnostic } : {}),
+    }));
+    if (before.lastUpdateStatus === 'InProgress' || before.state === 'Creating') {
+      throw new Error('FC reports an update still in progress; no new code was uploaded.');
+    }
     // Metadata inspection can take time. Recheck main immediately before the only mutation.
     await currentMain();
     assertFcCodeRequestFits(zipBytes.byteLength);
+    report('FC publication verified: ' + JSON.stringify({ sourceCommit: env.GITHUB_SHA, zipBytes: zipBytes.byteLength,
+      jsonRequestBytes: fcCodeRequestBytes(zipBytes.byteLength), packageSha256: manifest.archive.sha256 }));
     await bounded(signal => client.updateCode(zipBytes, { signal }), 'FC code update failed; deployment was not verified.');
     let consecutive = 0;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -124,6 +149,7 @@ export async function deployFc({ directory, repositoryDirectory, env = process.e
         } catch (error) { if (controller.signal.aborted) throw error; }
       }
       consecutive = matches ? consecutive + 1 : 0;
+      if (matches) report(`FC signed /healthz match ${consecutive}/3: ${env.GITHUB_SHA}`);
       if (consecutive === 3) {
         const finalTrigger = await bounded(signal => client.getTrigger({ signal }), 'FC trigger could not be rechecked; deployment was not verified.');
         const finalHealthUrl = triggerUrl(finalTrigger);

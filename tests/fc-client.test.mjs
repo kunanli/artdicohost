@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { createFcClient, FC_API_ENDPOINT, FC_REGION, MAX_FC_ZIP_BYTES, validateFcTriggerUrl } from '../scripts/fc-client.mjs';
+import { createFcClient, FC_API_ENDPOINT, FC_REGION, MAX_FC_ZIP_BYTES, summarizeFcError, validateFcTriggerUrl } from '../scripts/fc-client.mjs';
 
 const credentials = { accessKeyId: 'SYNTHETICKEY', accessKeySecret: 'synthetic-access-secret' };
 const clock = () => new Date('2026-10-19T04:00:00Z');
@@ -16,12 +16,15 @@ function fakeClient(reply = () => json({ functionName: 'artdicohost-api' }), opt
   return { calls, client: createFcClient({ credentials, clock, nonce, fetchFn, ...options }) };
 }
 async function safelyRejected(operation) {
+  let caught;
   await assert.rejects(operation, error => {
+    caught = error;
     assert.match(error.message, /^FC (?:request failed|client configuration is invalid)/u);
     for (const privateValue of [credentials.accessKeyId, 'STS.SYNTHETICKEY', credentials.accessKeySecret, 'synthetic-security-token', 'PRIVATE-REMOTE', 'PRIVATE-NETWORK']) assert.equal(String(error.stack).includes(privateValue), false);
     assert.equal(Object.hasOwn(error, 'cause'), false);
     return true;
   });
+  return caught;
 }
 
 test('ACS3 GetFunction matches an independently computed Python HMAC fixture and uses only the fixed API endpoint', async () => {
@@ -142,4 +145,69 @@ test('responses are streamed under a fixed size limit and external cancellation 
   const reading = blockedBody.client.getFunction({ signal: abortBody.signal });
   abortBody.abort();
   await safelyRejected(() => reading);
+});
+
+test('only fixed provider codes from bounded error JSON become trusted status diagnostics', async () => {
+  for (const field of ['Code', 'code', 'ErrorCode', 'errorCode']) {
+    const { client, calls } = fakeClient(() => json({ [field]: 'AccessDenied', Message: 'PRIVATE-REMOTE SYNTHETICKEY', RequestId: 'PRIVATE-REMOTE' }, { status: 403 }));
+    const error = await safelyRejected(() => client.updateCode(new Uint8Array([80, 75])));
+    assert.equal(summarizeFcError(error), 'operation=UpdateFunction phase=http status=403 code=AccessDenied');
+    assert.equal(calls.length, 1);
+    assert.deepEqual(Object.keys(error), []);
+  }
+  for (const code of ['PRIVATE-REMOTE', 'InvalidArgument.PRIVATE-REMOTE', 'AccessDenied\nPRIVATE-REMOTE', ['AccessDenied'], { Code: 'AccessDenied' }]) {
+    const { client } = fakeClient(() => json({ Code: code, Message: 'PRIVATE-REMOTE' }, { status: 403 }));
+    const error = await safelyRejected(() => client.getFunction());
+    assert.equal(summarizeFcError(error), 'operation=GetFunction phase=http status=403');
+  }
+  const { client } = fakeClient(() => json({ Code: 'InvalidArgument', Message: 'PRIVATE-REMOTE' }, { status: 201 }));
+  assert.equal(summarizeFcError(await safelyRejected(() => client.getFunction())), 'operation=GetFunction phase=http status=201 code=InvalidArgument');
+});
+
+test('response format, redirect and size failures preserve only fixed phase and HTTP status', async () => {
+  let cancelled = false;
+  const replies = [
+    [() => new Response('PRIVATE-REMOTE', { status: 403 }), 'response_type', 403],
+    [() => new Response('PRIVATE-REMOTE', { status: 302, headers: { location: 'https://PRIVATE-REMOTE.invalid' } }), 'redirect', 302],
+    [() => new Response('PRIVATE-REMOTE', { headers: { 'content-type': 'application/json' } }), 'json', 200],
+    [() => json([]), 'response_shape', 200],
+    [() => new Response(new Uint8Array([0xc3, 0x28]), { status: 403, headers: { 'content-type': 'application/json' } }), 'utf8', 403],
+    [() => json({ Code: 'AccessDenied' }, { status: 403, headers: { 'content-type': 'application/json', 'content-length': '16385' } }), 'response_size', 403],
+    [() => new Response(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(16385)); }, cancel() { cancelled = true; } }), { status: 403, headers: { 'content-type': 'application/json' } }), 'response_size', 403],
+  ];
+  for (const [reply, phase, status] of replies) {
+    const { client, calls } = fakeClient(reply);
+    assert.equal(summarizeFcError(await safelyRejected(() => client.getFunction())), `operation=GetFunction phase=${phase} status=${status}`);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].settings.redirect, 'error');
+  }
+  assert.equal(cancelled, true);
+});
+
+test('network, external abort and the fixed request timeout have separate safe classifications', async t => {
+  const network = fakeClient(() => { throw Object.assign(new Error('PRIVATE-NETWORK'), { status: 403, code: 'AccessDenied', cause: 'PRIVATE-REMOTE' }); });
+  assert.equal(summarizeFcError(await safelyRejected(() => network.client.getFunction())), 'operation=GetFunction phase=network');
+  const controller = new AbortController();
+  const blocked = fakeClient(() => new Promise(() => {}));
+  const pending = blocked.client.getFunction({ signal: controller.signal });
+  controller.abort(new Error('PRIVATE-REMOTE'));
+  assert.equal(summarizeFcError(await safelyRejected(() => pending)), 'operation=GetFunction phase=aborted');
+  t.mock.method(AbortSignal, 'timeout', milliseconds => { assert.equal(milliseconds, 20_000); return AbortSignal.abort(new Error('PRIVATE-REMOTE')); });
+  const timedOut = fakeClient();
+  assert.equal(summarizeFcError(await safelyRejected(() => timedOut.client.getFunction())), 'operation=GetFunction phase=timeout');
+  assert.equal(timedOut.calls.length, 0);
+});
+
+test('error names, copied properties, wrappers and causes cannot manufacture trusted diagnostics', async () => {
+  const { client } = fakeClient(() => json({ Code: 'Forbidden' }, { status: 403 }));
+  const trusted = await safelyRejected(() => client.getFunction());
+  class FcRequestError extends Error {}
+  for (const error of [undefined, null, 'PRIVATE-REMOTE', {}, new FcRequestError('PRIVATE-REMOTE'),
+    Object.assign(new Error('PRIVATE-REMOTE'), { operation: 'GetFunction', phase: 'http', status: 403, code: 'Forbidden' }),
+    new Error('PRIVATE-REMOTE', { cause: trusted }), Object.assign(new Error('PRIVATE-REMOTE'), trusted)]) assert.equal(summarizeFcError(error), null);
+  const hostile = new Error('PRIVATE-REMOTE');
+  for (const key of ['message', 'cause', 'code', 'status', 'operation']) Object.defineProperty(hostile, key, { get() { throw new Error('PRIVATE-REMOTE'); } });
+  assert.equal(summarizeFcError(hostile), null);
+  trusted.message = 'PRIVATE-REMOTE';
+  assert.equal(summarizeFcError(trusted), 'operation=GetFunction phase=http status=403 code=Forbidden');
 });

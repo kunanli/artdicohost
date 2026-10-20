@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deployFc } from '../scripts/deploy-fc.mjs';
+import { createFcClient, FC_API_ENDPOINT } from '../scripts/fc-client.mjs';
 
 const commit = 'a'.repeat(40);
 const env = { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/main', GITHUB_REPOSITORY: 'kunanli/artdicohost', GITHUB_SHA: commit,
@@ -163,5 +164,48 @@ test('update errors, failed state and changed runtime settings fail without roll
     await assert.rejects(deployFc(value.options), error => !error.message.includes('PRIVATE-'));
     assert.equal(value.calls.filter(item => item === 'update').length, 1);
     assert.equal(value.calls.includes('health'), false);
+  }
+});
+
+test('trusted UpdateFunction diagnostics survive the client and deployment boundaries without retrying or exposing remote fields', async () => {
+  const value = fixture();
+  const requests = [];
+  const client = createFcClient({ credentials: { accessKeyId: env.FC_ACCESS_KEY_ID, accessKeySecret: env.FC_ACCESS_KEY_SECRET },
+    clock: () => new Date('2026-10-20T00:00:00Z'), nonce: () => '0123456789abcdef0123456789abcdef',
+    async fetchFn(url, options) {
+      requests.push({ url, method: options.method });
+      assert.ok(url.startsWith(FC_API_ENDPOINT + '/2023-03-30/functions/artdicohost-api'));
+      const body = options.method === 'PUT' ? { ErrorCode: 'AccessDenied', Message: 'PRIVATE-SYNTHETIC-MESSAGE', RequestId: 'PRIVATE-SYNTHETIC-REQUEST', details: env }
+        : url.endsWith('/triggers/defaultTrigger') ? triggerInfo() : functionInfo();
+      return new Response(JSON.stringify(body), { status: options.method === 'PUT' ? 403 : 200, headers: { 'content-type': 'application/json' } });
+    } });
+  await assert.rejects(deployFc({ ...value.options, client }), error => {
+    assert.equal(error.message, 'FC code update failed; deployment was not verified. [operation=UpdateFunction phase=http status=403 code=AccessDenied]');
+    assert.doesNotMatch(error.stack, /PRIVATE-|fcapp\.run|aliyuncs\.com|acs:fc|RequestId|details|Message/u);
+    assert.equal(Object.hasOwn(error, 'cause'), false);
+    return true;
+  });
+  assert.equal(requests.filter(request => request.method === 'PUT').length, 1);
+  assert.equal(requests.length, 3);
+  assert.deepEqual(value.calls, ['verify', 'head', 'head']);
+});
+
+test('deployment wrappers ignore forged metadata and causes on arbitrary service failures', async () => {
+  const trustedClient = createFcClient({ credentials: { accessKeyId: env.FC_ACCESS_KEY_ID, accessKeySecret: env.FC_ACCESS_KEY_SECRET },
+    fetchFn: async () => new Response(JSON.stringify({ Code: 'Forbidden' }), { status: 403, headers: { 'content-type': 'application/json' } }) });
+  let trusted;
+  try { await trustedClient.getFunction(); } catch (error) { trusted = error; }
+  class FcRequestError extends Error {}
+  for (const error of [Object.assign(new FcRequestError('PRIVATE-SYNTHETIC-FAILURE'), { operation: 'UpdateFunction', phase: 'http', status: 403, code: 'AccessDenied' }),
+    new Error('PRIVATE-SYNTHETIC-FAILURE', { cause: trusted })]) {
+    const value = fixture();
+    value.client.updateCode = async () => { value.calls.push('update'); throw error; };
+    await assert.rejects(deployFc(value.options), result => {
+      assert.equal(result.message, 'FC code update failed; deployment was not verified.');
+      assert.doesNotMatch(result.stack, /PRIVATE-|Forbidden|AccessDenied/u);
+      assert.equal(Object.hasOwn(result, 'cause'), false);
+      return true;
+    });
+    assert.equal(value.calls.filter(call => call === 'update').length, 1);
   }
 });

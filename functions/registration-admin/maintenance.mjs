@@ -63,6 +63,15 @@ function objectReferences(item) {
       refs.push({ key: `cms/v1/registrations/${location[1]}/records/${entry.recordHash}.json`, hash: entry.recordHash });
     }
   }
+  if (value.kind === 'registration_group_invite') {
+    const location = item.key.match(/^cms\/v1\/group-invites\/([A-Za-z0-9_-]{1,80})\/state\/blobs\/[a-f0-9]{64}\.json$/u);
+    if (!location || value.eventId !== location[1] || !Array.isArray(value.audit)) fail('BACKUP_INVALID');
+    const ids = [value.active?.imageId, ...value.audit.map(entry => entry?.imageId)].filter(value => value !== null && value !== undefined);
+    for (const id of ids) {
+      if (typeof id !== 'string' || !PORTRAIT_ID_PATTERN.test(id)) fail('BACKUP_INVALID');
+      refs.push({ key: `cms/v1/group-invites/${location[1]}/images/${id}`, hash: id.slice(0, 64) });
+    }
+  }
   if (value.storageVersion === 1 && plain(value.draft) && plain(value.draft.content)) {
     const contents = [value.draft.content, value.published?.content].filter(Boolean);
     for (const content of contents) {
@@ -178,7 +187,8 @@ export async function collectJournalBackupKeys({ objects, journalPrefixes, addit
       totalBytes += item.bytes; if (totalBytes > MAX_TOTAL_BYTES) fail('BACKUP_INVALID');
       for (const ref of objectReferences(item)) if (!keys.has(ref.key)) { keys.add(ref.key); pending.push(ref.key); }
     }
-    if (!keys.size || keys.size > MAX_OBJECTS) fail('BACKUP_INVALID');
+    if (!keys.size) fail('NO_BACKUP_DATA');
+    if (keys.size > MAX_OBJECTS) fail('BACKUP_INVALID');
     return [...keys].sort();
   });
 }

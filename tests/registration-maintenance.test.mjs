@@ -104,3 +104,19 @@ test('backup inventory follows registration record and content portrait referenc
   objects.files.delete(portraitKey);
   await rejects(collectJournalBackupKeys({ objects, journalPrefixes: ['cms/v1/content'] }), 'BACKUP_INVALID');
 });
+
+test('group-invite backup follows current and historical private image IDs without public URLs or bucket listing', async () => {
+  const objects = memoryObjects(), prefix = 'cms/v1/group-invites/ggj-cn-2026';
+  const first = Buffer.from('SYNTHETIC-GROUP-QR-1'), second = Buffer.from('SYNTHETIC-GROUP-QR-2');
+  const digest = value => createHash('sha256').update(value).digest('hex');
+  const ids = [digest(first) + '.png', digest(second) + '.png'];
+  await objects.putImmutable(prefix + '/images/' + ids[0], first, { contentType: 'image/png' });
+  await objects.putImmutable(prefix + '/images/' + ids[1], second, { contentType: 'image/png' });
+  const state = createObjectJournal({ objects, prefix: prefix + '/state' });
+  await state.commit((await state.read()).cursor, { schemaVersion: 1, kind: 'registration_group_invite', eventId: 'ggj-cn-2026', revision: 2,
+    active: { imageId: ids[1] }, audit: [{ action: 'replace', imageId: ids[0] }, { action: 'replace', imageId: ids[1] }] });
+  const keys = await collectJournalBackupKeys({ objects, journalPrefixes: [prefix + '/state'] });
+  assert.equal(keys.length, 4); assert.ok(keys.includes(prefix + '/images/' + ids[0])); assert.ok(keys.includes(prefix + '/images/' + ids[1]));
+  const key = generateBackupKey(); assert.equal((await createEncryptedObjectBackup({ objects, keys, key, clock: now })).objectCount, 4);
+  await rejects(createEncryptedObjectBackup({ objects, keys: keys.filter(value => !value.endsWith(ids[0])), key, clock: now }), 'BACKUP_INVALID');
+});

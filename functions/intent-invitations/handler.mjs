@@ -9,7 +9,7 @@ export function isIntentInvitationPath(path) {
     || /^\/api\/admin\/contacts\/[A-Za-z0-9][A-Za-z0-9_-]{0,79}\/(?:invitation|assignments)$/u.test(path)
     || /^\/api\/admin\/intent-invitations\/[A-Za-z0-9][A-Za-z0-9_-]{0,99}\/manual-sent$/u.test(path);
 }
-async function body(request) {
+export async function readIntentBody(request, maxBytes = 32 * 1024) {
   if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/iu.test(request.headers.get('content-type') ?? '')
     || request.headers.has('content-encoding')) throw failure('INVALID_INPUT', 400);
   const reader = request.body?.getReader(); let size = 0; const chunks = [];
@@ -22,7 +22,7 @@ async function body(request) {
     if (signal.aborted) throw failure('INVALID_INPUT', 400);
     if (reader) while (true) {
       const part = await Promise.race([reader.read(), abort]); if (part.done) break;
-      if (!(part.value instanceof Uint8Array) || (size += part.value.byteLength) > 32 * 1024) throw failure('INVALID_INPUT', 400);
+      if (!(part.value instanceof Uint8Array) || (size += part.value.byteLength) > maxBytes) throw failure('INVALID_INPUT', 400);
       chunks.push(part.value);
     }
     const declared = request.headers.get('content-length');
@@ -50,7 +50,7 @@ export function createIntentInvitationApi({ service, authenticate, permissionRef
       if (request.method !== 'GET' && !equalToken(request.headers.get('x-csrf-token'), session.csrfToken)) throw failure('FORBIDDEN', 403);
       if (url.pathname === '/api/admin/intent-invitations' && request.method === 'GET') return json(await service.read({ actor }));
       if (request.method !== 'POST') return json({ error: { code: 'METHOD_NOT_ALLOWED', message: '此操作只接受明确提交。' } }, 405);
-      const input = await body(request);
+      const input = await readIntentBody(request);
       if (url.pathname === '/api/admin/contacts/convert') {
         shape(input, ['contactIds', 'expectedContactRevision']);
         return json(await service.convertContacts({ ...input, actor, permissionReference }));

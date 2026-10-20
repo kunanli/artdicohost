@@ -187,16 +187,16 @@ test('HTTP conversion/invitation routes enforce authentication, Origin, CSRF, fi
 
 test('migration plans preserve original schema identities, source and private state and refuse conflicts or silent manual recreation', async () => {
   const f = await fixture(), roster = await f.contactsStore.read();
-  const snapshot = JSON.stringify({ storageVersion: 1, revision: roster.revision, contacts: roster.contacts, audit: [] });
+  const snapshot = JSON.stringify((await f.journalFor('cms/v1/contacts').read()).value);
   const plan = prepareIntentContactImport({ snapshot });
   assert.equal(plan.canCommit, true); assert.equal(plan.summary.added, 1); assert.deepEqual(plan.rows[0].contact, f.contact);
   assert.equal(plan.digest, hash(snapshot));
   assert.equal(prepareIntentContactImport({ snapshot, existingContacts: roster.contacts }).summary.unchanged, 1);
   const changed = structuredClone(roster.contacts); changed[0].profile.name = '合成变更';
-  assert.equal(prepareIntentContactImport({ snapshot, existingContacts: changed }).canCommit, false);
+  assert.equal(prepareIntentContactImport({ snapshot, existingContacts: changed }).summary.unchanged, 1);
   const malformed = JSON.parse(snapshot); malformed.contacts[0].id = 'c_wrong';
   assert.throws(() => prepareIntentContactImport({ snapshot: JSON.stringify(malformed) }));
-  const importer = createIntentContactImporter({ contactsStore: f.contactsStore });
-  await assert.rejects(importer.commit({ snapshot, expectedDigest: plan.digest, expectedContactRevision: 1, actor }), { code: 'STORAGE_UNAVAILABLE' });
+  const importer = createIntentContactImporter({ contactsStore: { read: f.contactsStore.read } });
+  await assert.rejects(importer.commit({ kind: 'snapshot', snapshot, originalSha256: plan.digest, expectedRevision: 1, actor }), { code: 'INVALID_INPUT' });
   assert.deepEqual(await f.contactsStore.read(), roster);
 });

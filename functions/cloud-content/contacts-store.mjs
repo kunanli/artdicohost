@@ -4,6 +4,7 @@ import { CONTACT_SCHEMA_VERSION, MAX_CONTACTS, INVITATION_CHANNELS, validateImpo
   validateStoredContact, validateContactOperations, validateInvitationSettings, createEmptyContactOperations } from '../../shared/contacts-schema.mjs';
 import { validateManualContactProfile, validateContactProfileEdit, guestPrefillFromContact } from '../../shared/contact-editor.mjs';
 import { CloudContentError } from './errors.mjs';
+import { readMigrationSource } from '../intent-invitations/contact-snapshot.mjs';
 
 export const MAX_CONTACT_STATE_BYTES = 1024 * 1024;
 export const MAX_CONTACT_AUDIT_ENTRIES = 1000;
@@ -46,7 +47,8 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
     throw unavailable();
   }
   function stateValue(input) {
-    if (!keys(input, ['storageVersion', 'revision', 'contacts', 'audit']) || input.storageVersion !== CONTACT_SCHEMA_VERSION
+    const archiveFields = Object.hasOwn(input ?? {}, 'migrationArchives') ? ['migrationArchives'] : [];
+    if (!keys(input, ['storageVersion', 'revision', 'contacts', 'audit', ...archiveFields]) || input.storageVersion !== CONTACT_SCHEMA_VERSION
       || !revision(input.revision) || !Array.isArray(input.contacts) || input.contacts.length > MAX_CONTACTS
       || !Array.isArray(input.audit) || input.audit.length > MAX_CONTACT_AUDIT_ENTRIES
       || input.audit.length !== input.revision || size(input) > MAX_CONTACT_STATE_BYTES) throw unavailable();
@@ -79,8 +81,43 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
       if (ids.has(contact.id) || identities.has(identity)) throw unavailable();
       ids.add(contact.id); identities.add(identity);
     }
-    const created = new Set(), last = new Map(), generated = new Map(), sent = new Map(); let at = '';
+    const archives = new Map(), archivedIds = new Set();
+    if (archiveFields.length) {
+      if (!Array.isArray(input.migrationArchives) || input.migrationArchives.length > 20) throw unavailable();
+      for (const archive of input.migrationArchives) {
+        if (!keys(archive, ['digest', 'snapshot', 'sourceKind', 'sourceFileSha256', 'payloadSha256', 'importedAt', 'actorId', 'contactIds'])
+          || !SHA.test(archive.digest) || typeof archive.snapshot !== 'string' || hash(archive.snapshot) !== archive.digest
+          || !['snapshot', 'rows'].includes(archive.sourceKind) || !SHA.test(archive.sourceFileSha256) || !SHA.test(archive.payloadSha256)
+          || !iso(archive.importedAt) || !ACTOR.test(archive.actorId) || !Array.isArray(archive.contactIds) || !archive.contactIds.length
+          || archive.contactIds.some(id => !ID.test(id) || !ids.has(id)) || new Set(archive.contactIds).size !== archive.contactIds.length
+          || archives.has(archive.digest)) throw unavailable();
+        let original; try { original = readMigrationSource(archive.snapshot, archive.sourceKind, archive.sourceFileSha256, archive.payloadSha256); } catch { throw unavailable(); }
+        const baselines = new Map(original.contacts.map(contact => [contact.id, contact]));
+        for (const id of archive.contactIds) {
+          const baseline = baselines.get(id), current = input.contacts.find(contact => contact.id === id);
+          if (!baseline || archivedIds.has(id) || !isDeepStrictEqual(current.source, baseline.source) || current.createdAt !== baseline.createdAt
+            || baseline.updatedAt > archive.importedAt || current.updatedAt < baseline.updatedAt) throw unavailable();
+          archivedIds.add(id);
+        }
+        archives.set(archive.digest, { archive, baselines });
+      }
+    }
+    const usedArchives = new Set(), created = new Set(), last = new Map(), generated = new Map(), sent = new Map(); let at = '';
     for (const [index, entry] of input.audit.entries()) {
+      if (entry.action === 'import_contacts') {
+        if (!keys(entry, ['action', 'actorId', 'revision', 'at', 'archiveDigest', 'contactIds']) || entry.revision !== index + 1
+          || !ACTOR.test(entry.actorId) || !iso(entry.at) || entry.at < at || !archives.has(entry.archiveDigest) || usedArchives.has(entry.archiveDigest)) throw unavailable();
+        const { archive, baselines } = archives.get(entry.archiveDigest);
+        if (archive.actorId !== entry.actorId || archive.importedAt !== entry.at || !isDeepStrictEqual(archive.contactIds, entry.contactIds)) throw unavailable();
+        for (const id of archive.contactIds) {
+          const baseline = baselines.get(id);
+          if (created.has(id)) throw unavailable();
+          created.add(id); last.set(id, baseline.updatedAt);
+          if (baseline.invitation.generatedAt) generated.set(id, { at: baseline.invitation.generatedAt, settingsDigest: hash(JSON.stringify(baseline.invitation.settings)) });
+          if (baseline.invitation.sentAt) sent.set(id, { at: baseline.invitation.sentAt, generatedAt: baseline.invitation.sentGenerationAt, channel: baseline.invitation.channel });
+        }
+        usedArchives.add(entry.archiveDigest); at = entry.at; continue;
+      }
       const extra = entry.action === 'create_contact' ? ['consentSource', 'contactConsent', 'sourceDigest']
         : entry.action === 'record_invitation_manually_sent' ? ['channel']
           : entry.action === 'record_invitation_generated' ? ['settingsDigest'] : [];
@@ -103,7 +140,7 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
       }
       at = entry.at; last.set(entry.contactId, entry.at);
     }
-    if (created.size !== ids.size || input.contacts.some(contact => last.get(contact.id) !== contact.updatedAt)) throw unavailable();
+    if (created.size !== ids.size || usedArchives.size !== archives.size || input.contacts.some(contact => last.get(contact.id) !== contact.updatedAt)) throw unavailable();
     for (const contact of input.contacts) {
       const invitation = contact.invitation, generation = generated.get(contact.id), delivery = sent.get(contact.id);
       if (invitation.generatedAt !== (generation?.at ?? null)
@@ -168,6 +205,39 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
   }
   return {
     read: async () => { const { state } = await load(); return structuredClone({ revision: state.revision, contacts: state.contacts }); },
+    importContacts: async ({ expectedRevision, snapshot, sourceKind, sourceFileSha256, sourceDigest, actorId, allowPossibleDuplicates = false } = {}) => {
+      if (!revision(expectedRevision) || !ACTOR.test(actorId ?? '') || !['snapshot', 'rows'].includes(sourceKind)
+        || !SHA.test(sourceFileSha256 ?? '') || !SHA.test(sourceDigest ?? '') || typeof allowPossibleDuplicates !== 'boolean') throw new CloudContentError('VALIDATION_ERROR', '导入来源或修订号无效。', 422);
+      let original; try { original = readMigrationSource(snapshot, sourceKind, sourceFileSha256, sourceDigest); } catch { throw new CloudContentError('VALIDATION_ERROR', '原始名单、来源摘要或历史审计无效。', 422); }
+      const { state, cursor } = await load();
+      const prior = state.migrationArchives?.find(archive => archive.payloadSha256 === sourceDigest && archive.sourceFileSha256 === sourceFileSha256 && archive.sourceKind === sourceKind);
+      if (prior) return { committed: true, revision: state.revision, sourceDigest, imported: false };
+      if (state.revision !== expectedRevision) throw conflict();
+      const additions = [];
+      for (const contact of original.contacts) {
+        const current = state.contacts.find(item => item.id === contact.id || item.source.key === contact.source.key && item.source.rowId === contact.source.rowId);
+        if (current) {
+          if (current.id !== contact.id || current.source.digest !== contact.source.digest) throw conflict();
+        } else additions.push(contact);
+      }
+      if (!additions.length) return { committed: true, revision: state.revision, sourceDigest, imported: false };
+      if (state.contacts.length + additions.length > MAX_CONTACTS || state.audit.length >= MAX_CONTACT_AUDIT_ENTRIES) throw capacity();
+      for (const contact of additions) {
+        const duplicate = [...state.contacts, ...additions].some(other => other.id !== contact.id
+          && (contact.profile.email && other.profile.email.toLowerCase() === contact.profile.email.toLowerCase()
+            || contact.profile.wechat && other.profile.wechat.toLowerCase() === contact.profile.wechat.toLowerCase()));
+        if (duplicate && !allowPossibleDuplicates) throw new CloudContentError('DUPLICATE_REVIEW_REQUIRED', '请核对重复联络资料并明确保留为不同对象后再导入。', 422);
+      }
+      const at = timestamp(state), digest = hash(snapshot), contactIds = additions.map(contact => contact.id);
+      if (additions.some(contact => contact.updatedAt > at)) throw new CloudContentError('VALIDATION_ERROR', '来源记录时间晚于受控服务器时间。', 422);
+      state.contacts.push(...structuredClone(additions));
+      state.migrationArchives ??= [];
+      state.migrationArchives.push({ digest, snapshot, sourceKind, sourceFileSha256, payloadSha256: sourceDigest, importedAt: at, actorId, contactIds });
+      state.revision++;
+      state.audit.push({ action: 'import_contacts', actorId, revision: state.revision, at, archiveDigest: digest, contactIds });
+      await commit(cursor, state);
+      return { committed: true, revision: state.revision, sourceDigest, imported: true };
+    },
     createContact: (expected, input, actorId) => mutate(expected, actorId, (state, at) => {
       if (state.contacts.length >= MAX_CONTACTS) throw capacity();
       const profile = checked(validateManualContactProfile(input));

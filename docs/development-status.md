@@ -15,7 +15,7 @@
 
 | 工作 | 分支／已知提交 | 当前交付与下一步 |
 | --- | --- | --- |
-| 原聊天修复 | PR #25，main `03c766a`；来源 `f8b9afd` | 补受控账号缺项诊断及交接；新 main 实际发布／配置结果由主维护者补入本文，不能沿用旧失败运行判断新状态 |
+| 原聊天修复 | PR #25，main `03c766a`；来源 `f8b9afd` | [Actions 39448880855](https://github.com/kunanli/artdicohost/actions/runs/39448880855) 各任务成功，owner 配置保持关闭；这不代表扩展功能或真实私有储存已验收 |
 | 报名服务 | `feat/registration-service`，`7894767` | 共享私有 OSS、Token、总容量、幂等提交、工作人员部分资料登记与来源查询；需合并、完整回归及真实云端验收 |
 | 审核与生命周期 | `feat/registration-review`，`6c0365e` 起 | 私密审核、统计、受控导出、撤回和删除请求；当前详细状态以该分支后续提交为准 |
 | 公开报名和后台界面 | `feat/admin-completion` | 公开传输、真实成功／失败、审核与意向转报名／邀请操作由界面维护者继续集成 |
@@ -49,15 +49,21 @@ HTTP 路由均在 `https://api.artdico.host`，需要可信会话、服务端角
 
 ## 真实 39 笔资料的恢复与迁移
 
-旧聊天曾将真实 39 笔资料写入其忽略目录；**当前新环境没有这份 contacts.json 或原上传文件**。不能创建 39 个占位联系人，也不能将测试夹具冒充恢复结果。需要从原聊天／原工作区恢复原文件或用户重附原件，并核对来源记录；已有代码和构建不包含该私密文件。
+用户已重新提供原始 **39 行文字选项 XLSX**。已用既有 `readSheet`／`parseContactImport` 映射原来源序号和答案，并由新增导入 schema 验证恰为 39 行；准确原文件 SHA-256、受控请求及准备元信息仅保存于主工作区忽略目录 `.local-data/private-intent-import/`（目录 0700、文件 0600）。未打印姓名／联络方式，不将真实资料作测试夹具。**云端迁移、转报名和邀请发送仍待真正执行**，准备文件不等于已完成操作。
 
-新增 `prepareIntentContactImport` 只解析明确提供的原 contacts.json 字串，依据原 `CONTACT_SCHEMA_VERSION`、`validateStoredContact`、稳定 source key／row ID／hash 与来源快照校验，保留原始资料、安排及邀请历史。相同记录 unchanged，来源冲突整批阻挡，邮箱／微信疑似重复须明确核对，不模糊合并姓名。
+旧聊天的本机 contacts.json 尚未恢复，因此其历史跟进、实际回复和人工发出记录不能从重新上传的原问卷推断或重建。问卷行保留历史意向；新私密 operations 从 pending、未安排和未发出开始。若之后取得原 contacts.json，可按下一段的严格快照路径核对；不得覆盖已合法编辑的新记录。
 
-`createIntentContactImporter` 只向具备 `importContacts` 原子契约的注入储存提交：须保留来源与旧私密 audit，并确认新 revision／snapshot digest；当前原 cloud contactsStore **尚无此方法**。不通过逐条 createContact 重建来源、不悄悄改成 manual，不把旧本机 Map preview token 当作云端共享能力。主维护者必须补齐兼容的云端迁移存储／真实资料恢复后，才能记录“39 笔已迁移／已转报名”。
+`prepareIntentContactImport` 解析明确提供的原 contacts.json 字串，依据原 `CONTACT_SCHEMA_VERSION`、精确字段、稳定 source key／row ID／hash 与完整已知历史 audit 校验，保留原始资料、安排及邀请历史。未知 audit action／字段、伪造创建、被改动的来源 hash 或不一致的邀请历史均拒绝。相同来源记录 unchanged，并保留导入后合法编辑；来源 digest 冲突整批阻挡，邮箱／微信疑似重复须明确核对，不模糊合并姓名。
+
+`createIntentContactImporter` 与 cloud contactsStore 的 `importContacts` 已实现单一 journal CAS 导入。快照在独立 migrationArchives 中逐字保留原审计，并有原文件／payload／snapshot SHA-256、实际导入者、时间和明确 contact IDs；云端新增真实 import_contacts 事件，不伪造 create_contact 历史。后续每次读取重新校验档案及状态关系；日志仍遵守 1 MiB 单状态与 1000 条审计上限，超限拒绝写入。
+
+原问卷 XLSX 可由现有浏览器解析器读成规范 rows；请求同时提供原文件 bytes 的 base64 与 SHA-256。服务器验证实际上传 bytes 的 hash、原来源行号、逐字段 schema 及规范 rows digest，再由工作人员明确确认原件和映射。这里的「行与 XLSX 对照」是工作人员审阅的浏览器规范化，不宣称服务器另行解析过 Excel；原文件 bytes 经 hash 后不重复保存在云端。unknown／declined 的联系同意不会因导入被改成 consented，历史预计到场不会自动变成 confirmed。
+
+`POST /api/admin/contacts/import/preview` 接受 `{kind:'snapshot',snapshot,originalSha256}` 或 `{kind:'rows',sourceKey,rows,sourceFileBase64,originalSha256}`；返回与来源 digest、当前 revision 和操作者绑定的 previewToken、expectedRevision、固定 counts，rows 为空。`POST /api/admin/contacts/import` 重送同一来源，并提供 expectedRevision、previewToken、confirmSource:true、allowPossibleDuplicates。两者需要 outreach／superadmin、准确 Origin、会话及 CSRF。没有仅存在单实例的 Map token；来源变更和过期修订不会静默写入。未知 ACK 不自动重送，明确重试可只读确认同一已提交迁移。源文件上限 2 MiB，传输正文上限 3 MiB，最终私密日志容量仍独立核对。
 
 ## 本阶段验证与剩余验收
 
-意向／邀请新增测试目前为 18 项全部通过、零失败／跳过：来源转换与重建幂等、未授权／过期修订／拒绝对象、确认活动邀请、人工发出分离、明确邮件意图、竞争仅一 provider 调用、丢 ACK 不重发、已受理但缺关联的恢复、预留后再核对同意／审核、撤回／删除阻挡、稳定场次分配、HTTP 权限／Origin／CSRF／字段白名单、旧名单迁移拒绝路径，以及固定 EmailJS 请求／寄件限制／有界响应／timeout。212 文件源码扫描通过，diff 检查通过。另以真实新 registration service 及本模块组合，验证部分来源资料、不伪造申请人同意、持久关联、重建幂等及确认活动邀请。测试全部使用合成资料及注入 provider；没有真实发信、读取原联系人或请求真实 OSS。
+意向／邀请首批 18 项测试及导入 8 项测试全部通过；连同既有 cloud contacts 12 项回归共 **38 项通过、零失败／跳过**，导入后 215 文件源码扫描与 diff 检查通过。覆盖来源转换与重建幂等、权限／修订／拒绝对象、确认活动邀请、人工发出分离、邮件明确意图、竞争仅一调用、未知 ACK 不重发、收据恢复、预留后复核、撤回／删除、场次分配，以及严格快照／原文件 hash／归档 audit、导入后编辑、重放不覆盖、原始同意保留、重复联络审阅和单一迁移竞争。组合完整检查由主维护者继续记录。另以真实新 registration service 与本模块组合验证了部分来源资料、保留 staff provenance／无申请人同意、持久关联和手动邀请。测试全部用合成资料及注入 provider；实际 39 行仅用于用户授权的私密准备和无写入 schema 校验，没有真实发信或真实 OSS 请求。
 
 合并后仍须记录：完整套件、源码检查、Astro 检查／四页构建、依赖审计、实际候选包验证、浏览器端到端、准确 main 的公开 OSS 回读和 FC 三次签名 SHA、受控配置读回、隔离真实 OSS／会话／并发／发布撤回结果。真实邮件要取得已配置 provider 的可核对接受结果；未知发送状态需人工处理，不以重跑 job 自动再发。备份／恢复／删除／容量维护与源文件丢失仍是明确交付项，不能因本阶段通过而删除待办。
 

@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 15
     env:
       ASTRO_TELEMETRY_DISABLED: "1"
+      PUBLIC_API_BASE: "https://api.artdico.host"
+      PUBLIC_CONTENT_API_ORIGIN: "https://api.artdico.host"
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -119,7 +121,7 @@ jobs:
 
   deploy:
     name: Publish public site to Hong Kong OSS
-    needs: check
+    needs: [check, deploy-fc]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'kunanli/artdicohost' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15

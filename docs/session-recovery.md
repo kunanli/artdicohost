@@ -14,7 +14,7 @@
 
 - 前轮未发布四档修正从 GitHub tree `5c8337e6c0094575e4076ce453c5f1de4336bfdf` 恢复，内容与来源逐项核对。
 - [PR #25](https://github.com/kunanli/artdicohost/pull/25) 已合并为 `03c766a2cbe32a90f42ec5f8c0e0bc464001920d`；[PR CI](https://github.com/kunanli/artdicohost/actions/runs/39448120552) 的 449 项测试全部通过，构建／依赖稽核／两个包的离线 smoke 通过。
-- [main 发布 39448880855](https://github.com/kunanli/artdicohost/actions/runs/39448880855) 正在核对；账号配置与内容启用是不同步骤，不能由健康回读推论业务已开。
+- [main 发布 39448880855](https://github.com/kunanli/artdicohost/actions/runs/39448880855) 的检查、公开 OSS、FC 代码与受控账号配置均成功；FC 三次签名健康标记为同一完整提交。账号配置已确认，内容仍关闭，真实 OSS 的独立验收在下一批代码中接续。
 
 ## 进行中的代码分工
 

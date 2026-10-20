@@ -2,6 +2,7 @@ import { validateContent, toPublicContent } from '../../shared/content-schema.mj
 import { showcaseSummary } from '../../shared/showcase-display.mjs';
 import { createArrangementsView } from './arrangements-view.mjs';
 import { createInitialPresentation } from '../config/content.mjs';
+import { completeBoothSlots } from '../lib/booth-slots.mjs';
 
 const $ = selector => document.querySelector(selector);
 const status = $('[data-admin-status]');
@@ -68,7 +69,7 @@ function lockControls() {
   $('[data-guest-submit]').disabled = busy || portraitUploading || coverUploading || !canEdit();
   $('[data-guest-portrait-file]').disabled = busy || !canEdit();
   $('[data-guest-portrait-remove]').disabled = busy || !canEdit();
-  for (const node of document.querySelectorAll('[data-admin-save],[data-admin-add-session],[data-admin-add-booth],[data-admin-add-guest],[data-admin-add-showcase],[data-row-action]')) node.disabled = busy || portraitUploading || coverUploading || !canEdit();
+  for (const node of document.querySelectorAll('[data-admin-save],[data-admin-add-session],[data-admin-add-booth],[data-admin-fill-booths],[data-admin-add-guest],[data-admin-add-showcase],[data-row-action]')) node.disabled = busy || portraitUploading || coverUploading || !canEdit();
   $('[data-admin-publish]').disabled = busy || portraitUploading || coverUploading || !canPublish() || dirty;
   $('[data-admin-preview]').disabled = busy || !draft;
   $('[data-admin-logout]').disabled = busy || portraitUploading || coverUploading;
@@ -221,7 +222,10 @@ function render() {
     const codeCell = cell(row, '编号', item.code);
     codeCell.append(node('small', item.slotNumber ? String(item.slotNumber).padStart(2,'0')+' 号位置' : '未指定位置', 'ah-admin-row-format'));
     cell(row, '出席单位', item.organization || '待确认');
-    cell(row, '展示内容', item.project || '待确认');
+    const projectCell=cell(row, '展示内容', item.project || '待确认');
+    if(item.description)projectCell.append(node('small',item.description));
+    const contactCell=cell(row,'负责人 / 联系方式',item.contactName||'负责人待填写');
+    contactCell.append(node('small',item.contactMethods||'联系方式待填写 · 不公开'));
     cell(row, '场地', item.zone + ' 区');
     cell(row, '状态', { pending: '待确认', confirmed: '已确认', cancelled: '已取消' }[item.status]);
     rowActions(row, 'booth', item);
@@ -723,6 +727,16 @@ $('[data-admin-preview]').addEventListener('click', () => { try { previewPublic(
 $('[data-admin-preview-close]').addEventListener('click', () => { $('[data-admin-preview-panel]').hidden = true; });
 $('[data-admin-add-session]').addEventListener('click', () => openEditor('session'));
 $('[data-admin-add-booth]').addEventListener('click', () => openEditor('booth'));
+$('[data-admin-fill-booths]').addEventListener('click',()=>{
+  if(!canEdit()||busy||portraitUploading||coverUploading||!draft)return;
+  try{
+    const result=completeBoothSlots(draft.content.booths);
+    if(!result.created){announce('十五个位置已有待确认或已确认展位，未新增重复记录。');return;}
+    const candidate={...draft.content,booths:result.booths};const validation=validateContent(candidate);
+    if(!validation.valid)throw new Error([...new Set(Object.values(validation.errors))].join(' '));
+    draft.content=validation.value;setDirty(true);render();announce('已在本页草稿补齐 '+result.created+' 个待确认展位位置。机构、负责人、联系方式与展示内容仍待填写，请核对后保存。');
+  }catch(error){announce(error.message||'展位位置未补齐，请核对资料。',true);}
+});
 $('[data-admin-add-guest]').addEventListener('click', () => openEditor('guest'));
 $('[data-admin-add-showcase]').addEventListener('click', () => openEditor('showcase'));
 $('[data-showcase-form]').addEventListener('submit', event => submitEditor('showcase', event));

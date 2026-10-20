@@ -45,6 +45,11 @@ test('configured closed registration is explicit and can never submit a new reco
   assert.deepEqual(await client.configure(),{enabled:false,reason:'closed'});
   await assert.rejects(client.submit({name:'合成'}));assert.deepEqual(calls,['GET']);
 });
+test('closed registration keeps a complete approved privacy notice available for existing applicants',async()=>{
+  const client=createRegistrationClient({apiOrigin:'https://api.artdico.host',pageOrigin:'https://artdico.host',fetchFn:async()=>json({...policy,enabled:false,reason:'closed'})});
+  const result=await client.configure();assert.equal(result.enabled,false);assert.equal(result.privacy.rightsRequest,policy.privacy.rightsRequest);
+  await assert.rejects(client.submit({name:'合成'}));
+});
 test('unknown save acknowledgement preserves the exact key and payload for explicit retry',async()=>{
   let attempts=0;
   const f=fixture(()=>{if(++attempts===1)throw new Error('PRIVATE-SYNTHETIC-TRANSPORT');return json({status:'registered',reference_code:reference},200);});

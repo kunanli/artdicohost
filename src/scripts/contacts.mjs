@@ -17,6 +17,8 @@ let intentState = null;
 let importSource = null;
 const selectedContacts = new Set();
 let visibleContactIds = [];
+let pendingContactId=null,sessionGeneration=0;
+if(location.hash.startsWith('#contact=')){try{const id=decodeURIComponent(location.hash.slice(9));if(/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(id))pendingContactId=id;}catch{}history.replaceState(null,'',location.pathname+location.search);}
 const consentLabels = { unknown: '尚未核实', consented: '已明确同意联络', declined: '不同意联络' };
 
 function matchesSavedInvitation() {
@@ -77,11 +79,14 @@ function lock() {
   $('[data-contacts-selected]').textContent = '已选 '+selectedContacts.size+' 位';
 }
 async function request(path, options = {}) {
+  const generation=sessionGeneration;
   const headers = { Accept: 'application/json' };
   if (options.body) headers['Content-Type'] = 'application/json';
   if (options.method && options.method !== 'GET' && csrfToken) headers['X-CSRF-Token'] = csrfToken;
   const response = await fetch(path, { ...options, headers, credentials: 'same-origin', cache: 'no-store' });
+  if(generation!==sessionGeneration)throw new Error('会话已改变，请重新登录。');
   const result = await response.json().catch(() => ({}));
+  if(generation!==sessionGeneration)throw new Error('会话已改变，请重新登录。');
   if (!response.ok) {
     if (response.status === 401 && path !== '/api/admin/login') clearPrivateState();
     const details = result.error?.fields ? [...new Set(Object.values(result.error.fields))].join(' ') : '';
@@ -93,7 +98,7 @@ async function action(callback) {
   if (busy) return;
   busy = true; lock();
   try { await callback(); } catch (error) { announce(error.message || '操作未完成。', true); }
-  finally { busy = false; lock(); }
+  finally { busy = false; lock();if(pendingContactId&&user&&contacts.length){const id=pendingContactId;pendingContactId=null;const contact=contactById(id);if(contact)openContact(contact);else announce('关联人员已不在当前名单中，请核对最新资料。',true);} }
 }
 function clearImport() {
   importSource = null;
@@ -107,6 +112,7 @@ function clearImport() {
   $('[data-contacts-file-name]').textContent = '支持原始 Excel 问卷或旧后台 contacts.json 快照';
 }
 function clearPrivateState() {
+  sessionGeneration+=1;
   selectedContacts.clear();intentState=null;visibleContactIds=[];
   user = null; csrfToken = ''; revision = 0; contacts = []; content = null; communications = null; features = { contactImport: false, communicationsPreview: false };
   currentContactId = null; invitationContactId = null; renderedSettings = null; operationsDirty = false;
@@ -266,6 +272,8 @@ function openContact(item){
   detailPair(dl,'联络许可',consentLabels[p.contactConsent]||consentLabels.unknown);
   detailPair(dl,'来源',item.source.key==='manual'?'工作人员手动新增':'问卷导入 · 来源序号 '+item.source.rowId);
   profile.replaceChildren(dl);
+  const linked=intentState?.conversions?.find(value=>value.sourceContactId===item.id);
+  if(linked){const link=node('a','查看已关联报名 · '+linked.referenceCode,'ah-admin-button');link.href='/admin/registrations/#registration='+encodeURIComponent(linked.registrationId);profile.append(link);}
   if(item.sourceProfile){const original=node('details');original.append(node('summary','查看原始来源基本资料（只读）'));const source=node('dl');for(const key of EDITABLE_CONTACT_FIELDS)if(item.sourceProfile[key]&&item.sourceProfile[key]!==p[key])detailPair(source,key,item.sourceProfile[key]);if(!source.childNodes.length)source.append(node('dd','基本资料与原始来源一致。'));original.append(source);profile.append(original);}
   const form=$('[data-contact-form]');form.reset();
   for(const key of ['owner','priority','followUpAt','notes','responseStatus'])form.elements.namedItem(key).value=item.operations[key];

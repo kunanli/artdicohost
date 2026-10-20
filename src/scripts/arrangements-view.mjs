@@ -75,6 +75,7 @@ export function createArrangementsView({ root, load, edit }) {
       const participation = list(person.participationForms).map(value => forms[value]).filter(Boolean).join(' / ');
       if (participation) item.append(node('small', '全活动参与：' + participation));
       if (person.guestId) item.append(editButton('guest', person.guestId, '嘉宾资料'));
+      if(stableId.test(person.contactId??'')){const link=node('a','人员详情与关联报名','ah-arrangements-edit');link.href='/admin/contacts/#contact='+encodeURIComponent(person.contactId);item.append(link);}
       output.append(item);
     }
     return output;
@@ -106,6 +107,8 @@ export function createArrangementsView({ root, load, edit }) {
       return card;
     }
     card.append(node('h4', booth.organization || '机构 / 团队待确认'), node('p', booth.project || '项目待确认'), node('small', booth.code + ' · ' + booth.zone + ' 区', 'ah-arrangements-booth-code'));
+    if(booth.description)card.append(node('p',booth.description,'ah-arrangements-description'));
+    if(booth.contactName||booth.contactMethods){const contact=node('p',undefined,'ah-arrangements-booth-contact');contact.append(node('strong',booth.contactName||'负责人待填写'));if(booth.contactMethods)contact.append(node('span',booth.contactMethods));card.append(contact);}
     if (list(row.people).length) card.append(people(row.people));
     if (list(row.teams).length) card.append(teams(row.teams));
     if (!list(row.people).length && !list(row.teams).length) card.append(node('p', '参与人 / 学生团队尚未关联', 'ah-arrangements-assignment-empty'));

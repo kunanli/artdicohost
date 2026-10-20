@@ -56,13 +56,15 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
       const result = await request('/api/admin/registration/config');
       const value = result.value;
       if (result.status !== 200) throw failure('UNAVAILABLE','正式报名服务暂时不可用，请稍后重试。');
-      if (value?.enabled === false) { config = null; return {enabled:false,reason:value.reason==='closed'?'closed':'unavailable'}; }
+      const complete = value && typeof value.eventId==='string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(value.eventId) && timestamp(value.opensAt) && timestamp(value.closesAt)
+        && Number.isSafeInteger(value.capacity) && value.capacity > 0
+        && PRIVACY_KEYS.every(key => typeof value.privacy?.[key] === 'string' && value.privacy[key].trim().length > 0 && value.privacy[key].length <= 4000)
+        && !/demo|frontend|mock/iu.test(value.privacy.version);
+      const metadata = complete ? {eventId:value.eventId,opensAt:value.opensAt,closesAt:value.closesAt,capacity:value.capacity,privacy:Object.fromEntries(PRIVACY_KEYS.map(key=>[key,value.privacy[key]]))} : {};
+      if (value?.enabled === false) { config = null; return {enabled:false,reason:value.reason==='closed'?'closed':'unavailable',...metadata}; }
       if (value?.enabled !== true) throw failure('CONFIG_INVALID','正式报名配置尚未完整，请稍后再来。');
-      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(value.eventId) || !timestamp(value.opensAt) || !timestamp(value.closesAt)
-        || !Number.isSafeInteger(value.capacity) || value.capacity < 1
-        || !PRIVACY_KEYS.every(key => typeof value.privacy?.[key] === 'string' && value.privacy[key].trim().length > 0 && value.privacy[key].length <= 4000)
-        || /demo|frontend|mock/iu.test(value.privacy.version)) throw failure('CONFIG_INVALID','正式报名配置尚未完整，请稍后再来。');
-      config = structuredClone({enabled:true,eventId:value.eventId,opensAt:value.opensAt,closesAt:value.closesAt,capacity:value.capacity,privacy:Object.fromEntries(PRIVACY_KEYS.map(key=>[key,value.privacy[key]]))});
+      if (!complete) throw failure('CONFIG_INVALID','正式报名配置尚未完整，请稍后再来。');
+      config = structuredClone({enabled:true,...metadata});
       return structuredClone(config);
     },
     async submit(fields) {

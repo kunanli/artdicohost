@@ -99,6 +99,7 @@ async function loadPublishedContent(url) {
     for (const item of content.booths.filter(item => item.status === 'confirmed')) {
       const card = element('article', undefined, 'ah-booth-card');
       card.append(element('span', item.code + ' · ' + item.zone + ' 区', 'ah-kicker'), element('h3', item.organization), element('p', item.project));
+      if(typeof item.description==='string'&&item.description)card.append(element('p',item.description));
       booths.append(card);
     }
     const empty = document.querySelector('[data-public-booths-empty]');

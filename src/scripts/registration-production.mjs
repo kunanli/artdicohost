@@ -16,6 +16,7 @@ function renderPublicPrivacy(){
   }
 }
 document.addEventListener('artdico:registration-ready',event=>{currentPublicPrivacy=event.detail?.privacy??null;currentAvailability={message:'可以，通过本页正式表单提交。实际保存成功后将显示报名编号；住宿、讲者与展位另行确认。'};renderPublicPrivacy();});
+document.addEventListener('artdico:registration-policy',event=>{currentPublicPrivacy=event.detail?.privacy??null;renderPublicPrivacy();});
 document.addEventListener('artdico:registration-unavailable',event=>{currentAvailability=event.detail;renderPublicPrivacy();});
 document.addEventListener('artdico:public-content-updated',renderPublicPrivacy);
 
@@ -80,6 +81,7 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
   },true);
   window.addEventListener('beforeunload', event => { if (client.pending) {event.preventDefault();event.returnValue='';} });
   client.configure().then(value => {
+    if(value?.privacy)document.dispatchEvent(new CustomEvent('artdico:registration-policy',{detail:{privacy:value.privacy}}));
     if (!value || value.enabled !== true) { unavailable(value?.reason??'unavailable'); return; }
     config = value;
     const details = section.querySelector('[data-registration-policy-details]');

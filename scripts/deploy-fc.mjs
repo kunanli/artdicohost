@@ -7,6 +7,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertCurrentMainHead } from './deploy-oss.mjs';
 import { verifyFcPublication } from './verify-fc-package.mjs';
+import { summarizeFcError } from './fc-client.mjs';
 
 export const FC_FUNCTION_NAME = 'artdicohost-api';
 export const FC_REGION = 'cn-hongkong';
@@ -71,7 +72,11 @@ export async function deployFc({ directory, repositoryDirectory, env = process.e
       const result = await Promise.race([Promise.resolve().then(() => operation(controller.signal)), aborted]);
       if (performance.now() >= deadline) { controller.abort(); throw deadlineError(); }
       return result;
-    } catch { throw controller.signal.aborted ? deadlineError() : new Error(message); }
+    } catch (error) {
+      if (controller.signal.aborted) throw deadlineError();
+      const diagnostic = summarizeFcError(error);
+      throw new Error(message + (diagnostic ? ` [${diagnostic}]` : ''));
+    }
     finally { controller.signal.removeEventListener('abort', onAbort); }
   }
   const currentMain = () => bounded(signal => assertCurrentMainHead(env, (url, options) => fetchHead(url, { ...options, signal: AbortSignal.any([options.signal, signal]) })), 'Cannot verify that this run is the current main commit; no FC code was updated.');

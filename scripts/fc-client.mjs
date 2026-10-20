@@ -10,9 +10,31 @@ export const MAX_FC_ZIP_BYTES = 64 * 1024 * 1024;
 const VERSION = '2023-03-30';
 const FUNCTION_PATH = `/${VERSION}/functions/${FC_FUNCTION_NAME}`;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
+const MAX_ERROR_BYTES = 16 * 1024;
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const failure = () => new Error('FC request failed; no response or credential details are included');
+const diagnostics = new WeakMap();
+const operations = new Set(['GetFunction', 'UpdateFunction', 'GetTrigger', 'CheckHealth']);
+const phases = new Set(['input', 'signing', 'network', 'timeout', 'aborted', 'http', 'redirect', 'response_type', 'response_size', 'response_read', 'utf8', 'json', 'response_shape', 'trigger_url']);
+const providerCodes = new Set(['AccessDenied', 'Forbidden', 'InvalidArgument', 'InvalidParameter', 'RequestEntityTooLarge', 'TooManyRequests', 'Unauthorized', 'SignatureDoesNotMatch', 'InvalidAccessKeyId', 'SecurityTokenExpired', 'InvalidSecurityToken', 'FunctionNotFound', 'InternalError', 'ServiceUnavailable']);
+function failure(details) {
+  const error = new Error('FC request failed; no response or credential details are included');
+  if (operations.has(details?.operation) && phases.has(details.phase)) {
+    const safe = { operation: details.operation, phase: details.phase };
+    if (Number.isInteger(details.status) && details.status >= 100 && details.status <= 599) safe.status = details.status;
+    if (providerCodes.has(details.code)) safe.code = details.code;
+    diagnostics.set(error, Object.freeze(safe));
+  }
+  return error;
+}
+const preserve = (error, details) => diagnostics.has(error) ? error : failure(details);
+
+/** Only errors created by this module carry diagnostics; arbitrary error properties are ignored. */
+export function summarizeFcError(error) {
+  const details = diagnostics.get(error);
+  if (!details) return null;
+  return `operation=${details.operation} phase=${details.phase}${details.status === undefined ? '' : ` status=${details.status}`}${details.code === undefined ? '' : ` code=${details.code}`}`;
+}
 
 /** Only a root URL returned by this function's authenticated GetTrigger can be used. */
 export function validateFcTriggerUrl(value) {
@@ -57,16 +79,24 @@ export function createFcClient({ region = FC_REGION, credentials, fetchFn = fetc
   } catch { throw new Error('FC client configuration is invalid'); }
   let triggerOrigin = null;
 
-  async function request(url, options, externalSignal) {
-    let reader, response;
+  async function request(operation, url, options, externalSignal) {
+    let reader, response, timeoutSignal, signal, status;
+    let phase = 'network';
     try {
-      const signal = externalSignal ? AbortSignal.any([externalSignal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000);
+      timeoutSignal = AbortSignal.timeout(20_000);
+      signal = externalSignal ? AbortSignal.any([externalSignal, timeoutSignal]) : timeoutSignal;
       if (signal.aborted) throw failure();
       response = await abortable(fetchFn(url, { ...options, redirect: 'error', cache: 'no-store', signal }), signal);
-      if (response.status !== 200 || response.redirected || response.url && response.url !== url
-        || !/^application\/json(?:\s*;|$)/iu.test(response.headers.get('content-type') ?? '')) throw failure();
+      status = response.status;
+      phase = 'redirect';
+      if (response.redirected || response.url && response.url !== url || status >= 300 && status < 400) throw failure();
+      phase = 'response_type';
+      if (!/^application\/json(?:\s*;|$)/iu.test(response.headers.get('content-type') ?? '')) throw failure();
+      const limit = status === 200 ? MAX_RESPONSE_BYTES : MAX_ERROR_BYTES;
+      phase = 'response_size';
       const declared = response.headers.get('content-length');
-      if (declared !== null && (!/^\d+$/u.test(declared) || Number(declared) > MAX_RESPONSE_BYTES)) throw failure();
+      if (declared !== null && (!/^\d+$/u.test(declared) || Number(declared) > limit)) throw failure();
+      phase = 'response_read';
       reader = response.body?.getReader();
       if (!reader) throw failure();
       const chunks = [];
@@ -74,13 +104,27 @@ export function createFcClient({ region = FC_REGION, credentials, fetchFn = fetc
       while (true) {
         const { done, value } = await abortable(reader.read(), signal);
         if (done) break;
-        if (!(value instanceof Uint8Array) || (length += value.byteLength) > MAX_RESPONSE_BYTES) throw failure();
+        if (!(value instanceof Uint8Array) || (length += value.byteLength) > limit) {
+          phase = 'response_size'; throw failure();
+        }
         chunks.push(value);
       }
-      const body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)));
+      phase = 'utf8';
+      const decoded = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
+      phase = 'json';
+      const body = JSON.parse(decoded);
+      phase = 'response_shape';
       if (!plain(body)) throw failure();
-      return { status: response.status, body };
-    } catch { throw failure(); }
+      if (status !== 200) {
+        const code = ['Code', 'code', 'ErrorCode', 'errorCode'].filter(key => Object.hasOwn(body, key)).map(key => body[key]).find(value => providerCodes.has(value));
+        throw failure({ operation, phase: 'http', status, code });
+      }
+      return { status, body };
+    } catch (error) {
+      if (externalSignal?.aborted) throw failure({ operation, phase: 'aborted', status });
+      if (timeoutSignal?.aborted) throw failure({ operation, phase: 'timeout', status });
+      throw preserve(error, { operation, phase, status });
+    }
     finally {
       if (reader) { reader.cancel().catch(() => {}); try { reader.releaseLock(); } catch { /* Aborted readers stay private. */ } }
       else response?.body?.cancel().catch(() => {});
@@ -101,34 +145,37 @@ export function createFcClient({ region = FC_REGION, credentials, fetchFn = fetc
       const canonical = [method, path, '', canonicalHeaders, names.join(';'), sha256(body)].join('\n');
       const signature = createHmac('sha256', accessKeySecret).update('ACS3-HMAC-SHA256\n' + sha256(canonical)).digest('hex');
       headers.authorization = `ACS3-HMAC-SHA256 Credential=${accessKeyId},SignedHeaders=${names.join(';')},Signature=${signature}`;
-      return (await request(FC_API_ENDPOINT + path, { method, headers, ...(body ? { body } : {}) }, signal)).body;
-    } catch { throw failure(); }
+      return (await request(action, FC_API_ENDPOINT + path, { method, headers, ...(body ? { body } : {}) }, signal)).body;
+    } catch (error) { throw preserve(error, { operation: action, phase: 'signing' }); }
   }
 
   return {
     getFunction: options => api('GetFunction', 'GET', FUNCTION_PATH, '', options),
     updateCode: (zipBytes, options) => {
-      if (!(zipBytes instanceof Uint8Array) || !zipBytes.byteLength || zipBytes.byteLength > MAX_FC_ZIP_BYTES) return Promise.reject(failure());
+      if (!(zipBytes instanceof Uint8Array) || !zipBytes.byteLength || zipBytes.byteLength > MAX_FC_ZIP_BYTES) return Promise.reject(failure({ operation: 'UpdateFunction', phase: 'input' }));
       return api('UpdateFunction', 'PUT', FUNCTION_PATH, JSON.stringify({ code: { zipFile: Buffer.from(zipBytes).toString('base64') } }), options);
     },
     getTrigger: async options => {
       triggerOrigin = null;
       const body = await api('GetTrigger', 'GET', FUNCTION_PATH + `/triggers/${FC_TRIGGER_NAME}`, '', options);
-      triggerOrigin = validateFcTriggerUrl(body.httpTrigger?.urlInternet);
+      try { triggerOrigin = validateFcTriggerUrl(body.httpTrigger?.urlInternet); }
+      catch { throw failure({ operation: 'GetTrigger', phase: 'trigger_url' }); }
       return body;
     },
     checkHealth: async (url = triggerOrigin, { signal } = {}) => {
+      let phase = 'trigger_url';
       try {
         const origin = validateFcTriggerUrl(url);
         if (!triggerOrigin || origin !== triggerOrigin) throw failure();
+        phase = 'signing';
         const headers = { host: new URL(origin).host, date: time(clock).toUTCString() };
         if (securityToken !== undefined) headers['x-fc-security-token'] = securityToken;
         const canonicalFc = securityToken === undefined ? '' : `x-fc-security-token:${securityToken}\n`;
         // HTTP trigger v1 signs an empty query object as a trailing newline after the path.
         const canonical = `GET\n\n\n${headers.date}\n${canonicalFc}/healthz\n`;
         headers.authorization = `FC ${accessKeyId}:${createHmac('sha256', accessKeySecret).update(canonical).digest('base64')}`;
-        return await request(origin + '/healthz', { method: 'GET', headers }, signal);
-      } catch { throw failure(); }
+        return await request('CheckHealth', origin + '/healthz', { method: 'GET', headers }, signal);
+      } catch (error) { throw preserve(error, { operation: 'CheckHealth', phase }); }
     },
   };
 }

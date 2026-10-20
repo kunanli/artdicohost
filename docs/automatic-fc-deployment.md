@@ -14,6 +14,10 @@
 - 用户确认启用开关此前放在 **Repository secrets**。工作流读取的是 `vars.ARTDICO_FC_DEPLOY_ENABLED`，所以对应 Repository Variable 不存在时即使 Secret 同名也会略过。用户随后回报已在 **Variables → Repository variables** 保存启用值及账号 ID；实际是否读到须由新运行验证，不读取或取回 Secret 值。
 - 修正设置不会补跑已完成的 job；下一次正常 main push 才会重新求值。手动 workflow_dispatch 仍只检查，不绕过 main 门禁；若 main 前进，以当前 main 最新 push 验收。
 
+最新重试：[Actions 39350373144 / attempt 2](https://github.com/kunanli/artdicohost/actions/runs/39350373144/attempts/2)，来源 `94d7791fe738e3b1167a831aae156dc4ef48b93d`。check job `118401813150` 的 175 项检查与 Debian 11 ZIP 启动验证成功，disabled 提示略过，已确认启用值被读取；OSS job `118402041101` 实际完成 12 个公开对象上传与 SHA-256 回读。FC job `118402041213` 实际执行，在代码更新步骤失败，固定错误为 `FC code update failed; deployment was not verified.`。这不是开关再次略过，亦尚无三次签名健康检查成功结果；不能由更新请求报错推断云端未改变。
+
+失败诊断只允许固定操作 / 阶段、HTTP 状态与白名单服务错误码；不记录远端正文、任意 Message、headers、环境、角色、凭证或原始 cause。未知服务码仅作为未分类错误处理。取得实际类别前，不推定 IAM 不足、包体过大或超时，不放宽原成功校验或自动重送 PUT。
+
 下一次运行须分别取得公开 OSS 回读及 FC 实际更新、连续三次签名 `/healthz` 返回该次完整提交标记的证据；artifact 存在或整体绿色不能代替。部署仍为业务关闭的启动包，没有管理员云端登录、真实报名、私有 OSS 读写或统计能力。
 
 ## 采用的模式

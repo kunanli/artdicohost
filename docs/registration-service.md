@@ -70,3 +70,23 @@ node --test tests/registration-service.test.mjs tests/registration-http.test.mjs
 ```
 
 新增服务文件必须全部进入独立云端包白名单；公开静态包只包含浏览器传输代码，不含受控配置、Token Secret、报名或联系人资料。回退先关闭报名开关，再恢复已验收代码和配置，保留所有私有日志，不用旧索引覆盖新记录。
+
+## 受限微信群码
+
+`createGroupInviteService({objects,journalFor,eventId,tokenSecret,apiOrigin,clock,isWithdrawn})` 使用同一独立报名 Secret 派生用途专属的 HMAC key；报名 Token 不能冒充图片链接。群码保存在独立 `cms/v1/group-invites/<eventId>/images/<sha256>.<ext>` 与 `state/` 日志，不进入公开构建、活动配置或公开 OSS。
+
+`service.forReceipt({receipt,origin})` 只供已核对持久收据的可信报名组合调用，返回当次 `{platform:'wechat',qrImageUrl,expiresAt}` 或 null。URL 绑定活动、报名随机编号、当前群码修订／image hash 和十分钟以内有效期；并受群码实际期限约束。当前 FC 域名已有 `/api/admin/*` 路由，因此默认图片 URL 使用精确别名 `/api/admin/registration/group-invite/<token>`；运行层可映射到标准 `/api/registration/group-invite/<token>`，两种精确路径均由独立图片 handler 验签，不走一般管理员读接口。除此之外没有匿名 current 群码入口。
+
+`createGroupInviteApi({service,auth,apiOrigin,publicOrigins})` 提供：
+
+| 路径 | 方法 | 边界 |
+| --- | --- | --- |
+| `/api/admin/group-invite` | GET | 登录且 superadmin，返回修订、是否配置／到期、大小、MIME、更新时间与私有预览路径 |
+| `/api/admin/group-invite` | POST | 同一角色、准确后台 Origin 与 CSRF；JSON expectedRevision、contentType、dataBase64、expiresAt，替换当前图片 |
+| `/api/admin/group-invite` | PUT | 同样授权；JSON expectedRevision、enabled:false，停用当前图片 |
+| `/api/admin/group-invite/image` | GET、HEAD | 同一管理员会话才可预览，不签发匿名常驻 URL |
+| `/api/registration/group-invite/<token>` 或其精确别名 | GET、HEAD | 有效签名、活动／修订／图片／时间一致且报名未撤回／待删除，才返回图片；无需登录 Cookie |
+
+上传上限 512 KiB、2048×2048，只接受经实际结构／尺寸／压缩边界校验的静态 PNG、JPEG 或 WebP，去除非渲染元数据。这里不扫码加入群，也不验证微信服务端是否提前使二维码失效。到期时间必须是明确偏移的完整 ISO 时间，晚于当前且不超过七天；单独「有效至某日期」不能自动编造具体时刻。修改期限须重新明确上传，停用／替换立即令旧修订链接拒绝，不能用提醒自动延长旧码。
+
+每次图片读取都核验当前日志、图片 hash、期限及撤回状态，读取后再次核对修订。审核／存储失败保持不可用，不输出 provider 错误。所有图片响应 private,no-store、nosniff、no-referrer。已保存报名在群码不可用时仍保留成功编号；未知上传 ACK 只允许重新读取现况，不自动再写。历史私有图片与日志未自动删除，仍纳入维护／删除方案。

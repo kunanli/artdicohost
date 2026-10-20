@@ -28,7 +28,7 @@ async function fixture() {
   } };
   const repository = createIntentInvitationRepository({ journal: journalFor('cms/v1/intent-invitations') });
   const emailProvider = { readiness: () => ({ ready: true, reason: 'SYNTHETIC_PROVIDER' }), async send() { providerCalls++; return { status: providerStatus }; } };
-  const dependencies = { registrationService, contactsStore, contentStore, repository, emailProvider, isRegistrationActive: async () => true, now };
+  const dependencies = { registrationService, contactsStore, contentStore, repository, emailProvider, isRegistrationActive: async () => true, getAdmissionStatus: async () => ({ status: 'confirmed', revision: 0 }), now };
   const service = createIntentInvitationService(dependencies);
   const convert = () => service.convertContacts({ contactIds: [contact.id], expectedContactRevision: 1, actor, permissionReference: '合成用户明确授权转换原始意向。' });
   const invitationInput = channel => ({ contactId: contact.id, expectedContactRevision: 1, expectedRegistrationId: 'r_synthetic', channel, actor, confirmEmail: channel === 'email' });

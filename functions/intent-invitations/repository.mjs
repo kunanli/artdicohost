@@ -40,12 +40,14 @@ function stateValue(value) {
   }
   let previous = '';
   for (const [index, entry] of value.audit.entries()) {
-    const optional = entry?.action === 'convert_contact' && Object.hasOwn(entry, 'projectionWarnings') ? ['projectionWarnings'] : [];
+    const optional = entry?.action === 'convert_contact' && Object.hasOwn(entry, 'projectionWarnings') ? ['projectionWarnings']
+      : entry?.action === 'prepare_invitation' && Object.hasOwn(entry, 'batchId') ? ['batchId'] : [];
     if (!exact(entry, ['revision', 'action', 'actorId', 'sourceContactId', 'invitationId', 'at', ...optional]) || entry.revision !== index + 1
       || !['convert_contact', 'prepare_invitation', 'reserve_email', 'email_result', 'manual_sent'].includes(entry.action)
       || !identifier(entry.actorId) || !identifier(entry.sourceContactId) || !sources.has(entry.sourceContactId)
       || !(entry.invitationId === null || invitations.has(entry.invitationId)) || !iso(entry.at) || entry.at < previous
-      || optional.length && (!Array.isArray(entry.projectionWarnings) || entry.projectionWarnings.some(field => !['website', 'caseLinks'].includes(field))
+      || optional.includes('batchId') && (typeof entry.batchId !== 'string' || !/^b_[a-f0-9]{64}$/u.test(entry.batchId) || entry.invitationId === null)
+      || optional.includes('projectionWarnings') && (!Array.isArray(entry.projectionWarnings) || entry.projectionWarnings.some(field => !['website', 'caseLinks'].includes(field))
         || !isDeepStrictEqual(entry.projectionWarnings, value.conversions.find(item => item.sourceContactId === entry.sourceContactId)?.projectionWarnings))) throw failure();
     previous = entry.at;
   }

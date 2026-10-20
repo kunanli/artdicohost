@@ -1,0 +1,24 @@
+/* Equal presentation for confirmed exhibiting organizations, without invented logos or tiers. */
+#artdico-host.ah-festival .ah-booths h2{font-size:clamp(27px,3cqi,41px)}
+#artdico-host.ah-festival .ah-booths .ah-exhibiting-partners{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));list-style:none;margin:0;padding:0;border-block:1px solid var(--ah-line)}
+#artdico-host.ah-festival .ah-exhibiting-partners>li{min-width:0;min-height:150px;padding:30px 24px;display:flex;flex-direction:column;justify-content:center;gap:12px}
+#artdico-host.ah-festival .ah-exhibiting-partners>li+li{border-left:1px solid var(--ah-line)}
+#artdico-host.ah-festival .ah-exhibiting-partners h3{margin:0;color:var(--ah-ink);font-size:clamp(21px,2.1cqi,30px);font-weight:550;line-height:1.35;letter-spacing:-.035em}
+#artdico-host.ah-festival .ah-exhibiting-partners li>span{font-size:11px;line-height:1.7;letter-spacing:.08em;color:var(--ah-muted)}
+#artdico-host.ah-festival .ah-exhibition-details{margin-top:22px;color:var(--ah-ink)}
+#artdico-host.ah-festival .ah-exhibition-details>summary{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:52px;padding:12px 0;list-style:none;font-size:13px}
+#artdico-host.ah-festival .ah-exhibition-details>summary::-webkit-details-marker{display:none}
+#artdico-host.ah-festival .ah-exhibition-details>summary>span{font-size:23px;line-height:1;color:var(--ah-muted)}
+#artdico-host.ah-festival .ah-exhibition-details[open]>summary>span{transform:rotate(45deg)}
+#artdico-host.ah-festival .ah-exhibition-content{padding-top:12px}
+#artdico-host.ah-festival .ah-exhibition-content>.ah-agenda-caption{max-width:760px;margin:20px 0 0;color:var(--ah-muted);font-size:12px;line-height:1.9}
+@media(max-width:760px){
+ #artdico-host.ah-festival .ah-booths .ah-exhibiting-partners{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #artdico-host.ah-festival .ah-exhibiting-partners>li{min-height:132px;padding:25px 18px}
+ #artdico-host.ah-festival .ah-exhibiting-partners>li:nth-child(odd){border-left:0}
+ #artdico-host.ah-festival .ah-exhibiting-partners>li:nth-child(n+3){border-top:1px solid var(--ah-line)}
+}
+@media(max-width:370px){
+ #artdico-host.ah-festival .ah-exhibiting-partners>li{padding:23px 12px}
+ #artdico-host.ah-festival .ah-exhibiting-partners h3{font-size:20px}
+}

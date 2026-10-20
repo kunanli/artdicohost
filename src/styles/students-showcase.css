@@ -1,0 +1,76 @@
+/* One original concept image; published student work is still to be announced. */
+#artdico-host.ah-festival .ah-students-showcase .ah-showcase-media{
+  margin:0;
+  overflow:hidden;
+  border:1px solid #65594e;
+  background:#24211f;
+}
+#artdico-host.ah-festival .ah-students-showcase .ah-showcase-media>img{
+  display:block;
+  width:100%;
+  height:auto;
+  aspect-ratio:16 / 9;
+  object-fit:cover;
+}
+#artdico-host.ah-festival .ah-students-showcase .ah-showcase-media figcaption{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:10px 24px;
+  padding:24px 28px;
+  border-top:1px solid #65594e;
+}
+#artdico-host.ah-festival .ah-students-showcase .ah-showcase-media h3{
+  margin:0;
+  color:#f1eee8;
+  font-size:clamp(19px,1.8cqi,24px);
+  line-height:1.6;
+  font-weight:500;
+  letter-spacing:-.025em;
+}
+#artdico-host.ah-festival .ah-students-showcase .ah-showcase-media p{
+  margin:0;
+  color:#c0b4a6;
+  font-size:11px;
+  line-height:1.8;
+}
+#artdico-host.ah-festival .ah-students-showcase .ah-showcase-timeline{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:34px;
+  margin-top:32px;
+  padding-top:27px;
+  border-top:1px solid #5c534a;
+}
+#artdico-host.ah-festival .ah-students-showcase .ah-showcase-timeline article{
+  min-width:0;
+}
+#artdico-host.ah-festival .ah-students-showcase .ah-showcase-timeline :is(time,.ah-showcase-time){
+  display:block;
+  color:#d0c7bc;
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+}
+#artdico-host.ah-festival .ah-students-showcase .ah-showcase-timeline h3{
+  margin:12px 0 0;
+  color:#f1eee8;
+  font-size:17px;
+  font-weight:500;
+}
+#artdico-host.ah-festival .ah-students-showcase .ah-showcase-timeline p{
+  margin:7px 0 0;
+  color:#c0b8af;
+  font-size:12px;
+  line-height:1.8;
+}
+@container(max-width:700px){
+  #artdico-host.ah-festival .ah-students-showcase .ah-showcase-media figcaption{align-items:flex-start;flex-direction:column;gap:8px;padding:20px}
+  #artdico-host.ah-festival .ah-students-showcase .ah-showcase-media h3{font-size:20px}
+  #artdico-host.ah-festival .ah-students-showcase .ah-showcase-media p{font-size:10px}
+  #artdico-host.ah-festival .ah-students-showcase .ah-showcase-timeline{grid-template-columns:1fr;gap:23px;margin-top:27px;padding-top:25px}
+  #artdico-host.ah-festival .ah-students-showcase .ah-showcase-timeline article{display:grid;grid-template-columns:112px 1fr;gap:2px 15px}
+  #artdico-host.ah-festival .ah-students-showcase .ah-showcase-timeline :is(time,.ah-showcase-time){grid-row:1 / 3;padding-top:3px;font-size:11px}
+  #artdico-host.ah-festival .ah-students-showcase .ah-showcase-timeline h3{margin:0;font-size:16px}
+  #artdico-host.ah-festival .ah-students-showcase .ah-showcase-timeline p{margin:0;font-size:11px}
+}

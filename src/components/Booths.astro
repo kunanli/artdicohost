@@ -1,12 +1,22 @@
 ---
 import Icon from './Icon.astro';
 import { eventConfig } from '../config/event.mjs';
+import { exhibitingPartners } from '../config/exhibiting-partners.mjs';
+import '../styles/exhibiting-partners.css';
 ---
 <section class="ah-booths ah-section" id="booths" aria-labelledby="booths-heading">
-  <div class="ah-section-heading" id="exhibition"><h2 id="booths-heading">走近作品，遇见创作者。</h2><p>游戏试玩与开放展示 · C 区展位</p></div>
-  <div class="ah-booths-empty" data-public-booths-empty><Icon name="gamepad" /><p>展位与作品名单确认后公布。</p><a class="ah-text-action" href="#registration">我有作品想展示 <span aria-hidden="true">↗</span></a></div>
-  <div class="ah-public-booths" data-public-booths></div>
-  <details class="ah-highlights-detail"><summary>展位申请说明 <span aria-hidden="true">＋</span></summary><p class="ah-agenda-caption">{eventConfig.exhibition.description}</p></details>
+  <div class="ah-section-heading" id="exhibition"><div><span class="ah-kicker">MEET THE COMMUNITIES</span><h2 id="booths-heading">参展伙伴</h2></div><p>在现场，与这些组织相遇。<br />C 区 · 展示、试玩与交流</p></div>
+  <ul class="ah-exhibiting-partners" aria-label="已确认参展伙伴">
+    {exhibitingPartners.map(partner => <li><h3>{partner.name}</h3><span>现场参展</span></li>)}
+  </ul>
+  <details class="ah-exhibition-details">
+    <summary>现场展位与作品 <span aria-hidden="true">＋</span></summary>
+    <div class="ah-exhibition-content">
+      <div class="ah-booths-empty" data-public-booths-empty><Icon name="gamepad" /><p>作品与具体展位安排陆续公布。</p><a class="ah-text-action" href="#registration">我有作品想展示 <span aria-hidden="true">↗</span></a></div>
+      <div class="ah-public-booths" data-public-booths></div>
+      <p class="ah-agenda-caption">{eventConfig.exhibition.description}</p>
+    </div>
+  </details>
 </section>
 <style>
   .ah-booths-empty{padding:29px;background:#f5f7fb;border:1px solid #e4e8ef;border-radius:14px;color:#667187;text-align:center;font-size:13px}

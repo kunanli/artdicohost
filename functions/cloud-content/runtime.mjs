@@ -100,7 +100,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   let registrationService, reviewStore, intentService, groupService;
   const policy = registrationPolicy(env);
   if (policy) {
-    const isWithdrawn = async id => { const { review } = await reviewStore.detail(id); return review.status === 'withdrawn' || review.deletionRequested !== null; };
+    const isWithdrawn = id => reviewStore.isWithdrawn(id);
     groupService = createGroupInviteService({ objects, journalFor, eventId: policy.eventId, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET,
       apiOrigin: CLOUD_API_ORIGIN, clock: now, isWithdrawn });
     registrationService = createRegistrationService({ objects, journalFor, policy, capacity: policy.capacity,
@@ -111,7 +111,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     intentService = createIntentInvitationService({ registrationService, contactsStore, contentStore: store,
       repository: createIntentInvitationRepository({ journal: journalFor('cms/v1/intent-invitations') }),
       emailProvider: createInvitationEmailProvider({ env, fetchFn }), now,
-      isRegistrationActive: async ({ registrationId }) => { const { review } = await reviewStore.detail(registrationId); return review.status !== 'withdrawn' && review.deletionRequested === null; } });
+      isRegistrationActive: async ({ registrationId }) => !await isWithdrawn(registrationId) });
   }
   const registrationHandle = createRegistrationApi({ allowedOrigins: [PUBLIC_SITE_ORIGIN], submissionService: registrationService, allowedGroupInviteOrigins: [CLOUD_API_ORIGIN], clock: now });
   const groupHandle = createGroupInviteApi({ service: groupService, auth, apiOrigin: CLOUD_API_ORIGIN, publicOrigins: [PUBLIC_SITE_ORIGIN] });

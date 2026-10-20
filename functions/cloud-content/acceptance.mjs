@@ -251,7 +251,7 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         await call(second.api, '/api/admin/content', { headers: additional }, 401);
         await call(first.api, '/api/admin/users', { method: 'POST', headers: owner, body: { expectedRevision: 2, id: users[0].id, active: false } }, 422);
         await call(first.api, secondGroupUrl, { origin: PUBLIC_SITE_ORIGIN }, 200);
-        await call(second.api, '/api/admin/group-invite', { method: 'PUT', headers: alias, body: { expectedRevision: 1 } }, 200);
+        await call(second.api, '/api/admin/group-invite', { method: 'PUT', headers: alias, body: { expectedRevision: 1, enabled: false } }, 200);
         await call(first.api, secondGroupUrl, { origin: PUBLIC_SITE_ORIGIN }, 404);
       });
       await stage('session-revocation', async () => {

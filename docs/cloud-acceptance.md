@@ -37,7 +37,7 @@
 
 ## 验证、保留与回退
 
-`node --test tests/cloud-acceptance.test.mjs tests/cloud-http-server.test.mjs tests/cloud-production-entry.test.mjs` 使用隔离合成 OSS HTTP fixture。早期仅内容的 fixture 为 323 次请求、37 个触及 key；扩展至报名／审核后的实际数量由测试回报，均不是线上证据。测试同时覆盖越界拒绝、源码／配置门禁、不会执行的配置、故障及全局期限、健康投影不泄露敏感额外字段、健康读取不重跑、生产 factory 遇验收标识强制关闭，以及原 HTTP／生产入口回归。
+`node --test tests/cloud-acceptance.test.mjs tests/cloud-http-server.test.mjs tests/cloud-production-entry.test.mjs` 使用隔离合成 OSS HTTP fixture。早期仅内容的 fixture 为 323 次请求、37 个触及 key；扩展至报名／审核的十项 fixture 为 734 次请求、68 个触及 key，均不是线上证据。测试同时覆盖越界拒绝、源码／配置门禁、不会执行的配置、故障及全局期限、健康投影不泄露敏感额外字段、健康读取不重跑、生产 factory 遇验收标识强制关闭，以及原 HTTP／生产入口回归。
 
 验收对象含合成会话、已撤销会话、照片、快照和审计；全部留在私有 acceptance 前缀，结果精确记录 `cleanupPerformed: false`。没有删除权限也没有假清理承诺；保留、清理与独立备份维护流程须由运维工具覆盖，不能只删除当前日志破坏引用。
 

@@ -1,0 +1,27 @@
+<aside class="ah-arrangement-planner" data-arrangement-planner hidden aria-labelledby="planner-title">
+  <div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">PLAN HERE</span><h3 id="planner-title" data-planner-title>直接调整安排</h3></div><button class="ah-admin-text-button" type="button" data-planner-close>关闭</button></div>
+  <p class="ah-admin-small" data-planner-note></p>
+  <p class="ah-admin-alert" data-planner-error role="alert" hidden></p><p class="ah-admin-small" data-planner-result role="status" aria-live="polite"></p>
+  <form data-planner-booth hidden>
+    <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="planner-booth-code">展位编号</label><input id="planner-booth-code" name="code" maxlength="16" required /></div><div class="ah-admin-field"><label for="planner-booth-status">确认状态</label><select id="planner-booth-status" name="status"><option value="pending">待确认</option><option value="confirmed">已确认</option><option value="cancelled">已取消</option></select></div></div>
+    <div class="ah-admin-field"><label for="planner-booth-org">机构 / 团队</label><input id="planner-booth-org" name="organization" maxlength="200" /></div>
+    <div class="ah-admin-field"><label for="planner-booth-project">展示项目</label><input id="planner-booth-project" name="project" maxlength="200" /></div>
+    <div class="ah-admin-field"><label for="planner-booth-person">负责人姓名（不公开）</label><input id="planner-booth-person" name="contactName" maxlength="120" autocomplete="off" /></div>
+    <div class="ah-admin-field"><label for="planner-booth-contact">联系方式（不公开）</label><textarea id="planner-booth-contact" name="contactMethods" rows="2" maxlength="500" autocomplete="off"></textarea></div>
+    <div class="ah-admin-field"><label for="planner-booth-description">大概展示内容</label><textarea id="planner-booth-description" name="description" rows="3" maxlength="2000"></textarea></div>
+    <ul class="ah-arrangements-inline-warnings" data-planner-readiness></ul>
+    <button class="ah-admin-button ah-admin-primary" type="submit" data-planner-apply>应用到内容草稿</button>
+  </form>
+  <section data-planner-people hidden>
+    <div class="ah-admin-section-heading"><h4>在这里分配人员</h4><button class="ah-admin-text-button" type="button" data-planner-refresh>重新读取名单</button></div>
+    <p class="ah-admin-small">人员安排单独保存，不改变对方实际回复，也不会自动发布姓名。候补或撤回报名不能当作已确认名额。</p>
+    <form data-planner-assignment>
+      <div class="ah-admin-field"><label for="planner-contact">选择人员</label><select id="planner-contact" name="contactId" required><option value="">请选择</option></select></div>
+      <p class="ah-admin-small" data-planner-person-state></p>
+      <fieldset><legend>参与场次</legend><div class="ah-planner-choices" data-planner-session-choices></div></fieldset>
+      <fieldset><legend>参与展位</legend><div class="ah-planner-choices" data-planner-booth-choices></div></fieldset>
+      <p class="ah-admin-small" data-planner-preflight></p>
+      <button class="ah-admin-button ah-admin-primary" type="submit" data-planner-save>检查并保存人员安排</button>
+    </form>
+  </section>
+</aside>

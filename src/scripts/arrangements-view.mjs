@@ -1,3 +1,5 @@
+import { sessionTimeline } from '../lib/arrangement-planner.mjs';
+
 const formats = { talk: '演讲', workshop: '工作坊', roundtable: '圆桌', showcase: '作品分享', social: '交流活动', break: '休息 / 签到', other: '待分类 / 其他' };
 const replies = { pending: '待回复', attending: '确认参加', declined: '不参加' };
 const forms = { guest: '嘉宾', speaker: '演讲', panelist: '圆桌', host: '主持', booth: '展位', student_showcase: '学生展示', attendee: '参会' };
@@ -12,7 +14,7 @@ function list(value) { return Array.isArray(value) ? value : []; }
 function count(value) { return Number.isSafeInteger(value) && value >= 0 ? value : 0; }
 
 /** A private, saved-only projection. Never derives arrangements from local draft edits. */
-export function createArrangementsView({ root, load, edit }) {
+export function createArrangementsView({ root, load, edit, plan = edit }) {
   const $ = selector => root.querySelector(selector);
   let snapshot = null;
   let allowed = false;
@@ -24,7 +26,7 @@ export function createArrangementsView({ root, load, edit }) {
   let zone = 'A';
   let format = '';
   const refreshButton = $('[data-arrangements-refresh]');
-  const outputSelectors = ['summary', 'slots', 'unplaced', 'cancelled', 'warnings', 'sessions', 'people-summary', 'student-summary', 'formats-summary', 'meta', 'result'];
+  const outputSelectors = ['summary', 'slots', 'unplaced', 'cancelled', 'warnings', 'sessions', 'people-summary', 'student-summary', 'formats-summary', 'meta', 'result', 'timeline'];
 
   function clearSnapshot() {
     snapshot = null;
@@ -42,6 +44,7 @@ export function createArrangementsView({ root, load, edit }) {
     $('[data-arrangements-revision-warning]').hidden = !allowed || !mismatch();
     refreshButton.disabled = !allowed || locked || loading;
     for (const button of root.querySelectorAll('[data-arrangements-edit]')) button.disabled = !canJump();
+    for (const button of root.querySelectorAll('[data-arrangements-plan]')) button.disabled = !allowed || locked || loading || mismatch() || (button.dataset.arrangementsPlan === 'session' && dirty);
     for (const control of root.querySelectorAll('[data-arrangements-zone],[data-arrangements-format]')) control.disabled = !allowed || loading;
   }
   function editButton(type, id, label, slotNumber = 0) {
@@ -53,6 +56,34 @@ export function createArrangementsView({ root, load, edit }) {
       edit(type, id, slotNumber);
     });
     return button;
+  }
+  function planButton(type, id, slotNumber = 0, label = '直接编辑与分配') {
+    const button = node('button', label, 'ah-arrangements-edit ah-arrangements-plan');
+    button.type = 'button'; button.dataset.arrangementsPlan = type;
+    button.addEventListener('click', () => {
+      if (!allowed || locked || loading || mismatch() || type === 'session' && dirty || id && !stableId.test(id)) return;
+      plan(type, id, slotNumber);
+    });
+    return button;
+  }
+  function renderTimeline() {
+    const output = $('[data-arrangements-timeline]'); output.replaceChildren();
+    for (const row of sessionTimeline(snapshot)) {
+      const tr = node('tr'), time = node('th', row.start); time.scope = 'row'; tr.append(time);
+      for (const zone of ['A','B','C']) {
+        const cell = node('td');
+        for (const session of row.zones[zone]) {
+          const card = node('div', undefined, 'ah-arrangements-timeline-session');
+          card.append(node('strong', session.title), node('small', session.start + '–' + session.end + ' · ' + ({scheduled:'已安排',draft:'草稿',cancelled:'已取消'})[session.status]));
+          if (session.status !== 'cancelled') card.append(planButton('session', session.id, 0, '分配人员'));
+          cell.append(card);
+        }
+        if (!cell.childElementCount) cell.textContent = '—';
+        tr.append(cell);
+      }
+      output.append(tr);
+    }
+    if (!output.childElementCount) { const row = node('tr'), cell = node('td', '暂无已保存场次。'); cell.colSpan = 4; row.append(cell); output.append(row); }
   }
   function warnings(items) {
     const values = list(items);
@@ -103,7 +134,7 @@ export function createArrangementsView({ root, load, edit }) {
     badge.dataset.status = booth?.status || 'empty'; heading.append(badge); card.append(heading);
     if (!booth) {
       card.dataset.empty = 'true';
-      card.append(node('p', '待安排参展单位', 'ah-arrangements-vacant'), editButton('booth', null, '安排此位置', row.slotNumber));
+      card.append(node('p', '待安排参展单位', 'ah-arrangements-vacant'), planButton('booth', null, row.slotNumber, '安排此位置'));
       return card;
     }
     card.append(node('h4', booth.organization || '机构 / 团队待确认'), node('p', booth.project || '项目待确认'), node('small', booth.code + ' · ' + booth.zone + ' 区', 'ah-arrangements-booth-code'));
@@ -113,7 +144,8 @@ export function createArrangementsView({ root, load, edit }) {
     if (list(row.teams).length) card.append(teams(row.teams));
     if (!list(row.people).length && !list(row.teams).length) card.append(node('p', '参与人 / 学生团队尚未关联', 'ah-arrangements-assignment-empty'));
     const alert = warnings(row.warnings); if (alert) card.append(alert);
-    card.append(editButton('booth', booth.id, history ? '查看取消记录' : '调整展位'));
+    if (!history) card.append(planButton('booth', booth.id, row.slotNumber));
+    card.append(editButton('booth', booth.id, history ? '查看取消记录' : '完整编辑'));
     return card;
   }
   function renderSessions() {
@@ -139,6 +171,7 @@ export function createArrangementsView({ root, load, edit }) {
       if (students.childElementCount) detail.append(students);
       if (!row.primarySpeaker && !participants.childElementCount && !students.childElementCount) detail.append(node('p', '参与人员尚未关联', 'ah-arrangements-assignment-empty'));
       const alert = warnings(row.warnings); if (alert) detail.append(alert);
+      if (row.status !== 'cancelled') detail.append(planButton('session', row.id, 0, '分配人员'));
       detail.append(editButton('session', row.id, '调整场次'));
       item.append(time, detail); output.append(item);
     }
@@ -184,7 +217,7 @@ export function createArrangementsView({ root, load, edit }) {
       return formats[key] + '：已安排 ' + count(item.scheduled) + ' 场 · 已记讲者 ' + count(item.withPrimarySpeaker) + ' · 待补讲者 ' + count(item.missingPrimarySpeaker);
     }).join('；') + '。讲者统计只计已安排场次，含待核实的文字记录，不代表确认出席。';
     $('[data-arrangements-body]').hidden = false;
-    renderSessions();
+    renderTimeline(); renderSessions();
   }
   function validSnapshot(value) {
     return value?.schemaVersion === 1 && Number.isSafeInteger(value.revisions?.content) && value.revisions.content >= 0

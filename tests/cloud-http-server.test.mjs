@@ -13,6 +13,8 @@ const INLINE = 'globalThis.__syntheticStaff = true;\r\n';
 const HTML = '<!doctype html><html><head><script>' + INLINE + '</script><script src="/_astro/staff-test.js"></script></head><body>合成后台页面</body></html>';
 const ASSETS = () => new Map([
   ['/admin/', Buffer.from(HTML)],
+  ['/admin/contacts/', Buffer.from('<!doctype html><html><body>合成名单页面</body></html>')],
+  ['/invitations/template-blank.png', Buffer.from('synthetic-png-template')],
   ['/_astro/staff-test.js', Buffer.from('export const syntheticStaff = true;')],
   ['/_astro/staff-test.css', Buffer.from('body { color: #222; }')],
 ]);
@@ -69,7 +71,7 @@ test('the unbound adapter imports without listening and rejects non-allowlisted 
   assert.equal(child.stdout, 'import-only');
   const runtime = { configured: true, handle: async () => json({}) };
   assert.equal(createCloudContentServer({ runtime }).listening, false);
-  for (const path of ['/admin/index.html', '/admin/contacts/', '/etc/passwd', '../admin/', '/_astro/../hidden.js', '/_astro/nested/file.js', '/_astro/private.json', '/_astro/portrait.png', '/_astro/staff.js?secret=x']) {
+  for (const path of ['/admin/index.html', '/admin/contacts/private/', '/etc/passwd', '../admin/', '/_astro/../hidden.js', '/_astro/nested/file.js', '/_astro/private.json', '/_astro/portrait.png', '/_astro/staff.js?secret=x', '/invitations/private.png']) {
     assert.throws(() => createCloudContentServer({ runtime, assets: new Map([[path, Buffer.from('synthetic')]]) }), TypeError);
   }
   for (const assets of [new Map([['/admin/', Buffer.alloc(0)]]), new Map([['/admin/', Buffer.alloc(2 * 1024 * 1024 + 1)]]),
@@ -110,13 +112,31 @@ test('actual HTTP serves copied allowlisted bytes, exact inline CSP hashes, safe
   const redirect = await send(port, '/admin');
   assert.equal(redirect.status, 308);
   assert.equal(redirect.headers.location, '/admin/');
+  const contacts = await send(port, '/admin/contacts/');
+  assert.equal(contacts.status, 200); secure(contacts);
+  assert.equal(contacts.headers['content-type'], 'text/html; charset=utf-8');
+  assert.match(contacts.text, /合成名单页面/u);
+  assert.match(contacts.headers['content-security-policy'], /connect-src 'self';/u);
+  const contactRedirect = await send(port, '/admin/contacts');
+  assert.equal(contactRedirect.status, 308);
+  assert.equal(contactRedirect.headers.location, '/admin/contacts/');
+  const queriedRedirect = await send(port, '/admin/contacts?marker=synthetic');
+  assert.equal(queriedRedirect.status, 404);
+  const template = await send(port, '/invitations/template-blank.png');
+  assert.equal(template.status, 200); secure(template);
+  assert.equal(template.headers['content-type'], 'image/png');
+  assert.equal(template.text, 'synthetic-png-template');
+  const templateHead = await send(port, '/invitations/template-blank.png', { method: 'HEAD' });
+  assert.equal(templateHead.status, 200);
+  assert.equal(templateHead.body.length, 0);
+  assert.equal(templateHead.headers['content-length'], template.headers['content-length']);
   assert.equal(calls, 0, 'static routes cannot enter the API runtime');
 });
 
 test('filesystem-looking, unknown or queried static paths never discover files or enter the API', async t => {
   let calls = 0;
   const { port } = await loopback(t, { runtime: { configured: true, handle: async () => { calls++; return json({ error: { code: 'SYNTHETIC_API_NOT_FOUND' } }, 404); } } });
-  for (const path of ['/package.json', '/AGENTS.md', '/.env.local', '/admin/contacts/', '/admin/?marker=PRIVATE-SYNTHETIC-QUERY', '/_astro/staff-test.js?marker=PRIVATE-SYNTHETIC-QUERY', '/_astro/%2e%2e/package.json', '/_astro/private.json', '/missing']) {
+  for (const path of ['/package.json', '/AGENTS.md', '/.env.local', '/admin/contacts/private/', '/admin/?marker=PRIVATE-SYNTHETIC-QUERY', '/_astro/staff-test.js?marker=PRIVATE-SYNTHETIC-QUERY', '/_astro/%2e%2e/package.json', '/_astro/private.json', '/invitations/private.png', '/missing']) {
     const response = await send(port, path);
     assert.equal(response.status, 404, path); secure(response);
     assert.deepEqual(JSON.parse(response.text), { error: { code: 'NOT_FOUND', message: '页面不存在。' } });
@@ -149,7 +169,7 @@ test('exact application Host and fixed HTTPS origin cannot be overridden with pr
 
 test('closed configuration serves no admin bytes while process health keeps the full source marker and no readiness claim', async t => {
   const { port } = await loopback(t, { runtime: { configured: false, handle: createCloudContentApi({ enabled: false }) } });
-  for (const path of ['/admin', '/admin/', '/_astro/staff-test.js', '/api/admin/session', '/api/admin/login']) {
+  for (const path of ['/admin', '/admin/', '/admin/contacts', '/admin/contacts/', '/invitations/template-blank.png', '/_astro/staff-test.js', '/api/admin/session', '/api/admin/login']) {
     const response = await send(port, path);
     assert.equal(response.status, 503, path); secure(response);
     assert.equal(response.text.includes('合成后台页面'), false);

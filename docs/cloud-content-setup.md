@@ -1,5 +1,24 @@
 # 云端内容后台：运行角色与接入准备
 
+## 2026-10-20 最新现场与候选包阶段
+
+用户提供的香港 `artdicohost-api` 配置截图已显示函数角色为 `artdicohost-content-runtime`。RAM 自定义策略源代码也已核对为只有 `oss:GetObject`／`oss:PutObject` 与本站 `cms/v1/*` 的范围；控制台摘要仍有资源识别警告，不能仅凭截图判断有效或无效，尚待实际临时身份与合成 OSS 写读验收。角色 ARN 不必再以函数 ARN代替；这里没有读取任何临时凭据、永久 AccessKey 或账号摘要。用户随后提供的香港 FC 域名清单为空，正在由用户新增 `api.artdico.host`，HTTPS／DNS 尚未验收。
+
+本阶段新增独立的 `fc-cloud-content-candidate` 候选装配，而非替换现行 `fc-preflight`：固定生产入口、两个后台页面、邀请底图与已引用脚本／样式／字体，均有精确文件清单与 SHA-256。构建器从明确源码提交读取白名单输入，隔离构建并清除外部环境配置；归档验证器核对源码、清单、路径、模式、大小、引用闭包、ZIP 字节及固定 Node。生成静态资源由该受控构建与 CI 记录绑定，不声称另有独立可重现构建认证。运行时仅重验明确静态资源及 release 记录，服务器源码完整性由发布前归档验证负责。
+
+候选包准备及核对命令（Node 二进制须为已独立核验的官方 Linux x64 v24.19.0）：
+
+```sh
+node scripts/prepare-cloud-content.mjs --node-binary /absolute/path/to/node --node-sha256 bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12 --source-commit FULL_40_CHARACTER_COMMIT --out EMPTY_OUTPUT_DIRECTORY
+node scripts/verify-cloud-content-package.mjs EMPTY_OUTPUT_DIRECTORY/publication FULL_40_CHARACTER_COMMIT
+```
+
+CI 保留独立的 `cloud-content-candidate-COMMIT` 产物，并在无网络、只读代码、512 MiB／0.35 CPU 的 Debian 11 夹具中启动实际 ZIP。默认关闭与纯合成配置两个模式分别核对：完整进程提交标记、两个后台页面／静态资源／邀请底图、匿名私密访问拒绝及正式报名关闭。合成配置模式不请求 OSS、不证明真实账户或权限；候选产物也不等于已部署业务包。现行 `deploy-fc` 仍只接受原六文件启动包，不消费候选产物。
+
+用户当前可先完成域名及证书准备：域名 `api.artdico.host`，每条路由选择 `artdicohost-api`／`LATEST`，重写保持未配置；路径为 `/admin`、`/admin/*`、`/_astro/*`、`/invitations/template-blank.png`、`/api/admin/*`、`/api/public/content`、`/api/public/portraits/*`。控制台若没有展示 HTTP 方法选择，以应用精确路由／方法拒绝为边界，待接入验收时再核对实际 PathConfig；不加入全站 `/*`、`/healthz` 或报名路径。HTTPS 证书必须覆盖 `api.artdico.host`，主域证书本身不能推断覆盖子域。DNS 的 `api` CNAME 只采用当前香港 FC 控制台实际给出的值，保留 `@` 网站记录。受控账号、维护和真正生产切换仍按后文验收，不能因为域名建立便打开业务。
+
+下文保留前阶段准备说明；其中“尚未绑定角色”属于当时状态，以上述新截图观察为准。
+
 2026-10-20。用户确认 `artdicohost-api` 尚未配置执行角色。本文件提供可审阅的专用角色与接入步骤；本轮没有创建角色、授权、绑定函数、修改 DNS、证书、触发器或上传云端业务包。现有 GitHub 部署身份及其他项目的权限不变。
 
 本阶段准备工作人员登录、嘉宾头像、场次／展位、私密人员邀约及工作人员登记学生展示的草稿和明确发布。学生基础资料与材料链接留在私有内容快照，公开只输出获授权作品字段；作品封面沿用同一内容定址图片前缀。使用既有香港 FC 与私有 OSS，不新增数据库。正式报名、学生自行申请／双审、报名统计、历史联系人云迁移、群码、邮件及 Wallet 没有因此接通；39 笔联系人仍留本机，原群码与更换提醒不变。
@@ -88,6 +107,7 @@ FC 3.0 的自定义域名独立于 HTTP Trigger；应保留当前 `defaultTrigge
 | --- | --- | --- |
 | `/admin`、`/admin/*` | GET、HEAD | 后台页面；静态页面入口仍须由最终装配核定 |
 | `/_astro/*` | GET、HEAD | 最终后台构建实际需要的静态资源 |
+| `/invitations/template-blank.png` | GET、HEAD | 固定无个人资料的邀请底图，不含原微信群码 |
 | `/api/admin/environment`、`/api/admin/session`、`/api/admin/content` | GET | 模式／会话／草稿读取；模式不等于储存已验收 |
 | `/api/admin/portraits/*` | GET | 已登录、有内容权限的私有头像读取 |
 | `/api/admin/login`、`/api/admin/logout`、`/api/admin/portraits`、`/api/admin/content/publish` | POST | 登录、退出、上传、明确发布 |

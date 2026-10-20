@@ -22,7 +22,7 @@ export const contentSchema = Object.freeze({
 });
 
 /** @typedef {{id:string,start:string,end:string,zone:string,title:string,guestId:string,speakerName:string,speakerStatus:string,status:string,internalNotes:string,format:string}} Session */
-/** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string,slotNumber:number}} Booth */
+/** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string,slotNumber:number,contactName?:string,contactMethods?:string,description?:string}} Booth */
 /** @typedef {{id:string,name:string,company:string,ggjRole:string,portraitId:string,status:string,publicConsent:boolean,internalNotes:string,contactId:string}} Guest */
 /** @typedef {{id:string,title:string,teamName:string,school:string,contactName:string,email:string,wechat:string,memberCount:number,participationForms:string[],responseStatus:string,materialLinks:string,summary:string,coverId:string,status:string,publicConsent:boolean,sessionId:string,boothId:string,internalNotes:string}} Showcase */
 /** @typedef {{heroDescription:string,aboutTitle:string,aboutText:string,faqItems:{question:string,answer:string}[],contactEmail:string,mapUrl:string,openingTime:string,endTime:string,checkInTime:string}} EventPresentation */
@@ -63,11 +63,17 @@ function guest(input) {
 /** @param {unknown} input @returns {Booth} */
 function booth(input) {
   const item = object(input);
-  return {
+  const result = {
     id: text(item.id), code: text(item.code).toUpperCase(), organization: text(item.organization), project: text(item.project),
     zone: text(item.zone), status: text(item.status), internalNotes: text(item.internalNotes),
     slotNumber: item.slotNumber === undefined ? 0 : /** @type {number} */ (item.slotNumber),
   };
+  // Optional additions must not change legacy normalized or published snapshots.
+  for (const name of ['contactName', 'contactMethods', 'description']) {
+    const descriptor = Object.getOwnPropertyDescriptor(item, name);
+    if (descriptor) result[name] = text('value' in descriptor ? descriptor.value : undefined);
+  }
+  return result;
 }
 
 /** @param {unknown} input @returns {Showcase} */
@@ -269,6 +275,7 @@ export function validateContent(input) {
   const positions = new Map();
   for (const [index, item] of value.booths.entries()) {
     const key = `booths.${index}`;
+    const raw = object(rawBooths[index]);
     stableId(`${key}.id`, item.id);
     if (ids.has(item.id)) errors[`${key}.id`] = 'ID 重复，请保留每条内容独立的稳定 ID。';
     ids.add(item.id);
@@ -288,6 +295,14 @@ export function validateContent(input) {
     stringField(`${key}.organization`, item.organization, 160, item.status === 'confirmed');
     stringField(`${key}.project`, item.project, 200, item.status === 'confirmed');
     stringField(`${key}.internalNotes`, item.internalNotes, 4000, false);
+    for (const [name, maximum] of Object.entries({ contactName: 120, contactMethods: 500, description: 2000 })) {
+      if (!Object.hasOwn(raw, name)) continue;
+      const descriptor = Object.getOwnPropertyDescriptor(raw, name);
+      const supplied = descriptor && 'value' in descriptor ? descriptor.value : undefined;
+      stringField(`${key}.${name}`, item[name], maximum, false);
+      const controls = name === 'contactName' ? /[\u0000-\u001f\u007f]/u : /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u;
+      if (!descriptor?.enumerable || typeof supplied !== 'string' || controls.test(supplied)) errors[`${key}.${name}`] = name === 'contactName' ? '负责人姓名须为不含换行或控制字符的文字。' : '请填写有效文字，不得含无效控制字符。';
+    }
   }
 
   for (const [index, item] of value.showcases.entries()) {
@@ -373,6 +388,7 @@ export function toPublicContent(input) {
     booths: value.booths.filter((item) => item.status === 'confirmed').map((item) => ({
       id: item.id, code: item.code, organization: item.organization, project: item.project, zone: item.zone, status: item.status,
       ...(item.slotNumber > 0 ? { slotNumber: item.slotNumber } : {}),
+      ...(Object.hasOwn(item, 'description') ? { description: item.description } : {}),
     })),
     showcases: value.showcases.filter(item => isPublicShowcase(item, value)).map(item => {
       const allocated = showcaseAllocations(item, value);

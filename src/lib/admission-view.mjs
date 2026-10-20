@@ -15,7 +15,9 @@ export function admissionSummary(value) {
   if (keys.some(key => !Number.isSafeInteger(value[key]) || value[key] < 0 || value[key] > 1000)
     || value.capacity < 1 || value.staffReserve > value.capacity || typeof value.waitlistEnabled !== 'boolean'
     || value.confirmedCount !== value.attendeeConfirmedCount + value.crewConfirmedCount || value.confirmedCount > value.capacity
-    || value.remainingTotal !== value.capacity - value.confirmedCount || value.remainingPublic > value.remainingTotal) return null;
+    || value.remainingTotal !== value.capacity - value.confirmedCount
+    || value.attendeeConfirmedCount > value.capacity - value.staffReserve
+    || value.remainingPublic !== Math.max(0, Math.min(value.remainingTotal, value.capacity - value.staffReserve - value.attendeeConfirmedCount))) return null;
   return { ...Object.fromEntries(keys.map(key => [key, value[key]])), waitlistEnabled: value.waitlistEnabled };
 }
 

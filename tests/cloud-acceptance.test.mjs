@@ -44,6 +44,7 @@ test('isolated acceptance performs durable HTTP object operations and reports on
   assert.equal(result.independentClients, 2); assert.equal(result.fcProcesses, 1); assert.equal(result.cleanupPerformed, false);
   assert.ok(result.requests > 100 && result.requests < 1000);
   assert.equal(result.requests, fixture.calls.length);
+  assert.ok(fixture.calls.every(call => call.headers['accept-encoding'] === 'identity'));
   const prefix = `cms/v1/acceptance/${RUN}/${result.instanceId}/`;
   assert.ok(fixture.calls.every(call => call.key.startsWith(prefix)));
   assert.ok([...fixture.stored.keys()].every(key => key.startsWith(prefix)));
@@ -57,6 +58,14 @@ test('isolated acceptance performs durable HTTP object operations and reports on
   const calls = fixture.calls.length;
   assert.deepEqual(monitor.snapshot(), result); assert.deepEqual(await monitor.completion, result);
   assert.equal(fixture.calls.length, calls, 'reading evidence never repeats mutations');
+});
+
+test('all stages also pass with an advancing clock across durable operations', async () => {
+  const fixture = objectFixture(); let ticks = 0;
+  const result = await startCloudAcceptance({ ...options(fixture), now: () => fixedClock().getTime() + ++ticks * 7 }).completion;
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.equal(result.completed.length, 10);
+  assert.ok(ticks > 100 && result.requests < 1000);
 });
 
 test('missing acceptance setting does no credential, clock or network work and returns no health claim', async () => {

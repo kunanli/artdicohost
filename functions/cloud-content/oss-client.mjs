@@ -112,7 +112,10 @@ export function createOssObjectClient({ credentials, fetchFn = fetch, clock = ()
       }
       if (method === 'PUT') input['x-oss-forbid-overwrite'] = 'true';
       if (method === 'PUT' || appendPosition === 0) input['x-oss-server-side-encryption'] = 'AES256';
-      const headers = signedHeaders(method, key, query, input, value, clock);
+      // Byte counts, hashes and immutable readback must use the stored bytes.
+      // Node fetch otherwise negotiates compression and transparently decodes
+      // the body while retaining the compressed response length/encoding.
+      const headers = { ...signedHeaders(method, key, query, input, value, clock), 'accept-encoding': 'identity' };
       const url = `${OSS_ORIGIN}/${key}${query ? '?' + query : ''}`;
       response = await abortable(Promise.resolve().then(() => fetchFn(url, { method, headers, ...(data ? { body: data } : {}), redirect: 'error', cache: 'no-store', signal: controller.signal })), controller.signal);
       if (!response || !Number.isInteger(response.status) || response.redirected || response.url && response.url !== url

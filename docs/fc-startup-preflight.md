@@ -1,6 +1,6 @@
 # 香港 FC 启动验收
 
-日期：2026-10-20（Asia/Taipei）。用户已建立香港函数 `artdicohost-api`，初始截图为自定义运行时 Debian 11 / Python 3.12 示例及签名认证的 HTTP `defaultTrigger`；随后用户回报本文件要求的运行时启动设置、RAM 权限及 GitHub Variables 已保存，并已授权正常发布。最新 main 为 `dff3c897bdadfbe555459366183ccab1fbca0195`；[Actions 39357108387](https://github.com/kunanli/artdicohost/actions/runs/39357108387) 的 check `118414315427` 完成 203 项测试及 6.395 秒离线 ZIP smoke，OSS `118414977033` 于 02:08:57–02:09:10 UTC 完成 12 个公开对象 SHA-256 回读。FC `118414977011` 的更新前 state / update 为 `unknown`，签名 health 为 400 `InvalidArgument`；UpdateFunction 等待 120 秒后于 02:10:56 UTC 超时。不能判断代码是否已更新，尚无本项目 FC 启动及三次签名健康检查的云端成功证据，不直接重送该次或更旧提交的 PUT。私有桶 `artdicohost-data-hk` 已创建，用户回报已保存 SSE-OSS / AES256；尚未验证函数身份或私有对象读写。
+日期：2026-10-20（Asia/Taipei）。香港函数 `artdicohost-api` 的运行时、精确 RAM 权限及 GitHub Variables 已配置，自动发布已获授权。最近完整验收基线为 `e82762e2f86ea3663a4e3e78d0a10d0a608ef541`；[Actions 39362633747](https://github.com/kunanli/artdicohost/actions/runs/39362633747) 的 224 项检查、OSS 12 次 SHA-256 回读及 FC 单次更新后连续三次签名 `/healthz` 全部通过，完整来源标记匹配。生命周期字段为 null，未推论 Active / Successful；FC 启动与云端业务是不同门槛。私有桶 `artdicohost-data-hk` 已创建且用户回报保存 SSE-OSS / AES256，函数身份及私有读写仍未验收。
 
 本阶段只替换示例码并验证 Node.js 可以启动。`/healthz` 的 200 只表示进程存活；报名、后台与存储就绪均保持关闭。不要把本机 `functions/content-api/server.mjs` 上传为云端后台。
 
@@ -43,7 +43,7 @@ node scripts/prepare-fc-bootstrap.mjs \
 
 本轮修正独立客户端与部署观测，不改六文件 runtime 源码。健康检查按[现行 fcapp.run 官方契约](https://help.aliyun.com/zh/functioncompute/configure-signature-authentication-for-http-triggers)使用 ACS3、`x-acs-date`、选用 `x-acs-security-token`，payload 参数为空字串；旧 FC scheme 来自 2016 API / proxy 范围。隔离的官方 SDK `0.3.3` AK / STS 固定向量已纳入测试，没有新增项目依赖；不能把旧算法测试当成服务规格证明，也不能在实测前断言此为 400 唯一原因。
 
-PUT 前仍以 GetFunction 和签名 health 观察旧状态，不把观察作为成功；枚举值未知时只投影 `unknown`，presence 仅区分 `absent` / `null` / `recognized` / `unrecognized`，不回显任意内容。官方 state 使用 `Pending`，`Creating` 属 reason code；补上 Pending 阻挡并保留旧 Creating 的保守阻挡，更新 `InProgress` 时也不上传。重新核对当前 main 后，native HTTPS 对同一固定香港端点发送一次同 method / JSON bytes 的代码 PUT，保留 TLS 验证，明确 UTF-8 `Content-Length`，无 redirect / retry。私有 WeakMap 只投影可信 Promise 的 `uploadBodyWritten` / `responseStarted` 两个布林；`finish` 只表示本机写完，不是 FC 已接收或确认。没有证据显示原 fetch 的 Content-Length 错误，也未证明新传输已解决超时。
+PUT 前仍以 GetFunction 和签名 health 观察旧状态，不把观察作为成功；枚举值未知时只投影 `unknown`，presence 仅区分 `absent` / `null` / `recognized` / `unrecognized`，不回显任意内容。官方 state 使用 `Pending`，`Creating` 属 reason code；补上 Pending 阻挡并保留旧 Creating 的保守阻挡，更新 `InProgress` 时也不上传。重新核对当前 main 后，native HTTPS 对同一固定香港端点发送一次同 method / JSON bytes 的代码 PUT，保留 TLS 验证，明确 UTF-8 `Content-Length`，无 redirect / retry。私有 WeakMap 只投影可信 Promise 的 `uploadBodyWritten` / `responseStarted` 两个布林；`finish` 只表示本机写完，不是 FC 已接收或确认。没有证据显示原 fetch 的 Content-Length 错误，后续基线已取得单次 native PUT 成功确认及三次签名健康证明，仍不把本机写完当服务端确认。
 
 UpdateFunction 等待期限保持 120 秒，GET / health 为 20 秒，总期限 240 秒；不改变 FC 执行超时、IAM、`/code/bootstrap` 或签名触发器。更新后须 HTTP 200 更新确认、配置保持，以及三次连续匹配本次完整提交的签名 health；生命周期字段存在时要求 Active / Successful，仅两字段各为 own absent/null 时可依同样的三次实测来源验证并明确标记 metadata 未提供，绝不从字段缺失推定就绪；详细日志与失败处理见[自动更新说明](automatic-fc-deployment.md)。
 

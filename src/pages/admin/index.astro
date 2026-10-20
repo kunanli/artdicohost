@@ -1,8 +1,9 @@
 ---
 import SiteLayout from '../../layouts/SiteLayout.astro';
 import '../../styles/admin.css';
+import '../../styles/guests.css';
 ---
-<SiteLayout title="工作人员后台｜ARTDiCO HOST" description="ARTDiCO HOST 工作人员场次及展位管理。">
+<SiteLayout title="工作人员后台｜ARTDiCO HOST" description="ARTDiCO HOST 工作人员嘉宾、场次及展位管理。">
   <div id="artdico-admin" class="ah-admin">
     <header class="ah-admin-header"><a class="ah-admin-brand" href="/">ARTDiCO <span>HOST / STAFF</span></a><a class="ah-admin-back" href="/">查看活动页面 <span aria-hidden="true">↗</span></a></header>
     <main id="main-content" class="ah-admin-main">
@@ -10,26 +11,27 @@ import '../../styles/admin.css';
       <p class="ah-admin-alert" data-admin-error role="alert" tabindex="-1" hidden></p>
       <p class="ah-admin-status" data-admin-status role="status" aria-live="polite"></p>
       <section class="ah-admin-login-card" data-admin-login-panel aria-labelledby="login-title">
-        <span class="ah-admin-eyebrow">FOR THE PEOPLE BEHIND THE DAY</span><h1 id="login-title">一起，把现场准备好。</h1><p class="ah-admin-intro">登录后管理活动场次与展位。请使用已配置的工作人员账号，身份将由后台实际校验。</p>
+        <span class="ah-admin-eyebrow">FOR THE PEOPLE BEHIND THE DAY</span><h1 id="login-title">一起，把现场准备好。</h1><p class="ah-admin-intro">登录后管理嘉宾、活动场次与展位。请使用已配置的工作人员账号，身份将由后台实际校验。</p>
         <form method="post" data-admin-login>
           <div class="ah-admin-field"><label for="staff-username">用户名或邮箱</label><input id="staff-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="160" placeholder="用户名或 @artdico.co 邮箱" /></div>
           <div class="ah-admin-field"><label for="staff-password">密码</label><input id="staff-password" name="password" type="password" autocomplete="current-password" required maxlength="1024" /></div>
           <button class="ah-admin-button ah-admin-primary" type="submit" data-admin-login-submit disabled>登录后台 <span aria-hidden="true">→</span></button>
         </form>
-        <p class="ah-admin-small">工作人员权限用于场次和展位维护。报名个人资料不在此页展示。</p>
+        <p class="ah-admin-small">工作人员权限用于嘉宾、场次和展位维护。报名个人资料不在此页展示。</p>
         <noscript><p class="ah-admin-alert">后台操作需要启用 JavaScript。当前没有登录，也不会提交账号资料。</p></noscript>
       </section>
 
       <section data-admin-workspace hidden aria-labelledby="workspace-title">
-        <div class="ah-admin-page-heading"><div><span class="ah-admin-eyebrow">CONTENT & CONNECTIONS</span><h1 id="workspace-title">安排好每一次相遇。</h1><p>维护场次、确认讲者与展位，准备好后再发布到公开活动页。</p></div><div class="ah-admin-account"><span data-admin-user></span><small data-admin-role></small><button type="button" class="ah-admin-text-button" data-admin-logout>退出登录</button></div></div>
+        <div class="ah-admin-page-heading"><div><span class="ah-admin-eyebrow">CONTENT & CONNECTIONS</span><h1 id="workspace-title">安排好每一次相遇。</h1><p>维护嘉宾资料、安排场次与展位，准备好后再发布到公开活动页。</p></div><div class="ah-admin-account"><span data-admin-user></span><small data-admin-role></small><button type="button" class="ah-admin-text-button" data-admin-logout>退出登录</button></div></div>
         <div class="ah-admin-event-card"><div><span class="ah-admin-eyebrow">当前活动</span><strong data-admin-event-title>活动信息加载中</strong></div><p><span data-admin-event-date></span><span data-admin-event-venue></span></p></div>
-        <div class="ah-admin-summary"><article><span>活动场次</span><strong data-admin-session-count>—</strong><small>包含各区域草稿与已安排场次</small></article><article><span>展位记录</span><strong data-admin-booth-count>—</strong><small>待确认与已确认分别维护</small></article><article><span>公开发布</span><strong class="ah-admin-publish-status" data-admin-published-at>尚未载入</strong><small>保存草稿不会自动对外发布</small></article></div>
+        <div class="ah-admin-summary"><article><span>嘉宾资料</span><strong data-admin-guest-count>—</strong><small>确认并获授权后才公开展示</small></article><article><span>活动场次</span><strong data-admin-session-count>—</strong><small>包含各区域草稿与已安排场次</small></article><article><span>展位记录</span><strong data-admin-booth-count>—</strong><small>待确认与已确认分别维护</small></article><article><span>公开发布</span><strong class="ah-admin-publish-status" data-admin-published-at>尚未载入</strong><small>保存草稿不会自动对外发布</small></article></div>
         <div class="ah-admin-toolbar"><div><strong data-admin-unsaved>尚未载入草稿</strong><span>草稿版本 <span data-admin-revision>—</span></span></div><div class="ah-admin-toolbar-actions"><button class="ah-admin-button" type="button" data-admin-preview>预览公开内容</button><button class="ah-admin-button" type="button" data-admin-save>保存草稿</button><button class="ah-admin-button ah-admin-primary" type="button" data-admin-publish disabled>发布到公开页 <span aria-hidden="true">↗</span></button></div></div>
-        <p class="ah-admin-small">先保存，再发布。发布需具备发布权限；其他工作人员可继续维护草稿。未确认讲者姓名和内部备注不会出现在公开页。</p>
+        <p class="ah-admin-small">先保存，再发布。发布需具备发布权限；其他工作人员可继续维护草稿。未确认或未获公开授权的嘉宾、照片与内部备注不会出现在公开页。</p>
 
+        <section class="ah-admin-panel" aria-labelledby="guests-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">THE PEOPLE</span><h2 id="guests-title">嘉宾资料</h2><p>上传头像，填写姓名、所属公司与可选的 GGJ 职务。确认并获公开授权后随发布版展示。</p></div><button type="button" class="ah-admin-button" data-admin-add-guest><span aria-hidden="true">＋</span> 新增嘉宾</button></div><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="嘉宾表，可水平滚动"><table><caption class="ah-sr-only">嘉宾头像、姓名、公司、GGJ 职务及公开状态</caption><thead><tr><th scope="col">头像</th><th scope="col">姓名</th><th scope="col">所属公司</th><th scope="col">GGJ 职务</th><th scope="col">确认与授权</th><th scope="col">操作</th></tr></thead><tbody data-admin-guests></tbody></table></div><p class="ah-admin-empty" data-admin-guests-empty hidden>还没有嘉宾资料。新增后先保存草稿，名单确认并获授权后再发布。</p></section>
         <section class="ah-admin-panel" aria-labelledby="sessions-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">THE PROGRAM</span><h2 id="sessions-title">活动场次</h2><p>草稿不公开；已安排与取消状态会随发布版更新。</p></div><button type="button" class="ah-admin-button" data-admin-add-session><span aria-hidden="true">＋</span> 新增场次</button></div><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="活动场次表，可水平滚动"><table><caption class="ah-sr-only">所有活动场次及讲者确认状态</caption><thead><tr><th scope="col">时间</th><th scope="col">区域</th><th scope="col">场次与主题</th><th scope="col">讲者</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody data-admin-sessions></tbody></table></div><p class="ah-admin-empty" data-admin-sessions-empty hidden>还没有场次。添加第一场分享，开始安排这一天。</p></section>
         <section class="ah-admin-panel" aria-labelledby="booths-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">PROJECTS ON THE FLOOR</span><h2 id="booths-title">展位与展示项目</h2><p>公开页只显示已确认展位；待确认与取消记录保留在后台。</p></div><button type="button" class="ah-admin-button" data-admin-add-booth><span aria-hidden="true">＋</span> 新增展位</button></div><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="展位表，可水平滚动"><table><caption class="ah-sr-only">展位编号、机构、项目及确认状态</caption><thead><tr><th scope="col">展位编号</th><th scope="col">机构 / 团队</th><th scope="col">展示项目</th><th scope="col">区域</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody data-admin-booths></tbody></table></div><p class="ah-admin-empty" data-admin-booths-empty hidden>展位名单尚未建立。确认项目后，可新增展位并安排编号。</p></section>
-        <section class="ah-admin-panel ah-admin-preview" data-admin-preview-panel hidden aria-labelledby="preview-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">BEFORE IT GOES LIVE</span><h2 id="preview-title">公开内容预览</h2><p>检查本次准备发布的资料。草稿场次、未确认讲者姓名与内部备注均不对外展示。</p></div><button type="button" class="ah-admin-button" data-admin-preview-close>关闭预览</button></div><div class="ah-admin-preview-content" data-admin-public-preview></div></section>
+        <section class="ah-admin-panel ah-admin-preview" data-admin-preview-panel hidden aria-labelledby="preview-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">BEFORE IT GOES LIVE</span><h2 id="preview-title">公开内容预览</h2><p>检查本次准备发布的资料。草稿场次、未确认或未获授权的嘉宾及内部备注均不对外展示。</p></div><button type="button" class="ah-admin-button" data-admin-preview-close>关闭预览</button></div><div class="ah-admin-preview-content" data-admin-public-preview></div></section>
       </section>
     </main>
     <footer class="ah-admin-footer"><span>ARTDiCO HOST / STAFF</span><p>从细节出发，让连接发生。</p><a href="/admin/contacts/">名单与邀约管理</a><a href="/">返回活动页面</a></footer>
@@ -42,8 +44,9 @@ import '../../styles/admin.css';
       <input type="hidden" name="id" />
       <div class="ah-admin-field-row"><div class="ah-admin-field"><label for="session-start">开始时间</label><input id="session-start" name="start" type="time" required /></div><div class="ah-admin-field"><label for="session-end">结束时间</label><input id="session-end" name="end" type="time" required /></div><div class="ah-admin-field"><label for="session-zone">活动区域</label><select id="session-zone" name="zone" required><option value="A">A · 阶梯展示厅</option><option value="B">B · 咖啡厅</option><option value="C">C · 外围展位区</option></select></div></div>
       <div class="ah-admin-field"><label for="session-title">场次名称 / 主题</label><input id="session-title" name="title" required maxlength="200" /></div>
+      <div class="ah-admin-field"><label for="session-guest">关联嘉宾（选填）</label><select id="session-guest" name="guestId"><option value="">手动维护讲者 · 未关联嘉宾</option></select><small>关联后使用该嘉宾的姓名与公开确认状态；尚未确认或未获授权时，前台仍显示待公布。</small></div>
       <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="session-speaker-name">讲者姓名（可先留空）</label><input id="session-speaker-name" name="speakerName" maxlength="120" autocomplete="off" /></div><div class="ah-admin-field"><label for="session-speaker-status">讲者确认状态</label><select id="session-speaker-status" name="speakerStatus" required><option value="pending">待确认</option><option value="confirmed">已确认</option></select></div></div>
-      <p class="ah-admin-small">选择“已确认”时须填写讲者姓名。尚未确认的姓名仅供内部筹备，不会发布。</p>
+      <p class="ah-admin-small">未关联嘉宾时，选择“已确认”须填写讲者姓名。关联嘉宾后不需重复填写；未确认或未获授权的姓名不会发布。</p>
       <div class="ah-admin-field"><label for="session-status">场次状态</label><select id="session-status" name="status" required><option value="draft">草稿 · 不公开</option><option value="scheduled">已安排</option><option value="cancelled">已取消</option></select></div>
       <div class="ah-admin-field"><label for="session-notes">内部备注（不公开）</label><textarea id="session-notes" name="internalNotes" rows="3" maxlength="4000"></textarea></div>
       <div class="ah-admin-dialog-actions"><button type="button" class="ah-admin-button" data-close-dialog="session">取消</button><button type="submit" class="ah-admin-button ah-admin-primary" data-session-submit disabled>应用场次修改</button></div>
@@ -63,6 +66,22 @@ import '../../styles/admin.css';
       <div class="ah-admin-field"><label for="booth-notes">内部备注（不公开）</label><textarea id="booth-notes" name="internalNotes" rows="3" maxlength="4000"></textarea></div>
       <div class="ah-admin-dialog-actions"><button type="button" class="ah-admin-button" data-close-dialog="booth">取消</button><button type="submit" class="ah-admin-button ah-admin-primary" data-booth-submit disabled>应用展位修改</button></div>
       <p class="ah-admin-small">应用修改后，仍需保存草稿；发布后才会更新公开名单。</p>
+    </form>
+  </dialog>
+  <dialog class="ah-admin-dialog ah-admin-guest-dialog" data-guest-dialog aria-labelledby="guest-dialog-title">
+    <div class="ah-admin-dialog-heading"><div><span class="ah-admin-eyebrow">GUEST PROFILE</span><h2 id="guest-dialog-title" data-guest-dialog-title>新增嘉宾</h2></div><button type="button" class="ah-admin-icon-button" data-close-dialog="guest" aria-label="关闭嘉宾编辑">×</button></div>
+    <p class="ah-admin-alert" data-guest-error role="alert" tabindex="-1" hidden></p>
+    <form method="post" data-guest-form>
+      <input type="hidden" name="id" /><input type="hidden" name="portraitId" />
+      <div class="ah-admin-portrait-upload"><div class="ah-admin-portrait-frame"><img data-guest-portrait-preview alt="所选嘉宾头像预览" width="116" height="116" hidden /><span data-guest-portrait-empty>头像</span></div><div class="ah-admin-field"><label for="guest-portrait">头像照片</label><input id="guest-portrait" type="file" name="portraitFile" accept="image/jpeg,image/png,image/webp" data-guest-portrait-file /><small>JPEG、PNG 或 WebP，原图最多 8 MiB。系统会缩小至最长 1024px 并重新编码为 JPEG；实际上传最多 512 KiB，照片不会自动公开。</small><p class="ah-admin-small" data-guest-portrait-status role="status" aria-live="polite"></p><button type="button" class="ah-admin-text-button" data-guest-portrait-remove>移除本次照片</button></div></div>
+      <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="guest-name">姓名</label><input id="guest-name" name="name" required maxlength="120" autocomplete="off" /></div><div class="ah-admin-field"><label for="guest-company">所属公司 / 机构</label><input id="guest-company" name="company" required maxlength="160" autocomplete="off" /></div></div>
+      <div class="ah-admin-field"><label for="guest-ggj-role">GGJ 职务（选填）</label><input id="guest-ggj-role" name="ggjRole" maxlength="160" autocomplete="off" placeholder="没有相关职务可留空" /></div>
+      <div class="ah-admin-field"><label for="guest-status">嘉宾确认状态</label><select id="guest-status" name="status" required><option value="pending">待确认 · 不公开</option><option value="confirmed">已确认</option></select></div>
+      <label class="ah-admin-guest-consent" for="guest-public-consent"><input id="guest-public-consent" type="checkbox" name="publicConsent" /><span>我已确认该嘉宾同意公开上述姓名、所属公司、GGJ 职务及此头像照片。</span></label>
+      <p class="ah-admin-small" data-guest-consent-note>确认状态与公开授权分别记录。更改资料或照片后，请重新核对授权；保存草稿不会自动公开。</p>
+      <div class="ah-admin-field"><label for="guest-notes">内部备注（不公开）</label><textarea id="guest-notes" name="internalNotes" rows="3" maxlength="4000"></textarea></div>
+      <div class="ah-admin-dialog-actions"><button type="button" class="ah-admin-button" data-close-dialog="guest">取消</button><button type="submit" class="ah-admin-button ah-admin-primary" data-guest-submit disabled>应用嘉宾修改</button></div>
+      <p class="ah-admin-small">应用修改后，仍需保存草稿；只有已确认、获授权且有有效头像的资料才会随发布版展示。</p>
     </form>
   </dialog>
   <script>

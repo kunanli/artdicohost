@@ -2,7 +2,7 @@
 
 用户已创建独立网站桶 `artdicohost-web-hk`，地域为中国香港，并于 2026-10-19 确认 AccessKey 已保存于 GitHub Actions Secrets，由部署流程使用。日常发布通过 GitHub 自动更新，不再手动上传 ZIP。此流程的发布范围仅含静态前台及图片邀请函生成器；本机 39 笔真实联系人、真实报名、工作人员数据 API、Wallet 签名和邮件投递不随本流程上线。开发和验证只使用示范资料。
 
-用户已建立香港 `artdicohost-api` 并要求参照 `artdico-deck` 自动更新 FC，沿用[独立 FC 自动更新](automatic-fc-deployment.md)的只读 PR 验证与 main 发布分离模式。运行时启动设置、精确 RAM 权限及 GitHub Variables 已由用户回报配置完成。最新 main 的紧凑 XZ 包通过 CI / 离线夹具与公开 OSS 回读；FC 更新前签名 health 报 400 `InvalidArgument`，随后 UpdateFunction 等待 120 秒超时，变更结果仍不明，尚无三次签名健康检查成功证据。本轮修正现行 trigger ACS3 契约、补上 Pending 状态阻挡 / presence 投影，并为单次 native HTTPS PUT 增加安全进度诊断；不把本机写完视为 FC 确认，也不宣称超时已修。上传 120 秒、GET / health 20 秒、总期限 240 秒及 48,000,000-byte JSON 工程预算不变，不自动重试、扩大 IAM 或改变启动 / 触发器设置。FC 更新与本节公开 OSS 上传是两个独立任务，不将启动包或资料放进网站桶。
+用户已建立香港 `artdicohost-api` 并要求参照 `artdico-deck` 自动更新 FC，沿用[独立 FC 自动更新](automatic-fc-deployment.md)的只读 PR 检查与 main 发布分离模式。运行时、精确 RAM 权限及 GitHub Variables 已配置；最近完整验收基线为 `e82762e2f86ea3663a4e3e78d0a10d0a608ef541`，[Actions 39362633747](https://github.com/kunanli/artdicohost/actions/runs/39362633747) 的公开 OSS 与 FC 两项实际发布均成功。FC 使用紧凑六文件启动包、现行 ACS3 trigger 签名及单次 native HTTPS 代码上传；GET / health、上传和总体期限及来源 / 配置门槛不放宽。云端仍是业务关闭的启动包，未接通工作人员登录、嘉宾管理、真实报名或私有 OSS / 统计。本轮嘉宾编辑及图片保存仅在独立本地内容 API 验证，不打入公开站点或 FC 启动包。
 
 用户已授权后续正常发布：完成检查和审阅后可合并到 main 并执行自动部署，无需逐次再申请发布确认。公开稿件核准、真实资料迁移与个人信息公开 / 分享授权仍按各自要求办理；正式隐私告知及 39 笔真实联系人保留本机的边界不变。
 
@@ -13,17 +13,17 @@
 | 项目 | 已取得的证据 |
 | --- | --- |
 | 公开发布基线 | 包含 `GlobalGameJam` 更名与报名准备；后台登录与寄件仍未作为云端业务开放 |
-| 已部署到公开 OSS 的 main 提交 | `dff3c897bdadfbe555459366183ccab1fbca0195` |
-| [Actions 39357108387](https://github.com/kunanli/artdicohost/actions/runs/39357108387) | `push` / `main`；check `118414315427` 的 203 项测试及离线 ZIP smoke（6.395 秒）通过；FC `118414977011` 更新前 state / update `unknown`、签名 health 400 `InvalidArgument`，UpdateFunction 等待 120 秒后于 02:10:56 UTC 超时，变更结果不明且未通过启动验收 |
+| 已验收的公开 OSS / FC 来源提交 | `e82762e2f86ea3663a4e3e78d0a10d0a608ef541` |
+| [Actions 39362633747](https://github.com/kunanli/artdicohost/actions/runs/39362633747) | `push` / `main`；check `118432075926` 的 224 项测试、构建与依赖审计通过；FC `118432690825` 单次更新后连续三次签名 `/healthz` 匹配该完整提交；生命周期字段为 null，未推论 Active / Successful |
 | 公开文件 | 12 个公开文件已部署至 `artdicohost-web-hk`，含最后上传的 `release.json`，全部通过 SHA-256 回读 |
-| OSS 回读记录 | job `118414977033`；10:08:57–10:09:10（Asia/Taipei；日志 02:08:57–02:09:10 UTC）完成 12 次回读 |
+| OSS 回读记录 | job `118432690875`；11:09:58–11:10:10（Asia/Taipei；日志 03:09:58–03:10:10 UTC）完成 12 次回读 |
 | AccessKey | 已在 GitHub Secrets，由成功部署使用；无需重新提供，不读取或复制到本机 |
 | 自定义域名 / DNS | 用户截图显示阿里云 DNS 正确、初次查看为 0 条记录；后续 `artdico.host` 的 OSS 绑定已生效，根域名 `@` CNAME 已启用，TTL 为 10 分钟；未开启 CDN |
 | HTTPS | 用户回报证书已配置，`https://artdico.host/` 可正常显示；尚未运行独立线上检查，证书签发者、覆盖范围和到期日待记录 |
 
 当前状态是「静态公开文件已部署并回读通过，域名已绑定，用户回报 HTTPS 页面可显示」。不需要再次合并 PR #3、重建 bucket 或重填 Secrets。该回报不代表版本、全部资源、证书链或所有浏览器已通过独立验收。
 
-上述线上版本并列呈现「2026 GGJ 中国交流聚会」与「ARTDiCO HOST 学生嘉年华」，采用蓝橙视觉与按需展开的精简内容。首屏 `GlobalGameJam` 更名与无公网接入的正式报名准备已随上述提交发布；内建表单仍不发送或保存资料。FC 的独立首次验收状态见[实际结果](automatic-fc-deployment.md)。
+上述线上版本并列呈现「2026 GGJ 中国交流聚会」与「ARTDiCO HOST 学生嘉年华」，采用深灰 / 白字、少量蓝橙点缀与按需展开的精简内容。首屏 `GlobalGameJam` 更名与无公网接入的正式报名准备已随上述提交发布；内建表单仍不发送或保存资料。FC 的独立首次验收状态见[实际结果](automatic-fc-deployment.md)。
 
 ## 更新流程
 

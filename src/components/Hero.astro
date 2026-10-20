@@ -1,9 +1,13 @@
 ---
 import { eventConfig } from '../config/event.mjs';
 import Icon from './Icon.astro';
+import '../styles/hero-program.css';
 const [, month, day] = eventConfig.date.value.split('-');
+const startsAt = `${eventConfig.date.value}T${eventConfig.time.opening}:00+08:00`;
+const endsAt = `${eventConfig.date.value}T${eventConfig.time.end}:00+08:00`;
 ---
-<section class="ah-hero" id="top" aria-labelledby="hero-heading">
+<section class="ah-hero ah-hero-unified" id="top" aria-labelledby="hero-heading">
+  <div class="ah-hero-atmosphere" aria-hidden="true"><span></span><span></span></div>
   <div class="ah-hero-copy">
     <p class="ah-eyebrow"><span class="ah-dot" aria-hidden="true"></span>{eventConfig.year} · 深圳前海</p>
     <h1 id="hero-heading" data-public-event-title data-initial-event-title={eventConfig.title} aria-label={eventConfig.title}>
@@ -21,9 +25,19 @@ const [, month, day] = eventConfig.date.value.split('-');
       <a class="ah-text-action" href="#registration">了解参与方式 <span aria-hidden="true">→</span></a>
     </div>
     <p class="ah-fine"><span data-public-static-checkin>09:30 开始签到<span aria-hidden="true"> · </span></span>报名已开放</p>
+    <div class="ah-event-countdown" data-event-countdown data-countdown-source-date={eventConfig.date.value} data-countdown-source-timezone={eventConfig.time.timezone} data-starts-at={startsAt} data-ends-at={endsAt} data-public-static-hours>
+      <p class="ah-countdown-label" data-countdown-label hidden>距离活动开场</p>
+      <div class="ah-countdown-timer" data-countdown-timer role="timer" aria-live="off" aria-label="距离活动开场" hidden>
+        <span><strong data-countdown-value="days">—</strong><small>天</small></span>
+        <span><strong data-countdown-value="hours">—</strong><small>时</small></span>
+        <span><strong data-countdown-value="minutes">—</strong><small>分</small></span>
+        <span><strong data-countdown-value="seconds">—</strong><small>秒</small></span>
+      </div>
+      <p class="ah-countdown-target" data-countdown-fallback><time datetime={startsAt}>{eventConfig.date.label} {eventConfig.time.opening}</time><span>北京时间 · UTC+8 开场</span></p>
+      <p class="ah-countdown-status" data-countdown-status role="status" aria-live="polite" aria-atomic="true"></p>
+    </div>
   </div>
-  <div class="ah-festival-art" aria-hidden="true">
-    <div class="ah-artwork-caption"><span>PLAY. MEET. CREATE.</span><span>01 — 02</span></div>
+  <div class="ah-festival-art ah-hero-background-art" aria-hidden="true">
     <svg class="ah-connection-sculpture" viewBox="0 0 640 640" fill="none">
       <defs>
         <linearGradient id="festival-silver" x1="134" y1="132" x2="440" y2="444" gradientUnits="userSpaceOnUse">
@@ -48,6 +62,10 @@ const [, month, day] = eventConfig.date.value.split('-');
       <g stroke="#B5BBC5" stroke-width="1" opacity=".45"><path d="M62 102V122M52 112H72" /><path d="M560 476V496M550 486H570" /></g>
       <circle cx="538" cy="138" r="3" fill="#ED9860" /><circle cx="105" cy="472" r="3" fill="#769CFF" />
     </svg>
-    <div class="ah-artwork-footer"><span class="ah-artwork-date" data-public-artwork-date><span class="ah-date-month">{month}</span><span class="ah-date-dot">.</span><span class="ah-date-day">{day}</span></span><span class="ah-artwork-place">SHENZHEN<br />QIANHAI, {eventConfig.year}</span><span class="ah-artwork-arrow">↗</span></div>
+
   </div>
 </section>
+
+<script>
+  import '../scripts/countdown.mjs';
+</script>

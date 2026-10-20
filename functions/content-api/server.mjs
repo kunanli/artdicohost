@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createContentApi, MAX_BODY_BYTES } from './handler.mjs';
 import { createFileContentStore } from './store.mjs';
 import { createFileContactsStore } from './contacts-store.mjs';
+import { createFilePortraitStore } from './portrait-store.mjs';
 import { parseAdminUsers } from './auth.mjs';
 import { createPreviewCommunications } from './communications.mjs';
 
@@ -51,7 +52,8 @@ export async function startLocalContentServer({ env = process.env, users, port, 
   if (inside(dist, data)) throw new TypeError('内容数据目录必须位于 dist 之外。');
   await mkdir(data, { recursive: true, mode: 0o700 });
   if (inside(dist, await realpath(data))) throw new TypeError('内容数据目录不可通过链接指向 dist。');
-  const store = createFileContentStore({ directory: data });
+  const portraitStore = createFilePortraitStore({ directory: data });
+  const store = createFileContentStore({ directory: data, portraitStore });
   const contactsStore = createFileContactsStore({ directory: data, contentStore: store });
   let api;
   let origin;
@@ -114,7 +116,7 @@ export async function startLocalContentServer({ env = process.env, users, port, 
   server.headersTimeout = 10_000;
   await new Promise((accept, reject) => { server.once('error', reject); server.listen(localPort, '127.0.0.1', accept); });
   origin = `http://127.0.0.1:${server.address().port}`;
-  api = createContentApi({ store, contactsStore, communications, users: accounts, allowedOrigin: origin });
+  api = createContentApi({ store, contactsStore, portraitStore, communications, users: accounts, allowedOrigin: origin });
   return { server, origin, close: () => new Promise((accept, reject) => { server.closeAllConnections(); server.close((error) => error ? reject(error) : accept()); }) };
 }
 

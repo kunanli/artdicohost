@@ -57,7 +57,8 @@ test('accounts require scrypt hashes and explicit supported roles; login exposes
   assert.throws(() => parseAdminUsers(''), /JSON/u);
   assert.throws(() => parseAdminUsers([]), /默认/u);
   assert.throws(() => parseAdminUsers([{ ...users[0], password: PASSWORD }]), /明文/u);
-  assert.throws(() => parseAdminUsers([{ ...users[0], roles: ['superadmin'] }]), /无效/u);
+  assert.throws(() => parseAdminUsers([{ ...users[0], roles: ['implicit-admin'] }]), /无效/u);
+  assert.deepEqual(parseAdminUsers([{ ...users[0], roles: ['superadmin'] }])[0].roles, ['superadmin']);
   const { api } = await fixture(t);
   const session = await login(api);
   assert.deepEqual(session.user.roles, ['editor']);

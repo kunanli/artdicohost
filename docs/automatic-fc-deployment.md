@@ -1,16 +1,18 @@
 # GitHub 自动更新香港 FC
 
-日期：2026-10-19（Asia/Taipei）。用户已建立香港 `artdicohost-api`，要求参照 `kunanli/artdico-deck` 自动更新，并回报运行时启动设置、RAM 权限及 GitHub Variables 已保存。用户已明确授权合并 PR #6 / #7 与本次首次发布；已核对 PR #6 / #7 合并后的首次运行：公开 OSS 成功，FC 因该次执行未读到启用开关而略过，尚无本项目 FC 云端更新及签名健康检查成功的证据。私有 OSS 已建不等于正式 API 可用。
+日期：2026-10-20（Asia/Taipei）。用户已建立香港 `artdicohost-api`，要求参照 `kunanli/artdico-deck` 自动更新，并回报运行时启动设置、RAM 权限及 GitHub Variables 已保存。用户已明确授权合并 PR #6 / #7 与本次首次发布；已核对 PR #6 / #7 合并后的首次运行：公开 OSS 成功，FC 因该次执行未读到启用开关而略过，尚无本项目 FC 云端更新及签名健康检查成功的证据。私有 OSS 已建不等于正式 API 可用。
 
 用户同时授权后续正常发布：完成检查和审阅后，可合并到 main 并执行自动部署，无需逐次再申请发布确认。此授权不替代公开稿件核准、真实资料迁移及个人信息公开 / 分享授权，也不改变正式隐私告知与当前业务关闭边界。
 
 ## 首次发布的实际结果（2026-10-20 接续核对）
 
-- 当前已核对 main：`73a1e5479721e0381e2a3150dc00d65bd3aba8b2`（PR #7；PR #6 合并为 `bdec4fbc95014a42a65c93d1769736116d081643`）。
+- PR #7 记录：`73a1e5479721e0381e2a3150dc00d65bd3aba8b2`（PR #6 合并为 `bdec4fbc95014a42a65c93d1769736116d081643`）。
 - [Actions 39279414370](https://github.com/kunanli/artdicohost/actions/runs/39279414370) 已完成，整体结论 success。检查 job `118150738016` 成功，包含 165 项测试、FC 打包与 Debian 11 启动验收。
 - OSS job `118154224656` 成功，日志有 12 条 `Verified`，公开对象上传和 SHA-256 回读通过。
 - FC job `118164111489` 为 **skipped**。检查日志实际出现 `FC automatic deployment is disabled.`，对应工作流判断 `vars.ARTDICO_FC_DEPLOY_ENABLED != 'true'`；它仅证明该次运行未读到精确启用值，不代表现在的 Variable 值，也不是 FC API 权限失败。
-- 用户接续确认 Repository Variable 已为 `true`。这个设置不会补跑已完成的 job；下一次正常 main push 才会重新求值。手动 workflow_dispatch 仍只检查，不绕过 main 门禁；若 main 前进，以当前 main 最新 push 验收。
+- 最新已验 main：`2e90103f7756acdb49cc5433a5dd6ab22500a6f2`（PR #9）。[Actions 39349541751](https://github.com/kunanli/artdicohost/actions/runs/39349541751) 的 check job `118390207507` 有 175 项测试及 Debian 11 ZIP smoke 成功；OSS job `118390479876` 有 12 条 `Verified`，公开 SHA-256 回读通过；FC job `118390481472` 仍为 skipped，disabled 提示实际执行。
+- 用户确认启用开关此前放在 **Repository secrets**。工作流读取的是 `vars.ARTDICO_FC_DEPLOY_ENABLED`，所以对应 Repository Variable 不存在时即使 Secret 同名也会略过。用户随后回报已在 **Variables → Repository variables** 保存启用值及账号 ID；实际是否读到须由新运行验证，不读取或取回 Secret 值。
+- 修正设置不会补跑已完成的 job；下一次正常 main push 才会重新求值。手动 workflow_dispatch 仍只检查，不绕过 main 门禁；若 main 前进，以当前 main 最新 push 验收。
 
 下一次运行须分别取得公开 OSS 回读及 FC 实际更新、连续三次签名 `/healthz` 返回该次完整提交标记的证据；artifact 存在或整体绿色不能代替。部署仍为业务关闭的启动包，没有管理员云端登录、真实报名、私有 OSS 读写或统计能力。
 
@@ -29,7 +31,7 @@
 1. 在香港 `artdicohost-api → 弹性配置` 将最小实例数设为 `0`，其他当前资源规格可先沿用。缩至零允许冷启动，不代表完全无费用。
 2. 在 **配置 → 运行时配置** 保留自定义运行时 Debian 11，启动命令使用命令模式 `/code/bootstrap`，监听端口 `9000`，执行超时 `60` 秒；启动参数留空。触发器仍为 `defaultTrigger`、`LATEST`、HTTP 签名认证，允许 `GET`。不新增环境变量或改为匿名认证。启动命令保存后，在首次本项目 ZIP 部署前原 Python 示例无法按新命令启动，这是首次接入的暂态；当前函数尚未承接正式业务。
 3. 在阿里云 RAM 找到**与 GitHub 现有部署 Secrets 对应的专用部署用户**。不要凭名字猜测身份或取回 AccessKey 值。建立自定义策略，例如 `artdicohost-fc-update`，从[权限模板](../deploy/fc-update-policy.template.json)替换所有 `<ALIYUN_ACCOUNT_ID>` 为本账号 UID，核对地域与函数后授予该用户。不要给其他项目身份、`AliyunFCFullAccess` 或私有资料桶权限。
-4. 在 [GitHub Actions Variables](https://github.com/kunanli/artdicohost/settings/variables/actions) 建立以下 **Repository variables**；它们不是 Secret：
+4. 在 [GitHub Actions Variables](https://github.com/kunanli/artdicohost/settings/variables/actions) 建立以下 **Repository variables**；它们不是 Secret；同名 Repository secret 不能替代。账号 ID 是函数 ARN 中的账号 UID，启用值为不含引号或空白的 `true`：
 
 | 名称 | 值 |
 | --- | --- |

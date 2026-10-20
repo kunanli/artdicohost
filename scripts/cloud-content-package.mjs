@@ -13,7 +13,7 @@ const MiB = 1024 * 1024;
 const BUILD_SCOPES = ['src', 'shared', 'public', 'astro.config.mjs', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json'];
 export const CANDIDATE_SOURCES = Object.freeze([
   ['functions/cloud-content/bootstrap', 'bootstrap', '0755'],
-  ...['launch.py', 'server.mjs', 'runtime.mjs', 'http-server.mjs', 'handler.mjs', 'auth.mjs', 'oss-client.mjs', 'object-journal.mjs', 'store.mjs', 'portrait-store.mjs', 'contacts-store.mjs', 'errors.mjs'].map(name => ['functions/cloud-content/' + name, 'functions/cloud-content/' + name, '0644']),
+  ...['launch.py', 'server.mjs', 'runtime.mjs', 'http-server.mjs', 'handler.mjs', 'auth.mjs', 'oss-client.mjs', 'object-journal.mjs', 'store.mjs', 'portrait-store.mjs', 'contacts-store.mjs', 'errors.mjs', 'acceptance.mjs', 'scoped-objects.mjs'].map(name => ['functions/cloud-content/' + name, 'functions/cloud-content/' + name, '0644']),
   ...['handler.mjs', 'launch.py'].map(name => ['functions/fc-api/' + name, 'functions/fc-api/' + name, '0644']),
   ...['auth.mjs', 'store.mjs', 'communications.mjs'].map(name => ['functions/content-api/' + name, 'functions/content-api/' + name, '0644']),
   ...['content-schema.mjs', 'contacts-schema.mjs', 'contact-editor.mjs', 'arrangement-overview.mjs', 'portrait-codec.mjs'].map(name => ['shared/' + name, 'shared/' + name, '0644']),

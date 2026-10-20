@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { request as httpRequest } from 'node:http';
 import { loadCloudContentRelease, createProductionCloudServer } from '../functions/cloud-content/server.mjs';
+import { hashPassword } from '../functions/content-api/auth.mjs';
 
 const SOURCE = 'd'.repeat(40);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -149,4 +150,22 @@ test('closed production factory preserves exact process health while serving no 
     assert.equal(result.headers['set-cookie'], undefined);
   }
   assert.equal(calls, 0);
+});
+
+test('an acceptance setting always closes the business runtime and refuses to test an enabled configuration', async t => {
+  const f = await fixture(t);
+  let calls = 0;
+  const users = [{ id: 'synthetic-owner', username: 'synthetic.owner', label: '合成账号', roles: ['editor'], passwordHash: await hashPassword('synthetic-acceptance-password') }];
+  const env = { NODE_ENV: 'production', ARTDICO_CLOUD_CONTENT_ENABLED: 'true', ARTDICO_CLOUD_ACCEPTANCE_RUN_ID: 'r123-' + SOURCE,
+    ARTDICO_CONTENT_API_ORIGIN: 'https://api.artdico.host', ARTDICO_PUBLIC_SITE_ORIGIN: 'https://artdico.host',
+    ARTDICO_CONTENT_BUCKET: 'artdicohost-data-hk', ARTDICO_CONTENT_REGION: 'cn-hongkong', ADMIN_USERS_JSON: JSON.stringify(users),
+    ALIBABA_CLOUD_ACCESS_KEY_ID: 'SyntheticRoleId', ALIBABA_CLOUD_ACCESS_KEY_SECRET: 'SyntheticRoleSecret', ALIBABA_CLOUD_SECURITY_TOKEN: 'SyntheticRoleToken' };
+  const server = await createProductionCloudServer({ codeDirectory: f.directory, env, fetchFn: async () => { calls++; throw new Error('PRIVATE_NETWORK'); } });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
+  const port = server.address().port;
+  const health = JSON.parse((await send(port, '/healthz')).text);
+  assert.equal(health.scope, 'process-only'); assert.equal(health.acceptance.status, 'rejected');
+  assert.equal(health.acceptance.requests, 0); assert.equal(calls, 0);
+  for (const path of ['/admin/', '/api/admin/session', '/api/admin/content']) assert.equal((await send(port, path)).status, 503);
 });

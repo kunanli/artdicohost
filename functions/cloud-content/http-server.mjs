@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { handleFcRequest } from '../fc-api/handler.mjs';
 import { CLOUD_API_ORIGIN, MAX_CLOUD_BODY_BYTES } from './handler.mjs';
+import { acceptanceHealthProof } from './acceptance.mjs';
 
 const SECURITY = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' };
 const MIME = { '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.woff': 'font/woff', '.woff2': 'font/woff2' };
@@ -43,8 +44,9 @@ function fixedError(response, status, code, message) {
 /** Unbound HTTP adapter. A verified candidate package supplies the explicit admin asset map.
  * It never reads a filesystem, discovers routes, opens a port on import or trusts proxy headers.
  */
-export function createCloudContentServer({ runtime, sourceCommit = null, assets = new Map() } = {}) {
+export function createCloudContentServer({ runtime, sourceCommit = null, assets = new Map(), readAcceptance = () => null } = {}) {
   if (!runtime || typeof runtime.handle !== 'function' || typeof runtime.configured !== 'boolean') throw new TypeError('云端 HTTP 服务需要明确的运行时。');
+  if (typeof readAcceptance !== 'function') throw new TypeError('云端验收状态读取无效。');
   const knownAssets = staticAssets(assets);
   const server = createServer({ maxHeaderSize: 8192, requestTimeout: 15_000, headersTimeout: 5_000, keepAliveTimeout: 1_000, connectionsCheckingInterval: 1_000 }, async (incoming, outgoing) => {
     incoming.on('error', () => outgoing.destroy());
@@ -58,9 +60,15 @@ export function createCloudContentServer({ runtime, sourceCommit = null, assets 
       // This path remains behind the unchanged signed FC trigger. Custom domain
       // routes must explicitly exclude it; it never proves business readiness.
       if (url.pathname === '/healthz') {
-        const result = handleFcRequest({ method, url: url.href }, { sourceCommit });
+        const result = handleFcRequest({ method: method === 'HEAD' ? 'GET' : method, url: url.href }, { sourceCommit });
+        let body = await result.text();
+        if (result.status === 200) {
+          const acceptance = acceptanceHealthProof(readAcceptance());
+          if (acceptance !== null) body = JSON.stringify({ ...JSON.parse(body), acceptance });
+        }
         result.headers.forEach((value, key) => outgoing.setHeader(key, value)); outgoing.statusCode = result.status;
-        outgoing.end(method === 'HEAD' ? undefined : await result.text()); return;
+        outgoing.setHeader('content-length', String(Buffer.byteLength(body)));
+        outgoing.end(method === 'HEAD' ? undefined : body); return;
       }
       if (incoming.headers.host !== new URL(CLOUD_API_ORIGIN).host) return fixedError(outgoing, 421, 'HOST_REJECTED', '请使用指定的后台地址。');
       if (!url.pathname.startsWith('/api/')) {

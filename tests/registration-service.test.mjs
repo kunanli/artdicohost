@@ -96,7 +96,8 @@ test('capacity is one atomic index gate across concurrent different keys', async
   const results = await Promise.all([a.submit(inputs[0]), b.submit(inputs[1])]);
   assert.deepEqual(results.map(value => value.outcome).sort(), ['closed', 'created']);
   assert.equal((await a.repository.list()).registrations.length, 1);
-  assert.deepEqual(await a.metadata(), { enabled: false, reason: 'closed' });
+  const closed = await a.metadata();
+  assert.equal(closed.enabled, false); assert.equal(closed.reason, 'closed'); assert.equal(closed.privacy.contactEmail, policy().privacy.contactEmail);
 });
 
 test('a lost index append ACK returns unavailable once and the same key later replays proven storage', async () => {
@@ -192,4 +193,34 @@ test('withdrawn or deletion-requested review state suppresses receipt and group-
   assert.deepEqual(await service.submit(input), { outcome: 'withdrawn' }); assert.equal(inviteCalls, 1);
   assert.deepEqual(await f.service({ isWithdrawn: async () => { throw new Error('PRIVATE-SYNTHETIC-REVIEW-FAILED'); } }).submit(input), { outcome: 'unavailable' });
   assert.deepEqual(await f.service({ isWithdrawn: async () => 'unknown' }).submit(input), { outcome: 'unavailable' });
+});
+
+test('approved notice and rights contact remain public after cutoff, capacity closure or temporary storage failure', async () => {
+  const f = fixture({ capacity: 1 }), service = f.service();
+  assert.equal((await service.submit(await submission(service))).outcome, 'created');
+  for (const closedService of [service, f.service({ policy: { ...policy(), enabled: false } })]) {
+    const config = await closedService.metadata();
+    assert.equal(config.enabled, false); assert.equal(config.reason, 'closed');
+    assert.equal(config.privacy.rightsRequest, policy().privacy.rightsRequest);
+    assert.equal(config.privacy.contactEmail, policy().privacy.contactEmail);
+    const handle = createRegistrationApi({ allowedOrigins: [ORIGIN], submissionService: closedService });
+    const response = await handle(new Request('https://api.example.invalid/api/registration/config', { headers: { origin: ORIGIN } }));
+    assert.equal(response.status, 200); const body = await response.json();
+    assert.equal(body.enabled, false); assert.equal(body.privacy.contactEmail, policy().privacy.contactEmail); assert.equal(body.capacity, 1);
+  }
+  f.state.now = Date.parse(policy().closesAt);
+  const afterCutoff = await f.service().metadata();
+  assert.equal(afterCutoff.enabled, false); assert.equal(afterCutoff.reason, 'closed'); assert.equal(afterCutoff.privacy.version, policy().privacy.version);
+  const unavailable = await fixture().service({ journalFor: async () => ({ async read() { throw new Error('PRIVATE-STORAGE-ERROR'); }, async commit() { throw new Error(); } }) }).metadata();
+  assert.equal(unavailable.enabled, false); assert.equal(unavailable.reason, 'unavailable');
+  assert.equal(unavailable.privacy.contactEmail, policy().privacy.contactEmail); assert.equal(JSON.stringify(unavailable).includes('PRIVATE-'), false);
+});
+
+test('malformed notice contacts are never published while closed', async () => {
+  const config = policy(); config.enabled = false; config.privacy.contactEmail = 'PRIVATE-INVALID-CONTACT';
+  const service = fixture({ policy: config }).service();
+  assert.deepEqual(await service.metadata(), { enabled: false, reason: 'unavailable' });
+  const handle = createRegistrationApi({ allowedOrigins: [ORIGIN], submissionService: { submit: async () => ({ outcome: 'unavailable' }), metadata: async () => ({ ...config, capacity: 300, reason: 'closed' }) } });
+  const response = await handle(new Request('https://api.example.invalid/api/registration/config', { headers: { origin: ORIGIN } }));
+  assert.equal(response.status, 503); assert.equal(JSON.stringify(await response.json()).includes('PRIVATE-'), false);
 });

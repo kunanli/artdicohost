@@ -29,7 +29,7 @@ const handle = createRegistrationApi({
 
 | 路径 | 方法 | 结果 |
 | --- | --- | --- |
-| `/api/registration/config` | GET、OPTIONS | 开放时返回 eventId、开放／截止时间、容量与完整公开隐私告知；关闭时只有 enabled:false 及固定原因 |
+| `/api/registration/config` | GET、OPTIONS | 返回 eventId、开放／截止时间、容量与完整公开隐私告知；截止、满额或临时故障时 enabled:false 加固定原因，保留已核定的告知与权利联系；告知配置本身不合法时只返回关闭状态 |
 | `/api/registration/token` | POST、OPTIONS | JSON `{eventId,idempotencyKey}`；返回 submissionToken、expiresAt、eventId |
 | `/api/registrations` | POST、OPTIONS | 既有完整正式字段／隐私同意契约；请求头 Idempotency-Key、X-Registration-Token |
 

@@ -31,6 +31,9 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
   const budgets = createRegistrationRateLimit({ journalFor, eventId, tokenLimit, submissionLimit });
   const current = () => { const value = clockTime(clock()); if (value === null || value < 0) throw new Error(); return value; };
   const policyAt = now => validateRegistrationPolicy(configured, { now });
+  // Validate public notice facts independently of the current intake window, without opening writes.
+  const noticeCheck = validateRegistrationPolicy({ ...configured, enabled: true }, { now: configured.opensAt });
+  const publicNotice = noticeCheck.valid ? { ...noticeCheck.value, capacity } : null;
   async function decorate(saved, origin, includeInvite = true) {
     if (!['created', 'replayed'].includes(saved.outcome)) return saved;
     if (typeof isWithdrawn === 'function') {
@@ -47,13 +50,14 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
   return Object.freeze({
     repository,
     async metadata() {
+      if (!publicNotice) return { enabled: false, reason: 'unavailable' };
       try {
         const checked = policyAt(current());
-        if (!checked.valid) return { enabled: false, reason: Object.keys(checked.errors).some(key => !['enabled', 'window'].includes(key)) ? 'unavailable' : 'closed' };
+        if (!checked.valid) return { ...publicNotice, enabled: false, reason: Object.keys(checked.errors).some(key => !['enabled', 'window'].includes(key)) ? 'unavailable' : 'closed' };
         const state = await repository.readIndex();
-        if (state.value.entries.length >= capacity) return { enabled: false, reason: 'closed' };
+        if (state.value.entries.length >= capacity) return { ...publicNotice, enabled: false, reason: 'closed' };
         return { ...checked.value, capacity };
-      } catch { return { enabled: false, reason: 'unavailable' }; }
+      } catch { return { ...publicNotice, enabled: false, reason: 'unavailable' }; }
     },
     async issueToken(input) {
       try {

@@ -1,5 +1,5 @@
 import { MAX_REGISTRATION_BYTES } from './validation.mjs';
-import { own, plainObject, parseTimestamp, clockTime } from './policy.mjs';
+import { own, plainObject, parseTimestamp, clockTime, validateRegistrationPolicy } from './policy.mjs';
 
 const HEADER_NAMES = ['content-type', 'idempotency-key', 'x-registration-token'];
 const KEY_PATTERN = /^[A-Za-z0-9_-]{32,128}$/u;
@@ -127,17 +127,19 @@ export function createRegistrationApi({ allowedOrigins, submissionService, allow
         if (configRoute) {
           if (!metadata) return reply({ enabled: false, reason: 'unavailable' }, 200);
           const value = await metadata();
-          if (own(value, 'enabled') === false) return reply({ enabled: false, reason: own(value, 'reason') === 'closed' ? 'closed' : 'unavailable' }, 200);
+          const enabled = own(value, 'enabled'), reason = own(value, 'reason') === 'closed' ? 'closed' : 'unavailable';
+          if (enabled === false && !['eventId', 'opensAt', 'closesAt', 'capacity', 'privacy'].some(key => own(value, key) !== undefined)) return reply({ enabled: false, reason }, 200);
           // Only the server-owned public notice/configuration projection can leave this endpoint.
-          const checked = { enabled: true, eventId: own(value, 'eventId'), opensAt: own(value, 'opensAt'), closesAt: own(value, 'closesAt'), capacity: own(value, 'capacity'), privacy: {} };
-          if (own(value, 'enabled') !== true || typeof checked.eventId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(checked.eventId)
+          const checked = { enabled, eventId: own(value, 'eventId'), opensAt: own(value, 'opensAt'), closesAt: own(value, 'closesAt'), capacity: own(value, 'capacity'), privacy: {} };
+          if (typeof enabled !== 'boolean' || typeof checked.eventId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(checked.eventId)
             || parseTimestamp(checked.opensAt) === null || parseTimestamp(checked.closesAt) === null || !Number.isSafeInteger(checked.capacity) || checked.capacity < 1 || checked.capacity > 1000) return failure('UNAVAILABLE');
           for (const key of ['version', 'processor', 'contactEmail', 'purpose', 'storageRegion', 'retention', 'rightsRequest', 'sharing']) {
             const text = own(own(value, 'privacy'), key);
             if (typeof text !== 'string' || !text || text.length > 4000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)) return failure('UNAVAILABLE');
             checked.privacy[key] = text;
           }
-          return reply(checked, 200);
+          if (!validateRegistrationPolicy({ ...checked, enabled: true }, { now: checked.opensAt }).valid) return failure('UNAVAILABLE');
+          return reply(enabled ? checked : { ...checked, reason }, 200);
         }
         if (!issueToken) return failure('UNAVAILABLE');
         if (!/^application\/json(?:\s*;\s*charset\s*=\s*(?:utf-8|"utf-8"))?\s*$/iu.test(request.headers.get('content-type') ?? '')

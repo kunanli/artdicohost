@@ -17,16 +17,24 @@ export function crc32(bytes) {
 export function privateInvitationFilename(recipientName, contactId, index) {
   if (typeof recipientName !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(contactId)
     || !Number.isSafeInteger(index) || index < 0 || index >= 100) throw new TypeError('Invalid invitation filename input.');
-  const name = Array.from(recipientName.normalize('NFKC').replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069<>:"/\\|?*]/gu, '_')
-    .replace(/\.+/gu, '_').replace(/\s+/gu, ' ').trim()).slice(0, 60).join('') || '邀请函';
-  return String(index + 1).padStart(3, '0') + '-' + name + '-' + contactId + '.png';
+  const cleaned = recipientName.normalize('NFKC').replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069<>:"/\\|?*]/gu, '_')
+    .replace(/\.+/gu, '_').replace(/\s+/gu, ' ').trim();
+  const prefix = String(index + 1).padStart(3, '0') + '-', suffix = '-' + contactId + '.png';
+  const budget = 240 - encoder.encode(prefix + suffix).length;
+  let name = '', used = 0;
+  for (const character of Array.from(cleaned).slice(0, 60)) {
+    const bytes = encoder.encode(character).length;
+    if (used + bytes > budget) break;
+    name += character; used += bytes;
+  }
+  return prefix + (name.trimEnd() || '邀请函') + suffix;
 }
 function nameBytes(name) {
   if (typeof name !== 'string' || !name || name.length > 240 || name !== name.normalize('NFKC')
     || /^[. ]|[. ]$/u.test(name) || /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069<>:"/\\|?*]/u.test(name)
     || /(^|\.)\.{2}(\.|$)/u.test(name) || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(name)) throw new TypeError('Unsafe ZIP filename.');
   const bytes = encoder.encode(name);
-  if (bytes.length > 1024) throw new RangeError('ZIP filename is too long.');
+  if (bytes.length > 240) throw new RangeError('ZIP filename is too long.');
   return bytes;
 }
 function sizeOf(data) {

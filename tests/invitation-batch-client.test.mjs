@@ -77,6 +77,18 @@ test('malicious and colliding recipient names become bounded unique basenames re
   assert.throws(()=>privateInvitationFilename('name','../id',0), /Invalid/u);
 });
 
+test('long CJK recipient names retain an 80-character stable ID within a 240-byte filesystem component', async () => {
+  const contactId = 'c'.repeat(80);
+  const name = privateInvitationFilename('长'.repeat(80), contactId, 99);
+  assert.ok(encoder.encode(name).length <= 240);
+  assert.ok(name.startsWith('100-'));
+  assert.ok(name.endsWith('-' + contactId + '.png'));
+  assert.ok(name.includes('长'));
+  const files = await readZip(await createPrivateInvitationZip([{ name, data: png() }]));
+  assert.ok(files.has(name));
+  await assert.rejects(createPrivateInvitationZip([{ name: '长'.repeat(90) + '.png', data: png() }]), /too long/u);
+});
+
 test('archive size is bounded including directories before any Blob bytes are read', async () => {
   let reads = 0;
   class ObservedBlob extends Blob { async arrayBuffer() { reads++; return super.arrayBuffer(); } }

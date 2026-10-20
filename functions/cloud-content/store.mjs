@@ -32,6 +32,33 @@ function checkActor(value) {
 function envelope(state) { return structuredClone({ draft: state.draft, published: state.published }); }
 function bytes(value) { return Buffer.byteLength(JSON.stringify(value)); }
 
+function preserveArrangementFields(input, current) {
+  const copy = (value, field) => {
+    if (!record(value)) throw new CloudContentError('VALIDATION_ERROR', '请提供完整的内容资料。', 422, { [field]: '请提供普通资料对象。' });
+    const result = Object.create(null);
+    for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+      if (!descriptor.enumerable) continue;
+      if (!('value' in descriptor)) throw new CloudContentError('VALIDATION_ERROR', '内容字段无效。', 422, { [field]: '请提供明确的资料值。' });
+      result[key] = descriptor.value;
+    }
+    return result;
+  };
+  const result = copy(input, 'content');
+  for (const [collection, field, fallback] of [['sessions', 'format', 'other'], ['booths', 'slotNumber', 0]]) {
+    if (!Array.isArray(result[collection])) continue;
+    result[collection] = result[collection].map(item => {
+      const row = copy(item, collection);
+      if (row[field] === undefined) {
+        const id = typeof row.id === 'string' ? row.id.normalize('NFC').trim() : '';
+        const existing = current[collection].find(candidate => candidate.id === id);
+        row[field] = existing?.[field] ?? fallback;
+      }
+      return row;
+    });
+  }
+  return result;
+}
+
 /** Private durable state. The journal, not a process mutex, owns atomic commit position. */
 export function createOssContentStore({ journal, portraitStore, initialContent = createInitialContent(), now = () => Date.now() } = {}) {
   if (!journal || typeof journal.read !== 'function' || typeof journal.commit !== 'function' || typeof now !== 'function') {
@@ -136,7 +163,7 @@ export function createOssContentStore({ journal, portraitStore, initialContent =
       if (state.draft.content.showcases?.length && (!record(input) || !Object.hasOwn(input, 'showcases'))) {
         throw new CloudContentError('VALIDATION_ERROR', '现有学生展示不可因字段缺失被清空，请重新载入完整草稿。', 422, { showcases: '请保留完整展示数组；删除须明确提交修改。' });
       }
-      const content = checkedContent(input);
+      const content = checkedContent(preserveArrangementFields(input, state.draft.content));
       if (content.eventId !== seed.eventId) throw new CloudContentError('VALIDATION_ERROR', '本后台只维护当前活动。', 422, { eventId: '活动 ID 不可更改。' });
       await verifyPortraits(content);
       if (!Number.isSafeInteger(state.draft.revision + 1)) throw capacity();

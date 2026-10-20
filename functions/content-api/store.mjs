@@ -30,6 +30,34 @@ function envelope(state) {
   return structuredClone({ draft: state.draft, published: state.published });
 }
 
+function preserveArrangementFields(input, current) {
+  const copy = (value, field) => {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)
+      || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new ContentError('VALIDATION_ERROR', '请提供完整的内容资料。', 422, { [field]: '请提供普通资料对象。' });
+    const result = Object.create(null);
+    for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+      if (!descriptor.enumerable) continue;
+      if (!('value' in descriptor)) throw new ContentError('VALIDATION_ERROR', '内容字段无效。', 422, { [field]: '请提供明确的资料值。' });
+      result[key] = descriptor.value;
+    }
+    return result;
+  };
+  const result = copy(input, 'content');
+  for (const [collection, field, fallback] of [['sessions', 'format', 'other'], ['booths', 'slotNumber', 0]]) {
+    if (!Array.isArray(result[collection])) continue;
+    result[collection] = result[collection].map(item => {
+      const row = copy(item, collection);
+      if (row[field] === undefined) {
+        const id = typeof row.id === 'string' ? row.id.normalize('NFC').trim() : '';
+        const existing = current[collection].find(candidate => candidate.id === id);
+        row[field] = existing?.[field] ?? fallback;
+      }
+      return row;
+    });
+  }
+  return result;
+}
+
 /** Single-process local storage; deliberately provides no cross-process or cloud lock. */
 export function createFileContentStore({ directory, portraitStore, initialContent = createInitialContent(), now = () => Date.now() }) {
   if (!directory) throw new TypeError('必须指定本地内容目录。');
@@ -108,7 +136,7 @@ export function createFileContentStore({ directory, portraitStore, initialConten
       if (state.draft.content.showcases?.length && (input === null || typeof input !== 'object' || !Object.hasOwn(input, 'showcases'))) {
         throw new ContentError('VALIDATION_ERROR', '现有学生展示不可因字段缺失被清空，请重新载入完整草稿。', 422, { showcases: '请保留完整展示数组；删除须明确提交修改。' });
       }
-      const content = checkedContent(input);
+      const content = checkedContent(preserveArrangementFields(input, state.draft.content));
       if (content.eventId !== state.draft.content.eventId) throw new ContentError('VALIDATION_ERROR', '本后台只维护当前活动。', 422, { eventId: '活动 ID 不可更改。' });
       await verifyPortraits(content);
       state.draft = { revision: state.draft.revision + 1, content };

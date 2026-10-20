@@ -4,6 +4,7 @@ import { ContentError } from './store.mjs';
 import { createPreviewCommunications } from './communications.mjs';
 import { PORTRAIT_ID_PATTERN } from '../../shared/content-schema.mjs';
 import { toContactPlanningContent } from '../../shared/contact-editor.mjs';
+import { buildArrangementOverview } from '../../shared/arrangement-overview.mjs';
 
 export const MAX_BODY_BYTES = 1024 * 1024;
 export const SESSION_COOKIE = 'artdico_local_session';
@@ -117,6 +118,13 @@ export function createContentApi({ store, contactsStore, portraitStore, communic
         permit(session, 'outreach');
         const { draft } = await store.read();
         return json({ content: toContactPlanningContent(draft.content), features: { contactImport: true, communicationsPreview: true } });
+      }
+      if (url.pathname === '/api/admin/arrangements' && request.method === 'GET' && !url.search) {
+        permit(session, 'editor');
+        permit(session, 'outreach');
+        if (!contactsStore) throw new ContentError('CONTACTS_UNAVAILABLE', '私密联系人模块未配置，不能读取完整人员安排。', 503);
+        const [{ draft }, roster] = await Promise.all([store.read(), contactsStore.read()]);
+        return json(buildArrangementOverview({ content: draft.content, contacts: roster.contacts, contentRevision: draft.revision, contactsRevision: roster.revision }));
       }
       if (url.pathname === '/api/admin/portraits' && request.method === 'POST') {
         permit(session, 'editor');

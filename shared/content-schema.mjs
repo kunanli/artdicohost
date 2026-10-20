@@ -10,6 +10,7 @@ export const contentSchema = Object.freeze({
   maxShowcases: MAX_CONTENT_ITEMS,
   zones: ['A', 'B', 'C'],
   sessionStatuses: ['draft', 'scheduled', 'cancelled'],
+  sessionFormats: ['talk', 'workshop', 'roundtable', 'showcase', 'social', 'break', 'other'],
   speakerStatuses: ['pending', 'confirmed'],
   boothStatuses: ['pending', 'confirmed', 'cancelled'],
   eventStatuses: ['tentative', 'confirmed', 'cancelled'],
@@ -20,8 +21,8 @@ export const contentSchema = Object.freeze({
   showcaseParticipationForms: ['booth', 'share'],
 });
 
-/** @typedef {{id:string,start:string,end:string,zone:string,title:string,guestId:string,speakerName:string,speakerStatus:string,status:string,internalNotes:string}} Session */
-/** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string}} Booth */
+/** @typedef {{id:string,start:string,end:string,zone:string,title:string,guestId:string,speakerName:string,speakerStatus:string,status:string,internalNotes:string,format:string}} Session */
+/** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string,slotNumber:number}} Booth */
 /** @typedef {{id:string,name:string,company:string,ggjRole:string,portraitId:string,status:string,publicConsent:boolean,internalNotes:string,contactId:string}} Guest */
 /** @typedef {{id:string,title:string,teamName:string,school:string,contactName:string,email:string,wechat:string,memberCount:number,participationForms:string[],responseStatus:string,materialLinks:string,summary:string,coverId:string,status:string,publicConsent:boolean,sessionId:string,boothId:string,internalNotes:string}} Showcase */
 /** @typedef {{schemaVersion:number,eventId:string,event:{title:string,date:string,timezone:string,venue:string,status:string,dateStatus:string,venueStatus:string},sessions:Session[],booths:Booth[],guests:Guest[],showcases:Showcase[]}} Content */
@@ -43,6 +44,7 @@ function session(input) {
   const item = object(input);
   return {
     id: text(item.id), start: text(item.start), end: text(item.end), zone: text(item.zone), title: text(item.title),
+    format: item.format === undefined ? 'other' : text(item.format),
     guestId: text(item.guestId), speakerName: text(item.speakerName), speakerStatus: text(item.speakerStatus), status: text(item.status), internalNotes: text(item.internalNotes),
   };
 }
@@ -63,6 +65,7 @@ function booth(input) {
   return {
     id: text(item.id), code: text(item.code).toUpperCase(), organization: text(item.organization), project: text(item.project),
     zone: text(item.zone), status: text(item.status), internalNotes: text(item.internalNotes),
+    slotNumber: item.slotNumber === undefined ? 0 : /** @type {number} */ (item.slotNumber),
   };
 }
 
@@ -215,6 +218,8 @@ export function validateContent(input) {
     stringField(`${key}.title`, item.title, 200);
     stringField(`${key}.speakerName`, item.speakerName, 120, item.speakerStatus === 'confirmed' && !item.guestId);
     const raw = object(rawSessions[index]);
+    if (raw.format !== undefined && (typeof raw.format !== 'string' || /[\u0000-\u001f\u007f]/u.test(raw.format))) errors[`${key}.format`] = '请选择有效的活动形式。';
+    enumField(`${key}.format`, item.format, contentSchema.sessionFormats);
     if (raw.guestId !== undefined && typeof raw.guestId !== 'string') errors[`${key}.guestId`] = '请选择本活动已有的嘉宾，或留空使用原讲者资料。';
     if (item.guestId && !guestIds.has(item.guestId)) errors[`${key}.guestId`] = '请选择本活动已有的嘉宾，或留空使用原讲者资料。';
     stringField(`${key}.internalNotes`, item.internalNotes, 4000, false);
@@ -227,6 +232,7 @@ export function validateContent(input) {
   }
 
   const codes = new Set();
+  const positions = new Map();
   for (const [index, item] of value.booths.entries()) {
     const key = `booths.${index}`;
     stableId(`${key}.id`, item.id);
@@ -235,6 +241,14 @@ export function validateContent(input) {
     if (!/^[A-Z0-9][A-Z0-9-]{0,15}$/u.test(item.code)) errors[`${key}.code`] = '展位编号须为 1–16 位字母、数字或短横线。';
     if (codes.has(item.code)) errors[`${key}.code`] = '展位编号重复（不区分大小写）。';
     codes.add(item.code);
+    if (!Number.isInteger(item.slotNumber) || item.slotNumber < 0 || item.slotNumber > 15) errors[`${key}.slotNumber`] = '展位位置须为 0–15 的整数；0 表示尚未指定位置。';
+    else if (item.slotNumber > 0 && ['pending', 'confirmed'].includes(item.status)) {
+      const previous = positions.get(item.slotNumber);
+      if (previous !== undefined) {
+        errors[`${key}.slotNumber`] = '此展位位置已被其他有效展位占用，请核对安排。';
+        errors[`booths.${previous}.slotNumber`] = '此展位位置已被其他有效展位占用，请核对安排。';
+      } else positions.set(item.slotNumber, index);
+    }
     if (item.zone !== 'C') errors[`${key}.zone`] = '本阶段展位仅安排在 C 区。';
     enumField(`${key}.status`, item.status, contentSchema.boothStatuses);
     stringField(`${key}.organization`, item.organization, 160, item.status === 'confirmed');
@@ -319,10 +333,12 @@ export function toPublicContent(input) {
         guestId: linked?.id ?? '',
         speakerName: item.guestId ? linked?.name ?? '' : item.speakerStatus === 'confirmed' ? item.speakerName : '',
         speakerStatus: item.guestId ? linked ? 'confirmed' : 'pending' : item.speakerStatus, status: item.status,
+        ...(item.format !== 'other' ? { format: item.format } : {}),
       };
     }),
     booths: value.booths.filter((item) => item.status === 'confirmed').map((item) => ({
       id: item.id, code: item.code, organization: item.organization, project: item.project, zone: item.zone, status: item.status,
+      ...(item.slotNumber > 0 ? { slotNumber: item.slotNumber } : {}),
     })),
     showcases: value.showcases.filter(item => isPublicShowcase(item, value)).map(item => {
       const allocated = showcaseAllocations(item, value);

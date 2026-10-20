@@ -27,6 +27,10 @@ export function createInitialContent() {
         end: slot.end,
         zone,
         title,
+        // Only explicitly documented formats; the remaining slots await classification.
+        format: zone === 'A' && ['ggj-talk', 'speaker-one', 'speaker-two', 'speaker-three'].includes(slot.id) ? 'talk'
+          : zone === 'A' && slot.id === 'student-showcase' ? 'showcase'
+          : zone === 'B' && slot.id === 'speaker-one' ? 'roundtable' : 'other',
         guestId: '',
         speakerName: '',
         speakerStatus: 'pending',

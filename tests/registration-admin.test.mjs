@@ -201,11 +201,13 @@ test('withdrawal guard reads only validated review state and fails closed on mal
   const before = f.objects.calls.length;
   assert.equal(await fast.isWithdrawn(A), true); assert.equal(applicationReads, 0);
   const reads = f.objects.calls.slice(before); assert.equal(reads.length, 2); assert.ok(reads.every(call => call.key.startsWith('cms/v1/registration-reviews/')));
+  assert.deepEqual(await fast.inactiveRegistrationIds(), [A]); assert.equal(applicationReads, 0);
   const saved = await f.journal().read();
   for (const change of [state => { state.value.reviews[A].deletionRequested.status = 'cleared'; }, state => { state.value.reviews[A].status = 'invalid'; }, state => { state.value.audit[0].metadata.reason = PRIVATE; }]) {
     const altered = clone(saved); change(altered);
     const corrupted = createRegistrationReviewStore({ eventId: EVENT, journal: { read: async () => altered, commit() {} }, loadRegistrations: async () => { throw new Error('must not read'); } });
     await rejects(corrupted.isWithdrawn(A), 'STORAGE_UNAVAILABLE');
+    await rejects(corrupted.inactiveRegistrationIds(), 'STORAGE_UNAVAILABLE');
   }
   f.objects.setFailure('get'); await rejects(fast.isWithdrawn(A), 'STORAGE_UNAVAILABLE'); assert.equal(applicationReads, 0);
 });

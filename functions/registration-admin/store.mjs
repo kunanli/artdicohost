@@ -197,6 +197,11 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
     return { ...result.value, revision: next.revision };
   }
   return Object.freeze({
+    /** Private task aggregation reads the validated review journal once, without application data. */
+    async inactiveRegistrationIds() { return guarded(async () => {
+      const state = reviewState(await journal.read());
+      return Object.keys(state.reviews).filter(id => state.reviews[id].status === 'withdrawn' || state.reviews[id].deletionRequested !== null);
+    }); },
     /** Call only after a committed receipt or signed ID is proven; never reads the application repository. */
     async isWithdrawn(id) { return guarded(async () => {
       if (typeof id !== 'string' || !RECORD_ID.test(id)) fail('INVALID_REQUEST');

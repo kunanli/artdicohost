@@ -1,39 +1,23 @@
 ---
-import { eventConfig } from '../config/event.mjs';
+import '../styles/navigation.css';
 const links = [
+  { href: '#top', label: '活动首页' },
   { href: '#about', label: '活动亮点' },
   { href: '#guests', label: '嘉宾阵容' },
   { href: '#agenda', label: '活动日程' },
   { href: '#recruitment', label: '参与指引' },
 ];
 ---
-<header class="ah-header">
-  <a class="ah-wordmark ah-dual-wordmark" href="#top" aria-label="GlobalGameJam 中国交流聚会与 ARTDiCO HOST 学生嘉年华首页">
-    <span class="ah-lockup-brand">GlobalGameJam<span class="ah-host-word">CHINA / {eventConfig.year}</span></span>
-    <span class="ah-lockup-cross" aria-hidden="true">×</span>
-    <span class="ah-lockup-brand">ARTDiCO<span class="ah-host-word">HOST / {eventConfig.year}</span></span>
-  </a>
-  <nav class="ah-desktop-nav" aria-label="主导航">
-    {links.map(link => <a href={link.href}>{link.label}</a>)}
-    <a href="#registration" class="ah-nav-cta">了解报名 <span aria-hidden="true">↗</span></a>
-  </nav>
-  <details class="ah-mobile-nav" data-mobile-nav>
-    <summary>菜单 <span aria-hidden="true">+</span></summary>
-    <nav aria-label="手机主导航">
+<header class="ah-header ah-compact-header">
+  <details class="ah-site-menu" data-site-menu data-mobile-nav>
+    <summary aria-controls="site-navigation">菜单 <span class="ah-menu-icon" aria-hidden="true"><span></span><span></span></span></summary>
+    <nav id="site-navigation" aria-label="页面导航">
       {links.map(link => <a href={link.href}>{link.label}<span aria-hidden="true">↗</span></a>)}
       <a href="#venue">地点与常见问题<span aria-hidden="true">↗</span></a>
-      <a href="#registration" class="ah-nav-cta">了解报名<span aria-hidden="true">↗</span></a>
+      <a href="#registration" class="ah-menu-action">了解报名<span aria-hidden="true">↗</span></a>
     </nav>
   </details>
 </header>
 <script>
-  for (const menu of document.querySelectorAll<HTMLDetailsElement>('[data-mobile-nav]')) {
-    menu.querySelectorAll('a').forEach(link => link.addEventListener('click', () => { menu.open = false; }));
-    menu.addEventListener('keydown', event => {
-      if (event.key === 'Escape' && menu.open) {
-        menu.open = false;
-        menu.querySelector('summary')?.focus();
-      }
-    });
-  }
+  import '../scripts/navigation.mjs';
 </script>

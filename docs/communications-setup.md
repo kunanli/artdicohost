@@ -36,7 +36,7 @@ settings 为 `{recipientName,date:'YYYY-MM-DD',time:'HH:mm–HH:mm',venue,confir
 
 ## EmailJS 后续设置
 
-先在 EmailJS 建立发件服务和出席确认模板，核对发件人、回复地址、模板变量和已验证域名。服务端占位为 `EMAILJS_SERVICE_ID`、`EMAILJS_TEMPLATE_ID`、`EMAILJS_PUBLIC_KEY`，可选未来服务端授权的 `EMAILJS_PRIVATE_KEY`。当前未安装 EmailJS SDK，没有调用其发送 API。
+先在 EmailJS 建立发件服务和出席确认模板，核对发件人、回复地址、模板变量和已验证域名。用户指定发件网域为 `artdico.co`；server-only 的 `EMAIL_FROM_ADDRESS` 必须为该网域的单一合法地址，`EMAIL_FROM_NAME` 为发件显示名称。就绪说明只指出缺少或无效的固定字段，不回传这些配置值。填入地址不代表邮箱已经存在、域名发信验证或 EmailJS 已完成配置；仍须在邮件服务核对 SPF / DKIM / DMARC 及实际服务要求，不改现有 DNS。服务端占位为 `EMAILJS_SERVICE_ID`、`EMAILJS_TEMPLATE_ID`、`EMAILJS_PUBLIC_KEY`，可选未来服务端授权的 `EMAILJS_PRIVATE_KEY`。当前未安装 EmailJS SDK，没有调用其发送 API。
 
 后续实现应依照 [EmailJS 官方 send API](https://www.emailjs.com/docs/rest-api/send/)配置服务与模板；只有具备实际出席确认及联系许可的对象进入发送队列。投递还需人工确认收件人 / 内容、同一确认事件幂等、速率限制、结果记录、失败重试和退订 / 撤回处理。不要以浏览器按钮点击、预览生成或 HTTP 超时推断已发送 / 已送达。
 

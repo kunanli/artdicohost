@@ -12,7 +12,7 @@ import '../../styles/admin.css';
       <section class="ah-admin-login-card" data-admin-login-panel aria-labelledby="login-title">
         <span class="ah-admin-eyebrow">FOR THE PEOPLE BEHIND THE DAY</span><h1 id="login-title">一起，把现场准备好。</h1><p class="ah-admin-intro">登录后管理活动场次与展位。请使用已配置的工作人员账号，身份将由后台实际校验。</p>
         <form method="post" data-admin-login>
-          <div class="ah-admin-field"><label for="staff-username">工作人员账号</label><input id="staff-username" name="username" autocomplete="username" required maxlength="160" /></div>
+          <div class="ah-admin-field"><label for="staff-username">用户名或邮箱</label><input id="staff-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="160" placeholder="用户名或 @artdico.co 邮箱" /></div>
           <div class="ah-admin-field"><label for="staff-password">密码</label><input id="staff-password" name="password" type="password" autocomplete="current-password" required maxlength="1024" /></div>
           <button class="ah-admin-button ah-admin-primary" type="submit" data-admin-login-submit disabled>登录后台 <span aria-hidden="true">→</span></button>
         </form>

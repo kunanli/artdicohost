@@ -14,10 +14,28 @@ const EMAIL_REQUIREMENTS = [
   ['EMAILJS_SERVICE_ID', 'EmailJS Service ID'],
   ['EMAILJS_TEMPLATE_ID', 'EmailJS Template ID'],
   ['EMAILJS_PUBLIC_KEY', 'EmailJS Public Key'],
+  ['EMAIL_FROM_ADDRESS', '寄件地址（@artdico.co）'],
+  ['EMAIL_FROM_NAME', '寄件名称'],
 ];
 
 function missing(env, requirements) {
   return requirements.filter(([key]) => typeof env[key] !== 'string' || !env[key].trim()).map(([, label]) => label);
+}
+function invalidSender(env) {
+  const invalid = [];
+  const address = env.EMAIL_FROM_ADDRESS;
+  if (typeof address === 'string' && address.trim()) {
+    const [local, domain, extra] = address.split('@');
+    // Only an unquoted ASCII dot-atom mailbox at this exact domain is prepared.
+    // Do not normalize whitespace or accept display names, lists or subdomains.
+    if (address.length > 254 || !local || local.length > 64 || extra !== undefined
+      || domain?.toLowerCase() !== 'artdico.co'
+      || !/^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/.test(local)) invalid.push('寄件地址须为有效的 @artdico.co 邮箱');
+  }
+  const name = env.EMAIL_FROM_NAME;
+  if (typeof name === 'string' && name.trim()
+    && (name.length > 80 || !name.isWellFormed() || /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/u.test(name))) invalid.push('寄件名称须为 1–80 字的单行文字');
+  return invalid;
 }
 function requireContactConsent(contact) {
   if (!contact) throw new ContentError('CONTACT_NOT_FOUND', '此联系人不存在，请重新载入。', 404);
@@ -29,10 +47,15 @@ function checkedSettings(settings) {
   return result.value;
 }
 
-/** Readiness never validates, reads or returns credentials; preview is always disabled for delivery. */
+/** Check sender syntax only; never read credential files, contact providers or return config values. */
 export function getCommunicationsReadiness(env = {}) {
   const walletMissing = missing(env, WALLET_REQUIREMENTS);
   const emailMissing = missing(env, EMAIL_REQUIREMENTS);
+  const senderInvalid = invalidSender(env);
+  const emailPending = [
+    ...(emailMissing.length ? ['待配置：' + emailMissing.join('、')] : []),
+    ...(senderInvalid.length ? ['需修正：' + senderInvalid.join('、')] : []),
+  ];
   return {
     mode: 'preview',
     wallet: {
@@ -43,8 +66,8 @@ export function getCommunicationsReadiness(env = {}) {
     },
     email: {
       ready: false,
-      reason: emailMissing.length
-        ? '仅开放确认邮件预览。待配置：' + emailMissing.join('、') + '；还需核对发件服务、模板与投递结果。'
+      reason: emailPending.length
+        ? '仅开放确认邮件预览。' + emailPending.join('；') + '；还需核对发件服务、模板与投递结果。'
         : '已提供配置占位，但未核验发件服务与投递；当前仅开放预览，不会发送邮件。',
     },
   };

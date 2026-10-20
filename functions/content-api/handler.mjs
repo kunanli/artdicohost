@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { parseAdminUsers, publicUser, verifyPassword, equalToken } from './auth.mjs';
+import { parseAdminUsers, findAdminUser, publicUser, verifyPassword, equalToken } from './auth.mjs';
 import { ContentError } from './store.mjs';
 import { createPreviewCommunications } from './communications.mjs';
 
@@ -83,7 +83,7 @@ export function createContentApi({ store, contactsStore, communications = create
         budget.count += 1;
         attempts.set(address, budget);
         const input = await body(request);
-        const account = accounts.find((user) => user.username === input.username);
+        const account = findAdminUser(accounts, input.username);
         const verified = await verifyPassword(input.password, (account ?? accounts[0]).passwordHash);
         if (!account || !verified) throw new ContentError('AUTH_FAILED', '账号或密码不正确。', 401);
         if (sessions.size >= 1000) throw new ContentError('SESSION_LIMIT', '本地会话暂不可用，请稍后重试。', 503);

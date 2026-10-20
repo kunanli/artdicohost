@@ -1,4 +1,4 @@
-import { registrationSchema, getActiveBranches } from '../../shared/registration-schema.mjs';
+import { registrationSchema, getActiveBranches, isRegistrationFieldRequired } from '../../shared/registration-schema.mjs';
 import { plainObject, own, clockTime, validateRegistrationPolicy } from './policy.mjs';
 
 export const MAX_REGISTRATION_BYTES = 128 * 1024;
@@ -85,8 +85,8 @@ export function validateRegistrationSubmission(payload, { policy, now } = {}) {
   if (own(consent, 'accepted') !== true) errors['consent.accepted'] = '请主动同意正式个人信息处理告知。';
   if (own(consent, 'version') !== configured.privacy.version) errors['consent.version'] = '个人信息处理告知版本不匹配。';
   const fields = {};
-  function readField(input, field, target, key) {
-    const result = fieldValue(input, field);
+  function readField(input, field, target, key, branch = '') {
+    const result = fieldValue(input, { ...field, required: isRegistrationFieldRequired(field, source, branch) });
     if (result.error) errors[key] = result.error;
     else target[field.name] = result.value;
   }
@@ -99,7 +99,7 @@ export function validateRegistrationSubmission(payload, { policy, now } = {}) {
     const branch = own(source, name);
     if (!plainObject(branch)) { errors[`fields.${name}`] = '请提供当前身份对应的资料对象。'; continue; }
     fields[name] = {};
-    for (const field of registrationSchema.branches[name].fields) readField(branch, field, fields[name], `fields.${name}.${field.name}`);
+    for (const field of registrationSchema.branches[name].fields) readField(branch, field, fields[name], `fields.${name}.${field.name}`, name);
   }
   fields.accommodationNights = active.includes('accommodation') ? 1 : 0;
   if (Object.keys(errors).length) return { valid: false, errors };

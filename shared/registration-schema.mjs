@@ -2,7 +2,7 @@
  * Frontend-only contract. No export here writes, sends, or accepts a real registration.
  * Proposed hard limits and conditional required fields still need product confirmation.
  * @typedef {{value:string,label:string}} Option
- * @typedef {{name:string,label:string,type:string,required:boolean,minLength?:number,maxLength?:number,min?:number,max?:number,options?:Option[],hint?:string,conditional?:string}} Field
+ * @typedef {{name:string,label:string,type:string,required:boolean,requiredFor?:string[],minLength?:number,maxLength?:number,min?:number,max?:number,options?:Option[],hint?:string,conditional?:string}} Field
  * @typedef {{label:string,fields:Field[]}} Branch
  */
 
@@ -44,14 +44,14 @@ const yesNoUncertain = [
 const baseFields = [
   { name: 'name', label: '姓名', type: 'text', required: true, minLength: 2, maxLength: 80 },
   { name: 'city', label: '所在城市', type: 'text', required: true, maxLength: 100 },
-  { name: 'organization', label: '所属机构 / 团队', type: 'text', required: true, maxLength: 160, hint: '独立个人可填「独立开发者」。' },
-  { name: 'position', label: '职位 / 身份', type: 'text', required: true, maxLength: 120 },
+  { name: 'organization', label: '所属机构 / 团队', type: 'text', required: false, requiredFor: ['speaker', 'exhibitor', 'partner'], maxLength: 160, hint: '普通参会选填；独立个人可填「独立开发者」。' },
+  { name: 'position', label: '职位 / 身份', type: 'text', required: false, requiredFor: ['speaker', 'exhibitor', 'partner'], maxLength: 120, hint: '普通参会选填；讲者、展商与合作交流时填写。' },
   { name: 'email', label: '邮箱', type: 'email', required: true, maxLength: 254, hint: '未填写微信时，邮箱作为替代联络方式。演示请使用示例邮箱。' },
   { name: 'wechat', label: '微信号', type: 'text', required: false, maxLength: 100, hint: '建议填写；未填写时使用邮箱联系。' },
   { name: 'website', label: '个人 / 机构网站', type: 'url', required: false, maxLength: 2048 },
   { name: 'categories', label: '目前的参与身份', type: 'checkbox-group', required: true, options: identityOptions, hint: '可以多选，最终只是一份申请。' },
   { name: 'participationInterests', label: '参与方式与可选合作咨询', type: 'checkbox-group', required: true, options: participationOptions, hint: '普通参会可选「仅出席」。讲者、展位及赞助合作另行沟通，不影响普通报名。' },
-  { name: 'background', label: '相关经历或机构简介', type: 'textarea', required: true, maxLength: 1000, hint: '建议 30–1000 字；演示不设 30 字硬性下限。' },
+  { name: 'background', label: '相关经历或机构简介', type: 'textarea', required: false, requiredFor: ['speaker', 'exhibitor', 'partner'], maxLength: 1000, hint: '普通参会选填；讲者、展商与合作交流时简要介绍，无需重复填写完整履历。' },
   { name: 'caseLinks', label: '相关站点 / 案例 / 作品链接', type: 'url-list', required: false, maxLength: 8192, hint: '选填，每行一个 http/https 链接，最多 5 个。' },
   { name: 'attendance', label: '12 月 5 日到场安排', type: 'select', required: true, options: [
     { value: 'expected', label: '预计可到场' }, { value: 'uncertain', label: '尚待确定' }, { value: 'unavailable', label: '暂无法出席' },
@@ -164,6 +164,15 @@ export function getActiveBranches(input) {
   return active;
 }
 
+/** One required-field rule shared by browser UX and independent server validation.
+ * @param {Field} field @param {unknown} input @param {string} [branch]
+ */
+export function isRegistrationFieldRequired(field, input, branch = '') {
+  const active = getActiveBranches(input);
+  if (branch && !active.includes(branch) || field.conditional && !active.includes(field.conditional)) return false;
+  return field.required === true || Array.isArray(field.requiredFor) && field.requiredFor.some(name => active.includes(name));
+}
+
 /**
  * Whitelists input, drops inactive branch values, and never persists anything.
  * Accepts nested branch objects and exact dot-path names from a form adapter.
@@ -245,14 +254,14 @@ export function validateRegistration(input) {
   const errors = {};
   for (const field of baseFields) {
     if (field.conditional && !active.includes(field.conditional)) continue;
-    const error = fieldError(field, value[field.name]);
+    const error = fieldError({ ...field, required: isRegistrationFieldRequired(field, value) }, value[field.name]);
     if (error) errors[field.name] = error;
   }
   for (const name of active) {
     if (name === 'accommodation') continue;
     const nested = record(value[name]);
     for (const field of branches[name].fields) {
-      const error = fieldError(field, nested[field.name]);
+      const error = fieldError({ ...field, required: isRegistrationFieldRequired(field, value, name) }, nested[field.name]);
       if (error) errors[`${name}.${field.name}`] = error;
     }
   }

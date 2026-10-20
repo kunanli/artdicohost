@@ -45,9 +45,8 @@ if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('报�
       <section data-form-step="1" hidden aria-labelledby="details-heading">
         <h3 id="details-heading" tabindex="-1">先认识一下你。</h3>
         <p class="ah-form-hint" data-registration-data-hint>带 * 为必填。体验时请填写虚构资料；资料仅留在当前页面内存。</p>
-        <div class="ah-fields-grid">{['name','city','organization','position','email','wechat','website'].map(name => <FormField field={field(name)} />)}</div>
-        <FormField field={field('background')} />
-        <FormField field={field('caseLinks')} />
+        <div class="ah-fields-grid">{['name','city','email','wechat'].map(name => <FormField field={field(name)} />)}</div>
+        <p class="ah-form-hint">普通参会先填写姓名、城市与联络方式即可；讲者、展商和社群交流的补充资料在下一步填写。</p>
         <BranchFields name="soRo" />
         <BranchFields name="newSite" />
         <div class="ah-form-actions"><button type="button" data-prev-step class="ah-secondary">上一步</button><button type="button" data-next-step class="ah-primary">参与方式 <span aria-hidden="true">→</span></button></div>
@@ -56,6 +55,12 @@ if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('报�
         <h3 id="interests-heading" tabindex="-1">你期待怎样的交流？</h3>
         <p class="ah-form-hint">普通参会直接报名。讲者、展位、站点咨询与住宿安排另行沟通。</p>
         <FormField field={field('participationInterests')} />
+        <details class="ah-registration-extra" data-registration-profile>
+          <summary>机构与经历补充 <small data-registration-profile-label>普通参会可跳过</small></summary>
+          <div class="ah-fields-grid">{['organization','position','website'].map(name => <FormField field={field(name)} />)}</div>
+          <FormField field={field('background')} />
+          <FormField field={field('caseLinks')} />
+        </details>
         <BranchFields name="speaker" />
         <BranchFields name="exhibitor" />
         <BranchFields name="partner" />

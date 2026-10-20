@@ -2,19 +2,19 @@
 
 用户已创建独立网站桶 `artdicohost-web-hk`，地域为中国香港，并于 2026-10-19 确认 AccessKey 已保存于 GitHub Actions Secrets，由部署流程使用。日常发布通过 GitHub 自动更新，不再手动上传 ZIP。此流程的发布范围仅含静态前台及图片邀请函生成器；本机 39 笔真实联系人、真实报名、工作人员数据 API、Wallet 签名和邮件投递不随本流程上线。开发和验证只使用示范资料。
 
-用户现已建立香港 `artdicohost-api` 并要求参照 `artdico-deck` 自动更新 FC。本轮另准备[独立 FC 自动更新](automatic-fc-deployment.md)：只读 PR 验证与 main 发布分离。用户已回报运行时启动设置、精确 RAM 权限及 GitHub Variables 配置完成，并明确授权合并 PR #6 / #7 与本次首次发布；当前尚无本项目 FC 云端更新及健康检查成功的证据。FC 更新与本节公开 OSS 上传是两个独立任务，不将启动包或资料放进网站桶。
+用户已建立香港 `artdicohost-api` 并要求参照 `artdico-deck` 自动更新 FC，沿用[独立 FC 自动更新](automatic-fc-deployment.md)的只读 PR 验证与 main 发布分离模式。运行时启动设置、精确 RAM 权限及 GitHub Variables 已由用户回报配置完成；最新实际 FC 更新明确返回 HTTP 413，尚无三次签名健康检查成功证据。本轮准备将官方 Node 以 XZ 保存于启动包，通过内置 Python 离线解压到私有 `/tmp` 并验证原始 hash，外部启动命令、IAM 和签名触发器保持不变。最终紧凑包仍待发布验收；FC 更新与本节公开 OSS 上传是两个独立任务，不将启动包或资料放进网站桶。
 
 用户已授权后续正常发布：完成检查和审阅后可合并到 main 并执行自动部署，无需逐次再申请发布确认。公开稿件核准、真实资料迁移与个人信息公开 / 分享授权仍按各自要求办理；正式隐私告知及 39 笔真实联系人保留本机的边界不变。
 
 ## 本次核对结果
 
-核对日期：2026-10-20（Asia/Taipei）。本节以 PR #10 最新重试的实际日志更新历史快照；后续提交仍须以对应 Actions 结果为准。
+核对日期：2026-10-20（Asia/Taipei）。本节以最新 main 的实际日志更新历史快照；后续提交仍须以对应 Actions 结果为准。
 
 | 项目 | 已取得的证据 |
 | --- | --- |
-| [PR #10](https://github.com/kunanli/artdicohost/pull/10) | 已合并；更新发布记录；后台登录与寄件仍为准备阶段 |
-| 已部署的 main 提交 | `94d7791fe738e3b1167a831aae156dc4ef48b93d` |
-| [Actions 39350373144 / attempt 2](https://github.com/kunanli/artdicohost/actions/runs/39350373144/attempts/2) | `push` / `main`；检查与 OSS 成功；FC 启用后在实际更新步骤失败，尚未通过验收 |
+| 公开发布基线 | 包含 `GlobalGameJam` 更名与报名准备；后台登录与寄件仍未作为云端业务开放 |
+| 已部署的 main 提交 | `9ea9482ce54f8fb30a34d8ecc928ec4fc9a76966` |
+| [Actions 39354134071](https://github.com/kunanli/artdicohost/actions/runs/39354134071) | `push` / `main`；181 项检查及 OSS 成功；FC job `118405168647` 的 UpdateFunction 返回 HTTP 413，尚未通过启动验收 |
 | 公开文件 | 12 个公开文件已部署至 `artdicohost-web-hk`，含最后上传的 `release.json`，全部通过 SHA-256 回读 |
 | AccessKey | 已在 GitHub Secrets，由成功部署使用；无需重新提供，不读取或复制到本机 |
 | 自定义域名 / DNS | 用户截图显示阿里云 DNS 正确、初次查看为 0 条记录；后续 `artdico.host` 的 OSS 绑定已生效，根域名 `@` CNAME 已启用，TTL 为 10 分钟；未开启 CDN |

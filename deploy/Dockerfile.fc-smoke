@@ -1,0 +1,4 @@
+# Test fixture for the Python version/path documented by FC custom.debian11.
+# This image is used only for offline startup verification, never as the deployed runtime.
+FROM python:3.12.4-slim-bullseye@sha256:26ce493641ad3b1c8a6202117c31340c7bbb2dc126f1aeee8ea3972730a81dc6
+RUN mkdir -p /var/fc/lang && ln -s /usr/local /var/fc/lang/python3.12

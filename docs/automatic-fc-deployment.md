@@ -10,13 +10,15 @@
 - [Actions 39279414370](https://github.com/kunanli/artdicohost/actions/runs/39279414370) 已完成，整体结论 success。检查 job `118150738016` 成功，包含 165 项测试、FC 打包与 Debian 11 启动验收。
 - OSS job `118154224656` 成功，日志有 12 条 `Verified`，公开对象上传和 SHA-256 回读通过。
 - FC job `118164111489` 为 **skipped**。检查日志实际出现 `FC automatic deployment is disabled.`，对应工作流判断 `vars.ARTDICO_FC_DEPLOY_ENABLED != 'true'`；它仅证明该次运行未读到精确启用值，不代表现在的 Variable 值，也不是 FC API 权限失败。
-- 最新已验 main：`2e90103f7756acdb49cc5433a5dd6ab22500a6f2`（PR #9）。[Actions 39349541751](https://github.com/kunanli/artdicohost/actions/runs/39349541751) 的 check job `118390207507` 有 175 项测试及 Debian 11 ZIP smoke 成功；OSS job `118390479876` 有 12 条 `Verified`，公开 SHA-256 回读通过；FC job `118390481472` 仍为 skipped，disabled 提示实际执行。
+- PR #9 记录：`2e90103f7756acdb49cc5433a5dd6ab22500a6f2`。[Actions 39349541751](https://github.com/kunanli/artdicohost/actions/runs/39349541751) 的 check job `118390207507` 有 175 项测试及 Debian 11 ZIP smoke 成功；OSS job `118390479876` 有 12 条 `Verified`，公开 SHA-256 回读通过；FC job `118390481472` 仍为 skipped，disabled 提示实际执行。
 - 用户确认启用开关此前放在 **Repository secrets**。工作流读取的是 `vars.ARTDICO_FC_DEPLOY_ENABLED`，所以对应 Repository Variable 不存在时即使 Secret 同名也会略过。用户随后回报已在 **Variables → Repository variables** 保存启用值及账号 ID；实际是否读到须由新运行验证，不读取或取回 Secret 值。
 - 修正设置不会补跑已完成的 job；下一次正常 main push 才会重新求值。手动 workflow_dispatch 仍只检查，不绕过 main 门禁；若 main 前进，以当前 main 最新 push 验收。
 
-最新重试：[Actions 39350373144 / attempt 2](https://github.com/kunanli/artdicohost/actions/runs/39350373144/attempts/2)，来源 `94d7791fe738e3b1167a831aae156dc4ef48b93d`。check job `118401813150` 的 175 项检查与 Debian 11 ZIP 启动验证成功，disabled 提示略过，已确认启用值被读取；OSS job `118402041101` 实际完成 12 个公开对象上传与 SHA-256 回读。FC job `118402041213` 实际执行，在代码更新步骤失败，固定错误为 `FC code update failed; deployment was not verified.`。这不是开关再次略过，亦尚无三次签名健康检查成功结果；不能由更新请求报错推断云端未改变。
+首次实际更新重试：[Actions 39350373144 / attempt 2](https://github.com/kunanli/artdicohost/actions/runs/39350373144/attempts/2)，来源 `94d7791fe738e3b1167a831aae156dc4ef48b93d`。check job `118401813150` 的 175 项检查与 Debian 11 ZIP 启动验证成功，disabled 提示略过，已确认启用值被读取；OSS job `118402041101` 实际完成 12 个公开对象上传与 SHA-256 回读。FC job `118402041213` 实际执行，在代码更新步骤失败，固定错误为 `FC code update failed; deployment was not verified.`。这不是开关再次略过，亦尚无三次签名健康检查成功结果；不能由更新请求报错推断云端未改变。
 
-失败诊断只允许固定操作 / 阶段、HTTP 状态与白名单服务错误码；不记录远端正文、任意 Message、headers、环境、角色、凭证或原始 cause。未知服务码仅作为未分类错误处理。取得实际类别前，不推定 IAM 不足、包体过大或超时，不放宽原成功校验或自动重送 PUT。
+最新已验 main 为 `9ea9482ce54f8fb30a34d8ecc928ec4fc9a76966`。[Actions 39354134071](https://github.com/kunanli/artdicohost/actions/runs/39354134071) 的 181 项检查通过，OSS 12 个公开对象 SHA-256 回读通过；FC job `118405168647` 明确记录 `operation=UpdateFunction phase=response_type status=413`，响应类型不是 JSON。由此已确认实际上传路径拒绝过大的请求体；这不是 IAM 失败，不以增加权限处理。本轮改用紧凑 XZ 启动包，尚未取得新包的 FC 更新及三次签名健康检查结果。
+
+失败诊断只允许固定操作 / 阶段、HTTP 状态与白名单服务错误码；不记录远端正文、任意 Message、headers、环境、角色、凭证或原始 cause。未知服务码仅作为未分类错误处理。已确认的 413 按请求体大小处理，不放宽成功校验、不自动重送 PUT，也不扩大 IAM。
 
 下一次运行须分别取得公开 OSS 回读及 FC 实际更新、连续三次签名 `/healthz` 返回该次完整提交标记的证据；artifact 存在或整体绿色不能代替。部署仍为业务关闭的启动包，没有管理员云端登录、真实报名、私有 OSS 读写或统计能力。
 
@@ -24,7 +26,11 @@
 
 只读参考 [artdico-deck@5154ad2 的工作流](https://github.com/kunanli/artdico-deck/blob/5154ad2aa1c568e6f3c08bd67681557d5a7bf6b9/.github/workflows/build-backend-zip.yml)与[部署说明](https://github.com/kunanli/artdico-deck/blob/5154ad2aa1c568e6f3c08bd67681557d5a7bf6b9/docs/guides/BACKEND-DEPLOY.md)：main 更新既有函数代码，之后核对线上版本。没有复制参考项目的源码、身份、函数、私有资料或 Node 20 运行时。
 
-本项目保留当前 main 检查和 artifact 发布模式：PR 只有检查，主分支发布不重新打包已验收的 ZIP。所有 main push 先完成既有检查，再生成与该完整提交绑定的 FC 包，以无网络、只读、非 root 的 Debian 11 容器运行实际 ZIP；保留 `fc-publication-<SHA>` artifact 14 天。发布任务重新核对 ZIP 内容、官方 Node 二进制校验值、源码提交与 manifest，上传内存中已核对的同一份 ZIP bytes。大二进制不写回 Git。
+本项目保留当前 main 检查和 artifact 发布模式：PR 只有检查，主分支发布不重新打包已验收的 ZIP。FC 包绑定该完整提交，保留 `fc-publication-<SHA>` artifact 14 天。发布任务重新核对六文件 ZIP、Node XZ 内容及解压后的官方原始二进制校验值、源码提交与 manifest，上传内存中已核对的同一份 ZIP bytes。大二进制不写回 Git。
+
+紧凑包保留 `/code/bootstrap` 外部设置，调用 `custom.debian11` 内置 Python 3.12，在私有 `/tmp` 目录离线解压并核对 Node 后执行；原始 Node bytes 未修改。不会在运行时下载二进制、把包放到公开 OSS、创建私有 artifact 桶或增加 layer。当前 CI 夹具采用固定 Python `3.12.4` / Debian bullseye 模拟文档中的解释器路径，以非 root、无网络、只读 `/code`、可执行 `/tmp` tmpfs 192 MiB、512 MB 内存及 0.35 CPU 验证实际 ZIP；它不是阿里云实际 FC 镜像，仍须真实账号验收。
+
+上传前固定检查完整 Base64 JSON 请求体不超过 **48,000,000 bytes**。这是针对观察到的 413 所设工程预算，不是阿里云精确上限；官方[限制文档](https://help.aliyun.com/zh/functioncompute/limits-of-usage)当前写为 Base64 及其他 body 总量小于 100 MB，但本次约 59.1 MB 请求已经被拒绝。本轮已测 Node XZ 为 29,494,612 bytes，最终 ZIP 与完整请求大小待验；预算通过不能代替云端上传和健康验证。
 
 网站 OSS 与 FC 是独立 job、独立验收，不是联合原子部署；一方失败不代表另一方已回退。原网站部署保持既有目标与权限。PR、手动 `workflow_dispatch`、错误仓库 / 分支、缺少开关或过时 main 运行都不能执行 FC 更新。
 
@@ -60,9 +66,9 @@
 
 ## 本地验证记录
 
-- 165 项测试通过，包含实际 ZIP 打包 / 解码、已提交来源绑定、独立签名向量、失效与取消、只更新代码、旧实例及触发器变化拒绝成功。
-- 源码检查、Astro 检查与四页静态构建通过；依赖审计无已知漏洞。Astro 为 0 错误 / 0 警告，保留一项测试可改写为 async 的样式提示。
-- 实际启动 ZIP 的源码提交为 `56f22f4b47720e2ba128d34c014b8c24e55734dc`，大小 44,329,599 bytes，SHA-256 `945bca020392863bece7c1cd5c88ebd585dff9d7d5dd2b3dabc6f73b3311c67e`。在固定 Debian 11 镜像 `debian@sha256:e5b6442dd2e9684cf5e87d8338b5968f3b348636fc0be6d7850a381e3731a2bd` 中以非 root、无网络及只读 `/code` 启动成功，源码健康标记准确，业务路由 503。此后自动化工具变更未修改这三个运行源文件；CI 会为每次准确提交重新打包并验收。
+- 初版历史记录：165 项测试、源码检查、Astro 检查及四页静态构建通过，依赖审计无已知漏洞；不作为紧凑包当前测试结果。
+- 初版历史 ZIP 的源码提交为 `56f22f4b47720e2ba128d34c014b8c24e55734dc`，大小 44,329,599 bytes，SHA-256 `945bca020392863bece7c1cd5c88ebd585dff9d7d5dd2b3dabc6f73b3311c67e`。该版直接携带未压缩 Node，在固定 Debian 11 镜像 `debian@sha256:e5b6442dd2e9684cf5e87d8338b5968f3b348636fc0be6d7850a381e3731a2bd` 中启动成功；它不是本轮六文件 XZ 包，也不是 FC 云端验收证据。
+- 最新已发布源码 `9ea9482` 的 CI 为 181 项检查与原包 smoke 通过。本轮本机 195 项测试、源码与 Astro 检查、四页构建通过，依赖审计无已知漏洞；紧凑包的实际 ZIP / 请求大小及容器启动结果另行记录。新包使用 Python 夹具验收，允许仅在私有 `/tmp` 写入解压后的 Node，正式业务路由继续 503。
 - 本节记录的本地验证未使用阿里云凭据、执行 FC 更新或验证实际账号的签名 / RAM 相容性。用户已授权首次发布，线上结果须另行记录，不以本机或合成测试替代。
 
 ## 失败、并发与回退

@@ -5,9 +5,10 @@ import { spawnSync } from 'node:child_process';
 import { dirname, parse, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
+import { assertFcCodeRequestFits, MAX_FC_ZIP_BYTES } from './fc-upload-limits.mjs';
 
 const MiB = 1024 * 1024;
-const MAX_ARCHIVE_BYTES = 64 * MiB;
+const MAX_ARCHIVE_BYTES = MAX_FC_ZIP_BYTES;
 const ARCHIVE = 'artdicohost-fc-preflight.zip';
 const MANIFEST = 'package-manifest.json';
 const OFFICIAL_NODE_SHA256 = 'bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12';
@@ -16,12 +17,42 @@ const FILES = Object.freeze([
   { path: 'bootstrap', source: 'functions/fc-api/bootstrap', mode: '0755', limit: MiB },
   { path: 'functions/fc-api/handler.mjs', source: 'functions/fc-api/handler.mjs', mode: '0644', limit: MiB },
   { path: 'functions/fc-api/server.mjs', source: 'functions/fc-api/server.mjs', mode: '0644', limit: MiB },
-  { path: 'runtime/node/bin/node', mode: '0755', limit: 192 * MiB },
+  { path: 'functions/fc-api/launch.py', source: 'functions/fc-api/launch.py', mode: '0644', limit: MiB },
+  { path: 'runtime/node/bin/node.xz', mode: '0644', limit: MAX_FC_ZIP_BYTES },
   { path: 'release.json', mode: '0644', limit: 64 * 1024 },
 ]);
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const isSha256 = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const childEnv = () => ({ PATH: process.env.PATH ?? '', LANG: 'C', LC_ALL: 'C', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' });
+const INSPECT_NODE_XZ = `import hashlib, json, lzma, sys
+decoder = lzma.LZMADecompressor(format=lzma.FORMAT_XZ, memlimit=96 * 1024 * 1024)
+digest = hashlib.sha256()
+length = 0
+header = b''
+while True:
+    chunk = sys.stdin.buffer.read(65536)
+    if not chunk:
+        break
+    if decoder.eof:
+        raise ValueError('trailing input')
+    while True:
+        output = decoder.decompress(chunk, max_length=65536)
+        chunk = b''
+        length += len(output)
+        if length > 192 * 1024 * 1024:
+            raise ValueError('output limit')
+        digest.update(output)
+        header = (header + output)[:64]
+        if decoder.eof:
+            if decoder.unused_data:
+                raise ValueError('trailing input')
+            break
+        if decoder.needs_input:
+            break
+if not decoder.eof or decoder.check != lzma.CHECK_CRC64:
+    raise ValueError('incomplete XZ stream')
+print(json.dumps({'bytes': length, 'sha256': digest.hexdigest(), 'header': header.hex()}, separators=(',', ':')))
+`;
 
 function exactKeys(value, names, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -41,7 +72,6 @@ function fileRecords(value, count) {
     exactKeys(item, ['path', 'bytes', 'sha256', 'mode'], 'file record');
     if (item.path !== expected.path || item.mode !== expected.mode || !isSha256(item.sha256)
       || !Number.isSafeInteger(item.bytes) || item.bytes <= 0 || item.bytes > expected.limit) throw new Error('Invalid allowlisted file record: ' + expected.path);
-    if (item.path === 'runtime/node/bin/node' && item.sha256 !== OFFICIAL_NODE_SHA256) throw new Error('Runtime file must use the pinned official binary SHA-256');
   }
 }
 
@@ -81,9 +111,9 @@ async function regularBytes(path, limit) {
   } finally { await handle.close(); }
 }
 
-function run(execute, command, args, limit, label, encoding) {
+function run(execute, command, args, limit, label, encoding, input) {
   let result;
-  try { result = execute(command, args, { env: childEnv(), timeout: 30_000, maxBuffer: limit, stdio: 'pipe', ...(encoding ? { encoding } : {}) }); }
+  try { result = execute(command, args, { env: childEnv(), timeout: 30_000, maxBuffer: limit, stdio: 'pipe', ...(encoding ? { encoding } : {}), ...(input ? { input } : {}) }); }
   catch { throw new Error(label + ' failed'); }
   if (result.error || result.status !== 0) throw new Error(label + ' failed');
   if (encoding) {
@@ -99,7 +129,7 @@ function verifyCentralDirectory(bytes, records) {
     if (bytes.readUInt32LE(offset) === 0x06054b50 && offset + 22 + bytes.readUInt16LE(offset + 20) === bytes.length) { end = offset; break; }
   }
   if (end < 0 || bytes.readUInt16LE(end + 4) !== 0 || bytes.readUInt16LE(end + 6) !== 0
-    || bytes.readUInt16LE(end + 8) !== FILES.length || bytes.readUInt16LE(end + 10) !== FILES.length) throw new Error('ZIP must contain exactly five entries in one disk');
+    || bytes.readUInt16LE(end + 8) !== FILES.length || bytes.readUInt16LE(end + 10) !== FILES.length) throw new Error('ZIP must contain exactly six entries in one disk');
   let offset = bytes.readUInt32LE(end + 16);
   const centralStart = offset;
   if (offset + bytes.readUInt32LE(end + 12) !== end) throw new Error('ZIP central directory is invalid');
@@ -157,12 +187,13 @@ export async function verifyFcPublication({ directory, expectedCommit, repositor
     || manifest.archive.bytes <= 0 || manifest.archive.bytes > MAX_ARCHIVE_BYTES || !isSha256(manifest.archive.sha256)) throw new Error('Invalid archive name, size or digest');
   const archivePath = resolve(artifact, ARCHIVE);
   const zipBytes = await regularBytes(archivePath, MAX_ARCHIVE_BYTES);
+  assertFcCodeRequestFits(zipBytes.length);
   if (zipBytes.length !== manifest.archive.bytes || digest(zipBytes) !== manifest.archive.sha256) throw new Error('ZIP bytes do not match the manifest');
   const entries = verifyCentralDirectory(zipBytes, manifest.files);
   const objectType = run(execute, 'git', ['--no-replace-objects', '-C', repository, 'cat-file', '-t', expectedCommit], 4096, 'Source commit lookup', 'utf8');
   if (objectType.trim() !== 'commit') throw new Error('Expected source SHA must identify a commit object');
   const contents = new Map();
-  for (const expected of [...FILES.filter(item => item.source), FILES[4], FILES[3]]) {
+  for (const expected of [...FILES.filter(item => item.source), FILES[5], FILES[4]]) {
     const record = manifest.files.find(item => item.path === expected.path);
     const entry = entries.get(expected.path);
     const compressed = zipBytes.subarray(entry.start, entry.end);
@@ -181,15 +212,19 @@ export async function verifyFcPublication({ directory, expectedCommit, repositor
       exactKeys(release, ['schemaVersion', 'kind', 'sourceCommit', 'node', 'files'], 'release');
       if (release.schemaVersion !== 1 || release.kind !== 'fc-preflight' || release.sourceCommit !== expectedCommit) throw new Error('Release does not match the expected commit or package kind');
       nodeRecord(release.node);
-      fileRecords(release.files, 4);
-      for (let index = 0; index < 4; index++) {
+      fileRecords(release.files, 5);
+      for (let index = 0; index < 5; index++) {
         const actual = release.files[index];
         const manifestFile = manifest.files[index];
         if (['path', 'bytes', 'sha256', 'mode'].some(key => actual[key] !== manifestFile[key])) throw new Error('Release file records differ from the manifest');
       }
     }
   }
-  const runtime = contents.get('runtime/node/bin/node');
+  const inspected = decodeJson(Buffer.from(run(execute, 'python3', ['-I', '-S', '-c', INSPECT_NODE_XZ], 4096, 'Compressed runtime inspection', 'utf8', contents.get('runtime/node/bin/node.xz'))), 'runtime inspection');
+  exactKeys(inspected, ['bytes', 'sha256', 'header'], 'runtime inspection');
+  if (!Number.isSafeInteger(inspected.bytes) || inspected.bytes < 64 || inspected.bytes > 192 * MiB
+    || inspected.sha256 !== OFFICIAL_NODE_SHA256 || typeof inspected.header !== 'string' || !/^[a-f0-9]{128}$/u.test(inspected.header)) throw new Error('Compressed runtime does not contain the pinned official Node binary');
+  const runtime = Buffer.from(inspected.header, 'hex');
   if (runtime.length < 64 || !runtime.subarray(0, 7).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1, 1]))
     || runtime.readUInt16LE(18) !== 62 || runtime.readUInt32LE(20) !== 1) throw new Error('Official runtime must be Linux ELF64 little-endian x86_64');
   // Return the verified bytes rather than asking callers to re-read a mutable path.

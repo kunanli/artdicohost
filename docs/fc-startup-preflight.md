@@ -1,22 +1,25 @@
 # 香港 FC 启动验收
 
-日期：2026-10-19（Asia/Taipei）。用户已建立香港函数 `artdicohost-api`，初始截图为自定义运行时 Debian 11 / Python 3.12 示例及签名认证的 HTTP `defaultTrigger`；随后用户回报本文件要求的运行时启动设置、RAM 权限及 GitHub Variables 已保存，并已授权合并 PR #6 / #7 和首次发布。当前尚无本项目 FC 启动及签名健康检查的云端成功证据。私有桶 `artdicohost-data-hk` 已创建，用户回报已保存 SSE-OSS / AES256；尚未验证函数身份或私有对象读写。
+日期：2026-10-20（Asia/Taipei）。用户已建立香港函数 `artdicohost-api`，初始截图为自定义运行时 Debian 11 / Python 3.12 示例及签名认证的 HTTP `defaultTrigger`；随后用户回报本文件要求的运行时启动设置、RAM 权限及 GitHub Variables 已保存，并已授权正常发布。`main@9ea9482ce54f8fb30a34d8ecc928ec4fc9a76966` 的 [Actions 39354134071](https://github.com/kunanli/artdicohost/actions/runs/39354134071) 检查及公开 OSS 回读通过，FC 更新明确返回 HTTP 413；本轮正准备缩小启动包，尚无本项目 FC 启动及三次签名健康检查的云端成功证据。私有桶 `artdicohost-data-hk` 已创建，用户回报已保存 SSE-OSS / AES256；尚未验证函数身份或私有对象读写。
 
 本阶段只替换示例码并验证 Node.js 可以启动。`/healthz` 的 200 只表示进程存活；报名、后台与存储就绪均保持关闭。不要把本机 `functions/content-api/server.mjs` 上传为云端后台。
 
 ## 交付内容与来源
 
-`scripts/prepare-fc-bootstrap.mjs` 只读取三个已提交的指定源文件与显式指定的 Node 可执行文件，以完整提交核对源文件内容，拒绝符号链接、错误架构 / 版本 / 校验值及非空输出目录；不会扫描真实名单或删除原输出。ZIP 根目录仅含五个文件：
+`scripts/prepare-fc-bootstrap.mjs` 只读取四个已提交的指定源文件与显式指定的 Node 可执行文件，以完整提交核对源文件内容，拒绝符号链接、错误架构 / 版本 / 校验值及非空输出目录；不会扫描真实名单或删除原输出。先核对官方 Node 原始 bytes，再压为 XZ；ZIP 白名单仅含六个文件：
 
 ```text
 bootstrap
 functions/fc-api/handler.mjs
 functions/fc-api/server.mjs
-runtime/node/bin/node
+functions/fc-api/launch.py
+runtime/node/bin/node.xz
 release.json
 ```
 
-Node 与 bootstrap 保留 `0755` 权限；无需安装依赖、layer、挂载 OSS 或配置 AccessKey。Node 由官方 Linux x64 发行包提取，使用 TLS 下载与官方校验清单核对，不关闭证书验证：
+`bootstrap` 保留 `0755`，其余包内文件为 `0644`。固定的 `/code/bootstrap` 调用 `/var/fc/lang/python3.12/bin/python3 -I -S`，使用 `launch.py` 离线解压 Node 到新建的私有 `/tmp/artdicohost-node-*` 目录；原始 SHA-256 与 ELF x86_64 核对完成后才将临时 Node 设为 `0700` 并执行。损坏、截断、尾随数据、超出解压上限或 hash 不符均拒绝启动，失败清理仅限本次创建的私有临时目录。不会在冷启动下载运行时、安装依赖、配置 layer、挂载 OSS 或添加 AccessKey。
+
+Python 3.12 是 [FC custom.debian11 官方列明的内置解释器](https://help.aliyun.com/zh/functioncompute/custom-runtime/)，当前外部启动命令、runtime、端口及触发器设置均不变。Node 仍由官方 Linux x64 发行包提取，使用 TLS 下载与官方校验清单核对，不关闭证书验证、不 strip 或更改原始二进制：
 
 | 项目 | 值 |
 | --- | --- |
@@ -35,6 +38,8 @@ node scripts/prepare-fc-bootstrap.mjs \
   --source-commit <exact-reviewed-40-character-commit> \
   --out <new-empty-output-directory>
 ```
+
+原始 Node 的已测 XZ 大小为 29,494,612 bytes，最终 ZIP 与完整 Base64 JSON 请求体大小仍待本轮验收。打包、artifact 验证及上传端共同执行 **48,000,000 bytes 完整 JSON body** 的固定工程预算，按 Base64 膨胀与 JSON 包装精确计算，超出时不发请求。此预算是为处理已观察的 413 保留余量，不是阿里云精确上限或上传成功保证；不使用未验证的请求 gzip 编码绕过限制。
 
 ## 控制台操作
 
@@ -65,12 +70,12 @@ node scripts/prepare-fc-bootstrap.mjs \
 
 ## 验证与后续
 
-`tests/fc-runtime.test.mjs` 覆盖真实 loopback HTTP / HEAD、关闭的写入、未结束的流、畸形请求、标头上限、端口及版本投影；`tests/fc-package.test.mjs` 覆盖来源绑定与实际 ZIP 白名单 / 校验 / 执行权限。独立 Debian 11 容器验收使用实际交付包、无外网、只读 `/code`，检查 bootstrap、版本及上述响应；本机结果不能代替 FC 控制台测试。
+`tests/fc-runtime.test.mjs` 覆盖真实 loopback HTTP / HEAD、关闭的业务写入、未结束的流、畸形请求、标头上限、端口及版本投影；包测试覆盖来源绑定与六文件 ZIP 白名单、原始及压缩校验、损坏解压与执行权限，上传预算另有精确边界测试。本轮容器夹具由固定 Python `3.12.4` / Debian bullseye 镜像模拟官方列明的解释器路径，使用实际交付 ZIP，在无网络、只读 `/code`、可执行 `/tmp` tmpfs 192 MiB、512 MB 内存及 0.35 CPU 下检查冷启动和响应。该夹具不是阿里云实际 FC 镜像，本机或 CI 结果不能代替真实 FC 的解释器 / `_lzma` 可用性及三次签名健康检查。
 
 函数确认能启动后，下一阶段再建立专用运行角色与最小范围 OSS 临时凭据权限、合成资料读写验收及真实持久化服务。GitHub 部署身份沿用公开网站桶上传权限，并由用户回报已授予单一 FC 的更新与验收权限；它不作为 FC 运行角色，也没有因此获得私有数据访问权限。39 笔真实联系人继续本机保留；筛选 / 公开稿件 / 统计、真实报名、群码受限图片服务、Wallet 与邮件均未由此包接通。正常技术发布授权不替代公开稿件核准、真实资料迁移、个人信息公开 / 分享授权或正式隐私告知。
 
 ## 回退与数据生命周期
 
-本包没有写入或收集资料，无云端报名数据需要备份 / 删除。保留上一个已验收的启动 ZIP 与对应 manifest；上传或配置失败时可恢复上一包及其启动命令 / 端口。当前仅有 Python 示例且尚无已验收本项目版本时，保持签名认证并停止使用该函数，核对失败原因后重试；不要切换公开表单来绕过失败。未使用的函数可在确认无其他用途后禁用；不要删除私有桶或原始联系人。
+本包不收集或持久化业务资料，无云端报名数据需要备份 / 删除；启动仅在本实例的私有 `/tmp` 目录写入经验证的临时 Node，不写 OSS 或报名 / 后台资料。保留上一个已验收的启动 ZIP 与对应 manifest；上传或配置失败时可恢复上一包及其启动命令 / 端口。尚无已验收本项目版本时，保持签名认证，核对失败原因后重试；不要切换公开表单来绕过失败。未使用的函数可在确认无其他用途后禁用；不要删除私有桶或原始联系人。
 
 静态网站发布、回退及数据边界仍见[自动部署说明](automatic-deployment.md)。启动包可由独立 Actions 任务更新；它不会修改 DNS 或开启正式报名服务。

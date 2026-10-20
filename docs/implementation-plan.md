@@ -2,7 +2,17 @@
 
 核对日期：2026-10-18（Asia/Taipei）。阶段：P0，计划与架构核对。
 
-## 2026-10-20 接续：FC 实际更新失败的安全诊断
+## 2026-10-20 当前阶段：缩小 FC 启动包以处理 HTTP 413
+
+最新已核对 main 为 `9ea9482ce54f8fb30a34d8ecc928ec4fc9a76966`；[Actions 39354134071](https://github.com/kunanli/artdicohost/actions/runs/39354134071) 的 181 项检查及公开 OSS 12 个对象 SHA-256 回读通过。FC job `118405168647` 明确记录 `operation=UpdateFunction phase=response_type status=413`：实际上传路径拒绝该请求体，且返回非 JSON；这不是 IAM 失败。官方公开文档仍列 Base64 与 JSON 总量小于 100 MB，但本次约 59.1 MB 请求被拒绝，不能把文档值当作该路径已验证的容量，也不能由一次拒绝推定精确上限。
+
+本阶段保持 `custom.debian11`、`/code/bootstrap`、9000 端口、签名触发器与既有 IAM，只改变包内启动器和二进制存放方式。官方 Node.js `v24.19.0` 的原始 Linux x64 可执行文件先核对 SHA-256 `bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12`，再以 XZ 保存进六文件 ZIP；启动器使用该运行时文档列明的内置 Python 3.12，在私有 `/tmp` 目录离线解压、重新核对原始 Node hash 后执行。不修改原始 Node bytes，不在冷启动下载运行时，也不把代码包放到公开 OSS、增加私有 artifact 桶或配置 layer。
+
+已测 XZ 为 29,494,612 bytes；最终 ZIP 与完整 JSON 请求体大小尚待本阶段验收。上传前以 **48,000,000 bytes 完整 JSON body** 作为保守工程预算，超出便在发请求前拒绝；它不是阿里云已确认的精确上限，不据此承诺一定上传成功。来源绑定、压缩与解压大小上限、损坏 / 尾随内容拒绝、hash、权限、私有临时目录及启动失败关闭行为均须验证，正式业务与持久化写入继续关闭。
+
+CI 使用 Python `3.12.4` / Debian bullseye 夹具模拟官方列明的解释器绝对路径；它不是阿里云实际 FC 镜像，不能替代账号内验收。实际 ZIP 在无网络、只读 `/code`、可执行 `/tmp` tmpfs 192 MiB、512 MB 内存及 0.35 CPU 下验证；仅允许启动器写入私有 `/tmp`，报名、后台及 OSS 不写入。通过正常 PR / main 发布后，仍须取得三次签名健康检查及完整提交标记，未取得结果不声明 FC 成功或业务接通。39 笔本机联系人、受限群码及既有提醒均不因缩包改变。
+
+## 2026-10-20 上一阶段：FC 实际更新失败的安全诊断
 
 用户最新截图已显示 Repository variables，并授权重试。只读确认 main 仍为 `94d7791fe738e3b1167a831aae156dc4ef48b93d` 后，重试对应最新 push 的 check 及相依任务，没有重跑过时提交。[39350373144 第 2 次执行](https://github.com/kunanli/artdicohost/actions/runs/39350373144/attempts/2) 确认开关生效、175 项检查及 OSS 12 个公开对象 SHA-256 回读成功；FC 实际执行后在 UpdateFunction 阶段失败。此时请求可能已送达，不能断言函数未改变，也没有三次签名健康检查通过的证据。
 

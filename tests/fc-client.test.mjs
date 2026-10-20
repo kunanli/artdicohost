@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createFcClient, FC_API_ENDPOINT, FC_REGION, MAX_FC_ZIP_BYTES, summarizeFcError, validateFcTriggerUrl } from '../scripts/fc-client.mjs';
+import { MAX_FC_REQUEST_BYTES, MAX_FC_ZIP_BYTES as SHARED_MAX_FC_ZIP_BYTES, fcCodeRequestBytes } from '../scripts/fc-upload-limits.mjs';
 
 const credentials = { accessKeyId: 'SYNTHETICKEY', accessKeySecret: 'synthetic-access-secret' };
 const clock = () => new Date('2026-10-19T04:00:00Z');
@@ -72,9 +73,31 @@ test('code update sends exact supplied bytes as a code-only JSON body and signs 
   assert.equal(settings.method, 'PUT');
   assert.deepEqual(JSON.parse(settings.body), { code: { zipFile: Buffer.from(bytes).toString('base64') } });
   assert.equal(settings.headers['x-acs-action'], 'UpdateFunction');
+  assert.equal(Buffer.byteLength(settings.body, 'utf8'), fcCodeRequestBytes(bytes.byteLength));
+  assert.ok(Buffer.byteLength(settings.body, 'utf8') <= MAX_FC_REQUEST_BYTES);
   assert.equal(settings.headers['x-acs-content-sha256'], createHash('sha256').update(settings.body).digest('hex'));
-  for (const invalid of [undefined, '', {}, new Uint8Array(), new Uint8Array(MAX_FC_ZIP_BYTES + 1)]) await safelyRejected(() => client.updateCode(invalid));
+  for (const invalid of [undefined, '', {}, new Uint8Array()]) await safelyRejected(() => client.updateCode(invalid));
   assert.equal(calls.length, 1);
+});
+
+test('over-budget and invalid byte lengths fail as opaque input errors before copy, Base64, signing or fetch', async t => {
+  assert.equal(MAX_FC_ZIP_BYTES, SHARED_MAX_FC_ZIP_BYTES, 'the existing client export uses the shared fixed cap');
+  const { client, calls } = fakeClient(undefined, { nonce() { assert.fail('Rejected input must not reach signing'); } });
+  const originalFrom = Buffer.from;
+  const blocked = new Set();
+  t.mock.method(Buffer, 'from', function(value, ...args) {
+    assert.equal(blocked.has(value), false, 'rejected ZIP input must not be copied or Base64 encoded');
+    return originalFrom.call(Buffer, value, ...args);
+  });
+  // Synthetic views supply only a length; no large ZIP or request body is allocated.
+  for (const length of [MAX_FC_ZIP_BYTES + 1, 64 * 1024 * 1024, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1, -1, 0.5, Infinity, 'PRIVATE-SYNTHETIC-LENGTH']) {
+    const bytes = new Uint8Array([80, 75]);
+    Object.defineProperty(bytes, 'byteLength', { value: length });
+    blocked.add(bytes);
+    const error = await safelyRejected(() => client.updateCode(bytes));
+    assert.equal(summarizeFcError(error), 'operation=UpdateFunction phase=input');
+  }
+  assert.deepEqual(calls, []);
 });
 
 test('health signing requires this client to fetch and bind the exact fixed function trigger first', async () => {

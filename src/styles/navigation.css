@@ -1,0 +1,40 @@
+/* One small navigation control sits on the Hero at every viewport size. */
+#artdico-host.ah-festival .ah-header.ah-compact-header{
+  position:absolute;inset:0 0 auto;z-index:20;display:block;height:0;min-height:0;
+  padding:0;border:0;background:transparent;pointer-events:none
+}
+#artdico-host.ah-festival .ah-compact-header .ah-site-menu{
+  position:absolute;top:20px;right:clamp(20px,3.1vw,50px);margin:0;pointer-events:auto
+}
+#artdico-host.ah-festival .ah-compact-header .ah-site-menu>summary{
+  display:flex;align-items:center;justify-content:center;gap:14px;min-width:90px;min-height:44px;
+  padding:10px 14px;border:1px solid #696e77;border-radius:24px;list-style:none;
+  background:#202225;color:#eeede9;font-size:12px;line-height:1.5;letter-spacing:.06em;cursor:pointer
+}
+#artdico-host.ah-festival .ah-compact-header .ah-site-menu>summary::-webkit-details-marker{display:none}
+#artdico-host.ah-festival .ah-compact-header .ah-site-menu>summary:hover,
+#artdico-host.ah-festival .ah-compact-header .ah-site-menu[open]>summary{background:#30343b;border-color:#9298a2}
+#artdico-host.ah-festival .ah-compact-header .ah-menu-icon{position:relative;width:16px;height:14px;flex:none}
+#artdico-host.ah-festival .ah-compact-header .ah-menu-icon>span{position:absolute;left:0;top:4px;width:16px;height:1px;background:currentColor}
+#artdico-host.ah-festival .ah-compact-header .ah-menu-icon>span:last-child{top:9px}
+#artdico-host.ah-festival .ah-compact-header .ah-site-menu[open] .ah-menu-icon>span{top:7px;transform:rotate(45deg)}
+#artdico-host.ah-festival .ah-compact-header .ah-site-menu[open] .ah-menu-icon>span:last-child{transform:rotate(-45deg)}
+#artdico-host.ah-festival .ah-compact-header .ah-site-menu>nav{
+  position:absolute;top:calc(100% + 12px);right:0;display:grid;gap:0;width:280px;max-width:calc(100vw - 40px);
+  max-height:min(72dvh,460px);overflow:auto;overscroll-behavior:contain;padding:9px 18px;
+  border:1px solid #696e77;border-radius:12px;background:#202225;box-shadow:0 16px 40px #08090b70
+}
+#artdico-host.ah-festival .ah-compact-header .ah-site-menu nav>a{
+  display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:48px;
+  padding:12px 4px;border-bottom:1px solid #3c4149;color:#e5e6e9;font-size:13px;white-space:normal
+}
+#artdico-host.ah-festival .ah-compact-header .ah-site-menu nav>a:last-child{border-bottom:0}
+#artdico-host.ah-festival .ah-compact-header .ah-site-menu nav>a>span{color:#b4bac4;font-size:14px}
+#artdico-host.ah-festival .ah-compact-header .ah-site-menu nav>a:hover{color:#fff;text-decoration:underline}
+#artdico-host.ah-festival .ah-compact-header .ah-menu-action{font-weight:600}
+#artdico-host.ah-festival .ah-compact-header :is(summary,a):focus-visible{outline:2px solid #eeede9;outline-offset:4px}
+@container(max-width:600px){
+  #artdico-host.ah-festival .ah-compact-header .ah-site-menu{top:16px;right:18px}
+  #artdico-host.ah-festival .ah-compact-header .ah-site-menu>summary{min-width:84px;padding-inline:12px;gap:12px}
+  #artdico-host.ah-festival .ah-compact-header .ah-site-menu>nav{max-width:calc(100vw - 36px)}
+}

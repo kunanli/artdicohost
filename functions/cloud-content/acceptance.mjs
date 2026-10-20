@@ -82,7 +82,7 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
     if (controller.signal.aborted) throw fail();
     completed.push(name);
   }
-  const completion = (async () => {
+  const execution = (async () => {
     try {
       const aObjects = objects(), bObjects = objects();
       await stage('object-readback', async () => {
@@ -203,5 +203,13 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
     finally { clearTimeout(timer); controller.abort(); }
     return snapshot();
   })();
+  // Bound the observable result too, including a non-conforming transport whose
+  // response stream ignores abort. No later operation may promote an aborted
+  // run: each stage checks the controller before recording completion.
+  const stopped = new Promise(resolve => controller.signal.addEventListener('abort', () => {
+    if (status === 'running') status = 'failed';
+    resolve(snapshot());
+  }, { once: true }));
+  const completion = Promise.race([execution, stopped]);
   return { snapshot, completion };
 }

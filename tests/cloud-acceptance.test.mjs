@@ -101,6 +101,23 @@ test('the overall deadline bounds a transport that ignores abort and no late suc
   } finally { clearTimeout(keeper); }
 });
 
+test('the overall result deadline also bounds a response body that ignores transport abort', async () => {
+  let body;
+  const fetchFn = async () => new Response(new ReadableStream({ start(controller) { body = controller; } }), {
+    headers: { 'content-type': 'application/json', 'x-oss-object-type': 'Normal' },
+  });
+  const monitor = startCloudAcceptance({ ...options({ fetchFn }), deadlineMs: 20 });
+  const started = Date.now(), keeper = setTimeout(() => {}, 500);
+  try {
+    const result = await monitor.completion;
+    assert.equal(result.status, 'failed'); assert.deepEqual(result.completed, []);
+    assert.ok(Date.now() - started < 400);
+    body.close();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(monitor.snapshot().status, 'failed');
+  } finally { clearTimeout(keeper); }
+});
+
 test('health proof cannot promote incomplete results, reorder stages or return unchecked status fields', async () => {
   const good = await startCloudAcceptance(options(objectFixture())).completion;
   for (const patch of [{ status: 'unknown' }, { completed: [] }, { completed: Array(8) }, { completed: [...good.completed].reverse() }, { requests: 501 }, { runId: '../private' }, { sourceCommit: 'short' }, { instanceId: 'private' }, { fcProcesses: 2 }, { cleanupPerformed: true }]) {

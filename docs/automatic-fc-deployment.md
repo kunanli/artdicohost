@@ -1,5 +1,12 @@
 # GitHub 自动更新香港 FC
 
+## 当前发布路径：内容代码与账号配置仍保持关闭
+
+本阶段基于已验收 main `b65eb4d8615f08ce303d172744389b4fa424f47e`（[Actions 39421559983](https://github.com/kunanli/artdicohost/actions/runs/39421559983)，413 项测试、16 个 OSS SHA-256 回读和三次 FC 签名完整提交标记）。现在将日常 `deploy-fc` 输入永久切换到同次检查的独立内容包；新发布器仍只更新 code，要求准确专用执行角色、关闭的业务开关和最新 main，保留配置及签名触发器，并分别验收三次完整源码标记。FC codeChecksum 仍是 CRC64；包 SHA-256 不是远端回读。
+
+独立账号设置 job 在代码发布成功后运行，使用用户已建立的密码 Secret／身份 Variables，在 runner 内存中生成 scrypt 摘要，只更新固定目标的环境映射并保持业务关闭。代码与配置任务共享固定生产并发组。新客户端 `scripts/fc-config-client.mjs` 专管环境更新，原代码客户端不接受环境字段；两者均不创建资源、修改 IAM／DNS／角色／触发器。完整设置与验收边界见 [云端内容后台接入](cloud-content-setup.md)。下文六文件部署及“不修改环境”的描述属于原预检代码路径；新环境任务是单独受控步骤，不是代码上传的附带行为。
+
+
 日期：2026-10-20（Asia/Taipei）。香港 `artdicohost-api` 已按用户要求参照 `kunanli/artdico-deck` 自动更新；部署运行时、RAM 与 Variables 配置完成。本阶段开始时最近完整验收基线为 `5eff813523f075d9871cf6188d2e61a923e4cb52`，[Actions 39397120656](https://github.com/kunanli/artdicohost/actions/runs/39397120656) 的 check `118542478148` 完成 346 项测试；OSS `118543356196` 完成 16 个对象 SHA-256 回读；FC `118543356284` 单次更新后于 17:01:37、17:01:39、17:01:42（Asia/Taipei）连续三次签名完整源码标记全部匹配。生命周期字段仍为 null，不推论 Active／Successful；FC CRC64 不等于远端 SHA-256 回读。私有 OSS 已创建仍不代表正式 API、后台登录或嘉宾管理已接通。后续提交以各自最新 main push 的实际日志为准，以下保留历史验收与失败记录。
 
 用户同时授权后续正常发布：完成检查和审阅后，可合并到 main 并执行自动部署，无需逐次再申请发布确认。此授权不替代公开稿件核准、真实资料迁移及个人信息公开 / 分享授权，也不改变正式隐私告知与当前业务关闭边界。

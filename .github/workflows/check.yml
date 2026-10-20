@@ -79,7 +79,7 @@ jobs:
           mkdir -m 755 "$RUNNER_TEMP/artdico-cloud-content-smoke"
           unzip -q .local-data/cloud-content-build/publication/artdicohost-cloud-content-candidate.zip -d "$RUNNER_TEMP/artdico-cloud-content-smoke"
           docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 --memory 512m --cpus 0.35 --user 1000:1000 --tmpfs /tmp:rw,nosuid,nodev,exec,size=192m,mode=1777 --mount "type=bind,src=$RUNNER_TEMP/artdico-cloud-content-smoke,dst=/code,readonly" --mount "type=bind,src=$GITHUB_WORKSPACE/scripts/smoke-cloud-content.py,dst=/verify.py,readonly" artdicohost-fc-smoke python3 -I -S /verify.py
-      - name: Retain the reviewed cloud content candidate without deploying it
+      - name: Retain the reviewed cloud content publication
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cloud-content-candidate-${{ github.sha }}
@@ -91,9 +91,8 @@ jobs:
         continue-on-error: true
         run: node scripts/probe-content-endpoint.mjs
       - name: Report that FC updates still need one-time setup
-        # The candidate artifact above is deliberately not consumed by deploy-fc.
         if: ${{ vars.ARTDICO_FC_DEPLOY_ENABLED != 'true' }}
-        run: echo 'FC automatic deployment is disabled. The startup package was checked; artdicohost-api was not updated.' >> "$GITHUB_STEP_SUMMARY"
+        run: echo 'FC automatic deployment is disabled. The cloud-content publication was checked; artdicohost-api was not updated.' >> "$GITHUB_STEP_SUMMARY"
       - name: Verify the pinned official deployment tool without credentials
         run: bash scripts/install-ossutil.sh "$RUNNER_TEMP/artdico-ossutil-check"
       - name: Prepare public-only OSS publication
@@ -152,11 +151,14 @@ jobs:
         run: node scripts/deploy-oss.mjs .local-data/oss-publish "$RUNNER_TEMP/artdico-ossutil/ossutil-2.4.0-linux-amd64/ossutil"
 
   deploy-fc:
-    name: Update the isolated Hong Kong FC startup code
+    name: Publish closed cloud-content code to Hong Kong FC
     needs: check
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'kunanli/artdicohost' && vars.ARTDICO_FC_DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: artdicohost-production-fc
+      cancel-in-progress: false
     permissions:
       contents: read
     steps:
@@ -170,11 +172,11 @@ jobs:
         with:
           node-version: "24.19.0"
           package-manager-cache: false
-      - name: Download this run's checked FC publication
+      - name: Download this run's checked cloud-content publication
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: fc-publication-${{ github.sha }}
-          path: .local-data/fc-publication/
+          name: cloud-content-candidate-${{ github.sha }}
+          path: .local-data/cloud-content-publication/
       - name: Update only this function's code and verify the signed health response
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -182,4 +184,39 @@ jobs:
           ARTDICO_FC_ACCOUNT_ID: ${{ vars.ARTDICO_FC_ACCOUNT_ID }}
           FC_ACCESS_KEY_ID: ${{ secrets.ARTDICO_OSS_ACCESS_KEY_ID }}
           FC_ACCESS_KEY_SECRET: ${{ secrets.ARTDICO_OSS_ACCESS_KEY_SECRET }}
-        run: node scripts/deploy-fc.mjs .local-data/fc-publication
+        run: node scripts/deploy-cloud-content.mjs .local-data/cloud-content-publication
+
+
+  configure-cloud-admin:
+    name: Configure the isolated owner account with cloud business closed
+    needs: deploy-fc
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'kunanli/artdicohost' && vars.ARTDICO_FC_DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: artdicohost-production-fc
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the exact accepted source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up the pinned Node.js without build dependencies
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.19.0"
+          package-manager-cache: false
+      - name: Configure only approved owner and content environment with business closed
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ARTDICO_CLOUD_ADMIN_SETUP_ENABLED: "true"
+          ARTDICO_FC_ACCOUNT_ID: ${{ vars.ARTDICO_FC_ACCOUNT_ID }}
+          FC_ACCESS_KEY_ID: ${{ secrets.ARTDICO_OSS_ACCESS_KEY_ID }}
+          FC_ACCESS_KEY_SECRET: ${{ secrets.ARTDICO_OSS_ACCESS_KEY_SECRET }}
+          ARTDICO_ADMIN_PASSWORD: ${{ secrets.ARTDICO_ADMIN_PASSWORD }}
+          ARTDICO_ADMIN_USERNAME: ${{ vars.ARTDICO_ADMIN_USERNAME }}
+          ARTDICO_ADMIN_EMAIL: ${{ vars.ARTDICO_ADMIN_EMAIL }}
+        run: node scripts/configure-cloud-admin.mjs

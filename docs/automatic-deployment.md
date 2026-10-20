@@ -1,5 +1,7 @@
 # GitHub 自动更新香港 OSS
 
+本阶段公开 OSS 上传及 SHA-256 回读流程不变。独立 FC 日常代码任务改为部署已验证的内容包，并在代码验收后独立配置受控 owner 账号，内容业务仍关闭；不会把后台 HTML、账号、私有资料或完整构建目录上传公开桶。最新完整发布基线为 `b65eb4d8615f08ce303d172744389b4fa424f47e` 的 [Actions 39421559983](https://github.com/kunanli/artdicohost/actions/runs/39421559983)。当前步骤及历史预检说明的差异见 [FC 自动更新](automatic-fc-deployment.md)与 [云端后台接入](cloud-content-setup.md)；新代码／设置的实际成功须核对各自 main job，不能由该历史基线推断。
+
 用户已创建独立网站桶 `artdicohost-web-hk`，地域为中国香港，并于 2026-10-19 确认 AccessKey 已保存于 GitHub Actions Secrets，由部署流程使用。日常发布通过 GitHub 自动更新，不再手动上传 ZIP。此流程的发布范围仅含静态前台及图片邀请函生成器；本机 39 笔真实联系人、真实报名、工作人员数据 API、Wallet 签名和邮件投递不随本流程上线。开发和验证只使用示范资料。
 
 用户已建立香港 `artdicohost-api` 并要求参照 `artdico-deck` 自动更新 FC，沿用[独立 FC 自动更新](automatic-fc-deployment.md)的只读 PR 检查与 main 发布分离模式。运行时、精确部署权限及 GitHub Variables 已配置；本阶段开始时最近完整验收基线为 `5eff813523f075d9871cf6188d2e61a923e4cb52`，[Actions 39397120656](https://github.com/kunanli/artdicohost/actions/runs/39397120656) 的公开 OSS 16 个对象 SHA-256 回读与 FC 三次完整提交签名启动检查均成功，check 完成 346 项测试。FC 使用紧凑六文件启动包、现行 ACS3 trigger 签名及单次 native HTTPS 代码上传；GET / health、上传和总体期限及来源 / 配置门槛不放宽。云端仍是业务关闭的启动包，未接通工作人员登录、嘉宾管理、真实报名或私有 OSS / 统计。本轮后台模块及图片保存仅在独立本地／合成内容 API 验证，不打入公开站点或 FC 启动包。

@@ -7,7 +7,7 @@ import { createCloudContentApi } from '../functions/cloud-content/handler.mjs';
 import { objectFixture, fakeCredentials, fixedClock } from './cloud-oss-fixture.mjs';
 import { request as httpRequest } from 'node:http';
 
-const SOURCE = 'a'.repeat(40), RUN = 'r123456-' + SOURCE, INSTANCE = 'b'.repeat(32);
+const SOURCE = 'a'.repeat(40), RUN = 'r123456-a1-' + 'c'.repeat(16) + '-' + SOURCE, INSTANCE = 'b'.repeat(32);
 const ENV = { NODE_ENV: 'production', ARTDICO_CLOUD_CONTENT_ENABLED: 'false', ARTDICO_CLOUD_ACCEPTANCE_RUN_ID: RUN,
   ARTDICO_CONTENT_API_ORIGIN: 'https://api.artdico.host', ARTDICO_PUBLIC_SITE_ORIGIN: 'https://artdico.host',
   ARTDICO_CONTENT_BUCKET: 'artdicohost-data-hk', ARTDICO_CONTENT_REGION: 'cn-hongkong',
@@ -18,17 +18,18 @@ const options = fixture => ({ env: ENV, sourceCommit: SOURCE, fetchFn: fixture.f
 test('all logical object categories are mapped to one private acceptance namespace and nested or malformed scopes are rejected', async () => {
   const seen = [], objects = Object.fromEntries(['get', 'putImmutable', 'append'].map(operation => [operation, (...args) => { seen.push([operation, ...args]); return Promise.resolve(null); }]));
   const scoped = createAcceptanceObjects({ objects, runId: RUN, instanceId: INSTANCE });
-  for (const category of ['content', 'contacts', 'portraits', 'sessions', 'limits', 'probes']) {
+  for (const category of ['content', 'contacts', 'portraits', 'sessions', 'limits', 'probes', 'registrations', 'registration-reviews', 'intent-invitations', 'group-invites', 'users', 'maintenance']) {
     const logical = `cms/v1/${category}/synthetic.json`;
     await scoped.get(logical); await scoped.putImmutable(logical, Buffer.from('{}')); await scoped.append(logical, 0, Buffer.from('{}'));
   }
-  assert.equal(seen.length, 18);
+  assert.equal(seen.length, 36);
   assert.ok(seen.every(([, key]) => key.startsWith(`cms/v1/acceptance/${RUN}/${INSTANCE}/`)));
   for (const value of ['cms/v1/acceptance/existing/probe.json', 'cms/v1/content/../private.json', 'cms/v1/other/probe.json', 'cms/v1/content//probe.json', 'other/content/probe.json', null, ['cms/v1/content/probe.json']]) {
     assert.throws(() => scoped.get(value), { message: 'Acceptance object scope is invalid.' });
   }
-  assert.equal(seen.length, 18);
-  for (const runId of ['production', 'r0-' + SOURCE, 'r1-../' + SOURCE, 'r1-' + 'A'.repeat(40), 'r1-' + SOURCE + '/extra']) {
+  assert.equal(seen.length, 36);
+  for (const runId of ['production', 'r0-a1-' + 'c'.repeat(16) + '-' + SOURCE, 'r1-a0-' + 'c'.repeat(16) + '-' + SOURCE,
+    'r1-' + SOURCE, 'r1-a1-../' + SOURCE, 'r1-a1-' + 'c'.repeat(16) + '-' + 'A'.repeat(40), RUN + '/extra']) {
     assert.throws(() => createAcceptanceObjects({ objects, runId, instanceId: INSTANCE }));
   }
 });
@@ -39,14 +40,14 @@ test('isolated acceptance performs durable HTTP object operations and reports on
   const result = await monitor.completion;
   assert.equal(result.status, 'passed', JSON.stringify(result));
   assert.equal(result.runId, RUN); assert.equal(result.sourceCommit, SOURCE);
-  assert.equal(result.completed.length, 8);
+  assert.equal(result.completed.length, 10);
   assert.equal(result.independentClients, 2); assert.equal(result.fcProcesses, 1); assert.equal(result.cleanupPerformed, false);
-  assert.ok(result.requests > 100 && result.requests < 500);
+  assert.ok(result.requests > 100 && result.requests < 1000);
   assert.equal(result.requests, fixture.calls.length);
   const prefix = `cms/v1/acceptance/${RUN}/${result.instanceId}/`;
   assert.ok(fixture.calls.every(call => call.key.startsWith(prefix)));
   assert.ok([...fixture.stored.keys()].every(key => key.startsWith(prefix)));
-  for (const category of ['content', 'contacts', 'portraits', 'sessions', 'limits', 'probes']) assert.ok([...fixture.stored.keys()].some(key => key.startsWith(prefix + category + '/')), category);
+  for (const category of ['content', 'contacts', 'portraits', 'sessions', 'limits', 'probes', 'registrations', 'registration-reviews', 'intent-invitations', 'group-invites', 'users']) assert.ok([...fixture.stored.keys()].some(key => key.startsWith(prefix + category + '/')), category);
   assert.equal(fixture.calls.some(call => call.method === 'DELETE'), false);
   assert.equal(fixture.calls.some(call => call.method === 'POST' && !call.url.includes('?append&position=')), false);
   const serialized = JSON.stringify(result);
@@ -68,7 +69,7 @@ test('missing acceptance setting does no credential, clock or network work and r
 test('acceptance rejects enabled business, missing role credentials, wrong fixed targets, invalid source binding and excessive deadline before networking', async () => {
   for (const patch of [{ ARTDICO_CLOUD_CONTENT_ENABLED: 'true' }, { ALIBABA_CLOUD_SECURITY_TOKEN: '' }, { ALIBABA_CLOUD_ACCESS_KEY_SECRET: '' },
     { NODE_ENV: 'development' }, { ARTDICO_CONTENT_BUCKET: 'another-private-bucket' }, { ARTDICO_CONTENT_REGION: 'cn-shanghai' },
-    { ARTDICO_CONTENT_API_ORIGIN: 'https://example.invalid' }, { ARTDICO_CLOUD_ACCEPTANCE_RUN_ID: 'r123456-' + 'b'.repeat(40) }]) {
+    { ARTDICO_CONTENT_API_ORIGIN: 'https://example.invalid' }, { ARTDICO_CLOUD_ACCEPTANCE_RUN_ID: 'r123456-a1-' + 'c'.repeat(16) + '-' + 'b'.repeat(40) }]) {
     let calls = 0;
     const monitor = startCloudAcceptance({ ...options({ fetchFn() { calls++; } }), env: { ...ENV, ...patch } });
     assert.equal((await monitor.completion).status, 'rejected'); assert.equal(calls, 0);
@@ -120,7 +121,7 @@ test('the overall result deadline also bounds a response body that ignores trans
 
 test('health proof cannot promote incomplete results, reorder stages or return unchecked status fields', async () => {
   const good = await startCloudAcceptance(options(objectFixture())).completion;
-  for (const patch of [{ status: 'unknown' }, { completed: [] }, { completed: Array(8) }, { completed: [...good.completed].reverse() }, { requests: 501 }, { runId: '../private' }, { sourceCommit: 'short' }, { instanceId: 'private' }, { fcProcesses: 2 }, { cleanupPerformed: true }]) {
+  for (const patch of [{ status: 'unknown' }, { completed: [] }, { completed: Array(10) }, { completed: [...good.completed].reverse() }, { requests: 1001 }, { runId: '../private' }, { sourceCommit: 'short' }, { instanceId: 'private' }, { fcProcesses: 2 }, { cleanupPerformed: true }]) {
     assert.throws(() => acceptanceHealthProof({ ...good, ...patch }), { message: 'Cloud acceptance was not verified.' });
   }
 });

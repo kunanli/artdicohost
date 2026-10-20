@@ -51,6 +51,7 @@ async function fixture(t) {
       for (const [path, body] of [
         ['admin/index.html', '<html><script type="module" src="/_astro/admin.hash.js"></script><link rel="stylesheet" href="/_astro/admin.hash.css"></html>'],
         ['admin/contacts/index.html', '<html><script type="module" src="/_astro/contacts.hash.js"></script></html>'],
+        ['admin/registrations/index.html', '<html><script type="module" src="/_astro/contacts.hash.js"></script></html>'],
         ['invitations/template-blank.png', 'SYNTHETIC-PNG-BYTES'],
         ['_astro/admin.hash.js', 'export const version = 1;'],
         ['_astro/admin.hash.css', '@font-face{src:url("./font.hash.woff2")}'],

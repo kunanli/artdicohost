@@ -15,6 +15,7 @@ const NODE = { version: 'v24.19.0', platform: 'linux', arch: 'x64', sha256: 'bc1
 const syntheticAssets = [
   { url: '/admin/', path: 'admin-assets/admin/index.html', data: '<!doctype html><p>synthetic content editor</p>' },
   { url: '/admin/contacts/', path: 'admin-assets/admin/contacts/index.html', data: '<!doctype html><p>synthetic contacts editor</p>' },
+  { url: '/admin/registrations/', path: 'admin-assets/admin/registrations/index.html', data: '<!doctype html><p>synthetic registration review</p>' },
   { url: '/invitations/template-blank.png', path: 'admin-assets/invitations/template-blank.png', data: 'synthetic blank image' },
   { url: '/_astro/staff-test.js', path: 'admin-assets/_astro/staff-test.js', data: 'export const synthetic=true;' },
 ];
@@ -156,7 +157,7 @@ test('an acceptance setting always closes the business runtime and refuses to te
   const f = await fixture(t);
   let calls = 0;
   const users = [{ id: 'synthetic-owner', username: 'synthetic.owner', label: '合成账号', roles: ['editor'], passwordHash: await hashPassword('synthetic-acceptance-password') }];
-  const env = { NODE_ENV: 'production', ARTDICO_CLOUD_CONTENT_ENABLED: 'true', ARTDICO_CLOUD_ACCEPTANCE_RUN_ID: 'r123-' + SOURCE,
+  const env = { NODE_ENV: 'production', ARTDICO_CLOUD_CONTENT_ENABLED: 'true', ARTDICO_CLOUD_ACCEPTANCE_RUN_ID: 'r123-a1-' + 'c'.repeat(16) + '-' + SOURCE,
     ARTDICO_CONTENT_API_ORIGIN: 'https://api.artdico.host', ARTDICO_PUBLIC_SITE_ORIGIN: 'https://artdico.host',
     ARTDICO_CONTENT_BUCKET: 'artdicohost-data-hk', ARTDICO_CONTENT_REGION: 'cn-hongkong', ADMIN_USERS_JSON: JSON.stringify(users),
     ALIBABA_CLOUD_ACCESS_KEY_ID: 'SyntheticRoleId', ALIBABA_CLOUD_ACCESS_KEY_SECRET: 'SyntheticRoleSecret', ALIBABA_CLOUD_SECURITY_TOKEN: 'SyntheticRoleToken' };

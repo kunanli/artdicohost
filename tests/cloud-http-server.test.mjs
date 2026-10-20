@@ -14,6 +14,7 @@ const HTML = '<!doctype html><html><head><script>' + INLINE + '</script><script 
 const ASSETS = () => new Map([
   ['/admin/', Buffer.from(HTML)],
   ['/admin/contacts/', Buffer.from('<!doctype html><html><body>合成名单页面</body></html>')],
+  ['/admin/registrations/', Buffer.from('<!doctype html><html><body>合成报名审核页面</body></html>')],
   ['/invitations/template-blank.png', Buffer.from('synthetic-png-template')],
   ['/_astro/staff-test.js', Buffer.from('export const syntheticStaff = true;')],
   ['/_astro/staff-test.css', Buffer.from('body { color: #222; }')],
@@ -120,6 +121,9 @@ test('actual HTTP serves copied allowlisted bytes, exact inline CSP hashes, safe
   const contactRedirect = await send(port, '/admin/contacts');
   assert.equal(contactRedirect.status, 308);
   assert.equal(contactRedirect.headers.location, '/admin/contacts/');
+  const registrations = await send(port, '/admin/registrations/');
+  assert.equal(registrations.status, 200); assert.match(registrations.text, /合成报名审核页面/u);
+  assert.equal((await send(port, '/admin/registrations')).headers.location, '/admin/registrations/');
   const queriedRedirect = await send(port, '/admin/contacts?marker=synthetic');
   assert.equal(queriedRedirect.status, 404);
   const template = await send(port, '/invitations/template-blank.png');
@@ -232,6 +236,24 @@ test('declared and actually streamed oversized bodies are rejected before the ru
   assert.equal(exact.status, 200);
   assert.deepEqual(JSON.parse(exact.text), { bytes: MAX_CLOUD_BODY_BYTES });
   assert.equal(calls, 1);
+});
+
+test('larger protected import and restore bodies are allowed only on their exact composed paths', async t => {
+  const seen = [];
+  const { port } = await loopback(t, { runtime: { configured: true, handle: async request => {
+    const bytes = (await request.arrayBuffer()).byteLength;
+    seen.push({ path: new URL(request.url).pathname, bytes }); return json({ bytes });
+  } } });
+  const oneMiB = MAX_CLOUD_BODY_BYTES;
+  const restored = await send(port, '/api/admin/maintenance/restore', { method: 'POST', body: Buffer.alloc(oneMiB + 1) });
+  assert.equal(restored.status, 200); assert.deepEqual(JSON.parse(restored.text), { bytes: oneMiB + 1 });
+  const imported = await send(port, '/api/admin/contacts/import/preview', { method: 'POST', body: Buffer.alloc(2 * oneMiB + 1) });
+  assert.equal(imported.status, 200); assert.deepEqual(JSON.parse(imported.text), { bytes: 2 * oneMiB + 1 });
+  assert.equal((await send(port, '/api/admin/contacts/import', { method: 'POST', body: Buffer.alloc(3 * oneMiB + 1) })).status, 413);
+  assert.equal((await send(port, '/api/admin/contacts/import/unlisted', { method: 'POST', body: Buffer.alloc(oneMiB + 1) })).status, 413);
+  assert.equal((await send(port, '/api/admin/maintenance/backup', { method: 'POST', body: Buffer.alloc(oneMiB + 1) })).status, 413);
+  assert.equal((await send(port, '/api/admin/maintenance/restore', { method: 'POST', body: Buffer.alloc(2 * oneMiB + 1) })).status, 413);
+  assert.equal(seen.length, 2);
 });
 
 test('runtime and HTTP parser failures stay opaque and leave the actual server responsive', async t => {

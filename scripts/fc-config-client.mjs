@@ -28,7 +28,7 @@ export function summarizeFcConfigError(error) {
   return detail ? `operation=UpdateFunction phase=${detail.phase}${detail.status === undefined ? '' : ' status=' + detail.status}${detail.code === undefined ? '' : ' code=' + detail.code}` : null;
 }
 
-function environmentBody(value) {
+function environmentBody(value, allowContentActivation = false) {
   try {
     if (!plain(value) || Object.getOwnPropertySymbols(value).length || Reflect.ownKeys(value).length > 100) throw failure();
     const copy = Object.create(null);
@@ -38,7 +38,8 @@ function environmentBody(value) {
         || !descriptor || !Object.hasOwn(descriptor, 'value') || typeof descriptor.value !== 'string' || Buffer.byteLength(descriptor.value) > 32 * 1024) throw failure();
       copy[key] = descriptor.value;
     }
-    if (copy.ARTDICO_CLOUD_CONTENT_ENABLED !== 'false') throw failure();
+    if (copy.ARTDICO_CLOUD_CONTENT_ENABLED !== 'false'
+      && !(allowContentActivation === true && copy.ARTDICO_CLOUD_CONTENT_ENABLED === 'true')) throw failure();
     if (Buffer.byteLength(JSON.stringify(copy)) > 4096) throw failure();
     const body = JSON.stringify({ environmentVariables: copy });
     if (Buffer.byteLength(body) > LIMIT) throw failure();
@@ -47,7 +48,14 @@ function environmentBody(value) {
 }
 
 /** Validate without returning the serialized map to a caller or logger. */
-export function assertFcEnvironmentMap(value) { environmentBody(value); }
+export function assertFcEnvironmentMap(value, options = {}) {
+  if (!plain(options) || Reflect.ownKeys(options).some(key => key !== 'allowContentActivation'
+    || !Object.hasOwn(Object.getOwnPropertyDescriptor(options, key), 'value'))) throw failure({ phase: 'input' });
+  const configured = Object.getOwnPropertyDescriptor(options, 'allowContentActivation')?.value;
+  const allowContentActivation = configured === undefined ? false : configured;
+  if (typeof allowContentActivation !== 'boolean') throw failure({ phase: 'input' });
+  environmentBody(value, allowContentActivation);
+}
 
 function abortable(promise, signal) {
   if (signal.aborted) return Promise.reject(failure());
@@ -69,9 +77,9 @@ function dateValue(clock) {
 
 /** Separate one-shot configuration transport; no code, role, runtime, trigger or creation mutation. */
 export function createFcConfigClient(options = {}) {
-  let accessKeyId, accessKeySecret, securityToken, readerClient, fetchFn, clock, nonce;
+  let accessKeyId, accessKeySecret, securityToken, readerClient, fetchFn, clock, nonce, allowContentActivation;
   try {
-    if (!plain(options) || Reflect.ownKeys(options).some(key => !['credentials', 'fetchFn', 'clock', 'nonce'].includes(key)
+    if (!plain(options) || Reflect.ownKeys(options).some(key => !['credentials', 'fetchFn', 'clock', 'nonce', 'allowContentActivation'].includes(key)
       || !Object.hasOwn(Object.getOwnPropertyDescriptor(options, key), 'value'))) throw failure();
     const credentials = Object.getOwnPropertyDescriptor(options, 'credentials')?.value;
     if (!plain(credentials) || Reflect.ownKeys(credentials).some(key => !['accessKeyId', 'accessKeySecret', 'securityToken'].includes(key)
@@ -82,10 +90,12 @@ export function createFcConfigClient(options = {}) {
     fetchFn = Object.getOwnPropertyDescriptor(options, 'fetchFn')?.value;
     clock = Object.getOwnPropertyDescriptor(options, 'clock')?.value;
     nonce = Object.getOwnPropertyDescriptor(options, 'nonce')?.value;
+    allowContentActivation = Object.getOwnPropertyDescriptor(options, 'allowContentActivation')?.value;
+    if (allowContentActivation === undefined) allowContentActivation = false;
     if (fetchFn === undefined) fetchFn = fetch;
     if (clock === undefined) clock = () => new Date();
     if (nonce === undefined) nonce = randomUUID;
-    if (typeof fetchFn !== 'function' || typeof clock !== 'function' || typeof nonce !== 'function'
+    if (typeof fetchFn !== 'function' || typeof clock !== 'function' || typeof nonce !== 'function' || typeof allowContentActivation !== 'boolean'
       || typeof accessKeyId !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/u.test(accessKeyId)
       || typeof accessKeySecret !== 'string' || !/^[\x21-\x7e]{1,1024}$/u.test(accessKeySecret)
       || securityToken !== undefined && (typeof securityToken !== 'string' || !/^[\x21-\x7e]{1,8192}$/u.test(securityToken))) throw failure();
@@ -100,7 +110,7 @@ export function createFcConfigClient(options = {}) {
       externalSignal = Object.getOwnPropertyDescriptor(options, 'signal')?.value;
       if (externalSignal !== undefined && !(externalSignal instanceof AbortSignal)) throw failure();
     } catch { throw failure({ phase: 'input' }); }
-    const body = environmentBody(environment);
+    const body = environmentBody(environment, allowContentActivation);
     let headers;
     try {
       const id = nonce();

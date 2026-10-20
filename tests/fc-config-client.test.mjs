@@ -72,6 +72,20 @@ test('configuration STS signing covers the security token and retains the fixed 
     'ACS3-HMAC-SHA256 Credential=STS.SYNTHETICKEY,SignedHeaders=content-type;host;x-acs-action;x-acs-content-sha256;x-acs-date;x-acs-security-token;x-acs-signature-nonce;x-acs-version,Signature=afd2a8528d75b0188021013f1cbd90fd412947c7cdfaea700fa4d6b00ef5d3e4');
 });
 
+test('content activation requires an explicit constructor capability and retains the same one-shot configuration boundary', async () => {
+  const environment = { ...ENVIRONMENT(), ARTDICO_CLOUD_CONTENT_ENABLED: 'true' };
+  const closed = fixture(); await safelyRejected(closed.client.updateEnvironment(environment));
+  assert.deepEqual(closed.calls, []);
+  const enabled = fixture(undefined, { allowContentActivation: true });
+  assert.deepEqual(await enabled.client.updateEnvironment(environment), { acknowledged: true });
+  assert.equal(enabled.calls.length, 1);
+  assert.deepEqual(JSON.parse(enabled.calls[0].settings.body), { environmentVariables: environment });
+  for (const invalid of [null, 'true', 1]) assert.throws(() => fixture(undefined, { allowContentActivation: invalid }), /client is invalid/u);
+  const ambiguous = fixture(undefined, { allowContentActivation: true });
+  await safelyRejected(ambiguous.client.updateEnvironment({ ...environment, ARTDICO_CLOUD_CONTENT_ENABLED: 'yes' }));
+  assert.deepEqual(ambiguous.calls, []);
+});
+
 test('the complete serialized environment map respects the conservative 4 KiB FC budget', async () => {
   const environment = { ARTDICO_CLOUD_CONTENT_ENABLED: 'false', SYNTHETIC_FILLER: '' };
   environment.SYNTHETIC_FILLER = 'x'.repeat(4096 - Buffer.byteLength(JSON.stringify(environment)));

@@ -220,6 +220,23 @@ function inviteApi(result, options = {}) {
   return createRegistrationApi({ allowedOrigins: [origin], submissionService: { async submit() { return result; } }, allowedGroupInviteOrigins: [inviteOrigin], clock: () => now, ...options });
 }
 
+test('waitlisted durable receipts retain creation/replay semantics while suppressing all group invitations', async () => {
+  for (const outcome of ['created', 'replayed']) {
+    const result = inviteResult({ outcome });
+    Object.assign(result.receipt, { admissionStatus: 'waitlisted', admissionKind: 'attendee', admissionRevision: 3, privateQueue: 'PRIVATE-SYNTHETIC' });
+    const response = await inviteApi(result)(request()), value = await response.json();
+    assert.equal(response.status, outcome === 'created' ? 201 : 200);
+    assert.equal(value.status, 'waitlisted'); assert.equal(value.reference_code, key); assert.equal(value.groupInvite, null);
+    assert.equal(value.admissionStatus, 'waitlisted'); assert.equal(value.admissionKind, 'attendee'); assert.equal(value.admissionRevision, 3);
+    assert.doesNotMatch(JSON.stringify(value), /PRIVATE-SYNTHETIC/u);
+  }
+  for (const admission of [{ admissionStatus: 'unknown' }, { admissionStatus: 'confirmed', admissionKind: 'crew', admissionRevision: 'PRIVATE' },
+    { admissionStatus: 'withdrawn', admissionKind: 'attendee', admissionRevision: 1 }, { admissionKind: 'crew' }]) {
+    const result = inviteResult(); Object.assign(result.receipt, admission);
+    await error(await inviteApi(result)(request()), 503, 'UNAVAILABLE');
+  }
+});
+
 test('committed creation and saved retries project only the current unexpired service invite', async t => {
   const stored = await fileService(t);
   let currentInvite = invite({ privateContact: 'PRIVATE-SYNTHETIC', instructionsHtml: '<b>PRIVATE-SYNTHETIC</b>' });

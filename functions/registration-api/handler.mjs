@@ -63,9 +63,27 @@ function committedReceipt(result, payload) {
   const receipt = own(result, 'receipt');
   const eventId = own(receipt, 'eventId');
   const referenceCode = own(receipt, 'referenceCode');
-  return own(receipt, 'committed') === true && typeof eventId === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(eventId)
+  const valid = own(receipt, 'committed') === true && typeof eventId === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(eventId)
     && eventId === own(payload, 'eventId') && typeof referenceCode === 'string' && KEY_PATTERN.test(referenceCode)
-    && parseTimestamp(own(receipt, 'committedAt')) !== null ? { referenceCode } : null;
+    && parseTimestamp(own(receipt, 'committedAt')) !== null;
+  if (!valid) return null;
+  const admissionStatus = own(receipt, 'admissionStatus'), admissionKind = own(receipt, 'admissionKind'), admissionRevision = own(receipt, 'admissionRevision');
+  if (admissionStatus === undefined) return admissionKind === undefined && admissionRevision === undefined ? { referenceCode } : null;
+  if (!['confirmed', 'waitlisted'].includes(admissionStatus) || !['attendee', 'crew'].includes(admissionKind)
+    || !Number.isSafeInteger(admissionRevision) || admissionRevision < 0) return null;
+  return { referenceCode, admissionStatus, admissionKind, admissionRevision };
+}
+
+function publicAdmissions(value, capacity) {
+  const projected = { capacity: own(value, 'capacity'), staffReserve: own(value, 'staffReserve'), waitlistEnabled: own(value, 'waitlistEnabled') };
+  if (projected.capacity !== capacity || !Number.isSafeInteger(projected.staffReserve) || projected.staffReserve < 0 || projected.staffReserve > capacity
+    || typeof projected.waitlistEnabled !== 'boolean') return null;
+  for (const field of ['confirmedCount', 'attendeeConfirmedCount', 'crewConfirmedCount', 'waitlistCount', 'remainingPublic', 'remainingTotal']) {
+    const count = own(value, field);
+    if (!Number.isSafeInteger(count) || count < 0 || count > (field === 'waitlistCount' ? 1000 : capacity)) return null;
+    projected[field] = count;
+  }
+  return projected;
 }
 
 /** Optional post-commit information; an unavailable invite never reverses a saved registration. */
@@ -139,6 +157,10 @@ export function createRegistrationApi({ allowedOrigins, submissionService, allow
             checked.privacy[key] = text;
           }
           if (!validateRegistrationPolicy({ ...checked, enabled: true }, { now: checked.opensAt }).valid) return failure('UNAVAILABLE');
+          if (own(value, 'admissions') !== undefined) {
+            checked.admissions = publicAdmissions(own(value, 'admissions'), checked.capacity);
+            if (!checked.admissions) return failure('UNAVAILABLE');
+          }
           return reply(enabled ? checked : { ...checked, reason }, 200);
         }
         if (!issueToken) return failure('UNAVAILABLE');
@@ -181,7 +203,9 @@ export function createRegistrationApi({ allowedOrigins, submissionService, allow
       if (outcome === 'created' || outcome === 'replayed') {
         const receipt = committedReceipt(result, payload);
         if (!receipt) return failure('UNAVAILABLE');
-        return reply({ status: 'registered', reference_code: receipt.referenceCode, groupInvite: groupInvite(result, inviteOrigins, clock) }, outcome === 'created' ? 201 : 200);
+        const { referenceCode, ...admission } = receipt, waitlisted = receipt.admissionStatus === 'waitlisted';
+        return reply({ status: waitlisted ? 'waitlisted' : 'registered', reference_code: referenceCode,
+          groupInvite: waitlisted ? null : groupInvite(result, inviteOrigins, clock), ...admission }, outcome === 'created' ? 201 : 200);
       }
       if (outcome === 'rate_limited' && Number.isSafeInteger(own(result, 'retryAfter')) && own(result, 'retryAfter') >= 1 && own(result, 'retryAfter') <= 86400) headers['retry-after'] = String(own(result, 'retryAfter'));
       return failure(Object.hasOwn(OUTCOMES, outcome) ? OUTCOMES[outcome] : 'UNAVAILABLE');

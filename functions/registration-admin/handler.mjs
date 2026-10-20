@@ -40,9 +40,22 @@ async function body(request) {
 }
 
 /** Route only /api/admin/registrations to this boundary; share the production auth instance. */
-export function createRegistrationAdminApi({ enabled = false, auth, store, canExport = user => user.roles.includes('superadmin') } = {}) {
-  if (typeof enabled !== 'boolean' || typeof canExport !== 'function') throw new TypeError('报名审核配置无效。');
+export function createRegistrationAdminApi({ enabled = false, auth, store, canExport = user => user.roles.includes('superadmin'), onWithdrawalCommitted } = {}) {
+  if (typeof enabled !== 'boolean' || typeof canExport !== 'function' || onWithdrawalCommitted !== undefined && typeof onWithdrawalCommitted !== 'function') throw new TypeError('报名审核配置无效。');
   if (enabled && (typeof auth?.authenticate !== 'function' || !['list', 'detail', 'saveReview', 'exportCsv', 'requestDeletion'].every(name => typeof store?.[name] === 'function'))) throw new TypeError('报名审核依赖未配置。');
+  async function afterCommit(result, registrationId, actor) {
+    if (!onWithdrawalCommitted || result.review?.status !== 'withdrawn' && result.review?.deletionRequested == null) return result;
+    // A review failure never reaches here. Capacity is a separate confirmed CAS;
+    // an uncertain release keeps the review saved and reports pending honestly.
+    let admissionRelease = { status: 'pending' };
+    if (Number.isSafeInteger(result.revision) && result.revision > 0) {
+      try {
+        const release = await onWithdrawalCommitted({ registrationId, reviewRevision: result.revision, actor });
+        if (release?.status === 'released' && Number.isSafeInteger(release.promotedCount) && release.promotedCount >= 0 && release.promotedCount <= 1000) admissionRelease = { status: 'released', promotedCount: release.promotedCount };
+      } catch { /* The saved review remains authoritative; do not retry writes. */ }
+    }
+    return { ...result, admissionRelease };
+  }
   return async function handle(request) {
     try {
       const url = new URL(request.url);
@@ -78,12 +91,12 @@ export function createRegistrationAdminApi({ enabled = false, auth, store, canEx
       if (!action && request.method === 'GET') return json(await store.detail(id));
       if (action === 'review' && request.method === 'PATCH') {
         const input = await body(request); keys(input, ['expectedRevision', 'review'], ['expectedRevision', 'review']);
-        return json(await store.saveReview(id, input.expectedRevision, input.review, session.user.id));
+        return json(await afterCommit(await store.saveReview(id, input.expectedRevision, input.review, session.user.id), id, session.user));
       }
       if (action === 'deletion-request' && request.method === 'POST') {
         if (!session.user.roles.includes('superadmin')) failure('FORBIDDEN');
         const input = await body(request); keys(input, ['expectedRevision', 'reason'], ['expectedRevision', 'reason']);
-        return json(await store.requestDeletion(id, input.expectedRevision, input.reason, session.user.id));
+        return json(await afterCommit(await store.requestDeletion(id, input.expectedRevision, input.reason, session.user.id), id, session.user));
       }
       failure('NOT_FOUND');
     } catch (error) {

@@ -17,7 +17,7 @@ const plain = value => value !== null && typeof value === 'object' && !Array.isA
 const clone = value => structuredClone(value);
 const fail = code => { throw new RegistrationAdminError(code); };
 const hash = text => createHash('sha256').update(text).digest('hex');
-const validTime = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value) && Number.isFinite(Date.parse(value));
+const validTime = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 const ownValues = value => plain(value) && Reflect.ownKeys(value).every(key => typeof key === 'string' && Object.getOwnPropertyDescriptor(value, key)?.enumerable && Object.hasOwn(Object.getOwnPropertyDescriptor(value, key), 'value'));
 function safeText(value, max, optional = true) {
   if (typeof value !== 'string' || [...value].length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value)) fail('INVALID_REVIEW');
@@ -108,7 +108,7 @@ function csv(items, includeContact) {
 
 /** Independent review journal; accepted applications remain immutable and never get overwritten by staff. */
 export function createRegistrationReviewStore({ journal, loadRegistrations, eventId, clock = Date.now } = {}) {
-  if (!journal || !['read', 'commit'].every(name => typeof journal[name] === 'function') || typeof loadRegistrations !== 'function' || !EVENT.test(eventId) || typeof clock !== 'function') throw new TypeError('报名审核依赖未配置。');
+  if (!journal || !['read', 'commit'].every(name => typeof journal[name] === 'function') || typeof loadRegistrations !== 'function' || typeof eventId !== 'string' || !EVENT.test(eventId) || typeof clock !== 'function') throw new TypeError('报名审核依赖未配置。');
   const initial = () => ({ schemaVersion: 1, kind: 'registration_reviews', eventId, revision: 0, reviews: {}, audit: [] });
   const at = () => { const now = clock(); if (!Number.isSafeInteger(now) || now < 0) fail('STORAGE_UNAVAILABLE'); return new Date(now).toISOString(); };
   async function guarded(action) {
@@ -121,13 +121,18 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
     const state = stored.value ?? initial();
     if (!ownValues(state) || Object.keys(state).sort().join(',') !== 'audit,eventId,kind,reviews,revision,schemaVersion'
       || state.schemaVersion !== 1 || state.kind !== 'registration_reviews' || state.eventId !== eventId || !Number.isSafeInteger(state.revision) || state.revision < 0
-      || !ownValues(state.reviews) || !Array.isArray(state.audit) || state.audit.length > MAX_REGISTRATION_REVIEW_AUDIT || state.revision !== state.audit.length) fail('STORAGE_UNAVAILABLE');
+      || !ownValues(state.reviews) || !Array.isArray(state.audit) || state.audit.length > MAX_REGISTRATION_REVIEW_AUDIT || state.revision !== state.audit.length
+      || stored.cursor?.version !== state.revision
+      || Buffer.byteLength(JSON.stringify(state)) > 1024 * 1024) fail('STORAGE_UNAVAILABLE');
     const seen = new Set();
     const registrations = source.registrations.map(record => {
       if (!ownValues(record) || typeof record.id !== 'string' || !RECORD_ID.test(record.id) || seen.has(record.id) || record.eventId !== eventId || !validTime(record.submittedAt)
         || !ownValues(record.fields) || !['name', 'city', 'organization', 'position', 'attendance', 'accommodationChoice'].every(key => typeof record.fields[key] === 'string')
         || !Array.isArray(record.fields.categories) || record.fields.categories.some(value => typeof value !== 'string')
-        || !Array.isArray(record.fields.participationInterests) || record.fields.participationInterests.some(value => typeof value !== 'string')) fail('STORAGE_UNAVAILABLE');
+        || !Array.isArray(record.fields.participationInterests) || record.fields.participationInterests.some(value => typeof value !== 'string')
+        || !ownValues(record.provenance) || !['public', 'staff_assisted'].includes(record.provenance.kind) || !ownValues(record.consent)
+        || record.provenance.kind === 'public' && record.consent.accepted !== true
+        || record.provenance.kind === 'staff_assisted' && (record.consent.accepted !== false || typeof record.provenance.sourceContactId !== 'string' || !ID.test(record.provenance.sourceContactId))) fail('STORAGE_UNAVAILABLE');
       seen.add(record.id);
       const review = Object.hasOwn(state.reviews, record.id) ? state.reviews[record.id] : defaultRegistrationReview(record);
       if (!ownValues(review) || Object.keys(review).sort().join(',') !== [...REVIEW_KEYS, 'deletionRequested'].sort().join(',')) fail('STORAGE_UNAVAILABLE');
@@ -137,15 +142,23 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
       } catch { fail('STORAGE_UNAVAILABLE'); }
       if (review.deletionRequested !== null && (!ownValues(review.deletionRequested) || Object.keys(review.deletionRequested).sort().join(',') !== 'reason,requestedAt,requestedBy,status'
         || !['request', 'retention', 'duplicate', 'other'].includes(review.deletionRequested.reason) || review.deletionRequested.status !== 'pending'
-        || !validTime(review.deletionRequested.requestedAt) || !ID.test(review.deletionRequested.requestedBy))) fail('STORAGE_UNAVAILABLE');
+        || !validTime(review.deletionRequested.requestedAt) || typeof review.deletionRequested.requestedBy !== 'string' || !ID.test(review.deletionRequested.requestedBy))) fail('STORAGE_UNAVAILABLE');
       return { ...clone(record), referenceCode: record.referenceCode ?? record.id, review: clone(review) };
     }).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt) || a.id.localeCompare(b.id));
     // A missing application must not silently drop a review or be re-created from its audit.
     if (Object.keys(state.reviews).some(id => !RECORD_ID.test(id) || !seen.has(id))) fail('STORAGE_UNAVAILABLE');
+    let previousAt = '';
     for (let index = 0; index < state.audit.length; index++) {
       const entry = state.audit[index];
-      if (!ownValues(entry) || !ID.test(entry.actor) || !validTime(entry.at) || entry.revision !== index + 1 || !['update_review', 'export', 'deletion_requested'].includes(entry.action)
+      if (!ownValues(entry) || Object.keys(entry).sort().join(',') !== 'action,actor,at,metadata,registrationId,revision'
+        || typeof entry.actor !== 'string' || !ID.test(entry.actor) || !validTime(entry.at) || entry.at < previousAt || entry.revision !== index + 1 || !['update_review', 'export', 'deletion_requested'].includes(entry.action)
         || entry.registrationId !== null && !seen.has(entry.registrationId) || !ownValues(entry.metadata)) fail('STORAGE_UNAVAILABLE');
+      const meta = entry.metadata;
+      if (entry.action === 'update_review' && (Object.keys(meta).join(',') !== 'changedFields' || !Array.isArray(meta.changedFields) || meta.changedFields.some(key => !REVIEW_KEYS.includes(key)) || new Set(meta.changedFields).size !== meta.changedFields.length)
+        || entry.action === 'export' && (entry.registrationId !== null || Object.keys(meta).sort().join(',') !== 'contactIncluded,count,filterNames' || !Number.isSafeInteger(meta.count) || meta.count < 0 || meta.count > 1000 || typeof meta.contactIncluded !== 'boolean'
+          || !Array.isArray(meta.filterNames) || meta.filterNames.some(key => !FILTER_NAMES.includes(key)) || new Set(meta.filterNames).size !== meta.filterNames.length)
+        || entry.action === 'deletion_requested' && (Object.keys(meta).join(',') !== 'reason' || !['request', 'retention', 'duplicate', 'other'].includes(meta.reason))) fail('STORAGE_UNAVAILABLE');
+      previousAt = entry.at;
     }
     return { state: clone(state), cursor: stored.cursor, registrations, applicationRevision: source.revision };
   }
@@ -155,9 +168,11 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
     if (current.state.revision !== expectedRevision) fail('REVISION_CONFLICT');
     if (current.state.audit.length >= MAX_REGISTRATION_REVIEW_AUDIT) fail('CAPACITY_REACHED');
     const timestamp = at(), next = current.state;
+    if (timestamp < (next.audit.at(-1)?.at ?? '')) fail('STORAGE_UNAVAILABLE');
     const result = action(current, next, timestamp);
     next.revision++;
     next.audit.push({ revision: next.revision, actor, at: timestamp, action: result.action, registrationId: result.registrationId ?? null, metadata: result.metadata ?? {} });
+    if (Buffer.byteLength(JSON.stringify(next)) > 1024 * 1024) fail('CAPACITY_REACHED');
     const committed = await journal.commit(current.cursor, next);
     if (!committed || committed.value?.revision !== next.revision || hash(JSON.stringify(committed.value)) !== hash(JSON.stringify(next))) fail('STORAGE_UNAVAILABLE');
     return { ...result.value, revision: next.revision };

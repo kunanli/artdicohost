@@ -140,3 +140,22 @@ test('HTTP encoding, duplicate/unknown filters and storage failures never expose
   const response = await api(request('/api/admin/registrations')); assert.equal(response.status, 503); assert.doesNotMatch(await response.text(), /SYNTHETIC_PRIVATE_PROVIDER_DETAIL|cms\/v1/u);
   assert.equal((await createRegistrationAdminApi()(request('/api/admin/registrations'))).status, 503);
 });
+
+test('staff-assisted provenance remains distinct and malformed stored consent or audit data fails closed', async () => {
+  const source = record(A, {}, { consent: { accepted: false, version: null, acceptedAt: null },
+    provenance: { kind: 'staff_assisted', sourceContactId: 'synthetic-contact', actorId: 'synthetic-staff', recordedAt: AT, permissionReference: 'PRIVATE-SYNTHETIC-REFERENCE' } });
+  const f = fixture([source]), store = f.store();
+  const row = (await store.list()).registrations[0];
+  assert.deepEqual(row.provenance, { kind: 'staff_assisted', sourceContactId: 'synthetic-contact' });
+  assert.doesNotMatch(JSON.stringify(row), /PRIVATE-SYNTHETIC-REFERENCE/u);
+  assert.equal((await store.detail(A)).registration.consent.accepted, false);
+  const invalid = fixture([{ ...source, consent: { accepted: true, version: 'synthetic', acceptedAt: AT } }]);
+  await rejects(invalid.store().list(), 'STORAGE_UNAVAILABLE');
+  await store.saveReview(A, 0, editable(defaultRegistrationReview(source)), 'synthetic');
+  const saved = await f.journal().read();
+  for (const change of [value => { delete value.audit[0].actor; }, value => { value.audit[0].metadata = { changedFields: ['email'] }; }, value => { value.audit[0].at = '2026-02-30T00:00:00.000Z'; }]) {
+    const changed = clone(saved); change(changed.value);
+    const corrupted = createRegistrationReviewStore({ eventId: EVENT, journal: { read: async () => changed, commit() {} }, loadRegistrations: async () => ({ registrations: [source], revision: 1 }) });
+    await rejects(corrupted.list(), 'STORAGE_UNAVAILABLE');
+  }
+});

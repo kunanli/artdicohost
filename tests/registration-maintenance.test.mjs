@@ -1,0 +1,106 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
+import { generateBackupKey, createEncryptedObjectBackup, inspectEncryptedObjectBackup, collectJournalBackupKeys, restoreEncryptedBackupIsolated } from '../functions/registration-admin/maintenance.mjs';
+import { memoryObjects } from './helpers/cloud-memory-objects.mjs';
+
+const PRIVATE = 'PRIVATE-SYNTHETIC-BACKUP-CONTENT';
+const now = () => Date.parse('2026-10-20T08:00:00.000Z');
+const prefix = 'cms/v1/registration-reviews/ggj-cn-2026';
+async function fixture() {
+  const objects = memoryObjects(), journal = createObjectJournal({ objects, prefix });
+  let current = await journal.read();
+  current = await journal.commit(current.cursor, { version: 1, note: PRIVATE });
+  current = await journal.commit(current.cursor, { version: 2, note: PRIVATE, value: 'latest' });
+  const portraitKey = 'cms/v1/portraits/' + 'a'.repeat(64) + '.png';
+  await objects.putImmutable(portraitKey, Buffer.from('SYNTHETIC-IMAGE-BYTES'), { contentType: 'image/png' });
+  const keys = await collectJournalBackupKeys({ objects, journalPrefixes: [prefix], additionalKeys: [portraitKey] });
+  return { objects, journal, keys, portraitKey, key: generateBackupKey() };
+}
+async function rejects(operation, code) { await assert.rejects(operation, error => error.code === code && !error.message.includes(PRIVATE) && !error.message.includes('SYNTHETIC_PRIVATE_PROVIDER_DETAIL') && !error.cause); }
+
+test('encrypted backup includes every historical journal snapshot, verifies hashes and hides private plaintext and keys', async () => {
+  const f = await fixture(); assert.equal(f.keys.length, 4);
+  const backup = await createEncryptedObjectBackup({ ...f, clock: now });
+  assert.equal(backup.objectCount, 4); assert.equal(backup.encrypted, true); assert.equal(backup.independentBackup, false);
+  assert.equal(backup.bundle.includes(Buffer.from(PRIVATE)), false); assert.equal(backup.bundle.includes(Buffer.from(prefix)), false);
+  const inspection = inspectEncryptedObjectBackup({ ...f, bundle: backup.bundle });
+  assert.equal(inspection.valid, true); assert.equal(inspection.manifestHash, backup.manifestHash); assert.equal(Object.hasOwn(inspection, 'objects'), false);
+  const trusted = inspectEncryptedObjectBackup({ ...f, bundle: backup.bundle, includeObjects: true });
+  assert.equal(trusted.objects.length, 4);
+  const withoutBlob = f.keys.filter(key => key.includes('commits') || key === f.portraitKey);
+  await rejects(createEncryptedObjectBackup({ ...f, keys: withoutBlob, clock: now }), 'BACKUP_INVALID');
+});
+
+test('wrong keys, tampered ciphertext and malformed formats are rejected before any restore write', async () => {
+  const f = await fixture(), backup = await createEncryptedObjectBackup({ ...f, clock: now });
+  for (const [bundle, key] of [[backup.bundle, generateBackupKey()], [Buffer.from('invalid'), f.key], [backup.bundle, Buffer.alloc(31)]]) {
+    assert.throws(() => inspectEncryptedObjectBackup({ bundle, key }), error => error.code === 'BACKUP_INVALID' && !error.cause);
+  }
+  const tampered = Buffer.from(backup.bundle); tampered[tampered.length - 1] ^= 1;
+  assert.throws(() => inspectEncryptedObjectBackup({ bundle: tampered, key: f.key }), error => error.code === 'BACKUP_INVALID');
+  const destination = memoryObjects();
+  await rejects(restoreEncryptedBackupIsolated({ objects: destination, bundle: tampered, key: f.key, restoreId: 'synthetic-restore-01' }), 'BACKUP_INVALID');
+  assert.equal(destination.calls.length, 0);
+});
+
+test('isolated restore re-creates immutable snapshots before logs, reads back all objects and never activates live state or sessions', async () => {
+  const f = await fixture(), backup = await createEncryptedObjectBackup({ ...f, clock: now }), destination = memoryObjects();
+  const result = await restoreEncryptedBackupIsolated({ objects: destination, bundle: backup.bundle, key: f.key, restoreId: 'synthetic-restore-01' });
+  assert.equal(result.restored, true); assert.equal(result.active, false); assert.equal(result.sessionsRestored, false); assert.equal(result.objectCount, 4);
+  assert.ok([...destination.files.keys()].every(key => key.startsWith('cms/v1/restores/synthetic-restore-01/')));
+  const restored = createObjectJournal({ objects: destination, prefix: result.namespace + '/registration-reviews/ggj-cn-2026' });
+  assert.deepEqual((await restored.read()).value, (await f.journal.read()).value);
+  const writes = destination.calls.filter(call => call.operation !== 'get');
+  assert.equal(writes.at(-1).operation, 'append');
+  await rejects(restoreEncryptedBackupIsolated({ objects: destination, bundle: backup.bundle, key: f.key, restoreId: 'synthetic-restore-01' }), 'RESTORE_NOT_EMPTY');
+  assert.equal(destination.calls.filter(call => call.operation !== 'get').length, writes.length);
+});
+
+test('maintenance excludes active and nested session/limit prefixes, ambiguous restores and empty inventories', async () => {
+  const f = await fixture();
+  for (const name of ['cms/v1/sessions/private/commits.jsonl', 'cms/v1/limits/login/commits.jsonl', 'cms/v1/acceptance/synthetic/sessions/x', 'cms/v1/restores/old/content/x', 'outside/private.json']) {
+    await rejects(createEncryptedObjectBackup({ ...f, keys: [name], clock: now }), 'BACKUP_INVALID');
+  }
+  await rejects(createEncryptedObjectBackup({ ...f, keys: [], clock: now }), 'BACKUP_INVALID');
+  await rejects(collectJournalBackupKeys({ objects: f.objects, journalPrefixes: ['cms/v1/sessions/private'] }), 'BACKUP_INVALID');
+  const backup = await createEncryptedObjectBackup({ ...f, clock: now });
+  for (const restoreId of ['live', '../production', 'SYNTHETIC-RESTORE', '']) await rejects(restoreEncryptedBackupIsolated({ ...f, bundle: backup.bundle, restoreId }), 'BACKUP_INVALID');
+});
+
+test('changing source objects during backup and unknown restore acknowledgements fail without retries or false completion', async () => {
+  const f = await fixture();
+  let reads = 0;
+  const unstable = { async get(...args) { const value = await f.objects.get(...args); if (++reads > f.keys.length && value) return { ...value, contentType: 'application/changed' }; return value; } };
+  await rejects(createEncryptedObjectBackup({ ...f, objects: unstable, clock: now }), 'BACKUP_INVALID');
+  const backup = await createEncryptedObjectBackup({ ...f, clock: now }), target = memoryObjects(); let appends = 0;
+  const lost = { get: target.get, putImmutable: target.putImmutable, async append(...args) { appends++; await target.append(...args); throw new Error(PRIVATE); } };
+  await rejects(restoreEncryptedBackupIsolated({ objects: lost, bundle: backup.bundle, key: f.key, restoreId: 'synthetic-restore-02' }), 'MAINTENANCE_FAILED');
+  assert.equal(appends, 1);
+  const restored = createObjectJournal({ objects: target, prefix: 'cms/v1/restores/synthetic-restore-02/registration-reviews/ggj-cn-2026' });
+  assert.equal((await restored.read()).value.version, 2);
+  f.objects.setFailure('get');
+  await rejects(createEncryptedObjectBackup({ ...f, clock: now }), 'MAINTENANCE_FAILED');
+});
+
+test('backup inventory follows registration record and content portrait references rather than silently omitting private data', async () => {
+  const objects = memoryObjects();
+  const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+  const record = Buffer.from(JSON.stringify({ kind: 'registration', fields: { name: PRIVATE } })), recordHash = digest(record);
+  const recordKey = `cms/v1/registrations/ggj-cn-2026/records/${recordHash}.json`;
+  await objects.putImmutable(recordKey, record, { contentType: 'application/json' });
+  const index = createObjectJournal({ objects, prefix: 'cms/v1/registrations/ggj-cn-2026/index' });
+  await index.commit((await index.read()).cursor, { schemaVersion: 1, kind: 'registration_index', eventId: 'ggj-cn-2026', revision: 1, entries: [{ recordHash }] });
+  const portrait = Buffer.from('SYNTHETIC-PRIVATE-PORTRAIT'), portraitId = digest(portrait) + '.png', portraitKey = 'cms/v1/portraits/' + portraitId;
+  await objects.putImmutable(portraitKey, portrait, { contentType: 'image/png' });
+  const content = createObjectJournal({ objects, prefix: 'cms/v1/content' });
+  await content.commit((await content.read()).cursor, { storageVersion: 1, draft: { content: { guests: [{ portraitId }], showcases: [] } }, published: null, audit: [{ action: 'upload_portrait', portraitId }] });
+  const keys = await collectJournalBackupKeys({ objects, journalPrefixes: ['cms/v1/registrations/ggj-cn-2026/index', 'cms/v1/content'] });
+  assert.equal(keys.length, 6); assert.ok(keys.includes(recordKey)); assert.ok(keys.includes(portraitKey));
+  const key = generateBackupKey();
+  assert.equal((await createEncryptedObjectBackup({ objects, keys, key, clock: now })).objectCount, 6);
+  await rejects(createEncryptedObjectBackup({ objects, keys: keys.filter(item => item !== recordKey), key, clock: now }), 'BACKUP_INVALID');
+  objects.files.delete(portraitKey);
+  await rejects(collectJournalBackupKeys({ objects, journalPrefixes: ['cms/v1/content'] }), 'BACKUP_INVALID');
+});

@@ -18,9 +18,11 @@
 
 413 历史基线为 `9ea9482ce54f8fb30a34d8ecc928ec4fc9a76966`。[Actions 39354134071](https://github.com/kunanli/artdicohost/actions/runs/39354134071) 的 181 项检查通过，OSS 12 个公开对象 SHA-256 回读通过；FC job `118405168647` 明确记录 `operation=UpdateFunction phase=response_type status=413`，响应类型不是 JSON。该上传路径拒绝过大的请求体；这不是 IAM 失败，不以增加权限处理。
 
-最新已验 main 为 PR #12 合并提交 `8c6398d8cf337e8d7d5f12d0634aa71a9c8a1a7b`。[Actions 39355862651](https://github.com/kunanli/artdicohost/actions/runs/39355862651) 的 check job `118410359292` 完成 195 项测试、构建、依赖审计及紧凑 ZIP 检查；该次 ZIP 为 29,507,159 bytes，Python 离线夹具启动为 5.506 秒。OSS job `118411101002` 于 09:55:44–09:55:56（Asia/Taipei；日志为 01:55:44–01:55:56 UTC）完成 12 个公开对象 SHA-256 回读。FC job `118411100920` 实际执行，报告 `operation=UpdateFunction phase=timeout`，达到原 20 秒请求期限后失败；无法判断前次代码是否已更新，尚无三次签名健康检查成功证据。
+PR #12 历史基线为 `8c6398d8cf337e8d7d5f12d0634aa71a9c8a1a7b`。[Actions 39355862651](https://github.com/kunanli/artdicohost/actions/runs/39355862651) 的 check job `118410359292` 完成 195 项测试、构建、依赖审计及紧凑 ZIP 检查；该次 ZIP 为 29,507,159 bytes，Python 离线夹具启动为 5.506 秒。OSS job `118411101002` 于 09:55:44–09:55:56（Asia/Taipei；日志为 01:55:44–01:55:56 UTC）完成 12 个公开对象 SHA-256 回读。FC job `118411100920` 报告 `operation=UpdateFunction phase=timeout`，达到原 20 秒请求期限后失败，代码更新结果不明。
 
-失败诊断只允许固定操作 / 阶段、HTTP 状态与白名单服务错误码；不记录远端正文、任意 Message、headers、环境、角色、凭证或原始 cause。未知服务码仅作为未分类错误处理。针对 413 已完成紧凑包准备及离线验收，最新上传超时仍保留请求结果不明状态；不放宽成功校验、不自动重送 PUT，也不扩大 IAM。
+最新核对的 main 为 `dff3c897bdadfbe555459366183ccab1fbca0195`。[Actions 39357108387](https://github.com/kunanli/artdicohost/actions/runs/39357108387) 的 check job `118414315427` 完成 203 项测试及离线 ZIP smoke（6.395 秒）；OSS job `118414977033` 于 02:08:57–02:09:10 UTC 完成 12 个公开对象 SHA-256 回读。FC job `118414977011` 的更新前观察记录 state / update `unknown`，签名健康检查为 `operation=CheckHealth phase=http status=400 code=InvalidArgument`；之后 UpdateFunction 等待 120 秒，于 02:10:56 UTC 超时。此时仍无法判断代码是否已更新，也没有三次签名健康检查成功证据。
+
+失败诊断只允许固定操作 / 阶段、HTTP 状态与白名单服务错误码；UpdateFunction 可额外投影可信 transport 私有 WeakMap 中的 `uploadBodyWritten` / `responseStarted` 两个布林。不记录远端正文、任意 Message、headers、环境、角色、凭证或原始 cause，未知服务码仅作未分类错误处理。针对 413 已完成紧凑包准备及离线验收；最新上传超时仍保留请求结果不明状态，不自动重送该次或更旧提交的 PUT，不放宽成功校验或扩大 IAM。
 
 下一次运行须分别取得公开 OSS 回读及 FC 实际更新、连续三次签名 `/healthz` 返回该次完整提交标记的证据；artifact 存在或整体绿色不能代替。部署仍为业务关闭的启动包，没有管理员云端登录、真实报名、私有 OSS 读写或统计能力。
 
@@ -60,11 +62,15 @@
 
 管理请求使用固定香港端点 `https://fcv3.cn-hongkong.aliyuncs.com`、FC `2023-03-30` API 和 ACS3 签名。读取到的完整函数环境设置仅留在内存中比较，不输出到日志、artifact 或摘要。函数 ARN 必须精确匹配配置 UID、地域与 `artdicohost-api`，并在写入前检查当前 main 仍为本运行提交。
 
-本轮超时修复先读取 GetFunction，并对既有签名 `/healthz` 进行一次有界的只读观察；仅投影枚举状态、通过完整格式校验的旧 `sourceCommit` 或固定诊断，不输出 URL、环境、角色、凭证或原始回应。观察不代表前次已完整验收，也不计入新版本成功。随后重新核对当前 main，为该次新提交上传一次已验收包，禁止自动重试 PUT。
+签名健康检查采用[现行 fcapp.run HTTP trigger 契约](https://help.aliyun.com/zh/functioncompute/configure-signature-authentication-for-http-triggers)：ACS3、`x-acs-date`、选用 `x-acs-security-token`，payload 参数为空字串；按官方示例仅签这些头，不添加管理 API 的 action / version / nonce、MD5、content-type 或 SHA256(empty)。现有客户端仍绑定认证 GetTrigger 回传的精确香港 HTTPS origin，再请求 `GET /healthz`。旧 `FC ...` / Date / x-fc-* 实作来自 `2016-08-15` / proxy 范围文档，与现行契约不一致。独立官方 SDK `@alicloud/openapi-util@0.3.3` 的 AK / STS 固定向量已纳入测试，没有增加项目依赖；旧算法测试不能证明当前服务规格，修复尚未实测，不将契约不一致写成 400 的唯一原因。
+
+上传前先读取 GetFunction，并对既有签名 `/healthz` 进行一次有界的只读观察；仅投影枚举状态、通过完整格式校验的旧 `sourceCommit` 或固定诊断，不输出 URL、环境、角色、凭证或原始回应。状态字段 presence 只可为 `absent`、`null`、`recognized`、`unrecognized`，任意未知值不回显。官方 function state 的处理中值为 `Pending`，`Creating` 属 reason code；本轮补上 `Pending` 阻挡，并保守保留对旧 `Creating` 值的阻挡，`InProgress` 更新也拒绝新上传。观察不代表前次已完整验收，也不计入新版本成功。随后重新核对当前 main，为该次新提交上传一次已验收包，禁止自动重试 PUT。
 
 UpdateFunction 的请求期限固定为 **120 秒**；GetFunction、GetTrigger 与签名 health 保持 **20 秒**，总部署期限固定为 **240 秒**。这些是客户端等待期限，不改变 FC 函数执行超时或其他控制台设置。延长上传等待不放宽成功状态、配置保持与源码一致条件，也不增加调用权限。
 
-更新后等待 FC 完成，再用原签名认证触发器检查 `GET /healthz`，连续三次确认 HTTP 200、`status:ok`、`scope:process-only` 和准确 `sourceCommit`；每次符合时输出固定的 `match N/3` 日志与本次完整提交，不匹配即重置连续计数。签名错误、权限不足、旧实例、错误状态或配置改变均不能报告发布成功。模板中的 `InvokeFunction` 供签名 HTTP 健康检查使用。FC 的 `codeChecksum` 是 CRC64，本流程不把它称为 SHA-256 回读；实际 ZIP 在本机及 artifact 核对 SHA-256，线上验证为签名请求返回的进程源码标记。
+本轮仅将代码 PUT 的默认传输改为 native HTTPS，端点、method 与已签名的 JSON bytes 保持一致，继续验证 TLS，并明确设置按 UTF-8 bytes 计算的 `Content-Length`；不跟随 redirect、不重试、不增加第二次 PUT。仅对该 transport 自建 Promise 的私有 WeakMap 记录两个布林：`uploadBodyWritten` 表示本机 `finish` 已发生，`responseStarted` 表示响应已开始；前者不是 FC 接收或确认。没有证据显示原 fetch 的 Content-Length 错误，也未验证此变化已解决超时；这轮增加的是可定位上传阶段的安全诊断。
+
+更新必须取得本次 UpdateFunction HTTP 200 确认。生命周期字段存在时仍须 FC `state:Active` / `lastUpdateStatus:Successful`；仅当两个 own 字段各自均为 absent/null 时可进入同样的实际健康核验，不能从缺失推定状态。该路径成功明确标记 `functionMetadata:not-reported`，未知值、单字段缺失、显式失败及处理中均不允许采用此路径。通过原签名认证触发器检查 `GET /healthz`，连续三次确认 HTTP 200、`status:ok`、`scope:process-only` 和准确 `sourceCommit`；每次符合时输出固定的 `match N/3` 日志与本次完整提交，不匹配即重置连续计数。签名错误、权限不足、旧实例、错误状态或配置改变均不能报告发布成功。模板中的 `InvokeFunction` 供签名 HTTP 健康检查使用。FC 的 `codeChecksum` 是 CRC64，本流程不把它称为 SHA-256 回读；实际 ZIP 在本机及 artifact 核对 SHA-256，线上验证为签名请求返回的进程源码标记。
 
 开关未启用时，发布 job 跳过，摘要明确写为未更新 FC；不能仅凭工作流整体绿色就说 API 已部署。启用后查看 **Update the isolated Hong Kong FC startup code** job 及其摘要，不以网站 OSS job 成功替代。当前尚无该 job 的实际云端成功证据。
 
@@ -75,7 +81,8 @@ UpdateFunction 的请求期限固定为 **120 秒**；GetFunction、GetTrigger �
 - 初版历史记录：165 项测试、源码检查、Astro 检查及四页静态构建通过，依赖审计无已知漏洞；不作为紧凑包当前测试结果。
 - 初版历史 ZIP 的源码提交为 `56f22f4b47720e2ba128d34c014b8c24e55734dc`，大小 44,329,599 bytes，SHA-256 `945bca020392863bece7c1cd5c88ebd585dff9d7d5dd2b3dabc6f73b3311c67e`。该版直接携带未压缩 Node，在固定 Debian 11 镜像 `debian@sha256:e5b6442dd2e9684cf5e87d8338b5968f3b348636fc0be6d7850a381e3731a2bd` 中启动成功；它不是本轮六文件 XZ 包，也不是 FC 云端验收证据。
 - PR #12 前阶段本机来源 `d52ef96a40fe5a10538f92ad0d2911f813d449fa`：195 项测试、源码与 Astro 检查、四页构建及依赖审计通过。准确 ZIP 为 29,507,159 bytes，JSON 请求为 39,342,903 bytes，本机 ZIP SHA-256 为 `723953ef90b0f3bbff98cd769b518f3f96006b31d79935a63071bbf84d25f972`，Python 离线夹具为 10.999 秒。这个 hash 只描述该本机来源的包，不能当作合并提交包的 hash、远端 SHA-256 回读或 FC CRC64。
-- PR #12 合并提交的 CI 为 195 项检查及实际 ZIP smoke 通过，夹具为 5.506 秒；本轮 120 秒上传期限与只读观察修复的本机 203 项测试、源码 / Astro 检查、四页构建及依赖审计通过，独立安全审阅无阻挡问题。夹具仅模拟 FC 文档中的解释器路径，允许仅在私有 `/tmp` 写入解压后的 Node，不能替代实际 FC 签名验收；正式业务路由继续 503。
+- PR #12 合并提交的 CI 为 195 项检查及实际 ZIP smoke 通过，夹具为 5.506 秒；其后期限 / 只读观察阶段本机 203 项测试、源码 / Astro 检查、四页构建及依赖审计通过。最新 main `dff3c897bdadfbe555459366183ccab1fbca0195` 的 CI 为 203 项测试及 6.395 秒 smoke 通过，FC 仍在 120 秒后超时。本轮签名 / 上传诊断的本机 221 项测试、源码 / Astro 检查、四页构建及依赖审计通过，独立安全审阅无阻挡问题；其中健康签名 client 测试 19 项及独立官方 SDK 向量已通过。
+- 夹具仅模拟 FC 文档中的解释器路径，允许仅在私有 `/tmp` 写入解压后的 Node，不能替代实际 FC 签名验收；本轮没有改变 runtime 源码、IAM、后台 / 报名、私有 OSS / 统计或群码 / 提醒，正式业务路由继续 503。
 - 本节记录的本地验证未使用阿里云凭据、执行 FC 更新或验证实际账号的签名 / RAM 相容性。用户已授权首次发布，线上结果须另行记录，不以本机或合成测试替代。
 
 ## 失败、并发与回退
@@ -91,5 +98,6 @@ UpdateFunction 的请求期限固定为 **120 秒**；GetFunction、GetTrigger �
 ## 官方核对来源
 
 - [FC 管理端点](https://help.aliyun.com/en/functioncompute/api-fc-2023-03-30-endpoint)、[GetFunction](https://help.aliyun.com/en/functioncompute/api-fc-2023-03-30-getfunction)、[GetTrigger](https://help.aliyun.com/zh/functioncompute/api-fc-2023-03-30-gettrigger)
-- [ACS3 签名](https://help.aliyun.com/zh/functioncompute/signature-mechanism)、[HTTP 触发器签名](https://help.aliyun.com/zh/functioncompute/signature-authentication)
+- [管理 API ACS3 签名](https://help.aliyun.com/zh/functioncompute/signature-mechanism)、[现行 HTTP trigger 签名](https://help.aliyun.com/zh/functioncompute/configure-signature-authentication-for-http-triggers)、[官方 OpenAPI util](https://github.com/aliyun/darabonba-openapi-util/blob/master/ts/src/client.ts#L459)
+- [旧 2016-08-15 / proxy 签名（历史范围）](https://help.aliyun.com/zh/functioncompute/signature-authentication)、[HTTPTriggerConfig](https://help.aliyun.com/zh/functioncompute/api-fc-2023-03-30-struct-httptriggerconfig)
 - [代码包限制](https://help.aliyun.com/zh/functioncompute/limits-of-usage)、[Function 更新状态与 checksum](https://help.aliyun.com/zh/functioncompute/api-fc-2023-03-30-struct-function)

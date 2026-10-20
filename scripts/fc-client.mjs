@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { MAX_FC_REQUEST_BYTES, MAX_FC_ZIP_BYTES, assertFcCodeRequestFits } from './fc-upload-limits.mjs';
+import { uploadFcCode, fcUploadState } from './fc-upload-transport.mjs';
 export { MAX_FC_ZIP_BYTES } from './fc-upload-limits.mjs';
 
 // Official FC specifications: signature-mechanism, signature-authentication and
@@ -26,6 +27,10 @@ function failure(details) {
     const safe = { operation: details.operation, phase: details.phase };
     if (Number.isInteger(details.status) && details.status >= 100 && details.status <= 599) safe.status = details.status;
     if (providerCodes.has(details.code)) safe.code = details.code;
+    if (details.operation === 'UpdateFunction') {
+      if (typeof details.uploadBodyWritten === 'boolean') safe.uploadBodyWritten = details.uploadBodyWritten;
+      if (typeof details.responseStarted === 'boolean') safe.responseStarted = details.responseStarted;
+    }
     diagnostics.set(error, Object.freeze(safe));
   }
   return error;
@@ -36,7 +41,7 @@ const preserve = (error, details) => diagnostics.has(error) ? error : failure(de
 export function summarizeFcError(error) {
   const details = diagnostics.get(error);
   if (!details) return null;
-  return `operation=${details.operation} phase=${details.phase}${details.status === undefined ? '' : ` status=${details.status}`}${details.code === undefined ? '' : ` code=${details.code}`}`;
+  return `operation=${details.operation} phase=${details.phase}${details.status === undefined ? '' : ` status=${details.status}`}${details.code === undefined ? '' : ` code=${details.code}`}${details.uploadBodyWritten === undefined ? '' : ` uploadBodyWritten=${details.uploadBodyWritten}`}${details.responseStarted === undefined ? '' : ` responseStarted=${details.responseStarted}`}`;
 }
 
 /** Only a root URL returned by this function's authenticated GetTrigger can be used. */
@@ -71,11 +76,12 @@ function abortable(promise, signal) {
 }
 
 /** Narrow transport only: no create/configuration APIs, environment reads, or request/response logs. */
-export function createFcClient({ region = FC_REGION, credentials, fetchFn = fetch, clock = () => new Date(), nonce = randomUUID } = {}) {
+export function createFcClient({ region = FC_REGION, credentials, fetchFn, clock = () => new Date(), nonce = randomUUID } = {}) {
+  const transport = fetchFn === undefined ? (url, options) => options.method === 'PUT' ? uploadFcCode(url, options) : fetch(url, options) : fetchFn;
   let accessKeyId, accessKeySecret, securityToken;
   try {
     ({ accessKeyId, accessKeySecret, securityToken } = credentials);
-    if (region !== FC_REGION || typeof fetchFn !== 'function' || typeof clock !== 'function' || typeof nonce !== 'function'
+    if (region !== FC_REGION || typeof transport !== 'function' || typeof clock !== 'function' || typeof nonce !== 'function'
       || typeof accessKeyId !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/u.test(accessKeyId)
       || typeof accessKeySecret !== 'string' || !/^[\x21-\x7e]{1,1024}$/u.test(accessKeySecret)
       || securityToken !== undefined && (typeof securityToken !== 'string' || !/^[\x21-\x7e]{1,8192}$/u.test(securityToken))) throw failure();
@@ -83,13 +89,14 @@ export function createFcClient({ region = FC_REGION, credentials, fetchFn = fetc
   let triggerOrigin = null;
 
   async function request(operation, url, options, externalSignal) {
-    let reader, response, timeoutSignal, signal, status;
+    let reader, response, timeoutSignal, signal, status, pending;
     let phase = 'network';
     try {
       timeoutSignal = AbortSignal.timeout(operation === 'UpdateFunction' ? CODE_UPDATE_DEADLINE_MS : READ_REQUEST_DEADLINE_MS);
       signal = externalSignal ? AbortSignal.any([externalSignal, timeoutSignal]) : timeoutSignal;
       if (signal.aborted) throw failure();
-      response = await abortable(fetchFn(url, { ...options, redirect: 'error', cache: 'no-store', signal }), signal);
+      pending = transport(url, { ...options, redirect: 'error', cache: 'no-store', signal });
+      response = await abortable(pending, signal);
       status = response.status;
       phase = 'redirect';
       if (response.redirected || response.url && response.url !== url || status >= 300 && status < 400) throw failure();
@@ -124,9 +131,10 @@ export function createFcClient({ region = FC_REGION, credentials, fetchFn = fetc
       }
       return { status, body };
     } catch (error) {
-      if (externalSignal?.aborted) throw failure({ operation, phase: 'aborted', status });
-      if (timeoutSignal?.aborted) throw failure({ operation, phase: 'timeout', status });
-      throw preserve(error, { operation, phase, status });
+      const upload = operation === 'UpdateFunction' ? fcUploadState(pending) : null;
+      if (externalSignal?.aborted) throw failure({ operation, phase: 'aborted', status, ...upload });
+      if (timeoutSignal?.aborted) throw failure({ operation, phase: 'timeout', status, ...upload });
+      throw preserve(error, { operation, phase, status, ...upload });
     }
     finally {
       if (reader) { reader.cancel().catch(() => {}); try { reader.releaseLock(); } catch { /* Aborted readers stay private. */ } }
@@ -177,12 +185,16 @@ export function createFcClient({ region = FC_REGION, credentials, fetchFn = fetc
         const origin = validateFcTriggerUrl(url);
         if (!triggerOrigin || origin !== triggerOrigin) throw failure();
         phase = 'signing';
-        const headers = { host: new URL(origin).host, date: time(clock).toUTCString() };
-        if (securityToken !== undefined) headers['x-fc-security-token'] = securityToken;
-        const canonicalFc = securityToken === undefined ? '' : `x-fc-security-token:${securityToken}\n`;
-        // HTTP trigger v1 signs an empty query object as a trailing newline after the path.
-        const canonical = `GET\n\n\n${headers.date}\n${canonicalFc}/healthz\n`;
-        headers.authorization = `FC ${accessKeyId}:${createHmac('sha256', accessKeySecret).update(canonical).digest('base64')}`;
+        const headers = { 'x-acs-date': time(clock).toISOString().replace(/\.\d{3}Z$/u, 'Z') };
+        if (securityToken !== undefined) headers['x-acs-security-token'] = securityToken;
+        const names = Object.keys(headers).sort();
+        const canonicalHeaders = names.map(name => `${name}:${headers[name].trim()}\n`).join('');
+        // fcapp.run HTTP triggers use ACS3 with an empty payload argument, as in
+        // configure-signature-authentication-for-http-triggers; this is separate
+        // from the management API's hashed payload and action/version headers.
+        const canonical = ['GET', '/healthz', '', canonicalHeaders, names.join(';'), ''].join('\n');
+        const signature = createHmac('sha256', accessKeySecret).update('ACS3-HMAC-SHA256\n' + sha256(canonical)).digest('hex');
+        headers.authorization = `ACS3-HMAC-SHA256 Credential=${accessKeyId},SignedHeaders=${names.join(';')},Signature=${signature}`;
         return await request('CheckHealth', origin + '/healthz', { method: 'GET', headers }, signal);
       } catch (error) { throw preserve(error, { operation: 'CheckHealth', phase }); }
     },

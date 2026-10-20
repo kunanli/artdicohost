@@ -2,13 +2,21 @@
 
 核对日期：2026-10-18（Asia/Taipei）。阶段：P0，计划与架构核对。
 
-## 2026-10-20 当前阶段：有界观察 FC 上传超时与单次新版本发布
+## 2026-10-20 当前阶段：修正 HTTP trigger 签名与诊断单次上传进度
 
-PR #12 已合并为 `8c6398d8cf337e8d7d5f12d0634aa71a9c8a1a7b`。[Actions 39355862651](https://github.com/kunanli/artdicohost/actions/runs/39355862651) 的 check job `118410359292` 完成 195 项测试、构建、依赖审计及六文件 ZIP 验证；实际 ZIP 为 29,507,159 bytes，Python 离线夹具启动为 5.506 秒。OSS job `118411101002` 于 01:55:44–01:55:56 UTC 完成 12 个公开对象 SHA-256 回读。FC job `118411100920` 在 `UpdateFunction phase=timeout` 达到原 20 秒请求期限后失败：不知道请求是否已被 FC 接受，不能宣称未更新，也不能直接重送同一次 PUT。
+最新 main 为 `dff3c897bdadfbe555459366183ccab1fbca0195`。[Actions 39357108387](https://github.com/kunanli/artdicohost/actions/runs/39357108387) 的 check job `118414315427` 完成 203 项测试及离线 ZIP smoke（6.395 秒）；OSS job `118414977033` 于 02:08:57–02:09:10 UTC 完成 12 个公开对象 SHA-256 回读。FC job `118414977011` 的更新前观察为 state / update `unknown`，签名 health 报 `CheckHealth phase=http status=400 code=InvalidArgument`；随后 UpdateFunction 等待 120 秒，于 02:10:56 UTC 超时。代码更新结果仍不明，不能宣称未更新、已成功或直接重送该次 / 更旧提交的 PUT。
 
-本阶段先以 GetFunction 与签名 `/healthz` 只读观察前次结果，仅输出枚举状态、经完整格式验证的进程源码提交及固定诊断，不输出凭证、环境、角色、URL 或原始回应；该观察不计入新版本发布成功。若前次更新仍在处理，拒绝新上传。随后重新检查当前 main，再为当次新提交执行一次正常代码更新。仅将 UpdateFunction 固定请求期限调整为 120 秒，GET / health 仍为 20 秒，总部署期限为 240 秒；不增加 PUT 重试、不扩大 IAM，不放宽 HTTP 状态、配置保持、精确源码或三次连续签名健康检查条件。每次成功匹配仅记录固定安全日志及本次源码提交。
+已确认健康检查实现与[现行 fcapp.run HTTP trigger 官方签名契约](https://help.aliyun.com/zh/functioncompute/configure-signature-authentication-for-http-triggers)不一致：旧实现沿用 `2016-08-15` / proxy 范围的 FC scheme。本轮独立改用 ACS3、`x-acs-date`、选用的 `x-acs-security-token` 与空字串 payload 参数；不套用管理 API 的 action / version / nonce 或 SHA256(empty)。AK / STS 固定向量由隔离安装的官方 `@alicloud/openapi-util@0.3.3` 产生，未新增项目依赖。旧 HMAC 测试不能证明现行服务契约；尚未实测修复后的签名，不能断言它是 400 的唯一原因。
 
-新修复的本机 203 项测试、源码 / Astro 检查、四页构建及依赖审计通过，独立安全审阅无阻挡问题；前阶段本机 195 项测试与实际紧凑 ZIP 的离线夹具 10.999 秒记录仅作历史证据，不能代替新提交或 FC 实机验收。代码包只在私有 `/tmp` 离线解出经校验的 Node，官方原始 bytes、48,000,000-byte JSON 工程预算、业务关闭及 39 笔资料留在本机的边界均不变。
+更新前仍以 GetFunction 与签名 `/healthz` 只读观察前次结果。状态除了受控枚举，还仅投影字段 presence 为 `absent`、`null`、`recognized` 或 `unrecognized`，不回显任意字段内容；只输出经格式校验的旧源码提交及固定诊断。官方 function state 使用 `Pending`，`Creating` 属 reason code；补上 `Pending` 上传阻挡，并保留对旧 `Creating` 值的保守阻挡。更新仍在处理时拒绝新上传；观察不计入新版本成功。重新检查当前 main 后才对当次新提交执行一次正常代码更新。
+
+本轮以 native HTTPS 对同一固定香港管理端点发送同一 method / JSON bytes，保持 TLS 验证、明确 UTF-8 `Content-Length`、单次 PUT、无 redirect / retry。私有 WeakMap 仅按该 transport 创建的 Promise 保存 `uploadBodyWritten`、`responseStarted` 两个布林；`finish` 只表示本机请求写完，不表示 FC 已接收或确认。没有证据显示原 fetch 的 Content-Length 错误，也未证明改用此传输已解决超时。UpdateFunction 120 秒、GET / health 20 秒、总期限 240 秒均不变；成功必须取得本次 UpdateFunction HTTP 200、配置保持和三次连续匹配本次完整源码的签名健康检查。生命周期字段正常返回时沿用 Active / Successful 门槛；仅当 state 与 lastUpdateStatus 各自均为 own absent/null 时允许执行同样的三次健康核验，缺字段本身不代表就绪。此路径成功明确标记 functionMetadata:not-reported；单字段缺失、未知值、显式失败及处理中均不能采用此路径。
+
+本轮本机 221 项测试、源码 / Astro 检查、四页构建与依赖审计通过，独立安全审阅无阻挡问题；健康签名含 client 测试 19 项及官方 SDK 固定向量。前次 203 项 CI 和更早本机 / 夹具结果仅作各自历史证据，不能代替本次完整验证或 FC 实机验收。六文件 runtime 源码、官方 Node bytes、48,000,000-byte JSON 工程预算、IAM、后台 / 报名、私有 OSS / 统计及 39 笔本机资料边界均不变，群码与提醒不在本轮变更范围。
+
+## 2026-10-20 上一阶段：有界观察 FC 上传超时与单次新版本发布
+
+PR #12 已合并为 `8c6398d8cf337e8d7d5f12d0634aa71a9c8a1a7b`。[Actions 39355862651](https://github.com/kunanli/artdicohost/actions/runs/39355862651) 的 check job `118410359292` 完成 195 项测试、构建、依赖审计及六文件 ZIP 验证；实际 ZIP 为 29,507,159 bytes，Python 离线夹具启动为 5.506 秒。OSS job `118411101002` 于 01:55:44–01:55:56 UTC 完成 12 个公开对象 SHA-256 回读。FC job `118411100920` 在 `UpdateFunction phase=timeout` 达到原 20 秒请求期限后失败，变更结果不明。随后阶段增加上传前只读观察、当前 main 重查、单次新版本 PUT 与固定安全的 `match N/3` 日志；将 UpdateFunction 等待改为 120 秒，GET / health 仍为 20 秒，总期限 240 秒，保留三次精确源码签名健康检查。该阶段本机 203 项测试及检查通过，实际 main 结果见上节。
 
 ## 2026-10-20 上一阶段：缩小 FC 启动包以处理 HTTP 413
 

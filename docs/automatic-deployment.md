@@ -2,7 +2,7 @@
 
 用户已创建独立网站桶 `artdicohost-web-hk`，地域为中国香港，并于 2026-10-19 确认 AccessKey 已保存于 GitHub Actions Secrets，由部署流程使用。日常发布通过 GitHub 自动更新，不再手动上传 ZIP。此流程的发布范围仅含静态前台及图片邀请函生成器；本机 39 笔真实联系人、真实报名、工作人员数据 API、Wallet 签名和邮件投递不随本流程上线。开发和验证只使用示范资料。
 
-用户已建立香港 `artdicohost-api` 并要求参照 `artdico-deck` 自动更新 FC，沿用[独立 FC 自动更新](automatic-fc-deployment.md)的只读 PR 验证与 main 发布分离模式。运行时启动设置、精确 RAM 权限及 GitHub Variables 已由用户回报配置完成。PR #12 的紧凑 XZ 启动包已通过 CI 与离线夹具，但最新 FC 更新达到原 20 秒请求期限而超时，前次是否已更新仍不明，尚无三次签名健康检查成功证据。本轮准备先只读观察旧状态，再以 120 秒上传期限对新提交正常执行一次 PUT；不自动重试、扩大 IAM 或改变启动 / 触发器设置。FC 更新与本节公开 OSS 上传是两个独立任务，不将启动包或资料放进网站桶。
+用户已建立香港 `artdicohost-api` 并要求参照 `artdico-deck` 自动更新 FC，沿用[独立 FC 自动更新](automatic-fc-deployment.md)的只读 PR 验证与 main 发布分离模式。运行时启动设置、精确 RAM 权限及 GitHub Variables 已由用户回报配置完成。最新 main 的紧凑 XZ 包通过 CI / 离线夹具与公开 OSS 回读；FC 更新前签名 health 报 400 `InvalidArgument`，随后 UpdateFunction 等待 120 秒超时，变更结果仍不明，尚无三次签名健康检查成功证据。本轮修正现行 trigger ACS3 契约、补上 Pending 状态阻挡 / presence 投影，并为单次 native HTTPS PUT 增加安全进度诊断；不把本机写完视为 FC 确认，也不宣称超时已修。上传 120 秒、GET / health 20 秒、总期限 240 秒及 48,000,000-byte JSON 工程预算不变，不自动重试、扩大 IAM 或改变启动 / 触发器设置。FC 更新与本节公开 OSS 上传是两个独立任务，不将启动包或资料放进网站桶。
 
 用户已授权后续正常发布：完成检查和审阅后可合并到 main 并执行自动部署，无需逐次再申请发布确认。公开稿件核准、真实资料迁移与个人信息公开 / 分享授权仍按各自要求办理；正式隐私告知及 39 笔真实联系人保留本机的边界不变。
 
@@ -13,10 +13,10 @@
 | 项目 | 已取得的证据 |
 | --- | --- |
 | 公开发布基线 | 包含 `GlobalGameJam` 更名与报名准备；后台登录与寄件仍未作为云端业务开放 |
-| 已部署的 main 提交 | PR #12：`8c6398d8cf337e8d7d5f12d0634aa71a9c8a1a7b` |
-| [Actions 39355862651](https://github.com/kunanli/artdicohost/actions/runs/39355862651) | `push` / `main`；check `118410359292` 的 195 项测试、构建 / 审计 / 精确 ZIP 及离线夹具通过；FC `118411100920` 的 UpdateFunction 超时，尚未通过启动验收 |
+| 已部署到公开 OSS 的 main 提交 | `dff3c897bdadfbe555459366183ccab1fbca0195` |
+| [Actions 39357108387](https://github.com/kunanli/artdicohost/actions/runs/39357108387) | `push` / `main`；check `118414315427` 的 203 项测试及离线 ZIP smoke（6.395 秒）通过；FC `118414977011` 更新前 state / update `unknown`、签名 health 400 `InvalidArgument`，UpdateFunction 等待 120 秒后于 02:10:56 UTC 超时，变更结果不明且未通过启动验收 |
 | 公开文件 | 12 个公开文件已部署至 `artdicohost-web-hk`，含最后上传的 `release.json`，全部通过 SHA-256 回读 |
-| OSS 回读记录 | job `118411101002`；09:55:44–09:55:56（Asia/Taipei；日志 01:55:44–01:55:56 UTC）完成 12 次回读 |
+| OSS 回读记录 | job `118414977033`；10:08:57–10:09:10（Asia/Taipei；日志 02:08:57–02:09:10 UTC）完成 12 次回读 |
 | AccessKey | 已在 GitHub Secrets，由成功部署使用；无需重新提供，不读取或复制到本机 |
 | 自定义域名 / DNS | 用户截图显示阿里云 DNS 正确、初次查看为 0 条记录；后续 `artdico.host` 的 OSS 绑定已生效，根域名 `@` CNAME 已启用，TTL 为 10 分钟；未开启 CDN |
 | HTTPS | 用户回报证书已配置，`https://artdico.host/` 可正常显示；尚未运行独立线上检查，证书签发者、覆盖范围和到期日待记录 |
@@ -69,7 +69,7 @@ OSS 原生桶域名可能让浏览器下载 HTML；目前 `artdico.host` 已绑�
 
 公开 `release.json` 仅记录发布提交和公开文件校验值，不包含环境变量或私密资料。发布完成后在可访问目标域名的环境使用 `scripts/check-live-site.mjs` 核对 HTTPS、HTML 响应类型、发布提交及资源校验；准确命令见 [域名和 HTTPS 操作单](domain-https.md)。GitHub 上传回读通过和浏览器自定义域名可用是两项独立结果，须分别记录。
 
-若 main 的当前提交首次部署失败，可在修正 Secrets / RAM 后重新运行同一 **push** 的失败 job；若 main 已有更新，旧运行会被拒绝，应检查最新 push 的结果。代码问题用修复 PR 合并产生新的 push，不修改工作流绕过分支限制。
+若 main 当前提交的**公开 OSS job** 部署失败，可在修正 Secrets / RAM 后重新运行同一 **push** 的该失败 job；若 main 已有更新，旧运行会被拒绝，应检查最新 push 的结果。代码问题用修复 PR 合并产生新的 push，不修改工作流绕过分支限制。FC 的上传超时属于变更结果不明，须先只读核对，再按当前 main 的修复提交正常发布，不套用这项 OSS 重跑说明去重送同一次 PUT。
 
 ## 回退和数据边界
 

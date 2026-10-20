@@ -1,5 +1,16 @@
 # 云端内容后台：运行角色与接入准备
 
+## 2026-10-20 受控账号配置与内容包发布阶段
+
+用户已回报建立 `ARTDICO_ADMIN_PASSWORD` Repository Secret，以及 `ARTDICO_ADMIN_USERNAME`、`ARTDICO_ADMIN_EMAIL` Repository Variables。用户名与明确配置的 `@artdico.co` 邮箱使用同一工作人员账号；不开放公司域名自动注册。实际身份不写仓库；密码或摘要不写命令参数、日志、文件或 artifact。身份 Variables 属于非秘密元数据，GitHub 步骤环境展示可能显示其值；脚本不输出身份或完整配置。
+
+本阶段工作流的 `deploy-fc` 永久改为消费同次检查产生的 `cloud-content-candidate-COMMIT`，由独立验证器及 `scripts/deploy-cloud-content.mjs` 上传内容包，仍保持 `ARTDICO_CLOUD_CONTENT_ENABLED=false`（首次部署也接受该项未设置）。原六文件预检包继续用于隔离检查和历史回退参考，不再是日常发布输入。代码更新仍仅发送 code；配置更新由随后独立的 `configure-cloud-admin` job 执行，不改变原代码客户端契约。
+
+账号设置任务仅在本站最新 main push 且代码发布验收成功后运行；与代码任务共用 `artdicohost-production-fc` 并发组，不取消进行中的更新。它在 runner 内存中从 Secret 生成 scrypt 摘要并验证账号结构，合并固定内容参数及原有环境映射，再仅发送 `environmentVariables`。目标固定为香港本站函数及专用执行角色；不设置临时角色凭据、不修改代码／角色／runtime／trigger，不扩大 IAM。已有完全一致的 owner 配置仅验证密码并保留摘要；未知非空工作人员配置拒绝覆盖。更新前重新核对完整源码健康标记、现场设置和最新 main；未知 ACK 只做有界只读回查，不重送 PUT。并发组约束仓库工作流，不保证控制台手工操作具备原子 CAS。
+
+此任务始终保持内容开关 false；配置成功不代表工作人员已能登录、真实 OSS 已写读或真实报名已接通。后续还须使用隔离合成身份完成私有 OSS、会话撤销、修订竞争、发布／撤回及备份维护验收，才能启用真实工作人员和前台只读来源。失败时查看该次 job 的固定错误说明，不能取回 Secret、输出完整 GetFunction 环境或增加权限。下文较早阶段的“仍使用预检包／尚未创建设置”仅保留历史背景，以本节为准；实际完成状态以对应 main 运行证据为准。
+
+
 ## 2026-10-20 最新现场与候选包阶段
 
 用户提供的香港 `artdicohost-api` 配置截图已显示函数角色为 `artdicohost-content-runtime`。RAM 自定义策略源代码也已核对为只有 `oss:GetObject`／`oss:PutObject` 与本站 `cms/v1/*` 的范围；控制台摘要仍有资源识别警告，不能仅凭截图判断有效或无效，尚待实际临时身份与合成 OSS 写读验收。角色 ARN 不必再以函数 ARN代替；这里没有读取任何临时凭据、永久 AccessKey 或账号摘要。用户随后提供的香港 FC 域名清单为空，正在由用户新增 `api.artdico.host`，HTTPS／DNS 尚未验收。

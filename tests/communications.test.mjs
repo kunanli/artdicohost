@@ -32,12 +32,12 @@ async function login(api, username = 'outreach') {
   assert.equal(response.status, 200);
   return { ...await response.json(), cookie: response.headers.get('set-cookie').split(';')[0] };
 }
-function fixture(contact = structuredClone(synthetic)) {
+function fixture(contact = structuredClone(synthetic), communications) {
   const state = { revision: 1, contacts: [contact] };
   const api = createContentApi({
     store: { read: async () => ({ published: null }) },
     contactsStore: { read: async () => structuredClone(state) },
-    users, allowedOrigin: ORIGIN,
+    users, allowedOrigin: ORIGIN, ...(communications ? { communications } : {}),
   });
   return { api, state, contact };
 }
@@ -48,6 +48,7 @@ test('communications readiness never exposes credentials or enables signing and 
     'APPLE_WALLET_TEAM_ID', 'APPLE_WALLET_PASS_TYPE_ID', 'APPLE_WALLET_ORGANIZATION_NAME',
     'APPLE_WALLET_CERT_PATH', 'APPLE_WALLET_KEY_PATH', 'APPLE_WALLET_WWDR_CERT_PATH',
     'APPLE_WALLET_KEY_PASSPHRASE', 'EMAILJS_SERVICE_ID', 'EMAILJS_TEMPLATE_ID', 'EMAILJS_PUBLIC_KEY', 'EMAILJS_PRIVATE_KEY',
+    'EMAIL_FROM_ADDRESS', 'EMAIL_FROM_NAME',
   ].map((name) => [name, 'synthetic-secret-do-not-return']));
   for (const value of [{}, env]) {
     const result = getCommunicationsReadiness(value);
@@ -63,6 +64,87 @@ test('communications readiness never exposes credentials or enables signing and 
   assert.throws(() => adapter.sendEmail(), error('COMMUNICATIONS_PREVIEW_ONLY'));
   assert.throws(() => adapter.issueWalletPass(), error('COMMUNICATIONS_PREVIEW_ONLY'));
   assert.throws(() => createPreviewCommunications({ env: { COMMUNICATIONS_MODE: 'live' } }), /preview/u);
+});
+
+const senderEnv = {
+  EMAILJS_SERVICE_ID: 'synthetic-service-config',
+  EMAILJS_TEMPLATE_ID: 'synthetic-template-config',
+  EMAILJS_PUBLIC_KEY: 'synthetic-provider-key',
+  EMAIL_FROM_ADDRESS: 'synthetic-fixture-only@artdico.co',
+  EMAIL_FROM_NAME: '合成寄件名称',
+};
+
+test('sender preparation reports missing fields while valid configuration never enables delivery', () => {
+  const absent = getCommunicationsReadiness({});
+  assert.match(absent.email.reason, /待配置：[\s\S]*寄件地址（@artdico\.co）[\s\S]*寄件名称/u);
+  for (const key of ['EMAIL_FROM_ADDRESS', 'EMAIL_FROM_NAME']) {
+    const env = { ...senderEnv };
+    delete env[key];
+    assert.match(getCommunicationsReadiness(env).email.reason, /待配置/u);
+  }
+  for (const address of [senderEnv.EMAIL_FROM_ADDRESS, 'synthetic.fixture+preview@ARTDICO.CO']) {
+    const env = { ...senderEnv, EMAIL_FROM_ADDRESS: address };
+    const adapter = createPreviewCommunications({ env });
+    const readiness = adapter.readiness();
+    assert.equal(readiness.email.ready, false);
+    assert.doesNotMatch(readiness.email.reason, /待配置|需修正/u);
+    assert.match(readiness.email.reason, /仅开放预览，不会发送/u);
+    for (const value of Object.values(env)) assert.equal(JSON.stringify(readiness).includes(value), false, 'readiness returns no sender identity or provider configuration');
+    assert.throws(() => adapter.sendEmail(), error('COMMUNICATIONS_PREVIEW_ONLY'));
+    assert.throws(() => adapter.issueWalletPass(), error('COMMUNICATIONS_PREVIEW_ONLY'));
+  }
+});
+
+test('sender address preparation rejects other domains, ambiguous mailboxes and header injection without echoing them', () => {
+  const invalid = [
+    'synthetic@artdico.co.example.invalid', 'synthetic@mail.artdico.co', 'synthetic@evilartdico.co',
+    'synthetic@artdico.co.', 'synthetic@example.invalid', 'synthetic@@artdico.co',
+    'Synthetic <synthetic@artdico.co>', 'synthetic@artdico.co,second@artdico.co',
+    'synthetic@artdico.co\r\nBcc: synthetic@example.invalid',
+    ' synthetic@artdico.co', 'synthetic@artdico.co ', 'synthetic name@artdico.co',
+    '.synthetic@artdico.co', 'synthetic.@artdico.co', 'synthetic..fixture@artdico.co',
+    '合成@artdico.co', 'a'.repeat(65) + '@artdico.co',
+  ];
+  for (const address of invalid) {
+    const readiness = getCommunicationsReadiness({ ...senderEnv, EMAIL_FROM_ADDRESS: address });
+    assert.equal(readiness.email.ready, false);
+    assert.match(readiness.email.reason, /需修正：寄件地址须为有效的 @artdico\.co 邮箱/u);
+    assert.equal(JSON.stringify(readiness).includes(JSON.stringify(address).slice(1, -1)), false);
+  }
+});
+
+test('sender display name preparation rejects malformed or multiline values and keeps them private', () => {
+  for (const name of ['Synthetic\r\nBcc: example', 'Synthetic\u0000Name', 'Synthetic\u2028Name', '\u202eSynthetic', 'S'.repeat(81), '\ud800']) {
+    const readiness = getCommunicationsReadiness({ ...senderEnv, EMAIL_FROM_NAME: name });
+    assert.equal(readiness.email.ready, false);
+    assert.match(readiness.email.reason, /需修正：寄件名称/u);
+    assert.equal(JSON.stringify(readiness).includes(JSON.stringify(name).slice(1, -1)), false);
+  }
+  for (const name of ['', '  ', undefined, 42]) {
+    const readiness = getCommunicationsReadiness({ ...senderEnv, EMAIL_FROM_NAME: name });
+    assert.match(readiness.email.reason, /待配置：寄件名称/u);
+  }
+});
+
+test('authenticated readiness and confirmation previews do not reveal server-only sender configuration', async () => {
+  const env = { ...senderEnv, EMAILJS_PRIVATE_KEY: 'synthetic-private-key-never-return' };
+  const adapter = createPreviewCommunications({ env });
+  const contact = { ...structuredClone(synthetic), operations: { responseStatus: 'attending' } };
+  const { api } = fixture(contact, adapter);
+  const session = await login(api);
+  const readiness = await request(api, '/api/admin/communications', { session });
+  const preview = await request(api, '/api/admin/contacts/' + contact.id + '/email/preview', { method: 'POST', session, payload: { settings } });
+  assert.equal(readiness.status, 200);
+  assert.equal(preview.status, 200);
+  const readinessValue = await readiness.json();
+  const previewValue = await preview.json();
+  assert.equal(readinessValue.email.ready, false);
+  assert.equal(previewValue.status, 'not_sent');
+  const returned = JSON.stringify({ readinessValue, previewValue });
+  for (const value of Object.values(env)) assert.equal(returned.includes(value), false);
+  for (const field of ['from', 'fromEmail', 'fromName', 'senderLabel']) assert.equal(field in previewValue, false);
+  assert.equal(Object.keys(previewValue.variables).some(key => /from|sender/iu.test(key)), false);
+  assert.throws(() => adapter.sendEmail(), error('COMMUNICATIONS_PREVIEW_ONLY'));
 });
 
 test('Wallet invitation is an unsigned data preview and can precede an attendance reply', () => {

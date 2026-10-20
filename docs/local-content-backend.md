@@ -15,10 +15,10 @@ Read-Host '本地账号密码' -MaskInput | node functions/content-api/hash-pass
 复制 `.env.example` 为已忽略的 `.env.local`，在 `ADMIN_USERS_JSON` 中配置 1–20 个账号。格式如下，`passwordHash` 必须替换为上一步生成的完整摘要；示例占位值不能登录。
 
 ```json
-[{"id":"your-stable-id","username":"your-login","label":"工作人员名称","roles":["editor","publisher"],"passwordHash":"粘贴完整的 scrypt 摘要"}]
+[{"id":"your-stable-id","username":"your-login","email":"staff@artdico.co","label":"工作人员名称","roles":["editor","publisher"],"passwordHash":"粘贴完整的 scrypt 摘要"}]
 ```
 
-在环境文件中用单引号包住整个 JSON 数组。ID、用户名不能重复；只接受 `editor`、`publisher`、`outreach` 角色和 `scrypt$16384$8$1$…` 格式摘要，不接受明文 `password` 字段。`editor` 可读取和保存草稿；`publisher` 可读取和发布，只有同时具有 `editor` 时才可保存。`outreach` 专门授权私密联系人操作，内容编辑 / 发布角色不会自动继承名单权限。不要在前端 `PUBLIC_` 配置中设置这些账号。
+在环境文件中用单引号包住整个 JSON 数组。ID、规范化后的用户名和邮箱不能重复；只接受 `editor`、`publisher`、`outreach` 角色和 `scrypt$16384$8$1$…` 格式摘要，不接受明文 `password` 字段。`editor` 可读取和保存草稿；`publisher` 可读取和发布，只有同时具有 `editor` 时才可保存。`outreach` 专门授权私密联系人操作，内容编辑 / 发布角色不会自动继承名单权限。可选 `email` 必须为明确配置的单一 `@artdico.co` 邮箱；用户名和邮箱登录均去除首尾空白、不区分 ASCII 大小写，匹配同一账号及角色。不提供邮箱的旧账号仍可用用户名登录。仅持有该网域邮箱不获得后台权限，没有自助注册或邮件验证码；配置校验不证明邮箱所有权或可投递性。不要在前端 `PUBLIC_` 配置中设置这些账号。
 
 ```sh
 pnpm admin:local
@@ -42,7 +42,7 @@ pnpm admin:local
 
 | 接口 | 请求 / 响应 |
 | --- | --- |
-| `POST /api/admin/login` | `{username,password}` → `{user:{id,label,roles},csrfToken}` |
+| `POST /api/admin/login` | `{username:用户名或邮箱,password}` → `{user:{id,label,roles},csrfToken}` |
 | `GET /api/admin/session` | → `{user,csrfToken}` |
 | `POST /api/admin/logout` | 撤销当前会话并清除 cookie → `{ok:true}` |
 | `GET /api/admin/content` | → `{draft:{revision,content},published:{revision,publishedAt,content}\|null}` |
@@ -64,4 +64,4 @@ pnpm admin:local
 
 `tests/content-api.test.mjs` 用合成账号及隔离文件测试鉴权、Origin / CSRF、角色、版本冲突、重启持久化、公开字段剥离、失败关闭、静态边界和生产模式拒绝。运行 `node --test tests/content-api.test.mjs` 或完整 `pnpm test`。当前执行结果见 [前端验证记录](frontend-validation.md) 及 PR 最新 CI；环境限制导致的跳过必须记录，不能宣称已完成本机 HTTP 验收。
 
-FC / OSS、共享生产账号、真实报名、生产 HTTPS、跨实例限流与并发、云端备份删除仍未接通。原实施计划的云资源预检、费用和发布授权门槛不变；此本地后台不触发云端发布。
+FC / OSS、共享生产账号、真实报名、生产 HTTPS、跨实例限流与并发、云端备份删除仍未接通。云端接入仍须独立验证资源、身份及运行结果；正常发布沿用用户任务授权，不再逐次请求上线确认。此本地后台不触发云端发布。

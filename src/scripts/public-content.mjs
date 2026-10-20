@@ -1,3 +1,5 @@
+import { publicGuestCards } from '../../shared/guest-display.mjs';
+
 // Public content is a separate, read-only endpoint. Registration remains a no-I/O demo.
 const endpoint = document.querySelector('meta[name="artdico-content-api"]')?.getAttribute('content');
 if (endpoint) {
@@ -30,8 +32,18 @@ async function loadPublishedContent(url) {
   if (summary) summary.hidden = true;
   const fullProgram = agenda?.querySelector('[data-full-program]');
   if (fullProgram) fullProgram.open = true;
-  // The API publishes session times, but has no authoritative check-in / opening fields.
-  for (const hint of document.querySelectorAll('[data-public-static-hours], [data-public-static-checkin]')) hint.hidden = true;
+  // Published sessions do not define check-in/opening. Keep the confirmed countdown
+  // only while its original date/timezone facts still match the published event.
+  for (const hint of document.querySelectorAll('[data-public-static-hours], [data-public-static-checkin]')) {
+    const sameCountdown = hint.matches('[data-event-countdown]')
+      && hint.dataset.countdownSourceDate === content.event.date
+      && hint.dataset.countdownSourceTimezone === content.event.timezone
+      && content.event.dateStatus === 'confirmed' && content.event.status !== 'cancelled';
+    hint.hidden = !sameCountdown;
+  }
+  const programTimezone = document.querySelector('[data-public-program-timezone]');
+  if (programTimezone) programTimezone.textContent = ['Asia/Shanghai', 'Asia/Hong_Kong'].includes(content.event.timezone)
+    ? '北京时间 · UTC+8' : '活动时区 · ' + content.event.timezone;
   for (const panel of agenda?.querySelectorAll('[data-agenda-panel]') ?? []) {
     const list = panel.querySelector('.ah-agenda-list');
     if (!list) continue;
@@ -43,15 +55,39 @@ async function loadPublishedContent(url) {
       row.classList.toggle('ah-featured', item.start === '15:30' || item.start === '16:30');
       row.append(element('time', item.start + '–' + item.end));
       const detail = element('div');
-      detail.append(element('strong', item.title));
-      if (item.status === 'cancelled') detail.append(element('small', '本场已取消'));
-      else detail.append(element('small', item.speakerStatus === 'confirmed' ? '讲者：' + item.speakerName : '讲者 / 主持人待确认'));
+      detail.append(element('span', item.zone + ' 区', 'ah-session-category'), element('strong', item.title));
+      if (item.status === 'cancelled') {
+        row.dataset.sessionStatus = 'cancelled';
+        detail.append(element('small', '本场已取消', 'ah-session-meta'));
+      } else detail.append(element('small', item.speakerStatus === 'confirmed' ? '讲者：' + item.speakerName : '讲者 / 主持人待确认', 'ah-session-meta'));
       row.append(detail);
       list.append(row);
     }
-    if (!rows.length) list.append(element('p', '此区域的场次尚未公布。', 'ah-agenda-caption'));
   }
   agenda?.dispatchEvent(new Event('artdico:content-updated'));
+  const guestGrid = document.querySelector('[data-public-guests]');
+  if (guestGrid) {
+    const cards = publicGuestCards(content.guests);
+    guestGrid.replaceChildren();
+    for (const guest of cards) {
+      const card = element('li', undefined, 'ah-guest-card');
+      const portrait = element('div', undefined, 'ah-guest-portrait');
+      const initial = element('span', Array.from(guest.name)[0], 'ah-guest-initial');
+      initial.setAttribute('aria-hidden', 'true');
+      const photo = document.createElement('img');
+      photo.width = 116; photo.height = 116;
+      photo.alt = guest.name + '的头像'; photo.loading = 'lazy'; photo.decoding = 'async';
+      photo.addEventListener('error', () => { photo.hidden = true; });
+      photo.src = guest.portraitUrl;
+      portrait.append(initial, photo);
+      card.append(portrait, element('h3', guest.name, 'ah-guest-name'), element('p', guest.company, 'ah-guest-company'));
+      if (guest.ggjRole) card.append(element('p', guest.ggjRole, 'ah-guest-role'));
+      guestGrid.append(card);
+    }
+    guestGrid.hidden = cards.length === 0;
+    const emptyGuests = document.querySelector('[data-public-guests-empty]');
+    if (emptyGuests) emptyGuests.hidden = cards.length > 0;
+  }
   const booths = document.querySelector('[data-public-booths]');
   if (booths) {
     booths.replaceChildren();

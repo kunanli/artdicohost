@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { parseAdminUsers, findAdminUser, publicUser, verifyPassword, equalToken } from './auth.mjs';
 import { ContentError } from './store.mjs';
 import { createPreviewCommunications } from './communications.mjs';
+import { PORTRAIT_ID_PATTERN } from '../../shared/content-schema.mjs';
 
 export const MAX_BODY_BYTES = 1024 * 1024;
 export const SESSION_COOKIE = 'artdico_local_session';
@@ -39,7 +40,7 @@ async function body(request) {
 }
 
 /** Pure Request -> Response boundary. Sessions/rate limits are local to this process. */
-export function createContentApi({ store, contactsStore, communications = createPreviewCommunications(), users, allowedOrigin, mode = 'local', now = () => Date.now(), sessionTtlMs = 8 * 60 * 60 * 1000, loginLimit = 10, loginWindowMs = 15 * 60 * 1000 }) {
+export function createContentApi({ store, contactsStore, portraitStore, communications = createPreviewCommunications(), users, allowedOrigin, mode = 'local', now = () => Date.now(), sessionTtlMs = 8 * 60 * 60 * 1000, loginLimit = 10, loginWindowMs = 15 * 60 * 1000 }) {
   if (mode !== 'local') throw new TypeError('本内容 API 只支持本地模式，尚未接入生产鉴权或 OSS。');
   const origin = new URL(allowedOrigin);
   if (origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1' || origin.origin !== allowedOrigin) throw new TypeError('本地 API Origin 必须是 http://127.0.0.1:端口。');
@@ -74,6 +75,14 @@ export function createContentApi({ store, contactsStore, communications = create
         const { published } = await store.read();
         return published ? json(published) : json({ error: { code: 'NOT_PUBLISHED', message: '尚未发布本地内容。' } }, 404);
       }
+      const publicPortrait = url.pathname.startsWith('/api/public/portraits/') ? url.pathname.slice('/api/public/portraits/'.length) : '';
+      if (publicPortrait && request.method === 'GET' && !url.search && PORTRAIT_ID_PATTERN.test(publicPortrait)) {
+        if (!portraitStore) throw new ContentError('NOT_FOUND', '头像不存在。', 404);
+        const { published } = await store.read();
+        if (!published?.content.guests.some(guest => guest.portraitId === publicPortrait && guest.status === 'confirmed' && guest.publicConsent === true)) throw new ContentError('NOT_FOUND', '头像不存在。', 404);
+        const portrait = await portraitStore.read(publicPortrait);
+        return new Response(portrait.data, { headers: { 'content-type': portrait.contentType, 'content-length': String(portrait.bytes), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
+      }
       if (url.pathname === '/api/admin/login' && request.method === 'POST') {
         for (const [key, value] of attempts) if (value.until <= now()) attempts.delete(key);
         for (const [key, value] of sessions) if (value.expiresAt <= now()) sessions.delete(key);
@@ -100,6 +109,21 @@ export function createContentApi({ store, contactsStore, communications = create
       if (url.pathname === '/api/admin/logout' && request.method === 'POST') {
         sessions.delete(session.token);
         return json({ ok: true }, 200, { 'set-cookie': cookie('', 0) });
+      }
+      if (url.pathname === '/api/admin/portraits' && request.method === 'POST') {
+        permit(session, 'editor');
+        if (!portraitStore || !store.recordPortraitUpload) throw new ContentError('PORTRAITS_UNAVAILABLE', '本地头像存储未配置。', 503);
+        const input = await body(request);
+        const portrait = await portraitStore.upload({ contentType: input.contentType, dataBase64: input.dataBase64 });
+        await store.recordPortraitUpload(portrait.id, session.user.id);
+        return json({ portrait }, 201);
+      }
+      const privatePortrait = url.pathname.startsWith('/api/admin/portraits/') ? url.pathname.slice('/api/admin/portraits/'.length) : '';
+      if (privatePortrait && request.method === 'GET' && !url.search && PORTRAIT_ID_PATTERN.test(privatePortrait)) {
+        if (!session.user.roles.some(role => role === 'editor' || role === 'publisher')) throw new ContentError('FORBIDDEN', '当前账号没有此操作权限。', 403);
+        if (!portraitStore) throw new ContentError('NOT_FOUND', '头像不存在。', 404);
+        const portrait = await portraitStore.read(privatePortrait);
+        return new Response(portrait.data, { headers: { 'content-type': portrait.contentType, 'content-length': String(portrait.bytes), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
       }
       if (url.pathname === '/api/admin/communications' && request.method === 'GET') {
         permit(session, 'outreach');
@@ -141,7 +165,10 @@ export function createContentApi({ store, contactsStore, communications = create
         }
         throw new ContentError('NOT_FOUND', '联系人接口或方法不存在。', 404);
       }
-      if (url.pathname === '/api/admin/content' && request.method === 'GET') return json(await store.read());
+      if (url.pathname === '/api/admin/content' && request.method === 'GET') {
+        if (!session.user.roles.some(role => role === 'editor' || role === 'publisher')) throw new ContentError('FORBIDDEN', '当前账号没有此操作权限。', 403);
+        return json(await store.read());
+      }
       if (url.pathname === '/api/admin/content' && request.method === 'PUT') {
         permit(session, 'editor');
         const input = await body(request);

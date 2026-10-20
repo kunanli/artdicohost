@@ -27,6 +27,7 @@ export function createInitialContent() {
         end: slot.end,
         zone,
         title,
+        guestId: '',
         speakerName: '',
         speakerStatus: 'pending',
         status: 'scheduled',
@@ -34,5 +35,6 @@ export function createInitialContent() {
       }];
     })),
     booths: [],
+    guests: [],
   };
 }

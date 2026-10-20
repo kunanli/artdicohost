@@ -1,14 +1,37 @@
 for (const root of document.querySelectorAll('[data-agenda]')) {
   const tabs = [...root.querySelectorAll('[data-zone]')];
   const panels = [...root.querySelectorAll('[data-agenda-panel]')];
-  const expand = root.querySelector('[data-full-agenda]');
-  const tablist = root.querySelector('[role="tablist"]');
-  let zone = 'A';
-  let expanded = false;
-  const layout = root.closest('#artdico-host') ?? root;
-  const horizontalTabs = () => layout.clientWidth <= 700;
-  const compactStarts = new Set(['09:30', '10:15', '11:15', '15:30', '17:00']);
+  const controls = root.querySelector('[data-program-controls]');
+  const period = root.querySelector('[data-program-period]');
+  const validPeriods = new Set(['all', 'morning', 'afternoon']);
+  let zone = tabs[0]?.dataset.zone ?? 'A';
+  const rowPeriod = row => row.dataset.agendaStart < '12:00' ? 'morning' : 'afternoon';
+
+  // Published content replaces the list with direct article children. Recreate
+  // these presentation headings from those new rows rather than stale copies.
+  function groupRows(panel) {
+    const list = panel.querySelector('.ah-agenda-list');
+    if (!list) return;
+    list.querySelectorAll('[data-program-divider]').forEach(heading => heading.remove());
+    let previous;
+    for (const row of list.querySelectorAll('.ah-agenda-row')) {
+      const current = rowPeriod(row);
+      if (current !== previous) {
+        const heading = document.createElement('h4');
+        heading.className = 'ah-program-divider';
+        heading.dataset.programDivider = current;
+        heading.append(document.createTextNode(current === 'morning' ? '上午' : '午后'));
+        const english = document.createElement('span');
+        english.setAttribute('aria-hidden', 'true');
+        english.textContent = current === 'morning' ? 'MORNING' : 'AFTERNOON';
+        heading.append(english);
+        list.insertBefore(heading, row);
+      }
+      previous = current;
+    }
+  }
   function render() {
+    const selectedPeriod = validPeriods.has(period?.value) ? period.value : 'all';
     for (const tab of tabs) {
       const selected = tab.dataset.zone === zone;
       tab.setAttribute('aria-selected', String(selected));
@@ -16,26 +39,16 @@ for (const root of document.querySelectorAll('[data-agenda]')) {
     }
     for (const panel of panels) {
       panel.hidden = panel.dataset.agendaPanel !== zone;
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', 'tab-' + panel.dataset.agendaPanel);
       const rows = [...panel.querySelectorAll('.ah-agenda-row')];
-      const compactRows = new Set(rows.filter(row => compactStarts.has(row.dataset.agendaStart)));
-      for (const row of rows) {
-        if (compactRows.size >= 5) break;
-        compactRows.add(row);
+      for (const row of rows) row.hidden = selectedPeriod !== 'all' && rowPeriod(row) !== selectedPeriod;
+      for (const heading of panel.querySelectorAll('[data-program-divider]')) {
+        heading.hidden = selectedPeriod !== 'all' && heading.dataset.programDivider !== selectedPeriod;
       }
-      rows.forEach(row => {
-        const compact = rows.length <= 6 || compactRows.has(row);
-        row.hidden = panel.dataset.agendaPanel !== 'C' && !expanded && !compact;
-      });
+      const empty = panel.querySelector('[data-program-empty]');
+      if (empty) empty.hidden = rows.some(row => !row.hidden);
     }
-    if (expand) {
-      const count = panels.find(panel => panel.dataset.agendaPanel === zone)?.querySelectorAll('.ah-agenda-row').length ?? 0;
-      expand.hidden = zone === 'C' || count <= 6;
-      expand.setAttribute('aria-controls', 'agenda-' + zone);
-      expand.setAttribute('aria-expanded', String(expanded));
-      expand.firstChild.textContent = expanded ? '收起 ' + zone + ' 区完整日程 ' : '展开 ' + zone + ' 区完整日程（' + count + ' 段） ';
-      expand.querySelector('span').textContent = expanded ? '↑' : '↓';
-    }
-    tablist?.setAttribute('aria-orientation', horizontalTabs() ? 'horizontal' : 'vertical');
   }
   function choose(tab, focus = false) {
     zone = tab.dataset.zone;
@@ -44,8 +57,8 @@ for (const root of document.querySelectorAll('[data-agenda]')) {
   }
   tabs.forEach((tab, index) => {
     tab.addEventListener('click', () => choose(tab));
-    tab.addEventListener('keydown', (event) => {
-      const offsets = horizontalTabs() ? { ArrowRight: 1, ArrowLeft: -1 } : { ArrowDown: 1, ArrowUp: -1 };
+    tab.addEventListener('keydown', event => {
+      const offsets = { ArrowRight: 1, ArrowLeft: -1 };
       if (Object.hasOwn(offsets, event.key)) {
         event.preventDefault();
         choose(tabs[(index + offsets[event.key] + tabs.length) % tabs.length], true);
@@ -55,9 +68,9 @@ for (const root of document.querySelectorAll('[data-agenda]')) {
       }
     });
   });
-  expand?.addEventListener('click', () => { expanded = !expanded; render(); });
-  if (typeof ResizeObserver === 'function') new ResizeObserver(render).observe(layout);
-  else window.addEventListener('resize', render);
-  root.addEventListener('artdico:content-updated', render);
+  period?.addEventListener('change', render);
+  root.addEventListener('artdico:content-updated', () => { panels.forEach(groupRows); render(); });
+  panels.forEach(groupRows);
   render();
+  if (controls) controls.hidden = false;
 }

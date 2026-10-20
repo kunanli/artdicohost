@@ -6,17 +6,23 @@ export const contentSchema = Object.freeze({
   schemaVersion: CONTENT_SCHEMA_VERSION,
   maxSessions: MAX_CONTENT_ITEMS,
   maxBooths: MAX_CONTENT_ITEMS,
+  maxGuests: MAX_CONTENT_ITEMS,
   zones: ['A', 'B', 'C'],
   sessionStatuses: ['draft', 'scheduled', 'cancelled'],
   speakerStatuses: ['pending', 'confirmed'],
   boothStatuses: ['pending', 'confirmed', 'cancelled'],
   eventStatuses: ['tentative', 'confirmed', 'cancelled'],
   factStatuses: ['tentative', 'confirmed'],
+  guestStatuses: ['pending', 'confirmed'],
 });
 
-/** @typedef {{id:string,start:string,end:string,zone:string,title:string,speakerName:string,speakerStatus:string,status:string,internalNotes:string}} Session */
+/** @typedef {{id:string,start:string,end:string,zone:string,title:string,guestId:string,speakerName:string,speakerStatus:string,status:string,internalNotes:string}} Session */
 /** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string}} Booth */
-/** @typedef {{schemaVersion:number,eventId:string,event:{title:string,date:string,timezone:string,venue:string,status:string,dateStatus:string,venueStatus:string},sessions:Session[],booths:Booth[]}} Content */
+/** @typedef {{id:string,name:string,company:string,ggjRole:string,portraitId:string,status:string,publicConsent:boolean,internalNotes:string}} Guest */
+/** @typedef {{schemaVersion:number,eventId:string,event:{title:string,date:string,timezone:string,venue:string,status:string,dateStatus:string,venueStatus:string},sessions:Session[],booths:Booth[],guests:Guest[]}} Content */
+
+/** Only server-created content-addressed portraits are accepted; no external URLs. */
+export const PORTRAIT_ID_PATTERN = /^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
 
 /** @param {unknown} input @returns {Record<string,unknown>} */
 function object(input) {
@@ -32,7 +38,17 @@ function session(input) {
   const item = object(input);
   return {
     id: text(item.id), start: text(item.start), end: text(item.end), zone: text(item.zone), title: text(item.title),
-    speakerName: text(item.speakerName), speakerStatus: text(item.speakerStatus), status: text(item.status), internalNotes: text(item.internalNotes),
+    guestId: text(item.guestId), speakerName: text(item.speakerName), speakerStatus: text(item.speakerStatus), status: text(item.status), internalNotes: text(item.internalNotes),
+  };
+}
+
+/** @param {unknown} input @returns {Guest} */
+function guest(input) {
+  const item = object(input);
+  return {
+    id: text(item.id), name: text(item.name), company: text(item.company), ggjRole: text(item.ggjRole),
+    portraitId: text(item.portraitId), status: text(item.status), publicConsent: item.publicConsent === true,
+    internalNotes: text(item.internalNotes),
   };
 }
 
@@ -74,6 +90,7 @@ export function validateContent(input) {
   const rawEvent = object(source.event);
   const rawSessions = Array.isArray(source.sessions) ? source.sessions : [];
   const rawBooths = Array.isArray(source.booths) ? source.booths : [];
+  const rawGuests = Array.isArray(source.guests) ? source.guests : [];
   /** @type {Content} */
   const value = {
     schemaVersion: CONTENT_SCHEMA_VERSION,
@@ -85,6 +102,7 @@ export function validateContent(input) {
     // At most one overflow item is needed to reject an oversized array.
     sessions: rawSessions.slice(0, MAX_CONTENT_ITEMS + 1).map(session),
     booths: rawBooths.slice(0, MAX_CONTENT_ITEMS + 1).map(booth),
+    guests: rawGuests.slice(0, MAX_CONTENT_ITEMS + 1).map(guest),
   };
   /** @type {Record<string,string>} */
   const errors = {};
@@ -115,15 +133,43 @@ export function validateContent(input) {
   else if (rawSessions.length > MAX_CONTENT_ITEMS) errors.sessions = `场次最多 ${MAX_CONTENT_ITEMS} 个。`;
   if (!Array.isArray(source.booths)) errors.booths = '展位数组不可缺少。';
   else if (rawBooths.length > MAX_CONTENT_ITEMS) errors.booths = `展位最多 ${MAX_CONTENT_ITEMS} 个。`;
+  // Version-one drafts from before the guest editor remain valid. An explicitly
+  // malformed new field cannot silently erase guest records.
+  if (source.guests !== undefined && !Array.isArray(source.guests)) errors.guests = '嘉宾须为数组。';
+  else if (rawGuests.length > MAX_CONTENT_ITEMS) errors.guests = `嘉宾最多 ${MAX_CONTENT_ITEMS} 位。`;
 
   const ids = new Set();
+  const guestIds = new Set();
+  for (const [index, item] of value.guests.entries()) {
+    const key = `guests.${index}`;
+    stableId(`${key}.id`, item.id);
+    if (ids.has(item.id)) errors[`${key}.id`] = 'ID 重复，请保留每条内容独立的稳定 ID。';
+    ids.add(item.id);
+    guestIds.add(item.id);
+    enumField(`${key}.status`, item.status, contentSchema.guestStatuses);
+    stringField(`${key}.name`, item.name, 120, item.status === 'confirmed');
+    stringField(`${key}.company`, item.company, 160, item.status === 'confirmed');
+    stringField(`${key}.ggjRole`, item.ggjRole, 160, false);
+    stringField(`${key}.internalNotes`, item.internalNotes, 4000, false);
+    const raw = object(rawGuests[index]);
+    for (const name of ['name', 'company', 'ggjRole']) {
+      if (typeof raw[name] === 'string' && /[\u0000-\u001f\u007f]/u.test(raw[name])) errors[`${key}.${name}`] = '请填写不含换行或控制字符的单行内容。';
+    }
+    if (raw.publicConsent !== undefined && typeof raw.publicConsent !== 'boolean') errors[`${key}.publicConsent`] = '请明确勾选是否已获公开授权。';
+    if (raw.portraitId !== undefined && typeof raw.portraitId !== 'string') errors[`${key}.portraitId`] = '请选择后台已上传的头像。';
+    if (item.portraitId && !PORTRAIT_ID_PATTERN.test(item.portraitId)) errors[`${key}.portraitId`] = '请选择后台已上传的头像。';
+    if (item.status === 'confirmed' && item.publicConsent && !item.portraitId) errors[`${key}.portraitId`] = '公开嘉宾前请先上传已获授权的头像。';
+  }
   for (const [index, item] of value.sessions.entries()) {
     const key = `sessions.${index}`;
     stableId(`${key}.id`, item.id);
     if (ids.has(item.id)) errors[`${key}.id`] = 'ID 重复，请保留每条内容独立的稳定 ID。';
     ids.add(item.id);
     stringField(`${key}.title`, item.title, 200);
-    stringField(`${key}.speakerName`, item.speakerName, 120, item.speakerStatus === 'confirmed');
+    stringField(`${key}.speakerName`, item.speakerName, 120, item.speakerStatus === 'confirmed' && !item.guestId);
+    const raw = object(rawSessions[index]);
+    if (raw.guestId !== undefined && typeof raw.guestId !== 'string') errors[`${key}.guestId`] = '请选择本活动已有的嘉宾，或留空使用原讲者资料。';
+    if (item.guestId && !guestIds.has(item.guestId)) errors[`${key}.guestId`] = '请选择本活动已有的嘉宾，或留空使用原讲者资料。';
     stringField(`${key}.internalNotes`, item.internalNotes, 4000, false);
     enumField(`${key}.zone`, item.zone, contentSchema.zones);
     enumField(`${key}.status`, item.status, contentSchema.sessionStatuses);
@@ -173,16 +219,30 @@ export function toPublicContent(input) {
   const result = validateContent(input);
   if (!result.valid) throw new TypeError('内容校验未通过，不能生成公开内容。');
   const { value } = result;
+  const publicGuests = value.guests.filter(item => item.status === 'confirmed' && item.publicConsent && PORTRAIT_ID_PATTERN.test(item.portraitId));
+  const guestsById = new Map(publicGuests.map(item => [item.id, item]));
   return {
     schemaVersion: value.schemaVersion,
     eventId: value.eventId,
     event: { ...value.event },
-    sessions: value.sessions.filter((item) => item.status !== 'draft').map((item) => ({
-      id: item.id, start: item.start, end: item.end, zone: item.zone, title: item.title,
-      speakerName: item.speakerStatus === 'confirmed' ? item.speakerName : '', speakerStatus: item.speakerStatus, status: item.status,
-    })),
+    sessions: value.sessions.filter((item) => item.status !== 'draft').map((item) => {
+      const linked = item.guestId ? guestsById.get(item.guestId) : undefined;
+      return {
+        id: item.id, start: item.start, end: item.end, zone: item.zone, title: item.title,
+        guestId: linked?.id ?? '',
+        speakerName: item.guestId ? linked?.name ?? '' : item.speakerStatus === 'confirmed' ? item.speakerName : '',
+        speakerStatus: item.guestId ? linked ? 'confirmed' : 'pending' : item.speakerStatus, status: item.status,
+      };
+    }),
     booths: value.booths.filter((item) => item.status === 'confirmed').map((item) => ({
       id: item.id, code: item.code, organization: item.organization, project: item.project, zone: item.zone, status: item.status,
+    })),
+    guests: publicGuests.map(item => ({
+      id: item.id, name: item.name, company: item.company, ggjRole: item.ggjRole, portraitId: item.portraitId,
+      portraitUrl: '/api/public/portraits/' + item.portraitId,
+      // These affirmative publication fields keep the public snapshot idempotent
+      // when it is validated again on restart; consent history stays private.
+      status: 'confirmed', publicConsent: true,
     })),
   };
 }

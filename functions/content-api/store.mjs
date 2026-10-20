@@ -31,11 +31,24 @@ function envelope(state) {
 }
 
 /** Single-process local storage; deliberately provides no cross-process or cloud lock. */
-export function createFileContentStore({ directory, initialContent = createInitialContent(), now = () => Date.now() }) {
+export function createFileContentStore({ directory, portraitStore, initialContent = createInitialContent(), now = () => Date.now() }) {
   if (!directory) throw new TypeError('必须指定本地内容目录。');
   const root = resolve(directory);
   const file = join(root, 'content.json');
   const seed = checkedContent(initialContent);
+
+  async function verifyPortraits(content) {
+    const checked = new Set();
+    for (const [index, guest] of content.guests.entries()) {
+      if (!guest.portraitId || checked.has(guest.portraitId)) continue;
+      if (!portraitStore?.verify) throw new ContentError('PORTRAITS_UNAVAILABLE', '本地头像存储未配置。', 503);
+      try { await portraitStore.verify(guest.portraitId); }
+      catch {
+        throw new ContentError('VALIDATION_ERROR', '嘉宾头像不存在或不可读取，请重新上传。', 422, { [`guests.${index}.portraitId`]: '请选择已成功上传且仍可读取的头像。' });
+      }
+      checked.add(guest.portraitId);
+    }
+  }
 
   async function load() {
     try {
@@ -83,8 +96,14 @@ export function createFileContentStore({ directory, initialContent = createIniti
     save: (expectedRevision, input, actorId) => serial(async () => {
       const state = await load();
       checkRevision(expectedRevision, state.draft.revision);
+      // A legacy client may omit the newly added array. It cannot silently
+      // erase guests that are already present in this revision.
+      if (state.draft.content.guests.length && (input === null || typeof input !== 'object' || !Object.hasOwn(input, 'guests'))) {
+        throw new ContentError('VALIDATION_ERROR', '现有嘉宾资料不可因字段缺失被清空，请重新载入完整草稿。', 422, { guests: '请保留完整嘉宾数组；删除须明确提交修改。' });
+      }
       const content = checkedContent(input);
       if (content.eventId !== state.draft.content.eventId) throw new ContentError('VALIDATION_ERROR', '本后台只维护当前活动。', 422, { eventId: '活动 ID 不可更改。' });
+      await verifyPortraits(content);
       state.draft = { revision: state.draft.revision + 1, content };
       state.audit.push({ action: 'save_draft', actorId, revision: state.draft.revision, at: new Date(now()).toISOString() });
       await commit(state);
@@ -93,11 +112,19 @@ export function createFileContentStore({ directory, initialContent = createIniti
     publish: (expectedRevision, actorId) => serial(async () => {
       const state = await load();
       checkRevision(expectedRevision, state.draft.revision);
+      await verifyPortraits(state.draft.content);
       if (state.published?.revision === state.draft.revision) return structuredClone(state.published);
       state.published = { revision: state.draft.revision, publishedAt: new Date(now()).toISOString(), content: toPublicContent(state.draft.content) };
       state.audit.push({ action: 'publish', actorId, revision: state.draft.revision, at: state.published.publishedAt });
       await commit(state);
       return structuredClone(state.published);
+    }),
+    recordPortraitUpload: (portraitId, actorId) => serial(async () => {
+      if (!portraitStore?.verify) throw new ContentError('PORTRAITS_UNAVAILABLE', '本地头像存储未配置。', 503);
+      const portrait = await portraitStore.verify(portraitId);
+      const state = await load();
+      state.audit.push({ action: 'upload_portrait', actorId, portraitId: portrait.id, bytes: portrait.bytes, at: new Date(now()).toISOString() });
+      await commit(state);
     }),
   };
 }

@@ -1,49 +1,46 @@
 ---
 import { eventConfig, agenda, zones } from '../config/event.mjs';
-const cRows = agenda.filter((_, index) => [0,11,12,13,14].includes(index));
-const overview = [
-  { time: '09:30–10:00', title: '签到入场', label: 'START' },
-  { time: '10:00–12:30', title: 'GGJ 分享、站点圆桌与合影', label: 'GGJ' },
-  { time: '12:30–13:30', title: '午餐与自由交流', label: 'BREAK' },
-  { time: '13:30–15:30', title: '讲座、专题研讨与新站点咨询', label: 'GGJ' },
-  { time: '15:30–16:30', title: 'ARTDiCO HOST 学生作品分享', label: 'HOST', student: true },
-  { time: '16:30–17:00', title: '学生作品体验与反馈', label: 'HOST', student: true },
-  { time: '17:00–18:00', title: '组织者与生态交流、闭幕合影', label: 'MEET' },
-];
+import '../styles/program.css';
+const period = (start: string) => start < '12:00' ? 'morning' : 'afternoon';
+const label = (id: string, zone: string) => id.startsWith('student-') ? '学生作品' : zone === 'C' ? '展位现场' : '交流现场';
 ---
-<section class="ah-agenda ah-section" id="agenda" aria-labelledby="agenda-heading" data-agenda>
+<section class="ah-agenda ah-program ah-section" id="agenda" aria-labelledby="agenda-heading" data-agenda>
   <div class="ah-section-heading">
-    <div><span class="ah-kicker">THE PROGRAM</span><h2 id="agenda-heading">这一天，怎么过。</h2></div>
-    <span class="ah-outline-tag" data-public-agenda-date>{eventConfig.date.label} · {eventConfig.time.label}</span>
+    <div><span class="ah-kicker">SCHEDULE</span><h2 id="agenda-heading">这一天，怎么过。</h2></div>
+    <p>找到你感兴趣的时间与现场。</p>
   </div>
-  <ol class="ah-day-overview" data-agenda-summary>
-    {overview.map(item => <li class:list={{'ah-day-student': item.student}}><time>{item.time}</time><strong>{item.title}</strong><span aria-hidden="true">{item.label}</span></li>)}
-  </ol>
-  <details class="ah-agenda-details" data-full-program>
-    <summary>查看三区完整日程 <span aria-hidden="true">＋</span></summary>
-    <div class="ah-agenda-layout">
-    <div class="ah-agenda-aside">
-      <p>找到你感兴趣的现场</p>
-      <div class="ah-zone-tabs" role="tablist" aria-label="场地日程" aria-orientation="vertical">
-        {zones.map((zone, index) => <button type="button" id={`tab-${zone.id}`} data-zone={zone.id} role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-controls={`agenda-${zone.id}`} tabindex={index === 0 ? 0 : -1}><b>{zone.id}</b><span>{zone.name}<small>{zone.description}</small></span><span aria-hidden="true">↗</span></button>)}
+  <div class="ah-program-shell">
+    <div class="ah-program-datebar">
+      <span class="ah-program-date" data-public-agenda-date>{eventConfig.date.label}</span>
+      <span class="ah-program-timezone" data-public-program-timezone>北京时间 · UTC+8</span>
+    </div>
+    <div class="ah-program-controls" data-program-controls hidden>
+      <div class="ah-zone-tabs" role="tablist" aria-label="选择场地日程" aria-orientation="horizontal">
+        {zones.map((zone, index) => <button type="button" id={`tab-${zone.id}`} data-zone={zone.id} role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-controls={`agenda-${zone.id}`} tabindex={index === 0 ? 0 : -1}><b>{zone.id}</b><span>{zone.name}<small>{zone.description}</small></span></button>)}
       </div>
-      <p class="ah-agenda-caption" data-public-content-status>讲者与具体主题陆续公布。</p>
+      <label class="ah-program-period" for="program-period"><span>浏览时段</span><select id="program-period" data-program-period><option value="all">全日</option><option value="morning">上午 · AM</option><option value="afternoon">午后 · PM</option></select></label>
     </div>
+    <p class="ah-agenda-caption ah-program-notice" data-public-content-status>讲者与具体主题陆续公布。</p>
     <div class="ah-agenda-main">
-      {zones.map(zone => <div class="ah-agenda-panel" id={`agenda-${zone.id}`} data-agenda-panel={zone.id} role="tabpanel" aria-labelledby={`tab-${zone.id}`} tabindex="0">
-        <h3 class="ah-panel-heading">{zone.id} 区 · {zone.name}</h3>
-        {zone.id === 'C' && <p class="ah-agenda-caption">展位依活动时段开放；16:30–17:00 为学生作品体验与反馈。</p>}
-        <div class="ah-agenda-list">
-          {(zone.id === 'C' ? cRows : agenda.filter(item => item[zone.id as 'A' | 'B' | 'C'] !== '—')).map(item => <article class:list={['ah-agenda-row', {'ah-featured': item.start === '15:30' || item.start === '16:30'}]} data-agenda-start={item.start}>
-            <time datetime={`${eventConfig.date.value}T${item.start}:00+08:00`}>{item.time}</time>
-            <div><strong>{item[zone.id as 'A' | 'B' | 'C']}</strong>{item.start === '14:30' && zone.id === 'B' && <small>正式站点资格以 GGJ 流程为准</small>}</div>
-          </article>)}
-        </div>
-      </div>)}
-      <button type="button" data-full-agenda class="ah-text-action" aria-expanded="false" hidden>展开完整日程 <span aria-hidden="true">↓</span></button>
+      {zones.map(zone => {
+        const rows = agenda.filter(item => item[zone.id as 'A' | 'B' | 'C'] !== '—');
+        return <section class="ah-agenda-panel" id={`agenda-${zone.id}`} data-agenda-panel={zone.id} aria-labelledby={`program-heading-${zone.id}`} tabindex="0">
+          <h3 class="ah-panel-heading" id={`program-heading-${zone.id}`}>{zone.id} 区 · {zone.name}</h3>
+          {zone.id === 'C' && <p class="ah-agenda-caption ah-program-zone-note">展位按活动时段开放；16:30–17:00 学生作品体验与反馈。</p>}
+          <div class="ah-agenda-list">
+            {rows.map((item, index) => <>
+              {(index === 0 || period(item.start) !== period(rows[index - 1].start)) && <h4 class="ah-program-divider" data-program-divider={period(item.start)}>{period(item.start) === 'morning' ? '上午' : '午后'}<span aria-hidden="true">{period(item.start) === 'morning' ? 'MORNING' : 'AFTERNOON'}</span></h4>}
+              <article class:list={['ah-agenda-row', {'ah-featured': item.id.startsWith('student-')}]} data-agenda-start={item.start}>
+                <time datetime={`${eventConfig.date.value}T${item.start}:00+08:00`}>{item.time}</time>
+                <div class="ah-session-detail"><span class="ah-session-category">{label(item.id, zone.id)}</span><strong>{item[zone.id as 'A' | 'B' | 'C']}</strong>{item.start === '14:30' && zone.id === 'B' && <small class="ah-session-meta">正式站点资格以 GGJ 流程为准</small>}</div>
+              </article>
+            </>)}
+          </div>
+          <p class="ah-agenda-caption ah-program-empty" data-program-empty hidden>此时段暂无已公布场次。</p>
+        </section>;
+      })}
     </div>
-    </div>
-  </details>
+  </div>
 </section>
 <script>
   import '../scripts/agenda.mjs';

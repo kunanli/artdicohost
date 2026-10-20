@@ -16,30 +16,31 @@
 - [PR #25](https://github.com/kunanli/artdicohost/pull/25) 已合并为 `03c766a2cbe32a90f42ec5f8c0e0bc464001920d`；[PR CI](https://github.com/kunanli/artdicohost/actions/runs/39448120552) 的 449 项测试全部通过，构建／依赖稽核／两个包的离线 smoke 通过。
 - [main 发布 39448880855](https://github.com/kunanli/artdicohost/actions/runs/39448880855) 的检查、公开 OSS、FC 代码与受控账号配置均成功；FC 三次签名健康标记为同一完整提交。账号配置已确认，内容仍关闭，真实 OSS 的独立验收在下一批代码中接续。
 
-## 进行中的代码分工
+## 当前已集成代码与验证
 
-所有分支起点均为 PR #25 内容，集成分支为 `feat/full-site-completion`。各 agent 在独立 worktree 提交，由主 agent逐个 cherry-pick、审阅、整合和真实部署。
+整站扩展已逐项集成到 `feat/full-site-completion`，本次交接基准为 **`5e5ea84`**。完整 **581 项测试通过**，真实 Chromium 的核心报名流程检查通过；浏览器使用合成响应，不代表生产报名、真实联系人或邮件已执行。[PR #26](https://github.com/kunanli/artdicohost/pull/26) 当前为 draft，等待最终 CI、合并及 main 发布。上节 PR #25 的成功发布是历史生产基准，不能代替本批代码的云端验收。
 
-| 工作 | 分支／目录 | 内容与接续边界 |
+| 工作 | 已集成内容 | 接续文档 |
 | --- | --- | --- |
-| 云端合成验收 | `feat/cloud-acceptance`／`/workspace/artdico-worktrees/cloud-acceptance` | FC 内部临时身份，全部测试对象隔离在 `cms/v1/acceptance/`；仅签名健康入口回固定结果；业务仍关闭 |
-| 正式报名 | `feat/registration-service`／`/workspace/artdico-worktrees/registration-service` | 私有不可变记录＋共享 CAS 索引、300 人容量、签名令牌、幂等、限流、明确回读收据 |
-| 后台与公开页 | `feat/admin-completion`／`/workspace/artdico-worktrees/admin-completion` | 活动基础／文案编辑、真实报名传输、隐私说明、审核筛选统计及导出界面 |
-| 审核与维护 | `feat/registration-review`／`/workspace/artdico-worktrees/registration-review` | 独立 reviewer／superadmin、审核与住宿状态、最小导出审计、受控删除申请、加密备份及隔离恢复验证 |
-| 意向与邀请 | `feat/intent-invitations`／`/workspace/artdico-worktrees/intent-invitations` | 联系人转报名、来源与唯一键、邀请准备／人工发出／明确邮件发送、场次展位分配 |
-| 主集成 | `feat/full-site-completion`／`/workspace/artdicohost` | schema、运行时装配、固定包白名单、受控配置／启用／回退、CI 与最终验收 |
+| 云端装配与合成验收 | 生产服务组合、精确公开路由、后台资源闭包、来源绑定候选包、十阶段隔离验收及受控启用 | [运行时](cloud-runtime-completion.md)、[云端验收](cloud-acceptance.md) |
+| 正式报名 | 私有记录＋共享 CAS 索引、300 人容量、签名令牌、幂等、限流、工作人员部分资料及来源查询 | [报名服务](registration-service.md) |
+| 后台与公开页 | 公开报名与隐私说明、审核／导出、人员管理、15 个展位位置、场次与人员安排 | [开发台账](development-status.md) |
+| 审核与维护 | 独立角色、审核与住宿状态、受控导出／删除申请、加密备份、原子占位的隔离恢复 | [审核](registration-review.md)、[备份恢复](maintenance-backup.md)、[账号](staff-accounts.md) |
+| 意向与邀请 | 严格原始资料导入、资格预览、来源幂等转报名、邀请准备／人工发出／明确邮件发送、撤回防护 | [开发台账及 API](development-status.md) |
 
-## 集成顺序与完成定义
+原工作分支／worktree 是开发来源，不再表示待合并任务；恢复时先核对主集成分支与 GitHub 最新状态，避免重复 cherry-pick。
 
-1. 当前 main 的 OSS、FC 与账号配置分别取证。
-2. 各模块完成安全失败、并发／权限与有意义的测试，提交后集成；首先完成关闭状态的真实 OSS 合成验收，再启用工作人员内容后台。
-3. 衔接报名／审核／意向／邀请及前台读取；普通报名与住宿／讲者／展位确认分开。未配置寄信渠道时下载和人工发出可用，不能假称邮件送达。
-4. 明确生产政策、角色迁移、API 路由和容量，执行完整 CI、包核对、浏览器及云端端到端检查；失败继续修复，未知写入结果不盲重送。
-5. 写入早晨验收清单、真实运行链接及剩余人工设置；已通过并发布与仅有代码的能力分别记录。
+## 发布与剩余完成定义
+
+1. 完成 PR #26 最终 CI，核对候选包及完整来源 SHA，再合并和发布 main；记录公开 OSS 哈希回读及 FC 三次签名 SHA。
+2. 在业务关闭状态执行真实 OSS 十阶段隔离验收，读回受控政策、账号角色与开关；验收是两个独立客户端、一个 FC 进程，不宣称两个真实 FC 实例并发。通过后按受控生命周期启用并记录工作人员登录和公开读取。
+3. 使用真实工作人员登录导入已恢复的 39 行原始问卷，明确跳过 1 笔拒绝对象，仅转换 38 笔合资格资料；核对来源、收据及私密安排。准备文件与本地校验均不表示已迁移。
+4. 邀请准备、PNG 下载、人工发出和 provider 接受分别记录；真实邮件须明确确认和受控配置，未知 ACK 不盲重送，也不声称送达。
+5. 记录最终 Actions、实际验收结果和剩余人工设置。当前角色无 Delete／List 权限，物理擦除与自动保留期清理仍须独立维护；删除申请不等于彻底擦除。
 
 ## 恢复时必须核对
 
-- `git status`、各分支最新提交、GitHub main、最新 Actions、此文档与 `docs/development-status.md`（如已生成）。不要重做已成功的部署或读取 Secrets 来猜配置。
-- 旧 session 的 39 笔私有联系人与群码在忽略目录；当前新工作区尚未确认恢复。以取回原始文件为准，不生成占位人、不宣称已迁移或删除。用户已授权联系人转报名，仍须保留原始来源及最小披露。
+- `git status`、各分支最新提交、GitHub main、最新 Actions、此文档与 [开发台账](development-status.md)。不要重做已成功的部署或读取 Secrets 来猜配置。
+- 用户重新上传的原始 39 行 XLSX 已恢复；私密请求及逐行问题记录位于主工作区忽略目录 `.local-data/private-intent-import/`（目录 0700、文件 0600）。38 笔同意联系、1 笔明确拒绝；11 笔有选填 URL 投影警告，原答案不变。尚未云端导入、转换或发出邀请。旧 contacts.json 的跟进／回复／发送历史及原群码未因恢复问卷而恢复，不推断或重造。
 - 不修改 IGDA 资源、不新增服务套餐、不扩大 IAM、不改主站 DNS 或健康 trigger；恢复与物理删除若需要不同运维权限，明确记录，不能用应用 tombstone 冒充彻底擦除。
 - 本地沙盒 Node spawnSync 可能 EPERM；获准执行相关检查后通过。依赖用 `/tmp/artdico-pnpm-store`，不要改系统 HOME。

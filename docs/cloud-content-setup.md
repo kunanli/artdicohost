@@ -93,6 +93,7 @@ FC 3.0 的自定义域名独立于 HTTP Trigger；应保留当前 `defaultTrigge
 | `/api/admin/login`、`/api/admin/logout`、`/api/admin/portraits`、`/api/admin/content/publish` | POST | 登录、退出、上传、明确发布 |
 | `/api/admin/content` | PUT | 带预期修订号保存草稿 |
 | `/api/admin/planning`、`/api/admin/communications` | GET | outreach 的最小排程／功能标记及准备状态 |
+| `/api/admin/arrangements` | GET | editor + outreach 的已保存十五位展位／活动人员总览，不公开名单 |
 | `/api/admin/contacts` | GET、POST | 私密名单读取与手动新增，仅 outreach |
 | `/api/admin/contacts/*` | GET、PUT、POST | 应用精确匹配的修正、跟进、生成／人工发出与双角色最小预填；不提供匿名名单 |
 | `/api/public/content`、`/api/public/portraits/*` | GET、HEAD、OPTIONS | 只读公开发布内容与当前授权头像 |

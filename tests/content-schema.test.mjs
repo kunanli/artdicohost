@@ -152,3 +152,83 @@ test('public output and normalized state do not mutate the draft or share editab
   published.sessions[0].title = '仅公开场次副本编辑';
   assert.deepEqual(draft, snapshot);
 });
+
+test('legacy sessions and booths normalize unclassified / unpositioned without changing their public payload', () => {
+  const content = emptyContent();
+  content.sessions = [session({ speakerName: '合成公开讲者', speakerStatus: 'confirmed' })];
+  content.booths = [booth({ code: 'C15', status: 'confirmed' })];
+  const normalized = validateContent(content);
+  assert.equal(normalized.valid, true);
+  assert.equal(normalized.value.sessions[0].format, 'other');
+  assert.equal(normalized.value.booths[0].slotNumber, 0);
+  const published = toPublicContent(content);
+  assert.equal(Object.hasOwn(published.sessions[0], 'format'), false);
+  assert.equal(Object.hasOwn(published.booths[0], 'slotNumber'), false);
+  assert.deepEqual(toPublicContent(published), published);
+  // A code which happens to contain digits is never treated as a physical allocation.
+  assert.equal(validateContent({ ...content, booths: [booth({ code: 'S15' })] }).value.booths[0].slotNumber, 0);
+});
+
+test('fifteen explicit booth positions are bounded and unique among active records; cancelled positions may be reused', () => {
+  const content = emptyContent();
+  content.booths = Array.from({ length: 15 }, (_, index) => booth({ id: 'synthetic-' + index, code: 'X-' + index, slotNumber: index + 1 }));
+  assert.equal(validateContent(content).valid, true);
+  for (const value of [-1, 16, 1.5, '1', null, true, NaN, Infinity]) {
+    const invalid = { ...content, booths: [booth({ slotNumber: value })] };
+    assert.ok(validateContent(invalid).errors['booths.0.slotNumber'], String(value));
+  }
+  for (const firstStatus of ['pending', 'confirmed']) {
+    for (const secondStatus of ['pending', 'confirmed']) {
+      const conflicting = { ...content, booths: [booth({ slotNumber: 4, status: firstStatus }), booth({ id: 'second', code: 'DIFFERENT', slotNumber: 4, status: secondStatus })] };
+      const result = validateContent(conflicting);
+      assert.ok(result.errors['booths.0.slotNumber']);
+      assert.ok(result.errors['booths.1.slotNumber']);
+    }
+  }
+  content.booths = [booth({ slotNumber: 15, status: 'cancelled' }), booth({ id: 'new-position-holder', code: 'UNRELATED', slotNumber: 15, status: 'confirmed' })];
+  assert.equal(validateContent(content).valid, true);
+  assert.equal(toPublicContent(content).booths.length, 1);
+  assert.equal(toPublicContent(content).booths[0].slotNumber, 15);
+  content.booths[0].slotNumber = 16;
+  assert.ok(validateContent(content).errors['booths.0.slotNumber'], 'cancelled records still require a valid position');
+  content.booths = [booth(), booth({ id: 'second-unpositioned', code: 'SECOND' })];
+  assert.equal(validateContent(content).valid, true, 'many unassigned records may remain at zero');
+});
+
+test('session formats accept only explicit supported choices and never infer workshop from titles', () => {
+  const content = emptyContent();
+  for (const format of ['talk', 'workshop', 'roundtable', 'showcase', 'social', 'break', 'other']) {
+    content.sessions = [session({ format, title: '任意合成标题' })];
+    assert.equal(validateContent(content).valid, true, format);
+    const publicSession = toPublicContent(content).sessions[0];
+    assert.equal(publicSession.format, format === 'other' ? undefined : format);
+    assert.deepEqual(toPublicContent(toPublicContent(content)), toPublicContent(content));
+  }
+  for (const format of ['', 'lecture', 'Workshop', 3, null, {}, true, 'talk\n']) {
+    content.sessions = [session({ format })];
+    assert.ok(validateContent(content).errors['sessions.0.format'], JSON.stringify(format));
+  }
+  content.sessions = [session({ title: '合成工作坊 · 不据标题猜测形式' })];
+  assert.equal(validateContent(content).value.sessions[0].format, 'other');
+  const seed = createInitialContent();
+  assert.deepEqual(seed.sessions.filter(item => item.format === 'talk').map(item => item.id), [
+    'session-ggj-talk-a', 'session-speaker-one-a', 'session-speaker-two-a', 'session-speaker-three-a',
+  ]);
+  assert.deepEqual(seed.sessions.filter(item => item.format === 'roundtable').map(item => item.id), ['session-speaker-one-b']);
+  assert.deepEqual(seed.sessions.filter(item => item.format === 'showcase').map(item => item.id), ['session-student-showcase-a']);
+  assert.equal(seed.sessions.filter(item => item.format === 'workshop').length, 0);
+  assert.equal(seed.sessions.filter(item => item.format === 'other').length, 37);
+  assert.deepEqual(seed.booths, [], 'empty physical positions do not create fictional booth records');
+});
+
+test('public position and format additions retain private-field filtering and legacy snapshot idempotence', () => {
+  const content = emptyContent();
+  content.sessions = [session({ format: 'workshop', internalNotes: 'PRIVATE-WORKSHOP', speakerName: 'PRIVATE-UNCONFIRMED' })];
+  content.booths = [booth({ slotNumber: 7, status: 'confirmed', internalNotes: 'PRIVATE-BOOTH' })];
+  const published = toPublicContent(content);
+  assert.equal(published.sessions[0].format, 'workshop');
+  assert.equal(published.booths[0].slotNumber, 7);
+  assert.equal(JSON.stringify(published).includes('PRIVATE-'), false);
+  assert.deepEqual(toPublicContent(published), published);
+  assert.deepEqual(toPublicContent(validateContent(published).value), published);
+});

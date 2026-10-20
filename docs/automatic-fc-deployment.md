@@ -1,6 +1,6 @@
 # GitHub 自动更新香港 FC
 
-日期：2026-10-20（Asia/Taipei）。香港 `artdicohost-api` 已按用户要求参照 `kunanli/artdico-deck` 自动更新；运行时、RAM 与 Variables 配置完成。最近完整验收基线 `e82762e2f86ea3663a4e3e78d0a10d0a608ef541` 的 [Actions 39362633747](https://github.com/kunanli/artdicohost/actions/runs/39362633747) 已取得公开 OSS 12 个对象 SHA-256 回读，以及 FC 单次更新后的三次连续签名完整源码标记。私有 OSS 已创建仍不代表正式 API、后台登录或嘉宾管理已接通。后续提交以各自最新 main push 的实际日志为准。
+日期：2026-10-20（Asia/Taipei）。香港 `artdicohost-api` 已按用户要求参照 `kunanli/artdico-deck` 自动更新；部署运行时、RAM 与 Variables 配置完成。本阶段开始时最近完整验收基线为 `5eff813523f075d9871cf6188d2e61a923e4cb52`，[Actions 39397120656](https://github.com/kunanli/artdicohost/actions/runs/39397120656) 的 check `118542478148` 完成 346 项测试；OSS `118543356196` 完成 16 个对象 SHA-256 回读；FC `118543356284` 单次更新后于 17:01:37、17:01:39、17:01:42（Asia/Taipei）连续三次签名完整源码标记全部匹配。生命周期字段仍为 null，不推论 Active／Successful；FC CRC64 不等于远端 SHA-256 回读。私有 OSS 已创建仍不代表正式 API、后台登录或嘉宾管理已接通。后续提交以各自最新 main push 的实际日志为准，以下保留历史验收与失败记录。
 
 用户同时授权后续正常发布：完成检查和审阅后，可合并到 main 并执行自动部署，无需逐次再申请发布确认。此授权不替代公开稿件核准、真实资料迁移及个人信息公开 / 分享授权，也不改变正式隐私告知与当前业务关闭边界。
 

@@ -1,5 +1,6 @@
 import { validateContent, toPublicContent } from '../../shared/content-schema.mjs';
 import { showcaseSummary } from '../../shared/showcase-display.mjs';
+import { createArrangementsView } from './arrangements-view.mjs';
 
 const $ = selector => document.querySelector(selector);
 const status = $('[data-admin-status]');
@@ -35,6 +36,17 @@ const portraitIdPattern = /^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
 const contentKey = type => ({ session: 'sessions', booth: 'booths', guest: 'guests', showcase: 'showcases' })[type];
 const typeLabel = type => ({ session: '活动场次', booth: '出席展位', guest: '嘉宾资料', showcase: '学生作品' })[type];
 
+const arrangements = createArrangementsView({
+  root: $('[data-arrangements]'),
+  load: () => request('/api/admin/arrangements'),
+  edit: (type, id, slotNumber) => {
+    if (!draft || busy || dirty || portraitUploading || coverUploading) return;
+    const item = id ? draft.content[contentKey(type)]?.find(entry => entry.id === id) : null;
+    if (id && !item) { announce('此记录已不在本页草稿中，请重新读取最新资料。', true); return; }
+    openEditor(type, item);
+    if (type === 'booth' && !item && slotNumber) $('[data-booth-form]').elements.namedItem('slotNumber').value = String(slotNumber);
+  },
+});
 function announce(message, error = false) {
   status.textContent = error ? '' : message;
   errorBox.textContent = error ? message : '';
@@ -56,6 +68,7 @@ function lockControls() {
   $('[data-admin-publish]').disabled = busy || portraitUploading || coverUploading || !canPublish() || dirty;
   $('[data-admin-preview]').disabled = busy || !draft;
   $('[data-admin-logout]').disabled = busy || portraitUploading || coverUploading;
+  arrangements.configure({ allowed: Boolean(canEdit() && user?.roles.includes('outreach')), busy: busy || portraitUploading || coverUploading, dirty, draftRevision: draft?.revision });
 }
 function setDirty(value) {
   dirty = value;
@@ -69,7 +82,7 @@ async function request(path, options = {}) {
   const response = await fetch(path, { ...options, headers, credentials: 'same-origin', cache: 'no-store' });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 401 && path !== '/api/admin/login') showLogin();
+    if (response.status === 401 && path !== '/api/admin/login') { showLogin(); announce('会话已结束，请重新登录。', true); }
     const message = response.status === 409 ? '草稿已被其他工作人员更新。你的修改仍保留在本页；请先复制需要保留的内容，再重新载入最新草稿。' : result.error?.message || '操作暂未完成，请重试。';
     throw new Error(message);
   }
@@ -85,6 +98,7 @@ async function action(callback) {
 function showLogin() {
   clearPortrait();
   clearCover();
+  arrangements.clear();
   user = null;
   csrfToken = '';
   draft = null;
@@ -176,7 +190,8 @@ function render() {
     const row = node('tr');
     cell(row, '时间', item.start + '–' + item.end);
     cell(row, '场地', item.zone + ' 区');
-    cell(row, '场次', item.title);
+    const titleCell = cell(row, '场次', item.title);
+    titleCell.append(node('small', ({talk:'演讲',workshop:'工作坊',roundtable:'圆桌',showcase:'作品分享',social:'交流活动',break:'休息 / 签到',other:'待分类 / 其他'})[item.format] || '待分类 / 其他', 'ah-admin-row-format'));
     const linkedGuest = item.guestId ? draft.content.guests?.find(guest => guest.id === item.guestId) : null;
     cell(row, '讲者', linkedGuest ? linkedGuest.name + (linkedGuest.status === 'confirmed' && linkedGuest.publicConsent ? '（已关联）' : '（待确认或授权）') : item.speakerStatus === 'confirmed' ? item.speakerName : '待确认' + (item.speakerName ? '（已记内部候选）' : ''));
     cell(row, '状态', { draft: '草稿', scheduled: '已安排', cancelled: '已取消' }[item.status]);
@@ -188,7 +203,8 @@ function render() {
   booths.replaceChildren();
   for (const item of [...draft.content.booths].sort((a,b) => a.code.localeCompare(b.code))) {
     const row = node('tr');
-    cell(row, '编号', item.code);
+    const codeCell = cell(row, '编号', item.code);
+    codeCell.append(node('small', item.slotNumber ? String(item.slotNumber).padStart(2,'0')+' 号位置' : '未指定位置', 'ah-admin-row-format'));
     cell(row, '出席单位', item.organization || '待确认');
     cell(row, '展示内容', item.project || '待确认');
     cell(row, '场地', item.zone + ' 区');
@@ -232,12 +248,14 @@ function openEditor(type, item = null, allowBusy = false) {
   if (type === 'guest') { clearPortrait(); guestFormDirty=false; $('[data-guest-consent-note]').textContent='确认状态与公开授权分别记录。更改资料或照片后，请重新核对授权；保存草稿不会自动公开。'; }
   if (type === 'session') fillSessionGuests();
   const id = type + '-' + [...crypto.getRandomValues(new Uint8Array(16))].map(value => value.toString(16).padStart(2, '0')).join('');
-  const value = item || (type === 'session' ? { id, start: '09:30', end: '10:00', zone: 'A', title: '', speakerName: '', speakerStatus: 'pending', guestId: '', status: 'draft', internalNotes: '' } : type === 'booth' ? { id, code: '', organization: '', project: '', zone: 'C', status: 'pending', internalNotes: '' } : { id, name: '', company: '', ggjRole: '', portraitId: '', contactId: '', status: 'pending', publicConsent: false, internalNotes: '' });
+  const value = item || (type === 'session' ? { id, start: '09:30', end: '10:00', zone: 'A', title: '', format: 'other', speakerName: '', speakerStatus: 'pending', guestId: '', status: 'draft', internalNotes: '' } : type === 'booth' ? { id, code: '', organization: '', project: '', zone: 'C', slotNumber: 0, status: 'pending', internalNotes: '' } : { id, name: '', company: '', ggjRole: '', portraitId: '', contactId: '', status: 'pending', publicConsent: false, internalNotes: '' });
   for (const [key,valueText] of Object.entries(value)) {
     const field = form.elements.namedItem(key);
     if (field?.type === 'checkbox') field.checked = valueText === true;
     else if (field) field.value = valueText;
   }
+  if (type === 'session' && !value.format) form.elements.namedItem('format').value = 'other';
+  if (type === 'booth' && value.slotNumber === undefined) form.elements.namedItem('slotNumber').value = '0';
   if (type === 'session') { editingSession = item?.id ?? null; syncSessionGuest(); }
   else if (type === 'booth') editingBooth = item?.id ?? null;
   else { editingGuest = item?.id ?? null; showPortrait(value.portraitId); }
@@ -281,6 +299,7 @@ function submitEditor(type, event) {
   const key = contentKey(type);
   const editingId = ({ session: editingSession, booth: editingBooth, guest: editingGuest, showcase: editingShowcase })[type];
   const value = Object.fromEntries(new FormData(form));
+  if (type === 'booth') value.slotNumber = Number(form.elements.namedItem('slotNumber').value);
   if (type === 'guest') {
     delete value.portraitFile;
     value.publicConsent = form.elements.namedItem('publicConsent').checked;
@@ -622,6 +641,8 @@ $('[data-admin-login]').addEventListener('submit', event => {
     workspace.hidden = false;
     setDirty(false);
     render();
+    await arrangements.refresh();
+    if (!user || !draft) return;
     if(!await prepareInvitedGuest())announce('已登录。修改草稿后，需要发布才会显示到前台。');
   });
 });
@@ -632,6 +653,8 @@ $('[data-admin-save]').addEventListener('click', () => action(async () => {
   draft = result.draft;
   setDirty(false);
   render();
+  await arrangements.refresh();
+  if (!user || !draft) return;
   announce('草稿已保存，前台尚未改变。可先预览，再发布。');
 }));
 $('[data-admin-publish]').addEventListener('click', () => action(async () => {
@@ -641,6 +664,7 @@ $('[data-admin-publish]').addEventListener('click', () => action(async () => {
   render();
   announce('发布成功。打开本地前台即可查看最新场次、公开嘉宾与已确认展位；云端接通状态以实际部署为准。');
 }));
+$('[data-arrangements-refresh]').addEventListener('click', () => action(() => arrangements.refresh()));
 $('[data-admin-preview]').addEventListener('click', () => { try { previewPublic(); } catch (error) { announce(error.message, true); } });
 $('[data-admin-preview-close]').addEventListener('click', () => { $('[data-admin-preview-panel]').hidden = true; });
 $('[data-admin-add-session]').addEventListener('click', () => openEditor('session'));
@@ -687,6 +711,8 @@ if (location.protocol === 'file:') {
     workspace.hidden = false;
     setDirty(false);
     render();
+    await arrangements.refresh();
+    if (!user || !draft) return;
     if(!await prepareInvitedGuest())announce('已恢复工作人员会话。');
   });
 }

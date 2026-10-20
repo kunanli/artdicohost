@@ -4,6 +4,7 @@ import { PORTRAIT_ID_PATTERN } from '../../shared/content-schema.mjs';
 import { CloudContentError } from './errors.mjs';
 import { createPreviewCommunications } from '../content-api/communications.mjs';
 import { toContactPlanningContent } from '../../shared/contact-editor.mjs';
+import { buildArrangementOverview } from '../../shared/arrangement-overview.mjs';
 
 export const CLOUD_API_ORIGIN = 'https://api.artdico.host';
 export const PUBLIC_SITE_ORIGIN = 'https://artdico.host';
@@ -121,6 +122,13 @@ export function createCloudContentApi({ enabled = false, store, portraitStore, a
         requireRole(session, ['outreach']);
         const { draft } = await store.read();
         return json({ content: toContactPlanningContent(draft.content), features: { contactImport: false, communicationsPreview: true } });
+      }
+      if (url.pathname === '/api/admin/arrangements' && request.method === 'GET' && !url.search) {
+        requireRole(session, ['editor']);
+        requireRole(session, ['outreach']);
+        if (!contactsStore) throw new CloudContentError('CONTACTS_UNAVAILABLE', '私密联系人模块尚未配置，不能读取完整人员安排。', 503);
+        const [{ draft }, roster] = await Promise.all([store.read(), contactsStore.read()]);
+        return json(buildArrangementOverview({ content: draft.content, contacts: roster.contacts, contentRevision: draft.revision, contactsRevision: roster.revision }));
       }
       if (url.pathname === '/api/admin/communications' && request.method === 'GET') {
         requireRole(session, ['outreach']);

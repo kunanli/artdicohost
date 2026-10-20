@@ -60,7 +60,7 @@ export function parseAdminUsers(value) {
       || typeof label !== 'string' || !label.trim() || label.length > 120
       || typeof passwordHash !== 'string' || !HASH_PATTERN.test(passwordHash) || 'password' in user
       || !Array.isArray(roles) || !roles.length
-      || Array.from(roles).some((role) => !['editor', 'publisher', 'outreach'].includes(role))
+      || Array.from(roles).some((role) => !['editor', 'publisher', 'outreach', 'reviewer', 'superadmin'].includes(role))
       || new Set(roles).size !== roles.length
       || ids.has(id) || names.has(username) || email !== undefined && emails.has(email)) {
       throw new TypeError('本地账号的 ID、用户名、可选邮箱、角色或 scrypt 摘要无效；不接受明文密码。');

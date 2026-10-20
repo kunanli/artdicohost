@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { NODE_VERSION, PACKAGE_PATHS, parseArguments, prepareFcBootstrap, sha256, verifyNodeBytes } from '../scripts/prepare-fc-bootstrap.mjs';
+import { assertFcCodeRequestFits, MAX_FC_REQUEST_BYTES } from '../scripts/fc-upload-limits.mjs';
 
-const sources = ['functions/fc-api/bootstrap', 'functions/fc-api/handler.mjs', 'functions/fc-api/server.mjs'];
+const sources = ['functions/fc-api/bootstrap', 'functions/fc-api/handler.mjs', 'functions/fc-api/server.mjs', 'functions/fc-api/launch.py'];
 const gitEnv = { PATH: process.env.PATH ?? '', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' };
 
 function git(directory, args) {
@@ -32,7 +33,7 @@ async function fixture(t) {
   });
   const repositoryDirectory = resolve(directory, 'repository');
   await mkdir(resolve(repositoryDirectory, 'functions/fc-api'), { recursive: true });
-  for (const [index, path] of sources.entries()) await writeFile(resolve(repositoryDirectory, path), index ? 'export const synthetic = true;\n' : '#!/bin/sh\nexec /code/runtime/node/bin/node /code/functions/fc-api/server.mjs\n');
+  for (const [index, path] of sources.entries()) await writeFile(resolve(repositoryDirectory, path), index === 3 ? '# Synthetic launcher fixture\n' : index ? 'export const synthetic = true;\n' : '#!/bin/sh\nexec python3 -I -S /code/functions/fc-api/launch.py\n');
   git(repositoryDirectory, ['init', '--quiet']);
   git(repositoryDirectory, ['add', '--', ...sources]);
   git(repositoryDirectory, ['commit', '--quiet', '-m', 'Synthetic package fixture']);
@@ -160,7 +161,8 @@ test('one real ZIP contains exactly the reviewed files, verified runtime and exe
   assert.match(manifest.verification, /provenance must be verified separately/);
   const zipBytes = await readFile(resolve(options.outputDirectory, manifest.archive.path));
   assert.equal(sha256(zipBytes), manifest.archive.sha256);
-  assert.deepEqual(archiveEntries(zipBytes), PACKAGE_PATHS.map(path => ({ path, mode: path === 'bootstrap' || path === 'runtime/node/bin/node' ? 0o755 : 0o644 })));
+  assert.deepEqual(archiveEntries(zipBytes), PACKAGE_PATHS.map(path => ({ path, mode: path === 'bootstrap' ? 0o755 : 0o644 })));
+  assert.ok(assertFcCodeRequestFits(zipBytes.length) < MAX_FC_REQUEST_BYTES);
   const release = JSON.parse(await readFile(resolve(options.outputDirectory, 'code/release.json'), 'utf8'));
   assert.equal(release.sourceCommit, options.sourceCommit);
   assert.deepEqual(release.files, manifest.files.filter(item => item.path !== 'release.json'));
@@ -169,6 +171,12 @@ test('one real ZIP contains exactly the reviewed files, verified runtime and exe
     assert.equal((await stat(path)).mode & 0o777, parseInt(item.mode, 8));
     assert.equal(sha256(await readFile(path)), item.sha256);
   }
+  const compressed = await readFile(resolve(options.outputDirectory, 'code/runtime/node/bin/node.xz'));
+  assert.notEqual(sha256(compressed), manifest.node.sha256, 'the compressed file digest is distinct from the official raw binary digest');
+  const inspected = spawnSync('python3', ['-I', '-S', '-c', 'import hashlib,lzma,sys; data=lzma.decompress(sys.stdin.buffer.read()); print(hashlib.sha256(data).hexdigest()); print(len(data))'], { input: compressed, encoding: 'utf8', timeout: 30_000, maxBuffer: 4096, env: gitEnv });
+  assert.equal(inspected.status, 0);
+  assert.deepEqual(inspected.stdout.trim().split('\n'), [sha256(nodeBytes), String(nodeBytes.length)], 'XZ preserves every original Node byte');
+  await assert.rejects(stat(resolve(options.outputDirectory, 'code/runtime/node/bin/node')), { code: 'ENOENT' });
   assert.deepEqual(JSON.parse(await readFile(resolve(options.outputDirectory, 'package-manifest.json'), 'utf8')), manifest);
   await assert.rejects(prepareFcBootstrap(options), /must be empty/);
 });

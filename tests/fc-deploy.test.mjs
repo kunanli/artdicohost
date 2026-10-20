@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deployFc } from '../scripts/deploy-fc.mjs';
 import { createFcClient, FC_API_ENDPOINT } from '../scripts/fc-client.mjs';
+import { MAX_FC_ZIP_BYTES, MAX_FC_REQUEST_BYTES } from '../scripts/fc-upload-limits.mjs';
 
 const commit = 'a'.repeat(40);
 const env = { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/main', GITHUB_REPOSITORY: 'kunanli/artdicohost', GITHUB_SHA: commit,
@@ -55,6 +56,27 @@ test('artifact verification, commit identity and exact archive bytes are mandato
     await assert.rejects(deployFc({ ...value.options, verifyPackage }), error => !error.message.includes('PRIVATE-'));
     assert.deepEqual(value.calls, []);
   }
+});
+
+test('the fixed code request budget refuses an oversized artifact before any remote inspection or update', async () => {
+  const value = fixture();
+  const oversized = Buffer.from(archive);
+  Object.defineProperty(oversized, 'byteLength', { value: MAX_FC_ZIP_BYTES + 1 });
+  await assert.rejects(deployFc({ ...value.options,
+    env: { ...env, MAX_FC_ZIP_BYTES: String(64 * 1024 * 1024), MAX_FC_REQUEST_BYTES: String(MAX_FC_REQUEST_BYTES * 2) },
+    verifyPackage: async () => ({ zipBytes: oversized, manifest: { sourceCommit: commit, archive: { sha256: archiveHash }, maxZipBytes: 64 * 1024 * 1024 } }),
+  }), error => !error.message.includes('PRIVATE-'));
+  assert.deepEqual(value.calls, [], 'neither GitHub head, FC inspection nor update can run');
+});
+
+test('the request budget is rechecked immediately before the only FC code write', async () => {
+  let length = archive.byteLength;
+  const changing = Buffer.from(archive);
+  Object.defineProperty(changing, 'byteLength', { get: () => length });
+  const value = fixture({ head: count => { if (count === 2) length = MAX_FC_ZIP_BYTES + 1; return commit; } });
+  await assert.rejects(deployFc({ ...value.options, verifyPackage: async () => ({ zipBytes: changing, manifest: { sourceCommit: commit, archive: { sha256: archiveHash } } }) }), /fixed request budget/u);
+  assert.deepEqual(value.calls, ['head', 'function', 'trigger', 'head']);
+  assert.equal(value.calls.includes('update'), false);
 });
 
 test('invalid runtime, account, function, command, port and environment gates never update code', async () => {

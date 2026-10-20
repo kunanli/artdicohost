@@ -1,4 +1,6 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
+import { MAX_FC_REQUEST_BYTES, MAX_FC_ZIP_BYTES, assertFcCodeRequestFits } from './fc-upload-limits.mjs';
+export { MAX_FC_ZIP_BYTES } from './fc-upload-limits.mjs';
 
 // Official FC specifications: signature-mechanism, signature-authentication and
 // api-fc-2023-03-30-endpoint under https://help.aliyun.com/zh/functioncompute/.
@@ -6,7 +8,6 @@ export const FC_REGION = 'cn-hongkong';
 export const FC_API_ENDPOINT = 'https://fcv3.cn-hongkong.aliyuncs.com';
 export const FC_FUNCTION_NAME = 'artdicohost-api';
 export const FC_TRIGGER_NAME = 'defaultTrigger';
-export const MAX_FC_ZIP_BYTES = 64 * 1024 * 1024;
 const VERSION = '2023-03-30';
 const FUNCTION_PATH = `/${VERSION}/functions/${FC_FUNCTION_NAME}`;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -152,8 +153,14 @@ export function createFcClient({ region = FC_REGION, credentials, fetchFn = fetc
   return {
     getFunction: options => api('GetFunction', 'GET', FUNCTION_PATH, '', options),
     updateCode: (zipBytes, options) => {
-      if (!(zipBytes instanceof Uint8Array) || !zipBytes.byteLength || zipBytes.byteLength > MAX_FC_ZIP_BYTES) return Promise.reject(failure({ operation: 'UpdateFunction', phase: 'input' }));
-      return api('UpdateFunction', 'PUT', FUNCTION_PATH, JSON.stringify({ code: { zipFile: Buffer.from(zipBytes).toString('base64') } }), options);
+      let body;
+      try {
+        if (!(zipBytes instanceof Uint8Array) || !zipBytes.byteLength || zipBytes.byteLength > MAX_FC_ZIP_BYTES) throw failure();
+        const expectedBytes = assertFcCodeRequestFits(zipBytes.byteLength);
+        body = JSON.stringify({ code: { zipFile: Buffer.from(zipBytes).toString('base64') } });
+        if (Buffer.byteLength(body, 'utf8') !== expectedBytes || expectedBytes > MAX_FC_REQUEST_BYTES) throw failure();
+      } catch { return Promise.reject(failure({ operation: 'UpdateFunction', phase: 'input' })); }
+      return api('UpdateFunction', 'PUT', FUNCTION_PATH, body, options);
     },
     getTrigger: async options => {
       triggerOrigin = null;

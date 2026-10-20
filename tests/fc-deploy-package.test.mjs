@@ -9,11 +9,12 @@ import { tmpdir } from 'node:os';
 import { deflateRawSync } from 'node:zlib';
 import { prepareFcBootstrap } from '../scripts/prepare-fc-bootstrap.mjs';
 import { verifyFcPublication } from '../scripts/verify-fc-package.mjs';
+import { MAX_FC_ZIP_BYTES } from '../scripts/fc-upload-limits.mjs';
 
 const OFFICIAL_SHA = 'bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12';
 const NODE = { version: 'v24.19.0', platform: 'linux', arch: 'x64', sha256: OFFICIAL_SHA };
-const PATHS = ['bootstrap', 'functions/fc-api/handler.mjs', 'functions/fc-api/server.mjs', 'runtime/node/bin/node', 'release.json'];
-const SOURCES = ['functions/fc-api/bootstrap', ...PATHS.slice(1, 3)];
+const PATHS = ['bootstrap', 'functions/fc-api/handler.mjs', 'functions/fc-api/server.mjs', 'functions/fc-api/launch.py', 'runtime/node/bin/node.xz', 'release.json'];
+const SOURCES = ['functions/fc-api/bootstrap', ...PATHS.slice(1, 4)];
 const ARCHIVE = 'artdicohost-fc-preflight.zip';
 const MANIFEST = 'package-manifest.json';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -34,6 +35,12 @@ function elf() {
   return bytes;
 }
 
+function compress(bytes) {
+  const result = spawnSync('python3', ['-I', '-S', '-c', 'import lzma,sys; sys.stdout.buffer.write(lzma.compress(sys.stdin.buffer.read(),format=lzma.FORMAT_XZ,check=lzma.CHECK_CRC64,preset=6))'], { input: bytes, env: gitEnv, timeout: 30_000, maxBuffer: 1024 * 1024 });
+  assert.equal(result.status, 0, 'synthetic XZ compression succeeds');
+  return result.stdout;
+}
+
 async function fixture(t) {
   const root = await mkdtemp(resolve(tmpdir(), 'artdico-fc-publication-test-'));
   t.after(async () => {
@@ -42,7 +49,7 @@ async function fixture(t) {
   });
   const repositoryDirectory = resolve(root, 'repository');
   await mkdir(resolve(repositoryDirectory, 'functions/fc-api'), { recursive: true });
-  const sourceBytes = [Buffer.from('#!/bin/sh\nexec /code/runtime/node/bin/node /code/functions/fc-api/server.mjs\n'), Buffer.from('export const handler = () => "synthetic";\n'), Buffer.from('export const server = "synthetic";\n')];
+  const sourceBytes = [Buffer.from('#!/bin/sh\nexec python3 -I -S /code/functions/fc-api/launch.py\n'), Buffer.from('export const handler = () => "synthetic";\n'), Buffer.from('export const server = "synthetic";\n'), Buffer.from('# Synthetic launcher fixture\n')];
   for (const [index, source] of SOURCES.entries()) await writeFile(resolve(repositoryDirectory, source), sourceBytes[index]);
   git(repositoryDirectory, ['init', '--quiet']);
   git(repositoryDirectory, ['add', '--', ...SOURCES]);
@@ -57,12 +64,12 @@ async function fixture(t) {
     await writeFile(resolve(code, PATHS[index]), bytes);
     await chmod(resolve(code, PATHS[index]), index ? 0o644 : 0o755);
   }
-  const runtime = elf();
-  await writeFile(resolve(code, PATHS[3]), runtime, { mode: 0o755 });
-  await chmod(resolve(code, PATHS[3]), 0o755);
+  const runtime = compress(elf());
+  await writeFile(resolve(code, PATHS[4]), runtime, { mode: 0o644 });
+  await chmod(resolve(code, PATHS[4]), 0o644);
   // A forged runtime claim allows tiny fixtures to reach earlier source checks.
   // Production must still reject the actual bytes; no verification override exists.
-  files.push({ path: PATHS[3], bytes: runtime.length, sha256: OFFICIAL_SHA, mode: '0755' });
+  files.push({ path: PATHS[4], bytes: runtime.length, sha256: hash(runtime), mode: '0644' });
   const release = { schemaVersion: 1, kind: 'fc-preflight', sourceCommit: expectedCommit, node: { ...NODE }, files: structuredClone(files) };
   const manifest = { schemaVersion: 1, kind: 'fc-preflight', sourceCommit: expectedCommit, node: { ...NODE }, files, archive: {}, verification: 'Synthetic fixture; must fail official runtime byte verification.' };
   const fixture = { root, repositoryDirectory, directory, code, expectedCommit, manifest, release };
@@ -78,7 +85,7 @@ async function rebuild(fixture, paths = PATHS) {
   const releaseBytes = Buffer.from(JSON.stringify(fixture.release));
   await writeFile(resolve(fixture.code, 'release.json'), releaseBytes, { mode: 0o644 });
   await chmod(resolve(fixture.code, 'release.json'), 0o644);
-  fixture.manifest.files = [...fixture.manifest.files.slice(0, 4), { path: 'release.json', bytes: releaseBytes.length, sha256: hash(releaseBytes), mode: '0644' }];
+  fixture.manifest.files = [...fixture.manifest.files.slice(0, 5), { path: 'release.json', bytes: releaseBytes.length, sha256: hash(releaseBytes), mode: '0644' }];
   const archive = resolve(fixture.directory, ARCHIVE);
   await rm(archive, { force: true });
   const result = spawnSync('/usr/bin/zip', ['-X', '-q', '-0', archive, ...paths], { cwd: fixture.code, env: gitEnv, encoding: 'utf8' });
@@ -101,7 +108,7 @@ function rewriteZipEntries(bytes, mutate) {
   const end = bytes.length - 22;
   let offset = bytes.readUInt32LE(end + 16);
   const entries = [];
-  for (let index = 0; index < 5; index++) {
+  for (let index = 0; index < PATHS.length; index++) {
     const length = 46 + bytes.readUInt16LE(offset + 28) + bytes.readUInt16LE(offset + 30) + bytes.readUInt16LE(offset + 32);
     const local = bytes.readUInt32LE(offset + 42);
     const localLength = 30 + bytes.readUInt16LE(local + 26) + bytes.readUInt16LE(local + 28) + bytes.readUInt32LE(offset + 20);
@@ -133,14 +140,19 @@ test('the real producer artifact verifies from only two files and binds every so
     if (calls.length === 1) writeFileSync(resolve(fixtureData.directory, ARCHIVE), 'SYNTHETIC-PATHNAME-REPLACEMENT');
     assert.ok(options.timeout > 0 && options.timeout <= 30_000);
     assert.ok(options.maxBuffer < 200 * 1024 * 1024);
-    assert.equal(command, 'git', 'verification only reads git objects and never executes packaged code or mutable archive paths');
+    assert.ok(['git', 'python3'].includes(command), 'verification only reads git objects or executes a fixed isolated XZ inspector');
+    if (command === 'python3') {
+      assert.deepEqual(args.slice(0, 3), ['-I', '-S', '-c']);
+      assert.ok(Buffer.isBuffer(options.input), 'the inspector receives only the immutable compressed bytes');
+      assert.equal(options.maxBuffer, 4096);
+    }
     return spawnSync(command, args, options);
   } });
   assert.deepEqual(checked.manifest, produced);
   assert.equal(hash(checked.zipBytes), produced.archive.sha256);
   assert.equal(await readFile(resolve(fixtureData.directory, ARCHIVE), 'utf8'), 'SYNTHETIC-PATHNAME-REPLACEMENT', 'returned bytes stay bound to the verified snapshot after an archive pathname change');
-  assert.equal(calls.length, 4, 'one object-type check and three immutable source blob reads');
-  assert.equal(calls.filter(([command, args]) => command === 'git' && args.includes('show') && args.includes('--no-textconv') && args.includes('--no-ext-diff') && args.includes('--no-replace-objects')).length, 3);
+  assert.equal(calls.length, 6, 'one object-type check, four immutable source reads and one bounded XZ inspection');
+  assert.equal(calls.filter(([command, args]) => command === 'git' && args.includes('show') && args.includes('--no-textconv') && args.includes('--no-ext-diff') && args.includes('--no-replace-objects')).length, 4);
 });
 
 test('untrusted manifests cannot choose a runtime, path, file set, commit or oversized archive', async t => {
@@ -155,9 +167,10 @@ test('untrusted manifests cannot choose a runtime, path, file set, commit or ove
     value => { value.files.push(value.files[0]); },
     value => { value.files[0].path = '../bootstrap'; },
     value => { value.files[0].mode = '0644'; },
-    value => { value.files[3].sha256 = hash(elf()); },
+    value => { value.files[4].sha256 = 'not-a-sha256'; },
+    value => { value.files[4].mode = '0755'; },
     value => { value.archive.path = '../runtime.zip'; },
-    value => { value.archive.bytes = 64 * 1024 * 1024 + 1; },
+    value => { value.archive.bytes = MAX_FC_ZIP_BYTES + 1; },
     value => { value.archive.bytes = 1.5; },
     value => { value.privateData = 'synthetic-only'; },
   ];
@@ -187,7 +200,7 @@ test('publication paths reject extra files, symbolic links and real archive size
   await assert.rejects(verifyFcPublication(item), /Symbolic links/);
   await rm(manifestPath);
   await copyFile(elsewhere, manifestPath);
-  await truncate(resolve(item.directory, ARCHIVE), 64 * 1024 * 1024 + 1);
+  await truncate(resolve(item.directory, ARCHIVE), MAX_FC_ZIP_BYTES + 1);
   await assert.rejects(verifyFcPublication(item), /size limit/);
 });
 
@@ -234,7 +247,7 @@ test('ZIP names, order, duplicate entries, executable modes and unlisted data ar
     const item = await fixture(t);
     await writeFile(resolve(item.code, 'extra.txt'), 'synthetic');
     await rebuild(item, [...PATHS, 'extra.txt']);
-    await assert.rejects(verifyFcPublication(item), /exactly five entries/);
+    await assert.rejects(verifyFcPublication(item), /exactly six entries/);
   });
   for (const replacement of ['../escape', 'bootstrap']) await t.test(replacement === 'bootstrap' ? 'duplicate name' : 'unsafe name', async t => {
     const item = await fixture(t);
@@ -286,7 +299,25 @@ test('manifest hashes do not vouch for release metadata or for a substituted run
     await assert.rejects(verifyFcPublication(item), error);
   }
   const runtime = await fixture(t);
-  await assert.rejects(verifyFcPublication(runtime), /file bytes do not match the manifest: runtime\/node\/bin\/node/);
+  await assert.rejects(verifyFcPublication(runtime), /Compressed runtime does not contain the pinned official Node binary/);
+});
+
+test('self-consistent compressed runtime records cannot admit malformed, trailing, concatenated or oversized XZ output', async t => {
+  const oversized = spawnSync('python3', ['-I', '-S', '-c', `import lzma,sys
+c=lzma.LZMACompressor(format=lzma.FORMAT_XZ,check=lzma.CHECK_CRC64,preset=0)
+for _ in range(193):
+    sys.stdout.buffer.write(c.compress(b'X' * (1024 * 1024)))
+sys.stdout.buffer.write(c.flush())`], { env: gitEnv, timeout: 30_000, maxBuffer: 1024 * 1024 });
+  assert.equal(oversized.status, 0);
+  const valid = compress(elf());
+  for (const bytes of [Buffer.from('not-XZ'), valid.subarray(0, -1), Buffer.concat([valid, Buffer.from([0])]), Buffer.concat([valid, valid]), oversized.stdout]) {
+    const item = await fixture(t);
+    await writeFile(resolve(item.code, PATHS[4]), bytes);
+    item.manifest.files[4] = { path: PATHS[4], bytes: bytes.length, sha256: hash(bytes), mode: '0644' };
+    item.release.files[4] = { ...item.manifest.files[4] };
+    await rebuild(item);
+    await assert.rejects(verifyFcPublication(item), /Compressed runtime inspection failed/);
+  }
 });
 
 test('child failures are bounded and never expose stderr', async t => {

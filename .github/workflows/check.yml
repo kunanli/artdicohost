@@ -56,11 +56,12 @@ jobs:
           mkdir -m 700 .local-data/fc-publication
           cp .local-data/fc-build/artdicohost-fc-preflight.zip .local-data/fc-build/package-manifest.json .local-data/fc-publication/
           node scripts/verify-fc-package.mjs .local-data/fc-publication "$GITHUB_SHA"
-      - name: Smoke test the actual ZIP on Debian 11 without network or writes
+      - name: Smoke test the actual ZIP offline with read-only code and bounded temporary runtime
         run: |
           mkdir -m 755 "$RUNNER_TEMP/artdico-fc-smoke"
           unzip -q .local-data/fc-publication/artdicohost-fc-preflight.zip -d "$RUNNER_TEMP/artdico-fc-smoke"
-          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 --memory 256m --cpus 0.35 --user 1000:1000 --mount "type=bind,src=$RUNNER_TEMP/artdico-fc-smoke,dst=/code,readonly" --mount "type=bind,src=$GITHUB_WORKSPACE/scripts/smoke-fc-bootstrap.mjs,dst=/verify.mjs,readonly" debian@sha256:e5b6442dd2e9684cf5e87d8338b5968f3b348636fc0be6d7850a381e3731a2bd /code/runtime/node/bin/node /verify.mjs
+          docker build --network none -t artdicohost-fc-smoke - < deploy/Dockerfile.fc-smoke
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 --memory 512m --cpus 0.35 --user 1000:1000 --tmpfs /tmp:rw,nosuid,nodev,exec,size=192m,mode=1777 --mount "type=bind,src=$RUNNER_TEMP/artdico-fc-smoke,dst=/code,readonly" --mount "type=bind,src=$GITHUB_WORKSPACE/scripts/smoke-fc-bootstrap.py,dst=/verify.py,readonly" artdicohost-fc-smoke python3 -I -S /verify.py
       - name: Retain checked FC startup package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

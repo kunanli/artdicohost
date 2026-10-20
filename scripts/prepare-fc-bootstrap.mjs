@@ -4,17 +4,28 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { dirname, parse, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertFcCodeRequestFits, MAX_FC_ZIP_BYTES } from './fc-upload-limits.mjs';
 
 export const NODE_VERSION = 'v24.19.0';
 export const PACKAGE_PATHS = Object.freeze([
   'bootstrap', 'functions/fc-api/handler.mjs', 'functions/fc-api/server.mjs',
-  'runtime/node/bin/node', 'release.json',
+  'functions/fc-api/launch.py', 'runtime/node/bin/node.xz', 'release.json',
 ]);
 const SOURCE_FILES = [
   ['functions/fc-api/bootstrap', 'bootstrap', 0o755],
   ['functions/fc-api/handler.mjs', 'functions/fc-api/handler.mjs', 0o644],
   ['functions/fc-api/server.mjs', 'functions/fc-api/server.mjs', 0o644],
+  ['functions/fc-api/launch.py', 'functions/fc-api/launch.py', 0o644],
 ];
+const COMPRESS_NODE = `import lzma, sys
+compressor = lzma.LZMACompressor(format=lzma.FORMAT_XZ, check=lzma.CHECK_CRC64, preset=6)
+while True:
+    chunk = sys.stdin.buffer.read(65536)
+    if not chunk:
+        break
+    sys.stdout.buffer.write(compressor.compress(chunk))
+sys.stdout.buffer.write(compressor.flush())
+`;
 const childEnv = () => ({ PATH: process.env.PATH ?? '', LANG: 'C', LC_ALL: 'C' });
 export const sha256 = value => createHash('sha256').update(value).digest('hex');
 
@@ -89,14 +100,20 @@ export async function prepareFcBootstrap({ repositoryDirectory, nodeBinary, expe
     if (committed.error || committed.status !== 0 || !Buffer.isBuffer(committed.stdout) || !committed.stdout.equals(bytes)) throw new Error('Allowlisted source does not match the exact source commit: ' + input);
     source.push({ input, path, mode, bytes });
   }
+  let compressed;
+  try { compressed = execute('python3', ['-I', '-S', '-c', COMPRESS_NODE], { input: nodeBytes, env: childEnv(), timeout: 120_000, maxBuffer: 192 * 1024 * 1024, stdio: 'pipe' }); }
+  catch { throw new Error('Node XZ compression failed'); }
+  if (compressed.error || compressed.status !== 0 || !Buffer.isBuffer(compressed.stdout)
+    || compressed.stdout.length < 6 || !compressed.stdout.subarray(0, 6).equals(Buffer.from('fd377a585a00', 'hex'))) throw new Error('Node XZ compression failed');
+  const nodeXz = compressed.stdout;
   const code = resolve(output, 'code');
   const files = [];
   for (const item of source) {
     await writeKnown(resolve(code, item.path), item.bytes, item.mode);
     files.push(fileRecord(item.path, item.bytes, item.mode));
   }
-  await writeKnown(resolve(code, 'runtime/node/bin/node'), nodeBytes, 0o755);
-  files.push(fileRecord('runtime/node/bin/node', nodeBytes, 0o755));
+  await writeKnown(resolve(code, 'runtime/node/bin/node.xz'), nodeXz, 0o644);
+  files.push(fileRecord('runtime/node/bin/node.xz', nodeXz, 0o644));
   const release = {
     schemaVersion: 1, kind: 'fc-preflight', sourceCommit,
     node: { version: NODE_VERSION, platform: 'linux', arch: 'x64', sha256: expectedNodeSha256 },
@@ -106,9 +123,10 @@ export async function prepareFcBootstrap({ repositoryDirectory, nodeBinary, expe
   await writeKnown(resolve(code, 'release.json'), releaseBytes, 0o644);
   files.push(fileRecord('release.json', releaseBytes, 0o644));
   const archive = resolve(output, 'artdicohost-fc-preflight.zip');
-  const result = execute('zip', ['-X', '-q', '-6', archive, ...PACKAGE_PATHS], { cwd: code, env: childEnv(), encoding: 'utf8', timeout: 120_000, maxBuffer: 4096, stdio: 'pipe' });
+  const result = execute('zip', ['-X', '-q', '-0', archive, ...PACKAGE_PATHS], { cwd: code, env: childEnv(), encoding: 'utf8', timeout: 120_000, maxBuffer: 4096, stdio: 'pipe' });
   if (result.error || result.status !== 0) throw new Error('ZIP creation failed; inspect the retained output directory');
-  const archiveBytes = await knownFile(archive, 220 * 1024 * 1024);
+  const archiveBytes = await knownFile(archive, MAX_FC_ZIP_BYTES);
+  assertFcCodeRequestFits(archiveBytes.length);
   const manifest = {
     schemaVersion: 1, kind: 'fc-preflight', sourceCommit, node: release.node, files,
     archive: { path: 'artdicohost-fc-preflight.zip', bytes: archiveBytes.length, sha256: sha256(archiveBytes) },

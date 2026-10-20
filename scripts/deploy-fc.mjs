@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { assertCurrentMainHead } from './deploy-oss.mjs';
 import { verifyFcPublication } from './verify-fc-package.mjs';
 import { summarizeFcError } from './fc-client.mjs';
+import { MAX_FC_ZIP_BYTES, assertFcCodeRequestFits } from './fc-upload-limits.mjs';
 
 export const FC_FUNCTION_NAME = 'artdicohost-api';
 export const FC_REGION = 'cn-hongkong';
@@ -83,9 +84,10 @@ export async function deployFc({ directory, repositoryDirectory, env = process.e
   try {
     const publication = await bounded(() => verifyPackage({ directory, expectedCommit: env.GITHUB_SHA, repositoryDirectory }), 'FC publication verification failed; no code was updated.');
     const { zipBytes, manifest } = publication ?? {};
-    if (!(zipBytes instanceof Uint8Array) || zipBytes.byteLength === 0 || zipBytes.byteLength > 64 * 1024 * 1024
+    if (!(zipBytes instanceof Uint8Array) || zipBytes.byteLength === 0 || zipBytes.byteLength > MAX_FC_ZIP_BYTES
       || manifest?.sourceCommit !== env.GITHUB_SHA || !/^[a-f0-9]{64}$/u.test(manifest?.archive?.sha256 ?? '')
       || createHash('sha256').update(zipBytes).digest('hex') !== manifest.archive.sha256) throw new Error('FC publication identity or archive hash is invalid; no code was updated.');
+    assertFcCodeRequestFits(zipBytes.byteLength);
     await currentMain();
     if (!client) {
       client = await bounded(async () => {
@@ -102,6 +104,7 @@ export async function deployFc({ directory, repositoryDirectory, env = process.e
     const triggerSnapshot = { triggerType: trigger.triggerType, qualifier: trigger.qualifier, config: JSON.parse(trigger.triggerConfig) };
     // Metadata inspection can take time. Recheck main immediately before the only mutation.
     await currentMain();
+    assertFcCodeRequestFits(zipBytes.byteLength);
     await bounded(signal => client.updateCode(zipBytes, { signal }), 'FC code update failed; deployment was not verified.');
     let consecutive = 0;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {

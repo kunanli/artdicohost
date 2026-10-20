@@ -1,0 +1,24 @@
+---
+import { agenda } from '../config/event.mjs';
+
+const sharing = agenda.find(item => item.id === 'student-showcase');
+const feedback = agenda.find(item => item.id === 'student-feedback');
+---
+<section class="ah-students ah-section" id="students" aria-labelledby="students-heading">
+  <div class="ah-section-heading">
+    <div><span class="ah-kicker">ARTDiCO HOST 学生嘉年华</span><h2 id="students-heading">把作品带到现场。</h2></div>
+    <p>让大家玩到你的作品，也听见你的想法。</p>
+  </div>
+  <div class="ah-student-layout">
+    <p class="ah-student-count" aria-label="计划约8组学生作品"><span>计划约</span><strong>8</strong><span>组学生作品</span></p>
+    <div class="ah-student-formats">
+      <article><span class="ah-feature-number">01</span><h3>展位试玩</h3><p>带上可体验的作品。</p><span class="ah-student-time">C 区 · 展位另行分配</span></article>
+      <article><span class="ah-feature-number">02</span><h3>作品分享</h3><p>讲讲创作背后的想法。</p><span class="ah-student-time" data-public-static-hours>{sharing?.time}</span></article>
+      <article><span class="ah-feature-number">03</span><h3>现场反馈</h3><p>边玩边聊，收获新建议。</p><span class="ah-student-time" data-public-static-hours>{feedback?.time}</span></article>
+    </div>
+  </div>
+  <div class="ah-student-actions">
+    <a class="ah-primary" href="#registration" data-recruit="student">学员作品展示与分享申请 <span aria-hidden="true">↗</span></a>
+    <small>入选与时段另行确认 · 本页表单仅供预览，不发送或保存资料</small>
+  </div>
+</section>

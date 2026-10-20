@@ -48,7 +48,7 @@ v2 索引的 `admissions` 包含 `settings`、以 registration ID 為鍵的個�
 
 審核及名額 journal 不假裝跨 journal 原子交易。先保存審核撤回或刪除待處置標記，`isWithdrawn` 即時拒絕原收據、邀請與 QR；再以已保存的審核 revision 衍生穩定 operationId，讀取當前名額 revision 後呼叫一次 withdrawAdmission。未知 ACK 留待相同操作明確恢復，不能自動盲重送。中途失敗保守保留佔用名額，不超賣；管理員重試後完成釋出與轉正。
 
-getAdmissions 是單次非個資索引快照，暫存上述協調間隙的保守佔用數。每日待辦等批次畫面須合併已批次讀取的審核狀態，立即排除撤回者；不得為 300 列逐一呼叫個人證明方法。候補轉正只查詢候選者的審核標記，最多 8 個並行，失敗不提交任何局部變更。原始個人資料列表仍有 8 並行及 12 秒上限。
+getAdmissions 是單次非個資索引快照，暫存上述協調間隙的保守佔用數。每日待辦等批次畫面須合併已批次讀取的審核狀態，立即排除撤回者；不得為 300 列逐一呼叫個人證明方法。正式 runtime 應注入 `getWithdrawnIds:()=>reviewStore.inactiveRegistrationIds()`，每次候補／管理操作以一次審核 journal 讀取取得已驗證的撤回 ID，與候選者交集，沒有跨請求快取。未提供批次 hook 的測試整合才使用最多 8 個並行的個別審核查詢。兩者查詢失敗皆不提交任何局部變更；個人 getAdmissionStatus 仍使用個別 isWithdrawn 證明。原始個人資料列表仍有 8 並行及 12 秒上限。
 
 ## 接續與驗證
 

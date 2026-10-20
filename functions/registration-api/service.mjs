@@ -19,10 +19,11 @@ const staffSource = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-
 
 /** Real storage is required. Invalid or absent policy never opens collection or invents notice facts. */
 export function createRegistrationService({ objects, journalFor, policy, capacity, tokenSecret, allowedOrigins, clock = () => Date.now(), groupInviteProvider,
-  isWithdrawn, tokenLimit = 120, submissionLimit = 60, waitlistEnabled = false, staffReserve = 0 } = {}) {
+  isWithdrawn, getWithdrawnIds, tokenLimit = 120, submissionLimit = 60, waitlistEnabled = false, staffReserve = 0 } = {}) {
   if (typeof clock !== 'function' || !Number.isSafeInteger(capacity) || capacity < 1 || capacity > MAX_REGISTRATIONS
     || !Array.isArray(allowedOrigins) || !allowedOrigins.length || !allowedOrigins.every(validOrigin)
-    || isWithdrawn !== undefined && typeof isWithdrawn !== 'function') throw new TypeError('Registration configuration is unavailable.');
+    || isWithdrawn !== undefined && typeof isWithdrawn !== 'function'
+    || getWithdrawnIds !== undefined && typeof getWithdrawnIds !== 'function') throw new TypeError('Registration configuration is unavailable.');
   let configured;
   try { configured = JSON.parse(registrationJson(policy).toString()); } catch { throw new TypeError('Registration policy is unavailable.'); }
   if (Object.hasOwn(configured, 'capacity') && configured.capacity !== capacity) throw new TypeError('Registration capacity configuration does not match.');
@@ -32,7 +33,7 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
   const budgets = createRegistrationRateLimit({ journalFor, eventId, tokenLimit, submissionLimit });
   const current = () => { const value = clockTime(clock()); if (value === null || value < 0) throw new Error(); return value; };
   const policyAt = now => validateRegistrationPolicy(configured, { now });
-  const admissions = createAdmissionOperations({ repository, eventId, current, policyAt, isWithdrawn });
+  const admissions = createAdmissionOperations({ repository, eventId, current, policyAt, isWithdrawn, getWithdrawnIds });
   // Validate public notice facts independently of the current intake window, without opening writes.
   const noticeCheck = validateRegistrationPolicy({ ...configured, enabled: true }, { now: configured.opensAt });
   const publicNotice = noticeCheck.valid ? { ...noticeCheck.value, capacity } : null;

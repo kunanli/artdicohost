@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { own, plainObject } from './policy.mjs';
 import { registrationJson, RegistrationStorageError } from './repository.mjs';
 import { validateStaffRegistrationFields } from './validation.mjs';
-import { validAdmissionOperation } from './admissions.mjs';
+import { validAdmissionOperation, validAdmissionId } from './admissions.mjs';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 const trusted = (actor, admin = false) => typeof own(actor, 'id') === 'string' && /^[A-Za-z0-9_-]{1,80}$/u.test(own(actor, 'id'))
@@ -10,9 +10,14 @@ const trusted = (actor, admin = false) => typeof own(actor, 'id') === 'string' &
 const invalid = outcome => ({ outcome });
 
 /** Admission writes share the registration index CAS. Review checks fail closed and are bounded to eight in flight. */
-export function createAdmissionOperations({ repository, eventId, current, policyAt, isWithdrawn }) {
+export function createAdmissionOperations({ repository, eventId, current, policyAt, isWithdrawn, getWithdrawnIds }) {
+  async function bulkWithdrawn() {
+    const inactive = await getWithdrawnIds();
+    if (!Array.isArray(inactive) || inactive.length > 1000 || inactive.some(id => !validAdmissionId(id)) || new Set(inactive).size !== inactive.length) throw new RegistrationStorageError();
+    return new Set(inactive);
+  }
   async function withdrawn(id) {
-    if (typeof isWithdrawn !== 'function') return false;
+    if (typeof isWithdrawn !== 'function') return typeof getWithdrawnIds === 'function' ? (await bulkWithdrawn()).has(id) : false;
     const value = await isWithdrawn(id);
     if (typeof value !== 'boolean') throw new RegistrationStorageError();
     return value;
@@ -20,6 +25,10 @@ export function createAdmissionOperations({ repository, eventId, current, policy
   function getExcluded(extra = []) {
     return async ids => {
       const candidates = [...new Set([...ids, ...extra])], excluded = [];
+      if (typeof getWithdrawnIds === 'function' && candidates.length) {
+        const denied = await bulkWithdrawn();
+        return candidates.filter(id => denied.has(id));
+      }
       let position = 0;
       await Promise.all(Array.from({ length: Math.min(8, candidates.length) }, async () => {
         while (position < candidates.length) {

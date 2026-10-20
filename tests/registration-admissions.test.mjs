@@ -249,3 +249,15 @@ test('review checks for candidate promotions are bounded to eight in flight and 
   assert.deepEqual(await failing.promoteAdmissions({ actor, expectedRevision: after.revision, operationId: key() }), { outcome: 'unavailable' });
   assert.equal(f.state.indexWrites, writes + 1);
 });
+
+test('trusted bulk review hook reads once per mutation, validates complete IDs and fails closed without per-person requests', async () => {
+  const f = fixture({ capacity: 1 }), service = f.service(), first = await register(service), second = await register(service), third = await register(service);
+  let calls = 0;
+  const bulk = f.service({ getWithdrawnIds: async () => { calls++; return [second.saved.receipt.registrationId]; },
+    isWithdrawn: async () => { throw new Error('Unnecessary per-person request'); } });
+  const result = await mutate(bulk, 'withdrawAdmission', { registrationId: first.saved.receipt.registrationId });
+  assert.equal(result.outcome, 'updated'); assert.equal(calls, 1); assert.deepEqual(result.promotedIds, [third.saved.receipt.registrationId]);
+  const bad = f.service({ getWithdrawnIds: async () => ['PRIVATE-MALFORMED-ID'] }), writes = f.state.indexWrites;
+  assert.deepEqual(await mutate(bad, 'setAdmissionKind', { registrationId: third.saved.receipt.registrationId, kind: 'crew' }), { outcome: 'unavailable' });
+  assert.equal(f.state.indexWrites, writes);
+});

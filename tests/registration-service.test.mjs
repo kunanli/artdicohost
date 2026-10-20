@@ -25,10 +25,14 @@ function payload() {
   consent: { accepted: true, version: 'notice-2026-v1' } };
 }
 function fixture(options = {}) {
-  const remote = objectFixture(), state = { now: at, loseIndexAck: false, indexAppends: 0 };
+  const remote = objectFixture(), state = { now: at, loseIndexAck: false, indexAppends: 0, afterRecord: null };
   function service(patch = {}) {
     const base = createOssObjectClient({ credentials: async () => fakeCredentials, clock: () => new Date(state.now), fetchFn: remote.fetchFn });
-    const objects = { ...base, async append(key, position, data) {
+    const objects = { ...base, async putImmutable(key, bytes, options) {
+      const result = await base.putImmutable(key, bytes, options);
+      if (key.includes('/records/') && typeof state.afterRecord === 'function') state.afterRecord();
+      return result;
+    }, async append(key, position, data) {
       const result = await base.append(key, position, data);
       if (key.endsWith('/index/commits.jsonl')) {
         state.indexAppends++;
@@ -169,4 +173,23 @@ test('disabled/incomplete policies and malformed new submissions cannot be unloc
   invalid.payload.consent.accepted = false;
   assert.equal((await active.submit(invalid)).outcome, 'invalid');
   assert.equal([...ready.remote.stored.keys()].some(key => key.includes('/records/')), false);
+});
+
+test('slow staging rechecks the window before index commit and mismatched configured capacities refuse construction', async () => {
+  const f = fixture(), service = f.service(), input = await submission(service);
+  f.state.afterRecord = () => { f.state.now = Date.parse(policy().closesAt); };
+  assert.deepEqual(await service.submit(input), { outcome: 'closed' });
+  assert.equal(f.state.indexAppends, 0); assert.equal((await service.repository.list()).registrations.length, 0);
+  assert.throws(() => f.service({ policy: { ...policy(), capacity: 2 }, capacity: 3 }), /capacity configuration does not match/u);
+});
+
+test('withdrawn or deletion-requested review state suppresses receipt and group-invite replay; unavailable review fails closed', async () => {
+  let withdrawn = false, inviteCalls = 0;
+  const f = fixture({ isWithdrawn: async () => withdrawn, groupInviteProvider: async () => { inviteCalls++; return null; } });
+  const service = f.service(), input = await submission(service);
+  assert.equal((await service.submit(input)).outcome, 'created'); assert.equal(inviteCalls, 1);
+  withdrawn = true;
+  assert.deepEqual(await service.submit(input), { outcome: 'withdrawn' }); assert.equal(inviteCalls, 1);
+  assert.deepEqual(await f.service({ isWithdrawn: async () => { throw new Error('PRIVATE-SYNTHETIC-REVIEW-FAILED'); } }).submit(input), { outcome: 'unavailable' });
+  assert.deepEqual(await f.service({ isWithdrawn: async () => 'unknown' }).submit(input), { outcome: 'unavailable' });
 });

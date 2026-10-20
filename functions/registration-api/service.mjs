@@ -18,24 +18,31 @@ const staffSource = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-
 
 /** Real storage is required. Invalid or absent policy never opens collection or invents notice facts. */
 export function createRegistrationService({ objects, journalFor, policy, capacity, tokenSecret, allowedOrigins, clock = () => Date.now(), groupInviteProvider,
-  tokenLimit = 120, submissionLimit = 60 } = {}) {
+  isWithdrawn, tokenLimit = 120, submissionLimit = 60 } = {}) {
   if (typeof clock !== 'function' || !Number.isSafeInteger(capacity) || capacity < 1 || capacity > MAX_REGISTRATIONS
-    || !Array.isArray(allowedOrigins) || !allowedOrigins.length || !allowedOrigins.every(validOrigin)) throw new TypeError('Registration configuration is unavailable.');
+    || !Array.isArray(allowedOrigins) || !allowedOrigins.length || !allowedOrigins.every(validOrigin)
+    || isWithdrawn !== undefined && typeof isWithdrawn !== 'function') throw new TypeError('Registration configuration is unavailable.');
   let configured;
   try { configured = JSON.parse(registrationJson(policy).toString()); } catch { throw new TypeError('Registration policy is unavailable.'); }
+  if (Object.hasOwn(configured, 'capacity') && configured.capacity !== capacity) throw new TypeError('Registration capacity configuration does not match.');
   const eventId = own(configured, 'eventId'), origins = new Set(allowedOrigins);
   const repository = createRegistrationRepository({ objects, journalFor, eventId });
   const tokens = createRegistrationTokens({ secret: tokenSecret, eventId });
   const budgets = createRegistrationRateLimit({ journalFor, eventId, tokenLimit, submissionLimit });
   const current = () => { const value = clockTime(clock()); if (value === null || value < 0) throw new Error(); return value; };
   const policyAt = now => validateRegistrationPolicy(configured, { now });
-  async function decorate(saved, origin) {
+  async function decorate(saved, origin, includeInvite = true) {
     if (!['created', 'replayed'].includes(saved.outcome)) return saved;
+    if (typeof isWithdrawn === 'function') {
+      const withdrawn = await isWithdrawn(saved.receipt.registrationId ?? saved.receipt.referenceCode);
+      if (typeof withdrawn !== 'boolean') return result('unavailable');
+      if (withdrawn) return result('withdrawn');
+    }
     let groupInvite = null;
-    if (typeof groupInviteProvider === 'function') {
+    if (includeInvite && typeof groupInviteProvider === 'function') {
       try { groupInvite = await groupInviteProvider({ receipt: saved.receipt, origin }); } catch { /* A saved registration remains saved if the invite is unavailable. */ }
     }
-    return { ...saved, groupInvite };
+    return includeInvite ? { ...saved, groupInvite } : saved;
   }
   return Object.freeze({
     repository,
@@ -72,7 +79,7 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         const keyHash = digest('public\0' + eventId + '\0' + idempotencyKey), payloadHash = digest(bytes);
         // A proven saved replay survives closure and token expiry; it can never create a new record.
         const replay = await repository.find(keyHash, payloadHash);
-        if (replay) return decorate(replay, origin);
+        if (replay) return await decorate(replay, origin);
         if (!tokens.verify({ token: submissionToken, origin, idempotencyKey, now })) return result('forbidden');
         const checked = policyAt(now);
         if (!checked.valid) return result('closed');
@@ -80,7 +87,8 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         if (!budget.allowed) return { outcome: 'rate_limited', retryAfter: budget.retryAfter };
         const validation = validateRegistrationSubmission(payload, { policy: configured, now });
         if (!validation.valid) return result('invalid');
-        return decorate(await repository.accept({ value: { ...validation.value, provenance: { kind: 'public' } }, keyHash, payloadHash, capacity }), origin);
+        return await decorate(await repository.accept({ value: { ...validation.value, provenance: { kind: 'public' } }, keyHash, payloadHash, capacity,
+          beforeCommit: () => { const at = current(); return policyAt(at).valid && tokens.verify({ token: submissionToken, origin, idempotencyKey, now: at }); } }), origin);
       } catch { return result('unavailable'); }
     },
     async submitStaffRegistration(input) {
@@ -93,7 +101,7 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         const fields = own(supplied, 'fields'), keyHash = digest('staff\0' + eventId + '\0' + sourceContactId);
         const payloadHash = digest(registrationJson({ fields, permissionReference: permissionReference.trim() }));
         const replay = await repository.find(keyHash, payloadHash);
-        if (replay) return replay;
+        if (replay) return await decorate(replay, undefined, false);
         const now = current(), checked = policyAt(now);
         if (!checked.valid) return result('closed');
         const validation = validateStaffRegistrationFields(fields);
@@ -102,7 +110,7 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         const value = { eventId, fields: validation.value, submittedAt: recordedAt,
           consent: { accepted: false, version: null, acceptedAt: null },
           provenance: { kind: 'staff_assisted', sourceContactId, actorId, recordedAt, permissionReference: permissionReference.trim() } };
-        return repository.accept({ value, keyHash, payloadHash, capacity });
+        return await decorate(await repository.accept({ value, keyHash, payloadHash, capacity, beforeCommit: () => policyAt(current()).valid }), undefined, false);
       } catch { return result('unavailable'); }
     },
     async getStaffRegistrationBySource(input) {
@@ -114,7 +122,9 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         if (!entry) return result('not_found');
         const record = await repository.readRecord(entry);
         if (record.provenance.kind !== 'staff_assisted' || record.provenance.sourceContactId !== sourceContactId) return result('unavailable');
-        return { outcome: 'found', receipt: { committed: true, eventId, registrationId: entry.id, referenceCode: entry.id, committedAt: entry.committedAt } };
+        const receipt = { committed: true, eventId, registrationId: entry.id, referenceCode: entry.id, committedAt: entry.committedAt };
+        const access = await decorate({ outcome: 'replayed', receipt }, undefined, false);
+        return access.outcome === 'replayed' ? { outcome: 'found', receipt } : access;
       } catch { return result('unavailable'); }
     },
   });

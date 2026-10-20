@@ -13,6 +13,7 @@ const service = createRegistrationService({
   allowedOrigins: ['https://artdico.host'],
   clock: () => Date.now(),
   groupInviteProvider: optionalTrustedProvider,
+  isWithdrawn: async id => { const {review} = await reviewStore.detail(id); return review.status === 'withdrawn' || review.deletionRequested !== null; },
 });
 const handle = createRegistrationApi({
   allowedOrigins: ['https://artdico.host'],
@@ -44,7 +45,9 @@ const handle = createRegistrationApi({
 - `index/`：共享日志，索引只保存随机编号、幂等键／正文／记录 hash 和提交时间。一次 CAS 追加是正式受理及容量分配的唯一提交点。
 - `limits/tokens/<window>/`、`limits/submissions/<window>/`：独立共享固定窗口额度。
 
-同键同内容重放原收据，不重复占位；同键不同内容 409。不同键竞争最后名额时仅一个原子提交成功。只有明确 409 CAS 拒绝可在有界次数内重读；丢失 ACK／未知失败不盲重送或回成功，调用方以原键重试后可回读真正已提交的记录。记录缺失、hash 错误或日志损坏均失败，不能重置为空。容量是已受理记录上限，撤回不自动释放名额；若后续需要释放必须独立设计可审计的原子策略。
+同键同内容重放原收据，不重复占位；同键不同内容 409。不同键竞争最后名额时仅一个原子提交成功。慢速记录写入后、索引提交前再次检查窗口及 Token 有效期。只有明确 409 CAS 拒绝可在有界次数内重读；丢失 ACK／未知失败不盲重送或回成功，调用方以原键重试后可回读真正已提交的记录。记录缺失、hash 错误或日志损坏均失败，不能重置为空。容量是已受理记录上限，撤回不自动释放名额；若后续需要释放必须独立设计可审计的原子策略。
+
+生产组合必须注入审核服务的 `isWithdrawn(id)`。已撤回或待删除的记录返回 withdrawn，不再重放公开收据／群码；审核读取失败或非布尔结果保持 unavailable。创建前不查询尚不存在的审核记录；已提交后才读取并决定响应。测试与未组合模块可省略此接口，但不能据此宣称生产撤回边界已接通。
 
 `service.repository.list()` 返回 `{registrations,revision}`，每项含 id、referenceCode、eventId、submittedAt、fields、consent、provenance，供已授权审核服务注入。不能挂成匿名列表。审核、内部备注及通知状态使用独立日志，不覆盖原申请。
 

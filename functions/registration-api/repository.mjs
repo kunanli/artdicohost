@@ -106,7 +106,7 @@ export function createRegistrationRepository({ objects, journalFor, eventId } = 
     try {
       if (!plainObject(entry) || !ID.test(entry.id ?? '') || !HASH.test(entry.recordHash ?? '') || parseTimestamp(entry.committedAt) === null) throw unavailable();
       const saved = await objects.get(`${prefix}/records/${entry.recordHash}.json`, { maxBytes: 160 * 1024 });
-      if (!saved || !(saved.data instanceof Uint8Array) || digest(saved.data) !== entry.recordHash) throw unavailable();
+      if (!saved || saved.objectType !== 'Normal' || saved.contentType !== 'application/json' || !(saved.data instanceof Uint8Array) || digest(saved.data) !== entry.recordHash) throw unavailable();
       const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(saved.data));
       return structuredClone(checkedRecord(value, entry, eventId));
     } catch { throw unavailable(); }
@@ -130,9 +130,10 @@ export function createRegistrationRepository({ objects, journalFor, eventId } = 
       await readRecord(entry);
       return { outcome: 'replayed', receipt: { committed: true, eventId, registrationId: entry.id, referenceCode: entry.id, committedAt: entry.committedAt } };
     },
-    async accept({ value, keyHash, payloadHash, capacity }) {
+    async accept({ value, keyHash, payloadHash, capacity, beforeCommit }) {
       if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > MAX_REGISTRATIONS || !HASH.test(keyHash ?? '') || !HASH.test(payloadHash ?? '')
-        || !plainObject(value) || value.eventId !== eventId || !plainObject(value.fields) || !plainObject(value.consent)) throw unavailable();
+        || !plainObject(value) || value.eventId !== eventId || !plainObject(value.fields) || !plainObject(value.consent)
+        || beforeCommit !== undefined && typeof beforeCommit !== 'function') throw unavailable();
       const submittedAt = value.provenance?.kind === 'staff_assisted' ? value.submittedAt : value.consent.acceptedAt;
       if (parseTimestamp(submittedAt) === null) throw unavailable();
       const id = randomBytes(32).toString('base64url');
@@ -154,6 +155,8 @@ export function createRegistrationRepository({ objects, journalFor, eventId } = 
           await readRecord(entry);
         } catch { throw unavailable(); }
         const next = { ...current.value, revision: current.value.revision + 1, entries: [...current.value.entries, entry] };
+        // Slow record staging must not silently extend the accepted registration window.
+        if (beforeCommit !== undefined && await beforeCommit() !== true) return { outcome: 'closed' };
         try {
           const saved = await journal.commit(current.cursor, next);
           if (!isDeepStrictEqual(saved?.value, next) || saved?.cursor?.version !== current.cursor.version + 1) throw unavailable();

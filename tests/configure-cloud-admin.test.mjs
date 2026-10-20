@@ -84,6 +84,24 @@ test('a protected latest-main push with explicit setup intent and complete accou
     error => !error.message.includes('PRIVATE-') && error.message.includes('CONTEXT_INVALID'));
 });
 
+test('trusted setup reports only the fixed missing setting name, while untrusted contexts remain opaque', async () => {
+  for (const [name, expected] of [
+    ['ARTDICO_ADMIN_USERNAME', 'MISSING_REPOSITORY_VARIABLE_ARTDICO_ADMIN_USERNAME'],
+    ['ARTDICO_ADMIN_EMAIL', 'MISSING_REPOSITORY_VARIABLE_ARTDICO_ADMIN_EMAIL'],
+    ['ARTDICO_ADMIN_PASSWORD', 'MISSING_REPOSITORY_SECRET_ARTDICO_ADMIN_PASSWORD'],
+  ]) {
+    const f = fixture();
+    await opaqueFailure(configureCloudAdmin({ ...f.options, env: { ...ENV, [name]: '' } }), new RegExp(expected, 'u'));
+    assert.deepEqual(f.calls, []);
+    await assert.rejects(configureCloudAdmin({ ...f.options, env: { ...ENV, [name]: '', GITHUB_REF: 'refs/heads/foreign' } }), error => {
+      assert.match(error.message, /CONTEXT_INVALID/u);
+      assert.doesNotMatch(error.message, /MISSING_REPOSITORY_/u);
+      return true;
+    });
+    assert.deepEqual(f.calls, []);
+  }
+});
+
 test('the actual CLI accepts Node process.env and never prints sensitive environment values or hashes', () => {
   const stub = 'data:text/javascript,' + encodeURIComponent('globalThis.fetch=async()=>{throw new Error("PRIVATE-SYNTHETIC-NETWORK-DIAGNOSTIC")};');
   const child = spawnSync(process.execPath, ['--import', stub, new URL('../scripts/configure-cloud-admin.mjs', import.meta.url).pathname],

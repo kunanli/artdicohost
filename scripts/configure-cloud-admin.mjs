@@ -51,7 +51,12 @@ export function requireCloudAdminSetupContext(input) {
   if (env.GITHUB_ACTIONS !== 'true' || env.GITHUB_EVENT_NAME !== 'push' || env.GITHUB_REF !== 'refs/heads/main'
     || env.GITHUB_REPOSITORY !== 'kunanli/artdicohost' || typeof env.GITHUB_SHA !== 'string' || !/^[a-f0-9]{40}$/u.test(env.GITHUB_SHA)
     || env.ARTDICO_CLOUD_ADMIN_SETUP_ENABLED !== 'true' || env.ARTDICO_FC_ACCOUNT_ID !== ACCOUNT
-    || !['FC_ACCESS_KEY_ID', 'FC_ACCESS_KEY_SECRET', 'ARTDICO_ADMIN_PASSWORD', 'ARTDICO_ADMIN_USERNAME', 'ARTDICO_ADMIN_EMAIL'].every(key => typeof env[key] === 'string' && env[key].length)) throw stage('CONTEXT_INVALID');
+    || !['FC_ACCESS_KEY_ID', 'FC_ACCESS_KEY_SECRET'].every(key => typeof env[key] === 'string' && env[key].length)) throw stage('CONTEXT_INVALID');
+  // Names are fixed public configuration identifiers; never include input values.
+  for (const key of ['ARTDICO_ADMIN_USERNAME', 'ARTDICO_ADMIN_EMAIL']) {
+    if (typeof env[key] !== 'string' || !env[key].length) throw stage('MISSING_REPOSITORY_VARIABLE_' + key);
+  }
+  if (typeof env.ARTDICO_ADMIN_PASSWORD !== 'string' || !env.ARTDICO_ADMIN_PASSWORD.length) throw stage('MISSING_REPOSITORY_SECRET_ARTDICO_ADMIN_PASSWORD');
   if (Buffer.byteLength(env.ARTDICO_ADMIN_PASSWORD) < 12 || Buffer.byteLength(env.ARTDICO_ADMIN_PASSWORD) > 1024) throw stage('ACCOUNT_INPUT_INVALID');
 }
 

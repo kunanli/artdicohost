@@ -1,5 +1,12 @@
 # 云端内容后台：运行角色与接入准备
 
+## 2026-10-20 实际发布及账号缺项诊断
+
+[main 运行 39426879176](https://github.com/kunanli/artdicohost/actions/runs/39426879176) 已发布完整内容包，三次签名健康标记均为 `3bb438d7425b35cdc723b84a68ce47f0d7ba1ad7`，十六个公开 OSS 对象通过 SHA-256 回读；账号设置在任何写入前因空输入停止。用户补建设置后，该失败 job 的 attempt 2 仍读到两个空身份 Variables，因此新 main 执行重新核对，而非将旧执行输出当成当前仓库设置清单。
+
+受控来源门禁通过后，缺项只报告固定的 `MISSING_REPOSITORY_VARIABLE_ARTDICO_ADMIN_USERNAME`、`MISSING_REPOSITORY_VARIABLE_ARTDICO_ADMIN_EMAIL` 或 `MISSING_REPOSITORY_SECRET_ARTDICO_ADMIN_PASSWORD`，不报告值或长度。请在 Repository settings 的 Variables／Secrets 对应页维护；不需要重新提供 AccessKey，也不要在聊天贴密码。内容仍关闭，实际账号配置、私有 OSS 与登录验收未完成。
+
+
 ## 2026-10-20 受控账号配置与内容包发布阶段
 
 用户已回报建立 `ARTDICO_ADMIN_PASSWORD` Repository Secret，以及 `ARTDICO_ADMIN_USERNAME`、`ARTDICO_ADMIN_EMAIL` Repository Variables。用户名与明确配置的 `@artdico.co` 邮箱使用同一工作人员账号；不开放公司域名自动注册。实际身份不写仓库；密码或摘要不写命令参数、日志、文件或 artifact。身份 Variables 属于非秘密元数据，GitHub 步骤环境展示可能显示其值；脚本不输出身份或完整配置。

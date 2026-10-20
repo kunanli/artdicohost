@@ -51,4 +51,6 @@
 
 `PUBLIC_CONTENT_API_ORIGIN` 默认空白，只接受准确的 `https://api.artdico.host`。未来主站匿名读取 `/api/public/content`，头像也来自同一受控 API，不携带管理凭据；本机同源读取保留。其他来源、管理／报名路径与 URL 变体均不作为公开读取配置。
 
-**云端业务仍未开放。** 新模块不在现行六文件启动包，主站未启用跨源读取。还须完成专用角色、账号、API HTTPS／精确路由、生产后台包、容量维护／备份／恢复／删除及合成端到端验收，见[云端操作单](cloud-content-setup.md)。本机入库不等于官网后台可登录或云端同步；真实资料迁移按当时授权与就绪结果处理。
+2026-10-20 接续：main `3bb438d7425b35cdc723b84a68ce47f0d7ba1ad7` 的 [Actions 39426879176（第 2 次执行）](https://github.com/kunanli/artdicohost/actions/runs/39426879176/attempts/2) 已通过 448 项测试、16 个公开 OSS SHA-256 回读及三次 FC 签名完整源码标记，包含名单内核的独立内容包已发布。账号配置因该次运行的身份 Variables 为空，在写入前失败；用户随后回报已补齐 `ARTDICO_ADMIN_USERNAME`、`ARTDICO_ADMIN_EMAIL`，新运行待验收。
+
+**云端业务仍未开放。** 内容开关保持 false，主站未启用跨源读取，私有 OSS 与实际登录尚未验证。专用角色已绑定，仍须完成账号配置结果、实际权限、API HTTPS／精确路由、容量维护／备份／恢复／删除及合成端到端验收，见[云端操作单](cloud-content-setup.md)。本机入库不等于官网后台可登录或云端同步；真实资料迁移按当时授权与就绪结果处理。

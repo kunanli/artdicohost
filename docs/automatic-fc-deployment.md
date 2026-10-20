@@ -2,12 +2,14 @@
 
 ## 当前发布路径：内容代码与账号配置仍保持关闭
 
-本阶段基于已验收 main `b65eb4d8615f08ce303d172744389b4fa424f47e`（[Actions 39421559983](https://github.com/kunanli/artdicohost/actions/runs/39421559983)，413 项测试、16 个 OSS SHA-256 回读和三次 FC 签名完整提交标记）。现在将日常 `deploy-fc` 输入永久切换到同次检查的独立内容包；新发布器仍只更新 code，要求准确专用执行角色、关闭的业务开关和最新 main，保留配置及签名触发器，并分别验收三次完整源码标记。FC codeChecksum 仍是 CRC64；包 SHA-256 不是远端回读。
+2026-10-20 接续：main `3bb438d7425b35cdc723b84a68ce47f0d7ba1ad7` 的 [Actions 39426879176（第 2 次执行）](https://github.com/kunanli/artdicohost/actions/runs/39426879176/attempts/2) 已通过 448 项测试、16 个公开 OSS SHA-256 回读及三次 FC 签名完整源码标记。日常 `deploy-fc` 已永久消费同次检查的独立内容包；发布器仍只更新 code，要求准确专用执行角色、关闭的业务开关和最新 main，保留配置及签名触发器。FC codeChecksum 仍是 CRC64；包 SHA-256 不是远端回读。此前 `b65eb4d`／[39421559983](https://github.com/kunanli/artdicohost/actions/runs/39421559983) 的 413 项检查为切换前历史基线。
+
+该次独立账号配置因身份 Variables 为空，在写入前失败；用户随后回报已补齐 `ARTDICO_ADMIN_USERNAME`、`ARTDICO_ADMIN_EMAIL`，新运行结果待核对。内容开关仍为 false，私有 OSS 与实际登录尚未验收。
 
 独立账号设置 job 在代码发布成功后运行，使用用户已建立的密码 Secret／身份 Variables，在 runner 内存中生成 scrypt 摘要，只更新固定目标的环境映射并保持业务关闭。代码与配置任务共享固定生产并发组。新客户端 `scripts/fc-config-client.mjs` 专管环境更新，原代码客户端不接受环境字段；两者均不创建资源、修改 IAM／DNS／角色／触发器。完整设置与验收边界见 [云端内容后台接入](cloud-content-setup.md)。下文六文件部署及“不修改环境”的描述属于原预检代码路径；新环境任务是单独受控步骤，不是代码上传的附带行为。
 
 
-日期：2026-10-20（Asia/Taipei）。香港 `artdicohost-api` 已按用户要求参照 `kunanli/artdico-deck` 自动更新；部署运行时、RAM 与 Variables 配置完成。本阶段开始时最近完整验收基线为 `5eff813523f075d9871cf6188d2e61a923e4cb52`，[Actions 39397120656](https://github.com/kunanli/artdicohost/actions/runs/39397120656) 的 check `118542478148` 完成 346 项测试；OSS `118543356196` 完成 16 个对象 SHA-256 回读；FC `118543356284` 单次更新后于 17:01:37、17:01:39、17:01:42（Asia/Taipei）连续三次签名完整源码标记全部匹配。生命周期字段仍为 null，不推论 Active／Successful；FC CRC64 不等于远端 SHA-256 回读。私有 OSS 已创建仍不代表正式 API、后台登录或嘉宾管理已接通。后续提交以各自最新 main push 的实际日志为准，以下保留历史验收与失败记录。
+历史验收（2026-10-20，Asia/Taipei）：香港 `artdicohost-api` 已按用户要求参照 `kunanli/artdico-deck` 自动更新；部署运行时、RAM 与发布 Variables 配置完成。六文件启动包基线 `5eff813523f075d9871cf6188d2e61a923e4cb52` 的 [Actions 39397120656](https://github.com/kunanli/artdicohost/actions/runs/39397120656) 中，check `118542478148` 完成 346 项测试；OSS `118543356196` 完成 16 个对象 SHA-256 回读；FC `118543356284` 单次更新后于 17:01:37、17:01:39、17:01:42 连续三次签名完整源码标记全部匹配。生命周期字段为 null，未推论 Active／Successful；FC CRC64 不等于远端 SHA-256 回读。私有 OSS 已创建不代表后台登录或嘉宾管理已接通。以下保留历史验收与失败记录，当前路径及待办以上文为准。
 
 用户同时授权后续正常发布：完成检查和审阅后，可合并到 main 并执行自动部署，无需逐次再申请发布确认。此授权不替代公开稿件核准、真实资料迁移及个人信息公开 / 分享授权，也不改变正式隐私告知与当前业务关闭边界。
 
@@ -89,9 +91,9 @@ UpdateFunction 的请求期限固定为 **180 秒**；GetFunction、GetTrigger �
 
 更新必须取得本次 UpdateFunction HTTP 200 确认。生命周期字段存在时仍须 FC `state:Active` / `lastUpdateStatus:Successful`；仅当两个 own 字段各自均为 absent/null 时可进入同样的实际健康核验，不能从缺失推定状态。该路径成功明确标记 `functionMetadata:not-reported`，未知值、单字段缺失、显式失败及处理中均不允许采用此路径。通过原签名认证触发器检查 `GET /healthz`，连续三次确认 HTTP 200、`status:ok`、`scope:process-only` 和准确 `sourceCommit`；每次符合时输出固定的 `match N/3` 日志与本次完整提交，不匹配即重置连续计数。签名错误、权限不足、旧实例、错误状态或配置改变均不能报告发布成功。模板中的 `InvokeFunction` 供签名 HTTP 健康检查使用。FC 的 `codeChecksum` 是 CRC64，本流程不把它称为 SHA-256 回读；实际 ZIP 在本机及 artifact 核对 SHA-256，线上验证为签名请求返回的进程源码标记。
 
-开关未启用时，发布 job 跳过，摘要明确写为未更新 FC；不能仅凭工作流整体绿色就说 API 已部署。启用后查看 **Update the isolated Hong Kong FC startup code** job 及其摘要，不以网站 OSS job 成功替代。当前尚无该 job 的实际云端成功证据。
+开关未启用时，发布 job 跳过，摘要明确写为未更新 FC；不能仅凭工作流整体绿色就说 API 已部署。查看对应运行的 FC 代码 job 及其摘要，不以网站 OSS job 成功替代。上述历史失败后已取得启动包及内容包的实际成功证据，当前结果见本文顶部。
 
-自动更新的仍是[FC 启动验收包](fc-startup-preflight.md)：`/api/health`、报名及后台写入保持 503。它没有 OSS 读写、正式报名、名单迁移、公开资料审核、报名统计、Wallet 签名或 EmailJS 投递能力。
+原[FC 启动验收包](fc-startup-preflight.md)仅保留为历史参考，日常更新已切换到独立内容包。内容业务开关仍关闭，私有 OSS、实际登录及发布／撤回须另行验收；正式报名、名单迁移、报名统计、Wallet 签名或 EmailJS 投递未因此接通。
 
 ## 本地验证记录
 

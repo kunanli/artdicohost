@@ -2,6 +2,8 @@
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。域名 `artdico.host`。公开活动页已部署，用户确认活动报名已开放；本站正式报名与云端工作人员后台仍在准备中，内建表单预览不发送或保存资料。
 
+2026-10-20 接续：main `3bb438d7425b35cdc723b84a68ce47f0d7ba1ad7` 的 [Actions 39426879176（第 2 次执行）](https://github.com/kunanli/artdicohost/actions/runs/39426879176/attempts/2) 已通过 448 项测试、16 个公开 OSS SHA-256 回读及三次 FC 签名源码标记核对，日常 FC 已改为发布内容包。账号配置因该次运行的身份 Variables 为空，在写入前失败；用户随后回报已补齐 `ARTDICO_ADMIN_USERNAME`、`ARTDICO_ADMIN_EMAIL`，新运行结果待核对。内容开关仍关闭，私有 OSS 与实际登录尚未验收；准确接续见 [云端后台说明](docs/cloud-content-setup.md)。
+
 ## 目标
 一页式简体中文活动落地页；展示日程和参与方式；后续正式报名收集 GGJ SO/RO、新站点、行业嘉宾、机构及生态合作伙伴资料，并支持独立确认讲者、赞助、展位与住宿安排。已确认 2026-12-05、09:30 签到、10:00–18:00 正式活动，场地为深圳前海5号楼；待邀嘉宾、协办署名与其他安排仍按各自确认状态展示。
 
@@ -23,8 +25,8 @@
 - `docs/08-deployment.md`：部署环境和上线清单
 - `docs/automatic-deployment.md`、`docs/domain-https.md`：当前阿里云静态部署及域名操作记录
 - `docs/registration-server-contract.md`：正式报名服务端校验准备及接入边界
-- `docs/fc-startup-preflight.md`：香港 FC 启动包、控制台验收及回退；业务写入保持关闭
-- `docs/automatic-fc-deployment.md`：由 GitHub 自动更新独立 FC；启动验收已通过，云端业务仍关闭
+- `docs/fc-startup-preflight.md`：历史香港 FC 启动包、控制台验收及回退参考
+- `docs/automatic-fc-deployment.md`：由 GitHub 自动发布独立内容包与配置账号；云端业务仍关闭
 
 ## 第一版范围
 前端、一页内容、表单持久化、独立管理员登录、筛选/备注/导出、隐私告知、基础测试与部署方案。电子票、二维码签到、邮件批量营销、支付、自动奖项评定均不在首版范围。

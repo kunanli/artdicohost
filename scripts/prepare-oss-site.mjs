@@ -11,7 +11,7 @@ export const sha256 = (data) => createHash('sha256').update(data).digest('hex');
 export function validatePublicPath(path) {
   if (!path || path.includes('\\') || path.startsWith('/') || path.split('/').some(part => !part || part.startsWith('.') || /[\u0000-\u001f]/u.test(part))) throw new Error('Unsafe public path');
   if (path === 'release.json') return path;
-  const namedRoute = ['index.html', '404.html', 'invitation/index.html', 'registration/confirmation/index.html', 'admin/index.html', 'admin/contacts/index.html', 'admin/registrations/index.html', 'admin/tasks/index.html', 'admin/settings/index.html', 'admin/person/index.html', 'admin/volunteers/index.html', 'invitations/template-blank.png'].includes(path);
+  const namedRoute = ['index.html', '404.html', 'invitation/index.html', 'registration/confirmation/index.html', 'admin/index.html', 'admin/contacts/index.html', 'admin/registrations/index.html', 'admin/tasks/index.html', 'admin/settings/index.html', 'admin/person/index.html', 'admin/volunteers/index.html', 'invitations/template-blank.png', 'invitations/ggj2026-poster-v2.webp'].includes(path);
   if (!allowedExtensions.has(extname(path).toLowerCase()) || (!namedRoute && !/^_astro\/[A-Za-z0-9_.\/-]+$/.test(path))) throw new Error('Unexpected public file: ' + path);
   return path;
 }
@@ -68,6 +68,7 @@ export async function prepareOssSite({ distDirectory = resolve(root, 'dist'), ou
     }
   }
   selected.set('invitations/template-blank.png', await checkedPublicRead(distDirectory, 'invitations/template-blank.png'));
+  selected.set('invitations/ggj2026-poster-v2.webp', await checkedPublicRead(distDirectory, 'invitations/ggj2026-poster-v2.webp'));
   selected.set('404.html', Buffer.from(statusPage('找不到这个页面', '页面可能已移动。你可以返回活动首页查看最新安排。')));
   const notice = Buffer.from(statusPage('工作人员后台入口', '请前往独立的云端后台登录，管理活动内容、人员安排与报名。本站公开页面不接收工作人员密码；服务是否开放以后台实际状态为准。')
     .replace('<a href="/">返回活动首页</a>', '<a href="https://api.artdico.host/admin/">前往云端工作人员后台</a>'));

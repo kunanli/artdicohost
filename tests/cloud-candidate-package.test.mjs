@@ -31,6 +31,7 @@ async function fixture(t) {
   for (const file of ['astro.config.mjs', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json']) await writeFile(resolve(repositoryDirectory, file), file.endsWith('.json') ? '{}\n' : '# Synthetic fixed build input\n');
   await mkdir(resolve(repositoryDirectory, 'public/invitations'), { recursive: true });
   await writeFile(resolve(repositoryDirectory, 'public/invitations/template-blank.png'), 'SYNTHETIC-PNG-BYTES');
+  await writeFile(resolve(repositoryDirectory, 'public/invitations/ggj2026-poster-v2.webp'), 'SYNTHETIC-PNG-BYTES');
   await mkdir(resolve(repositoryDirectory, 'node_modules/astro/bin'), { recursive: true });
   await writeFile(resolve(repositoryDirectory, 'node_modules/astro/bin/astro.mjs'), '// synthetic installed Astro CLI\n');
   await writeFile(resolve(repositoryDirectory, '.env.local'), 'SYNTHETIC_SECRET=never-copy\n');
@@ -57,6 +58,7 @@ async function fixture(t) {
         ['admin/person/index.html', '<html><script type="module" src="/_astro/person.hash.js"></script></html>'],
         ['admin/volunteers/index.html', '<html><script type="module" src="/_astro/volunteers.hash.js"></script></html>'],
         ['invitations/template-blank.png', 'SYNTHETIC-PNG-BYTES'],
+        ['invitations/ggj2026-poster-v2.webp', 'SYNTHETIC-WEBP-BYTES'],
         ['_astro/admin.hash.js', 'export const version = 1;'],
         ['_astro/admin.hash.css', '@font-face{src:url("./font.hash.woff2")}'],
         ['_astro/font.hash.woff2', 'SYNTHETIC-FONT-BYTES'],

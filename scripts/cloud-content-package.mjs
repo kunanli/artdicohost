@@ -35,6 +35,7 @@ const FIXED_ASSETS = Object.freeze([
   ['/admin/settings/', 'admin/settings/index.html'], ['/admin/person/', 'admin/person/index.html'],
   ['/admin/volunteers/', 'admin/volunteers/index.html'],
   ['/invitations/template-blank.png', 'invitations/template-blank.png'],
+  ['/invitations/ggj2026-poster-v2.webp', 'invitations/ggj2026-poster-v2.webp'],
 ]);
 const ASSET = /^\/_astro\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,200}\.(?:css|m?js|woff2?)$/u;
 const HASH = /^[a-f0-9]{64}$/u;

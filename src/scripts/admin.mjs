@@ -725,7 +725,7 @@ function entityCandidate(type,base=draft.content,record=null,quiet=false){
   value.id=editingId??(record?raw.id:editorStableIds[type]??raw.id);candidate[key]??=[];
   const previous=candidate[key].find(item=>item.id===value.id);
   if(editingId&&!previous){if(!quiet)announce('原记录已变化，请保留填写并重新核对。',true);return null;}
-  if(type==='booth'){value.slotNumber=Number(value.slotNumber);const relation=boothOrganizationField(previous,value.organizationId);delete value.organizationId;Object.assign(value,relation);}
+  if(type==='booth'){if(previous&&Object.hasOwn(previous,'website'))value.website=previous.website;value.slotNumber=Number(value.slotNumber);const relation=boothOrganizationField(previous,value.organizationId);delete value.organizationId;Object.assign(value,relation);}
   if(type==='showcase')value.memberCount=Number(value.memberCount);
   if(type==='session'&&value.guestId){value.speakerName='';value.speakerStatus='pending';}
   const index=candidate[key].findIndex(item=>item.id===value.id);if(index<0)candidate[key].push(value);else candidate[key][index]=value;
@@ -1132,6 +1132,18 @@ function acceptSavedContent(saved,submitted){
   const remaining=captureLocalDraft().forms;legacyWorkspaceReview=Object.keys(remaining).some(type=>({event:'event',guest:'guests',session:'sessions',booth:'booths',showcase:'showcases',organization:'organizations',planner:'arrangements'})[type]!==activePage);
   renderPageView();lockControls();return unchanged&&!hasUnappliedInputs()&&!planner?.hasLocalChanges();
 }
+function retainAcknowledgedSave(saved,submitted){
+  // A proven write stays proven even if later DOM or local cleanup fails.
+  // Keep its original recovery record and raw fields; never retry it blindly.
+  const localContent=draft.content;
+  loadedContent=structuredClone(saved.content);draft={revision:saved.revision,content:sameContent(localContent,submitted.content)?structuredClone(saved.content):localContent};
+  dirty=!sameContent(draft.content,loadedContent);savedGuestContacts=new Map((saved.content.guests??[]).map(guest=>[guest.id,guest.contactId||'']));
+  pendingSave=null;pendingHistorical=false;pendingUncertain=false;retryContentReady=false;confirmedSaveRevision=saved.revision;saveOutcome='saved';
+  saveProblem='云端已确认保存，界面或本机恢复信息尚未整理完成。填写仍保留，请先复制或核对暂存后再继续。';
+  const snapshot=localDraftBinding?.snapshot;if(snapshot?.record)localRecovery=snapshot;
+  localDraftProblem=saveProblem;try{renderLocalRecovery();}catch{}announce(saveProblem,true);
+  return false;
+}
 async function reportSavedContent({checked=false,unchanged=true,epoch}){
   if(activePage==='arrangements')await loadActivePageData();
   if(epoch!==requestSessionGeneration||!user||!draft)return;
@@ -1174,7 +1186,7 @@ async function retryContentDraft(){
   pendingHistorical=true;pendingUncertain=true;return persistContentSnapshot(pendingSave);
 }
 async function persistContentSnapshot(submitted,{firstAttempt=false}={}){
-  const epoch=requestSessionGeneration,previous={pendingSave,saveOutcome,saveProblem,retryContentReady,pendingHistorical,pendingUncertain},mayReject=firstAttempt&&!pendingSave&&!pendingHistorical&&!pendingUncertain;let requested=false;
+  const epoch=requestSessionGeneration,previous={pendingSave,saveOutcome,saveProblem,retryContentReady,pendingHistorical,pendingUncertain},mayReject=firstAttempt&&!pendingSave&&!pendingHistorical&&!pendingUncertain;let requested=false,acknowledged=null;
   pendingSave=submitted;retryContentReady=false;savingContent=true;saveOutcome='saving';saveProblem='';lockControls();
   try{
     if(!localDraftBinding||!localDraftReady)throw new Error('本机暂存尚未就绪。');
@@ -1183,9 +1195,10 @@ async function persistContentSnapshot(submitted,{firstAttempt=false}={}){
     requested=true;const result=await timedContentRequest({method:'PUT',body:JSON.stringify(submitted)});
     if(epoch!==requestSessionGeneration||!user||!draft)return false;
     const saved=confirmedContentSave(result,submitted);if(!saved)throw new Error('保存回执内容或版本无法核对。');
-    const unchanged=acceptSavedContent(saved,submitted);await finishLocalSubmission();await reportSavedContent({unchanged,epoch});return true;
+    acknowledged=saved;const unchanged=acceptSavedContent(saved,submitted);await finishLocalSubmission();await reportSavedContent({unchanged,epoch});return true;
   }catch(error){
     if(epoch!==requestSessionGeneration||!user||!draft)return false;
+    if(acknowledged)return retainAcknowledgedSave(acknowledged,submitted);
     if(!requested){
       pendingSave=previous.pendingSave;saveOutcome=previous.saveOutcome;retryContentReady=previous.retryContentReady;pendingHistorical=previous.pendingHistorical;pendingUncertain=previous.pendingUncertain;
       saveProblem='本机原提交暂存未完成，尚未向云端发送。填写仍保留，请先复制内容并核对暂存状态。';
@@ -1203,14 +1216,14 @@ async function persistContentSnapshot(submitted,{firstAttempt=false}={}){
 
 async function checkContentSave() {
   if (!canEdit() || !draft || !pendingSave || !['unknown', 'conflict'].includes(saveOutcome)) return;
-  const submitted = pendingSave, epoch = requestSessionGeneration;
+  const submitted = pendingSave, epoch = requestSessionGeneration;let acknowledged=null;
   checkingContentSave = true; retryContentReady = false; lockControls();
   try {
     const result = await timedContentRequest();
     if (epoch !== requestSessionGeneration || pendingSave !== submitted || !user || !draft) return;
     const proof = inspectContentSave(result, submitted);
     if (proof.state === 'confirmed') {
-      const unchanged = acceptSavedContent(proof.draft, submitted);
+      acknowledged=proof.draft;const unchanged = acceptSavedContent(proof.draft, submitted);
       await finishLocalSubmission();
       await reportSavedContent({ checked: true, unchanged, epoch });
     } else {
@@ -1223,6 +1236,7 @@ async function checkContentSave() {
     }
   } catch (error) {
     if (epoch !== requestSessionGeneration || !user || !draft) return;
+    if(acknowledged){retainAcknowledgedSave(acknowledged,submitted);return;}
     saveProblem = '暂时无法核对云端保存结果。本页修改仍保留，请稍后再次核对，不要刷新。'; announce(saveProblem, true);
   } finally { if (epoch === requestSessionGeneration) { checkingContentSave = false; lockControls(); } }
 }

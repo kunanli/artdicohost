@@ -50,7 +50,9 @@ export function recoverRejectedSettingsDraft(kind,value){
 }
 
 /** Superadmin tools never retain passwords, recovery keys or images in browser storage. */
-export function createStaffSettings({root,request,binaryRequest,draftStore,eventId}){
+export function createStaffSettings({root,request,binaryRequest,draftStore,eventId,section='all'}){
+  if(!['all','group','accounts'].includes(section))throw new TypeError('Unknown staff settings section');
+  const includes=kind=>section==='all'||(section==='group'?kind==='group':kind!=='group');
   const $=selector=>root.querySelector(selector);
   let user=null,busy=false,externalBusy=false,usersRevision=null,groupRevision=null,groupConfigured=false,maintenance=null;
   let accountKey='',userDirty=false,groupDirty=false,restoreDirty=false,groupImageGeneration=0;
@@ -127,7 +129,7 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
         apply:value=>{if(value.id&&!userDirectory?.users.some(row=>row.id===value.id&&!row.protected))throw new Error('账号已改变，请核对目录。');resetUser();for(const key of['id','username','email','label'])accountForm.elements.namedItem(key).value=value[key];for(const field of accountForm.querySelectorAll('[name=roles]'))field.checked=value.roles.includes(field.value);accountForm.elements.namedItem('active').checked=value.active;accountForm.elements.namedItem('password').required=!value.id;userEditRevision=usersRevision;userDirty=true;$('[data-user-form-title]').textContent=value.id?'编辑工作人员 · '+value.username:'新增工作人员';}},
       {kind:'restore',form:restoreForm,ready:canRecoverSystem(user),revision:()=>0,fields:['restoreId'],capture:()=>({restoreId:restoreForm.elements.namedItem('restoreId').value}),validate:value=>string(value.restoreId,80),apply:value=>{restoreForm.elements.namedItem('restoreId').value=value.restoreId;restoreDirty=true;}},
     ];
-    for(const spec of specs){if(!spec.ready||drafts.has(spec.kind)||started!==generation)continue;
+    for(const spec of specs){if(!includes(spec.kind)||!spec.ready||drafts.has(spec.kind)||started!==generation)continue;
       const draft=createSettingsFormDraft({store:draftStore,actorId:user.id,eventId,entity:spec.kind,form:spec.form,policy:{fields:[...spec.fields,'uncertain'],pendingFields:spec.fields,
         validate:value=>spec.validate(value)&&(value.uncertain===undefined||typeof value.uncertain==='boolean'),rejectPending:value=>recoverRejectedSettingsDraft(spec.kind,value)},baseRevision:spec.revision,isCurrent:()=>started===generation&&canManageEventOperations(user),capture:spec.capture,apply:spec.apply,onChange:lock,
         onPending:()=>{unknown.add(spec.kind);},onDiscard:()=>{unknown.delete(spec.kind);spec.form.reset();if(spec.kind==='users')resetUser();else if(spec.kind==='group')groupDirty=false;else restoreDirty=false;lock();}});
@@ -233,7 +235,7 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
     get pending(){return busy||unknown.size>0;},get dirty(){return userDirty||groupDirty||restoreDirty;},clear,wipeSecrets,lock(value){externalBusy=value;lock();},
     async configure(account){
       const key=account?.id+'|'+[...(account?.roles??[])].sort().join(',');if(key!==accountKey)clear();user=account;accountKey=key;root.hidden=!canManageEventOperations(user);if(root.hidden){clear();return;}
-      const started=generation,results=await Promise.allSettled([loadGroup(),...(canManageAccounts(user)?[loadUsers()]:[]),...(canRecoverSystem(user)?[loadMaintenance()]:[])]);if(started!==generation)return;
+      const started=generation,results=await Promise.allSettled([...(includes('group')?[loadGroup()]:[]),...(includes('users')&&canManageAccounts(user)?[loadUsers()]:[]),...(includes('restore')&&canRecoverSystem(user)?[loadMaintenance()]:[])]);if(started!==generation)return;
       await configureDrafts(started);if(started!==generation)return;
       if(results.some(result=>result.status==='rejected'))status('部分设置尚未载入，可分别刷新核对。',true);lock();
     },

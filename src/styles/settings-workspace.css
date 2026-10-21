@@ -17,6 +17,15 @@
 [data-settings-workspace] [data-staff-settings]>.ah-admin-page-heading{margin-top:34px}
 [data-settings-workspace] [data-staff-settings]>.ah-admin-page-heading h2{font-size:22px}
 [data-settings-workspace] [data-staff-settings]>.ah-admin-panel{margin-top:18px}
+[data-settings-panel][hidden]{display:none!important}
+[data-settings-workspace] [data-staff-settings]>.ah-admin-page-heading{display:none}
+[data-settings-workspace]>.ah-admin-workspace-content>.ah-admin-page-heading{margin-bottom:24px}
+[data-settings-panel="group"]>.settings-panel,[data-settings-panel="accounts"]>.settings-panel{margin-top:18px}
+[data-settings-panel="group"] .contacts-action-row,[data-settings-panel="accounts"] [data-user-form]>.contacts-action-row{justify-content:flex-end}
+[data-settings-panel="delivery"] [data-delivery-automatic]{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+[data-settings-panel="delivery"] [data-delivery-automatic]>.delivery-muted{flex-basis:100%}
+[data-settings-panel="delivery"] [data-delivery-automatic]>button{margin-left:auto}
+[data-settings-panel="delivery"] [data-delivery-dispatch]>button,[data-settings-panel="accounts"] [data-restore-form]>button{display:block;margin:18px 0 0 auto}
 .settings-account-shortcuts,.settings-account-credentials,.settings-account-unknown{padding:20px;border-top:1px solid var(--admin-line)}
 .settings-account-shortcuts{display:flex;align-items:center;flex-wrap:wrap;gap:10px}.settings-account-shortcuts p{flex-basis:100%;margin:0}
 .settings-local-draft{padding:14px 18px;margin:16px;border:1px solid var(--admin-line);border-radius:6px;background:#f7f9ff}.settings-local-draft p{margin:4px 0 10px;font-size:13px}.settings-local-draft pre{overflow:auto;max-height:240px;white-space:pre-wrap;overflow-wrap:anywhere}.settings-local-draft .contacts-action-row{display:flex;flex-wrap:wrap;gap:8px}

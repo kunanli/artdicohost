@@ -7,7 +7,7 @@ export const eventConfig = {
   siteRegistration: {
     existing: { title: '我已是 GGJ 站点负责人', categories: ['so', 'ro'], description: '登记现任或曾任 SO / RO 的站点、城市、组织年份、当前 / 历史角色与交流经历。' },
     prospective: { title: '我想在城市组织 GGJ 站点', categories: ['new_site'], description: '了解本地负责人、团队与场地准备，并通过 GGJ 官网 Start a Jam Site 申请。' },
-    notice: '两种身份可以同时选择；本次聚会与现场咨询不替代 GGJ 官方申请，正式结果由 GGJ 官方确认。',
+    notice: '现场咨询不替代 GGJ 官方申请，正式结果由 GGJ 官方确认。',
   },
   status: 'confirmed',
   language: 'zh-CN',
@@ -81,7 +81,7 @@ export const highlights = [
 export const faqItems = [
   { question: '现在可以报名吗？', answer: '可以，活动报名已开放。本页表单仅供预览，不发送或保存资料。' },
   { question: '不是 GGJ 组织者也能参加吗？', answer: '可以，欢迎学生、开发者、高校、行业与生态伙伴参加。' },
-  { question: '已经是站点负责人，或想建立新站点，怎么登记？', answer: '欢迎现任或曾任 GGJ SO / RO，以及新站点筹备者参与。请在报名时注明身份与相关经历。' },
+  { question: '已经是站点负责人，或想建立新站点，怎么登记？', answer: '在申请表选择对应身份。详细经历及站点筹备情况由筹备同事后续联系。' },
   { question: '新站点现场咨询代表已通过申请吗？', answer: '不代表。请准备本地负责人、团队与场地，再通过 GGJ 官网 Start a Jam Site 申请。本次聚会和现场咨询不替代官方申请，开放时间与结果以 GGJ 官方信息为准。' },
   { question: '报名成功就有住宿吗？', answer: '一晚住宿须单独申请、审核；报名成功不代表获得住宿。' },
   { question: '如何修改或撤回资料？', answer: '本页预览表单不保存资料。本站正式表单启用前，将公布相关联系方式与申请流程。' },

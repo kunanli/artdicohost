@@ -10,6 +10,7 @@ import { createConfirmationTokens } from '../functions/registration-confirmation
 import { createConfirmationRepository } from '../functions/registration-confirmation/repository.mjs';
 import { createConfirmationEmailProvider } from '../functions/registration-confirmation/email-provider.mjs';
 import { objectFixture, fakeCredentials } from './cloud-oss-fixture.mjs';
+import { COLLABORATOR_ROLES } from '../shared/staff-permissions.mjs';
 
 const EVENT = 'synthetic-confirmation', SITE = 'https://artdico.host';
 const SECRET = 'SYNTHETIC-CONFIRMATION-SHARED-SECRET-ONLY-1234567890';
@@ -358,6 +359,23 @@ test('settings and explicit dispatch are revision-bound, actor-bound and replay 
   assert.equal((await f.confirmation().dispatch(command)).outcome, 'replayed'); assert.equal(f.state.messages.length, 2);
   await assert.rejects(c.dispatch({ ...command, registrationIds: [...command.registrationIds].reverse() }), error => error.code === 'REVISION_CONFLICT');
   assert.deepEqual((await c.settings({ actor })).counts, { total: 2, providerAccepted: 2, rejected: 0, unknown: 0 });
+});
+
+test('event collaborators can operate notification settings and explicit dispatch while incomplete roles are denied before I/O', async () => {
+  const f = fixture(), { saved } = await register(f), c = f.confirmation(), before = f.remote.calls.length;
+  for (let mask = 0; mask < 15; mask++) {
+    const user = { id: 'synthetic-partial', roles: COLLABORATOR_ROLES.filter((_, index) => mask & 1 << index) };
+    await assert.rejects(c.settings({ actor: user }), error => error.code === 'FORBIDDEN');
+    await assert.rejects(c.setSettings({ actor: user, expectedRevision: 0, operationId: operationId(), enabled: true }), error => error.code === 'FORBIDDEN');
+    await assert.rejects(c.dispatch({ actor: user, expectedRevision: 0, operationId: operationId(), registrationIds: [saved.receipt.registrationId] }), error => error.code === 'FORBIDDEN');
+  }
+  assert.equal(f.remote.calls.length, before); assert.equal(f.state.messages.length, 0);
+  const collaborator = { id: 'synthetic-collaborator', roles: [...COLLABORATOR_ROLES] };
+  assert.equal((await c.settings({ actor: collaborator })).revision, 0);
+  const setting = await c.setSettings({ actor: collaborator, expectedRevision: 0, operationId: operationId(), enabled: true });
+  assert.equal(setting.outcome, 'updated');
+  const dispatched = await c.dispatch({ actor: collaborator, expectedRevision: setting.revision, operationId: operationId(), registrationIds: [saved.receipt.registrationId] });
+  assert.equal(dispatched.outcome, 'updated'); assert.equal(dispatched.results[0].status, 'provider_accepted'); assert.equal(f.state.messages.length, 1);
 });
 
 test('explicit known-refusal retry is bounded and unknown batch outcome stops following recipients', async () => {

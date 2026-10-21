@@ -14,12 +14,13 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
 if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('申请 API 必须使用指定的 HTTPS 来源。');
 ---
 <section class="ah-registration ah-section" id="registration" aria-labelledby="registration-heading" data-registration-api-origin={apiOrigin || undefined}>
-  <div class="ah-register-intro"><h2 id="registration-heading">申请参加。</h2><p data-registration-notice>欢迎学生、组织者、游戏创作者与社群伙伴。申请收到后由主办方审核，通过并确认名额后再发送正式邀请。</p></div>
+  <div class="ah-register-intro"><h2 id="registration-heading">申请参加。</h2><p data-registration-notice>提交申请 → 主办方审核 → 确认名额与邀请</p></div>
   <div class="ah-registration-preview ah-general-application" data-registration-preview>
     <div class="ah-form-card">
       <div class="ah-form-top"><strong data-registration-open-label>活动申请</strong><span class="ah-demo-tag" data-registration-mode-label>预览 · 不提交</span></div>
       <form data-registration-form data-registration-mode="mock" data-application-intake="general-v2" method="post" novalidate autocomplete="off">
-        <p class="ah-form-hint" data-registration-data-hint>带 * 为必填。此处预览不提交资料。</p>
+        <p class="ah-form-hint" data-registration-data-hint>带 * 为必填，其余选填。</p>
+        <div class="ah-application-draft-bar"><span data-application-draft-status role="status" aria-live="polite">预览不暂存资料</span><button type="button" class="ah-text-action" data-application-draft-save>暂存草稿</button><button type="button" class="ah-text-action" data-application-draft-restore hidden>恢复本机草稿</button><button type="button" class="ah-text-action" data-application-draft-clear hidden>清除</button></div>
         <p class="ah-form-error" data-form-error role="alert" tabindex="-1" hidden></p>
         <div class="ah-fields-grid">{['name','email','categories'].map(name => <FormField field={field(name)} />)}</div>
         <details class="ah-registration-extra ah-general-extra"><summary>学校、机构与其他联络信息（选填）</summary><div class="ah-fields-grid">{['organization','city','wechat'].map(name => <FormField field={field(name)} />)}</div></details>
@@ -28,7 +29,7 @@ if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('申�
         <details class="ah-registration-policy" data-registration-policy hidden><summary id="registration-policy-title">查看个人信息处理告知</summary><dl data-registration-policy-details></dl></details>
         <FormField field={field('consentAccepted')} />
         <button type="submit" data-submit class="ah-primary ah-full" disabled>检查预览</button>
-        <p class="ah-form-disclaimer" data-registration-disclaimer>申请需经人工审核。待审核不占参会名额，不提供正式邀请、入群码或 Wallet。</p>
+        <p class="ah-form-disclaimer" data-registration-disclaimer>本机暂存不等于提交；提交后等待审核。</p>
       </form>
       <p class="ah-form-result" data-form-result role="status" aria-live="polite"></p>
       <noscript><p class="ah-form-disclaimer">申请需要启用 JavaScript。活动信息和日程仍可直接阅读。</p></noscript>

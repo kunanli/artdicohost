@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAdmissionsApi, MAX_ADMISSIONS_BODY_BYTES } from '../functions/registration-admin/admissions-handler.mjs';
 import { CloudContentError } from '../functions/cloud-content/errors.mjs';
+import { COLLABORATOR_ROLES } from '../shared/staff-permissions.mjs';
 
 const ROOT = 'https://api.artdico.host/api/admin/admissions', operationId = 'a'.repeat(43), id = 'r'.repeat(43);
 const methods = ['getAdmissions', 'setAdmissionSettings', 'setAdmissionKind', 'approveApplication', 'rejectApplication', 'withdrawAdmission', 'promoteAdmissions', 'saveAdmissionTeam', 'removeAdmissionTeam', 'addStaffMember'];
@@ -30,7 +31,7 @@ test('ordinary editors and outreach cannot read private admissions, and rejected
   assert.deepEqual(f.calls, []);
 });
 
-test('reviewers can coordinate withdrawal, promotion and teams but only superadmin can change reserve, kind or create staff', async () => {
+test('reviewers can coordinate withdrawal, promotion and teams while individual review permission cannot change reserve, kind or create staff', async () => {
   const reviewer = setup(['reviewer']), envelope = { expectedRevision: 0, operationId };
   for (const [path, input] of [['/withdraw', { registrationId: id }], ['/promote', {}], ['/teams', { team: { name: '合成团队', memberIds: [id] } }], ['/teams/remove', { teamId: 'synthetic-team' }]]) {
     assert.equal((await reviewer.handle(request(path, 'POST', { ...envelope, ...input }))).status, 200);
@@ -43,6 +44,18 @@ test('reviewers can coordinate withdrawal, promotion and teams but only superadm
     assert.equal(owner.calls[0].input.actor, owner.actor);
   }
   assert.equal(reviewer.calls.length, 4);
+});
+
+test('full event collaborators pass daily admission gates and every incomplete combination is rejected before service I/O', async () => {
+  const cases = [['/settings', 'PUT', { settings: { staffReserve: 0, waitlistEnabled: true } }],
+    ['/kind', 'POST', { registrationId: id, kind: 'crew' }], ['/staff', 'POST', { input: { kind: 'crew' } }]];
+  for (const [path, method, input] of cases) {
+    for (let mask = 0; mask < 16; mask++) {
+      const f = setup(COLLABORATOR_ROLES.filter((_, index) => mask & 1 << index));
+      const response = await f.handle(request(path, method, { expectedRevision: 0, operationId, ...input }));
+      assert.equal(response.status, mask === 15 ? 200 : 403); assert.equal(f.calls.length, mask === 15 ? 1 : 0);
+    }
+  }
 });
 
 test('exact methods, origin, CSRF, bounded plain JSON and operation identity are enforced before mutation', async () => {

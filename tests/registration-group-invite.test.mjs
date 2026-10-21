@@ -8,6 +8,7 @@ import { createOssObjectClient } from '../functions/cloud-content/oss-client.mjs
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
 import { CloudContentError } from '../functions/cloud-content/errors.mjs';
 import { objectFixture, fakeCredentials } from './cloud-oss-fixture.mjs';
+import { COLLABORATOR_ROLES } from '../shared/staff-permissions.mjs';
 
 const API = 'https://api.example.invalid', SITE = 'https://example.invalid', EVENT = 'synthetic-qr-event';
 const SECRET = 'PRIVATE-SYNTHETIC-INDEPENDENT-GROUP-KEY';
@@ -34,7 +35,7 @@ async function expectError(promise, code) {
 
 test('private actual image upload survives independent clients and only a committed receipt obtains a short link', async () => {
   const f = fixture(), service = f.service();
-  assert.equal((await service.adminRead()).configured, false);
+  assert.equal((await service.adminRead(actor)).configured, false);
   const changed = await service.replace(f.upload(), actor);
   assert.equal(changed.revision, 1); assert.equal(changed.configured, true); assert.equal(changed.expired, false);
   assert.equal(changed.imageUrl, API + '/api/admin/group-invite/image');
@@ -58,7 +59,7 @@ test('replacement and disable invalidate older links across clients even when re
   await f.service().disable({ expectedRevision: 2, enabled: false }, actor);
   await expectError(first.publicImage(extractToken(fresh)), 'GROUP_INVITE_NOT_FOUND');
   assert.equal(await first.forReceipt({ receipt: receipt() }), null);
-  assert.equal((await first.adminRead()).revision, 3);
+  assert.equal((await first.adminRead(actor)).revision, 3);
 });
 
 test('supplied pending and rejected receipts cannot mint QR links even if an older adapter lacks an admission guard', async () => {
@@ -82,7 +83,7 @@ test('expired links, expired QR and withdrawn registrations cannot read an image
   f.state.withdrawalFailure = false; f.state.now += 600000;
   await expectError(service.publicImage(token), 'GROUP_INVITE_NOT_FOUND');
   f.state.now = at + 3600000;
-  assert.equal((await service.adminRead()).expired, true);
+  assert.equal((await service.adminRead(actor)).expired, true);
   assert.equal(await service.forReceipt({ receipt: receipt() }), null);
 });
 
@@ -101,7 +102,7 @@ test('explicit expiry, static MIME and actual image structure are required befor
   }
   assert.equal(f.remote.calls.filter(call => call.method !== 'GET').length, 0);
   await service.replace(f.upload(0, { contentType: 'image/webp', dataBase64: WEBP }), actor);
-  assert.equal((await service.adminImage()).contentType, 'image/webp');
+  assert.equal((await service.adminImage(actor)).contentType, 'image/webp');
 });
 
 test('two concurrent replacements have one winner, and an unknown ACK never automatically retries', async () => {
@@ -112,7 +113,7 @@ test('two concurrent replacements have one winner, and an unknown ACK never auto
   const g = fixture(); g.state.lostAck = true;
   await expectError(g.service().replace(g.upload(), actor), 'GROUP_INVITE_UNAVAILABLE');
   assert.equal(g.state.appends, 1);
-  assert.equal((await g.service().adminRead()).revision, 1);
+  assert.equal((await g.service().adminRead(actor)).revision, 1);
   assert.equal(g.state.appends, 1);
 });
 
@@ -122,10 +123,10 @@ test('hash or structural corruption never returns an image or silently replaces 
   const key = [...f.remote.stored.keys()].find(value => value.includes('/images/'));
   f.remote.stored.get(key).data = Buffer.from('PRIVATE-SYNTHETIC-CORRUPTION');
   await expectError(service.publicImage(extractToken(invite)), 'GROUP_INVITE_UNAVAILABLE');
-  await expectError(service.adminImage(), 'GROUP_INVITE_UNAVAILABLE');
+  await expectError(service.adminImage(actor), 'GROUP_INVITE_UNAVAILABLE');
 });
 
-test('HTTP admin requires superadmin, exact Origin and CSRF before upload; public image requires signed link only', async () => {
+test('HTTP admin requires full event operations, exact Origin and CSRF before upload; public image requires signed link only', async () => {
   const f = fixture(), service = f.service(), csrfToken = randomBytes(32).toString('base64url');
   let user = actor, loggedIn = false;
   const auth = { async authenticate() { if (!loggedIn) throw new CloudContentError('AUTH_REQUIRED', 'PRIVATE-AUTH', 401); return { user, csrfToken }; } };
@@ -146,4 +147,23 @@ test('HTTP admin requires superadmin, exact Origin and CSRF before upload; publi
   const foreign = await handle(new Request(invite.qrImageUrl, { headers: { origin: 'https://foreign.invalid' } })); assert.equal(foreign.status, 403);
   assert.equal((await handle(new Request(API + '/api/registration/group-invite/current'))).status, 404);
   assert.equal((await handle(new Request(API + '/api/admin/group-invite/image'))).status, 401);
+});
+
+test('complete collaborators can manage the private QR while incomplete role sets fail in the service before any private I/O', async () => {
+  const f = fixture(), service = f.service(), collaborator = { id: 'synthetic-collaborator', roles: [...COLLABORATOR_ROLES] };
+  const before = f.remote.calls.length;
+  for (let mask = 0; mask < 15; mask++) {
+    const user = { id: 'synthetic-partial', roles: COLLABORATOR_ROLES.filter((_, index) => mask & 1 << index) };
+    await expectError(service.adminRead(user), 'FORBIDDEN'); await expectError(service.adminImage(user), 'FORBIDDEN');
+    await expectError(service.replace(f.upload(), user), 'FORBIDDEN'); await expectError(service.disable({ expectedRevision: 0, enabled: false }, user), 'FORBIDDEN');
+  }
+  assert.equal(f.remote.calls.length, before);
+  const handle = createGroupInviteApi({ service, apiOrigin: API, publicOrigins: [SITE], auth: { authenticate: async () => ({ user: collaborator, csrfToken: 'synthetic-csrf' }) } });
+  const request = (method, input) => new Request(API + '/api/admin/group-invite', { method,
+    headers: { origin: API, 'content-type': 'application/json', 'x-csrf-token': 'synthetic-csrf' },
+    ...(input ? { body: JSON.stringify(input) } : {}) });
+  assert.equal((await handle(request('GET'))).status, 200);
+  assert.equal((await handle(request('POST', f.upload()))).status, 200);
+  assert.equal((await service.adminRead(collaborator)).configured, true); assert.equal((await service.adminImage(collaborator)).contentType, 'image/png');
+  assert.equal((await handle(request('PUT', { expectedRevision: 1, enabled: false }))).status, 200);
 });

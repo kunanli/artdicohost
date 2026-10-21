@@ -5,6 +5,7 @@ import { createRegistrationService } from '../functions/registration-api/service
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
 import { createOssObjectClient } from '../functions/cloud-content/oss-client.mjs';
 import { objectFixture, fakeCredentials } from './cloud-oss-fixture.mjs';
+import { COLLABORATOR_ROLES } from '../shared/staff-permissions.mjs';
 
 const EVENT = 'synthetic-admissions', ORIGIN = 'https://admissions.example.invalid';
 const actor = { id: 'synthetic-admin', roles: ['superadmin'] }, reviewer = { id: 'synthetic-reviewer', roles: ['reviewer'] };
@@ -46,6 +47,27 @@ async function mutate(service, method, patch = {}, operationId = key()) {
   const current = await service.getAdmissions({ actor });
   return service[method]({ actor, expectedRevision: current.revision, operationId, ...patch });
 }
+
+test('the complete collaborator preset may manage reserve, staff classification and real manual staff intake without upgrading individual roles', async () => {
+  const f = fixture(), service = f.service(), collaborator = { id: 'synthetic-collaborator', roles: [...COLLABORATOR_ROLES] };
+  const staff = { kind: 'crew', fields: { name: '合成实际工作人员', wechat: 'synthetic-staff' }, permissionReference: '合成现场逐人登记许可' };
+  const before = f.remote.calls.length;
+  for (let mask = 0; mask < 15; mask++) {
+    const supplied = { actor: { id: 'synthetic-partial', roles: COLLABORATOR_ROLES.filter((_, index) => mask & 1 << index) }, expectedRevision: 0, operationId: key() };
+    assert.deepEqual(await service.setAdmissionSettings({ ...supplied, settings: { staffReserve: 1, waitlistEnabled: true } }), { outcome: 'forbidden' });
+    assert.deepEqual(await service.setAdmissionKind({ ...supplied, registrationId: 'r'.repeat(43), kind: 'crew' }), { outcome: 'forbidden' });
+    assert.deepEqual(await service.addStaffMember({ ...supplied, input: staff }), { outcome: 'forbidden' });
+  }
+  assert.equal(f.remote.calls.length, before, 'partial role combinations never read the admission journal');
+  const settings = await service.setAdmissionSettings({ actor: collaborator, expectedRevision: 0, operationId: key(), settings: { staffReserve: 1, waitlistEnabled: true } });
+  assert.equal(settings.outcome, 'updated'); assert.equal(settings.summary.staffReserve, 1);
+  const created = await service.addStaffMember({ actor: collaborator, expectedRevision: settings.revision, operationId: key(), input: staff });
+  assert.equal(created.outcome, 'updated'); assert.equal(created.summary.crewConfirmedCount, 1);
+  const changed = await service.setAdmissionKind({ actor: collaborator, expectedRevision: created.revision, operationId: key(), registrationId: created.registrationId, kind: 'attendee' });
+  assert.equal(changed.outcome, 'updated'); assert.equal(changed.summary.attendeeConfirmedCount, 1); assert.equal(changed.summary.crewConfirmedCount, 0);
+  const record = (await service.repository.list()).registrations[0];
+  assert.equal(record.provenance.kind, 'staff_entry'); assert.equal(record.provenance.actorId, collaborator.id); assert.equal(record.consent.accepted, false);
+});
 
 test('independent approvals race for one actual seat; approved waitlist is durably saved and gets no group invite', async () => {
   const f = fixture({ capacity: 1 }), a = f.service(), b = f.service();

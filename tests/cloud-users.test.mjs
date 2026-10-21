@@ -85,3 +85,18 @@ test('user API requires superadmin, exact Origin and CSRF and hides malformed bo
   assert.equal(saved.status, 200);
   assert.equal((await saved.text()).includes('scrypt$'), false);
 });
+
+test('a value-only or mismatched journal ACK never claims a saved account and is never retried', async () => {
+  for (const patch of [ack => ({ value: ack.value }), ack => ({ ...ack, cursor: { ...ack.cursor, version: 0 } }),
+    ack => ({ ...ack, cursor: { ...ack.cursor, position: 0 } }), ack => ({ ...ack, cursor: { ...ack.cursor, hash: '' } }),
+    ack => ({ ...ack, cursor: { ...ack.cursor, hash: 'PRIVATE' } })]) {
+    const f = fixture(), target = f.journalFor('cms/v1/users'); let commits = 0;
+    const store = createCloudUserStore({ bootstrapUsers: bootstrap, journal: { ...target, async commit(...args) {
+      commits++; return patch(await target.commit(...args));
+    } } });
+    await assert.rejects(store.save(input(), 'synthetic_owner'), error => error.code === 'USER_STORAGE_UNAVAILABLE' && error.status === 503);
+    assert.equal(commits, 1); const current = await f.store.list();
+    assert.equal(current.revision, 1); assert.equal(current.users.filter(user => user.username === 'synthetic-reviewer').length, 1);
+    assert.equal(JSON.stringify([...f.values]).includes(PASSWORD), false);
+  }
+});

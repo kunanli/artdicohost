@@ -3,10 +3,11 @@ import { own, plainObject } from './policy.mjs';
 import { registrationJson, RegistrationStorageError } from './repository.mjs';
 import { validateStaffRegistrationFields } from './validation.mjs';
 import { validAdmissionOperation, validAdmissionId } from './admissions.mjs';
+import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 const trusted = (actor, admin = false) => typeof own(actor, 'id') === 'string' && /^[A-Za-z0-9_-]{1,80}$/u.test(own(actor, 'id'))
-  && Array.isArray(own(actor, 'roles')) && own(actor, 'roles').some(role => (admin ? ['superadmin'] : ['reviewer', 'superadmin']).includes(role));
+  && (admin ? canManageEventOperations(actor) : Array.isArray(own(actor, 'roles')) && own(actor, 'roles').some(role => ['reviewer', 'superadmin'].includes(role)));
 const invalid = outcome => ({ outcome });
 
 /** Admission writes share the registration index CAS. Review checks fail closed and are bounded to eight in flight. */

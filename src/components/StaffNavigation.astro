@@ -23,6 +23,7 @@ const sections = current === 'content' ? contentSections : current === 'settings
   ['delivery-settings-heading', '报名确认与票券'],
   ['group-settings-title', '微信群入口'],
   ['invitation-settings-title', '工作人员邀请'],
+  ['staff-accounts-title', '用户管理'],
 ] : [];
 ---
 <aside class="ah-staff-navigation" data-staff-navigation>
@@ -33,7 +34,7 @@ const sections = current === 'content' ? contentSections : current === 'settings
         {pages.map(page => <a href={page.href} aria-current={current === page.key ? 'page' : current === 'person' && page.key === 'contacts' ? 'location' : undefined}>{page.label}</a>)}
       </div>
       {sections.length > 0 && <div class="ah-staff-navigation-sections" aria-label={current === 'settings' ? '设置区块' : '活动内容区块'}>
-        {sections.map(([id, label]) => <a href={'#' + id} data-staff-section-link>{label}</a>)}
+        {sections.map(([id, label]) => <a href={'#' + id} data-staff-section-link data-staff-admin-link={id === 'staff-accounts-title' ? '' : undefined} hidden={id === 'staff-accounts-title'}>{label}</a>)}
       </div>}
     </nav>
   </details>

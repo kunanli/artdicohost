@@ -6,6 +6,7 @@ import { RegistrationAdminError, isRegistrationAdminError } from './errors.mjs';
 import { registrationFilters } from './store.mjs';
 import { registrationWorkbook, contactsWorkbook } from './xlsx-export.mjs';
 import { XLSX_MIME } from '../../shared/xlsx-workbook.mjs';
+import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 
 const ORIGIN = 'https://api.artdico.host', MAX_BODY = 16 * 1024;
 const SECURITY = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', vary: 'Cookie, Origin' };
@@ -63,7 +64,7 @@ function binary(workbook, filename, revision, count, hash, extra = {}) {
 }
 
 /** No data source is called before the complete role, Origin, CSRF and scope gate. */
-export function createRegistrationXlsxApi({ enabled = false, auth, store, loadAdmissions, loadArrangements, canExport = user => has(user, 'superadmin') } = {}) {
+export function createRegistrationXlsxApi({ enabled = false, auth, store, loadAdmissions, loadArrangements, canExport = canManageEventOperations } = {}) {
   if (typeof enabled !== 'boolean' || typeof canExport !== 'function' || enabled && (typeof auth?.authenticate !== 'function' || typeof store?.exportXlsx !== 'function' || typeof loadAdmissions !== 'function')
     || loadArrangements !== undefined && typeof loadArrangements !== 'function') throw new TypeError('Workbook export dependencies are unavailable.');
   return async function handle(request) {
@@ -75,7 +76,7 @@ export function createRegistrationXlsxApi({ enabled = false, auth, store, loadAd
       const { includeContact = false, includeAnswers = false, includeArrangements = false } = input;
       if (!validRevision(input.expectedRevision) || [includeContact, includeAnswers, includeArrangements].some(flag => typeof flag !== 'boolean')) fail('INVALID_REQUEST');
       const filters = registrationFilters(input.filters ?? {});
-      if (includeContact && !has(user, 'superadmin') || includeArrangements && !planningRole(user)) fail('FORBIDDEN');
+      if (includeContact && !canManageEventOperations(user) || includeArrangements && !planningRole(user)) fail('FORBIDDEN');
       if (includeArrangements && typeof loadArrangements !== 'function') fail('STORAGE_UNAVAILABLE');
       const [admissions, arrangements] = await Promise.all([loadAdmissions(user), includeArrangements ? loadArrangements(user) : null]);
       const result = await store.exportXlsx(input.expectedRevision, filters, user.id, { includeContact, includeAnswers, includeArrangements,

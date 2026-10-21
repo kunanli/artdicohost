@@ -3,6 +3,7 @@ import {isPublicWebsite} from '../../shared/content-schema.mjs';
 import {prepareProfileImage,processedImageSummary} from '../lib/profile-image.mjs';
 import {editStaffImage} from '../lib/staff-image-editor.mjs';
 import {organizationMemberPage,personContactPath} from '../lib/content-relationships.mjs';
+import {readContentForm,writeContentForm} from '../lib/content-local-drafts.mjs';
 import '../styles/organizations-admin.css';
 
 const portrait=/^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
@@ -174,6 +175,16 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onCha
   });
   clear();
   return Object.freeze({render,configure,clear,openById(id){const item=Object.hasOwn(context().content??{},'organizations')?records().find(item=>item.id===id):null;if(!item){announce('此组织尚未保存或已不存在，请重新读取内容后核对。',true);return;}open(item);},get uploading(){return uploading;},hasUnapplied:()=>dialog.open||uploading,
+    localDraft(){return dialog.open?{editingId,fields:readContentForm(form,'organization'),imageNeedsReselect:Boolean(uploading||pendingImage)}:null;},
+    restoreLocalDraft(record){
+      if(!allowed()||blocked())throw new Error('当前不能恢复组织编辑。');
+      const item=record.editingId?records().find(value=>value.id===record.editingId):null;
+      if(record.editingId&&!item)throw new Error('原组织已不存在，请复制暂存后核对。');
+      open(item);editingId=record.editingId;writeContentForm(form,'organization',record.fields);formDirty=true;image(record.fields.logoId);
+      $('[data-organization-consent-note]').textContent='已恢复本机填写，公开授权请重新核对。';
+      if(record.imageNeedsReselect)$('[data-organization-image-status]').textContent='未上传的图片编辑无法恢复，请重新选择图片。';
+      notify();configure();
+    },
     appendPublicPreview(content,output){
       const list=Object.hasOwn(content,'organizations')?content.organizations:createDefaultOrganizations();output.append(node('h3','参与组织'));if(!list.length)output.append(node('p','暂未公布参与组织。'));
       for(const item of list){const card=node('article',undefined,'ah-organization-row'),body=node('div');const logo=(item.logoUrl??'').split('/').at(-1);if(portrait.test(logo??'')){const picture=node('img');picture.src='/api/admin/portraits/'+logo;picture.alt=item.name+'组织图片';picture.width=110;picture.height=90;picture.style.objectFit='contain';card.append(picture);}body.append(node('h4',item.name),node('p',participationLabels[item.participation]??participationLabels.undecided));if(item.website&&isPublicWebsite(item.website)){const link=node('a','组织页面 ↗');link.href=item.website;link.target='_blank';link.rel='noopener noreferrer';body.append(link);}card.append(body);output.append(card);}

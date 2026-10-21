@@ -1,3 +1,4 @@
+import {createOperationsFormDraft,operationsDraftStore,captureDraftFields,applyDraftFields,removeOperationsDraft} from '../lib/operations-form-draft.mjs';
 import { canManageVolunteers, volunteerWorkspaceView, volunteerSourceView, filterVolunteerRows, parseVolunteerSelection, sourceToken, parseSourceToken, personWorkspacePath, operationBody, operationReceipt, workflowLabels, admissionLabels, assignmentLabels, issueLabel } from '../lib/volunteer-workspace.mjs';
 
 const $ = suffix => document.querySelector('[data-volunteer-' + suffix + ']');
@@ -5,6 +6,17 @@ const kinds = ['person', 'position', 'shift', 'assignment'];
 const dialogs = Object.fromEntries(kinds.map(kind => [kind, { element: $(kind + '-dialog'), form: $(kind + '-form'), dirty: false, revision: null, source: null, links: null }]));
 let user = null, csrfToken = '', view = null, epoch = 0, readSequence = 0, sourceSequence = 0, authSequence = 0;
 let busy = false, reading = false, pending = null, sources = [], nextCursor = null, sourceQuery = '', sourceLoading = false, lastDeepLink = '';
+let pendingDraft=null,pendingFormEntity='',pendingFormRevision='';
+function setupPendingDraft(){if(pendingDraft||!view||!user)return;const generation=epoch;pendingDraft=createOperationsFormDraft({actorId:user.id,roles:user.roles,page:'volunteers',entity:'pending-operation',autoSave:false,form:$('authorized'),baseRevision:()=>view?.revision,isCurrent:()=>generation===epoch&&Boolean(user),capture:()=>({formEntity:pendingFormEntity,formRevision:pendingFormRevision}),apply:()=>{},onPending:request=>{if(request.path!=='/api/admin/volunteers/operations'||request.method!=='POST')throw new Error('原志愿者操作无法核对。');const body=operationBody(JSON.parse(request.body)),kind=body.action.replace('_upsert','').replace('volunteer','person');if(!kinds.includes(kind))throw new Error('原操作类型无法核对。');const draftEntity=request.fields.formEntity;if(typeof draftEntity!=='string'||!draftEntity.startsWith(kind+':')||!/^([A-Za-z]+):(new|[A-Za-z0-9_-]+)$/u.test(draftEntity))throw new Error('原表单关联无法核对。');const draftRevision=request.fields.formRevision===undefined?null:Number(request.fields.formRevision);if(draftRevision!==null&&(!/^[0-9]+$/u.test(request.fields.formRevision)||!Number.isSafeInteger(draftRevision)||draftRevision<1))throw new Error('原表单版本无法核对。');pendingFormEntity=draftEntity;pendingFormRevision=draftRevision===null?'':String(draftRevision);pending={type:'mutation',kind,body,uncertain:true,draftEntity,draftRevision};},onDiscard:()=>{pending=null;lock();},onChange:event=>{if(event.error?.code==='STALE_ACTOR'){clearPrivate();return;}lock();}});return pendingDraft.load();}
+const drafts=new Map();
+const draftNames={person:['id','source','workflowStatus','owner','followUpAt','lastContactAt','notes'],position:['id','name','zone','location','lead','description','status'],shift:['id','positionId','start','end','required','sessionId','boothId','status'],assignment:['id','volunteerId','shiftId','status']};
+function openDraft(kind,record){
+  drafts.get(kind)?.close();const generation=epoch,form=dialogs[kind].form,entity=kind+':'+(record?.id||'new'),names=draftNames[kind];dialogs[kind].draftEntity=entity;
+  const draft=createOperationsFormDraft({actorId:user.id,roles:user.roles,page:'volunteers',entity,form,baseRevision:()=>dialogs[kind].revision,isCurrent:()=>generation===epoch&&Boolean(user)&&dialogs[kind].element.open,capture:()=>({...captureDraftFields(form,names),...(kind==='person'?{availabilityJson:JSON.stringify([...$('availability').children].map(row=>({start:row.querySelector('[name=start]').value,end:row.querySelector('[name=end]').value})))}:{})}),
+    apply:fields=>{const{availabilityJson,...values}=fields;applyDraftFields(form,values,names);if(availabilityJson){const windows=JSON.parse(availabilityJson);if(!Array.isArray(windows)||windows.length>12||windows.some(value=>typeof value.start!=='string'||typeof value.end!=='string'||!/^([0-2][0-9]):[0-5][0-9]$/u.test(value.start)||!/^([0-2][0-9]):[0-5][0-9]$/u.test(value.end)))throw new Error('可服务时段无法核对。');$('availability').replaceChildren();for(const window of windows)availabilityRow(window);}dirty(kind);},
+    onChange:event=>{if(event.error?.code==='STALE_ACTOR'){clearPrivate();return;}if(event.status==='discarded'&&pending?.kind===kind)pending=null;lock();}});
+  drafts.set(kind,draft);void draft.load().then(async snapshot=>{if(generation!==epoch||!dialogs[kind].element.open||kind!=='person'||record)return;const source=parseSourceToken(snapshot?.record?.value?.fields?.source);if(source)await loadSources({exact:source});}).catch(()=>{});
+}
 const controllers = new Set();
 const downloads = new Set();
 const allowed = () => canManageVolunteers(user?.roles);
@@ -13,14 +25,15 @@ function node(tag, value, className) { const element = document.createElement(ta
 function button(text, action, id) { const element = node('button', text, 'ah-admin-button'); element.type = 'button'; element.dataset.volunteerAction = action; if (id) element.dataset.id = id; return element; }
 function announce(message = '', error = false) { $('status').textContent = error ? '' : message; $('error').textContent = error ? message : ''; $('error').hidden = !error; }
 function formError(kind, message = '') { $(kind + '-error').textContent = message; $(kind + '-error').hidden = !message; }
-function dirty(kind, value = true) { dialogs[kind].dirty = value; $(kind + '-dirty').textContent = value ? '尚未保存到云端。刷新或离开前请先保存。' : '修改后请保存到云端。'; }
+function dirty(kind, value = true) { dialogs[kind].dirty = value; $(kind + '-dirty').textContent = value ? '尚未保存到云端。' : '';if(value&&!pending)drafts.get(kind)?.schedule(); }
 function lock() {
   $('login-submit').disabled = busy || location.protocol === 'file:';
   $('refresh').disabled = busy || reading || Boolean(pending) || !allowed(); $('logout').disabled = busy || !user;
-  const writable = allowed() && view !== null && !busy && !reading && !pending;
+  const writable = allowed() && view !== null && !busy && !reading && !pending && !pendingDraft?.blocked;
   for (const key of ['add', 'add-position', 'add-shift', 'add-assignment', 'export']) $(key).disabled = !writable || key === 'export' && displayed().length === 0;
   for (const target of document.querySelectorAll('[data-volunteer-action]')) target.disabled = !writable;
-  for (const kind of kinds) for (const field of dialogs[kind].form.elements) field.disabled = !writable || kind === 'person' && field.name === 'source' && Boolean(dialogs.person.source) || kind === 'assignment' && ['volunteerId', 'shiftId'].includes(field.name) && Boolean(dialogs.assignment.links);
+  for (const kind of kinds) for (const field of dialogs[kind].form.elements) field.disabled = !writable || Boolean(drafts.get(kind)?.blocked) || kind === 'person' && field.name === 'source' && Boolean(dialogs.person.source) || kind === 'assignment' && ['volunteerId', 'shiftId'].includes(field.name) && Boolean(dialogs.assignment.links);
+  for(const target of document.querySelectorAll('.operations-local-draft button'))target.disabled=busy||!allowed();
   $('add-availability').disabled = !writable || $('availability').children.length >= 12;
   for (const target of document.querySelectorAll('[data-volunteer-remove-availability]')) target.disabled = !writable;
   $('source-next').disabled = !writable || sourceLoading;
@@ -39,6 +52,7 @@ function clearContent() {
   for (const key of ['roster-empty', 'shifts-empty', 'positions-empty']) $(key).hidden = true;
 }
 function clearPrivate() {
+  pendingDraft?.close();pendingDraft=null;for(const draft of drafts.values())draft.close();drafts.clear();
   epoch++; readSequence++; sourceSequence++; authSequence++;
   for (const controller of controllers) controller.abort(); controllers.clear();
   for (const url of downloads) URL.revokeObjectURL(url); downloads.clear();
@@ -127,7 +141,7 @@ function render() {
 }
 async function load() {
   if (!allowed() || reading) return; const generation = epoch, sequence = ++readSequence; reading = true; lock();
-  try { const result = volunteerWorkspaceView(await request('/api/admin/volunteers', { generation, current: () => sequence === readSequence })); if (generation !== epoch || sequence !== readSequence) return; view = result; reading = false; render(); announce('已读取云端名单与分工。'); await deepLink(); }
+  try { const result = volunteerWorkspaceView(await request('/api/admin/volunteers', { generation, current: () => sequence === readSequence })); if (generation !== epoch || sequence !== readSequence) return; view = result;await setupPendingDraft();if(generation!==epoch)return; reading = false; render(); announce('已读取云端名单与分工。'); await deepLink(); }
   catch (error) { if (generation === epoch && sequence === readSequence) { clearContent(); announce(error.message, true); } }
   finally { if (generation === epoch && sequence === readSequence) { reading = false; lock(); } }
 }
@@ -153,10 +167,10 @@ function availabilityRow(window = { start: '', end: '' }) {
   for (const [key, label] of [['start', '开始'], ['end', '结束']]) { const wrapper = node('label', label); const field = document.createElement('input'); field.type = 'time'; field.name = key; field.value = window[key]; field.required = true; wrapper.append(field); row.append(wrapper); }
   const remove = node('button', '移除此时段', 'ah-admin-text-button'); remove.type = 'button'; remove.dataset.volunteerRemoveAvailability = ''; remove.addEventListener('click', () => { if (pending || !view) return; row.remove(); dirty('person'); lock(); }); row.append(remove); $('availability').append(row); lock();
 }
-function close(kind) { const state = dialogs[kind]; if (pending) { if (!window.confirm('这项操作结果尚待确认。关闭表单会保留原内容及操作编号，请在页面点击「再次确认同一操作」。确定暂时关闭？')) return false; state.element.close(); return true; } if (state.dirty && !window.confirm('这些修改尚未保存到云端。确定放弃并关闭？')) return false; state.element.close(); state.form.reset(); state.source = null; state.revision = null; if (kind === 'person') { sourceSequence++; sourceLoading = false; } dirty(kind, false); formError(kind); return true; }
-function open(kind, record = null, preset = {}) {
-  if (!allowed() || !view || pending || busy) return;
-  for (const other of kinds) if (dialogs[other].element.open && !close(other)) return;
+async function close(kind) { const generation=epoch,state = dialogs[kind]; if (pending) { if (!window.confirm('这项操作结果尚待确认。关闭表单会保留原内容及操作编号，请在页面点击「再次确认同一操作」。确定暂时关闭？')) return false; state.element.close(); return true; } if (state.dirty && !window.confirm('关闭表单并保留本机草稿？')) return false; if(state.dirty&&!drafts.get(kind)?.blocked)await drafts.get(kind)?.flush().catch(()=>{});if(generation!==epoch)return false;drafts.get(kind)?.close();drafts.delete(kind);state.element.close(); state.form.reset(); state.source = null; state.revision = null; if (kind === 'person') { sourceSequence++; sourceLoading = false; } dirty(kind, false); formError(kind); return true; }
+async function open(kind, record = null, preset = {}) {
+  if (!allowed() || !view || pending || pendingDraft?.blocked || busy) return;
+  const generation=epoch;for (const other of kinds) if (dialogs[other].element.open && !await close(other)) return;if(generation!==epoch||!allowed()||!view)return;
   const state = dialogs[kind]; state.form.reset(); state.revision = view.revision; state.source = kind === 'person' && record ? record.source : null; state.links = kind === 'assignment' && record ? { volunteerId: record.volunteerId, shiftId: record.shiftId } : null; formError(kind); dirty(kind, false);
   const values = record || { id: '', ...preset }; for (const [name, value] of Object.entries(values)) if (state.form.elements[name] && typeof value !== 'object') state.form.elements[name].value = String(value);
   if (kind === 'person') {
@@ -165,7 +179,7 @@ function open(kind, record = null, preset = {}) {
   }
   if (kind === 'shift') { setOptions(state.form.elements.positionId, view.positions.map(item => ({ value: item.id, label: item.name + (item.status === 'inactive' ? '（已停用）' : '') })), record?.positionId || preset.positionId || '', '请选择岗位'); setOptions(state.form.elements.sessionId, view.planning.sessions.map(item => ({ value: item.id, label: item.title + ' · ' + item.start + '–' + item.end + (item.status === 'cancelled' ? '（已取消）' : '') })), record?.sessionId || '', '不关联场次'); setOptions(state.form.elements.boothId, view.planning.booths.map(item => ({ value: item.id, label: item.code + ' · ' + (item.organization || '组织待定') })), record?.boothId || '', '不关联展位'); if (!record) state.form.elements.required.value = '1'; }
   if (kind === 'assignment') { setOptions(state.form.elements.volunteerId, view.volunteers.map(item => ({ value: item.id, label: item.person.name + ' · ' + workflowLabels[item.workflowStatus] + ' · ' + admissionLabels[item.person.admissionStatus] })), record?.volunteerId || preset.volunteerId || '', '请选择志愿者'); setOptions(state.form.elements.shiftId, view.shifts.map(item => ({ value: item.id, label: shiftLabel(item) })), record?.shiftId || preset.shiftId || '', '请选择班次'); }
-  state.element.showModal(); lock();
+  state.element.showModal();openDraft(kind,record); lock();
   if (kind === 'person' && !record) void loadSources();
 }
 function uuid(prefix) { if (!globalThis.crypto?.randomUUID) throw new Error('当前浏览器不能安全建立操作编号，请使用新版浏览器。'); return prefix + '_' + crypto.randomUUID().replaceAll('-', ''); }
@@ -178,8 +192,8 @@ function payload(kind) {
   const volunteerId = dialogs.assignment.links?.volunteerId || value('volunteerId'), shiftId = dialogs.assignment.links?.shiftId || value('shiftId'); const existing = view.assignments.find(item => item.volunteerId === volunteerId && item.shiftId === shiftId && item.id !== id); if (existing) throw new Error('同一人已有这个班次的安排，请从班次列表调整原记录。'); return { id, volunteerId, shiftId, status: value('status') };
 }
 async function submit(kind) {
-  if (!view || !allowed() || pending || busy || reading || !dialogs[kind].form.reportValidity()) return;
-  try { const body = operationBody({ expectedRevision: dialogs[kind].revision, operationId: uuid('operation'), action: (kind === 'person' ? 'volunteer' : kind) + '_upsert', payload: payload(kind) }); pending = { type: 'mutation', kind, body }; sourceSequence++; sourceLoading = false; dirty(kind); formError(kind); await confirmPending(); }
+  if (!view || !allowed() || pending || busy || reading || drafts.get(kind)?.blocked || !dialogs[kind].form.reportValidity()) return;
+  try { const body = operationBody({ expectedRevision: dialogs[kind].revision, operationId: uuid('operation'), action: (kind === 'person' ? 'volunteer' : kind) + '_upsert', payload: payload(kind) }); pendingFormEntity=dialogs[kind].draftEntity;const local=await drafts.get(kind).flush();pendingFormRevision=String(local.revision);await pendingDraft.markPending({path:'/api/admin/volunteers/operations',method:'POST',body:JSON.stringify(body)});pending = { type: 'mutation', kind, body, draftEntity:pendingFormEntity,draftRevision:Number(pendingFormRevision) }; sourceSequence++; sourceLoading = false; dirty(kind); formError(kind); await confirmPending(); }
   catch (error) { if (user) formError(kind, error.message); }
 }
 async function validateFile(result, body) {
@@ -194,24 +208,24 @@ async function confirmPending() {
   try {
     if (current.type === 'mutation') {
       const result = await request('/api/admin/volunteers/operations', { method: 'POST', body: current.body, generation }); if (generation !== epoch || pending !== current) return;
-      const next = operationReceipt(result, current.body); pending = null; view = next; dirty(current.kind, false); dialogs[current.kind].element.close(); dialogs[current.kind].form.reset(); dialogs[current.kind].source = null; dialogs[current.kind].revision = null; formError(current.kind); render(); announce('已收到云端保存回执，名单与安排已更新。');
+      const next = operationReceipt(result, current.body);if(drafts.has(current.kind)&&drafts.get(current.kind).snapshot?.revision===current.draftRevision)await drafts.get(current.kind).acknowledge();else if(current.draftEntity&&current.draftRevision!==null)await removeOperationsDraft({actorId:user.id,roles:user.roles,page:'volunteers',entity:current.draftEntity,expectedRevision:current.draftRevision,isCurrent:()=>generation===epoch});await pendingDraft.acknowledge();drafts.get(current.kind)?.close();drafts.delete(current.kind); pending = null; view = next; dirty(current.kind, false); dialogs[current.kind].element.close(); dialogs[current.kind].form.reset(); dialogs[current.kind].source = null; dialogs[current.kind].revision = null; formError(current.kind); render(); announce('已收到云端保存回执，名单与安排已更新。');
     } else {
       const result = await request('/api/admin/volunteers/export.xlsx', { method: 'POST', body: current.body, generation, binary: true }); await validateFile(result, current.body); if (generation !== epoch || pending !== current) return;
       const url = URL.createObjectURL(new Blob([result.bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); downloads.add(url); const anchor = node('a'); anchor.href = url; anchor.download = 'artdico-volunteers.xlsx'; document.body.append(anchor); anchor.click(); anchor.remove(); setTimeout(() => { URL.revokeObjectURL(url); downloads.delete(url); }, 1000); pending = null; clearContent(); announce('已生成 Excel 并记录导出。文件下载由浏览器处理；请重新读取最新名单。');
     }
   } catch (error) {
     if (generation !== epoch || pending !== current) return;
-    const rejected = [400, 413, 415, 422, 429].includes(error.status); if (rejected) pending = null;
+    const rejected = [400, 413, 415, 422, 429].includes(error.status); if (rejected&&!current.uncertain) {await pendingDraft.acknowledge();pending = null;}
     if (current.kind) formError(current.kind, error.message);
     $('pending-message').textContent = error.message + ' 请点击「再次确认同一操作」；系统不会自动重送或新增第二笔。'; announce(error.message, true);
-    if (error.status === 409) { pending = null; clearContent(); $('pending-message').textContent = ''; }
+    if(error.status===409&&!current.uncertain){await pendingDraft.acknowledge();pending=null;clearContent();$('pending-message').textContent='';}else if(pending===current)current.uncertain=true;
   } finally { if (generation === epoch) { busy = false; lock(); } }
 }
 async function deepLink() {
   const selected = parseVolunteerSelection(location.hash); if (!selected || !view || !allowed() || lastDeepLink === location.hash || changed()) return; lastDeepLink = location.hash;
   const existing = view.volunteers.find(item => sourceToken(item.source) === sourceToken(selected) || selected.kind === 'contact' && item.person.contactId === selected.id || selected.kind === 'registration' && item.person.registrationId === selected.id);
-  if (existing) { open('person', existing); return; }
-  open('person'); const generation = epoch; const result = await loadSources({ exact: selected }); if (generation !== epoch || !dialogs.person.element.open || !result) return; const candidate = result.candidates.find(item => sourceToken(item.source) === sourceToken(selected)); if (!candidate?.eligible) { formError('person', '这位人员暂不可加入志愿者名单，请先核对来源许可与参与状态。'); return; }
+  if (existing) { await open('person', existing); return; }
+  await open('person'); const generation = epoch; const result = await loadSources({ exact: selected }); if (generation !== epoch || !dialogs.person.element.open || !result) return; const candidate = result.candidates.find(item => sourceToken(item.source) === sourceToken(selected)); if (!candidate?.eligible) { formError('person', '这位人员暂不可加入志愿者名单，请先核对来源许可与参与状态。'); return; }
   $('person-form').elements.source.value = sourceToken(selected); $('person-source').textContent = candidate.name + ' · ' + admissionLabels[candidate.admissionStatus]; dirty('person');
 }
 async function authenticate(body = null) {
@@ -228,7 +242,7 @@ for (const kind of kinds) {
 }
 for (const target of document.querySelectorAll('[data-volunteer-close]')) target.addEventListener('click', () => close(target.dataset.volunteerClose));
 $('login').addEventListener('submit', event => { event.preventDefault(); if (busy || !$('login').reportValidity()) return; const form = new FormData($('login')); const body = { username: String(form.get('username') || '').trim(), password: String(form.get('password') || '') }; $('login').elements.password.value = ''; void authenticate(body); });
-$('logout').addEventListener('click', async () => { if (busy || changed() && !window.confirm('还有尚未保存或结果待确认的操作。退出将清除本机填写内容；之后请重新读取云端核对。确定退出？')) return; const generation = epoch; busy = true; lock(); try { await request('/api/admin/logout', { method: 'POST', body: {}, generation }); if (generation === epoch) { clearPrivate(); announce('已退出登录。'); } } catch (error) { if (generation === epoch) { busy = false; announce('退出未获确认，本机资料已清除。请重新登录核对。', true); clearPrivate(); } } });
+$('logout').addEventListener('click',async()=>{if(busy||changed()&&!window.confirm('退出并清除本机草稿及待核对操作？云端结果需另行核对。'))return;const generation=epoch,actorId=user?.id;busy=true;lock();pendingDraft?.close();for(const draft of drafts.values())draft.close();try{if(actorId)await operationsDraftStore().clearActor(actorId);}finally{try{await request('/api/admin/logout',{method:'POST',body:{},generation});}catch{}finally{if(generation===epoch)clearPrivate();}}announce('已退出，本机填写已清空。');});
 $('refresh').addEventListener('click', () => { void load(); });
 $('retry').addEventListener('click', () => { void confirmPending(); });
 $('add').addEventListener('click', () => open('person'));

@@ -33,11 +33,21 @@ export function admissionAdminState(value) {
 }
 
 /** An uncertain write can only be retried with its original body and operation ID. */
-export function createAdmissionOperations({ request, revision, operationId = () => {
+export function savedAdmissionOperation(value) {
+  if (!plain(value) || Object.keys(value).some(key=>!['path','method','body'].includes(key)) || typeof value.body !== 'string' || value.body.length > 100000) return null;
+  const action=value.path?.match(/^\/api\/admin\/admissions\/(settings|teams|teams\/remove|staff|withdraw|kind|promote|approve|reject)$/u)?.[1];
+  if (!action || value.method !== (action==='settings'?'PUT':'POST')) return null;
+  let body;try{body=JSON.parse(value.body);}catch{return null;}
+  const fields={settings:['settings'],teams:['team'],'teams/remove':['teamId'],staff:['input'],withdraw:['registrationId'],kind:['registrationId','kind'],promote:[],approve:['registrationId'],reject:['registrationId']}[action];
+  if (!plain(body) || !/^[A-Za-z0-9_-]{32,128}$/u.test(body.operationId??'') || !Number.isSafeInteger(body.expectedRevision) || body.expectedRevision<0 || Object.keys(body).some(key=>!['operationId','expectedRevision',...fields].includes(key)) || fields.some(key=>!Object.hasOwn(body,key))) return null;
+  return {path:value.path,method:value.method,body:value.body};
+}
+
+export function createAdmissionOperations({ request, revision, savePending, clearPending, operationId = () => {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return btoa(String.fromCharCode(...bytes)).replace(/\+/gu,'-').replace(/\//gu,'_').replace(/=+$/u,'');
 } }) {
-  let pending = null, busy = false, generation = 0;
+  let pending = null, busy = false, generation = 0, uncertain = false;
   async function send() {
     if (busy || !pending) throw new Error('请先核对当前操作结果。');
     const started = generation, operation = pending;
@@ -57,23 +67,30 @@ export function createAdmissionOperations({ request, revision, operationId = () 
           throw new Error('审核回执尚未通过核对，请保留本页并再次确认同一操作。');
         }
       }
+      if(clearPending)await clearPending({acknowledged:true,operation:{...operation}});
+      if (started !== generation) throw new Error('会话已改变，原操作结果已丢弃。');
       pending = null; return state;
     } catch (error) {
-      // A definite rejection did not commit. A transport/5xx/invalid ACK may have committed.
-      if (started === generation && Number.isInteger(error.status) && error.status >= 400 && error.status < 500) pending = null;
+      // Only a first definite rejection proves no commit. After an unknown attempt or refresh,
+      // a later 4xx cannot disprove the original outcome, so keep the original operation.
+      if (started === generation && !uncertain && Number.isInteger(error.status) && error.status >= 400 && error.status < 500) { if(clearPending)await clearPending({acknowledged:false,operation:{...operation}}); if(started===generation)pending = null; }
+      if(started===generation&&pending)uncertain=true;
       throw error;
     } finally { if (started === generation) busy = false; }
   }
   return Object.freeze({
     get pending() { return pending !== null; },
+    get pendingRequest() { return pending ? {...pending} : null; },
+    restore(value) { if(pending||busy)throw new Error('请先核对当前操作。');const restored=savedAdmissionOperation(value);if(!restored)throw new Error('原名额操作无法核对。');pending=restored;uncertain=true; },
     async run(path, data, method = 'POST') {
       if (pending || busy) throw new Error('上次操作结果尚未确认，请先再次确认同一操作。');
       const id = operationId(), expectedRevision = revision();
       if (!/^[A-Za-z0-9_-]{32,128}$/u.test(id) || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw new Error('名额版本尚未载入，请先刷新。');
-      pending = { path, method, body: JSON.stringify({ ...data, expectedRevision, operationId: id }) };
+      uncertain=false;pending = { path, method, body: JSON.stringify({ ...data, expectedRevision, operationId: id }) };
+      if(savePending){const started=generation;busy=true;try{await savePending({...pending});if(started!==generation)throw new Error('会话已改变，未发送原操作。');}catch(error){if(started===generation)pending=null;throw error;}finally{if(started===generation)busy=false;}}
       return send();
     },
     retry: send,
-    clear() { generation++; pending = null; busy = false; },
+    clear() { generation++; pending = null; busy = false; uncertain=false; },
   });
 }

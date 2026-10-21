@@ -10,6 +10,7 @@ import {createInitialContent} from '../src/config/content.mjs';
 import {memoryObjects} from './helpers/cloud-memory-objects.mjs';
 import {XLSX_MIME} from '../shared/xlsx-workbook.mjs';
 import {contactsWorkbook} from '../functions/registration-admin/xlsx-export.mjs';
+import {COLLABORATOR_ROLES} from '../shared/staff-permissions.mjs';
 
 const AT='2026-10-21T00:00:00.000Z',EVENT='ggj-cn-2026',A='A'.repeat(43),B='B'.repeat(43),C='C'.repeat(43),TEAM='t_'+'a'.repeat(22);
 const clone=value=>structuredClone(value),digest=value=>createHash('sha256').update(value).digest('hex');
@@ -87,6 +88,18 @@ test('role, scope, Origin, CSRF and bounded JSON gates execute before any privat
   const granted=fixture({canExport:()=>true});assert.equal((await granted.api(request(undefined,{role:'reviewer',body:{expectedRevision:0,includeContact:true}}))).status,403);
   assert.equal((await granted.api(request(undefined,{role:'reviewer',body:{expectedRevision:0,includeArrangements:true}}))).status,403);assert.equal(granted.calls.admissions,0);
   assert.equal((await granted.api(request(undefined,{role:'reviewer'}))).status,200);assert.equal(granted.calls.arrangements,0);
+});
+
+test('the complete event collaborator preset can export scoped registration contacts and arrangements, without extending partial roles',async()=>{
+  const f=fixture();
+  for(let mask=0;mask<15;mask++){
+    const role=COLLABORATOR_ROLES.filter((_,index)=>mask&1<<index).join(',');
+    assert.equal((await f.api(request(undefined,{role,body:{expectedRevision:0,includeContact:true,includeAnswers:true,includeArrangements:true}}))).status,403);
+  }
+  assert.equal(f.calls.admissions,0);assert.equal(f.calls.arrangements,0);assert.equal(f.commits(),0);
+  const response=await f.api(request(undefined,{role:COLLABORATOR_ROLES.join(','),body:{expectedRevision:0,includeContact:true,includeAnswers:true,includeArrangements:true}}));
+  assert.equal(response.status,200);const rows=await table(await response.arrayBuffer(),'报名与参会');assert.equal(cell(rows,'邮箱'),'synthetic@example.invalid');
+  const audit=(await f.base.read()).value.audit[0];assert.equal(audit.metadata.contactIncluded,true);assert.equal(audit.metadata.arrangementsIncluded,true);assert.equal(f.commits(),1);
 });
 test('mismatched admission revision and missing people fail before an export audit can claim a complete workbook',async()=>{
   const f=fixture();f.admissions.revision=4;assert.equal((await f.api(request())).status,409);assert.equal(f.commits(),0);

@@ -2,26 +2,30 @@
 const roles=[['editor','公开内容编辑'],['publisher','公开内容发布'],['outreach','人员与邀约'],['reviewer','报名审核'],['superadmin','工作人员与维护管理']];
 ---
 <section data-staff-settings hidden aria-labelledby="staff-settings-title">
-  <div class="ah-admin-page-heading"><div><h2 id="staff-settings-title">微信群与管理工具</h2><p>仅管理权限账号可操作，每个功能独立保存。</p></div></div>
+  <div class="ah-admin-page-heading"><div><h2 id="staff-settings-title">活动工作设置</h2><p>群码、账号与备份分别保存。</p></div></div>
   <p class="ah-admin-alert" data-settings-error role="alert" tabindex="-1" hidden></p><p class="ah-admin-status" data-settings-status role="status" aria-live="polite"></p>
   <p class="ah-admin-alert" data-settings-pending role="status" hidden></p>
   <section class="ah-admin-panel settings-panel">
-    <div class="ah-admin-section-heading"><div><h2 id="group-settings-title">报名成功后的微信群入口</h2><p>只在已确认保存的报名收据中提供短效图片入口。替换后旧入口失效，过期不会自动延长。</p></div><button class="ah-admin-button" type="button" data-group-refresh>刷新群码状态</button></div>
+    <div class="ah-admin-section-heading"><div><h2 id="group-settings-title">活动微信群入口</h2><p>仅向名额已确认的参与者提供。替换后旧入口失效，过期不会自动延长。</p></div><button class="ah-admin-button" type="button" data-group-refresh>刷新群码状态</button></div>
     <div class="settings-form"><p data-group-status>群码状态尚未载入。</p><img class="settings-qr" data-group-image hidden alt="当前受保护的微信群入群二维码" />
       <form data-group-form><div class="ah-admin-field"><label for="group-image-file">新二维码原图</label><input id="group-image-file" name="image" type="file" accept="image/png,image/jpeg,image/webp" required /><small>PNG、JPEG 或 WebP，最多 512 KiB。保持二维码完整，不将原图放进仓库或公开静态目录。</small></div><div class="ah-admin-field"><label for="group-expires">新图到期时间 · 台北 / 北京时间（UTC+8）</label><input id="group-expires" name="expiresAt" type="datetime-local" required /><small>填写图上标示并核对的准确时间，最多未来 7 天。不要沿用旧日期或猜测有效期。</small></div><div class="contacts-action-row"><button class="ah-admin-button ah-admin-primary" type="submit">上传并替换当前二维码</button><button class="ah-admin-button" type="button" data-group-disable>关闭入群图片</button></div></form>
     </div>
   </section>
-  <details class="settings-workspace-tools"><summary>工作人员账号与备份</summary>
-  <section class="ah-admin-panel settings-panel">
-    <div class="ah-admin-section-heading"><div><h2>工作人员账号</h2><p>按实际职责分配权限；停用或修改密码会使原会话失效。受保护的维护账号通过受控部署设置。</p></div><button class="ah-admin-button" type="button" data-users-refresh>刷新账号</button></div>
+  <section class="ah-admin-panel settings-panel" data-settings-accounts hidden>
+    <div class="ah-admin-section-heading"><div><h2 id="staff-accounts-title">工作人员账号</h2><p>仅管理员可新增与停用账号。协作者预设不含账号和备份权限。</p></div><button class="ah-admin-button" type="button" data-users-refresh>刷新账号</button></div>
+    <div class="settings-account-shortcuts"><button type="button" class="ah-admin-button" data-user-prefill="zhouyufei">准备 zhouyufei</button><button type="button" class="ah-admin-button" data-user-prefill="wangying">准备 wangying</button><p class="ah-admin-small">仅填表；保存后才会建立账号。</p></div>
     <div class="ah-admin-table-wrap"><table><caption class="ah-sr-only">工作人员账号与权限</caption><thead><tr><th scope="col">账号</th><th scope="col">权限</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody data-users-list></tbody></table></div>
     <form class="settings-form" data-user-form><h3 data-user-form-title>新增工作人员</h3><input name="id" type="hidden" />
       <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="new-staff-name">用户名</label><input id="new-staff-name" name="username" maxlength="80" autocomplete="off" autocapitalize="none" spellcheck="false" required /></div><div class="ah-admin-field"><label for="new-staff-label">显示名称</label><input id="new-staff-label" name="label" maxlength="120" autocomplete="off" /></div></div>
-      <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="new-staff-email">公司邮箱（选填）</label><input id="new-staff-email" name="email" type="email" maxlength="254" autocomplete="off" placeholder="@artdico.co" /></div><div class="ah-admin-field"><label for="new-staff-password">密码</label><input id="new-staff-password" name="password" type="password" minlength="12" maxlength="1024" autocomplete="new-password" required /><small data-user-password-note>新账号请设置至少 12 个字元的独立密码。</small></div></div>
-      <fieldset class="ah-admin-choice-group"><legend>工作权限（可多选）</legend>{roles.map(([value,label])=><label><input type="checkbox" name="roles" value={value} />{label}</label>)}</fieldset><label class="settings-check"><input name="active" type="checkbox" checked />启用此账号</label>
+      <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="new-staff-email">公司邮箱（选填）</label><input id="new-staff-email" name="email" type="email" maxlength="254" autocomplete="off" placeholder="@artdico.co" /></div><div class="ah-admin-field"><label for="new-staff-password">密码</label><input id="new-staff-password" name="password" type="password" minlength="12" maxlength="1024" autocomplete="new-password" required /><div class="contacts-action-row"><button class="ah-admin-button" type="button" data-user-password-generate>生成独立密码</button><button class="ah-admin-button" type="button" data-user-password-toggle>显示密码</button><button class="ah-admin-button" type="button" data-user-password-copy>复制密码</button></div><small data-user-password-note>新账号请设置至少 12 个字元的独立密码。</small></div></div>
+      <button class="ah-admin-button" type="button" data-user-collaborator-preset>协作者 · 全部活动功能</button>
+      <fieldset class="ah-admin-choice-group"><legend>工作权限（可多选）</legend>{roles.map(([value,label])=><label><input type="checkbox" name="roles" value={value} />{label}</label>)}</fieldset><label class="settings-check"><input name="active" type="checkbox" checked />启用此账号（取消勾选并保存即可停用）</label><p class="ah-admin-small">停用保留工作记录，并使已有登录失效。</p>
       <div class="contacts-action-row"><button class="ah-admin-button ah-admin-primary" type="submit">保存工作人员账号</button><button class="ah-admin-button" type="button" data-user-reset>取消编辑 / 新增账号</button></div>
     </form>
+    <div class="settings-account-unknown" data-user-unknown hidden><p>此账号保存结果未确认。读取目录不能证明密码已生效；请先核对目录，再放弃此未确认输入并编辑已有账号。</p><button class="ah-admin-button" type="button" data-user-discard-unknown>放弃本页未确认操作</button></div>
+    <section class="settings-account-credentials" data-user-credentials hidden aria-labelledby="staff-credentials-title"><h3 id="staff-credentials-title">本页已确认保存的登录资料</h3><p>请私下交付本人。显示与复制由你操作；离开或退出后即清空。</p><div data-user-credential-list></div><button class="ah-admin-button" type="button" data-user-credentials-clear>清空本页密码</button></section>
   </section>
+  <details class="settings-workspace-tools" data-settings-recovery hidden><summary>加密备份与隔离恢复 · 仅管理员</summary>
   <section class="ah-admin-panel settings-panel">
     <div class="ah-admin-section-heading"><div><h2>加密备份与隔离恢复</h2><p>备份与密钥应分别保存在受控位置。隔离恢复不切换线上资料，也不恢复旧会话。</p></div><button class="ah-admin-button" type="button" data-maintenance-refresh>刷新维护能力</button></div>
     <div class="settings-form"><p data-maintenance-status>维护能力尚未载入。</p><button class="ah-admin-button" type="button" data-backup-create>创建加密备份</button>

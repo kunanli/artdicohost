@@ -37,7 +37,7 @@ export function contentSaveUiState({ loaded, canEdit, dirty, unapplied = [], bus
   else if (outcome === 'unknown') { state = 'unknown'; title = '云端保存结果未确认'; description = problem || '本页修改仍保留。请先核对云端保存结果，勿重复保存或刷新。'; }
   else if (outcome === 'conflict') { state = 'conflict'; title = '云端版本已变化，本页修改仍保留'; description = problem || '请先保留本页修改，再核对最新云端草稿；不会自动覆盖其他工作人员的更新。'; }
   else if (unapplied.length) { state = 'unapplied'; title = '还有未应用的输入，尚未保存到云端'; description = '请先在「' + unapplied.join('、') + '」应用修改，或明确取消本次编辑，再保存到云端。'; }
-  else if (dirty) { state = 'dirty'; title = '本页修改尚未保存到云端'; description = problem || '应用修改只更新当前页面，刷新会丢失。点击「保存到云端」保存全部活动内容。'; }
+  else if (dirty) { state = 'dirty'; title = '本页修改尚未保存到云端'; description = problem || '点击「保存到云端」提交全部已应用内容；公开发布另行操作。'; }
   else if (confirmedRevision === currentRevision) { state = 'saved'; title = '已确认保存到云端'; description = '草稿版本 ' + currentRevision + ' 已保存，刷新后可继续编辑；公开页面尚未自动更新。'; }
   return { state, title, description, canSave: Boolean(loaded && canEdit && dirty && !unapplied.length && !busy && !saving && !['unknown', 'conflict'].includes(outcome)),
     canCheck: Boolean(loaded && canEdit && !busy && !saving && ['unknown', 'conflict'].includes(outcome)),

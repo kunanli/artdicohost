@@ -1,3 +1,4 @@
+import {canManageEventOperations} from '../../shared/staff-permissions.mjs';
 const CONTACT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const REGISTRATION = /^[A-Za-z0-9_-]{43}$/u;
 const STATES = new Set(['available', 'unlinked', 'restricted', 'unavailable']);
@@ -171,7 +172,7 @@ export function personWorkspaceActions(view, roles = []) {
       : contactId ? { kind: 'contact', id: contactId } : null;
     if (source) actions.push({ key: 'volunteers', label: '志愿者与分工', href: '/admin/volunteers/#' + source.kind + '=' + encodeURIComponent(source.id) });
   }
-  if (roles.includes('superadmin')) actions.push({ key: 'settings', label: '设置与通知', href: '/admin/settings/' });
+  if (canManageEventOperations({roles})) actions.push({ key: 'settings', label: '设置与通知', href: '/admin/settings/' });
   return actions;
 }
 

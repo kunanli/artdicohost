@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { MAX_PORTRAIT_BYTES, PORTRAIT_TYPES, PORTRAIT_ID_PATTERN, normalizePortraitBytes } from '../../shared/portrait-codec.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { own, plainObject, parseTimestamp, clockTime } from './policy.mjs';
+import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 
 const PURPOSE = 'artdico-registration-group-invite-v1';
 const MAX_TTL = 10 * 60 * 1000, MAX_EXPIRY = 7 * 24 * 60 * 60 * 1000;
@@ -11,6 +12,7 @@ const TOKEN_PART = /^[A-Za-z0-9_-]+$/u;
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const fields = (value, names) => plainObject(value) && Object.keys(value).sort().join(',') === [...names].sort().join(',');
 const ERRORS = {
+  FORBIDDEN: [403, '当前账号没有管理入群码的权限。'],
   GROUP_INVITE_UNAVAILABLE: [503, '入群码操作未确认完成，请重新载入后核对。'],
   INVALID_GROUP_INVITE: [422, '请上传有效的静态 PNG、JPEG 或 WebP 图片，并明确填写含时区的未来到期时间（七天以内）。'],
   GROUP_INVITE_CONFLICT: [409, '入群码已被更新，请重新载入后再决定。'],
@@ -34,7 +36,10 @@ export function createGroupInviteService({ objects, journalFor, eventId, tokenSe
   const signingKey = createHmac('sha256', tokenSecret).update(PURPOSE).digest();
   const sign = text => createHmac('sha256', signingKey).update(text).digest();
   function now() { let value; try { value = clockTime(clock()); } catch { throw failure(); } if (value === null || value < 0) throw failure(); return value; }
-  function actorId(actor) { const id = own(actor, 'id'); if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/u.test(id)) throw failure('INVALID_GROUP_INVITE'); return id; }
+  function actorId(actor) {
+    if (!canManageEventOperations(actor)) throw failure('FORBIDDEN');
+    const id = own(actor, 'id'); if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/u.test(id)) throw failure('INVALID_GROUP_INVITE'); return id;
+  }
   async function journal() { try { const value = await journalFor(prefix + '/state'); if (!value || !['read', 'commit'].every(key => typeof value[key] === 'function')) throw failure(); return value; } catch { throw failure(); } }
   function checkedActive(value) {
     if (!fields(value, ['imageId', 'contentType', 'bytes', 'expiresAt', 'updatedAt', 'updatedBy']) || !PORTRAIT_ID_PATTERN.test(value.imageId ?? '')
@@ -99,8 +104,8 @@ export function createGroupInviteService({ objects, journalFor, eventId, tokenSe
     try { const value = await isWithdrawn(id); if (typeof value !== 'boolean') throw failure(); return value; } catch { throw failure(); }
   }
   return Object.freeze({
-    async adminRead() { return projection(await read()); },
-    async adminImage() { const state = await read(); if (!state.value.active) throw failure('GROUP_INVITE_NOT_FOUND'); return image(state.value.active); },
+    async adminRead(actor) { actorId(actor); return projection(await read()); },
+    async adminImage(actor) { actorId(actor); const state = await read(); if (!state.value.active) throw failure('GROUP_INVITE_NOT_FOUND'); return image(state.value.active); },
     async replace(input, actor) {
       const id = actorId(actor), revision = own(input, 'expectedRevision'), contentType = own(input, 'contentType'), dataBase64 = own(input, 'dataBase64');
       const expires = parseTimestamp(own(input, 'expiresAt')), at = now();

@@ -1,5 +1,6 @@
 import { admissionSummary, registrationReceiptState } from './admission-view.mjs';
 import { savedConfirmation } from './confirmation-client.mjs';
+import { applicationPendingValue } from './application-draft.mjs';
 const API_ORIGIN = 'https://api.artdico.host';
 const SITE_ORIGIN = 'https://artdico.host';
 const KEY = /^[A-Za-z0-9_-]{32,128}$/u;
@@ -16,12 +17,16 @@ function timestamp(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T.+(?:Z|[+-]\d{2}:\d{2})$/u.test(value) && Number.isFinite(Date.parse(value));
 }
 
-/** Public registration transport. No browser storage, staff cookie, auto-retry or default API. */
-export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = globalThis.fetch, randomBytes = () => crypto.getRandomValues(new Uint8Array(32)), clock = Date.now } = {}) {
+/** Public transport uses an injected recovery store; tokens and staff cookies never persist. */
+export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = globalThis.fetch, randomBytes = () => crypto.getRandomValues(new Uint8Array(32)), clock = Date.now, pendingStore = null } = {}) {
   const available = apiOrigin === API_ORIGIN && pageOrigin === SITE_ORIGIN && typeof fetchFn === 'function';
   let config = null;
   let pending = null;
   let busy = false;
+  let preparing = false;
+  if(pendingStore!==null&&(!pendingStore||!['prepare','update','clear','reject'].every(key=>typeof pendingStore[key]==='function')))throw new TypeError('Application recovery store required.');
+  const pendingValue=()=>({eventId:JSON.parse(pending.json).eventId,idempotencyKey:pending.key,payloadJson:pending.json,attempted:pending.sent,uncertain:pending.uncertain});
+  async function persist(method){if(!pendingStore)return;const value=pendingValue();const saved=applicationPendingValue(await pendingStore[method](value),value.eventId);if(saved.idempotencyKey!==pending.key||saved.payloadJson!==pending.json||saved.attempted!==pending.sent||saved.uncertain!==pending.uncertain)throw failure('DRAFT_UNCONFIRMED','本机恢复信息尚未保存，当前未继续提交。',pending.sent);}
   async function request(path, body, headers = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20_000);
@@ -51,8 +56,38 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
     } catch { throw failure('UNAVAILABLE','网络或服务暂时无法确认，请保留本页并重试。'); }
     finally { clearTimeout(timer); }
   }
+  async function sendPending(){
+      if(!available||!pending)throw failure('NOT_READY','没有可核对的原申请。');
+      if(busy||preparing)throw failure('BUSY','正在确认申请结果，请稍候。');
+      const previousUnknown=pending.uncertain;busy=true;
+      try{
+        const eventId=JSON.parse(pending.json).eventId;
+        const issued=await request('/api/admin/registration/token',{eventId,idempotencyKey:pending.key});const token=issued.value;
+        if(issued.status!==200||token?.eventId!==eventId||typeof token.submissionToken!=='string'||token.submissionToken.length>4096||!TOKEN.test(token.submissionToken)||!timestamp(token.expiresAt)||Date.parse(token.expiresAt)<=clock())throw failure('TOKEN_UNAVAILABLE','暂时无法核对，请保留原申请后重试。',pending.sent);
+        pending.sent=true;await persist('update');
+        const result=await request('/api/admin/registration/submit',JSON.parse(pending.json),{'Idempotency-Key':pending.key,'X-Registration-Token':token.submissionToken});
+        const admissionState=registrationReceiptState(result.value);
+        if([200,201].includes(result.status)&&admissionState&&KEY.test(result.value.reference_code)){
+          const receipt={httpStatus:result.status,body:{status:admissionState==='confirmed'?'registered':admissionState,admissionStatus:admissionState,reference_code:result.value.reference_code,groupInvite:null}};
+          if(result.value.admissionKind!==undefined)receipt.body.admissionKind=result.value.admissionKind;if(result.value.admissionRevision!==undefined)receipt.body.admissionRevision=result.value.admissionRevision;
+          const confirmation=savedConfirmation(result.value.confirmation,clock());if(confirmation&&['pending_review','rejected'].includes(admissionState))confirmation.email.status='not_applicable';if(confirmation)receipt.body.confirmation=confirmation;
+          const invite=result.value.groupInvite;if(admissionState==='confirmed'&&invite?.platform==='wechat'&&timestamp(invite.expiresAt)&&Date.parse(invite.expiresAt)>clock()){try{const url=new URL(invite.qrImageUrl);if(url.origin===API_ORIGIN&&!url.username&&!url.password&&!url.hash)receipt.body.groupInvite={platform:'wechat',qrImageUrl:url.href,expiresAt:invite.expiresAt};}catch{}}
+          let cleaned=true;if(pendingStore)try{await pendingStore.clear(pendingValue());}catch{receipt.localRecoveryRetained=true;cleaned=false;}
+          if(cleaned)pending=null;return receipt;
+        }
+        if(result.status===422&&!previousUnknown){if(pendingStore)await pendingStore.reject(pendingValue());pending=null;throw failure('INVALID','资料未通过检查，请核对字段及隐私同意。');}
+        if(result.status===422)throw failure('PENDING','原申请结果仍待核对，请勿重新提交另一份申请。',true);
+        if(result.status===429)throw failure('RATE_LIMITED','请求较多，请稍候核对原申请。',true);
+        if(result.status===409)throw failure('CONFLICT','原申请暂时无法核对，请联系主办方。',true);
+        if(result.status===410)throw failure('WITHDRAWN','这份申请已撤回，请联系主办方。',true);
+        throw failure('UNCONFIRMED','结果尚待核对，请保留原申请，再次点击确认。',true);
+      }catch(error){if(pending?.sent){pending.uncertain=true;try{await persist('update');}catch{}error.uncertain=true;}if(error.code)throw error;throw failure('UNCONFIRMED','结果尚待核对，请保留原申请。',Boolean(pending?.sent));}finally{busy=false;}
+  }
   return Object.freeze({
-    get pending() { return Boolean(pending?.sent); },
+    get pending() { return Boolean(pending&&(pending.sent||pendingStore)); },
+    get pendingSnapshot(){return pending?structuredClone(pendingValue()):null;},
+    restorePending(value){if(!available||busy||preparing||pending)throw failure('PENDING','请先核对当前申请。');const saved=applicationPendingValue(value);pending={key:saved.idempotencyKey,json:saved.payloadJson,sent:saved.attempted,uncertain:saved.uncertain||saved.attempted};return structuredClone(pendingValue());},
+    resume(){return sendPending();},
     async configure() {
       if (!available) return null;
       const result = await request('/api/admin/registration/config');
@@ -71,6 +106,8 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
       return structuredClone(config);
     },
     async submit(fields) {
+      if(busy||preparing)throw failure('BUSY','正在确认申请结果，请稍候。');
+      if(pending){if(JSON.stringify(JSON.parse(pending.json).fields)!==JSON.stringify(fields))throw failure('PENDING','请先核对原申请，不能更换内容重复提交。',true);return sendPending();}
       if (!available || !config) throw failure('NOT_READY','本站正式报名暂未开放，请勿填写真实资料。');
       if (busy) throw failure('BUSY','正在确认报名结果，请稍候。');
       const payload = { eventId: config.eventId, fields, consent: {accepted:true,version:config.privacy.version} };
@@ -82,41 +119,10 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
         if (!(bytes instanceof Uint8Array) || bytes.length !== 32) throw failure('UNAVAILABLE','当前浏览器无法安全提交，请更换浏览器。');
         const key = Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');
         if (!KEY.test(key)) throw failure('UNAVAILABLE','当前浏览器无法安全提交，请更换浏览器。');
-        pending = {key,json,sent:false};
+        pending = {key,json,sent:false,uncertain:false};
       }
-      busy = true;
-      try {
-        const issued = await request('/api/admin/registration/token',{eventId:config.eventId,idempotencyKey:pending.key});
-        const token = issued.value;
-        if (issued.status !== 200 || token?.eventId !== config.eventId || typeof token.submissionToken !== 'string'
-          || token.submissionToken.length > 4096 || !TOKEN.test(token.submissionToken) || !timestamp(token.expiresAt)
-          || Date.parse(token.expiresAt) <= clock()) throw failure('TOKEN_UNAVAILABLE','报名验证暂时无法完成，请稍后再试。',pending.sent);
-        pending.sent = true;
-        const result = await request('/api/admin/registration/submit',JSON.parse(pending.json),{'Idempotency-Key':pending.key,'X-Registration-Token':token.submissionToken});
-        const admissionState = registrationReceiptState(result.value);
-        if ([200,201].includes(result.status) && admissionState && KEY.test(result.value.reference_code)) {
-          const receipt = {httpStatus:result.status,body:{status:admissionState==='confirmed'?'registered':admissionState,admissionStatus:admissionState,reference_code:result.value.reference_code,groupInvite:null}};
-          if (result.value.admissionKind !== undefined) receipt.body.admissionKind = result.value.admissionKind;
-          if (result.value.admissionRevision !== undefined) receipt.body.admissionRevision = result.value.admissionRevision;
-          const confirmation = savedConfirmation(result.value.confirmation,clock());
-          if (confirmation && ['pending_review','rejected'].includes(admissionState)) confirmation.email.status = 'not_applicable';
-          if (confirmation) receipt.body.confirmation = confirmation;
-          const invite = result.value.groupInvite;
-          if (admissionState==='confirmed' && invite?.platform === 'wechat' && timestamp(invite.expiresAt) && Date.parse(invite.expiresAt) > clock()) {
-            try { const url = new URL(invite.qrImageUrl); if (url.origin === API_ORIGIN && !url.username && !url.password && !url.hash) receipt.body.groupInvite = {platform:'wechat',qrImageUrl:url.href,expiresAt:invite.expiresAt}; } catch {}
-          }
-          pending = null;
-          return receipt;
-        }
-        if (result.status === 422) { pending = null; throw failure('INVALID','资料未通过检查，请核对必填项目、格式及当前隐私告知。'); }
-        if (result.status === 429) throw failure('RATE_LIMITED','请求较多，请稍候再试。保留本页即可，无需重新填写。',true);
-        if (result.status === 409) throw failure('CONFLICT','当前报名已关闭或资料存在冲突。请保留本页并联络工作人员核对。',true);
-        if (result.status === 410) throw failure('WITHDRAWN','这份报名已撤回，请联络工作人员核对。',true);
-        throw failure('UNCONFIRMED','尚未确认保存成功。请保留本页与原资料，再次点击确认结果，不要重复新建报名。',true);
-      } catch (error) {
-        if (error.code) { if (pending?.sent) error.uncertain = true; throw error; }
-        throw failure('UNCONFIRMED','尚未确认保存成功，请保留本页并再次确认。',Boolean(pending?.sent));
-      } finally { busy = false; }
+      preparing=true;try{await persist('prepare');}catch(error){pending=null;throw error;}finally{preparing=false;}
+      return sendPending();
     },
   });
 }

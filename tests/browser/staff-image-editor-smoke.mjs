@@ -60,9 +60,9 @@ async function fixture({width=1280,mode='normal'}={}){
         const entry={bytes:data,type:body.contentType,payload:body,id};uploads.push(entry);images.set(id,entry);
         if(mode==='503-once'&&uploads.length===1)return route.fulfill(json({error:{code:'CONTENT_NOT_READY',message:'云端内容后台尚未开放。'}},503));
         if(mode==='401-once'&&uploads.length===1){authenticated=false;return route.fulfill(json({error:{code:'AUTH_REQUIRED',message:'会话已结束。'}},401));}
-        const held=mode==='late-first'&&uploads.length===1;
+        const held=['late-first','late-401-ignore-abort'].includes(mode)&&uploads.length===1;
         if(held)await new Promise(accept=>{releaseUpload=accept;});
-        try{return await route.fulfill(json({portrait:{id,bytes:data.length,contentType:body.contentType}}));}catch(error){if(!held)throw error;}finally{if(held)settleLate();}
+        try{return await route.fulfill(held&&mode==='late-401-ignore-abort'?json({error:{code:'AUTH_REQUIRED',message:'合成旧会话失效'}},401):json({portrait:{id,bytes:data.length,contentType:body.contentType}}));}catch(error){if(!held)throw error;}finally{if(held)settleLate();}
         return;
       }
       if(path.startsWith('/api/admin/portraits/')){const image=images.get(path.split('/').at(-1));return route.fulfill(image?{status:200,contentType:image.type,body:image.bytes}:{status:404,body:''});}
@@ -70,6 +70,15 @@ async function fixture({width=1280,mode='normal'}={}){
     }
     const file=resolve(dist,'.'+(path.endsWith('/')?path+'index.html':path));assert.ok(file.startsWith(dist+'/'));
     return route.fulfill({status:200,body:await readFile(file),contentType:({html:'text/html',js:'text/javascript',css:'text/css',png:'image/png',jpg:'image/jpeg',svg:'image/svg+xml',webp:'image/webp',woff2:'font/woff2'})[extname(file).slice(1)]||'application/octet-stream'});
+  });
+  if(mode==='late-401-ignore-abort')await context.addInitScript(()=>{
+    const original=window.fetch.bind(window);let first=true;
+    window.fetch=(input,options={})=>{
+      if(first&&String(input).endsWith('/api/admin/portraits')&&options.method==='POST'){
+        first=false;const next={...options};delete next.signal;return original(input,next);
+      }
+      return original(input,options);
+    };
   });
   await page.goto(SITE+'/admin/',{waitUntil:'networkidle'});await page.locator('[data-admin-workspace]:visible').waitFor();
   return {page,context,uploads,writes,content,release:async()=>{assert.ok(releaseUpload,'the held upload must exist');releaseUpload();await lateDone;}};
@@ -170,15 +179,31 @@ try{
   }
 
   for(const kind of ['guest','organization']){
+    const f=await fixture({mode:'503-once'}),form=await open(f,kind);
+    assert.equal(await form.locator('[name=publicConsent]').isChecked(),true);
+    editor=await choose(f,kind,'shape');await editor.locator('[data-image-editor-apply]').click();await f.page.locator(config[kind].retry).waitFor({state:'visible'});
+    assert.equal(await form.locator('[name=publicConsent]').isChecked(),true,'the original picture retains its prior authorization before a new picture is linked');
+    await f.page.locator(kind==='guest'?'[data-guest-portrait-discard]':'[data-organization-image-discard]').click();
+    assert.equal(await form.locator(`[name=${config[kind].id}]`).inputValue(),seedId);
+    assert.equal(await form.locator('[name=publicConsent]').isChecked(),true,'discarding the pending photo does not revoke unchanged original data');
+    editor=await choose(f,kind,'shape');await editor.locator('[data-image-editor-apply]').click();await waitUploaded(f,kind);
+    assert.equal(await form.locator('[name=publicConsent]').isChecked(),false,'a successfully linked new picture requires renewed authorization');
+    await f.context.close();reports.push({kind,discardPreservesOriginalPhotoAndAuthorization:true,newPhotoRequiresRenewedConsent:true});
+  }
+
+  for(const kind of ['guest','organization']){
     const f=await fixture({mode:'401-once'}),form=await open(f,kind);await form.locator('[name=name]').fill('PRIVATE-STALE-IMAGE-FORM');editor=await choose(f,kind,'shape');await editor.locator('[data-image-editor-apply]').click();
     await f.page.locator('[data-admin-login-panel]:visible').waitFor();assert.equal(await f.page.locator('[data-image-editor]').count(),0,kind+' editor canvas removed');assert.equal(await form.locator(`[name=${config[kind].id}]`).inputValue(),'',kind+' private image reference cleared');assert.equal(await form.locator('[name=name]').inputValue(),'',kind+' private form cleared');
     assert.deepEqual(await form.locator('input[type=hidden]').evaluateAll(inputs=>inputs.map(input=>input.value)),Array(await form.locator('input[type=hidden]').count()).fill(''),kind+' hidden record references cleared');
     await login(f.page);await open(f,kind);assert.doesNotMatch(await form.locator('[name=name]').inputValue(),/PRIVATE-STALE/u);assert.equal(await f.page.locator(config[kind].retry).isVisible(),false);assert.equal(f.uploads.length,1);await f.context.close();reports.push({kind,expiredSessionClearsPreparedFileAndCanvas:true,newAccountDoesNotReuseOldForm:true});
   }
 
-  const late=await fixture({mode:'late-first'});await open(late,'organization');editor=await choose(late,'organization','shape');await editor.locator('[data-image-editor-apply]').click();await waitUploads(late,1);
-  await late.page.locator(config.organization.close).first().click();await late.page.locator('[data-admin-logout]').click();await late.page.locator('[data-admin-login-panel]:visible').waitFor();await login(late.page);
-  const current=await open(late,'organization');await current.locator('[name=name]').fill('合成新账号当前编辑');await late.release();await late.page.waitForTimeout(50);
-  assert.equal(await current.locator('[name=name]').inputValue(),'合成新账号当前编辑');assert.equal(await current.locator('[name=logoId]').inputValue(),seedId);assert.equal(await late.page.locator('[data-image-editor]').count(),0);await late.context.close();reports.push({abortedLateUploadCannotChangeNewAccount:true});
+  for(const mode of ['late-first','late-401-ignore-abort']){
+    const late=await fixture({mode});await open(late,'organization');editor=await choose(late,'organization','shape');await editor.locator('[data-image-editor-apply]').click();await waitUploads(late,1);
+    await late.page.locator(config.organization.close).first().click();await late.page.locator('[data-admin-logout]').click();await late.page.locator('[data-admin-login-panel]:visible').waitFor();await login(late.page);
+    const current=await open(late,'organization');await current.locator('[name=name]').fill('合成新账号当前编辑');await late.release();await late.page.waitForTimeout(50);
+    assert.equal(await late.page.locator('[data-admin-workspace]').isVisible(),true,mode+' must not clear the new session');
+    assert.equal(await current.locator('[name=name]').inputValue(),'合成新账号当前编辑');assert.equal(await current.locator('[name=logoId]').inputValue(),seedId);assert.equal(await late.page.locator('[data-image-editor]').count(),0);await late.context.close();reports.push({mode,abortedLateUploadCannotChangeNewAccount:true});
+  }
   assert.deepEqual(errors,[]);console.log(JSON.stringify({reports,pageErrors:errors,syntheticOnly:true},null,2));
 }finally{await browser.close();}

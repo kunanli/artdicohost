@@ -526,6 +526,7 @@ async function sendPortrait(pending, generation, controller) {
   if (generation !== portraitGeneration || controller.signal.aborted || !portraitContextMatches(pending.context)) return;
   const payload = pending.prepared.payload;
   if (!portraitIdPattern.test(result.portrait?.id) || result.portrait.contentType !== payload.contentType || !Number.isSafeInteger(result.portrait.bytes) || result.portrait.bytes < 1 || result.portrait.bytes > 512 * 1024) throw new Error('照片上传结果无效，可重试同一份图片。');
+  revokeGuestConsent(); guestFormDirty = true;
   $('[data-guest-form]').elements.namedItem('portraitId').value = result.portrait.id;
   showPortrait(result.portrait.id);
   portraitPending = null;
@@ -553,7 +554,7 @@ async function editPortrait(fileOrLoader) {
     if (!active()) return;
     $('[data-guest-image-editor]').hidden = true;
     if (!edited) { $('[data-guest-portrait-status]').textContent = '已取消图片编辑，原有照片与资料保留。'; return; }
-    revokeGuestConsent(); guestFormDirty = true;
+    guestFormDirty = true;
     $('[data-guest-portrait-status]').textContent = '正在处理并上传编辑后的照片…';
     const prepared = await prepareProfileImage(edited,{maxEdge:800,preserveTransparency:true,signal:controller.signal});
     if (!active()) return;

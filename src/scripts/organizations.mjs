@@ -85,6 +85,7 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onCha
   async function sendImage(pending,started,controller){
     const result=await request('/api/admin/portraits',{method:'POST',body:JSON.stringify(pending.prepared.payload),signal:controller.signal});if(!activeImage(pending.context,started,controller.signal))return;
     const proof=result.portrait;if(!portrait.test(proof?.id??'')||proof.contentType!==pending.prepared.payload.contentType||!Number.isSafeInteger(proof.bytes)||proof.bytes<1||proof.bytes>512*1024)throw new Error('图片上传结果尚未核对，可重试同一份图片。');
+    revoke();
     form.elements.namedItem('logoId').value=proof.id;image(proof.id);pendingImage=null;$('[data-organization-image-status]').textContent=processedImageSummary(pending.prepared)+' 图片已上传；请应用组织修改、保存并发布。';
   }
   function imageFailure(reason){$('[data-organization-image-status]').textContent=pendingImage?'已保留待上传图片与当前组织资料，原图片仍保留。请稍后重试上传，或取消本次图片。':'图片编辑未完成，原有图片与组织资料仍保留。';error(reason.message||'图片上传暂未完成。');}
@@ -100,7 +101,7 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onCha
       const edited=await editStaffImage(file,{root:$('[data-organization-image-editor]'),kind:'organization',signal:controller.signal});if(!active())return;
       $('[data-organization-image-editor]').hidden=true;
       if(!edited){$('[data-organization-image-status]').textContent='已取消图片编辑，原有图片与组织资料保留。';return;}
-      revoke();$('[data-organization-image-status]').textContent='正在处理并上传编辑后的组织图片…';
+      $('[data-organization-image-status]').textContent='正在处理并上传编辑后的组织图片…';
       const prepared=await prepareProfileImage(edited,{maxEdge:800,preserveTransparency:true,signal:controller.signal});if(!active())return;
       pendingImage={prepared,context:state};await sendImage(pendingImage,started,controller);
     }catch(reason){if(active())imageFailure(reason);}

@@ -1343,6 +1343,7 @@ $('[data-admin-navigation-cancel]').addEventListener('click',cancelNavigation);
 $('[data-admin-navigation-dialog]').addEventListener('cancel',event=>{event.preventDefault();cancelNavigation();});
 $('[data-admin-navigation-save]').addEventListener('click',()=>action(async()=>{
   const target=navigationTarget;if(!target)return;
+  if(!hasUnsavedChanges()&&!localRecovery&&!localPendingArchive){completeNavigation(target);return;}
   try{const saved=await saveContentDraft();if(!user||!draft)return;
     if(saved&&!hasUnsavedChanges()&&!localRecovery&&!localPendingArchive)completeNavigation(target);
     else navigationError(pendingSave?'保存结果仍待核对，请核对原提交后再前往。':'仍有未保存的填写，请完成或明确放弃后再前往。');

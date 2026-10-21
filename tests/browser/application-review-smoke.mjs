@@ -23,6 +23,9 @@ async function fixture({ width = 390, capacity = 3, mail = true, username = 'own
   const [name, ...value] = headers.Cookie.split('=');
   await context.addCookies([{ domain: new URL(API).hostname, path: '/api/admin', name, value: value.join('='), httpOnly: true, secure: true, sameSite: 'Strict' }]);
   const page = await context.newPage(); page.setDefaultTimeout(10000);
+  // The real fixture clock is fixed; keep browser capability/token expiry checks on that same wall clock.
+  // setFixedTime leaves event-loop timers running normally.
+  await page.clock.setFixedTime(new Date('2026-10-21T09:00:00.000Z'));
   const calls = [], writes = [], reads = [];
   let loseSubmit = submitAckLost, loseApproval = approvalAckLost, approving = false, rejectAdmissionRead = false;
   const append = runtime.objects.append.bind(runtime.objects);

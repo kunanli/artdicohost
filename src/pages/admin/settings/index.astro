@@ -14,7 +14,7 @@ import '../../../styles/settings-workspace.css';
       <p class="ah-admin-status" data-settings-page-status role="status" aria-live="polite"></p>
       <p class="ah-admin-alert" data-settings-page-error role="alert" tabindex="-1" hidden></p>
       <section class="ah-admin-login-card" data-settings-login-panel aria-labelledby="settings-login-title">
-        <h1 id="settings-login-title">设置与通知</h1><p class="ah-admin-intro">使用现有工作人员账号登录。管理设置需要管理员权限。</p>
+        <h1 id="settings-login-title">设置与通知</h1><p class="ah-admin-intro">活动协作账号可管理通知与群码；账号和备份由管理员维护。</p>
         <form method="post" data-settings-login><div class="ah-admin-field"><label for="settings-username">用户名或邮箱</label><input id="settings-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="160" required /></div><div class="ah-admin-field"><label for="settings-password">密码</label><input id="settings-password" name="password" type="password" autocomplete="current-password" maxlength="1024" required /></div><button type="submit" class="ah-admin-button ah-admin-primary" data-settings-login-submit disabled>登录后台 →</button></form>
       </section>
       <div class="settings-workspace-account" data-settings-account hidden><span data-settings-user></span><button type="button" class="ah-admin-text-button" data-settings-logout>退出登录</button></div>
@@ -22,12 +22,13 @@ import '../../../styles/settings-workspace.css';
         <StaffNavigation current="settings" />
         <div class="ah-admin-workspace-content">
           <div class="ah-admin-page-heading"><div><h1 id="settings-workspace-title">设置与通知</h1><p>集中核对寄件、入群与票券。每项修改分别保存。</p></div><button type="button" class="ah-admin-button" data-settings-refresh>刷新全部状态</button></div>
-          <p class="ah-admin-alert" data-settings-access-denied hidden>此账号没有管理设置的权限。可从左侧返回自己的工作区，或使用管理员账号登录。</p>
+          <p class="ah-admin-alert" data-settings-access-denied hidden>此账号未具备完整活动协作权限，可从左侧返回自己的工作区。</p>
           <div data-settings-authorized hidden>
             <nav class="settings-workspace-overview" aria-label="设置状态与下一步">
-              <a href="#delivery-settings-heading"><strong>报名确认信</strong><span data-settings-mail-summary>状态尚未载入</span><small>保存报名后通知；与工作人员邀请分开。</small></a>
+              <a href="#delivery-settings-heading"><strong>报名确认信</strong><span data-settings-mail-summary>状态尚未载入</span><small>审核通过并取得名额后通知。</small></a>
               <a href="#group-settings-title"><strong>微信群入口</strong><span data-settings-group-summary>状态尚未载入</span><small>核对图片有效期，及时替换。</small></a>
               <a href="#wallet-settings-title"><strong>Apple Wallet</strong><span data-settings-wallet-summary>状态尚未载入</span><small>核对开发者身份、签章与真机验收。</small></a>
+              <a href="#staff-accounts-title" data-settings-accounts-link hidden><strong>工作人员账号</strong><span>新增、权限与停用</span><small>仅管理员；可准备日常协作账号。</small></a>
             </nav>
             <StaffDeliverySettings />
             <section class="ah-admin-panel settings-invitation-help" aria-labelledby="invitation-settings-title"><h2 id="invitation-settings-title">工作人员邀请</h2><p>意向代登记对象使用独立的报名邀请。到人员工作页核对名额与联络同意后，再明确下载或寄送；开启自动确认信不会补寄历史名单。</p><a class="ah-admin-button" href="/admin/contacts/">前往人员与邀约</a></section>

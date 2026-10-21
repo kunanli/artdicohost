@@ -1,5 +1,5 @@
 .settings-workspace-account{display:flex;align-items:center;justify-content:flex-end;gap:20px}
-.settings-workspace-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.settings-workspace-overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
 .settings-workspace-overview a{display:flex;flex-direction:column;gap:9px;padding:22px;border:1px solid var(--admin-line);border-radius:8px;background:#fff}
 .settings-workspace-overview strong{font-size:16px}
 .settings-workspace-overview span{color:var(--admin-blue);font-size:13px}
@@ -17,4 +17,12 @@
 [data-settings-workspace] [data-staff-settings]>.ah-admin-page-heading{margin-top:34px}
 [data-settings-workspace] [data-staff-settings]>.ah-admin-page-heading h2{font-size:22px}
 [data-settings-workspace] [data-staff-settings]>.ah-admin-panel{margin-top:18px}
+.settings-account-shortcuts,.settings-account-credentials,.settings-account-unknown{padding:20px;border-top:1px solid var(--admin-line)}
+.settings-account-shortcuts{display:flex;align-items:center;flex-wrap:wrap;gap:10px}.settings-account-shortcuts p{flex-basis:100%;margin:0}
+.settings-local-draft{padding:14px 18px;margin:16px;border:1px solid var(--admin-line);border-radius:6px;background:#f7f9ff}.settings-local-draft p{margin:4px 0 10px;font-size:13px}.settings-local-draft pre{overflow:auto;max-height:240px;white-space:pre-wrap;overflow-wrap:anywhere}.settings-local-draft .contacts-action-row{display:flex;flex-wrap:wrap;gap:8px}
+.settings-account-credentials h3{margin:0 0 10px}.settings-account-credentials p{font-size:13px;color:var(--admin-muted)}
+.settings-account-credential{display:grid;gap:10px;margin:16px 0;padding:16px;border:1px solid var(--admin-line);border-radius:6px}
+.settings-account-credential input{width:100%;min-width:0;padding:12px;border:1px solid var(--admin-line);border-radius:4px;font-family:monospace;font-size:14px}
+.settings-account-credential .contacts-action-row{display:flex;flex-wrap:wrap;gap:8px}
+[data-settings-accounts]>.ah-admin-table-wrap{padding:0 20px}[data-settings-accounts] [data-user-collaborator-preset]{margin-bottom:16px}
 @media(max-width:720px){.settings-workspace-overview{grid-template-columns:1fr;gap:10px}.settings-workspace-overview a{padding:18px}.settings-workspace-tools{padding:16px}.settings-invitation-help{padding:20px}.settings-workspace-account{font-size:12px}.settings-workspace-tools .settings-form{padding:0 16px 16px}.settings-workspace-tools .ah-admin-section-heading{padding:16px}}

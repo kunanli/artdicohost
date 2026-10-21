@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createStaffSettings} from '../src/scripts/staff-settings.mjs';
+const directory={revision:0,users:[{id:'owner',username:'owner',label:'合成管理员',roles:['superadmin'],active:true,protected:true}]};
+globalThis.document={createElement:()=>({append(){},addEventListener(){},dataset:{}})};
 
 // A small DOM stand-in lets the regression control file/read completion order.
 // No real records, images, credentials, browser storage or HTTP are involved.
@@ -12,7 +14,7 @@ function fixture(request){
       const node={hidden:false,textContent:'',value:'',disabled:false,listeners,
         addEventListener:(type,listener)=>listeners.set(type,listener),querySelectorAll:()=>[],
         reset(){for(const field of fields.values())field.value='';},reportValidity:()=>true,focus(){},
-        replaceChildren(){},removeAttribute(){},cloneNode(){return {...this};},replaceWith(next){nodes.set(selector,next);},
+        replaceChildren(){},append(){},removeAttribute(){},cloneNode(){return {...this};},replaceWith(next){nodes.set(selector,next);},
         elements:{namedItem(name){if(!fields.has(name))fields.set(name,{value:'',files:[],required:false});return fields.get(name);}},
       };
       nodes.set(selector,node);
@@ -31,7 +33,7 @@ test('an old file upload cannot submit using a newly authenticated account',asyn
   const writes=[];let release;
   const f=fixture(async(path,options={})=>{
     if(options.method){writes.push(path);throw new Error('unexpected write');}
-    if(path.endsWith('/users'))return {revision:0,users:[]};
+    if(path.endsWith('/users'))return directory;
     if(path.endsWith('/group-invite'))return group(0);
     return {enabled:false};
   });
@@ -49,7 +51,7 @@ test('an old file upload cannot submit using a newly authenticated account',asyn
 test('a late same-account group read cannot replace a newer revision',async()=>{
   const reads=[];
   const f=fixture(async path=>{
-    if(path.endsWith('/users'))return {revision:0,users:[]};
+    if(path.endsWith('/users'))return directory;
     if(path.endsWith('/group-invite'))return new Promise(resolve=>reads.push(resolve));
     return {enabled:false};
   });
@@ -60,12 +62,12 @@ test('a late same-account group read cannot replace a newer revision',async()=>{
   assert.equal(f.get('[data-settings-error]').textContent,'');
 });
 
-test('an uncertain group write blocks another mutation until an explicit read, without claiming success',async()=>{
+test('an uncertain group write stays blocked after a read without durable write proof',async()=>{
   let writes=0;const originalConfirm=globalThis.confirm;globalThis.confirm=()=>true;
   try{
     const f=fixture(async(path,options={})=>{
       if(options.method){writes++;const error=new Error('服务暂不可用');error.status=503;throw error;}
-      if(path.endsWith('/users'))return {revision:0,users:[]};
+      if(path.endsWith('/users'))return directory;
       if(path.endsWith('/group-invite'))return {revision:1,configured:true,expired:false,expiresAt:new Date(Date.now()+86400000).toISOString()};
       return {enabled:false};
     });
@@ -74,7 +76,7 @@ test('an uncertain group write blocks another mutation until an explicit read, w
     assert.equal(writes,1);assert.equal(f.controller.pending,true);assert.equal(f.get('[data-group-disable]').disabled,true);
     assert.equal(f.get('[data-group-refresh]').disabled,false);assert.match(f.get('[data-settings-pending]').textContent,/待核对/u);
     f.get('[data-group-refresh]').listeners.get('click')();await tick();
-    assert.equal(writes,1);assert.equal(f.controller.pending,false);
-    assert.match(f.get('[data-settings-status]').textContent,/不代表先前修改成功/u);
+    assert.equal(writes,1);assert.equal(f.controller.pending,true);
+    assert.match(f.get('[data-settings-error]').textContent,/不能证明先前修改成功/u);
   }finally{globalThis.confirm=originalConfirm;}
 });

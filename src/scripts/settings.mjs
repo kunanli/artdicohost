@@ -1,6 +1,8 @@
 import {createStaffSettings} from './staff-settings.mjs';
 import {createDeliverySettings} from './delivery-settings.mjs';
 import {createSettingsSession} from '../lib/settings-session.mjs';
+import {canManageEventOperations,canManageAccounts} from '../../shared/staff-permissions.mjs';
+import {createBrowserDraftStore} from '../lib/browser-drafts.mjs';
 
 const root=document.querySelector('[data-settings-admin]'),$=selector=>root.querySelector(selector);
 const secure=location.protocol==='https:'||['127.0.0.1','localhost'].includes(location.hostname);
@@ -11,14 +13,15 @@ const transport=createSettingsSession({
   onForbidden(){clear();announce('此账号的设置权限已改变。请重新登录核对权限。',true);},
 });
 const request=(path,options)=>transport.request(path,options);
+const draftStore=createBrowserDraftStore();
 const staffRoot=$('[data-staff-settings]'),deliveryRoot=$('[data-delivery-settings]');
-const staffSettings=createStaffSettings({root:staffRoot,request,binaryRequest:(path,body)=>request(path,{method:'POST',body:JSON.stringify(body),binary:true})});
-const deliverySettings=createDeliverySettings({root:deliveryRoot,request});
+const staffSettings=createStaffSettings({root:staffRoot,request,draftStore,binaryRequest:(path,body)=>request(path,{method:'POST',body:JSON.stringify(body),binary:true})});
+const deliverySettings=createDeliverySettings({root:deliveryRoot,request,draftStore});
 const pending=()=>staffSettings.pending||deliverySettings.pending;
 const dirty=()=>staffSettings.dirty||deliverySettings.dirty;
 function lock(){
   for(const field of $('[data-settings-login]').querySelectorAll('input,button'))field.disabled=busy||!secure;
-  $('[data-settings-refresh]').disabled=busy||!user?.roles.includes('superadmin');
+  $('[data-settings-refresh]').disabled=busy||!canManageEventOperations(user);
   $('[data-settings-logout]').disabled=busy;
   staffSettings.lock(busy);deliverySettings.lock(busy);
 }
@@ -27,11 +30,12 @@ function clear(){
   $('[data-settings-workspace]').hidden=true;$('[data-settings-account]').hidden=true;$('[data-settings-login-panel]').hidden=false;
   $('[data-settings-authorized]').hidden=true;$('[data-settings-access-denied]').hidden=true;$('[data-settings-user]').textContent='';
   $('[data-settings-login]').reset();for(const selector of ['[data-settings-mail-summary]','[data-settings-group-summary]','[data-settings-wallet-summary]'])$(selector).textContent='状态尚未载入';
+  for(const link of root.querySelectorAll('[data-staff-admin-link],[data-settings-accounts-link]'))link.hidden=true;
   for(const details of root.querySelectorAll('.settings-workspace-tools, .delivery-guide'))details.open=false;
   lock();
 }
 async function load(){
-  if(!user?.roles.includes('superadmin'))return;
+  if(!canManageEventOperations(user))return;
   const started=epoch;await Promise.all([staffSettings.configure(user),deliverySettings.configure(user)]);
   if(started!==epoch)return;
 }
@@ -39,11 +43,12 @@ async function acceptSession(result){
   user=transport.setSession(result);
   $('[data-settings-user]').textContent=user.label||user.id;
   $('[data-settings-login-panel]').hidden=true;$('[data-settings-account]').hidden=false;$('[data-settings-workspace]').hidden=false;
-  const allowed=user.roles.includes('superadmin');$('[data-settings-access-denied]').hidden=allowed;$('[data-settings-authorized]').hidden=!allowed;
+  const allowed=canManageEventOperations(user);$('[data-settings-access-denied]').hidden=allowed;$('[data-settings-authorized]').hidden=!allowed;
+  for(const link of root.querySelectorAll('[data-staff-admin-link],[data-settings-accounts-link]'))link.hidden=!canManageAccounts(user);
   if(allowed){
     await load();
     const anchor=location.hash;
-    if(['#delivery-settings-heading','#wallet-settings-title','#group-settings-title','#staff-settings-title','#invitation-settings-title'].includes(anchor))requestAnimationFrame(()=>{
+    if(['#delivery-settings-heading','#wallet-settings-title','#group-settings-title','#staff-settings-title','#invitation-settings-title',...(canManageAccounts(user)?['#staff-accounts-title']:[])].includes(anchor))requestAnimationFrame(()=>{
       if(user!==result.user||location.hash!==anchor||$('[data-settings-workspace]').hidden)return;
       const heading=document.getElementById(anchor.slice(1));if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});heading.scrollIntoView({block:'start',behavior:'instant'});}
     });
@@ -79,9 +84,10 @@ $('[data-settings-refresh]').addEventListener('click',()=>{
 });
 $('[data-settings-logout]').addEventListener('click',()=>{
   if((pending()||dirty())&&!confirm(pending()?'有操作正在进行或结果尚待确认。建议先核对原操作，退出会清空本页的重试入口。仍要退出吗？':'有未保存的设置内容，确定退出并清空本页吗？'))return;
-  action(async started=>{await request('/api/admin/logout',{method:'POST'});if(started!==epoch)return;clear();announce('已退出，本页的设置资料与下载入口已清空。');});
+  action(async started=>{const actorId=user?.id;await request('/api/admin/logout',{method:'POST'});if(started!==epoch)return;clear();let cleared=true;try{if(actorId)await draftStore.clearActor(actorId);}catch{cleared=false;}announce(cleared?'已退出，本页资料与此账号的本机草稿已清空。':'已退出并清空本页。此浏览器的本机草稿尚未确认清除，请在共用设备清除本站数据。',!cleared);});
 });
 window.addEventListener('beforeunload',event=>{if(dirty()||pending()){event.preventDefault();event.returnValue='';}});
+window.addEventListener('pagehide',()=>staffSettings.wipeSecrets());
 clear();
 if(secure)action(async started=>{const result=await request('/api/admin/session');if(started!==epoch)return;await acceptSession(result);if(started===epoch)announce('已恢复工作人员会话。');});
 else announce('请通过已配置的 HTTPS 工作人员入口登录。',true);

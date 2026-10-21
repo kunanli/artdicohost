@@ -30,6 +30,7 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
     root.hidden = true; boothForm.reset(); assignmentForm.reset();
     for (const key of ['session-choices','booth-choices','readiness']) $('[data-planner-' + key + ']').replaceChildren();
     assignmentForm.elements.namedItem('contactId').replaceChildren(node('option', '请选择'));
+    for (const key of ['title','note','person-state','preflight']) $('[data-planner-' + key + ']').textContent = '';
     message(''); if (wasWorking) onBusy(false); onDraftChange();
   }
   function selectedContact() { return roster?.contacts.find(contact => contact.id === assignmentForm.elements.namedItem('contactId').value); }

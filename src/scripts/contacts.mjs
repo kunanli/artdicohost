@@ -85,6 +85,7 @@ function mayConvert(item) { return Boolean(item)&&permitted()&&user.roles.some(r
 function requireInviteConsent() { if (!mayInvite(contactById(invitationContactId))) throw new Error(invitationBlockReason(contactById(invitationContactId))); }
 function lock() {
   $('[data-contacts-login-submit]').disabled = busy || location.protocol === 'file:';
+  for(const button of document.querySelectorAll('.operations-local-draft button'))button.disabled=busy||!permitted();
   for (const field of document.querySelectorAll('[data-contacts-workspace] button,[data-contacts-file]')) field.disabled = busy || !permitted() || field.hasAttribute('data-consent-blocked') || field.hasAttribute('data-role-blocked');
   $('[data-contacts-file]').disabled = busy || !permitted() || !features.contactImport;
   $('[data-profile-fields]').disabled = busy || !permitted() || profilePending || Boolean(profileDraft?.blocked);

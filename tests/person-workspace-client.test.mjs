@@ -57,6 +57,16 @@ test('history metadata and bounded list sizes are validated, with explicit trunc
   for (const change of [item => item.communications.historyLimit = 0, item => item.communications.invitationTotal = 0, item => item.communications.historyTruncated = undefined, item => item.communications.timeline = Array(201).fill(item.communications.timeline[0]), item => item.communications.timeline[0].at = 'invalid date']) { const invalid = fixture(); change(invalid); assert.equal(personWorkspaceView(invalid, selection), null); }
 });
 
+test('saved manual invitation history stays visible when the separate invitation source is unavailable', () => {
+  const value = fixture();
+  value.availability.invitations = 'unavailable';
+  value.communications.invitations = []; value.communications.invitationTotal = 0;
+  value.communications.timeline[0] = { source: 'legacy_invitation', id: 'legacy-sent', at: AT, status: 'manually_sent', channel: 'wechat', kind: null };
+  assert.ok(personWorkspaceView(value, selection), 'contact and its manual history remain readable');
+  value.communications.timeline[0].source = 'invitation';
+  assert.equal(personWorkspaceView(value, selection), null, 'unavailable separate-source entries remain forbidden');
+});
+
 test('links reuse the original editors and never create a save/send request', () => {
   const value = fixture(), actions = personWorkspaceActions(value, ['outreach', 'editor', 'superadmin']);
   assert.deepEqual(actions.map(action => action.key), ['profile', 'arrangements', 'invitation', 'guest', 'review', 'settings']);

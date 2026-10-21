@@ -71,7 +71,9 @@ export function personWorkspaceView(value, selection) {
       || !communications.timeline.every(item => lines(item, ['source', 'id', 'status', 'channel']) && ['invitation', 'confirmation', 'legacy_invitation'].includes(item.source) && (item.kind === null || text(item.kind, 100)) && date(item.at))) return null;
     if ((value.availability.invitations !== 'available' && communications.invitations.length) || (value.availability.confirmations !== 'available' && communications.confirmations.length)) return null;
     if (communications.invitationTotal < communications.invitations.length || communications.confirmationTotal < communications.confirmations.length || communications.timelineTotal < communications.timeline.length) return null;
-    if (communications.timeline.some(item => value.availability[item.source === 'confirmation' ? 'confirmations' : 'invitations'] !== 'available')) return null;
+    // Historical manual invitation entries belong to the contact journal, which
+    // may be available even when the separate invitation service cannot be read.
+    if (communications.timeline.some(item => value.availability[item.source === 'legacy_invitation' ? 'contact' : item.source === 'confirmation' ? 'confirmations' : 'invitations'] !== 'available')) return null;
     if (!plain(publicProfile) || publicProfile.state !== value.availability.publicProfile || !list(publicProfile.profiles)
       || !publicProfile.profiles.every(item => lines(item, ['id', 'name', 'company', 'title']) && id(item.id) && ['pending', 'confirmed'].includes(item.status)
         && typeof item.publicConsent === 'boolean' && typeof item.hasPortrait === 'boolean' && typeof item.published === 'boolean' && typeof item.publishedMatchesDraft === 'boolean' && strings(item.publicRoles, 10))

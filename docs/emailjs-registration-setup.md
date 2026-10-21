@@ -2,12 +2,14 @@
 
 2026-10-21。根據使用者提供的 EmailJS 畫面，已有 Service `LoginPlan`，SMTP `smtp.feishu.cn`／465／SSL，帳號 `support@artdico.co`。這證明已有設定，尚不代表本次活動已寄信或收件成功。
 
+使用者已保存並提供實際 **Template ID `template_89mgpj9`**。使用者已確認 EmailJS Test It 收到信、寄件人與排版正常；目前沒有由本開發工作修改 FC 或啟用寄件。
+
 只讀核對 `kunanli/artdico-deck` 的 `backend/lib/email-fallback.js`：使用相同服務，以服務端 REST 傳送；另有歡迎及通知模板。可沿用同一個 EmailJS SMTP 服務，新增活動專用模板，保留 Deck 原模板與設定。Deck 的 `message`／`subject` 參數與此專案的 `invitation_text` 不同。
 
 ## EmailJS 控制台
 
 1. 在 Email Services 保留 `LoginPlan` 服務 ID、SMTP、SSL、帳號及 App Password。SMTP 密碼只留在 EmailJS，不放入活動站設定。此時不需要重新按 Update Service；畫面勾選的 Send test email 會發信，僅在要核驗服務時自行執行。
-2. 在 Email Templates 新建一份活動確認模板。可命名「ARTDiCO HOST 报名确认」，Template ID 建議 `host_registration_confirmation`；若控制台產生不同 ID，以實際保存的 ID 為準。
+2. 活動確認模板已由使用者保存，實際 Template ID 為 `template_89mgpj9`；接續使用此 ID，不再以先前建議名稱重建。
 3. 欄位如下。From Email 可保留使用服務預設地址，核對實際為 `support@artdico.co`；或在允許指定時固定填此地址。
 
 | 欄位 | 值 |
@@ -34,7 +36,7 @@
 ```json
 {
   "EMAILJS_SERVICE_ID": "LoginPlan",
-  "EMAILJS_CONFIRMATION_TEMPLATE_ID": "REPLACE_WITH_SAVED_TEMPLATE_ID",
+  "EMAILJS_CONFIRMATION_TEMPLATE_ID": "template_89mgpj9",
   "EMAILJS_PUBLIC_KEY": "REPLACE_IN_PROTECTED_FILE",
   "EMAILJS_PRIVATE_KEY": "REPLACE_IN_PROTECTED_FILE",
   "EMAIL_FROM_ADDRESS": "support@artdico.co",
@@ -43,6 +45,26 @@
 ```
 
 上例只有佔位值，不能直接啟用。實際 key 在受控機器的 0600 私密檔案提供，不貼聊天、不寫進 Git／`PUBLIC_` 或一般網頁表單。本機 `.env.local` 不會同步到正式 FC；Deck 的 GitHub Secrets 也不會自動成為此站設定。
+
+### 現成的小型配置入口：FC 環境變數
+
+`functions/cloud-content/runtime.mjs` 只在提供 `ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID` 時載入 bundle；沒有 locator 時，既有 provider 直接讀取上述六欄，無需新程式或重新部署。可由現有管理者在阿里雲 FC 的香港函數 `artdicohost-api` 配置頁受控新增。先在報名後台關閉自動通知並保存，保留 FC 全部原有環境值，不設定佔位 bundle ID。
+
+| 新增／核對的環境變數 | 值 |
+| --- | --- |
+| `EMAILJS_SERVICE_ID` | `LoginPlan` |
+| `EMAILJS_CONFIRMATION_TEMPLATE_ID` | `template_89mgpj9` |
+| `EMAILJS_PUBLIC_KEY` | 從 EmailJS Account 複製到 FC 受控欄位 |
+| `EMAILJS_PRIVATE_KEY` | 從 EmailJS 帳戶的 API／Security 設定複製到 FC 受控欄位 |
+| `EMAIL_FROM_ADDRESS` | `support@artdico.co` |
+| `EMAIL_FROM_NAME` | `ARTDiCO HOST` |
+| `ARTDICO_CONFIRMATION_EMAIL_ENABLED` | 初次配置先 `false`；核驗後再明確開啟 |
+
+直接方式的前提是**完整原環境與新增欄位的 JSON 不超過 4096 bytes**，目前未量測正式 map 大小，不能保證放得下。超限不要刪除原有設定來騰空間，改用下方 bundle；若原本已有非空 locator，須先核對原配置，直接環境不會覆蓋該 bundle。現有 `.github/workflows/check.yml` 沒有消費任何 EmailJS Secrets，只新增 GitHub Secrets 不會配置 FC。既有公開網站部署身分也不拿來讀寫私有配置物件。
+
+完成初次停用配置後，先確認 EmailJS Test It 已正常收到信，再在後台自動通知仍關閉時把 FC 寄件開關改為 `true`。重新載入「报名确认与票券」核對缺項／readiness；最後才明確開啟後台自動通知。這個順序與 bundle 的通知閘門一致。
+
+### 完整配置入口：加密 bundle
 
 由既有運維依 [加密配置流程](delivery-configuration.md)使用現有報名簽章秘密產生 bundle，上傳同一私有桶的不可變物件；FC 只增加 `ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID` 和明確寄件開關。現有 FC 環境總量上限 4096 bytes，保留其餘環境、角色與正式資料；不用將多個 key 直接塞進既有環境。
 
@@ -59,4 +81,4 @@
 
 ## 本輪實際狀態
 
-已核對原倉庫的接法、目前活動站的參數與官方說明，準備好模板及操作指引。尚未在使用者的 EmailJS 控制台建立模板、讀取實際 API key、修改 FC 配置或寄信。下一步是保存新模板並取得實際 Template ID（此 ID 不是密鑰），再由受控配置接上並驗收。
+已核對原倉庫的接法、目前活動站的參數與官方說明，準備好模板及操作指引。使用者已保存模板並提供 `template_89mgpj9`；尚未讀取實際 API key、修改 FC 配置或寄信。使用者已確認 Test It 收件、寄件人與排版正常；下一步透過 FC 受控欄位（容量允許時）或加密 bundle 加入 API 設定，再核對 readiness 與明確開啟通知。SMTP／模板測試通過不等於網站寄件已啟用。

@@ -2,6 +2,8 @@
 
 ## 2026-10-21 设置接续：support@artdico.co 报名确认信
 
+用户已回报实际确认模板 ID `template_89mgpj9`，用户已确认 Test It 收件、寄件人与排版正常。代码复查确认无 bundle locator 时可读六项直接 FC 环境；若完整 map 在既有 4096 bytes 内，可先保留原值并以寄件关闭配置，测试通过后再分步核对 readiness／通知开关。当前 GitHub workflow 不读取 EmailJS Secrets，部署身份也不用于私有桶写入，不能把加入 Secrets 当作已配置；超限继续按已有受控私有桶身份走加密 bundle，不新增 IAM。
+
 文案补充：按用户提供的「GGJ 中国交流聚会 × ARTDiCO HOST 2026」正式活动介绍，在确认邮件中加入 12 月 5 日深圳前海、目标参与对象及计划活动形式；末句截断的「合作交」按合作交流补齐。保留逐人确认／候补正文与私人链接，议程／嘉宾另行公布，不增加官方背书、已确认嘉宾或名额承诺。仅更新待贴入 EmailJS 的模板和指引，不修改已启用的网站与发送配置。
 
 用户提供 EmailJS SMTP 截图（Service ID `LoginPlan`，飞书 SSL 465，寄件账号 `support@artdico.co`），并要求参考已有 `artdico-deck`。只读核对该仓库的邮件代码与配置名称：共用现有服务，保留 welcome／notify 模板，为活动确认建立独立模板，匹配本项目 `invitation_text` 与既有白名单参数。准备可贴上的 HTML、字段映射及加密 bundle／后台开关操作文档；本轮不改变生产代码或触发重部署。SMTP App Password 留在 EmailJS，API 密钥走受控配置；实际模板 ID、凭证就绪、首次实际收件与启用仍按后台真实状态核对，不宣称截图已证明发送成功。

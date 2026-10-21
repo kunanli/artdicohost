@@ -2,6 +2,8 @@
 
 ## 设置接续：support@artdico.co 自动报名确认信（2026-10-21）
 
+最新：使用者已保存模板並提供 **`template_89mgpj9`**，使用者已確認 Test It 收件、寄件人與排版正常。已確認目前 provider 支援直接 FC 六欄＋寄件開關（完整環境仍須 ≤4096 bytes），初次可先保持 `false`，後台自動通知先停用；若超限使用原加密 bundle 流程。現有 GitHub workflow 不讀 EmailJS Secrets，加入 Secrets 本身不會配置；部署公開桶身分不寫私有配置。開發工作尚未取得 API key、改 FC 或實寄，勿把新 ID 記錄當作已啟用。實際步驟見下方連結。
+
 用户已有 EmailJS `LoginPlan`／飞书 SSL SMTP，并要求参考 `artdico-deck`。已只读核对原仓库邮件参数，为本项目准备[独立模板、控制台字段及受控启用步骤](emailjs-registration-setup.md)。原 Deck 使用 welcome／notify，活动站使用独立 `EMAILJS_CONFIRMATION_TEMPLATE_ID` 和 `invitation_text`；不能直接套原 `message` 模板。本轮只有文档及模板材料，没有取得实际 API key、修改 EmailJS／FC、启用自动通知或发信；下一步保存独立模板并取得实际 Template ID，再按受控配置验收，不重部署已成功的图片功能。
 
 用户随后要求带入正式活动介绍；[HTML 模板](templates/emailjs-registration-confirmation.html) 已加入「GGJ 中国交流聚会 × ARTDiCO HOST 2026」、12 月 5 日深圳前海、参与对象及计划活动内容，后接真实确认／候补正文。EmailJS 控制台仍须由现有账号保存新模板；本机文件更新不代表线上模板已更改或已寄信。

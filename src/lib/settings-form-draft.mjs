@@ -19,7 +19,7 @@ export function createSettingsFormDraft({store,actorId,eventId,entity,form,polic
   discard.addEventListener('click',async()=>{const pending=binding.snapshot?.record?.kind==='pending_submission';if(!confirm(pending?'已人工核对后台原操作？解除锁定只清除本机记录，不撤销或重送后台操作。':'清除这份本机填写？后台数据不会改变。'))return;try{await binding.discard({allowPending:pending});copy.textContent='';copy.hidden=true;await onDiscard(pending);}catch{}});
   view.addEventListener('click',()=>{copy.textContent=JSON.stringify(binding.snapshot?.record?.value??{},null,2);copy.hidden=!copy.hidden;});
   const schedule=()=>binding.schedule();form.addEventListener('input',schedule);form.addEventListener('change',schedule);
-  return Object.freeze({get blocked(){return binding.blocked;},get pending(){return binding.snapshot?.record?.kind==='pending_submission';},get state(){return state;},load:()=>binding.load(),schedule,
+  return Object.freeze({get blocked(){return binding.blocked;},get pending(){return binding.snapshot?.record?.kind==='pending_submission';},get value(){return binding.snapshot?.record?.value??null;},get state(){return state;},load:()=>binding.load(),schedule,
     markPending:value=>binding.markPending(value??capture()),
     async discard(){return binding.discard({allowPending:true});},
     close(){if(closed)return;closed=true;binding.close();form.removeEventListener('input',schedule);form.removeEventListener('change',schedule);copy.textContent='';panel.remove();}});

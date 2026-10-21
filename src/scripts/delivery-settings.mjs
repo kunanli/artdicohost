@@ -16,7 +16,7 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
   const drafts=new Map(),persistedPending=new Set(),allowed=()=>canManageEventOperations(user);
   const mutations=createDeliveryMutations({request:async(path,options)=>{
     const started=generation,kind=path.endsWith('/dispatch')?'dispatch':'settings',draft=drafts.get(kind);
-    if(draft)await draft.markPending({...JSON.parse(options.body),action:kind});
+    if(draft){const value={...JSON.parse(options.body),action:kind};if(draft.pending){if(JSON.stringify(draft.value)!==JSON.stringify(value))throw new Error('上次设置操作仍待核对，不能另建新操作。');}else await draft.markPending(value);}
     if(started!==generation||!allowed())throw new Error('会话已改变，未提交原操作。');return request(path,options);
   },revision:()=>state?.revision});
   function status(message,error=false){$('[data-delivery-status]').textContent=error?'':message;$('[data-delivery-error]').textContent=error?message:'';$('[data-delivery-error]').hidden=!error;}
@@ -47,7 +47,7 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
   }
   async function action(callback){
     if(busy||externalBusy||!allowed())return;const started=generation;busy=true;lock();
-    try{await callback(started);}catch(error){if(started===generation)status(error.message||'结果尚未确认，请保留本页并再次确认。',true);}
+    try{await callback(started);}catch(error){if(started===generation){if(!mutations.pending)for(const[kind,draft]of drafts)if(draft.pending)persistedPending.add(kind);status(error.message||'结果尚未确认，请保留本页并再次确认。',true);}}
     finally{if(started===generation){busy=false;lock();}}
   }
   async function accept(result,started){

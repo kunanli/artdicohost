@@ -4,6 +4,7 @@ import { EDITABLE_CONTACT_FIELDS } from '../../shared/contact-editor.mjs';
 import { SESSION_ROLES, SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
 import { eventConfig } from '../config/event.mjs';
 import { contactProgress, summarizeContactProgress, invitationProgressLabels, contactDeclined } from '../../shared/organizer-progress.mjs';
+import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, admissionForContact, ADMISSION_LABELS, PUBLIC_ROLE_LABELS, savedContactReceipt, conversionPreview, conversionReceipt } from '../lib/people-relationships.mjs';
 
 const $ = value => document.querySelector(value);
 const responses = { pending: '尚未确认', attending: '已确认出席', declined: '不出席' };
@@ -19,6 +20,9 @@ let intentState = null;
 let importSource = null;
 const selectedContacts = new Set();
 let visibleContactIds = [];
+let relationships = null, relationshipSequence = 0, operationRevision = null, membershipEdited = false, uncertainSave = null, conversionDraft = null;
+const admissionReceipts = new Map();
+let organizationSelection = parseOrganizationSelection(location.hash);
 let pendingContactId=null,pendingContactAction='contact',sessionGeneration=0;
 let batchDownloadUrl = null;
 const privateExportUrls = new Set();
@@ -71,8 +75,8 @@ function lock() {
   $('[data-profile-fields]').disabled = busy || !permitted();
   $('[data-profile-save]').disabled = busy || !permitted() || (!$('[data-profile-duplicates]').hidden && !$('[data-profile-duplicates-confirm]').checked);
   for (const button of document.querySelectorAll('[data-profile-close]')) button.disabled = busy;
-  $('[data-contact-save]').disabled = busy || !permitted();
-  $('[data-contact-fields]').disabled = busy || !permitted();
+  $('[data-contact-save]').disabled = busy || !permitted() || Boolean(uncertainSave);
+  $('[data-contact-fields]').disabled = busy || !permitted() || Boolean(uncertainSave);
   $('[data-contacts-export]').disabled = busy || !permitted() || !features.contactXlsxExport;
   for(const option of document.querySelectorAll('[data-contacts-export-contact],[data-contacts-export-answers]'))option.disabled=busy||!permitted()||!features.contactXlsxExport;
   for (const field of document.querySelectorAll('[data-invitation-form] input,[data-invitation-form] select')) field.disabled = busy || !permitted();
@@ -88,28 +92,46 @@ function lock() {
   $('[data-contacts-batch-invite]').disabled = busy || !permitted() || !features.batchInvitations || !intentState || !selectedContacts.size;
   for (const input of document.querySelectorAll('[data-contact-selection]')) input.disabled = busy || !features.intentInvitations || !maySelect(contactById(input.dataset.contactSelection));
   $('[data-contacts-selected]').textContent = '已选 '+selectedContacts.size+' 位';
+  for(const key of ['organization','public-role','public-state'])$('[data-contacts-'+key+']').disabled=busy||!permitted()||!relationships;
+  const unpublished=$('[data-contacts-public-state] option[value="unpublished"]');unpublished.disabled=!relationships||relationships.publicationAttributionUnavailable;
+  $('[data-contact-membership-add]').disabled=busy||!permitted()||!relationships||$('[data-contact-memberships]').children.length>=20||Boolean(uncertainSave);
+  $('[data-contact-check-save]').disabled=busy||!permitted()||!uncertainSave;
+  $('[data-contacts-sync-attending]').disabled=busy||!permitted()||!user?.roles.some(role=>['reviewer','superadmin'].includes(role))||!intentState||!contacts.some(item=>item.operations.responseStatus==='attending'&&!intentState.conversions?.some(row=>row.sourceContactId===item.id));
+  $('[data-conversion-confirm]').disabled=busy||!permitted()||!conversionDraft||conversionDraft.unknown||!conversionDraft.eligibleIds.length;
+  for(const button of document.querySelectorAll('[data-conversion-close]'))button.disabled=busy;
 }
 async function request(path, options = {}) {
   const generation=sessionGeneration;
+  const {current=()=>true,...fetchOptions}=options;
   const headers = { Accept: 'application/json' };
   if (options.body) headers['Content-Type'] = 'application/json';
   if (options.method && options.method !== 'GET' && csrfToken) headers['X-CSRF-Token'] = csrfToken;
-  const response = await fetch(path, { ...options, headers, credentials: 'same-origin', cache: 'no-store' });
-  if(generation!==sessionGeneration)throw new Error('会话已改变，请重新登录。');
-  const result = await response.json().catch(() => ({}));
-  if(generation!==sessionGeneration)throw new Error('会话已改变，请重新登录。');
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15_000);
+  let response,result;
+  try{
+    response=await fetch(path,{...fetchOptions,headers,credentials:'same-origin',cache:'no-store',redirect:'error',signal:controller.signal});
+    if(generation!==sessionGeneration||!current()){response.body?.cancel().catch(()=>{});throw new Error('会话或读取对象已改变，已忽略旧回应。');}
+    if([401,403].includes(response.status)&&path!=='/api/admin/login'){response.body?.cancel().catch(()=>{});const error=new Error(response.status===401?'工作人员会话已结束，请重新登录。':'此账号没有读取这份私人资料的权限，请重新登录核对。');error.status=response.status;clearPrivateState();announce(error.message,true);throw error;}
+    if(!/^application\/json(?:\s*;|$)/iu.test(response.headers.get('content-type')??''))throw new Error('云端回应格式无法核对。');
+    const maximum=path==='/api/admin/contacts'?32*1024*1024:4*1024*1024,declared=response.headers.get('content-length');
+    if(declared!==null&&(!/^[0-9]+$/u.test(declared)||Number(declared)>maximum))throw new Error('云端回应超出可核对范围。');
+    const reader=response.body?.getReader();if(!reader)throw new Error('云端回应为空。');const chunks=[];let length=0;
+    try{while(true){const part=await reader.read();if(part.done)break;if((length+=part.value.length)>maximum)throw new Error('云端回应超出可核对范围。');chunks.push(part.value);}const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}result=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}finally{reader.cancel().catch(()=>{});reader.releaseLock();}
+    if(generation!==sessionGeneration||!current())throw new Error('会话或读取对象已改变，已忽略旧回应。');
+  }finally{clearTimeout(timer);}
   if (!response.ok) {
-    if (response.status === 401 && path !== '/api/admin/login') clearPrivateState();
+    if ([401,403].includes(response.status) && path !== '/api/admin/login') clearPrivateState();
     const details = result.error?.fields ? [...new Set(Object.values(result.error.fields))].join(' ') : '';
-    throw new Error(response.status === 409 ? (result.error?.code === 'INVITATION_GENERATION_MISMATCH' ? '邀请函生成记录已变化，请重新生成并下载当前版本，再核对实际发出的版本。' : '名单版本已更新或预览已过期。当前编辑仍保留，请先核对并刷新名单后重试。') : (result.error?.message || '操作未完成，请确认本地服务已启动。') + (details ? ' ' + details : ''));
+    const error=new Error(response.status === 409 ? (result.error?.code === 'INVITATION_GENERATION_MISMATCH' ? '邀请函生成记录已变化，请重新生成并下载当前版本，再核对实际发出的版本。' : '名单版本已更新或预览已过期。当前编辑仍保留，请先核对并刷新名单后重试。') : (result.error?.message || '操作未完成，请确认本地服务已启动。') + (details ? ' ' + details : ''));error.status=response.status;throw error;
   }
   return result;
 }
 async function action(callback) {
   if (busy) return;
+  const generation=sessionGeneration;
   busy = true; lock();
-  try { await callback(); } catch (error) { announce(error.message || '操作未完成。', true); }
-  finally { busy = false; lock();if(pendingContactId&&user&&permitted()&&!$('[data-contacts-workspace]').hidden){const id=pendingContactId,kind=pendingContactAction;pendingContactId=null;const contact=contactById(id);if(contact){if(kind==='profile')openProfile(contact);else if(kind==='invitation')openInvitation(contact);else openContact(contact);}else announce('关联人员已不在当前名单中，请核对最新资料。',true);} }
+  try { await callback(); } catch (error) { if(generation===sessionGeneration)announce(error.message || '操作未完成。', true); }
+  finally { if(generation===sessionGeneration){busy = false; lock();if(pendingContactId&&user&&permitted()&&!$('[data-contacts-workspace]').hidden){const id=pendingContactId,kind=pendingContactAction;pendingContactId=null;const contact=contactById(id);if(contact){if(kind==='profile')openProfile(contact);else if(kind==='invitation')openInvitation(contact);else openContact(contact);}else announce('关联人员已不在当前名单中，请核对最新资料。',true);}} }
 }
 function clearImport() {
   importSource = null;
@@ -124,6 +146,7 @@ function clearImport() {
 }
 function clearPrivateState() {
   sessionGeneration+=1;
+  relationshipSequence+=1;relationships=null;admissionReceipts.clear();operationRevision=null;membershipEdited=false;uncertainSave=null;conversionDraft=null;busy=false;
   for(const url of privateExportUrls)URL.revokeObjectURL(url);privateExportUrls.clear();
   $('[data-contacts-export-contact]').checked=false;$('[data-contacts-export-answers]').checked=false;$('[data-contacts-export-panel]').hidden=true;
   clearBatchResult();
@@ -153,6 +176,9 @@ function clearPrivateState() {
   $('[data-contacts-owner]').value = '';
   $('[data-contacts-progress]').value = '';
   $('[data-contacts-result-count]').textContent = '';
+  for(const selector of ['[data-contacts-organization]','[data-contacts-public-role]','[data-contacts-public-state]'])$(selector).value='';
+  $('[data-people-relationships-status]').textContent='';$('[data-contact-memberships]').replaceChildren();$('[data-contact-membership-status]').textContent='';$('[data-contact-save-unknown]').hidden=true;
+  $('[data-conversion-dialog]').close();$('[data-conversion-entries]').replaceChildren();$('[data-conversion-summary]').textContent='';$('[data-conversion-error]').textContent='';$('[data-conversion-error]').hidden=true;
   $('[data-contact-profile]').replaceChildren();
   $('[data-contact-sessions]').replaceChildren();
   $('[data-contact-booths]').replaceChildren();
@@ -169,6 +195,7 @@ function clearPrivateState() {
   $('[data-contact-error]').textContent = '';
   $('[data-contact-error]').hidden = true;
   if ($('[data-contact-dialog]').open) $('[data-contact-dialog]').close();
+  lock();
 }
 async function loadWorkspace() {
   const generation=sessionGeneration;
@@ -178,9 +205,11 @@ async function loadWorkspace() {
   const nextFeatures = { contactImport: program.features?.contactImport === true, communicationsPreview: program.features?.communicationsPreview === true, intentInvitations: program.features?.intentInvitations === true, protectedContactImport: program.features?.protectedContactImport === true, batchInvitations: program.features?.batchInvitations === true, contactXlsxExport: program.features?.contactXlsxExport === true };
   const nextCommunications = nextFeatures.communicationsPreview ? await request('/api/admin/communications') : null;
   const nextIntent = nextFeatures.intentInvitations ? await request('/api/admin/intent-invitations').catch(()=>null) : null;
+  const nextRelationships=await loadRelationships();
   if(generation!==sessionGeneration||!permitted())throw new Error('会话已改变，未载入旧私人名单。');
   revision = state.revision; contacts = state.contacts; content = program.content;
   features = nextFeatures; communications = nextCommunications; intentState=nextIntent;
+  relationships=nextRelationships;admissionReceipts.clear();renderRelationshipFilters();
   for(const id of selectedContacts)if(!contacts.some(contact=>contact.id===id))selectedContacts.delete(id);
   $('[data-contacts-conversion-note]').textContent = intentState ? '将已核对的既有意向登记为工作人员代登记，保留原始来源；不会代替申请人的网站隐私同意，也不会自动发送邀请。' : '报名转换服务尚未就绪；现有名单、跟进与现场安排仍可分别维护。';
   $('[data-contacts-import-panel]').hidden = !features.contactImport;
@@ -193,16 +222,26 @@ async function loadWorkspace() {
   $('[data-contacts-user]').textContent = user.label || user.id;
   render();
 }
+async function loadRelationships(){const generation=sessionGeneration,sequence=++relationshipSequence;try{const value=peopleRelationships(await request('/api/admin/people/relationships',{current:()=>sequence===relationshipSequence}));if(generation!==sessionGeneration||sequence!==relationshipSequence)return null;return value;}catch(error){if(generation!==sessionGeneration||sequence!==relationshipSequence)throw error;return null;}}
+function renderRelationshipFilters(){
+  const select=$('[data-contacts-organization]'),selected=organizationSelection||select.value;select.replaceChildren();
+  for(const [value,label]of[['','全部组织关系'],['__none','尚未关联组织'],...(relationships?.organizations??[]).map(row=>[row.id,row.name+(row.status==='withdrawn'?'（已退出）':'')])]){const option=node('option',label);option.value=value;select.append(option);}
+  const missing=[...new Set(contacts.flatMap(row=>(row.operations.organizationMemberships??[]).map(link=>link.organizationId)))].filter(id=>!relationships?.organizations.some(row=>row.id===id));if(selected&&!['','__none'].includes(selected)&&!relationships?.organizations.some(row=>row.id===selected)&&!missing.includes(selected))missing.push(selected);
+  for(const id of missing){const option=node('option','历史组织 · '+id);option.value=id;select.append(option);}select.value=selected;organizationSelection=null;
+  $('[data-people-relationships-status]').dataset.unavailable=String(!relationships);
+  $('[data-people-relationships-status]').textContent=!relationships?'组织与公开人物来源暂时无法核对，关系筛选已暂停。现有沟通及已保存组织编号保留，不将读取失败当成「未建立」。':relationships.publicationAttributionUnavailable?'部分旧公开人物无法归属到当前联系人，「尚未发布」筛选暂停；其余明确关系可继续核对。':'按明确人员与组织编号串连；机构文字、内部职责、公开授权及正式名额分别保留。';
+}
 function today() { return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date()); }
 function due(item) { return !contactDeclined(item) && !!item.operations.followUpAt && item.operations.followUpAt <= today() && item.operations.responseStatus === 'pending'; }
 function invitationState(item) { return invitationProgressLabels[contactProgress(item, progressOptions()).state]; }
 function render() {
   const metrics = $('[data-contacts-metrics]'); metrics.replaceChildren();
   const summary = summarizeContactProgress(contacts, progressOptions());
-  for (const [label, count] of [['对象总数',summary.total],['已记录人工发出 · 当前版',summary.manuallySent],['服务商已接受 · 未证明送达',summary.providerAccepted],['发送结果待核对',summary.unknown],['候补 · 名额尚未确认',summary.waitlisted],['名额状态待核对',summary.admissionUnknown],['出席已确认',summary.attending],['已联系待回复',summary.awaitingReply]]) {
+  const formal=contacts.map(item=>admissionForContact(item,intentState));
+  for (const [label, count] of [['对象总数',contacts.length],['本人已答应参加',contacts.filter(item=>item.operations.responseStatus==='attending').length],['本名单正式名额',intentState?formal.filter(row=>row.status==='confirmed').length:'待核对'],['本名单候补',intentState?formal.filter(row=>row.status==='waitlisted').length:'待核对'],['跟进已到期',contacts.filter(due).length]]) {
     const card=node('article');card.append(node('span',label),node('strong',String(count)));metrics.append(card);
   }
-  $('[data-contacts-progress-note]').textContent = '按人去重，拒绝联络或出席 '+summary.excluded+' 位不计入联络进度；旧版已发出不计作当前版。'+(features.intentInvitations&&!intentState?'新版报名邀请记录暂时无法读取，当前统计仅含可核对的旧邀请函。':'人工发出与服务商接受分别统计，均不表示本人回复或邮件送达。');
+  $('[data-contacts-progress-note]').textContent = '本人回复与正式名额分别统计；共同 300 人总数以报名审核后台为准。'+(features.intentInvitations&&!intentState?'正式名额来源暂时无法读取，不能据此判断为零。':'拒绝出席后的正式名额须到报名审核明确撤回，回复变更不会自行释放。')+'当前版人工发出 '+summary.manuallySent+' 位，服务商接受 '+summary.providerAccepted+' 位，结果待核对 '+summary.unknown+' 位；接受不等于送达。';
   const ownerSelect = $('[data-contacts-owner]'), previousOwner = ownerSelect.value;
   ownerSelect.replaceChildren();for(const [value,label] of [['','全部负责同事'],['__unassigned','尚未分配负责人'],...[...new Set(contacts.map(item=>item.operations.owner).filter(Boolean))].sort().map(value=>[value,value])]){const option=node('option',label);option.value=value;ownerSelect.append(option);}ownerSelect.value=previousOwner;
   $('[data-contacts-planning]').textContent='原问卷意向：自报 SO / RO '+contacts.filter(item=>item.profile.categories.some(value=>['so','ro'].includes(value))).length+' 位，筹备新站点 '+contacts.filter(item=>item.profile.categories.includes('prospective_site')).length+' 位，展示意向 '+contacts.filter(item=>item.profile.interests.includes('exhibition')).length+' 位，需要住宿 '+contacts.filter(item=>item.profile.accommodationIntent==='needed').length+' 位；同意联络 '+contacts.filter(item=>item.profile.contactConsent==='consented'&&!contactDeclined(item)).length+' 位。意向不代表安排已确认。';
@@ -223,7 +262,7 @@ function render() {
     const matchesOwner=!owner||(owner==='__unassigned'?!progress.owner:progress.owner===owner);
     const progressMatches={unconverted:!progress.excluded&&Boolean(intentState)&&!progress.conversion,unreplied:!progress.excluded&&progress.response==='pending'&&progress.contacted,unassigned:!progress.excluded&&!progress.inactive&&!progress.admissionPending&&progress.response==='attending'&&progress.missingAssignment,unsent:!progress.excluded&&!progress.inactive&&!progress.admissionPending&&progress.consented&&!progress.contacted&&!progress.unknown,excluded:progress.excluded,manually_sent:progress.manuallySent,provider_accepted:progress.providerAccepted,unknown:progress.unknown,stale:progress.state==='stale',waitlisted:progress.admissionStatus==='waitlisted',admission_unknown:progress.admissionStatus==='unknown'};
     const matchesProgress=!progressFilter||progressMatches[progressFilter]===true;
-    return matchesOwner&&matchesProgress&&matchesParticipation&&matchesArrangement&&(!search||[p.name,p.displayName,p.organization,p.city,p.email,p.wechat].some(value=>value.toLowerCase().includes(search)))&&(!response||item.operations.responseStatus===response)&&(!onlyDue||due(item))&&(!type||(type.startsWith('category:')?p.categories.includes(type.slice(9)):p.interests.includes(type.slice(9))));
+    return matchesPeopleRelationships(item,relationships,{organization:$('[data-contacts-organization]').value,publicRole:$('[data-contacts-public-role]').value,publicState:$('[data-contacts-public-state]').value})&&matchesOwner&&matchesProgress&&matchesParticipation&&matchesArrangement&&(!search||[p.name,p.displayName,p.organization,p.city,p.email,p.wechat].some(value=>value.toLowerCase().includes(search)))&&(!response||item.operations.responseStatus===response)&&(!onlyDue||due(item))&&(!type||(type.startsWith('category:')?p.categories.includes(type.slice(9)):p.interests.includes(type.slice(9))));
   });
   const body=$('[data-contacts-rows]');body.replaceChildren();
   for(const id of selectedContacts)if(!maySelect(contactById(id)))selectedContacts.delete(id);
@@ -243,10 +282,11 @@ function render() {
     if(linked){const link=node('a','已代登记 · 查看报名');link.href='/admin/registrations/#registration='+encodeURIComponent(linked.registrationId);invitation.append(link);}
     row.append(invitation);
     const follow=node('td',item.operations.owner||'待分配');follow.append(node('small',item.operations.followUpAt||'未安排跟进日期'));if(item.operations.priority==='high')follow.append(node('small','优先跟进'));row.append(follow);
-    row.append(node('td',responses[item.operations.responseStatus]));
+    const reply=node('td',responses[item.operations.responseStatus]),admission=admissionForContact(item,intentState,admissionReceipts);reply.append(node('small',ADMISSION_LABELS[admission.status]));if(admission.registrationId){const link=node('a',admission.status==='withdrawn'?'前往审核／撤回记录':'查看正式报名');link.href='/admin/registrations/#registration='+encodeURIComponent(admission.registrationId);reply.append(link);}if(item.operations.responseStatus==='declined'&&admission.status==='confirmed')reply.append(node('small','本人不出席，原名额仍在；请明确撤回。','people-relationship-warning'));row.append(reply);
     const participationCell=node('td',undefined,'contacts-participation-cell');
     for(const value of item.operations.participationForms??[])participationCell.append(node('span',participationLabels.get(value)||value,'contacts-tag'));
     if(!participationCell.childNodes.length)participationCell.append(node('small','尚未标记'));
+    participationCell.dataset.contactRelationships=item.id;renderContactRelationships(participationCell,item);
     row.append(participationCell);
     const arrangements=node('td',undefined,'contacts-arrangements');
     for(const [key,list] of [['sessionIds',content.sessions],['boothIds',content.booths]])for(const id of item.operations[key]){
@@ -270,7 +310,7 @@ function render() {
       if(manual){const state=node('small',({prepared:'报名邀请已准备，未记录发出',manually_sent:'报名邀请已记录人工发出',provider_accepted:'服务商已接受发送',unknown:'发送结果不明，勿重复发送',rejected:'服务商拒绝发送'})[manual.status]||'邀请状态待核对');actions.append(state);if(manual.status==='prepared'&&mayInvite(item)){const sent=node('button','记录报名邀请已发出');sent.type='button';sent.addEventListener('click',()=>action(async()=>{const named=prompt('确认已经实际发出后，填写实际渠道：微信、邮件或其他。此操作只记录，不发送消息。');const channel=({微信:'wechat',邮件:'email',其他:'other'})[named?.trim()];if(!channel)return;await request('/api/admin/intent-invitations/'+encodeURIComponent(manual.id)+'/manual-sent',{method:'POST',body:JSON.stringify({channel})});intentState=await request('/api/admin/intent-invitations');render();announce('已记录报名邀请经'+named.trim()+'人工发出；没有自动确认对方出席。');}));actions.append(sent);}}
     }
     row.append(actions);
-    ['对象','原始身份与意向','邀请函 / 发出记录','跟进','出席回复','参与形式','现场安排','操作'].forEach((label,index)=>{row.children[index].dataset.label=label;});body.append(row);
+    ['对象','原始身份与意向','邀请函 / 发出记录','跟进','回复与正式名额','身份与组织','现场安排','操作'].forEach((label,index)=>{row.children[index].dataset.label=label;});body.append(row);
   }
   $('[data-contacts-empty]').hidden=matches.length>0;
   $('[data-contacts-empty]').textContent=contacts.length?'没有符合筛选条件的对象。':'目前没有对象，可手动新增联系人。'+(features.contactImport?'也可导入并核对名单。':'');
@@ -292,9 +332,32 @@ async function prepareRegistrationInvitation(item,linked,channel){
   intentState=await request('/api/admin/intent-invitations');render();
 }
 function detailPair(dl,label,value){if(!value)return;dl.append(node('dt',label),node('dd',value));}
+function renderContactRelationships(output,item){
+  const related=relationshipForContact(item,relationships);
+  if(!related.available){output.append(node('small','公开身份与组织目录待核对','people-relationship-warning'));for(const row of related.memberships)output.append(node('small','已保存组织编号：'+row.organizationId));return;}
+  for(const profile of related.profiles){output.append(node('small','公开职责：'+(profile.publicRoles.map(role=>PUBLIC_ROLE_LABELS[role]).join('、')||'尚未标记')));output.append(node('small',[profile.publicConsent?'已记录公开授权':'公开授权待核对',profile.hasPortrait?'已有照片':'照片待补',profile.published?profile.publishedMatchesDraft?'当前资料已发布':'旧版已发布，修改待发布':related.publicationKnown?'尚未发布':'公开归属待核对'].join(' · ')));}
+  if(!related.profiles.length)output.append(node('small','尚未关联人物资料'));
+  for(const member of related.memberships){const line=node('small',member.name+' · '+(member.role==='lead'?'负责人':'成员')+(member.title?' · '+member.title:'')+(member.state==='missing'?'（组织已失效，保留关联）':member.state==='withdrawn'?'（组织已退出）':''),member.state!=='available'?'people-relationship-warning':undefined);output.append(line);if(user?.roles.includes('editor')&&member.state!=='missing'){const link=node('a','查看组织','people-profile-link');link.href='/admin/#organization='+encodeURIComponent(member.organizationId);output.append(link);}}
+  if(!related.memberships.length)output.append(node('small','尚未关联组织'));
+}
+function membershipRow(member={organizationId:'',role:'member',title:''}){
+  const output=$('[data-contact-memberships]');if(output.children.length>=20)return;
+  const row=node('div',undefined,'people-membership-row');row.dataset.contactMembershipRow='';
+  const organizationLabel=node('label','组织'),organization=node('select');organization.name='organizationId';organization.required=true;
+  const empty=node('option','请选择已保存组织');empty.value='';organization.append(empty);
+  for(const item of relationships?.organizations??[]){const option=node('option',item.name+(item.status==='withdrawn'?'（已退出）':''));option.value=item.id;option.disabled=item.status==='withdrawn'&&item.id!==member.organizationId;organization.append(option);}
+  if(member.organizationId&&!relationships?.organizations.some(item=>item.id===member.organizationId)){const option=node('option','历史组织 · '+member.organizationId);option.value=member.organizationId;organization.append(option);row.append(node('p','原组织已失效，关联仍保留；请核对后明确移除。','people-relationship-warning'));}
+  organization.value=member.organizationId;organizationLabel.append(organization);
+  const roleLabel=node('label','关系'),role=node('select');role.name='role';for(const [value,label]of[['member','成员'],['lead','负责人']]){const option=node('option',label);option.value=value;role.append(option);}role.value=member.role;roleLabel.append(role);
+  const titleLabel=node('label','组织内职务／说明（内部）'),title=node('input');title.name='title';title.maxLength=120;title.value=member.title;titleLabel.append(title);
+  const remove=node('button','解除这项关联','ah-admin-button');remove.type='button';remove.dataset.contactMembershipRemove='';remove.addEventListener('click',()=>{if(busy||uncertainSave)return;row.remove();membershipEdited=true;operationsDirty=true;lock();});
+  row.addEventListener('input',()=>{membershipEdited=true;operationsDirty=true;});row.addEventListener('change',()=>{membershipEdited=true;operationsDirty=true;});row.append(organizationLabel,roleLabel,titleLabel,remove);output.append(row);
+}
+function membershipValues(){return organizationMemberships([...$('[data-contact-memberships]').children].map(row=>({organizationId:row.querySelector('[name="organizationId"]').value,role:row.querySelector('[name="role"]').value,title:row.querySelector('[name="title"]').value.normalize('NFC').trim()})));}
 function openContact(item){
   if(busy||!permitted())return;
   currentContactId=item.id;operationsDirty=false;
+  operationRevision=revision;membershipEdited=false;uncertainSave=null;$('[data-contact-save-unknown]').hidden=true;
   $('[data-contact-title]').textContent=item.profile.displayName+' · 跟进与安排';
   const profile=$('[data-contact-profile]');const dl=node('dl');
   const p=item.profile;
@@ -307,6 +370,9 @@ function openContact(item){
   if(linked){const link=node('a','查看已关联报名 · '+linked.referenceCode,'ah-admin-button');link.href='/admin/registrations/#registration='+encodeURIComponent(linked.registrationId);profile.append(link);}
   if(item.sourceProfile){const original=node('details');original.append(node('summary','查看原始来源基本资料（只读）'));const source=node('dl');for(const key of EDITABLE_CONTACT_FIELDS)if(item.sourceProfile[key]&&item.sourceProfile[key]!==p[key])detailPair(source,key,item.sourceProfile[key]);if(!source.childNodes.length)source.append(node('dd','基本资料与原始来源一致。'));original.append(source);profile.append(original);}
   const form=$('[data-contact-form]');form.reset();
+  $('[data-contact-memberships]').replaceChildren();
+  if(relationships)for(const member of item.operations.organizationMemberships??[])membershipRow(member);
+  $('[data-contact-membership-status]').textContent=relationships?'选择或移除关系后，连同下方跟进一起保存。':'组织目录暂时无法核对；此次保存保留原组织关联。请重新读取后再调整。';
   for(const key of ['owner','priority','followUpAt','notes','responseStatus'])form.elements.namedItem(key).value=item.operations[key];
   for(const input of form.querySelectorAll('[name=participationForms]'))input.checked=(item.operations.participationForms??[]).includes(input.value);
   for(const [key,list,target]of[['sessionIds',content.sessions,'[data-contact-sessions]'],['boothIds',content.booths,'[data-contact-booths]']]){
@@ -330,8 +396,9 @@ function openContact(item){
   }
   $('[data-contact-error]').hidden=true;$('[data-contact-error]').textContent='';
   $('[data-contact-dialog]').showModal();
+  lock();
 }
-function closeContact(){if(busy)return;if(operationsDirty&&!confirm('关闭将放弃未保存的跟进修改，继续吗？'))return;operationsDirty=false;$('[data-contact-dialog]').close();$('[data-contact-form]').reset();$('[data-contact-profile]').replaceChildren();}
+function closeContact(){if(busy)return;if((operationsDirty||uncertainSave)&&!confirm(uncertainSave?'保存结果尚待核对。关闭会清除本页草稿，之后请重新读取云端核对，不能据此判断保存失败。确定关闭？':'关闭将放弃未保存的跟进修改，继续吗？'))return;operationsDirty=false;uncertainSave=null;operationRevision=null;membershipEdited=false;$('[data-contact-save-unknown]').hidden=true;$('[data-contact-dialog]').close();$('[data-contact-form]').reset();$('[data-contact-profile]').replaceChildren();$('[data-contact-memberships]').replaceChildren();}
 function updateContact(result){revision=result.revision;const exists=contacts.some(item=>item.id===result.contact.id);contacts=exists?contacts.map(item=>item.id===result.contact.id?result.contact:item):[...contacts,result.contact];render();}
 function resetProfile(){
   profileContactId=null;profileDirty=false;
@@ -415,23 +482,37 @@ $('[data-contacts-batch-invite]').addEventListener('click',()=>action(async()=>{
   announce('批量准备结束，逐人结果已列出。没有发送邀请或确认任何人出席。');
 }));
 function batchReason(code){return ({CONTACT_DECLINED:'已拒绝联络或出席',CONTACT_NOT_CONSENTED:'联络授权尚未核实',REGISTRATION_REQUIRED:'尚未代登记',REGISTRATION_INACTIVE:'报名已停用或名额待核对',ADMISSION_REQUIRED:'名额尚未确认',INVITATION_DISPATCH_RECORDED:'已有发出或服务商接受记录，不重复准备',INVITATION_STATUS_UNKNOWN:'发送结果不明，先核对勿重试',INVITATION_CHANGED:'邀请版本已变化，请核对',REVISION_CONFLICT:'名单版本已更新',STORAGE_UNAVAILABLE:'保存结果待核对'})[code]||'请核对对象资料及有效报名';}
-$('[data-contacts-convert]').addEventListener('click',()=>action(async()=>{
-  if(!intentState||!selectedContacts.size)throw new Error('请先选择要代登记的对象。');
-  if(selectedContacts.size>100)throw new Error('每次最多代登记 100 位，请分批核对。');
-  const preview=await request('/api/admin/contacts/convert/preview',{method:'POST',body:JSON.stringify({contactIds:[...selectedContacts],expectedContactRevision:revision})});
-  if(!Array.isArray(preview.entries)||!preview.summary)throw new Error('转换预览尚未完成，未登记任何新报名。');
-  const eligible=preview.entries.filter(item=>item.eligible===true).map(item=>item.contactId);
-  if(!eligible.length)throw new Error('所选对象目前没有可转换记录，拒绝联络或出席的对象不会转换或邀请。');
-  const omissions=Number.isSafeInteger(preview.summary.optionalFieldsOmitted)?preview.summary.optionalFieldsOmitted:0;
-  if(!confirm('已核对 '+eligible.length+' 位可代登记对象。'+(omissions?'其中 '+omissions+' 项无效选填网站／案例链接不会写入新报名，原始来源仍保留。':'')+'保留原始来源，不代替本人完成网站隐私同意，也不发送消息。确认转换吗？'))return;
-  const result=await request('/api/admin/contacts/convert',{method:'POST',body:JSON.stringify({contactIds:eligible,expectedContactRevision:revision})});
-  intentState=await request('/api/admin/intent-invitations');
-  const success=Array.isArray(result.registrations)?result.registrations.length:0,failed=Array.isArray(result.failures)?result.failures.length:0;
-  for(const record of result.registrations??[])selectedContacts.delete(record.contactId);
-  const skipped=Array.isArray(result.skipped)?result.skipped.length:0;
-  render();announce('已确认代登记 '+success+' 位'+(skipped?'；跳过 '+skipped+' 位拒绝联络或出席对象。':'。')+(failed?'另有 '+failed+' 位未完成，请核对后重试。':'')+'没有自动发出邀请或确认出席。',failed>0);
+function conversionReason(code){return({CONTACT_DECLINED:'本人已拒绝联络或出席',CONTACT_NOT_CONSENTED:'联络许可待核对',ALREADY_CONVERTED:'已有明确报名关联',CONTACT_NOT_FOUND:'人员记录已变化',SOURCE_CHANGED:'来源已变化',REGISTRATION_INACTIVE:'关联报名已停用',REGISTRATION_CLOSED:'正式报名已关闭'})[code]||'来源、许可或报名条件需核对';}
+async function previewContactConversions(ids,{backfill=false,total=ids.length}={}){
+  if(!intentState||!permitted()||!user.roles.some(role=>['reviewer','superadmin'].includes(role)))throw new Error('需要邀约与审核权限，并先读取正式报名状态。');
+  if(operationsDirty||profileDirty||uncertainSave)throw new Error('请先保存或关闭尚未保存的表单，再核对名额同步。');
+  if(!ids.length||ids.length>100)throw new Error('每批请选择 1 至 100 位人员。');
+  const generation=sessionGeneration,expected=revision;
+  const preview=conversionPreview(await request('/api/admin/contacts/convert/preview',{method:'POST',body:JSON.stringify({contactIds:ids,expectedContactRevision:expected})}),ids,expected);
+  if(generation!==sessionGeneration)return;
+  conversionDraft={...preview,backfill,unknown:false};
+  $('[data-conversion-summary]').textContent='已预览 '+ids.length+' 位，可代登记 '+preview.eligibleIds.length+' 位。'+(total>100?'本次仅核对前 100 位；其余 '+(total-100)+' 位请下一批处理。':'')+'下方确认后才写入报名；候补不会冒充已确认名额。';
+  const output=$('[data-conversion-entries]');output.replaceChildren();for(const entry of preview.entries){const item=contactById(entry.contactId);output.append(node('li',(item?.profile.displayName||entry.contactId)+' · '+(entry.eligible?'可代登记':conversionReason(entry.reason))+(entry.warningCount?' · 有选填资料需核对，原始来源保留':'')));}
+  $('[data-conversion-error]').hidden=true;$('[data-conversion-error]').textContent='';$('[data-conversion-dialog]').showModal();
+}
+$('[data-contacts-convert]').addEventListener('click',()=>action(()=>previewContactConversions([...selectedContacts])));
+$('[data-contacts-sync-attending]').addEventListener('click',()=>action(()=>{const ids=contacts.filter(item=>item.operations.responseStatus==='attending'&&!intentState?.conversions?.some(row=>row.sourceContactId===item.id)).map(item=>item.id);return previewContactConversions(ids.slice(0,100),{backfill:true,total:ids.length});}));
+$('[data-conversion-confirm]').addEventListener('click',()=>action(async()=>{
+  const draft=conversionDraft,generation=sessionGeneration;if(!draft||draft.unknown||!draft.eligibleIds.length)return;
+  try{
+    const raw=await request('/api/admin/contacts/convert',{method:'POST',body:JSON.stringify({contactIds:draft.eligibleIds,expectedContactRevision:draft.contactRevision})});
+    if(generation!==sessionGeneration||conversionDraft!==draft)return;
+    const result=conversionReceipt(raw,draft);
+    const nextIntent=await request('/api/admin/intent-invitations').catch(()=>null);if(generation!==sessionGeneration)return;intentState=nextIntent;conversionDraft=null;
+    const output=$('[data-conversion-entries]');output.replaceChildren();for(const id of draft.eligibleIds){const item=contactById(id),admission=admissionForContact(item,intentState);const row=node('li',(item?.profile.displayName||id)+' · '+ADMISSION_LABELS[admission.status]);if(admission.registrationId){const link=node('a','查看报名');link.href='/admin/registrations/#registration='+encodeURIComponent(admission.registrationId);row.append(link);}output.append(row);}
+    for(const record of result.registrations)selectedContacts.delete(record.contactId);
+    $('[data-conversion-summary]').textContent='已收到 '+result.registrations.length+' 位代登记回执；正式名额按下方最新来源核对。'+(result.failureCount?'另有 '+result.failureCount+' 位未完成，请先核对，勿自动重送。':'')+'没有发送邀请或邮件。';render();
+  }catch(error){if(generation!==sessionGeneration||conversionDraft!==draft)return;draft.unknown=!error.status||error.status>=500;$('[data-conversion-error]').textContent=error.message+(draft.unknown?' 本次结果待核对，不会自动重送。关闭后请刷新名单及名额，再明确预览。':'');$('[data-conversion-error]').hidden=false;throw error;}
 }));
-for(const selector of ['[data-contacts-search]','[data-contacts-category]','[data-contacts-response]','[data-contacts-arrangement]','[data-contacts-participation]','[data-contacts-due]','[data-contacts-owner]','[data-contacts-progress]'])$(selector).addEventListener('input',render);
+function closeConversion(){if(busy)return;if(conversionDraft?.unknown&&!confirm('本次代登记结果尚待核对。关闭后请重新读取名单及正式名额，不能据此判断未写入。确定关闭？'))return;conversionDraft=null;$('[data-conversion-dialog]').close();lock();}
+for(const button of document.querySelectorAll('[data-conversion-close]'))button.addEventListener('click',closeConversion);
+$('[data-conversion-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeConversion();});
+for(const selector of ['[data-contacts-search]','[data-contacts-category]','[data-contacts-response]','[data-contacts-arrangement]','[data-contacts-participation]','[data-contacts-due]','[data-contacts-owner]','[data-contacts-progress]','[data-contacts-organization]','[data-contacts-public-role]','[data-contacts-public-state]'])$(selector).addEventListener('input',render);
 for(const [prefix,items,label]of[['category:',sourceLabels.categories,'身份'],['interest:',sourceLabels.interests,'参与意向']]){const group=node('optgroup');group.label=label;for(const item of items){const option=node('option',item.label);option.value=prefix+item.value;group.append(option);}$('[data-contacts-category]').append(group);}
 $('[data-contacts-file]').addEventListener('change',event=>{
   const file=event.currentTarget.files?.[0];
@@ -506,7 +587,27 @@ $('[data-profile-form]').addEventListener('submit',event=>{
 $('[data-contact-form]').addEventListener('input',()=>{operationsDirty=true;});
 for(const button of document.querySelectorAll('[data-contact-close]'))button.addEventListener('click',closeContact);
 $('[data-contact-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeContact();});
-$('[data-contact-form]').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;if(!form.reportValidity())return;const data=new FormData(form);action(async()=>{const operations=Object.fromEntries(['owner','priority','followUpAt','notes','responseStatus'].map(key=>[key,data.get(key)||'']));operations.sessionIds=data.getAll('sessionIds');operations.boothIds=data.getAll('boothIds');operations.participationForms=data.getAll('participationForms');operations.sessionRoles=operations.sessionIds.map(sessionId=>({sessionId,roles:data.getAll('sessionRoles:'+sessionId)})).filter(entry=>entry.roles.length);try{const result=await request('/api/admin/contacts/'+encodeURIComponent(currentContactId),{method:'PUT',body:JSON.stringify({expectedRevision:revision,operations})});updateContact(result);operationsDirty=false;$('[data-contact-dialog]').close();announce('职责、跟进与安排已保存。原始问卷及报名保留，名额与公开名单仍分别确认。');}catch(error){$('[data-contact-error]').textContent=error.message;$('[data-contact-error]').hidden=false;$('[data-contact-error]').focus();throw error;}});});
+$('[data-contact-form]').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;if(uncertainSave||!form.reportValidity())return;const data=new FormData(form);action(async()=>{
+  const generation=sessionGeneration,contactId=currentContactId,expectedRevision=operationRevision;
+  const operations=Object.fromEntries(['owner','priority','followUpAt','notes','responseStatus'].map(key=>[key,String(data.get(key)||'').normalize('NFC').trim()]));operations.sessionIds=data.getAll('sessionIds');operations.boothIds=data.getAll('boothIds');operations.participationForms=data.getAll('participationForms');operations.sessionRoles=operations.sessionIds.map(sessionId=>({sessionId,roles:data.getAll('sessionRoles:'+sessionId)})).filter(entry=>entry.roles.length);
+  if(relationships&&(membershipEdited||Object.hasOwn(contactById(contactId).operations,'organizationMemberships')))operations.organizationMemberships=membershipValues();
+  try{
+    const receipt=savedContactReceipt(await request('/api/admin/contacts/'+encodeURIComponent(contactId),{method:'PUT',body:JSON.stringify({expectedRevision,operations})}),{contactId,expectedRevision,operations});
+    if(generation!==sessionGeneration)return;
+    if(receipt.admission)admissionReceipts.set(contactId,receipt.admission);else admissionReceipts.delete(contactId);
+    updateContact(receipt);operationsDirty=false;uncertainSave=null;operationRevision=null;$('[data-contact-dialog]').close();
+    const nextIntent=features.intentInvitations?await request('/api/admin/intent-invitations').catch(()=>null):null;if(generation!==sessionGeneration)return;intentState=nextIntent;render();
+    announce('回复、职责与组织安排已保存。'+(receipt.admission?ADMISSION_LABELS[receipt.admission.status]+'。':'正式名额仍以报名审核记录为准。')+(operations.responseStatus==='declined'?'原报名及名额不会自动撤回，请到报名审核处理。':'')+'没有发送邀请或邮件。');
+  }catch(error){if(generation!==sessionGeneration)return;operationsDirty=true;if(!error.status||error.status>=500){uncertainSave={contactId,expectedRevision,operations};$('[data-contact-save-unknown]').hidden=false;}$('[data-contact-error]').textContent=error.message;$('[data-contact-error]').hidden=false;$('[data-contact-error]').focus();throw error;}
+});});
+$('[data-contact-membership-add]').addEventListener('click',()=>{if(busy||!relationships||uncertainSave)return;membershipRow();membershipEdited=true;operationsDirty=true;lock();});
+$('[data-contact-check-save]').addEventListener('click',()=>action(async()=>{
+  const pending=uncertainSave,generation=sessionGeneration;if(!pending)return;
+  const state=await request('/api/admin/contacts');if(generation!==sessionGeneration||uncertainSave!==pending)return;
+  const contact=state.contacts?.find(item=>item.id===pending.contactId);if(!Number.isSafeInteger(state.revision)||state.revision<=pending.expectedRevision||!contact||!Object.entries(pending.operations).every(([key,value])=>JSON.stringify(contact.operations?.[key])===JSON.stringify(value)))throw new Error('当前云端记录与这份草稿尚未一致，请保留填写内容，关闭后刷新并核对差异。');
+  revision=state.revision;contacts=state.contacts;uncertainSave=null;operationsDirty=false;operationRevision=null;$('[data-contact-save-unknown]').hidden=true;$('[data-contact-dialog]').close();
+  intentState=features.intentInvitations?await request('/api/admin/intent-invitations').catch(()=>null):null;if(generation!==sessionGeneration)return;render();announce('已核对当前云端记录与这份填写一致。本人回复、正式名额及邀请发送仍分别核对；没有自动重送或代登记。');
+}));
 $('[data-invitation-form]').addEventListener('input',event=>{if(!['recipientName','date','time','venue','confirmed'].includes(event.target.name))return;renderedSettings=null;$('[data-invitation-image]').hidden=true;$('[data-invitation-image]').removeAttribute('src');$('[data-invitation-sent-confirm]').checked=false;clearCommunicationPreviews();lock();});
 $('[data-invitation-form]').addEventListener('submit',event=>{event.preventDefault();if(!event.currentTarget.reportValidity())return;action(async()=>{requireInviteConsent();const settings=settingsFromForm();await renderInvitation($('[data-invitation-canvas]'),{templateUrl:'/invitations/template-blank.png',...settings});renderedSettings=settings;$('[data-invitation-canvas]').dataset.ready='true';$('[data-invitation-image]').src=$('[data-invitation-canvas]').toDataURL('image/png');$('[data-invitation-image]').hidden=false;$('[data-invitation-caption]').textContent=settings.recipientName+' · '+(settings.confirmed?'正式版预览':'暂定版预览')+' · 仅预览，不会发送';announce('邀请函预览已生成。下载只保存图片，不会发送给对象。');});});
 $('[data-invitation-download]').addEventListener('click',()=>action(async()=>{requireInviteConsent();if(!renderedSettings||!invitationContactId)throw new Error('请先生成当前设置的邀请函预览。');const blob=await invitationPngBlob($('[data-invitation-canvas]'));if(!blob.size)throw new Error('图片生成未完成，请重试。');const link=node('a');const url=URL.createObjectURL(blob);try{link.href=url;link.download=invitationFilename(renderedSettings.recipientName,renderedSettings.confirmed);document.body.append(link);link.click();}finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);}const result=await request('/api/admin/contacts/'+encodeURIComponent(invitationContactId)+'/invitation/generated',{method:'POST',body:JSON.stringify({expectedRevision:revision,settings:renderedSettings})});updateContact(result);$('[data-invitation-sent-confirm]').checked=false;announce('PNG 已生成并开始下载，已记录生成时间；尚未记录发出。');}));
@@ -522,5 +623,6 @@ $('[data-invitation-close]').addEventListener('click',()=>{
 });
 $('[data-wallet-preview-button]').addEventListener('click',()=>{if(!$('[data-invitation-form]').reportValidity())return;action(async()=>{requireInviteConsent();const result=await request('/api/admin/contacts/'+encodeURIComponent(invitationContactId)+'/wallet/preview',{method:'POST',body:JSON.stringify({settings:settingsFromForm()})});for(const [selector,value]of [['[data-wallet-title]',result.title],['[data-wallet-name]',result.name],['[data-wallet-date]',result.date],['[data-wallet-time]',result.time],['[data-wallet-location]',result.location],['[data-wallet-notice]',result.notice]])$(selector).textContent=value;$('[data-wallet-preview]').hidden=false;announce('已生成未签名 Wallet 卡片预览。尚未制作或发送 Apple Wallet 通行证。');});});
 $('[data-email-preview-button]').addEventListener('click',()=>{if(!$('[data-invitation-form]').reportValidity())return;action(async()=>{requireInviteConsent();if(contactById(invitationContactId)?.operations.responseStatus!=='attending')throw new Error('请先核实并保存对方已确认出席的回复。');const result=await request('/api/admin/contacts/'+encodeURIComponent(invitationContactId)+'/email/preview',{method:'POST',body:JSON.stringify({settings:settingsFromForm()})});$('[data-email-to]').textContent=result.toEmail;$('[data-email-subject]').textContent=result.subject;$('[data-email-text]').textContent=result.text;$('[data-email-preview]').hidden=false;announce('确认信内容已生成，仅供核对，尚未发送。');});});
-window.addEventListener('beforeunload',event=>{if(operationsDirty||profileDirty){event.preventDefault();event.returnValue='';}});
-if(location.protocol==='file:'){announce('这是离线界面预览。请启动本地服务，使用有邀约管理权限的账号登录。');lock();}else{action(async()=>{const response=await fetch('/api/admin/session',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});if(response.status===401)return;if(!response.ok)throw new Error('请先启动本地后台服务。');const session=await response.json();user=session.user;csrfToken=session.csrfToken;$('[data-contacts-account]').hidden=false;$('[data-contacts-user]').textContent=user.label||user.id;await loadWorkspace();announce('已恢复工作人员会话。');});}
+window.addEventListener('beforeunload',event=>{if(operationsDirty||profileDirty||conversionDraft?.unknown){event.preventDefault();event.returnValue='';}});
+window.addEventListener('hashchange',()=>{const organization=parseOrganizationSelection(location.hash);if(!organization)return;organizationSelection=organization;if(user&&permitted()&&!$('[data-contacts-workspace]').hidden){renderRelationshipFilters();render();}});
+if(location.protocol==='file:'){announce('这是离线界面预览。请启动本地服务，使用有邀约管理权限的账号登录。');lock();}else{action(async()=>{const session=await request('/api/admin/session');user=session.user;csrfToken=session.csrfToken;$('[data-contacts-account]').hidden=false;$('[data-contacts-user]').textContent=user.label||user.id;await loadWorkspace();announce('已恢复工作人员会话。');});}

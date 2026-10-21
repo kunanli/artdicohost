@@ -15,3 +15,9 @@
 ## 发布接续
 
 准确包与离线成功后，提交PR并等待精确head完整CI；合并后核对main、真实私有OSS／300政策与exactHTTPS，另补实证。不使用真实人员、邮件、群码或凭证作测试，不创建正式协作者账号。两个账号需现有管理员登录用户管理保存，Wallet等待真实签章。
+
+## 发布包容量阻挡（13:13 UTC，尚未 PR／部署）
+
+准确候选来源 `d02c573dfdca4c72f9bc50fb6feb689169443e61`：128 files／40 assets／7,326,049 static bytes 符合原资源限额，但旧 Node XZ preset6 29,494,612B 令 stored ZIP 为 **37,769,494B**，对应 code-only JSON **50,359,351B**，超过既有 **48,000,000B** request／**35,999,982B** ZIP预算，builder正确拒绝，没有 manifest成功或任何实际部署。
+
+不提高任何限额、不删旧模板或字形、不改官方 Node pin。正在/tmp比较 X86 BCJ＋LZMA2 无损压缩；preset6/7/8 已保持 CRC64、原官方 SHA、96MiB decoder 通过，但还不够小，继续验证。120秒是 producer压缩／打包子程序限制，INSPECT是30秒；launcher有限输入／输出和平台启动边界不变，不能宣称其另有120秒内部计时器。最终方案需通过同一官方 Node、准确候选ZIP和 Docker512MiB/.35CPU/no-network启动，才创建PR并继续发布。

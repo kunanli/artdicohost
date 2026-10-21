@@ -1,6 +1,6 @@
 # 下一阶段：公开可见性与游戏／作品
 
-本文件是已授权下一阶段计划。先完成[后台独立页面与直接保存](admin-independent-pages.md)的实际发布，再实施本阶段，不在前一阶段混入数据契约变更。
+本阶段已开始，根分支`feat/publication-games`，基准为实际main d504ecc及证据3d04822。前一[后台独立页面与直接保存](admin-independent-pages.md)已于23:33:20（UTC+08）实际发布，准确证据见[发布记录](admin-pages-release-2026-10-21.md)。本阶段尚未发布；[操作说明](publication-games-operations.md)随实现核对。
 
 ## 实际诊断
 
@@ -44,3 +44,9 @@
 ## 完成主功能后的跟进人标记
 
 用户最后追加：前述功能完成后，「人员与邀约」跟进人名称改彩色姓名标签。同一位跟进人固定同色，保留原姓名文字与筛选；未分配用中性标记，不能与红绿出席／公开状态混淆。不改负责人数据、权限或联系记录；主流程完成后补此项并验证桌面／手机辨识与对比。
+
+## 实作分工与恢复点
+
+统一隔离base `3d04822cb039220331760a4b4863333fc52404ed`。root负责匿名公开数据／CORS验收脚本、workflow、打包闭包、整合、文档与实际发布。`games-domain`负责schema／publicguest／双store与备份；`games-readiness`负责共享readiness、person projection及人员／个人页；`games-admin`负责内容／组织controller与旧raw草稿；`games-ui`负责既有Astro／CSS及统一标签；`games-public`负责公开renderer／返回刷新；`games-browser`负责两个origin真实合成runtime与手机原生验收。各worker仅跑定向检查，完整suite／build／Chromium／XZ由root顺序协调，不能将旧dist当新功能通过。main保持d504ecc直到准确PR合并。
+
+root `74fb950`先加入部署激活后的固定匿名公开data／CORS检查：15项含前阶段alias回归定向通过；没有访问生产私有资料或发布草稿。尚须本阶段完整实现／原生／准确封装及实际部署。

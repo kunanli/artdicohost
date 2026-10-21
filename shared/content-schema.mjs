@@ -3,6 +3,7 @@ export const CONTENT_SCHEMA_VERSION = 1;
 export const MAX_CONTENT_ITEMS = 200;
 export const GUEST_PUBLIC_ROLES = Object.freeze(['speaker', 'guest', 'organizer', 'moderator']);
 export const GUEST_PUBLIC_ROLE_LABELS = Object.freeze({speaker:'讲者',guest:'嘉宾',organizer:'研讨会组织者',moderator:'主持人'});
+export const ORGANIZATION_PARTICIPATION_LABELS = Object.freeze({undecided:'参与形式待确定',exhibitor:'参展',attendee:'一般参与'});
 
 export const contentSchema = Object.freeze({
   schemaVersion: CONTENT_SCHEMA_VERSION,
@@ -10,6 +11,7 @@ export const contentSchema = Object.freeze({
   maxBooths: MAX_CONTENT_ITEMS,
   maxGuests: MAX_CONTENT_ITEMS,
   maxShowcases: MAX_CONTENT_ITEMS,
+  maxOrganizations: MAX_CONTENT_ITEMS,
   zones: ['A', 'B', 'C'],
   sessionStatuses: ['draft', 'scheduled', 'cancelled'],
   sessionFormats: ['talk', 'workshop', 'roundtable', 'showcase', 'social', 'break', 'other'],
@@ -21,14 +23,17 @@ export const contentSchema = Object.freeze({
   showcaseStatuses: ['pending', 'confirmed'],
   responseStatuses: ['pending', 'attending', 'declined'],
   showcaseParticipationForms: ['booth', 'share'],
+  organizationParticipationForms: ['undecided', 'exhibitor', 'attendee'],
+  organizationStatuses: ['pending', 'confirmed', 'withdrawn'],
 });
 
 /** @typedef {{id:string,start:string,end:string,zone:string,title:string,guestId:string,speakerName:string,speakerStatus:string,status:string,internalNotes:string,format:string}} Session */
 /** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string,slotNumber:number,contactName?:string,contactMethods?:string,description?:string,website?:string}} Booth */
 /** @typedef {{id:string,name:string,company:string,ggjRole:string,portraitId:string,status:string,publicConsent:boolean,internalNotes:string,contactId:string,title?:string,bio?:string,website?:string,publicRoles?:string[]}} Guest */
+/** @typedef {{id:string,name:string,logoId:string,website:string,participation:string,status:string,publicConsent:boolean,internalNotes:string}} Organization */
 /** @typedef {{id:string,title:string,teamName:string,school:string,contactName:string,email:string,wechat:string,memberCount:number,participationForms:string[],responseStatus:string,materialLinks:string,summary:string,coverId:string,status:string,publicConsent:boolean,sessionId:string,boothId:string,internalNotes:string}} Showcase */
 /** @typedef {{heroDescription:string,aboutTitle:string,aboutText:string,faqItems:{question:string,answer:string}[],contactEmail:string,mapUrl:string,openingTime:string,endTime:string,checkInTime:string}} EventPresentation */
-/** @typedef {{schemaVersion:number,eventId:string,event:{title:string,date:string,timezone:string,venue:string,status:string,dateStatus:string,venueStatus:string,presentation?:EventPresentation},sessions:Session[],booths:Booth[],guests:Guest[],showcases:Showcase[]}} Content */
+/** @typedef {{schemaVersion:number,eventId:string,event:{title:string,date:string,timezone:string,venue:string,status:string,dateStatus:string,venueStatus:string,presentation?:EventPresentation},sessions:Session[],booths:Booth[],guests:Guest[],showcases:Showcase[],organizations?:Organization[]}} Content */
 
 /** Only server-created content-addressed portraits are accepted; no external URLs. */
 export const PORTRAIT_ID_PATTERN = /^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
@@ -75,6 +80,15 @@ function guest(input) {
   const roles = Object.getOwnPropertyDescriptor(item,'publicRoles');
   if (roles) result.publicRoles = Array.isArray(roles.value) ? roles.value.slice(0,5).map(text) : [];
   return result;
+}
+
+/** @param {unknown} input @returns {Organization} */
+function organization(input) {
+  const item = object(input);
+  const read = key => { const field = Object.getOwnPropertyDescriptor(item, key); return field && 'value' in field ? field.value : undefined; };
+  return { id: text(read('id')), name: text(read('name')), logoId: text(read('logoId')), website: text(read('website')),
+    participation: text(read('participation')), status: text(read('status')), publicConsent: read('publicConsent') === true,
+    internalNotes: text(read('internalNotes')) };
 }
 
 /** @param {unknown} input @returns {Booth} */
@@ -154,6 +168,8 @@ export function validateContent(input) {
   const rawBooths = Array.isArray(source.booths) ? source.booths : [];
   const rawGuests = Array.isArray(source.guests) ? source.guests : [];
   const rawShowcases = Array.isArray(source.showcases) ? source.showcases : [];
+  const organizationsField = Object.getOwnPropertyDescriptor(source, 'organizations');
+  const rawOrganizations = Array.isArray(organizationsField?.value) ? organizationsField.value : [];
   /** @type {Content} */
   const value = {
     schemaVersion: CONTENT_SCHEMA_VERSION,
@@ -167,6 +183,7 @@ export function validateContent(input) {
     booths: rawBooths.slice(0, MAX_CONTENT_ITEMS + 1).map(booth),
     guests: rawGuests.slice(0, MAX_CONTENT_ITEMS + 1).map(guest),
     showcases: rawShowcases.slice(0, MAX_CONTENT_ITEMS + 1).map(showcase),
+    ...(organizationsField ? { organizations: rawOrganizations.slice(0, MAX_CONTENT_ITEMS + 1).map(organization) } : {}),
   };
   /** @type {Record<string,string>} */
   const errors = {};
@@ -237,10 +254,39 @@ export function validateContent(input) {
 
   if (source.showcases !== undefined && !Array.isArray(source.showcases)) errors.showcases = '学生作品须为数组。';
   else if (rawShowcases.length > MAX_CONTENT_ITEMS) errors.showcases = `学生作品最多 ${MAX_CONTENT_ITEMS} 组。`;
+  if (organizationsField && (!organizationsField.enumerable || !('value' in organizationsField) || !Array.isArray(organizationsField.value))) errors.organizations = '参与组织须为明确的数组。';
+  else if (rawOrganizations.length > MAX_CONTENT_ITEMS) errors.organizations = `参与组织最多 ${MAX_CONTENT_ITEMS} 个。`;
 
   const ids = new Set();
   const contactIds = new Set();
   const guestIds = new Set();
+  for (const [index, item] of (value.organizations ?? []).entries()) {
+    const key = `organizations.${index}`, raw = rawOrganizations[index];
+    const fields = ['id', 'name', 'logoId', 'website', 'participation', 'status', 'publicConsent'];
+    const optional = ['internalNotes', 'logoUrl'];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || ![Object.prototype, null].includes(Object.getPrototypeOf(raw))
+      || Object.getOwnPropertySymbols(raw).length || Object.getOwnPropertyNames(raw).some(name => !fields.includes(name) && !optional.includes(name))
+      || fields.some(name => { const descriptor = Object.getOwnPropertyDescriptor(raw, name); return !descriptor?.enumerable || !('value' in descriptor)
+        || typeof descriptor.value !== (name === 'publicConsent' ? 'boolean' : 'string'); })
+      || optional.some(name => { const descriptor = Object.getOwnPropertyDescriptor(raw, name); return descriptor && (!descriptor.enumerable || !('value' in descriptor) || typeof descriptor.value !== 'string'); })) errors[key] = '请提供完整的组织名称、图片、链接、参与形式及公开设置。';
+    stableId(`${key}.id`, item.id);
+    if (ids.has(item.id)) errors[`${key}.id`] = 'ID 重复，请保留每条内容独立的稳定 ID。';
+    ids.add(item.id);
+    stringField(`${key}.name`, item.name, 160);
+    stringField(`${key}.website`, item.website, 500, false);
+    stringField(`${key}.internalNotes`, item.internalNotes, 4000, false);
+    for (const name of ['id', 'name', 'logoId', 'website', 'participation', 'status']) {
+      const descriptor = raw && typeof raw === 'object' ? Object.getOwnPropertyDescriptor(raw, name) : undefined;
+      if (typeof descriptor?.value === 'string' && /[\u0000-\u001f\u007f]/u.test(descriptor.value)) errors[`${key}.${name}`] = '请填写不含换行或控制字符的单行文字。';
+    }
+    if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(item.internalNotes)) errors[`${key}.internalNotes`] = '请填写有效的内部备注。';
+    enumField(`${key}.participation`, item.participation, contentSchema.organizationParticipationForms);
+    enumField(`${key}.status`, item.status, contentSchema.organizationStatuses);
+    if (item.logoId && !PORTRAIT_ID_PATTERN.test(item.logoId)) errors[`${key}.logoId`] = '请选择后台已上传的组织图片。';
+    const route = raw && typeof raw === 'object' ? Object.getOwnPropertyDescriptor(raw, 'logoUrl') : undefined;
+    if (route && route.value !== (item.logoId ? '/api/public/portraits/' + item.logoId : '')) errors[`${key}.logoUrl`] = '组织图片须使用后台图片的公开路径。';
+    if (!isPublicWebsite(item.website)) errors[`${key}.website`] = '组织链接须为有效的 HTTP 或 HTTPS 网址，不含帐号或密码。';
+  }
   for (const [index, item] of value.guests.entries()) {
     const key = `guests.${index}`;
     stableId(`${key}.id`, item.id);
@@ -440,5 +486,10 @@ export function toPublicContent(input) {
       status: 'confirmed', publicConsent: true,
       ...Object.fromEntries(['title','bio','website','publicRoles'].filter(name => Object.hasOwn(item,name)).map(name => [name,structuredClone(item[name])])),
     })),
+    ...(Object.hasOwn(value, 'organizations') ? { organizations: value.organizations.filter(item => item.status === 'confirmed' && item.publicConsent).map(item => ({
+      id: item.id, name: item.name, participation: item.participation, website: item.website,
+      logoId: item.logoId, status: 'confirmed', publicConsent: true,
+      logoUrl: item.logoId ? '/api/public/portraits/' + item.logoId : '',
+    })) } : {}),
   };
 }

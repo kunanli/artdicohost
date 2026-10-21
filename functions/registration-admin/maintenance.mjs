@@ -77,6 +77,25 @@ function objectReferences(item) {
     for (const content of contents) {
       if (!Array.isArray(content.guests)) fail('BACKUP_INVALID');
       const ids = [...content.guests.map(guest => guest?.portraitId), ...(content.showcases ?? []).map(showcase => showcase?.coverId)];
+      if (Object.hasOwn(content, 'organizations')) {
+        if (!Array.isArray(content.organizations)) fail('BACKUP_INVALID');
+        for (const organization of content.organizations) {
+          if (!plain(organization)) fail('BACKUP_INVALID');
+          // Drafts retain private logo IDs; published projections carry only the approved route.
+          if (Object.hasOwn(organization, 'logoId')) {
+            if (typeof organization.logoId !== 'string') fail('BACKUP_INVALID');
+            ids.push(organization.logoId);
+          }
+          if (Object.hasOwn(organization, 'logoUrl')) {
+            if (typeof organization.logoUrl !== 'string') fail('BACKUP_INVALID');
+            if (organization.logoUrl) {
+              const match = /^\/api\/public\/portraits\/([a-f0-9]{64}\.(?:jpg|png|webp))$/u.exec(organization.logoUrl);
+              if (!match) fail('BACKUP_INVALID');
+              ids.push(match[1]);
+            }
+          }
+        }
+      }
       for (const id of ids.filter(Boolean)) {
         if (typeof id !== 'string' || !PORTRAIT_ID_PATTERN.test(id)) fail('BACKUP_INVALID');
         refs.push({ key: 'cms/v1/portraits/' + id, hash: id.slice(0, 64) });

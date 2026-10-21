@@ -107,7 +107,7 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
     if(!value)throw new Error('未生成新的独立密码，请核对浏览器安全环境。');lastGeneratedPassword=value;
     const input=$('[data-user-form] [name=password]');input.value=value;input.type='password';$('[data-user-password-toggle]').textContent='显示密码';userDirty=true;status('已生成本次独立密码。保存成功后才会提供已确认的登录资料。');
   }
-  function collaboratorPreset(){for(const field of $('[data-user-form]').querySelectorAll('[name=roles]'))field.checked=COLLABORATOR_ROLES.includes(field.value);userDirty=true;}
+  function collaboratorPreset(){for(const field of $('[data-user-form]').querySelectorAll('[name=roles]'))field.checked=COLLABORATOR_ROLES.includes(field.value);userDirty=true;drafts.get('users')?.schedule();}
   async function configureDrafts(started){
     if(!draftStore||!user?.id)return;
     const accountForm=$('[data-user-form]'),groupForm=$('[data-group-form]'),restoreForm=$('[data-restore-form]');

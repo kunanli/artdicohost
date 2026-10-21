@@ -143,7 +143,8 @@ test('withdrawal/deletion review and unknown review reads block invitations, ass
   const closed = createIntentInvitationService({ ...f.dependencies, isRegistrationActive: async () => false });
   await assert.rejects(closed.issueInvitation(f.invitationInput('email')), { code: 'REGISTRATION_INACTIVE' });
   await assert.rejects(closed.markManualSent({ invitationId: prepared.invitation.id, channel: 'wechat', actor }), { code: 'REGISTRATION_INACTIVE' });
-  await assert.rejects(closed.assignContact({ contactId: f.contact.id, expectedContactRevision: 1, sessionIds: [], boothIds: [], actor }), { code: 'REGISTRATION_INACTIVE' });
+  const session = (await f.contentStore.read()).draft.content.sessions.find(item => item.status === 'scheduled');
+  await assert.rejects(closed.assignContact({ contactId: f.contact.id, expectedContactRevision: 1, sessionIds: [session.id], boothIds: [], actor }), { code: 'REGISTRATION_INACTIVE' });
   const unknown = createIntentInvitationService({ ...f.dependencies, isRegistrationActive: async () => { throw new Error('PRIVATE-SYNTHETIC-REVIEW'); } });
   await assert.rejects(unknown.issueInvitation(f.invitationInput('email')), error => error.code === 'STORAGE_UNAVAILABLE' && !error.message.includes('PRIVATE-'));
   assert.equal(f.providerCalls(), 0);
@@ -224,4 +225,38 @@ test('migration plans preserve original schema identities, source and private st
   const importer = createIntentContactImporter({ contactsStore: { read: f.contactsStore.read } });
   await assert.rejects(importer.commit({ kind: 'snapshot', snapshot, originalSha256: plan.digest, expectedRevision: 1, actor }), { code: 'INVALID_INPUT' });
   assert.deepEqual(await f.contactsStore.read(), roster);
+});
+
+
+test('new assignments require confirmed admission while waitlisted and withdrawn historical references can be removed', async () => {
+  const f = await fixture(); await f.convert();
+  const draft = (await f.contentStore.read()).draft.content;
+  draft.booths = [{ id: 'synthetic-booth', code: 'C-01', zone: 'C', organization: '合成团队', project: '合成作品', status: 'pending', internalNotes: '' }];
+  await f.contentStore.save(0, draft, actor.id);
+  const first = draft.sessions.find(item => item.status === 'scheduled');
+  const next = draft.sessions.find(item => item.status === 'scheduled' && item.start >= first.end);
+  assert.ok(next);
+  const saved = await f.service.assignContact({ actor, contactId: f.contact.id, expectedContactRevision: 1,
+    sessionIds: [first.id], boothIds: ['synthetic-booth'] });
+  const waiting = createIntentInvitationService({ ...f.dependencies, getAdmissionStatus: async () => ({ status: 'waitlisted', revision: 1 }) });
+  await assert.rejects(waiting.assignContact({ actor, contactId: f.contact.id, expectedContactRevision: saved.revision,
+    sessionIds: [first.id, next.id], boothIds: ['synthetic-booth'] }), { code: 'REGISTRATION_WAITLISTED' });
+  assert.equal((await f.contactsStore.read()).revision, saved.revision);
+  let statusReads = 0;
+  const cleanup = createIntentInvitationService({ ...f.dependencies,
+    getAdmissionStatus: async () => { statusReads++; throw Error('SYNTHETIC_UNKNOWN_ADMISSION'); },
+    isRegistrationActive: async () => { statusReads++; throw Error('SYNTHETIC_UNKNOWN_REVIEW'); } });
+  const removedBooth = await cleanup.assignContact({ actor, contactId: f.contact.id, expectedContactRevision: saved.revision,
+    sessionIds: [first.id], boothIds: [] });
+  assert.deepEqual(removedBooth.contact.operations.boothIds, []); assert.equal(statusReads, 0);
+  await assert.rejects(waiting.assignContact({ actor, contactId: f.contact.id, expectedContactRevision: removedBooth.revision,
+    sessionIds: [first.id], boothIds: ['synthetic-booth'] }), { code: 'REGISTRATION_WAITLISTED' });
+  const declined = await f.contactsStore.saveOperations(f.contact.id, removedBooth.revision,
+    { ...removedBooth.contact.operations, responseStatus: 'declined', notes: '合成历史备注保留' }, actor.id);
+  const inactive = createIntentInvitationService({ ...f.dependencies, isRegistrationActive: async () => false,
+    getAdmissionStatus: async () => ({ status: 'withdrawn', revision: 2 }) });
+  const removed = await inactive.assignContact({ actor, contactId: f.contact.id, expectedContactRevision: declined.revision,
+    sessionIds: [], boothIds: [] });
+  assert.deepEqual(removed.contact.operations.sessionIds, []); assert.equal(removed.contact.operations.notes, '合成历史备注保留');
+  assert.equal(removed.contact.operations.responseStatus, 'declined'); assert.equal((await f.contentStore.read()).published, null);
 });

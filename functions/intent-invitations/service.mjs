@@ -240,15 +240,23 @@ export function createIntentInvitationService({ registrationService, contactsSto
         contactRevision: roster.revision, registrations, failures, skipped, warnings };
     },
     async assignContact({ contactId, expectedContactRevision, sessionIds, boothIds, actor } = {}) {
-      const staff = actorValue(actor), roster = await rosterAt(expectedContactRevision), contact = contactValue(roster, contactId);
+      const staff = actorValue(actor), roster = await rosterAt(expectedContactRevision), contact = contactValue(roster, contactId, true);
       const state = await readState();
       const registration = conversionFor(state, contactId);
       if (!registration) throw failure('REGISTRATION_REQUIRED', 409);
-      await requireActive(registration.registrationId, staff);
       let planning; try { planning = (await contentStore.read()).draft.content; } catch { throw failure(); }
       const operations = { ...contact.operations, sessionIds, boothIds };
       const checked = validateContactOperations(operations, planning);
       if (!checked.valid) throw failure('INVALID_ASSIGNMENT', 422);
+      const adding = ['sessionIds', 'boothIds'].some(field => checked.value[field].some(id => !contact.operations[field].includes(id)));
+      if (adding) {
+        if (declined(contact)) throw failure('CONTACT_DECLINED', 422);
+        requireSource(contact, registration);
+        await requireActive(registration.registrationId, staff);
+        await requireConfirmed(registration.registrationId);
+      }
+      // Removing or retaining historical references allocates no new place;
+      // staff must be able to clean these up after withdrawal or declined contact.
       try { return await contactsStore.saveOperations(contactId, expectedContactRevision, checked.value, staff.id); }
       catch (error) {
         if (error?.status === 409) throw failure('REVISION_CONFLICT', 409);

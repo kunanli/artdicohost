@@ -16,10 +16,12 @@
 | From Name | `ARTDiCO HOST` |
 | From Email | `support@artdico.co`，或核實相同的服務預設地址 |
 | Reply-To | `support@artdico.co` |
-| Subject | `{{event_title}}｜报名状态通知` |
+| Subject | `GGJ 中国交流聚会 × ARTDiCO HOST 2026｜报名状态通知` |
 | CC／BCC | 留空 |
 
 4. Content 的 HTML 原始碼使用 [可貼上的模板](templates/emailjs-registration-confirmation.html)。正文以 **`{{invitation_text}}`** 為主，保留雙大括號的 escaping。它已包含姓名、確認／候補狀態、活動事實、報名編號與私人確認／列印連結。不要改成 Deck 的 `{{message}}`，也不要固定寫「所有人報名成功」，避免候補被誤認為已取得名額。
+
+   模板已按使用者指定加入「GGJ 中国交流聚会 × ARTDiCO HOST 2026」及正式活動介紹：2026 年 12 月 5 日深圳前海、SO／RO 與開發者等參與對象，以及 GGJ 分享、圓桌、技術講座、作品展示和合作交流。介紹在「本次报名信息」之前，後段仍以個人實際名額狀態為準；具體議程與嘉賓安排將陸續公布。
 5. 這份模板由活動後端明確呼叫一次；不再串接 EmailJS 的額外 Auto-Reply 模板，以免一份報名收到重複通知。沒有新增附件或付費需求。
 6. 在 Account 找到現有 Public Key／Private Key；依帳戶目前 Security 設定核對服務端 API 的授權。活動後端會傳 `accessToken`，目前程式要求兩種 key 都存在。不要因新增此站而輪替 Deck 共用 key，或直接改變可能影響原站的帳戶級限制。
 

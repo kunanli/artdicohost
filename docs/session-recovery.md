@@ -4,6 +4,8 @@
 
 用户已有 EmailJS `LoginPlan`／飞书 SSL SMTP，并要求参考 `artdico-deck`。已只读核对原仓库邮件参数，为本项目准备[独立模板、控制台字段及受控启用步骤](emailjs-registration-setup.md)。原 Deck 使用 welcome／notify，活动站使用独立 `EMAILJS_CONFIRMATION_TEMPLATE_ID` 和 `invitation_text`；不能直接套原 `message` 模板。本轮只有文档及模板材料，没有取得实际 API key、修改 EmailJS／FC、启用自动通知或发信；下一步保存独立模板并取得实际 Template ID，再按受控配置验收，不重部署已成功的图片功能。
 
+用户随后要求带入正式活动介绍；[HTML 模板](templates/emailjs-registration-confirmation.html) 已加入「GGJ 中国交流聚会 × ARTDiCO HOST 2026」、12 月 5 日深圳前海、参与对象及计划活动内容，后接真实确认／候补正文。EmailJS 控制台仍须由现有账号保存新模板；本机文件更新不代表线上模板已更改或已寄信。
+
 ## 已上线：嘉宾／组织图片编辑与上传恢复（2026-10-21）
 
 [PR #33](https://github.com/kunanli/artdicohost/pull/33) 已上线 main **`4a9b49bc8f285deb2551c9b0b55dab9454f3f970`**；本机／准确 PR／main **817/817**、12 组专用 Chromium、相关既有流程与独立透明公开页检查通过。[正式运行 39536595824](https://github.com/kunanli/artdicohost/actions/runs/39536595824) attempt 1 三个 job 全部成功：真实十阶段私有 OSS、11:12:06（UTC+08）启用、11:12:07 核定政策／300 人容量、11:12:53 的 **23/23** HTTPS 对象回读，11:12:56 完成；远端 main 已核对。

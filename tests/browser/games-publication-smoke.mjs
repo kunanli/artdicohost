@@ -266,7 +266,7 @@ async function gamesCases(browser, errors, reports) {
     const f = await fixture(browser, errors);
     try {
       let form = await editWork(f, IDS.indie); await form.locator('[name=title]').fill('合成旧本机填写继续');
-      await until(f.admin, async () => (await draftRecords(f.admin)).some(row => row.kind === 'editing'), 'the old raw form is durably cached');
+      await until(f.admin, async () => (await draftRecords(f.admin)).some(row => row.kind === 'editing' && row.value.forms?.showcase?.fields?.title === '合成旧本机填写继续'), 'the latest old raw form is durably cached');
       await f.admin.evaluate(async ({ actorId, eventId }) => {
         const { createBrowserDraftStore } = await import('/__test_source__/src/lib/browser-drafts.mjs'), { CONTENT_DRAFT_POLICY } = await import('/__test_source__/src/lib/content-local-drafts.mjs');
         const store = createBrowserDraftStore(), scope = { actorId, eventId, page: 'content', entityId: 'workspace' }, head = await store.read(scope, CONTENT_DRAFT_POLICY), value = structuredClone(head.record.value);
@@ -286,7 +286,7 @@ async function gamesCases(browser, errors, reports) {
       await f.admin.locator('[data-admin-savebar][data-save-state=unknown]').waitFor({ state: 'attached' });
       const original = f.calls.find(call => call.path === '/api/admin/content' && call.method === 'PUT'); assert.equal(Object.hasOwn(original.body.content.showcases[0], 'kind'), false);
       const row = (await draftRecords(f.admin)).find(row => row.kind === 'pending_submission'); assert.deepEqual(row.value.pendingSave, original.body);
-      await f.admin.reload({ waitUntil: 'networkidle' }); await f.admin.locator('[data-admin-local-restore]:visible').click(); await (await proofControl(f.admin, 'check-save')).click(); await (await proofControl(f.admin, 'retry-save')).click();
+      await f.admin.reload({ waitUntil: 'networkidle' }); await f.admin.locator('[data-admin-local-restore]:visible').click(); await f.admin.locator('[data-showcase-dialog][open]').waitFor(); await f.admin.locator('[data-admin-local-restore]').waitFor({ state: 'hidden' }); await (await proofControl(f.admin, 'check-save')).click(); await (await proofControl(f.admin, 'retry-save')).click();
       await f.admin.locator('[data-admin-savebar][data-save-state=saved]').waitFor({ state: 'attached' });
       const puts = f.calls.filter(call => call.path === '/api/admin/content' && call.method === 'PUT'); assert.equal(puts.length, 2); assert.equal(puts[1].rawBody, original.rawBody); assert.equal(Object.hasOwn((await f.runtime.app.store.read()).draft.content.showcases[0], 'kind'), false);
       reports.push({ group: 'games', oldPendingBodyNeverReceivesDefaultKind: true, refreshExplicitProofAndExactOriginalRetry: true });
@@ -297,7 +297,7 @@ async function gamesCases(browser, errors, reports) {
     try {
       const form = await editOrganization(f); await form.locator('[name=name]').fill('合成未知保存退出'); f.failNextSave(); await f.admin.locator('[data-organization-submit]').click(); await f.admin.locator('[data-admin-savebar][data-save-state=unknown]').waitFor({ state: 'attached' });
       assert.ok((await draftRecords(f.admin)).some(row => row.kind === 'pending_submission')); await f.admin.locator('[data-organization-dialog][open] [data-admin-proof-logout]').click(); await f.admin.locator('[data-admin-login-panel]:visible').waitFor();
-      const privateDom = await f.admin.evaluate(() => document.body.textContent + [...document.querySelectorAll('input,textarea')].map(field => field.value).join(' ')); assert.equal(privateDom.includes('合成未知保存退出'), false); assert.equal(privateDom.includes(PRIVATE), false); assert.equal((await draftRecords(f.admin)).length, 0);
+      const privateDom = await f.admin.evaluate(() => document.body.textContent + [...document.querySelectorAll('input,textarea')].map(field => field.value).join(' ')); assert.equal(privateDom.includes('合成未知保存退出'), false); assert.equal(privateDom.includes(PRIVATE), false); await until(f.admin, async () => (await draftRecords(f.admin)).length === 0, 'explicit logout durably clears the old actor cache');
       assert.equal(f.calls.filter(call => call.path === '/api/admin/content' && call.method === 'PUT').length, 1); assert.equal((await f.runtime.app.store.read()).draft.content.organizations[0].name, f.initial.content.organizations[0].name);
       reports.push({ group: 'games', unknownProofDialogOffersExplicitLogout: true, logoutClearsActorCacheAndPrivateDom: true, noRetryOrUnsavedOverwrite: true });
     } finally { await f.close(); }

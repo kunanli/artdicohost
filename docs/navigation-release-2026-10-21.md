@@ -8,6 +8,8 @@
 
 本机完整 **808/808**，零失败／跳过／取消，209.385 秒；六个新回归覆盖注销后、准备后、两客户端间、已知与未知限流探测之间的换窗、连续换窗安全失败及未覆写的产品默认行为。独立审阅无阻挡问题。PR check job **119003110603**：**808/808**，零失败／跳过／取消，78.146 秒；源码 389 文件，Astro 290 文件、零错误／警告、一项既有提示，七页构建及依赖审计通过。实际无网络唯读 ZIP preflight **6.491 秒**、candidate **14.604 秒**、99 个文件／23 个静态资源；包来源为正常 PR 合成合并提交 `ba19a15fdaf3243bf72a0814ab231ad22568ba4b`，不是已发布 main。
 
+准确 main 的 check job **119004376445** 已成功：**808/808**，零失败／跳过／取消，70.834 秒；源码 389、Astro 290 文件、零错误／警告、一项既有提示、七页构建及零已知依赖漏洞。实际无网络唯读 ZIP preflight **6.475 秒**、candidate **13.868 秒**、99 个文件／23 个静态资源，全部绑定 `b51dff2`。FC lifecycle job **119005492862** 进行中；公开 23 文件仍是候选，待实际启用与 HTTPS 回读。
+
 ## 导航首次上线来源
 
 [PR #31](https://github.com/kunanli/artdicohost/pull/31) 已上线 main **`b8d6818bc6da2c4d298d9f04678f90b5e5b5ffc1`**。候选 head **`ffd35f89ecbd032a28d6a7128ad69a6b86afd939`** 的[准确 PR 检查 39531005132](https://github.com/kunanli/artdicohost/actions/runs/39531005132) 成功，GitHub PR 合并测试来源为 `f054f6794b879cb6638513cac7afe41f63cb473e`。[正式发布 39531376320](https://github.com/kunanli/artdicohost/actions/runs/39531376320) attempt 2 已于 **10:22:22（UTC+08）** 全部成功；首次验收失败与受控恢复证据保留在下方。

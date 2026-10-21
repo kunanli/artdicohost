@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { validateVolunteer, validateVolunteerPosition, validateVolunteerShift, validateVolunteerAssignment, VOLUNTEER_ISSUE_LABELS } from '../../shared/volunteer-schema.mjs';
+import { validateVolunteer, validateVolunteerPosition, validateVolunteerShift, validateVolunteerAssignment, VOLUNTEER_ISSUE_LABELS, VOLUNTEER_LIMITS } from '../../shared/volunteer-schema.mjs';
 import { projectVolunteerCoverage, assertVolunteerPlanChange } from './planning.mjs';
 import { volunteerWorkbook } from './xlsx.mjs';
 
@@ -184,6 +184,7 @@ export function createVolunteerService({ repository, getSources, clock = Date.no
           })) fail('DUPLICATE_SOURCE');
         }
         const index = after[collection].findIndex(row => row.id === entity.id); if (index < 0) after[collection].push(entity); else after[collection][index] = entity;
+        if (after[collection].length > VOLUNTEER_LIMITS[collection]) fail('CAPACITY_EXCEEDED');
         if (input.action === 'shift_upsert' && !after.positions.some(row => row.id === entity.positionId)
           || input.action === 'assignment_upsert' && (!after.volunteers.some(row => row.id === entity.volunteerId) || !after.shifts.some(row => row.id === entity.shiftId))) fail('INVALID_REQUEST');
         assertVolunteerPlanChange(current, after, { action: input.action, id: entity.id }, loaded);

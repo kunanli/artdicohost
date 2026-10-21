@@ -187,3 +187,19 @@ test('export cannot omit selection/contact scope or bypass role, revision, or bo
   await errorCode(await f.api(request(f, '/export.xlsx', { method: 'POST', body: { ...input, expectedRevision: 0 } })), 409, 'CONFLICT');
   assert.equal((await f.repository.read()).audit.filter(row => row.action === 'export').length, 0);
 });
+
+test('collection and durable audit capacity return controlled409 without another commit', async () => {
+  const f = volunteerFixture(), positions = Array.from({ length: 100 }, (_, index) => ({ ...fixturePosition(), id: 'position_' + index }));
+  await f.repository.mutate({ actorId: f.actor.id, expectedRevision: 0, operationId: 'synthetic_full_positions_01', action: 'position_upsert', payload: positions[0] }, state => ({ ...state, positions }));
+  const before = f.objects.calls.filter(row => row.operation === 'append').length;
+  await errorCode(await f.api(request(f, '/operations', { method: 'POST', body: command({ ...fixturePosition(), id: 'position_overflow' }, 'position_upsert', 1) })), 409, 'CAPACITY_EXCEEDED');
+  assert.equal((await f.repository.read()).revision, 1); assert.equal(f.objects.calls.filter(row => row.operation === 'append').length, before);
+  const at = '2026-10-21T05:00:00.000Z', state = { schemaVersion: 1, eventId: 'ggj-cn-2026', revision: 1000, volunteers: [], positions: [], shifts: [], assignments: [],
+    audit: Array.from({ length: 1000 }, (_, index) => ({ revision: index + 1, operationId: 'synthetic_audit_full_' + String(index).padStart(4, '0'), action: 'position_upsert', actorId: f.actor.id, fingerprint: 'f'.repeat(64), at })) };
+  let commits = 0;
+  const repository = createVolunteerRepository({ eventId: 'ggj-cn-2026', journal: { read: async () => ({ value: state, cursor: { version: 1000, position: 1000, hash: 'a'.repeat(64) } }), commit: async () => { commits++; } } });
+  const service = createVolunteerService({ repository, getSources: async () => structuredClone(f.sources) });
+  const api = createVolunteersApi({ service, authenticate: async () => ({ user: f.actor, csrfToken: f.csrfToken }) });
+  await errorCode(await api(request(f, '/operations', { method: 'POST', body: command(fixturePosition(), 'position_upsert', 1000) })), 409, 'CAPACITY_EXCEEDED');
+  assert.equal(commits, 0);
+});

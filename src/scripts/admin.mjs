@@ -273,7 +273,7 @@ function lockControls() {
   for (const node of document.querySelectorAll('[data-admin-save],[data-admin-add-session],[data-admin-add-booth],[data-admin-fill-booths],[data-admin-add-guest],[data-admin-add-showcase],[data-row-action]')) node.disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canEdit();
   $('[data-admin-publish]').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canPublish() || dirty || hasUnappliedInputs() || savingContent || ['unknown', 'conflict'].includes(saveOutcome);
   $('[data-admin-preview]').disabled = controlsBusy || !draft;
-  $('[data-admin-logout]').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy;
+  $('[data-admin-logout]').disabled = busy || plannerBusy || localRecovering || savingContent || checkingContentSave || portraitUploading || coverUploading || organizationBusy;
   arrangements.configure({ allowed: Boolean(canEdit() && user?.roles.includes('outreach')), busy: controlsBusy || portraitUploading || coverUploading || organizationBusy, dirty, draftRevision: draft?.revision });
   planner?.configure();
   organizations?.configure();
@@ -1195,7 +1195,9 @@ for (const name of ['name','company','ggjRole','title','bio','website']) $('[dat
 for(const option of $('[data-guest-form]').querySelectorAll('[name=publicRoles]'))option.addEventListener('change',revokeGuestConsent);
 for (const button of document.querySelectorAll('[data-close-dialog]')) button.addEventListener('click', () => {if(button.dataset.closeDialog==='guest')closeGuestEditor();else if(button.dataset.closeDialog==='showcase')closeShowcaseEditor();else closeSimpleEditor(button.dataset.closeDialog);});
 $('[data-admin-logout]').addEventListener('click', () => action(async () => {
-  if (hasUnsavedChanges() && !confirm('还有未保存到云端的修改，确定退出并放弃这些修改吗？')) return;
+  if(localRecovering||savingContent||checkingContentSave||portraitUploading||coverUploading)return;
+  const recoveryRecord=localRecovery?.record??localDraftBinding?.snapshot?.record;
+  if ((hasUnsavedChanges()||recoveryRecord||localPendingArchive) && !confirm(recoveryRecord?.kind==='pending_submission'||pendingSave?'仍有保存结果待核对。退出会清除本机恢复信息，不撤销可能已保存的云端内容。确定退出？':'还有未保存到云端的修改，确定退出并放弃本机填写及暂存吗？')) return;
   const actor=user?.id,binding=localDraftBinding;binding?.close();
   let cleared=true,loggedOut=false;try{if(actor)await localDraftStore.clearActor(actor);}catch{cleared=false;}
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15_000);

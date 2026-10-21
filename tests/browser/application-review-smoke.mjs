@@ -4,7 +4,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
-import { peopleRuntimeFixture, PEOPLE_FIXTURE_API as API, PEOPLE_FIXTURE_PUBLIC as SITE } from '../helpers/people-runtime-fixture.mjs';
+import { peopleRuntimeFixture, PEOPLE_FIXTURE_API as API, PEOPLE_FIXTURE_PUBLIC as SITE, PEOPLE_FIXTURE_PASSWORD } from '../helpers/people-runtime-fixture.mjs';
 
 const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
 const project = fileURLToPath(new URL('../../', import.meta.url));
@@ -27,7 +27,7 @@ async function fixture({ width = 390, capacity = 3, mail = true, username = 'own
   // setFixedTime leaves event-loop timers running normally.
   await page.clock.setFixedTime(new Date('2026-10-21T09:00:00.000Z'));
   const calls = [], writes = [], reads = [];
-  let loseSubmit = submitAckLost, loseApproval = approvalAckLost, approving = false, rejectAdmissionRead = false;
+  let loseSubmit = submitAckLost, loseApproval = approvalAckLost, approving = false, rejectAdmissionRead = false, rejectNextApproval = false;
   const append = runtime.objects.append.bind(runtime.objects);
   runtime.objects.append = async (key, ...args) => {
     const result = await append(key, ...args);
@@ -48,6 +48,7 @@ async function fixture({ width = 390, capacity = 3, mail = true, username = 'own
       if (/^\/api\/(?:public\/|admin\/registration\/)/u.test(path)) assert.equal(requestHeaders.cookie, undefined, 'public request omits the private staff cookie');
       if (path.endsWith('/registration/confirmation')) assert.equal(requestHeaders.referer, undefined, 'private receipt is not a Referer');
       if (rejectAdmissionRead && path === '/api/admin/admissions' && req.method() === 'GET') return route.fulfill(json({}, 401));
+      if (rejectNextApproval && path === '/api/admin/admissions/approve') { rejectNextApproval = false; entry.status = 401; return route.fulfill(json({}, 401)); }
       const request = new Request(req.url(), { method: req.method(), headers: requestHeaders,
         ...(['GET', 'HEAD'].includes(req.method()) ? {} : { body: req.postData() }) });
       approving = path === '/api/admin/admissions/approve';
@@ -69,7 +70,7 @@ async function fixture({ width = 390, capacity = 3, mail = true, username = 'own
     const response = await runtime.app.handle(runtime.request(path, { method, body, headers: useHeaders }));
     const value = await response.json(); assert.equal(response.status, status, JSON.stringify(value)); return value;
   }
-  return { runtime, context, page, headers, calls, writes, reads, api, expireAdmissionRead: () => { rejectAdmissionRead = true; } };
+  return { runtime, context, page, headers, calls, writes, reads, api, expireNextApproval: () => { rejectNextApproval = true; }, expireAdmissionRead: () => { rejectAdmissionRead = true; } };
 }
 async function noOverflow(page) { assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true); }
 async function openPublic(f) {
@@ -244,12 +245,22 @@ try {
   {
     const f = await fixture({ username: 'reviewer' }), pending = await f.runtime.seedPublic(pendingFields('合成审核同事申请'));
     await openReview(f); assert.equal(await f.page.locator('[data-admissions-superadmin]:visible').count(), 0);
+    await f.page.locator('[data-review-rows] tr').first().getByRole('button', { name: '查看与核查' }).click();
+    await f.page.locator('[data-review-dialog][open]').waitFor(); f.expireNextApproval();
+    await f.page.locator('[data-review-approve]').click(); await f.page.locator('[data-review-workspace]').waitFor({ state: 'hidden' });
+    assert.equal(await f.page.locator('[data-review-dialog]').isVisible(), false);
+    assert.equal(await f.page.locator('[data-admissions-people] tr').count(), 0);
+    assert.equal(await f.page.locator('[data-review-login-submit]').isEnabled(), true, 'an expired in-flight decision must not leave the login controls busy');
+    assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(pending.reference_code)).status, 'pending_review'); assert.equal(f.runtime.messages.length, 0);
+    await f.page.locator('[data-review-login] [name=username]').fill('reviewer');
+    await f.page.locator('[data-review-login] [name=password]').fill(PEOPLE_FIXTURE_PASSWORD); await f.page.locator('[data-review-login-submit]').click();
+    await f.page.locator('[data-review-workspace]:visible').waitFor();
     await f.page.locator('[data-admissions-approve="' + pending.reference_code + '"]').click();
     await f.page.locator('[data-admissions-status]').filter({ hasText: /已确认参会名额/u }).waitFor(); assert.equal(f.runtime.messages.length, 1);
     f.expireAdmissionRead(); await f.page.locator('[data-admissions-refresh]').click(); await f.page.locator('[data-review-workspace]').waitFor({ state: 'hidden' });
     assert.equal(await f.page.locator('[data-admissions-people] tr').count(), 0); assert.equal(await f.page.locator('[data-admissions-metrics]').textContent(), '');
     assert.doesNotMatch(await f.page.locator('body').textContent(), /合成审核同事申请/u);
-    await f.context.close(); reports.push({ reviewerCanReviewWithoutSuperadminTools: true, sessionExpiryClearsPrivateReviewState: true });
+    await f.context.close(); reports.push({ reviewerCanReviewWithoutSuperadminTools: true, detailDecisionExpiryClearsAndUnlocksLogin: true, reloginAfterExpiredDecisionWorks: true, sessionExpiryClearsPrivateReviewState: true });
   }
   {
     const f = await fixture({ username: 'outreach' }); await f.page.goto(API + '/admin/registrations/', { waitUntil: 'networkidle' });

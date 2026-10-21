@@ -27,3 +27,5 @@
 纯XZ的BCJ6/7/8/9及极端选项均不足；最佳28,218,632B runtime仍差约494KB。保留原全部字体与历史图，不采用删字／改水平字形／垂直功能裁剪。方案为 **BCJ6＋仅明确文字文件的ZIP deflate6**：/tmp实测文字从1,831,809B降至562,706B，省1,269,103B；加BCJ6预估ZIP35,642,219B，原35,999,982B cap不变。
 
 新验包只对现有白名单文字允许method8；图片、字体和runtime仍stored；文字总解压预算额外限制4MiB，每件仍原1MiB/2MiB/64KiB限制。Node24 `inflateRawSync` 限output，严格检查engine.bytesWritten等于全部compressed bytes，拒绝尾随／串联；实际CRC32、原SHA、local/central、顺序／模式／无gap都核对。旧stored包继续接受。未改bootstrap/XZdecoder/官方pin/96MiB/192MiB/上传与静态上限。最终仍须准确来源实包及受限Docker冷启动，当前不视为发布完成。
+
+容量修复已实现：`783126d`（BCJ6，原12focused验证）＋`bf69169`（bounded text deflate，7新增／5原candidate测试；实际pinnedNode archive通过）。root整合后 **12/12** 新压缩／deflate边界检查通过（0.663324749秒），保持所有旧上限。仅构建工具改变，前端产品仍f9e5ea8／13:06:38冻结来源，不需重制海报或字形；下一步为最终准确head实包、原Docker限制启动与正式CI。

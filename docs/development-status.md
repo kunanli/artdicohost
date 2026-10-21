@@ -2,7 +2,7 @@
 
 ## 当前：独立参与组织（2026-10-21）
 
-PR #30 已合并 main `a0a02e009d5c547e5683a6b5c37f1c3ff7ea99b2`，本机／最终 PR CI 802/802、十二组 Chromium 通过；[正式运行 39528912033](https://github.com/kunanli/artdicohost/actions/runs/39528912033) 待核对三个 job。源代码已完成不代表实际部署结果；[本轮证据](organization-release-2026-10-21.md)及[组织操作](participating-organizations.md)是接续入口，下方 PR #29 属前轮。
+PR #30 已上线 main `a0a02e009d5c547e5683a6b5c37f1c3ff7ea99b2`，本机／最终 PR／main CI 802/802、十二组 Chromium 通过；[正式运行 39528912033](https://github.com/kunanli/artdicohost/actions/runs/39528912033) 三个 job 全部成功。十阶段真实私有 OSS、核定政策／300 人容量及 23 个公开 HTTPS 对象全部验证，内容与报名已启用。[完整证据](organization-release-2026-10-21.md)及[组织操作](participating-organizations.md)是接续入口，下方 PR #29 属前轮；实际组织图片、链接和参与形式由 owner 在后台填写并发布。
 
 ## 当前参会体验更新（2026-10-21）
 

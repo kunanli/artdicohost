@@ -63,8 +63,9 @@ try{
   actor={id:'synthetic-editor',roles:['editor']};const before=sourceReads;
   await page.reload({waitUntil:'networkidle'});await page.locator('[data-tasks-error]:visible').waitFor();assert.equal(sourceReads,before);assert.equal(await page.locator('[data-tasks-metrics]').textContent(),'');
   actor=staff;await page.goto('https://api.artdico.host/admin/contacts/',{waitUntil:'networkidle'});
-  assert.equal(await page.locator('[data-contacts-metrics] article').filter({hasText:'已记录人工发出'}).locator('strong').textContent(),'1');
-  assert.equal(await page.locator('[data-contacts-metrics] article').filter({hasText:'服务商已接受'}).locator('strong').textContent(),'1');
+  const progressNote=await page.locator('[data-contacts-progress-note]').textContent();
+  assert.match(progressNote,/当前版人工发出 1 位/u);
+  assert.match(progressNote,/服务商接受 1 位/u);
   assert.equal(await page.locator('[data-contact-selection="synthetic-declined"]').isDisabled(),true);
   const waitingRow=page.locator('[data-contacts-rows] tr').filter({hasText:'合成候补对象'});assert.equal(await waitingRow.getByRole('button',{name:'名额待确认 · 暂不准备正式邀请',exact:true}).isDisabled(),true);assert.equal(await waitingRow.getByRole('button',{name:'名额待确认',exact:true}).isDisabled(),true);
   await page.locator('[data-contacts-progress]').selectOption('waitlisted');assert.equal(await page.locator('[data-contacts-rows] tr').count(),1);

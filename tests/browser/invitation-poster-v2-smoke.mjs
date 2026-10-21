@@ -14,7 +14,7 @@ const {eventConfig}=await import(pathToFileURL(resolve(source,'src/config/event.
 const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright-core');
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const VERSION='ggj2026-poster-v2',AT='2026-10-21T09:00:00.000Z',reports=[],errors=[];
-const MIXED_NAME='合成Name'.repeat(20),LONG_VENUE='合成完整场地'.repeat(50);
+const MIXED_NAME='合成Name'.repeat(20),PUBLIC_NAME='合成Name'.repeat(13),LONG_VENUE='合成完整场地'.repeat(50);
 assert.equal(MIXED_NAME.length,120);assert.equal(LONG_VENUE.length,300);
 const json=(value,status=200)=>({status,contentType:'application/json',body:JSON.stringify(value)});
 const operationId=()=>randomBytes(32).toString('base64url');
@@ -74,7 +74,7 @@ const settings=(name=MIXED_NAME,venue='深圳前海5号楼3F')=>({recipientName:
 async function renderNative(f,input=settings()){
   return f.page.evaluate(async input=>{const{renderer,canvas}=globalThis.__posterNative;globalThis.__posterProbe.reset();const metadata=await renderer.renderInvitation(canvas,input),png=await renderer.invitationPngBlob(canvas);globalThis.__posterNative.png=png;const bitmap=await createImageBitmap(png),dimensions=[bitmap.width,bitmap.height];bitmap.close();return{metadata,dimensions,size:png.size,type:png.type,records:globalThis.__posterProbe.records,faces:[...document.fonts].map(face=>({family:face.family,weight:face.weight,status:face.status}))};},input);
 }
-async function seedPublic(f,name=MIXED_NAME,status='confirmed'){
+async function seedPublic(f,name=PUBLIC_NAME,status='confirmed'){
   if(status==='waitlisted'){const first=await f.runtime.seedPublic({intake:'general-v2',name:'合成占位申请人',email:'synthetic.occupied@example.invalid'});await f.runtime.approvePublic(first.reference_code);}
   const result=await f.runtime.seedPublic({intake:'general-v2',name,email:'synthetic.poster@example.invalid'});assert.ok(result.confirmation?.confirmationUrl);
   if(['confirmed','waitlisted','withdrawn','crew'].includes(status))await f.runtime.approvePublic(result.reference_code);
@@ -107,6 +107,7 @@ try{
   await mkdir(evidence,{recursive:true});
   {
     const f=await fixture();await harness(f);const value=await renderNative(f);
+    const png120=await f.page.evaluate(async()=>{const bytes=new Uint8Array(await globalThis.__posterNative.png.arrayBuffer());let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);return btoa(binary);});await writeFile(resolve(evidence,'native-full120-name.png'),Buffer.from(png120,'base64'));
     assert.deepEqual(value.dimensions,[1080,1920]);assert.equal(value.type,'image/png');assert.ok(value.size>10000);assert.equal(value.metadata.layouts.recipientName.lines.join(''),MIXED_NAME);
     assert.ok(value.records.some(call=>call.font.includes('ARTDiCOInvitationMediumV2')));assert.ok(value.faces.some(face=>face.family.includes('ARTDiCOInvitationMediumV2')&&face.status==='loaded'));assert.ok(value.faces.some(face=>face.family.includes('ARTDiCOInvitationRegularV2')&&face.status==='loaded'));
     for(const line of value.records)assert.ok(line.left>=-1&&line.right<=1081&&line.top>=-1&&line.bottom<=1921,'real text ink must remain on the PNG canvas');

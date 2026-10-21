@@ -5,6 +5,7 @@ import { createPreviewCommunications } from './communications.mjs';
 import { PORTRAIT_ID_PATTERN } from '../../shared/content-schema.mjs';
 import { toContactPlanningContent } from '../../shared/contact-editor.mjs';
 import { buildArrangementOverview } from '../../shared/arrangement-overview.mjs';
+import { contactOperationsResponse, createGuestContactLinkGuard } from '../people-operations/service.mjs';
 
 export const MAX_BODY_BYTES = 1024 * 1024;
 export const SESSION_COOKIE = 'artdico_local_session';
@@ -42,8 +43,9 @@ async function body(request) {
 }
 
 /** Pure Request -> Response boundary. Sessions/rate limits are local to this process. */
-export function createContentApi({ store, contactsStore, portraitStore, communications = createPreviewCommunications(), users, allowedOrigin, mode = 'local', now = () => Date.now(), sessionTtlMs = 8 * 60 * 60 * 1000, loginLimit = 10, loginWindowMs = 15 * 60 * 1000 }) {
+export function createContentApi({ store, contactsStore, portraitStore, communications = createPreviewCommunications(), users, allowedOrigin, mode = 'local', now = () => Date.now(), sessionTtlMs = 8 * 60 * 60 * 1000, loginLimit = 10, loginWindowMs = 15 * 60 * 1000, onContactOperationsCommitted }) {
   if (mode !== 'local') throw new TypeError('本内容 API 只支持本地模式，尚未接入生产鉴权或 OSS。');
+  if (onContactOperationsCommitted !== undefined && typeof onContactOperationsCommitted !== 'function') throw new TypeError('联系人名额同步配置无效。');
   const origin = new URL(allowedOrigin);
   if (origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1' || origin.origin !== allowedOrigin) throw new TypeError('本地 API Origin 必须是 http://127.0.0.1:端口。');
   const accounts = parseAdminUsers(users);
@@ -185,7 +187,9 @@ export function createContentApi({ store, contactsStore, portraitStore, communic
         const contactRoute = url.pathname.match(/^\/api\/admin\/contacts\/([A-Za-z0-9][A-Za-z0-9_-]{0,79})(?:\/invitation\/(generated|sent))?$/u);
         if (contactRoute && !contactRoute[2] && request.method === 'PUT') {
           const input = await body(request);
-          return json(await contactsStore.saveOperations(contactRoute[1], input.expectedRevision, input.operations, session.user.id));
+          const saved = await contactsStore.saveOperations(contactRoute[1], input.expectedRevision, input.operations, session.user.id);
+          return json(await contactOperationsResponse({ saved, contactId: contactRoute[1], expectedRevision: input.expectedRevision, operations: input.operations,
+            actor: session.user, onCommitted: onContactOperationsCommitted, errorFactory: (...args) => new ContentError(...args) }));
         }
         if (contactRoute?.[2] === 'generated' && request.method === 'POST') {
           const input = await body(request);
@@ -204,7 +208,9 @@ export function createContentApi({ store, contactsStore, portraitStore, communic
       if (url.pathname === '/api/admin/content' && request.method === 'PUT') {
         permit(session, 'editor');
         const input = await body(request);
-        return json({ draft: await store.save(input.expectedRevision, input.content, session.user.id) });
+        return json({ draft: await store.save(input.expectedRevision, input.content, session.user.id, {
+          beforeCommit: createGuestContactLinkGuard({ actor: session.user, contactsStore, errorFactory: (...args) => new ContentError(...args) }),
+        }) });
       }
       if (url.pathname === '/api/admin/content/publish' && request.method === 'POST') {
         permit(session, 'publisher');

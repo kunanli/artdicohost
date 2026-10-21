@@ -5,6 +5,7 @@ import { CloudContentError } from './errors.mjs';
 import { createPreviewCommunications } from '../content-api/communications.mjs';
 import { toContactPlanningContent } from '../../shared/contact-editor.mjs';
 import { buildArrangementOverview } from '../../shared/arrangement-overview.mjs';
+import { contactOperationsResponse, createGuestContactLinkGuard } from '../people-operations/service.mjs';
 
 export const CLOUD_API_ORIGIN = 'https://api.artdico.host';
 export const PUBLIC_SITE_ORIGIN = 'https://artdico.host';
@@ -65,13 +66,14 @@ function requireRole(session, roles) {
 }
 
 /** Production Request boundary. The caller must supply shared, persistent implementations. */
-export function createCloudContentApi({ enabled = false, store, portraitStore, auth, contactsStore, communications = createPreviewCommunications(), beforeContactMutation } = {}) {
+export function createCloudContentApi({ enabled = false, store, portraitStore, auth, contactsStore, communications = createPreviewCommunications(), beforeContactMutation, onContactOperationsCommitted } = {}) {
   if (typeof enabled !== 'boolean') throw new TypeError('云端内容服务开关必须为布尔值。');
   if (enabled && (!['read', 'save', 'publish', 'recordPortraitUpload'].every(key => typeof store?.[key] === 'function')
     || !['read', 'upload'].every(key => typeof portraitStore?.[key] === 'function')
     || !['login', 'authenticate', 'logout'].every(key => typeof auth?.[key] === 'function'))) throw new TypeError('云端内容服务依赖未配置。');
   if (contactsStore && !['read', 'createContact', 'saveProfile', 'saveOperations', 'recordGenerated', 'recordSent', 'guestPrefill'].every(key => typeof contactsStore[key] === 'function')) throw new TypeError('云端私密名单依赖未配置。');
   if (beforeContactMutation !== undefined && typeof beforeContactMutation !== 'function') throw new TypeError('联系人写入核对配置无效。');
+  if (onContactOperationsCommitted !== undefined && typeof onContactOperationsCommitted !== 'function') throw new TypeError('联系人名额同步配置无效。');
   return async function handle(request) {
     let cors = {}, head = false;
     try {
@@ -158,7 +160,9 @@ export function createCloudContentApi({ enabled = false, store, portraitStore, a
         if (id && !action && request.method === 'PUT') {
           const input = await inputBody(request);
           await beforeContactMutation?.({ contactId: id, actor: session.user, action: 'operations', input });
-          return json(await contactsStore.saveOperations(id, input.expectedRevision, input.operations, session.user.id));
+          const saved = await contactsStore.saveOperations(id, input.expectedRevision, input.operations, session.user.id);
+          return json(await contactOperationsResponse({ saved, contactId: id, expectedRevision: input.expectedRevision, operations: input.operations,
+            actor: session.user, onCommitted: onContactOperationsCommitted, errorFactory: (...args) => new CloudContentError(...args) }));
         }
         if (id && action === 'invitation/generated' && request.method === 'POST') {
           const input = await inputBody(request);
@@ -184,7 +188,9 @@ export function createCloudContentApi({ enabled = false, store, portraitStore, a
       if (url.pathname === '/api/admin/content' && request.method === 'PUT') {
         requireRole(session, ['editor']);
         const input = await inputBody(request);
-        return json({ draft: await store.save(input.expectedRevision, input.content, session.user.id) });
+        return json({ draft: await store.save(input.expectedRevision, input.content, session.user.id, {
+          beforeCommit: createGuestContactLinkGuard({ actor: session.user, contactsStore, errorFactory: (...args) => new CloudContentError(...args) }),
+        }) });
       }
       if (url.pathname === '/api/admin/content/publish' && request.method === 'POST') {
         requireRole(session, ['publisher']);

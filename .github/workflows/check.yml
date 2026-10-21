@@ -195,3 +195,6 @@ jobs:
           ARTDICO_ADMIN_USERNAME: ${{ vars.ARTDICO_ADMIN_USERNAME }}
           ARTDICO_ADMIN_EMAIL: ${{ vars.ARTDICO_ADMIN_EMAIL }}
         run: node scripts/cloud-lifecycle.mjs .local-data/cloud-content-publication
+      - name: Verify all fixed admin subpages through the activated HTTPS API domain without credentials
+        timeout-minutes: 1
+        run: node scripts/verify-cloud-admin-pages.mjs .local-data/cloud-content-publication

@@ -112,6 +112,7 @@ organizations = createOrganizationsEditor({
 guestPeople = createGuestContactPicker({
   root: $('[data-guest-person-picker]'), request,
   getContext: () => ({ user, content: draft?.content, revision: draft?.revision, guestId: $('[data-guest-form]').elements.namedItem('id').value,
+    publishedIdentity: Boolean(published?.content?.guests?.some(guest => guest.id === $('[data-guest-form]').elements.namedItem('id').value)),
     busy: busy || plannerBusy || portraitUploading || coverUploading || Boolean(portraitPending) || organizations?.uploading }),
   getValue: () => $('[data-guest-form]').elements.namedItem('contactId').value,
   setValue: id => { $('[data-guest-form]').elements.namedItem('contactId').value = id; },

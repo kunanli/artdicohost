@@ -9,6 +9,7 @@ export function createGuestContactPicker({ root, request, getContext, getValue, 
   let epoch = 0, controller = null, opened = false, account = '', candidates = [], revision = null, nextCursor = null, loading = false, chosen = '';
   const key = () => { const user = getContext().user; return user ? user.id + '|' + [...user.roles].sort().join(',') : ''; };
   const permitted = () => canLinkContentPeople(getContext().user);
+  const publishedIdentity = () => getContext().publishedIdentity === true;
   function stop() { epoch++; controller?.abort(); controller = null; loading = false; }
   function clear() {
     stop(); opened = false; candidates = []; revision = null; nextCursor = null; chosen = ''; query.value = ''; select.replaceChildren();
@@ -16,7 +17,7 @@ export function createGuestContactPicker({ root, request, getContext, getValue, 
     $('[data-guest-person-more]').hidden = true;
   }
   function controls() {
-    const disabled = !opened || !permitted() || getContext().busy;
+    const disabled = !opened || !permitted() || publishedIdentity() || getContext().busy;
     for (const control of root.querySelectorAll('input,select,button')) control.disabled = disabled || loading && (control === select || control.hasAttribute('data-guest-person-more'));
     $('[data-guest-person-controls]').hidden = !permitted();
     $('[data-guest-person-more]').hidden = !nextCursor;
@@ -37,11 +38,11 @@ export function createGuestContactPicker({ root, request, getContext, getValue, 
     select.value = selected; selectedLink(); controls();
   }
   async function load({ append = false, id = '' } = {}) {
-    if (!opened || !permitted() || getContext().busy) return;
+    if (!opened || !permitted() || publishedIdentity() || getContext().busy) return;
     const cursor = append ? nextCursor : null; if (append && !cursor) return;
     stop(); const stamp = epoch, state = getContext(), currentAccount = key(), term = query.value.trim();
     const signalController = new AbortController(); controller = signalController; loading = true; controls();
-    const current = () => stamp === epoch && opened && permitted() && key() === currentAccount && getContext().content === state.content
+    const current = () => stamp === epoch && opened && permitted() && !publishedIdentity() && key() === currentAccount && getContext().content === state.content
       && getContext().revision === state.revision && getContext().guestId === state.guestId;
     const active = () => current() && !signalController.signal.aborted;
     const timer = setTimeout(() => signalController.abort(), 15_000);
@@ -64,6 +65,7 @@ export function createGuestContactPicker({ root, request, getContext, getValue, 
   function configure() {
     const next = key(); if (next !== account) { clear(); account = next; }
     if (!permitted()) { stop(); candidates = []; revision = null; nextCursor = null; select.replaceChildren(); selectedLink(); $('[data-guest-person-status]').textContent = getValue() ? '已保存内部人员关联。查看或修改需要同时具备人员邀约与活动编辑权限。' : '关联名单人员需要同时具备人员邀约与活动编辑权限。'; }
+    else if (publishedIdentity()) { stop(); candidates = []; revision = null; nextCursor = null; $('[data-guest-person-status]').textContent = '请先停止公开并保存发布，再更换关联人员。'; }
     controls();
   }
   function open() { clear(); account = key(); opened = true; chosen = getValue(); configure(); renderChoices(); if (permitted()) { const stamp = epoch; if (getContext().busy) setTimeout(() => { if (stamp === epoch && opened) void load({ id: chosen }); }, 0); else void load({ id: chosen }); } }
@@ -71,7 +73,7 @@ export function createGuestContactPicker({ root, request, getContext, getValue, 
   $('[data-guest-person-more]').addEventListener('click', () => void load({ append: true }));
   query.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); void load(); } });
   select.addEventListener('change', () => {
-    if (!opened || !permitted() || loading || getContext().busy) { select.value = getValue(); return; }
+    if (!opened || !permitted() || publishedIdentity() || loading || getContext().busy) { select.value = getValue(); return; }
     const id = select.value, item = candidates.find(item => item.id === id);
     if (id && (!item?.eligible || (getContext().content?.guests ?? []).some(guest => guest.id !== getContext().guestId && guest.contactId === id))) { select.value = getValue(); return; }
     if (id !== getValue()) { setValue(id); chosen = id; onChange(); $('[data-guest-person-status]').textContent = '内部关联已更改，请重新核对本人及公开授权，再应用并保存草稿。'; }

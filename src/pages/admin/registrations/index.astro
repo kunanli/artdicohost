@@ -1,4 +1,5 @@
 ---
+import StaffNavigation from '../../../components/StaffNavigation.astro';
 import SiteLayout from '../../../layouts/SiteLayout.astro';
 import StaffSettings from '../../../components/StaffSettings.astro';
 import StaffAdmissions from '../../../components/StaffAdmissions.astro';
@@ -12,13 +13,15 @@ const accommodation=[['not_requested','未申请'],['requested','已申请'],['p
 ---
 <SiteLayout title="报名与审核｜ARTDiCO HOST" description="工作人员私有报名核对、独立住宿审核与最小必要导出。">
   <div class="ah-admin" data-registration-admin>
-    <header class="ah-admin-header"><a class="ah-admin-brand" href="/admin/">ARTDiCO <span>HOST / REGISTRATIONS</span></a><nav class="review-nav"><a href="/admin/tasks/">今日待办</a><a href="/admin/">活动 / 嘉宾</a><a href="/admin/contacts/">人员 / 邀约</a><a href="https://artdico.host">公开活动页 ↗</a></nav></header>
+    <header class="ah-admin-header"><a class="ah-admin-brand" href="/admin/">ARTDiCO <span>HOST / REGISTRATIONS</span></a><nav aria-label="公开活动页面"><a class="ah-admin-back" href="https://artdico.host">查看活动页面 <span aria-hidden="true">↗</span></a></nav></header>
     <main class="ah-admin-main" id="main-content">
       <div class="ah-admin-environment"><span class="ah-admin-dot" aria-hidden="true"></span><p><strong>报名与人工审核</strong>实际保存的报名、工作人员代登记、出席确认与住宿批准分别记录。编辑公开内容的权限不会自动取得报名读取权限。</p></div>
       <p class="ah-admin-status" data-review-status role="status" aria-live="polite"></p><p class="ah-admin-alert" data-review-error role="alert" tabindex="-1" hidden></p>
       <section class="ah-admin-login-card" data-review-login-panel aria-labelledby="review-login-title"><span class="ah-admin-eyebrow">REVIEW WITH CARE</span><h1 id="review-login-title">核对每一份参与。</h1><p class="ah-admin-intro">使用具备报名审核权限的工作人员账号登录。名单及导出均由服务端校验权限。</p><form data-review-login method="post"><div class="ah-admin-field"><label for="review-user">用户名或邮箱</label><input id="review-user" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="160" required /></div><div class="ah-admin-field"><label for="review-password">密码</label><input id="review-password" name="password" type="password" autocomplete="current-password" maxlength="1024" required /></div><button class="ah-admin-button ah-admin-primary" type="submit" data-review-login-submit disabled>登录报名后台 →</button></form></section>
       <div class="review-account" data-review-account hidden><span data-review-user></span><button class="ah-admin-text-button" type="button" data-review-logout>退出登录</button></div>
-      <section data-review-workspace hidden aria-labelledby="review-title">
+      <section class="ah-admin-workspace-layout" data-review-workspace hidden aria-labelledby="review-title">
+        <StaffNavigation current="registrations" />
+        <div class="ah-admin-workspace-content">
         <div class="ah-admin-page-heading"><div><span class="ah-admin-eyebrow">PEOPLE, WITH CONTEXT</span><h1 id="review-title">报名与审核</h1><p>原始填写资料保留，内部核查单独保存；一般参会、讲者、展位与住宿分别确认。</p></div><button class="ah-admin-button" type="button" data-review-refresh>刷新已保存记录</button></div>
         <div class="review-metrics" data-review-metrics></div>
         <StaffAdmissions />
@@ -29,6 +32,7 @@ const accommodation=[['not_requested','未申请'],['requested','已申请'],['p
           <div class="ah-admin-table-wrap"><table class="review-table"><caption class="ah-sr-only">私有报名列表，点击查看资料并维护审核</caption><thead><tr><th scope="col">姓名 / 机构</th><th scope="col">城市 / 类别</th><th scope="col">审核状态</th><th scope="col">住宿</th><th scope="col">来源</th><th scope="col">保存时间</th><th scope="col">操作</th></tr></thead><tbody data-review-rows></tbody></table></div><p class="ah-admin-empty" data-review-empty hidden>目前没有符合筛选的已保存报名。</p>
         </section>
         <section class="ah-admin-panel review-export"><div><h2>导出当前筛选</h2><p>用户原件与参会状态保留；Excel 分开呈现原填写资料、当前名额及实际职责。默认不含联络字段和完整回答，导出范围及文件摘要会记录审计。</p></div><div><label><input type="checkbox" data-review-export-contact />确有必要，包含结构化邮箱／微信</label><label><input type="checkbox" data-review-export-answers />包含完整原始回答（自由文本可能有联络信息）</label><label><input type="checkbox" data-review-export-arrangements />包含当前角色、场次职责及展位（另需人员邀约权限）</label><button class="ah-admin-button ah-admin-primary" type="button" data-review-export-xlsx>导出 Excel 工作簿</button><button class="ah-admin-button" type="button" data-review-export>导出简表 CSV</button><p class="ah-admin-small">只导出当前明确筛选的报名；未代登记或拒绝联络的筹备人员，请到人员后台单独导出全部联系人。不会生成公开链接，也不会自动发给其他人。</p></div></section>
+        </div>
       </section>
       <StaffSettings />
     </main><footer class="ah-admin-footer"><span>ARTDiCO HOST / REVIEW</span><p>仅为本次活动核查所需，谨慎查看与分享。</p><a href="/admin/">返回工作人员后台</a></footer>

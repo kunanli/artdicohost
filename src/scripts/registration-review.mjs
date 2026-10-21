@@ -33,12 +33,15 @@ function clear(){
   sessionGeneration+=1;
   for(const url of privateExportUrls)URL.revokeObjectURL(url);privateExportUrls.clear();
   staffAdmissions.clear();
-  user=null;csrfToken='';revision=0;nextCursor=null;selected=null;dirty=false;filters={};busy=false;
+  user=null;csrfToken='';revision=0;nextCursor=null;selected=null;dirty=false;filters={};busy=false;pendingRegistration=null;
   $('[data-review-workspace]').hidden=true;$('[data-review-account]').hidden=true;$('[data-review-login-panel]').hidden=false;
   for(const selector of ['[data-review-rows]','[data-review-metrics]','[data-review-details]'])$(selector).replaceChildren();
   $('[data-review-form]').reset();$('[data-review-filters]').reset();$('[data-review-export-contact]').checked=false;
   $('[data-review-export-answers]').checked=false;$('[data-review-export-arrangements]').checked=false;
-  $('[data-review-admission-notice]').textContent='';
+  $('[data-review-login]').reset();
+  $('[data-review-detail-title]').textContent='报名资料';
+  for(const selector of ['[data-review-user]','[data-review-result-count]','[data-review-provenance]','[data-review-detail-error]','[data-review-deletion-state]','[data-review-admission-notice]','[data-review-status]','[data-review-error]'])$(selector).textContent='';
+  $('[data-review-detail-error]').hidden=true;$('[data-review-error]').hidden=true;$('[data-review-next]').hidden=true;$('[data-review-empty]').hidden=true;
   renderAdmissionDecision();
   if($('[data-review-dialog]').open)$('[data-review-dialog]').close();
   lock();
@@ -48,6 +51,7 @@ async function request(path,options={}){
   const response=await fetch(path,{...options,credentials:'same-origin',cache:'no-store',redirect:'error',headers:{Accept:'application/json',...(options.body?{'Content-Type':'application/json'}:{}),...(options.method&&options.method!=='GET'&&csrfToken?{'X-CSRF-Token':csrfToken}:{})}});
   if(generation!==sessionGeneration)throw new Error('会话已改变，请重新登录。');
   if(response.status===401){clear();throw new Error(path==='/api/admin/login'?'账号或密码未通过验证。':'会话已结束，请重新登录。');}
+  if(response.status===403){clear();const error=new Error('此账号没有相应权限，请重新登录核对。');error.status=403;throw error;}
   if(!response.ok){
     const messages={403:'此账号没有相应的报名读取、修改或导出权限。',409:'记录版本已改变，你的编辑仍保留在本页。请先核对并保留修改，再刷新最新记录。',422:'请检查核查字段、日期与状态是否完整有效。',429:'请求较多，请稍后重试。',503:'报名服务暂时不可用，请稍后重试。'};
     let message=messages[response.status]||'操作尚未完成，请稍后重试。';
@@ -172,8 +176,8 @@ $('[data-review-form]').addEventListener('input',()=>{dirty=true;renderAdmission
 $('[data-review-form]').addEventListener('change',()=>{dirty=true;renderAdmissionDecision();});
 $('[data-review-form]').addEventListener('submit',event=>{
   event.preventDefault();if(!selected||!event.currentTarget.reportValidity())return;
-  const review=Object.fromEntries(reviewFields.map(name=>[name,event.currentTarget.elements.namedItem(name).value]));const id=selected.id,expectedRevision=selected.revision;
-  action(async()=>{try{await request('/api/admin/registrations/'+encodeURIComponent(id)+'/review',{method:'PATCH',body:JSON.stringify({expectedRevision,review})});dirty=false;await openRecord(id);await load();announce('核查记录已保存。未发送通知或公开报名资料。');}catch(error){$('[data-review-detail-error]').textContent=error.message;$('[data-review-detail-error]').hidden=false;$('[data-review-detail-error]').focus();throw error;}});
+  const review=Object.fromEntries(reviewFields.map(name=>[name,event.currentTarget.elements.namedItem(name).value]));const id=selected.id,expectedRevision=selected.revision,generation=sessionGeneration;
+  action(async()=>{try{await request('/api/admin/registrations/'+encodeURIComponent(id)+'/review',{method:'PATCH',body:JSON.stringify({expectedRevision,review})});dirty=false;await openRecord(id);await load();announce('核查记录已保存。未发送通知或公开报名资料。');}catch(error){if(generation===sessionGeneration&&selected?.id===id){$('[data-review-detail-error]').textContent=error.message;$('[data-review-detail-error]').hidden=false;$('[data-review-detail-error]').focus();}throw error;}});
 });
 $('[data-review-deletion]').addEventListener('click',()=>{
   if(!selected||!user?.roles.includes('superadmin'))return;if(dirty){announce('请先保存或放弃核查修改，再登记删除申请。',true);return;}
@@ -186,7 +190,7 @@ $('[data-review-export-xlsx]').addEventListener('click',()=>action(async()=>{
   const includeContact=$('[data-review-export-contact]').checked,includeAnswers=$('[data-review-export-answers]').checked,includeArrangements=$('[data-review-export-arrangements]').checked;
   if(!confirm('确认导出当前筛选的 Excel？'+(includeContact?'包含联络字段。':'不含结构化联络字段。')+(includeAnswers?'包含完整原始回答；请特别核对自由文本。':'')+(includeArrangements?'另含当前角色与场次／展位。':'')+'请核对接收范围。'))return;
   let result;
-  try{result=await downloadPrivateXlsx({path:'/api/admin/registrations/export.xlsx',body:{expectedRevision:revision,filters,includeContact,includeAnswers,includeArrangements},csrfToken,filename:'artdico-registration-attendance.xlsx',isCurrent:()=>generation===sessionGeneration&&Boolean(user),onPrivateUrl:url=>privateExportUrls.add(url)});}catch(error){if(error.status===401)clear();throw error;}
+  try{result=await downloadPrivateXlsx({path:'/api/admin/registrations/export.xlsx',body:{expectedRevision:revision,filters,includeContact,includeAnswers,includeArrangements},csrfToken,filename:'artdico-registration-attendance.xlsx',isCurrent:()=>generation===sessionGeneration&&Boolean(user),onPrivateUrl:url=>privateExportUrls.add(url)});}catch(error){if(generation===sessionGeneration&&[401,403].includes(error.status))clear();throw error;}
   if(generation!==sessionGeneration)return;revision=result.revision;
   try{await load();}catch(error){if(generation===sessionGeneration)announce('Excel 已开始下载且已记录审计；列表刷新未完成，请稍后明确刷新核对。',true);return;}
   if(generation===sessionGeneration)announce('Excel 已生成并开始下载（'+result.count+' 份报名）；原始回答、当前名额与职责分别记录。请按核定范围使用。');
@@ -199,10 +203,11 @@ $('[data-review-export]').addEventListener('click',()=>action(async()=>{
   const response=await fetch('/api/admin/registrations/export',{method:'POST',credentials:'same-origin',cache:'no-store',redirect:'error',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify({expectedRevision:revision,filters,includeContact})});
   if(generation!==sessionGeneration)throw new Error('会话已改变，未提供导出下载。');
   if(response.status===401){clear();throw new Error('会话已结束，请重新登录。');}
+  if(response.status===403){clear();throw new Error('此账号没有导出权限，请重新登录核对。');}
   if(!response.ok||!response.headers.get('content-type')?.toLowerCase().startsWith('text/csv'))throw new Error(response.status===403?'此账号没有导出权限。':response.status===409?'记录版本已更新，请刷新后重新核对导出范围。':'导出未完成，请稍后重试。');
   const blob=await response.blob();if(blob.size>4*1024*1024)throw new Error('导出超过页面下载上限，请缩小筛选范围。');
   if(generation!==sessionGeneration)throw new Error('会话已改变，未提供导出下载。');
-  const url=URL.createObjectURL(blob),link=node('a');link.href=url;link.download='artdico-registration-review.csv';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+  const url=URL.createObjectURL(blob),link=node('a');privateExportUrls.add(url);link.href=url;link.download='artdico-registration-review.csv';document.body.append(link);link.click();link.remove();setTimeout(()=>{URL.revokeObjectURL(url);privateExportUrls.delete(url);},10000);
   await load();announce('CSV 已生成并开始下载，服务端已记录导出操作。请按核定范围使用。');
 }));
 window.addEventListener('beforeunload',event=>{if(dirty||staffAdmissions.pending){event.preventDefault();event.returnValue='';}});

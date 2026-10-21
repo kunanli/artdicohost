@@ -68,7 +68,7 @@ async function request(path, { method = 'GET', body, generation = epoch, binary 
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 15_000);
   try {
     const response = await fetch(path, { method, credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: controller.signal, headers: { Accept: binary ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}), ...(method !== 'GET' && csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
-    if (generation !== epoch || !current() || controller.signal.aborted) throw new Error('会话或读取对象已改变，已忽略旧回应。');
+    if (generation !== epoch || !current() || controller.signal.aborted) { response.body?.cancel().catch(() => {}); controller.abort(); throw new Error('会话或读取对象已改变，已忽略旧回应。'); }
     if (!response.ok) { response.body?.cancel().catch(() => {}); const error = new Error(path === '/api/admin/login' && response.status === 401 ? '账号或密码未通过验证。' : statusMessages[response.status] || '云端结果尚待核对，请手动确认同一操作。'); error.status = response.status; if ([401, 403].includes(response.status)) { clearPrivate(); announce(error.message, true); } throw error; }
     const mime = response.headers.get('content-type') ?? '';
     if (binary) {
@@ -237,7 +237,7 @@ $('add-shift').addEventListener('click', () => open('shift'));
 $('add-assignment').addEventListener('click', () => open('assignment'));
 $('add-availability').addEventListener('click', () => { if (!pending && view && $('availability').children.length < 12) { availabilityRow(); dirty('person'); } });
 $('filters').addEventListener('submit', event => { event.preventDefault(); renderRoster(); lock(); });
-$('filters').addEventListener('reset', () => { queueMicrotask(() => { renderRoster(); lock(); }); });
+$('filters').addEventListener('reset', () => { const generation = epoch; setTimeout(() => { if (generation === epoch) { renderRoster(); lock(); } }, 0); });
 $('source-search').addEventListener('submit', event => { event.preventDefault(); sourceQuery = String(new FormData($('source-search')).get('query') || '').trim(); void loadSources(); });
 $('source-next').addEventListener('click', () => { void loadSources({ append: true }); });
 $('person-form').elements.source.addEventListener('change', event => { const candidate = sources.find(item => sourceToken(item.source) === event.target.value); $('person-source').textContent = candidate ? candidate.name + ' · ' + admissionLabels[candidate.admissionStatus] : ''; });

@@ -38,7 +38,34 @@ test('malformed or dangling snapshots fail closed instead of showing zero', () =
 });
 test('missing source is explicit and never inferred as eligible or admitted', () => {
   const value = fixture(); Object.assign(value.volunteers[0].person, { canonicalId: null, registrationId: null, eligible: false, admissionStatus: 'unavailable', issues: ['SOURCE_UNAVAILABLE'] }); value.volunteers[0].issues = ['SOURCE_UNAVAILABLE']; value.summary.unverifiableSources = 1;
+  value.assignments[0].valid = false; value.assignments[0].issues = ['SOURCE_UNAVAILABLE', 'ADMISSION_NOT_CONFIRMED']; value.shifts[0].confirmedCount = 0; value.shifts[0].gap = 2;
+  Object.assign(value.summary, { activePeopleCount: 0, confirmedPeopleCount: 0, admissionConfirmedPeopleCount: 0, assignedPeopleCount: 0, confirmedSlots: 0, gapSlots: 2, issueCount: 3 });
   const view = volunteerWorkspaceView(value); assert.equal(view.summary.unverifiableSources, 1); assert.equal(view.volunteers[0].person.admissionStatus, 'unavailable'); assert.match(issueLabel('SOURCE_UNAVAILABLE'), /无法核对/u); assert.equal(issueLabel('FUTURE_SAFE_CODE'), '资料或安排需核对');
+});
+test('canonical identity must match explicit source and linked IDs, including source picker', () => {
+  for (const mutate of [row => { row.person.canonicalId = 'anything'; }, row => { row.person.canonicalId = 'r:' + 'x'.repeat(43); }, row => { row.person.canonicalId = 'c:' + row.person.contactId; }, row => { row.person.contactId = 'someone_else'; }, row => { row.person.canonicalId = null; }, row => { row.source = { kind: 'registration', id: 'x'.repeat(43) }; }]) {
+    const value = fixture(); mutate(value.volunteers[0]); assert.throws(() => volunteerWorkspaceView(value));
+  }
+  const candidate = { source, ...person(), canonicalId: 'c:foreign' };
+  assert.throws(() => volunteerSourceView({ schemaVersion: 1, candidates: [candidate], total: 1, nextCursor: null }));
+});
+test('coverage counts must match valid assignments and active demand, never fabricated totals', () => {
+  for (const mutate of [value => { value.summary.confirmedSlots = 999999; }, value => { value.summary.activePeopleCount = 2; }, value => { value.summary.issueCount = 1; }, value => { value.summary.unverifiableSources = 1; }, value => { value.shifts[0].confirmedCount = 2; }, value => { value.shifts[0].gap = 0; }, value => { value.assignments[0].issues = ['TIME_CONFLICT']; }, value => { value.volunteers[0].workflowStatus = 'pending'; }, value => { value.volunteers[0].person.admissionStatus = 'waitlisted'; }, value => { value.volunteers[0].availability = []; }, value => { value.positions[0].status = 'inactive'; }, value => { value.shifts[0].sessionId = 'missing'; }]) {
+    const input = fixture(); mutate(input); assert.throws(() => volunteerWorkspaceView(input));
+  }
+});
+test('proposal before admission remains distinct from confirmed coverage', () => {
+  const input = fixture(); input.volunteers[0].workflowStatus = 'pending'; input.volunteers[0].person.admissionStatus = 'waitlisted'; input.assignments[0].status = 'proposed'; Object.assign(input.shifts[0], { proposedCount: 1, confirmedCount: 0, gap: 2 }); Object.assign(input.summary, { confirmedPeopleCount: 0, admissionConfirmedPeopleCount: 0, proposedSlots: 1, confirmedSlots: 0, gapSlots: 2 });
+  assert.equal(volunteerWorkspaceView(input).summary.assignedPeopleCount, 1);
+});
+test('historical cancelled shift retains its row without counting demand or coverage', () => {
+  const input = fixture(); Object.assign(input.shifts[0], { status: 'cancelled', confirmedCount: 0, gap: 0, issues: ['SHIFT_CANCELLED'] }); Object.assign(input.assignments[0], { valid: false, issues: ['SHIFT_CANCELLED'] }); Object.assign(input.summary, { assignedPeopleCount: 0, requiredSlots: 0, confirmedSlots: 0, gapSlots: 0, issueCount: 2 });
+  const view = volunteerWorkspaceView(input); assert.equal(view.shifts.length, 1); assert.equal(view.summary.activePeopleCount, 1); assert.equal(view.summary.requiredSlots, 0);
+});
+test('one known person in adjacent shifts counts once and supplies two person-slots', () => {
+  const input = fixture(); input.shifts.push({ ...input.shifts[0], id: 'shift_2', start: '10:00', end: '11:00' }); input.assignments.push({ ...input.assignments[0], id: 'assignment_2', shiftId: 'shift_2' }); Object.assign(input.summary, { requiredSlots: 4, confirmedSlots: 2, gapSlots: 2 });
+  const view = volunteerWorkspaceView(input); assert.equal(view.summary.assignedPeopleCount, 1); assert.equal(view.summary.confirmedSlots, 2);
+  input.shifts[1].start = '09:30'; assert.throws(() => volunteerWorkspaceView(input));
 });
 test('source picker validates bounded pagination and keeps canonical identity separate from source', () => {
   const value = { schemaVersion: 1, candidates: [{ source, ...person(), rawQuestionnaire: 'never copy' }], total: 201, nextCursor: '100' };

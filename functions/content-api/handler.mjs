@@ -83,7 +83,10 @@ export function createContentApi({ store, contactsStore, portraitStore, communic
         const { published } = await store.read();
         const inGuest = published?.content.guests.some(guest => guest.portraitId === publicPortrait && guest.status === 'confirmed' && guest.publicConsent === true);
         const inShowcase = published?.content.showcases?.some(showcase => showcase.coverId === publicPortrait && showcase.status === 'confirmed' && showcase.responseStatus === 'attending' && showcase.publicConsent === true);
-        if (!inGuest && !inShowcase) throw new ContentError('NOT_FOUND', '图片不存在。', 404);
+        // Organization publication is already consent-filtered by the content store.
+        // Match only the exact server-created public route, never a private draft or arbitrary URL.
+        const inOrganization = published?.content.organizations?.some(organization => organization.logoUrl === '/api/public/portraits/' + publicPortrait);
+        if (!inGuest && !inShowcase && !inOrganization) throw new ContentError('NOT_FOUND', '图片不存在。', 404);
         const portrait = await portraitStore.read(publicPortrait);
         return new Response(portrait.data, { headers: { 'content-type': portrait.contentType, 'content-length': String(portrait.bytes), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
       }

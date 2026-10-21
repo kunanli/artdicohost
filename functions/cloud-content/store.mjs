@@ -44,6 +44,14 @@ function preserveArrangementFields(input, current) {
     return result;
   };
   const result = copy(input, 'content');
+  if (!Object.hasOwn(result, 'organizations') && Object.hasOwn(current, 'organizations')) result.organizations = structuredClone(current.organizations);
+  if (Array.isArray(result.organizations)) result.organizations = result.organizations.map(item => {
+    const row = copy(item, 'organizations');
+    const id = typeof row.id === 'string' ? row.id.normalize('NFC').trim() : '';
+    const existing = current.organizations?.find(candidate => candidate.id === id);
+    if (!Object.hasOwn(row, 'internalNotes') && existing) row.internalNotes = existing.internalNotes;
+    return row;
+  });
   for (const [collection, field, fallback] of [['sessions', 'format', 'other'], ['booths', 'slotNumber', 0]]) {
     if (!Array.isArray(result[collection])) continue;
     result[collection] = result[collection].map(item => {
@@ -150,6 +158,7 @@ export function createOssContentStore({ journal, portraitStore, initialContent =
     const images = [
       ...content.guests.map((guest, index) => ({ id: guest.portraitId, field: `guests.${index}.portraitId` })),
       ...(content.showcases ?? []).map((showcase, index) => ({ id: showcase.coverId, field: `showcases.${index}.coverId` })),
+      ...(content.organizations ?? []).map((organization, index) => ({ id: organization.logoId, field: `organizations.${index}.logoId` })),
     ];
     for (const image of images) {
       if (!image.id || verified.has(image.id)) continue;
@@ -158,7 +167,7 @@ export function createOssContentStore({ journal, portraitStore, initialContent =
         const proof = await portraitStore.verify(image.id);
         if (proof?.id !== image.id) throw unavailable();
       } catch {
-        throw new CloudContentError('VALIDATION_ERROR', '头像或作品图不存在或不可读取，请重新上传。', 422, { [image.field]: '请选择已成功上传且仍可读取的图片。' });
+        throw new CloudContentError('VALIDATION_ERROR', '头像、作品图或组织图片不存在或不可读取，请重新上传。', 422, { [image.field]: '请选择已成功上传且仍可读取的图片。' });
       }
       verified.add(image.id);
     }

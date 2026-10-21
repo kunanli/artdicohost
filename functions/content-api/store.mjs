@@ -43,6 +43,14 @@ function preserveArrangementFields(input, current) {
     return result;
   };
   const result = copy(input, 'content');
+  if (!Object.hasOwn(result, 'organizations') && Object.hasOwn(current, 'organizations')) result.organizations = structuredClone(current.organizations);
+  if (Array.isArray(result.organizations)) result.organizations = result.organizations.map(item => {
+    const row = copy(item, 'organizations');
+    const id = typeof row.id === 'string' ? row.id.normalize('NFC').trim() : '';
+    const existing = current.organizations?.find(candidate => candidate.id === id);
+    if (!Object.hasOwn(row, 'internalNotes') && existing) row.internalNotes = existing.internalNotes;
+    return row;
+  });
   for (const [collection, field, fallback] of [['sessions', 'format', 'other'], ['booths', 'slotNumber', 0]]) {
     if (!Array.isArray(result[collection])) continue;
     result[collection] = result[collection].map(item => {
@@ -82,13 +90,14 @@ export function createFileContentStore({ directory, portraitStore, initialConten
     const images = [
       ...content.guests.map((guest, index) => ({ id: guest.portraitId, field: `guests.${index}.portraitId` })),
       ...(content.showcases ?? []).map((showcase, index) => ({ id: showcase.coverId, field: `showcases.${index}.coverId` })),
+      ...(content.organizations ?? []).map((organization, index) => ({ id: organization.logoId, field: `organizations.${index}.logoId` })),
     ];
     for (const image of images) {
       if (!image.id || checked.has(image.id)) continue;
       if (!portraitStore?.verify) throw new ContentError('PORTRAITS_UNAVAILABLE', '本地头像存储未配置。', 503);
-      try { await portraitStore.verify(image.id); }
+      try { const proof = await portraitStore.verify(image.id); if (proof?.id !== image.id) throw new Error('Image proof mismatch'); }
       catch {
-        throw new ContentError('VALIDATION_ERROR', '头像或作品图不存在或不可读取，请重新上传。', 422, { [image.field]: '请选择已成功上传且仍可读取的图片。' });
+        throw new ContentError('VALIDATION_ERROR', '头像、作品图或组织图片不存在或不可读取，请重新上传。', 422, { [image.field]: '请选择已成功上传且仍可读取的图片。' });
       }
       checked.add(image.id);
     }

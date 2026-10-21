@@ -2,13 +2,17 @@
 import Icon from './Icon.astro';
 import { eventConfig } from '../config/event.mjs';
 import { exhibitingPartners } from '../config/exhibiting-partners.mjs';
+import { publicContentEndpoint } from '../../shared/public-content-source.mjs';
 import '../styles/exhibiting-partners.css';
+const deferOrganizations = Boolean(publicContentEndpoint(import.meta.env.PUBLIC_CONTENT_API_ORIGIN));
 ---
 <section class="ah-booths ah-section" id="booths" aria-labelledby="booths-heading">
-  <div class="ah-section-heading" id="exhibition"><div><h2 id="booths-heading">参展伙伴</h2></div><p>在现场，与这些组织相遇。<br />C 区 · 展示、试玩与交流</p></div>
-  <ul class="ah-exhibiting-partners" aria-label="已确认参展伙伴">
-    {exhibitingPartners.map(partner => <li><h3>{partner.name}</h3><span>现场参展</span></li>)}
+  <div class="ah-section-heading" id="exhibition"><div><h2 id="booths-heading">参与组织</h2></div><p>在现场，与这些组织相遇。</p></div>
+  <ul class="ah-exhibiting-partners" data-public-organizations aria-label="参与组织" hidden={deferOrganizations}>
+    {exhibitingPartners.map(partner => <li><div class="ah-organization-card"><h3>{partner.name}</h3></div></li>)}
   </ul>
+  <p class="ah-organizations-message" data-public-organizations-empty hidden={!deferOrganizations} role="status">正在读取参与组织…</p>
+  {deferOrganizations && <noscript><p class="ah-organizations-message">请启用 JavaScript 以读取参与组织的最新信息。</p></noscript>}
   <details class="ah-exhibition-details">
     <summary>现场展位与作品 <span aria-hidden="true">＋</span></summary>
     <div class="ah-exhibition-content">

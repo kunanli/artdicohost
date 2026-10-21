@@ -1,11 +1,12 @@
 ---
 import SiteLayout from '../../layouts/SiteLayout.astro';
 import ArrangementPlanner from '../../components/ArrangementPlanner.astro';
+import StaffOrganizations from '../../components/StaffOrganizations.astro';
 import '../../styles/admin.css';
 import '../../styles/arrangements.css';
 import '../../styles/guests.css';
 ---
-<SiteLayout title="工作人员后台｜ARTDiCO HOST" description="ARTDiCO HOST 工作人员嘉宾、场次、展位及学生作品管理。">
+<SiteLayout title="工作人员后台｜ARTDiCO HOST" description="ARTDiCO HOST 工作人员组织、嘉宾、场次、展位及学生作品管理。">
   <div id="artdico-admin" class="ah-admin">
     <header class="ah-admin-header"><a class="ah-admin-brand" href="https://artdico.host">ARTDiCO <span>HOST / STAFF</span></a><nav class="ah-admin-account"><a class="ah-admin-back" href="/admin/tasks/">今日待办</a><a class="ah-admin-back" href="/admin/registrations/">报名 / 审核</a><a class="ah-admin-back" href="/admin/contacts/">人员 / 邀约</a><a class="ah-admin-back" href="https://artdico.host">查看活动页面 <span aria-hidden="true">↗</span></a></nav></header>
     <main id="main-content" class="ah-admin-main">
@@ -24,7 +25,7 @@ import '../../styles/guests.css';
       </section>
 
       <section data-admin-workspace hidden aria-labelledby="workspace-title">
-        <div class="ah-admin-page-heading"><div><span class="ah-admin-eyebrow">CONTENT & CONNECTIONS</span><h1 id="workspace-title">安排好每一次相遇。</h1><p>维护嘉宾与学生作品，安排场次、展位，准备好后再发布到公开活动页。</p></div><div class="ah-admin-account"><span data-admin-user></span><small data-admin-role></small><button type="button" class="ah-admin-text-button" data-admin-logout>退出登录</button></div></div>
+        <div class="ah-admin-page-heading"><div><span class="ah-admin-eyebrow">CONTENT & CONNECTIONS</span><h1 id="workspace-title">安排好每一次相遇。</h1><p>维护参与组织、嘉宾与学生作品，安排场次、展位，准备好后再发布到公开活动页。</p></div><div class="ah-admin-account"><span data-admin-user></span><small data-admin-role></small><button type="button" class="ah-admin-text-button" data-admin-logout>退出登录</button></div></div>
         <div class="ah-admin-event-card"><div><span class="ah-admin-eyebrow">当前活动</span><strong data-admin-event-title>活动信息加载中</strong></div><p><span data-admin-event-date></span><span data-admin-event-venue></span></p></div>
         <div class="ah-admin-summary"><article><span>嘉宾资料</span><strong data-admin-guest-count>—</strong><small>确认并获授权后才公开展示</small></article><article><span>活动场次</span><strong data-admin-session-count>—</strong><small>包含各区域草稿与已安排场次</small></article><article><span>展位记录</span><strong data-admin-booth-count>—</strong><small>待确认与已确认分别维护</small></article><article><span>公开发布</span><strong class="ah-admin-publish-status" data-admin-published-at>尚未载入</strong><small>保存草稿不会自动对外发布</small></article></div>
         <div class="ah-admin-toolbar"><div><strong data-admin-unsaved>尚未载入草稿</strong><span>草稿版本 <span data-admin-revision>—</span></span></div><div class="ah-admin-toolbar-actions"><button class="ah-admin-button" type="button" data-admin-preview>预览公开内容</button><button class="ah-admin-button" type="button" data-admin-save>保存草稿</button><button class="ah-admin-button ah-admin-primary" type="button" data-admin-publish disabled>发布到公开页 <span aria-hidden="true">↗</span></button></div></div>
@@ -70,6 +71,7 @@ import '../../styles/guests.css';
           <ArrangementPlanner />
         </section>
         <section class="ah-admin-panel" aria-labelledby="guests-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">THE PEOPLE</span><h2 id="guests-title">讲者与嘉宾资料</h2><p>维护姓名、公开职责、机构、简介与照片。内部人员安排和公开授权分别核对，确认后再发布。</p></div><button type="button" class="ah-admin-button" data-admin-add-guest><span aria-hidden="true">＋</span> 新增嘉宾</button></div><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="嘉宾表，可水平滚动"><table><caption class="ah-sr-only">嘉宾头像、姓名、公司、GGJ 职务及公开状态</caption><thead><tr><th scope="col">头像</th><th scope="col">姓名 / 公开职责</th><th scope="col">机构 / 职称</th><th scope="col">GGJ 职务</th><th scope="col">确认与授权</th><th scope="col">操作</th></tr></thead><tbody data-admin-guests></tbody></table></div><p class="ah-admin-empty" data-admin-guests-empty hidden>还没有嘉宾资料。新增后先保存草稿，名单确认并获授权后再发布。</p></section>
+        <StaffOrganizations />
         <section class="ah-admin-panel" aria-labelledby="showcases-title">
           <div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">STUDENT SHOWCASE</span><h2 id="showcases-title">学生作品与参与安排</h2><p>一组作品一条记录。基础资料、材料与回复保留在后台；作品图与介绍另行核准发布。</p></div><button type="button" class="ah-admin-button" data-admin-add-showcase><span aria-hidden="true">＋</span> 新增学生作品</button></div>
           <div class="ah-admin-showcase-summary" aria-label="学生展示筹备统计"><article><span>确认参加</span><strong data-showcase-confirmed-teams>0</strong><small>组作品</small></article><article><span>预计到场学生</span><strong data-showcase-confirmed-students>0</strong><small>按确认组的填报人数，非签到统计</small></article><article><span>已安排分享 / 展位</span><strong data-showcase-assigned-count>0 / 0</strong><small>只统计确认参加且分配有效的组</small></article><article><span>可公开作品</span><strong data-showcase-public-count>0</strong><small>须确认、获授权、有图及有效安排</small></article></div>

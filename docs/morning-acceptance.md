@@ -1,6 +1,6 @@
 # ARTDiCO HOST 驗收與接續
 
-**本階段六項參會體驗擴展尚未正式發布。** 候選分支 `feat/attendee-experience`，本次文件閱讀基準 `60d6e77`；最終 CI、發布 SHA、Actions 與實際 HTTPS／OSS 證據由主集成補登。上一階段已上線 main `37a679b7d3a8cfef8d7c2bfcca648756d095fc54`，PR #28／[正式發布 39519803502](https://github.com/kunanli/artdicohost/actions/runs/39519803502) 三個 job 成功，十項真實隔離驗收及 19 個公開 HTTPS 檔案讀回通過；[完整證據](organizer-release-2026-10-21.md)保留，不將其當作本階段已上線。
+六項參會體驗更新已上線。[PR #29](https://github.com/kunanli/artdicohost/pull/29) 的 main `d66582e60a7cf3da3a4e2d851a633496bdb02ba4` 通過最終 PR／main **785/785** 測試；[正式發布 39525987286](https://github.com/kunanli/artdicohost/actions/runs/39525987286) 三個 job 全部成功，十項真實隔離 OSS、正式政策／300 人容量，以及 23 個公開 HTTPS 檔案回讀已驗證。01:19:38 UTC 業務啟用、01:20:25 UTC 公開回讀完成；[完整發布證據](attendee-release-2026-10-21.md)。前階段 [PR #28 證據](organizer-release-2026-10-21.md)另行保留。
 
 真實 39 行仍未雲端匯入、轉報名或發信。郵件寄件憑證尚未提供或未核驗，沒有實際收件驗收。主辦方尚無 Apple Developer 帳號及票券簽章憑證，已要求先完成設定流程與操作指引；此時不應看到可用 Wallet 按鈕。
 
@@ -15,6 +15,8 @@
 使用原有管理員帳號登入；帳號、密碼、寄件密鑰及 Apple 私鑰不保存在文件或聊天。以下新版步驟以主集成確認部署完成後為準；本機合成驗收不表示真實名單已遷移。
 
 ## 六項新版驗收
+
+本次追加的「參與組織」功能正在獨立分支整合，發布前不把下列步驟當作已在正式後台提供。發布後在活動後台新增或編輯組織，填名稱、上傳圖片、填對方頁面，分別選擇「參展／一般參與／待確定」及參加確認。核對公開授權後應用、保存、發布；前台顯示完整比例圖片，圖片和名稱可跳轉有效連結，沒有網址則不可點。停止公開後原件仍在，一般參與不占用攤位；詳見[組織操作](participating-organizations.md)。
 
 | 驗收項目 | 操作與應看到的結果 |
 | --- | --- |
@@ -55,4 +57,4 @@ Apple 目前先驗收缺項顯示及[操作指引](apple-wallet-setup.md)，不�
 - PR #28：main `37a679b7d3a8cfef8d7c2bfcca648756d095fc54`，[發布 39519803502](https://github.com/kunanli/artdicohost/actions/runs/39519803502)，十項實際隔離 OSS、19 個公開 HTTPS 物件及正式政策／300 人容量通過；內容與正式報名已啟用。原始名單仍未實際匯入或派發。
 - PR #27：main `2d84d8b74ece04cc4cc9fa95e6847abf06de116c`，[發布 39458653245](https://github.com/kunanli/artdicohost/actions/runs/39458653245)，589/589 CI、五頁構建、依賴稽核、兩包離線啟動、13/13 合成瀏覽器流程、十項實際 OSS 及 18 個公開物件通過。這些數字只屬該來源。
 
-中斷後先讀[接續台帳](session-recovery.md)及最新 main／Actions；本階段最終發布與實際驗收欄仍待主集成補登，不重做前階段已成功發布。
+中斷後先讀[接續台帳](session-recovery.md)及最新 main／Actions；本階段最終證據已補登，不重做已成功發布或重複導入資料。最後紀錄保存在 `docs/attendee-release-evidence-2026-10-21`，不為文件再次重啟已驗證服務。

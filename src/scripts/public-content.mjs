@@ -2,6 +2,8 @@ import { publicGuestCards, publicGuestSessions } from '../../shared/guest-displa
 import { GUEST_PUBLIC_ROLE_LABELS, isPublicWebsite } from '../../shared/content-schema.mjs';
 import { publicShowcaseCards } from '../../shared/showcase-display.mjs';
 import { resolvePublicContentSource } from '../../shared/public-content-source.mjs';
+import { publicOrganizationCards, organizationParticipationLabel } from '../../shared/organization-display.mjs';
+import { createDefaultOrganizations } from '../config/exhibiting-partners.mjs';
 import { eventTimeInstant } from '../lib/event-presentation.mjs';
 
 // Published event content is independent from registration readiness and staff cookies.
@@ -10,10 +12,11 @@ if (endpoint) {
   const target = resolvePublicContentSource(endpoint, location.origin);
   if (target) {
     loadPublishedContent(target).catch(() => {
+      organizationsUnavailable();
       const notice = document.querySelector('[data-public-content-status]');
       if (notice) notice.textContent = '暂时无法读取最新安排，以下显示网站日程。';
     });
-  }
+  } else organizationsUnavailable();
 }
 
 function element(tag, text, className) {
@@ -25,11 +28,13 @@ function element(tag, text, className) {
 
 async function loadPublishedContent(url) {
   const response = await fetch(url, { credentials: 'omit', cache: 'no-store', headers: { Accept: 'application/json' } });
-  if (response.status === 404) return; // No published revision: retain the static event configuration.
+  if (response.status === 404) { renderOrganizations(defaultOrganizationCards(),url);return; } // No published revision: retain the static event configuration.
   if (!response.ok) throw new Error('Content unavailable');
   const envelope = await response.json();
   const content = envelope.content;
   if (!content || !Array.isArray(content.sessions) || !Array.isArray(content.booths) || !content.event) throw new Error('Invalid public content');
+  if(Object.hasOwn(content,'organizations')&&!Array.isArray(content.organizations))throw new Error('Invalid public organizations');
+  renderOrganizations(Object.hasOwn(content,'organizations')?publicOrganizationCards(content.organizations):defaultOrganizationCards(),url);
   const agenda = document.querySelector('[data-agenda]');
   // A published timetable replaces the static overview, so it never shows stale time blocks.
   const summary = agenda?.querySelector('[data-agenda-summary]');
@@ -183,6 +188,43 @@ async function loadPublishedContent(url) {
   const notice = document.querySelector('[data-public-content-status]');
   if (notice) notice.textContent = content.event.status === 'cancelled' ? '本次活动已取消。' : '讲者与主题陆续公布。';
   document.dispatchEvent(new Event('artdico:public-content-updated'));
+}
+
+function defaultOrganizationCards() {
+  return publicOrganizationCards(createDefaultOrganizations().map(({id,name,participation,website,status,publicConsent})=>({id,name,participation,website,status,publicConsent,logoUrl:''})));
+}
+
+function organizationsUnavailable() {
+  const list=document.querySelector('[data-public-organizations]');
+  if(list){list.replaceChildren();list.hidden=true;}
+  const message=document.querySelector('[data-public-organizations-empty]');
+  if(message){message.textContent='暂时无法读取参与组织，请稍后重试。';message.hidden=false;}
+}
+
+function renderOrganizations(cards,url) {
+  const list=document.querySelector('[data-public-organizations]');if(!list)return;
+  list.replaceChildren();
+  for(const organization of cards){
+    const item=element('li');item.dataset.organizationId=organization.id;
+    const card=element(organization.website?'a':'div',undefined,'ah-organization-card');
+    if(organization.website){card.href=organization.website;card.target='_blank';card.rel='noopener noreferrer';card.referrerPolicy='no-referrer';card.setAttribute('aria-label',organization.name+' · 打开组织页面（新窗口）');}
+    if(organization.logoUrl){
+      const frame=element('div',undefined,'ah-organization-image'),logo=element('img');
+      logo.width=240;logo.height=120;logo.alt=organization.name+'的组织图片';logo.loading='lazy';logo.decoding='async';
+      if(url.origin!==location.origin)logo.crossOrigin='anonymous';logo.referrerPolicy='no-referrer';
+      logo.addEventListener('error',()=>{frame.hidden=true;});logo.src=new URL(organization.logoUrl,url.origin).href;
+      frame.append(logo);card.append(frame);
+    }
+    const name=element('h3',organization.name);
+    if(organization.website){const mark=element('span','↗','ah-organization-external');mark.setAttribute('aria-hidden','true');name.append(mark);}
+    card.append(name);
+    const label=organizationParticipationLabel(organization.participation);
+    if(label)card.append(element('span',label,'ah-organization-participation'));
+    item.append(card);list.append(item);
+  }
+  list.hidden=cards.length===0;
+  const message=document.querySelector('[data-public-organizations-empty]');
+  if(message){message.textContent='参与组织陆续公布。';message.hidden=cards.length>0;}
 }
 
 function renderPresentation(event) {

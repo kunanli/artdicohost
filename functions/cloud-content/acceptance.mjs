@@ -175,10 +175,16 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         const content = createInitialContent();
         content.event.title = '合成云端验收活动';
         content.guests = [{ id: 'synthetic-guest', name: '合成验收嘉宾', company: '合成机构', ggjRole: '', portraitId: portrait.id, status: 'confirmed', publicConsent: true, internalNotes: 'PRIVATE_SYNTHETIC_ACCEPTANCE_NOTE' }];
+        content.organizations = [{ id: 'synthetic-participant-org', name: '合成验收参与组织', logoId: portrait.id, website: 'https://example.org/synthetic-organization',
+          participation: 'attendee', status: 'confirmed', publicConsent: true, internalNotes: 'PRIVATE_SYNTHETIC_ORGANIZATION_NOTE' }];
         await call(first.api, '/api/admin/content', { method: 'PUT', headers: owner, body: { expectedRevision: 0, content } }, 200);
         await call(second.api, '/api/admin/content/publish', { method: 'POST', headers: alias, body: { expectedRevision: 1 } }, 200);
         const publicResult = await call(first.api, '/api/public/content', { origin: PUBLIC_SITE_ORIGIN }, 200);
         const text = await publicResult.text(); requireThat(text.includes('合成验收嘉宾') && !/PRIVATE_SYNTHETIC|passwordHash|csrfToken|example\.invalid/u.test(text));
+        const publicOrganizations = JSON.parse(text).content?.organizations;
+        requireThat(Array.isArray(publicOrganizations) && publicOrganizations.length === 1
+          && publicOrganizations[0].id === 'synthetic-participant-org' && publicOrganizations[0].participation === 'attendee'
+          && publicOrganizations[0].website === 'https://example.org/synthetic-organization' && publicOrganizations[0].logoUrl === path);
         await call(second.api, path, { origin: PUBLIC_SITE_ORIGIN }, 200);
         const left = structuredClone(content), right = structuredClone(content);
         left.event.title = '合成左编辑'; right.event.title = '合成右编辑';
@@ -186,8 +192,10 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
           second.api(request('/api/admin/content', { method: 'PUT', headers: alias, body: { expectedRevision: 1, content: right } }))]);
         requireThat(outcomes.filter(value => value.status === 200).length === 1 && outcomes.filter(value => value.status === 409).length === 1);
         const restarted = make(objects());
-        const read = await restarted.store.read(); requireThat(read.draft.revision === 2 && read.published.revision === 1);
+        const read = await restarted.store.read(); requireThat(read.draft.revision === 2 && read.published.revision === 1
+          && read.draft.content.organizations[0].logoId === portrait.id && read.published.content.organizations[0].participation === 'attendee');
         read.draft.content.guests[0].publicConsent = false;
+        read.draft.content.organizations[0].publicConsent = false;
         await call(restarted.api, '/api/admin/content', { method: 'PUT', headers: owner, body: { expectedRevision: 2, content: read.draft.content } }, 200);
         await call(first.api, '/api/admin/content/publish', { method: 'POST', headers: alias, body: { expectedRevision: 3 } }, 200);
         await call(second.api, path, { origin: PUBLIC_SITE_ORIGIN }, 404);

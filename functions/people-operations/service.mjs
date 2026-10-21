@@ -100,13 +100,19 @@ export function createAttendanceSynchronizer({ intentService, registrationServic
 export function createGuestContactLinkGuard({ actor, contactsStore, errorFactory } = {}) {
   if (typeof errorFactory !== 'function') throw new TypeError('Guest relationship error factory required.');
   const reject = (code, message, status = 422) => { throw errorFactory(code, message, status); };
-  return async ({ current, next }) => {
+  return async context => {
+    const { current, next, published } = context ?? {};
     if (!Array.isArray(current?.guests) || !Array.isArray(next?.guests)) reject('CONTACTS_UNAVAILABLE', '嘉宾关联资料暂时无法核对。', 503);
     const old = new Map(current.guests.map(guest => [guest.id, guest])), updated = new Map(next.guests.map(guest => [guest.id, guest]));
     const changed = next.guests.filter(guest => (guest.contactId || '') !== (old.get(guest.id)?.contactId || ''));
-    const removed = current.guests.some(guest => guest.contactId && !updated.has(guest.id));
-    if (!changed.length && !removed) return;
+    const removed = current.guests.filter(guest => guest.contactId && !updated.has(guest.id));
+    if (!changed.length && !removed.length) return;
     if (!Array.isArray(actor?.roles) || !actor.roles.includes('editor') || !actor.roles.includes('outreach')) reject('FORBIDDEN', '维护私人嘉宾关联须同时具备活动编辑与邀约权限。', 403);
+    if (!Object.hasOwn(context, 'published') || published !== null && (!plain(published) || !revision(published.revision) || !plain(published.content)
+      || !Array.isArray(published.content.guests) || published.content.guests.length > 200
+      || published.content.guests.some(guest => !plain(guest) || typeof guest.id !== 'string' || !ID.test(guest.id)))) reject('CONTACTS_UNAVAILABLE', '嘉宾公开版本暂时无法核对，请重新读取后再调整人员关联。', 503);
+    const publicIds = new Set(published?.content.guests.map(guest => guest.id) ?? []);
+    if ([...changed, ...removed].some(guest => publicIds.has(guest.id))) reject('CONTACT_LINK_PUBLISHED', '这份嘉宾资料仍有公开版本；请先停止公开并保存发布，再更换关联人员。');
     if (changed.some(guest => guest.publicConsent !== false)) reject('CONTACT_LINK_CONSENT_REQUIRED', '人员关联已改变，请先取消公开授权并保存，再重新核实授权。');
     const contactIds = new Set(changed.map(guest => guest.contactId).filter(Boolean));
     if (!contactIds.size) return;

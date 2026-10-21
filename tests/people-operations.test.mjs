@@ -164,13 +164,54 @@ test('guest relationship guard requires literal editor+outreach before any conta
   let reads = 0; const guard = roles => createGuestContactLinkGuard({ actor: { id: 'operator', roles }, contactsStore: { read: async () => { reads++; throw new Error(SECRET); } }, errorFactory: (...args) => new CloudContentError(...args) });
   const before = { guests: [guest('guest_01', 'contact_01')] };
   for (const roles of [['editor'], ['outreach'], ['superadmin']]) {
-    await assert.rejects(guard(roles)({ current: { guests: [] }, next: before }), { code: 'FORBIDDEN' });
-    await assert.rejects(guard(roles)({ current: before, next: { guests: [] } }), { code: 'FORBIDDEN' });
-    await guard(roles)({ current: before, next: { guests: [{ ...before.guests[0], name: 'Updated public name' }] } });
+    await assert.rejects(guard(roles)({ current: { guests: [] }, next: before, published: null }), { code: 'FORBIDDEN' });
+    await assert.rejects(guard(roles)({ current: before, next: { guests: [] }, published: null }), { code: 'FORBIDDEN' });
+    await guard(roles)({ current: before, next: { guests: [{ ...before.guests[0], name: 'Updated public name' }] }, published: null });
   }
   assert.equal(reads, 0);
-  await assert.rejects(guard(['editor', 'outreach'])({ current: before, next: { guests: [{ ...guest('guest_01', 'contact_02'), publicConsent: true }] } }), { code: 'CONTACT_LINK_CONSENT_REQUIRED' }); assert.equal(reads, 0);
-  await guard(['editor', 'outreach'])({ current: before, next: { guests: [guest('guest_01', '')] } }); assert.equal(reads, 0);
+  await assert.rejects(guard(['editor', 'outreach'])({ current: before, next: { guests: [{ ...guest('guest_01', 'contact_02'), publicConsent: true }] }, published: null }), { code: 'CONTACT_LINK_CONSENT_REQUIRED' }); assert.equal(reads, 0);
+  await guard(['editor', 'outreach'])({ current: before, next: { guests: [guest('guest_01', '')] }, published: null }); assert.equal(reads, 0);
+  await assert.rejects(guard(['editor', 'outreach'])({ current: before, next: { guests: [guest('guest_01', '')] } }), { code: 'CONTACTS_UNAVAILABLE', status: 503 }); assert.equal(reads, 0);
+  await assert.rejects(guard(['editor', 'outreach'])({ current: { guests: [] }, next: before, published: { revision: 1, content: { guests: [{ id: 'guest_01' }] } } }), { code: 'CONTACT_LINK_PUBLISHED', status: 422 }); assert.equal(reads, 0, 'an orphan public ID also cannot be claimed by a new private link');
+});
+
+test('a published same-name guest cannot be relinked until its public version is explicitly withdrawn', async () => {
+  const f = await fixture(); f.actor.roles.push('publisher');
+  const second = await f.contactsStore.createContact(1, profile('合成人员', { email: 'second.synthetic.people@example.invalid' }), f.actor.id);
+  const image = await f.portraitStore.upload({ contentType: 'image/png', dataBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFElEQVR4nGN0KFjAwMDAxMDAgKAAGOQBVgs9CEsAAAAASUVORK5CYII=' });
+  let draft = (await f.store.read()).draft;
+  async function save(content) {
+    const response = await request(f, '/api/admin/content', { expectedRevision: draft.revision, content });
+    assert.equal(response.status, 200, JSON.stringify(await response.clone().json())); draft = (await response.json()).draft; return draft;
+  }
+  async function publish() {
+    const response = await request(f, '/api/admin/content/publish', { expectedRevision: draft.revision }, { method: 'POST' });
+    assert.equal(response.status, 200); return (await response.json()).published;
+  }
+  await save({ ...draft.content, guests: [{ ...guest('guest_same_name', f.created.contact.id), name: '合成人员', portraitId: image.id, status: 'confirmed' }] });
+  await save({ ...draft.content, guests: [{ ...draft.content.guests[0], publicConsent: true }] });
+  const publicA = await publish(); assert.equal(publicA.content.guests.length, 1);
+  async function blocked(guests) {
+    const before = f.objects.calls.length, response = await request(f, '/api/admin/content', { expectedRevision: draft.revision, content: { ...draft.content, guests } });
+    assert.equal(response.status, 422); const body = await response.json(); assert.equal(body.error.code, 'CONTACT_LINK_PUBLISHED');
+    assert.equal(body.error.message, '这份嘉宾资料仍有公开版本；请先停止公开并保存发布，再更换关联人员。');
+    assert.equal(f.objects.calls.slice(before).some(call => call.key.startsWith('cms/v1/contacts/') || call.operation !== 'get'), false, 'public attribution rejection precedes PII reads, portrait checks and writes');
+    assert.equal((await f.store.read()).draft.revision, draft.revision);
+  }
+  await blocked([{ ...draft.content.guests[0], contactId: second.contact.id, publicConsent: false }]);
+  await blocked([{ ...draft.content.guests[0], contactId: '', publicConsent: false }]);
+  await blocked([]);
+  await save({ ...draft.content, guests: [{ ...draft.content.guests[0], publicConsent: false }] });
+  await blocked([{ ...draft.content.guests[0], contactId: second.contact.id }]);
+  const withdrawn = await publish(); assert.equal(withdrawn.content.guests.length, 0);
+  const unreviewed = { ...draft.content, guests: [{ ...draft.content.guests[0], contactId: second.contact.id, publicConsent: true }] };
+  await expectError(await request(f, '/api/admin/content', { expectedRevision: draft.revision, content: unreviewed }), 422, 'CONTACT_LINK_CONSENT_REQUIRED');
+  await save({ ...draft.content, guests: [{ ...draft.content.guests[0], contactId: second.contact.id, publicConsent: false }] });
+  assert.equal(draft.content.guests[0].contactId, second.contact.id);
+  await save({ ...draft.content, guests: [{ ...draft.content.guests[0], publicConsent: true }] });
+  assert.equal((await f.store.read()).published.content.guests.length, 0, 'a fresh consent save for B cannot attribute A\'s withdrawn public snapshot to B');
+  const publicB = await publish(); assert.equal(publicB.content.guests.length, 1); assert.equal(publicB.content.guests[0].id, publicA.content.guests[0].id);
+  assert.equal(JSON.stringify(publicB.content.guests[0]).includes(second.contact.id), false, 'private source linkage never enters public content');
 });
 
 test('cloud content save guards changed links inside existing CAS and retains unchanged old-client links without PII reads', async () => {

@@ -1,6 +1,16 @@
 # 新版邀请函与私人 PNG：验证记录
 
-产品来源 `f9e5ea8`，在已上线 PR #38／main `19fe621` 后单独实施。**尚待准确候选 ZIP、PR／main／实际发布，不能称已上线。** [契约与操作](invitation-poster-v2.md)。
+[PR #39](https://github.com/kunanli/artdicohost/pull/39) 已合并 main **`29c9bd32c78f7824288b86ec6eda70f0b6ef3f13`**。精确 PR 检查 **1194/1194**、准确候选 ZIP 与受限离线启动通过；**main 实际发布待核验，当前不称新版已上线**。[契约与操作](invitation-poster-v2.md)。
+
+## 精确 PR 检查
+
+[运行39608895601](https://github.com/kunanli/artdicohost/actions/runs/39608895601)，check **119252233490** 全 success：**1194项／0失败／85.556636539秒**、514文件源码、382文件Astro（0errors／0warnings／1既有hint）、10页构建与依赖审计、预检和内容两份实际 ZIP 离线启动均通过。PR源 head **`58f8ae9f87c4d84f29a1b4664af5d0235a1a20ee`**；GitHub PR merge测试树 **`f71fe0113f1be68ad63f59a3be71e52ed053a700`**，与最后main合并SHA分别记录，不混称。
+
+2026-10-21 **13:37:31 UTC**合并。待核对该main push运行、真实私有OSS／政策／共同300与逐档HTTPS后补实际结果；PR成功不代替线上成功。
+
+### main 触发观察
+
+13:42 UTC 独立复核：main ref准确，PR已合并；该SHA的run／check run／check suite均为0，并非已排队或runner并发等待。工作流与PR #38逐字相同，push/main门禁保留，无skip标记。未实际调用部署、未启停服务，线上仍是已验证PR #38。手动workflow_dispatch只运行检查，不能绕过仅push允许的发布门禁；不重跑旧PR来冒充上线。下一步可随本次有实际用途的接续文档PR，经精确检查后作普通main push，并继续核对真实发布，不改门禁或读取密钥。
 
 ## 实施与验证
 
@@ -10,22 +20,30 @@
 - 本机完整第一轮 **1176/1176**、0失败，**86.740681932秒**；最终增补149定向、18file-store、42lifecycle/client/batch通过。最终产品来源 `f9e5ea8` 的完整复验 **1182/1182**、零失败／取消／跳过，**84.139525025秒**通过；不合并重复测试次数。
 - 最终源码 **512 files**、Astro **380 files**（0errors、0warnings、1既有hint）、**10页**构建与依赖审计通过。冻结构建 **13:06:38 UTC**，来源f9e5ea8；随后仅文档／测试变更时不替换产品来源证据。
 - 原生Chromium最终 **24/24**个人确认／实际字体／真实PNG、**11/11**手动／批次、既有contacts含XLSX/代登记通过，零页面错误。320／390／1440px实际截图与完整120字PNG已目视检查，无遮挡／横向溢出；覆盖字体404/慢载、缺字、身份/状态变更、toBlob晚回、撤销已生成Blob、历史版本、首-/_编号与pagehide预检零新POST。所有HTTP拦截、合成人员／内存OSS，零真实报名／邮件。
-- 候选资产闭包已确认40件约7.33 MB（6.99 MiB），单件最大旧PNG1,661,625B，仍为128files／40assets／单件2MiB／合计8MiB原限额；准确ZIP与真实离线启动待执行，不能以闭包计数替代。
+- 最终准确候选及受限Docker已通过，见下方「准确候选包已通过」；128files／40assets／单件2MiB／合计8MiB原限额保持，不以闭包计数代替真实ZIP证明。
 
 ## 发布接续
 
-准确包与离线成功后，提交PR并等待精确head完整CI；合并后核对main、真实私有OSS／300政策与exactHTTPS，另补实证。不使用真实人员、邮件、群码或凭证作测试，不创建正式协作者账号。两个账号需现有管理员登录用户管理保存，Wallet等待真实签章。
+准确包、离线及PR检查已通过并合并；接着核对main、真实私有OSS／300政策与exactHTTPS，另补实证。不使用真实人员、邮件、群码或凭证作测试，不创建正式协作者账号。两个账号需现有管理员登录用户管理保存，Wallet等待真实签章。
 
-## 发布包容量阻挡（13:13 UTC，尚未 PR／部署）
+## 历史：发布包容量阻挡（已解决）
 
 准确候选来源 `d02c573dfdca4c72f9bc50fb6feb689169443e61`：128 files／40 assets／7,326,049 static bytes 符合原资源限额，但旧 Node XZ preset6 29,494,612B 令 stored ZIP 为 **37,769,494B**，对应 code-only JSON **50,359,351B**，超过既有 **48,000,000B** request／**35,999,982B** ZIP预算，builder正确拒绝，没有 manifest成功或任何实际部署。
 
 不提高任何限额、不删旧模板或字形、不改官方 Node pin。正在/tmp比较 X86 BCJ＋LZMA2 无损压缩；preset6/7/8 已保持 CRC64、原官方 SHA、96MiB decoder 通过，但还不够小，继续验证。120秒是 producer压缩／打包子程序限制，INSPECT是30秒；launcher有限输入／输出和平台启动边界不变，不能宣称其另有120秒内部计时器。最终方案需通过同一官方 Node、准确候选ZIP和 Docker512MiB/.35CPU/no-network启动，才创建PR并继续发布。
 
-### 已选择的容量修复（实现／验证中）
+### 历史：容量修复方案
 
 纯XZ的BCJ6/7/8/9及极端选项均不足；最佳28,218,632B runtime仍差约494KB。保留原全部字体与历史图，不采用删字／改水平字形／垂直功能裁剪。方案为 **BCJ6＋仅明确文字文件的ZIP deflate6**：/tmp实测文字从1,831,809B降至562,706B，省1,269,103B；加BCJ6预估ZIP35,642,219B，原35,999,982B cap不变。
 
 新验包只对现有白名单文字允许method8；图片、字体和runtime仍stored；文字总解压预算额外限制4MiB，每件仍原1MiB/2MiB/64KiB限制。Node24 `inflateRawSync` 限output，严格检查engine.bytesWritten等于全部compressed bytes，拒绝尾随／串联；实际CRC32、原SHA、local/central、顺序／模式／无gap都核对。旧stored包继续接受。未改bootstrap/XZdecoder/官方pin/96MiB/192MiB/上传与静态上限。最终仍须准确来源实包及受限Docker冷启动，当前不视为发布完成。
 
 容量修复已实现：`783126d`（BCJ6，原12focused验证）＋`bf69169`（bounded text deflate，7新增／5原candidate测试；实际pinnedNode archive通过）。root整合后 **12/12** 新压缩／deflate边界检查通过（0.663324749秒），保持所有旧上限。仅构建工具改变，前端产品仍f9e5ea8／13:06:38冻结来源，不需重制海报或字形；下一步为最终准确head实包、原Docker限制启动与正式CI。
+
+## 准确候选包已通过（13:31 UTC）
+
+精确最终head **`58f8ae9f87c4d84f29a1b4664af5d0235a1a20ee`**，BCJ6＋bounded text deflate实包成功：**128 files／40 static assets／7,326,049 static bytes**，ZIP **35,642,099B**、code JSON **47,522,823B**，均在原35,999,982／48,000,000上限内，字体和旧图完全未改。strict source／ZIP／解压后官方Node SHA验证通过。
+
+同一ZIP解压后 Docker **14.97秒**完成bootstrap／closedMode／syntheticConfigurationOnly及40件静态资源hash/bytes；**512MiB／0.35CPU／network none／code read-only／非root／tmpfs192MiB**不变，没有真实账号／私有OSS业务写入或部署。最新源码 **514 files**、Astro **382 files**（0errors/0warnings/1既有hint），十页构建与原审计通过；前端仍f9e5ea8冻结来源，包装变更无需重新编辑图片／字体。
+
+[PR #39](https://github.com/kunanli/artdicohost/pull/39) head同上；精确PR运行已success并合并，见页首。初次超限阻挡为已解决历史，不重做失败来源包。

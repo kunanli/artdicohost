@@ -11,7 +11,8 @@ for (const navigation of document.querySelectorAll('[data-staff-navigation]')) {
     if (workspace.hidden) return;
     let current = headings[0];
     for (const heading of headings) {
-      if (heading.getBoundingClientRect().top <= 100) current = heading;
+      // Allow subpixel rounding around the mobile scroll margin plus page padding.
+      if (heading.getBoundingClientRect().top <= 102) current = heading;
     }
     // The last section can be too short to reach the top of the viewport.
     if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) current = headings.at(-1);

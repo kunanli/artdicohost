@@ -75,6 +75,8 @@ test('links reuse the original editors and never create a save/send request', ()
   assert.equal(actions.find(action => action.key === 'review').href, '/admin/registrations/#registration=' + REGISTRATION);
   assert.ok(actions.every(action => action.href.startsWith('/admin/') && !action.href.includes('?') && !action.href.includes('@')));
   assert.equal(personWorkspaceActions(value, ['outreach']).some(action => ['guest', 'settings'].includes(action.key)), false);
+  assert.equal(personWorkspaceActions(value, ['editor','publisher','outreach','reviewer']).find(action=>action.key==='settings')?.href,'/admin/settings/');
+  assert.equal(personWorkspaceActions(value, ['editor','outreach','reviewer']).some(action=>action.key==='settings'),false);
   assert.equal(personWorkspaceActions(value, ['superadmin', 'editor']).some(action => ['profile', 'arrangements', 'invitation', 'guest'].includes(action.key)), false,
     'read access to the aggregate does not grant the existing contact editor role');
   value.admission.status = 'waitlisted'; assert.equal(personWorkspaceActions(value, ['outreach']).some(action => action.key === 'invitation'), false);

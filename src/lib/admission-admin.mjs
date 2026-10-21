@@ -71,7 +71,8 @@ export function createAdmissionOperations({ request, revision, savePending, clea
       if (started !== generation) throw new Error('会话已改变，原操作结果已丢弃。');
       pending = null; return state;
     } catch (error) {
-      // A definite rejection did not commit. A transport/5xx/invalid ACK may have committed.
+      // Only a first definite rejection proves no commit. After an unknown attempt or refresh,
+      // a later 4xx cannot disprove the original outcome, so keep the original operation.
       if (started === generation && !uncertain && Number.isInteger(error.status) && error.status >= 400 && error.status < 500) { if(clearPending)await clearPending({acknowledged:false,operation:{...operation}}); if(started===generation)pending = null; }
       if(started===generation&&pending)uncertain=true;
       throw error;

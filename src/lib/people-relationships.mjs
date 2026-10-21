@@ -11,6 +11,15 @@ function rows(value, max, map, key = 'id') { check(Array.isArray(value) && value
 const boolean = value => { check(typeof value === 'boolean'); return value; };
 export const PUBLIC_ROLE_LABELS = Object.freeze({ speaker: '讲者', guest: '嘉宾', organizer: '研讨会组织者', moderator: '主持人' });
 
+/** Display-only palette: normalized name determines color, original name remains
+ * the label and filter value. No roster order, stored assignments or identities change. */
+export function ownerTagPresentation(value) {
+  const label=typeof value==='string'?value:'',name=label.normalize('NFC').trim();
+  if(!name)return{label:'待分配',tone:'neutral'};
+  let hash=2166136261;
+  for(const character of name)hash=Math.imul(hash^character.codePointAt(0),16777619)>>>0;
+  return{label,tone:String(hash%6)};
+}
 /** Attendance is the recorded personal reply, independently of seat or guest status. */
 export function attendancePresentation(status) {
   return status==='attending'?{label:'已确认出席',tone:'positive'}

@@ -1,5 +1,5 @@
 import { parsePersonSelection, personWorkspacePath, personWorkspaceView, personWorkspaceActions, personWorkspaceSteps, personAvailabilityText } from '../lib/person-workspace.mjs';
-import { attendancePresentation, profilePublicationPresentation } from '../lib/people-relationships.mjs';
+import { ownerTagPresentation, attendancePresentation, profilePublicationPresentation } from '../lib/people-relationships.mjs';
 import { SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
 import { sourceLabels } from '../../shared/contact-import.mjs';
 import { identityOptions, participationOptions } from '../../shared/registration-schema.mjs';
@@ -130,7 +130,7 @@ function renderProfile(view) {
     fact(follow, '原始身份／意向', view.contact.sourceCategories.map(value => categoryLabels.get(value) ?? value).join('、'));
     fact(follow, '原始参与意向', view.contact.profile.interests.map(value => interestLabels.get(value) ?? value).join('、'));
     fact(follow, '联络同意', { consented: '已明确同意联络', declined: '不同意联络', unknown: '尚未核实' }[view.contact.profile.contactConsent] ?? '待核对');
-    fact(follow, '负责同事', operations.owner || '尚未分配'); fact(follow, '优先级', operations.priority === 'high' ? '优先跟进' : '普通'); fact(follow, '下次跟进', operations.followUpAt || '尚未安排');
+    const owner=ownerTagPresentation(operations.owner),ownerValue=node('dd'),ownerBadge=node('span',owner.label,'ah-owner-tag');ownerBadge.dataset.ownerTone=owner.tone;ownerBadge.dataset.personOwner='';ownerValue.append(ownerBadge);follow.append(node('dt','负责同事'),ownerValue); fact(follow, '优先级', operations.priority === 'high' ? '优先跟进' : '普通'); fact(follow, '下次跟进', operations.followUpAt || '尚未安排');
     output.append(node('h3', '当前跟进'), follow);
     if (operations.notes) { const notes = node('details'); notes.append(node('summary', '查看内部跟进备注'), node('p', operations.notes)); output.append(notes); }
   }

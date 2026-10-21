@@ -5,7 +5,7 @@ import { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS } from '../../sh
 import { SESSION_ROLES, SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
 import { eventConfig } from '../config/event.mjs';
 import { contactProgress, summarizeContactProgress, invitationProgressLabels, contactDeclined,buildPosterInvitationSettings,INVITATION_POSTER_RENDER_VERSION } from '../../shared/organizer-progress.mjs';
-import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, admissionForContact, ADMISSION_LABELS, PUBLIC_ROLE_LABELS, savedContactReceipt, conversionPreview, conversionReceipt, privateResponseAction, attendancePresentation, profilePublicationPresentation } from '../lib/people-relationships.mjs';
+import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, admissionForContact, ADMISSION_LABELS, PUBLIC_ROLE_LABELS, savedContactReceipt, conversionPreview, conversionReceipt, privateResponseAction, ownerTagPresentation, attendancePresentation, profilePublicationPresentation } from '../lib/people-relationships.mjs';
 
 const $ = value => document.querySelector(value);
 const categoryLabels = new Map(sourceLabels.categories.map(item => [item.value, item.label]));
@@ -322,7 +322,7 @@ function render() {
     const linked=intentState?.conversions?.find(value=>value.sourceContactId===item.id);
     if(linked){const link=node('a','已代登记 · 查看报名');link.href='/admin/registrations/#registration='+encodeURIComponent(linked.registrationId);invitation.append(link);}
     row.append(invitation);
-    const follow=node('td',item.operations.owner||'待分配');follow.append(node('small',item.operations.followUpAt||'未安排跟进日期'));if(item.operations.priority==='high')follow.append(node('small','优先跟进'));row.append(follow);
+    const follow=node('td'),owner=ownerTagPresentation(item.operations.owner),ownerBadge=node('span',owner.label,'ah-owner-tag');ownerBadge.dataset.ownerTone=owner.tone;ownerBadge.dataset.contactOwner=item.id;follow.append(ownerBadge,node('small',item.operations.followUpAt||'未安排跟进日期'));if(item.operations.priority==='high')follow.append(node('small','优先跟进'));row.append(follow);
     const reply=node('td'),attendance=attendancePresentation(item.operations.responseStatus),replyBadge=statusBadge(attendance.label,attendance.tone),admission=admissionForContact(item,intentState,admissionReceipts);replyBadge.dataset.attendanceStatus=item.operations.responseStatus;reply.append(replyBadge,node('small',ADMISSION_LABELS[admission.status]));if(admission.registrationId){const link=node('a',admission.status==='withdrawn'?'前往审核／撤回记录':'查看正式报名');link.href='/admin/registrations/#registration='+encodeURIComponent(admission.registrationId);reply.append(link);}if(item.operations.responseStatus==='declined'&&admission.status==='confirmed')reply.append(node('small','本人不出席，原名额仍在；请明确撤回。','people-relationship-warning'));row.append(reply);
     const participationCell=node('td',undefined,'contacts-participation-cell');
     for(const value of item.operations.participationForms??[])participationCell.append(node('span',participationLabels.get(value)||value,'contacts-tag'));

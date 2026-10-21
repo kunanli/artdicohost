@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateImportedContact, createEmptyContactOperations } from '../shared/contacts-schema.mjs';
-import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, savedContactReceipt, conversionPreview, conversionReceipt, admissionForContact, privateResponseAction, attendancePresentation, profilePublicationPresentation } from '../src/lib/people-relationships.mjs';
+import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, savedContactReceipt, conversionPreview, conversionReceipt, admissionForContact, privateResponseAction, ownerTagPresentation, attendancePresentation, profilePublicationPresentation } from '../src/lib/people-relationships.mjs';
 
 const registrationId='r'.repeat(43),referenceCode='c'.repeat(43);
 function contact(){const {sourceRowId,...profile}=validateImportedContact({sourceRowId:'synthetic-1',name:'合成人员',displayName:'合成称呼',organization:'同名组织',email:'fixture@example.invalid',categories:['so'],interests:['talk'],contactConsent:'consented'}).value;return{id:'contact_1',source:{key:'synthetic',rowId:sourceRowId,digest:'a'.repeat(64),importedAt:'2026-10-21T00:00:00Z'},profile,operations:createEmptyContactOperations(),invitation:{generatedAt:null,settings:null,sentAt:null,channel:null,sentGenerationAt:null},createdAt:'2026-10-21T00:00:00Z',updatedAt:'2026-10-21T00:00:00Z'};}
@@ -99,4 +99,23 @@ test('unpublished filter requires known publication metadata and an existing lin
 test('an unrelated orphan does not erase a linked guest ID that the server positively found published',()=>{
   const profile=catalog().profiles[0],status=profilePublicationPresentation(profile,{known:false});
   assert.equal(status.label,'已公开');assert.equal(status.tone,'positive');assert.equal(status.change,'updated');assert.match(status.detail,/历史公开版本.*待核对/u);
+});
+
+
+test('owner palette is deterministic across ordering, reloads and NFC without changing names or filters',()=>{
+  const names=['合成同事甲','合成同事乙','Café','Cafe\u0301','🎮策展人','同事 <example>'];
+  const before=structuredClone(names),first=new Map(names.map(name=>[name,ownerTagPresentation(name)]));
+  for(const name of [...names].reverse()){
+    assert.deepEqual(ownerTagPresentation(name),first.get(name));assert.match(first.get(name).tone,/^[0-5]$/u);assert.equal(first.get(name).label,name);
+  }
+  const serialized=JSON.parse(JSON.stringify(names));assert.deepEqual(serialized.map(ownerTagPresentation),names.map(ownerTagPresentation));
+  assert.equal(ownerTagPresentation('Café').tone,ownerTagPresentation('Cafe\u0301').tone);assert.equal(ownerTagPresentation('  合成同事甲  ').tone,ownerTagPresentation('合成同事甲').tone);
+  assert.equal(ownerTagPresentation('  合成同事甲  ').label,'  合成同事甲  ');
+  assert.deepEqual(names,before,'palette does not sort or normalize stored names');
+  assert.deepEqual(names.filter(name=>name==='Cafe\u0301'),['Cafe\u0301'],'existing exact filter values remain distinct');
+});
+
+test('unassigned owner is neutral and markup-like owner names remain plain display text',()=>{
+  for(const value of ['', '  ', '\n\t', null,undefined,42])assert.deepEqual(ownerTagPresentation(value),{label:'待分配',tone:'neutral'});
+  const value='<img src=x onerror="throw 1"> & 合成同事';const status=ownerTagPresentation(value);assert.equal(status.label,value);assert.match(status.tone,/^[0-5]$/u);
 });

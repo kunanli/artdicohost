@@ -1,5 +1,9 @@
 # 开发接续
 
+## 当前开发
+
+用户新增：后台每个子卡片独立页面、区块底部／右侧直接保存、操作更直观；随后追加前端组织／嘉宾／作品未显示及作品整合。当前分支`feat/admin-independent-pages`从main9b9c418与证据9de61c6接续，先页面／保存阶段，再可见性／游戏与作品阶段；[完整计划](admin-independent-pages.md)。当前尚未实施／发布，不重做之前已上线功能，也不代替真实人物确认公开授权。
+
 ## 当前发布状态
 
 新版邀请函 [PR #39](https://github.com/kunanli/artdicohost/pull/39) 与文档 [PR #40](https://github.com/kunanli/artdicohost/pull/40) 已合并并实际发布，正式main **`9b9c418ca32a5c93b5c0260732dc5630bc5793c7`**。**2026-10-21 22:00:20（UTC+08）**完成；[run39611733126](https://github.com/kunanli/artdicohost/actions/runs/39611733126) attempt1三个job全success：1194项、真实私有OSS、共同300政策及**33/33 HTTPS**通过。内容与正式报名已启用，先前延迟触发／维护已恢复。[完整证据](invitation-release-2026-10-21.md)。

@@ -118,3 +118,19 @@ test('invalid operation identity or unloaded revision prevents every request', a
     assert.equal(operations.pending,false);
   }
 });
+
+test('clearing an in-flight operation discards its late success or rejection without changing a new session operation', async () => {
+  for (const late of ['success','403']) {
+    const deferred=[],calls=[];
+    const operations=createAdmissionOperations({request:(path,options)=>{calls.push({path,...options});return new Promise((resolve,reject)=>deferred.push({resolve,reject}));},revision:()=>5,operationId:()=>'o'.repeat(43)});
+    const old=operations.run('/api/admin/admissions/promote',{});const oldRejection=assert.rejects(old);
+    operations.clear();assert.equal(operations.pending,false);
+    const next=operations.run('/api/admin/admissions/withdraw',{registrationId:ids[0]});
+    if(late==='success')deferred[0].resolve({...state(),outcome:'updated'});else deferred[0].reject(rejection(403));
+    await oldRejection;
+    assert.equal(operations.pending,true,'late completion cannot clear the new operation');
+    await assert.rejects(operations.retry());assert.equal(calls.length,2,'late finally cannot release the new operation lock');
+    deferred[1].resolve({...state(),outcome:'updated'});await next;
+    assert.equal(operations.pending,false);
+  }
+});

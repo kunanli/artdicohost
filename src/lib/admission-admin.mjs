@@ -35,20 +35,22 @@ export function createAdmissionOperations({ request, revision, operationId = () 
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return btoa(String.fromCharCode(...bytes)).replace(/\+/gu,'-').replace(/\//gu,'_').replace(/=+$/u,'');
 } }) {
-  let pending = null, busy = false;
+  let pending = null, busy = false, generation = 0;
   async function send() {
     if (busy || !pending) throw new Error('请先核对当前操作结果。');
+    const started = generation, operation = pending;
     busy = true;
     try {
-      const result = await request(pending.path, { method: pending.method, body: pending.body });
+      const result = await request(operation.path, { method: operation.method, body: operation.body });
+      if (started !== generation) throw new Error('会话已改变，原操作结果已丢弃。');
       const state = admissionAdminState(result);
       if (!state || !['updated','replayed'].includes(result.outcome)) throw new Error('名额结果尚未通过核对，请保留本页并再次确认同一操作。');
       pending = null; return state;
     } catch (error) {
       // A definite rejection did not commit. A transport/5xx/invalid ACK may have committed.
-      if (Number.isInteger(error.status) && error.status >= 400 && error.status < 500) pending = null;
+      if (started === generation && Number.isInteger(error.status) && error.status >= 400 && error.status < 500) pending = null;
       throw error;
-    } finally { busy = false; }
+    } finally { if (started === generation) busy = false; }
   }
   return Object.freeze({
     get pending() { return pending !== null; },
@@ -60,6 +62,6 @@ export function createAdmissionOperations({ request, revision, operationId = () 
       return send();
     },
     retry: send,
-    clear() { pending = null; },
+    clear() { generation++; pending = null; busy = false; },
   });
 }

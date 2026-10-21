@@ -24,6 +24,9 @@ PUBLIC_API_BASE=https://api.artdico.host pnpm build
 pnpm check
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/usr/bin/chromium node tests/browser/registration-smoke.mjs
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/usr/bin/chromium node tests/browser/admissions-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/usr/bin/chromium node tests/browser/admissions-session-race.mjs
 ```
 
 公开浏览器回归覆盖关闭报名、一般参会不填经历、同一请求重试、候补无群码、讲者条件必填；工作人员回归覆盖角色、预留、逐人登记、团队、取消补位及未知回执重试。实际容量并发、幂等与 FIFO 保证由名额服务测试及合成运行时验收负责；本界面不会把浏览器显示当作容量承诺。
+
+会话清除回归使用真实组件与模块、受控延迟的合成请求，覆盖晚到的 GET、修改回执、错误与 onChange。退出或账号／角色改变会立即清空 DOM、姓名缓存、表单及原操作；旧回调不能重填资料、解锁新操作或清除新会话的待确认请求。同一会话内并发读取以最后发起的读取为准；已保存修改后的旧读取也不会覆盖新状态。

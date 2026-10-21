@@ -80,8 +80,10 @@ function renderRows(records){
 }
 async function load(cursor){
   if(!allowed())throw new Error('此账号没有报名审核权限。');
+  const generation=sessionGeneration;
   const params=new URLSearchParams({...filters,limit:'20',...(cursor?{cursor}:{} )});
   const state=await request('/api/admin/registrations?'+params);
+  if(generation!==sessionGeneration)return;
   if(!Array.isArray(state.registrations)||!Number.isSafeInteger(state.revision)||!Number.isSafeInteger(state.total))throw new Error('报名列表结果无效，请稍后重试。');
   revision=state.revision;nextCursor=typeof state.nextCursor==='string'?state.nextCursor:null;
   renderStats(state);renderRows(state.registrations);
@@ -89,7 +91,9 @@ async function load(cursor){
   $('[data-review-next]').hidden=!nextCursor;
   $('[data-review-login-panel]').hidden=true;$('[data-review-workspace]').hidden=false;$('[data-review-account]').hidden=false;$('[data-review-user]').textContent=user.label||user.id;
   if(pendingRegistration){const id=pendingRegistration;pendingRegistration=null;await openRecord(id);}
+  if(generation!==sessionGeneration)return;
   await staffSettings.configure(user);
+  if(generation!==sessionGeneration)return;
   await staffAdmissions.configure(user,state.registrations);
 }
 function pair(output,label,value){if(value===undefined||value===null||value==='')return;output.append(node('dt',label),node('dd',Array.isArray(value)?value.join(' / '):String(value)));}
@@ -107,7 +111,9 @@ function renderDetails(record){
 }
 async function openRecord(id){
   if(dirty&&!confirm('还有未保存的核查修改，放弃后打开另一条记录吗？'))return;
+  const generation=sessionGeneration;
   const result=await request('/api/admin/registrations/'+encodeURIComponent(id));
+  if(generation!==sessionGeneration)return;
   if(!result.registration||!Number.isSafeInteger(result.revision))throw new Error('报名详情结果无效。');
   const review=result.review??result.registration.review??{};selected={...result.registration,review,revision:result.revision};revision=result.revision;dirty=false;
   $('[data-review-detail-title]').textContent=(selected.fields?.name||'报名资料')+' · 内部核查';renderDetails(selected);

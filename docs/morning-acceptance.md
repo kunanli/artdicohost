@@ -1,5 +1,7 @@
 # ARTDiCO HOST 驗收與接續
 
+最新「志愿者与分工」已上线 PR #35／main `19b0d10`，**17:47:01（UTC+08）**完成 942 项 PR／main 检查、真实私有 OSS、300 人政策及 27/27 HTTPS。[完整证据](volunteer-release-2026-10-21.md)。从「志愿者与分工」选择既有人员，保存沟通与可服务时段，再建立岗位、班次及逐班安排；人数与人次分别统计，冲突／超额由服务器拒绝，取消保留历史。个人工作页可查看同一人的分工；导出默认不含联络字段。实际人员名单与岗位由工作人员明确填写，本开发未替真实人员作安排。[操作](volunteer-operations.md)。
+
 最新 PR #34／main `ddf7a2e` 已於 **2026-10-21 16:45:43（UTC+08）** 完整上線：877 項檢查、真實私有 OSS、300 人政策與 26/26 HTTPS 回讀通過。[完整證據](staff-operations-release-2026-10-21.md)。先驗收：內容表單輸入後離頁有提醒；套用後固定欄明示未存雲端；按「保存到云端」並收到確認後刷新仍可讀回。人員名單打開「個人工作頁」有五步指引、實際回覆與場次／展位；「設置與通知」集中寄信、群碼與 Wallet。以下舊版本發布數據保留作歷史。
 
 後台快捷導覽已上線 [PR #31](https://github.com/kunanli/artdicohost/pull/31)／main `b8d6818`，802 項檢查與六組相關瀏覽器流程通過。[正式運行 39531376320 attempt 2](https://github.com/kunanli/artdicohost/actions/runs/39531376320) 已恢復服務，十階段私有 OSS、300 人政策與 23/23 HTTPS 對象完成，**10:22:22（UTC+08）** 成功結束；首次窗口切換失敗與恢復證據見[發布紀錄](navigation-release-2026-10-21.md)。桌面左欄與手機收合的驗收步驟在下方。
@@ -26,6 +28,7 @@
 - [正式報名、名額、住宿與 Excel](https://api.artdico.host/admin/registrations/)
 - [設置與通知、確認信、群碼及 Wallet](https://api.artdico.host/admin/settings/)
 - [每日待辦](https://api.artdico.host/admin/tasks/)
+- [志願者與分工、排班與缺額](https://api.artdico.host/admin/volunteers/)
 
 使用原有管理員帳號登入；帳號、密碼、寄件密鑰及 Apple 私鑰不保存在文件或聊天。以下新版步驟以主集成確認部署完成後為準；本機合成驗收不表示真實名單已遷移。
 

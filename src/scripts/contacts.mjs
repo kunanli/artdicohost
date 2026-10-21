@@ -513,7 +513,7 @@ $('[data-contacts-batch-invite]').addEventListener('click',()=>action(async()=>{
   const generation=sessionGeneration,selection=invitationGeneration,contactIds=[...selectedContacts],expectedContactRevision=revision;
   const {previewBatchInvitations,prepareBatchInvitations}=await import('../lib/invitation-batch.mjs');
   const renderVersion=INVITATION_POSTER_RENDER_VERSION;const preview=await previewBatchInvitations({contactIds,expectedContactRevision,request,renderVersion});
-  if(generation!==sessionGeneration)throw new Error('会话已改变，请重新登录。');
+  if(generation!==sessionGeneration||selection!==invitationGeneration)throw new Error('会话或页面已改变，未继续准备邀请。');
   clearBatchResult();$('[data-batch-panel]').hidden=false;
   for(const entry of preview.entries){const item=contactById(entry.contactId);$('[data-batch-results]').append(node('li',(item?.profile.displayName||'所选对象')+' · '+(entry.eligible?'可准备邀请':'跳过：'+batchReason(entry.reason))));}
   $('[data-batch-summary]').textContent='预检 '+preview.summary.selected+' 位，可准备 '+preview.summary.eligible+' 位，跳过 '+preview.summary.skipped+' 位。';

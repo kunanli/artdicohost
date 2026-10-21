@@ -5,6 +5,7 @@ import { createPrivateInvitationZip, privateInvitationFilename, privateZipEntryB
 export const INVITATION_BATCH_MAX_CONTACTS = 100;
 const METADATA_RESERVE = 512 * 1024;
 const id = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(value);
+const registrationId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,100}$/u.test(value);
 const code = value => typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,79}$/u.test(value) ? value : null;
 const token = value => typeof value === 'string' && value.length > 0 && value.length <= 4096 && !/[\u0000-\u0020\u007f]/u.test(value);
 function renderChoice(value) {
@@ -34,9 +35,9 @@ export async function previewBatchInvitations({ contactIds, expectedContactRevis
   const version=renderChoice(renderVersion);
   const response = await post(request, '/api/admin/contacts/invitations/preview', { contactIds: selected, expectedContactRevision,...version });
   const entries = entriesFor(response, selected, 'entries', expectedContactRevision).map(entry => {
-    if (typeof entry.eligible !== 'boolean' || entry.eligible && (!id(entry.registrationId) || !id(entry.referenceCode))) throw new TypeError('批量邀请预检无效。');
+    if (typeof entry.eligible !== 'boolean' || entry.eligible && (!registrationId(entry.registrationId) || !registrationId(entry.referenceCode))) throw new TypeError('批量邀请预检无效。');
     return { contactId: entry.contactId, eligible: entry.eligible, reason: code(entry.reason),
-      ...(id(entry.registrationId) ? { registrationId: entry.registrationId } : {}), ...(id(entry.referenceCode) ? { referenceCode: entry.referenceCode } : {}) };
+      ...(registrationId(entry.registrationId) ? { registrationId: entry.registrationId } : {}), ...(registrationId(entry.referenceCode) ? { referenceCode: entry.referenceCode } : {}) };
   });
   if (!token(response.previewToken)) throw new TypeError('批量邀请预检凭据无效。');
   return { contactRevision: expectedContactRevision, previewToken: response.previewToken, entries,...version,
@@ -48,8 +49,8 @@ function pngResult(entry, status, pngError = null, fileName = null) {
 function safeRecord(result) {
   const invitation = result.invitation;
   return { contactId: result.contactId, status: result.status, code: code(result.code),
-    registrationId: id(invitation?.registrationId) ? invitation.registrationId : null,
-    referenceCode: id(invitation?.referenceCode) ? invitation.referenceCode : null,
+    registrationId: registrationId(invitation?.registrationId) ? invitation.registrationId : null,
+    referenceCode: registrationId(invitation?.referenceCode) ? invitation.referenceCode : null,
     invitationId: id(invitation?.id) ? invitation.id : null,
     invitationStatus: typeof invitation?.status === 'string' && /^[a-z_]{1,40}$/u.test(invitation.status) ? invitation.status : null,
     recipientName: typeof invitation?.content?.settings?.recipientName === 'string' && invitation.content.settings.recipientName.length <= 320 ? invitation.content.settings.recipientName : null,
@@ -78,7 +79,7 @@ export async function prepareBatchInvitations({ contactIds, expectedContactRevis
     if (['prepared', 'replayed'].includes(entry.status)) {
       const invitation = entry.invitation, settings = invitation?.content?.settings;
       if (invitation?.channel !== 'manual' || !['prepared', 'manually_sent'].includes(invitation.status)
-        || !id(invitation.id) || !id(invitation.registrationId) || !id(invitation.referenceCode)
+        || !id(invitation.id) || !registrationId(invitation.registrationId) || !registrationId(invitation.referenceCode)
         || settings?.confirmed !== true || settings.renderVersion!==renderVersion || ['recipientName', 'date', 'time', 'venue'].some(field => typeof settings[field] !== 'string' || settings[field].length > 480) || !validateInvitationData(settings).valid) throw new TypeError('批量邀请内容无效，请核对后台记录。');
     }
   }

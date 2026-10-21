@@ -206,3 +206,14 @@ test('unknown versions fail before I/O and mismatched saved image versions fail 
   await assert.rejects(prepare([changed],{renderInvitation:async()=>{renders++;return png();}}),/内容无效/u);
   assert.equal(renders,0);
 });
+
+test('leading underscore and dash registration tokens survive preview, preparation and private manifest without relaxing contact IDs', async () => {
+  const registrationId='_'+'A'.repeat(42),referenceCode='-'+'b'.repeat(42),renderVersion='ggj2026-poster-v2';
+  const preview=await previewBatchInvitations({contactIds:['contact_1'],expectedContactRevision:7,renderVersion,request:async()=>({contactRevision:7,previewToken:'synthetic-token',entries:[{contactId:'contact_1',eligible:true,registrationId,referenceCode}]})});
+  assert.equal(preview.entries[0].registrationId,registrationId);assert.equal(preview.entries[0].referenceCode,referenceCode);
+  const resultEntry=entry('contact_1');Object.assign(resultEntry.invitation,{registrationId,referenceCode});resultEntry.invitation.content.settings.renderVersion=renderVersion;
+  const result=await prepare([resultEntry],{renderVersion});const files=await readZip(result.blob),metadata=JSON.parse(decoder.decode(files.get('results-private.json')));
+  assert.equal(result.summary.pngCreated,1);assert.equal(metadata.results[0].registrationId,registrationId);assert.equal(metadata.results[0].referenceCode,referenceCode);
+  let calls=0;await assert.rejects(previewBatchInvitations({contactIds:['_contact'],expectedContactRevision:7,request:async()=>{calls++;}}),/名单或版本/u);assert.equal(calls,0);
+  for(const token of ['../bad','~bad','A'.repeat(101)])await assert.rejects(previewBatchInvitations({contactIds:['contact_1'],expectedContactRevision:7,request:async()=>({contactRevision:7,previewToken:'synthetic-token',entries:[{contactId:'contact_1',eligible:true,registrationId:token,referenceCode}]})}),/预检无效/u);
+});

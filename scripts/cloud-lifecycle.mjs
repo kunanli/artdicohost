@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { assertCurrentMainHead } from './deploy-oss.mjs';
 import { createFcClient, summarizeFcError } from './fc-client.mjs';
 import { createFcConfigClient, assertFcEnvironmentMap, summarizeFcConfigError } from './fc-config-client.mjs';
-import { configureCloudAdmin, requireCloudAdminSetupContext, cloudAdminEnvironment, cloudAdminFunctionSnapshot, cloudAdminTriggerSnapshot } from './configure-cloud-admin.mjs';
+import { configureCloudAdmin, requireCloudAdminSetupContext, assertCloudLifecycleConfigurationFits, cloudAdminEnvironment, cloudAdminFunctionSnapshot, cloudAdminTriggerSnapshot } from './configure-cloud-admin.mjs';
 import { deployCloudContent, requireCloudContentDeploymentContext } from './deploy-cloud-content.mjs';
 import { verifyCloudContentCandidate } from './verify-cloud-content-package.mjs';
 import { CANDIDATE_KIND, CANDIDATE_ARCHIVE } from './cloud-content-package.mjs';
@@ -236,6 +236,7 @@ export async function deployCloudLifecycle(options = {}) {
 
       const closedVariables = { ...initialSnapshot.variables, [CONTENT_KEY]: 'false' };
       delete closedVariables[RUN_KEY];
+      await bounded(() => assertCloudLifecycleConfigurationFits({ env, previous: initialSnapshot.variables, acceptanceRunId: runId }), 'CONFIGURATION_PREFLIGHT_INVALID');
       await mutate(initial, closedVariables, priorCommit, 'quiesced', { requireNoAcceptance: true });
       const codeResult = await bounded(() => deployCode({ directory: own(options, 'directory'), repositoryDirectory: own(options, 'repositoryDirectory'), env,
         client: codeClient, verifyPackage: () => publication, fetchHead, wait, report: () => {} }), 'CODE_DEPLOYMENT_NOT_VERIFIED');

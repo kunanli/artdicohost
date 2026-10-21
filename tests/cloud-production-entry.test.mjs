@@ -17,6 +17,8 @@ const syntheticAssets = [
   { url: '/admin/contacts/', path: 'admin-assets/admin/contacts/index.html', data: '<!doctype html><p>synthetic contacts editor</p>' },
   { url: '/admin/registrations/', path: 'admin-assets/admin/registrations/index.html', data: '<!doctype html><p>synthetic registration review</p>' },
   { url: '/admin/tasks/', path: 'admin-assets/admin/tasks/index.html', data: '<!doctype html><p>synthetic organizer tasks</p>' },
+  { url: '/admin/settings/', path: 'admin-assets/admin/settings/index.html', data: '<!doctype html><p>synthetic settings</p>' },
+  { url: '/admin/person/', path: 'admin-assets/admin/person/index.html', data: '<!doctype html><p>synthetic person workspace</p>' },
   { url: '/invitations/template-blank.png', path: 'admin-assets/invitations/template-blank.png', data: 'synthetic blank image' },
   { url: '/_astro/staff-test.js', path: 'admin-assets/_astro/staff-test.js', data: 'export const synthetic=true;' },
 ];
@@ -110,6 +112,8 @@ test('entry rejects unreviewed manifest schema, identity, static URLs, paths and
     arraySource: release => { release.sourceCommit = [SOURCE]; },
     differentNode: release => { release.node = { ...release.node, version: 'v24.0.0' }; },
     missingContactsPage: release => { release.assets.splice(1, 1); },
+    missingSettingsPage: release => { release.assets = release.assets.filter(asset => asset.url !== '/admin/settings/'); },
+    missingPersonPage: release => { release.assets = release.assets.filter(asset => asset.url !== '/admin/person/'); },
     duplicateUrl: release => { release.assets.push({ ...release.assets[0] }); },
     duplicateFile: release => { release.files.push({ ...release.files[0] }); },
     publicHomepage: release => { release.assets[0].url = '/'; },
@@ -144,7 +148,7 @@ test('closed production factory preserves exact process health while serving no 
   const health = await send(port, '/healthz', { host: 'synthetic-fc-signature-gateway.invalid' });
   assert.equal(health.status, 200);
   assert.deepEqual(JSON.parse(health.text), { status: 'ok', scope: 'process-only', sourceCommit: SOURCE });
-  for (const path of ['/admin/', '/admin/contacts/', '/invitations/template-blank.png', '/api/admin/environment', '/api/admin/session', '/api/registrations']) {
+  for (const path of ['/admin/', '/admin/contacts/', '/admin/settings/', '/admin/person/', '/invitations/template-blank.png', '/api/admin/environment', '/api/admin/session', '/api/registrations']) {
     const result = await send(port, path);
     assert.equal(result.status, 503, path);
     assert.equal(result.headers['cache-control'], 'no-store');

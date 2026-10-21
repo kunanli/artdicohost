@@ -89,8 +89,12 @@ test('all logical object categories are mapped to one private acceptance namespa
   }
 });
 
-test('isolated acceptance performs durable HTTP object operations and reports only fixed evidence, with no production objects touched', async () => {
-  const fixture = objectFixture(), monitor = startCloudAcceptance(options(fixture));
+test('isolated acceptance uses only synthetic settings even when both real-mail feature flags are enabled', async () => {
+  const fixture = objectFixture(), mail = { ARTDICO_INVITATION_EMAIL_ENABLED: 'true', ARTDICO_CONFIRMATION_EMAIL_ENABLED: 'true',
+    EMAILJS_SERVICE_ID: 'synthetic_service', EMAILJS_TEMPLATE_ID: 'synthetic_invitation', EMAILJS_CONFIRMATION_TEMPLATE_ID: 'synthetic_confirmation',
+    EMAILJS_PUBLIC_KEY: 'PRIVATE_SYNTHETIC_MAIL_PUBLIC', EMAILJS_PRIVATE_KEY: 'PRIVATE_SYNTHETIC_MAIL_PRIVATE',
+    EMAIL_FROM_ADDRESS: 'synthetic.sender@artdico.co', EMAIL_FROM_NAME: '合成通知团队', ARTDICO_DELIVERY_CONFIG_BUNDLE_ID: 'synthetic-bundle' };
+  const monitor = startCloudAcceptance({ ...options(fixture), env: { ...ENV, ...mail } });
   assert.equal(monitor.snapshot().status, 'running');
   const result = await monitor.completion;
   assert.equal(result.status, 'passed', JSON.stringify(result));
@@ -107,6 +111,10 @@ test('isolated acceptance performs durable HTTP object operations and reports on
   assert.ok(fixture.calls.some(call => call.key.startsWith(prefix + 'users/')), 'bootstrap directory is checked without creating extra staff');
   assert.equal(fixture.calls.some(call => call.method === 'DELETE'), false);
   assert.equal(fixture.calls.some(call => call.method === 'POST' && !call.url.includes('?append&position=')), false);
+  assert.ok(fixture.calls.every(call => new URL(call.url).hostname === 'artdicohost-data-hk.oss-cn-hongkong.aliyuncs.com'));
+  for (const value of ['PRIVATE_SYNTHETIC_MAIL_PUBLIC', 'PRIVATE_SYNTHETIC_MAIL_PRIVATE', 'synthetic.sender@artdico.co', 'synthetic-bundle']) {
+    assert.equal([...fixture.stored.values()].some(item => item.data.includes(Buffer.from(value))), false);
+  }
   const serialized = JSON.stringify(result);
   assert.doesNotMatch(serialized, /passwordHash|csrfToken|set-cookie|synthetic\.acceptance|synthetic@example|scrypt\$|PRIVATE_|ExampleSecret|ExampleToken|cms\/v1/u);
   assert.deepEqual(acceptanceHealthProof({ ...result, privateProviderBody: 'PRIVATE_INPUT' }), result);

@@ -16,6 +16,8 @@ const ASSETS = () => new Map([
   ['/admin/contacts/', Buffer.from('<!doctype html><html><body>合成名单页面</body></html>')],
   ['/admin/registrations/', Buffer.from('<!doctype html><html><body>合成报名审核页面</body></html>')],
   ['/admin/tasks/', Buffer.from('<!doctype html><html><body>合成筹备待办页面</body></html>')],
+  ['/admin/settings/', Buffer.from('<!doctype html><html><body>合成设置页面</body></html>')],
+  ['/admin/person/', Buffer.from('<!doctype html><html><body>合成人员工作区</body></html>')],
   ['/invitations/template-blank.png', Buffer.from('synthetic-png-template')],
   ['/_astro/staff-test.js', Buffer.from('export const syntheticStaff = true;')],
   ['/_astro/staff-test.css', Buffer.from('body { color: #222; }')],
@@ -127,6 +129,16 @@ test('actual HTTP serves copied allowlisted bytes, exact inline CSP hashes, safe
   assert.equal((await send(port, '/admin/registrations')).headers.location, '/admin/registrations/');
   assert.match((await send(port, '/admin/tasks/')).text, /合成筹备待办页面/u);
   assert.equal((await send(port, '/admin/tasks')).headers.location, '/admin/tasks/');
+  for (const [path, text] of [['/admin/settings/', '合成设置页面'], ['/admin/person/', '合成人员工作区']]) {
+    const page = await send(port, path);
+    assert.equal(page.status, 200); secure(page);
+    assert.equal(page.headers['content-type'], 'text/html; charset=utf-8');
+    assert.ok(page.text.includes(text));
+    const head = await send(port, path, { method: 'HEAD' });
+    assert.equal(head.status, 200); assert.equal(head.body.length, 0);
+    assert.equal((await send(port, path.slice(0, -1))).headers.location, path);
+    assert.equal((await send(port, path + '?private=synthetic')).status, 404);
+  }
   const queriedRedirect = await send(port, '/admin/contacts?marker=synthetic');
   assert.equal(queriedRedirect.status, 404);
   const template = await send(port, '/invitations/template-blank.png');

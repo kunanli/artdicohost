@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
-import {staffDirectory,staffUserSaveAcknowledged,generateInitialStaffPassword} from '../src/scripts/staff-settings.mjs';
+import {staffDirectory,staffUserSaveAcknowledged,generateInitialStaffPassword,recoverRejectedSettingsDraft} from '../src/scripts/staff-settings.mjs';
 
 const owner={id:'owner',username:'owner',label:'合成管理员',roles:['superadmin'],active:true,protected:true};
 const collaborator={id:'staff_synthetic',username:'zhouyufei',label:'zhouyufei',roles:['editor','publisher','outreach','reviewer'],active:true,protected:false};
@@ -47,4 +47,13 @@ test('independent initial passwords require cryptographic random bytes and clear
   assert.equal(first.length,36);assert.match(first,/^Aa1![A-Za-z0-9_-]{32}$/u);assert.notEqual(first,second);
   let scratch;generateInitialStaffPassword({getRandomValues(bytes){scratch=bytes;bytes.fill(37);return bytes;}});assert.ok(scratch.every(byte=>byte===0));
   assert.throws(()=>generateInitialStaffPassword({}),/无法生成/u);
+});
+
+test('definitively rejected settings recover only the original editing fields and local group time',()=>{
+  const fields={id:'',username:'zhouyufei',email:'',label:'zhouyufei',roles:[...collaborator.roles],active:true};
+  assert.deepEqual(recoverRejectedSettingsDraft('users',{...fields,uncertain:false}),fields);
+  assert.deepEqual(recoverRejectedSettingsDraft('group',{expiresAt:'2026-10-22T03:45:00.000Z',action:'replace',uncertain:false}),{expiresAt:'2026-10-22T11:45',action:'replace'});
+  assert.deepEqual(recoverRejectedSettingsDraft('group',{expiresAt:'',action:'disable',uncertain:false}),{expiresAt:'',action:'replace'});
+  assert.deepEqual(recoverRejectedSettingsDraft('restore',{restoreId:'synthetic-isolated',uncertain:false}),{restoreId:'synthetic-isolated'});
+  for(const uncertain of[true,undefined])assert.throws(()=>recoverRejectedSettingsDraft('users',{...fields,uncertain}),/人工核对/u);
 });

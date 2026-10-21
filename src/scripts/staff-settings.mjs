@@ -41,6 +41,13 @@ export function generateInitialStaffPassword(random=globalThis.crypto){
   const bytes=new Uint8Array(24);random.getRandomValues(bytes);
   const result='Aa1!'+base64(bytes).replace(/\+/gu,'-').replace(/\//gu,'_').replace(/=+$/u,'');bytes.fill(0);return result;
 }
+export function recoverRejectedSettingsDraft(kind,value){
+  if(!safe(value)||value.uncertain!==false)throw new Error('原操作仍须人工核对。');
+  if(kind==='users')return Object.fromEntries(['id','username','email','label','roles','active'].map(key=>[key,structuredClone(value[key])]));
+  if(kind==='restore')return{restoreId:value.restoreId};
+  if(kind==='group')return{expiresAt:value.expiresAt?new Date(Date.parse(value.expiresAt)+8*3600000).toISOString().slice(0,16):'',action:'replace'};
+  throw new Error('设置类型无法核对。');
+}
 
 /** Superadmin tools never retain passwords, recovery keys or images in browser storage. */
 export function createStaffSettings({root,request,binaryRequest,draftStore,eventId}){
@@ -73,7 +80,7 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
     const started=generation;
     const draft=drafts.get(kind);if(draft){const body=kind==='group'?JSON.parse(options.body):null;await draft.markPending(body?{expiresAt:body.expiresAt??'',action:options.method==='PUT'?'disable':'replace'}:undefined);current(started);}
     try{const value=await request(path,options);current(started);if(validate&&!validate(value))throw new Error('写入结果未通过核对，请保留原输入并刷新对应区块。');if(draft)await draft.discard();current(started);return value;}
-    catch(error){if(started===generation){if(!Number.isInteger(error.status)||error.status>=500)unknown.add(kind);else if(!unknown.has(kind)&&draft){await draft.discard();draft.schedule();}}throw error;}
+    catch(error){if(started===generation){if(!Number.isInteger(error.status)||error.status>=500){unknown.add(kind);try{await draft?.markUncertain();}catch{}}else if(!unknown.has(kind)&&draft){try{await draft.rejectPending();}catch{unknown.add(kind);}}}throw error;}
   }
   async function action(callback,permission=canManageEventOperations){if(busy||externalBusy||!permission(user))return;const started=generation;busy=true;lock();try{await callback(started);}catch(error){if(started===generation)status(error.message||'操作尚未完成，请刷新核对后重试。',true);}finally{if(started===generation){busy=false;lock();}}}
   function current(started){if(started!==generation||!canManageEventOperations(user))throw new Error('会话已改变，原操作不会写入新的账号。');}
@@ -121,7 +128,8 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
       {kind:'restore',form:restoreForm,ready:canRecoverSystem(user),revision:()=>0,fields:['restoreId'],capture:()=>({restoreId:restoreForm.elements.namedItem('restoreId').value}),validate:value=>string(value.restoreId,80),apply:value=>{restoreForm.elements.namedItem('restoreId').value=value.restoreId;restoreDirty=true;}},
     ];
     for(const spec of specs){if(!spec.ready||drafts.has(spec.kind)||started!==generation)continue;
-      const draft=createSettingsFormDraft({store:draftStore,actorId:user.id,eventId,entity:spec.kind,form:spec.form,policy:{fields:spec.fields,pendingFields:spec.fields,validate:spec.validate},baseRevision:spec.revision,isCurrent:()=>started===generation&&canManageEventOperations(user),capture:spec.capture,apply:spec.apply,onChange:lock,
+      const draft=createSettingsFormDraft({store:draftStore,actorId:user.id,eventId,entity:spec.kind,form:spec.form,policy:{fields:[...spec.fields,'uncertain'],pendingFields:spec.fields,
+        validate:value=>spec.validate(value)&&(value.uncertain===undefined||typeof value.uncertain==='boolean'),rejectPending:value=>recoverRejectedSettingsDraft(spec.kind,value)},baseRevision:spec.revision,isCurrent:()=>started===generation&&canManageEventOperations(user),capture:spec.capture,apply:spec.apply,onChange:lock,
         onPending:()=>{unknown.add(spec.kind);},onDiscard:()=>{unknown.delete(spec.kind);spec.form.reset();if(spec.kind==='users')resetUser();else if(spec.kind==='group')groupDirty=false;else restoreDirty=false;lock();}});
       drafts.set(spec.kind,draft);try{await draft.load();}catch{}if(started!==generation)return;
     }lock();

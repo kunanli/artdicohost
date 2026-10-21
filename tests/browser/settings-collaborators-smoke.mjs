@@ -9,16 +9,17 @@ const project=fileURLToPath(new URL('../../',import.meta.url)),dist=resolve(proc
 const evidence=resolve(project,'.local-data/browser-evidence'),reports=[],errors=[];
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const json=(body,status=200)=>({status,contentType:'application/json',body:JSON.stringify(body)});
-async function fixture({width=1280,role='owner',lostAck=false,badAck=false,logoutMode='normal'}={}){
+async function fixture({width=1280,role='owner',lostAck=false,badAck=false,logoutMode='normal',rejectUserOnce=false}={}){
   const runtime=await peopleRuntimeFixture({mail:true}),auth=await runtime.login(role),context=await browser.newContext({viewport:{width,height:900}});
   const [name,...value]=auth.Cookie.split('=');await context.addCookies([{domain:new URL(SITE).hostname,path:'/api/admin',name,value:value.join('='),secure:true,httpOnly:true,sameSite:'Strict'}]);
   const page=await context.newPage();page.setDefaultTimeout(10000);await page.clock.setFixedTime(new Date('2026-10-21T09:00:00.000Z'));
-  const calls=[];let lose=lostAck,malform=badAck,expire=false;
+  const calls=[];let lose=lostAck,malform=badAck,expire=false,rejectUser=rejectUserOnce;
   page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
   await context.route('**/*',async route=>{
     const req=route.request(),url=new URL(req.url()),path=url.pathname;assert.equal(url.origin,SITE,'all requests remain intercepted');
     if(path.startsWith('/api/')){
       const headers=await req.allHeaders(),body=req.postData()?JSON.parse(req.postData()):null,entry={path,method:req.method(),body};calls.push(entry);
+      if(path==='/api/admin/users'&&req.method()==='POST'&&rejectUser){rejectUser=false;return route.fulfill(json({error:{code:'SYNTHETIC_VALIDATION_REJECTION'}},422));}
       if(path==='/api/admin/logout'&&logoutMode==='expired')return route.fulfill(json({},401));
       if(path==='/api/admin/logout'&&logoutMode==='network')return route.abort('failed');
       if(expire&&path==='/api/admin/group-invite'){expire=false;return route.fulfill(json({},401));}
@@ -80,6 +81,12 @@ try{
   {
     const f=await fixture();await open(f);const form=f.page.locator('[data-user-form]');await form.locator('[name=username]').fill('synthetic-preset-draft');await waitDraft(f.page);assert.equal((await draftRecords(f.page)).find(row=>row.scope.entityId==='users').value.roles.length,0);
     await f.page.locator('[data-user-collaborator-preset]').click();await waitDraft(f.page);assert.equal((await draftRecords(f.page)).find(row=>row.scope.entityId==='users').value.roles.length,4);await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-settings-local-draft=users]').getByRole('button',{name:'恢复填写'}).click();assert.equal(await form.locator('[name=roles]:checked').count(),4);assert.equal(usersWrites(f).length,0);await f.context.close();reports.push({standaloneRolePresetSurvivesRefreshWithoutAccountWrite:true});
+  }
+  for(const quotaFailure of[false,true]){
+    const f=await fixture({rejectUserOnce:true});await open(f);const{form,password}=await prepare(f,'zhouyufei');await waitDraft(f.page);
+    if(quotaFailure)await f.page.evaluate(()=>{const put=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(value,...args){if(this.name==='drafts'&&value?.kind==='editing'&&value.scope?.entityId==='users')throw new DOMException('SYNTHETIC_QUOTA','QuotaExceededError');return put.call(this,value,...args);};});
+    await form.locator('button[type=submit]').click();await f.page.locator('[data-settings-error]').filter({hasText:'设置内容未通过检查'}).waitFor();const record=(await draftRecords(f.page)).find(row=>row.scope.entityId==='users');assert.equal(record.kind,quotaFailure?'pending_submission':'editing');assert.equal(record.value.username,'zhouyufei');assert.equal(record.value.roles.length,4);assert.equal(JSON.stringify(record).includes(password),false);assert.equal(usersWrites(f).length,1);assert.equal((await f.api('/api/admin/users')).users.some(row=>row.username==='zhouyufei'),false);
+    await f.page.reload({waitUntil:'networkidle'});const draft=f.page.locator('[data-settings-local-draft=users]');if(quotaFailure){await draft.locator('p').filter({hasText:'结果待核对'}).waitFor();assert.equal(await form.locator('button[type=submit]').isDisabled(),true);}else{await draft.getByRole('button',{name:'恢复填写'}).click();assert.equal(await form.locator('[name=username]').inputValue(),'zhouyufei');assert.equal(await form.locator('[name=roles]:checked').count(),4);}assert.equal(await form.locator('[name=password]').inputValue(),'');assert.equal(usersWrites(f).length,1);await f.context.close();reports.push({quotaFailure,first422PreservesOriginalNonsecretFields:true,atomicRecoveryOrIntactPendingRollback:true,noAutomaticAccountRetry:true});
   }
   {
     const f=await fixture();await open(f);const{form}=await prepare(f,'zhouyufei');await waitDraft(f.page);

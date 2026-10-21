@@ -21,7 +21,9 @@ export function createSettingsFormDraft({store,actorId,eventId,entity,form,polic
   view.addEventListener('click',()=>{copy.textContent=JSON.stringify(binding.snapshot?.record?.value??{},null,2);copy.hidden=!copy.hidden;});
   const schedule=()=>binding.schedule();form.addEventListener('input',schedule);form.addEventListener('change',schedule);
   return Object.freeze({get blocked(){return binding.blocked;},get pending(){return binding.snapshot?.record?.kind==='pending_submission';},get value(){return binding.snapshot?.record?.value??null;},get state(){return state;},load:()=>binding.load(),schedule,
-    markPending:value=>binding.markPending(value??capture()),
+    markPending:value=>binding.markPending({...(value??capture()),...(policy.fields.includes('uncertain')?{uncertain:false}:{})}),
+    markUncertain:()=>policy.fields.includes('uncertain')&&binding.snapshot?.record?.kind==='pending_submission'?binding.markPending({...binding.snapshot.record.value,uncertain:true}):Promise.resolve(),
+    rejectPending:()=>binding.rejectPending(),
     async discard(){return binding.discard({allowPending:true});},
     close(){if(closed)return;closed=true;binding.close();form.removeEventListener('input',schedule);form.removeEventListener('change',schedule);copy.textContent='';panel.remove();}});
 }

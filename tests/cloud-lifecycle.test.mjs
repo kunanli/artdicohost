@@ -258,7 +258,7 @@ test('acceptance proof does not treat process health or incomplete stage evidenc
 
 test('enabled registration requires credential-free HTTPS alias metadata matching the full approved policy', async () => {
   const policy = approvedRegistrationPolicy({ contactEmail: ENV.ARTDICO_ADMIN_EMAIL });
-  const metadata = { ...policy, opensAt: new Date(policy.opensAt).toISOString(), closesAt: new Date(policy.closesAt).toISOString() };
+  const metadata = { ...policy, attendeeReviewRequired: true, opensAt: new Date(policy.opensAt).toISOString(), closesAt: new Date(policy.closesAt).toISOString() };
   const reply = value => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json', 'access-control-allow-origin': 'https://artdico.host' } });
   const f = fixture(); f.options.env = { ...ENV, ARTDICO_REGISTRATION_SETUP_ENABLED: 'true' };
   f.options.fetchPublic = async (url, options) => {
@@ -269,12 +269,13 @@ test('enabled registration requires credential-free HTTPS alias metadata matchin
     return reply(metadata);
   };
   assert.equal((await deployCloudLifecycle(f.options)).registrationEnabled, true);
-  const admissions = { capacity: 300, staffReserve: 0, waitlistEnabled: true, confirmedCount: 0, attendeeConfirmedCount: 0, crewConfirmedCount: 0, waitlistCount: 0, remainingPublic: 300, remainingTotal: 300 };
+  const admissions = { capacity: 300, staffReserve: 0, waitlistEnabled: true, confirmedCount: 0, attendeeConfirmedCount: 0, crewConfirmedCount: 0, waitlistCount: 0, pendingReviewCount: 0, rejectedCount: 0, remainingPublic: 300, remainingTotal: 300 };
   assert.equal(await verifyPublicRegistrationAlias(async () => reply({ ...metadata, admissions }), policy), true);
+  assert.equal(await verifyPublicRegistrationAlias(async () => reply({ ...metadata, admissions: { ...admissions, pendingReviewCount: 900, rejectedCount: 1000 } }), policy), true);
   for (const summary of [{ ...admissions, people: ['PRIVATE'] }, { ...admissions, remainingTotal: 301 }, { ...admissions, waitlistEnabled: 'true' }]) {
     await assert.rejects(verifyPublicRegistrationAlias(async () => reply({ ...metadata, admissions: summary }), policy), /PUBLIC_REGISTRATION_NOT_VERIFIED/u);
   }
-  for (const change of [{ ...metadata, capacity: 301 }, { ...metadata, closesAt: '2026-12-05T05:00:00.000Z' },
+  for (const change of [{ ...metadata, attendeeReviewRequired: false }, { ...metadata, capacity: 301 }, { ...metadata, closesAt: '2026-12-05T05:00:00.000Z' },
     { enabled: false, reason: 'unavailable' }, { ...metadata, privacy: { ...metadata.privacy, retention: 'wrong' } }]) {
     await assert.rejects(verifyPublicRegistrationAlias(async () => reply(change), policy), /PUBLIC_REGISTRATION_NOT_VERIFIED/u);
   }

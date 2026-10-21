@@ -243,7 +243,7 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
       await stage('registration-intake', async () => {
         const config = await call(first.api, '/api/admin/registration/config', { origin: PUBLIC_SITE_ORIGIN }, 200);
         const metadata = await config.json();
-        requireThat(metadata.enabled === true && metadata.eventId === eventId && metadata.capacity === 3 && metadata.privacy.version === policy.privacy.version
+        requireThat(metadata.enabled === true && metadata.attendeeReviewRequired === true && metadata.eventId === eventId && metadata.capacity === 3 && metadata.privacy.version === policy.privacy.version
           && metadata.admissions.waitlistEnabled === true && metadata.admissions.staffReserve === 0
           && config.headers.get('access-control-allow-origin') === PUBLIC_SITE_ORIGIN && config.headers.get('access-control-allow-credentials') === null);
         await call(first.api, '/api/admin/registration/config', { origin: 'https://synthetic-foreign.invalid' }, 403);
@@ -268,8 +268,18 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         requireThat(results.filter(value => value.status === 201).length === 1 && results.filter(value => value.status === 200).length === 1);
         const [left, right] = await Promise.all(results.map(value => value.json()));
         requireThat(left.reference_code === right.reference_code && /^[A-Za-z0-9_-]{43}$/u.test(left.reference_code));
-        requireThat(left.confirmation?.email?.status === 'not_configured'
+        requireThat(left.status === 'pending_review' && right.status === 'pending_review'
+          && left.admissionStatus === 'pending_review' && left.groupInvite === null && right.groupInvite === null
+          && left.confirmation?.email?.status === 'not_applicable'
           && left.confirmation.confirmationUrl === PUBLIC_SITE_ORIGIN + '/registration/confirmation/#r=' + left.confirmation.receiptToken);
+        registrationId = left.reference_code;
+        const approval = await call(first.api, '/api/admin/admissions/approve', { method: 'POST', headers: owner,
+          body: { registrationId, expectedRevision: 2, operationId: randomBytes(32).toString('base64url') } }, 200);
+        const approved = await approval.json();
+        requireThat(approved.revision === 3 && approved.summary.confirmedCount === 1 && approved.summary.pendingReviewCount === 0
+          && approved.people.find(person => person.registrationId === registrationId)?.status === 'confirmed'
+          && approved.operation?.action === 'approve' && approved.operation.registrationId === registrationId
+          && approved.approvalEmail?.status === 'not_configured');
         const confirmation = await call(second.api, '/api/admin/registration/confirmation', { method: 'POST', origin: PUBLIC_SITE_ORIGIN,
           body: { receiptToken: left.confirmation.receiptToken } }, 200);
         const confirmed = await confirmation.json();
@@ -277,8 +287,8 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
           && confirmed.email.status === 'not_configured' && confirmed.wallet.ready === false
           && confirmation.headers.get('cache-control') === 'private, no-store' && confirmation.headers.get('access-control-allow-credentials') === null
           && !/synthetic\.public@example|passwordHash|cms\/v1/u.test(JSON.stringify(confirmed)));
-        requireThat(left.groupInvite?.qrImageUrl?.startsWith(CLOUD_API_ORIGIN + '/api/admin/registration/group-invite/'));
-        registrationId = left.reference_code; groupUrl = new URL(left.groupInvite.qrImageUrl).pathname;
+        requireThat(confirmed.groupInvite?.qrImageUrl?.startsWith(CLOUD_API_ORIGIN + '/api/admin/registration/group-invite/'));
+        groupUrl = new URL(confirmed.groupInvite.qrImageUrl).pathname;
         await call(second.api, groupUrl, { origin: PUBLIC_SITE_ORIGIN }, 200);
         await call(second.api, '/api/admin/registration/submit', { ...savedSubmission, body: { ...payload, fields: { ...payload.fields, name: '合成冲突名字' } } }, 409);
         const conversion = await call(first.api, '/api/admin/contacts/convert', { method: 'POST', headers: owner, body: { contactIds: [contactId], expectedContactRevision: 1 } }, 200);
@@ -286,17 +296,23 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         requireThat(converted.status === 'completed' && converted.registrations.length === 1 && converted.failures.length === 0);
         staffRegistrationId = converted.registrations[0].registrationId;
         const crew = await call(first.api, '/api/admin/admissions/staff', { method: 'POST', headers: owner,
-          body: { expectedRevision: 3, operationId: randomBytes(32).toString('base64url'), input: { kind: 'crew', fields: { name: '合成工作人员', wechat: 'synthetic-crew' }, permissionReference: '隔离合成人员登记授权' } } }, 200);
+          body: { expectedRevision: 4, operationId: randomBytes(32).toString('base64url'), input: { kind: 'crew', fields: { name: '合成工作人员', wechat: 'synthetic-crew' }, permissionReference: '隔离合成人员登记授权' } } }, 200);
         const worker = await crew.json();
-        requireThat(worker.revision === 4 && worker.summary.confirmedCount === 3 && worker.summary.crewConfirmedCount === 1);
+        requireThat(worker.revision === 5 && worker.summary.confirmedCount === 3 && worker.summary.crewConfirmedCount === 1);
         savedWaitingSubmission = await prepare({ ...payload, fields: { ...payload.fields, name: '合成候补报名人' } });
         const waiting = await call(second.api, '/api/admin/registration/submit', savedWaitingSubmission, 201);
         const queued = await waiting.json(); waitingRegistrationId = queued.reference_code;
-        requireThat(queued.status === 'waitlisted' && queued.admissionStatus === 'waitlisted' && queued.groupInvite === null);
+        requireThat(queued.status === 'pending_review' && queued.admissionStatus === 'pending_review' && queued.groupInvite === null);
+        const waitingApproval = await call(second.api, '/api/admin/admissions/approve', { method: 'POST', headers: owner,
+          body: { registrationId: waitingRegistrationId, expectedRevision: 6, operationId: randomBytes(32).toString('base64url') } }, 200);
+        const approvedWaiting = await waitingApproval.json();
+        requireThat(approvedWaiting.revision === 7 && approvedWaiting.summary.confirmedCount === 3 && approvedWaiting.summary.waitlistCount === 1
+          && approvedWaiting.summary.pendingReviewCount === 0 && approvedWaiting.approvalEmail === undefined
+          && approvedWaiting.people.find(person => person.registrationId === waitingRegistrationId)?.status === 'waitlisted');
         const team = await call(second.api, '/api/admin/admissions/teams', { method: 'POST', headers: alias,
-          body: { expectedRevision: 5, operationId: randomBytes(32).toString('base64url'), team: { name: '合成已登记团队', memberIds: [registrationId, worker.registrationId] } } }, 200);
+          body: { expectedRevision: 7, operationId: randomBytes(32).toString('base64url'), team: { name: '合成已登记团队', memberIds: [registrationId, worker.registrationId] } } }, 200);
         const linked = await team.json();
-        requireThat(linked.revision === 6 && linked.teams.length === 1 && linked.teams[0].memberIds.length === 2
+        requireThat(linked.revision === 8 && linked.teams.length === 1 && linked.teams[0].memberIds.length === 2
           && linked.summary.totalRegistered === 4 && linked.summary.confirmedCount === 3 && linked.summary.waitlistCount === 1);
         const preview = await call(first.api, '/api/admin/contacts/invitations/preview', { method: 'POST', headers: owner,
           body: { contactIds: [contactId], expectedContactRevision: 1 } }, 200);
@@ -307,7 +323,7 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         requireThat(prepared.status === 'completed' && prepared.summary.prepared === 1 && prepared.results[0].invitation.status === 'prepared'
           && prepared.results[0].invitation.channel === 'manual');
         const durable = await second.registrationService.repository.list();
-        requireThat(durable.registrations.length === 4 && durable.revision === 6);
+        requireThat(durable.registrations.length === 4 && durable.revision === 8);
         const staff = durable.registrations.find(value => value.id === staffRegistrationId);
         requireThat(staff.provenance.kind === 'staff_assisted' && staff.provenance.sourceContactId === contactId
           && staff.consent.accepted === false && staff.consent.acceptedAt === null && staff.consent.version === null);

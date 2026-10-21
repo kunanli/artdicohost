@@ -8,7 +8,7 @@ import { hashPassword, parseAdminUsers, verifyPassword } from '../functions/cont
 import { assertCurrentMainHead } from './deploy-oss.mjs';
 import { createFcConfigClient, summarizeFcConfigError, assertFcEnvironmentMap } from './fc-config-client.mjs';
 import { summarizeFcError, validateFcTriggerUrl } from './fc-client.mjs';
-import { approvedRegistrationPolicy } from './approved-registration-policy.mjs';
+import { approvedRegistrationPolicy, approvedAdmissionDefaults } from './approved-registration-policy.mjs';
 
 const ACCOUNT = '1954121651395178';
 const FUNCTION = `acs:fc:cn-hongkong:${ACCOUNT}:functions/artdicohost-api`;
@@ -146,7 +146,8 @@ function registrationEnvironment(env, previous) {
   try { policy = approvedRegistrationPolicy({ contactEmail: env.ARTDICO_ADMIN_EMAIL, enabled }); }
   catch { throw stage('REGISTRATION_POLICY_INVALID'); }
   return { ARTDICO_REGISTRATION_TOKEN_SECRET: secret, ARTDICO_REGISTRATION_POLICY_JSON: JSON.stringify(policy),
-    ARTDICO_REGISTRATION_CAPACITY: String(policy.capacity), ARTDICO_REGISTRATION_ENABLED: String(enabled) };
+    ARTDICO_REGISTRATION_CAPACITY: String(policy.capacity), ARTDICO_REGISTRATION_ENABLED: String(enabled),
+    ARTDICO_REGISTRATION_WAITLIST_ENABLED: String(approvedAdmissionDefaults({ enabled }).waitlistEnabled) };
 }
 
 /** Trusted one-time account configuration only. No business activation, storage probe, filesystem output or secret return. */

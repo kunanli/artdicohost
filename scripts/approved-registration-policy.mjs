@@ -19,3 +19,8 @@ export function approvedRegistrationPolicy({ contactEmail, enabled = true } = {}
     },
   };
 }
+
+/** Initial admissions policy only; a saved private index setting takes precedence. */
+export function approvedAdmissionDefaults({ enabled = true } = {}) {
+  return Object.freeze({ staffReserve: 0, waitlistEnabled: enabled === true });
+}

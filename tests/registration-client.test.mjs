@@ -10,11 +10,11 @@ const policy={enabled:true,eventId:'synthetic-event',opensAt:'2026-10-01T00:00:0
 const token={eventId:policy.eventId,submissionToken:'synthetic.payload.signature',expiresAt:'2026-10-20T16:05:00Z'};
 const reference='r'.repeat(43);
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json'}});
-function fixture(send){
+function fixture(send,config=policy){
   const calls=[];
   const client=createRegistrationClient({apiOrigin:'https://api.artdico.host',pageOrigin:'https://artdico.host',clock:()=>NOW,randomBytes:()=>new Uint8Array(32).fill(7),fetchFn:async(url,options)=>{
     calls.push({url,options});
-    if(url.endsWith('/config'))return json(policy);
+    if(url.endsWith('/config'))return json(config);
     if(url.endsWith('/token'))return json(token);
     return send?send(calls):json({status:'registered',reference_code:reference,groupInvite:null},201);
   }});
@@ -38,6 +38,31 @@ test('formal submission omits cookies and returns success only for a confirmed r
   const issued=JSON.parse(f.calls[1].options.body),saved=JSON.parse(f.calls[2].options.body);
   assert.equal(issued.idempotencyKey,f.calls[2].options.headers['Idempotency-Key']);
   assert.equal(saved.consent.accepted,true);assert.equal(saved.consent.version,'notice-v1');
+});
+test('a saved waitlist entry retains its reference and admission state while dropping every invitation',async()=>{
+  const f=fixture(()=>json({status:'waitlisted',admissionStatus:'waitlisted',admissionKind:'attendee',admissionRevision:4,reference_code:reference,
+    groupInvite:{platform:'wechat',qrImageUrl:'https://api.artdico.host/api/admin/registration/group-invite/synthetic',expiresAt:'2026-10-20T16:05:00Z'},private:'PRIVATE-SYNTHETIC'},201));
+  await f.client.configure();
+  const result=await f.client.submit({name:'合成候补'});
+  assert.deepEqual(result,{httpStatus:201,body:{status:'waitlisted',admissionStatus:'waitlisted',admissionKind:'attendee',admissionRevision:4,reference_code:reference,groupInvite:null}});
+  assert.equal(f.client.pending,false);
+  assert.equal(f.calls.some(call=>call.url.includes('/group-invite/')),false);
+});
+test('contradictory or malformed admission receipts preserve the same uncertain submission for retry',async()=>{
+  for(const patch of [{status:'registered',admissionStatus:'waitlisted'},{status:'waitlisted',admissionStatus:'confirmed'},{status:'registered',admissionStatus:'unknown'},{status:'registered',admissionKind:'team'},{status:'waitlisted',admissionRevision:-1}]){
+    const f=fixture(()=>json({...patch,reference_code:reference},201));await f.client.configure();
+    await assert.rejects(f.client.submit({name:'合成候补'}),error=>error.uncertain===true);
+    assert.equal(f.client.pending,true);
+    await assert.rejects(f.client.submit({name:'另一个人'}),error=>error.code==='PENDING');
+    assert.equal(f.calls.filter(call=>call.url.endsWith('/submit')).length,1);
+  }
+});
+test('metadata exposes validated per-person capacity facts without leaking roster or accepting inconsistent totals',async()=>{
+  const admissions={capacity:300,staffReserve:0,waitlistEnabled:true,confirmedCount:300,attendeeConfirmedCount:298,crewConfirmedCount:2,waitlistCount:3,remainingPublic:0,remainingTotal:0};
+  const f=fixture(null,{...policy,admissions:{...admissions,people:[{name:'PRIVATE-SYNTHETIC'}]}});
+  assert.deepEqual((await f.client.configure()).admissions,admissions);
+  const invalid=fixture(null,{...policy,admissions:{...admissions,remainingTotal:1}});
+  assert.equal(Object.hasOwn(await invalid.client.configure(),'admissions'),false);
 });
 test('configured closed registration is explicit and can never submit a new record',async()=>{
   const calls=[];

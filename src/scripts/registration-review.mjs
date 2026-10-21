@@ -1,5 +1,6 @@
 import {registrationSchema} from '../../shared/registration-schema.mjs';
 import {createStaffSettings} from './staff-settings.mjs';
+import {createStaffAdmissions} from './staff-admissions.mjs';
 
 const $=selector=>document.querySelector(selector);
 const statuses={new:'新报名',in_review:'核查中',awaiting_maria:'待 Maria 审阅',approved:'已确认',discussion:'待讨论',not_this_time:'本次不邀请',withdrawn:'已撤回'};
@@ -9,6 +10,7 @@ const reviewFields=['status','accommodationStatus','recommendation','proposedRol
 let user=null,csrfToken='',revision=0,nextCursor=null,selected=null,busy=false,dirty=false;
 let sessionGeneration=0;
 let filters={};
+const staffAdmissions=createStaffAdmissions({root:$('[data-staff-admissions]'),request,openRecord:id=>action(()=>openRecord(id)),onChange:()=>load()});
 const staffSettings=createStaffSettings({root:$('[data-staff-settings]'),request,binaryRequest:async(path,body)=>{
   const generation=sessionGeneration;
   const response=await fetch(path,{method:'POST',credentials:'same-origin',cache:'no-store',redirect:'error',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(body)});
@@ -27,10 +29,12 @@ function lock(){
   for(const element of document.querySelectorAll('[data-review-workspace] button,[data-review-workspace] input,[data-review-workspace] select,[data-review-form] input,[data-review-form] select,[data-review-form] textarea,[data-review-form] button'))element.disabled=busy||!allowed();
   $('[data-review-logout]').disabled=busy;
   $('[data-review-deletion]').disabled=busy||!user?.roles.includes('superadmin')||!selected;
+  staffAdmissions.lock(busy||!allowed());
 }
 function clear(){
   sessionGeneration+=1;
   staffSettings.clear();
+  staffAdmissions.clear();
   user=null;csrfToken='';revision=0;nextCursor=null;selected=null;dirty=false;filters={};
   $('[data-review-workspace]').hidden=true;$('[data-review-account]').hidden=true;$('[data-review-login-panel]').hidden=false;
   for(const selector of ['[data-review-rows]','[data-review-metrics]','[data-review-details]'])$(selector).replaceChildren();
@@ -44,7 +48,7 @@ async function request(path,options={}){
   if(response.status===401){clear();throw new Error(path==='/api/admin/login'?'账号或密码未通过验证。':'会话已结束，请重新登录。');}
   if(!response.ok){
     const messages={403:'此账号没有相应的报名读取、修改或导出权限。',409:'记录版本已改变，你的编辑仍保留在本页。请先核对并保留修改，再刷新最新记录。',422:'请检查核查字段、日期与状态是否完整有效。',429:'请求较多，请稍后重试。',503:'报名服务暂时不可用，请稍后重试。'};
-    throw new Error(messages[response.status]||'操作尚未完成，请稍后重试。');
+    const error=new Error(messages[response.status]||'操作尚未完成，请稍后重试。');error.status=response.status;throw error;
   }
   const result=await response.json().catch(()=>null);
   if(generation!==sessionGeneration)throw new Error('会话已改变，请重新登录。');
@@ -55,7 +59,7 @@ async function action(callback){if(busy)return;busy=true;lock();try{await callba
 function readFilters(){return Object.fromEntries(['query','city','category','status','accommodation','attendance'].map(name=>[name,$('[data-review-filters]').elements.namedItem(name).value.trim()]).filter(([,value])=>value));}
 function renderStats(state){
   const summary=state.stats??{},output=$('[data-review-metrics]');output.replaceChildren();
-  for(const[label,count]of[['全部已保存报名',state.overallTotal??summary.overallTotal??state.total],['当前筛选',state.total],['筛选内已确认',summary.byStatus?.approved??0],['筛选内住宿批准',summary.byAccommodation?.approved??0]]){
+  for(const[label,count]of[['全部已保存报名',state.overallTotal??summary.overallTotal??state.total],['当前筛选',state.total],['筛选内审核确认',summary.byStatus?.approved??0],['筛选内住宿批准',summary.byAccommodation?.approved??0]]){
     const card=node('article');card.append(node('span',label),node('strong',String(Number.isSafeInteger(count)?count:0)));output.append(card);
   }
 }
@@ -68,7 +72,7 @@ function renderRows(records){
     const name=cell(row,'姓名 / 机构',fields.name||'未填写姓名');name.append(node('small',fields.organization||'机构未填写'));
     const location=cell(row,'城市 / 类别',fields.city||'—');location.append(node('small',(fields.categories??[]).map(value=>categories[value]??value).join(' / ')));
     cell(row,'审核状态',statuses[review.status]??'待核对');cell(row,'住宿',accommodations[review.accommodationStatus]??'待核对');
-    cell(row,'来源',record.provenance?.kind==='staff_assisted'?'工作人员代登记':'申请人自行提交');
+    cell(row,'来源',record.provenance?.kind==='staff_assisted'?'工作人员代登记':record.provenance?.kind==='staff_entry'?'受托逐人登记':'申请人自行提交');
     cell(row,'保存时间',typeof record.submittedAt==='string'?record.submittedAt.replace('T',' ').replace(/\.\d+Z$/u,' UTC'):'—');
     const actions=cell(row,'操作');const button=node('button','查看与核查','ah-admin-button');button.type='button';button.addEventListener('click',()=>action(()=>openRecord(record.id)));actions.append(button);output.append(row);
   }
@@ -76,8 +80,10 @@ function renderRows(records){
 }
 async function load(cursor){
   if(!allowed())throw new Error('此账号没有报名审核权限。');
+  const generation=sessionGeneration;
   const params=new URLSearchParams({...filters,limit:'20',...(cursor?{cursor}:{} )});
   const state=await request('/api/admin/registrations?'+params);
+  if(generation!==sessionGeneration)return;
   if(!Array.isArray(state.registrations)||!Number.isSafeInteger(state.revision)||!Number.isSafeInteger(state.total))throw new Error('报名列表结果无效，请稍后重试。');
   revision=state.revision;nextCursor=typeof state.nextCursor==='string'?state.nextCursor:null;
   renderStats(state);renderRows(state.registrations);
@@ -85,7 +91,10 @@ async function load(cursor){
   $('[data-review-next]').hidden=!nextCursor;
   $('[data-review-login-panel]').hidden=true;$('[data-review-workspace]').hidden=false;$('[data-review-account]').hidden=false;$('[data-review-user]').textContent=user.label||user.id;
   if(pendingRegistration){const id=pendingRegistration;pendingRegistration=null;await openRecord(id);}
+  if(generation!==sessionGeneration)return;
   await staffSettings.configure(user);
+  if(generation!==sessionGeneration)return;
+  await staffAdmissions.configure(user,state.registrations);
 }
 function pair(output,label,value){if(value===undefined||value===null||value==='')return;output.append(node('dt',label),node('dd',Array.isArray(value)?value.join(' / '):String(value)));}
 function renderDetails(record){
@@ -102,11 +111,13 @@ function renderDetails(record){
 }
 async function openRecord(id){
   if(dirty&&!confirm('还有未保存的核查修改，放弃后打开另一条记录吗？'))return;
+  const generation=sessionGeneration;
   const result=await request('/api/admin/registrations/'+encodeURIComponent(id));
+  if(generation!==sessionGeneration)return;
   if(!result.registration||!Number.isSafeInteger(result.revision))throw new Error('报名详情结果无效。');
   const review=result.review??result.registration.review??{};selected={...result.registration,review,revision:result.revision};revision=result.revision;dirty=false;
   $('[data-review-detail-title]').textContent=(selected.fields?.name||'报名资料')+' · 内部核查';renderDetails(selected);
-  $('[data-review-provenance]').textContent=selected.provenance?.kind==='staff_assisted'?'工作人员根据既有意向资料代登记。此记录不代表申请人本人完成网站隐私同意；原始来源与联络许可须分别核对。':'申请人通过正式表单提交，隐私同意版本与时间随原始报名保存。';
+  $('[data-review-provenance]').textContent=['staff_assisted','staff_entry'].includes(selected.provenance?.kind)?(selected.provenance.kind==='staff_entry'?'工作人员根据已核定许可逐人登记。':'工作人员根据既有意向资料代登记。')+'此记录不代表本人完成网站隐私同意；原始来源与联络许可须分别核对。':'申请人通过正式表单提交，隐私同意版本与时间随原始报名保存。';
   const form=$('[data-review-form]');for(const name of reviewFields)form.elements.namedItem(name).value=review[name]??'';
   $('[data-review-deletion-state]').textContent=review.deletionRequested?'已登记删除申请；尚未宣称完成数据擦除，后续须按受控维护流程处理。':'';
   $('[data-review-detail-error]').hidden=true;
@@ -117,7 +128,7 @@ $('[data-review-login]').addEventListener('submit',event=>{
   event.preventDefault();const form=event.currentTarget;if(!form.reportValidity())return;const login=Object.fromEntries(new FormData(form));
   action(async()=>{let result;try{result=await request('/api/admin/login',{method:'POST',body:JSON.stringify(login)});}finally{form.elements.namedItem('password').value='';login.password='';}user=result.user;csrfToken=result.csrfToken;await load();announce('已登录。请按需要核查，避免导出或分享无关个人资料。');});
 });
-$('[data-review-logout]').addEventListener('click',()=>action(async()=>{if(dirty&&!confirm('还有未保存修改，确定退出吗？'))return;await request('/api/admin/logout',{method:'POST'});clear();announce('已退出，当前页的报名资料已清空。');}));
+$('[data-review-logout]').addEventListener('click',()=>action(async()=>{if((dirty||staffAdmissions.pending)&&!confirm(staffAdmissions.pending?'名额操作结果尚未确认，退出将清空本页的原操作重试入口。请优先确认同一操作结果；仍要退出吗？':'还有未保存修改，确定退出吗？'))return;await request('/api/admin/logout',{method:'POST'});clear();announce('已退出，当前页的报名资料已清空。');}));
 $('[data-review-filters]').addEventListener('submit',event=>{event.preventDefault();filters=readFilters();action(()=>load());});
 $('[data-review-filters]').addEventListener('reset',()=>{filters={};queueMicrotask(()=>action(()=>load()));});
 $('[data-review-refresh]').addEventListener('click',()=>action(async()=>{if(dirty&&!confirm('有未保存修改，放弃后刷新吗？'))return;dirty=false;selected=null;if($('[data-review-dialog]').open)$('[data-review-dialog]').close();await load();announce('已读取最新保存记录。');}));
@@ -150,7 +161,7 @@ $('[data-review-export]').addEventListener('click',()=>action(async()=>{
   const url=URL.createObjectURL(blob),link=node('a');link.href=url;link.download='artdico-registration-review.csv';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
   await load();announce('CSV 已生成并开始下载，服务端已记录导出操作。请按核定范围使用。');
 }));
-window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
+window.addEventListener('beforeunload',event=>{if(dirty||staffAdmissions.pending){event.preventDefault();event.returnValue='';}});
 if(location.protocol==='https:'||location.hostname==='127.0.0.1'||location.hostname==='localhost')action(async()=>{
   const response=await fetch('/api/admin/session',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});if(response.status===401)return;if(!response.ok)throw new Error('报名后台暂未就绪，请稍后重试。');const result=await response.json();user=result.user;csrfToken=result.csrfToken;$('[data-review-account]').hidden=false;$('[data-review-user]').textContent=user?.label||user?.id||'';await load();
 });else announce('请通过已配置的 HTTPS 工作人员入口登录。');

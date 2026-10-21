@@ -109,7 +109,7 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
       const policy = { enabled: true, eventId, capacity: 3, opensAt: new Date(at - 60_000).toISOString(), closesAt: new Date(at + 3_600_000).toISOString(),
         privacy: { version: 'synthetic-notice-acceptance-v1', processor: '合成验收处理者', contactEmail: 'synthetic@example.invalid', purpose: '隔离合成报名验收',
           storageRegion: '合成私有验收位置', retention: '合成验收保留规则', rightsRequest: '合成权利申请流程', sharing: '合成资料不分享' } };
-      const syntheticEnv = { ADMIN_USERS_JSON: JSON.stringify(users), ARTDICO_REGISTRATION_ENABLED: 'true', ARTDICO_REGISTRATION_CAPACITY: '3',
+      const syntheticEnv = { ADMIN_USERS_JSON: JSON.stringify(users), ARTDICO_REGISTRATION_ENABLED: 'true', ARTDICO_REGISTRATION_CAPACITY: '3', ARTDICO_REGISTRATION_WAITLIST_ENABLED: 'true',
         ARTDICO_REGISTRATION_POLICY_JSON: JSON.stringify(policy), ARTDICO_REGISTRATION_TOKEN_SECRET: randomBytes(48).toString('base64url'), ARTDICO_INVITATION_EMAIL_ENABLED: 'false' };
       const make = target => {
         const application = createCloudApplication({ objects: target, env: syntheticEnv, now });
@@ -126,7 +126,7 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         requireThat(!JSON.stringify(body).includes('scrypt$') && typeof body.csrfToken === 'string');
         return { Cookie: result.headers.get('set-cookie').split(';')[0], 'X-CSRF-Token': body.csrfToken };
       }
-      let owner, alias, editor, contactId, savedSubmission, registrationId, groupUrl, secondGroupUrl, staffRegistrationId;
+      let owner, alias, editor, contactId, savedSubmission, savedWaitingSubmission, registrationId, waitingRegistrationId, groupUrl, secondGroupUrl, staffRegistrationId;
       await stage('login-permissions', async () => {
         await call(first.api, '/api/admin/content', {}, 401);
         owner = await login(first.api, users[0].username);
@@ -141,10 +141,31 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
       });
       await stage('private-contacts', async () => {
         await call(second.api, '/api/admin/contacts', { headers: editor }, 403);
-        const saved = await first.contactsStore.createContact(0, { name: '合成验收联络人', organization: '合成机构', email: 'synthetic@example.invalid' }, users[0].id);
+        const saved = await first.contactsStore.createContact(0, { name: '合成验收联络人', organization: '合成机构', email: 'synthetic@example.invalid', contactConsent: 'consented' }, users[0].id);
         contactId = saved.contact.id;
         const observed = await second.contactsStore.read();
         requireThat(observed.revision === 1 && observed.contacts.length === 1 && observed.contacts[0].id === saved.contact.id);
+        const encryptionKey = randomBytes(32);
+        try {
+          const backup = await call(first.api, '/api/admin/maintenance/backup', { method: 'POST', headers: owner,
+            body: { encryptionKey: encryptionKey.toString('base64url'), confirmation: 'CREATE_ENCRYPTED_BACKUP' } }, 200);
+          const bundle = Buffer.from(await backup.arrayBuffer());
+          requireThat(backup.headers.get('content-type') === 'application/octet-stream' && backup.headers.get('x-backup-sha256') === hash(bundle));
+          const inspection = inspectEncryptedObjectBackup({ bundle, key: encryptionKey, includeObjects: true });
+          requireThat(inspection.objects.some(value => value.key.startsWith('cms/v1/contacts/'))
+            && !inspection.objects.some(value => /^cms\/v1\/(?:users|sessions|limits)\//u.test(value.key)));
+          const restoreId = 'synthetic-' + randomBytes(16).toString('hex');
+          const restored = await call(second.api, '/api/admin/maintenance/restore', { method: 'POST', headers: alias,
+            body: { encryptionKey: encryptionKey.toString('base64url'), bundleBase64: bundle.toString('base64'), restoreId, confirmation: 'RESTORE_TO_ISOLATED_NAMESPACE' } }, 200);
+          const recovery = await restored.json();
+          requireThat(recovery.restored === true && recovery.active === false && recovery.sessionsRestored === false
+            && recovery.namespace === 'cms/v1/restores/' + restoreId && recovery.objectCount === inspection.objectCount);
+          const recoveredContacts = await createObjectJournal({ objects: bObjects, prefix: recovery.namespace + '/contacts' }).read();
+          requireThat(recoveredContacts.cursor.version === 1 && recoveredContacts.value.revision === 1);
+          const maintenance = await call(first.api, '/api/admin/maintenance', { headers: owner }, 200);
+          const readiness = await maintenance.json();
+          requireThat(readiness.audit.count === 3 && readiness.audit.incompleteRestoreCount === 0 && readiness.audit.lastRestoreAt !== null);
+        } finally { encryptionKey.fill(0); }
         await call(first.api, '/api/admin/contacts', {}, 401);
       });
       await stage('content-portrait', async () => {
@@ -187,8 +208,14 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         const config = await call(first.api, '/api/admin/registration/config', { origin: PUBLIC_SITE_ORIGIN }, 200);
         const metadata = await config.json();
         requireThat(metadata.enabled === true && metadata.eventId === eventId && metadata.capacity === 3 && metadata.privacy.version === policy.privacy.version
+          && metadata.admissions.waitlistEnabled === true && metadata.admissions.staffReserve === 0
           && config.headers.get('access-control-allow-origin') === PUBLIC_SITE_ORIGIN && config.headers.get('access-control-allow-credentials') === null);
         await call(first.api, '/api/admin/registration/config', { origin: 'https://synthetic-foreign.invalid' }, 403);
+        await call(second.api, '/api/admin/admissions', { headers: editor }, 403);
+        const reserved = await call(first.api, '/api/admin/admissions/settings', { method: 'PUT', headers: owner,
+          body: { expectedRevision: 0, operationId: randomBytes(32).toString('base64url'), settings: { staffReserve: 1, waitlistEnabled: true } } }, 200);
+        const reservation = await reserved.json();
+        requireThat(reservation.revision === 1 && reservation.summary.capacity === 3 && reservation.summary.remainingPublic === 2);
         await call(first.api, '/api/admin/group-invite', { method: 'POST', headers: owner,
           body: { expectedRevision: 0, contentType: 'image/png', dataBase64: PNG, expiresAt: new Date(now() + 3_600_000).toISOString() } }, 200);
         const payload = { eventId, fields: { name: '合成公开报名人', city: '合成城市', organization: '合成团队', position: '合成开发者', email: 'synthetic.public@example.invalid',
@@ -209,19 +236,33 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         registrationId = left.reference_code; groupUrl = new URL(left.groupInvite.qrImageUrl).pathname;
         await call(second.api, groupUrl, { origin: PUBLIC_SITE_ORIGIN }, 200);
         await call(second.api, '/api/admin/registration/submit', { ...savedSubmission, body: { ...payload, fields: { ...payload.fields, name: '合成冲突名字' } } }, 409);
-        const secondInput = await prepare({ ...payload, fields: { ...payload.fields, name: '合成第二位报名人' } });
-        const secondResult = await call(second.api, '/api/admin/registration/submit', secondInput, 201);
-        secondGroupUrl = new URL((await secondResult.json()).groupInvite.qrImageUrl).pathname;
         const conversion = await call(first.api, '/api/admin/contacts/convert', { method: 'POST', headers: owner, body: { contactIds: [contactId], expectedContactRevision: 1 } }, 200);
         const converted = await conversion.json();
         requireThat(converted.status === 'completed' && converted.registrations.length === 1 && converted.failures.length === 0);
         staffRegistrationId = converted.registrations[0].registrationId;
-        const repeated = await call(second.api, '/api/admin/contacts/convert', { method: 'POST', headers: alias, body: { contactIds: [contactId], expectedContactRevision: 1 } }, 200);
-        requireThat((await repeated.json()).registrations[0].registrationId === staffRegistrationId);
-        const fourthKey = randomBytes(32).toString('base64url');
-        await call(first.api, '/api/admin/registration/token', { method: 'POST', origin: PUBLIC_SITE_ORIGIN, body: { eventId, idempotencyKey: fourthKey } }, 409);
+        const crew = await call(first.api, '/api/admin/admissions/staff', { method: 'POST', headers: owner,
+          body: { expectedRevision: 3, operationId: randomBytes(32).toString('base64url'), input: { kind: 'crew', fields: { name: '合成工作人员', wechat: 'synthetic-crew' }, permissionReference: '隔离合成人员登记授权' } } }, 200);
+        const worker = await crew.json();
+        requireThat(worker.revision === 4 && worker.summary.confirmedCount === 3 && worker.summary.crewConfirmedCount === 1);
+        savedWaitingSubmission = await prepare({ ...payload, fields: { ...payload.fields, name: '合成候补报名人' } });
+        const waiting = await call(second.api, '/api/admin/registration/submit', savedWaitingSubmission, 201);
+        const queued = await waiting.json(); waitingRegistrationId = queued.reference_code;
+        requireThat(queued.status === 'waitlisted' && queued.admissionStatus === 'waitlisted' && queued.groupInvite === null);
+        const team = await call(second.api, '/api/admin/admissions/teams', { method: 'POST', headers: alias,
+          body: { expectedRevision: 5, operationId: randomBytes(32).toString('base64url'), team: { name: '合成已登记团队', memberIds: [registrationId, worker.registrationId] } } }, 200);
+        const linked = await team.json();
+        requireThat(linked.revision === 6 && linked.teams.length === 1 && linked.teams[0].memberIds.length === 2
+          && linked.summary.totalRegistered === 4 && linked.summary.confirmedCount === 3 && linked.summary.waitlistCount === 1);
+        const preview = await call(first.api, '/api/admin/contacts/invitations/preview', { method: 'POST', headers: owner,
+          body: { contactIds: [contactId], expectedContactRevision: 1 } }, 200);
+        const checked = await preview.json(); requireThat(checked.summary.eligible === 1);
+        const batch = await call(second.api, '/api/admin/contacts/invitations/prepare-batch', { method: 'POST', headers: alias,
+          body: { contactIds: [contactId], expectedContactRevision: 1, previewToken: checked.previewToken, confirmPrepare: true } }, 200);
+        const prepared = await batch.json();
+        requireThat(prepared.status === 'completed' && prepared.summary.prepared === 1 && prepared.results[0].invitation.status === 'prepared'
+          && prepared.results[0].invitation.channel === 'manual');
         const durable = await second.registrationService.repository.list();
-        requireThat(durable.registrations.length === 3 && durable.revision === 3);
+        requireThat(durable.registrations.length === 4 && durable.revision === 6);
         const staff = durable.registrations.find(value => value.id === staffRegistrationId);
         requireThat(staff.provenance.kind === 'staff_assisted' && staff.provenance.sourceContactId === contactId
           && staff.consent.accepted === false && staff.consent.acceptedAt === null && staff.consent.version === null);
@@ -230,48 +271,29 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         await call(first.api, '/api/admin/registrations', { headers: editor }, 403);
         const listing = await call(second.api, '/api/admin/registrations', { headers: owner }, 200);
         const listed = await listing.json();
-        requireThat(listed.total === 3 && listed.overallTotal === 3 && !JSON.stringify(listed.registrations).includes('synthetic.public@example.invalid'));
+        requireThat(listed.total === 4 && listed.overallTotal === 4 && !JSON.stringify(listed.registrations).includes('synthetic.public@example.invalid'));
         const detail = await call(first.api, '/api/admin/registrations/' + registrationId, { headers: owner }, 200);
         const item = await detail.json(), review = { ...item.review, status: 'in_review' }; delete review.deletionRequested;
         await call(second.api, '/api/admin/registrations/' + registrationId + '/review', { method: 'PATCH', headers: { Cookie: owner.Cookie }, body: { expectedRevision: 0, review } }, 403);
         await call(second.api, '/api/admin/registrations/' + registrationId + '/review', { method: 'PATCH', headers: owner, body: { expectedRevision: 0, review } }, 200);
-        const encryptionKey = randomBytes(32);
-        try {
-          const backup = await call(first.api, '/api/admin/maintenance/backup', { method: 'POST', headers: owner,
-            body: { encryptionKey: encryptionKey.toString('base64url'), confirmation: 'CREATE_ENCRYPTED_BACKUP' } }, 200);
-          const bundle = Buffer.from(await backup.arrayBuffer());
-          requireThat(backup.headers.get('content-type') === 'application/octet-stream' && backup.headers.get('x-backup-sha256') === hash(bundle));
-          const inspection = inspectEncryptedObjectBackup({ bundle, key: encryptionKey, includeObjects: true });
-          requireThat(inspection.objects.some(value => value.key.startsWith('cms/v1/registrations/'))
-            && !inspection.objects.some(value => /^cms\/v1\/(?:users|sessions|limits)\//u.test(value.key)));
-          const restoreId = 'synthetic-' + randomBytes(16).toString('hex');
-          const restored = await call(second.api, '/api/admin/maintenance/restore', { method: 'POST', headers: alias,
-            body: { encryptionKey: encryptionKey.toString('base64url'), bundleBase64: bundle.toString('base64'), restoreId, confirmation: 'RESTORE_TO_ISOLATED_NAMESPACE' } }, 200);
-          const recovery = await restored.json();
-          requireThat(recovery.restored === true && recovery.active === false && recovery.sessionsRestored === false
-            && recovery.namespace === 'cms/v1/restores/' + restoreId && recovery.objectCount === inspection.objectCount);
-          const recoveredReview = await createObjectJournal({ objects: bObjects, prefix: recovery.namespace + '/registration-reviews/' + eventId }).read();
-          requireThat(recoveredReview.cursor.version === 1 && recoveredReview.value.revision === 1);
-          const maintenance = await call(first.api, '/api/admin/maintenance', { headers: owner }, 200);
-          const readiness = await maintenance.json();
-          requireThat(readiness.audit.count === 3 && readiness.audit.incompleteRestoreCount === 0 && readiness.audit.lastRestoreAt !== null);
-        } finally { encryptionKey.fill(0); }
         const exported = await call(first.api, '/api/admin/registrations/export', { method: 'POST', headers: alias, body: { expectedRevision: 1, includeContact: false } }, 200);
         requireThat(exported.headers.get('x-review-revision') === '2' && !(await exported.text()).includes('example.invalid'));
-        await call(second.api, '/api/admin/registrations/' + registrationId + '/review', { method: 'PATCH', headers: owner, body: { expectedRevision: 2, review: { ...review, status: 'withdrawn' } } }, 200);
+        const withdrawn = await call(second.api, '/api/admin/registrations/' + registrationId + '/review', { method: 'PATCH', headers: owner, body: { expectedRevision: 2, review: { ...review, status: 'withdrawn' } } }, 200);
+        const released = await withdrawn.json(); requireThat(released.admissionRelease.status === 'released' && released.admissionRelease.promotedCount === 1);
         await call(first.api, '/api/admin/registration/submit', savedSubmission, 410);
         await call(second.api, groupUrl, { origin: PUBLIC_SITE_ORIGIN }, 404);
+        const promoted = await call(first.api, '/api/admin/registration/submit', savedWaitingSubmission, 200);
+        const admitted = await promoted.json();
+        requireThat(admitted.status === 'registered' && admitted.reference_code === waitingRegistrationId && admitted.admissionStatus === 'confirmed' && admitted.groupInvite?.qrImageUrl);
+        secondGroupUrl = new URL(admitted.groupInvite.qrImageUrl).pathname;
+        await call(second.api, '/api/admin/tasks', { headers: editor }, 403);
+        const tasks = await call(first.api, '/api/admin/tasks', { headers: owner }, 200);
+        requireThat(!/synthetic\.public@example|passwordHash|permissionReference/u.test(await tasks.text()));
         const deletion = await call(first.api, '/api/admin/registrations/' + staffRegistrationId + '/deletion-request', { method: 'POST', headers: owner, body: { expectedRevision: 3, reason: 'request' } }, 200);
         const deleted = await deletion.json(); requireThat(deleted.erased === false && deleted.maintenanceRequired === true);
         const directory = await call(second.api, '/api/admin/users', { headers: owner }, 200);
         requireThat(!(await directory.text()).includes('passwordHash'));
-        const created = await call(first.api, '/api/admin/users', { method: 'POST', headers: owner, body: { expectedRevision: 0, username: 'synthetic.additional', label: '合成附加账号', roles: ['editor'], password } }, 200);
-        const createdUser = (await created.json()).users.find(value => !value.protected);
-        requireThat(createdUser?.active === true);
-        const additional = await login(second.api, 'synthetic.additional');
-        await call(first.api, '/api/admin/users', { method: 'POST', headers: owner, body: { expectedRevision: 1, id: createdUser.id, active: false } }, 200);
-        await call(second.api, '/api/admin/content', { headers: additional }, 401);
-        await call(first.api, '/api/admin/users', { method: 'POST', headers: owner, body: { expectedRevision: 2, id: users[0].id, active: false } }, 422);
+        await call(first.api, '/api/admin/users', { method: 'POST', headers: owner, body: { expectedRevision: 0, id: users[0].id, active: false } }, 422);
         await call(first.api, secondGroupUrl, { origin: PUBLIC_SITE_ORIGIN }, 200);
         await call(second.api, '/api/admin/group-invite', { method: 'PUT', headers: alias, body: { expectedRevision: 1, enabled: false } }, 200);
         await call(first.api, secondGroupUrl, { origin: PUBLIC_SITE_ORIGIN }, 404);

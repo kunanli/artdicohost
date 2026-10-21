@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createOssObjectClient } from './oss-client.mjs';
 import { createObjectJournal } from './object-journal.mjs';
 import { createCloudAuth } from './auth.mjs';
@@ -22,6 +23,9 @@ import { createGroupInviteApi } from '../registration-api/group-invite-handler.m
 import { createMaintenanceApi, createMaintenanceAuditStore } from '../registration-admin/maintenance-handler.mjs';
 import { createIntentContactImporter } from '../intent-invitations/importer.mjs';
 import { createIntentContactImportApi, isIntentContactImportPath } from '../intent-invitations/import-handler.mjs';
+import { createAdmissionsApi } from '../registration-admin/admissions-handler.mjs';
+import { createOrganizerTasksApi } from '../organizer-tasks/handler.mjs';
+import { createContactAdmissionGuard } from './contact-admission-guard.mjs';
 
 const credentialFields = ['ALIBABA_CLOUD_ACCESS_KEY_ID', 'ALIBABA_CLOUD_ACCESS_KEY_SECRET', 'ALIBABA_CLOUD_SECURITY_TOKEN'];
 const PUBLIC_ALIASES = new Map([
@@ -32,6 +36,7 @@ const PUBLIC_ALIASES = new Map([
 function registrationPolicy(env) {
   try {
     if (!['true', 'false'].includes(env.ARTDICO_REGISTRATION_ENABLED)
+      || env.ARTDICO_REGISTRATION_WAITLIST_ENABLED !== undefined && !['true', 'false'].includes(env.ARTDICO_REGISTRATION_WAITLIST_ENABLED)
       || typeof env.ARTDICO_REGISTRATION_POLICY_JSON !== 'string' || Buffer.byteLength(env.ARTDICO_REGISTRATION_POLICY_JSON) > 16 * 1024
       || typeof env.ARTDICO_REGISTRATION_CAPACITY !== 'string' || !/^[1-9][0-9]{0,3}$/u.test(env.ARTDICO_REGISTRATION_CAPACITY)
       || typeof env.ARTDICO_REGISTRATION_TOKEN_SECRET !== 'string' || !/^[A-Za-z0-9_-]{32,256}$/u.test(env.ARTDICO_REGISTRATION_TOKEN_SECRET)) return null;
@@ -54,10 +59,10 @@ function remap(request, path) {
   return new Request(url, request);
 }
 
-function withJson(result, value) {
+function withJson(result, value, status = result.status) {
   const body = JSON.stringify(value), headers = new Headers(result.headers);
   headers.set('content-length', String(Buffer.byteLength(body)));
-  return new Response(body, { status: result.status, headers });
+  return new Response(body, { status, headers });
 }
 
 /** Construct only from server-side configuration and FC's platform role environment.
@@ -95,27 +100,66 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const userStore = createCloudUserStore({ journal: journalFor('cms/v1/users'), bootstrapUsers: env.ADMIN_USERS_JSON, now });
   const auth = createCloudAuth({ users: env.ADMIN_USERS_JSON, usersProvider: () => userStore.users(), journalFor, now });
   const userHandle = createCloudUserApi({ enabled: true, auth, store: userStore });
-  const contentHandle = createCloudContentApi({ enabled: true, store, portraitStore, auth, contactsStore });
-  const importHandle = createIntentContactImportApi({ importer: createIntentContactImporter({ contactsStore, now }), authenticate: request => auth.authenticate(request) });
   let registrationService, reviewStore, intentService, groupService;
+  const beforeContactMutation = createContactAdmissionGuard({ contactsStore,
+    lookupRegistration: async ({ contactId, actor }) => {
+      if (!intentService) throw new Error('Registration linkage is unavailable.');
+      const intent = await intentService.read({ actor });
+      return intent.conversions.find(value => value.sourceContactId === contactId)?.registrationId ?? null;
+    }, getAdmissionStatus: id => {
+      if (!registrationService) throw new Error('Admission state is unavailable.');
+      return registrationService.getAdmissionStatus(id);
+    } });
+  const contentHandle = createCloudContentApi({ enabled: true, store, portraitStore, auth, contactsStore, beforeContactMutation });
+  const importHandle = createIntentContactImportApi({ importer: createIntentContactImporter({ contactsStore, now }), authenticate: request => auth.authenticate(request) });
   const policy = registrationPolicy(env);
   if (policy) {
     const isWithdrawn = id => reviewStore.isWithdrawn(id);
     groupService = createGroupInviteService({ objects, journalFor, eventId: policy.eventId, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET,
-      apiOrigin: CLOUD_API_ORIGIN, clock: now, isWithdrawn });
+      apiOrigin: CLOUD_API_ORIGIN, clock: now, isWithdrawn: async id => {
+        // getAdmissionStatus verifies the immutable record and the review guard.
+        // The registration service itself receives only the review-only hook.
+        const admission = await registrationService.getAdmissionStatus(id);
+        if (!['confirmed', 'waitlisted', 'withdrawn'].includes(admission?.status)) throw new Error('Admission state is unavailable.');
+        return admission.status !== 'confirmed';
+      } });
     registrationService = createRegistrationService({ objects, journalFor, policy, capacity: policy.capacity,
       tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, allowedOrigins: [PUBLIC_SITE_ORIGIN], clock: now,
-      isWithdrawn, groupInviteProvider: input => groupService.forReceipt(input) });
+      isWithdrawn, getWithdrawnIds: () => reviewStore.inactiveRegistrationIds(),
+      waitlistEnabled: env.ARTDICO_REGISTRATION_WAITLIST_ENABLED === 'true', staffReserve: 0,
+      groupInviteProvider: input => groupService.forReceipt(input) });
     reviewStore = createRegistrationReviewStore({ journal: journalFor(`cms/v1/registration-reviews/${policy.eventId}`),
       loadRegistrations: () => registrationService.repository.list(), eventId: policy.eventId, clock: now });
     intentService = createIntentInvitationService({ registrationService, contactsStore, contentStore: store,
       repository: createIntentInvitationRepository({ journal: journalFor('cms/v1/intent-invitations') }),
       emailProvider: createInvitationEmailProvider({ env, fetchFn }), now,
-      isRegistrationActive: async ({ registrationId }) => !await isWithdrawn(registrationId) });
+      isRegistrationActive: async ({ registrationId }) => !await isWithdrawn(registrationId),
+      getAdmissionStatus: id => registrationService.getAdmissionStatus(id) });
   }
   const registrationHandle = createRegistrationApi({ allowedOrigins: [PUBLIC_SITE_ORIGIN], submissionService: registrationService, allowedGroupInviteOrigins: [CLOUD_API_ORIGIN], clock: now });
   const groupHandle = createGroupInviteApi({ service: groupService, auth, apiOrigin: CLOUD_API_ORIGIN, publicOrigins: [PUBLIC_SITE_ORIGIN] });
-  const reviewHandle = createRegistrationAdminApi({ enabled: Boolean(reviewStore), auth, store: reviewStore });
+  const reviewHandle = createRegistrationAdminApi({ enabled: Boolean(reviewStore), auth, store: reviewStore,
+    onWithdrawalCommitted: registrationService ? async ({ registrationId, reviewRevision, actor }) => {
+      const current = await registrationService.getAdmissions({ actor });
+      if (!Number.isSafeInteger(current.revision)) return { status: 'pending' };
+      const operationId = createHash('sha256').update('review-withdraw\0' + registrationId + '\0' + reviewRevision).digest('hex');
+      const saved = await registrationService.withdrawAdmission({ actor, registrationId, expectedRevision: current.revision, operationId });
+      if (!['updated', 'replayed'].includes(saved.outcome) || !Array.isArray(saved.promotedIds)) return { status: 'pending' };
+      return { status: 'released', promotedCount: saved.promotedIds.length };
+    } : undefined });
+  const admissionsHandle = createAdmissionsApi({ enabled: Boolean(registrationService), auth, service: registrationService });
+  const tasksHandle = createOrganizerTasksApi({ authenticate: request => auth.authenticate(request), now,
+    getSources: async actor => {
+      const [roster, { draft }, intent, admissions, withdrawnIds] = await Promise.all([
+        contactsStore.read(), store.read(), intentService ? intentService.read({ actor }) : null,
+        registrationService ? registrationService.getAdmissions({ actor }) : null,
+        reviewStore ? reviewStore.inactiveRegistrationIds() : [],
+      ]);
+      if (admissions && !Array.isArray(admissions.people)) throw new Error('Admission state is unavailable.');
+      return { contacts: roster.contacts, contactRevision: roster.revision, intent, content: draft.content, contentRevision: draft.revision,
+        inactiveRegistrationIds: withdrawnIds,
+        admissionStatuses: (admissions?.people ?? []).map(({ registrationId, status }) => ({ registrationId, status })) };
+    } });
   const intentHandle = intentService ? createIntentInvitationApi({ service: intentService, authenticate: request => auth.authenticate(request) }) : null;
   const eventId = createInitialContent().eventId;
   const maintenanceHandle = createMaintenanceApi({ enabled: true, auth, objects, clock: now,
@@ -132,17 +176,31 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     if (alias) return registrationHandle(remap(request, alias));
     if (['/api/registration/config', '/api/registration/token', '/api/registrations'].includes(url.pathname)) return registrationHandle(request);
     if (url.pathname === '/api/admin/users') return userHandle(request);
+    if (url.pathname === '/api/admin/tasks') return tasksHandle(request);
+    if (url.pathname === '/api/admin/admissions' || url.pathname.startsWith('/api/admin/admissions/')) return admissionsHandle(request);
     if (isIntentContactImportPath(url.pathname)) return importHandle(request);
     if (url.pathname === '/api/admin/maintenance' || url.pathname.startsWith('/api/admin/maintenance/')) return maintenanceHandle(request);
     if (url.pathname === '/api/admin/registrations' || url.pathname.startsWith('/api/admin/registrations/')) return reviewHandle(request);
-    if (isIntentInvitationPath(url.pathname) && intentHandle) return intentHandle(request);
+    if (isIntentInvitationPath(url.pathname) && intentHandle) {
+      const result = await intentHandle(request);
+      if (result.status !== 200 || request.method !== 'GET' || url.pathname !== '/api/admin/intent-invitations') return result;
+      try {
+        // This response was already authorized for outreach. Add only each
+        // existing conversion's status, never the private admission roster/counts.
+        const [admissions, inactiveIds] = await Promise.all([registrationService.repository.getAdmissions(), reviewStore.inactiveRegistrationIds()]);
+        const states = new Map(admissions.people.map(value => [value.registrationId, value.status])), inactive = new Set(inactiveIds);
+        const value = await result.json();
+        return withJson(result, { ...value, conversions: value.conversions.map(conversion => ({ ...conversion,
+          admissionStatus: inactive.has(conversion.registrationId) ? 'withdrawn' : states.get(conversion.registrationId) ?? 'unknown' })) });
+      } catch { return withJson(result, { error: { code: 'ADMISSION_STATUS_UNAVAILABLE', message: '人员名额状态暂时无法核对，请稍后刷新。' } }, 503); }
+    }
     const result = await contentHandle(request);
     if (result.status === 200 && url.pathname === '/api/admin/environment' && request.method === 'GET' && registrationEnabled) {
       return withJson(result, { ...await result.json(), registration: 'enabled' });
     }
     if (result.status === 200 && url.pathname === '/api/admin/planning' && request.method === 'GET') {
       const value = await result.json();
-      return withJson(result, { ...value, features: { ...value.features, contactImport: true, protectedContactImport: true, intentInvitations: Boolean(intentService) } });
+      return withJson(result, { ...value, features: { ...value.features, contactImport: true, protectedContactImport: true, intentInvitations: Boolean(intentService), batchInvitations: Boolean(intentService) } });
     }
     return result;
   };

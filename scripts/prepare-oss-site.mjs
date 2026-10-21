@@ -11,7 +11,7 @@ export const sha256 = (data) => createHash('sha256').update(data).digest('hex');
 export function validatePublicPath(path) {
   if (!path || path.includes('\\') || path.startsWith('/') || path.split('/').some(part => !part || part.startsWith('.') || /[\u0000-\u001f]/u.test(part))) throw new Error('Unsafe public path');
   if (path === 'release.json') return path;
-  const namedRoute = ['index.html', '404.html', 'invitation/index.html', 'admin/index.html', 'admin/contacts/index.html', 'admin/registrations/index.html', 'invitations/template-blank.png'].includes(path);
+  const namedRoute = ['index.html', '404.html', 'invitation/index.html', 'admin/index.html', 'admin/contacts/index.html', 'admin/registrations/index.html', 'admin/tasks/index.html', 'invitations/template-blank.png'].includes(path);
   if (!allowedExtensions.has(extname(path).toLowerCase()) || (!namedRoute && !/^_astro\/[A-Za-z0-9_.\/-]+$/.test(path))) throw new Error('Unexpected public file: ' + path);
   return path;
 }
@@ -74,6 +74,7 @@ export async function prepareOssSite({ distDirectory = resolve(root, 'dist'), ou
   selected.set('admin/index.html', notice);
   selected.set('admin/contacts/index.html', notice);
   selected.set('admin/registrations/index.html', notice);
+  selected.set('admin/tasks/index.html', notice);
   // This public receipt contains only the checked source SHA and public object hashes.
   // It is uploaded after the homepage, so an older receipt exposes a partial release.
   const release = { schemaVersion: 1, commit, files: [...selected].sort(([a], [b]) => a.localeCompare(b)).map(([path, data]) => ({ path, bytes: data.length, sha256: sha256(data) })) };

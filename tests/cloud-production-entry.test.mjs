@@ -16,6 +16,7 @@ const syntheticAssets = [
   { url: '/admin/', path: 'admin-assets/admin/index.html', data: '<!doctype html><p>synthetic content editor</p>' },
   { url: '/admin/contacts/', path: 'admin-assets/admin/contacts/index.html', data: '<!doctype html><p>synthetic contacts editor</p>' },
   { url: '/admin/registrations/', path: 'admin-assets/admin/registrations/index.html', data: '<!doctype html><p>synthetic registration review</p>' },
+  { url: '/admin/tasks/', path: 'admin-assets/admin/tasks/index.html', data: '<!doctype html><p>synthetic organizer tasks</p>' },
   { url: '/invitations/template-blank.png', path: 'admin-assets/invitations/template-blank.png', data: 'synthetic blank image' },
   { url: '/_astro/staff-test.js', path: 'admin-assets/_astro/staff-test.js', data: 'export const synthetic=true;' },
 ];

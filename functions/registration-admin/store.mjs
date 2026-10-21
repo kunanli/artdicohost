@@ -94,7 +94,7 @@ function stats(items) {
 function summary(item) {
   const fields = {};
   for (const key of ['name', 'city', 'organization', 'position', 'categories', 'participationInterests', 'attendance', 'accommodationChoice']) if (Object.hasOwn(item.fields, key)) fields[key] = clone(item.fields[key]);
-  const provenance = item.provenance?.kind === 'staff_assisted' ? { kind: 'staff_assisted', sourceContactId: item.provenance.sourceContactId } : { kind: 'public' };
+  const provenance = item.provenance?.kind === 'staff_assisted' ? { kind: 'staff_assisted', sourceContactId: item.provenance.sourceContactId } : { kind: item.provenance.kind };
   return { id: item.id, eventId: item.eventId, submittedAt: item.submittedAt, referenceCode: item.referenceCode, fields, review: clone(item.review), provenance };
 }
 function csvCell(value) {
@@ -159,11 +159,15 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
     const registrations = source.registrations.map(record => {
       if (!ownValues(record) || typeof record.id !== 'string' || !RECORD_ID.test(record.id) || seen.has(record.id) || record.eventId !== eventId || !validTime(record.submittedAt)
         || !ownValues(record.fields) || typeof record.fields.name !== 'string'
-        || !ownValues(record.provenance) || !['public', 'staff_assisted'].includes(record.provenance.kind) || !ownValues(record.consent)
+        || !ownValues(record.provenance) || !['public', 'staff_assisted', 'staff_entry'].includes(record.provenance.kind) || !ownValues(record.consent)
         || record.provenance.kind === 'public' && record.consent.accepted !== true
-        || record.provenance.kind === 'staff_assisted' && (record.consent.accepted !== false || typeof record.provenance.sourceContactId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(record.provenance.sourceContactId))) fail('STORAGE_UNAVAILABLE');
+        || record.provenance.kind === 'staff_assisted' && (record.consent.accepted !== false || typeof record.provenance.sourceContactId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(record.provenance.sourceContactId))
+        || record.provenance.kind === 'staff_entry' && (record.consent.accepted !== false || record.consent.version !== null || record.consent.acceptedAt !== null
+          || !ID.test(record.provenance.actorId ?? '') || !validTime(record.provenance.recordedAt) || typeof record.provenance.permissionReference !== 'string' || !record.provenance.permissionReference.trim()
+          || !/^[A-Za-z0-9_-]{32,128}$/u.test(record.provenance.operationId ?? ''))) fail('STORAGE_UNAVAILABLE');
       const full = record.provenance.kind === 'public';
-      if (['city', 'organization', 'position', 'attendance', 'accommodationChoice'].some(key => (full || Object.hasOwn(record.fields, key)) && typeof record.fields[key] !== 'string')
+      if (['city', 'attendance', 'accommodationChoice'].some(key => (full || Object.hasOwn(record.fields, key)) && typeof record.fields[key] !== 'string')
+        || ['organization', 'position'].some(key => Object.hasOwn(record.fields, key) && typeof record.fields[key] !== 'string')
         || ['categories', 'participationInterests'].some(key => (full || Object.hasOwn(record.fields, key)) && (!Array.isArray(record.fields[key]) || record.fields[key].some(value => typeof value !== 'string')))) fail('STORAGE_UNAVAILABLE');
       seen.add(record.id);
       const review = Object.hasOwn(state.reviews, record.id) ? state.reviews[record.id] : defaultRegistrationReview(record);
@@ -193,6 +197,11 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
     return { ...result.value, revision: next.revision };
   }
   return Object.freeze({
+    /** Private task aggregation reads the validated review journal once, without application data. */
+    async inactiveRegistrationIds() { return guarded(async () => {
+      const state = reviewState(await journal.read());
+      return Object.keys(state.reviews).filter(id => state.reviews[id].status === 'withdrawn' || state.reviews[id].deletionRequested !== null);
+    }); },
     /** Call only after a committed receipt or signed ID is proven; never reads the application repository. */
     async isWithdrawn(id) { return guarded(async () => {
       if (typeof id !== 'string' || !RECORD_ID.test(id)) fail('INVALID_REQUEST');

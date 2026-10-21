@@ -201,11 +201,29 @@ test('withdrawal guard reads only validated review state and fails closed on mal
   const before = f.objects.calls.length;
   assert.equal(await fast.isWithdrawn(A), true); assert.equal(applicationReads, 0);
   const reads = f.objects.calls.slice(before); assert.equal(reads.length, 2); assert.ok(reads.every(call => call.key.startsWith('cms/v1/registration-reviews/')));
+  assert.deepEqual(await fast.inactiveRegistrationIds(), [A]); assert.equal(applicationReads, 0);
   const saved = await f.journal().read();
   for (const change of [state => { state.value.reviews[A].deletionRequested.status = 'cleared'; }, state => { state.value.reviews[A].status = 'invalid'; }, state => { state.value.audit[0].metadata.reason = PRIVATE; }]) {
     const altered = clone(saved); change(altered);
     const corrupted = createRegistrationReviewStore({ eventId: EVENT, journal: { read: async () => altered, commit() {} }, loadRegistrations: async () => { throw new Error('must not read'); } });
     await rejects(corrupted.isWithdrawn(A), 'STORAGE_UNAVAILABLE');
+    await rejects(corrupted.inactiveRegistrationIds(), 'STORAGE_UNAVAILABLE');
   }
   f.objects.setFailure('get'); await rejects(fast.isWithdrawn(A), 'STORAGE_UNAVAILABLE'); assert.equal(applicationReads, 0);
+});
+
+test('ordinary public profiles and manual staff entries retain absence and explicit provenance', async () => {
+  const ordinary = record(A); delete ordinary.fields.organization; delete ordinary.fields.position;
+  const manual = record(B, {}, { fields: { name: '合成工作人员', wechat: 'synthetic-only' }, consent: { accepted: false, version: null, acceptedAt: null },
+    provenance: { kind: 'staff_entry', actorId: 'synthetic-admin', recordedAt: AT, permissionReference: '合成核定来源', operationId: 'X'.repeat(43) } });
+  const store = fixture([ordinary, manual]).store(), list = await store.list();
+  assert.deepEqual(list.registrations.find(item => item.id === B).provenance, { kind: 'staff_entry' });
+  assert.equal(Object.hasOwn(list.registrations.find(item => item.id === A).fields, 'organization'), false);
+  assert.deepEqual((await store.detail(B)).registration.fields, manual.fields);
+  assert.equal((await store.detail(B)).registration.consent.accepted, false);
+  assert.equal(list.stats.byAttendance.unknown, 1);
+  for (const provenance of [{ ...manual.provenance, operationId: '' }, { ...manual.provenance, recordedAt: 'invalid' }, { ...manual.provenance, permissionReference: '' }]) {
+    await rejects(fixture([{ ...manual, provenance }]).store().list(), 'STORAGE_UNAVAILABLE');
+  }
+  await rejects(fixture([{ ...manual, consent: { accepted: true, version: 'invented', acceptedAt: AT } }]).store().list(), 'STORAGE_UNAVAILABLE');
 });

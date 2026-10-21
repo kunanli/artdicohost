@@ -1,3 +1,4 @@
+import { registrationReceiptState } from '../lib/admission-view.mjs';
 const REFERENCE_PATTERN = /^[A-Za-z0-9_-]{32,128}$/u;
 const GROUP_FALLBACK = '报名已完成，入群二维码暂时无法显示。请保留报名编号，无需重复报名。';
 
@@ -66,10 +67,17 @@ export function renderRegistrationSuccess(container, response = {}) {
   const httpStatus = own(response, 'httpStatus');
   const body = own(response, 'body');
   const referenceCode = own(body, 'reference_code');
-  if (![200, 201].includes(httpStatus) || own(body, 'status') !== 'registered' || typeof referenceCode !== 'string' || !REFERENCE_PATTERN.test(referenceCode)) return false;
+  const admissionState = registrationReceiptState(body);
+  if (![200, 201].includes(httpStatus) || !admissionState || typeof referenceCode !== 'string' || !REFERENCE_PATTERN.test(referenceCode)) return false;
 
   reference.textContent = referenceCode;
   container.hidden = false;
+  if (admissionState === 'waitlisted') {
+    heading.textContent = '候补登记已保存';
+    status.textContent = '你已加入候补队列，当前尚未确认参会名额。名额释放后由工作人员按顺序处理；请保留登记编号，无需重复提交。';
+    status.hidden = false;
+    return true;
+  }
   const fallback = () => {
     heading.textContent = '报名已完成';
     status.textContent = GROUP_FALLBACK;

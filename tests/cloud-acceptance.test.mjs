@@ -48,7 +48,8 @@ test('isolated acceptance performs durable HTTP object operations and reports on
   const prefix = `cms/v1/acceptance/${RUN}/${result.instanceId}/`;
   assert.ok(fixture.calls.every(call => call.key.startsWith(prefix)));
   assert.ok([...fixture.stored.keys()].every(key => key.startsWith(prefix)));
-  for (const category of ['content', 'contacts', 'portraits', 'sessions', 'limits', 'probes', 'registrations', 'registration-reviews', 'intent-invitations', 'group-invites', 'users', 'maintenance', 'restores']) assert.ok([...fixture.stored.keys()].some(key => key.startsWith(prefix + category + '/')), category);
+  for (const category of ['content', 'contacts', 'portraits', 'sessions', 'limits', 'probes', 'registrations', 'registration-reviews', 'intent-invitations', 'group-invites', 'maintenance', 'restores']) assert.ok([...fixture.stored.keys()].some(key => key.startsWith(prefix + category + '/')), category);
+  assert.ok(fixture.calls.some(call => call.key.startsWith(prefix + 'users/')), 'bootstrap directory is checked without creating extra staff');
   assert.equal(fixture.calls.some(call => call.method === 'DELETE'), false);
   assert.equal(fixture.calls.some(call => call.method === 'POST' && !call.url.includes('?append&position=')), false);
   const serialized = JSON.stringify(result);

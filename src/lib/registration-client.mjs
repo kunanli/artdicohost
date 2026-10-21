@@ -1,3 +1,4 @@
+import { admissionSummary, registrationReceiptState } from './admission-view.mjs';
 const API_ORIGIN = 'https://api.artdico.host';
 const SITE_ORIGIN = 'https://artdico.host';
 const KEY = /^[A-Za-z0-9_-]{32,128}$/u;
@@ -60,7 +61,8 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
         && Number.isSafeInteger(value.capacity) && value.capacity > 0
         && PRIVACY_KEYS.every(key => typeof value.privacy?.[key] === 'string' && value.privacy[key].trim().length > 0 && value.privacy[key].length <= 4000)
         && !/demo|frontend|mock/iu.test(value.privacy.version);
-      const metadata = complete ? {eventId:value.eventId,opensAt:value.opensAt,closesAt:value.closesAt,capacity:value.capacity,privacy:Object.fromEntries(PRIVACY_KEYS.map(key=>[key,value.privacy[key]]))} : {};
+      const summary = admissionSummary(value?.admissions);
+      const metadata = complete ? {eventId:value.eventId,opensAt:value.opensAt,closesAt:value.closesAt,capacity:value.capacity,privacy:Object.fromEntries(PRIVACY_KEYS.map(key=>[key,value.privacy[key]])), ...(summary ? {admissions:summary} : {})} : {};
       if (value?.enabled === false) { config = null; return {enabled:false,reason:value.reason==='closed'?'closed':'unavailable',...metadata}; }
       if (value?.enabled !== true) throw failure('CONFIG_INVALID','正式报名配置尚未完整，请稍后再来。');
       if (!complete) throw failure('CONFIG_INVALID','正式报名配置尚未完整，请稍后再来。');
@@ -90,10 +92,13 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
           || Date.parse(token.expiresAt) <= clock()) throw failure('TOKEN_UNAVAILABLE','报名验证暂时无法完成，请稍后再试。',pending.sent);
         pending.sent = true;
         const result = await request('/api/admin/registration/submit',JSON.parse(pending.json),{'Idempotency-Key':pending.key,'X-Registration-Token':token.submissionToken});
-        if ([200,201].includes(result.status) && result.value?.status === 'registered' && KEY.test(result.value.reference_code)) {
-          const receipt = {httpStatus:result.status,body:{status:'registered',reference_code:result.value.reference_code,groupInvite:null}};
+        const admissionState = registrationReceiptState(result.value);
+        if ([200,201].includes(result.status) && admissionState && KEY.test(result.value.reference_code)) {
+          const receipt = {httpStatus:result.status,body:{status:admissionState==='waitlisted'?'waitlisted':'registered',admissionStatus:admissionState,reference_code:result.value.reference_code,groupInvite:null}};
+          if (result.value.admissionKind !== undefined) receipt.body.admissionKind = result.value.admissionKind;
+          if (result.value.admissionRevision !== undefined) receipt.body.admissionRevision = result.value.admissionRevision;
           const invite = result.value.groupInvite;
-          if (invite?.platform === 'wechat' && timestamp(invite.expiresAt) && Date.parse(invite.expiresAt) > clock()) {
+          if (admissionState==='confirmed' && invite?.platform === 'wechat' && timestamp(invite.expiresAt) && Date.parse(invite.expiresAt) > clock()) {
             try { const url = new URL(invite.qrImageUrl); if (url.origin === API_ORIGIN && !url.username && !url.password && !url.hash) receipt.body.groupInvite = {platform:'wechat',qrImageUrl:url.href,expiresAt:invite.expiresAt}; } catch {}
           }
           pending = null;

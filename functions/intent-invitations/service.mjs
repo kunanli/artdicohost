@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { validateStoredContact, validateContactOperations, validateInvitationSettings } from '../../shared/contacts-schema.mjs';
 import { eventConfig } from '../../src/config/event.mjs';
 import { failure, IntentInvitationError, plainData, identifier, revision, iso } from './errors.mjs';
+import { createInvitationBatchOperations } from './batch.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const CATEGORY = { prospective_site: 'new_site', developer: 'industry', university: 'education' };
@@ -84,7 +85,7 @@ export function buildRegistrationInvitation(contact, registration, event = event
 
 /** Selected, audited staff conversion. Source data and public-applicant consent are never fabricated. */
 export function createIntentInvitationService({ registrationService, contactsStore, contentStore, repository,
-  emailProvider, isRegistrationActive, event = eventConfig, now = () => Date.now() } = {}) {
+  emailProvider, isRegistrationActive, getAdmissionStatus = registrationService?.getAdmissionStatus?.bind(registrationService), event = eventConfig, now = () => Date.now() } = {}) {
   if (!registrationService || typeof registrationService.submitStaffRegistration !== 'function'
     || !contactsStore || typeof contactsStore.read !== 'function' || typeof contactsStore.saveOperations !== 'function'
     || typeof contentStore?.read !== 'function' || !repository || typeof repository.read !== 'function' || typeof repository.commit !== 'function'
@@ -98,6 +99,18 @@ export function createIntentInvitationService({ registrationService, contactsSto
     let active;
     try { active = await isRegistrationActive({ registrationId, actor }); } catch { throw failure(); }
     if (active !== true) throw failure('REGISTRATION_INACTIVE', 409);
+  }
+  async function requireConfirmed(registrationId) {
+    let admission;
+    try { admission = await getAdmissionStatus?.(registrationId); } catch { throw failure(); }
+    if (!plainData(admission) || !['confirmed', 'waitlisted', 'withdrawn'].includes(admission.status)
+      || !revision(admission.revision)) throw failure();
+    if (admission.status !== 'confirmed') throw failure(admission.status === 'waitlisted' ? 'REGISTRATION_WAITLISTED' : 'REGISTRATION_INACTIVE', 409);
+    return { status: admission.status, revision: admission.revision };
+  }
+  function requireSource(contact, registration) {
+    if (registration.sourceDigest !== contact.source.digest || registration.sourceKey !== contact.source.key
+      || registration.sourceRowId !== contact.source.rowId) throw failure('REGISTRATION_CHANGED', 409);
   }
   async function rosterAt(expected) {
     if (!revision(expected)) throw failure('INVALID_INPUT', 400);
@@ -121,7 +134,46 @@ export function createIntentInvitationService({ registrationService, contactsSto
     if (safe.status === 'issuing') safe.status = 'unknown';
     return safe;
   }
-  return Object.freeze({
+  async function inspectBatch({ contactIds, expectedContactRevision, actor }) {
+    const roster = await rosterAt(expectedContactRevision), selected = selectedContacts(roster, contactIds), state = await readState();
+    const entries = [], bindings = [];
+    for (const contact of selected) {
+      const registration = conversionFor(state, contact.id);
+      let reason = null, contentDigest = null, admission = null;
+      if (declined(contact)) reason = 'CONTACT_DECLINED';
+      else if (contact.profile.contactConsent !== 'consented') reason = 'CONTACT_NOT_CONSENTED';
+      else if (!registration) reason = 'REGISTRATION_REQUIRED';
+      else {
+        try {
+          requireSource(contact, registration);
+          await requireActive(registration.registrationId, actor);
+          admission = await requireConfirmed(registration.registrationId);
+          const content = buildRegistrationInvitation(contact, registration, event);
+          contentDigest = hash(JSON.stringify(content));
+          const previous = state.value.invitations.find(item => item.sourceContactId === contact.id && item.channel === 'manual');
+          const dispatch = state.value.invitations.find(item => item.sourceContactId === contact.id
+            && ['issuing', 'unknown', 'provider_accepted', 'manually_sent'].includes(item.status));
+          if (dispatch) reason = ['issuing', 'unknown'].includes(dispatch.status) ? 'INVITATION_STATUS_UNKNOWN' : 'INVITATION_DISPATCH_RECORDED';
+          else if (previous && (previous.digest !== contentDigest || !isDeepStrictEqual(previous.content, content))) reason = 'INVITATION_CHANGED';
+        } catch (error) {
+          if (!(error instanceof IntentInvitationError) || error.code === 'STORAGE_UNAVAILABLE') throw failure();
+          reason = error.code;
+        }
+      }
+      entries.push({ contactId: contact.id, eligible: reason === null, reason,
+        ...(registration ? { registrationId: registration.registrationId, referenceCode: registration.referenceCode } : {}) });
+      bindings.push({ contactId: contact.id, sourceDigest: contact.source.digest, sourceKey: contact.source.key,
+        sourceRowId: contact.source.rowId, registrationId: registration?.registrationId ?? null,
+        referenceCode: registration?.referenceCode ?? null, contentDigest, admission, reason });
+    }
+    return { contactRevision: roster.revision, entries, bindings };
+  }
+  let service;
+  const batch = createInvitationBatchOperations({ inspect: inspectBatch, authorize: actorValue,
+    issueManual: input => service.issueInvitation(input) });
+  service = Object.freeze({
+    previewInvitations: batch.preview,
+    prepareInvitations: batch.prepare,
     async read({ actor } = {}) {
       actorValue(actor);
       const state = await readState();
@@ -188,15 +240,23 @@ export function createIntentInvitationService({ registrationService, contactsSto
         contactRevision: roster.revision, registrations, failures, skipped, warnings };
     },
     async assignContact({ contactId, expectedContactRevision, sessionIds, boothIds, actor } = {}) {
-      const staff = actorValue(actor), roster = await rosterAt(expectedContactRevision), contact = contactValue(roster, contactId);
+      const staff = actorValue(actor), roster = await rosterAt(expectedContactRevision), contact = contactValue(roster, contactId, true);
       const state = await readState();
       const registration = conversionFor(state, contactId);
       if (!registration) throw failure('REGISTRATION_REQUIRED', 409);
-      await requireActive(registration.registrationId, staff);
       let planning; try { planning = (await contentStore.read()).draft.content; } catch { throw failure(); }
       const operations = { ...contact.operations, sessionIds, boothIds };
       const checked = validateContactOperations(operations, planning);
       if (!checked.valid) throw failure('INVALID_ASSIGNMENT', 422);
+      const adding = ['sessionIds', 'boothIds'].some(field => checked.value[field].some(id => !contact.operations[field].includes(id)));
+      if (adding) {
+        if (declined(contact)) throw failure('CONTACT_DECLINED', 422);
+        requireSource(contact, registration);
+        await requireActive(registration.registrationId, staff);
+        await requireConfirmed(registration.registrationId);
+      }
+      // Removing or retaining historical references allocates no new place;
+      // staff must be able to clean these up after withdrawal or declined contact.
       try { return await contactsStore.saveOperations(contactId, expectedContactRevision, checked.value, staff.id); }
       catch (error) {
         if (error?.status === 409) throw failure('REVISION_CONFLICT', 409);
@@ -204,27 +264,42 @@ export function createIntentInvitationService({ registrationService, contactsSto
         throw failure();
       }
     },
-    async issueInvitation({ contactId, expectedContactRevision, channel = 'manual', expectedRegistrationId, actor, confirmEmail = false } = {}) {
+    async issueInvitation({ contactId, expectedContactRevision, channel = 'manual', expectedRegistrationId, actor, confirmEmail = false, batchId } = {}) {
       const staff = actorValue(actor), roster = await rosterAt(expectedContactRevision), contact = contactValue(roster, contactId);
-      if (!['manual', 'email'].includes(channel) || typeof confirmEmail !== 'boolean' || !identifier(expectedRegistrationId)) throw failure('INVALID_INPUT', 400);
+      if (!['manual', 'email'].includes(channel) || typeof confirmEmail !== 'boolean' || !identifier(expectedRegistrationId)
+        || batchId !== undefined && (channel !== 'manual' || typeof batchId !== 'string' || !/^b_[a-f0-9]{64}$/u.test(batchId))) throw failure('INVALID_INPUT', 400);
       if (contact.profile.contactConsent !== 'consented') throw failure('CONTACT_NOT_CONSENTED', 422);
       const state = await readState(), registration = conversionFor(state, contactId);
       if (!registration) throw failure('REGISTRATION_REQUIRED', 409);
       if (registration.registrationId !== expectedRegistrationId) throw failure('REGISTRATION_CHANGED', 409);
+      requireSource(contact, registration);
       await requireActive(registration.registrationId, staff);
+      await requireConfirmed(registration.registrationId);
       const content = buildRegistrationInvitation(contact, registration, event), digest = hash(JSON.stringify(content));
       const id = 'i_' + hash(event.id + '\0' + registration.registrationId + '\0' + channel).slice(0, 32);
       const previous = state.value.invitations.find(item => item.id === id);
+      if (batchId && state.value.invitations.some(item => item.sourceContactId === contactId
+        && ['issuing', 'unknown', 'provider_accepted', 'manually_sent'].includes(item.status))) throw failure('INVITATION_CHANGED', 409);
       if (previous) {
         if (previous.digest !== digest || !isDeepStrictEqual(previous.content, content)) throw failure('INVITATION_CHANGED', 409);
         return { invitation: invitationProjection(previous), contactRevision: roster.revision, replayed: true };
       }
       if (channel === 'email' && (confirmEmail !== true || emailProvider?.readiness?.().ready !== true || typeof emailProvider.send !== 'function')) throw failure('EMAIL_NOT_READY', 503);
+      // The roster, review and admission live in separate journals. Recheck as
+      // close to each manual reservation as possible; this is not a cross-journal transaction.
+      if (channel === 'manual') {
+        const latest = contactValue(await rosterAt(expectedContactRevision), contactId);
+        if (latest.profile.contactConsent !== 'consented') throw failure('CONTACT_NOT_CONSENTED', 422);
+        requireSource(latest, registration);
+        if (!isDeepStrictEqual(buildRegistrationInvitation(latest, registration, event), content)) throw failure('REVISION_CONFLICT', 409);
+        await requireActive(registration.registrationId, staff);
+        await requireConfirmed(registration.registrationId);
+      }
       const at = timestamp(), invitation = { id, sourceContactId: contactId, registrationId: registration.registrationId,
         referenceCode: registration.referenceCode, digest, channel, status: channel === 'manual' ? 'prepared' : 'issuing',
         content, createdAt: at, updatedAt: at, actorId: staff.id, sentChannel: null };
       state.value.invitations.push(invitation);
-      const reserved = await record(state, channel === 'manual' ? 'prepare_invitation' : 'reserve_email', staff.id, contactId, id);
+      const reserved = await record(state, channel === 'manual' ? 'prepare_invitation' : 'reserve_email', staff.id, contactId, id, batchId ? { batchId } : {});
       if (channel === 'manual') return { invitation: invitationProjection(invitation), contactRevision: roster.revision, replayed: false };
       // Reservation must be acknowledged before the only provider request. Any
       // interrupted result leaves 'issuing', exposed as unknown, never resent.
@@ -234,6 +309,7 @@ export function createIntentInvitationService({ registrationService, contactsSto
         if (latest.profile.contactConsent !== 'consented' || latest.profile.email !== contact.profile.email
           || !isDeepStrictEqual(buildRegistrationInvitation(latest, registration, event), content)) throw failure('REVISION_CONFLICT', 409);
         await requireActive(registration.registrationId, staff);
+        await requireConfirmed(registration.registrationId);
       } catch {
         const rejected = reserved.value.invitations.find(item => item.id === id);
         rejected.status = 'rejected'; rejected.updatedAt = timestamp();
@@ -258,6 +334,7 @@ export function createIntentInvitationService({ registrationService, contactsSto
       const state = await readState(), invitation = state.value.invitations.find(item => item.id === invitationId);
       if (!invitation || invitation.channel !== 'manual') throw failure('INVALID_INPUT', 400);
       await requireActive(invitation.registrationId, staff);
+      await requireConfirmed(invitation.registrationId);
       let roster; try { roster = await contactsStore.read(); } catch { throw failure(); }
       const contact = contactValue(roster, invitation.sourceContactId);
       if (contact.profile.contactConsent !== 'consented') throw failure('CONTACT_NOT_CONSENTED', 422);
@@ -271,4 +348,5 @@ export function createIntentInvitationService({ registrationService, contactsSto
       return { invitation: invitationProjection(invitation), contactRevision: roster.revision, replayed: false };
     },
   });
+  return service;
 }

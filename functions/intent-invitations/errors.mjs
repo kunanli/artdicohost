@@ -7,6 +7,7 @@ export class IntentInvitationError extends Error {
       CONTACT_DECLINED: '对象已拒绝联系或婉拒参加，不能自动转报名或邀请。',
       CONTACT_NOT_CONSENTED: '对象未明确同意联系，不能发出邀请。',
       REGISTRATION_REQUIRED: '请先完成此联系人的报名转换。', REGISTRATION_CHANGED: '报名关联已变化，请重新核对。',
+      REGISTRATION_WAITLISTED: '报名仍在候补，确认名额前不能准备正式邀请。',
       REGISTRATION_INACTIVE: '报名已撤回或申请删除，不能继续邀请或安排。',
       INVITATION_CHANGED: '邀请内容已变化，请核对原版本，不自动重复发出。',
       EMAIL_NOT_READY: '发信服务尚未配置或本次操作未明确确认发送。',

@@ -65,12 +65,13 @@ function requireRole(session, roles) {
 }
 
 /** Production Request boundary. The caller must supply shared, persistent implementations. */
-export function createCloudContentApi({ enabled = false, store, portraitStore, auth, contactsStore, communications = createPreviewCommunications() } = {}) {
+export function createCloudContentApi({ enabled = false, store, portraitStore, auth, contactsStore, communications = createPreviewCommunications(), beforeContactMutation } = {}) {
   if (typeof enabled !== 'boolean') throw new TypeError('云端内容服务开关必须为布尔值。');
   if (enabled && (!['read', 'save', 'publish', 'recordPortraitUpload'].every(key => typeof store?.[key] === 'function')
     || !['read', 'upload'].every(key => typeof portraitStore?.[key] === 'function')
     || !['login', 'authenticate', 'logout'].every(key => typeof auth?.[key] === 'function'))) throw new TypeError('云端内容服务依赖未配置。');
   if (contactsStore && !['read', 'createContact', 'saveProfile', 'saveOperations', 'recordGenerated', 'recordSent', 'guestPrefill'].every(key => typeof contactsStore[key] === 'function')) throw new TypeError('云端私密名单依赖未配置。');
+  if (beforeContactMutation !== undefined && typeof beforeContactMutation !== 'function') throw new TypeError('联系人写入核对配置无效。');
   return async function handle(request) {
     let cors = {}, head = false;
     try {
@@ -155,14 +156,17 @@ export function createCloudContentApi({ enabled = false, store, portraitStore, a
         }
         if (id && !action && request.method === 'PUT') {
           const input = await inputBody(request);
+          await beforeContactMutation?.({ contactId: id, actor: session.user, action: 'operations', input });
           return json(await contactsStore.saveOperations(id, input.expectedRevision, input.operations, session.user.id));
         }
         if (id && action === 'invitation/generated' && request.method === 'POST') {
           const input = await inputBody(request);
+          await beforeContactMutation?.({ contactId: id, actor: session.user, action: 'invitation', input });
           return json(await contactsStore.recordGenerated(id, input.expectedRevision, input.settings, session.user.id));
         }
         if (id && action === 'invitation/sent' && request.method === 'POST') {
           const input = await inputBody(request);
+          await beforeContactMutation?.({ contactId: id, actor: session.user, action: 'invitation', input });
           return json(await contactsStore.recordSent(id, input.expectedRevision, input.channel, input.generatedAt, input.settings, session.user.id));
         }
         if (id && ['email/preview', 'wallet/preview'].includes(action) && request.method === 'POST') {

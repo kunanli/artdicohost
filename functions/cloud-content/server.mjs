@@ -9,7 +9,7 @@ import { startCloudAcceptance } from './acceptance.mjs';
 
 const MiB = 1024 * 1024;
 const NODE = Object.freeze({ version: 'v24.19.0', platform: 'linux', arch: 'x64', sha256: 'bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12' });
-const REQUIRED = ['/admin/', '/admin/contacts/', '/admin/registrations/', '/invitations/template-blank.png'];
+const REQUIRED = ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/invitations/template-blank.png'];
 const failure = () => new Error('Cloud content package verification failed.');
 const exactKeys = (value, keys) => value !== null && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
@@ -47,6 +47,7 @@ function assetPath(url) {
   if (url === '/admin/') return 'admin-assets/admin/index.html';
   if (url === '/admin/contacts/') return 'admin-assets/admin/contacts/index.html';
   if (url === '/admin/registrations/') return 'admin-assets/admin/registrations/index.html';
+  if (url === '/admin/tasks/') return 'admin-assets/admin/tasks/index.html';
   return 'admin-assets' + url;
 }
 

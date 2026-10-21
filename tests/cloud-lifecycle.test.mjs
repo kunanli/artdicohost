@@ -223,6 +223,11 @@ test('enabled registration requires credential-free HTTPS alias metadata matchin
     return reply(metadata);
   };
   assert.equal((await deployCloudLifecycle(f.options)).registrationEnabled, true);
+  const admissions = { capacity: 300, staffReserve: 0, waitlistEnabled: true, confirmedCount: 0, attendeeConfirmedCount: 0, crewConfirmedCount: 0, waitlistCount: 0, remainingPublic: 300, remainingTotal: 300 };
+  assert.equal(await verifyPublicRegistrationAlias(async () => reply({ ...metadata, admissions }), policy), true);
+  for (const summary of [{ ...admissions, people: ['PRIVATE'] }, { ...admissions, remainingTotal: 301 }, { ...admissions, waitlistEnabled: 'true' }]) {
+    await assert.rejects(verifyPublicRegistrationAlias(async () => reply({ ...metadata, admissions: summary }), policy), /PUBLIC_REGISTRATION_NOT_VERIFIED/u);
+  }
   for (const change of [{ ...metadata, capacity: 301 }, { ...metadata, closesAt: '2026-12-05T05:00:00.000Z' },
     { enabled: false, reason: 'unavailable' }, { ...metadata, privacy: { ...metadata.privacy, retention: 'wrong' } }]) {
     await assert.rejects(verifyPublicRegistrationAlias(async () => reply(change), policy), /PUBLIC_REGISTRATION_NOT_VERIFIED/u);

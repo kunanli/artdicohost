@@ -1,0 +1,28 @@
+---
+import SiteLayout from '../../../layouts/SiteLayout.astro';
+import '../../../styles/admin.css';
+import '../../../styles/organizer-tasks.css';
+---
+<SiteLayout title="今日待办｜ARTDiCO HOST" description="筹备团队私有待办、邀请进度与展位资料核对。">
+  <div class="ah-admin tasks-app">
+    <header class="ah-admin-header"><a class="ah-admin-brand" href="/admin/">ARTDiCO <span>HOST / TODAY</span></a><nav aria-label="工作人员导航"><a href="/admin/contacts/">人员 / 邀约</a><a href="/admin/">活动 / 展位安排</a><a href="/admin/registrations/">报名 / 审核</a></nav></header>
+    <main class="ah-admin-main" id="main-content">
+      <div class="ah-admin-environment"><span class="ah-admin-dot" aria-hidden="true"></span><p><strong>工作人员每日待办</strong>依据后台已保存记录整理。仅具备人员邀约及报名审核权限的同事可读取。</p></div>
+      <p class="ah-admin-status" data-tasks-status role="status" aria-live="polite"></p><p class="ah-admin-alert" data-tasks-error role="alert" hidden></p>
+      <section class="ah-admin-login-card" data-tasks-login-panel><span class="ah-admin-eyebrow">ONE CLEAR NEXT STEP</span><h1>今天，先把这些准备好。</h1><p class="ah-admin-intro">统一核对代登记、邀请、回复与现场安排。工作人员的发出记录、服务商接受与本人回复分别保留。</p><form method="post" data-tasks-login><div class="ah-admin-field"><label for="tasks-user">用户名或邮箱</label><input id="tasks-user" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="160" /></div><div class="ah-admin-field"><label for="tasks-password">密码</label><input id="tasks-password" name="password" type="password" autocomplete="current-password" required maxlength="1024" /></div><button class="ah-admin-button ah-admin-primary" type="submit" data-tasks-login-submit disabled>登录查看今日待办 →</button></form><noscript><p>启用 JavaScript 后才可登录并读取私有待办。</p></noscript></section>
+      <section data-tasks-workspace hidden>
+        <div class="ah-admin-page-heading"><div><span class="ah-admin-eyebrow">THE NEXT THING, TOGETHER</span><h1>今日待办</h1><p>从已核对的名单，继续准备每一次相遇。</p></div><div class="tasks-account"><span data-tasks-user></span><button class="ah-admin-button" type="button" data-tasks-refresh>刷新已保存进度</button><button class="ah-admin-text-button" type="button" data-tasks-logout>退出登录</button></div></div>
+        <div class="tasks-metrics" data-tasks-metrics aria-label="全部名单的进度概况"></div>
+        <p class="ah-admin-small">概况按人去重，拒绝联络或出席者不计入联络进度。人工已发出与服务商已接受可能涉及同一人；服务商接受不等于邮件送达，也不等于本人回复。</p>
+        <p class="tasks-caution" data-tasks-availability hidden></p>
+        <section class="ah-admin-panel tasks-panel" aria-labelledby="tasks-list-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">FOLLOW THROUGH</span><h2 id="tasks-list-title">接下来要做的事</h2><p>同一人可有多项待办；普通参会无需分配活动场次。展位资料的负责人按展位记录显示。</p></div></div>
+          <form class="tasks-filters" data-tasks-filters><div class="ah-admin-field"><label for="tasks-owner">负责同事 / 展位负责人</label><select id="tasks-owner" name="owner" data-tasks-owner><option value="">全部负责人</option><option value="__unassigned">尚未分配负责人</option></select></div><div class="ah-admin-field"><label for="tasks-kind">待办类型</label><select id="tasks-kind" name="kind" data-tasks-kind><option value="">全部待办</option></select></div><button class="ah-admin-button ah-admin-primary" type="submit">应用筛选</button><button class="ah-admin-button" type="reset">清除筛选</button></form>
+          <div class="tasks-quick-filters" data-tasks-quick aria-label="按待办类型查看"></div><p class="tasks-result" data-tasks-result role="status" aria-live="polite"></p>
+          <ul class="tasks-list" data-tasks-list></ul><p class="ah-admin-empty" data-tasks-empty hidden>当前筛选下没有待办。可清除筛选查看全部；这不代表邀请已送达或所有安排已公开。</p>
+          <div class="tasks-pagination"><button class="ah-admin-button" type="button" data-tasks-first hidden>返回第一页</button><button class="ah-admin-button" type="button" data-tasks-next hidden>查看下一页</button></div>
+        </section><p class="ah-admin-small" data-tasks-meta></p>
+      </section>
+    </main><footer class="ah-admin-footer"><span>ARTDiCO HOST / TODAY</span><p>待办只读取已保存资料；打开记录后按原流程核对和保存。</p><a href="/admin/contacts/">人员 / 邀约 →</a></footer>
+  </div>
+  <script>import '../../../scripts/organizer-tasks.mjs';</script>
+</SiteLayout>

@@ -2,6 +2,7 @@ import {
   getActiveBranches,
   validateRegistration,
   completeMockRegistration,
+  isRegistrationFieldRequired,
 } from '../../shared/registration-schema.mjs';
 import { publicRegistrationSchema as registrationSchema, getRecruitmentChoices } from '../../shared/public-registration-schema.mjs';
 
@@ -77,7 +78,8 @@ for (const form of document.querySelectorAll('[data-registration-form]')) {
     if (focus) steps.find(section => Number(section.dataset.formStep) === step)?.querySelector('h3')?.focus();
   }
   function syncBranches() {
-    const active = new Set(getActiveBranches(read()));
+    const value = read();
+    const active = new Set(getActiveBranches(value));
     for (const fieldset of branchSets) {
       const visible = active.has(fieldset.dataset.branch);
       if (!visible) {
@@ -91,6 +93,20 @@ for (const form of document.querySelectorAll('[data-registration-form]')) {
       fieldset.disabled = !visible;
       fieldset.hidden = !visible;
     }
+    let profileRequired = false;
+    for (const field of registrationSchema.baseFields.filter(item => item.requiredFor?.length)) {
+      const required = isRegistrationFieldRequired(field, value);
+      const wrapper = [...form.querySelectorAll('[data-field]')].find(element => element.dataset.field === field.name);
+      const control = form.elements.namedItem(field.name);
+      if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement) control.required = required;
+      if (wrapper?.querySelector('[data-required-marker]')) wrapper.querySelector('[data-required-marker]').hidden = !required;
+      if (wrapper?.querySelector('[data-optional-marker]')) wrapper.querySelector('[data-optional-marker]').hidden = required;
+      profileRequired ||= required;
+    }
+    const profile = form.querySelector('[data-registration-profile]');
+    if (profile instanceof HTMLDetailsElement && profileRequired) profile.open = true;
+    const profileLabel = form.querySelector('[data-registration-profile-label]');
+    if (profileLabel) profileLabel.textContent = profileRequired ? '当前参与方式需要补充标记的资料' : '普通参会可跳过';
     form.querySelectorAll('[data-identity]').forEach(input => {
       const mark = input.closest('label')?.querySelector('b');
       if (mark) mark.textContent = input.checked ? '✓' : '+';
@@ -105,6 +121,8 @@ for (const form of document.querySelectorAll('[data-registration-form]')) {
       for (const input of form.querySelectorAll('[name]')) if (input.name === name) input.setAttribute('aria-invalid', 'true');
       const control = [...form.querySelectorAll('[name]')].find(input => input.name === name);
       if (control) {
+        const extra = control.closest('[data-registration-profile]');
+        if (extra instanceof HTMLDetailsElement) extra.open = true;
         const item = document.createElement('li');
         const link = document.createElement('button');
         link.type = 'button';

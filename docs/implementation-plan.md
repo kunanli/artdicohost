@@ -1,5 +1,25 @@
 # ARTDiCO HOST 实施计划
 
+## 2026-10-21 当前阶段：五项扩展集成与 v2 发布验收
+
+`feat/organizer-workflow` 已集成每日待办、批量私密 PNG ZIP、总览直接编排、精简一般报名、逐人名额／候补／团队五项模块及界面，核心基准 `2551c64`；后续修正与运行时收尾以主分支最新提交为准。入口、局部测试和剩余检查汇总在[接续记录](session-recovery.md)及[验收清单](morning-acceptance.md)。本轮全套、最终 CI、候选包／实际 OSS／正式发布尚待主集成取证；前轮 589 项、十项云端及 18 文件的成功属于 main `2d84d8b`，不代表本轮已部署。
+
+架构与资源维持既有 Astro／香港 OSS／FC、同一私有 index CAS；零新增服务／IAM／DNS／trigger。新增确认名额判断用于公开收据、群码、邀请及关联报名的新增场次／展位；候补不自动成为参会确认，移除历史安排仍可执行。每日待办与统计不把 provider 接受或 PNG 下载记为实际发出。
+
+完成顺序为运行时／精确路由／包白名单与初始候补设置对齐，完整备份闭包及旧群码撤回回归，最新候选完整测试／检查／五组浏览器，再走准确 main 的真实隔离 OSS 与公开哈希回读。完整 v2 备份必须含所有索引历史快照、引用的不可变个人原件、团队和操作审计，不能为请求预算裁去历史；合成完整备份回归与有界真实验收分别记录，不互相替代。真实验收具体阶段及预算由[云端验收契约](cloud-acceptance.md)维护。
+
+v1 索引只读解释不写入；第一次明确操作才升级 v2，原 records bytes 保持不变。v2 revision 是提交次数，不能当作人数。发布前保留完整私密备份；已写入 v2 后禁止回退到只识别 v1 的旧写入者，先停止新写入，再用兼容 v2 的修复版本核对审计和撤回状态。隔离恢复不启用生产、不恢复会话；不覆盖新报名或移除未知 ACK 的操作历史。
+
+真实 39 行只完成本机私密准备：38 可联系、1 拒绝、11 URL 警告；没有云端导入、转换、派发或发信。owner 在新版实际验收后自行登录核对原件、名额、预留与私密安排；不新增政策确认，不伪造资料／同意。EmailJS 仍须受控配置及本次明确发送，物理保留／删除按已有维护边界执行。
+
+## 2026-10-20 已集成子阶段：批量准备私密邀请图片
+
+复用既有私有联系人、报名／候补索引与邀请 journal，不新增资源、依赖、IAM 权限或公开文件。最多选择 100 人，先只读预检当前来源／名单修订、明确联系同意、活动报名与来源关联、审核有效状态及已确认名额；候补、撤回、拒绝或未知同意均不可准备正式邀请。预检摘要绑定操作者与完整当前状态，明确确认后重新核对，逐人复用现有稳定邀请 ledger；部分失败和未知 ACK 必须分别显示，不能自动重送。
+
+客户端以现有真实邀请 PNG renderer 顺序生成，制作无压缩、CRC32／UTF-8 的私密 ZIP，包含逐人结果与人工派发核对表，最多 100 人、总量 64 MiB。文件名去除路径／控制符并附稳定唯一 ID；所有 bytes 只留当前工作人员浏览器，下载不记为已发送，不公开托管。实际邮件、本机真实联系人及云端写入不属于本次代码验证。
+
+分阶段提交：先实现预检／明确准备和权限审计，再接顺序 PNG／有界 ZIP 与名单页面，最后完成来源／同意／候补／修订漂移／幂等重放／部分未知 ACK、ZIP 结构及恶意文件名测试，交主集成执行完整检查和部署。没有新增人工政策确认；仍需真实工作人员明确选择与准备，并自行核对人工派发，邮件接受不等于送达。
+
 ## 2026-10-20 接续：新执行重新读取账号变量及安全缺项诊断
 
 PR #24 的 main `3bb438d7425b35cdc723b84a68ce47f0d7ba1ad7` 已在运行 39426879176 通过 448 项检查、十六项 OSS SHA-256 回读及完整内容包三次签名来源检查；账号设置 job 在上下文预检便停止，未写入设置。用户补建身份 Variables 后，仅重跑该失败 job 的 attempt 2 仍显示用户名／邮箱两个输入为空，密码 Secret 存在。该结果不能证明现在设置不存在，也不能确定为 GitHub 重跑快照行为；新 main 执行才能区分。
@@ -416,3 +436,19 @@ CSV 和 Excel 导出先通过事件授权、字段白名单及用途检查，在
 - [部署工作流](https://github.com/kunanli/igda_shenzhen/blob/954c792aa3c20e8dd5870b7fa5dbedf4780ef2b1/.github/workflows/deploy.yml)、[FC 配置](https://github.com/kunanli/igda_shenzhen/blob/954c792aa3c20e8dd5870b7fa5dbedf4780ef2b1/s.yaml)、[部署脚本](https://github.com/kunanli/igda_shenzhen/blob/954c792aa3c20e8dd5870b7fa5dbedf4780ef2b1/scripts/deploy-api.mjs)
 - [Node.js 发布与支持计划](https://github.com/nodejs/Release/blob/main/README.md)、[FC 内置运行时](https://www.alibabacloud.com/help/en/functioncompute/runtime-intro)、[CreateFunction API](https://api.alibabacloud.com/document/FC/2023-03-30/CreateFunction)、[FC 自定义运行时](https://www.alibabacloud.com/help/en/functioncompute/custom-runtime/)
 - [OSS PutObject](https://www.alibabacloud.com/help/en/oss/developer-reference/putobject)、[OSS ListObjectsV2](https://www.alibabacloud.com/help/en/oss/developer-reference/listobjectsv2)
+
+## 2026-10-20：籌備工作流程第二階段（用戶已授權實作）
+
+正式功能基準 main `2d84d8b74ece04cc4cc9fa95e6847abf06de116c`，十項實際 OSS／589 測試／13 組瀏覽器／18 個正式 HTTPS 物件均已驗證；本階段帶入已保存的發布證據文件，再完成以下五項。
+
+1. 統一每日待辦及人員進度，修正新版報名邀請未計入舊發出統計；保持人工發出、服務商接受及實際回覆分開，不虛報送達。
+2. 已核對對象可批次準備個人邀請 PNG ZIP 及逐人結果，預檢同意、有效報名與資料；下載不視為發出，不新增自動發信。私密下載與原件不進公開桶或 Git。
+3. 既有 15 格展位總覽支援直接編輯與人員配置，場次時間軸支援分配；保留草稿／私密安排／公開發布的明確界線，保存前顯示衝突及缺資料。
+4. 一般參會減少必填，講者／展商保留所需詳情；前後端共用規則，既有紀錄與同一 payload 幂等重播保持有效。
+5. 實際每人一筆與團隊成員關聯、工作人員預留額度（預設 0，由管理員自行設定）、滿額候補及取消釋出。300 是所有人員的共同上限；團隊預估人數不冒充已登記成員，不替他人偽造網站同意。名額的 CAS 判斷、候補轉正、重試與撤回需可稽核且不超賣；舊索引只讀相容，遷移不覆寫既有不可變紀錄。
+
+架構仍為 Astro＋現有香港 OSS／FC，不購買新服務、不擴充 IAM、不改 DNS／trigger、不共享 IGDA 身份或資料。新增資料限定原有 cms/v1 私密範圍；角色、準確 Origin、CSRF、未知 ACK 保護及恢復清單必須一併更新。估計資源僅增加私密小型 journal／靜態程式，無新增常駐服務。
+
+分工：報名名額服務（registration_service）；精簡表單與名額管理介面（registration_review）；人員進度／待辦及 contacts 整合（admin_completion）；批次邀請與 ZIP（docs_recovery）；總覽直接編排（reference_review）；HTTP／runtime／受控設定／包與合成驗收（cloud_acceptance）；主 agent 負責契約協調、集成、回歸、文件、PR 與實際發布。
+
+各工作使用獨立 worktree，主分支逐項集成。階段完成條件：有意義的並發／撤回／幂等／角色與統計測試、前後端與包檢查、手機及桌面端到端、準確 main 的實際隔離 OSS 驗收、公開網域逐檔驗證。真實 39 行名單及外部發信不作測試，不宣稱已代入或送達。新增候補及額度語義須在實作前由服務與 UI 維護者確認契約，日誌保留更新及復原方法。

@@ -15,6 +15,7 @@ const ASSETS = () => new Map([
   ['/admin/', Buffer.from(HTML)],
   ['/admin/contacts/', Buffer.from('<!doctype html><html><body>合成名单页面</body></html>')],
   ['/admin/registrations/', Buffer.from('<!doctype html><html><body>合成报名审核页面</body></html>')],
+  ['/admin/tasks/', Buffer.from('<!doctype html><html><body>合成筹备待办页面</body></html>')],
   ['/invitations/template-blank.png', Buffer.from('synthetic-png-template')],
   ['/_astro/staff-test.js', Buffer.from('export const syntheticStaff = true;')],
   ['/_astro/staff-test.css', Buffer.from('body { color: #222; }')],
@@ -124,6 +125,8 @@ test('actual HTTP serves copied allowlisted bytes, exact inline CSP hashes, safe
   const registrations = await send(port, '/admin/registrations/');
   assert.equal(registrations.status, 200); assert.match(registrations.text, /合成报名审核页面/u);
   assert.equal((await send(port, '/admin/registrations')).headers.location, '/admin/registrations/');
+  assert.match((await send(port, '/admin/tasks/')).text, /合成筹备待办页面/u);
+  assert.equal((await send(port, '/admin/tasks')).headers.location, '/admin/tasks/');
   const queriedRedirect = await send(port, '/admin/contacts?marker=synthetic');
   assert.equal(queriedRedirect.status, 404);
   const template = await send(port, '/invitations/template-blank.png');

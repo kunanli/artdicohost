@@ -1,12 +1,13 @@
 ---
 import SiteLayout from '../../layouts/SiteLayout.astro';
+import ArrangementPlanner from '../../components/ArrangementPlanner.astro';
 import '../../styles/admin.css';
 import '../../styles/arrangements.css';
 import '../../styles/guests.css';
 ---
 <SiteLayout title="工作人员后台｜ARTDiCO HOST" description="ARTDiCO HOST 工作人员嘉宾、场次、展位及学生作品管理。">
   <div id="artdico-admin" class="ah-admin">
-    <header class="ah-admin-header"><a class="ah-admin-brand" href="https://artdico.host">ARTDiCO <span>HOST / STAFF</span></a><nav class="ah-admin-account"><a class="ah-admin-back" href="/admin/registrations/">报名 / 审核</a><a class="ah-admin-back" href="/admin/contacts/">人员 / 邀约</a><a class="ah-admin-back" href="https://artdico.host">查看活动页面 <span aria-hidden="true">↗</span></a></nav></header>
+    <header class="ah-admin-header"><a class="ah-admin-brand" href="https://artdico.host">ARTDiCO <span>HOST / STAFF</span></a><nav class="ah-admin-account"><a class="ah-admin-back" href="/admin/tasks/">今日待办</a><a class="ah-admin-back" href="/admin/registrations/">报名 / 审核</a><a class="ah-admin-back" href="/admin/contacts/">人员 / 邀约</a><a class="ah-admin-back" href="https://artdico.host">查看活动页面 <span aria-hidden="true">↗</span></a></nav></header>
     <main id="main-content" class="ah-admin-main">
       <div class="ah-admin-environment" data-admin-environment><span class="ah-admin-dot" aria-hidden="true"></span><p><strong>活动 / 嘉宾 / 学生作品</strong>保存草稿与公开发布分别执行；人员联系方式在独立邀约工作区维护。</p></div>
       <p class="ah-admin-alert" data-admin-error role="alert" tabindex="-1" hidden></p>
@@ -63,9 +64,10 @@ import '../../styles/guests.css';
             <section class="ah-arrangements-program" aria-labelledby="arrangements-program-title">
               <div class="ah-arrangements-program-heading"><div><h3 id="arrangements-program-title">各区活动与参与人</h3><p>实际回复来自邀约记录；嘉宾资料确认与报名、签到分别维护。</p></div><div><p class="ah-arrangements-people-summary" data-arrangements-people-summary></p><p class="ah-arrangements-people-summary" data-arrangements-student-summary></p><p class="ah-arrangements-people-summary" data-arrangements-formats-summary></p></div></div>
               <div class="ah-arrangements-filters"><div class="ah-arrangements-zones" role="group" aria-label="筛选活动区域"><button type="button" data-arrangements-zone="A" aria-pressed="true">A · 演讲 / 分享</button><button type="button" data-arrangements-zone="B" aria-pressed="false">B · 工作坊 / 交流</button><button type="button" data-arrangements-zone="workshops" aria-pressed="false">全部工作坊</button><button type="button" data-arrangements-zone="other" aria-pressed="false">其他区域</button></div><label for="arrangements-format">活动形式<select id="arrangements-format" data-arrangements-format><option value="">全部形式</option><option value="talk">演讲</option><option value="workshop">工作坊</option><option value="roundtable">圆桌</option><option value="showcase">作品分享</option><option value="social">交流活动</option><option value="break">休息 / 签到</option><option value="other">待分类 / 其他</option></select></label></div>
-              <p class="ah-arrangements-result" data-arrangements-result role="status" aria-live="polite"></p><div class="ah-arrangements-sessions" data-arrangements-sessions></div>
+              <details class="ah-arrangements-timeline" open><summary>按时间直接分配人员</summary><p class="ah-admin-small">点击场次打开同页人员分配；不同区域在同一时间轴核对。</p><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="各区场次时间轴"><table><thead><tr><th scope="col">开始</th><th scope="col">A 区</th><th scope="col">B 区</th><th scope="col">C 区</th></tr></thead><tbody data-arrangements-timeline></tbody></table></div></details><p class="ah-arrangements-result" data-arrangements-result role="status" aria-live="polite"></p><div class="ah-arrangements-sessions" data-arrangements-sessions></div>
             </section>
           </div>
+          <ArrangementPlanner />
         </section>
         <section class="ah-admin-panel" aria-labelledby="guests-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">THE PEOPLE</span><h2 id="guests-title">嘉宾资料</h2><p>上传头像，填写姓名、所属公司与可选的 GGJ 职务。确认并获公开授权后随发布版展示。</p></div><button type="button" class="ah-admin-button" data-admin-add-guest><span aria-hidden="true">＋</span> 新增嘉宾</button></div><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="嘉宾表，可水平滚动"><table><caption class="ah-sr-only">嘉宾头像、姓名、公司、GGJ 职务及公开状态</caption><thead><tr><th scope="col">头像</th><th scope="col">姓名</th><th scope="col">所属公司</th><th scope="col">GGJ 职务</th><th scope="col">确认与授权</th><th scope="col">操作</th></tr></thead><tbody data-admin-guests></tbody></table></div><p class="ah-admin-empty" data-admin-guests-empty hidden>还没有嘉宾资料。新增后先保存草稿，名单确认并获授权后再发布。</p></section>
         <section class="ah-admin-panel" aria-labelledby="showcases-title">

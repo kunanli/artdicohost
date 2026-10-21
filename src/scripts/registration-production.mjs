@@ -15,7 +15,7 @@ function renderPublicPrivacy(){
     if(question.startsWith('如何修改或撤回资料？')&&currentPublicPrivacy&&answer.textContent.includes('预览表单不保存'))answer.textContent=currentPublicPrivacy.rightsRequest;
   }
 }
-document.addEventListener('artdico:registration-ready',event=>{currentPublicPrivacy=event.detail?.privacy??null;currentAvailability={message:'可以，通过本页正式表单提交。实际保存成功后将显示报名编号；住宿、讲者与展位另行确认。'};renderPublicPrivacy();});
+document.addEventListener('artdico:registration-ready',event=>{currentPublicPrivacy=event.detail?.privacy??null;currentAvailability={message:'可以，通过本页正式表单提交。结果会明确区分已确认名额与候补；保存候补不代表已可参会。住宿、讲者与展位另行确认。'};renderPublicPrivacy();});
 document.addEventListener('artdico:registration-policy',event=>{currentPublicPrivacy=event.detail?.privacy??null;renderPublicPrivacy();});
 document.addEventListener('artdico:registration-unavailable',event=>{currentAvailability=event.detail;renderPublicPrivacy();});
 document.addEventListener('artdico:public-content-updated',renderPublicPrivacy);
@@ -55,7 +55,7 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
       if (value || frozen) { if (!control.disabled) { control.dataset.registrationLocked = 'true'; control.disabled = true; } }
       else if (control.dataset.registrationLocked) { control.disabled = false; delete control.dataset.registrationLocked; }
     }
-    submit.textContent = value ? '正在确认保存结果…' : frozen ? '再次确认报名结果' : '确认并提交报名';
+    submit.textContent = value ? '正在确认保存结果…' : frozen ? '再次确认报名结果' : config?.admissions?.remainingPublic===0?'提交候补登记':'确认并提交报名';
   }
   async function submitFields(fields) {
     if (!config || form.dataset.submitting === 'true') return;
@@ -63,7 +63,7 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
     try {
       const result = await client.submit(fields);
       if (!renderRegistrationSuccess(receipt,result)) {
-        const fallback=node('p','报名已完成，编号：'+result.body.reference_code+'。请保留编号，无需重复报名。');
+        const fallback=node('p',(result.body.status==='waitlisted'?'候补登记已保存，尚未确认参会。登记编号：':'报名已确认，编号：')+result.body.reference_code+'。请保留编号，无需重复报名。');
         fallback.setAttribute('role','status');section.append(fallback);
       }
       frozen = false;
@@ -100,7 +100,10 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
     for (const [key,label] of Object.entries(labels)) details.append(node('dt',label),node('dd',value.privacy[key]));
     details.append(node('dt','全场人数与截止时间'),node('dd','全场人数上限 '+value.capacity+' 人；报名截止 '+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Taipei',dateStyle:'medium',timeStyle:'short'}).format(new Date(value.closesAt))+'（UTC+8）。住宿与展位另行确认。'));
     section.querySelector('[data-registration-policy]').hidden = false;
-    section.querySelector('[data-registration-notice]').textContent = '欢迎组织者、学生、游戏创作者与社群伙伴报名。资料实际保存成功后，才会显示报名编号；住宿、讲者与展位分别确认。';
+    const admissions = value.admissions;
+    const waitlisting = admissions?.remainingPublic === 0;
+    if (admissions) details.append(node('dt','当前参会名额'),node('dd','已确认 '+admissions.confirmedCount+' 人；普通参会剩余 '+admissions.remainingPublic+' 个名额；候补 '+admissions.waitlistCount+' 人。每位成员须分别登记，团队预计人数不会直接占用名额。'));
+    section.querySelector('[data-registration-notice]').textContent = waitlisting?'普通参会名额暂满，目前可保存候补登记。候补不代表已确认参会，名额释放后由工作人员按顺序处理。':'欢迎组织者、学生、游戏创作者与社群伙伴报名。保存结果会明确区分已确认名额与候补；住宿、讲者与展位分别确认。';
     section.querySelector('[data-registration-open-label]').textContent = '填写活动报名';
     section.querySelector('[data-registration-mode-label]').textContent = '正式报名';
     section.querySelector('[data-registration-data-hint]').textContent = '带 * 为必填。请填写真实且必要的联络资料；不收取身份证、酒店订单或财务账单。';
@@ -113,9 +116,9 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
     if (consentHint) consentHint.textContent = '请主动勾选。工作人员不会代替你完成个人信息处理同意。';
     const emailHint = document.getElementById('field-email-hint');
     if (emailHint) emailHint.textContent = '未填写微信时，邮箱将作为替代联络方式。';
-    submit.textContent = '确认并提交报名';
+    submit.textContent = waitlisting?'提交候补登记':'确认并提交报名';
     form.dataset.registrationMode = 'production';
-    for(const status of document.querySelectorAll('[data-registration-availability]'))status.textContent='报名已开放';
+    for(const status of document.querySelectorAll('[data-registration-availability]'))status.textContent=waitlisting?'候补登记开放':'报名已开放';
     document.dispatchEvent(new CustomEvent('artdico:registration-ready',{detail:{privacy:value.privacy,closesAt:value.closesAt}}));
   }).catch(() => {
     unavailable('unavailable');

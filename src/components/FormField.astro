@@ -1,6 +1,6 @@
 ---
 interface Field {
-  name: string; label: string; type: string; required: boolean;
+  name: string; label: string; type: string; required: boolean; requiredFor?: string[];
   minLength?: number; maxLength?: number; min?: number; max?: number;
   options?: { value: string; label: string }[]; hint?: string;
 }
@@ -24,7 +24,7 @@ const inputType: 'email' | 'url' | 'number' | 'text' = field.type === 'email' ? 
   {field.hint && <small id={`${id}-hint`} class="ah-field-hint">{field.hint}</small>}
   <p class="ah-form-error" id={`${id}-error`} data-error-for={name} hidden></p>
 </div> : <div class:list={['ah-field', {'ah-field-long': isLongText}]} data-field={name}>
-  <label for={id}>{field.label}{field.required ? <em aria-label="必填"> *</em> : <span class="ah-optional">（选填）</span>}</label>
+  <label for={id}>{field.label}<em aria-label="必填" data-required-marker hidden={!field.required}> *</em><span class="ah-optional" data-optional-marker hidden={field.required}>（选填）</span></label>
   {field.type === 'select' ? <select id={id} name={name} required={field.required} aria-describedby={describedBy}>
     <option value="">请选择</option>
     {field.options?.map(option => <option value={option.value}>{option.label}</option>)}

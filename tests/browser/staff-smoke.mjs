@@ -51,5 +51,13 @@ try{
  await page.goto('https://api.artdico.host/admin/',{waitUntil:'networkidle'});await page.locator('[data-admin-fill-booths]').click();assert.equal(await page.locator('[data-admin-booths] tr').count(),15);
  await page.locator('[data-admin-booths] tr').first().locator('button').first().click();const booth=page.locator('[data-booth-form]');for(const[name,value]of Object.entries({organization:'合成参展机构',project:'合成展示项目',description:'合成游戏互动演示',contactName:'合成负责人',contactMethods:'synthetic@example.invalid'}))await booth.locator(`[name=${name}]`).fill(value);await booth.locator('[name=status]').selectOption('confirmed');await page.locator('[data-booth-submit]').click();await page.locator('[data-admin-save]').click();await page.locator('[data-admin-status]').filter({hasText:'草稿已保存'}).waitFor();
  assert.equal(content.booths.length,15);assert.equal(content.booths[0].contactName,'合成负责人');await page.locator('[data-admin-publish]').click();await page.locator('[data-admin-status]').filter({hasText:'发布成功'}).waitFor();assert.equal(published.content.booths[0].description,'合成游戏互动演示');assert.equal(Object.hasOwn(published.content.booths[0],'contactName'),false);
- await page.screenshot({path:evidence+'/booth-management-desktop.png',fullPage:true});assert.deepEqual(errors,[]);console.log(JSON.stringify({reviewAndAccommodationSeparate:true,userAccountSaved:true,qrRotation:true,encryptedBackupDownload:true,fifteenBooths:true,privateBoothContactsNotPublished:true,mutations:writes.map(item=>item.path),pageErrors:errors},null,2));
+ await page.locator('[data-arrangements-slots] [data-arrangements-plan="booth"]').first().click();
+ const direct=page.locator('[data-planner-booth]');await direct.locator('[name=description]').fill('合成直接编辑展示内容');
+ assert.equal(await page.locator('[data-admin-save]').isDisabled(),true);
+ assert.equal(content.booths[0].description,'合成游戏互动演示');
+ await direct.locator('button[type=submit]').click();await page.locator('[data-planner-result]').filter({hasText:'已应用'}).waitFor();
+ await page.locator('[data-planner-close]').click();await page.locator('[data-admin-save]').click();await page.locator('[data-admin-status]').filter({hasText:'草稿已保存'}).waitFor();
+ assert.equal(content.booths[0].description,'合成直接编辑展示内容');assert.equal(content.booths[0].contactName,'合成负责人');
+ assert.equal(published.content.booths[0].description,'合成游戏互动演示');
+ await page.screenshot({path:evidence+'/booth-management-desktop.png',fullPage:true});assert.deepEqual(errors,[]);console.log(JSON.stringify({reviewAndAccommodationSeparate:true,userAccountSaved:true,qrRotation:true,encryptedBackupDownload:true,fifteenBooths:true,directBoothDraftEditing:true,unappliedChangesProtected:true,privateBoothContactsNotPublished:true,mutations:writes.map(item=>item.path),pageErrors:errors},null,2));
 }finally{await context.close();await browser.close();}

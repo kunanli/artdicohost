@@ -26,6 +26,7 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/volunteer-smoke.mjs
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/people-relationships-smoke.mjs
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/application-review-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/settings-collaborators-smoke.mjs
 ```
 
 `registration-smoke.mjs` 在手机宽度检查：正式报名关闭时不提交且可读隐私告知；一般机构／职位／经历可省略但讲者／展商按条件必填；收据明确区分已确认和候补，候补不显示或读取群码；保存结果不明时冻结原资料，明确重试使用相同内容和幂等键。另置入合成工作人员 Cookie，验证公开 API 与入群图片均不发送该 Cookie。
@@ -63,3 +64,5 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 `application-review-smoke.mjs` 是人工审核阶段的公开申请／后台联动验收，使用实际 runtime、鉴权、v3 名额账本、确认通知和内存 OSS，全部 HTTP 请求拦截。覆盖 320／390／1440px 单页简表、学生身份、未问字段省略、同一申请的选填分享主题、重复点击、公开保存未知回执的原正文／幂等键重试、私人待审收据与 A4 打印。待审不占名额、不寄信、不读取已设置群码或提供 Wallet；内部 `approved` 核查意见不能取得名额。分别从详情与逐人表格明确核准／拒绝，验证保存失回执时零通知、GET 核对不代为执行、明确重播同一审核操作只寄一次。另验证已核准候补转正、未审者不自动递补、当前学生身份与原始身份同时保留／可筛选、reviewer 与 superadmin 工具差异、权限先于读取及会话失效清理。
 
 该脚本与本阶段调整后的 `people-relationships-smoke.mjs` 才采用「新公开申请先待审」语义；后者在真实 300 人场景明确核准新申请后再验证候补，不能直接把提交当成占位。较早 `registration-smoke.mjs`／`confirmation-smoke.mjs` 的三步骤表单部分是旧流程验收，不能作为新版简表的通过证据。邮件只由合成 provider stub 记录，不代表真实 EmailJS 寄送或收件；没有真实报名、群码、Apple 凭证或名单输入。
+
+`settings-collaborators-smoke.mjs` 使用真实 runtime、账号服务与内存 OSS，覆盖 320／390／1440px 管理员账号入口、两位协作者的明确建立及真实登录、独立密码与四项活动权限。完整协作者读取群码和通知设置，完全不请求账号或维护 API；部分角色不读取私有设置。检查真实账号保存失回执和坏回执、目录 GET 不能证明密码、刷新后保持待核对且不重送；本机草稿仅保存非敏感填写，明确恢复不创建账号，密码／密钥／图片不进入 IndexedDB。另核对登出清除本机资料、401 清空私有 DOM 和密码后仍能重新登录，以及同一账号验证后恢复填写。全部账号、密码与通知均是隔离内存合成资料，不创建或联络正式工作人员；输出不包含密码。

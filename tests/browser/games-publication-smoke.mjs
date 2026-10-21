@@ -65,7 +65,7 @@ async function fixture(browser, errors, { width = 1440, published = true, userna
   await context.addInitScript(({ ignorePublicAbort }) => {
     const original = fetch.bind(window); window.__publicFetchOptions = []; window.__publicFetchSettlements = [];
     window.fetch = (input, options = {}) => {
-      const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+      const url = new URL(input instanceof URL ? input.href : typeof input === 'string' ? input : input.url, location.href);
       if (url.pathname === '/api/public/content') {
         const id = window.__publicFetchOptions.length + 1;
         window.__publicFetchOptions.push({ id, credentials: options.credentials, cache: options.cache, hasSignal: Boolean(options.signal) });
@@ -134,10 +134,11 @@ async function publish(f) { await openAdmin(f, 'publish'); const before = (await
 async function returnToFront(f) { await f.front.waitForTimeout(1100); await f.front.bringToFront(); await f.front.evaluate(() => { dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })); dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); }); }
 async function publicState(page, kind, id, state, label) { const status = publication(page, kind, id); await status.waitFor(); assert.equal(await status.getAttribute('data-publication-state'), state); assert.match(await status.textContent(), label); return status; }
 async function noOverflow(page) { assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'no horizontal viewport overflow'); }
+async function visibleHit(locator) { await locator.evaluate(node => node.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' })); await locator.page().evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))); const result = await locator.evaluate(node => { const box = node.getBoundingClientRect(), hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2); return { hit: box.width > 0 && box.height > 0 && box.top >= 0 && box.bottom <= innerHeight && (hit === node || node.contains(hit)), rect: box.toJSON(), covering: hit?.outerHTML.slice(0, 900), savebar: document.querySelector('[data-admin-savebar]')?.getBoundingClientRect().toJSON(), wrap: node.closest('.ah-admin-table-wrap')?.getBoundingClientRect().toJSON(), scrollY, viewport: { width: innerWidth, height: innerHeight } }; }); if (!result.hit) { process.stderr.write('visibility diagnostic ' + JSON.stringify(result) + '\n'); await locator.page().screenshot({ path: resolve(evidence, 'failed-hit-' + result.viewport.width + '.png') }); } assert.equal(result.hit, true, 'the visible status/action is not obscured by the save bar'); }
 async function assertPrivate(f) { const envelope = await anonymous(f); assert.equal(envelope.status, 200); const value = JSON.stringify(envelope.value); assert.doesNotMatch(value, new RegExp(PRIVATE + '|synthetic.private|contactId|contactName|materialLinks|internalNotes|wechat|memberCount')); assert.equal(f.runtime.messages.length, 0); }
 async function unchangedAdmissions(f, before) { const after = await f.runtime.app.registrationService.getAdmissions({ actor: f.runtime.users[0] }); assert.deepEqual(after, before, 'game/organization/publication changes do not allocate attendance places'); assert.equal(after.summary.capacity, 300); }
 async function draftRecords(page) { return page.evaluate(() => new Promise((resolve, reject) => { const request = indexedDB.open('artdico-browser-drafts-v1', 1); request.onerror = () => reject(request.error); request.onsuccess = () => { const db = request.result, tx = db.transaction('drafts', 'readonly'), read = tx.objectStore('drafts').getAll(); read.onsuccess = () => resolve(read.result); read.onerror = () => reject(read.error); tx.oncomplete = () => db.close(); }; })); }
-async function proofControl(page, name) { const open = page.locator('dialog[open] [data-admin-' + name + ']:visible'); return await open.count() ? open.last() : page.locator('[data-admin-savebar] [data-admin-' + name + ']:visible'); }
+async function proofControl(page, name) { const open = page.locator('dialog[open] [data-admin-' + name + ']'); return await open.count() ? open.last() : page.locator('[data-admin-savebar] [data-admin-' + name + ']'); }
 
 // Group implementations are deliberately separate: a frozen bundle can run a focused
 // refresh race again without repeating every save/publish scenario.
@@ -155,7 +156,9 @@ async function flowCases(browser, errors, reports) {
       const ready = await publicState(f.admin, 'guests', IDS.guest, 'unpublished', /未公开/u); assert.equal(await ready.getAttribute('data-publication-change'), 'new');
       assert.deepEqual((await anonymous(f)).value, baseline.value, 'saving valid draft does not publish');
       assert.equal(f.calls.filter(call => call.path.endsWith('/publish')).length, 0);
-      await publish(f); await openAdmin(f, 'guests'); await publicState(f.admin, 'guests', IDS.guest, 'published', /已公开/u);
+      await publish(f); await openAdmin(f, 'guests'); const publishedBadge = await publicState(f.admin, 'guests', IDS.guest, 'published', /已公开/u);
+      await visibleHit(publishedBadge); await f.admin.screenshot({ path: resolve(evidence, 'guest-published-status-' + width + '.png') });
+      const editButton = f.admin.locator('[data-guest-id="' + IDS.guest + '"] [data-row-action=edit]'); await visibleHit(editButton); await editButton.click(); await f.admin.locator('[data-guest-dialog][open]').waitFor(); await f.admin.locator('[data-guest-dialog] [data-close-dialog=guest]').first().click();
       await returnToFront(f); const card = f.front.locator('[data-public-guests] [data-guest-id="' + IDS.guest + '"]'); await card.waitFor();
       assert.match(await card.textContent(), /合成公开人物/u); assert.equal(await card.locator('img').count(), 0); assert.equal(await card.locator('.ah-guest-initial').textContent(), '合');
       assert.equal(f.calls.some(call => call.path === '/api/public/portraits/' || call.path.endsWith('/undefined') || call.path.endsWith('/null')), false);
@@ -217,7 +220,7 @@ async function gamesCases(browser, errors, reports) {
     assert.deepEqual((await anonymous(f)).value, baseline.value); await publish(f); await openFront(f);
     const grid = f.front.locator('[data-public-showcases]'); await grid.locator('[data-showcase-id]').first().waitFor(); assert.equal(await grid.locator('[data-showcase-id]').count(), 3);
     assert.deepEqual(await grid.locator('[data-showcase-id]').evaluateAll(nodes => nodes.map(node => node.dataset.showcaseId).sort()), [IDS.legacy, IDS.indie, IDS.team].sort());
-    assert.equal(await grid.locator('.ah-showcase-organization a').count(), 0, 'unauthorized creator organization is not revealed by a work');
+    assert.equal(await grid.locator('a.ah-showcase-organization').count(), 0, 'unauthorized creator organization is not revealed by a work');
     assert.equal((await anonymous(f)).value.content.showcases.find(work => work.id === IDS.indie).organizationId ?? '', '', 'public relation requires independently authorized organization in the same snapshot');
     for (const [kind, count] of [['student', 1], ['indie', 1], ['team', 1], ['all', 3]]) {
       await f.front.locator('[data-public-works-filter]').selectOption(kind); assert.equal(await grid.locator('[data-showcase-id]:visible').count(), count);
@@ -227,14 +230,14 @@ async function gamesCases(browser, errors, reports) {
     form = await editOrganization(f); await form.locator('[name=publicConsent]').check(); await saveAndClose(f, 'organization');
     assert.equal((await anonymous(f)).value.content.organizations.some(item => item.id === IDS.creator), false);
     await publish(f); await returnToFront(f);
-    await grid.locator('[data-showcase-id="' + IDS.indie + '"] .ah-showcase-organization a[href="#organization-' + IDS.creator + '"]').waitFor();
+    await grid.locator('[data-showcase-id="' + IDS.indie + '"] a.ah-showcase-organization[href="#organization-' + IDS.creator + '"]').waitFor();
     assert.equal(await f.front.locator('#organization-' + IDS.creator + ' a[href^="#work-"]').count(), 2);
     assert.equal(await f.front.locator('#booth-' + IDS.booth + ' a[href^="#work-"]').count(), 3);
     reports.push({ group: 'games', creatorRelationAppearsOnlyAfterOwnAuthorizationAndPublication: true, samePublishedSnapshotRelations: true });
     form = await editWork(f, IDS.indie); await form.locator('[name=organizationId]').selectOption(''); assert.equal(await form.locator('[name=publicConsent]').isChecked(), false); await form.locator('[name=publicConsent]').check(); await saveAndClose(f, 'showcase');
     head = await f.runtime.app.store.read(); assert.equal(head.draft.content.showcases.find(work => work.id === IDS.indie).organizationId, '');
     assert.equal((await anonymous(f)).value.content.showcases.find(work => work.id === IDS.indie).organizationId, IDS.creator);
-    await publish(f); await returnToFront(f); await until(f.front, async () => await grid.locator('[data-showcase-id="' + IDS.indie + '"] .ah-showcase-organization a').count() === 0, 'explicit relation clear reaches frontend');
+    await publish(f); await returnToFront(f); await until(f.front, async () => await grid.locator('[data-showcase-id="' + IDS.indie + '"] a.ah-showcase-organization').count() === 0, 'explicit relation clear reaches frontend');
     reports.push({ group: 'games', explicitEmptyOrganizationClearsOnlyOwnRelation: true, oldPublishedRelationRetainedUntilPublish: true });
     await assertPrivate(f); const dom = await f.front.evaluate(() => document.body.innerHTML); assert.equal(dom.includes(PRIVATE), false); assert.equal(dom.includes('synthetic.private@example.invalid'), false);
     await unchangedAdmissions(f, admissions);

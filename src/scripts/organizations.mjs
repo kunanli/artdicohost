@@ -3,6 +3,7 @@ import {isPublicWebsite} from '../../shared/content-schema.mjs';
 import {prepareProfileImage,processedImageSummary} from '../lib/profile-image.mjs';
 import {editStaffImage} from '../lib/staff-image-editor.mjs';
 import {organizationMemberPage,personContactPath} from '../lib/content-relationships.mjs';
+import {PUBLICATION_REASON_LABELS,PUBLICATION_CHANGE_LABELS} from '../lib/admin-save-state.mjs';
 import {readContentForm,writeContentForm} from '../lib/content-local-drafts.mjs';
 import '../styles/organizations-admin.css';
 
@@ -66,25 +67,35 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onSav
     }catch(reason){if(activeSave===operation&&key===accountKey&&allowed())announce(reason.message||'组织资料尚未保存，原记录仍保留。',true);return false;}
     finally{if(activeSave===operation){activeSave=null;saving=false;configure();notify();}}
   }
+  function publication(item){return context().publication?.items.organizations.find(row=>row.id===item.id)??null;}
+  function matchesPublication(item,filter){if(!filter)return true;const state=publication(item);if(!state)return false;return filter==='published'?state.published:filter==='unpublished'?!state.published:filter==='ready'?state.ready:filter==='changed'?['new','updated','removed'].includes(state.change):state.change==='blocked';}
+  function appendPublication(body,item){
+    const report=context().publication,state=publication(item),isInitial=!Object.hasOwn(context().content??{},'organizations');
+    const badge=node('span',!report?'公开状态待核对':!state?(isInitial?'初始内容':'待保存'):state.published?'已公开':'未公开','ah-status');
+    badge.dataset.publicationRecord='';badge.dataset.publicationKind='organizations';badge.dataset.publicationId=item.id;badge.dataset.publicationState=!report?'unknown':!state?'unsaved':state.published?'published':'unpublished';badge.dataset.publicationChange=state?.change??'';badge.dataset.statusTone=!state?'neutral':state.published?'positive':'negative';body.append(badge);
+    if(state){const progress=node('small',PUBLICATION_CHANGE_LABELS[state.change]??'公开进度待核对');progress.dataset.publicationProgress='';body.append(progress);if(state.reasons.length){const reasons=node('small',state.reasons.map(code=>PUBLICATION_REASON_LABELS[code]??'请核对公开条件').join('；'));reasons.dataset.publicationReasons='';body.append(reasons);}}
+  }
   function render(){
     configure();if(!context().content||!pageActive())return;
     cancelMembers();
-    const current=records(),output=$('[data-organization-list]');output.replaceChildren();
-    $('[data-organizations-legacy]').hidden=Object.hasOwn(context().content,'organizations');$('[data-organizations-empty]').hidden=current.length>0;
+    const current=records(),filter=$('[data-organization-publication-filter]')?.value??'',visible=current.filter(item=>matchesPublication(item,filter)),output=$('[data-organization-list]');output.replaceChildren();
+    $('[data-organizations-legacy]').hidden=Object.hasOwn(context().content,'organizations');$('[data-organizations-empty]').hidden=visible.length>0;$('[data-organizations-empty]').textContent=current.length?'此筛选下没有组织记录。':'还没有参与组织记录。';
     for(const [index,item]of current.entries()){
+      if(!matchesPublication(item,filter))continue;
       const card=node('article',undefined,'ah-organization-row');card.dataset.organizationId=item.id;
       const frame=node('div',undefined,'ah-organization-image');
       if(portrait.test(item.logoId)){const picture=node('img');picture.src='/api/admin/portraits/'+item.logoId;picture.alt=item.name+'组织图片（内部预览）';picture.width=110;picture.height=90;picture.loading='lazy';picture.addEventListener('error',()=>{picture.remove();frame.append(node('span','图片预览不可用'));},{once:true});frame.append(picture);}else frame.append(node('span','未上传图片'));
       const body=node('div');body.append(node('h3',item.name||'未填写组织名称'),node('p',participationLabels[item.participation]??participationLabels.undecided),node('p',(statusLabels[item.status]??statusLabels.pending)+' · '+(item.publicConsent?'已获公开授权':'未获公开授权')));
+      appendPublication(body,item);
       if(item.website&&isPublicWebsite(item.website)){const link=node('a','查看组织页面 ↗');link.href=item.website;link.target='_blank';link.rel='noopener noreferrer';body.append(link);}
       const actions=node('div',undefined,'ah-organization-actions');
-      for(const [label,action]of[['编辑','edit'],['上移','up'],['下移','down'],...(item.publicConsent?[['停止公开','withdraw']]:[])]){
+      for(const [label,action]of[['编辑','edit'],['核对公开条件','readiness'],['上移','up'],['下移','down'],...(item.publicConsent?[[publication(item)?.published?'停止公开':'取消待发布','withdraw']]:[])]){
         const button=node('button',label);button.type='button';button.dataset.organizationAction=action;button.setAttribute('aria-label',label+'组织 '+item.name);button.dataset.edge=String(action==='up'&&index===0||action==='down'&&index===current.length-1);
         button.addEventListener('click',()=>{
           if(!allowed()||!pageActive()||blocked()||saving||uploading||dialog.open)return;
-          if(action==='edit'){open(item);return;}
+          if(action==='edit'||action==='readiness'){open(item);if(action==='readiness'){const field=form.elements.namedItem(item.status!=='confirmed'?'status':'publicConsent');field.focus({preventScroll:true});field.scrollIntoView({block:'center',behavior:'auto'});}return;}
           const next=structuredClone(records()),position=next.findIndex(value=>value.id===item.id);if(position<0)return;
-          if(action==='withdraw'){if(!confirm('停止公开此组织？名称、图片、链接与备注会保留，保存并发布后才更新前台。'))return;next[position].publicConsent=false;void apply(next,'已在草稿停止公开此组织，资料仍保留。');}
+          if(action==='withdraw'){if(!confirm((publication(item)?.published?'停止公开':'取消待发布')+'此组织？参与确认、名称、图片、链接与备注会保留；明确发布后才更新前台。'))return;next[position].publicConsent=false;void apply(next,'已在草稿停止公开此组织，资料仍保留。');}
           else{const target=position+(action==='up'?-1:1);if(target<0||target>=next.length)return;[next[position],next[target]]=[next[target],next[position]];void apply(next,'组织显示顺序已应用到草稿。');}
         });actions.append(button);
       }
@@ -222,6 +233,7 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onSav
     }catch(reason){if(current()&&dialog.open&&form.elements.namedItem('id').value===operation.id)error(reason.message||'组织资料尚未保存，填写内容仍保留。');return false;}
     finally{if(activeSave===operation){activeSave=null;saving=false;configure();notify();}}
   }
+  $('[data-organization-publication-filter]')?.addEventListener('change',render);
   form.addEventListener('submit',event=>{event.preventDefault();void save();});
   clear();
   return Object.freeze({render,configure,clear,save,acknowledgeSaved,openById(id){const item=Object.hasOwn(context().content??{},'organizations')?records().find(item=>item.id===id):null;if(!item){announce('此组织尚未保存或已不存在，请重新读取内容后核对。',true);return;}open(item);},get uploading(){return uploading;},get saving(){return saving;},hasUnapplied:()=>dialog.open||uploading,

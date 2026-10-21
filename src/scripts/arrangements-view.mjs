@@ -144,7 +144,7 @@ export function createArrangementsView({ root, load, edit, plan = edit }) {
     if(booth.contactName||booth.contactMethods){const contact=node('p',undefined,'ah-arrangements-booth-contact');contact.append(node('strong',booth.contactName||'负责人待填写'));if(booth.contactMethods)contact.append(node('span',booth.contactMethods));card.append(contact);}
     if (list(row.people).length) card.append(people(row.people));
     if (list(row.teams).length) card.append(teams(row.teams));
-    if (!list(row.people).length && !list(row.teams).length) card.append(node('p', '参与人 / 学生团队尚未关联', 'ah-arrangements-assignment-empty'));
+    if (!list(row.people).length && !list(row.teams).length) card.append(node('p', '参与人 / 作品团队尚未关联', 'ah-arrangements-assignment-empty'));
     const alert = warnings(row.warnings); if (alert) card.append(alert);
     if (!history) card.append(planButton('booth', booth.id, row.slotNumber));
     card.append(editButton('booth', booth.id, history ? '查看取消记录' : '完整编辑'));
@@ -212,7 +212,7 @@ export function createArrangementsView({ root, load, edit, plan = edit }) {
     const persons = summary.people;
     $('[data-arrangements-people-summary]').textContent = '已关联 ' + count(persons.assignedContacts) + ' 位邀约对象 · 确认参加 ' + count(persons.attendingContacts) + ' · 待回复 ' + count(persons.pendingContacts) + ' · 不参加 ' + count(persons.declinedContacts) + '；另有 ' + count(persons.unlinkedConfirmedGuests) + ' 位已确认嘉宾未关联回复。';
     const students = summary.studentTeams ?? {};
-    $('[data-arrangements-student-summary]').textContent = '学生展示已关联 ' + count(students.assignedTeams) + ' 组 · 确认参加 ' + count(students.attendingTeams) + ' 组 · ' + count(students.reportedAttendingMembers) + ' 人（团队填报，非去重签到）。';
+    $('[data-arrangements-student-summary]').textContent = '作品已关联 ' + count(students.assignedTeams) + ' 件 · 确认参加 ' + count(students.attendingTeams) + ' 件 · 填报成员总数 ' + count(students.reportedAttendingMembers) + ' 人（作品团队填报，非去重参会人数或签到）。';
     const sessionsByFormat = summary.sessions.byFormat;
     $('[data-arrangements-formats-summary]').textContent = ['talk','workshop'].map(key => {
       const item = sessionsByFormat[key];

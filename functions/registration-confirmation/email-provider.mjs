@@ -8,13 +8,13 @@ export function createConfirmationEmailProvider({ env = {}, fetchFn = globalThis
   if (loadConfiguration !== undefined && typeof loadConfiguration !== 'function') throw new TypeError('Trusted confirmation configuration loader required.');
   const direct = Object.fromEntries(FIELDS.map(key => [key, own(env, key)]));
   const enabled = own(env, 'ARTDICO_CONFIRMATION_EMAIL_ENABLED') === 'true';
-  async function current() {
+  async function current(transportFetch = fetchFn) {
     // Disabled setup does not fetch any bundle or contact a provider.
     const loaded = enabled && loadConfiguration ? await loadConfiguration() : direct;
     const config = Object.fromEntries(FIELDS.map(key => [key, loaded && typeof loaded === 'object' ? own(loaded, key) : undefined]));
     const transport = createInvitationEmailProvider({ env: { ...config,
       EMAILJS_TEMPLATE_ID: config.EMAILJS_CONFIRMATION_TEMPLATE_ID,
-      ARTDICO_INVITATION_EMAIL_ENABLED: enabled ? 'true' : 'false' }, fetchFn, timeoutMs });
+      ARTDICO_INVITATION_EMAIL_ENABLED: enabled ? 'true' : 'false' }, fetchFn: transportFetch, timeoutMs });
     return { config, transport };
   }
   const readiness = async () => {
@@ -27,6 +27,18 @@ export function createConfirmationEmailProvider({ env = {}, fetchFn = globalThis
     } catch { return { ready: false, enabled, reason: 'EMAIL_CONFIGURATION_UNAVAILABLE', missing: [], template: 'confirmation', deliveryProof: false }; }
   };
   return Object.freeze({ readiness,
-    async send(input) { try { return await (await current()).transport.send(input); } catch { return { status: 'rejected', reason: 'EMAIL_NOT_READY' }; } },
+    async send(input) {
+      let blocked = false;
+      try {
+        const guardedFetch = (...args) => {
+          if (typeof input?.canStart === 'function' && input.canStart() !== true) {
+            blocked = true; throw new Error('Confirmation delivery window expired.');
+          }
+          return fetchFn(...args);
+        };
+        const result = await (await current(guardedFetch)).transport.send(input);
+        return blocked ? { status: 'rejected', reason: 'DELIVERY_WINDOW_EXPIRED' } : result;
+      } catch { return { status: 'rejected', reason: 'EMAIL_NOT_READY' }; }
+    },
   });
 }

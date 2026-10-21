@@ -3,7 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { plainObject, own, parseTimestamp } from '../registration-api/policy.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { createConfirmationTokens } from './tokens.mjs';
-import { createConfirmationRepository, confirmationNoticeId, confirmationRequestHash, validConfirmationOperation, MAX_CONFIRMATION_BATCH } from './repository.mjs';
+import { createConfirmationRepository, canonicalConfirmationKind, confirmationNoticeId, confirmationRequestHash, validConfirmationOperation, MAX_CONFIRMATION_BATCH } from './repository.mjs';
 
 const SITE = 'https://artdico.host';
 const ID = /^[A-Za-z0-9_-]{43}$/u;
@@ -100,11 +100,14 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!current.value.settings.enabled) return { status: 'disabled' };
     return { status: (await providerState()).ready ? 'pending' : 'not_configured' };
   }
-  async function reserve(registrationId, kind, admission, actorId, retryRejected) {
+  async function reserve(registrationId, admission, actorId, retryRejected, deadline) {
     for (let tries = 0; tries < 4; tries++) {
-      const current = await target().read(), previous = current.value.notices.find(item => item.id === confirmationNoticeId(eventId, registrationId, kind));
+      if (monotonicNow() >= deadline) return { status: 'not_attempted' };
+      const current = await target().read(), kind = canonicalConfirmationKind(current.value, registrationId, admission.status);
+      const previous = current.value.notices.find(item => item.id === confirmationNoticeId(eventId, registrationId, kind));
       if (!current.value.settings.enabled) return { status: 'disabled' };
       if (previous && (!retryRejected || previous.status !== 'rejected' || previous.attempt >= 5)) return { notice: previous, owned: false };
+      if (monotonicNow() >= deadline) return { status: 'not_attempted' };
       try {
         const saved = await target().append(current, 'reserve', { registrationId, kind, admissionStatus: admission.status, admissionRevision: admission.revision, retryRejected }, actorId);
         return { notice: saved.value.notices.find(item => item.id === confirmationNoticeId(eventId, registrationId, kind)), owned: true };
@@ -121,14 +124,16 @@ export function createRegistrationConfirmationService({ registrationService, jou
     }
     failure();
   }
-  async function notify(registrationId, { kind = 'registration', actorId = automaticActor, retryRejected = false } = {}) {
+  async function notify(registrationId, { kind = 'registration', actorId = automaticActor, retryRejected = false,
+    deadline = monotonicNow() + batchTimeoutMs } = {}) {
     if (!(await providerState()).ready) return { status: 'not_configured' };
+    if (monotonicNow() >= deadline) return { status: 'not_attempted' };
     const loaded = await loadRegistration(registrationId), { record, admission } = loaded;
     if (record.provenance.kind !== 'public') return { status: 'not_public' };
     if (admission.status === 'withdrawn') return { status: 'withdrawn' };
     if (typeof record.fields.email !== 'string' || !record.fields.email) return { status: 'not_applicable' };
     if (kind === 'promotion' && admission.status !== 'confirmed') return { status: 'not_attempted' };
-    const reserved = await reserve(registrationId, kind, admission, actorId, retryRejected);
+    const reserved = await reserve(registrationId, admission, actorId, retryRejected, deadline);
     if (reserved.status) return reserved;
     if (!reserved.owned) return noticeEmail(reserved.notice);
     const notice = reserved.notice;
@@ -147,6 +152,9 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!delivery.value.settings.enabled) {
       try { return await recordResult(notice, 'rejected', actorId); } catch { return { status: 'unknown' }; }
     }
+    if (monotonicNow() >= deadline) {
+      try { await recordResult(notice, 'rejected', actorId); return { status: 'not_attempted' }; } catch { return { status: 'unknown' }; }
+    }
     const link = capability(registrationId), confirmed = admission.status === 'confirmed';
     const subject = eventFacts.title + (confirmed ? '｜参会名额已确认' : '｜候补登记已保存');
     const text = [record.fields.name + '，你好：', '', confirmed ? '你的参会名额已确认。' : '你的候补登记已保存，目前尚未确认参会名额。',
@@ -157,24 +165,27 @@ export function createRegistrationConfirmationService({ registrationService, jou
       '住宿、讲者、展位与其他职责分别确认。需要更正或取消，请通过原联系渠道联系筹备团队。'].join('\n');
     let result;
     try {
-      result = await emailProvider.send({ recipient: record.fields.email, subject, text,
+      result = await emailProvider.send({ recipient: record.fields.email, subject, text, canStart: () => monotonicNow() < deadline,
         idempotencyKey: 'c_' + confirmationRequestHash({ id: notice.id, attempt: notice.attempt }),
         templateVariables: { to_name: record.fields.name, to_email: record.fields.email, event_title: eventFacts.title,
           event_date: eventFacts.date, event_time: eventFacts.time, event_venue: eventFacts.venue, reference_code: registrationId, invitation_text: text } });
     } catch { result = { status: 'unknown' }; }
     const status = ['provider_accepted', 'rejected'].includes(result?.status) ? result.status : 'unknown';
-    try { return await recordResult(notice, status, actorId); } catch { return { status: 'unknown' }; }
+    try { const saved = await recordResult(notice, status, actorId);
+      return result?.reason === 'DELIVERY_WINDOW_EXPIRED' && status === 'rejected' ? { status: 'not_attempted' } : saved;
+    } catch { return { status: 'unknown' }; }
   }
   async function forSavedReceipt({ receipt, notify: send = true } = {}) {
     if (receipt?.committed !== true || receipt.eventId !== eventId || !ID.test(receipt.registrationId ?? '')
       || receipt.referenceCode !== receipt.registrationId || parseTimestamp(receipt.committedAt) === null
       || !['confirmed', 'waitlisted'].includes(receipt.admissionStatus)) failure();
-    const result = capability(receipt.registrationId);
+    const result = capability(receipt.registrationId), deadline = monotonicNow() + batchTimeoutMs;
     // Unconfigured notification adds no object access to the successful write.
     // This is configuration state, not a claim about historical delivery.
     if (!send || !(await providerState()).ready) return { ...result, email: { status: 'not_configured' } };
-    try { const email = await notify(receipt.registrationId); return { ...result,
-      email: ['not_public', 'withdrawn'].includes(email.status) ? { status: 'not_applicable' } : email }; }
+    try { const email = await notify(receipt.registrationId, { deadline }); return { ...result,
+      email: ['not_public', 'withdrawn'].includes(email.status) ? { status: 'not_applicable' }
+        : email.status === 'not_attempted' ? { status: 'pending' } : email }; }
     catch { return { ...result, email: { status: 'unknown' } }; }
   }
   async function confirmation(input) {
@@ -230,6 +241,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || !validConfirmationOperation(operationId)
       || !Array.isArray(registrationIds) || !registrationIds.length || registrationIds.length > MAX_CONFIRMATION_BATCH
       || new Set(registrationIds).size !== registrationIds.length || registrationIds.some(id => !ID.test(id)) || typeof retryRejected !== 'boolean') failure('INVALID_REQUEST', 400);
+    const deadline = monotonicNow() + batchTimeoutMs;
     const requestHash = confirmationRequestHash({ actorId: actor.id, registrationIds, retryRejected }), current = await target().read();
     const previous = current.value.operations.find(op => op.operationId === operationId);
     if (previous) {
@@ -241,16 +253,14 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (current.value.revision !== expectedRevision) failure('REVISION_CONFLICT', 409);
     try { await target().append(current, 'dispatch_started', { operationId, requestHash, registrationIds, retryRejected }, actor.id); }
     catch (error) { if (conflict(error)) failure('REVISION_CONFLICT', 409); failure(); }
-    const deadline = monotonicNow() + batchTimeoutMs, results = []; let stop = false;
+    const results = []; let stop = false;
     for (const registrationId of registrationIds) {
       if (monotonicNow() >= deadline) stop = true;
       if (stop) { results.push({ registrationId, status: 'not_attempted' }); continue; }
       try {
-        const state = await target().read(), initial = state.value.notices.find(n => n.id === confirmationNoticeId(eventId, registrationId, 'registration'));
-        const loaded = await loadRegistration(registrationId), kind = initial?.admissionStatus === 'waitlisted' && loaded.admission.status === 'confirmed' ? 'promotion' : 'registration';
-        const email = await notify(registrationId, { kind, actorId: actor.id, retryRejected });
+        const email = await notify(registrationId, { actorId: actor.id, retryRejected, deadline });
         results.push({ registrationId, status: email.status });
-        if (email.status === 'unknown') stop = true;
+        if (['unknown', 'not_attempted'].includes(email.status)) stop = true;
       } catch { results.push({ registrationId, status: 'unavailable' }); stop = true; }
     }
     let saved;
@@ -261,12 +271,13 @@ export function createRegistrationConfirmationService({ registrationService, jou
   async function notifyPromoted({ registrationIds, timeoutMs = batchTimeoutMs } = {}) {
     if (!Array.isArray(registrationIds) || registrationIds.length > MAX_CONFIRMATION_BATCH || registrationIds.some(id => !ID.test(id))
       || new Set(registrationIds).size !== registrationIds.length || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > batchTimeoutMs) failure('INVALID_REQUEST', 400);
+    const deadline = monotonicNow() + timeoutMs;
     if (!(await providerState()).ready) return { status: 'not_configured', results: [] };
-    const deadline = monotonicNow() + timeoutMs, results = []; let stop = false;
+    const results = []; let stop = false;
     for (const registrationId of registrationIds) {
       if (monotonicNow() >= deadline) stop = true;
       if (stop) { results.push({ registrationId, status: 'not_attempted' }); continue; }
-      try { const email = await notify(registrationId, { kind: 'promotion' }); results.push({ registrationId, status: email.status }); if (email.status === 'unknown') stop = true; }
+      try { const email = await notify(registrationId, { kind: 'promotion', deadline }); results.push({ registrationId, status: email.status }); if (['unknown', 'not_attempted'].includes(email.status)) stop = true; }
       catch { results.push({ registrationId, status: 'unavailable' }); stop = true; }
     }
     return { results };

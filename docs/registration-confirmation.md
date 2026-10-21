@@ -60,9 +60,9 @@ const handle = createRegistrationConfirmationApi({service, auth});
 
 - 已持久化的 public 报名，配置完整时自动准备「参会名额已确认」或「候补登记已保存」，只对原记录的邮箱发送。无邮箱记不适用；未配置、自动通知停用、待处理、服务商接受、明确拒绝及结果未知分别显示。
 - 当前能力读取永不发信。公开重放读取同一通知，不重占名额；后台显式补发仅处理尚未尝试或已明确拒绝的 public 报名。同意／来源不被重写，工作人员受托登记需要原有邀请流程。
-- 每封通知先在同一 CAS journal 预留，再执行唯一一次 provider 请求。外部请求前再次核对当前资格及持久自动通知开关；暂停后不继续发出新请求。预留 ACK 不明时不会请求 provider；provider 或结果 ACK 不明时不会盲重发。持久 `reserved` 对外视为 unknown。明确 4xx 拒绝可由管理员勾选 retryRejected 后再次尝试，最多五次；unknown 永远不能以普通重试再次发送。
-- 后台批次先写入 operationId／正文 hash，再逐人执行。相同 operationId 改正文拒绝。未知批次启动回执重放会覆盖所有选定 ID 并逐一返回 unknown，不启动新的发送。遇到未知结果、存储问题或二十秒批次期限，后续条目标明 not_attempted，不能当作已处理；不得把「批次完成」当作全部送达。
-- `notifyPromoted({registrationIds})` 是可信运行时可选钩子，发送单独、幂等的转正通知。确认页读取不调用它；未配置时不会自动回填旧名单。显式后台派发会识别已发送候补后当前已转正者，使用独立 promotion 通知身份。
+- 每封通知先在同一 CAS journal 预留，再执行唯一一次 provider 请求。外部请求前再次核对当前资格及持久自动通知开关；暂停后不继续发出新请求。预留 ACK 不明时不会请求 provider；provider 或结果 ACK 不明时不会盲重发。持久 `reserved` 对外视为 unknown。明确未发送或 4xx 拒绝可由管理员勾选 retryRejected 后再次尝试，最多五次；unknown 永远不能以普通重试再次发送。
+- 后台批次先写入 operationId／正文 hash，再逐人执行。相同 operationId 改正文拒绝。未知批次启动回执重放会覆盖所有选定 ID 并逐一返回 unknown，不启动新的发送。批次期限从进入操作开始计算，包含配置、OSS 读取及预留；预留前与外部请求前都检查同一期限，异步配置加载后传输层仍会再次检查。遇到未知结果、存储问题或期限，后续条目标明 not_attempted；预留后已超时的已知未发送记录保留为 rejected，公开保存结果显示 pending。不能当作已处理或全部送达。工厂默认二十秒，生产运行时采用五秒并使用四秒 provider 超时。
+- `notifyPromoted({registrationIds,timeoutMs?})` 是可信运行时可选钩子，timeoutMs 可缩小至同一公开请求的剩余通知预算。确认页读取不调用它；未配置时不会自动回填旧名单。已存在候补通知时，转正使用独立 promotion 身份，保留一次候补加一次确认。若转正在原通知钩子运行前发生，intake／promotion 在同一 CAS 内选择唯一 confirmed 身份；并发、逆序和未知 ACK 均不能产生第二封相同确认信。显式 rejected 重试只重用该身份。
 - 结果不明时先核对服务商及已有通知审计，不更换 operationId 盲发。后台刷新不会把旧 unknown 改成未发送。必要的人工核对与后续安全派发须由已有管理员按实际证据处理，不能伪造 provider 接受或送达。
 
 ## 存储、备份与回退
@@ -73,7 +73,7 @@ const handle = createRegistrationConfirmationApi({service, auth});
 
 ## 验证
 
-23 项合成回归覆盖 capability 用途与期限、原始记录与撤回状态、未配置零 I/O、独立实例只发一次、预留／结果 ACK 丢失、预留后的停用竞态、未知 provider 输出、候补及转正、无邮箱／受托来源、CAS 设置与批次重放、明确拒绝重试、批次期限、伪造快照、配置隔离，以及 HTTP Origin／角色／CSRF／大小／字段／错误隐私。只使用合成对象协议与注入 provider；不是实际投递、真实名单迁移或 Apple 设备验收。
+30 项合成回归覆盖 capability 用途与期限、原始记录与撤回状态、未配置零 I/O、独立实例只发一次、跨 intake／promotion 的顺序／并发／未知 ACK 去重、预留／结果 ACK 丢失、预留后的停用竞态、未知 provider 输出、候补及转正、无邮箱／受托来源、CAS 设置与批次重放、同一 canonical 身份明确拒绝重试、包含慢读取及配置加载的批次期限、伪造快照、配置隔离，以及 HTTP Origin／角色／CSRF／大小／字段／错误隐私。只使用合成对象协议与注入 provider；不是实际投递、真实名单迁移或 Apple 设备验收。
 
 ```sh
 node --test --test-isolation=none tests/registration-confirmation.test.mjs tests/registration-confirmation-http.test.mjs

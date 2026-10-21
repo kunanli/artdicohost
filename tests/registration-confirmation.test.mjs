@@ -105,6 +105,69 @@ test('saved waitlist gets a waitlist notice and no group or Wallet; current rece
   assert.equal(f.state.messages.length, 2); assert.match(f.state.messages[1].subject, /名额已确认/u);
 });
 
+async function promotedBeforeNotification(f) {
+  const first = await register(f), waiting = await register(f);
+  const capacity = await f.service.getAdmissions({ actor });
+  const released = await f.service.withdrawAdmission({ actor, expectedRevision: capacity.revision, operationId: operationId(), registrationId: first.saved.receipt.registrationId });
+  assert.deepEqual(released.promotedIds, [waiting.saved.receipt.registrationId]);
+  return waiting.saved.receipt;
+}
+
+test('intake and promotion share one confirmed identity in either order when the waitlist hook was delayed', async () => {
+  for (const promotionFirst of [false, true]) {
+    const f = fixture(), receipt = await promotedBeforeNotification(f), c = f.confirmation();
+    const intake = () => c.forSavedReceipt({ receipt }), promotion = () => f.confirmation().notifyPromoted({ registrationIds: [receipt.registrationId] });
+    await (promotionFirst ? promotion() : intake()); await (promotionFirst ? intake() : promotion());
+    assert.equal(f.state.messages.length, 1); assert.match(f.state.messages[0].subject, /名额已确认/u);
+    const saved = await createConfirmationRepository({ journal: f.journalFor(c.prefix), eventId: EVENT }).read();
+    assert.equal(saved.value.notices.length, 1); assert.equal(saved.value.notices[0].kind, 'registration');
+    assert.equal(saved.value.notices[0].admissionStatus, 'confirmed');
+  }
+});
+
+test('concurrent intake and promotion reserve one confirmed notice across independent instances', async () => {
+  const f = fixture(), receipt = await promotedBeforeNotification(f);
+  await Promise.all([f.confirmation().forSavedReceipt({ receipt }), f.confirmation().notifyPromoted({ registrationIds: [receipt.registrationId] })]);
+  assert.equal(f.state.messages.length, 1);
+  const current = await createConfirmationRepository({ journal: f.journalFor(f.confirmation().prefix), eventId: EVENT }).read();
+  assert.equal(current.value.notices.length, 1); assert.equal(current.value.notices[0].status, 'provider_accepted');
+});
+
+test('cross-kind replays never resend a lost reservation or result acknowledgement', async () => {
+  for (const promotionFirst of [false, true]) for (const lostAt of [1, 2]) {
+    const f = fixture(), receipt = await promotedBeforeNotification(f); f.state.loseAt = lostAt;
+    const intake = () => f.confirmation().forSavedReceipt({ receipt });
+    const promotion = () => f.confirmation().notifyPromoted({ registrationIds: [receipt.registrationId] });
+    await (promotionFirst ? promotion() : intake()); await (promotionFirst ? intake() : promotion());
+    await intake(); await promotion();
+    assert.equal(f.state.messages.length, lostAt === 1 ? 0 : 1);
+    const current = await createConfirmationRepository({ journal: f.journalFor(f.confirmation().prefix), eventId: EVENT }).read();
+    assert.equal(current.value.notices.length, 1); assert.equal(current.value.notices[0].attempt, 1);
+  }
+});
+
+test('cross-kind explicit retries retain the canonical notice and never retry unknown delivery', async () => {
+  for (const providerStatus of ['rejected', 'unknown']) {
+    const f = fixture(), receipt = await promotedBeforeNotification(f), c = f.confirmation(); f.state.providerStatus = providerStatus;
+    await c.notifyPromoted({ registrationIds: [receipt.registrationId] }); await c.forSavedReceipt({ receipt });
+    assert.equal(f.state.messages.length, 1);
+    f.state.providerStatus = 'provider_accepted';
+    await c.dispatch({ actor, expectedRevision: (await c.settings({ actor })).revision, operationId: operationId(), registrationIds: [receipt.registrationId], retryRejected: true });
+    assert.equal(f.state.messages.length, providerStatus === 'rejected' ? 2 : 1);
+    const current = await createConfirmationRepository({ journal: f.journalFor(c.prefix), eventId: EVENT }).read();
+    assert.equal(current.value.notices.length, 1); assert.equal(current.value.notices[0].kind, 'registration');
+    assert.equal(current.value.notices[0].attempt, providerStatus === 'rejected' ? 2 : 1);
+  }
+});
+
+test('journal replay itself rejects a second confirmed identity across notice kinds', async () => {
+  const f = fixture(), { saved } = await register(f), c = f.confirmation(); await c.forSavedReceipt({ receipt: saved.receipt });
+  const repository = createConfirmationRepository({ journal: f.journalFor(c.prefix), eventId: EVENT }), current = await repository.read();
+  await assert.rejects(repository.append(current, 'reserve', { registrationId: saved.receipt.registrationId, kind: 'promotion',
+    admissionStatus: 'confirmed', admissionRevision: 1, retryRejected: false }, actor.id), /unavailable/u);
+  assert.equal((await repository.read()).value.revision, current.value.revision); assert.equal(f.state.messages.length, 1);
+});
+
 test('withdrawal hides attendee, group and Wallet immediately, and review failure never exposes a stale receipt', async () => {
   const f = fixture(), { saved } = await register(f), c = f.confirmation(), receipt = await c.forSavedReceipt({ receipt: saved.receipt });
   const source = await f.service.repository.readIndex(), original = await f.service.repository.readRecord(source.value.entries[0]);
@@ -230,10 +293,46 @@ test('pausing automatic delivery after reservation still prevents the external r
 
 test('manual batch deadline leaves following recipients explicitly unattempted instead of running past the request budget', async () => {
   const f = fixture(), first = await register(f), second = await register(f); let ticks = 0;
-  const c = f.confirmation({ batchTimeoutMs: 1500, monotonicNow: () => ticks++ * 1000 });
+  const c = f.confirmation({ batchTimeoutMs: 1500, monotonicNow: () => ticks, emailProvider: {
+    readiness: () => ({ ready: true }), async send(input) { f.state.messages.push(input); ticks = 2000; return { status: 'provider_accepted' }; } } });
   const result = await c.dispatch({ actor, expectedRevision: 0, operationId: operationId(), registrationIds: [first.saved.receipt.registrationId, second.saved.receipt.registrationId] });
   assert.equal(result.status, 'partial'); assert.deepEqual(result.results.map(item => item.status), ['provider_accepted', 'not_attempted']);
   assert.equal(f.state.messages.length, 1);
+});
+
+test('slow registration, reservation or final eligibility reads cannot start a provider request after the budget', async () => {
+  for (const stage of ['registration', 'reservation', 'recheck']) {
+    const f = fixture(), { saved } = await register(f); let ticks = 0, admissionReads = 0;
+    const registrationService = { ...f.service, async getAdmissionStatus(id) {
+      const result = await f.service.getAdmissionStatus(id); admissionReads++;
+      if (stage === 'registration' && admissionReads === 1 || stage === 'recheck' && admissionReads === 2) ticks = 5000;
+      return result;
+    } };
+    const journalFor = prefix => { const journal = f.journalFor(prefix); return { ...journal, async read() {
+      const result = await journal.read(); if (stage === 'reservation') ticks = 5000; return result;
+    } }; };
+    const c = f.confirmation({ registrationService, journalFor, batchTimeoutMs: 5000, monotonicNow: () => ticks });
+    const receipt = await c.forSavedReceipt({ receipt: saved.receipt });
+    assert.equal(receipt.email.status, 'pending'); assert.equal(f.state.messages.length, 0);
+    const current = await createConfirmationRepository({ journal: f.journalFor(c.prefix), eventId: EVENT }).read();
+    assert.equal(current.value.notices.length, stage === 'recheck' ? 1 : 0);
+    if (stage === 'recheck') assert.equal(current.value.notices[0].status, 'rejected', 'known unsent reservation stays explicitly retryable');
+  }
+});
+
+test('promotion readiness and administrative operation writes consume the same deadline as notification', async () => {
+  for (const mode of ['promotion', 'dispatch']) {
+    const f = fixture(), { saved } = await register(f); let ticks = 0;
+    const journalFor = prefix => { const journal = f.journalFor(prefix); return { ...journal, async commit(...args) {
+      const result = await journal.commit(...args); ticks = 5000; return result;
+    } }; };
+    const c = f.confirmation({ journalFor, batchTimeoutMs: 5000, monotonicNow: () => ticks, emailProvider: {
+      readiness: async () => { ticks = 5000; return { ready: true }; }, send: async () => assert.fail('expired window cannot send'),
+    } });
+    const response = mode === 'promotion' ? await c.notifyPromoted({ registrationIds: [saved.receipt.registrationId] })
+      : await c.dispatch({ actor, expectedRevision: 0, operationId: operationId(), registrationIds: [saved.receipt.registrationId] });
+    assert.deepEqual(response.results.map(item => item.status), ['not_attempted']); assert.equal(f.state.messages.length, 0);
+  }
 });
 
 test('admin Wallet setup retains only safe missing field names and certificate dates, while public receipts stay minimal', async () => {
@@ -259,6 +358,10 @@ test('confirmation provider uses a separate template, never loads disabled confi
     to_name: fields.name, to_email: fields.email, event_title: event.title, event_date: event.date.value, event_time: event.time.label,
     event_venue: event.venue.address, reference_code: 'a'.repeat(43), invitation_text: text } });
   assert.equal(sent.status, 'provider_accepted'); assert.equal(calls, 1);
+  const blocked = await provider.send({ recipient: fields.email, subject: '合成确认', text, idempotencyKey: 'synthetic_notice', canStart: () => false, templateVariables: {
+    to_name: fields.name, to_email: fields.email, event_title: event.title, event_date: event.date.value, event_time: event.time.label,
+    event_venue: event.venue.address, reference_code: 'a'.repeat(43), invitation_text: text } });
+  assert.equal(blocked.status, 'rejected'); assert.equal(blocked.reason, 'DELIVERY_WINDOW_EXPIRED'); assert.equal(calls, 1, 'final transport guard runs after asynchronous config load');
   const broken = createConfirmationEmailProvider({ env: { ARTDICO_CONFIRMATION_EMAIL_ENABLED: 'true' }, loadConfiguration: async () => { throw new Error('PRIVATE-LOAD-ERROR'); }, fetchFn: async () => assert.fail('no network') });
   assert.equal((await broken.readiness()).ready, false); assert.equal((await broken.send({})).status, 'rejected');
 });

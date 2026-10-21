@@ -19,6 +19,15 @@ export const confirmationNoticeId = (eventId, registrationId, kind = 'registrati
 export const confirmationRequestHash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const validConfirmationOperation = value => typeof value === 'string' && OP.test(value);
 
+// A confirmed message has one durable identity across intake and promotion.
+// Preserve a distinct promotion only when a waitlist notice already exists.
+export function canonicalConfirmationKind(state, registrationId, admissionStatus) {
+  if (admissionStatus !== 'confirmed') return 'registration';
+  const notices = state.notices.filter(item => item.registrationId === registrationId);
+  return notices.find(item => item.admissionStatus === 'confirmed')?.kind
+    ?? (notices.some(item => item.kind === 'registration' && item.admissionStatus === 'waitlisted') ? 'promotion' : 'registration');
+}
+
 function initial(eventId) { return { schemaVersion: 1, eventId, revision: 0, settings: { enabled: true }, notices: [], operations: [], audit: [] }; }
 function apply(state, audit) {
   const d = audit.details;
@@ -26,9 +35,11 @@ function apply(state, audit) {
     if (!exact(d, ['registrationId', 'kind', 'admissionStatus', 'admissionRevision', 'retryRejected']) || !ID.test(d.registrationId ?? '')
       || !['registration', 'promotion'].includes(d.kind) || !['confirmed', 'waitlisted'].includes(d.admissionStatus)
       || !Number.isSafeInteger(d.admissionRevision) || d.admissionRevision < 0 || typeof d.retryRejected !== 'boolean') fail();
-    if (d.kind === 'promotion' && d.admissionStatus !== 'confirmed') fail();
+    if (d.kind !== canonicalConfirmationKind(state, d.registrationId, d.admissionStatus)) fail();
     const id = confirmationNoticeId(state.eventId, d.registrationId, d.kind), existing = state.notices.find(n => n.id === id);
-    if (existing && (!d.retryRejected || existing.status !== 'rejected' || existing.attempt >= 5)) fail();
+    if (existing && (!d.retryRejected || existing.status !== 'rejected' || existing.attempt >= 5 || existing.admissionStatus !== d.admissionStatus)) fail();
+    if (d.admissionStatus === 'confirmed' && state.notices.some(item => item.registrationId === d.registrationId
+      && item.admissionStatus === 'confirmed' && item.id !== id)) fail();
     if (!existing && state.notices.length >= 2000) fail();
     const notice = { id, registrationId: d.registrationId, kind: d.kind, status: 'reserved', admissionStatus: d.admissionStatus,
       admissionRevision: d.admissionRevision, createdAt: existing?.createdAt ?? audit.at, updatedAt: audit.at,

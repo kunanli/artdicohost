@@ -4,7 +4,7 @@ import { EDITABLE_CONTACT_FIELDS } from '../../shared/contact-editor.mjs';
 import { SESSION_ROLES, SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
 import { eventConfig } from '../config/event.mjs';
 import { contactProgress, summarizeContactProgress, invitationProgressLabels, contactDeclined } from '../../shared/organizer-progress.mjs';
-import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, admissionForContact, ADMISSION_LABELS, PUBLIC_ROLE_LABELS, savedContactReceipt, conversionPreview, conversionReceipt } from '../lib/people-relationships.mjs';
+import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, admissionForContact, ADMISSION_LABELS, PUBLIC_ROLE_LABELS, savedContactReceipt, conversionPreview, conversionReceipt, privateResponseAction } from '../lib/people-relationships.mjs';
 
 const $ = value => document.querySelector(value);
 const responses = { pending: '尚未确认', attending: '已确认出席', declined: '不出席' };
@@ -110,8 +110,10 @@ async function request(path, options = {}) {
   let response,result;
   try{
     response=await fetch(path,{...fetchOptions,headers,credentials:'same-origin',cache:'no-store',redirect:'error',signal:controller.signal});
-    if(generation!==sessionGeneration||!current()){response.body?.cancel().catch(()=>{});throw new Error('会话或读取对象已改变，已忽略旧回应。');}
-    if([401,403].includes(response.status)&&path!=='/api/admin/login'){response.body?.cancel().catch(()=>{});const error=new Error(response.status===401?'工作人员会话已结束，请重新登录。':'此账号没有读取这份私人资料的权限，请重新登录核对。');error.status=response.status;clearPrivateState();announce(error.message,true);throw error;}
+    const responseAction=privateResponseAction({requestGeneration:generation,currentGeneration:sessionGeneration,status:response.status,selectionCurrent:current,login:path==='/api/admin/login'});
+    if(responseAction==='ignore_session'){response.body?.cancel().catch(()=>{});throw new Error('会话已改变，已忽略旧回应。');}
+    if(responseAction==='clear_session'){response.body?.cancel().catch(()=>{});const error=new Error(response.status===401?'工作人员会话已结束，请重新登录。':'此账号没有读取这份私人资料的权限，请重新登录核对。');error.status=response.status;clearPrivateState();announce(error.message,true);throw error;}
+    if(responseAction==='ignore_selection'){response.body?.cancel().catch(()=>{});throw new Error('读取对象已改变，已忽略旧回应。');}
     if(!/^application\/json(?:\s*;|$)/iu.test(response.headers.get('content-type')??''))throw new Error('云端回应格式无法核对。');
     const maximum=path==='/api/admin/contacts'?32*1024*1024:4*1024*1024,declared=response.headers.get('content-length');
     if(declared!==null&&(!/^[0-9]+$/u.test(declared)||Number(declared)>maximum))throw new Error('云端回应超出可核对范围。');
@@ -336,7 +338,7 @@ function detailPair(dl,label,value){if(!value)return;dl.append(node('dt',label),
 function renderContactRelationships(output,item){
   const related=relationshipForContact(item,relationships);
   if(!related.available){output.append(node('small','公开身份与组织目录待核对','people-relationship-warning'));for(const row of related.memberships)output.append(node('small','已保存组织编号：'+row.organizationId));return;}
-  for(const profile of related.profiles){output.append(node('small','公开职责：'+(profile.publicRoles.map(role=>PUBLIC_ROLE_LABELS[role]).join('、')||'尚未标记')));output.append(node('small',[profile.publicConsent?'已记录公开授权':'公开授权待核对',profile.hasPortrait?'已有照片':'照片待补',profile.published?profile.publishedMatchesDraft?'当前资料已发布':'旧版已发布，修改待发布':related.publicationKnown?'尚未发布':'公开归属待核对'].join(' · ')));}
+  for(const profile of related.profiles){output.append(node('small','公开职责：'+(profile.publicRoles.map(role=>PUBLIC_ROLE_LABELS[role]).join('、')||'尚未标记')));output.append(node('small',[profile.publicConsent?'已记录公开授权':'公开授权待核对',profile.hasPortrait?'已有照片':'照片待补',profile.published?profile.publishedMatchesDraft?'当前资料已发布':'资料有历史公开版本，当前人员关联及内容待核对':related.publicationKnown?'尚未发布':'公开归属待核对'].join(' · ')));}
   if(!related.profiles.length)output.append(node('small','尚未关联人物资料'));
   for(const member of related.memberships){const line=node('small',member.name+' · '+(member.role==='lead'?'负责人':'成员')+(member.title?' · '+member.title:'')+(member.state==='missing'?'（组织已失效，保留关联）':member.state==='withdrawn'?'（组织已退出）':''),member.state!=='available'?'people-relationship-warning':undefined);output.append(line);if(user?.roles.includes('editor')&&member.state!=='missing'){const link=node('a','查看组织','people-profile-link');link.href='/admin/#organization='+encodeURIComponent(member.organizationId);output.append(link);}}
   if(!related.memberships.length)output.append(node('small','尚未关联组织'));

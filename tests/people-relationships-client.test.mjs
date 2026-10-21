@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateImportedContact, createEmptyContactOperations } from '../shared/contacts-schema.mjs';
-import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, savedContactReceipt, conversionPreview, conversionReceipt, admissionForContact } from '../src/lib/people-relationships.mjs';
+import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, savedContactReceipt, conversionPreview, conversionReceipt, admissionForContact, privateResponseAction } from '../src/lib/people-relationships.mjs';
 
 const registrationId='r'.repeat(43),referenceCode='c'.repeat(43);
 function contact(){const {sourceRowId,...profile}=validateImportedContact({sourceRowId:'synthetic-1',name:'合成人员',displayName:'合成称呼',organization:'同名组织',email:'fixture@example.invalid',categories:['so'],interests:['talk'],contactConsent:'consented'}).value;return{id:'contact_1',source:{key:'synthetic',rowId:sourceRowId,digest:'a'.repeat(64),importedAt:'2026-10-21T00:00:00Z'},profile,operations:createEmptyContactOperations(),invitation:{generatedAt:null,settings:null,sentAt:null,channel:null,sentGenerationAt:null},createdAt:'2026-10-21T00:00:00Z',updatedAt:'2026-10-21T00:00:00Z'};}
@@ -26,7 +26,18 @@ test('organization and public role filters use exact relationships and retain or
   assert.deepEqual(relationshipForContact(item,source).memberships.map(row=>row.state),['withdrawn','missing']);
 });
 test('unattributed publication disables unpublished inference while retaining positive filters',()=>{
-  const source=peopleRelationships({...catalog(),publicationAttributionUnavailable:true}),item=contact();assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicRole:'organizer',publicState:'unpublished'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicState:'published'}),true);
+  const source=peopleRelationships({...catalog(),publicationAttributionUnavailable:true}),item=contact();assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicRole:'organizer',publicState:'unpublished'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicState:'published'}),false);
+});
+test('historical public guest identity never claims the current linked contact is published',()=>{
+  const source=peopleRelationships(catalog()),item=contact();assert.equal(relationshipForContact(item,source).profiles[0].published,true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'published'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicState:'changed'}),true);
+  source.profiles[0].publishedMatchesDraft=true;assert.equal(matchesPeopleRelationships(item,source,{publicState:'published'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'changed'}),false);
+});
+test('same-session expiry clears private data before stale selection checks; old-account expiry is ignored',()=>{
+  let checked=0;const stale=()=>{checked++;return false;};
+  for(const status of [401,403])assert.equal(privateResponseAction({requestGeneration:4,currentGeneration:4,status,selectionCurrent:stale}),'clear_session');assert.equal(checked,0);
+  for(const status of [200,401,403])assert.equal(privateResponseAction({requestGeneration:3,currentGeneration:4,status,selectionCurrent:stale}),'ignore_session');assert.equal(checked,0);
+  assert.equal(privateResponseAction({requestGeneration:4,currentGeneration:4,status:200,selectionCurrent:stale}),'ignore_selection');assert.equal(checked,1);
+  assert.equal(privateResponseAction({requestGeneration:4,currentGeneration:4,status:200}),'accept');assert.equal(privateResponseAction({requestGeneration:4,currentGeneration:4,status:401,login:true}),'accept');
 });
 test('organization deep links contain only bounded stable identifiers',()=>{
   assert.equal(parseOrganizationSelection('#organization=org_1'),'org_1');for(const hash of ['#organization=同名组织','#organization=org_1&contact=contact_1','#organization=fixture@example.invalid','#organization=%ED%A0%80','#guest=org_1'])assert.equal(parseOrganizationSelection(hash),null);

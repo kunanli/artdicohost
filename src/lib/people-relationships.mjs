@@ -10,6 +10,7 @@ const choice = (value, values) => { check(values.includes(value)); return value;
 function rows(value, max, map, key = 'id') { check(Array.isArray(value) && value.length <= max); const result = value.map(row => { check(plain(row)); return map(row); }); check(new Set(result.map(row => row[key])).size === result.length); return result; }
 const boolean = value => { check(typeof value === 'boolean'); return value; };
 export const PUBLIC_ROLE_LABELS = Object.freeze({ speaker: '讲者', guest: '嘉宾', organizer: '研讨会组织者', moderator: '主持人' });
+export function privateResponseAction({requestGeneration,currentGeneration,status,selectionCurrent=()=>true,login=false}){if(requestGeneration!==currentGeneration)return'ignore_session';if(!login&&[401,403].includes(status))return'clear_session';return selectionCurrent()?'accept':'ignore_selection';}
 export function peopleRelationships(value) {
   check(plain(value) && value.schemaVersion === 1);
   const contentRevision = integer(value.contentRevision), publishedRevision = value.publishedRevision === null ? null : integer(value.publishedRevision);
@@ -33,7 +34,7 @@ export function matchesPeopleRelationships(contact, catalog, { organization = ''
   if (organization && (organization === '__none' ? related.memberships.length !== 0 : !related.memberships.some(row => row.organizationId === organization))) return false;
   if (publicRole && !profiles.some(row => row.publicRoles.includes(publicRole))) return false;
   if (!publicState) return true;
-  return ({ linked: profiles.length > 0, unlinked: profiles.length === 0, published: profiles.some(row => row.published), unpublished: !related.publicationKnown || profiles.length > 0 && profiles.every(row => !row.published), changed: profiles.some(row => row.published && !row.publishedMatchesDraft), no_consent: profiles.some(row => !row.publicConsent), no_portrait: profiles.some(row => !row.hasPortrait) })[publicState] === true;
+  return ({ linked: profiles.length > 0, unlinked: profiles.length === 0, published: profiles.some(row => row.publishedMatchesDraft), unpublished: !related.publicationKnown || profiles.length > 0 && profiles.every(row => !row.published), changed: profiles.some(row => row.published && !row.publishedMatchesDraft), no_consent: profiles.some(row => !row.publicConsent), no_portrait: profiles.some(row => !row.hasPortrait) })[publicState] === true;
 }
 export function parseOrganizationSelection(hash) { if (typeof hash !== 'string' || hash.length > 150) return null; const match = /^#organization=([^&#=]+)$/u.exec(hash); if (!match) return null; try { return id(decodeURIComponent(match[1])); } catch { return null; } }
 export function admissionForContact(contact, intent, receipts = new Map()) {

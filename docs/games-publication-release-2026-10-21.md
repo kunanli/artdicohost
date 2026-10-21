@@ -19,3 +19,11 @@
 原生harness准备30reports：两origin save→anonymous不变→explicitpublish→returnrender、三分类／多作品／同快照组织／私密字段、旧raw与unknown exactretry、unknownproof logout、空照片、红绿及owner固定色、320／390／1440。必须待root冻结最终dist后执行，再记实际结果。
 
 待完整source／Astro／suite／build／audit、准确ZIP／受限启动与PR CI。main保持d504ecc，准确合并后保持main稳定，核对真实私有OSS／300政策／13API别名／公开对象HTTPS及匿名公开快照／CORS，才能标正式完成；各证据分别记录，不借用前阶段数值。原128files／40assets／8MiB及单资产、ZIP／CodeJSON预算不放宽，无新依赖或FC源码条目。
+
+## 16:01 UTC 接续检查点（未发布）
+
+产品来源冻结 `9bdad4597b6f632dab02940fed69dedcbac59e51`；其后只有测试脚本修正及文档。root完整验证 **545源码／Astro406（0errors、0warnings、1既有hint）／1298测试全过（82.946300422秒）／23页／依赖审计零已知漏洞**。dist于2026-10-21 **15:52:05.958540559 UTC**生成，未重建。实际既有admin闭包40资产／7,367,526 B／最大1,661,625 B，46份public publication准备通过；这不是最终准确来源ZIP或正式部署证明。
+
+冻结bundle的原生flow5、games11、refresh9、people5已经分组全部通过、pageErrors为空；最终单次合并30及前阶段受影响回归仍在执行。根已整合测试修正 `edaffd4`：真实anchor而非虚构子a、URL对象请求探针、等待弹窗内镜像核对按钮、instant滚动后实际hit-test。320已证实green状态及编辑按钮可见可点，最初截图是在smooth-scroll尚未完成时截取，没有确认产品遮挡问题。证据在`/workspace/games-browser/.local-data/browser-evidence/games-publication/`。
+
+下一步：等待全部浏览器完成退出，再提交准确证据并交domain按最终head空目录封装、完整verify及受限实际ZIP启动；之后准确PR CI、merge及实际部署。不得现在将main前进，不重复合成fixture为真实业务操作。

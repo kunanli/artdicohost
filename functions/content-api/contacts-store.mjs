@@ -1,6 +1,7 @@
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { ContentError } from './store.mjs';
 import {
   CONTACT_SCHEMA_VERSION, MAX_IMPORT_ROWS, MAX_CONTACTS, INVITATION_CHANNELS,
@@ -272,6 +273,10 @@ export function createFileContactsStore({ directory, contentStore, now = () => D
       permitInvitation(contact);
       const settings = validationError(validateInvitationSettings(settingsInput), '邀请函设置未通过校验。');
       const timestamp = new Date(now()).toISOString();
+      if (contact.invitation.sentAt && !isDeepStrictEqual(settings, contact.invitation.settings)
+        && Date.parse(timestamp) <= Date.parse(contact.invitation.sentAt)) {
+        throw new ContentError('VALIDATION_ERROR', '上一版邀请刚记录发出，请稍后重新生成并核对新版本。', 422);
+      }
       contact.invitation.generatedAt = timestamp;
       contact.invitation.settings = settings;
       contact.updatedAt = timestamp;

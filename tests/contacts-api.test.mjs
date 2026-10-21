@@ -8,6 +8,8 @@ import { createContentApi } from '../functions/content-api/handler.mjs';
 import { createFileContentStore } from '../functions/content-api/store.mjs';
 import { createFileContactsStore } from '../functions/content-api/contacts-store.mjs';
 import { validateImportedContact, validateContactOperations, validateInvitationSettings, createEmptyContactOperations, MAX_IMPORT_ROWS } from '../shared/contacts-schema.mjs';
+import { buildPosterInvitationSettings, contactProgress } from '../shared/organizer-progress.mjs';
+import { eventConfig } from '../src/config/event.mjs';
 
 const PASSWORD = 'synthetic-private-outreach-password';
 const passwordHash = await hashPassword(PASSWORD);
@@ -422,6 +424,26 @@ test('generated, manually sent and attendee response are distinct revision-prote
   const invalid = await request(api, base + 'generated', { method: 'POST', session, payload: { expectedRevision: 3, settings: { ...settings, time: '18:00-10:00' } } });
   assert.equal(invalid.status, 422);
   assert.equal((await (await request(api, '/api/admin/contacts', { session })).json()).revision, 3);
+});
+
+test('a changed file invitation cannot collide with an earlier send timestamp or overwrite its durable history', async t => {
+  let tick = Date.parse('2026-10-20T08:00:00.000Z');
+  const { contactsStore, directory, contentStore } = await fixture(t, { now: () => tick });
+  const created = await contactsStore.createContact(0, { name: '合成时戳来宾', contactConsent: 'consented' }, 'test-outreach'), id = created.contact.id;
+  const old = { recipientName: '合成时戳来宾', date: '2026-12-05', time: '10:00–18:00', venue: '合成旧场地', confirmed: true };
+  const generated = await contactsStore.recordGenerated(id, 1, old, 'test-outreach');
+  const sent = await contactsStore.recordSent(id, 2, 'wechat', generated.contact.invitation.generatedAt, old, 'test-outreach');
+  const bytes = await readFile(join(directory, 'contacts.json'), 'utf8'), poster = buildPosterInvitationSettings(old.recipientName, eventConfig);
+  await assert.rejects(contactsStore.recordGenerated(id, 3, poster, 'test-outreach'), error => error.code === 'VALIDATION_ERROR' && error.status === 422);
+  assert.equal(await readFile(join(directory, 'contacts.json'), 'utf8'), bytes);
+  const restarted = createFileContactsStore({ directory, contentStore, now: () => tick });
+  assert.equal((await restarted.read()).revision, sent.revision);
+  tick++;
+  const retried = await restarted.recordGenerated(id, 3, poster, 'test-outreach');
+  assert.equal(retried.revision, 4); assert.equal(retried.contact.invitation.sentAt, sent.contact.invitation.sentAt);
+  assert.notEqual(retried.contact.invitation.generatedAt, retried.contact.invitation.sentGenerationAt);
+  const progress = contactProgress(retried.contact, { event: eventConfig, now: tick });
+  assert.equal(progress.manuallySent, false); assert.equal(progress.historyManuallySent, true);
 });
 
 test('declined and unknown contact permission block both invitation APIs, including older stored profiles', async (t) => {

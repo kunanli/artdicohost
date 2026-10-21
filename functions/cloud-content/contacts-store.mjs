@@ -290,7 +290,14 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
     }),
     recordGenerated: (id, expected, input, actorId) => mutate(expected, actorId, (state, at) => {
       const contact = find(state, id); permitInvitation(contact);
-      contact.invitation.settings = checked(validateInvitationSettings(input), '邀请函设置未通过校验。');
+      const settings = checked(validateInvitationSettings(input), '邀请函设置未通过校验。');
+      // Generation timestamps are the legacy dispatch binding. A changed image
+      // must not inherit an older send when both actions share the same clock tick.
+      if (contact.invitation.sentAt && !isDeepStrictEqual(settings, contact.invitation.settings)
+        && Date.parse(at) <= Date.parse(contact.invitation.sentAt)) {
+        throw new CloudContentError('VALIDATION_ERROR', '上一版邀请刚记录发出，请稍后重新生成并核对新版本。', 422);
+      }
+      contact.invitation.settings = settings;
       contact.invitation.generatedAt = at;
       return { contact, action: 'record_invitation_generated', detail: { settingsDigest: hash(JSON.stringify(contact.invitation.settings)) } };
     }),

@@ -11,7 +11,7 @@ import { hashPassword } from '../functions/content-api/auth.mjs';
 import { CloudContentError } from '../functions/cloud-content/errors.mjs';
 import { createInitialContent } from '../src/config/content.mjs';
 import { createEmptyContactOperations } from '../shared/contacts-schema.mjs';
-import { buildPosterInvitationSettings } from '../shared/organizer-progress.mjs';
+import { buildPosterInvitationSettings, contactProgress } from '../shared/organizer-progress.mjs';
 import { eventConfig } from '../src/config/event.mjs';
 import { readContactSnapshot } from '../functions/intent-invitations/contact-snapshot.mjs';
 import { memoryObjects } from './helpers/cloud-memory-objects.mjs';
@@ -108,6 +108,25 @@ test('versioned contact invitation settings survive restart and snapshot validat
   const sent = await first.recordSent(id, saved.revision, 'wechat', saved.contact.invitation.generatedAt, poster, 'outreach');
   assert.equal(sent.contact.invitation.settings.renderVersion, poster.renderVersion);
   await fails(() => second.recordGenerated(id, sent.revision, { ...poster, renderVersion: 2 }, 'outreach'), 'VALIDATION_ERROR', 422);
+});
+
+test('a changed cloud invitation at the old send tick fails without commit and a later explicit retry preserves dispatch history', async () => {
+  const journal = journalFixture(); let tick = Date.parse(AT);
+  const contentStore = { read: async () => ({ draft: { content: createInitialContent() } }) };
+  const make = () => createOssContactsStore({ journal: journal.client(), contentStore, now: () => tick });
+  const first = make(), second = make(), created = await first.createContact(0, profile(), 'outreach'), id = created.contact.id;
+  const generated = await first.recordGenerated(id, 1, settings, 'outreach');
+  await second.recordSent(id, 2, 'wechat', generated.contact.invitation.generatedAt, settings, 'outreach');
+  const original = journal.snapshot(), poster = buildPosterInvitationSettings(profile().displayName, eventConfig);
+  await fails(() => first.recordGenerated(id, 3, poster, 'outreach'), 'VALIDATION_ERROR', 422);
+  assert.deepEqual(journal.snapshot(), original, 'a colliding changed generation cannot advance its audit or stage an ACK');
+  assert.deepEqual(await second.read(), { revision: 3, contacts: original.value.contacts });
+  tick++;
+  const retry = await second.recordGenerated(id, 3, poster, 'outreach');
+  assert.equal(retry.revision, 4); assert.equal(retry.contact.invitation.sentAt, AT);
+  assert.equal(retry.contact.invitation.sentGenerationAt, AT); assert.notEqual(retry.contact.invitation.generatedAt, AT);
+  const progress = contactProgress(retry.contact, { event: eventConfig, now: tick });
+  assert.equal(progress.manuallySent, false); assert.equal(progress.historyManuallySent, true); assert.equal(progress.contacted, true);
 });
 
 test('current student identity survives cloud restart without changing first original categories or source digest', async () => {

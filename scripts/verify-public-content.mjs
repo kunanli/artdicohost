@@ -10,7 +10,7 @@ const MAX_BYTES = 1024 * 1024;
 const MESSAGE = 'Anonymous public content verification failed.';
 const failures = new WeakSet();
 const codes = new Set(['INVALID_ARGUMENTS', 'INVALID_RESPONSE', 'TRANSPORT_ERROR', 'TIMEOUT', 'HTTP_STATUS', 'REDIRECT', 'RESPONSE_URL',
-  'CONTENT_TYPE', 'CACHE_CONTROL', 'CONTENT_ENCODING', 'CORS_ORIGIN', 'VARY_ORIGIN', 'CREDENTIALS', 'SET_COOKIE',
+  'CONTENT_TYPE', 'CACHE_CONTROL', 'CONTENT_ENCODING', 'CORS_ORIGIN', 'VARY_ORIGIN', 'SET_COOKIE',
   'CONTENT_LENGTH', 'BODY_UNAVAILABLE', 'BODY_TOO_LARGE', 'BODY_CHUNK', 'BODY_READ_ERROR', 'BODY_ENCODING', 'INVALID_JSON',
   'INVALID_ENVELOPE', 'EVENT_MISMATCH', 'INVALID_PROJECTION']);
 const validStatus = status => Number.isSafeInteger(status) && status >= 100 && status <= 599;
@@ -55,7 +55,8 @@ export async function verifyPublicContent(options = {}) {
     if (![null, 'identity'].includes(response.headers.get('content-encoding'))) throw failure('CONTENT_ENCODING', status);
     if (response.headers.get('access-control-allow-origin') !== PUBLIC_CONTENT_ORIGIN) throw failure('CORS_ORIGIN', status);
     if (!(response.headers.get('vary') ?? '').split(',').some(value => value.trim().toLowerCase() === 'origin')) throw failure('VARY_ORIGIN', status);
-    if (response.headers.has('access-control-allow-credentials')) throw failure('CREDENTIALS', status);
+    // Fetch consults Access-Control-Allow-Credentials only for credentials: include;
+    // this fixed anonymous request always uses omit.
     if (response.headers.has('set-cookie')) throw failure('SET_COOKIE', status);
     const declared = response.headers.get('content-length');
     if (declared !== null && (!/^(?:0|[1-9]\d*)$/u.test(declared) || !Number.isSafeInteger(Number(declared)) || Number(declared) > MAX_BYTES)) throw failure('CONTENT_LENGTH', status);

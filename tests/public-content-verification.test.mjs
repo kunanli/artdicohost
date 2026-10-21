@@ -57,10 +57,10 @@ test('404 NOT_PUBLISHED is explicitly no publication, not synchronized data or a
   for (const code of ['NOT_FOUND', 'CONTENT_NOT_READY', 'SERVICE_UNAVAILABLE']) await rejects(verifyPublicContent({ fetchFn: async () => json({ error: { code, message: PRIVATE } }, { status: 404 }) }));
 });
 
-test('CORS, credentials, caching, redirects and transport errors cannot claim public verification', async () => {
+test('CORS, cookies, caching, redirects and transport errors cannot claim public verification', async () => {
   for (const changed of [
     { 'access-control-allow-origin': '*' }, { 'access-control-allow-origin': 'https://other.invalid' },
-    { vary: 'Accept' }, { 'access-control-allow-credentials': 'true' }, { 'set-cookie': PRIVATE },
+    { vary: 'Accept' }, { 'set-cookie': PRIVATE },
     { 'cache-control': 'public' }, { 'content-type': 'text/html' }, { 'content-encoding': 'gzip' },
     { 'content-length': '1048577' }, { 'content-length': '3' }, { 'content-length': '-1' },
   ]) await rejects(verifyPublicContent({ fetchFn: async () => json(snapshot(), { headers: { ...headers, ...changed } }) }));
@@ -72,6 +72,20 @@ test('CORS, credentials, caching, redirects and transport errors cannot claim pu
     await rejects(verifyPublicContent({ fetchFn: async () => response }));
   }
   await rejects(verifyPublicContent({ fetchFn: async () => { throw new Error(PRIVATE); } }));
+});
+
+test('anonymous omit-mode verification ignores the response credentials flag while never sending Cookie or Authorization', async () => {
+  for (const flag of ['true', 'false', PRIVATE]) {
+    const calls = [], result = await verifyPublicContent({ fetchFn: async (...args) => { calls.push(args); return json(historicalSnapshot(), { headers: { ...headers, 'access-control-allow-credentials': flag } }); } });
+    assert.equal(result.verified, true); assert.equal(calls.length, 1); assert.equal(calls[0][0], PUBLIC_CONTENT_URL);
+    const options = calls[0][1]; assert.equal(options.credentials, 'omit');
+    assert.deepEqual(options.headers, { accept: 'application/json', origin: PUBLIC_CONTENT_ORIGIN, 'accept-encoding': 'identity' });
+    assert.equal(Object.keys(options.headers).some(name => /^(?:cookie|authorization)$/iu.test(name)), false);
+    assert.equal(JSON.stringify(result).includes(PRIVATE), false);
+  }
+  assert.deepEqual(await verifyPublicContent({ fetchFn: async () => json({ error: { code: 'NOT_PUBLISHED', message: PRIVATE } }, { status: 404, headers: { ...headers, 'access-control-allow-credentials': 'true' } }) }), { verified: true, cors: true, publication: 'none' });
+  assert.deepEqual(await observePublicContent({ fetchFn: async () => json(snapshot(), { headers: { ...headers, 'access-control-allow-credentials': 'true', 'set-cookie': PRIVATE } }) }), { verified: false, failure: 'SET_COOKIE', status: 200 });
+  assert.deepEqual(await observePublicContent({ fetchFn: async () => json(snapshot(), { headers: { ...headers, 'access-control-allow-credentials': 'true', 'access-control-allow-origin': '*' } }) }), { verified: false, failure: 'CORS_ORIGIN', status: 200 });
 });
 
 test('private fields, malformed projections, wrong event or invalid publication metadata are rejected without raw diagnostics', async () => {
@@ -107,7 +121,7 @@ test('observation identifies fixed header and transport categories without copyi
   const mutations = [
     ['CONTENT_TYPE', { 'content-type': PRIVATE }], ['CACHE_CONTROL', { 'cache-control': PRIVATE }],
     ['CONTENT_ENCODING', { 'content-encoding': PRIVATE }], ['CORS_ORIGIN', { 'access-control-allow-origin': PRIVATE }],
-    ['VARY_ORIGIN', { vary: PRIVATE }], ['CREDENTIALS', { 'access-control-allow-credentials': PRIVATE }],
+    ['VARY_ORIGIN', { vary: PRIVATE }],
     ['SET_COOKIE', { 'set-cookie': PRIVATE }], ['CONTENT_LENGTH', { 'content-length': PRIVATE }], ['CONTENT_LENGTH', { 'content-length': '1' }],
   ];
   for (const [failure, changed] of mutations) {

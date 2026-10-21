@@ -6,6 +6,8 @@ PR42已合并main `0164330ef64e00295ea5017e9fe7e9b981e4b913`，run39634798298 at
 
 当前 `fix/public-content-verification` 从同一main接续，只补不含正文的固定诊断代码及PR只读观察；先查清失败原因，再完成修复／准确PR与正式部署。所有已完成产品来源及本机原生验收保留，不重做人员、作品、色标功能。下方是先前检查点，当前状态以本节和后续最终证据为准。最终文档生成草稿在忽略目录 `.local-data/games-final-docs/`，**尚未执行／不可当作已发布记录**；成功后需按新准确head/main/run更新其中来源字段再执行。
 
+16:48 UTC已定位：PR43 head3090dca、run39637287514的1303项完整检查通过；16:43:33.776 UTC只读报告为`{"verified":false,"failure":"CREDENTIALS","status":200}`。该固定码只对应响应Access-Control-Allow-Credentials存在，Set-Cookie是另一码；请求仍固定credentials:omit。验证器误把响应允许携带凭证当作本次请求使用凭证，须依Fetch的omit语义修正；固定Origin、无Cookie／Authorization请求、无跳转、公开投影／容量／时间限制保留。PR43正在补此回归，尚未合并或完成公开发布。
+
 ## 当前开发
 
 后台九个内容独立页、四个设置独立页、直接保存与离页防呆已实际发布[PR41](https://github.com/kunanli/artdicohost/pull/41)。现在接续**公开可见性与游戏／作品**，随后补人员与邀约跟进人固定彩色姓名标签。[完整计划](games-publication-plan.md)。不自动授权、发布真实草稿、寄信或改名额；所有测试合成隔离。root分支`feat/publication-games`，主功能及最后owner色标已集成；产品冻结9bdad45，545源码／Astro406／1298测试／23页／审计已通过，15:52:05 UTC dist未再改。新增30与旧核心39／组织4／关系23／图片12全部原生通过，零pageErrors，所有Chromium已退出；尚待准确封装／PR与实际发布；[本阶段证据](games-publication-release-2026-10-21.md)。不要把各隔离worker的source-native或定向测试当已上线。

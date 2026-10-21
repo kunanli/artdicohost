@@ -24,6 +24,7 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/staff-operations-smoke.mjs
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/content-save-smoke.mjs
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/volunteer-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/people-relationships-smoke.mjs
 ```
 
 `registration-smoke.mjs` 在手机宽度检查：正式报名关闭时不提交且可读隐私告知；一般机构／职位／经历可省略但讲者／展商按条件必填；收据明确区分已确认和候补，候补不显示或读取群码；保存结果不明时冻结原资料，明确重试使用相同内容和幂等键。另置入合成工作人员 Cookie，验证公开 API 与入群图片均不发送该 Cookie。
@@ -54,4 +55,6 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 
 `volunteer-smoke.mjs` 使用真实志愿者 API、服务与内存审计仓库，全部请求拦截且只含合成人员。它在 320／390／1440px 检查完整权限、现有人员明确关联、沟通与可服务时间、岗位班次与人次缺额、相邻／冲突排班、保存结果不明的原操作手动重试、未保存防呆、晚到回应及会话清理；实际读回 OOXML，核对最小导出、明确包含联络资料及审计与私密 Blob 清理。它不创建正式报名、发信或发布。单人工作页另检查志愿分工摘要及原人员深链。
 
-输出只包含合成验收项目与路由名称。截图及打印 PDF 写入忽略的 `.local-data/browser-evidence/`，只含合成资料。十八组脚本均拒绝未拦截的页面来源，并检查页面执行错误。它们不在默认 `pnpm test` 中；默认测试仍覆盖纯函数与服务端边界，实际浏览器操作应在有 Chromium 的环境单独执行。
+`people-relationships-smoke.mjs` 将实际 runtime、鉴权、联系人、内容、转换及共同名额服务接到合成内存 OSS，拦截全部浏览器请求。覆盖稳定人员／组织 ID、多重公开角色、关系筛选、明确成员保存、来源失败、权限与未保存防呆、确认参加后的正式名额及重复保存不重复报名；测试信仅在内存 stub 中记录，不实际发送。
+
+输出只包含合成验收项目与路由名称。截图及打印 PDF 写入忽略的 `.local-data/browser-evidence/`，只含合成资料。十九组脚本均拒绝未拦截的页面来源，并检查页面执行错误。它们不在默认 `pnpm test` 中；默认测试仍覆盖纯函数与服务端边界，实际浏览器操作应在有 Chromium 的环境单独执行。

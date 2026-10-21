@@ -85,7 +85,7 @@ async function fixture({width=1280,role='superadmin',mode='normal'}={}){
           finally{finishHeld();}
         }
         const value=syntheticPerson({kind,id,restricted:mode==='restricted',unlinked:mode==='unlinked',unavailable:mode==='unavailable',attendee:mode==='attendee',draftPublic:mode==='public-draft',name:account>0?'合成新账号人员':id==='contact-next'?'合成下一位人员':'合成人员'});
-        if(mode==='volunteer-linked'){
+        if(mode==='volunteer-linked'&&id!=='contact-next'){
           value.permissions.volunteers=true;value.availability.volunteers='available';value.revisions.volunteers=4;
           value.volunteers={revision:4,entries:[{id:'synthetic-volunteer',workflowStatus:'confirmed',availability:[{start:'09:00',end:'18:00'}],assignments:[{id:'synthetic-assignment',status:'confirmed',shiftId:'synthetic-shift',positionId:'synthetic-position',positionName:'签到接待',zone:'A',location:'签到处',start:'09:30',end:'10:30',shiftStatus:'active',eligible:true,issues:[]}]}]};
         }
@@ -155,7 +155,10 @@ try{
   const volunteerSummary=volunteerPerson.page.locator('[data-person-volunteers]');await volunteerSummary.waitFor();
   assert.match(await volunteerSummary.textContent(),/签到接待/u);assert.match(await volunteerSummary.textContent(),/09:30.*10:30/u);
   assert.equal(await volunteerPerson.page.locator('[data-person-action=volunteers]').getAttribute('href'),'/admin/volunteers/#contact='+CONTACT);
-  assert.deepEqual(volunteerPerson.writes,[],'linked volunteer summary and entrance never create profiles, admission or assignments');await noOverflow(volunteerPerson.page);await volunteerPerson.context.close();reports.push({personVolunteerAssignmentsLinked:true,volunteerReplyAndAttendanceRemainSeparate:true,noLinkedPersonWrites:true});
+  assert.deepEqual(volunteerPerson.writes,[],'linked volunteer summary and entrance never create profiles, admission or assignments');await noOverflow(volunteerPerson.page);
+  await volunteerPerson.page.evaluate(()=>{location.hash='contact=contact-next';});await volunteerPerson.page.locator('[data-person-name]').filter({hasText:'合成下一位人员'}).waitFor();assert.doesNotMatch(await volunteerSummary.textContent(),/签到接待/u,'changing the person clears the previous private volunteer assignment');
+  await volunteerPerson.page.goto(SITE+'/admin/person/#registration='+ID,{waitUntil:'networkidle'});await volunteerSummary.filter({hasText:'签到接待'}).waitFor();assert.equal(await volunteerPerson.page.locator('[data-person-action=volunteers]').getAttribute('href'),'/admin/volunteers/#registration='+ID);
+  await volunteerPerson.page.locator('[data-person-logout]').click();await volunteerPerson.page.locator('[data-person-login-panel]:visible').waitFor();assert.equal(await volunteerSummary.textContent(),'');await volunteerPerson.context.close();reports.push({personVolunteerAssignmentsLinked:true,volunteerReplyAndAttendanceRemainSeparate:true,volunteerLinksPreserveSelectedKind:true,hashAndLogoutClearVolunteerSummary:true,noLinkedPersonWrites:true});
 
   const reviewerPerson=await fixture({role:'reviewer',mode:'restricted',width:320});await reviewerPerson.page.goto(SITE+'/admin/person/#registration='+ID,{waitUntil:'networkidle'});await reviewerPerson.page.locator('[data-person-record]:visible').waitFor();
   assert.match(await reviewerPerson.page.locator('[data-person-registration]').textContent(),/报名编号/u);assert.match(await reviewerPerson.page.locator('[data-person-profile]').textContent(),/权限/u);assert.match(await reviewerPerson.page.locator('[data-person-communications]').textContent(),/服务商已接受，未证明送达/u);assert.equal(await reviewerPerson.page.locator('[data-person-action=profile]').count(),0);assert.equal(await reviewerPerson.page.locator('[data-person-action=review]').getAttribute('href'),'/admin/registrations/#registration='+ID);assert.equal(await reviewerPerson.page.locator('[data-person-step][data-step-state=complete]').count(),0,'restricted personnel facts are never marked complete');assert.deepEqual(reviewerPerson.writes,[]);await noOverflow(reviewerPerson.page);await reviewerPerson.context.close();reports.push({registrationEntryAndReviewerProjection:true});

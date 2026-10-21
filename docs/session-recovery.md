@@ -2,7 +2,7 @@
 
 ## 当前发布：后台快捷导航（2026-10-21，部署中）
 
-[PR #31](https://github.com/kunanli/artdicohost/pull/31) 已合并 main **`b8d6818bc6da2c4d298d9f04678f90b5e5b5ffc1`**，本机完整 802 项、准确 PR 检查 39531005132 及导航浏览器回归通过。[正式运行 39531376320](https://github.com/kunanli/artdicohost/actions/runs/39531376320) 尚在进行，继续核对三个 job 及实际 FC／私有 OSS／公开 HTTPS；不能在此阶段声称上线。文档分支 `docs/navigation-release-evidence-2026-10-21` 保存检查点，勿重新实现或合并。操作见[后台快捷导航](staff-navigation.md)，来源与证据见[发布记录](navigation-release-2026-10-21.md)。没有操作真实组织、报名、名单、邮件或 Wallet 凭证。
+[PR #31](https://github.com/kunanli/artdicohost/pull/31) 已合并 main **`b8d6818bc6da2c4d298d9f04678f90b5e5b5ffc1`**，本机及正式检查 802 项、准确 PR 检查 39531005132 及导航浏览器回归通过。[正式运行 39531376320](https://github.com/kunanli/artdicohost/actions/runs/39531376320) attempt 1 在最后限流阶段达到 1000 次预算而失败，业务保持关闭，公开发布跳过；可控时钟已重现十五分钟窗口切换原因。已于 02:18 UTC 受控重跑失败及依赖 job，使用全新隔离证据恢复；继续核对 attempt 2 激活与公开回读，不能在此阶段声称上线。文档分支 `docs/navigation-release-evidence-2026-10-21` 保存检查点，勿重复实现或合并。操作见[后台快捷导航](staff-navigation.md)，来源与证据见[发布记录](navigation-release-2026-10-21.md)。没有操作真实组织、报名、名单、邮件或 Wallet 凭证。
 
 ## 当前阶段：独立参与组织（2026-10-21，已上线）
 

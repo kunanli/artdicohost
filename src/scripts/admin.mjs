@@ -533,6 +533,7 @@ function publicationReport(){
   publicationCache={content:loadedContent,revision:draft.revision,published,report};return report;
 }
 function publicationItem(collection,id){return publicationReport()?.items[collection]?.find(item=>item.id===id)??null;}
+function withdrawalLabel(item){return item?.published?'停止公开':item?.ready?'取消待发布':'撤回公开授权';}
 function publicationMatches(item,filter){
   if(!filter)return true;if(!item)return false;
   if(filter==='published')return item.published===true;
@@ -572,7 +573,7 @@ function renderPublicationOverview(){
 }
 async function withdrawPublicConsent(type,item){
   if(!canEdit()||!draft||!['guest','showcase'].includes(type))return false;
-  const collection=contentKey(type),entry=publicationItem(collection,item.id),label=entry?.published?'停止公开':'取消待发布';
+  const collection=contentKey(type),entry=publicationItem(collection,item.id),label=withdrawalLabel(entry);
   if(!confirm(label+'这份资料？确认和参与记录保留；保存后仍需明确发布，前台才会改变。'))return false;
   const candidate=structuredClone(draft.content),current=candidate[collection].find(value=>value.id===item.id);if(!current)return false;
   current.publicConsent=false;const saved=await saveSectionCandidate(candidate,collection);if(saved)announce('已保存公开授权变更。确认与参与记录保留；明确发布后才更新前台。');return saved;
@@ -580,7 +581,7 @@ async function withdrawPublicConsent(type,item){
 function openPublicationEditor(type,item){openEditor(type,item);const form=$('[data-'+type+'-form]');const field=form?.elements.namedItem(item.status!=='confirmed'?'status':'publicConsent');field?.focus({preventScroll:true});field?.scrollIntoView({block:'center',behavior:'auto'});}
 function rowActions(row, type, item) {
   const td = cell(row, '操作', undefined);
-  const actions = type === 'guest' ? [['编辑','edit'],['核对公开条件','readiness'],...(item.publicConsent ? [[publicationItem('guests',item.id)?.published?'停止公开':'取消待发布','unpublish']] : [])] : [['编辑','edit'],['删除','delete']];
+  const actions = type === 'guest' ? [['编辑','edit'],['核对公开条件','readiness'],...(item.publicConsent ? [[withdrawalLabel(publicationItem('guests',item.id)),'unpublish']] : [])] : [['编辑','edit'],['删除','delete']];
   for (const [label, actionName] of actions) {
     const button = node('button', label);
     button.type = 'button';
@@ -983,7 +984,7 @@ function renderShowcases() {
     const materials=(item.materialLinks??'').split(/\r?\n/u).filter(value=>value.trim()).length;
     body.append(node('p','材料链接 '+materials+' 条 · '+(item.status==='confirmed'?'资料已核准':'资料待核准')+' · '+(item.publicConsent?'已获公开授权':'未获公开授权'),'ah-admin-small'));
     const actions=node('div',undefined,'ah-admin-showcase-actions');
-    for(const [label,actionName]of [['编辑作品与安排','edit'],['核对公开条件','readiness'],...(item.publicConsent?[[publicationItem('showcases',item.id)?.published?'停止公开':'取消待发布','unpublish']]:[]),['删除','delete']]){
+    for(const [label,actionName]of [['编辑作品与安排','edit'],['核对公开条件','readiness'],...(item.publicConsent?[[withdrawalLabel(publicationItem('showcases',item.id)),'unpublish']]:[]),['删除','delete']]){
       const button=node('button',label,'ah-admin-button');button.type='button';button.dataset.rowAction=actionName;button.setAttribute('aria-label',label+' '+item.title);
       button.addEventListener('click',()=>{if(!canEdit()||busy||portraitUploading||coverUploading)return;if(actionName==='edit')openEditor('showcase',item);else if(actionName==='readiness')openPublicationEditor('showcase',item);else if(actionName==='unpublish')void action(()=>withdrawPublicConsent('showcase',item));else if(confirm('从草稿移除此作品记录？保存并发布前，公开页面不会改变。')){draft.content.showcases=records.filter(entry=>entry.id!==item.id);setDirty(true);render();announce('已从本页草稿移除作品；仍需保存草稿并发布，才会改变公开页。');}});actions.append(button);
     }

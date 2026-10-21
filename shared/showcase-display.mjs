@@ -5,6 +5,7 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const ownValue = (value, key) => Object.getOwnPropertyDescriptor(value, key)?.value;
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const coverPattern = /^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
+export const SHOWCASE_KIND_LABELS=Object.freeze({student:'学生作品',indie:'独立游戏',team:'团队作品'});
 const line = (value, limit, required = true) => typeof value === 'string'
   && [...value.trim()].length <= limit && (!required || value.trim().length > 0)
   && !/[\u0000-\u001f\u007f]/u.test(value) ? value.trim() : null;
@@ -23,14 +24,19 @@ export function publicShowcaseCards(input) {
     const sessionId = ownValue(value, 'sessionId') ?? '';
     const boothId = ownValue(value, 'boothId') ?? '';
     const forms = ownValue(value, 'participationForms');
+    const kind=Object.hasOwn(value,'kind')?ownValue(value,'kind'):'student';
+    const organizationId=Object.hasOwn(value,'organizationId')?ownValue(value,'organizationId'):undefined;
     if (typeof id !== 'string' || !idPattern.test(id) || seen.has(id) || typeof coverId !== 'string' || !coverPattern.test(coverId)
       || title === null || teamName === null || summary === null || typeof sessionId !== 'string' || typeof boothId !== 'string'
       || sessionId && !idPattern.test(sessionId) || boothId && !idPattern.test(boothId)
       || !Array.isArray(forms) || forms.length < 1 || forms.length > 2 || new Set(forms).size !== forms.length
       || forms.some(form => !['booth', 'share'].includes(form))
-      || Boolean(sessionId) !== forms.includes('share') || Boolean(boothId) !== forms.includes('booth')) return [];
+      || Boolean(sessionId) !== forms.includes('share') || Boolean(boothId) !== forms.includes('booth')
+      || typeof kind!=='string'||!Object.hasOwn(SHOWCASE_KIND_LABELS,kind)
+      || Object.hasOwn(value,'organizationId')&&(typeof organizationId!=='string'||organizationId!==''&&!idPattern.test(organizationId))) return [];
     seen.add(id);
-    return [{ id, title, teamName, summary, coverId, coverUrl: '/api/public/portraits/' + coverId, sessionId, boothId }];
+    return [{ id, title, teamName, summary, coverId, coverUrl: '/api/public/portraits/' + coverId, sessionId, boothId,kind,
+      ...(organizationId?{organizationId}:{}) }];
   });
 }
 

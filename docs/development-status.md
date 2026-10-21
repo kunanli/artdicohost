@@ -1,5 +1,9 @@
 # 开发接续与验收台账
 
+## 当前参会体验更新（2026-10-21）
+
+六项更新已在 PR #29 合并 main `d66582e60a7cf3da3a4e2d851a633496bdb02ba4`，最终 PR CI 785/785 通过；正式运行 [39525987286](https://github.com/kunanli/artdicohost/actions/runs/39525987286) 的实际部署结果待核对。[本轮证据与未配置项](attendee-release-2026-10-21.md)及[早晨验收](morning-acceptance.md)是接续入口。下方五项扩展和 PR #28 属于前阶段，不代表本轮发布结果。
+
 ## 本轮已正式发布（2026-10-21 UTC）
 
 五项扩展已上线 main **`37a679b7d3a8cfef8d7c2bfcca648756d095fc54`**，PR #28／[发布 39519803502](https://github.com/kunanli/artdicohost/actions/runs/39519803502) 全部成功。十项真实隔离 OSS、核定政策／300 人容量及 19 个公开 HTTPS 物件已验证，正式报名已启用。下方候选待办状态由此取代；[完整证据与人工接续](organizer-release-2026-10-21.md)。实际原始资料尚未导入或发出邀请。

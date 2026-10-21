@@ -1,6 +1,6 @@
 # ARTDiCO HOST 驗收與接續
 
-**本階段六項參會體驗擴展尚未正式發布。** 候選分支 `feat/attendee-experience`，本次文件閱讀基準 `60d6e77`；最終 CI、發布 SHA、Actions 與實際 HTTPS／OSS 證據由主集成補登。上一階段已上線 main `37a679b7d3a8cfef8d7c2bfcca648756d095fc54`，PR #28／[正式發布 39519803502](https://github.com/kunanli/artdicohost/actions/runs/39519803502) 三個 job 成功，十項真實隔離驗收及 19 個公開 HTTPS 檔案讀回通過；[完整證據](organizer-release-2026-10-21.md)保留，不將其當作本階段已上線。
+六項參會體驗更新已合併 [PR #29](https://github.com/kunanli/artdicohost/pull/29)，main `d66582e60a7cf3da3a4e2d851a633496bdb02ba4`；最終 PR CI **785/785** 通過。[正式發布 39525987286](https://github.com/kunanli/artdicohost/actions/runs/39525987286) 尚待三個 job 與實際 HTTPS／OSS 結果核對，**目前尚未確認新版上線**。準確結果見[本輪發布證據](attendee-release-2026-10-21.md)；前階段 [PR #28 證據](organizer-release-2026-10-21.md)另行保留。
 
 真實 39 行仍未雲端匯入、轉報名或發信。郵件寄件憑證尚未提供或未核驗，沒有實際收件驗收。主辦方尚無 Apple Developer 帳號及票券簽章憑證，已要求先完成設定流程與操作指引；此時不應看到可用 Wallet 按鈕。
 

@@ -1,6 +1,6 @@
 # 人员关系与共同名额发布证据
 
-[PR #36](https://github.com/kunanli/artdicohost/pull/36) 已合并，实际 main 为 `661eb41a5dee261dcb930b9b8b8bcfcfb488daa6`。本文件先保存已验证来源，**正式部署仍在运行，尚不宣称已上线**。
+[PR #36](https://github.com/kunanli/artdicohost/pull/36) 已实际上线，实际 main 为 `661eb41a5dee261dcb930b9b8b8bcfcfb488daa6`。正式检查、真实私有 OSS、共同 300 人政策及 **27/27 HTTPS** 全部通过，2026-10-21 **19:01:31（UTC+08）**全流程成功。
 
 ## 来源与本机／PR 验证
 
@@ -11,7 +11,11 @@
 
 ## 正式部署接续
 
-[main run 39587865136](https://github.com/kunanli/artdicohost/actions/runs/39587865136) attempt 1 仍在进行。接续必须核对准确 main 检查、FC 生命周期／真实私有 OSS、共同 300 人政策及公开 HTTPS 字节／哈希／MIME 回读，并在本节补实际结果。不能重跑已成功的志愿者发布，也不能将 PR 检查当作本次正式部署成功。
+[main run 39587865136](https://github.com/kunanli/artdicohost/actions/runs/39587865136) attempt 1 的三个 job 全部 success：check `119181159021`、FC `119182814478`、public `119184104968`。main 再次 **1017/1017**，0 失败／取消／跳过，81.521389780 秒；来源、Astro、构建、审计与两个离线 ZIP 通过。main 准确候选 120 文件／34 静态资源，离线启动 14.851 秒。
+
+实际生命周期（以下 UTC，当地加八小时）：10:57:47.7028086 旧服务受控关闭，11:00:13.4380312 准确 SHA／run 隔离验收准备；十阶段真实私有 OSS、两客户端／一 FC 通过，原 1000 请求／90 秒边界保留。日志未列实际请求数，不以合成测试次数冒充实测。11:00:32.9538682 业务启用，11:00:34.1586995 核定政策／共同 300 人验证；安全摘要同一完整 SHA、contentEnabled／registrationEnabled true、privateOssAcceptance passed。
+
+11:01:28.8669361 逐一读回 **27/27** 公开 HTTPS 对象，准确来源、字节／SHA／MIME／HTML 验证成功；11:01:31 全流程 success。远端 main 再次只读核对为同一完整提交。证据分支只补记录，不为文档重新部署。
 
 ## 业务与下一阶段
 

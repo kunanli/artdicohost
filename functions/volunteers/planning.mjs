@@ -1,7 +1,7 @@
 import { isVolunteerPlainObject, validateVolunteerState, volunteerWindowsOverlap, VOLUNTEER_ID } from '../../shared/volunteer-schema.mjs';
 
 const ACTIVE = new Set(['pending', 'invited', 'confirmed']);
-const ADMISSION = new Set(['confirmed', 'waitlisted', 'withdrawn', 'unlinked']);
+const ADMISSION = new Set(['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected', 'unlinked']);
 const IDENTITY = /^(?:c|r):[A-Za-z0-9_-]{1,80}$/u;
 const add = (list, code) => { if (!list.includes(code)) list.push(code); };
 function unavailable() { const error = new Error('志愿者来源或排班资料暂时无法核对。'); error.code = 'STORAGE_UNAVAILABLE'; error.status = 503; throw error; }

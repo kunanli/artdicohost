@@ -31,7 +31,7 @@ export function createOrganizerTasksApi({ authenticate, getSources, now = () => 
       if (!source || !Array.isArray(source.contacts) || !source.content || !Array.isArray(source.content.sessions) || !Array.isArray(source.content.booths)
         || !Number.isSafeInteger(source.contactRevision) || source.contactRevision < 0 || !Number.isSafeInteger(source.contentRevision) || source.contentRevision < 0
         || source.intent !== null && (!Array.isArray(source.intent?.conversions) || !Array.isArray(source.intent?.invitations))
-        || source.admissionStatuses !== undefined && (!Array.isArray(source.admissionStatuses) || source.admissionStatuses.some(entry => typeof entry?.registrationId !== 'string' || !['confirmed','waitlisted','withdrawn','unknown'].includes(entry.status)))) throw new Error('Invalid sources');
+        || source.admissionStatuses !== undefined && (!Array.isArray(source.admissionStatuses) || source.admissionStatuses.some(entry => typeof entry?.registrationId !== 'string' || !['confirmed','waitlisted','withdrawn','pending_review','rejected','unknown'].includes(entry.status)))) throw new Error('Invalid sources');
       const projection = buildOrganizerTasks({ ...source, event, now: now() });
       const filtered = projection.tasks.filter(task => (!kind || task.kind === kind) && (!owner || (owner === '__unassigned' ? !task.owner : task.owner === owner)));
       const offset = Number(cursorText), limit = Number(limitText), tasks = filtered.slice(offset, offset + limit);

@@ -128,6 +128,9 @@ export function createGroupInviteService({ objects, journalFor, eventId, tokenSe
       const receipt = own(input, 'receipt'), registrationId = own(receipt, 'registrationId') ?? own(receipt, 'referenceCode');
       if (own(receipt, 'committed') !== true || own(receipt, 'eventId') !== eventId || typeof registrationId !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(registrationId)
         || own(receipt, 'referenceCode') !== registrationId || parseTimestamp(own(receipt, 'committedAt')) === null) throw failure();
+      // Legacy receipts without admission facts retain their trusted current-state
+      // hook. A supplied non-confirmed state can never mint a new QR capability.
+      if (own(receipt, 'admissionStatus') !== undefined && own(receipt, 'admissionStatus') !== 'confirmed') return null;
       if (await withdrawn(registrationId)) return null;
       const state = await read(), at = now(), active = state.value.active;
       if (!active || parseTimestamp(active.expiresAt) <= at) return null;

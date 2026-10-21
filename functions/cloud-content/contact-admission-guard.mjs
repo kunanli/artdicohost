@@ -28,7 +28,7 @@ export function createContactAdmissionGuard({ contactsStore, lookupRegistration,
     if (typeof registrationId !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(registrationId)) unavailable();
     let admission;
     try { admission = await getAdmissionStatus(registrationId); } catch { unavailable(); }
-    if (!['confirmed', 'waitlisted', 'withdrawn'].includes(admission?.status)) unavailable();
+    if (!['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected'].includes(admission?.status)) unavailable();
     if (admission?.status !== 'confirmed') fail('ADMISSION_NOT_CONFIRMED', '此报名尚未确认名额，不能新增安排或记录正式邀请。', 422);
   };
 }

@@ -17,7 +17,7 @@ function decode(value) {
 }
 function validRecord(value) {
   return value && typeof value === 'object' && ID.test(value.registrationId ?? '') && value.referenceCode === value.registrationId
-    && ['confirmed', 'waitlisted', 'withdrawn'].includes(value.admissionStatus) && /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(value.event?.id ?? '');
+    && ['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected'].includes(value.admissionStatus) && /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(value.event?.id ?? '');
 }
 
 /** No credentials or personal data are returned by readiness. All callback dependencies are server supplied. */

@@ -242,6 +242,15 @@ test('new assignments require confirmed admission while waitlisted and withdrawn
   await assert.rejects(waiting.assignContact({ actor, contactId: f.contact.id, expectedContactRevision: saved.revision,
     sessionIds: [first.id, next.id], boothIds: ['synthetic-booth'] }), { code: 'REGISTRATION_WAITLISTED' });
   assert.equal((await f.contactsStore.read()).revision, saved.revision);
+  for (const status of ['pending_review', 'rejected']) {
+    const nonadmitted = createIntentInvitationService({ ...f.dependencies, getAdmissionStatus: async () => ({ status, revision: 1 }) });
+    await assert.rejects(nonadmitted.assignContact({ actor, contactId: f.contact.id, expectedContactRevision: saved.revision,
+      sessionIds: [first.id, next.id], boothIds: ['synthetic-booth'] }), { code: 'REGISTRATION_INACTIVE' });
+    const preview = await nonadmitted.previewInvitations({ actor, contactIds: [f.contact.id], expectedContactRevision: saved.revision });
+    assert.equal(preview.entries[0].eligible, false); assert.equal(preview.entries[0].reason, 'REGISTRATION_INACTIVE');
+    await assert.rejects(nonadmitted.issueInvitation({ ...f.invitationInput('manual'), expectedContactRevision: saved.revision }), { code: 'REGISTRATION_INACTIVE' });
+    assert.equal((await f.contactsStore.read()).revision, saved.revision);
+  }
   let statusReads = 0;
   const cleanup = createIntentInvitationService({ ...f.dependencies,
     getAdmissionStatus: async () => { statusReads++; throw Error('SYNTHETIC_UNKNOWN_ADMISSION'); },

@@ -63,7 +63,9 @@ export function contactProjection(value) {
   if (new Set(operations.sessionRoles.map(entry => entry.sessionId)).size !== operations.sessionRoles.length) fail();
   if (operations.followUpAt && (!/^\d{4}-\d\d-\d\d$/u.test(operations.followUpAt)
     || parseTimestamp(operations.followUpAt + 'T00:00:00Z') === null)) fail();
-  return { id: identifier(value.id), profile, operations };
+  const sourceProfile = Object.hasOwn(value, 'sourceProfile') ? value.sourceProfile : value.profile;
+  if (!plain(sourceProfile)) fail();
+  return { id: identifier(value.id), profile, operations, sourceCategories: strings(sourceProfile.categories, 30) };
 }
 export function intentSource(value) {
   if (!plain(value)) fail();
@@ -110,7 +112,7 @@ export function registrationSource(value, expectedId) {
 }
 export function admissionSource(value) {
   if (!plain(value)) fail();
-  return { status: oneOf(value.status, ['confirmed', 'waitlisted', 'withdrawn']), kind: oneOf(value.kind, ['attendee', 'crew']), revision: revisionValue(value.revision) };
+  return { status: oneOf(value.status, ['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected']), kind: oneOf(value.kind, ['attendee', 'crew']), revision: revisionValue(value.revision) };
 }
 export function contentSource(value) {
   if (!plain(value) || !plain(value.content)) fail();

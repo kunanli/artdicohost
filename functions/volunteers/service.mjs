@@ -42,7 +42,7 @@ function canonicalContact(record) {
 function canonicalRegistration(record, inactive, admission) {
   if (!plain(record.fields) || !plain(record.provenance) || !['public', 'staff_assisted', 'staff_entry'].includes(record.provenance.kind) || !plain(record.consent)) fail();
   const issues = [];
-  if (inactive || admission?.status === 'withdrawn') issues.push('SOURCE_INELIGIBLE');
+  if (inactive || ['withdrawn', 'rejected'].includes(admission?.status)) issues.push('SOURCE_INELIGIBLE');
   if (record.provenance.kind === 'public' ? record.consent.accepted !== true : !text(record.provenance.permissionReference, 1000)) issues.push('SOURCE_INELIGIBLE');
   return { name: text(record.fields.name, 120, true), organization: text(record.fields.organization, 300), email: text(record.fields.email, 254),
     wechat: text(record.fields.wechat, 150), phone: text(record.fields.phone, 150), issues };
@@ -67,7 +67,7 @@ export function volunteerSourceProjection(input) {
   const admissions = new Map(), inactive = new Set(input.inactiveRegistrationIds), conversions = new Map(), reverse = new Map();
   for (const entry of input.admissions.people) {
     if (!plain(entry) || !REGISTRATION.test(entry.registrationId ?? '') || admissions.has(entry.registrationId) || !registrationById.has(entry.registrationId)
-      || !['confirmed', 'waitlisted', 'withdrawn'].includes(entry.status) || !['crew', 'attendee'].includes(entry.kind)) fail();
+      || !['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected'].includes(entry.status) || !['crew', 'attendee'].includes(entry.kind)) fail();
     admissions.set(entry.registrationId, entry);
   }
   if (admissions.size !== registrations.length) fail();

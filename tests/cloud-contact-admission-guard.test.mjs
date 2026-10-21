@@ -17,7 +17,7 @@ function fixture({ status = 'waitlisted', linked = true, consent = 'consented', 
 const change = (operations, expectedRevision = 2, action = 'operations') => ({ contactId: id, actor, action, input: { expectedRevision, operations } });
 
 test('linked waitlisted, withdrawn and unknown admissions cannot bypass confirmed assignments or invitation records', async () => {
-  for (const status of ['waitlisted', 'withdrawn', 'unknown']) {
+  for (const status of ['pending_review', 'rejected', 'waitlisted', 'withdrawn', 'unknown']) {
     const f = fixture({ status });
     for (const input of [change({ ...operations, boothIds: ['new-booth'] }), change(undefined, 2, 'invitation')]) {
       await assert.rejects(f.guard(input), error => error instanceof CloudContentError && error.status === (status === 'unknown' ? 503 : 422) && !error.message.includes('PRIVATE'));
@@ -64,7 +64,7 @@ test('legacy HTTP hooks run after staff authorization and CSRF, before the origi
 });
 
 test('a new duty cannot bypass admission using an existing session while an old duty may be removed', async () => {
-  for(const status of ['waitlisted','withdrawn','unknown']){
+  for(const status of ['pending_review','rejected','waitlisted','withdrawn','unknown']){
     const f=fixture({status});f.contact.operations.sessionRoles=[{sessionId:'old-session',roles:['guest']}];
     await assert.rejects(f.guard(change({...operations,sessionRoles:[{sessionId:'old-session',roles:['guest','organizer']}]})),error=>error.status===(status==='unknown'?503:422));
     await f.guard(change({...operations,sessionRoles:[]}));

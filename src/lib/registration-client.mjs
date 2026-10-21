@@ -1,4 +1,5 @@
 import { admissionSummary, registrationReceiptState } from './admission-view.mjs';
+import { savedConfirmation } from './confirmation-client.mjs';
 const API_ORIGIN = 'https://api.artdico.host';
 const SITE_ORIGIN = 'https://artdico.host';
 const KEY = /^[A-Za-z0-9_-]{32,128}$/u;
@@ -97,6 +98,8 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
           const receipt = {httpStatus:result.status,body:{status:admissionState==='waitlisted'?'waitlisted':'registered',admissionStatus:admissionState,reference_code:result.value.reference_code,groupInvite:null}};
           if (result.value.admissionKind !== undefined) receipt.body.admissionKind = result.value.admissionKind;
           if (result.value.admissionRevision !== undefined) receipt.body.admissionRevision = result.value.admissionRevision;
+          const confirmation = savedConfirmation(result.value.confirmation,clock());
+          if (confirmation) receipt.body.confirmation = confirmation;
           const invite = result.value.groupInvite;
           if (admissionState==='confirmed' && invite?.platform === 'wechat' && timestamp(invite.expiresAt) && Date.parse(invite.expiresAt) > clock()) {
             try { const url = new URL(invite.qrImageUrl); if (url.origin === API_ORIGIN && !url.username && !url.password && !url.hash) receipt.body.groupInvite = {platform:'wechat',qrImageUrl:url.href,expiresAt:invite.expiresAt}; } catch {}

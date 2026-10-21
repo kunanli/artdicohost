@@ -69,6 +69,7 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
       frozen = false;
       pendingFields = null;
       form.dispatchEvent(new Event('artdico:registration-saved'));
+      if (result.body.confirmation) { location.assign(result.body.confirmation.confirmationUrl); return; }
       receipt?.querySelector('h3,h2')?.focus();
     } catch (error) {
       frozen = client.pending;

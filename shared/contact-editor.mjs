@@ -1,6 +1,6 @@
-import { EDITABLE_CONTACT_FIELDS, validateImportedContact } from './contacts-schema.mjs';
+import { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS, CONTACT_CATEGORIES, validateImportedContact } from './contacts-schema.mjs';
 
-export { EDITABLE_CONTACT_FIELDS } from './contacts-schema.mjs';
+export { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS } from './contacts-schema.mjs';
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && [Object.prototype, null].includes(Object.getPrototypeOf(value));
 const singleLine = new Set(EDITABLE_CONTACT_FIELDS.filter(key => !['topics', 'background'].includes(key)));
@@ -10,12 +10,26 @@ const result = (errors, value) => ({ valid: Object.keys(errors).length === 0, er
 function editableInput(input, manual) {
   const errors = {}, value = {};
   if (!plain(input) || Object.getOwnPropertySymbols(input).length) return { errors: { profile: '请提供可编辑的基本资料。' }, value };
-  const allowed = manual ? [...EDITABLE_CONTACT_FIELDS, 'contactConsent'] : EDITABLE_CONTACT_FIELDS;
+  const allowed = [...EDITABLE_CONTACT_FIELDS, ...EDITABLE_CONTACT_ARRAY_FIELDS, ...(manual ? ['contactConsent'] : [])];
   const names = Object.getOwnPropertyNames(input);
   if (!names.length || names.some(key => !allowed.includes(key))) errors.profile = '只能修改基本资料，不能更改来源、历史答案、联络同意或内部操作记录。';
   for (const key of names) {
     if (!allowed.includes(key)) continue;
     const descriptor = Object.getOwnPropertyDescriptor(input, key);
+    if (EDITABLE_CONTACT_ARRAY_FIELDS.includes(key)) {
+      const items = descriptor?.value;
+      if (!descriptor?.enumerable || !Array.isArray(items) || Object.getPrototypeOf(items) !== Array.prototype
+        || items.length > CONTACT_CATEGORIES.length || Object.getOwnPropertySymbols(items).length
+        || Object.getOwnPropertyNames(items).length !== items.length + 1) {
+        errors[key] = '请提供身份选项数组。'; continue;
+      }
+      const entries = Array.from({ length: items.length }, (_, index) => Object.getOwnPropertyDescriptor(items, String(index)));
+      if (entries.some(entry => !entry?.enumerable || !('value' in entry) || typeof entry.value !== 'string')) {
+        errors[key] = '请提供身份选项数组。'; continue;
+      }
+      value[key] = entries.map(entry => entry.value);
+      continue;
+    }
     if (!descriptor || !('value' in descriptor) || !descriptor.enumerable || typeof descriptor.value !== 'string') {
       errors[key] = '请提供文字。'; continue;
     }

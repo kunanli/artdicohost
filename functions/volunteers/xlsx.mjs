@@ -1,7 +1,7 @@
 import { createXlsxWorkbook } from '../../shared/xlsx-workbook.mjs';
 
 const workflow = { pending: '待联系', invited: '已邀请', confirmed: '已确认', declined: '已婉拒', inactive: '暂停参与' };
-const admission = { confirmed: '参会已确认', waitlisted: '候补', withdrawn: '已撤回', unlinked: '未关联报名', unavailable: '暂不可核实' };
+const admission = { confirmed: '参会已确认', waitlisted: '已核准候补', pending_review: '申请待审核（无名额）', rejected: '申请未通过（无名额）', withdrawn: '已撤回', unlinked: '未关联报名', unavailable: '暂不可核实' };
 const assignment = { proposed: '拟安排', confirmed: '已确认', cancelled: '已取消' };
 const cell = value => value === null || value === undefined ? '' : String(value);
 const windows = value => value.map(item => item.start + '–' + item.end).join('；');

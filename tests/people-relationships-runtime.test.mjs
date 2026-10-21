@@ -35,10 +35,13 @@ test('a durable attending reply reserves the original common seat once, survives
   assert.doesNotMatch(JSON.stringify(first),/receiptToken|synthetic-private-key/u);
 });
 
-test('an invited contact and public signup compete for the same last seat while an outreach-only reply remains explicitly unsynchronized',async()=>{
+test('a public application cannot take an invited contact last seat before manual approval, while outreach-only replies remain unsynchronized',async()=>{
   const f=await peopleRuntimeFixture({capacity:1}),created=await f.createContact(),headers=await f.login();
-  const [contact]=await Promise.all([saveOperations(f,created.contact.id,{responseStatus:'attending'},headers),f.seedPublic()]);
-  assert.ok(['confirmed','waitlisted'].includes(contact.admission.status));
+  const pending=await f.seedPublic();assert.equal(pending.admissionStatus,'pending_review');
+  const contact=await saveOperations(f,created.contact.id,{responseStatus:'attending'},headers);
+  assert.equal(contact.admission.status,'confirmed');
+  const approved=await f.approvePublic(pending.reference_code,{headers});
+  assert.equal(approved.people.find(person=>person.registrationId===pending.reference_code).status,'waitlisted');
   const admissions=await f.app.registrationService.getAdmissions({actor:f.users[0]});
   assert.equal(admissions.summary.confirmedCount,1);assert.equal(admissions.people.length,2);
   assert.equal(admissions.people.filter(row=>row.status==='confirmed').length,1);

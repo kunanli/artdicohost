@@ -127,6 +127,16 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     const uncertain = result?.results?.some(item => ['unknown', 'unavailable'].includes(item.status));
     return { status: result?.status === 'not_configured' ? 'not_configured' : uncertain || pendingCount ? 'pending' : 'completed', attemptedCount, pendingCount };
   };
+  const notifyApproved = async (registrationId, timeoutMs = 5000) => {
+    let result;
+    try { result = await confirmationService?.notifyApproved({ registrationIds: [registrationId], timeoutMs }); } catch { /* The durable decision is independent of delivery. */ }
+    if (result?.results?.length === 1 && result.results[0].registrationId === registrationId && result.results[0].status === 'not_applicable')
+      return { status: 'not_applicable', attemptedCount: 0, pendingCount: 0 };
+    const attemptedCount = Array.isArray(result?.results) && result.results.length === 1 && result.results[0].registrationId === registrationId
+      && !['not_attempted', 'unavailable', 'not_applicable'].includes(result.results[0].status) ? 1 : 0;
+    const pendingCount = 1 - attemptedCount;
+    return { status: result?.status === 'not_configured' ? 'not_configured' : result?.results?.some(item => ['unknown', 'unavailable'].includes(item.status)) || pendingCount ? 'pending' : 'completed', attemptedCount, pendingCount };
+  };
   const beforeContactMutation = createContactAdmissionGuard({ contactsStore,
     lookupRegistration: async ({ contactId, actor }) => {
       if (!intentService) throw new Error('Registration linkage is unavailable.');
@@ -147,20 +157,14 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
         // getAdmissionStatus verifies the immutable record and the review guard.
         // The registration service itself receives only the review-only hook.
         const admission = await registrationService.getAdmissionStatus(id);
-        if (!['confirmed', 'waitlisted', 'withdrawn'].includes(admission?.status)) throw new Error('Admission state is unavailable.');
+        if (!['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected'].includes(admission?.status)) throw new Error('Admission state is unavailable.');
         return admission.status !== 'confirmed';
       } });
     registrationService = createRegistrationService({ objects, journalFor, policy, capacity: policy.capacity,
       tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, allowedOrigins: [PUBLIC_SITE_ORIGIN], clock: now,
       isWithdrawn, getWithdrawnIds: () => reviewStore.inactiveRegistrationIds(),
       waitlistEnabled: env.ARTDICO_REGISTRATION_WAITLIST_ENABLED === 'true', staffReserve: 0,
-      onSaved: async ({ receipt, promotedIds }) => {
-        const started = performance.now();
-        const confirmation = await confirmationService.forSavedReceipt({ receipt, notify: true });
-        const remaining = Math.floor(5000 - (performance.now() - started));
-        if (remaining > 0) await notifyPromoted(promotedIds, remaining);
-        return confirmation;
-      },
+      onSaved: ({ receipt }) => confirmationService.forSavedReceipt({ receipt, notify: false }),
       groupInviteProvider: input => groupService.forReceipt(input) });
     reviewStore = createRegistrationReviewStore({ journal: journalFor(`cms/v1/registration-reviews/${policy.eventId}`),
       loadRegistrations: () => registrationService.repository.list(), eventId: policy.eventId, clock: now });
@@ -201,7 +205,16 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       return { status: 'released', promotedCount: saved.promotedIds.length, promotionEmail: await notifyPromoted(saved.promotedIds) };
     } : undefined });
   const admissionsHandle = createAdmissionsApi({ enabled: Boolean(registrationService), auth, service: registrationService,
-    onCommitted: async ({ result }) => notifyPromoted(result.promotedIds) });
+    onCommitted: async ({ action, result }) => {
+      if (action !== 'approve') return notifyPromoted(result.promotedIds);
+      const started = performance.now(), target = result.operation?.registrationId;
+      const person = result.people?.find(item => item.registrationId === target);
+      const approvalEmail = person?.status === 'confirmed' ? await notifyApproved(target) : undefined;
+      const remaining = Math.floor(5000 - (performance.now() - started));
+      const promotionEmail = remaining > 0 ? await notifyPromoted(result.promotedIds, remaining)
+        : result.promotedIds?.length ? { status: 'pending', attemptedCount: 0, pendingCount: result.promotedIds.length } : undefined;
+      return { ...(approvalEmail ? { approvalEmail } : {}), ...(promotionEmail ? { promotionEmail } : {}) };
+    } });
   const eventId = createInitialContent().eventId;
   const volunteerRepository = createVolunteerRepository({ journal: journalFor(`cms/v1/volunteers/${eventId}`), eventId, clock: now });
   const volunteerService = createVolunteerService({ repository: volunteerRepository, clock: now,

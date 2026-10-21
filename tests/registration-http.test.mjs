@@ -49,7 +49,7 @@ async function error(response, status, code) {
 }
 
 /** Test-only service with real isolated file writes; never imported by a runtime module. */
-async function fileService(t) {
+async function fileService(t, admissionStatus = 'pending_review') {
   const directory = await mkdtemp(join(tmpdir(), 'artdico-registration-http-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const state = { now, policy: policy(), writes: 0 };
@@ -65,7 +65,8 @@ async function fileService(t) {
     if (!readiness.valid) return { outcome: readiness.errors.enabled || readiness.errors.window ? 'closed' : 'unavailable' };
     const validated = validateRegistrationSubmission(input, { policy: state.policy, now: state.now });
     if (!validated.valid) return { outcome: 'invalid' };
-    const receipt = { committed: true, eventId: input.eventId, referenceCode: randomBytes(24).toString('base64url'), committedAt: validated.value.consent.acceptedAt };
+    const receipt = { committed: true, eventId: input.eventId, referenceCode: randomBytes(24).toString('base64url'), committedAt: validated.value.consent.acceptedAt,
+      admissionStatus, admissionKind: 'attendee', admissionRevision: 1 };
     const handle = await open(file, 'wx', 0o600);
     try { await handle.writeFile(JSON.stringify({ digest, receipt, registration: validated.value })); await handle.sync(); }
     finally { await handle.close(); }
@@ -173,9 +174,9 @@ test('201 follows an actual synced synthetic file; saved retries after closing r
   const created = await handle(request());
   assert.equal(created.status, 201);
   const body = await created.json();
-  assert.deepEqual(Object.keys(body), ['status', 'reference_code', 'groupInvite']);
+  assert.deepEqual(Object.keys(body), ['status', 'reference_code', 'groupInvite', 'admissionStatus', 'admissionKind', 'admissionRevision']);
   assert.equal(body.groupInvite, null);
-  assert.equal(body.status, 'registered');
+  assert.equal(body.status, 'pending_review');
   assert.match(body.reference_code, /^[A-Za-z0-9_-]{32}$/u);
   assert.equal(JSON.stringify(body).includes('PRIVATE-'), false);
   const files = await readdir(service.directory);
@@ -214,7 +215,8 @@ function invite(overrides = {}) {
   return { platform: 'wechat', qrImageUrl: inviteOrigin + '/group.png?signature=synthetic', expiresAt: '2026-10-20T00:00:00+08:00', ...overrides };
 }
 function inviteResult(overrides = {}) {
-  return { outcome: 'created', receipt: { committed: true, eventId: 'synthetic-2026', referenceCode: key, committedAt: now }, groupInvite: invite(), ...overrides };
+  return { outcome: 'created', receipt: { committed: true, eventId: 'synthetic-2026', referenceCode: key, committedAt: now,
+    admissionStatus: 'confirmed', admissionKind: 'attendee', admissionRevision: 1 }, groupInvite: invite(), ...overrides };
 }
 function inviteApi(result, options = {}) {
   return createRegistrationApi({ allowedOrigins: [origin], submissionService: { async submit() { return result; } }, allowedGroupInviteOrigins: [inviteOrigin], clock: () => now, ...options });
@@ -231,25 +233,38 @@ test('waitlisted durable receipts retain creation/replay semantics while suppres
     assert.doesNotMatch(JSON.stringify(value), /PRIVATE-SYNTHETIC/u);
   }
   for (const admission of [{ admissionStatus: 'unknown' }, { admissionStatus: 'confirmed', admissionKind: 'crew', admissionRevision: 'PRIVATE' },
-    { admissionStatus: 'withdrawn', admissionKind: 'attendee', admissionRevision: 1 }, { admissionKind: 'crew' }]) {
+    { admissionStatus: 'withdrawn', admissionKind: 'attendee', admissionRevision: 1 }, { admissionStatus: undefined, admissionKind: 'crew' }]) {
     const result = inviteResult(); Object.assign(result.receipt, admission);
     await error(await inviteApi(result)(request()), 503, 'UNAVAILABLE');
   }
 });
 
+test('pending and rejected receipts are explicit application states and never expose even a valid service-provided group code', async () => {
+  for (const status of ['pending_review', 'rejected']) for (const outcome of ['created', 'replayed']) {
+    const result = inviteResult({ outcome }); result.receipt.admissionStatus = status;
+    const response = await inviteApi(result)(request()), value = await response.json();
+    assert.equal(response.status, outcome === 'created' ? 201 : 200);
+    assert.equal(value.status, status); assert.equal(value.admissionStatus, status); assert.equal(value.groupInvite, null);
+    assert.equal(value.reference_code, key);
+  }
+  const incomplete = inviteResult(); delete incomplete.receipt.admissionStatus; delete incomplete.receipt.admissionKind; delete incomplete.receipt.admissionRevision;
+  await error(await inviteApi(incomplete)(request()), 503, 'UNAVAILABLE');
+});
+
 test('public admissions metadata projects only bounded aggregate counts and never people or teams', async () => {
-  const admissions = { capacity: 3, staffReserve: 1, waitlistEnabled: true, confirmedCount: 2, attendeeConfirmedCount: 1, crewConfirmedCount: 1, waitlistCount: 4, remainingPublic: 1, remainingTotal: 1 };
+  const admissions = { capacity: 3, staffReserve: 1, waitlistEnabled: true, confirmedCount: 2, attendeeConfirmedCount: 1, crewConfirmedCount: 1, waitlistCount: 4, pendingReviewCount: 995, rejectedCount: 1, remainingPublic: 1, remainingTotal: 1 };
   const metadata = { ...policy(), capacity: 3, admissions: { ...admissions, people: ['PRIVATE-SYNTHETIC'], teams: ['PRIVATE-SYNTHETIC'] } };
   const handle = createRegistrationApi({ allowedOrigins: [origin], submissionService: { metadata: async () => metadata } });
   const response = await handle(request({ url: endpoint.replace('/api/registrations', '/api/registration/config'), method: 'GET' }));
   assert.equal(response.status, 200); const value = await response.json();
+  assert.equal(value.attendeeReviewRequired, true);
   assert.deepEqual(value.admissions, admissions); assert.doesNotMatch(JSON.stringify(value), /PRIVATE-SYNTHETIC|people|teams/u);
   metadata.admissions.confirmedCount = 'PRIVATE-SYNTHETIC';
   await error(await handle(request({ url: endpoint.replace('/api/registrations', '/api/registration/config'), method: 'GET' })), 503, 'UNAVAILABLE');
 });
 
 test('committed creation and saved retries project only the current unexpired service invite', async t => {
-  const stored = await fileService(t);
+  const stored = await fileService(t, 'confirmed');
   let currentInvite = invite({ privateContact: 'PRIVATE-SYNTHETIC', instructionsHtml: '<b>PRIVATE-SYNTHETIC</b>' });
   const service = { async submit(input) { return { ...await stored.submit(input), groupInvite: currentInvite }; } };
   const handle = createRegistrationApi({ allowedOrigins: [origin], submissionService: service, allowedGroupInviteOrigins: [inviteOrigin], clock: () => stored.state.now });

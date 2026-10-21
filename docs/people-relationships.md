@@ -1,6 +1,6 @@
 # 人员关系与共同名额：接续计划
 
-用户已授权在志愿者完成实际发布后实施本阶段；本文件先记录契约，尚不代表功能已上线。随后还有新版邀请函与用户上传字体阶段，不能提前结束任务。[实施计划](implementation-plan.md)与[接续台账](session-recovery.md)保存当前状态。
+本阶段已在 [PR #36](https://github.com/kunanli/artdicohost/pull/36)／main `661eb41a5dee261dcb930b9b8b8bcfcfb488daa6` 实际上线。准确 PR／main 1017/1017、真实私有 OSS、共同 300 人政策及 27/27 HTTPS 通过，2026-10-21 19:01:31（UTC+08）全成功；[完整证据](people-release-2026-10-21.md)。下方为最终行为契约。接着先完成学生／精简申请／人工审核，再更新用户邀请函与字体；[实施计划](implementation-plan.md)与[接续台账](session-recovery.md)保存当前状态。
 
 ## 确认参加接入 300 人
 

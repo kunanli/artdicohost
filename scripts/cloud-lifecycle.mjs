@@ -103,16 +103,17 @@ export async function verifyPublicRegistrationAlias(fetchFn, policy, externalSig
       chunks.push(part.value);
     }
     const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks, size)));
-    if (value?.enabled !== true || value.eventId !== policy.eventId || value.capacity !== policy.capacity
+    if (value?.enabled !== true || value.attendeeReviewRequired !== true || value.eventId !== policy.eventId || value.capacity !== policy.capacity
       || value.opensAt !== new Date(policy.opensAt).toISOString() || value.closesAt !== new Date(policy.closesAt).toISOString()
       || !isDeepStrictEqual(value.privacy, policy.privacy)) throw failure('PUBLIC_REGISTRATION_NOT_VERIFIED');
     if (value.admissions !== undefined) {
       const summary = value.admissions;
-      const counts = ['confirmedCount', 'attendeeConfirmedCount', 'crewConfirmedCount', 'waitlistCount', 'remainingPublic', 'remainingTotal'];
+      const applicationCounts = ['waitlistCount', 'pendingReviewCount', 'rejectedCount'];
+      const counts = ['confirmedCount', 'attendeeConfirmedCount', 'crewConfirmedCount', ...applicationCounts, 'remainingPublic', 'remainingTotal'];
       if (!plain(summary) || Object.keys(summary).sort().join(',') !== ['capacity', 'staffReserve', 'waitlistEnabled', ...counts].sort().join(',')
         || summary.capacity !== policy.capacity || typeof summary.waitlistEnabled !== 'boolean'
         || !Number.isSafeInteger(summary.staffReserve) || summary.staffReserve < 0 || summary.staffReserve > policy.capacity
-        || counts.some(key => !Number.isSafeInteger(summary[key]) || summary[key] < 0 || summary[key] > (key === 'waitlistCount' ? 1000 : policy.capacity))) throw failure('PUBLIC_REGISTRATION_NOT_VERIFIED');
+        || counts.some(key => !Number.isSafeInteger(summary[key]) || summary[key] < 0 || summary[key] > (applicationCounts.includes(key) ? 1000 : policy.capacity))) throw failure('PUBLIC_REGISTRATION_NOT_VERIFIED');
     }
     return true;
   } catch { throw failure('PUBLIC_REGISTRATION_NOT_VERIFIED'); }

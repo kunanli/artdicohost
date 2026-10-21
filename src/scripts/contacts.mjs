@@ -1,6 +1,6 @@
 import { parseContactImport, WORKBOOK_SOURCE_KEY, sourceLabels } from '../../shared/contact-import.mjs';
 import { renderInvitation, invitationPngBlob, invitationFilename } from '../lib/invitation-renderer.mjs';
-import { EDITABLE_CONTACT_FIELDS } from '../../shared/contact-editor.mjs';
+import { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS } from '../../shared/contact-editor.mjs';
 import { SESSION_ROLES, SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
 import { eventConfig } from '../config/event.mjs';
 import { contactProgress, summarizeContactProgress, invitationProgressLabels, contactDeclined } from '../../shared/organizer-progress.mjs';
@@ -247,7 +247,7 @@ function render() {
   $('[data-contacts-progress-note]').textContent = '本人回复与正式名额分别统计；共同 300 人总数以报名审核后台为准。'+(features.intentInvitations&&!intentState?'正式名额来源暂时无法读取，不能据此判断为零。':'拒绝出席后的正式名额须到报名审核明确撤回，回复变更不会自行释放。')+'当前版人工发出 '+summary.manuallySent+' 位，服务商接受 '+summary.providerAccepted+' 位，结果待核对 '+summary.unknown+' 位；接受不等于送达。';
   const ownerSelect = $('[data-contacts-owner]'), previousOwner = ownerSelect.value;
   ownerSelect.replaceChildren();for(const [value,label] of [['','全部负责同事'],['__unassigned','尚未分配负责人'],...[...new Set(contacts.map(item=>item.operations.owner).filter(Boolean))].sort().map(value=>[value,value])]){const option=node('option',label);option.value=value;ownerSelect.append(option);}ownerSelect.value=previousOwner;
-  $('[data-contacts-planning]').textContent='原问卷意向：自报 SO / RO '+contacts.filter(item=>item.profile.categories.some(value=>['so','ro'].includes(value))).length+' 位，筹备新站点 '+contacts.filter(item=>item.profile.categories.includes('prospective_site')).length+' 位，展示意向 '+contacts.filter(item=>item.profile.interests.includes('exhibition')).length+' 位，需要住宿 '+contacts.filter(item=>item.profile.accommodationIntent==='needed').length+' 位；同意联络 '+contacts.filter(item=>item.profile.contactConsent==='consented'&&!contactDeclined(item)).length+' 位。意向不代表安排已确认。';
+  $('[data-contacts-planning]').textContent='原问卷意向：自报 SO / RO '+contacts.filter(item=>(item.sourceProfile??item.profile).categories.some(value=>['so','ro'].includes(value))).length+' 位，筹备新站点 '+contacts.filter(item=>(item.sourceProfile??item.profile).categories.includes('prospective_site')).length+' 位，展示意向 '+contacts.filter(item=>item.profile.interests.includes('exhibition')).length+' 位，需要住宿 '+contacts.filter(item=>item.profile.accommodationIntent==='needed').length+' 位；同意联络 '+contacts.filter(item=>item.profile.contactConsent==='consented'&&!contactDeclined(item)).length+' 位。意向不代表安排已确认。';
   const search=$('[data-contacts-search]').value.trim().toLowerCase();
   const type=$('[data-contacts-category]').value;
   const response=$('[data-contacts-response]').value;
@@ -263,9 +263,9 @@ function render() {
     const matchesParticipation=!participation||(participation==='__none'?forms.length===0:forms.includes(participation));
     const progress=contactProgress(item,progressOptions());
     const matchesOwner=!owner||(owner==='__unassigned'?!progress.owner:progress.owner===owner);
-    const progressMatches={unconverted:!progress.excluded&&Boolean(intentState)&&!progress.conversion,unreplied:!progress.excluded&&progress.response==='pending'&&progress.contacted,unassigned:!progress.excluded&&!progress.inactive&&!progress.admissionPending&&progress.response==='attending'&&progress.missingAssignment,unsent:!progress.excluded&&!progress.inactive&&!progress.admissionPending&&progress.consented&&!progress.contacted&&!progress.unknown,excluded:progress.excluded,manually_sent:progress.manuallySent,provider_accepted:progress.providerAccepted,unknown:progress.unknown,stale:progress.state==='stale',waitlisted:progress.admissionStatus==='waitlisted',admission_unknown:progress.admissionStatus==='unknown'};
+    const progressMatches={unconverted:!progress.excluded&&Boolean(intentState)&&!progress.conversion,unreplied:!progress.excluded&&progress.response==='pending'&&progress.contacted,unassigned:!progress.excluded&&!progress.inactive&&!progress.admissionPending&&progress.response==='attending'&&progress.missingAssignment,unsent:!progress.excluded&&!progress.inactive&&!progress.admissionPending&&progress.consented&&!progress.contacted&&!progress.unknown,excluded:progress.excluded,manually_sent:progress.manuallySent,provider_accepted:progress.providerAccepted,unknown:progress.unknown,stale:progress.state==='stale',waitlisted:progress.admissionStatus==='waitlisted',pending_review:progress.admissionStatus==='pending_review',rejected:progress.admissionStatus==='rejected',admission_unknown:progress.admissionStatus==='unknown'};
     const matchesProgress=!progressFilter||progressMatches[progressFilter]===true;
-    return matchesPeopleRelationships(item,relationships,{organization:$('[data-contacts-organization]').value,publicRole:$('[data-contacts-public-role]').value,publicState:$('[data-contacts-public-state]').value})&&matchesOwner&&matchesProgress&&matchesParticipation&&matchesArrangement&&(!search||[p.name,p.displayName,p.organization,p.city,p.email,p.wechat].some(value=>value.toLowerCase().includes(search)))&&(!response||item.operations.responseStatus===response)&&(!onlyDue||due(item))&&(!type||(type.startsWith('category:')?p.categories.includes(type.slice(9)):p.interests.includes(type.slice(9))));
+    return matchesPeopleRelationships(item,relationships,{organization:$('[data-contacts-organization]').value,publicRole:$('[data-contacts-public-role]').value,publicState:$('[data-contacts-public-state]').value})&&matchesOwner&&matchesProgress&&matchesParticipation&&matchesArrangement&&(!search||[p.name,p.displayName,p.organization,p.city,p.email,p.wechat].some(value=>value.toLowerCase().includes(search)))&&(!response||item.operations.responseStatus===response)&&(!onlyDue||due(item))&&(!type||(type.startsWith('category:')?p.categories.includes(type.slice(9)):type.startsWith('source-category:')?(item.sourceProfile??p).categories.includes(type.slice(16)):p.interests.includes(type.slice(9))));
   });
   const body=$('[data-contacts-rows]');body.replaceChildren();
   for(const id of selectedContacts)if(!maySelect(contactById(id)))selectedContacts.delete(id);
@@ -277,6 +277,7 @@ function render() {
     if(item.profile.contactConsent==='declined'||item.operations.responseStatus==='declined')identity.append(node('small','已拒绝联络或出席 · 不转换、不邀请','contacts-conversion-blocked'));
     const tags=node('td');
     for(const value of item.profile.categories)tags.append(node('span',categoryLabels.get(value)||value,'contacts-tag'));
+    if(JSON.stringify(item.profile.categories)!==JSON.stringify((item.sourceProfile??item.profile).categories))tags.append(node('small','原始身份：'+((item.sourceProfile??item.profile).categories.map(value=>categoryLabels.get(value)||value).join('、')||'未记录')));
     for(const value of item.profile.interests)tags.append(node('span',interestLabels.get(value)||value,'contacts-tag'));
     if(!tags.childNodes.length)tags.append(node('small','未记录'));
     row.append(tags);
@@ -364,7 +365,7 @@ function openContact(item){
   $('[data-contact-title]').textContent=item.profile.displayName+' · 跟进与安排';
   const profile=$('[data-contact-profile]');const dl=node('dl');
   const p=item.profile;
-  for(const [label,value]of[['机构 / 职务',[p.organization,p.position].filter(Boolean).join(' · ')],['城市',p.city],['邮箱',p.email],['微信',p.wechat],['身份',p.categories.map(value=>categoryLabels.get(value)||value).join('、')],['参与意向',p.interests.map(value=>interestLabels.get(value)||value).join('、')],['背景与经验',p.background],['关注主题',p.topics],['网站 / 作品',[p.website,p.caseLinks].filter(Boolean).join('\n')],['原出席意向',p.attendanceIntentLabel||'源选项码 '+(p.attendanceIntentCode||'未填')+'（待核对）'],['原住宿意向',p.accommodationIntentLabel||'源选项码 '+(p.accommodationIntentCode||'未填')+'（待核对）'],['原联络同意',p.contactConsentLabel||'源选项码 '+(p.contactConsentCode||'未填')+'（待核对）'],['原未来合作',p.futureCooperationLabel||'源选项码 '+(p.futureCooperationCode||'未填')+'（待核对）'],['原提交时间',p.submittedAt]])detailPair(dl,label,value);
+  for(const [label,value]of[['机构 / 职务',[p.organization,p.position].filter(Boolean).join(' · ')],['城市',p.city],['邮箱',p.email],['微信',p.wechat],['当前身份',p.categories.map(value=>categoryLabels.get(value)||value).join('、')||'未标记'],['原始身份（只读）',(item.sourceProfile??p).categories.map(value=>categoryLabels.get(value)||value).join('、')||'未记录'],['参与意向',p.interests.map(value=>interestLabels.get(value)||value).join('、')],['背景与经验',p.background],['关注主题',p.topics],['网站 / 作品',[p.website,p.caseLinks].filter(Boolean).join('\n')],['原出席意向',p.attendanceIntentLabel||'源选项码 '+(p.attendanceIntentCode||'未填')+'（待核对）'],['原住宿意向',p.accommodationIntentLabel||'源选项码 '+(p.accommodationIntentCode||'未填')+'（待核对）'],['原联络同意',p.contactConsentLabel||'源选项码 '+(p.contactConsentCode||'未填')+'（待核对）'],['原未来合作',p.futureCooperationLabel||'源选项码 '+(p.futureCooperationCode||'未填')+'（待核对）'],['原提交时间',p.submittedAt]])detailPair(dl,label,value);
   detailPair(dl,'电话',p.phone);detailPair(dl,'站点 / 职务',[p.siteName,p.siteRole].filter(Boolean).join(' · '));
   detailPair(dl,'联络许可',consentLabels[p.contactConsent]||consentLabels.unknown);
   detailPair(dl,'来源',item.source.key==='manual'?'工作人员手动新增':'问卷导入 · 来源序号 '+item.source.rowId);
@@ -410,6 +411,7 @@ function resetProfile(){
   $('[data-profile-source]').textContent='';$('[data-profile-error]').textContent='';$('[data-profile-error]').hidden=true;
   $('[data-profile-duplicates]').hidden=true;$('[data-profile-duplicate-message]').textContent='';
   $('[data-profile-consent-readonly]').textContent='';
+  $('[data-profile-original-categories]').textContent='';
 }
 function profileDuplicates(){
   const form=$('[data-profile-form]');
@@ -427,8 +429,10 @@ function openProfile(item=null){
   resetProfile();profileContactId=item?.id??null;
   const form=$('[data-profile-form]');
   for(const key of EDITABLE_CONTACT_FIELDS)form.elements.namedItem(key).value=item?.profile[key]??'';
+  for(const input of form.querySelectorAll('[name=categories]'))input.checked=(item?.profile.categories??[]).includes(input.value);
+  $('[data-profile-original-categories]').textContent=item?'原始身份（只读）：'+((item.sourceProfile??item.profile).categories.map(value=>categoryLabels.get(value)||value).join('、')||'未记录'):'';
   $('[data-profile-title]').textContent=item?'编辑联系人基本资料':'新增联系人';
-  $('[data-profile-source]').textContent=item?(item.source.key==='manual'?'工作人员手动新增。基本资料修正不会改变原联络同意或跟进记录。':'问卷导入。只修正基本资料，原始答案、同意与来源身份保持只读。'):'手动录入仅保存在私有人员工作区；不自动获邀或公开。';
+  $('[data-profile-source]').textContent=item?(item.source.key==='manual'?'工作人员手动新增。基本资料修正不会改变原联络同意或跟进记录。':'问卷导入。可修正基本资料与当前身份；原始身份、来源答案与联络同意保留。'):'手动录入仅保存在私有人员工作区；不自动获邀或公开。';
   $('[data-profile-consent-field]').hidden=Boolean(item);
   form.elements.namedItem('contactConsent').disabled=Boolean(item);
   $('[data-profile-consent-readonly]').hidden=!item;
@@ -516,7 +520,7 @@ function closeConversion(){if(busy)return;if(conversionDraft?.unknown&&!confirm(
 for(const button of document.querySelectorAll('[data-conversion-close]'))button.addEventListener('click',closeConversion);
 $('[data-conversion-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeConversion();});
 for(const selector of ['[data-contacts-search]','[data-contacts-category]','[data-contacts-response]','[data-contacts-arrangement]','[data-contacts-participation]','[data-contacts-due]','[data-contacts-owner]','[data-contacts-progress]','[data-contacts-organization]','[data-contacts-public-role]','[data-contacts-public-state]'])$(selector).addEventListener('input',render);
-for(const [prefix,items,label]of[['category:',sourceLabels.categories,'身份'],['interest:',sourceLabels.interests,'参与意向']]){const group=node('optgroup');group.label=label;for(const item of items){const option=node('option',item.label);option.value=prefix+item.value;group.append(option);}$('[data-contacts-category]').append(group);}
+for(const [prefix,items,label]of[['category:',sourceLabels.categories,'当前身份'],['source-category:',sourceLabels.categories,'原始身份（只读）'],['interest:',sourceLabels.interests,'原始参与意向']]){const group=node('optgroup');group.label=label;for(const item of items){const option=node('option',item.label);option.value=prefix+item.value;group.append(option);}$('[data-contacts-category]').append(group);}
 $('[data-contacts-file]').addEventListener('change',event=>{
   const file=event.currentTarget.files?.[0];
   if(!file||busy||!permitted()||!features.contactImport){event.currentTarget.value='';return;}
@@ -580,6 +584,7 @@ $('[data-profile-form]').addEventListener('submit',event=>{
   event.preventDefault();const form=event.currentTarget;if(!permitted()||!form.reportValidity())return;
   if(profileDuplicates()&&!$('[data-profile-duplicates-confirm]').checked){syncProfileDuplicates();return;}
   const profile=Object.fromEntries(EDITABLE_CONTACT_FIELDS.map(key=>[key,form.elements.namedItem(key).value.trim()]));
+  for(const key of EDITABLE_CONTACT_ARRAY_FIELDS)profile[key]=Array.from(form.querySelectorAll('[name='+key+']:checked'),input=>input.value);
   if(!profileContactId)profile.contactConsent=form.elements.namedItem('contactConsent').value;
   const id=profileContactId;
   action(async()=>{try{

@@ -21,6 +21,9 @@
 2026-10-21「志愿者与分工」已上线 [PR #35](https://github.com/kunanli/artdicohost/pull/35)／main `19b0d10`。942 项 PR／main 检查、真实私有 OSS 的志愿者 CAS／完整历史恢复、300 人政策与 27/27 HTTPS 回读通过，17:47:01（UTC+08）全部成功；[操作](docs/volunteer-operations.md)、[证据](docs/volunteer-release-2026-10-21.md)。接续实施[人员关系及确认参加同步名额](docs/people-relationships.md)，再更新用户提供的邀请函及字体。
 
 ## 文档入口
+
+2026-10-21「人员关系与共同名额」已上线 [PR #36](https://github.com/kunanli/artdicohost/pull/36)／main `661eb41`：1017 项 PR／main 检查、真实 OSS、300 人政策及 27/27 HTTPS 通过，19:01:31（UTC+08）全成功。[操作](docs/people-relationships.md)、[证据](docs/people-release-2026-10-21.md)。接续[学生、精简申请与人工审核](docs/public-application-review.md)，再更新用户邀请函与字体；不重复发布已完成阶段。
+
 - [志愿者与分工](docs/volunteer-operations.md)：既有人员关联、沟通、可服务时段、岗位班次、缺额及 Excel；候选发布状态见接续台账
 - [人员串联与步骤指引](docs/staff-operations-workspace.md)：单人工作页、沟通与安排、云端保存防呆、权限边界及设置中心
 - [嘉宾与组织图片编辑](docs/staff-image-editing.md)：裁切／缩放／去背景、透明 PNG、上传失败保留与重试（发布状态见接续台账）

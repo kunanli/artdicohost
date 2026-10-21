@@ -26,7 +26,8 @@ test('strict questionnaire import retains independent multi-select identities an
   assert.equal(rows[0].caseLinks, 'https://example.test/project');
   assert.equal(rows[0].website, 'https://example.test');
   assert.equal(rows[0].displayName, '合成来宾');
-  assert.equal(sourceLabels.categories.length, 9);
+  assert.equal(sourceLabels.categories.length, 10);
+  assert.deepEqual(sourceLabels.categories.at(-1), { value: 'student', label: '学生' });
   assert.equal(sourceLabels.interests.length, 10);
   assert.ok(warnings.some((warning) => warning.code === 'verified_answer_legend'));
   assert.equal(rows[0].attendanceIntent, 'expected');
@@ -39,6 +40,16 @@ test('strict questionnaire import retains independent multi-select identities an
   assert.equal(rows[0].rsvpStatus, undefined);
   assert.equal(rows[0].consentAccepted, undefined);
   assert.equal(rows[0].attendanceRegistration, undefined);
+});
+
+test('student is display-only for the historic export; all nine identity columns and following answers keep their original positions', () => {
+  const matrix = fixture();
+  for (let index = 13; index < 22; index++) matrix[1][index] = 1;
+  const imported = parseContactImport(matrix).rows[0];
+  assert.deepEqual(imported.categories, ['so','ro','prospective_site','industry','developer','university','education','partner','other']);
+  assert.equal(imported.categories.includes('student'), false);
+  assert.deepEqual(imported.interests, ['site_experience','talk','exhibition','product_demo','sponsorship_partnership']);
+  assert.equal(imported.contactConsent, 'declined');
 });
 
 test('drops irrelevant source metadata and ignores extra columns without copying their contents to diagnostics', () => {

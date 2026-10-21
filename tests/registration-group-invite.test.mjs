@@ -61,6 +61,15 @@ test('replacement and disable invalidate older links across clients even when re
   assert.equal((await first.adminRead()).revision, 3);
 });
 
+test('supplied pending and rejected receipts cannot mint QR links even if an older adapter lacks an admission guard', async () => {
+  const f = fixture(), service = f.service(); await service.replace(f.upload(), actor);
+  for (const admissionStatus of ['pending_review', 'rejected', 'waitlisted', 'withdrawn']) {
+    assert.equal(await service.forReceipt({ receipt: { ...receipt(), admissionStatus } }), null);
+  }
+  assert.equal((await service.forReceipt({ receipt: { ...receipt(), admissionStatus: 'confirmed' } })).platform, 'wechat');
+  assert.equal((await service.forReceipt({ receipt: receipt() })).platform, 'wechat', 'legacy receipt still uses the trusted current-state callback');
+});
+
 test('expired links, expired QR and withdrawn registrations cannot read an image; review failure stays opaque', async () => {
   const f = fixture(), service = f.service();
   await service.replace(f.upload(), actor);

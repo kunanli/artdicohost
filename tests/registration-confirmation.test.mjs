@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { createRegistrationService } from '../functions/registration-api/service.mjs';
+import { createAdmissionsApi } from '../functions/registration-admin/admissions-handler.mjs';
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
 import { createOssObjectClient } from '../functions/cloud-content/oss-client.mjs';
 import { createRegistrationConfirmationService } from '../functions/registration-confirmation/service.mjs';
@@ -21,11 +22,15 @@ const event = { id: EVENT, title: '合成活动', date: { value: '2026-12-05' },
 const fields = { name: 'PRIVATE-SYNTHETIC-NAME', city: '合成城市', organization: 'PRIVATE-SYNTHETIC-ORG', email: 'private-synthetic@example.invalid', categories: ['other'],
   participationInterests: ['attend'], attendance: 'expected', accommodationChoice: 'not_needed', cooperationInterest: 'none' };
 function fixture(patch = {}) {
+  const { capacity = 1, ...confirmationPatch } = patch;
   const remote = objectFixture(), state = { now: Date.parse('2026-10-21T00:00:00Z'), ready: true, messages: [], confirmationWrites: 0, loseAt: 0,
-    providerStatus: 'provider_accepted', providerThrow: false, reviewFailure: false, withdrawn: new Set() };
+    providerStatus: 'provider_accepted', providerThrow: false, reviewFailure: false, withdrawn: new Set(), loseAdmissionAck: false };
   const base = createOssObjectClient({ credentials: async () => fakeCredentials, clock: () => new Date(state.now), fetchFn: remote.fetchFn });
   const objects = { ...base, async append(path, position, bytes) {
     const ack = await base.append(path, position, bytes);
+    if (state.loseAdmissionAck && path.includes('/registrations/') && path.endsWith('/index/commits.jsonl')) {
+      state.loseAdmissionAck = false; throw new Error('PRIVATE-LOST-ADMISSION-ACK');
+    }
     if (path.includes('/registration-confirmations/') && path.endsWith('/commits.jsonl')) {
       state.confirmationWrites++;
       if (state.loseAt === state.confirmationWrites) throw new Error('PRIVATE-LOST-ACK');
@@ -33,21 +38,30 @@ function fixture(patch = {}) {
     return ack;
   } };
   const journalFor = prefix => createObjectJournal({ objects, prefix });
-  const service = createRegistrationService({ objects, journalFor, policy, capacity: 1, waitlistEnabled: true, tokenSecret: SECRET,
+  const service = createRegistrationService({ objects, journalFor, policy, capacity, waitlistEnabled: true, tokenSecret: SECRET,
     allowedOrigins: [SITE], clock: () => state.now, isWithdrawn: async id => { if (state.reviewFailure) throw new Error('PRIVATE-REVIEW'); return state.withdrawn.has(id); } });
   const provider = { readiness: () => ({ ready: state.ready, enabled: state.ready, missing: state.ready ? [] : ['EMAILJS_CONFIRMATION_TEMPLATE_ID'] }),
     async send(input) { state.messages.push(input); if (state.providerThrow) throw new Error('PRIVATE-PROVIDER-ERROR'); return { status: state.providerStatus }; } };
   const confirmation = extra => createRegistrationConfirmationService({ registrationService: service, journalFor, tokenSecret: SECRET, event,
     emailProvider: provider, clock: () => state.now, walletReadiness: async () => ({ ready: true, reason: 'WALLET_CONFIGURED' }),
     groupInviteProvider: async () => ({ platform: 'wechat', qrImageUrl: 'https://api.artdico.host/api/admin/registration/group-invite/synthetic', expiresAt: new Date(state.now + 60_000).toISOString(), PRIVATE_FIELD: 'never-project' }),
-    ...patch, ...extra });
+    ...confirmationPatch, ...extra });
   return { remote, state, objects, journalFor, service, confirmation };
 }
-async function register(f, value = fields) {
+async function register(f, value = fields, approve = true) {
   const idempotencyKey = operationId(), issued = await f.service.issueToken({ eventId: EVENT, origin: SITE, idempotencyKey });
   const input = { origin: SITE, idempotencyKey, submissionToken: issued.submissionToken,
     payload: { eventId: EVENT, fields: value, consent: { accepted: true, version: policy.privacy.version } } };
-  const saved = await f.service.submit(input); assert.equal(saved.outcome, 'created');
+  let saved = await f.service.submit(input); assert.equal(saved.outcome, 'created');
+  assert.equal(saved.receipt.admissionStatus, 'pending_review');
+  if (approve) {
+    const current = await f.service.getAdmissions({ actor });
+    const decision = await f.service.approveApplication({ actor, registrationId: saved.receipt.registrationId,
+      expectedRevision: current.revision, operationId: operationId() });
+    assert.equal(decision.outcome, 'updated');
+    saved = { ...saved, receipt: { ...saved.receipt, admissionStatus: (await f.service.getAdmissionStatus(saved.receipt.registrationId)).status,
+      admissionRevision: decision.revision } };
+  }
   return { saved, input };
 }
 
@@ -63,6 +77,87 @@ test('receipt capability is stable, bounded, purpose separated and contains no p
   assert.doesNotMatch(claims, /PRIVATE|@|email|name/u);
   now = expiry; assert.equal(tokens.verify(first.receiptToken), null); assert.throws(() => tokens.issue(id));
   assert.throws(() => createConfirmationTokens({ tokenSecret: 'short', eventId: EVENT, expiresAt: expiry }));
+});
+
+test('pending receipt and repeated private reads reserve no formal notice, send no mail and expose no admission extras', async () => {
+  const f = fixture(), { saved } = await register(f, fields, false), c = f.confirmation();
+  const before = f.remote.calls.length;
+  const receipt = await c.forSavedReceipt({ receipt: saved.receipt });
+  assert.equal(receipt.email.status, 'not_applicable'); assert.equal(f.remote.calls.length, before, 'pending decoration has no outbox or provider I/O');
+  for (const reader of [c, f.confirmation()]) {
+    const current = await reader.confirmation({ receiptToken: receipt.receiptToken });
+    assert.equal(current.admission.status, 'pending_review'); assert.equal(current.email.status, 'not_applicable');
+    assert.deepEqual(current.wallet, { ready: false, reason: 'ADMISSION_NOT_CONFIRMED' }); assert.equal(current.groupInvite, null);
+  }
+  assert.equal(f.state.confirmationWrites, 0); assert.equal(f.state.messages.length, 0);
+  assert.equal(f.remote.calls.slice(before).some(call => call.key.includes('/registration-confirmations/')), false);
+  assert.equal((await f.service.getAdmissions({ actor })).summary.confirmedCount, 0);
+  const candidate = { ...saved.receipt, admissionStatus: 'confirmed' };
+  assert.equal((await c.forSavedReceipt({ receipt: candidate })).email.status, 'not_applicable', 'even a stale confirmed receipt cannot authorize an unreviewed send');
+  assert.equal((await c.notifyApproved({ registrationIds: [saved.receipt.registrationId] })).results[0].status, 'not_applicable');
+  assert.equal((await c.notifyPromoted({ registrationIds: [saved.receipt.registrationId] })).results[0].status, 'not_applicable');
+  assert.equal(f.state.confirmationWrites, 0); assert.equal(f.state.messages.length, 0);
+});
+
+test('rejection preserves a working private application receipt without a formal notification identity', async () => {
+  const f = fixture(), { saved } = await register(f, fields, false), c = f.confirmation();
+  const cap = await c.forSavedReceipt({ receipt: saved.receipt, notify: false });
+  const decision = await f.service.rejectApplication({ actor, registrationId: saved.receipt.registrationId,
+    expectedRevision: saved.receipt.admissionRevision, operationId: operationId() });
+  assert.equal(decision.outcome, 'updated');
+  const page = await c.confirmation({ receiptToken: cap.receiptToken });
+  assert.equal(page.admission.status, 'rejected'); assert.equal(page.attendee.name, fields.name);
+  assert.equal(page.email.status, 'not_applicable'); assert.equal(page.groupInvite, null); assert.equal(page.wallet.ready, false);
+  await c.notifyApproved({ registrationIds: [saved.receipt.registrationId] });
+  assert.equal(f.state.confirmationWrites, 0); assert.equal(f.state.messages.length, 0);
+  assert.equal((await f.service.repository.list()).registrations.length, 1);
+});
+
+test('approval notification is durable and deduplicated; public receipt replay with notify false never sends', async () => {
+  const f = fixture(), { saved } = await register(f), c = f.confirmation();
+  const before = f.remote.calls.length, cap = await c.forSavedReceipt({ receipt: saved.receipt, notify: false });
+  assert.equal(cap.email.status, 'not_applicable'); assert.equal(f.remote.calls.length, before); assert.equal(f.state.messages.length, 0);
+  await Promise.all([c.notifyApproved({ registrationIds: [saved.receipt.registrationId] }),
+    f.confirmation().notifyApproved({ registrationIds: [saved.receipt.registrationId] })]);
+  assert.equal(f.state.messages.length, 1);
+  const history = await c.staffHistory({ actor, registrationId: saved.receipt.registrationId });
+  assert.equal(history.notices.length, 1); assert.equal(history.notices[0].kind, 'registration');
+  assert.equal(history.notices[0].admissionStatus, 'confirmed');
+  await c.forSavedReceipt({ receipt: saved.receipt, notify: false });
+  await c.notifyApproved({ registrationIds: [saved.receipt.registrationId] });
+  assert.equal(f.state.messages.length, 1);
+});
+
+test('real approval HTTP keeps lost ACK uncertain, then the exact replay authorizes one notification and never revives a later withdrawal', async () => {
+  const f = fixture(), { saved } = await register(f, fields, false), c = f.confirmation();
+  const command = { registrationId: saved.receipt.registrationId, expectedRevision: saved.receipt.admissionRevision, operationId: operationId() };
+  let callbacks = 0;
+  const api = createAdmissionsApi({ enabled: true, service: f.service,
+    auth: { authenticate: async () => ({ user: actor, csrfToken: 'synthetic-csrf' }) },
+    onCommitted: async ({ action, result }) => {
+      callbacks++; assert.equal(action, 'approve'); assert.equal(result.registrationId, command.registrationId); assert.deepEqual(result.promotedIds, []);
+      const notified = await c.notifyApproved({ registrationIds: [result.registrationId] });
+      return { approvalEmail: notified.results[0].status === 'not_applicable'
+        ? { status: 'not_applicable', attemptedCount: 0, pendingCount: 0 }
+        : { status: 'completed', attemptedCount: 1, pendingCount: 0 } };
+    } });
+  const request = (method = 'POST') => new Request('https://api.artdico.host/api/admin/admissions' + (method === 'POST' ? '/approve' : ''), {
+    method, headers: { origin: 'https://api.artdico.host', 'content-type': 'application/json', 'x-csrf-token': 'synthetic-csrf' },
+    ...(method === 'POST' ? { body: JSON.stringify(command) } : {}) });
+  f.state.loseAdmissionAck = true;
+  assert.equal((await api(request())).status, 503); assert.equal(callbacks, 0); assert.equal(f.state.messages.length, 0);
+  const replay = await api(request()), current = await replay.json();
+  assert.equal(replay.status, 200); assert.equal(current.outcome, 'replayed'); assert.equal(current.operation.operationId, command.operationId);
+  assert.equal(current.people.find(person => person.registrationId === command.registrationId).status, 'confirmed');
+  assert.equal(f.state.messages.length, 1); await api(request()); assert.equal(f.state.messages.length, 1);
+  const beforeRead = callbacks; await api(request('GET')); assert.equal(callbacks, beforeRead);
+  const capacity = await f.service.getAdmissions({ actor });
+  await f.service.withdrawAdmission({ actor, registrationId: command.registrationId, expectedRevision: capacity.revision, operationId: operationId() });
+  const later = await (await api(request())).json();
+  assert.equal(later.people.find(person => person.registrationId === command.registrationId).status, 'withdrawn');
+  assert.equal(later.operation.revision, command.expectedRevision + 1);
+  assert.deepEqual(later.approvalEmail, { status: 'not_applicable', attemptedCount: 0, pendingCount: 0 });
+  assert.equal(f.state.messages.length, 1);
 });
 
 test('unconfigured decoration adds no storage I/O, while re-open authoritatively reads the saved receipt without sending', async () => {
@@ -90,19 +185,37 @@ test('configured public confirmation is sent once across independent instances a
   assert.doesNotMatch(JSON.stringify(state.value), /PRIVATE-SYNTHETIC|private-synthetic@|receiptToken|confirmationUrl/u);
 });
 
-test('saved waitlist gets a waitlist notice and no group or Wallet; current receipt follows FIFO promotion', async () => {
+test('approved waitlist has no formal notice or group or Wallet; current receipt follows FIFO promotion', async () => {
   const f = fixture(), first = await register(f), second = await register(f, { ...fields, name: '合成候补', email: 'waiting@example.invalid' }), c = f.confirmation();
   const receipt = await c.forSavedReceipt({ receipt: second.saved.receipt });
-  assert.match(f.state.messages[0].subject, /候补/u); assert.match(f.state.messages[0].text, /尚未确认/u);
+  assert.equal(receipt.email.status, 'not_applicable'); assert.equal(f.state.messages.length, 0); assert.equal(f.state.confirmationWrites, 0);
   const before = await c.confirmation({ receiptToken: receipt.receiptToken });
   assert.equal(before.admission.status, 'waitlisted'); assert.equal(before.wallet.ready, false); assert.equal(before.groupInvite, null);
+  assert.equal(before.email.status, 'not_applicable');
   const capacity = await f.service.getAdmissions({ actor });
   const released = await f.service.withdrawAdmission({ actor, expectedRevision: capacity.revision, operationId: operationId(), registrationId: first.saved.receipt.registrationId });
   assert.deepEqual(released.promotedIds, [second.saved.receipt.registrationId]);
   const after = await c.confirmation({ receiptToken: receipt.receiptToken });
-  assert.equal(after.admission.status, 'confirmed'); assert.equal(after.wallet.ready, true); assert.equal(f.state.messages.length, 1, 'read never sends a promotion');
+  assert.equal(after.admission.status, 'confirmed'); assert.equal(after.wallet.ready, true); assert.equal(f.state.messages.length, 0, 'read never sends a promotion');
   await c.notifyPromoted({ registrationIds: released.promotedIds }); await f.confirmation().notifyPromoted({ registrationIds: released.promotedIds });
-  assert.equal(f.state.messages.length, 2); assert.match(f.state.messages[1].subject, /名额已确认/u);
+  assert.equal(f.state.messages.length, 1); assert.match(f.state.messages[0].subject, /名额已确认/u);
+});
+
+test('historical waitlist notice remains readable and keeps a distinct confirmed promotion identity', async () => {
+  const f = fixture(), first = await register(f), waiting = await register(f), c = f.confirmation();
+  const repository = createConfirmationRepository({ journal: f.journalFor(c.prefix), eventId: EVENT, clock: () => f.state.now });
+  let stored = await repository.read();
+  stored = await repository.append(stored, 'reserve', { registrationId: waiting.saved.receipt.registrationId,
+    kind: 'registration', admissionStatus: 'waitlisted', admissionRevision: waiting.saved.receipt.admissionRevision, retryRejected: false }, actor.id);
+  await repository.append(stored, 'result', { noticeId: stored.value.notices[0].id, status: 'provider_accepted' }, actor.id);
+  const cap = await c.forSavedReceipt({ receipt: waiting.saved.receipt, notify: false });
+  assert.equal((await c.confirmation({ receiptToken: cap.receiptToken })).email.status, 'provider_accepted');
+  const current = await f.service.getAdmissions({ actor });
+  const released = await f.service.withdrawAdmission({ actor, expectedRevision: current.revision, operationId: operationId(), registrationId: first.saved.receipt.registrationId });
+  await c.notifyPromoted({ registrationIds: released.promotedIds });
+  const history = await c.staffHistory({ actor, registrationId: waiting.saved.receipt.registrationId });
+  assert.deepEqual(history.notices.map(notice => [notice.kind, notice.admissionStatus]), [['registration', 'waitlisted'], ['promotion', 'confirmed']]);
+  assert.equal(f.state.messages.length, 1);
 });
 
 async function promotedBeforeNotification(f) {
@@ -110,7 +223,7 @@ async function promotedBeforeNotification(f) {
   const capacity = await f.service.getAdmissions({ actor });
   const released = await f.service.withdrawAdmission({ actor, expectedRevision: capacity.revision, operationId: operationId(), registrationId: first.saved.receipt.registrationId });
   assert.deepEqual(released.promotedIds, [waiting.saved.receipt.registrationId]);
-  return waiting.saved.receipt;
+  return { ...waiting.saved.receipt, admissionStatus: 'confirmed', admissionRevision: released.revision };
 }
 
 test('intake and promotion share one confirmed identity in either order when the waitlist hook was delayed', async () => {
@@ -229,7 +342,7 @@ test('legacy no-email and staff-assisted records do not receive automatic email 
 });
 
 test('settings and explicit dispatch are revision-bound, actor-bound and replay their durable operation without sends', async () => {
-  const f = fixture(), first = await register(f), second = await register(f), c = f.confirmation();
+  const f = fixture({ capacity: 3 }), first = await register(f), second = await register(f), c = f.confirmation();
   const deniedCalls = f.remote.calls.length;
   await assert.rejects(c.settings({ actor: { id: 'editor', roles: ['editor'] } }), error => error.code === 'FORBIDDEN');
   assert.equal(f.remote.calls.length, deniedCalls);
@@ -248,7 +361,7 @@ test('settings and explicit dispatch are revision-bound, actor-bound and replay 
 });
 
 test('explicit known-refusal retry is bounded and unknown batch outcome stops following recipients', async () => {
-  const f = fixture(), first = await register(f), second = await register(f), c = f.confirmation();
+  const f = fixture({ capacity: 3 }), first = await register(f), second = await register(f), c = f.confirmation();
   f.state.providerStatus = 'rejected'; await c.forSavedReceipt({ receipt: first.saved.receipt }); assert.equal(f.state.messages.length, 1);
   await c.forSavedReceipt({ receipt: first.saved.receipt }); assert.equal(f.state.messages.length, 1, 'public replay never retries a refusal');
   f.state.providerStatus = 'provider_accepted';
@@ -367,7 +480,7 @@ test('confirmation provider uses a separate template, never loads disabled confi
 });
 
 test('trusted staff notice history is role gated before I/O and exposes only the selected durable metadata', async () => {
-  const f = fixture(), first = await register(f), second = await register(f), c = f.confirmation();
+  const f = fixture({ capacity: 3 }), first = await register(f), second = await register(f), c = f.confirmation();
   await c.forSavedReceipt({ receipt: first.saved.receipt }); await c.forSavedReceipt({ receipt: second.saved.receipt });
   const deny = async () => assert.fail('history cannot read applications, capabilities or provider configuration');
   const history = f.confirmation({ registrationService: { repository: { readIndex: deny, readRecord: deny }, getAdmissionStatus: deny },

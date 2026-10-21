@@ -29,7 +29,7 @@ export async function peopleRuntimeFixture({capacity=3,mail=false}={}){
     ARTDICO_REGISTRATION_TOKEN_SECRET:'synthetic-people-registration-token-secret-123456',ARTDICO_CONFIRMATION_EMAIL_ENABLED:mail?'true':'false',
     EMAILJS_SERVICE_ID:'synthetic-service',EMAILJS_CONFIRMATION_TEMPLATE_ID:'synthetic-confirmation-template',EMAILJS_PUBLIC_KEY:'synthetic-public-key',
     EMAILJS_PRIVATE_KEY:'synthetic-private-key-never-project',EMAIL_FROM_ADDRESS:'synthetic@artdico.co',EMAIL_FROM_NAME:'合成筹备团队'};
-  const make=()=>createCloudApplication({objects,env,now:()=>Date.parse('2026-10-21T09:00:00.000Z'),fetchFn:async(url,options)=>{
+  const make=({objects:runtimeObjects=objects}={})=>createCloudApplication({objects:runtimeObjects,env,now:()=>Date.parse('2026-10-21T09:00:00.000Z'),fetchFn:async(url,options)=>{
     assert.equal(url,'https://api.emailjs.com/api/v1.0/email/send','all fixture mail must remain synthetic');messages.push(JSON.parse(options.body));
     return new Response('OK',{status:200,headers:{'content-type':'text/plain'}});
   }});
@@ -54,9 +54,19 @@ export async function peopleRuntimeFixture({capacity=3,mail=false}={}){
       body:{eventId:PEOPLE_FIXTURE_EVENT,idempotencyKey:key}}));assert.equal(token.status,200);
     const response=await app.handle(request('/api/admin/registration/submit',{method:'POST',origin:PEOPLE_FIXTURE_PUBLIC,
       headers:{'Idempotency-Key':key,'X-Registration-Token':(await token.json()).submissionToken},body:{eventId:PEOPLE_FIXTURE_EVENT,
-        fields:{name:'合成公开参会者',city:'合成城市',organization:'合成组织文字',position:'合成开发者',email:'synthetic.public@example.invalid',categories:['industry'],participationInterests:['attend'],
-          background:PEOPLE_FIXTURE_PRIVATE,attendance:'expected',accommodationChoice:'not_needed',cooperationInterest:'none',...fields},consent:{accepted:true,version:policy.privacy.version}}}));
+        fields:fields.intake==='general-v2'
+          ?{name:'合成公开申请人',email:'synthetic.public@example.invalid',categories:['student'],participationInterests:['attend'],...fields}
+          :{name:'合成公开参会者',city:'合成城市',organization:'合成组织文字',position:'合成开发者',email:'synthetic.public@example.invalid',categories:['industry'],participationInterests:['attend'],
+            background:PEOPLE_FIXTURE_PRIVATE,attendance:'expected',accommodationChoice:'not_needed',cooperationInterest:'none',...fields},consent:{accepted:true,version:policy.privacy.version}}}));
     assert.equal(response.status,201,'synthetic public registration');return response.json();
   }
-  return {app,make,objects,messages,users,request,login,createContact,seedPublic};
+  async function approvePublic(registrationId,{headers,expectedRevision,operationId=randomBytes(32).toString('base64url')}={}){
+    headers??=await login();
+    expectedRevision??=(await app.registrationService.getAdmissions({actor:users[0]})).revision;
+    const response=await app.handle(request('/api/admin/admissions/approve',{method:'POST',headers,body:{registrationId,expectedRevision,operationId}}));
+    const value=await response.json();assert.equal(response.status,200,JSON.stringify(value));
+    assert.equal(value.operation?.operationId,operationId);assert.equal(value.operation?.registrationId,registrationId);
+    return value;
+  }
+  return {app,make,objects,messages,users,request,login,createContact,seedPublic,approvePublic};
 }

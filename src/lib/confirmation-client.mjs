@@ -39,7 +39,7 @@ function groupInvite(value, now) {
 /** Project a capability response; private source/contacts and unknown fields never reach the page. */
 export function confirmationView(value, now = Date.now()) {
   if (!plain(value) || !ID.test(value.referenceCode ?? '') || !instant(value.submittedAt) || !plain(value.event) || !plain(value.admission)
-    || !['confirmed','waitlisted','withdrawn'].includes(value.admission.status) || !['attendee','crew'].includes(value.admission.kind)
+    || !['pending_review','confirmed','waitlisted','rejected','withdrawn'].includes(value.admission.status) || !['attendee','crew'].includes(value.admission.kind)
     || !Number.isSafeInteger(value.admission.revision) || value.admission.revision < 0 || !EMAIL_STATES.includes(value.email?.status)
     || typeof value.wallet?.ready !== 'boolean') return null;
   const eventKeys = ['id','title','date','time','venue','timezone','checkIn'];
@@ -52,7 +52,7 @@ export function confirmationView(value, now = Date.now()) {
     event: Object.fromEntries(eventKeys.map(key => [key,value.event[key]])), referenceCode: value.referenceCode, submittedAt: value.submittedAt,
     admission: { status: value.admission.status, kind: value.admission.kind, revision: value.admission.revision },
     attendee: withdrawn ? { name: '', organization: '' } : { name: value.attendee.name, organization: value.attendee.organization ?? '' },
-    email: { status: value.email.status }, wallet: { ready: confirmed && value.wallet.ready },
+    email: { status: ['pending_review','rejected'].includes(value.admission.status) ? 'not_applicable' : value.email.status }, wallet: { ready: confirmed && value.wallet.ready },
     groupInvite: confirmed ? groupInvite(value.groupInvite,now) : null,
   };
 }
@@ -65,6 +65,23 @@ export const confirmationEmailLabels = Object.freeze({
   provider_accepted: '确认邮件已交由服务商处理，请检查邮箱及垃圾邮件。',
   rejected: '报名已保存，确认邮件未能发出。请保存本页，无需重新报名。',
   unknown: '报名已保存，确认邮件的发送结果尚待核对。请保存本页，无需重复报名。',
+});
+
+/** Review status controls the purpose of this page; it never promises an invitation before a confirmed seat. */
+export function confirmationEmailMessage(admissionStatus, emailStatus) {
+  if (admissionStatus === 'pending_review') return '申请已收到，待主办方人工审核。当前没有参会名额，也不会发送正式邀请；请保存此查询链接。';
+  if (admissionStatus === 'rejected') return '本次申请未通过审核，没有确认参会名额或正式邀请。如需核对，请通过原联系渠道联络筹备团队。';
+  if (admissionStatus === 'waitlisted') return '当前为候补，尚未确认参会名额，不提供正式邀请。请通过本页核对后续状态，无需重复申请。';
+  if (admissionStatus === 'withdrawn') return '这份报名已取消，原确认邮件不代表当前仍有参会名额。';
+  return admissionStatus === 'confirmed' ? confirmationEmailLabels[emailStatus] ?? '' : '';
+}
+
+export const confirmationStatusLabels = Object.freeze({
+  pending_review: ['待人工审核', '申请已收到，待审核', '主办方将人工核对这份申请。目前尚未确认参会名额，请保存申请编号与本页查询链接。', '打印申请收据'],
+  confirmed: ['名额已确认', '参会名额已确认', '期待在现场与你相见。请保存登记编号，方便签到和后续核对。', '打印参会确认'],
+  waitlisted: ['尚未确认名额', '候补登记已保存', '当前尚未确认参会名额。请等待筹备团队核对后续名额，无需重复申请。', '打印候补状态'],
+  rejected: ['审核未通过', '本次申请未通过审核', '这份申请已完成审核，目前没有参会名额。如需核对，请通过原联系渠道联络筹备团队。', '打印审核结果'],
+  withdrawn: ['名额已取消', '这份报名已取消', '这份报名当前不再占用参会名额。如需调整，请通过原联系渠道向筹备团队核对。', '打印取消状态'],
 });
 
 export function createConfirmationClient({ apiOrigin, pageOrigin, fetchFn = globalThis.fetch, timeoutMs = 20_000 } = {}) {

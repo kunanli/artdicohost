@@ -5,6 +5,10 @@ import { own, plainObject, parseTimestamp } from './policy.mjs';
 import { AdmissionError, admissionDefaults, admissionView, validateAdmissions, admissionSnapshot, admissionFor,
   transitionAdmission, appendAdmissionAudit, addAdmission, releaseWithdrawn, promoteEligible, operationResult, validAdmissionOperation } from './admissions.mjs';
 
+// The application-count guard is distinct from the existing 1 MiB serialized
+// snapshot ceiling. For example, 1,000 pending applications plus roughly 550
+// decisions can reach that byte ceiling before the 2,000-operation audit limit.
+// Oversize next states must fail before staging/commit; prior history stays readable.
 export const MAX_REGISTRATIONS = 1000;
 const LIST_READ_CONCURRENCY = 8;
 const LIST_TIMEOUT_MS = 12000;
@@ -53,7 +57,7 @@ function indexValue(value, eventId, cursor, defaults) {
     if (cursor?.version !== 0 || cursor.position !== 0 || cursor.hash !== null) throw unavailable();
     return { schemaVersion: 1, kind: 'registration_index', eventId, revision: 0, entries: [] };
   }
-  if (!fieldsEqual(value, value.schemaVersion === 2 ? ['schemaVersion', 'kind', 'eventId', 'revision', 'entries', 'admissions'] : ['schemaVersion', 'kind', 'eventId', 'revision', 'entries']) || ![1, 2].includes(value.schemaVersion) || value.kind !== 'registration_index'
+  if (!fieldsEqual(value, [2, 3].includes(value.schemaVersion) ? ['schemaVersion', 'kind', 'eventId', 'revision', 'entries', 'admissions'] : ['schemaVersion', 'kind', 'eventId', 'revision', 'entries']) || ![1, 2, 3].includes(value.schemaVersion) || value.kind !== 'registration_index'
     || value.eventId !== eventId || !Array.isArray(value.entries) || value.entries.length > MAX_REGISTRATIONS
     || !Number.isSafeInteger(value.revision) || value.revision < value.entries.length || value.schemaVersion === 1 && value.revision !== value.entries.length || cursor?.version !== value.revision) throw unavailable();
   const ids = new Set(), keys = new Set();
@@ -63,7 +67,7 @@ function indexValue(value, eventId, cursor, defaults) {
       || parseTimestamp(entry.committedAt) === null || ids.has(entry.id) || keys.has(entry.keyHash)) throw unavailable();
     ids.add(entry.id); keys.add(entry.keyHash);
   }
-  if (value.schemaVersion === 2) validateAdmissions(value, defaults);
+  if ([2, 3].includes(value.schemaVersion)) validateAdmissions(value, defaults);
   registrationJson(value, { maxBytes: 1024 * 1024 });
   return value;
 }
@@ -135,10 +139,10 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
       : item.operationId === operationId);
     return { outcome, receipt: receipt(index, entry), ...(operation ? { promotedIds: operation.result.promotedIds, releasedIds: operation.result.releasedIds } : {}) };
   }
-  async function exclusions(index, getExcluded) {
+  async function exclusions(index, getExcluded, includeConfirmed = false) {
     if (getExcluded === undefined) return [];
     if (typeof getExcluded !== 'function') throw unavailable();
-    return await getExcluded(index.entries.filter(entry => index.admissions.people[entry.id].status === 'waitlisted').map(entry => entry.id));
+    return await getExcluded(index.entries.filter(entry => (includeConfirmed ? ['confirmed', 'waitlisted'] : ['waitlisted']).includes(index.admissions.people[entry.id].status)).map(entry => entry.id));
   }
   const safeAdmissionFailure = error => error instanceof AdmissionError && ['invalid', 'conflict', 'forbidden', 'not_found', 'capacity_conflict'].includes(error.code)
     ? { outcome: error.code } : { outcome: 'unavailable' };
@@ -159,10 +163,16 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
           || !/^[A-Za-z0-9_-]{1,80}$/u.test(actorId ?? '') || parseTimestamp(at) === null) return { outcome: 'invalid' };
         const current = await readIndex(), next = view(current.value);
         const previous = next.admissions.audit.find(entry => entry.operationId === operationId);
+        const operation = audit => ['approve', 'reject'].includes(audit.action) ? { operation: { operationId: audit.operationId, action: audit.action, registrationId: audit.result.registrationId, revision: audit.revision } } : {};
         if (previous) return previous.action === action && previous.actorId === actorId && previous.requestHash === requestHash
-          ? { outcome: 'replayed', ...snapshot(next), ...previous.result } : { outcome: 'conflict' };
+          ? { outcome: 'replayed', ...snapshot(next), ...previous.result, ...operation(previous) } : { outcome: 'conflict' };
         if (current.value.revision !== expectedRevision) return { outcome: 'conflict' };
-        const change = transitionAdmission(next, action, input, at, await exclusions(next, getExcluded));
+        const change = transitionAdmission(next, action, input, at, await exclusions(next, getExcluded, action === 'approve'));
+        if (['approve', 'reject'].includes(action)) {
+          const entry = next.entries.find(entry => entry.id === change.result.registrationId);
+          const record = await readRecord(entry);
+          if (record.provenance.kind !== 'public') throw unavailable();
+        }
         appendAdmissionAudit(next, { action, actorId, at, operationId, requestHash, ...change });
         validateAdmissions(next, pinned); registrationJson(next, { maxBytes: 1024 * 1024 });
         try {
@@ -174,7 +184,7 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
         }
         const after = await readIndex(), verified = view(after.value).admissions.audit.find(entry => entry.operationId === operationId);
         if (!isDeepStrictEqual(verified, next.admissions.audit.at(-1))) throw unavailable();
-        return { outcome: 'updated', ...snapshot(after.value), ...verified.result };
+        return { outcome: 'updated', ...snapshot(after.value), ...verified.result, ...operation(verified) };
       } catch (error) { return safeAdmissionFailure(error); }
     },
     async list(options = {}) {
@@ -245,9 +255,12 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
         if (expectedRevision !== undefined && expectedRevision !== current.value.revision) return { outcome: 'conflict' };
         if (current.value.entries.length >= MAX_REGISTRATIONS) return { outcome: 'closed' };
         const changedAt = new Date(Math.max(parseTimestamp(submittedAt), parseTimestamp(next.admissions.audit.at(-1)?.at) ?? -Infinity)).toISOString();
-        const releasedIds = releaseWithdrawn(next, await exclusions(next, getExcluded), changedAt);
-        const promotedIds = promoteEligible(next, changedAt);
-        const status = addAdmission(next, entry, admissionKind, changedAt);
+        // Public intake only records an application. It cannot allocate or
+        // release seats, or advance a previously approved waitlist.
+        const reviewRequired = record.provenance.kind === 'public';
+        const releasedIds = reviewRequired ? [] : releaseWithdrawn(next, await exclusions(next, getExcluded), changedAt);
+        const promotedIds = reviewRequired ? [] : promoteEligible(next, changedAt);
+        const status = addAdmission(next, entry, admissionKind, changedAt, { reviewRequired });
         if (status === null) return { outcome: 'closed' };
         try {
           await objects.putImmutable(`${prefix}/records/${recordHash}.json`, bytes, { contentType: 'application/json' });

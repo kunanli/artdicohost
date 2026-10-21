@@ -173,7 +173,7 @@ test('rollover after preparing nine attempts re-primes the new actual window and
   assert.equal(primes.length,2);
   assert.equal(primes[1].window,primes[0].window+1);
   assert.deepEqual(budgets.slice(-2).map(value=>value.count),[9,10]);
-  assert.equal(lateSessions.length,1,'the correct alias was accepted in the fresh window before the second bounded proof');
+  assert.equal(lateSessions.length,0,'an observed prime-boundary immediately re-primes before issuing a needless fresh-window session');
 });
 
 test('a correct alias accepted across the client boundary cannot masquerade as a shared 429 proof', async () => {

@@ -6,12 +6,13 @@ import { identityOptions, participationOptions } from '../../shared/registration
 const $ = selector => document.querySelector(selector);
 const profileFields = ['[data-person-profile]', '[data-person-registration]', '[data-person-admission]', '[data-person-arrangements]', '[data-person-organizations]', '[data-person-volunteers]', '[data-person-communications]', '[data-person-actions]', '[data-person-steps]'];
 const categoryLabels = new Map(sourceLabels.categories.map(item => [item.value, item.label]));
+categoryLabels.set('student', '学生');
 const interestLabels = new Map(sourceLabels.interests.map(item => [item.value, item.label]));
 const registrationIdentityLabels = new Map(identityOptions.map(item => [item.value, item.label]));
 const registrationInterestLabels = new Map(participationOptions.map(item => [item.value, item.label]));
 const participationLabels = { guest: '嘉宾', speaker: '讲者', panelist: '圆桌嘉宾', host: '主持', organizer: '研讨会组织者', booth: '展位', student_showcase: '学生作品展示', attendee: '现场参与' };
 const responseLabels = { pending: '尚未确认', attending: '已确认出席', declined: '不出席' };
-const admissionLabels = { confirmed: '已确认参会名额', waitlisted: '候补，名额尚未确认', withdrawn: '已取消／撤回' };
+const admissionLabels = { confirmed: '已确认参会名额', waitlisted: '已核准候补，名额尚未确认', pending_review: '申请待审核，尚无参会名额', rejected: '申请未通过，尚无参会名额', withdrawn: '已取消／撤回' };
 const reviewLabels = { new: '新报名', in_review: '核查中', awaiting_maria: '待 Maria 审阅', approved: '审核已确认', discussion: '待讨论', not_this_time: '本次不邀请', withdrawn: '已撤回' };
 const accommodationLabels = { not_requested: '未申请', requested: '已申请', pending: '待核对', approved: '已批准', declined: '未批准' };
 const channelLabels = { manual: '人工邀请', email: '邮件', wechat: '微信', other: '其他' };
@@ -124,7 +125,8 @@ function renderProfile(view) {
   }
   if (view.contact) {
     const follow = facts(), operations = view.contact.operations;
-    fact(follow, '原始身份', view.contact.profile.categories.map(value => categoryLabels.get(value) ?? value).join('、'));
+    fact(follow, '当前身份', view.contact.profile.categories.map(value => categoryLabels.get(value) ?? value).join('、'));
+    fact(follow, '原始身份／意向', view.contact.sourceCategories.map(value => categoryLabels.get(value) ?? value).join('、'));
     fact(follow, '原始参与意向', view.contact.profile.interests.map(value => interestLabels.get(value) ?? value).join('、'));
     fact(follow, '联络同意', { consented: '已明确同意联络', declined: '不同意联络', unknown: '尚未核实' }[view.contact.profile.contactConsent] ?? '待核对');
     fact(follow, '负责同事', operations.owner || '尚未分配'); fact(follow, '优先级', operations.priority === 'high' ? '优先跟进' : '普通'); fact(follow, '下次跟进', operations.followUpAt || '尚未安排');

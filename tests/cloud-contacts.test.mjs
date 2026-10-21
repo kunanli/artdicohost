@@ -90,6 +90,24 @@ test('profile edits keep stable source, original answers and consent separate fr
   assert.equal((await first.read()).revision, 8);
 });
 
+test('current student identity survives cloud restart without changing first original categories or source digest', async () => {
+  const { first, second } = unitSetup();
+  const created = await first.createContact(0, { ...profile(), categories: ['so'] }, 'outreach');
+  const original = clone(created.contact);
+  const updated = await second.saveProfile(original.id, 1, { categories: ['student', 'developer'] }, 'outreach');
+  assert.deepEqual(updated.contact.profile.categories, ['student', 'developer']);
+  assert.deepEqual(updated.contact.sourceProfile.categories, ['so']);
+  assert.deepEqual(updated.contact.source, original.source);
+  const legacy = await first.saveProfile(original.id, 2, { city: '合成修正城市' }, 'outreach');
+  assert.deepEqual(legacy.contact.profile.categories, ['student', 'developer']);
+  assert.deepEqual(legacy.contact.sourceProfile, original.sourceProfile);
+  const cleared = await second.saveProfile(original.id, 3, { categories: [] }, 'outreach');
+  assert.deepEqual((await first.read()).contacts[0], cleared.contact);
+  assert.deepEqual(cleared.contact.profile.categories, []);
+  assert.deepEqual(cleared.contact.sourceProfile, original.sourceProfile);
+  assert.equal(cleared.contact.sourceProfileDigest, original.sourceProfileDigest);
+});
+
 test('participation forms persist independently of source answers, invitation delivery and actual attendance', async () => {
   const { first, second, journal } = unitSetup();
   const original = (await first.createContact(0, profile(), 'outreach')).contact;

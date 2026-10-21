@@ -104,6 +104,7 @@ export function personWorkspaceView(value, selection) {
     if (value.availability.contact === 'available') {
       if (!plain(contact) || !CONTACT.test(contact.id ?? '') || !lines(contact.profile, ['name', 'displayName', 'organization', 'position', 'city', 'email', 'wechat', 'phone', 'contactConsent'])
         || !strings(contact.profile.categories) || !strings(contact.profile.interests)
+        || Object.hasOwn(contact, 'sourceCategories') && (!strings(contact.sourceCategories, 30) || !contact.sourceCategories.every(item => text(item, 160)))
         || !lines(contact.operations, ['owner', 'priority', 'followUpAt', 'responseStatus']) || !text(contact.operations.notes, 6000)
         || !strings(contact.operations.participationForms) || !strings(contact.operations.sessionIds) || !strings(contact.operations.boothIds)
         || !list(contact.operations.sessionRoles) || !contact.operations.sessionRoles.every(item => plain(item) && id(item.sessionId) && strings(item.roles, 10))
@@ -119,7 +120,7 @@ export function personWorkspaceView(value, selection) {
     if (selection.kind === 'contact' ? contact?.id !== selection.id : registration?.id !== selection.id) return null;
     for (const key of ['contact', 'registration', 'arrangements', 'invitations', 'confirmations']) if (value.availability[key] === 'available' && !value.permissions[key]) return null;
     if (value.availability.admission === 'available') {
-      if (!plain(admission) || !['confirmed', 'waitlisted', 'withdrawn'].includes(admission.status) || !['attendee', 'crew'].includes(admission.kind) || !integer(admission.revision)) return null;
+      if (!plain(admission) || !['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected'].includes(admission.status) || !['attendee', 'crew'].includes(admission.kind) || !integer(admission.revision)) return null;
     } else if (admission !== null) return null;
     if (!plain(arrangements) || !list(arrangements.sessions, 250) || !list(arrangements.booths)
       || !arrangements.sessions.every(item => lines(item, ['id', 'title', 'start', 'end', 'zone', 'status']) && id(item.id) && strings(item.roles, 10) && typeof item.missing === 'boolean')
@@ -146,7 +147,8 @@ export function personWorkspaceView(value, selection) {
     // Only the fields below reach the DOM. API additions cannot silently become UI/private links.
     return { schemaVersion: 1, selected: { ...value.selected }, person: { ...value.person }, linkage: { ...value.linkage }, permissions: { ...value.permissions, volunteers: volunteering.permission },
       availability: { ...value.availability, volunteers: volunteering.state, organizations: organizations.state }, revisions: { ...value.revisions, volunteers: volunteering.revision },
-      contact, registration, admission, arrangements, communications, publicProfile, organizations, volunteers: volunteering.value };
+      contact: contact ? { ...contact, sourceCategories: [...(contact.sourceCategories ?? contact.profile.categories)] } : null,
+      registration, admission, arrangements, communications, publicProfile, organizations, volunteers: volunteering.value };
   } catch { return null; }
 }
 
@@ -202,7 +204,7 @@ export function personWorkspaceSteps(view, roles = []) {
     const missing = view.arrangements.sessions.some(item => item.missing || item.status === 'cancelled') || view.arrangements.booths.some(item => item.missing || item.status === 'cancelled');
     const scheduledRoleMissing = forms.filter(value => ['speaker', 'panelist', 'host', 'organizer'].includes(value)).some(role => !sessions.some(item => item.roles.includes(role)));
     const pending = !forms.length || needsSession && (!sessions.length || scheduledRoleMissing) || needsBooth && !booths.length || needsShowcase && !sessions.length && !booths.length;
-    const detail = missing ? '已关联的场次或展位有取消／缺失记录，请核对保留的关联。' : !forms.length ? '先确认参与身份，再按需要安排场次或展位。' : !needsSession && !needsBooth && !needsShowcase ? '当前职责不要求讲者场次或展位；一般参与者可直接参加公开活动。' : pending ? '按已选职责关联对应场次、该场职责或展位，确认草稿安排已排期。' : '已关联对应场次职责／展位；可继续核对内容与时段。';
+    const detail = missing ? '已关联的场次或展位有取消／缺失记录，请核对保留的关联。' : !forms.length ? '先确认参与身份，再按需要安排场次或展位。' : !needsSession && !needsBooth && !needsShowcase ? '当前职责不要求讲者场次或展位；参会名额仍需单独核对。' : pending ? '按已选职责关联对应场次、该场职责或展位，确认草稿安排已排期。' : '已关联对应场次职责／展位；可继续核对内容与时段。';
     steps.push(step('arrangements', '安排场次／展位', missing ? 'review' : pending ? 'pending' : 'complete', detail, 'arrangements'));
   }
   const needsPublic = forms.some(value => ['guest', 'speaker', 'panelist', 'host', 'organizer'].includes(value));

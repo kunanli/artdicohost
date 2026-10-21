@@ -40,14 +40,14 @@ async function fixture({ capacity = 300, waitlistEnabled = true } = {}) {
   const portraitStore = createOssPortraitStore({ objects }), store = createOssContentStore({ journal: journalFor('cms/v1/content'), portraitStore, now });
   const contactsStore = createOssContactsStore({ journal: journalFor('cms/v1/contacts'), contentStore: store, now });
   const created = await contactsStore.createContact(0, profile(), actor.id);
-  let mailCalls = 0;
+  let mailCalls = 0; const publicCallbacks = [];
   const registrationService = createRegistrationService({ objects, journalFor, policy: policy(capacity), capacity, waitlistEnabled, staffReserve: 0,
-    tokenSecret: 'synthetic-people-registration-secret', allowedOrigins: ['https://artdico.host'], clock: now, onSaved: async () => { mailCalls++; } });
+    tokenSecret: 'synthetic-people-registration-secret', allowedOrigins: ['https://artdico.host'], clock: now, onSaved: async input => { publicCallbacks.push(input); if(input.notify===true)mailCalls++; } });
   const repository = createIntentInvitationRepository({ journal: journalFor('cms/v1/intent-invitations') });
   const intentService = createIntentInvitationService({ registrationService, contactsStore, contentStore: store, repository, now,
     isRegistrationActive: async ({ registrationId }) => (await registrationService.getAdmissionStatus(registrationId)).status !== 'withdrawn' });
   const synchronize = createAttendanceSynchronizer({ intentService, registrationService, contactsStore });
-  const f = { objects, actor, portraitStore, store, contactsStore, registrationService, intentService, repository, synchronize, created, get mailCalls() { return mailCalls; } };
+  const f = { objects, actor, portraitStore, store, contactsStore, registrationService, intentService, repository, synchronize, created, publicCallbacks, get mailCalls() { return mailCalls; } };
   f.api = cloudApi(f);
   f.saveReply = async (responseStatus = 'attending', patch = {}) => {
     const current = await contactsStore.read(), contact = current.contacts.find(row => row.id === created.contact.id);
@@ -81,16 +81,25 @@ test('outreach-only staff can save a reply but require reviewer, before admissio
   assert.equal(reads, 0);
 });
 
-test('public signup and confirmed contact compete for the last common place through actual CAS', async () => {
+test('manual public approval and a confirmed contact compete for the last common place through actual CAS', async () => {
   const f = await fixture({ capacity: 1 }), key = randomBytes(32).toString('base64url');
   const token = await f.registrationService.issueToken({ eventId: EVENT, origin: 'https://artdico.host', idempotencyKey: key });
   const publicInput = { origin: 'https://artdico.host', idempotencyKey: key, submissionToken: token.submissionToken, payload: { eventId: EVENT,
     fields: { name: '合成公开报名者', city: '合成城市', organization: '合成团队', position: '开发者', email: 'public.synthetic@example.invalid', categories: ['industry'], participationInterests: ['attend'], background: '合成经历', attendance: 'expected', accommodationChoice: 'not_needed', cooperationInterest: 'none' }, consent: { accepted: true, version: policy(1).privacy.version } } };
-  const [contactResponse, publicResult] = await Promise.all([f.saveReply(), f.registrationService.submit(publicInput)]);
+  const publicResult = await f.registrationService.submit(publicInput);
+  assert.equal(publicResult.receipt.admissionStatus,'pending_review');
+  const before=await f.registrationService.getAdmissions({actor:f.actor});assert.equal(before.summary.confirmedCount,0);
+  const decide=expectedRevision=>f.registrationService.approveApplication({actor:f.actor,registrationId:publicResult.receipt.registrationId,expectedRevision,operationId:randomBytes(32).toString('base64url')});
+  const [contactResponse, firstDecision] = await Promise.all([f.saveReply(), decide(before.revision)]);
+  let decision=firstDecision;
+  if(decision.outcome==='conflict')decision=await decide((await f.registrationService.getAdmissions({actor:f.actor})).revision);
+  assert.equal(decision.outcome,'updated');
   const contact = await contactResponse.json(); assert.equal(contact.replySaved, true); assert.ok(['confirmed', 'waitlisted'].includes(contact.admission.status));
   assert.ok(['created', 'replayed'].includes(publicResult.outcome));
   const admissions = await f.registrationService.getAdmissions({ actor: f.actor }); assert.equal(admissions.summary.confirmedCount, 1); assert.equal(admissions.summary.waitlistCount, 1); assert.equal(admissions.people.length, 2);
-  assert.notEqual(contact.admission.status, publicResult.receipt.admissionStatus); assert.equal(f.mailCalls, 1, 'only explicit public submission uses its established notification callback');
+  const publicStatus=await f.registrationService.getAdmissionStatus(publicResult.receipt.registrationId);
+  assert.notEqual(contact.admission.status, publicStatus.status);assert.equal(f.publicCallbacks.length,1);
+  assert.equal(f.publicCallbacks[0].notify,false);assert.equal(f.mailCalls,0,'saving the public application only establishes a private receipt; the runtime approval hook owns formal delivery');
 });
 
 test('a lost contact save ACK never starts conversion; malformed ACK cannot acquire replySaved', async () => {

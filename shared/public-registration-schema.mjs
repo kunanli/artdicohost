@@ -48,10 +48,27 @@ export const publicRegistrationSchema = Object.freeze({
   inquiryNotice: '讲者、展位、站点咨询与住宿申请分别沟通。预览不发送或保存报名资料。',
 });
 
+/** One short application; identity does not require legacy questionnaire branches. */
+export const generalApplicationSchema = Object.freeze({
+  fields: [
+    {name:'name',label:'姓名',type:'text',required:true,minLength:2,maxLength:80},
+    {name:'email',label:'Email',type:'email',required:true,maxLength:254,hint:'用于查询申请及接收审核后的通知。'},
+    {name:'categories',label:'参与身份',type:'select',required:true,options:projectOptions(registrationSchema.identityOptions)},
+    {name:'organization',label:'学校／机构／团队',type:'text',required:false,maxLength:160},
+    {name:'city',label:'所在城市',type:'text',required:false,maxLength:100},
+    {name:'wechat',label:'微信号',type:'text',required:false,maxLength:100},
+    {name:'consentAccepted',label:'我已阅读说明，并了解预览不会提交真实资料',type:'checkbox',required:true,hint:'正式申请须由你主动阅读并同意个人信息处理告知。'},
+  ],
+  proposal: [
+    {name:'topic',label:'拟分享主题',type:'text',required:true,maxLength:200},
+    {name:'summary',label:'主题简介',type:'textarea',required:true,maxLength:1500},
+  ],
+});
+
 const recruitmentChoices = {
   speaker: { categories: [], participationInterests: ['talk'] },
-  site: { categories: ['new_site'], participationInterests: ['site_support'] },
-  student: { categories: [], participationInterests: ['student_exchange', 'exhibition'] },
+  site: { categories: ['new_site'], participationInterests: ['attend'] },
+  student: { categories: ['student'], participationInterests: ['attend'] },
 };
 
 /** Unknown CTA names cannot select an unrelated identity or interest.

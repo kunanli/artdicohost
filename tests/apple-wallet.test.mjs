@@ -55,9 +55,10 @@ test('real pkpass contains bounded ZIP, exact manifest hashes and a detached CMS
   assert.equal(files.get('icon.png').readUInt32BE(16), 29); assert.equal(files.get('icon@2x.png').readUInt32BE(16), 58);
 });
 
-test('Wallet refuses waitlist, withdrawn and lost-authority outcomes, including cancellation while signing', async () => {
-  for (const admissionStatus of ['waitlisted', 'withdrawn']) {
+test('Wallet refuses pending, rejected, waitlist, withdrawn and lost-authority outcomes, including cancellation while signing', async () => {
+  for (const admissionStatus of ['pending_review', 'rejected', 'waitlisted', 'withdrawn']) {
     const wallet = service({ authorize: async () => ({ ...record, admissionStatus }) }); assert.equal((await wallet.download({ receiptToken: token })).outcome, 'inactive');
+    assert.equal((await service({ authorizedRegistration: async () => ({ ...record, admissionStatus }) }).download({ receiptToken: token })).outcome, 'inactive');
   }
   assert.equal((await service({ authorizedRegistration: async () => ({ ...record, admissionStatus: 'withdrawn' }) }).download({ receiptToken: token })).outcome, 'inactive');
   const error = new Error('PRIVATE_PROVIDER_DIAGNOSTIC');
@@ -74,7 +75,8 @@ test('barcode is a separate bounded purpose, rechecks current admission and reve
   const good = await wallet.verify({ token: validityToken }); assert.equal(good.valid, true); assert.equal(good.eventId, record.event.id);
   assert.doesNotMatch(JSON.stringify(good), /合成|a{43}|reference|name|organization/u);
   assert.deepEqual(await wallet.verify({ token }), { valid: false }); assert.deepEqual(await wallet.verify({ token: validityToken + 'x' }), { valid: false });
-  status = 'withdrawn'; assert.deepEqual(await wallet.verify({ token: validityToken }), { valid: false }); status = 'confirmed';
+  for (const value of ['pending_review', 'rejected', 'waitlisted', 'withdrawn']) { status = value; assert.deepEqual(await wallet.verify({ token: validityToken }), { valid: false }); }
+  status = 'confirmed';
   now += 20 * 86400000; assert.deepEqual(await wallet.verify({ token: validityToken }), { valid: false });
 });
 

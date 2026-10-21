@@ -68,8 +68,7 @@ function committedReceipt(result, payload) {
     && parseTimestamp(own(receipt, 'committedAt')) !== null;
   if (!valid) return null;
   const admissionStatus = own(receipt, 'admissionStatus'), admissionKind = own(receipt, 'admissionKind'), admissionRevision = own(receipt, 'admissionRevision');
-  if (admissionStatus === undefined) return admissionKind === undefined && admissionRevision === undefined ? { referenceCode } : null;
-  if (!['confirmed', 'waitlisted'].includes(admissionStatus) || !['attendee', 'crew'].includes(admissionKind)
+  if (!['pending_review', 'confirmed', 'waitlisted', 'rejected'].includes(admissionStatus) || !['attendee', 'crew'].includes(admissionKind)
     || !Number.isSafeInteger(admissionRevision) || admissionRevision < 0) return null;
   return { referenceCode, admissionStatus, admissionKind, admissionRevision };
 }
@@ -78,9 +77,9 @@ function publicAdmissions(value, capacity) {
   const projected = { capacity: own(value, 'capacity'), staffReserve: own(value, 'staffReserve'), waitlistEnabled: own(value, 'waitlistEnabled') };
   if (projected.capacity !== capacity || !Number.isSafeInteger(projected.staffReserve) || projected.staffReserve < 0 || projected.staffReserve > capacity
     || typeof projected.waitlistEnabled !== 'boolean') return null;
-  for (const field of ['confirmedCount', 'attendeeConfirmedCount', 'crewConfirmedCount', 'waitlistCount', 'remainingPublic', 'remainingTotal']) {
+  for (const field of ['confirmedCount', 'attendeeConfirmedCount', 'crewConfirmedCount', 'waitlistCount', 'pendingReviewCount', 'rejectedCount', 'remainingPublic', 'remainingTotal']) {
     const count = own(value, field);
-    if (!Number.isSafeInteger(count) || count < 0 || count > (field === 'waitlistCount' ? 1000 : capacity)) return null;
+    if (!Number.isSafeInteger(count) || count < 0 || count > (['waitlistCount', 'pendingReviewCount', 'rejectedCount'].includes(field) ? 1000 : capacity)) return null;
     projected[field] = count;
   }
   return projected;
@@ -172,6 +171,8 @@ export function createRegistrationApi({ allowedOrigins, submissionService, allow
             checked.privacy[key] = text;
           }
           if (!validateRegistrationPolicy({ ...checked, enabled: true }, { now: checked.opensAt }).valid) return failure('UNAVAILABLE');
+          // Review is server policy, never a caller-controlled option.
+          checked.attendeeReviewRequired = true;
           if (own(value, 'admissions') !== undefined) {
             checked.admissions = publicAdmissions(own(value, 'admissions'), checked.capacity);
             if (!checked.admissions) return failure('UNAVAILABLE');
@@ -218,10 +219,13 @@ export function createRegistrationApi({ allowedOrigins, submissionService, allow
       if (outcome === 'created' || outcome === 'replayed') {
         const receipt = committedReceipt(result, payload);
         if (!receipt) return failure('UNAVAILABLE');
-        const { referenceCode, ...admission } = receipt, waitlisted = receipt.admissionStatus === 'waitlisted';
+        const { referenceCode, ...admission } = receipt;
+        const status = {
+          pending_review: 'pending_review', confirmed: 'registered', waitlisted: 'waitlisted', rejected: 'rejected',
+        }[receipt.admissionStatus];
         const confirmation = publicConfirmation(result, clock);
-        return reply({ status: waitlisted ? 'waitlisted' : 'registered', reference_code: referenceCode,
-          groupInvite: waitlisted ? null : groupInvite(result, inviteOrigins, clock), ...admission,
+        return reply({ status, reference_code: referenceCode,
+          groupInvite: receipt.admissionStatus === 'confirmed' ? groupInvite(result, inviteOrigins, clock) : null, ...admission,
           ...(confirmation ? { confirmation } : {}) }, outcome === 'created' ? 201 : 200);
       }
       if (outcome === 'rate_limited' && Number.isSafeInteger(own(result, 'retryAfter')) && own(result, 'retryAfter') >= 1 && own(result, 'retryAfter') <= 86400) headers['retry-after'] = String(own(result, 'retryAfter'));

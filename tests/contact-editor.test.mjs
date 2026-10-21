@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EDITABLE_CONTACT_FIELDS, validateManualContactProfile, validateContactProfileEdit, guestPrefillFromContact } from '../shared/contact-editor.mjs';
+import { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS, validateManualContactProfile, validateContactProfileEdit, guestPrefillFromContact } from '../shared/contact-editor.mjs';
 import { validateImportedContact, validateStoredContact, createEmptyContactOperations, validateContactOperations, PARTICIPATION_FORMS } from '../shared/contacts-schema.mjs';
 
 function importedProfile(overrides = {}) {
@@ -71,10 +71,32 @@ test('source snapshot is optional for legacy contacts but strict, canonical and 
     item => { item.profile.contactConsent = 'consented'; },
     item => { item.profile.contactConsentCode = '1'; },
     item => { item.profile.attendanceIntent = 'uncertain'; },
-    item => { item.profile.categories = ['ro']; },
+    item => { item.profile.interests = ['roundtable']; },
   ]) {
     const corrupted = structuredClone(corrected); mutate(corrupted); assert.equal(validateStoredContact(corrupted), false);
   }
+});
+
+test('current identity edits use typed arrays, preserve omitted legacy values and leave the original snapshot unchanged', () => {
+  const original = importedProfile(), before = structuredClone(original);
+  assert.deepEqual(EDITABLE_CONTACT_ARRAY_FIELDS, ['categories']);
+  assert.equal(EDITABLE_CONTACT_FIELDS.includes('categories'), false);
+  const edited = validateContactProfileEdit({ categories: ['student', 'developer'] }, original);
+  assert.equal(edited.valid, true); assert.deepEqual(edited.value.categories, ['student', 'developer']);
+  assert.deepEqual(original, before);
+  assert.deepEqual(validateContactProfileEdit({ name: '旧客户端修正' }, edited.value).value.categories, ['student', 'developer']);
+  assert.deepEqual(validateContactProfileEdit({ categories: [] }, edited.value).value.categories, []);
+  assert.deepEqual(validateManualContactProfile({ name: '合成学生', categories: ['student'] }).value.categories, ['student']);
+  const stored = contact(edited.value); stored.sourceProfile = original; stored.sourceProfileDigest = 'b'.repeat(64);
+  assert.equal(validateStoredContact(stored), true);
+  assert.deepEqual(stored.sourceProfile.categories, ['so']);
+  for (const categories of [undefined, null, 'student', ['student', 'student'], ['unknown'], [true], Array(1)]) {
+    assert.equal(validateContactProfileEdit({ categories }, original).valid, false);
+  }
+  let accessed = false;
+  const accessor = Object.defineProperty([], '0', { enumerable: true, get() { accessed = true; throw new Error('must not execute'); } });
+  assert.equal(validateContactProfileEdit({ categories: accessor }, original).valid, false);
+  assert.equal(accessed, false);
 });
 
 test('consented pending invitees can prepare minimal linked drafts without confirming attendance or public authorization', () => {

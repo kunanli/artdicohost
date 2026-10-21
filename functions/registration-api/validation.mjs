@@ -1,5 +1,6 @@
 import { registrationSchema, getActiveBranches, isRegistrationFieldRequired } from '../../shared/registration-schema.mjs';
 import { plainObject, own, clockTime, validateRegistrationPolicy } from './policy.mjs';
+import { validateGeneralApplicationFields } from '../../shared/general-application.mjs';
 
 export const MAX_REGISTRATION_BYTES = 128 * 1024;
 
@@ -84,6 +85,11 @@ export function validateRegistrationSubmission(payload, { policy, now } = {}) {
   if (!plainObject(source)) errors.fields = '请提供报名资料对象。';
   if (own(consent, 'accepted') !== true) errors['consent.accepted'] = '请主动同意正式个人信息处理告知。';
   if (own(consent, 'version') !== configured.privacy.version) errors['consent.version'] = '个人信息处理告知版本不匹配。';
+  if(plainObject(source)&&Object.hasOwn(source,'intake')){
+    const general=validateGeneralApplicationFields(source);for(const[key,message]of Object.entries(general.errors))errors['fields.'+key]=message;
+    if(Object.keys(errors).length)return{valid:false,errors};
+    return{valid:true,errors,value:{eventId:configured.eventId,fields:general.value,consent:{accepted:true,version:configured.privacy.version,acceptedAt:new Date(clockTime(now)).toISOString()}}};
+  }
   const fields = {};
   function readField(input, field, target, key, branch = '') {
     const result = fieldValue(input, { ...field, required: isRegistrationFieldRequired(field, source, branch) });

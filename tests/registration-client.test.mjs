@@ -48,8 +48,17 @@ test('a saved waitlist entry retains its reference and admission state while dro
   assert.equal(f.client.pending,false);
   assert.equal(f.calls.some(call=>call.url.includes('/group-invite/')),false);
 });
+test('manual-review and rejected replay receipts preserve status while discarding all formal group access',async()=>{
+  for(const status of ['pending_review','rejected']){
+    const f=fixture(()=>json({status,admissionStatus:status,admissionKind:'attendee',admissionRevision:4,reference_code:reference,
+      groupInvite:{platform:'wechat',qrImageUrl:'https://api.artdico.host/api/admin/registration/group-invite/synthetic',expiresAt:'2026-10-20T16:05:00Z'}},201));
+    await f.client.configure();const result=await f.client.submit({intake:'general-v2',name:'合成申请人'});
+    assert.deepEqual(result.body,{status,admissionStatus:status,admissionKind:'attendee',admissionRevision:4,reference_code:reference,groupInvite:null});assert.equal(f.client.pending,false);
+    assert.equal(f.calls.filter(call=>call.url.endsWith('/submit')).length,1);assert.equal(f.calls.some(call=>call.url.includes('email')||call.url.includes('group-invite/')),false);
+  }
+});
 test('contradictory or malformed admission receipts preserve the same uncertain submission for retry',async()=>{
-  for(const patch of [{status:'registered',admissionStatus:'waitlisted'},{status:'waitlisted',admissionStatus:'confirmed'},{status:'registered',admissionStatus:'unknown'},{status:'registered',admissionKind:'team'},{status:'waitlisted',admissionRevision:-1}]){
+  for(const patch of [{status:'pending_review'},{status:'rejected'},{status:'pending_review',admissionStatus:'confirmed'},{status:'rejected',admissionStatus:'waitlisted'},{status:'registered',admissionStatus:'waitlisted'},{status:'waitlisted',admissionStatus:'confirmed'},{status:'registered',admissionStatus:'unknown'},{status:'registered',admissionKind:'team'},{status:'waitlisted',admissionRevision:-1}]){
     const f=fixture(()=>json({...patch,reference_code:reference},201));await f.client.configure();
     await assert.rejects(f.client.submit({name:'合成候补'}),error=>error.uncertain===true);
     assert.equal(f.client.pending,true);
@@ -60,9 +69,14 @@ test('contradictory or malformed admission receipts preserve the same uncertain 
 test('metadata exposes validated per-person capacity facts without leaking roster or accepting inconsistent totals',async()=>{
   const admissions={capacity:300,staffReserve:0,waitlistEnabled:true,confirmedCount:300,attendeeConfirmedCount:298,crewConfirmedCount:2,waitlistCount:3,remainingPublic:0,remainingTotal:0};
   const f=fixture(null,{...policy,admissions:{...admissions,people:[{name:'PRIVATE-SYNTHETIC'}]}});
-  assert.deepEqual((await f.client.configure()).admissions,admissions);
+  assert.deepEqual((await f.client.configure()).admissions,{...admissions,pendingReviewCount:0,rejectedCount:0});
   const invalid=fixture(null,{...policy,admissions:{...admissions,remainingTotal:1}});
   assert.equal(Object.hasOwn(await invalid.client.configure(),'admissions'),false);
+});
+test('manual review metadata forwards an explicit boolean and leaves older metadata compatible',async()=>{
+  const enabled=fixture(null,{...policy,attendeeReviewRequired:true});assert.equal((await enabled.client.configure()).attendeeReviewRequired,true);
+  const legacy=fixture();assert.equal(Object.hasOwn(await legacy.client.configure(),'attendeeReviewRequired'),false);
+  const invalid=fixture(null,{...policy,attendeeReviewRequired:'true'});assert.equal(Object.hasOwn(await invalid.client.configure(),'attendeeReviewRequired'),false);
 });
 test('configured closed registration is explicit and can never submit a new record',async()=>{
   const calls=[];

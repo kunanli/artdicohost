@@ -8,6 +8,8 @@ const SECURITY = { 'cache-control': 'no-store', 'x-content-type-options': 'nosni
 const routes = new Map([
   [ROOT + '/settings', ['PUT', 'setAdmissionSettings', ['settings'], true]],
   [ROOT + '/kind', ['POST', 'setAdmissionKind', ['registrationId', 'kind'], true]],
+  [ROOT + '/approve', ['POST', 'approveApplication', ['registrationId'], false]],
+  [ROOT + '/reject', ['POST', 'rejectApplication', ['registrationId'], false]],
   [ROOT + '/withdraw', ['POST', 'withdrawAdmission', ['registrationId'], false]],
   [ROOT + '/promote', ['POST', 'promoteAdmissions', [], false]],
   [ROOT + '/teams', ['POST', 'saveAdmissionTeam', ['team'], false]],
@@ -28,6 +30,28 @@ const plain = value => value !== null && typeof value === 'object' && !Array.isA
 const exact = (value, fields) => plain(value) && Object.keys(value).sort().join(',') === [...fields].sort().join(',');
 const snapshot = value => Number.isSafeInteger(value?.revision) && value.revision >= 0 && plain(value.settings) && plain(value.summary)
   && Array.isArray(value.people) && Array.isArray(value.teams) && Number.isSafeInteger(value.auditCount) && value.auditCount >= 0;
+const registrationId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/u.test(value);
+const ids = value => Array.isArray(value) && value.length <= 1000 && new Set(value).size === value.length && value.every(registrationId);
+function decisionReceipt(result, input, action) {
+  const receipt = result.operation;
+  return registrationId(input.registrationId) && result.registrationId === input.registrationId
+    && exact(receipt, ['operationId', 'action', 'registrationId', 'revision'])
+    && receipt.operationId === input.operationId && receipt.action === action && receipt.registrationId === input.registrationId
+    && receipt.revision === input.expectedRevision + 1 && receipt.revision <= result.revision
+    && ids(result.promotedIds) && ids(result.releasedIds) && !result.promotedIds.includes(input.registrationId)
+    && result.people.filter(person => person?.registrationId === input.registrationId).length === 1
+    && ['pending_review', 'confirmed', 'waitlisted', 'rejected', 'withdrawn'].includes(result.people.find(person => person?.registrationId === input.registrationId)?.status);
+}
+function emailProjection(value, count) {
+  return ['not_configured', 'pending', 'completed'].includes(value?.status)
+    && Number.isSafeInteger(value.attemptedCount) && value.attemptedCount >= 0 && value.attemptedCount <= count
+    && value.pendingCount === count - value.attemptedCount
+    ? { status: value.status, attemptedCount: value.attemptedCount, pendingCount: value.pendingCount } : null;
+}
+function approvalEmailProjection(value) {
+  return value?.status === 'not_applicable' && value.attemptedCount === 0 && value.pendingCount === 0
+    ? { status: 'not_applicable', attemptedCount: 0, pendingCount: 0 } : emailProjection(value, 1);
+}
 const failures = { invalid: 'INVALID_REQUEST', conflict: 'CONFLICT', forbidden: 'FORBIDDEN', not_found: 'NOT_FOUND', capacity_conflict: 'CAPACITY_CONFLICT', unavailable: 'UNAVAILABLE', closed: 'CLOSED' };
 const resultFailure = result => Object.hasOwn(failures, result?.outcome) ? failures[result.outcome] : 'UNAVAILABLE';
 function fail(code = 'UNAVAILABLE') { const error = new Error(code); error.code = code; safe.add(error); throw error; }
@@ -87,19 +111,27 @@ export function createAdmissionsApi({ enabled = false, auth, service, onCommitte
       const input = await inputBody(request);
       if (!exact(input, ['expectedRevision', 'operationId', ...route[2]]) || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0
         || typeof input.operationId !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/u.test(input.operationId)) fail('INVALID_REQUEST');
+      const action = url.pathname.slice(ROOT.length + 1), decision = ['approve', 'reject'].includes(action);
+      if (decision && !registrationId(input.registrationId)) fail('INVALID_REQUEST');
       const result = await service[route[1]]({ ...input, actor: session.user });
       if (!['updated', 'replayed'].includes(result?.outcome) || !snapshot(result)) fail(resultFailure(result));
-      let promotionEmail;
-      if (onCommitted && Array.isArray(result.promotedIds) && result.promotedIds.length) {
-        promotionEmail = { status: 'pending', attemptedCount: 0, pendingCount: result.promotedIds.length };
+      if (decision && !decisionReceipt(result, input, action)) fail();
+      const promotionCount = ids(result.promotedIds) ? result.promotedIds.length : 0;
+      let promotionEmail, approvalEmail;
+      if (onCommitted && (action === 'approve' || promotionCount > 0)) {
+        if (promotionCount) promotionEmail = { status: 'pending', attemptedCount: 0, pendingCount: promotionCount };
+        if (action === 'approve' && result.people.find(person => person?.registrationId === input.registrationId)?.status === 'confirmed') {
+          approvalEmail = { status: 'pending', attemptedCount: 0, pendingCount: 1 };
+        }
         try {
-          const value = await onCommitted({ result: structuredClone(result), actor: session.user });
-          if (['not_configured', 'pending', 'completed'].includes(value?.status)
-            && Number.isSafeInteger(value.attemptedCount) && value.attemptedCount >= 0 && value.attemptedCount <= result.promotedIds.length
-            && value.pendingCount === result.promotedIds.length - value.attemptedCount) promotionEmail = { status: value.status, attemptedCount: value.attemptedCount, pendingCount: value.pendingCount };
+          const value = await onCommitted({ action, result: structuredClone(result), actor: session.user });
+          if (action === 'approve') {
+            approvalEmail = approvalEmailProjection(value?.approvalEmail) ?? approvalEmail;
+            if (promotionCount) promotionEmail = emailProjection(value?.promotionEmail, promotionCount) ?? promotionEmail;
+          } else if (promotionCount) promotionEmail = emailProjection(value, promotionCount) ?? promotionEmail;
         } catch { /* A proven admission commit remains successful even when delivery is unavailable. */ }
       }
-      return json({ ...result, ...(promotionEmail ? { promotionEmail } : {}) });
+      return json({ ...result, ...(approvalEmail ? { approvalEmail } : {}), ...(promotionEmail ? { promotionEmail } : {}) });
     } catch (error) {
       let code = safe.has(error) ? error.code : 'UNAVAILABLE';
       if (error instanceof CloudContentError && error.code === 'AUTH_REQUIRED' && error.status === 401) code = 'AUTH_REQUIRED';

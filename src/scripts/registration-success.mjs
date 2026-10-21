@@ -72,6 +72,14 @@ export function renderRegistrationSuccess(container, response = {}) {
 
   reference.textContent = referenceCode;
   container.hidden = false;
+  if (admissionState === 'pending_review' || admissionState === 'rejected') {
+    heading.textContent = admissionState === 'pending_review' ? '申请已收到，待人工审核' : '本次申请未通过审核';
+    status.textContent = admissionState === 'pending_review'
+      ? '申请已保存，当前尚未确认参会名额，也未发送正式邀请。请保留申请编号，等待主办方审核，无需重复提交。'
+      : '这份申请当前没有确认参会名额。如需核对，请通过原联系渠道联络筹备团队，无需重复提交。';
+    status.hidden = false;
+    return true;
+  }
   if (admissionState === 'waitlisted') {
     heading.textContent = '候补登记已保存';
     status.textContent = '你已加入候补队列，当前尚未确认参会名额。名额释放后由工作人员按顺序处理；请保留登记编号，无需重复提交。';

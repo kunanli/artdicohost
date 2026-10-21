@@ -37,7 +37,8 @@ async function publicRegistration(service, name) {
   const saved = await service.submit({ origin: ORIGIN, idempotencyKey, submissionToken: token.submissionToken,
     payload: { eventId: EVENT, fields: { ...fields, name }, consent: { accepted: true, version: policy.privacy.version } } });
   assert.equal(saved.outcome, 'created');
-  return saved.receipt;
+  await mutate(service, 'approveApplication', { registrationId: saved.receipt.registrationId });
+  return { ...saved.receipt, admissionStatus: (await service.getAdmissionStatus(saved.receipt.registrationId)).status };
 }
 
 async function historyFixture() {
@@ -70,7 +71,7 @@ async function historyFixture() {
   assert.deepEqual(withdrawn.promotedIds, [pending.registrationId]);
   await mutate(service, 'setAdmissionSettings', { settings: { staffReserve: 0, waitlistEnabled: false } });
   const latest = await service.repository.readIndex(), admissions = await service.getAdmissions({ actor });
-  assert.equal(latest.value.schemaVersion, 2); assert.equal(latest.value.entries.length, 4);
+  assert.equal(latest.value.schemaVersion, 3); assert.equal(latest.value.entries.length, 4);
   assert.ok(latest.value.revision > latest.value.entries.length);
   assert.equal(admissions.summary.confirmedCount, 3); assert.equal(admissions.summary.withdrawnCount, 1);
   assert.deepEqual(admissions.settings, { capacity: 3, staffReserve: 0, waitlistEnabled: false });
@@ -95,7 +96,7 @@ async function historyFixture() {
   return { objects, latest, admissions, records, legacyKey, legacyBytes, snapshotKeys, recordKeys };
 }
 
-test('full v2 admission history and staff provenance survive encrypted backup and read-only isolated restore', async () => {
+test('full v3 admission history and staff provenance survive encrypted backup and read-only isolated restore', async () => {
   const f = await historyFixture(), sourceBefore = copyFiles(f.objects), sourceWrites = writeCount(f.objects);
   const keys = await collectJournalBackupKeys({ objects: f.objects, journalPrefixes: [INDEX] });
   const expectedKeys = [INDEX + '/commits.jsonl', ...f.snapshotKeys, ...f.recordKeys].sort();
@@ -136,7 +137,7 @@ test('full v2 admission history and staff provenance survive encrypted backup an
   assert.equal(writeCount(f.objects), sourceWrites); assert.deepEqual(copyFiles(f.objects), sourceBefore);
 });
 
-test('v2 backup cannot discard an old index snapshot or immutable person while retaining the latest view', async () => {
+test('v3 backup cannot discard an old index snapshot or immutable person while retaining the latest view', async () => {
   const f = await historyFixture(), keys = await collectJournalBackupKeys({ objects: f.objects, journalPrefixes: [INDEX] }), key = generateBackupKey();
   const rejectIncomplete = missing => assert.rejects(createEncryptedObjectBackup({ objects: f.objects,
     keys: keys.filter(name => name !== missing), key, clock: now }), error => error.code === 'BACKUP_INVALID');

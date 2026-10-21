@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { RegistrationAdminError, isRegistrationAdminError } from './errors.mjs';
+import { validateGeneralApplicationFields } from '../../shared/general-application.mjs';
 
 export const REVIEW_STATUSES = Object.freeze(['new', 'in_review', 'awaiting_maria', 'approved', 'discussion', 'not_this_time', 'withdrawn']);
 export const ACCOMMODATION_STATUSES = Object.freeze(['not_requested', 'requested', 'pending', 'approved', 'declined']);
@@ -66,7 +67,7 @@ export function registrationFilters(input = {}) {
   }
   if (output.status && !REVIEW_STATUSES.includes(output.status) || output.accommodation && !ACCOMMODATION_STATUSES.includes(output.accommodation)
     || output.attendance && !['expected', 'uncertain', 'unavailable'].includes(output.attendance)
-    || output.category && !['so', 'ro', 'new_site', 'industry', 'education', 'partner', 'sponsor', 'other'].includes(output.category)) fail('INVALID_REQUEST');
+    || output.category && !['so', 'ro', 'new_site', 'industry', 'education', 'partner', 'sponsor', 'other', 'student'].includes(output.category)) fail('INVALID_REQUEST');
   return output;
 }
 
@@ -93,7 +94,7 @@ function stats(items) {
 }
 function summary(item) {
   const fields = {};
-  for (const key of ['name', 'city', 'organization', 'position', 'categories', 'participationInterests', 'attendance', 'accommodationChoice']) if (Object.hasOwn(item.fields, key)) fields[key] = clone(item.fields[key]);
+  for (const key of ['intake','name', 'city', 'organization', 'position', 'categories', 'participationInterests', 'attendance', 'accommodationChoice']) if (Object.hasOwn(item.fields, key)) fields[key] = clone(item.fields[key]);
   const provenance = item.provenance?.kind === 'staff_assisted' ? { kind: 'staff_assisted', sourceContactId: item.provenance.sourceContactId } : { kind: item.provenance.kind };
   return { id: item.id, eventId: item.eventId, submittedAt: item.submittedAt, referenceCode: item.referenceCode, fields, review: clone(item.review), provenance };
 }
@@ -179,7 +180,9 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
         || record.provenance.kind === 'staff_entry' && (record.consent.accepted !== false || record.consent.version !== null || record.consent.acceptedAt !== null
           || !ID.test(record.provenance.actorId ?? '') || !validTime(record.provenance.recordedAt) || typeof record.provenance.permissionReference !== 'string' || !record.provenance.permissionReference.trim()
           || !/^[A-Za-z0-9_-]{32,128}$/u.test(record.provenance.operationId ?? ''))) fail('STORAGE_UNAVAILABLE');
-      const full = record.provenance.kind === 'public';
+      const general=Object.hasOwn(record.fields,'intake');
+      if(general&&(record.provenance.kind!=='public'||!validateGeneralApplicationFields(record.fields).valid))fail('STORAGE_UNAVAILABLE');
+      const full = record.provenance.kind === 'public'&&!general;
       if (['city', 'attendance', 'accommodationChoice'].some(key => (full || Object.hasOwn(record.fields, key)) && typeof record.fields[key] !== 'string')
         || ['organization', 'position'].some(key => Object.hasOwn(record.fields, key) && typeof record.fields[key] !== 'string')
         || ['categories', 'participationInterests'].some(key => (full || Object.hasOwn(record.fields, key)) && (!Array.isArray(record.fields[key]) || record.fields[key].some(value => typeof value !== 'string')))) fail('STORAGE_UNAVAILABLE');

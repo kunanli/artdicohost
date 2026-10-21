@@ -18,6 +18,7 @@ export const identityOptions = [
   { value: 'partner', label: '生态合作伙伴' },
   { value: 'sponsor', label: '潜在赞助方' },
   { value: 'other', label: '其他来宾' },
+  { value: 'student', label: '学生' },
 ];
 
 /** @type {Option[]} */

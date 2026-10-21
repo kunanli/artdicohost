@@ -103,7 +103,7 @@ export function createIntentInvitationService({ registrationService, contactsSto
   async function requireConfirmed(registrationId) {
     let admission;
     try { admission = await getAdmissionStatus?.(registrationId); } catch { throw failure(); }
-    if (!plainData(admission) || !['confirmed', 'waitlisted', 'withdrawn'].includes(admission.status)
+    if (!plainData(admission) || !['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected'].includes(admission.status)
       || !revision(admission.revision)) throw failure();
     if (admission.status !== 'confirmed') throw failure(admission.status === 'waitlisted' ? 'REGISTRATION_WAITLISTED' : 'REGISTRATION_INACTIVE', 409);
     return { status: admission.status, revision: admission.revision };

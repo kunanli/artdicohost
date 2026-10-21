@@ -25,7 +25,7 @@ const ledger = { revision: 1, conversions: contacts.slice(0,4).map(conversion), 
 const waitlisted = make('synthetic-waitlisted','合成候补对象'), admissionUnknown = make('synthetic-admission-unknown','合成名额待核对象');
 contacts.push(waitlisted,admissionUnknown);ledger.conversions.push({...conversion(waitlisted),admissionStatus:'waitlisted'},{...conversion(admissionUnknown),admissionStatus:'unknown'});
 const content = { sessions: [], booths: Array.from({length:15}, (_,index)=>({ id:'synthetic-booth-'+index, code:'C'+String(index+1).padStart(2,'0'), slotNumber:index+1, status:'pending', organization:'合成机构', project:'合成项目', description:'合成展示内容', contactName:'合成展位负责人', contactMethods:'private-synthetic-method' })), guests: [] };
-let actor = staff, sourceReads = 0, prepareCalls = 0, sentWrites = 0;
+let actor = staff, sourceReads = 0, prepareCalls = 0, sentWrites = 0, ledgerUnavailable = false;
 const tasks = createOrganizerTasksApi({ authenticate: async()=>({ user:actor }), getSources: async()=>{sourceReads++;return {contacts,contactRevision:2,content,contentRevision:1,intent:ledger};}, now:()=>Date.parse('2026-10-22T02:00:00.000Z') });
 const json = body=>({ status:200,contentType:'application/json',body:JSON.stringify(body) });
 await context.route('**/*',async route=>{
@@ -38,7 +38,7 @@ await context.route('**/*',async route=>{
     if(path==='/api/admin/tasks'){const response=await tasks(new Request(request.url()));return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});}
     if(path==='/api/admin/contacts')return route.fulfill(json({revision:2,contacts}));
     if(path==='/api/admin/planning')return route.fulfill(json({content,features:{intentInvitations:true,batchInvitations:true}}));
-    if(path==='/api/admin/intent-invitations')return route.fulfill(json(ledger));
+    if(path==='/api/admin/intent-invitations')return route.fulfill(ledgerUnavailable?{status:503,contentType:'application/json',body:'{}'}:json(ledger));
     if(path==='/api/admin/contacts/invitations/preview'){assert.deepEqual(request.postDataJSON().contactIds,['synthetic-new']);return route.fulfill(json({contactRevision:2,previewToken:'synthetic-preview-token',entries:[{contactId:'synthetic-new',eligible:true,registrationId:'r-synthetic-new',referenceCode:'ref-synthetic-new'}],summary:{selected:1,eligible:1,skipped:0}}));}
     if(path==='/api/admin/contacts/invitations/prepare-batch'){prepareCalls++;assert.equal(request.postDataJSON().confirmPrepare,true);const prepared=invitation(contacts[3],'prepared');ledger.invitations.push(prepared);return route.fulfill(json({contactRevision:2,results:[{contactId:'synthetic-new',status:'prepared',invitation:prepared}]}));}
     return route.fulfill({status:404,contentType:'application/json',body:'{}'});
@@ -75,5 +75,6 @@ try{
   assert.match(await page.locator('[data-batch-summary]').textContent(),/实际生成 1 张图片/u);
   assert.match(await page.locator('[data-batch-download]').getAttribute('download'),/\.zip$/u);
   await page.locator('[data-contacts-logout]').click();await page.locator('[data-contacts-login-panel]:visible').waitFor();assert.equal(await page.locator('[data-batch-download]').getAttribute('href'),null);assert.equal(await page.locator('[data-batch-results]').textContent(),'');
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({mobileTasks:true,ownerAndKindFilters:true,declinedExcluded:true,roleGateBeforeSourceRead:true,manualAndProviderSeparate:true,legacyAndLedgerDeduplicated:true,waitlistDistinctFromWithdrawal:true,waitlistNotOfferedFormalInvites:true,privateBatchZipPrepared:true,noSentWrites:true,logoutClearsPrivateDownload:true,pageErrors:errors,requests},null,2));
+  ledgerUnavailable=true;await page.goto('https://api.artdico.host/admin/contacts/',{waitUntil:'networkidle'});await page.locator('[data-contacts-workspace]:visible').waitFor();assert.equal(await page.locator('[data-contacts-rows] tr').filter({hasText:'合成人工对象'}).getByRole('button',{name:'名额暂无法核对',exact:true}).isDisabled(),true);
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({mobileTasks:true,ownerAndKindFilters:true,declinedExcluded:true,roleGateBeforeSourceRead:true,manualAndProviderSeparate:true,legacyAndLedgerDeduplicated:true,waitlistDistinctFromWithdrawal:true,waitlistNotOfferedFormalInvites:true,unavailableLedgerBlocksInvitationPreparation:true,privateBatchZipPrepared:true,noSentWrites:true,logoutClearsPrivateDownload:true,pageErrors:errors,requests},null,2));
 }finally{await context.close();await browser.close();}

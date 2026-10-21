@@ -1,0 +1,14 @@
+<section class="ah-admin-section delivery-settings" data-delivery-settings hidden aria-labelledby="delivery-settings-heading">
+  <div class="ah-admin-section-heading"><div><h2 id="delivery-settings-heading">报名确认与票券</h2><p>公开报名保存后自动准备对应通知。候补与确认名额分开，读取确认页不会触发重发。</p></div><button type="button" class="ah-admin-button" data-delivery-refresh>重新读取设置</button></div>
+  <p class="ah-admin-error" data-delivery-error role="alert" tabindex="-1" hidden></p>
+  <p class="delivery-status" data-delivery-status role="status" aria-live="polite"></p>
+  <div class="delivery-pending" data-delivery-pending hidden><p>上次操作结果尚待确认。请保留本页，再次确认同一操作；不会另建发送请求。</p><button class="ah-admin-button" type="button" data-delivery-retry>再次确认同一操作</button></div>
+  <div data-delivery-state hidden>
+    <div class="delivery-summary"><article><h3>确认邮件</h3><p data-delivery-mail-ready></p><ul data-delivery-mail-missing></ul></article><article><h3>Apple Wallet</h3><p data-delivery-wallet-ready></p><p class="delivery-muted">需要有效确认名额与完整签章设置，才会在确认页提供票券。</p></article></div>
+    <form data-delivery-automatic><label><input type="checkbox" name="enabled" /> 自动发送新公开报名的确认邮件</label><p class="delivery-muted">只处理之后的公开报名；不会自动向原始意向名单或工作人员代登记对象群发。未填邮箱时仍保留确认页。</p><button type="submit" class="ah-admin-button">保存邮件设置</button></form>
+    <dl class="delivery-counts" data-delivery-counts></dl>
+    <details class="delivery-guide"><summary>设置确认信</summary><ol><li>在 EmailJS 连接筹备团队的寄件账号，建立独立的报名确认模板。</li><li>按受控设置指引准备服务、模板与寄件配置；密钥只进入加密的私有设置包。</li><li>确认这里显示设置可用，再开启自动确认信。首次实际寄送请核对自己的测试邮箱。</li></ol><a href="https://github.com/kunanli/artdicohost/blob/main/docs/registration-confirmation.md" target="_blank" rel="noopener noreferrer">查看确认信设置指引</a></details>
+    <details class="delivery-guide"><summary>设置 Apple Wallet</summary><ol><li>由主办单位准备 Apple Developer 账号，建立对应活动的 Pass Type ID。</li><li>按指引申请签章证书、导出私钥，并准备对应的 Apple WWDR 与根证书。</li><li>通过受控工具验证并加密上传设置包；私钥不填入网页或聊天。</li><li>设置通过后，先用真实 iPhone 验证加入 Wallet，再开放票券。</li></ol><a href="https://github.com/kunanli/artdicohost/blob/main/docs/apple-wallet-setup.md" target="_blank" rel="noopener noreferrer">查看 Wallet 设置与轮替指引</a></details>
+    <details class="delivery-guide"><summary>补发所选公开报名的确认邮件</summary><p>选择登记编号后明确执行。服务商接受、明确拒绝及结果不明分别记录；结果不明的邮件不会再次发送。</p><form data-delivery-dispatch><div class="ah-admin-field"><label for="delivery-registration-ids">登记编号（最多 100 人，按行或逗号分隔）</label><textarea id="delivery-registration-ids" name="registrationIds" rows="4" maxlength="5000" required autocomplete="off" spellcheck="false"></textarea></div><label><input type="checkbox" name="retryRejected" /> 已核对原因，允许再尝试曾明确未发出的邮件</label><button type="submit" class="ah-admin-button">发送所选确认邮件</button></form><div data-delivery-results></div></details>
+  </div>
+</section>

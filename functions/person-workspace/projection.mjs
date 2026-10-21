@@ -180,6 +180,9 @@ export function communicationProjection({ contactRaw, contactId, registrationId,
     ...invitations.map(item => ({ source: 'invitation', id: item.id, at: item.updatedAt, status: item.status, channel: item.channel, kind: null })),
     ...notices.map(item => ({ source: 'confirmation', id: item.id, at: item.updatedAt, status: item.status, channel: 'email', kind: item.kind })),
   ];
+  // Legacy invitation facts belong to the already-authorized contacts source.
+  // They remain readable if the independent invitation ledger is unavailable;
+  // clients must gate this source by availability.contact, not invitations.
   if (contactRaw?.invitation?.generatedAt) timeline.push({ source: 'legacy_invitation', id: 'legacy-generated',
     at: timestamp(contactRaw.invitation.generatedAt), status: 'prepared', channel: 'manual', kind: null });
   if (contactRaw?.invitation?.sentAt) timeline.push({ source: 'legacy_invitation', id: 'legacy-sent',

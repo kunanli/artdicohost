@@ -134,6 +134,25 @@ test('optional source failures remain unavailable, preserve the selected record 
   assert.doesNotMatch(JSON.stringify(body), /PRIVATE/u);
 });
 
+test('independent invitation-ledger failure preserves authorized legacy contact history without claiming ledger availability', async () => {
+  for (const loadIntent of [undefined, async () => null, async () => { throw new Error('PRIVATE-LEDGER-FAILURE'); }]) {
+    const f = fixture({ roles: ['outreach'] });
+    f.data.contacts.contacts[0].invitation = { generatedAt: AT, sentAt: AT, channel: 'wechat' };
+    const { response, body } = await f.read({ loadIntent });
+    assert.equal(response.status, 200); assert.equal(body.availability.contact, 'available'); assert.equal(body.contact.id, CONTACT);
+    assert.equal(body.linkage.state, 'unavailable'); assert.equal(body.availability.invitations, 'unavailable');
+    assert.equal(body.revisions.invitations, null); assert.equal(body.availability.registration, 'restricted');
+    assert.deepEqual(body.communications.invitations, []); assert.equal(body.communications.invitationTotal, 0);
+    assert.equal(body.communications.timelineTotal, 2);
+    assert.deepEqual(body.communications.timeline, [
+      { source: 'legacy_invitation', id: 'legacy-generated', at: AT, status: 'prepared', channel: 'manual', kind: null },
+      { source: 'legacy_invitation', id: 'legacy-sent', at: AT, status: 'manually_sent', channel: 'wechat', kind: null },
+    ]);
+    assert.deepEqual(f.calls.map(item => item.source), ['contacts', 'content']);
+    assert.doesNotMatch(JSON.stringify(body), /PRIVATE-|provider_accepted|receiptToken/u);
+  }
+});
+
 test('registration and conversion disagreement fails closed without reading another admission or confirmation', async () => {
   const f = fixture(); f.data.registration.registration.provenance.sourceContactId = 'different-person';
   const { response, body } = await f.read({ loadAdmission: async () => assert.fail('mismatched relation'), loadConfirmations: async () => assert.fail('mismatched relation') });

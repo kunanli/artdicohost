@@ -1,6 +1,6 @@
 # 新版邀请函与私人 PNG：验证记录
 
-产品来源 `f9e5ea8`，在已上线 PR #38／main `19fe621` 后单独实施。**尚待准确候选 ZIP、PR／main／实际发布，不能称已上线。** [契约与操作](invitation-poster-v2.md)。
+产品来源 `f9e5ea8`，在已上线 PR #38／main `19fe621` 后单独实施。**准确候选ZIP及受限离线启动已通过，[PR #39](https://github.com/kunanli/artdicohost/pull/39)／精确CI正在执行；尚未实际发布，不能称已上线。** [契约与操作](invitation-poster-v2.md)。
 
 ## 实施与验证
 
@@ -29,3 +29,11 @@
 新验包只对现有白名单文字允许method8；图片、字体和runtime仍stored；文字总解压预算额外限制4MiB，每件仍原1MiB/2MiB/64KiB限制。Node24 `inflateRawSync` 限output，严格检查engine.bytesWritten等于全部compressed bytes，拒绝尾随／串联；实际CRC32、原SHA、local/central、顺序／模式／无gap都核对。旧stored包继续接受。未改bootstrap/XZdecoder/官方pin/96MiB/192MiB/上传与静态上限。最终仍须准确来源实包及受限Docker冷启动，当前不视为发布完成。
 
 容量修复已实现：`783126d`（BCJ6，原12focused验证）＋`bf69169`（bounded text deflate，7新增／5原candidate测试；实际pinnedNode archive通过）。root整合后 **12/12** 新压缩／deflate边界检查通过（0.663324749秒），保持所有旧上限。仅构建工具改变，前端产品仍f9e5ea8／13:06:38冻结来源，不需重制海报或字形；下一步为最终准确head实包、原Docker限制启动与正式CI。
+
+## 准确候选包已通过（13:31 UTC）
+
+精确最终head **`58f8ae9f87c4d84f29a1b4664af5d0235a1a20ee`**，BCJ6＋bounded text deflate实包成功：**128 files／40 static assets／7,326,049 static bytes**，ZIP **35,642,099B**、code JSON **47,522,823B**，均在原35,999,982／48,000,000上限内，字体和旧图完全未改。strict source／ZIP／解压后官方Node SHA验证通过。
+
+同一ZIP解压后 Docker **14.97秒**完成bootstrap／closedMode／syntheticConfigurationOnly及40件静态资源hash/bytes；**512MiB／0.35CPU／network none／code read-only／非root／tmpfs192MiB**不变，没有真实账号／私有OSS业务写入或部署。最新源码 **514 files**、Astro **382 files**（0errors/0warnings/1既有hint），十页构建与原审计通过；前端仍f9e5ea8冻结来源，包装变更无需重新编辑图片／字体。
+
+[PR #39](https://github.com/kunanli/artdicohost/pull/39) head同上；[精确PR运行39608895601](https://github.com/kunanli/artdicohost/actions/runs/39608895601)执行中，未合并。通过后才合并并核对main真实生命周期与HTTPS；下方初次超限阻挡为已解决历史，不重做失败来源包。

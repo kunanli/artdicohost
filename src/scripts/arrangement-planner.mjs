@@ -18,13 +18,13 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
   function configure() {
     const context = getContext();
     if (!context.allowed) { if (selected || roster || !root.hidden) clear(); return; }
-    for (const control of root.querySelectorAll('input,textarea,select,button')) if(!control.hasAttribute('data-admin-save'))control.disabled = working || context.busy;
-    $('[data-planner-save]').disabled = working || context.busy || context.dirty || uncertain || !roster || !assignmentForm.elements.namedItem('contactId').value;
+    for (const control of root.querySelectorAll('input,textarea,select,button')) if(!control.hasAttribute('data-admin-save'))control.disabled = working || context.busy || context.active===false;
+    $('[data-planner-save]').disabled = working || context.busy || context.active===false || context.dirty || uncertain || !roster || !assignmentForm.elements.namedItem('contactId').value;
     if (selected && selected.revision !== context.revision) {
       $('[data-planner-apply]').disabled = true; $('[data-planner-save]').disabled = true;
-      message('内容版本已变化，请重新打开此位置，保留并核对尚未应用的编辑。', true);
+      message('内容版本已变化，请保留填写并重新核对此位置。', true);
     }
-    $('[data-planner-refresh]').disabled = working || context.busy || context.dirty;
+    $('[data-planner-refresh]').disabled = working || context.busy || context.active===false || context.dirty;
   }
   function clear() {
     const wasWorking = working;
@@ -56,7 +56,7 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
   }
   async function loadPeople() {
     const context = getContext();
-    if (!selected || !context.allowed || context.dirty || working) { if (context.dirty) message('请先保存内容草稿，再读取和保存人员安排。', true); return; }
+    if (!selected || !context.allowed || context.active===false || context.dirty || working) { if (context.dirty) message('请先保存内容草稿，再读取和保存人员安排。', true); return; }
     const current = ++generation; working = true; onBusy(true); configure();
     try {
       const [people, planning] = await Promise.all([request('/api/admin/contacts'), request('/api/admin/planning')]);
@@ -84,8 +84,8 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
   }
   async function open(type, id, slotNumber = 0, {load=true} = {}) {
     const context = getContext();
-    if (!context.allowed || context.busy || !['booth','session'].includes(type) || id && !ID.test(id)) return;
-    if (unapplied) { message('请先应用当前展位编辑，或明确关闭编辑面板后再切换。', true); return; }
+    if (!context.allowed || context.active===false || context.busy || !['booth','session'].includes(type) || id && !ID.test(id)) return;
+    if (unapplied) { message('请先保存当前展位，或明确放弃填写后再切换。', true); return; }
     clear();
     const item = id ? context.content[type === 'booth' ? 'booths' : 'sessions'].find(entry => entry.id === id)
       : context.content.booths.find(entry => entry.slotNumber === slotNumber && entry.status !== 'cancelled');
@@ -94,7 +94,7 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
     original = item ? structuredClone(item) : null;
     root.hidden = false; boothForm.hidden = type !== 'booth'; $('[data-planner-people]').hidden = false;
     $('[data-planner-title]').textContent = type === 'booth' ? '直接调整第 ' + selected.slotNumber + ' 个展位' : '分配人员：' + item.title;
-    $('[data-planner-note]').textContent = type === 'booth' ? '展位资料应用到当前内容草稿；负责人及联络方式不公开。保存草稿、发布仍分别操作。' : '使用当前已保存场次分配人员；不改变报名名额、实际回复或公开授权。';
+    $('[data-planner-note]').textContent = type === 'booth' ? '保存展位资料到云端；负责人及联络方式不公开。公开页面需另行发布。' : '使用当前已保存场次分配人员；不改变报名名额、实际回复或公开授权。';
     if (type === 'booth') {
       let code = item?.code || 'C-' + String(selected.slotNumber).padStart(2,'0');
       let suffix = 1; while (!item && context.content.booths.some(booth => booth.code === code)) code = 'C-' + String(selected.slotNumber).padStart(2,'0') + '-' + suffix++;
@@ -102,7 +102,7 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
       const organization = boothForm.elements.namedItem('organizationId'), unlinked = node('option', '未关联组织'); unlinked.value = ''; organization.replaceChildren(unlinked);
       for (const choice of organizationChoices(context.content, item?.organizationId ?? '')) { const option = node('option', choice.name + (choice.missing ? ' · 请核对原关联' : choice.status === 'withdrawn' ? ' · 已退出' : choice.status === 'pending' ? ' · 待确认' : '')); option.value = choice.id; organization.append(option); }
       organization.value = item?.organizationId ?? '';
-      baseline = JSON.stringify(Object.fromEntries(new FormData(boothForm)));
+      baseline = JSON.stringify(readContentForm(boothForm,'plannerBooth'));
       readiness();
     }
     configure(); root.scrollIntoView({ block: 'nearest', behavior: 'auto' });
@@ -110,21 +110,40 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
   }
   function readiness() {
     const output = $('[data-planner-readiness]'); output.replaceChildren();
-    const value = Object.fromEntries(new FormData(boothForm));
+    const value = readContentForm(boothForm,'plannerBooth');
     unapplied = JSON.stringify(value) !== baseline; onDraftChange();
     for (const warning of boothReadiness(value)) output.append(node('li', warning));
     output.hidden = !output.childElementCount;
   }
   boothForm.addEventListener('input', readiness);
-  boothForm.addEventListener('submit', event => {
-    event.preventDefault(); const context = getContext(); if (working || context.busy || !selected || !boothForm.reportValidity()) return;
-    try {
-      const result = applyBooth({ boothId: selected.id, slotNumber: selected.slotNumber, original, expectedRevision: selected.revision, changes: Object.fromEntries(new FormData(boothForm)) });
-      selected.id = result.boothId; original = structuredClone(getContext().content.booths.find(booth => booth.id === result.boothId));
-      baseline = JSON.stringify(Object.fromEntries(new FormData(boothForm))); unapplied = false; onDraftChange();
-      message('已应用到内容草稿。可继续调整其他展位；保存草稿后再安排人员，发布后才更新公开页。'); configure();
-    } catch (error) { message(error.message || '展位资料未应用。', true); }
-  });
+  async function saveBooth({allowBusy=false}={}) {
+    const context=getContext();
+    if(working||!context.allowed||context.active===false||context.busy&&!allowBusy||!selected||selected.type!=='booth'||selected.revision!==context.revision||!boothForm.reportValidity())return false;
+    const current=generation,identity=selected,submitted=readContentForm(boothForm,'plannerBooth');
+    working=true;onBusy(true);configure();
+    try{
+      const result=await applyBooth({boothId:selected.id,slotNumber:selected.slotNumber,original,expectedRevision:selected.revision,changes:submitted});
+      if(current!==generation||selected!==identity||!getContext().allowed)return false;
+      // The controller retains the validated canonical candidate on a failed
+      // request. Bind a new position to that same ID so a retry cannot duplicate it.
+      const staged=getContext().content?.booths.find(booth=>booth.id===result.boothId);
+      if(staged){selected.id=result.boothId;original=structuredClone(staged);}
+      if(result.saved!==true){message(result.error||'尚未确认保存，展位填写仍保留。',true);return false;}
+      message('展位已保存到云端，公开页面尚未改变。');return true;
+    }catch(error){if(current===generation)message(error.message||'展位尚未保存，填写仍保留。',true);return false;}
+    finally{if(current===generation){working=false;onBusy(false);configure();}}
+  }
+  function acknowledgeSaved(record,{clearBooth=true}={}){
+    if(!selected||selected.type!=='booth'||!record||record.selected.type!=='booth')return false;
+    const context=getContext(),item=context.content?.booths.find(booth=>booth.id===selected.id||!selected.id&&booth.slotNumber===selected.slotNumber);
+    if(!item)return false;
+    selected.id=item.id;selected.revision=context.revision;original=structuredClone(item);
+    const current=readContentForm(boothForm,'plannerBooth');
+    const same=JSON.stringify(current)===JSON.stringify(record.booth);
+    if(same&&clearBooth){baseline=JSON.stringify(current);unapplied=false;}
+    onDraftChange();configure();return same;
+  }
+  boothForm.addEventListener('submit',event=>{event.preventDefault();void saveBooth();});
   assignmentForm.addEventListener('change', () => {
     assignmentDirty=true;onDraftChange();
     const contact = selectedContact();
@@ -137,7 +156,7 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
   assignmentForm.elements.namedItem('contactId').addEventListener('change', choices);
   assignmentForm.addEventListener('submit', async event => {
     event.preventDefault(); const context = getContext(), contact = selectedContact();
-    if (working || context.busy || context.dirty || uncertain || !roster || !contact || !selected || selected.revision !== context.revision) return;
+    if (working || context.busy || context.active===false || context.dirty || uncertain || !roster || !contact || !selected || selected.revision !== context.revision) return;
     let operations;
     try { operations = prepareContactAssignments(contact, { sessionIds: [...new FormData(assignmentForm).getAll('sessionIds')], boothIds: [...new FormData(assignmentForm).getAll('boothIds')] }, context.content); }
     catch (error) { message(error.message, true); return; }
@@ -166,9 +185,9 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
   $('[data-planner-close]').addEventListener('click', clear);
   $('[data-planner-refresh]').addEventListener('click', () => loadPeople());
   clear();
-  return { open, configure, clear, hasUnapplied: () => unapplied,hasLocalChanges:()=>unapplied||assignmentDirty||uncertain||Boolean(restoredAssignment),
+  return { open, configure, clear, saveBooth, acknowledgeSaved, hasUnapplied: () => unapplied,hasLocalChanges:()=>unapplied||assignmentDirty||uncertain||Boolean(restoredAssignment),
     localDraft(){if(!selected||!unapplied&&!assignmentDirty&&!uncertain&&!restoredAssignment)return null;return{selected:{type:selected.type,id:selected.id,slotNumber:selected.slotNumber},booth:selected.type==='booth'?readContentForm(boothForm,'plannerBooth'):null,
-      assignment:restoredAssignment?.assignment??(assignmentForm.elements.namedItem('contactId').value?{contactId:assignmentForm.elements.namedItem('contactId').value,sessionIds:new FormData(assignmentForm).getAll('sessionIds'),boothIds:new FormData(assignmentForm).getAll('boothIds')}:null),contactsRevision:restoredAssignment?.contactsRevision??roster?.revision??null,uncertain};},
+      assignment:restoredAssignment?.assignment??(assignmentForm.elements.namedItem('contactId').value?{contactId:assignmentForm.elements.namedItem('contactId').value,sessionIds:Array.from(assignmentForm.querySelectorAll('[name=sessionIds]:checked'),field=>field.value),boothIds:Array.from(assignmentForm.querySelectorAll('[name=boothIds]:checked'),field=>field.value)}:null),contactsRevision:restoredAssignment?.contactsRevision??roster?.revision??null,uncertain};},
     async restoreLocalDraft(record){await open(record.selected.type,record.selected.id,record.selected.slotNumber,{load:false});if(!selected)throw new Error('原场次或展位已不存在，未套用暂存。');if(record.booth){writeContentForm(boothForm,'plannerBooth',record.booth);readiness();}if(record.assignment){restoredAssignment={assignment:structuredClone(record.assignment),contactsRevision:record.contactsRevision,uncertain:record.uncertain};assignmentDirty=true;message('已保留原人员选择；请明确读取名单并核对，不会自动保存安排。');}onDraftChange();configure();},
   };
 }

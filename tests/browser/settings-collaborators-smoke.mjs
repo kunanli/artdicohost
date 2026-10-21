@@ -41,16 +41,20 @@ async function prepare(f,name){await f.page.locator('[data-user-prefill="'+name+
 async function create(f,name){const result=await prepare(f,name);await result.form.locator('button[type=submit]').click();await f.page.locator('[data-settings-status]').filter({hasText:'账号已保存'}).waitFor();return result.password;}
 async function logIn(f,username,password){const form=f.page.locator('[data-settings-login]');await form.locator('[name=username]').fill(username);await form.locator('[name=password]').fill(password);await form.locator('button[type=submit]').click();await f.page.locator('[data-settings-authorized]:visible').waitFor();await f.page.waitForLoadState('networkidle');}
 async function draftRecords(page){return page.evaluate(async()=>{const db=await new Promise((resolve,reject)=>{const req=indexedDB.open('artdico-browser-drafts-v1',1);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});try{return await new Promise((resolve,reject)=>{const req=db.transaction('drafts').objectStore('drafts').getAll();req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}finally{db.close();}});}
-async function waitDraft(page,kind='users'){await page.locator('[data-settings-local-draft="'+kind+'"] p').filter({hasText:'已保存在本机'}).waitFor();}
+async function waitDraft(page,kind='users'){await page.locator('[data-settings-local-draft="'+kind+'"] p').filter({hasText:'本机已暂存'}).waitFor();}
 async function noOverflow(page){assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);}
 try{
   await mkdir(evidence,{recursive:true});
   for(const width of[320,390,1440]){
     const f=await fixture({width});await open(f,'#staff-accounts-title');await f.page.locator('[data-settings-accounts]:visible').waitFor();
+    assert.equal(await f.page.locator('[data-delivery-setup-guide]').getAttribute('open'),null);assert.equal(await f.page.locator('[data-delivery-wallet-ready]').isVisible(),true);assert.equal(await f.page.locator('[data-delivery-wallet-missing]').isVisible(),false);
     assert.equal(await f.page.locator('[data-settings-accounts-link]').isVisible(),true);assert.equal(await f.page.locator('[data-settings-recovery]').getAttribute('open'),null);
     assert.equal(await f.page.locator('[data-user-prefill]').count(),2);assert.equal(usersWrites(f).length,0);await noOverflow(f.page);
-    if(width===390)await f.page.screenshot({path:resolve(evidence,'settings-collaborators-mobile.png'),fullPage:true});await f.context.close();reports.push({width,visibleAccountEntry:true,noCreationOnOpen:true,noPageOverflow:true});
+    if(width<1100)assert.equal(await f.page.evaluate(()=>document.querySelector('#staff-accounts-title').getBoundingClientRect().top>=document.querySelector('[data-staff-navigation-menu] summary').getBoundingClientRect().bottom),true,'mobile account anchor must remain below the sticky shortcut');
+    await f.page.screenshot({path:resolve(evidence,'settings-account-anchor-'+width+'.png')});
+    await f.page.locator('[data-settings-accounts]').screenshot({path:resolve(evidence,'settings-accounts-'+width+'.png')});if(width===390)await f.page.screenshot({path:resolve(evidence,'settings-collaborators-mobile.png'),fullPage:true});await f.context.close();reports.push({width,visibleAccountEntry:true,noCreationOnOpen:true,noPageOverflow:true});
   }
+  if(process.env.ARTDICO_SETTINGS_VISUAL_ONLY==='true'){assert.deepEqual(errors,[]);console.log(JSON.stringify({reports,pageErrors:errors}));await browser.close();process.exit(0);}
   {
     const f=await fixture();await open(f);const first=await create(f,'zhouyufei'),second=await create(f,'wangying');assert.ok(first!==second,'each account receives distinct random credentials');assert.equal(usersWrites(f).length,2);
     const directory=await f.api('/api/admin/users');for(const name of['zhouyufei','wangying']){const row=directory.users.find(user=>user.username===name);assert.deepEqual([...row.roles].sort(),['editor','outreach','publisher','reviewer']);assert.equal(row.active,true);assert.equal(row.protected,false);}
@@ -68,29 +72,29 @@ try{
   {
     const f=await fixture();await open(f);const{form,password}=await prepare(f,'zhouyufei');await form.locator('[name=label]').fill('合成本机账号填写');await waitDraft(f.page);
     const records=await draftRecords(f.page);assert.equal(JSON.stringify(records).includes(password),false);assert.doesNotMatch(JSON.stringify(records),/password|encryptionKey|dataBase64/u);assert.ok(records.every(row=>row.scope.eventId==='ggj-cn-2026'));
-    await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-settings-local-draft=users] p').filter({hasText:'找到本机填写'}).waitFor();assert.equal(await form.locator('[name=password]').inputValue(),'');assert.equal(await form.locator('[name=username]').inputValue(),'');assert.equal(usersWrites(f).length,0);
-    await f.page.locator('[data-settings-local-draft=users]').getByRole('button',{name:'恢复本机填写'}).click();assert.equal(await form.locator('[name=username]').inputValue(),'zhouyufei');assert.equal(await form.locator('[name=label]').inputValue(),'合成本机账号填写');assert.equal(await form.locator('[name=password]').inputValue(),'');assert.equal(usersWrites(f).length,0);
+    await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-settings-local-draft=users] p').filter({hasText:'有本机暂存'}).waitFor();assert.equal(await form.locator('[name=password]').inputValue(),'');assert.equal(await form.locator('[name=username]').inputValue(),'');assert.equal(usersWrites(f).length,0);
+    await f.page.locator('[data-settings-local-draft=users]').getByRole('button',{name:'恢复填写'}).click();assert.equal(await form.locator('[name=username]').inputValue(),'zhouyufei');assert.equal(await form.locator('[name=label]').inputValue(),'合成本机账号填写');assert.equal(await form.locator('[name=password]').inputValue(),'');assert.equal(usersWrites(f).length,0);
     await f.page.locator('[data-settings-logout]').click();await f.page.locator('[data-settings-login-panel]:visible').waitFor();assert.equal((await draftRecords(f.page)).filter(row=>row.scope.actorId===f.runtime.users[0].id).length,0);
     await f.context.close();reports.push({refreshOffersExplicitNonsecretRestore:true,noPasswordInIndexedDB:true,restoreNeverCreatesAccount:true,logoutErasesActorDrafts:true});
   }
   {
     const f=await fixture();await open(f);const{form}=await prepare(f,'zhouyufei');await waitDraft(f.page);
     const directory=await f.api('/api/admin/users');await f.api('/api/admin/users',{method:'POST',body:{expectedRevision:directory.revision,username:'synthetic-other-tab',label:'合成另一页账号',roles:['reviewer'],active:true,password:'synthetic-other-tab-strong-password'}});
-    await f.page.reload({waitUntil:'networkidle'});const draft=f.page.locator('[data-settings-local-draft=users]');await draft.locator('p').filter({hasText:'后台版本已改变'}).waitFor();assert.equal(await draft.getByRole('button',{name:'恢复本机填写'}).isVisible(),false);assert.equal(await form.locator('button[type=submit]').isDisabled(),true);
-    await draft.getByRole('button',{name:'查看本机内容'}).click();assert.match(await draft.locator('pre').textContent(),/zhouyufei/u);assert.equal(usersWrites(f).length,0);await f.context.close();reports.push({staleCloudDraftReadOnly:true,noOverwriteOrAutomaticCreate:true});
+    await f.page.reload({waitUntil:'networkidle'});const draft=f.page.locator('[data-settings-local-draft=users]');await draft.locator('p').filter({hasText:'云端有更新'}).waitFor();assert.equal(await draft.getByRole('button',{name:'恢复填写'}).isVisible(),false);assert.equal(await form.locator('button[type=submit]').isDisabled(),true);
+    await draft.getByRole('button',{name:'查看原填写'}).click();assert.match(await draft.locator('pre').textContent(),/zhouyufei/u);assert.equal(usersWrites(f).length,0);await f.context.close();reports.push({staleCloudDraftReadOnly:true,noOverwriteOrAutomaticCreate:true});
   }
   for(const mode of['lost','malformed']){
     const f=await fixture({lostAck:mode==='lost',badAck:mode==='malformed'});await open(f);const{form}=await prepare(f,'zhouyufei');await form.locator('button[type=submit]').click();await f.page.locator('[data-user-unknown]:visible').waitFor();
     assert.equal(usersWrites(f).length,1);assert.equal(await f.page.locator('[data-user-credentials]').isVisible(),false);assert.equal(await form.locator('[name=password]').inputValue(),'');
     await f.page.locator('[data-users-refresh]').click();await f.page.locator('[data-settings-error]').filter({hasText:'不能确认'}).waitFor();assert.equal(await form.locator('button[type=submit]').isDisabled(),true);assert.equal(usersWrites(f).length,1);
     await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-settings-local-draft=users] p').filter({hasText:'结果待核对'}).waitFor();assert.equal(await form.locator('button[type=submit]').isDisabled(),true);assert.equal(usersWrites(f).length,1);assert.equal(await form.locator('[name=password]').inputValue(),'');
-    await f.page.locator('[data-settings-local-draft=users]').getByRole('button',{name:'已手动核对，解除本机锁定'}).click();await form.locator('button[type=submit]:enabled').waitFor();assert.equal(usersWrites(f).length,1);assert.equal((await f.api('/api/admin/users')).users.filter(row=>row.username==='zhouyufei').length,1);
+    await f.page.locator('[data-settings-local-draft=users]').getByRole('button',{name:'已手动核对，解除锁定'}).click();await form.locator('button[type=submit]:enabled').waitFor();assert.equal(usersWrites(f).length,1);assert.equal((await f.api('/api/admin/users')).users.filter(row=>row.username==='zhouyufei').length,1);
     await f.context.close();reports.push({mode,actualCommittedUnknownNeverClaimsCreated:true,directoryReadDoesNotProvePassword:true,pendingSurvivesRefreshNoResend:true,explicitManualUnlockOnly:true});
   }
   {
     const f=await fixture();await open(f);await create(f,'zhouyufei');const form=f.page.locator('[data-user-form]');await form.locator('[name=username]').fill('synthetic-draft-after-create');await form.locator('[name=label]').fill('PRIVATE-SYNTHETIC-DRAFT');await waitDraft(f.page);
     f.expire();await f.page.locator('[data-group-refresh]').click();await f.page.locator('[data-settings-login-panel]:visible').waitFor();assert.equal(await f.page.locator('[data-user-credential-list] input').count(),0);assert.equal(await form.locator('[name=password]').inputValue(),'');assert.doesNotMatch(await f.page.locator('body').textContent(),/PRIVATE-SYNTHETIC-DRAFT/u);assert.equal(await f.page.locator('[data-settings-login] button').isEnabled(),true);
-    await logIn(f,'owner',PEOPLE_FIXTURE_PASSWORD);await f.page.locator('[data-settings-local-draft=users] p').filter({hasText:'找到本机填写'}).waitFor();await f.page.locator('[data-settings-local-draft=users]').getByRole('button',{name:'恢复本机填写'}).click();assert.equal(await form.locator('[name=label]').inputValue(),'PRIVATE-SYNTHETIC-DRAFT');
+    await logIn(f,'owner',PEOPLE_FIXTURE_PASSWORD);await f.page.locator('[data-settings-local-draft=users] p').filter({hasText:'有本机暂存'}).waitFor();await f.page.locator('[data-settings-local-draft=users]').getByRole('button',{name:'恢复填写'}).click();assert.equal(await form.locator('[name=label]').inputValue(),'PRIVATE-SYNTHETIC-DRAFT');
     await f.context.close();reports.push({authExpiryClearsAllPrivateDOMAndSecrets:true,loginRemainsEnabled:true,freshSameActorCanRestoreNonsecretDraft:true});
   }
   {

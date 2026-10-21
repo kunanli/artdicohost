@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialContent } from '../src/config/content.mjs';
 import { validateContent } from '../shared/content-schema.mjs';
-import { contentSaveSnapshot, confirmedContentSave, inspectContentSave, sameContent, contentSaveUiState } from '../src/lib/admin-save-state.mjs';
+import { contentSaveSnapshot, contentSectionSnapshot, confirmedContentSave, inspectContentSave, sameContent, contentSaveUiState } from '../src/lib/admin-save-state.mjs';
 
 function fixture() {
   const content = createInitialContent();
@@ -81,4 +81,56 @@ test('saved is shown only for a confirmed current revision, while newer local ch
   assert.equal(state({ dirty: true, outcome: 'saved', confirmedRevision: 3 }).state, 'dirty');
   assert.equal(state({ saving: true, outcome: 'saving' }).state, 'saving');
   assert.equal(state({ dirty: false, confirmedRevision: 2 }).state, 'loaded');
+});
+
+test('one-step save includes current raw input while keeping unknown, conflict and permission locks', () => {
+  for(const dirty of [false,true]){
+    const view=state({oneStep:true,dirty,unapplied:['嘉宾资料']});
+    assert.equal(view.canSave,true);assert.equal(view.title,'尚未保存');assert.doesNotMatch(view.description,/应用/u);
+  }
+  assert.equal(state({oneStep:true,dirty:true}).canSave,true);
+  assert.equal(state({oneStep:true,dirty:false,unapplied:[]}).canSave,false);
+  for(const blocked of [{loaded:false},{canEdit:false},{busy:true},{saving:true},{outcome:'unknown'},{outcome:'conflict'}]){
+    assert.equal(state({oneStep:true,dirty:false,unapplied:['嘉宾资料'],...blocked}).canSave,false);
+  }
+  assert.equal(state({oneStep:true,dirty:false,confirmedRevision:3}).title,'已保存');
+});
+
+test('one-step original-request retry can preserve an open form without treating its fields as a new submission', () => {
+  for(const outcome of ['unknown','conflict']){
+    const view=state({oneStep:true,outcome,retryReady:true,unapplied:['嘉宾资料']});
+    assert.equal(view.canSave,false);assert.equal(view.canRetry,true);
+    assert.equal(state({outcome,retryReady:true,unapplied:['嘉宾资料']}).canRetry,false,'legacy apply-first UI keeps its old restriction');
+    for(const blocked of [{loaded:false},{canEdit:false},{busy:true},{saving:true},{retryReady:false}]){
+      assert.equal(state({oneStep:true,outcome,retryReady:true,unapplied:['嘉宾资料'],...blocked}).canRetry,false);
+    }
+  }
+});
+
+test('page-scoped snapshots retain every unrelated cloud section and immutable submitted body', () => {
+  const base=fixture(),candidate=structuredClone(base),before=structuredClone(base);
+  candidate.event.title='候选活动';candidate.booths[0].project='候选作品';candidate.guests[0].name='候选人员';
+  for(const section of ['booths','arrangements']){
+    const submitted=contentSectionSnapshot(3,base,candidate,section);
+    assert.equal(submitted.expectedRevision,3);assert.equal(submitted.content.booths[0].project,'候选作品');
+    assert.deepEqual(submitted.content.event,base.event);assert.deepEqual(submitted.content.guests,base.guests);assert.deepEqual(submitted.content.sessions,base.sessions);
+    const submittedName=submitted.content.booths[0].contactName;candidate.booths[0].contactName='后续更改';assert.equal(submitted.content.booths[0].contactName,submittedName);candidate.booths[0].contactName='合成负责人';
+  }
+  const event=contentSectionSnapshot(3,base,candidate,'event');assert.equal(event.content.event.title,'候选活动');assert.deepEqual(event.content.booths,base.booths);
+  const guests=contentSectionSnapshot(3,base,candidate,'guests');assert.equal(guests.content.guests[0].name,'候选人员');assert.deepEqual(guests.content.event,base.event);
+  assert.deepEqual(base,before);
+});
+
+test('whole workspace saves require an explicit opt-in and cannot change event or normalize a broken source into a partial write', () => {
+  const base=fixture(),candidate=structuredClone(base);candidate.event.title='旧整份暂存活动';candidate.guests[0].name='旧整份暂存嘉宾';
+  for(const section of ['overview','publish']){
+    assert.equal(contentSectionSnapshot(3,base,candidate,section),null);
+    assert.deepEqual(contentSectionSnapshot(3,base,candidate,section,{allowWholeWorkspace:true}),contentSaveSnapshot(3,candidate));
+  }
+  for(const section of ['guest','unknown',null,undefined,['event'],{}])assert.equal(contentSectionSnapshot(3,base,candidate,section),null);
+  for(const options of [null,[],{allowWholeWorkspace:'true'},{allowWholeWorkspace:true,force:true}])assert.equal(contentSectionSnapshot(3,base,candidate,'guests',options),null);
+  for(const change of [value=>{value.eventId='other-event';},value=>{value.guests[0].portraitId='not-a-saved-image';}]){
+    const invalid=structuredClone(candidate);change(invalid);assert.equal(contentSectionSnapshot(3,base,invalid,'event',{allowWholeWorkspace:true}),null);
+  }
+  assert.equal(contentSectionSnapshot(-1,base,candidate,'guests'),null);assert.equal(contentSectionSnapshot(3,{},candidate,'guests'),null);
 });

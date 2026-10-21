@@ -1,5 +1,5 @@
 <aside class="ah-arrangement-planner" data-arrangement-planner hidden aria-labelledby="planner-title">
-  <div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">PLAN HERE</span><h3 id="planner-title" data-planner-title>直接调整安排</h3></div><button class="ah-admin-text-button" type="button" data-planner-close>关闭</button></div>
+  <div class="ah-admin-section-heading"><div><h3 id="planner-title" data-planner-title>直接调整安排</h3></div><button class="ah-admin-text-button" type="button" data-planner-close>关闭</button></div>
   <p class="ah-admin-small" data-planner-note></p>
   <p class="ah-admin-alert" data-planner-error role="alert" hidden></p><p class="ah-admin-small" data-planner-result role="status" aria-live="polite"></p>
   <form data-planner-booth hidden>
@@ -11,7 +11,7 @@
     <div class="ah-admin-field"><label for="planner-booth-contact">联系方式（不公开）</label><textarea id="planner-booth-contact" name="contactMethods" rows="2" maxlength="500" autocomplete="off"></textarea></div>
     <div class="ah-admin-field"><label for="planner-booth-description">大概展示内容</label><textarea id="planner-booth-description" name="description" rows="3" maxlength="2000"></textarea></div>
     <ul class="ah-arrangements-inline-warnings" data-planner-readiness></ul>
-    <div class="ah-admin-toolbar-actions"><button class="ah-admin-button ah-admin-primary" type="submit" data-planner-apply>应用到本页</button><button class="ah-admin-button" type="button" data-admin-save data-admin-save-location="planner" disabled>保存到云端</button></div>
+    <div class="ah-admin-toolbar-actions"><button class="ah-admin-button ah-admin-primary" type="submit" data-planner-apply>保存</button></div>
   </form>
   <section data-planner-people hidden>
     <div class="ah-admin-section-heading"><h4>在这里分配人员</h4><button class="ah-admin-text-button" type="button" data-planner-refresh>重新读取名单</button></div>
@@ -22,7 +22,7 @@
       <fieldset><legend>参与场次</legend><div class="ah-planner-choices" data-planner-session-choices></div></fieldset>
       <fieldset><legend>参与展位</legend><div class="ah-planner-choices" data-planner-booth-choices></div></fieldset>
       <p class="ah-admin-small" data-planner-preflight></p>
-      <button class="ah-admin-button ah-admin-primary" type="submit" data-planner-save>检查并保存人员安排</button>
+      <button class="ah-admin-button ah-admin-primary" type="submit" data-planner-save>保存人员安排</button>
     </form>
   </section>
 </aside>

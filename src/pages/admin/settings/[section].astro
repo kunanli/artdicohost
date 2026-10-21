@@ -1,0 +1,7 @@
+---
+import SettingsWorkspace from '../../../components/SettingsWorkspace.astro';
+import {SETTINGS_PAGES} from '../../../lib/admin-sections.mjs';
+export function getStaticPaths(){return SETTINGS_PAGES.map(page=>({params:{section:page.key},props:{section:page.key}}));}
+const {section}=Astro.props;
+---
+<SettingsWorkspace section={section} />

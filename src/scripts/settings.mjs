@@ -4,8 +4,19 @@ import {createSettingsSession} from '../lib/settings-session.mjs';
 import {canManageEventOperations,canManageAccounts} from '../../shared/staff-permissions.mjs';
 import {createBrowserDraftStore} from '../lib/browser-drafts.mjs';
 import {eventConfig} from '../config/event.mjs';
+import {SETTINGS_PAGES,resolveSettingsPage,settingsPageHref} from '../lib/admin-sections.mjs';
 
 const root=document.querySelector('[data-settings-admin]'),$=selector=>root.querySelector(selector);
+const section=resolveSettingsPage(location.pathname,location.hash);
+const page=SETTINGS_PAGES.find(item=>item.key===section);
+root.dataset.settingsSection=section??'unknown';
+if(section&&location.pathname!==settingsPageHref(section))history.replaceState(null,'',settingsPageHref(section)+location.hash);
+const title=section==='overview'?'设置与通知':page?.title??'设置页面不存在';
+document.title=title+'｜ARTDiCO HOST';$('[id=settings-workspace-title]').textContent=title;
+$('[data-settings-page-description]').textContent=page?.description??'选择要管理的设置。';
+for(const panel of root.querySelectorAll('[data-settings-panel]'))panel.hidden=panel.dataset.settingsPanel!==section;
+$('[data-settings-refresh]').hidden=!['delivery','group','accounts'].includes(section);
+$('[data-settings-local-note]').hidden=!['delivery','group','accounts'].includes(section);
 const secure=location.protocol==='https:'||['127.0.0.1','localhost'].includes(location.hostname);
 let user=null,busy=false,epoch=0,groupState=null,logoutPending=false;
 function announce(message,error=false){$('[data-settings-page-status]').textContent=error?'':message;$('[data-settings-page-error]').textContent=error?message:'';$('[data-settings-page-error]').hidden=!error;if(error)$('[data-settings-page-error]').focus();}
@@ -16,13 +27,14 @@ const transport=createSettingsSession({
 const request=(path,options)=>transport.request(path,options);
 const draftStore=createBrowserDraftStore();
 const staffRoot=$('[data-staff-settings]'),deliveryRoot=$('[data-delivery-settings]');
-const staffSettings=createStaffSettings({root:staffRoot,request,draftStore,eventId:eventConfig.id,binaryRequest:(path,body)=>request(path,{method:'POST',body:JSON.stringify(body),binary:true})});
+const staffSettings=createStaffSettings({root:staffRoot,request,draftStore,eventId:eventConfig.id,section:section==='accounts'?'accounts':'group',binaryRequest:(path,body)=>request(path,{method:'POST',body:JSON.stringify(body),binary:true})});
 const deliverySettings=createDeliverySettings({root:deliveryRoot,request,draftStore,eventId:eventConfig.id});
 const pending=()=>staffSettings.pending||deliverySettings.pending;
 const dirty=()=>staffSettings.dirty||deliverySettings.dirty;
+const pageAllowed=()=>Boolean(section)&&canManageEventOperations(user)&&(section!=='accounts'||canManageAccounts(user));
 function lock(){
   for(const field of $('[data-settings-login]').querySelectorAll('input,button'))field.disabled=busy||logoutPending||!secure;
-  $('[data-settings-refresh]').disabled=busy||!canManageEventOperations(user);
+  $('[data-settings-refresh]').disabled=busy||!pageAllowed();
   $('[data-settings-logout]').disabled=busy;
   staffSettings.lock(busy);deliverySettings.lock(busy);
 }
@@ -30,21 +42,24 @@ function clear({keepTransport=false}={}){
   epoch++;if(!keepTransport)transport.clear();user=null;busy=false;groupState=null;staffSettings.clear();deliverySettings.clear();
   $('[data-settings-workspace]').hidden=true;$('[data-settings-account]').hidden=true;$('[data-settings-login-panel]').hidden=false;
   $('[data-settings-authorized]').hidden=true;$('[data-settings-access-denied]').hidden=true;$('[data-settings-user]').textContent='';
-  $('[data-settings-login]').reset();for(const selector of ['[data-settings-mail-summary]','[data-settings-group-summary]','[data-settings-wallet-summary]'])$(selector).textContent='状态尚未载入';
+  $('[data-settings-login]').reset();for(const [selector,label]of [['[data-settings-mail-summary]','寄件与票券设置'],['[data-settings-group-summary]','群码图片与有效期'],['[data-settings-wallet-summary]','Apple Developer 与签章就绪后开放 Wallet。']])$(selector).textContent=label;
   for(const link of root.querySelectorAll('[data-staff-admin-link],[data-settings-accounts-link]'))link.hidden=true;
   for(const details of root.querySelectorAll('.settings-workspace-tools, .delivery-guide'))details.open=false;
   lock();
 }
 async function load(){
-  if(!canManageEventOperations(user))return;
-  const started=epoch;await Promise.all([staffSettings.configure(user),deliverySettings.configure(user)]);
+  if(!pageAllowed())return;
+  const started=epoch;
+  if(section==='delivery')await deliverySettings.configure(user);
+  else if(section==='group'||section==='accounts')await staffSettings.configure(user);
   if(started!==epoch)return;
 }
 async function acceptSession(result){
   user=transport.setSession(result);
   $('[data-settings-user]').textContent=user.label||user.id;
   $('[data-settings-login-panel]').hidden=true;$('[data-settings-account]').hidden=false;$('[data-settings-workspace]').hidden=false;
-  const allowed=canManageEventOperations(user);$('[data-settings-access-denied]').hidden=allowed;$('[data-settings-authorized]').hidden=!allowed;
+  const allowed=pageAllowed();$('[data-settings-access-denied]').hidden=allowed;$('[data-settings-authorized]').hidden=!allowed;
+  $('[data-settings-access-denied]').textContent=section==='accounts'?'工作人员账号与备份仅向管理员开放。':'此账号未具备完整活动协作权限，可从左侧返回自己的工作区。';
   for(const link of root.querySelectorAll('[data-staff-admin-link],[data-settings-accounts-link]'))link.hidden=!canManageAccounts(user);
   if(allowed){
     await load();

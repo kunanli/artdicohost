@@ -1,0 +1,7 @@
+---
+import ContentWorkspace from '../../../components/ContentWorkspace.astro';
+import { CONTENT_PAGES } from '../../../lib/admin-sections.mjs';
+export function getStaticPaths() { return CONTENT_PAGES.map(page => ({ params: { section: page.key }, props: { section: page.key } })); }
+const { section } = Astro.props;
+---
+<ContentWorkspace section={section} />

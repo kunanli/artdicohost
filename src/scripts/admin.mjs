@@ -10,10 +10,11 @@ import { editStaffImage } from '../lib/staff-image-editor.mjs';
 import { createOrganizationsEditor } from './organizations.mjs';
 import { createGuestContactPicker } from './guest-contact-picker.mjs';
 import { organizationChoices, boothOrganizationField } from '../lib/content-relationships.mjs';
-import { contentSaveSnapshot, confirmedContentSave, inspectContentSave, sameContent, contentSaveUiState } from '../lib/admin-save-state.mjs';
+import { contentSaveSnapshot, contentSectionSnapshot, confirmedContentSave, inspectContentSave, sameContent, contentSaveUiState } from '../lib/admin-save-state.mjs';
 import { createBrowserDraftStore } from '../lib/browser-drafts.mjs';
 import { createStaffFormDraft } from '../lib/staff-form-draft.mjs';
-import { CONTENT_DRAFT_POLICY,readContentForm,writeContentForm,contentDraftCopy } from '../lib/content-local-drafts.mjs';
+import { CONTENT_DRAFT_POLICY,readContentForm,writeContentForm,contentDraftCopy,contentDraftLocation } from '../lib/content-local-drafts.mjs';
+import { CONTENT_PAGES,resolveContentPage,contentPageHref } from '../lib/admin-sections.mjs';
 
 const $ = selector => document.querySelector(selector);
 const status = $('[data-admin-status]');
@@ -24,6 +25,13 @@ let user = null;
 let csrfToken = '';
 let requestSessionGeneration = 0;
 let draft = null;
+let loadedContent=null;
+let activePage=resolveContentPage(location.pathname,location.hash)??'overview';
+let currentPageUrl=contentPageHref(activePage),navigationTarget=null;
+let legacyWorkspaceReview=false,pendingHistorical=false,pendingUncertain=false,pendingForms=null;
+let arrangementsRevision=null;
+let arrangementsLoading=false;
+const editorStableIds={};
 let published = null;
 let dirty = false;
 let sessionFormDirty = false, boothFormDirty = false;
@@ -54,9 +62,11 @@ let portraitPending = null;
 let guestFormDirty = false;
 let pendingInvitee = takeInvitee();
 let pendingOrganization = takeOrganizationLink();
+let pendingEntity=takeEntityLink();
 const localDraftStore=createBrowserDraftStore({indexedDB:globalThis.indexedDB});
 let localDraftBinding=null,localDraftReady=false,localRecovering=false,localRecovery=null,localPendingArchive=null,localDraftProblem='';
 const requestControllers=new Set();
+function takeEntityLink(){const match=/^#(guest|session|showcase)=([A-Za-z0-9][A-Za-z0-9_-]{0,79})$/u.exec(location.hash);if(!match)return null;history.replaceState(null,'',location.pathname+location.search);return{type:match[1],id:match[2]};}
 function takeOrganizationLink() {
   const match = /^#organization=([A-Za-z0-9][A-Za-z0-9_-]{0,79})$/u.exec(location.hash);
   if (!match) return null;
@@ -84,7 +94,7 @@ function captureLocalDraft(){
   for(const type of ['session','booth','guest','showcase'])if($('[data-'+type+'-dialog]').open)forms[type]={editingId:({session:editingSession,booth:editingBooth,guest:editingGuest,showcase:editingShowcase})[type],fields:readContentForm($('[data-'+type+'-form]'),type),imageNeedsReselect:type==='guest'?Boolean(portraitUploading||portraitPending):type==='showcase'?coverUploading:false};
   const organization=organizations?.localDraft(),plan=planner?.localDraft();if(organization)forms.organization=organization;if(plan)forms.planner=plan;
   const checked=validateContent(draft.content);if(!checked.valid)throw new Error('本页内容无法暂存，请先复制填写内容。');
-  return{schemaVersion:1,roleKey:roleKey(),content:checked.value,forms,pendingSave:pendingSave?structuredClone(pendingSave):null};
+  return{schemaVersion:1,roleKey:roleKey(),section:activePage,content:checked.value,forms,pendingSave:pendingSave?structuredClone(pendingSave):null,...(pendingSave?{uncertain:pendingHistorical||pendingUncertain}:{} )};
 }
 function localDraftState(event){
   if(!user||!draft)return;
@@ -102,6 +112,7 @@ function renderLocalRecovery(){
   const box=$('[data-admin-local-recovery]'),record=(localRecovery??(localPendingArchive?localDraftBinding?.snapshot:null))?.record;
   box.hidden=!record&&!localDraftProblem;
   $('[data-admin-local-message]').textContent=record?(record.value.roleKey!==roleKey()?'当前工作权限已变化，不能恢复这份暂存。':record.baseRevision!==draft?.revision?(record.kind==='pending_submission'?'上次保存结果待核对。可恢复原提交，再明确核对云端；不会自动重送。':'云端版本已有更新。请复制暂存内容后逐项核对，不能直接覆盖。'):'发现上次未完成的编辑，可恢复后继续。'):localDraftProblem;
+  if(record&&record.value.roleKey===roleKey()&&contentDraftLocation(record.value)?.requiresReview)$('[data-admin-local-message]').textContent+=' 这份工作区暂存可能包含多个页面，恢复后请逐页核对。';
   $('[data-admin-local-restore]').hidden=!localRecovery||!record||record.value.roleKey!==roleKey()||record.baseRevision!==draft?.revision&&record.kind!=='pending_submission';
   $('[data-admin-local-discard]').hidden=!record;
   for(const button of box.querySelectorAll('button'))button.disabled=localRecovering;
@@ -113,7 +124,7 @@ function scheduleLocalDraft(){
   if(hasUnsavedChanges()){
     if(!localDraftBinding.blocked){$('[data-admin-local-status]').textContent='正在暂存本机…';localDraftBinding.schedule();}
   }
-  else if(localDraftBinding.snapshot?.record?.kind==='editing')localDraftBinding.discard().catch(()=>{});
+  else if(localDraftBinding.snapshot?.record?.kind==='editing'||localDraftBinding.unsettled&&!localDraftBinding.snapshot?.record) localDraftBinding.discard().catch(()=>{});
 }
 async function bindLocalDraft(){
   localDraftBinding?.close();localDraftReady=false;localRecovery=null;localPendingArchive=null;localDraftProblem='';
@@ -127,37 +138,55 @@ async function bindLocalDraft(){
 async function restoreLocalDraft(value,{pendingOnly=false}={}){
   const stamp=requestSessionGeneration;
   if(!user||!draft||value.content.eventId!==draft.content.eventId||value.roleKey!==roleKey())throw new Error('当前账号、权限或活动无法恢复这份暂存。');
+  const place=contentDraftLocation(value);if(!place)throw new Error('暂存所属页面无法核对。');
+  legacyWorkspaceReview=place.requiresReview;pendingHistorical=Boolean(value.pendingSave);pendingUncertain=Boolean(value.pendingSave);pendingForms=value.pendingSave?structuredClone(value.forms):null;
+  activatePage(place.section??(place.sections.length>1?'overview':value.section??'overview'));
   if(pendingOnly){pendingSave=structuredClone(value.pendingSave);saveOutcome='unknown';saveProblem='已恢复原提交，请明确核对云端保存结果。';localPendingArchive=structuredClone(value);localRecovery=null;lockControls();return;}
   const previous=draft.content;draft={revision:draft.revision,content:structuredClone(value.content)};dirty=!sameContent(previous,draft.content);
   pendingSave=value.pendingSave?structuredClone(value.pendingSave):null;if(pendingSave){saveOutcome='unknown';saveProblem='上次保存结果待核对，请先核对云端，不自动重送。';}
   render();
   if(value.forms.event){const form=$('[data-event-form]');writeContentForm(form,'event',value.forms.event.fields);renderFaqFields(value.forms.event.faqItems);eventFormDirty=true;}
-  if(value.forms.planner)await planner.restoreLocalDraft(value.forms.planner);
+  if(value.forms.planner){activatePage('arrangements');await planner.restoreLocalDraft(value.forms.planner);}
   if(stamp!==requestSessionGeneration||!user||!draft)return;
   for(const type of ['session','booth','guest','showcase'])if(value.forms[type]){
     const record=value.forms[type],item=record.editingId?draft.content[contentKey(type)].find(entry=>entry.id===record.editingId):null;
     if(record.editingId&&!item)throw new Error('原记录已不存在，暂存内容仍保留，请复制后核对。');
     openEditor(type,item,true);writeContentForm($('[data-'+type+'-form]'),type,record.fields);
+    editorStableIds[type]=record.fields.id;
     if(type==='session'){editingSession=record.editingId;sessionFormDirty=true;syncSessionGuest();}
     if(type==='booth'){editingBooth=record.editingId;boothFormDirty=true;}
     if(type==='guest'){editingGuest=record.editingId;guestFormDirty=true;showPortrait(record.fields.portraitId);$('[data-guest-consent-note]').textContent='已恢复填写，公开授权请重新核对。';guestPeople?.open();}
     if(type==='showcase'){editingShowcase=record.editingId;showcaseFormDirty=true;showCover(record.fields.coverId);syncShowcaseForms();}
     if(record.imageNeedsReselect)$('[data-'+type+(type==='guest'?'-portrait-status':'-cover-status')+']').textContent='未上传的图片编辑无法恢复，请重新选择图片。';
   }
-  if(value.forms.organization)organizations.restoreLocalDraft(value.forms.organization);
+  if(value.forms.organization){activatePage('organizations');organizations.restoreLocalDraft(value.forms.organization);}
   localRecovery=null;lockControls();
 }
 async function finishLocalSubmission(){
   const binding=localDraftBinding,stamp=requestSessionGeneration;
   if(!binding)return;
   try{
-    const archive=localPendingArchive;localPendingArchive=null;
-    await binding.discard({allowPending:true});if(stamp!==requestSessionGeneration||binding!==localDraftBinding||!user||!draft)return;
-    if(archive&&(!sameContent(archive.content,draft.content)||Object.keys(archive.forms).length)){
-      const remaining={...archive,pendingSave:null};const saved=await binding.flush({kind:'editing',value:remaining});
-      if(stamp!==requestSessionGeneration)return;localRecovery=saved;renderLocalRecovery();
-    }else if(hasUnsavedChanges())await binding.flush({kind:'editing'});
-  }catch{if(stamp===requestSessionGeneration&&user){localDraftProblem='云端结果已核对，本机暂存清理未完成；下次进入时请再次核对。';renderLocalRecovery();}}
+    const archive=localPendingArchive;
+    const remainingForms=archive?Object.fromEntries(Object.entries(archive.forms).filter(([type,record])=>!formAlreadySaved(type,record,loadedContent))):null;
+    const hasArchiveEdits=archive&&(!sameContent(archive.content,draft.content)||Object.keys(remainingForms).length);
+    const hasCurrentEdits=dirty||hasUnappliedInputs()||planner?.hasLocalChanges();
+    if(hasArchiveEdits||hasCurrentEdits){
+      let remaining=captureLocalDraft();
+      if(hasArchiveEdits){const{uncertain,...editing}=archive;remaining={...editing,content:structuredClone(archive.content),forms:remainingForms,pendingSave:null};}
+      // One IDB transaction keeps the proven original pending record until all
+      // remaining input has been durably recorded against the accepted revision.
+      const saved=await binding.completePending(remaining);
+      if(stamp!==requestSessionGeneration||binding!==localDraftBinding||!user||!draft)return;
+      localPendingArchive=null;if(hasArchiveEdits)localRecovery=saved;
+    }else{
+      await binding.discard({allowPending:true});
+      if(stamp!==requestSessionGeneration||binding!==localDraftBinding||!user||!draft)return;
+      localPendingArchive=null;
+    }
+    renderLocalRecovery();
+  }catch{
+    if(stamp===requestSessionGeneration&&user){localRecovery=binding.snapshot;localDraftProblem='云端结果已核对，本机恢复信息尚未整理完成。请先核对或复制暂存，再继续编辑。';renderLocalRecovery();}
+  }
 }
 async function copyLocalContent(type){
   if(!user||!draft||!canEdit())return;
@@ -168,6 +197,68 @@ async function copyLocalContent(type){
   }else{const value=localRecovery?.record?.value??localPendingArchive??captureLocalDraft();if(value.roleKey!==roleKey())throw new Error('权限已变化，不能复制这份暂存。');text=contentDraftCopy(value);}
   try{await navigator.clipboard.writeText(text);if(stamp===requestSessionGeneration)announce('填写内容已复制。未保存云端，也未发布。');}
   catch{if(stamp!==requestSessionGeneration)return;const field=$('[data-admin-copy-fallback]');(document.querySelector('dialog[open]')??$('[data-admin-local-recovery]').parentElement).append(field);field.hidden=false;field.value=text;field.focus();field.select();announce('请复制已选中的填写内容。');}
+}
+
+function renderPageView(){
+  const page=CONTENT_PAGES.find(item=>item.key===activePage);if(!page)return;
+  $('#artdico-admin').dataset.contentPage=activePage;
+  document.title=page.title+'｜内容管理｜ARTDiCO HOST';
+  for(const panel of document.querySelectorAll('[data-content-panel]'))panel.hidden=panel.dataset.contentPanel!==activePage;
+  for(const[selector,value]of[['[data-content-page-title]',page.title],['[data-content-page-description]',page.description],['[data-content-breadcrumb-current]',page.label]])if($(selector))$(selector).textContent=value;
+  for(const link of document.querySelectorAll('[data-staff-section-link]')){
+    const target=new URL(link.href,location.href),selected=resolveContentPage(target.pathname,target.hash)===activePage;
+    if(selected)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');
+  }
+  const warning=$('[data-admin-legacy-warning]');if(warning){warning.hidden=!legacyWorkspaceReview;warning.textContent=legacyWorkspaceReview?'已恢复旧工作区暂存，可能包含其他页面的修改。请逐项核对；保存整份暂存前会再次确认。':'';}
+}
+function queueEntity(hash){
+  const match=/^#(invitee|organization|booth|guest|session|showcase)=([A-Za-z0-9][A-Za-z0-9_-]{0,79})$/u.exec(hash);if(!match)return;
+  if(match[1]==='invitee')pendingInvitee=match[2];else if(match[1]==='organization')pendingOrganization=match[2];else if(match[1]==='booth')pendingBooth=match[2];else pendingEntity={type:match[1],id:match[2]};
+}
+function activatePage(section,{mode='replace',hash=''}={}){
+  if(!CONTENT_PAGES.some(item=>item.key===section))return;
+  const changed=activePage!==section;activePage=section;queueEntity(hash);currentPageUrl=contentPageHref(section);
+  if(mode!=='none')history[mode==='push'?'pushState':'replaceState'](null,'',currentPageUrl);
+  renderPageView();if(user&&draft){render();if(changed&&section!=='arrangements'){arrangements.clear();arrangementsRevision=null;}lockControls();}
+  if(!busy&&!plannerBusy){resumePendingLinks();void loadActivePageData();}
+}
+async function loadActivePageData(){
+  if(!user||!draft||activePage!=='arrangements'||arrangementsLoading||localRecovery||localRecovering||localPendingArchive||pendingSave||arrangementsRevision===draft.revision)return;
+  if(!canEdit()||!user.roles.includes('outreach'))return;
+  const stamp=requestSessionGeneration,revision=draft.revision;arrangementsLoading=true;
+  try{await arrangements.refresh();if(stamp===requestSessionGeneration&&activePage==='arrangements'&&$('[data-arrangements-error]').hidden)arrangementsRevision=revision;}
+  finally{if(stamp===requestSessionGeneration)arrangementsLoading=false;}
+}
+function completeNavigation(target){
+  navigationTarget=null;const dialog=$('[data-admin-navigation-dialog]');if(dialog?.open)dialog.close();
+  const section=resolveContentPage(target.pathname,target.hash);
+  if(target.origin===location.origin&&section){activatePage(section,{mode:'push',hash:target.hash});window.scrollTo({top:0,behavior:'auto'});}
+  else location.assign(target.href);
+}
+function requestNavigation(target){
+  if(busy||plannerBusy||savingContent||checkingContentSave||localRecovering||portraitUploading||coverUploading||organizations?.uploading){announce('正在处理当前操作，请完成后再切换页面。',true);return;}
+  if(!hasUnsavedChanges()&&!localRecovery&&!localPendingArchive){completeNavigation(target);return;}
+  navigationTarget=target;const dialog=$('[data-admin-navigation-dialog]');if(!dialog){announce('请先保存或明确放弃当前编辑，再前往其他页面。',true);return;}
+  $('[data-admin-navigation-description]').textContent='当前填写尚未保存。'+(pendingSave?'上次保存结果仍待核对，不能开始另一份保存；明确放弃时会先读取最新云端。':'保存成功后才会前往所选页面；放弃只清除本机编辑，不会撤销已保存内容。');
+  $('[data-admin-navigation-error]').textContent='';$('[data-admin-navigation-error]').hidden=true;if(!dialog.open)dialog.showModal();lockControls();
+}
+function clearPageInputs(){
+  guestPeople?.clear();clearPortrait();clearCover();organizations?.clear();planner?.clear();
+  for(const type of ['session','booth','guest','showcase']){const dialog=$('[data-'+type+'-dialog]');if(dialog.open)dialog.close();$('[data-'+type+'-form]').reset();delete editorStableIds[type];}
+  eventFormDirty=false;sessionFormDirty=false;boothFormDirty=false;guestFormDirty=false;showcaseFormDirty=false;editingSession=null;editingBooth=null;editingGuest=null;editingShowcase=null;
+}
+async function discardPageEdits(){
+  const stamp=requestSessionGeneration;let state=null;const record=localRecovery?.record??localDraftBinding?.snapshot?.record;
+  if(pendingSave||record?.kind==='pending_submission'){
+    state=await timedContentRequest();if(stamp!==requestSessionGeneration)return false;
+    if(!contentSaveSnapshot(state.draft?.revision,state.draft?.content))throw new Error('最新云端资料无法核对，未放弃本机恢复信息。');
+  }
+  if(localDraftBinding?.snapshot?.record)await localDraftBinding.discard({allowPending:record?.kind==='pending_submission'});
+  if(stamp!==requestSessionGeneration||!user||!draft)return false;
+  localDraftBinding?.close();localDraftBinding=null;localDraftReady=false;
+  clearPageInputs();if(state){loadedContent=structuredClone(state.draft.content);draft=state.draft;published=state.published;}else draft={revision:draft.revision,content:structuredClone(loadedContent)};
+  localRecovery=null;localPendingArchive=null;pendingSave=null;pendingForms=null;pendingHistorical=false;pendingUncertain=false;legacyWorkspaceReview=false;saveOutcome='loaded';saveProblem='';retryContentReady=false;dirty=false;
+  savedGuestContacts=new Map((loadedContent.guests??[]).map(item=>[item.id,item.contactId||'']));renderPageView();render();await bindLocalDraft();return stamp===requestSessionGeneration;
 }
 
 const arrangements = createArrangementsView({
@@ -184,22 +275,22 @@ const arrangements = createArrangementsView({
 });
 planner = createArrangementPlanner({
   root: $('[data-arrangement-planner]'), request,
-  getContext: () => ({ content: draft?.content, revision: draft?.revision, dirty, busy: busy&&!localRecovering || portraitUploading || coverUploading || organizations?.hasUnapplied(),
-    allowed: Boolean(canEdit() && user?.roles.includes('outreach')) }),
+  getContext: () => ({ content: draft?.content, revision: draft?.revision, dirty, busy: !localRecovering&&(busy||awaitingContentProof()||Boolean(localRecovery)||Boolean(localPendingArchive)) || portraitUploading || coverUploading || organizations?.hasUnapplied(),
+    active:activePage==='arrangements',allowed: Boolean(canEdit() && user?.roles.includes('outreach')) }),
   onBusy: value => { plannerBusy = value; lockControls(); },
   onDraftChange: () => {lockControls();scheduleLocalDraft();},
   refreshArrangements: () => arrangements.refresh(),
-  applyBooth: ({ expectedRevision, ...input }) => {
-    if (!canEdit() || busy || portraitUploading || coverUploading || organizations?.hasUnapplied() || !draft || expectedRevision !== draft.revision) throw new Error('内容版本已变化，请重新打开展位核对。');
+  applyBooth: async ({ expectedRevision, ...input }) => {
+    if (!canEdit() || portraitUploading || coverUploading || organizations?.hasUnapplied() || !draft || expectedRevision !== draft.revision) throw new Error('内容版本已变化，请重新打开展位核对。');
     const result = prepareBoothDraft(draft.content, { ...input, newId: 'booth_' + crypto.randomUUID().replaceAll('-', '') });
-    draft.content = result.content; setDirty(true); render();
-    announce('展位已应用到内容草稿；保存草稿后才能更新总览，发布仍需另行操作。');
-    return result;
+    const saved=await saveSectionCandidate(result.content,'arrangements');
+    return {...result,saved,error:saved?'':saveProblem};
   },
 });
 organizations = createOrganizationsEditor({
   root: $('[data-organizations]'), request,
-  getContext: () => ({ content: draft?.content, revision: draft?.revision, user, dirty, busy: busy&&!localRecovering || plannerBusy || portraitUploading || coverUploading }),
+  getContext: () => ({ content: draft?.content, revision: draft?.revision, user, dirty,active:activePage==='organizations', busy: !localRecovering&&(busy||awaitingContentProof()||Boolean(localRecovery)||Boolean(localPendingArchive)) || plannerBusy || portraitUploading || coverUploading }),
+  onSave: async records=>{const saved=await saveSectionCandidate({...draft.content,organizations:records},'organizations');if(!saved)throw new Error(saveProblem||'保存尚未确认，组织资料仍保留。');return true;},
   onApply: records => {
     if (!canEdit() || busy || plannerBusy || !draft) throw new Error('请重新读取可编辑草稿后，再应用组织资料。');
     const candidate = { ...draft.content, organizations: records }, checked = validateContent(candidate);
@@ -212,7 +303,7 @@ guestPeople = createGuestContactPicker({
   root: $('[data-guest-person-picker]'), request,
   getContext: () => ({ user, content: draft?.content, revision: draft?.revision, guestId: $('[data-guest-form]').elements.namedItem('id').value,
     publishedIdentity: Boolean(published?.content?.guests?.some(guest => guest.id === $('[data-guest-form]').elements.namedItem('id').value)),
-    busy: busy || plannerBusy || portraitUploading || coverUploading || Boolean(portraitPending) || organizations?.uploading }),
+    busy: busy || plannerBusy || awaitingContentProof() || portraitUploading || coverUploading || Boolean(portraitPending) || organizations?.uploading }),
   getValue: () => $('[data-guest-form]').elements.namedItem('contactId').value,
   setValue: id => { $('[data-guest-form]').elements.namedItem('contactId').value = id; },
   onChange: () => { revokeGuestConsent(); guestFormDirty = true;lockControls();scheduleLocalDraft(); },
@@ -224,6 +315,7 @@ function announce(message, error = false) {
 }
 function canEdit() { return user?.roles.includes('editor'); }
 function canPublish() { return user?.roles.includes('publisher'); }
+function awaitingContentProof(){return Boolean(pendingSave&&['saving','unknown','conflict'].includes(saveOutcome));}
 function unappliedInputs() {
   return [[eventFormDirty, '活动基本资料'], [sessionFormDirty, '场次编辑'], [boothFormDirty, '展位编辑'],
     [guestFormDirty || portraitUploading || portraitPending, '嘉宾资料'], [showcaseFormDirty || coverUploading, '学生作品'],
@@ -234,7 +326,7 @@ function hasUnsavedChanges() { return dirty || hasUnappliedInputs() || planner?.
 function renderSaveState() {
   const state = contentSaveUiState({ loaded: Boolean(user && draft), canEdit: canEdit(), dirty, unapplied: unappliedInputs(),
     busy: busy || plannerBusy || portraitUploading || coverUploading || organizations?.uploading || checkingContentSave || Boolean(localRecovery),
-    saving: savingContent, outcome: saveOutcome, revision: draft?.revision, confirmedRevision: confirmedSaveRevision, problem: saveProblem, retryReady: retryContentReady });
+    saving: savingContent, outcome: saveOutcome, revision: draft?.revision, confirmedRevision: confirmedSaveRevision, problem: saveProblem, retryReady: retryContentReady,oneStep:true });
   for (const output of document.querySelectorAll('[data-admin-save-state],[data-admin-unsaved]')) if (output.textContent !== state.title) output.textContent = state.title;
   for (const output of document.querySelectorAll('[data-admin-save-description]')) if (output.textContent !== state.description) output.textContent = state.description;
   for (const output of document.querySelectorAll('[data-admin-savebar],[data-admin-save-feedback]')) output.dataset.saveState = state.state;
@@ -242,6 +334,7 @@ function renderSaveState() {
   for (const button of document.querySelectorAll('[data-admin-save]')) button.disabled = !state.canSave;
   for (const button of document.querySelectorAll('[data-admin-check-save]')) { button.hidden = !pendingSave || !['unknown', 'conflict'].includes(saveOutcome); button.disabled = !state.canCheck; button.textContent = checkingContentSave ? '正在核对…' : '核对云端保存结果'; }
   for (const button of document.querySelectorAll('[data-admin-retry-save]')) { button.hidden = !pendingSave || !retryContentReady; button.disabled = !state.canRetry; }
+  for(const proof of document.querySelectorAll('[data-admin-dialog-proof]'))proof.hidden=!pendingSave||!['unknown','conflict'].includes(saveOutcome);
   updateSavebarSpace();
 }
 function updateSavebarSpace() {
@@ -249,10 +342,11 @@ function updateSavebarSpace() {
   $('#artdico-admin').style.setProperty('--admin-savebar-space', Math.ceil(bar.hidden ? 0 : bar.getBoundingClientRect().height) + 48 + 'px');
 }
 function lockControls() {
-  const controlsBusy = busy || plannerBusy || Boolean(localRecovery) || Boolean(localPendingArchive);
+  const controlsBusy = busy || plannerBusy || savingContent || checkingContentSave || awaitingContentProof() || Boolean(localRecovery) || Boolean(localPendingArchive);
   const organizationBusy = organizations?.uploading === true;
   $('[data-event-submit]').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canEdit();
   for (const field of $('[data-event-form]').querySelectorAll('input,select,textarea,[data-event-add-faq],[data-event-faq-remove]')) field.disabled = controlsBusy || organizationBusy || !canEdit();
+  for(const type of ['session','booth','guest','showcase'])for(const field of $('[data-'+type+'-form]').querySelectorAll('input,select,textarea'))if(!field.closest('[data-image-editor],[data-guest-person-picker]'))field.disabled=controlsBusy||portraitUploading||coverUploading||organizationBusy||!canEdit();
   $('[data-admin-login-submit]').disabled = controlsBusy || location.protocol === 'file:';
   $('[data-session-submit]').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canEdit();
   $('[data-showcase-submit]').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canEdit();
@@ -262,7 +356,7 @@ function lockControls() {
   $('[data-guest-submit]').disabled = controlsBusy || portraitUploading || Boolean(portraitPending) || coverUploading || organizationBusy || !canEdit();
   const guestForm = $('[data-guest-form]'), pendingIdentity = $('[data-guest-dialog]').open && guestForm.elements.namedItem('contactId').value !== (savedGuestContacts.get(guestForm.elements.namedItem('id').value) ?? '');
   guestForm.elements.namedItem('publicConsent').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canEdit() || pendingIdentity;
-  if (pendingIdentity) { guestForm.elements.namedItem('publicConsent').checked = false; $('[data-guest-consent-note]').textContent = '人员关联已变更。请先应用并保存这份不公开的关联，再重新打开嘉宾资料核对本人的公开授权。'; }
+  if (pendingIdentity) { guestForm.elements.namedItem('publicConsent').checked = false; $('[data-guest-consent-note]').textContent = '人员关联已变更。请先保存这份不公开的关联，再重新打开嘉宾资料核对本人的公开授权。'; }
   $('[data-guest-portrait-file]').disabled = controlsBusy || portraitUploading || Boolean(portraitPending) || organizationBusy || !canEdit();
   $('[data-guest-portrait-remove]').disabled = controlsBusy || organizationBusy || !canEdit();
   $('[data-guest-portrait-edit]').disabled = controlsBusy || portraitUploading || Boolean(portraitPending) || organizationBusy || !canEdit() || !portraitIdPattern.test($('[data-guest-form]').elements.namedItem('portraitId').value);
@@ -274,13 +368,16 @@ function lockControls() {
   $('[data-admin-publish]').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canPublish() || dirty || hasUnappliedInputs() || savingContent || ['unknown', 'conflict'].includes(saveOutcome);
   $('[data-admin-preview]').disabled = controlsBusy || !draft;
   $('[data-admin-logout]').disabled = busy || plannerBusy || localRecovering || savingContent || checkingContentSave || portraitUploading || coverUploading || organizationBusy;
-  arrangements.configure({ allowed: Boolean(canEdit() && user?.roles.includes('outreach')), busy: controlsBusy || portraitUploading || coverUploading || organizationBusy, dirty, draftRevision: draft?.revision });
+  arrangements.configure({ allowed: Boolean(activePage==='arrangements'&&canEdit() && user?.roles.includes('outreach')), busy: controlsBusy || portraitUploading || coverUploading || organizationBusy, dirty, draftRevision: draft?.revision });
   planner?.configure();
   organizations?.configure();
   guestPeople?.configure();
   renderSaveState();
   for(const button of document.querySelectorAll('[data-admin-local-restore],[data-admin-local-discard],[data-admin-local-copy]'))button.disabled=busy||plannerBusy||localRecovering||button.hasAttribute('data-admin-local-copy')&&Boolean(localRecovery?.record&&localRecovery.record.value.roleKey!==roleKey());
   for(const button of document.querySelectorAll('[data-content-copy]'))button.disabled=busy||plannerBusy||localRecovering||!canEdit();
+  for(const button of document.querySelectorAll('[data-admin-navigation-save],[data-admin-navigation-discard],[data-admin-navigation-cancel]'))button.disabled=busy||plannerBusy||savingContent||checkingContentSave||localRecovering||button.hasAttribute('data-admin-navigation-save')&&awaitingContentProof();
+  if($('[data-admin-save]'))$('[data-admin-save]').hidden=['overview','publish'].includes(activePage)&&!legacyWorkspaceReview;
+  syncShowcaseForms();
 }
 function setDirty(value) {
   dirty = value;
@@ -343,16 +440,17 @@ async function request(path, options = {}) {
   }finally{requestControllers.delete(controller);upstream?.removeEventListener('abort',abort);}
 }
 async function action(callback) {
-  if (busy || plannerBusy || organizations?.uploading) return;
+  if (busy || plannerBusy || savingContent || checkingContentSave || organizations?.uploading) return;
   const sequence=++actionSequence;busy = true;
   lockControls();
   try { await callback(); } catch (error) { if(sequence===actionSequence||!user)announce(error.message || '操作未完成。', true); }
-  finally { if(sequence===actionSequence){busy=false;lockControls();scheduleLocalDraft();resumePendingLinks();} }
+  finally { if(sequence===actionSequence){busy=false;lockControls();scheduleLocalDraft();resumePendingLinks();void loadActivePageData();} }
 }
 function resumePendingLinks() {
   if (!user || !draft || busy || plannerBusy || portraitUploading || portraitPending || hasUnappliedInputs() || localRecovery || localPendingArchive || localRecovering) return;
-  if (pendingBooth) { const id = pendingBooth; pendingBooth = null; planner.open('booth', id); return; }
-  if (pendingOrganization) { const id = pendingOrganization; pendingOrganization = null; organizations.openById(id); return; }
+  if (pendingBooth) { const id = pendingBooth; pendingBooth = null;activatePage('booths');const item=draft.content.booths.find(item=>item.id===id);if(item)openEditor('booth',item);else announce('此展位已不存在，请核对最新记录。',true);return; }
+  if (pendingOrganization) { const id = pendingOrganization; pendingOrganization = null;activatePage('organizations');organizations.openById(id);return; }
+  if(pendingEntity){const{type,id}=pendingEntity;pendingEntity=null;const item=draft.content[contentKey(type)]?.find(item=>item.id===id);if(item)openEditor(type,item);else announce('此记录已不存在，请核对最新资料。',true);return;}
   if (pendingInvitee) queueMicrotask(() => action(prepareInvitedGuest));
 }
 function showLogin() {
@@ -369,6 +467,8 @@ function showLogin() {
   user = null;
   csrfToken = '';
   draft = null;
+  loadedContent=null;pendingForms=null;pendingHistorical=false;pendingUncertain=false;legacyWorkspaceReview=false;arrangementsRevision=null;arrangementsLoading=false;navigationTarget=null;
+  for(const key of Object.keys(editorStableIds))delete editorStableIds[key];renderPageView();
   savedGuestContacts.clear();
   published = null;
   dirty = false;
@@ -533,11 +633,12 @@ function render() {
   }
   $('[data-admin-guests-empty]').hidden = (draft.content.guests?.length ?? 0) > 0;
   renderShowcases();
-  organizations?.render();
+  if(activePage==='organizations')organizations?.render();
   lockControls();
 }
 function openEditor(type, item = null, allowBusy = false) {
   if (!canEdit() || (busy && !allowBusy) || organizations?.hasUnapplied() || !draft) return;
+  activatePage(({guest:'guests',session:'sessions',booth:'booths',showcase:'showcases'})[type]);
   if (type === 'showcase') { openShowcaseEditor(item); return; }
   const form = $('[data-' + type + '-form]');
   form.reset();
@@ -549,6 +650,7 @@ function openEditor(type, item = null, allowBusy = false) {
   if (type === 'booth') { boothFormDirty = false; fillBoothOrganizations(item?.organizationId ?? ''); }
   const id = type + '-' + [...crypto.getRandomValues(new Uint8Array(16))].map(value => value.toString(16).padStart(2, '0')).join('');
   const value = item || (type === 'session' ? { id, start: '09:30', end: '10:00', zone: 'A', title: '', format: 'other', speakerName: '', speakerStatus: 'pending', guestId: '', status: 'draft', internalNotes: '' } : type === 'booth' ? { id, code: '', organization: '', project: '', zone: 'C', slotNumber: 0, status: 'pending', internalNotes: '' } : { id, name: '', company: '', ggjRole: '', portraitId: '', contactId: '', status: 'pending', publicConsent: false, internalNotes: '' });
+  editorStableIds[type]=value.id;
   for (const [key,valueText] of Object.entries(value)) {
     if(type==='guest'&&key==='publicRoles'){for(const option of form.querySelectorAll('[name=publicRoles]'))option.checked=valueText.includes(option.value);continue;}
     const field = form.elements.namedItem(key);
@@ -568,7 +670,7 @@ function openEditor(type, item = null, allowBusy = false) {
 async function prepareInvitedGuest(){
   if(!pendingInvitee||organizations?.hasUnapplied()||localRecovery||localPendingArchive||localRecovering)return false;
   const id=pendingInvitee;pendingInvitee=null;
-  if(guestFormDirty&&!confirm('准备新的嘉宾资料会放弃本次尚未应用的修改，继续吗？'))return false;
+  if(guestFormDirty&&!confirm('准备新的嘉宾资料会放弃本次尚未保存的修改，继续吗？'))return false;
   if(!canEdit()||!user?.roles.includes('outreach'))throw new Error('准备邀约对象的嘉宾草稿需要同时具备人员邀约与活动编辑权限。');
   const result=await request('/api/admin/contacts/'+encodeURIComponent(id)+'/guest-prefill');
   const prefill=result.prefill;
@@ -586,82 +688,81 @@ async function prepareInvitedGuest(){
     form.elements.namedItem('portraitId').value='';showPortrait('');guestFormDirty=true;
     $('[data-guest-consent-note]').textContent='已从邀约名单预填资料，实际回复：'+({pending:'待回复',attending:'确认参加',declined:'不参加'}[result.responseStatus]??'待核实')+'。请另行核实资料、出席与公开授权；尚未保存或公开。';
     if(Array.isArray(result.omittedFields)&&result.omittedFields.some(field=>['title','bio','website'].includes(field)))$('[data-guest-consent-note]').textContent+=' 部分原始资料超出公开栏位限制或网址格式无效，未自动带入；原始名单资料仍完整保留，请另行核对。';
-    announce('已准备关联嘉宾资料表，尚未保存。请核实职务、照片与公开同意，再应用修改。');
+    announce('已准备关联嘉宾资料表，尚未保存。请核实职务、照片与公开同意，再保存。');
     guestPeople?.open();
   }
   return true;
 }
 function closeGuestEditor(){
   if(busy)return;
-  if((guestFormDirty||portraitUploading||portraitPending)&&!confirm('关闭将放弃本次尚未应用的嘉宾资料及图片编辑，继续吗？'))return;
+  if((guestFormDirty||portraitUploading||portraitPending)&&!confirm('关闭将放弃本次尚未保存的嘉宾资料及图片编辑，继续吗？'))return;
   $('[data-guest-dialog]').close();
 }
 function closeSimpleEditor(type) {
   if (busy || plannerBusy) return;
   const changed = type === 'booth' ? boothFormDirty : sessionFormDirty;
-  if (changed && !confirm('关闭将放弃本次尚未应用的' + typeLabel(type) + '修改，继续吗？')) return;
+  if (changed && !confirm('关闭将放弃本次尚未保存的' + typeLabel(type) + '修改，继续吗？')) return;
   $('[data-' + type + '-dialog]').close();
   if (type === 'booth') boothFormDirty = false; else sessionFormDirty = false;
   lockControls();
 }
-function submitEditor(type, event) {
-  event.preventDefault();
-  if (!canEdit() || busy || portraitUploading || coverUploading || !draft) return;
-  if (type === 'guest' && portraitPending) return;
-  const form = event.currentTarget;
-  if (!form.reportValidity()) return;
-  const candidate = structuredClone(draft.content);
-  const key = contentKey(type);
-  const editingId = ({ session: editingSession, booth: editingBooth, guest: editingGuest, showcase: editingShowcase })[type];
-  const value = Object.fromEntries(new FormData(form));
-  if (type === 'booth') {
-    value.slotNumber = Number(form.elements.namedItem('slotNumber').value);
-    const previous = editingId ? candidate.booths.find(item => item.id === editingId) : null;
-    const relation = boothOrganizationField(previous, form.elements.namedItem('organizationId').value);
-    delete value.organizationId; Object.assign(value, relation);
-  }
-  if (type === 'guest') {
-    delete value.portraitFile;
-    value.publicConsent = form.elements.namedItem('publicConsent').checked;
-    value.publicRoles = new FormData(form).getAll('publicRoles');
-  }
-  if (type === 'showcase') {
-    delete value.coverFile;
-    value.memberCount = Number(form.elements.namedItem('memberCount').value);
-    value.participationForms = new FormData(form).getAll('participationForms');
-    value.publicConsent = form.elements.namedItem('publicConsent').checked;
-    value.sessionId = form.elements.namedItem('sessionId').value;
-    value.boothId = form.elements.namedItem('boothId').value;
-  }
-  if (type === 'session' && value.guestId) {
-    value.speakerName = '';
-    value.speakerStatus = 'pending';
-  }
-  candidate[key] ??= [];
-  // Never allow an existing row's stable ID to change through the UI.
-  if (editingId) value.id = editingId;
-  const index = candidate[key].findIndex(item => item.id === editingId);
-  if (index === -1) candidate[key].push(value); else candidate[key][index] = value;
-  const result = validateContent(candidate);
-  if (!result.valid) {
-    const details = [...new Set(Object.values(result.errors))].join(' ');
-    const localError = $('[data-' + type + '-error]');
-    if (localError) { localError.textContent = details; localError.hidden = false; localError.focus(); }
-    else announce(details, true);
-    return;
-  }
-  const localError = $('[data-' + type + '-error]');
-  if (localError) { localError.textContent = ''; localError.hidden = true; }
-  draft.content = result.value;
-  if(type==='guest')guestFormDirty=false;
-  if(type==='showcase')showcaseFormDirty=false;
-  if(type==='session')sessionFormDirty=false;
-  if(type==='booth')boothFormDirty=false;
-  $('[data-' + type + '-dialog]').close();
-  setDirty(true);
-  render();
-  announce('修改仅应用到本页，尚未保存到云端。请点击固定保存栏的「保存到云端」；公开发布另外执行。');
+function invalidContent(result,type,quiet=false){
+  if(result.valid)return result.value;
+  if(!quiet){const message=[...new Set(Object.values(result.errors))].join(' '),box=$('[data-'+type+'-error]');if(box){box.textContent=message;box.hidden=false;box.focus();}else announce(message,true);}
+  return null;
 }
+function eventCandidate(base=draft.content,record=null,quiet=false){
+  const fields=record?.fields??readContentForm($('[data-event-form]'),'event'),candidate=structuredClone(base);
+  if(!fields)return null;
+  for(const name of ['title','date','timezone','venue','status','dateStatus','venueStatus'])candidate.event[name]=fields[name];
+  candidate.event.presentation={};for(const name of ['heroDescription','aboutTitle','aboutText','checkInTime','openingTime','endTime','contactEmail','mapUrl'])candidate.event.presentation[name]=fields[name];
+  candidate.event.presentation.faqItems=record?.faqItems??[...$('[data-event-faq]').children].map(row=>({question:row.querySelector('[name=faqQuestion]').value,answer:row.querySelector('[name=faqAnswer]').value}));
+  return invalidContent(validateContent(candidate),'event',quiet);
+}
+function entityCandidate(type,base=draft.content,record=null,quiet=false){
+  const form=$('[data-'+type+'-form]'),raw=record?.fields??readContentForm(form,type);if(!raw)return null;
+  const candidate=structuredClone(base),key=contentKey(type),editingId=record?record.editingId:({session:editingSession,booth:editingBooth,guest:editingGuest,showcase:editingShowcase})[type],value=structuredClone(raw);
+  value.id=editingId??(record?raw.id:editorStableIds[type]??raw.id);candidate[key]??=[];
+  const previous=candidate[key].find(item=>item.id===value.id);
+  if(editingId&&!previous){if(!quiet)announce('原记录已变化，请保留填写并重新核对。',true);return null;}
+  if(type==='booth'){if(!Object.hasOwn(raw,'website')&&previous&&Object.hasOwn(previous,'website'))value.website=previous.website;value.slotNumber=Number(value.slotNumber);const relation=boothOrganizationField(previous,value.organizationId);delete value.organizationId;Object.assign(value,relation);}
+  if(type==='showcase')value.memberCount=Number(value.memberCount);
+  if(type==='session'&&value.guestId){value.speakerName='';value.speakerStatus='pending';}
+  const index=candidate[key].findIndex(item=>item.id===value.id);if(index<0)candidate[key].push(value);else candidate[key][index]=value;
+  return invalidContent(validateContent(candidate),type,quiet);
+}
+function formAlreadySaved(type,record,content){
+  try{
+    if(type==='event'){const candidate=eventCandidate(content,record,true);return Boolean(candidate&&sameContent(candidate,content));}
+    if(['guest','session','booth','showcase'].includes(type)){if(!content[contentKey(type)]?.some(item=>item.id===record.fields.id))return false;const candidate=entityCandidate(type,content,record,true);return Boolean(candidate&&sameContent(candidate,content));}
+    if(type==='organization'){const rows=structuredClone(content.organizations??[]),index=rows.findIndex(item=>item.id===record.fields.id);if(index<0)return false;rows[index]=structuredClone(record.fields);const checked=validateContent({...content,organizations:rows});return checked.valid&&sameContent(checked.value,content);}
+    if(type==='planner'){
+      if(record.assignment||record.uncertain||record.selected.type!=='booth'||!record.booth)return false;
+      const original=content.booths.find(item=>record.selected.id?item.id===record.selected.id:item.slotNumber===record.selected.slotNumber&&item.status!=='cancelled');if(!original)return false;
+      return sameContent(prepareBoothDraft(content,{boothId:original.id,slotNumber:record.selected.slotNumber,original,changes:record.booth}).content,content);
+    }
+  }catch{}
+  return false;
+}
+function finalizeAcknowledgedForms(content){
+  const forms=captureLocalDraft().forms;
+  if(forms.event&&formAlreadySaved('event',forms.event,content))eventFormDirty=false;
+  for(const type of ['session','booth','guest','showcase'])if(forms[type]&&formAlreadySaved(type,forms[type],content)){$('[data-'+type+'-dialog]').close();delete editorStableIds[type];}
+  if(forms.organization)organizations?.acknowledgeSaved(pendingForms?.organization??forms.organization,{keepOpen:!formAlreadySaved('organization',forms.organization,content)});
+  planner?.acknowledgeSaved(forms.planner??null,{clearBooth:Boolean(forms.planner&&formAlreadySaved('planner',{...forms.planner,assignment:null,uncertain:false},content))});
+  render();
+}
+async function saveEditor(type){
+  if(!canEdit()||portraitUploading||coverUploading||!draft||type==='guest'&&portraitPending)return false;
+  const form=$('[data-'+type+'-form]');if(!form.reportValidity())return false;
+  const candidate=entityCandidate(type);if(!candidate)return false;
+  const box=$('[data-'+type+'-error]');box.textContent='';box.hidden=true;
+  const saved=await saveSectionCandidate(candidate,({guest:'guests',session:'sessions',booth:'booths',showcase:'showcases'})[type]);
+  if(!saved&&user&&draft&&$('[data-'+type+'-dialog]').open){box.textContent=saveProblem||'尚未确认保存，填写内容仍保留。';box.hidden=false;box.focus();}
+  return saved;
+}
+function submitEditor(type,event){event.preventDefault();void action(()=>saveEditor(type));}
+
 function fillSessionGuests() {
   const select = $('[data-session-form]').elements.namedItem('guestId');
   select.replaceChildren();
@@ -739,7 +840,7 @@ async function sendPortrait(pending, generation, controller) {
   $('[data-guest-form]').elements.namedItem('portraitId').value = result.portrait.id;
   showPortrait(result.portrait.id);
   portraitPending = null;
-  $('[data-guest-portrait-status]').textContent = processedImageSummary(pending.prepared)+' 照片已上传；应用并保存后才会关联，尚未公开。';
+  $('[data-guest-portrait-status]').textContent = processedImageSummary(pending.prepared)+' 照片已上传；保存后才会关联，尚未公开。';
 }
 function portraitFailure(error) {
   const localError = $('[data-guest-error]');
@@ -860,13 +961,14 @@ function openShowcaseEditor(item=null) {
     }
   }
   for(const field of form.querySelectorAll('[name=participationForms]'))field.checked=value.participationForms?.includes(field.value)??false;
-  editingShowcase=item?.id??null;showcaseFormDirty=false;showCover(value.coverId);syncShowcaseForms();
+  editorStableIds.showcase=value.id;editingShowcase=item?.id??null;showcaseFormDirty=false;showCover(value.coverId);syncShowcaseForms();
   $('[data-showcase-consent-note]').textContent='公开授权与参加回复分别记录。学生基础资料、联系方式、材料链接及内部备注不进入公开作品页。';
   $('[data-showcase-dialog-title]').textContent=(item?'编辑':'新增')+'学生作品';$('[data-showcase-dialog]').showModal();
 }
 function syncShowcaseForms() {
   const form=$('[data-showcase-form]');
-  for(const[field,type]of[['sessionId','share'],['boothId','booth']])form.elements.namedItem(field).disabled=!form.querySelector('[name=participationForms][value='+type+']').checked;
+  const locked=busy||plannerBusy||savingContent||checkingContentSave||awaitingContentProof()||Boolean(localRecovery)||Boolean(localPendingArchive)||!canEdit();
+  for(const[field,type]of[['sessionId','share'],['boothId','booth']])form.elements.namedItem(field).disabled=locked||!form.querySelector('[name=participationForms][value='+type+']').checked;
 }
 function revokeShowcaseConsent() {
   $('[data-showcase-form]').elements.namedItem('publicConsent').checked=false;
@@ -883,7 +985,7 @@ function clearCover() {
 }
 function closeShowcaseEditor() {
   if(busy||coverUploading)return;
-  if(showcaseFormDirty&&!confirm('关闭将放弃本次尚未应用的作品资料，继续吗？'))return;
+  if(showcaseFormDirty&&!confirm('关闭将放弃本次尚未保存的作品资料，继续吗？'))return;
   $('[data-showcase-dialog]').close();
 }
 async function uploadCover(event) {
@@ -899,7 +1001,7 @@ async function uploadCover(event) {
     if(generation!==coverGeneration||controller.signal.aborted||!$('[data-showcase-dialog]').open)return;
     if(!portraitIdPattern.test(result.portrait?.id)||result.portrait.contentType!==payload.contentType||!Number.isSafeInteger(result.portrait.bytes)||result.portrait.bytes<1||result.portrait.bytes>512*1024)throw new Error('图片上传结果无效，请重试。');
     $('[data-showcase-form]').elements.namedItem('coverId').value=result.portrait.id;showCover(result.portrait.id);
-    $('[data-showcase-cover-status]').textContent=processedImageSummary(prepared)+' 作品图已上传；应用并保存后才会关联，尚未公开。';
+    $('[data-showcase-cover-status]').textContent=processedImageSummary(prepared)+' 作品图已上传；保存后才会关联，尚未公开。';
   }catch(error){
     if(generation!==coverGeneration||controller.signal.aborted)return;
     $('[data-showcase-form]').elements.namedItem('coverId').value='';showCover('');$('[data-showcase-cover-status]').textContent='作品图上传未完成，未关联新图片。';localError.textContent=error.message||'图片上传失败。';localError.hidden=false;
@@ -980,7 +1082,7 @@ $('[data-admin-login]').addEventListener('submit', event => {
     user = result.user;
     csrfToken = result.csrfToken;
     const state = await request('/api/admin/content');
-    draft = state.draft;
+    draft = state.draft;loadedContent=structuredClone(state.draft.content);
     savedGuestContacts = new Map((draft.content.guests ?? []).map(guest => [guest.id, guest.contactId || '']));
     published = state.published;
     loginPanel.hidden = true;
@@ -988,7 +1090,7 @@ $('[data-admin-login]').addEventListener('submit', event => {
     setDirty(false);
     render();
     await bindLocalDraft();
-    await arrangements.refresh();
+    await loadActivePageData();
     if (!user || !draft) return;
     if(!await prepareInvitedGuest())announce('已登录。修改草稿后，需要发布才会显示到前台。');
   });
@@ -1014,102 +1116,114 @@ $('[data-event-add-faq]').addEventListener('click',() => {
 });
 $('[data-event-form]').addEventListener('input', () => { eventFormDirty = true;lockControls(); });
 $('[data-event-form]').addEventListener('change', () => { eventFormDirty = true;lockControls(); });
-$('[data-event-form]').addEventListener('submit', event => {
-  event.preventDefault();
-  if (!draft || busy || !canEdit()) return;
-  const candidate = structuredClone(draft.content);
-  const form = event.currentTarget;
-  for (const name of ['title','date','timezone','venue','status','dateStatus','venueStatus']) candidate.event[name] = form.elements.namedItem(name).value;
-  candidate.event.presentation = {};
-  for (const name of ['heroDescription','aboutTitle','aboutText','checkInTime','openingTime','endTime','contactEmail','mapUrl']) candidate.event.presentation[name] = form.elements.namedItem(name).value;
-  candidate.event.presentation.faqItems = [...$('[data-event-faq]').children].map(row => ({question:row.querySelector('[name=faqQuestion]').value,answer:row.querySelector('[name=faqAnswer]').value}));
-  const result = validateContent(candidate);
-  const error = $('[data-event-error]');
-  if (!result.valid) { error.textContent = [...new Set(Object.values(result.errors))].join(' '); error.hidden = false; error.focus(); return; }
-  error.hidden = true; error.textContent = '';
-  draft.content = result.value; eventFormDirty = false;
-  setDirty(true); render();
-  announce('活动基本资料已应用到本页草稿。请保存草稿，再预览与发布。');
-});
+$('[data-event-form]').addEventListener('submit',event=>{event.preventDefault();void action(saveContentDraft);});
+
 async function timedContentRequest(options = {}) {
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 15_000);
   try { return await request('/api/admin/content', { ...options, signal: controller.signal }); }
   finally { clearTimeout(timer); }
 }
-function acceptSavedContent(saved, submitted) {
-  const unchanged = sameContent(draft.content, submitted.content), localContent = draft.content;
-  draft = { revision: saved.revision, content: unchanged ? saved.content : localContent };
-  savedGuestContacts = new Map((saved.content.guests ?? []).map(guest => [guest.id, guest.contactId || '']));
-  confirmedSaveRevision = saved.revision; saveOutcome = 'saved'; saveProblem = ''; pendingSave = null; savingContent = false; retryContentReady = false;
-  setDirty(!unchanged); render();
-  return unchanged;
+function acceptSavedContent(saved,submitted){
+  const unchanged=sameContent(draft.content,submitted.content),localContent=draft.content;
+  loadedContent=structuredClone(saved.content);draft={revision:saved.revision,content:unchanged?saved.content:localContent};
+  savedGuestContacts=new Map((saved.content.guests??[]).map(guest=>[guest.id,guest.contactId||'']));
+  confirmedSaveRevision=saved.revision;saveOutcome='saved';saveProblem='';pendingSave=null;retryContentReady=false;pendingHistorical=false;pendingUncertain=false;arrangementsRevision=null;
+  dirty=!unchanged;finalizeAcknowledgedForms(saved.content);pendingForms=null;
+  const remaining=captureLocalDraft().forms;legacyWorkspaceReview=Object.keys(remaining).some(type=>({event:'event',guest:'guests',session:'sessions',booth:'booths',showcase:'showcases',organization:'organizations',planner:'arrangements'})[type]!==activePage);
+  renderPageView();lockControls();return unchanged&&!hasUnappliedInputs()&&!planner?.hasLocalChanges();
 }
-async function reportSavedContent({ checked = false, unchanged = true, epoch }) {
-  announce(checked ? '已核对：当前云端草稿与待核对的提交内容一致。' : '草稿已保存到云端，公开页面尚未改变。');
-  let overviewFailed = false;
-  try { await arrangements.refresh(); } catch { overviewFailed = true; }
-  if (epoch !== requestSessionGeneration || !user || !draft) return;
-  overviewFailed ||= user.roles.includes('outreach') && !$('[data-arrangements-error]').hidden;
-  announce((checked ? '已核对：当前云端草稿与待核对的提交内容一致。' : '草稿已保存到云端，公开页面尚未改变。')
-    + (!unchanged ? '后续本页修改仍未保存。' : '') + (overviewFailed ? '现场总览暂未刷新；保存已完成，可稍后刷新总览。' : ''));
+function retainAcknowledgedSave(saved,submitted){
+  // A proven write stays proven even if later DOM or local cleanup fails.
+  // Keep its original recovery record and raw fields; never retry it blindly.
+  const localContent=draft.content;
+  loadedContent=structuredClone(saved.content);draft={revision:saved.revision,content:sameContent(localContent,submitted.content)?structuredClone(saved.content):localContent};
+  dirty=!sameContent(draft.content,loadedContent);savedGuestContacts=new Map((saved.content.guests??[]).map(guest=>[guest.id,guest.contactId||'']));
+  pendingSave=null;pendingHistorical=false;pendingUncertain=false;retryContentReady=false;confirmedSaveRevision=saved.revision;saveOutcome='saved';
+  saveProblem='云端已确认保存，界面或本机恢复信息尚未整理完成。填写仍保留，请先复制或核对暂存后再继续。';
+  const snapshot=localDraftBinding?.snapshot;if(snapshot?.record)localRecovery=snapshot;
+  localDraftProblem=saveProblem;try{renderLocalRecovery();}catch{}announce(saveProblem,true);
+  return false;
 }
-async function saveContentDraft() {
-  if (!draft || !canEdit()) throw new Error('此账号没有保存活动内容的权限。');
-  if(localRecovery||localPendingArchive)throw new Error('请先处理本机恢复信息，再保存云端。');
-  if (hasUnappliedInputs()) throw new Error('还有未应用的输入，请先应用或明确取消编辑，再保存到云端。');
-  if (['unknown', 'conflict'].includes(saveOutcome)) throw new Error('请先核对云端保存结果；本页修改仍保留，不重复保存或覆盖。');
-  if (!dirty) return;
-  const submitted = contentSaveSnapshot(draft.revision, draft.content);
-  if (!submitted) throw new Error('草稿未通过校验，尚未提交保存；本页修改仍保留。');
-  await persistContentSnapshot(submitted);
+async function reportSavedContent({checked=false,unchanged=true,epoch}){
+  if(activePage==='arrangements')await loadActivePageData();
+  if(epoch!==requestSessionGeneration||!user||!draft)return;
+  const overviewFailed=activePage==='arrangements'&&user.roles.includes('outreach')&&!$('[data-arrangements-error]').hidden;
+  announce((checked?'已核对：当前云端与原提交一致。':'已保存到云端，公开页面尚未改变。')+(!unchanged?'其他未保存填写仍保留。':'')+(overviewFailed?'总览暂未刷新，可稍后重读。':''));
 }
-async function retryContentDraft() {
-  if (!draft || !canEdit() || !pendingSave || !retryContentReady || !['unknown', 'conflict'].includes(saveOutcome)) return;
-  if (hasUnappliedInputs()) throw new Error('请先应用或明确取消正在编辑的输入；重试只保存上次提交的同一份内容。');
-  await persistContentSnapshot(pendingSave);
+async function saveSectionCandidate(candidate,section){
+  if(!draft||!loadedContent||!canEdit())throw new Error('此账号没有保存活动内容的权限。');
+  if(savingContent||checkingContentSave)throw new Error('正在核对当前保存，请稍后再操作。');
+  if(localRecovery||localPendingArchive)throw new Error('请先处理本机恢复信息，再保存。');
+  if(pendingSave||['unknown','conflict'].includes(saveOutcome))throw new Error('请先核对原提交结果；不会混入新填写或开始另一份保存。');
+  const checked=validateContent(candidate);if(!checked.valid)throw new Error([...new Set(Object.values(checked.errors))].join(' '));
+  let submitted=contentSectionSnapshot(draft.revision,loadedContent,checked.value,section);
+  if(!submitted&&!legacyWorkspaceReview)throw new Error('当前页面没有可提交的内容，请前往对应编辑页。');
+  if(legacyWorkspaceReview||!submitted||!sameContent(checked.value,submitted.content)){
+    legacyWorkspaceReview=true;renderPageView();
+    if(!confirm('这份暂存可能含其他页面已修改的内容。确认保存当前填写及整份已修改内容？其他尚未保存的表单仍会保留；不会发布或发送通知。'))return false;
+    submitted=contentSectionSnapshot(draft.revision,loadedContent,checked.value,section,{allowWholeWorkspace:true});
+  }
+  if(!submitted)throw new Error('填写内容未通过完整校验，尚未提交。');
+  draft.content=structuredClone(submitted.content);dirty=!sameContent(loadedContent,draft.content);pendingForms=structuredClone(captureLocalDraft().forms);
+  pendingHistorical=false;pendingUncertain=false;return persistContentSnapshot(submitted,{firstAttempt:true});
 }
-async function persistContentSnapshot(submitted) {
-  const epoch = requestSessionGeneration,previous={pendingSave,saveOutcome,saveProblem,retryContentReady};let requested=false;
-  pendingSave = submitted; retryContentReady = false; savingContent = true; saveOutcome = 'saving'; saveProblem = ''; lockControls();
-  try {
+async function saveContentDraft(){
+  if(!draft||!canEdit())throw new Error('请先读取可编辑内容。');
+  if(pendingSave||['unknown','conflict'].includes(saveOutcome))throw new Error('请先核对原提交，不能保存另一份内容。');
+  for(const type of ['guest','session','booth','showcase'])if($('[data-'+type+'-dialog]').open)return saveEditor(type);
+  if(organizations?.localDraft())return organizations.save({allowBusy:true});
+  if(activePage==='event'){
+    const candidate=eventCandidate();if(!candidate)return false;
+    const saved=await saveSectionCandidate(candidate,'event'),box=$('[data-event-error]');box.textContent=saved?'':saveProblem||'尚未确认保存，填写内容仍保留。';box.hidden=saved;if(!saved)box.focus();return saved;
+  }
+  if(activePage==='arrangements'&&planner?.hasUnapplied())return planner.saveBooth({allowBusy:true});
+  if(activePage==='arrangements'&&planner?.hasLocalChanges())throw new Error('人员安排另行保存，请先保存或明确放弃人员选择。');
+  if(!dirty)return false;
+  return saveSectionCandidate(draft.content,activePage);
+}
+async function retryContentDraft(){
+  if(!draft||!canEdit()||!pendingSave||!retryContentReady||!['unknown','conflict'].includes(saveOutcome))return false;
+  pendingHistorical=true;pendingUncertain=true;return persistContentSnapshot(pendingSave);
+}
+async function persistContentSnapshot(submitted,{firstAttempt=false}={}){
+  const epoch=requestSessionGeneration,previous={pendingSave,saveOutcome,saveProblem,retryContentReady,pendingHistorical,pendingUncertain},mayReject=firstAttempt&&!pendingSave&&!pendingHistorical&&!pendingUncertain;let requested=false,acknowledged=null;
+  pendingSave=submitted;retryContentReady=false;savingContent=true;saveOutcome='saving';saveProblem='';lockControls();
+  try{
     if(!localDraftBinding||!localDraftReady)throw new Error('本机暂存尚未就绪。');
     await localDraftBinding.markPending(captureLocalDraft());
-    if(epoch!==requestSessionGeneration||!user||!draft)return;
-    requested=true;
-    const result = await timedContentRequest({ method: 'PUT', body: JSON.stringify(submitted) });
-    if (epoch !== requestSessionGeneration || !user || !draft) return;
-    const saved = confirmedContentSave(result, submitted);
-    if (!saved) throw new Error('保存回执内容或版本无法核对。');
-    const unchanged = acceptSavedContent(saved, submitted);
-    await finishLocalSubmission();
-    await reportSavedContent({ unchanged, epoch });
-  } catch (error) {
-    if (epoch !== requestSessionGeneration || !user || !draft) return;
-    savingContent = false;
+    if(epoch!==requestSessionGeneration||!user||!draft)return false;
+    requested=true;const result=await timedContentRequest({method:'PUT',body:JSON.stringify(submitted)});
+    if(epoch!==requestSessionGeneration||!user||!draft)return false;
+    const saved=confirmedContentSave(result,submitted);if(!saved)throw new Error('保存回执内容或版本无法核对。');
+    acknowledged=saved;const unchanged=acceptSavedContent(saved,submitted);await finishLocalSubmission();await reportSavedContent({unchanged,epoch});return true;
+  }catch(error){
+    if(epoch!==requestSessionGeneration||!user||!draft)return false;
+    if(acknowledged)return retainAcknowledgedSave(acknowledged,submitted);
     if(!requested){
-      pendingSave=previous.pendingSave;saveOutcome=previous.saveOutcome;retryContentReady=previous.retryContentReady;
-      saveProblem='本机原提交暂存未完成，尚未向云端发送保存。请先复制填写内容并核对暂存状态。';
-    }else if (error.status === 409) {
-      saveOutcome = 'conflict'; saveProblem = '云端草稿版本已变化，本页修改仍保留。请先核对本次内容是否已保存；不会自动覆盖。';
-    } else if ([400, 403, 422].includes(error.status)) {
-      saveOutcome = 'loaded'; pendingSave = null; saveProblem = '本次保存未通过验证，本页修改仍保留。' + (error.message || '请核对后再保存。');
-      await finishLocalSubmission();
-    } else {
-      saveOutcome = 'unknown'; saveProblem = '保存结果未确认，本页修改仍保留。请先点击「核对云端保存结果」，不要重复保存或刷新。';
+      pendingSave=previous.pendingSave;saveOutcome=previous.saveOutcome;retryContentReady=previous.retryContentReady;pendingHistorical=previous.pendingHistorical;pendingUncertain=previous.pendingUncertain;
+      saveProblem='本机原提交暂存未完成，尚未向云端发送。填写仍保留，请先复制内容并核对暂存状态。';
+    }else if(mayReject&&[400,422].includes(error.status)){
+      try{await localDraftBinding.rejectPending();if(epoch!==requestSessionGeneration)return false;pendingSave=null;pendingForms=null;pendingHistorical=false;pendingUncertain=false;saveOutcome='loaded';saveProblem='本次保存未通过验证，填写仍保留。'+(error.message||'请核对后重试。');}
+      catch{pendingHistorical=true;pendingUncertain=true;saveOutcome='unknown';saveProblem='本次请求被拒绝，但原暂存状态未能核对。请保留填写并先核对原提交，不重复保存。';}
+    }else{
+      pendingUncertain=true;pendingHistorical=true;saveOutcome=error.status===409?'conflict':'unknown';
+      saveProblem=error.status===409?'云端版本已变化，填写与原提交仍保留；不会自动合并或覆盖。':[400,422].includes(error.status)?'本次重试被拒绝，仍不能证明原提交未写入。原正文与版本已保留，请继续核对。':'保存结果未确认，填写与原提交仍保留。请先核对云端结果，不重复保存。';
+      await localDraftBinding.flush({kind:'pending_submission',value:captureLocalDraft()}).catch(()=>{});
     }
-    announce(saveProblem, true);
-  } finally { if (epoch === requestSessionGeneration) { savingContent = false; lockControls(); } }
+    announce(saveProblem,true);return false;
+  }finally{if(epoch===requestSessionGeneration){savingContent=false;lockControls();scheduleLocalDraft();}}
 }
+
 async function checkContentSave() {
   if (!canEdit() || !draft || !pendingSave || !['unknown', 'conflict'].includes(saveOutcome)) return;
-  const submitted = pendingSave, epoch = requestSessionGeneration;
+  const submitted = pendingSave, epoch = requestSessionGeneration;let acknowledged=null;
   checkingContentSave = true; retryContentReady = false; lockControls();
   try {
     const result = await timedContentRequest();
     if (epoch !== requestSessionGeneration || pendingSave !== submitted || !user || !draft) return;
     const proof = inspectContentSave(result, submitted);
     if (proof.state === 'confirmed') {
-      const unchanged = acceptSavedContent(proof.draft, submitted);
+      acknowledged=proof.draft;const unchanged = acceptSavedContent(proof.draft, submitted);
       await finishLocalSubmission();
       await reportSavedContent({ checked: true, unchanged, epoch });
     } else {
@@ -1122,16 +1236,25 @@ async function checkContentSave() {
     }
   } catch (error) {
     if (epoch !== requestSessionGeneration || !user || !draft) return;
+    if(acknowledged){retainAcknowledgedSave(acknowledged,submitted);return;}
     saveProblem = '暂时无法核对云端保存结果。本页修改仍保留，请稍后再次核对，不要刷新。'; announce(saveProblem, true);
   } finally { if (epoch === requestSessionGeneration) { checkingContentSave = false; lockControls(); } }
+}
+for(const dialog of document.querySelectorAll('[data-guest-dialog],[data-session-dialog],[data-booth-dialog],[data-showcase-dialog],[data-organization-dialog],[data-admin-navigation-dialog]')){
+  const proof=node('div',undefined,'ah-admin-inline-proof');proof.dataset.adminDialogProof='';proof.hidden=true;
+  const state=node('p');state.dataset.adminSaveDescription='';
+  const check=node('button','核对云端保存结果','ah-admin-secondary');check.type='button';check.dataset.adminCheckSave='';
+  const retry=node('button','重试原提交','ah-admin-secondary');retry.type='button';retry.dataset.adminRetrySave='';
+  const copy=node('button','复制填写','ah-admin-text-button');copy.type='button';copy.addEventListener('click',()=>copyLocalContent().catch(error=>announce(error.message,true)));
+  proof.append(state,check,retry,copy);dialog.append(proof);
 }
 for (const button of document.querySelectorAll('[data-admin-save]')) button.addEventListener('click', () => action(saveContentDraft));
 for (const button of document.querySelectorAll('[data-admin-check-save]')) button.addEventListener('click', () => action(checkContentSave));
 for (const button of document.querySelectorAll('[data-admin-retry-save]')) button.addEventListener('click', () => action(retryContentDraft));
 $('[data-admin-publish]').addEventListener('click', () => action(async () => {
-  if (organizations?.hasUnapplied()) throw new Error('组织资料仍在编辑，请先应用并保存草稿，再发布。');
-  if (planner?.hasUnapplied()) throw new Error('总览展位仍有未应用编辑，请先应用并保存草稿。');
-  if (!canPublish() || dirty || hasUnappliedInputs() || ['unknown', 'conflict'].includes(saveOutcome)) throw new Error('请先应用全部编辑并确认草稿已保存，再由有发布权限的工作人员发布。');
+  if (organizations?.hasUnapplied()) throw new Error('组织资料仍在编辑，请先保存，再发布。');
+  if (planner?.hasUnapplied()) throw new Error('总览展位仍有未保存填写，请先保存。');
+  if (!canPublish() || dirty || hasUnappliedInputs() || ['unknown', 'conflict'].includes(saveOutcome)) throw new Error('请先确认全部编辑已保存，再由有发布权限的工作人员发布。');
   const result = await request('/api/admin/content/publish', { method: 'POST', body: JSON.stringify({ expectedRevision: draft.revision }) });
   published = result.published;
   render();
@@ -1211,7 +1334,9 @@ for(const button of document.querySelectorAll('[data-content-copy]'))button.addE
 $('[data-admin-local-copy]').addEventListener('click',()=>{copyLocalContent().catch(error=>announce(error.message,true));});
 $('[data-admin-local-restore]').addEventListener('click',async()=>{
   if(busy||plannerBusy||localRecovering||!localDraftBinding||!localRecovery)return;
-  const binding=localDraftBinding,stamp=requestSessionGeneration;localRecovering=true;renderLocalRecovery();
+  const binding=localDraftBinding,stamp=requestSessionGeneration;
+  if(contentDraftLocation(localRecovery.record.value)?.requiresReview&&!confirm('这份旧工作区暂存可能包含多个页面的修改。确认恢复后逐页核对？不会自动保存或发布。'))return;
+  localRecovering=true;renderLocalRecovery();
   try{const record=localRecovery.record;await binding.restore({pendingOnly:record.kind==='pending_submission'&&record.baseRevision!==draft.revision});if(stamp===requestSessionGeneration)announce(record.kind==='pending_submission'?'已恢复原保存信息，请先核对云端结果。':'已恢复本机填写；公开授权请重新核对，尚未保存云端。');}
   catch(error){if(stamp===requestSessionGeneration)announce(error.message||'暂存恢复未完成，内容仍保留。',true);}
   finally{if(stamp===requestSessionGeneration){localRecovering=false;renderLocalRecovery();}}
@@ -1222,14 +1347,42 @@ $('[data-admin-local-discard]').addEventListener('click',async()=>{
   if(!confirm(record.kind==='pending_submission'?'只舍弃本机恢复信息，不撤销可能已写入的云端内容。将先读取最新云端，且不会重送原提交。确定舍弃？':'舍弃这份本机暂存？已保存的云端内容保留。'))return;
   localRecovering=true;renderLocalRecovery();
   try{
-    let current=null;if(record.kind==='pending_submission'){current=await request('/api/admin/content');if(stamp!==requestSessionGeneration)return;if(!contentSaveSnapshot(current.draft?.revision,current.draft?.content))throw new Error('最新云端资料无法核对，未舍弃暂存。');}
-    await binding.discard({allowPending:record.kind==='pending_submission'});if(stamp!==requestSessionGeneration)return;
-    localRecovery=null;localPendingArchive=null;if(current){draft=current.draft;published=current.published;pendingSave=null;saveOutcome='loaded';saveProblem='';dirty=false;savedGuestContacts=new Map((draft.content.guests??[]).map(guest=>[guest.id,guest.contactId||'']));render();}
-    announce('本机暂存已舍弃；未发送保存或发布请求。');
+    if(await discardPageEdits())announce('本机暂存已舍弃；未发送保存或发布请求。');
   }catch(error){if(stamp===requestSessionGeneration)announce(error.message||'暂存未能清除，请保留内容。',true);}
   finally{if(stamp===requestSessionGeneration){localRecovering=false;renderLocalRecovery();}}
 });
-window.addEventListener('hashchange',()=>{const booth=takeBoothLink();if(booth){pendingBooth=booth;resumePendingLinks();return;}const organization=takeOrganizationLink();if(organization){pendingOrganization=organization;resumePendingLinks();return;}const id=takeInvitee();if(!id)return;pendingInvitee=id;resumePendingLinks();});
+function navigationError(text){const box=$('[data-admin-navigation-error]');box.textContent=text;box.hidden=!text;}
+function cancelNavigation(){navigationTarget=null;const dialog=$('[data-admin-navigation-dialog]');if(dialog.open)dialog.close();navigationError('');}
+$('[data-admin-navigation-cancel]').addEventListener('click',cancelNavigation);
+$('[data-admin-navigation-dialog]').addEventListener('cancel',event=>{event.preventDefault();cancelNavigation();});
+$('[data-admin-navigation-save]').addEventListener('click',()=>action(async()=>{
+  const target=navigationTarget;if(!target)return;
+  if(!hasUnsavedChanges()&&!localRecovery&&!localPendingArchive){completeNavigation(target);return;}
+  try{const saved=await saveContentDraft();if(!user||!draft)return;
+    if(saved&&!hasUnsavedChanges()&&!localRecovery&&!localPendingArchive)completeNavigation(target);
+    else navigationError(pendingSave?'保存结果仍待核对，请核对原提交后再前往。':'仍有未保存的填写，请完成或明确放弃后再前往。');
+  }catch(error){if(user)navigationError(error.message||'尚未确认保存，仍留在当前页面。');}
+}));
+$('[data-admin-navigation-discard]').addEventListener('click',()=>action(async()=>{
+  const target=navigationTarget;if(!target)return;
+  try{if(await discardPageEdits())completeNavigation(target);}catch(error){if(user)navigationError(error.message||'本机编辑尚未放弃，仍留在当前页面。');}
+}));
+document.addEventListener('click',event=>{
+  if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+  const link=event.target.closest('a[href]');if(!link||link.hasAttribute('download')||link.target&&link.target!=='_self')return;
+  const target=new URL(link.href,location.href);if(target.origin!==location.origin||!/^\/admin(?:\/|$)/u.test(target.pathname))return;
+  const section=resolveContentPage(target.pathname,target.hash);
+  if(!section&&!hasUnsavedChanges()&&!localRecovery&&!localPendingArchive)return;
+  event.preventDefault();requestNavigation(target);
+});
+function navigateFromHistory(){
+  const target=new URL(location.href),section=resolveContentPage(target.pathname,target.hash);if(!section)return;
+  if(hasUnsavedChanges()||localRecovery||localPendingArchive){history.replaceState(null,'',currentPageUrl);requestNavigation(target);}
+  else activatePage(section,{hash:target.hash});
+}
+window.addEventListener('hashchange',navigateFromHistory);
+window.addEventListener('popstate',navigateFromHistory);
+renderPageView();history.replaceState(null,'',currentPageUrl);
 window.addEventListener('beforeunload', event => { if (hasUnsavedChanges()||localDraftBinding?.unsettled) { event.preventDefault(); event.returnValue = ''; } });
 function flushLocalOnHide(){if(localDraftBinding&&localDraftReady&&!localRecovery&&!localRecovering&&user&&draft&&hasUnsavedChanges())localDraftBinding.flush().catch(()=>{});}
 window.addEventListener('pagehide',flushLocalOnHide);
@@ -1249,7 +1402,7 @@ if (location.protocol === 'file:') {
     user = result.user;
     csrfToken = result.csrfToken;
     const state = await request('/api/admin/content');
-    draft = state.draft;
+    draft = state.draft;loadedContent=structuredClone(state.draft.content);
     savedGuestContacts = new Map((draft.content.guests ?? []).map(guest => [guest.id, guest.contactId || '']));
     published = state.published;
     loginPanel.hidden = true;
@@ -1257,7 +1410,7 @@ if (location.protocol === 'file:') {
     setDirty(false);
     render();
     await bindLocalDraft();
-    await arrangements.refresh();
+    await loadActivePageData();
     if (!user || !draft) return;
     if(!await prepareInvitedGuest())announce('已恢复工作人员会话。');
   });

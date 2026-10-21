@@ -4,7 +4,7 @@ import { request as httpRequest } from 'node:http';
 import { connect } from 'node:net';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { createCloudContentServer } from '../functions/cloud-content/http-server.mjs';
+import { createCloudContentServer, CLOUD_ADMIN_PAGE_ALIASES, isCloudAdminAssetUrl } from '../functions/cloud-content/http-server.mjs';
 import { createCloudContentApi, MAX_CLOUD_BODY_BYTES } from '../functions/cloud-content/handler.mjs';
 
 const HOST = 'api.artdico.host';
@@ -177,6 +177,63 @@ test('filesystem-looking, unknown or queried static paths never discover files o
   const unknownApi = await send(port, '/api/not-implemented');
   assert.equal(unknownApi.status, 404);
   assert.equal(calls, 1);
+});
+
+test('independent admin routes serve only their existing verified HTML with identical CSP and HEAD metadata', async t => {
+  let calls = 0;
+  const assets = ASSETS(), count = assets.size;
+  const { port } = await loopback(t, { assets, runtime: { configured: true, handle: async () => { calls++; return json({}); } } });
+  assert.equal(CLOUD_ADMIN_PAGE_ALIASES.length, 13);
+  for (const [path, source] of CLOUD_ADMIN_PAGE_ALIASES) {
+    const canonical = await send(port, source), page = await send(port, path);
+    assert.equal(page.status, 200, path); secure(page);
+    assert.deepEqual(page.body, canonical.body, path);
+    for (const name of ['content-type', 'content-length', 'content-security-policy', 'cache-control', 'referrer-policy', 'x-frame-options']) {
+      assert.equal(page.headers[name], canonical.headers[name], path + ': ' + name);
+    }
+    const head = await send(port, path, { method: 'HEAD' });
+    assert.equal(head.status, 200, path); assert.equal(head.body.length, 0);
+    assert.equal(head.headers['content-length'], canonical.headers['content-length']);
+    assert.equal(head.headers['content-security-policy'], canonical.headers['content-security-policy']);
+    for (const method of ['GET', 'HEAD']) {
+      const redirect = await send(port, path.slice(0, -1), { method });
+      assert.equal(redirect.status, 308); assert.equal(redirect.headers.location, path);
+      assert.equal(redirect.body.length, 0); secure(redirect);
+    }
+    assert.equal(isCloudAdminAssetUrl(path), false, 'request aliases are not new manifest assets');
+    assert.throws(() => createCloudContentServer({ runtime: { configured: true, handle: async () => json({}) }, assets: new Map([[path, Buffer.from('untrusted alias HTML')]]) }), TypeError);
+  }
+  assert.equal(assets.size, count, 'aliasing does not expand the supplied asset map');
+  assert.equal(calls, 0, 'navigating to a subpage never enters the API');
+  const missing = await loopback(t, { assets: new Map(), runtime: { configured: true, handle: async () => { calls++; return json({}); } } });
+  assert.equal((await send(missing.port, '/admin/content/guests/')).status, 404, 'an alias cannot invent missing trusted HTML');
+  assert.equal(calls, 0);
+});
+
+test('admin subpage aliases retain exact query, path, method, Host and configured-state boundaries', async t => {
+  let calls = 0;
+  const { port } = await loopback(t, { runtime: { configured: true, handle: async () => { calls++; return json({}); } } });
+  const closed = await loopback(t, { runtime: { configured: false, handle: async () => { calls++; return json({}); } } });
+  for (const [path] of CLOUD_ADMIN_PAGE_ALIASES) {
+    for (const target of [path + '?private=PRIVATE-SYNTHETIC', path.slice(0, -1) + '?private=PRIVATE-SYNTHETIC', path + 'nested/']) {
+      const response = await send(port, target);
+      assert.equal(response.status, 404, target); secure(response);
+      assert.equal(response.headers.location, undefined);
+      assert.equal(response.text.includes('PRIVATE-'), false);
+    }
+    assert.equal((await send(port, path, { method: 'POST', body: 'PRIVATE-SYNTHETIC' })).status, 405);
+    assert.equal((await send(port, path, { headers: { host: 'example.invalid', 'x-forwarded-host': HOST } })).status, 421);
+    for (const target of [path, path.slice(0, -1)]) {
+      const response = await send(closed.port, target);
+      assert.equal(response.status, 503, target); secure(response);
+      assert.equal(response.headers.location, undefined);
+      assert.equal(response.text.includes('合成'), false);
+    }
+  }
+  for (const path of ['/admin/content/', '/admin/content', '/admin/content/unknown/', '/admin/content/event/index.html', '/admin/content/%67uests/', '/admin/settings/overview/', '/admin/settings/recovery/', '/admin/settings/accounts-extra/']) {
+    assert.equal((await send(port, path)).status, 404, path);
+  }
+  assert.equal(calls, 0);
 });
 
 test('exact application Host and fixed HTTPS origin cannot be overridden with proxy headers or absolute targets', async t => {

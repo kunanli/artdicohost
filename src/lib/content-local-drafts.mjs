@@ -6,17 +6,19 @@ const plain = value => value !== null && typeof value === 'object' && !Array.isA
 const exact = (value, keys) => plain(value) && Object.keys(value).every(key => keys.includes(key));
 const text = (value, max = 10000) => typeof value === 'string' && value.isWellFormed() && value.length <= max && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value);
 const ids = value => Array.isArray(value) && value.length <= 50 && value.every(item => typeof item === 'string' && ID.test(item)) && new Set(value).size === value.length;
+export const CONTENT_DRAFT_SECTIONS = Object.freeze(['overview','event','arrangements','guests','organizations','showcases','sessions','booths','publish']);
+const formSections = Object.freeze({event:'event',guest:'guests',organization:'organizations',showcase:'showcases',session:'sessions',booth:'booths',planner:'arrangements'});
 export const CONTENT_FORM_FIELDS = Object.freeze({
   event: ['title','date','timezone','venue','status','dateStatus','venueStatus','heroDescription','aboutTitle','aboutText','checkInTime','openingTime','endTime','contactEmail','mapUrl'],
   session: ['id','start','end','zone','title','format','speakerName','speakerStatus','guestId','status','internalNotes'],
-  booth: ['id','code','organization','organizationId','project','zone','slotNumber','contactName','contactMethods','description','status','internalNotes'],
+  booth: ['id','code','organization','organizationId','project','zone','slotNumber','contactName','contactMethods','description','website','status','internalNotes'],
   guest: ['id','name','company','ggjRole','portraitId','contactId','title','bio','website','status','internalNotes','publicConsent','publicRoles'],
   showcase: ['id','title','teamName','school','contactName','email','wechat','memberCount','participationForms','responseStatus','materialLinks','summary','coverId','status','publicConsent','sessionId','boothId','internalNotes'],
   organization: ['id','name','logoId','website','participation','status','publicConsent','internalNotes'],
   plannerBooth: ['code','organization','organizationId','project','contactName','contactMethods','description','status'],
 });
 const arrays = new Set(['publicRoles','participationForms']);
-/** Deliberately keeps incomplete text. Only an explicit apply validates business fields. */
+/** Deliberately keeps incomplete text. Only an explicit save validates business fields. */
 export function contentFormValue(type, input) {
   if (!CONTENT_FORM_FIELDS[type] || !exact(input, CONTENT_FORM_FIELDS[type])) return null;
   const result = {};
@@ -53,7 +55,9 @@ export function writeContentForm(form, type, value) {
   }
 }
 export function contentLocalDraftValue(value, { kind } = {}) {
-  if (!exact(value, ['schemaVersion','roleKey','content','forms','pendingSave']) || value.schemaVersion !== 1 || !text(value.roleKey, 500)
+  if (!exact(value, ['schemaVersion','roleKey','content','forms','pendingSave','section','uncertain']) || value.schemaVersion !== 1 || !text(value.roleKey, 500)
+    || Object.hasOwn(value,'section') && !CONTENT_DRAFT_SECTIONS.includes(value.section)
+    || Object.hasOwn(value,'uncertain') && typeof value.uncertain !== 'boolean'
     || !exact(value.forms, [...Object.keys(CONTENT_FORM_FIELDS).filter(key => key !== 'plannerBooth'), 'planner'])) return false;
   const checked = validateContent(value.content); if (!checked.valid || JSON.stringify(checked.value) !== JSON.stringify(value.content)) return false;
   if (['session','booth','guest','showcase','organization'].filter(type => Object.hasOwn(value.forms, type)).length > 1) return false;
@@ -81,12 +85,26 @@ export function contentLocalDraftValue(value, { kind } = {}) {
   }
   return true;
 }
+/** Legacy snapshots still contain the whole workspace, even when one raw form identifies where to resume. */
+export function contentDraftLocation(value) {
+  if (!contentLocalDraftValue(value,{kind:value?.pendingSave?'pending_submission':'editing'})) return null;
+  const legacy=!Object.hasOwn(value,'section'),sections=[...new Set(Object.keys(formSections).filter(type=>Object.hasOwn(value.forms,type)).map(type=>formSections[type]))];
+  if(!sections.length&&!legacy)sections.push(value.section);
+  return {section:sections.length===1?sections[0]:null,sections,legacy,
+    requiresReview:legacy||sections.length!==1||sections.some(section=>section!==value.section)};
+}
+/** Only the controller's first definitive rejection can use this atomic transition. Restored attempts remain unknown. */
+function rejectContentPending(value) {
+  if(value?.uncertain!==false||!contentLocalDraftValue(value,{kind:'pending_submission'}))return false;
+  const {uncertain,pendingSave,...editing}=value;
+  return {...editing,pendingSave:null};
+}
 export const CONTENT_DRAFT_POLICY = Object.freeze({
-  fields: ['schemaVersion','roleKey','content','forms','pendingSave'], pendingFields: ['pendingSave'], jsonFields: ['content','forms','pendingSave'],
-  validate: contentLocalDraftValue,
+  fields: ['schemaVersion','roleKey','content','forms','pendingSave','section','uncertain'], pendingFields: ['pendingSave'], jsonFields: ['content','forms','pendingSave'],
+  validate: contentLocalDraftValue,rejectPending:rejectContentPending,
 });
 /** Copy is deliberately a form/content whitelist, never an auth or image envelope. */
 export function contentDraftCopy(value) {
   if (!contentLocalDraftValue(value, {kind: value?.pendingSave ? 'pending_submission' : 'editing'})) throw new Error('暂存内容无法核对，未复制。');
-  return JSON.stringify({ eventId: value.content.eventId, content: value.content, unappliedForms: value.forms }, null, 2);
+  return JSON.stringify({ eventId: value.content.eventId, ...(Object.hasOwn(value,'section')?{section:value.section}:{}), content: value.content, unappliedForms: value.forms }, null, 2);
 }

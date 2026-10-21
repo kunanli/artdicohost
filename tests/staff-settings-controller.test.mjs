@@ -6,7 +6,7 @@ globalThis.document={createElement:()=>({append(){},addEventListener(){},dataset
 
 // A small DOM stand-in lets the regression control file/read completion order.
 // No real records, images, credentials, browser storage or HTTP are involved.
-function fixture(request){
+function fixture(request,options={}){
   const nodes=new Map(),events=[];
   const get=selector=>{
     if(!nodes.has(selector)){
@@ -22,12 +22,27 @@ function fixture(request){
     return nodes.get(selector);
   };
   const root={hidden:true,querySelector:get,querySelectorAll:selector=>selector==='form'?['user','group','restore'].map(kind=>get(`[data-${kind}-form]`)):[],dispatchEvent:event=>events.push(event)};
-  const controller=createStaffSettings({root,request,binaryRequest:()=>{throw new Error('unexpected binary call');}});
+  const controller=createStaffSettings({root,request,binaryRequest:()=>{throw new Error('unexpected binary call');},...options});
   return {controller,get,events};
 }
 const account=id=>({id,roles:['superadmin']});
 const group=revision=>({revision,configured:false,expired:true,expiresAt:null});
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+
+test('group subpage initializes only group state even for a superadmin',async()=>{
+  const calls=[];const f=fixture(async path=>{calls.push(path);return group(0);},{section:'group'});
+  await f.controller.configure(account('owner'));
+  assert.deepEqual(calls,['/api/admin/group-invite']);
+});
+
+test('accounts subpage preserves account gates without loading group images',async()=>{
+  for(const roles of [['superadmin'],['editor','publisher','outreach','reviewer']]){
+    const calls=[];const f=fixture(async path=>{calls.push(path);return path.endsWith('/users')?directory:{enabled:false};},{section:'accounts'});
+    await f.controller.configure({id:'synthetic',roles});
+    assert.deepEqual(calls,roles.includes('superadmin')?['/api/admin/users','/api/admin/maintenance']:[]);
+  }
+  assert.throws(()=>fixture(async()=>{}, {section:'unknown'}),TypeError);
+});
 
 test('an old file upload cannot submit using a newly authenticated account',async()=>{
   const writes=[];let release;

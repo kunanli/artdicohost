@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {readFile,mkdir} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {createInitialContent} from '../../src/config/content.mjs';
 import {normalizePortraitBytes} from '../../shared/portrait-codec.mjs';
@@ -16,6 +16,9 @@ const seed=normalizePortraitBytes(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADC
 const seedId=createHash('sha256').update(seed).digest('hex')+'.png';
 const errors=[],reports=[];
 const json=(body,status=200)=>({status,contentType:'application/json',body:JSON.stringify(body)});
+const actualSource=resolve(process.env.ARTDICO_SOURCE_DIRECTORY||project);
+const {CLOUD_ADMIN_PAGE_ALIASES}=await import(pathToFileURL(resolve(actualSource,'functions/cloud-content/http-server.mjs')));
+const pageAliases=new Map(CLOUD_ADMIN_PAGE_ALIASES);
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 
 async function fixture({width=1280,mode='normal'}={}){
@@ -69,7 +72,7 @@ async function fixture({width=1280,mode='normal'}={}){
       if(path.startsWith('/api/admin/portraits/')){const image=images.get(path.split('/').at(-1));return route.fulfill(image?{status:200,contentType:image.type,body:image.bytes}:{status:404,body:''});}
       throw new Error('Unimplemented synthetic API: '+path);
     }
-    const file=resolve(dist,'.'+(path.endsWith('/')?path+'index.html':path));assert.ok(file.startsWith(dist+'/'));
+    const served=pageAliases.get(path)||path;const file=resolve(dist,'.'+(served.endsWith('/')?served+'index.html':served));assert.ok(file.startsWith(dist+'/'));
     return route.fulfill({status:200,body:await readFile(file),contentType:({html:'text/html',js:'text/javascript',css:'text/css',png:'image/png',jpg:'image/jpeg',svg:'image/svg+xml',webp:'image/webp',woff2:'font/woff2'})[extname(file).slice(1)]||'application/octet-stream'});
   });
   if(mode==='late-401-ignore-abort')await context.addInitScript(()=>{
@@ -81,7 +84,7 @@ async function fixture({width=1280,mode='normal'}={}){
       return original(input,options);
     };
   });
-  await page.goto(SITE+'/admin/',{waitUntil:'networkidle'});await page.locator('[data-admin-workspace]:visible').waitFor();
+  await page.goto(SITE+'/admin/content/guests/',{waitUntil:'networkidle'});await page.locator('[data-admin-workspace]:visible').waitFor();
   return {page,context,uploads,writes,content,dialogEvents,setDismissConfirm:value=>{dismissConfirm=value;},release:async()=>{assert.ok(releaseUpload,'the held upload must exist');releaseUpload();await lateDone;}};
 }
 
@@ -89,7 +92,7 @@ const config={
   guest:{open:'[data-admin-guests] tr:first-child button:first-child',form:'[data-guest-form]',file:'[data-guest-portrait-file]',host:'[data-guest-image-editor]',id:'portraitId',status:'[data-guest-portrait-status]',error:'[data-guest-error]',retry:'[data-guest-portrait-retry]',close:'[data-guest-dialog] [data-close-dialog=guest]'},
   organization:{open:'[data-organization-action=edit]',form:'[data-organization-form]',file:'[data-organization-image]',host:'[data-organization-image-editor]',id:'logoId',status:'[data-organization-image-status]',error:'[data-organization-error]',retry:'[data-organization-image-retry]',close:'[data-organization-dialog] [data-organization-close]'},
 };
-async function open(f,kind){const c=config[kind];await f.page.locator(c.open).first().click();await f.page.locator(c.form).waitFor({state:'visible'});return f.page.locator(c.form);}
+async function open(f,kind){const target='/admin/content/'+(kind==='guest'?'guests':'organizations')+'/';if(new URL(f.page.url()).pathname!==target){await f.page.goto(SITE+target,{waitUntil:'networkidle'});await f.page.locator('[data-admin-workspace]:visible').waitFor();}const c=config[kind];await f.page.locator(c.open).first().click();await f.page.locator(c.form).waitFor({state:'visible'});return f.page.locator(c.form);}
 async function choose(f,kind,pattern='gradient'){
   const selector=config[kind].file;
   await f.page.evaluate(async({selector,pattern})=>{
@@ -165,8 +168,9 @@ try{
   assert.ok(await mobile.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await mobile.page.screenshot({path:resolve(evidence,'staff-image-editor-mobile.png')});
   await editor.locator('[data-image-editor-cancel]').click();assert.equal(mobile.uploads.length,0);await mobile.context.close();reports.push({mobileTouchMovesPixels:true,mobileNoHorizontalOverflow:true,touchCancelDoesNotUpload:true});
 
-  const encoding=await fixture({mode:'delayed-encode'}),encodingForm=await open(encoding,'guest');editor=await choose(encoding,'guest');
-  await encodingForm.locator('[name=name]').fill('合成取消编码仍保留');await editor.locator('[data-image-editor-apply]').click();await encoding.page.waitForFunction(()=>window.syntheticImageEncode.ready);
+  const encoding=await fixture({mode:'delayed-encode'}),encodingForm=await open(encoding,'guest');
+  await encodingForm.locator('[name=name]').fill('合成取消编码仍保留');editor=await choose(encoding,'guest');
+  await editor.locator('[data-image-editor-apply]').click();await encoding.page.waitForFunction(()=>window.syntheticImageEncode.ready);
   await editor.locator('[data-image-editor-cancel]').click();await encoding.page.evaluate(()=>window.syntheticImageEncode.release());await encoding.page.waitForTimeout(50);
   assert.equal(encoding.uploads.length,0);assert.equal(await encodingForm.locator('[name=portraitId]').inputValue(),seedId);assert.equal(await encodingForm.locator('[name=name]').inputValue(),'合成取消编码仍保留');await encoding.context.close();reports.push({lateEncodedPixelsDiscardedAfterCancel:true});
 

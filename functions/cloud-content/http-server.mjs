@@ -6,6 +6,19 @@ import { acceptanceHealthProof } from './acceptance.mjs';
 
 const SECURITY = { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' };
 const MIME = { '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.woff': 'font/woff', '.woff2': 'font/woff2' };
+// Request aliases share already verified HTML. They are not additional trusted
+// release assets, so the existing file, asset and byte budgets stay unchanged.
+export const CLOUD_ADMIN_PAGE_ALIASES = Object.freeze([
+  ...['overview', 'event', 'arrangements', 'guests', 'organizations', 'showcases', 'sessions', 'booths', 'publish']
+    .map(key => Object.freeze(['/admin/content/' + key + '/', '/admin/'])),
+  ...['delivery', 'group', 'invitations', 'accounts']
+    .map(key => Object.freeze(['/admin/settings/' + key + '/', '/admin/settings/'])),
+]);
+const PAGE_ALIASES = new Map(CLOUD_ADMIN_PAGE_ALIASES);
+const PAGE_REDIRECTS = new Map([
+  '/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/',
+  ...PAGE_ALIASES.keys(),
+].map(path => [path.slice(0, -1), path]));
 
 export function isCloudAdminAssetUrl(path) {
   return ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/invitations/template-blank.png', '/invitations/ggj2026-poster-v2.webp'].includes(path)
@@ -74,8 +87,9 @@ export function createCloudContentServer({ runtime, sourceCommit = null, assets 
       if (!url.pathname.startsWith('/api/')) {
         if (!runtime.configured) return fixedError(outgoing, 503, 'CONTENT_NOT_READY', '云端内容后台尚未开放。');
         if (!['GET', 'HEAD'].includes(method)) return fixedError(outgoing, 405, 'METHOD_NOT_ALLOWED', '页面只接受读取。');
-        if (['/admin', '/admin/contacts', '/admin/registrations', '/admin/tasks', '/admin/settings', '/admin/person', '/admin/volunteers'].includes(url.pathname) && !url.search) { outgoing.writeHead(308, { ...SECURITY, location: url.pathname + '/' }); outgoing.end(); return; }
-        const file = !url.search && knownAssets.get(url.pathname);
+        const redirect = !url.search && PAGE_REDIRECTS.get(url.pathname);
+        if (redirect) { outgoing.writeHead(308, { ...SECURITY, location: redirect }); outgoing.end(); return; }
+        const file = !url.search && knownAssets.get(PAGE_ALIASES.get(url.pathname) ?? url.pathname);
         if (!file) return fixedError(outgoing, 404, 'NOT_FOUND', '页面不存在。');
         outgoing.writeHead(200, file.headers); outgoing.end(method === 'HEAD' ? undefined : file.data); return;
       }

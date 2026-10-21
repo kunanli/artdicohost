@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, dirname, basename } from 'node:path';
-import { prepareOssSite, referencedAssets, validatePublicPath, sha256 } from '../scripts/prepare-oss-site.mjs';
+import { prepareOssSite, referencedAssets, validatePublicPath, sha256, PUBLIC_ADMIN_PAGE_ALIASES } from '../scripts/prepare-oss-site.mjs';
+import { CLOUD_ADMIN_PAGE_ALIASES } from '../functions/cloud-content/http-server.mjs';
 import { requireDeploymentContext, verifyPublication, deploy, putObjectArgs, uploadOrder, contentType, assertCurrentMainHead } from '../scripts/deploy-oss.mjs';
 
 const commit = 'a'.repeat(40);
@@ -27,6 +28,10 @@ async function fixture(t) {
   await writeFile(resolve(dist, 'admin/settings/index.html'), 'private-settings-form');
   await writeFile(resolve(dist, 'admin/person/index.html'), 'private-person-workspace');
   await writeFile(resolve(dist, 'admin/volunteers/index.html'), 'private-volunteer-workspace');
+  for (const route of PUBLIC_ADMIN_PAGE_ALIASES) {
+    await mkdir(resolve(dist, route.slice(1)), { recursive: true });
+    await writeFile(resolve(dist, route.slice(1), 'index.html'), '<form>PRIVATE-SYNTHETIC-ADMIN-SUBPAGE</form><script src="/_astro/private.hash.js"></script>');
+  }
   await writeFile(resolve(dist, 'invitation/index.html'), '<h1>图片邀请函</h1>');
   await writeFile(resolve(dist, 'registration/confirmation/index.html'), '<h1>报名确认</h1><script type="module" src="/_astro/receipt.hash.js"></script>');
   await writeFile(resolve(dist, '_astro/receipt.hash.js'), '/* Synthetic empty receipt controller; no participant data. */');
@@ -39,7 +44,7 @@ async function fixture(t) {
 test('publication selects reachable public assets and replaces local admin with notices', async t => {
   const { dist, output } = await fixture(t);
   const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
-  assert.equal(manifest.files.length, 17);
+  assert.equal(manifest.files.length, 30);
   const receipt = JSON.parse(await readFile(resolve(output, 'release.json'), 'utf8'));
   assert.equal(receipt.commit, commit);
   assert.deepEqual(receipt.files, manifest.files.filter(item => item.path !== 'release.json'));
@@ -61,6 +66,43 @@ test('publication selects reachable public assets and replaces local admin with 
   await assert.rejects(prepareOssSite({ distDirectory: dist, outputDirectory: output, commit }), /must be empty/);
 });
 
+test('each fixed admin subpage publishes its exact cloud-entry notice without its generated form or script closure', async t => {
+  const { dist, output } = await fixture(t);
+  const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
+  assert.deepEqual(PUBLIC_ADMIN_PAGE_ALIASES, CLOUD_ADMIN_PAGE_ALIASES.map(([path]) => path));
+  for (const route of PUBLIC_ADMIN_PAGE_ALIASES) {
+    const path = route.slice(1) + 'index.html';
+    assert.ok(manifest.files.some(item => item.path === path), path);
+    assert.equal(validatePublicPath(path), path);
+    const page = await readFile(resolve(output, path), 'utf8');
+    const targets = [...page.matchAll(/<a href="([^"]+)"/gu)].map(match => match[1]);
+    assert.deepEqual(targets, ['https://api.artdico.host' + route], path);
+    assert.match(page, /工作人员后台入口/u);
+    assert.doesNotMatch(page, /<form|<script|PRIVATE-|private\.hash\.js|data-admin-/iu);
+  }
+  assert.equal(manifest.files.some(item => item.path === '_astro/private.hash.js'), false);
+  // Legacy links still enter the same cloud workspace; fragment routing remains
+  // browser-side and never becomes a public query or a persisted notice value.
+  const legacy = await readFile(resolve(output, 'admin/index.html'), 'utf8');
+  assert.match(legacy, /href="https:\/\/api\.artdico\.host\/admin\/"/u);
+  assert.doesNotMatch(legacy, /invitee=|organization=|booth=|<script/iu);
+  assert.equal((await verifyPublication(output, commit)).files.length, manifest.files.length);
+});
+
+test('a coherent publication still fails before upload if a required admin subpage notice is omitted', async t => {
+  const { dist, output } = await fixture(t);
+  const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
+  const path = 'admin/content/publish/index.html';
+  await rm(resolve(output, path));
+  manifest.files = manifest.files.filter(item => item.path !== path);
+  const receipt = { schemaVersion: 1, commit, files: manifest.files.filter(item => item.path !== 'release.json') };
+  const bytes = Buffer.from(JSON.stringify(receipt));
+  await writeFile(resolve(output, 'release.json'), bytes);
+  Object.assign(manifest.files.find(item => item.path === 'release.json'), { bytes: bytes.length, sha256: sha256(bytes) });
+  await writeFile(resolve(output, 'publication-manifest.json'), JSON.stringify(manifest));
+  await assert.rejects(verifyPublication(output, commit), /Required public route missing/);
+});
+
 test('publication rejects added files, corrupt content and a mismatched commit before uploading', async t => {
   const { dist, output } = await fixture(t);
   await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
@@ -73,7 +115,7 @@ test('publication rejects added files, corrupt content and a mismatched commit b
 });
 
 test('path validation rejects private names, traversal, encoded extensions and unexpected routes', () => {
-  for (const path of ['../index.html', '/index.html', '_astro/../index.html', '.env', 'contacts.json', 'data.xlsx', 'backup.html', 'private/index.html', '_astro/x.map', '_astro/x%2ejs']) assert.throws(() => validatePublicPath(path));
+  for (const path of ['../index.html', '/index.html', '_astro/../index.html', '.env', 'contacts.json', 'data.xlsx', 'backup.html', 'private/index.html', '_astro/x.map', '_astro/x%2ejs', 'admin/content/index.html', 'admin/content/unknown/index.html', 'admin/content/guests/private/index.html', 'admin/content/%67uests/index.html', 'admin/settings/recovery/index.html', 'admin/settings/accounts/index.html?private=1']) assert.throws(() => validatePublicPath(path));
   assert.equal(validatePublicPath('admin/contacts/index.html'), 'admin/contacts/index.html');
   assert.equal(validatePublicPath('admin/settings/index.html'), 'admin/settings/index.html');
   assert.equal(validatePublicPath('admin/person/index.html'), 'admin/person/index.html');

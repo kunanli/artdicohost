@@ -2,7 +2,7 @@ import { readFile, readdir, lstat, appendFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { sha256, validatePublicPath, MAX_FILE_BYTES } from './prepare-oss-site.mjs';
+import { sha256, validatePublicPath, MAX_FILE_BYTES, PUBLIC_ADMIN_PAGE_ALIASES } from './prepare-oss-site.mjs';
 
 export const OSS_BUCKET = 'artdicohost-web-hk';
 export const OSS_ENDPOINT = 'https://oss-cn-hongkong.aliyuncs.com';
@@ -43,7 +43,8 @@ export async function verifyPublication(directory, expectedCommit) {
     const stat = await lstat(resolve(directory, item.path));
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_FILE_BYTES || stat.size !== item.bytes || sha256(await readFile(resolve(directory, item.path))) !== item.sha256) throw new Error('Publication checksum mismatch');
   }
-  for (const path of ['index.html', '404.html', 'invitation/index.html', 'registration/confirmation/index.html', 'admin/index.html', 'admin/contacts/index.html', 'invitations/template-blank.png', 'invitations/ggj2026-poster-v2.webp', 'release.json']) if (!expected.includes(path)) throw new Error('Required public route missing');
+  for (const path of ['index.html', '404.html', 'invitation/index.html', 'registration/confirmation/index.html', 'admin/index.html', 'admin/contacts/index.html', 'invitations/template-blank.png', 'invitations/ggj2026-poster-v2.webp', 'release.json',
+    ...PUBLIC_ADMIN_PAGE_ALIASES.map(route => route.slice(1) + 'index.html')]) if (!expected.includes(path)) throw new Error('Required public route missing');
   const release = JSON.parse(await readFile(resolve(directory, 'release.json'), 'utf8'));
   if (release.schemaVersion !== 1 || release.commit !== expectedCommit || JSON.stringify(release.files) !== JSON.stringify(manifest.files.filter(item => item.path !== 'release.json'))) throw new Error('Public release receipt differs from publication');
   return manifest;

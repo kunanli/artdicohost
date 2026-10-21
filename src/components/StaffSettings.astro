@@ -5,12 +5,15 @@ const roles=[['editor','公开内容编辑'],['publisher','公开内容发布'],
   <div class="ah-admin-page-heading"><div><h2 id="staff-settings-title">活动工作设置</h2><p>群码、账号与备份分别保存。</p></div></div>
   <p class="ah-admin-alert" data-settings-error role="alert" tabindex="-1" hidden></p><p class="ah-admin-status" data-settings-status role="status" aria-live="polite"></p>
   <p class="ah-admin-alert" data-settings-pending role="status" hidden></p>
+  <div data-settings-panel="group" hidden>
   <section class="ah-admin-panel settings-panel">
     <div class="ah-admin-section-heading"><div><h2 id="group-settings-title">活动微信群入口</h2><p>仅向名额已确认的参与者提供。替换后旧入口失效，过期不会自动延长。</p></div><button class="ah-admin-button" type="button" data-group-refresh>刷新群码状态</button></div>
     <div class="settings-form"><p data-group-status>群码状态尚未载入。</p><img class="settings-qr" data-group-image hidden alt="当前受保护的微信群入群二维码" />
-      <form data-group-form><div class="ah-admin-field"><label for="group-image-file">新二维码原图</label><input id="group-image-file" name="image" type="file" accept="image/png,image/jpeg,image/webp" required /><small>PNG、JPEG 或 WebP，最多 512 KiB。保持二维码完整，不将原图放进仓库或公开静态目录。</small></div><div class="ah-admin-field"><label for="group-expires">新图到期时间 · 台北 / 北京时间（UTC+8）</label><input id="group-expires" name="expiresAt" type="datetime-local" required /><small>填写图上标示并核对的准确时间，最多未来 7 天。不要沿用旧日期或猜测有效期。</small></div><div class="contacts-action-row"><button class="ah-admin-button ah-admin-primary" type="submit">上传并替换当前二维码</button><button class="ah-admin-button" type="button" data-group-disable>关闭入群图片</button></div></form>
+      <form data-group-form><div class="ah-admin-field"><label for="group-image-file">新二维码原图</label><input id="group-image-file" name="image" type="file" accept="image/png,image/jpeg,image/webp" required /><small>PNG、JPEG 或 WebP，最多 512 KiB；请保持二维码完整。</small></div><div class="ah-admin-field"><label for="group-expires">到期时间 · 北京时间（UTC+8）</label><input id="group-expires" name="expiresAt" type="datetime-local" required /><small>填写核对后的准确时间，最多未来 7 天。</small></div><div class="contacts-action-row"><button class="ah-admin-button ah-admin-primary" type="submit">上传并替换当前二维码</button><button class="ah-admin-button" type="button" data-group-disable>关闭入群图片</button></div></form>
     </div>
   </section>
+  </div>
+  <div data-settings-panel="accounts" hidden>
   <section class="ah-admin-panel settings-panel" data-settings-accounts hidden>
     <div class="ah-admin-section-heading"><div><h2 id="staff-accounts-title">工作人员账号</h2><p>仅管理员可新增与停用账号。协作者预设不含账号和备份权限。</p></div><button class="ah-admin-button" type="button" data-users-refresh>刷新账号</button></div>
     <div class="settings-account-shortcuts"><button type="button" class="ah-admin-button" data-user-prefill="zhouyufei">准备 zhouyufei</button><button type="button" class="ah-admin-button" data-user-prefill="wangying">准备 wangying</button><p class="ah-admin-small">仅填表；保存后才会建立账号。</p></div>
@@ -34,4 +37,5 @@ const roles=[['editor','公开内容编辑'],['publisher','公开内容发布'],
     </div>
   </section>
   </details>
+  </div>
 </section>

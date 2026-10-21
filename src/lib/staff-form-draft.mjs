@@ -8,7 +8,7 @@ export function createStaffFormDraft({ store, scope, policy, baseRevision, isCur
   if (!store || !['read', 'write', 'remove', 'subscribe'].every(key => typeof store[key] === 'function')
     || ![isCurrent, capture, apply, onState].every(value => typeof value === 'function')
     || !Number.isSafeInteger(delayMs) || delayMs < 0 || delayMs > 5000) throw new BrowserDraftError('INVALID');
-  let current = null, loaded = false, loading = null, blocked = false, closed = false, epoch = 0, timer = null, writing = false, conflictEpoch = 0;
+  let current = null, loaded = false, loading = null, blocked = false, completionAllowed = false, closed = false, epoch = 0, timer = null, writing = false, conflictEpoch = 0;
   let changeVersion = 0, settledVersion = 0;
   let queue = Promise.resolve();
   const clone = value => structuredClone(value);
@@ -26,19 +26,19 @@ export function createStaffFormDraft({ store, scope, policy, baseRevision, isCur
   function assertCurrent(generation) { if (!active(generation)) throw new BrowserDraftError('STALE_ACTOR'); }
   function problem(error) {
     const value = error instanceof BrowserDraftError ? error : new BrowserDraftError();
-    if (['CONFLICT', 'STALE_ACTOR', 'PENDING_IMMUTABLE'].includes(value.code)) { conflictEpoch++; blocked = true; clearTimeout(timer); timer = null; emit('conflict', value); }
+    if (['CONFLICT', 'STALE_ACTOR', 'PENDING_IMMUTABLE'].includes(value.code)) { conflictEpoch++; blocked = true; completionAllowed = false; clearTimeout(timer); timer = null; emit('conflict', value); }
     else emit('unavailable', value);
     return value;
   }
   const unsubscribe = store.subscribe(scope, event => {
     if (closed) return;
     if (event.type === 'actor_cleared' || current && event.actorEpoch !== current.actorEpoch) {
-      epoch++; conflictEpoch++; blocked = true; clearTimeout(timer); timer = null; current = null;
+      epoch++; conflictEpoch++; blocked = true; completionAllowed = false; clearTimeout(timer); timer = null; current = null;
       emit('conflict', new BrowserDraftError('STALE_ACTOR')); closed = true; unsubscribe(); removeLifecycle(); return;
     }
     if (!loaded || !current) return;
     if (event.revision !== current.revision && !(writing && event.revision === current.revision + 1)) {
-      conflictEpoch++; blocked = true; clearTimeout(timer); timer = null; emit('conflict', new BrowserDraftError('CONFLICT'));
+      conflictEpoch++; blocked = true; completionAllowed = false; clearTimeout(timer); timer = null; emit('conflict', new BrowserDraftError('CONFLICT'));
     }
   });
   async function load() {
@@ -76,12 +76,12 @@ export function createStaffFormDraft({ store, scope, policy, baseRevision, isCur
           const observed = await store.read(scope, policy); assertCurrent(generation);
           if (observed.actorEpoch !== current.actorEpoch || observed.revision !== current.revision) throw new BrowserDraftError('CONFLICT');
           current = observed;
-          if (!current.record) { blocked = false; emit('empty'); return clone(current); }
+          if (!current.record) { blocked = false; completionAllowed = false; emit('empty'); return clone(current); }
           if (!pendingOnly && current.record.baseRevision !== base()) throw new BrowserDraftError('CONFLICT');
           const restoreConflict = conflictEpoch;
           await apply(clone(current.record.value), { pendingOnly }); assertCurrent(generation);
           if (conflictEpoch !== restoreConflict) throw new BrowserDraftError('CONFLICT');
-          blocked = pendingOnly; emit(pendingOnly ? 'pending' : 'restored');
+          blocked = pendingOnly; completionAllowed = pendingOnly; emit(pendingOnly ? 'pending' : 'restored');
           return clone(current);
         } catch (error) { throw problem(error); }
       });
@@ -122,6 +122,26 @@ export function createStaffFormDraft({ store, scope, policy, baseRevision, isCur
       });
     },
     markPending(value) { return binding.flush({ kind: 'pending_submission', value }); },
+    /** Call only after a proven cloud ACK/readback, with the remaining editable
+     * value and the already advanced cloud base. It never sends a request. */
+    completePending(value) {
+      let remaining,cloudBase;
+      try{remaining=copyBrowserDraftValue(value);cloudBase=base();}catch(error){return Promise.reject(problem(error));}
+      const completedVersion=++changeVersion;clearTimeout(timer);timer=null;emit('saving');
+      return enqueue(async generation=>{
+        try{
+          await load();assertCurrent(generation);
+          if(blocked&&!completionAllowed)throw new BrowserDraftError('CONFLICT');
+          if(base()!==cloudBase)throw new BrowserDraftError('CONFLICT');
+          if(typeof store.completePending!=='function')throw new BrowserDraftError('INVALID');
+          const completeConflict=conflictEpoch;writing=true;
+          const saved=await store.completePending(scope,{expectedRevision:current.revision,actorEpoch:current.actorEpoch,baseRevision:cloudBase,value:remaining},policy);
+          assertCurrent(generation);if(conflictEpoch!==completeConflict||base()!==cloudBase)throw new BrowserDraftError('CONFLICT');
+          current=saved;blocked=false;completionAllowed=false;settledVersion=Math.max(settledVersion,completedVersion);
+          emit(binding.unsettled?'saving':'saved');return clone(current);
+        }catch(error){throw problem(error);}finally{writing=false;}
+      });
+    },
     rejectPending() {
       clearTimeout(timer); timer = null;
       return enqueue(async generation => {

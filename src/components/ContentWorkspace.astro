@@ -1,0 +1,215 @@
+---
+import StaffNavigation from './StaffNavigation.astro';
+import SiteLayout from '../layouts/SiteLayout.astro';
+import ArrangementPlanner from './ArrangementPlanner.astro';
+import StaffOrganizations from './StaffOrganizations.astro';
+import '../styles/admin.css';
+import '../styles/admin-save-state.css';
+import '../styles/admin-local-drafts.css';
+import '../styles/arrangements.css';
+import '../styles/guests.css';
+
+import { CONTENT_PAGES, contentPageHref } from '../lib/admin-sections.mjs';
+interface Props { section?: string }
+const { section = 'overview' } = Astro.props;
+const page = CONTENT_PAGES.find(item => item.key === section);
+if (!page) throw new TypeError('Unknown content page.');
+---
+<SiteLayout title={page.title + "｜内容管理｜ARTDiCO HOST"} description={page.description}>
+  <div id="artdico-admin" class="ah-admin" data-content-page={page.key}>
+    <header class="ah-admin-header"><a class="ah-admin-brand" href="https://artdico.host">ARTDiCO <span>HOST / STAFF</span></a><nav aria-label="公开活动页面"><a class="ah-admin-back" href="https://artdico.host">查看活动页面 <span aria-hidden="true">↗</span></a></nav></header>
+    <main id="main-content" class="ah-admin-main">
+      <div class="ah-admin-environment" data-admin-environment><span class="ah-admin-dot" aria-hidden="true"></span><p><strong>活动内容</strong>保存与公开发布分别操作。</p></div>
+      <p class="ah-admin-alert" data-admin-error role="alert" tabindex="-1" hidden></p>
+      <p class="ah-admin-status" data-admin-status role="status" aria-live="polite"></p>
+      <section class="ah-admin-login-card" data-admin-login-panel aria-labelledby="login-title">
+        <h1 id="login-title">一起，把现场准备好。</h1><p class="ah-admin-intro">登录后管理嘉宾、活动场次、展位与学生作品。请使用已配置的工作人员账号，身份将由后台实际校验。</p>
+        <form method="post" data-admin-login>
+          <div class="ah-admin-field"><label for="staff-username">用户名或邮箱</label><input id="staff-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="160" placeholder="用户名或 @artdico.co 邮箱" /></div>
+          <div class="ah-admin-field"><label for="staff-password">密码</label><input id="staff-password" name="password" type="password" autocomplete="current-password" required maxlength="1024" /></div>
+          <button class="ah-admin-button ah-admin-primary" type="submit" data-admin-login-submit disabled>登录后台 <span aria-hidden="true">→</span></button>
+        </form>
+        <p class="ah-admin-small">工作人员权限用于嘉宾、场次和展位维护。报名个人资料不在此页展示。</p>
+        <noscript><p class="ah-admin-alert">后台操作需要启用 JavaScript。当前没有登录，也不会提交账号资料。</p></noscript>
+      </section>
+
+      <section class="ah-admin-workspace-layout" data-admin-workspace hidden aria-labelledby="workspace-title">
+        <StaffNavigation current="content" />
+        <div class="ah-admin-workspace-content">
+        <div class="ah-admin-page-heading"><div><nav class="ah-admin-breadcrumb" aria-label="当前位置" data-content-breadcrumb><a href="/admin/">活动与内容</a><span aria-hidden="true">/</span><span data-content-breadcrumb-current>{page.label}</span></nav><h1 id="workspace-title" data-content-page-title>{page.title}</h1><p data-content-page-description>{page.description}</p></div><div class="ah-admin-account"><span data-admin-user></span><small data-admin-role></small><button type="button" class="ah-admin-text-button" data-admin-logout>退出登录</button></div></div>
+        <section data-content-panel="overview" hidden={section !== 'overview'} aria-label="内容工作区概况">
+        <div class="ah-admin-event-card"><div><span class="ah-admin-eyebrow">当前活动</span><strong data-admin-event-title>活动信息加载中</strong></div><p><span data-admin-event-date></span><span data-admin-event-venue></span></p></div>
+        <div class="ah-admin-summary"><article><a href={contentPageHref('guests')}><span>嘉宾资料</span><strong data-admin-guest-count>—</strong><small>确认并获授权后才公开展示</small></a></article><article><a href={contentPageHref('sessions')}><span>活动场次</span><strong data-admin-session-count>—</strong><small>包含各区域草稿与已安排场次</small></a></article><article><a href={contentPageHref('booths')}><span>展位记录</span><strong data-admin-booth-count>—</strong><small>待确认与已确认分别维护</small></a></article><article><a href={contentPageHref('publish')}><span>公开发布</span><strong class="ah-admin-publish-status" data-admin-published-at>尚未载入</strong><small>保存草稿不会自动对外发布</small></a></article></div>
+        <div class="ah-admin-page-grid">{CONTENT_PAGES.filter(item => ['event', 'arrangements', 'organizations', 'showcases'].includes(item.key)).map(item => <a href={item.href}><strong>{item.label}</strong><p>{item.description}</p><span aria-hidden="true">前往管理 →</span></a>)}</div>
+        </section>
+        <p class="ah-admin-small" data-admin-local-status role="status" aria-live="polite"></p>
+        <section class="ah-admin-local-recovery" data-admin-local-recovery hidden aria-label="本机编辑恢复"><p data-admin-local-message role="status"></p><div class="ah-admin-toolbar-actions"><button class="ah-admin-button" type="button" data-admin-local-restore>恢复编辑</button><button class="ah-admin-button" type="button" data-admin-local-copy>复制暂存内容</button><button class="ah-admin-text-button" type="button" data-admin-local-discard>舍弃本机暂存</button></div></section>
+        <textarea class="ah-admin-copy-fallback" data-admin-copy-fallback readonly rows="8" aria-label="可手动复制的填写内容" hidden></textarea>
+        <p class="ah-admin-alert" data-admin-legacy-warning role="status" hidden>已恢复跨页面的历史编辑，请核对后再保存完整草稿。</p>
+
+        <section class="ah-admin-panel" data-content-panel="event" hidden={section !== 'event'} aria-labelledby="event-editor-title">
+          <div class="ah-admin-section-heading"><div><h2 id="event-editor-title">活动基本资料</h2><p>修改后在页底保存。</p></div></div>
+          <form class="ah-admin-event-form" data-event-form>
+            <p class="ah-admin-alert" data-event-error role="alert" tabindex="-1" hidden></p>
+            <div class="ah-admin-field"><label for="event-title">活动名称</label><input id="event-title" name="title" maxlength="200" required /></div>
+            <div class="ah-admin-field-row"><div class="ah-admin-field"><label for="event-date">活动日期</label><input id="event-date" name="date" type="date" required /></div><div class="ah-admin-field"><label for="event-date-status">日期确认</label><select id="event-date-status" name="dateStatus"><option value="tentative">暂定</option><option value="confirmed">已确认</option></select></div><div class="ah-admin-field"><label for="event-timezone">活动时区</label><input id="event-timezone" name="timezone" maxlength="100" required placeholder="Asia/Shanghai" /></div></div>
+            <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="event-venue">场地名称</label><input id="event-venue" name="venue" maxlength="300" required /></div><div class="ah-admin-field"><label for="event-venue-status">场地确认</label><select id="event-venue-status" name="venueStatus"><option value="tentative">暂定</option><option value="confirmed">已确认</option></select></div></div>
+            <div class="ah-admin-field"><label for="event-status">活动状态</label><select id="event-status" name="status"><option value="tentative">暂定</option><option value="confirmed">已确认</option><option value="cancelled">已取消</option></select><small>更改日期或时区后，请到活动场次页核对时间。</small></div>
+            <div class="ah-admin-field-row"><div class="ah-admin-field"><label for="event-checkin">签到开始</label><input id="event-checkin" type="time" name="checkInTime" required /></div><div class="ah-admin-field"><label for="event-opening">正式开场</label><input id="event-opening" type="time" name="openingTime" required /></div><div class="ah-admin-field"><label for="event-end">活动结束</label><input id="event-end" type="time" name="endTime" required /></div></div>
+            <div class="ah-admin-field"><label for="event-description">首页活动短介绍</label><input id="event-description" name="heroDescription" maxlength="300" /></div>
+            <div class="ah-admin-field"><label for="event-about-title">活动介绍标题</label><input id="event-about-title" name="aboutTitle" maxlength="120" /></div>
+            <div class="ah-admin-field"><label for="event-about-text">活动介绍</label><textarea id="event-about-text" name="aboutText" maxlength="4000" rows="4"></textarea></div>
+            <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="event-contact-email">公开联络邮箱（选填）</label><input id="event-contact-email" type="email" name="contactEmail" maxlength="254" /></div><div class="ah-admin-field"><label for="event-map">地图链接（选填）</label><input id="event-map" type="url" name="mapUrl" maxlength="2048" placeholder="https://" /><small>仅填写已核对且不含账号密码的 HTTPS 链接。</small></div></div>
+            <div class="ah-admin-event-faq-heading"><h3>常见问题</h3><button type="button" class="ah-admin-button" data-event-add-faq>新增问题</button></div><div data-event-faq></div>
+            <button class="ah-admin-button" type="submit" data-event-submit disabled hidden>保存</button>
+          </form>
+        </section>
+        <section class="ah-admin-panel ah-arrangements" data-arrangements data-content-panel="arrangements" hidden={section !== 'arrangements'} aria-labelledby="arrangements-title">
+          <div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">THE WHOLE DAY, TOGETHER</span><h2 id="arrangements-title">现场配置总览</h2><p>从十五个展位到各区场次，一起核对参与人、实际回复与学生团队。</p></div><button type="button" class="ah-admin-button" data-arrangements-refresh disabled>刷新已保存安排</button></div>
+          <p class="ah-arrangements-notice" data-arrangements-access>查看人员配置需同时具备活动编辑与人员邀约权限。</p>
+          <p class="ah-arrangements-notice" data-arrangements-status role="status" aria-live="polite"></p>
+          <p class="ah-arrangements-notice ah-arrangements-caution" data-arrangements-dirty hidden>本页有未保存修改；下方总览仍为已保存记录。保存草稿后将重新读取。</p>
+          <p class="ah-arrangements-notice ah-arrangements-caution" data-arrangements-revision-warning hidden>总览内容版本与本页草稿不同。请先保留未保存修改并重新载入页面，再调整安排。</p>
+          <p class="ah-arrangements-notice ah-arrangements-error" data-arrangements-error role="alert" hidden></p>
+          <div data-arrangements-body hidden>
+            <p class="ah-arrangements-meta" data-arrangements-meta></p>
+            <div class="ah-arrangements-summary" aria-label="十五个展位位置统计" data-arrangements-summary></div>
+            <details class="ah-arrangements-warnings" data-arrangements-warnings-panel hidden><summary data-arrangements-warnings-title>需要核对的安排</summary><ul data-arrangements-warnings></ul></details>
+            <details class="ah-arrangements-group" open><summary>十五个展位位置 <small>空位仍待安排，未代表已确认参展</small></summary><div class="ah-arrangements-slots" data-arrangements-slots></div></details>
+            <details class="ah-arrangements-group" data-arrangements-unplaced-panel hidden><summary data-arrangements-unplaced-title>尚未指定位置的展位</summary><div class="ah-arrangements-slots" data-arrangements-unplaced></div></details>
+            <details class="ah-arrangements-group" data-arrangements-cancelled-panel hidden><summary data-arrangements-cancelled-title>已取消的展位记录</summary><div class="ah-arrangements-slots" data-arrangements-cancelled></div></details>
+            <section class="ah-arrangements-program" aria-labelledby="arrangements-program-title">
+              <div class="ah-arrangements-program-heading"><div><h3 id="arrangements-program-title">各区活动与参与人</h3><p>实际回复来自邀约记录；嘉宾资料确认与报名、签到分别维护。</p></div><div><p class="ah-arrangements-people-summary" data-arrangements-people-summary></p><p class="ah-arrangements-people-summary" data-arrangements-student-summary></p><p class="ah-arrangements-people-summary" data-arrangements-formats-summary></p></div></div>
+              <div class="ah-arrangements-filters"><div class="ah-arrangements-zones" role="group" aria-label="筛选活动区域"><button type="button" data-arrangements-zone="A" aria-pressed="true">A · 演讲 / 分享</button><button type="button" data-arrangements-zone="B" aria-pressed="false">B · 工作坊 / 交流</button><button type="button" data-arrangements-zone="workshops" aria-pressed="false">全部工作坊</button><button type="button" data-arrangements-zone="other" aria-pressed="false">其他区域</button></div><label for="arrangements-format">活动形式<select id="arrangements-format" data-arrangements-format><option value="">全部形式</option><option value="talk">演讲</option><option value="workshop">工作坊</option><option value="roundtable">圆桌</option><option value="showcase">作品分享</option><option value="social">交流活动</option><option value="break">休息 / 签到</option><option value="other">待分类 / 其他</option></select></label></div>
+              <details class="ah-arrangements-timeline" open><summary>按时间直接分配人员</summary><p class="ah-admin-small">点击场次打开同页人员分配；不同区域在同一时间轴核对。</p><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="各区场次时间轴"><table><thead><tr><th scope="col">开始</th><th scope="col">A 区</th><th scope="col">B 区</th><th scope="col">C 区</th></tr></thead><tbody data-arrangements-timeline></tbody></table></div></details><p class="ah-arrangements-result" data-arrangements-result role="status" aria-live="polite"></p><div class="ah-arrangements-sessions" data-arrangements-sessions></div>
+            </section>
+          </div>
+          <ArrangementPlanner />
+        </section>
+        <section class="ah-admin-panel" data-content-panel="guests" hidden={section !== 'guests'} aria-labelledby="guests-title"><div class="ah-admin-section-heading"><div><h2 id="guests-title">讲者与嘉宾资料</h2><p>维护姓名、公开职责、机构、简介与照片。内部人员安排和公开授权分别核对，确认后再发布。</p></div><button type="button" class="ah-admin-button" data-admin-add-guest><span aria-hidden="true">＋</span> 新增嘉宾</button></div><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="嘉宾表，可水平滚动"><table><caption class="ah-sr-only">嘉宾头像、姓名、公司、GGJ 职务及公开状态</caption><thead><tr><th scope="col">头像</th><th scope="col">姓名 / 公开职责</th><th scope="col">机构 / 职称</th><th scope="col">GGJ 职务</th><th scope="col">确认与授权</th><th scope="col">操作</th></tr></thead><tbody data-admin-guests></tbody></table></div><p class="ah-admin-empty" data-admin-guests-empty hidden>还没有嘉宾资料。新增后先保存草稿，名单确认并获授权后再发布。</p></section>
+        <div data-content-panel="organizations" hidden={section !== 'organizations'}><StaffOrganizations /></div>
+        <section class="ah-admin-panel" data-content-panel="showcases" hidden={section !== 'showcases'} aria-labelledby="showcases-title">
+          <div class="ah-admin-section-heading"><div><h2 id="showcases-title">学生作品与参与安排</h2><p>一组作品一条记录。基础资料、材料与回复保留在后台；作品图与介绍另行核准发布。</p></div><button type="button" class="ah-admin-button" data-admin-add-showcase><span aria-hidden="true">＋</span> 新增学生作品</button></div>
+          <div class="ah-admin-showcase-summary" aria-label="学生展示筹备统计"><article><span>确认参加</span><strong data-showcase-confirmed-teams>0</strong><small>组作品</small></article><article><span>预计到场学生</span><strong data-showcase-confirmed-students>0</strong><small>按确认组的填报人数，非签到统计</small></article><article><span>已安排分享 / 展位</span><strong data-showcase-assigned-count>0 / 0</strong><small>只统计确认参加且分配有效的组</small></article><article><span>可公开作品</span><strong data-showcase-public-count>0</strong><small>须确认、获授权、有图及有效安排</small></article></div>
+          <div class="ah-admin-showcase-filters"><label for="showcase-filter">回复筛选</label><select id="showcase-filter" data-showcase-filter><option value="">全部记录</option><option value="pending">待回复</option><option value="attending">确认参加</option><option value="declined">不参加</option></select><p data-showcase-result-count role="status" aria-live="polite"></p></div>
+          <div class="ah-admin-showcase-grid" data-admin-showcases></div><p class="ah-admin-empty" data-admin-showcases-empty hidden>还没有学生作品记录。新增资料后，再确认出席、收齐材料并安排展示。</p>
+        </section>
+        <section class="ah-admin-panel" data-content-panel="sessions" hidden={section !== 'sessions'} aria-labelledby="sessions-title"><div class="ah-admin-section-heading"><div><h2 id="sessions-title">活动场次</h2><p>草稿不公开；已安排与取消状态会随发布版更新。</p></div><button type="button" class="ah-admin-button" data-admin-add-session><span aria-hidden="true">＋</span> 新增场次</button></div><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="活动场次表，可水平滚动"><table><caption class="ah-sr-only">所有活动场次及讲者确认状态</caption><thead><tr><th scope="col">时间</th><th scope="col">区域</th><th scope="col">场次与主题</th><th scope="col">讲者</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody data-admin-sessions></tbody></table></div><p class="ah-admin-empty" data-admin-sessions-empty hidden>还没有场次。添加第一场分享，开始安排这一天。</p></section>
+        <section class="ah-admin-panel" data-content-panel="booths" hidden={section !== 'booths'} aria-labelledby="booths-title"><div class="ah-admin-section-heading"><div><h2 id="booths-title">展位与展示项目</h2><p>待确认与取消记录保留在后台。确认后仍需明确发布。</p></div><button type="button" class="ah-admin-button" data-admin-fill-booths>补齐15个展位位置</button><button type="button" class="ah-admin-button" data-admin-add-booth><span aria-hidden="true">＋</span> 新增展位</button></div><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="展位表，可水平滚动"><table><caption class="ah-sr-only">展位编号、机构、项目及确认状态</caption><thead><tr><th scope="col">展位编号</th><th scope="col">机构 / 团队</th><th scope="col">展示项目 / 内容</th><th scope="col">负责人 / 联系方式 · 不公开</th><th scope="col">区域</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody data-admin-booths></tbody></table></div><p class="ah-admin-empty" data-admin-booths-empty hidden>展位名单尚未建立。确认项目后，可新增展位并安排编号。</p></section>
+        <section class="ah-admin-panel ah-admin-publish-panel" data-content-panel="publish" hidden={section !== 'publish'} aria-labelledby="publish-page-title">
+          <div class="ah-admin-section-heading"><div><h2 id="publish-page-title">准备公开内容</h2><p>先保存，再预览与发布。未确认或未获授权的资料继续留在后台。</p></div></div>
+        <div class="ah-admin-toolbar"><div><strong data-admin-unsaved>尚未载入草稿</strong><span>保存后再发布到公开活动页</span></div><div class="ah-admin-toolbar-actions"><button class="ah-admin-button" type="button" data-admin-preview>预览公开内容</button><button class="ah-admin-button ah-admin-primary" type="button" data-admin-publish disabled>发布到公开页 <span aria-hidden="true">↗</span></button></div></div>
+        <section class="ah-admin-panel ah-admin-preview" data-admin-preview-panel hidden aria-labelledby="preview-title"><div class="ah-admin-section-heading"><div><h2 id="preview-title">公开内容预览</h2><p>检查本次准备发布的资料。草稿场次、未确认或未获授权的嘉宾及内部备注均不对外展示。</p></div><button type="button" class="ah-admin-button" data-admin-preview-close>关闭预览</button></div><div class="ah-admin-preview-content" data-admin-public-preview></div></section>
+        </section>
+        <footer class="ah-admin-savebar" data-admin-savebar data-save-state="loaded" hidden aria-label="保存当前内容页面"><div class="ah-admin-savebar-status" role="status" aria-live="polite"><strong data-admin-save-state>尚未载入草稿</strong><p data-admin-save-description>修改后保存到云端；公开发布另行操作。</p><small>草稿版本 <span data-admin-revision>—</span></small></div><div class="ah-admin-savebar-actions"><button class="ah-admin-text-button" type="button" data-content-copy="workspace">复制填写内容</button><button class="ah-admin-button" type="button" data-admin-check-save hidden>核对云端保存结果</button><button class="ah-admin-button" type="button" data-admin-retry-save hidden>重试同一份保存</button><button class="ah-admin-button ah-admin-primary" type="button" data-admin-save data-admin-save-location="footer" disabled>保存</button></div><span data-admin-save-feedback hidden></span></footer>
+        </div>
+      </section>
+    </main>
+    <footer class="ah-admin-footer"><span>ARTDiCO HOST / STAFF</span><p>从细节出发，让连接发生。</p><a href="/admin/contacts/">人员 / 邀约</a><a href="https://artdico.host">返回活动页面</a></footer>
+  </div>
+
+  <dialog class="ah-admin-dialog" data-session-dialog aria-labelledby="session-dialog-title">
+    <div class="ah-admin-dialog-heading"><div><h2 id="session-dialog-title" data-session-dialog-title>新增场次</h2></div><button type="button" class="ah-admin-icon-button" data-close-dialog="session" aria-label="关闭场次编辑">×</button></div>
+    <p class="ah-admin-alert" data-session-error role="alert" tabindex="-1" hidden></p>
+    <form method="post" data-session-form>
+      <input type="hidden" name="id" />
+      <div class="ah-admin-field-row"><div class="ah-admin-field"><label for="session-start">开始时间</label><input id="session-start" name="start" type="time" required /></div><div class="ah-admin-field"><label for="session-end">结束时间</label><input id="session-end" name="end" type="time" required /></div><div class="ah-admin-field"><label for="session-zone">活动区域</label><select id="session-zone" name="zone" required><option value="A">A · 阶梯展示厅</option><option value="B">B · 咖啡厅</option><option value="C">C · 外围展位区</option></select></div></div>
+      <div class="ah-admin-field"><label for="session-format">活动形式</label><select id="session-format" name="format" required><option value="other">待分类 / 其他</option><option value="talk">演讲</option><option value="workshop">工作坊</option><option value="roundtable">圆桌</option><option value="showcase">作品分享</option><option value="social">交流活动</option><option value="break">休息 / 签到</option></select><small>请明确选择形式，不根据标题推断。只改变分类，不改变场次时间与区域。</small></div>
+      <div class="ah-admin-field"><label for="session-title">场次名称 / 主题</label><input id="session-title" name="title" required maxlength="200" /></div>
+      <div class="ah-admin-field"><label for="session-guest">关联嘉宾（选填）</label><select id="session-guest" name="guestId"><option value="">手动维护讲者 · 未关联嘉宾</option></select><small>关联后使用该嘉宾的姓名与公开确认状态；尚未确认或未获授权时，前台仍显示待公布。</small></div>
+      <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="session-speaker-name">讲者姓名（可先留空）</label><input id="session-speaker-name" name="speakerName" maxlength="120" autocomplete="off" /></div><div class="ah-admin-field"><label for="session-speaker-status">讲者确认状态</label><select id="session-speaker-status" name="speakerStatus" required><option value="pending">待确认</option><option value="confirmed">已确认</option></select></div></div>
+      <p class="ah-admin-small">未关联嘉宾时，选择“已确认”须填写讲者姓名。关联嘉宾后不需重复填写；未确认或未获授权的姓名不会发布。</p>
+      <div class="ah-admin-field"><label for="session-status">场次状态</label><select id="session-status" name="status" required><option value="draft">草稿 · 不公开</option><option value="scheduled">已安排</option><option value="cancelled">已取消</option></select></div>
+      <div class="ah-admin-field"><label for="session-notes">内部备注（不公开）</label><textarea id="session-notes" name="internalNotes" rows="3" maxlength="4000"></textarea></div>
+      <div class="ah-admin-dialog-actions"><button type="button" class="ah-admin-button" data-close-dialog="session">取消</button><button type="button" class="ah-admin-button" data-content-copy="session">复制填写内容</button><button type="submit" class="ah-admin-button ah-admin-primary" data-session-submit disabled>保存</button></div>
+      <p class="ah-admin-small" data-editor-unsaved="session">保存后仍需在发布页明确公开。</p>
+    </form>
+  </dialog>
+
+  <dialog class="ah-admin-dialog" data-booth-dialog aria-labelledby="booth-dialog-title">
+    <div class="ah-admin-dialog-heading"><div><h2 id="booth-dialog-title" data-booth-dialog-title>新增展位</h2></div><button type="button" class="ah-admin-icon-button" data-close-dialog="booth" aria-label="关闭展位编辑">×</button></div>
+    <p class="ah-admin-alert" data-booth-error role="alert" tabindex="-1" hidden></p>
+    <form method="post" data-booth-form>
+      <input type="hidden" name="id" />
+      <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="booth-code">展位编号</label><input id="booth-code" name="code" required maxlength="16" pattern="[A-Za-z0-9][A-Za-z0-9\-]{0,15}" placeholder="例如 C-01" /><small>以字母或数字开头，可含横线，不重复。</small></div><div class="ah-admin-field"><label for="booth-zone">活动区域</label><select id="booth-zone" name="zone" required><option value="C">C · 外围展位区</option></select></div></div>
+      <div class="ah-admin-field"><label for="booth-slot-number">现场展位位置</label><select id="booth-slot-number" name="slotNumber" required><option value="0">未指定位置</option>{Array.from({length:15},(_,index)=><option value={index+1}>{String(index+1).padStart(2,'0')} 号位置</option>)}</select><small>现场共十五个位置。有效展位不能重复占用同一位置；取消记录不占位置，原展位编号保持独立。</small></div>
+      <div class="ah-admin-field"><label for="booth-organization">机构 / 团队</label><input id="booth-organization" name="organization" maxlength="160" autocomplete="off" /></div>
+      <div class="ah-admin-field"><label for="booth-organization-id">关联参与组织（内部，选填）</label><select id="booth-organization-id" name="organizationId" data-booth-organization-id><option value="">未关联组织</option></select><small>从已保存的参与组织选择；成员与展位安排分别维护。</small></div>
+      <div class="ah-admin-field"><label for="booth-project">展示项目</label><input id="booth-project" name="project" maxlength="200" /></div>
+      <div class="ah-admin-field"><label for="booth-website">组织网站（拟公开，选填）</label><input id="booth-website" name="website" type="url" maxlength="500" placeholder="https://" /></div>
+      <div class="ah-admin-field"><label for="booth-description">大致展示内容（拟公开）</label><textarea id="booth-description" name="description" rows="3" maxlength="2000"></textarea><small>仅在展位已确认并明确发布后公开，不填写私人联络资料。</small></div>
+      <div class="ah-admin-field"><label for="booth-contact-name">负责人姓名 · 不公开</label><input id="booth-contact-name" name="contactName" maxlength="120" autocomplete="off" /></div>
+      <div class="ah-admin-field"><label for="booth-contact-methods">负责人联系方式 · 不公开</label><textarea id="booth-contact-methods" name="contactMethods" maxlength="500" rows="2" placeholder="邮箱、微信或其他已核对的联络方式"></textarea></div>
+      <div class="ah-admin-field"><label for="booth-status">展位状态</label><select id="booth-status" name="status" required><option value="pending">待确认</option><option value="confirmed">已确认</option><option value="cancelled">已取消</option></select><small>已确认展位必须填妥机构与项目；发布后将显示在公开页。</small></div>
+      <div class="ah-admin-field"><label for="booth-notes">内部备注（不公开）</label><textarea id="booth-notes" name="internalNotes" rows="3" maxlength="4000"></textarea></div>
+      <div class="ah-admin-dialog-actions"><button type="button" class="ah-admin-button" data-close-dialog="booth">取消</button><button type="button" class="ah-admin-button" data-content-copy="booth">复制填写内容</button><button type="submit" class="ah-admin-button ah-admin-primary" data-booth-submit disabled>保存</button></div>
+      <p class="ah-admin-small" data-editor-unsaved="booth">保存后仍需在发布页明确公开。</p>
+    </form>
+  </dialog>
+  <dialog class="ah-admin-dialog ah-admin-guest-dialog" data-guest-dialog aria-labelledby="guest-dialog-title">
+    <div class="ah-admin-dialog-heading"><div><h2 id="guest-dialog-title" data-guest-dialog-title>新增嘉宾</h2></div><button type="button" class="ah-admin-icon-button" data-close-dialog="guest" aria-label="关闭嘉宾编辑">×</button></div>
+    <p class="ah-admin-alert" data-guest-error role="alert" tabindex="-1" hidden></p>
+    <form method="post" data-guest-form>
+      <input type="hidden" name="id" /><input type="hidden" name="portraitId" /><input type="hidden" name="contactId" />
+      <div class="ah-admin-portrait-upload"><div class="ah-admin-portrait-frame"><img data-guest-portrait-preview alt="所选嘉宾头像预览" width="116" height="116" hidden /><span data-guest-portrait-empty>头像</span></div><div class="ah-admin-field"><label for="guest-portrait">头像照片</label><input id="guest-portrait" type="file" name="portraitFile" accept="image/jpeg,image/png,image/webp" data-guest-portrait-file /><small>JPEG、PNG 或 WebP，原图最多 12 MiB／四千万像素。可裁切、缩放、移动和去背景；确认裁切后才上传，透明背景会保留。自动移除元数据，最长 800px、最多 512 KiB。</small><p class="ah-admin-small" data-guest-portrait-status role="status" aria-live="polite"></p><div class="ah-admin-toolbar-actions"><button type="button" class="ah-admin-text-button" data-guest-portrait-edit>编辑现有照片</button><button type="button" class="ah-admin-text-button" data-guest-portrait-remove>移除本次照片</button><button type="button" class="ah-admin-button" data-guest-portrait-retry hidden>重试上传</button><button type="button" class="ah-admin-text-button" data-guest-portrait-discard hidden>取消本次图片</button></div></div></div>
+      <div data-guest-image-editor hidden></div>
+      <section class="ah-admin-field ah-admin-person-picker" data-guest-person-picker aria-labelledby="guest-person-heading">
+        <h3 id="guest-person-heading">关联名单人员 · 内部</h3>
+        <div data-guest-person-controls hidden>
+          <label for="guest-person-query">搜索现有人员姓名或机构</label>
+          <div class="ah-admin-toolbar-actions"><input id="guest-person-query" type="search" maxlength="200" autocomplete="off" data-guest-person-query /><button class="ah-admin-button" type="button" data-guest-person-search>搜索人员</button></div>
+          <label for="guest-person-selection">选择对应人员</label><select id="guest-person-selection" data-guest-person-select><option value="">未关联名单人员</option></select>
+          <button class="ah-admin-text-button" type="button" data-guest-person-more hidden>载入更多人员</button>
+        </div>
+        <p class="ah-admin-small" data-guest-person-status role="status" aria-live="polite"></p><a data-guest-person-link hidden>查看个人工作页</a>
+      </section>
+      <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="guest-name">姓名</label><input id="guest-name" name="name" required maxlength="120" autocomplete="off" /></div><div class="ah-admin-field"><label for="guest-company">所属公司 / 机构</label><input id="guest-company" name="company" required maxlength="160" autocomplete="off" /></div></div>
+      <div class="ah-admin-field"><label for="guest-title">职称 / 身份说明（拟公开，选填）</label><input id="guest-title" name="title" maxlength="200" autocomplete="off" placeholder="例如创始人、研究员或社区组织者" /></div>
+      <fieldset class="ah-admin-choice-group"><legend>本次活动公开职责（可多选）</legend><label><input type="checkbox" name="publicRoles" value="speaker" />讲者</label><label><input type="checkbox" name="publicRoles" value="guest" />嘉宾</label><label><input type="checkbox" name="publicRoles" value="organizer" />研讨会组织者</label><label><input type="checkbox" name="publicRoles" value="moderator" />主持人</label></fieldset>
+      <div class="ah-admin-field"><label for="guest-bio">人物简介（拟公开，选填）</label><textarea id="guest-bio" name="bio" maxlength="4000" rows="4"></textarea><small>介绍经验或分享方向。勿填写邮箱、微信等私人联络资料。</small></div>
+      <div class="ah-admin-field"><label for="guest-website">个人 / 机构网站（拟公开，选填）</label><input id="guest-website" name="website" type="url" maxlength="500" placeholder="https://" /></div>
+      <div class="ah-admin-field"><label for="guest-ggj-role">GGJ 职务（选填）</label><input id="guest-ggj-role" name="ggjRole" maxlength="160" autocomplete="off" placeholder="没有相关职务可留空" /></div>
+      <div class="ah-admin-field"><label for="guest-status">嘉宾确认状态</label><select id="guest-status" name="status" required><option value="pending">待确认 · 不公开</option><option value="confirmed">已确认</option></select></div>
+      <label class="ah-admin-guest-consent" for="guest-public-consent"><input id="guest-public-consent" type="checkbox" name="publicConsent" /><span>我已确认本人同意公开上述姓名、机构、职称、活动职责、简介、网站、GGJ 职务及此头像照片。</span></label>
+      <p class="ah-admin-small" data-guest-consent-note>确认状态与公开授权分别记录。更改资料或照片后，请重新核对授权；保存草稿不会自动公开。</p>
+      <div class="ah-admin-field"><label for="guest-notes">内部备注（不公开）</label><textarea id="guest-notes" name="internalNotes" rows="3" maxlength="4000"></textarea></div>
+      <div class="ah-admin-dialog-actions"><button type="button" class="ah-admin-button" data-close-dialog="guest">取消</button><button type="button" class="ah-admin-button" data-content-copy="guest">复制填写内容</button><button type="submit" class="ah-admin-button ah-admin-primary" data-guest-submit disabled>保存</button></div>
+      <p class="ah-admin-small">确认、授权及有效头像齐备后才可公开。</p>
+    </form>
+  </dialog>
+  <dialog class="ah-admin-dialog ah-admin-showcase-dialog" data-showcase-dialog aria-labelledby="showcase-dialog-title">
+    <div class="ah-admin-dialog-heading"><div><h2 id="showcase-dialog-title" data-showcase-dialog-title>新增学生作品</h2></div><button type="button" class="ah-admin-icon-button" data-close-dialog="showcase" aria-label="关闭学生作品编辑">×</button></div>
+    <p class="ah-admin-alert" data-showcase-error role="alert" tabindex="-1" hidden></p>
+    <form method="post" data-showcase-form>
+      <input type="hidden" name="id" /><input type="hidden" name="coverId" />
+      <h3>作品介绍 · 拟公开</h3>
+      <div class="ah-admin-field"><label for="showcase-title">作品名称（待补可留空）</label><input id="showcase-title" name="title" maxlength="200" /></div>
+      <div class="ah-admin-field"><label for="showcase-team-name">团队展示名</label><input id="showcase-team-name" name="teamName" maxlength="160" /><small>可先留空；核准时须填写团队名或经核实可公开的署名，勿填私人联系方式。</small></div>
+      <div class="ah-admin-field"><label for="showcase-summary">作品短介绍</label><input id="showcase-summary" name="summary" type="text" maxlength="300" /></div>
+      <div class="ah-admin-cover-upload"><img data-showcase-cover-preview alt="所选作品图内部预览" width="320" height="180" hidden /><div class="ah-admin-field"><label for="showcase-cover">作品图片</label><input id="showcase-cover" type="file" name="coverFile" accept="image/jpeg,image/png,image/webp" data-showcase-cover-file /><small>JPEG、PNG 或 WebP，原图最多 12 MiB／四千万像素；自动缩小至最长 1600px、压缩并去除元数据后上传。仅上传可公开作品画面，不上传学生证、联系截图或私人材料。</small><p data-showcase-cover-status class="ah-admin-small" role="status" aria-live="polite"></p><button type="button" class="ah-admin-text-button" data-showcase-cover-remove>移除本次作品图</button></div></div>
+      <h3>学生 / 团队基础资料 · 不公开</h3>
+      <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="showcase-school">学校 / 所属机构</label><input id="showcase-school" name="school" maxlength="160" /></div><div class="ah-admin-field"><label for="showcase-contact-name">学生 / 组负责人姓名</label><input id="showcase-contact-name" name="contactName" maxlength="120" autocomplete="off" /></div></div>
+      <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="showcase-email">负责人邮箱</label><input id="showcase-email" name="email" type="email" maxlength="254" autocomplete="off" /></div><div class="ah-admin-field"><label for="showcase-wechat">负责人微信</label><input id="showcase-wechat" name="wechat" maxlength="150" autocomplete="off" /></div></div>
+      <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="showcase-member-count">预计到场学生人数</label><input id="showcase-member-count" name="memberCount" type="number" min="1" max="50" step="1" value="1" required /><small>此组预计实际到场的人数；同组成员勿另建重复作品记录。</small></div><div class="ah-admin-field"><label for="showcase-response">实际回复</label><select id="showcase-response" name="responseStatus" required><option value="pending">待回复</option><option value="attending">确认参加</option><option value="declined">不参加</option></select></div></div>
+      <div class="ah-admin-field"><label for="showcase-material-links">展示材料链接 · 不公开</label><textarea id="showcase-material-links" name="materialLinks" rows="3" maxlength="4000" placeholder="每行一条 HTTPS 链接，例如演示文稿、试玩或补件资料"></textarea><small>最多 10 条，由工作人员自行核对访问权限；系统不抓取链接、不代为公开或上传私人文件。</small></div>
+      <h3>现场安排</h3>
+      <fieldset class="ah-admin-choice-group"><legend>参与形式（可多选）</legend><label><input type="checkbox" name="participationForms" value="booth" /> 展位试玩</label><label><input type="checkbox" name="participationForms" value="share" /> 上台分享</label></fieldset>
+      <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="showcase-session">安排分享场次</label><select id="showcase-session" name="sessionId"><option value="">尚未安排</option></select><small>先选择上台分享，再分配有效场次。</small></div><div class="ah-admin-field"><label for="showcase-booth">安排展位</label><select id="showcase-booth" name="boothId"><option value="">尚未安排</option></select><small>先选择展位试玩，再分配展位。</small></div></div>
+      <div class="ah-admin-field"><label for="showcase-status">作品资料核准</label><select id="showcase-status" name="status" required><option value="pending">待核准 · 不公开</option><option value="confirmed">已核准</option></select></div>
+      <label class="ah-admin-guest-consent" for="showcase-public-consent"><input id="showcase-public-consent" type="checkbox" name="publicConsent" /><span>已核实权利人同意公开这份作品名称、团队展示名、短介绍及作品图。</span></label>
+      <p class="ah-admin-small" data-showcase-consent-note>公开授权与参加回复分别记录。学生基础资料、联系方式、材料链接及内部备注不进入公开作品页。</p>
+      <div class="ah-admin-field"><label for="showcase-notes">内部备注 / 设备需求 · 不公开</label><textarea id="showcase-notes" name="internalNotes" rows="3" maxlength="4000"></textarea></div>
+      <div class="ah-admin-dialog-actions"><button type="button" class="ah-admin-button" data-close-dialog="showcase">取消</button><button type="button" class="ah-admin-button" data-content-copy="showcase">复制填写内容</button><button type="submit" class="ah-admin-button ah-admin-primary" data-showcase-submit disabled>保存</button></div>
+      <p class="ah-admin-small">参加、核准、图片、授权及有效安排齐备后才可公开。</p>
+    </form>
+  </dialog>
+  <dialog class="ah-admin-dialog ah-admin-navigation-dialog" data-admin-navigation-dialog aria-labelledby="admin-navigation-title" aria-describedby="admin-navigation-description">
+    <h2 id="admin-navigation-title">先保存当前修改？</h2>
+    <p id="admin-navigation-description" data-admin-navigation-description>保存成功后再前往下一页，也可以继续编辑。</p>
+    <p class="ah-admin-alert" data-admin-navigation-error role="alert" tabindex="-1" hidden></p>
+    <div class="ah-admin-dialog-actions"><button type="button" class="ah-admin-button" data-admin-navigation-cancel>继续编辑</button><button type="button" class="ah-admin-button" data-admin-navigation-discard>放弃并前往</button><button type="button" class="ah-admin-button ah-admin-primary" data-admin-navigation-save>保存并前往</button></div>
+  </dialog>
+  <script>
+    import '../scripts/admin.mjs';
+  </script>
+</SiteLayout>

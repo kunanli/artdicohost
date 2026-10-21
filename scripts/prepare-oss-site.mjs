@@ -7,11 +7,19 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const allowedExtensions = new Set(['.html', '.css', '.js', '.mjs', '.png', '.svg', '.jpg', '.jpeg', '.webp', '.avif', '.woff', '.woff2', '.ico']);
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const sha256 = (data) => createHash('sha256').update(data).digest('hex');
+// Public entry notices are a fixed list, independent of generated admin forms.
+// The cloud package aliases these paths without adding any trusted HTML files.
+export const PUBLIC_ADMIN_PAGE_ALIASES = Object.freeze([
+  ...['overview', 'event', 'arrangements', 'guests', 'organizations', 'showcases', 'sessions', 'booths', 'publish']
+    .map(key => '/admin/content/' + key + '/'),
+  ...['delivery', 'group', 'invitations', 'accounts'].map(key => '/admin/settings/' + key + '/'),
+]);
 
 export function validatePublicPath(path) {
   if (!path || path.includes('\\') || path.startsWith('/') || path.split('/').some(part => !part || part.startsWith('.') || /[\u0000-\u001f]/u.test(part))) throw new Error('Unsafe public path');
   if (path === 'release.json') return path;
-  const namedRoute = ['index.html', '404.html', 'invitation/index.html', 'registration/confirmation/index.html', 'admin/index.html', 'admin/contacts/index.html', 'admin/registrations/index.html', 'admin/tasks/index.html', 'admin/settings/index.html', 'admin/person/index.html', 'admin/volunteers/index.html', 'invitations/template-blank.png', 'invitations/ggj2026-poster-v2.webp'].includes(path);
+  const namedRoute = ['index.html', '404.html', 'invitation/index.html', 'registration/confirmation/index.html', 'admin/index.html', 'admin/contacts/index.html', 'admin/registrations/index.html', 'admin/tasks/index.html', 'admin/settings/index.html', 'admin/person/index.html', 'admin/volunteers/index.html', 'invitations/template-blank.png', 'invitations/ggj2026-poster-v2.webp'].includes(path)
+    || PUBLIC_ADMIN_PAGE_ALIASES.some(route => path === route.slice(1) + 'index.html');
   if (!allowedExtensions.has(extname(path).toLowerCase()) || (!namedRoute && !/^_astro\/[A-Za-z0-9_.\/-]+$/.test(path))) throw new Error('Unexpected public file: ' + path);
   return path;
 }
@@ -79,6 +87,11 @@ export async function prepareOssSite({ distDirectory = resolve(root, 'dist'), ou
   selected.set('admin/settings/index.html', notice);
   selected.set('admin/person/index.html', notice);
   selected.set('admin/volunteers/index.html', notice);
+  for (const route of PUBLIC_ADMIN_PAGE_ALIASES) {
+    const page = statusPage('工作人员后台入口', '请前往独立的云端后台登录，管理活动内容、人员安排与报名。本站公开页面不接收工作人员密码；服务是否开放以后台实际状态为准。')
+      .replace('<a href="/">返回活动首页</a>', '<a href="https://api.artdico.host' + route + '">前往云端工作人员后台</a>');
+    selected.set(route.slice(1) + 'index.html', Buffer.from(page));
+  }
   // This public receipt contains only the checked source SHA and public object hashes.
   // It is uploaded after the homepage, so an older receipt exposes a partial release.
   const release = { schemaVersion: 1, commit, files: [...selected].sort(([a], [b]) => a.localeCompare(b)).map(([path, data]) => ({ path, bytes: data.length, sha256: sha256(data) })) };

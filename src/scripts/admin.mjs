@@ -725,7 +725,7 @@ function entityCandidate(type,base=draft.content,record=null,quiet=false){
   value.id=editingId??(record?raw.id:editorStableIds[type]??raw.id);candidate[key]??=[];
   const previous=candidate[key].find(item=>item.id===value.id);
   if(editingId&&!previous){if(!quiet)announce('原记录已变化，请保留填写并重新核对。',true);return null;}
-  if(type==='booth'){if(previous&&Object.hasOwn(previous,'website'))value.website=previous.website;value.slotNumber=Number(value.slotNumber);const relation=boothOrganizationField(previous,value.organizationId);delete value.organizationId;Object.assign(value,relation);}
+  if(type==='booth'){if(!Object.hasOwn(raw,'website')&&previous&&Object.hasOwn(previous,'website'))value.website=previous.website;value.slotNumber=Number(value.slotNumber);const relation=boothOrganizationField(previous,value.organizationId);delete value.organizationId;Object.assign(value,relation);}
   if(type==='showcase')value.memberCount=Number(value.memberCount);
   if(type==='session'&&value.guestId){value.speakerName='';value.speakerStatus='pending';}
   const index=candidate[key].findIndex(item=>item.id===value.id);if(index<0)candidate[key].push(value);else candidate[key][index]=value;

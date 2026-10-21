@@ -1,5 +1,9 @@
 # ARTDiCO HOST 实施计划
 
+## 2026-10-21 设置接续：support@artdico.co 报名确认信
+
+用户提供 EmailJS SMTP 截图（Service ID `LoginPlan`，飞书 SSL 465，寄件账号 `support@artdico.co`），并要求参考已有 `artdico-deck`。只读核对该仓库的邮件代码与配置名称：共用现有服务，保留 welcome／notify 模板，为活动确认建立独立模板，匹配本项目 `invitation_text` 与既有白名单参数。准备可贴上的 HTML、字段映射及加密 bundle／后台开关操作文档；本轮不改变生产代码或触发重部署。SMTP App Password 留在 EmailJS，API 密钥走受控配置；实际模板 ID、凭证就绪、首次实际收件与启用仍按后台真实状态核对，不宣称截图已证明发送成功。
+
 ## 2026-10-21 当前阶段：嘉宾／组织图片编辑与部署中上传恢复
 
 本阶段已在 PR #33／main `4a9b49bc8f285deb2551c9b0b55dab9454f3f970` 完成实际发布：817/817、12 组专用 Chromium、十阶段真实私有 OSS、300 人政策与 23/23 HTTPS 回读通过，11:12:56（UTC+08）全成功。详见[完整证据](staff-image-editing.md)及[业务操作状态](invitation-delivery-status-2026-10-21.md)。以下保留本阶段原始计划，不重复部署。

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { prepareOssSite } from '../scripts/prepare-oss-site.mjs';
+import { prepareOssSite, PUBLIC_ADMIN_PAGE_ALIASES } from '../scripts/prepare-oss-site.mjs';
 import { contentType } from '../scripts/deploy-oss.mjs';
 import { verifyPublicDomain, PUBLIC_SITE_ORIGIN } from '../scripts/verify-public-domain.mjs';
 
@@ -35,6 +35,9 @@ test('real-domain verification validates publication then reads every exact obje
   const result = await verifyPublicDomain({ directory: f.output, commit, fetchFn: f.fetchFn, report: line => reports.push(line) });
   assert.deepEqual(result, { verified: true, origin: PUBLIC_SITE_ORIGIN, commit, files: f.manifest.files.length });
   assert.equal(f.calls.length, f.manifest.files.length); assert.equal(reports.length, f.manifest.files.length);
+  for (const route of PUBLIC_ADMIN_PAGE_ALIASES) {
+    assert.ok(f.calls.some(({ url }) => new URL(url).pathname === route + 'index.html'), route);
+  }
   for (const { url, settings } of f.calls) {
     assert.equal(new URL(url).origin, 'https://artdico.host'); assert.equal(new URL(url).search, '?release=' + commit);
     assert.equal(settings.credentials, 'omit'); assert.equal(settings.redirect, 'error'); assert.equal(settings.cache, 'no-store');

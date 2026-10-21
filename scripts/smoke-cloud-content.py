@@ -17,6 +17,16 @@ expected_health = {
     'sourceCommit': release['sourceCommit'],
 }
 assets = {asset['url']: asset for asset in release['assets']}
+page_aliases = {
+    **{'/admin/content/' + key + '/': '/admin/' for key in [
+        'overview', 'event', 'arrangements', 'guests', 'organizations',
+        'showcases', 'sessions', 'booths', 'publish',
+    ]},
+    **{'/admin/settings/' + key + '/': '/admin/settings/' for key in [
+        'delivery', 'group', 'invitations', 'accounts',
+    ]},
+}
+assert not set(page_aliases).intersection(assets)
 
 
 def request(path, method='GET', host='api.artdico.host', origin=None):
@@ -120,11 +130,13 @@ for configured in [False, True]:
                                  ('/admin/person/', 'GET'),
                                  ('/admin/volunteers/', 'GET'),
                                  ('/api/admin/login', 'POST'),
-                                 ('/api/registrations', 'POST')]:
+                                 ('/api/registrations', 'POST')] + [
+                                     (path, 'GET') for path in page_aliases]:
                 status, headers, body = request(path, method)
                 assert status == 503 and headers.get('cache-control') == 'no-store'
                 assert json.loads(body)['error']['code'] == 'CONTENT_NOT_READY'
         else:
+            page_headers = {}
             for path in ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/']:
                 status, headers, body = request(path)
                 assert status == 200 and 'text/html' in headers['content-type']
@@ -133,6 +145,22 @@ for configured in [False, True]:
                 assert hashlib.sha256(body).hexdigest() == assets[path]['sha256']
                 assert b'synthetic-offline-only' not in body
                 assert b'scrypt$' not in body
+                page_headers[path] = headers
+            for path, source in page_aliases.items():
+                status, headers, body = request(path)
+                assert status == 200
+                assert hashlib.sha256(body).hexdigest() == assets[source]['sha256']
+                for name in ['content-type', 'content-length',
+                             'content-security-policy', 'cache-control']:
+                    assert headers[name] == page_headers[source][name]
+                status, headers, body = request(path, 'HEAD')
+                assert status == 200 and not body
+                assert int(headers['content-length']) == assets[source]['bytes']
+                assert headers['content-security-policy'] == page_headers[source]['content-security-policy']
+                assert request(path + '?private=synthetic')[0] == 404
+                assert request(path.rstrip('/') + '?private=synthetic')[0] == 404
+                assert request(path + 'nested/')[0] == 404
+                assert request(path, 'POST')[0] == 405
             for path, record in assets.items():
                 status, headers, body = request(path)
                 assert status == 200
@@ -154,7 +182,8 @@ for configured in [False, True]:
                 assert status == 200 and headers.get('cache-control') == 'no-store'
                 assert headers.get('access-control-allow-origin') == 'https://artdico.host'
                 assert json.loads(body) == {'enabled': False, 'reason': 'unavailable'}
-            for path in ['/release.json', '/.env',
+            for path in ['/release.json', '/.env', '/admin/content/unknown/',
+                         '/admin/settings/recovery/',
                          '/functions/cloud-content/server.mjs']:
                 assert request(path)[0] == 404
             assert request('/admin/', host='example.invalid')[0] == 421
@@ -165,6 +194,7 @@ print(json.dumps({
     'kind': release['kind'], 'sourceCommit': release['sourceCommit'],
     'bootstrap': 'passed', 'closedMode': 'passed',
     'syntheticConfigurationOnly': 'passed', 'staticAssets': len(assets),
+    'sharedHtmlPageAliases': len(page_aliases),
     'seconds': round(time.monotonic() - started, 3),
     'network': 'none', 'code': 'read-only', 'realAccounts': 'not-used',
     'privateOssReadWrite': 'not-tested', 'deployed': False,

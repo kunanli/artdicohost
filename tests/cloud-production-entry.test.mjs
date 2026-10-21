@@ -120,6 +120,8 @@ test('entry rejects unreviewed manifest schema, identity, static URLs, paths and
     duplicateUrl: release => { release.assets.push({ ...release.assets[0] }); },
     duplicateFile: release => { release.files.push({ ...release.files[0] }); },
     publicHomepage: release => { release.assets[0].url = '/'; },
+    contentRequestAlias: release => { release.assets[0].url = '/admin/content/guests/'; },
+    settingsRequestAlias: release => { release.assets[0].url = '/admin/settings/accounts/'; },
     queriedUrl: release => { release.assets[0].url = '/admin/?preview=1'; },
     hiddenSource: release => { release.assets[0].path = '.env.local'; },
     traversal: release => { release.assets[0].path = 'admin-assets/../../private.json'; },

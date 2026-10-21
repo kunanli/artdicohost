@@ -1,5 +1,11 @@
 # 开发接续与验收计划
 
+## 当前：学生、精简申请及人工审核已集成，待最终验收／发布（2026-10-21）
+
+分支 `feat/public-application-review` 从实际 main `661eb41` 与发布证据 `83c3af3` 接续，`6e6cfde` 已推送为恢复点。当前学生身份（原件不变）、单页 general-v2／选填同份主题提案、v3 pending_review／rejected／approve／reject、共同名额 CAS、核准后通知、消费端与历史恢复均已集成。[操作与详细状态](public-application-review.md)。尚无本阶段 PR／正式部署成功结论，最后完整测试／Chromium／来源包仍在收尾。
+
+最终浏览器发现 current401 清理后隐藏详情标题仍残留私有人名，已交后台负责人补完整清除；新构建后须重跑，不把仅隐藏面板当作清除。root 当前 dist 为 11:17:06 UTC，浏览器停止待修，重建前通知测试负责人。源路径工作树分工仍隔离，不能重复合并现有提交或提前做邀请函。
+
 ## 已上线：人员关系及确认参加同步共同名额（2026-10-21）
 
 [PR #36](https://github.com/kunanli/artdicohost/pull/36)／main **`661eb41a5dee261dcb930b9b8b8bcfcfb488daa6`** 已实际发布。[run 39587865136](https://github.com/kunanli/artdicohost/actions/runs/39587865136) attempt 1 三个 job 全部 success，准确 PR／main **1017/1017**、120 文件／34 静态资源离线包、真实十阶段私有 OSS、共同 300 政策及 **27/27 HTTPS** 通过；**19:01:31（UTC+08）**全成功，远端 main 复核。[完整证据](people-release-2026-10-21.md)、[操作契约](people-relationships.md)。原始资料、历史及既有 EmailJS 配置保留，没有实际转换名单或寄信。不要重做本次合并／部署。

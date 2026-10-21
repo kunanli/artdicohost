@@ -159,7 +159,7 @@ try {
 
   const legacy=await fixture(390);legacy.setAuthenticated(true);
   for(const [id,target] of [['delivery-settings-heading','delivery-settings-heading'],['staff-settings-title','group-settings-title']]){
-    await legacy.page.goto(SITE+'/admin/registrations/#'+id,{waitUntil:'networkidle'});await legacy.page.locator('[data-review-workspace]:visible').waitFor();
+    await legacy.page.goto(SITE+'/admin/registrations/?legacy='+id+'#'+id,{waitUntil:'networkidle'});await legacy.page.locator('[data-review-workspace]:visible').waitFor();
     await legacy.page.waitForFunction(id=>document.activeElement?.id===id,id);assert.equal(await legacy.page.locator('#'+id).count(),1);assert.equal(await legacy.page.locator('a[href="/admin/settings/#'+target+'"]').count(),1);assert.equal(await legacy.page.locator('[data-delivery-settings]').count(),0);assert.equal(await legacy.page.locator('[data-staff-settings]').count(),0);
   }
   assert.deepEqual(legacy.writes,[]);await legacy.context.close();reports.push({legacySettingsAnchorsRemainUseful:true,reviewDoesNotMountSettingsWidgets:true});

@@ -6,7 +6,7 @@ import { extname, resolve } from 'node:path';
 import { createOrganizerTasksApi } from '../../functions/organizer-tasks/handler.mjs';
 import { eventConfig as event } from '../../src/config/event.mjs';
 const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
-const dist = resolve(fileURLToPath(new URL('../../', import.meta.url)), 'dist');
+const dist = resolve(process.env.ARTDICO_DIST_DIRECTORY || resolve(fileURLToPath(new URL('../../', import.meta.url)), 'dist'));
 const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless: true, args: ['--no-sandbox','--disable-dev-shm-usage'] });
 const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
 const page = await context.newPage(), errors = [], requests = [];

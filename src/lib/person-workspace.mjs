@@ -212,7 +212,7 @@ export function personWorkspaceSteps(view, roles = []) {
   steps.push(!contact ? step('public', '核对公开资料', unavailable('contact'), personAvailabilityText(view.availability.contact), 'review')
     : publicState === 'restricted' ? step('public', '核对公开资料', 'restricted', personAvailabilityText(publicState))
           : publicState === 'unavailable' ? step('public', '核对公开资料', 'review', '公开资料或已发布快照暂时无法完整核对，请重新读取后确认。', 'guest')
-            : liveOldDraft ? step('public', '核对公开资料', 'review', '旧版公开资料仍在已发布页面显示，当前草稿与已发布版本不同；请核对照片、文字、职责及授权，再发布更新。', 'guest')
+            : liveOldDraft ? step('public', '核对公开资料', 'review', '资料有历史公开版本，当前人员关联及内容待核对；请核对照片、文字、职责及授权，再发布更新。', 'guest')
               : !forms.length ? step('public', '核对公开资料', 'pending', '先确认参与身份，再决定是否需要公开人物资料。', 'arrangements')
                 : !needsPublic ? step('public', '核对公开资料', 'complete', '当前内部职责不要求公开人物页；组织展示资料另在活动与内容维护。', 'arrangements')
               : publicState === 'unlinked' || !profiles.length ? step('public', '核对公开资料', 'pending', '尚未通过此人员的固定编号关联公开嘉宾资料；按需要创建并核对公开授权。', 'guest')

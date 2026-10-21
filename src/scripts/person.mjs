@@ -177,7 +177,7 @@ function renderArrangements(view) {
     const profiles = node('ul', undefined, 'person-list');
     for (const item of view.publicProfile.profiles) {
       const row = node('li'); row.append(node('strong', item.name || '姓名待完善'), node('p', [item.company, item.title].filter(Boolean).join(' · ')));
-      row.append(node('p', [item.status === 'confirmed' ? '草稿已确认' : '草稿待确认', item.publicConsent ? '已记录公开授权' : '未记录公开授权', item.hasPortrait ? '已有照片' : '尚未上传照片', item.published ? item.publishedMatchesDraft ? '已发布内容与当前人物草稿一致' : '旧版已发布，当前草稿变更待发布' : '尚未在已发布快照找到此人物'].join(' · ')));
+      row.append(node('p', [item.status === 'confirmed' ? '草稿已确认' : '草稿待确认', item.publicConsent ? '已记录公开授权' : '未记录公开授权', item.hasPortrait ? '已有照片' : '尚未上传照片', item.published ? item.publishedMatchesDraft ? '已发布内容与当前人物草稿一致' : '资料有历史公开版本，当前人员关联及内容待核对' : '尚未在已发布快照找到此人物'].join(' · ')));
       if (item.publicRoles.length) row.append(node('p', '公开职责：' + item.publicRoles.map(role => ({ speaker: '讲者', guest: '嘉宾', organizer: '研讨会组织者', moderator: '主持人' })[role] || role).join('、')));
       profiles.append(row);
     }

@@ -2,17 +2,9 @@
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
 
-2026-10-21「本机草稿、简化界面与协作账号」已上线 [PR #38](https://github.com/kunanli/artdicohost/pull/38)／main `19fe621`。准确 PR／main 1131 项、真实私有 OSS、300 人政策及 28/28 HTTPS 通过，20:44:48（UTC+08）完成。[操作](docs/usability-autosave-accounts.md)、[证据](docs/usability-release-2026-10-21.md)、[验收](docs/morning-acceptance.md)。接续新版邀请函、上传字体与私人 PNG；协作者真实账号须管理员在已上线入口保存建立。
+当前更新：[PR #39](https://github.com/kunanli/artdicohost/pull/39) 新版邀请函、上传字体与个人 PNG 已合并 main `29c9bd3`，1194 项 PR 检查通过，实际发布待核验；[发布证据](docs/invitation-release-2026-10-21.md)。上一个已验证正式版本是 [PR #38](https://github.com/kunanli/artdicohost/pull/38) 的本机暂存、就近保存、精简界面与协作者权限。[最新接续](docs/session-recovery.md)、[验收步骤](docs/morning-acceptance.md)。
 
-2026-10-21 人员步骤指引、个人工作页、设置与通知中心及内容保存防呆已上线 [PR #34](https://github.com/kunanli/artdicohost/pull/34)／main `ddf7a2e`。877 项本机／PR／main 检查、真私有 OSS、300 人政策及 26/26 HTTPS 回读通过，16:45:43（UTC+08）全成功；[完整发布证据](docs/staff-operations-release-2026-10-21.md)、[人员与保存操作](docs/staff-operations-workspace.md)。
-
-2026-10-21 嘉宾与组织的本地图片编辑已上线 [PR #33](https://github.com/kunanli/artdicohost/pull/33)：裁切／缩放／拖动、取色去背与手动画笔、透明 PNG，以及服务更新期间的原图片保留与明确重试。817 项本机／PR／main 检查、真实私有 OSS 与 23 个 HTTPS 对象全部通过；[操作及完整证据](docs/staff-image-editing.md)、[邀请 PNG／ZIP、群码和 EmailJS 实际状态](docs/invitation-delivery-status-2026-10-21.md)。
-
-2026-10-21 后台左侧快捷导航已上线 [PR #31](https://github.com/kunanli/artdicohost/pull/31)：四工作区切换、活动编辑八区直达、当前区块标记及手机收合。802 项检查、六组相关浏览器流程、真实私有 OSS 与 23 个 HTTPS 对象通过；首次验收的窗口切换失败及恢复见[发布记录](docs/navigation-release-2026-10-21.md)，[操作说明](docs/staff-navigation.md)。
-
-2026-10-21 独立「参与组织」已上线 [PR #30](https://github.com/kunanli/artdicohost/pull/30)：后台维护组织图片、名称、链接及参展／一般参与；不必占用展位，保存和发布分别执行。802 项检查与实际部署通过，[操作说明](docs/participating-organizations.md)及[完整证据](docs/organization-release-2026-10-21.md)。
-
-2026-10-21 参会体验更新跟踪 [PR #29](https://github.com/kunanli/artdicohost/pull/29)：人物与照片、逐场职责、精简 VI、保留原件的 Excel、报名确认／打印，以及确认信和 Wallet 的受控设置。用户随后回报 EmailJS 收件正常且已配置 key；实际名单与通知状态在私密后台核对，不将合成测试称为实际寄信。Apple Developer enrollment 进行中，签章证书与真机验收仍待完成；当前状态见接续台账。
+**仍需主办方操作：**现有管理员在[用户管理](https://api.artdico.host/admin/settings/#staff-accounts-title)保存建立 `zhouyufei`、`wangying`；Wallet 等 Apple Developer enrollment／签章证书与真机验收。快捷预填不是已建立账号。EmailJS 用户已确认正常，保留现有受控设置。
 
 ## 目标
 一页式简体中文活动落地页；展示日程和参与方式；正式报名收集 GGJ SO/RO、新站点、行业嘉宾、机构及生态合作伙伴资料，并支持独立确认讲者、赞助、展位与住宿安排。已确认 2026-12-05、09:30 签到、10:00–18:00 正式活动，场地为深圳前海5号楼；待邀嘉宾、协办署名与其他安排仍按各自确认状态展示。
@@ -20,13 +12,17 @@
 ## 技术决策
 参考私有仓库 `kunanli/igda_shenzhen`（2026-10-18 检查）：Astro、Function Compute、GitHub Actions、静态 OSS 公共站点、私有 OSS JSON 报名。新建独立仓库和独立 OSS/FC 资源；**不要复制旧密钥、成员数据或直接改 IGDA 正式站**。
 
-2026-10-21「志愿者与分工」已上线 [PR #35](https://github.com/kunanli/artdicohost/pull/35)／main `19b0d10`。942 项 PR／main 检查、真实私有 OSS 的志愿者 CAS／完整历史恢复、300 人政策与 27/27 HTTPS 回读通过，17:47:01（UTC+08）全部成功；[操作](docs/volunteer-operations.md)、[证据](docs/volunteer-release-2026-10-21.md)。接续实施[人员关系及确认参加同步名额](docs/people-relationships.md)，再更新用户提供的邀请函及字体。
-
 ## 文档入口
 
-2026-10-21「人员关系与共同名额」已上线 [PR #36](https://github.com/kunanli/artdicohost/pull/36)／main `661eb41`：1017 项 PR／main 检查、真实 OSS、300 人政策及 27/27 HTTPS 通过，19:01:31（UTC+08）全成功。[操作](docs/people-relationships.md)、[证据](docs/people-release-2026-10-21.md)。接续[学生、精简申请与人工审核](docs/public-application-review.md)，再更新用户邀请函与字体；不重复发布已完成阶段。
+| 主要流程 | 操作说明 | 实际发布证据 |
+| --- | --- | --- |
+| 人员、嘉宾／讲者、组织、场次与展位关联，共同300名额 | [人员关系](docs/people-relationships.md) | [PR #36](docs/people-release-2026-10-21.md) |
+| 学生、精简申请与人工审核 | [报名与审核](docs/public-application-review.md) | [PR #37](docs/application-release-2026-10-21.md) |
+| 本机自动暂存、刷新恢复、就近保存与协作者 | [保存与权限](docs/usability-autosave-accounts.md)、[账号](docs/staff-accounts.md) | [PR #38](docs/usability-release-2026-10-21.md) |
+| 新版邀请函、字体与私人PNG | [邀请函操作](docs/invitation-poster-v2.md) | [PR #39](docs/invitation-release-2026-10-21.md)（发布待核验） |
+| 志愿者名单、排班及缺额 | [志愿者](docs/volunteer-operations.md) | [PR #35](docs/volunteer-release-2026-10-21.md) |
 
-- [志愿者与分工](docs/volunteer-operations.md)：既有人员关联、沟通、可服务时段、岗位班次、缺额及 Excel；候选发布状态见接续台账
+- [志愿者与分工](docs/volunteer-operations.md)：既有人员关联、沟通、可服务时段、岗位班次、缺额及 Excel
 - [人员串联与步骤指引](docs/staff-operations-workspace.md)：单人工作页、沟通与安排、云端保存防呆、权限边界及设置中心
 - [嘉宾与组织图片编辑](docs/staff-image-editing.md)：裁切／缩放／去背景、透明 PNG、上传失败保留与重试（发布状态见接续台账）
 - [后台快捷导航](docs/staff-navigation.md)：四个工作区切换、活动区块直达与手机收合选单
@@ -51,5 +47,6 @@
 - `docs/fc-startup-preflight.md`：历史香港 FC 启动包、控制台验收及回退参考
 - `docs/automatic-fc-deployment.md`：由 GitHub 自动发布独立内容包与配置账号的流程
 
-## 第一版范围
-前端、一页内容、表单持久化、独立管理员登录、筛选/备注/导出、隐私告知、基础测试与部署方案。电子票、二维码签到、邮件批量营销、支付、自动奖项评定均不在首版范围。
+## 范围
+
+已实现活动页、私有报名与审核、人员／组织关系、活动与展位编排、志愿者、通知、邀请图、Excel及后台账号。Wallet 已有设置与下载流程，真实签章及设备验收待完成。二维码签到、支付、邮件营销及自动奖项评定尚未实施；不把计划当作现有功能。

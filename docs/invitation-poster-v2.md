@@ -22,7 +22,7 @@ Domain／历史：contacts-schema、organizer-progress、intent service/batch �
 
 ## 当前状态
 
-全部产品代码已集成至 `f9e5ea8`，13:06:38 UTC 冻结构建；原生 Chromium 个人／字体 24 组、手动／批次 11 组全部通过。尚待准确候选包、PR／main CI 及实际发布，不能称已上线。[本阶段验证记录](invitation-release-2026-10-21.md)。
+全部产品代码已集成至 `f9e5ea8`，13:06:38 UTC 冻结构建；原生 Chromium 个人／字体 24 组、手动／批次 11 组全部通过。准确候选包与受限离线启动、1194项PR检查均通过，PR #39已合并main `29c9bd3`；实际main发布待核验，不能先称已上线。[本阶段验证记录](invitation-release-2026-10-21.md)。
 
 ## 操作
 

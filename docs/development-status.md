@@ -2,7 +2,7 @@
 
 ## 本轮扩展候选（2026-10-21，尚待最终验收）
 
-每日待办、批量 PNG ZIP、总览直接编排、精简一般报名、逐人名额／候补／团队已在 `feat/organizer-workflow` 集成（核心 `2551c64`）；运行时、包、旧签名群码撤回和完整备份回归正在收尾。**本轮完整测试、CI 与正式发布尚未宣称通过**；下面 main `2d84d8b` 的成功是前一版生产证据。功能入口、局部测试及待办见[接续记录](session-recovery.md)和[验收清单](morning-acceptance.md)，浏览器脚本见[执行说明](../tests/browser/README.md)。
+每日待办、批量 PNG ZIP、总览直接编排、精简一般报名、逐人名额／候补／团队及完整运行时已在 `feat/organizer-workflow`、[PR #28](https://github.com/kunanli/artdicohost/pull/28) 集成。本地完整 **681/681**、Astro、六页构建、依赖稽核、六组 Chromium 脚本及合成运行时流程通过；固定十项合成 OSS 检查为 963 次请求，不能视为实际云端数。**最终来源的 CI 与正式发布仍待核对**；下面 main `2d84d8b` 是前一版生产证据。功能入口及接续见[接续记录](session-recovery.md)和[验收清单](morning-acceptance.md)，浏览器脚本见[执行说明](../tests/browser/README.md)。
 
 名额 v2 首次明确写入才升级索引，保留所有不可变个人记录；revision 不再等于人数。候补有持久收据，尚未确认名额，不得取得群码、正式邀请或新增关联安排；历史安排仍可清除。300 人包含工作人员，预留默认 0，团队只关联逐人已保存 ID。详见[名额契约及回退](registration-admissions-v2.md)。已写入 v2 后先关闭新写入并备份，用兼容 v2 的版本修复，不能把旧 v1 写入者或旧快照覆盖上去。
 

@@ -88,6 +88,7 @@ function captureLocalDraft(){
 }
 function localDraftState(event){
   if(!user||!draft)return;
+  if(event.error?.code==='STALE_ACTOR'){showLogin();announce('此账号已在其他页面退出，本页填写已清空。',true);return;}
   const record=event.snapshot?.record;
   const labels={empty:'尚无本机暂存',saving:'正在暂存本机…',saved:'已暂存本机，尚未保存云端',restored:'已恢复本机编辑，尚未保存云端',discarded:'已清除本机暂存',pending:'上次云端保存结果待核对',stale:'云端已有更新，本机暂存仍保留',available:'发现上次未完成的编辑',conflict:'本机暂存已变化，本页填写仍保留',unavailable:'本机暂存未完成，请先复制填写内容'};
   $('[data-admin-local-status]').textContent=labels[event.status]??'';
@@ -109,7 +110,9 @@ function renderLocalRecovery(){
 }
 function scheduleLocalDraft(){
   if(!localDraftBinding||!localDraftReady||localRecovering||localRecovery||!user||!draft||!canEdit())return;
-  if(hasUnsavedChanges())localDraftBinding.schedule();
+  if(hasUnsavedChanges()){
+    if(!localDraftBinding.blocked){$('[data-admin-local-status]').textContent='正在暂存本机…';localDraftBinding.schedule();}
+  }
   else if(localDraftBinding.snapshot?.record?.kind==='editing')localDraftBinding.discard().catch(()=>{});
 }
 async function bindLocalDraft(){
@@ -1193,12 +1196,12 @@ for(const option of $('[data-guest-form]').querySelectorAll('[name=publicRoles]'
 for (const button of document.querySelectorAll('[data-close-dialog]')) button.addEventListener('click', () => {if(button.dataset.closeDialog==='guest')closeGuestEditor();else if(button.dataset.closeDialog==='showcase')closeShowcaseEditor();else closeSimpleEditor(button.dataset.closeDialog);});
 $('[data-admin-logout]').addEventListener('click', () => action(async () => {
   if (hasUnsavedChanges() && !confirm('还有未保存到云端的修改，确定退出并放弃这些修改吗？')) return;
-  const actor=user?.id,binding=localDraftBinding;
-  await request('/api/admin/logout', { method: 'POST' });
-  binding?.close();
-  let cleared=true;try{if(actor)await localDraftStore.clearActor(actor);}catch{cleared=false;}
+  const actor=user?.id,binding=localDraftBinding;binding?.close();
+  let cleared=true,loggedOut=false;try{if(actor)await localDraftStore.clearActor(actor);}catch{cleared=false;}
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15_000);
+  try{await request('/api/admin/logout',{method:'POST',signal:controller.signal});loggedOut=true;}catch{}finally{clearTimeout(timer);}
   pendingInvitee=null;showLogin();
-  announce(cleared?'已退出，本机暂存已清除。':'已退出；本机暂存清除未完成，请在此浏览器清除网站资料。',!cleared);
+  announce(!cleared?'本机暂存清除未完成，请在此浏览器清除网站资料。':loggedOut?'已退出，本机暂存已清除。':'本机填写与暂存已清除；云端退出结果待核对，请重新登录。',!cleared||!loggedOut);
 }));
 for(const type of ['event','session','booth','guest','showcase'])for(const event of ['input','change'])$('[data-'+type+'-form]').addEventListener(event,input=>{if(!input.target.closest('[data-image-editor],[data-guest-person-picker]'))scheduleLocalDraft();});
 for(const type of ['session','booth','guest','showcase'])$('[data-'+type+'-dialog]').addEventListener('close',()=>{const field=$('[data-admin-copy-fallback]');field.value='';field.hidden=true;scheduleLocalDraft();});
@@ -1225,7 +1228,7 @@ $('[data-admin-local-discard]').addEventListener('click',async()=>{
   finally{if(stamp===requestSessionGeneration){localRecovering=false;renderLocalRecovery();}}
 });
 window.addEventListener('hashchange',()=>{const booth=takeBoothLink();if(booth){pendingBooth=booth;resumePendingLinks();return;}const organization=takeOrganizationLink();if(organization){pendingOrganization=organization;resumePendingLinks();return;}const id=takeInvitee();if(!id)return;pendingInvitee=id;resumePendingLinks();});
-window.addEventListener('beforeunload', event => { if (hasUnsavedChanges()) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (hasUnsavedChanges()||localDraftBinding?.unsettled) { event.preventDefault(); event.returnValue = ''; } });
 function flushLocalOnHide(){if(localDraftBinding&&localDraftReady&&!localRecovery&&!localRecovering&&user&&draft&&hasUnsavedChanges())localDraftBinding.flush().catch(()=>{});}
 window.addEventListener('pagehide',flushLocalOnHide);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flushLocalOnHide();});

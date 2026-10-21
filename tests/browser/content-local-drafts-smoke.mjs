@@ -74,6 +74,18 @@ try{
     assert.equal(await f.page.locator('[data-booth-form] [name=project]').inputValue(),UPDATED);assert.equal(await f.page.locator('[data-booth-form] [name=id]').inputValue(),stableId);assert.deepEqual(f.writes,[],'restoration never applies or saves');
     await f.page.locator('[data-booth-submit]').click();await saveNearBooth(f);await waitState(f,'saved');assert.equal(f.writes.length,1);await assertNoPublication(f);await f.context.close();reports.push('incomplete raw booth input survives refresh with same stable ID; explicit apply and cloud save remain separate');
   }
+  for(const type of ['guest','session','showcase','organization']){
+    const f=await fixture();await open(f);await permitReload(f);
+    await f.page.locator(type==='organization'?'[data-organization-add]':'[data-admin-add-'+type+']').click();
+    const form=f.page.locator('[data-'+type+'-form]'),field=type==='organization'||type==='guest'?'name':'title',value='PRIVATE-SYNTHETIC-'+type;
+    await form.locator('[name='+field+']').fill(value);
+    if(['guest','showcase','organization'].includes(type))await form.locator('[name=publicConsent]').check();
+    await localSaved(f);const id=await form.locator('[name=id]').inputValue();assert.ok(id);
+    await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-admin-local-restore]:visible').waitFor();await f.page.locator('[data-admin-local-restore]').click();
+    await f.page.locator('[data-'+type+'-dialog][open]').waitFor();assert.equal(await form.locator('[name='+field+']').inputValue(),value);assert.equal(await form.locator('[name=id]').inputValue(),id);
+    if(['guest','showcase','organization'].includes(type))assert.equal(await form.locator('[name=publicConsent]').isChecked(),false,'restoration never reaffirms public authorization');
+    assert.deepEqual(f.writes,[],'restoring incomplete fields never submits or publishes');await f.context.close();reports.push(type+' incomplete form keeps stable ID and fresh authorization check after native IDB reload');
+  }
   for(const mode of ['unknown-committed','unknown-uncommitted']){
     const f=await fixture({mode});await open(f);await permitReload(f);await applyBooth(f);await saveNearBooth(f);await waitState(f,'unknown');assert.equal(f.writes.length,1);
     const original=structuredClone(f.writes[0]);await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-admin-local-restore]:visible').waitFor();

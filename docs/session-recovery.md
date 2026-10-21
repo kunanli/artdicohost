@@ -2,7 +2,7 @@
 
 ## 当前发布状态
 
-新版邀请函 [PR #39](https://github.com/kunanli/artdicohost/pull/39) 已合并，main **`29c9bd32c78f7824288b86ec6eda70f0b6ef3f13`**。精确 PR 检查 **1194/1194** 全通过；**main 实际发布仍待核验，不能称新版已上线**。上一正式版本为 PR #38／main `19fe621`，20:44:48（UTC+08）完成。[本阶段证据](invitation-release-2026-10-21.md)。
+新版邀请函 [PR #39](https://github.com/kunanli/artdicohost/pull/39) 与文档 [PR #40](https://github.com/kunanli/artdicohost/pull/40) 均已合并，最新main **`9b9c418ca32a5c93b5c0260732dc5630bc5793c7`**。两次精确PR均1194项全过。GitHub push触发有7分以上延迟；旧main29c运行先完成quiesce，后以CODE_DEPLOYMENT_NOT_VERIFIED停止，public skipped，**当前维护保护关闭写入，等待最新main完整生命周期恢复**。不能称新版已上线或旧版仍正常开放。最后完整验证为PR #38／main `19fe621`。[本阶段证据](invitation-release-2026-10-21.md)。
 
 本页是恢复入口；[历史记录](session-history-2026-10-21.md)只供追溯，不重做其中旧待办。
 
@@ -19,7 +19,7 @@
 
 ## 下一步，只做尚未完成的事项
 
-1. 核对 main `29c9bd3` 对应 push Actions。仅在所有检查、真实私有 OSS／300 政策及 exact HTTPS 成功后，写入实际发布 SHA、job、时间和统计；不重复跑已成功的旧发布。
+1. 核对最新main `9b9c418` 的 [push run39611733126](https://github.com/kunanli/artdicohost/actions/runs/39611733126)，保持main不再前进。check119262059603已1194/1194通过，FC119263914746执行中。旧29c运行已延迟出现并停止，不重跑旧版本。仅在真实私有OSS／300政策及exactHTTPS成功后，写入实际发布SHA、job、时间和统计；不重复跑已成功的旧发布。
 2. 新版资产可做固定 API origin 的五个公开静态 GET／MIME／SHA 读回；不调用真实报名或邮件。
 3. 更新本页、README、验收与计划为实际结论，把仅文档证据保存在独立分支，不为补文档重新启停服务。
 4. 现有管理员在 [用户管理](https://api.artdico.host/admin/settings/#staff-accounts-title) 分别按「准备 zhouyufei」「准备 wangying」，核对权限、保存并私下交付各自初始密码。**正式账号尚未建立**；快捷预填、合成测试、部署均不等于创建。本环境没有既有管理员会话，不绕过认证或读取凭证。

@@ -12,6 +12,16 @@
 
 13:42 UTC 独立复核：main ref准确，PR已合并；该SHA的run／check run／check suite均为0，并非已排队或runner并发等待。工作流与PR #38逐字相同，push/main门禁保留，无skip标记。未实际调用部署、未启停服务，线上仍是已验证PR #38。手动workflow_dispatch只运行检查，不能绕过仅push允许的发布门禁；不重跑旧PR来冒充上线。下一步可随本次有实际用途的接续文档PR，经精确检查后作普通main push，并继续核对真实发布，不改门禁或读取密钥。
 
+## 延迟触发与正式发布接续
+
+PR #39 合并后，GitHub的run／suite查询一度均无该SHA；首次独立看到 [push run39610687104](https://github.com/kunanli/artdicohost/actions/runs/39610687104) 时，其created_at为13:44:52 UTC，比合并晚7分21秒。**原先「未建立run」只是当时观察，不能推断根因或工作流坏掉。**工作流未修改，没有绕过push门禁。
+
+有实际用途的文档 [PR #40](https://github.com/kunanli/artdicohost/pull/40) 经[运行39610554211](https://github.com/kunanli/artdicohost/actions/runs/39610554211) check **119257980541** 通过 **1194/1194、79.599853463秒**，515源码／382Astro／10页／审计／两份实际ZIP离线启动全过。精确head **`49ec88f63bb52dfa3148db8abd5eca04c4f22a2f`**；本机no-ff merge后核对tree完全相同，以普通非force push提交最新main **`9b9c418ca32a5c93b5c0260732dc5630bc5793c7`**（父29c9bd3＋49ec88f）。GitHub已确认PR #40 closed／merged。
+
+旧main29c运行的check **119258443970** 全通过（1194项、56.401007186秒），FC job **119260083807** 于13:48:29.4196272 UTC完成quiesced；13:50:35以 **CODE_DEPLOYMENT_NOT_VERIFIED** 停止，public job **119261407680** skipped。错误没有证明底层原因，不能称已换新代码或通过实际OSS；维护保护保持关闭写入。main已前进，**不重跑旧运行，不再前进main**，等待9b9c418对应push完整生命周期恢复与exactHTTPS。测试无真实业务资料／邮件，未改资源或门禁。
+
+最新main9b9c418的 [push run39611733126](https://github.com/kunanli/artdicohost/actions/runs/39611733126) 已建立（13:51:56 UTC）。check **119262059603** 全success：**1194/1194、62.058392723秒**，515源码／382Astro／十页／审计及两份实际ZIP离线启动通过。FC job **119263914746** 正执行完整生命周期，未据此先称已激活；主分支保持不动，完成后再补真实阶段与HTTPS。
+
 ## 实施与验证
 
 - 用户空名海报保留固定视觉，动态姓名／ISO日期显示斜线／时段／地点由保存事实绘制；新 V2 与旧模板分开，姓名120字、地点300字完整布局，不截断。四包真实上传字体合计4,607,936B，完整Medium30890cmap、派生改名、每包完整OFL。实际WOFF2 Brotli解码／cmap／SHA／权重／授权合同3项通过，不依原TTF或FontTools于CI。

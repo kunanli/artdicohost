@@ -740,7 +740,7 @@ async function uploadCover(event) {
   }finally{if(generation===coverGeneration){coverUploading=false;coverController=null;lockControls();}}
 }
 $('[data-showcase-cover-file]').addEventListener('change',uploadCover);
-$('[data-showcase-cover-remove]').addEventListener('click',()=>{clearCover();revokeShowcaseConsent();showcaseFormDirty=true;});
+$('[data-showcase-cover-remove]').addEventListener('click',()=>{clearCover();revokeShowcaseConsent();showcaseFormDirty=true;lockControls();});
 $('[data-showcase-cover-preview]').addEventListener('error',event=>{
   const id=$('[data-showcase-form]').elements.namedItem('coverId').value;
   if(!$('[data-showcase-dialog]').open||!portraitIdPattern.test(id)||event.currentTarget.src!==location.origin+'/api/admin/portraits/'+id)return;
@@ -1007,7 +1007,7 @@ $('[data-guest-portrait-discard]').addEventListener('click', () => {
   showPortrait($('[data-guest-form]').elements.namedItem('portraitId').value); lockControls();
   $('[data-guest-portrait-file]').focus({ preventScroll: true });
 });
-$('[data-guest-portrait-remove]').addEventListener('click', () => { clearPortrait(); revokeGuestConsent(); guestFormDirty=true; });
+$('[data-guest-portrait-remove]').addEventListener('click', () => { clearPortrait(); revokeGuestConsent(); guestFormDirty=true; lockControls(); });
 $('[data-guest-dialog]').addEventListener('close',()=>{clearPortrait();$('[data-guest-form]').reset();editingGuest=null;guestFormDirty=false;lockControls();});
 $('[data-guest-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeGuestEditor();});
 for (const type of ['input','change']) $('[data-guest-form]').addEventListener(type,event=>{if (!event.target.closest('[data-image-editor]') && event.target !== $('[data-guest-portrait-file]')) {guestFormDirty=true;lockControls();}});

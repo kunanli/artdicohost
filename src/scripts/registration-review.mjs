@@ -33,7 +33,7 @@ function clear(){
   sessionGeneration+=1;
   for(const url of privateExportUrls)URL.revokeObjectURL(url);privateExportUrls.clear();
   staffAdmissions.clear();
-  user=null;csrfToken='';revision=0;nextCursor=null;selected=null;dirty=false;filters={};
+  user=null;csrfToken='';revision=0;nextCursor=null;selected=null;dirty=false;filters={};busy=false;
   $('[data-review-workspace]').hidden=true;$('[data-review-account]').hidden=true;$('[data-review-login-panel]').hidden=false;
   for(const selector of ['[data-review-rows]','[data-review-metrics]','[data-review-details]'])$(selector).replaceChildren();
   $('[data-review-form]').reset();$('[data-review-filters]').reset();$('[data-review-export-contact]').checked=false;
@@ -41,6 +41,7 @@ function clear(){
   $('[data-review-admission-notice]').textContent='';
   renderAdmissionDecision();
   if($('[data-review-dialog]').open)$('[data-review-dialog]').close();
+  lock();
 }
 async function request(path,options={}){
   const generation=sessionGeneration;
@@ -62,7 +63,7 @@ async function request(path,options={}){
   if(!result||typeof result!=='object')throw new Error('服务返回结果无效，请稍后重试。');
   return result;
 }
-async function action(callback){if(busy)return;busy=true;lock();try{await callback();}catch(error){announce(error.message||'操作未完成。',true);}finally{busy=false;lock();}}
+async function action(callback){if(busy)return;const generation=sessionGeneration;busy=true;lock();try{await callback();}catch(error){if(generation===sessionGeneration||!user)announce(error.message||'操作未完成。',true);}finally{if(generation===sessionGeneration){busy=false;lock();}}}
 function readFilters(){return Object.fromEntries(['query','city','category','status','accommodation','attendance'].map(name=>[name,$('[data-review-filters]').elements.namedItem(name).value.trim()]).filter(([,value])=>value));}
 function renderStats(state){
   const summary=state.stats??{},output=$('[data-review-metrics]');output.replaceChildren();

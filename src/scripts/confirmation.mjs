@@ -2,7 +2,8 @@ import { confirmationToken, confirmationLink, confirmationEmailLabels, createCon
 
 const root = document.querySelector('[data-confirmation-page]');
 if (root) {
-  const $ = selector => root.querySelector(selector), token = confirmationToken(location.hash);
+  const $ = selector => root.querySelector(selector);
+  let token = confirmationToken(location.hash);
   const client = createConfirmationClient({apiOrigin:root.dataset.confirmationApi,pageOrigin:location.origin});
   let state = null, busy = false, generation = 0, walletUrl = null, printUrl = null;
   function releaseWallet() { if (walletUrl) URL.revokeObjectURL(walletUrl); walletUrl = null; }
@@ -51,6 +52,7 @@ if (root) {
     finally{if(current===generation){busy=false;controls();}}
   });
   window.addEventListener('pagehide',()=>{generation++;releaseWallet();clearGroup();clearPrivateView();$('[data-confirmation-content]').hidden=true;state=null;busy=false;controls();});
-  window.addEventListener('pageshow',event=>{if(event.persisted)void load();});
+  window.addEventListener('hashchange',()=>{generation++;busy=false;state=null;printUrl=null;releaseWallet();clearGroup();clearPrivateView();$('[data-confirmation-content]').hidden=true;token=confirmationToken(location.hash);void load();});
+  window.addEventListener('pageshow',event=>{if(event.persisted){token=confirmationToken(location.hash);void load();}});
   void load();
 }

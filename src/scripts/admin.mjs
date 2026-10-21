@@ -344,9 +344,9 @@ async function request(path, options = {}) {
 }
 async function action(callback) {
   if (busy || plannerBusy || organizations?.uploading) return;
-  const generation=requestSessionGeneration,sequence=++actionSequence;busy = true;
+  const sequence=++actionSequence;busy = true;
   lockControls();
-  try { await callback(); } catch (error) { if(generation===requestSessionGeneration||!user)announce(error.message || '操作未完成。', true); }
+  try { await callback(); } catch (error) { if(sequence===actionSequence||!user)announce(error.message || '操作未完成。', true); }
   finally { if(sequence===actionSequence){busy=false;lockControls();scheduleLocalDraft();resumePendingLinks();} }
 }
 function resumePendingLinks() {

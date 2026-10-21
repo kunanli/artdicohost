@@ -1,5 +1,9 @@
 # 开发接续与验收台账
 
+## 当前：独立参与组织（2026-10-21）
+
+PR #30 已合并 main `a0a02e009d5c547e5683a6b5c37f1c3ff7ea99b2`，本机／最终 PR CI 802/802、十二组 Chromium 通过；[正式运行 39528912033](https://github.com/kunanli/artdicohost/actions/runs/39528912033) 待核对三个 job。源代码已完成不代表实际部署结果；[本轮证据](organization-release-2026-10-21.md)及[组织操作](participating-organizations.md)是接续入口，下方 PR #29 属前轮。
+
 ## 当前参会体验更新（2026-10-21）
 
 六项更新已在 PR #29 上线 main `d66582e60a7cf3da3a4e2d851a633496bdb02ba4`，最终 PR／main CI 785/785 通过；正式运行 [39525987286](https://github.com/kunanli/artdicohost/actions/runs/39525987286) 三个 job 全部成功。十阶段真实私有 OSS、正式政策／300 人容量及 23 个 HTTPS 公开对象均验证，内容及报名已启用。[完整证据与未配置项](attendee-release-2026-10-21.md)及[早晨验收](morning-acceptance.md)是接续入口。下方五项扩展和 PR #28 属于前阶段，不代表本轮测试数量。

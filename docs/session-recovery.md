@@ -1,8 +1,8 @@
 # 开发接续与验收计划
 
-## 当前阶段：独立参与组织（2026-10-21，候选整合中）
+## 当前阶段：独立参与组织（2026-10-21，已合并待发布验收）
 
-用户新增要求为组织独立上传图片、名称及对方页面，区分参展与一般参与。分支 `feat/participating-organizations` 基于已验证 main d66582e 及已保存文档；schema／两个 store／匿名图片撤回及完整历史备份已整合，前后台及最终来源验证继续整合。[组织操作与数据契约](participating-organizations.md)、[实施计划](implementation-plan.md)是接续入口。没有实际修改四个组织、导入名单或寄信；旧快照读取不迁移，明确编辑才保存新名录。**本阶段尚未部署，下面 785 项与 PR #29 均为前轮证据。**
+[PR #30](https://github.com/kunanli/artdicohost/pull/30) 已合并 main **`a0a02e009d5c547e5683a6b5c37f1c3ff7ea99b2`**，本机及最终 PR CI 均为 **802/802**，十二组 Chromium 通过。[正式运行 39528912033](https://github.com/kunanli/artdicohost/actions/runs/39528912033) 尚待三个 job 与实际云端结果核对，不能只凭合并称为已上线。[本轮证据](organization-release-2026-10-21.md)、[组织操作](participating-organizations.md)及[实施计划](implementation-plan.md)是接续入口，文档分支 `docs/organization-release-evidence-2026-10-21` 不另触发部署。没有实际修改四个组织、导入名单或寄信；旧快照读取不迁移，明确编辑才保存新名录。下方 785 项与 PR #29 均为前轮证据；接续直接核对上述运行，不重复实现或合并。
 
 ## 当前接续：参会体验六项扩展（2026-10-21，已上线）
 

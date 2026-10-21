@@ -36,10 +36,17 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
             <button type="button" data-confirmation-print>打印 / 存为 PDF</button>
             <button type="button" data-confirmation-copy>保存确认链接</button>
             <button type="button" data-confirmation-wallet hidden>加入 Apple Wallet</button>
+            <button type="button" data-confirmation-invitation hidden>生成个人邀请函 PNG</button>
           </div>
           <p class="confirmation-action-status" data-confirmation-action-status role="status" aria-live="polite"></p>
           <div class="confirmation-copy-fallback" data-confirmation-copy-fallback hidden><label for="confirmation-private-link">复制并私下保存此链接</label><input id="confirmation-private-link" data-confirmation-private-link readonly autocomplete="off" /></div>
           <p class="confirmation-private">此链接可查看你的报名状态，请私下保存。</p>
+          <section class="confirmation-invitation" data-confirmation-invitation-preview hidden aria-labelledby="confirmation-invitation-heading">
+            <h2 id="confirmation-invitation-heading">个人邀请函</h2>
+            <img data-confirmation-invitation-image alt="个人活动邀请函" width="1080" height="1920" decoding="async" referrerpolicy="no-referrer" />
+            <a data-confirmation-invitation-download download="artdico-host-invitation.png">下载 PNG 邀请函</a>
+            <p>手机可长按图片保存；活动前请以确认页最新状态为准。</p>
+          </section>
           <section class="confirmation-group" data-confirmation-group hidden aria-labelledby="confirmation-group-heading">
             <h2 id="confirmation-group-heading">加入活动微信群</h2>
             <div data-confirmation-group-image></div>

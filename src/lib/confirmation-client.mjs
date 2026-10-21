@@ -8,6 +8,55 @@ const text = (value, max, empty = false) => typeof value === 'string' && value.l
   && (empty || value.trim().length > 0) && value.isWellFormed() && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value);
 const instant = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T.+(?:Z|[+-]\d{2}:\d{2})$/u.test(value) && Number.isFinite(Date.parse(value));
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const exact = (value, keys) => plain(value) && Object.keys(value).sort().join('\0') === [...keys].sort().join('\0');
+const posterText = (value, maximum) => typeof value === 'string' && value.isWellFormed() && value === value.normalize('NFC').trim()
+  && value.length > 0 && [...value].length <= maximum && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
+export const CONFIRMATION_INVITATION_FILENAME = 'artdico-host-invitation.png';
+
+/** The API supplies the exact poster facts. Older receipts never infer permission from their event text. */
+export function confirmationInvitation(value, admissionStatus, attendeeName) {
+  const disabled = { ready: false };
+  if (admissionStatus !== 'confirmed' || !exact(value, ['ready','settings']) || value.ready !== true) return disabled;
+  const settings = value.settings;
+  if (!exact(settings, ['recipientName','date','time','venue','confirmed','renderVersion'])
+    || settings.confirmed !== true || settings.renderVersion !== 'ggj2026-poster-v2'
+    || !posterText(settings.recipientName,120) || !posterText(settings.venue,300)
+    || typeof attendeeName !== 'string' || settings.recipientName !== attendeeName.normalize('NFC').trim()
+    || typeof settings.date!=='string'||typeof settings.time!=='string'
+    || !/^\d{4}-\d{2}-\d{2}$/u.test(settings.date)
+    || !Number.isFinite(Date.parse(settings.date+'T00:00:00Z'))
+    || new Date(settings.date+'T00:00:00Z').toISOString().slice(0,10) !== settings.date
+    || !/^(?:[01]\d|2[0-3]):[0-5]\d–(?:[01]\d|2[0-3]):[0-5]\d$/u.test(settings.time ?? '')
+    || settings.time.slice(6) <= settings.time.slice(0,5)) return disabled;
+  return { ready: true, settings: Object.fromEntries(['recipientName','date','time','venue','confirmed','renderVersion'].map(key=>[key,settings[key]])) };
+}
+
+const subject = value => value&&ID.test(value.referenceCode??'')&&instant(value.submittedAt)&&text(value.event?.id,100) ? JSON.stringify([value.referenceCode,value.submittedAt,value.event.id]) : null;
+/** Compare only this person's current facts; another attendee's shared admission revision is irrelevant. */
+export function confirmationInvitationFacts(value) {
+  if (!subject(value) || value.admission?.status !== 'confirmed' || !['attendee','crew'].includes(value.admission.kind)||value.invitation?.ready !== true||!text(value.attendee?.organization,500,true)) return null;
+  const invitation=confirmationInvitation(value.invitation,value.admission.status,value.attendee?.name);
+  return invitation.ready ? JSON.stringify([subject(value),value.attendee.name,value.attendee.organization,value.admission.kind,invitation.settings]) : null;
+}
+
+/** Two fresh read-only checks surround all asynchronous rendering and PNG encoding. */
+export async function prepareConfirmationInvitation({receiptToken,initial,read,generate,isCurrent=()=>true,signal}={}) {
+  const current=()=>isCurrent()===true&&!signal?.aborted;
+  const cancelled=()=>Object.assign(new Error('已取消这次邀请函生成。'),{cancelled:true});
+  const assertCurrent=()=>{if(!current())throw cancelled();};
+  assertCurrent();
+  if(!confirmationLink(receiptToken)||!confirmationInvitationFacts(initial))throw new Error('请重新核对当前参会名额与邀请函资料。');
+  const first=await read(receiptToken,{signal});assertCurrent();
+  if(subject(first)!==subject(initial))throw new Error('报名状态或活动资料已更新，请重新核对后生成。');
+  if(!confirmationInvitationFacts(first))throw Object.assign(new Error('报名状态或活动资料已更新，请重新核对后生成。'),{view:first});
+  let blob;
+  try{blob=await generate(first.invitation.settings,{signal});}catch(error){assertCurrent();throw Object.assign(new Error(error.message||'邀请函暂时无法生成，请稍后再试。'),{view:first});}
+  assertCurrent();
+  if(!(blob instanceof Blob)||blob.type!=='image/png'||!blob.size)throw Object.assign(new Error('邀请函图片未通过核对，请重新生成。'),{view:first});
+  const final=await read(receiptToken,{signal});assertCurrent();
+  if(confirmationInvitationFacts(first)!==confirmationInvitationFacts(final))throw Object.assign(new Error('报名状态或活动资料已更新，请重新核对后生成。'),subject(first)===subject(final)?{view:final}:{});
+  return {blob,view:final};
+}
 
 export function confirmationLink(token) {
   return typeof token === 'string' && TOKEN.test(token) ? SITE + PATH + '#r=' + token : null;
@@ -46,7 +95,7 @@ export function confirmationView(value, now = Date.now()) {
   if (eventKeys.some(key => !text(value.event[key], key === 'title' || key === 'venue' ? 500 : 100))
     || !/^\d{4}-\d{2}-\d{2}$/u.test(value.event.date)) return null;
   const withdrawn = value.admission.status === 'withdrawn';
-  if (!withdrawn && (!text(value.attendee?.name, 200) || !text(value.attendee?.organization ?? '', 500, true))) return null;
+  if (!withdrawn && (!text(value.attendee?.name, 400) || [...value.attendee.name].length>200 || !text(value.attendee?.organization ?? '', 500, true))) return null;
   const confirmed = value.admission.status === 'confirmed';
   return {
     event: Object.fromEntries(eventKeys.map(key => [key,value.event[key]])), referenceCode: value.referenceCode, submittedAt: value.submittedAt,
@@ -54,6 +103,7 @@ export function confirmationView(value, now = Date.now()) {
     attendee: withdrawn ? { name: '', organization: '' } : { name: value.attendee.name, organization: value.attendee.organization ?? '' },
     email: { status: ['pending_review','rejected'].includes(value.admission.status) ? 'not_applicable' : value.email.status }, wallet: { ready: confirmed && value.wallet.ready },
     groupInvite: confirmed ? groupInvite(value.groupInvite,now) : null,
+    invitation: confirmationInvitation(value.invitation,value.admission.status,value.attendee?.name),
   };
 }
 
@@ -86,10 +136,12 @@ export const confirmationStatusLabels = Object.freeze({
 
 export function createConfirmationClient({ apiOrigin, pageOrigin, fetchFn = globalThis.fetch, timeoutMs = 20_000 } = {}) {
   const available = apiOrigin === API && pageOrigin === SITE && typeof fetchFn === 'function';
-  async function request(path, receiptToken, mime, maxBytes) {
+  async function request(path, receiptToken, mime, maxBytes, signal) {
     if (!available || !confirmationLink(receiptToken)) throw new Error('请从报名完成后的确认链接或确认邮件打开本页。');
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(),timeoutMs);
+    const abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
     try {
+      if(controller.signal.aborted)throw new Error();
       const response = await fetchFn(API + path, { method: 'POST', credentials: 'omit', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer',
         headers: { 'Content-Type': 'application/json', Accept: mime }, body: JSON.stringify({ receiptToken }), signal: controller.signal });
       if (!response || response.redirected || response.url && response.url !== API + path) throw new Error();
@@ -100,7 +152,7 @@ export function createConfirmationClient({ apiOrigin, pageOrigin, fetchFn = glob
       const reader = response.body?.getReader(); if (!reader) throw new Error();
       const chunks = []; let size = 0;
       try {
-        for (;;) { const part = await reader.read(); if (part.done) break; size += part.value.byteLength; if (size > maxBytes) throw new Error(); chunks.push(part.value); }
+        for (;;) { if(controller.signal.aborted)throw new Error();const part = await reader.read(); if(controller.signal.aborted)throw new Error();if (part.done) break; size += part.value.byteLength; if (size > maxBytes) throw new Error(); chunks.push(part.value); }
       } finally { try { await reader.cancel(); } catch { /* A cancelled response cannot cause another request. */ } reader.releaseLock(); }
       // Browsers decode HTTP content encodings while retaining the encoded
       // Content-Length. Bound decoded bytes rather than comparing those sizes.
@@ -108,19 +160,20 @@ export function createConfirmationClient({ apiOrigin, pageOrigin, fetchFn = glob
       const bytes = new Uint8Array(size); let offset = 0; for (const part of chunks) { bytes.set(part,offset); offset += part.byteLength; }
       return bytes;
     } catch (error) {
+      if(signal?.aborted)throw Object.assign(new Error('读取已取消。'),{cancelled:true});
       if (error.known) throw error;
       throw new Error('暂时无法核对最新报名状态，请稍后按「重新读取」。无需重复报名。');
-    } finally { clearTimeout(timer); controller.abort(); }
+    } finally { clearTimeout(timer);signal?.removeEventListener('abort',abort); controller.abort(); }
   }
   return Object.freeze({
     get available() { return available; },
-    async read(receiptToken) {
-      const bytes = await request('/api/admin/registration/confirmation',receiptToken,'application/json',64 * 1024);
+    async read(receiptToken,{signal}={}) {
+      const bytes = await request('/api/admin/registration/confirmation',receiptToken,'application/json',64 * 1024,signal);
       let value; try { value = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)); } catch { throw new Error('报名状态未通过核对，请稍后重新读取。'); }
       const view = confirmationView(value); if (!view) throw new Error('报名状态未通过核对，请稍后重新读取。'); return view;
     },
-    async wallet(receiptToken) {
-      const bytes = await request('/api/admin/registration/wallet',receiptToken,'application/vnd.apple.pkpass',2 * 1024 * 1024);
+    async wallet(receiptToken,{signal}={}) {
+      const bytes = await request('/api/admin/registration/wallet',receiptToken,'application/vnd.apple.pkpass',2 * 1024 * 1024,signal);
       if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b || bytes[2] !== 3 || bytes[3] !== 4) throw new Error('票券未通过检查，请稍后再试。');
       return new Blob([bytes],{type:'application/vnd.apple.pkpass'});
     },

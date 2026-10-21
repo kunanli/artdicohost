@@ -1,11 +1,14 @@
 import { parsePersonSelection, personWorkspacePath, personWorkspaceView, personWorkspaceActions, personWorkspaceSteps, personAvailabilityText } from '../lib/person-workspace.mjs';
 import { SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
 import { sourceLabels } from '../../shared/contact-import.mjs';
+import { identityOptions, participationOptions } from '../../shared/registration-schema.mjs';
 
 const $ = selector => document.querySelector(selector);
 const profileFields = ['[data-person-profile]', '[data-person-registration]', '[data-person-admission]', '[data-person-arrangements]', '[data-person-communications]', '[data-person-actions]', '[data-person-steps]'];
 const categoryLabels = new Map(sourceLabels.categories.map(item => [item.value, item.label]));
 const interestLabels = new Map(sourceLabels.interests.map(item => [item.value, item.label]));
+const registrationIdentityLabels = new Map(identityOptions.map(item => [item.value, item.label]));
+const registrationInterestLabels = new Map(participationOptions.map(item => [item.value, item.label]));
 const participationLabels = { guest: '嘉宾', speaker: '讲者', panelist: '圆桌嘉宾', host: '主持', organizer: '研讨会组织者', booth: '展位', student_showcase: '学生作品展示', attendee: '现场参与' };
 const responseLabels = { pending: '尚未确认', attending: '已确认出席', declined: '不出席' };
 const admissionLabels = { confirmed: '已确认参会名额', waitlisted: '候补，名额尚未确认', withdrawn: '已取消／撤回' };
@@ -121,6 +124,8 @@ function renderProfile(view) {
   }
   if (view.contact) {
     const follow = facts(), operations = view.contact.operations;
+    fact(follow, '原始身份', view.contact.profile.categories.map(value => categoryLabels.get(value) ?? value).join('、'));
+    fact(follow, '原始参与意向', view.contact.profile.interests.map(value => interestLabels.get(value) ?? value).join('、'));
     fact(follow, '联络同意', { consented: '已明确同意联络', declined: '不同意联络', unknown: '尚未核实' }[view.contact.profile.contactConsent] ?? '待核对');
     fact(follow, '负责同事', operations.owner || '尚未分配'); fact(follow, '优先级', operations.priority === 'high' ? '优先跟进' : '普通'); fact(follow, '下次跟进', operations.followUpAt || '尚未安排');
     output.append(node('h3', '当前跟进'), follow);
@@ -143,7 +148,10 @@ function renderRegistration(view) {
   fact(list, '报名来源', { public: '本人公开报名', staff_assisted: '根据既有意向代登记', staff_entry: '工作人员受托逐人登记' }[item.provenance.kind] ?? '来源待核对');
   fact(list, '审核状态', reviewLabels[item.review.status] ?? '待核对'); fact(list, '住宿审核', accommodationLabels[item.review.accommodationStatus] ?? '待核对');
   fact(list, '审核负责人', item.review.assignedTo || '尚未分配'); fact(list, '核查下一步', item.review.nextStep || '尚未填写');
-  fact(list, '原始身份', item.fields.categories.map(value => categoryLabels.get(value) ?? value).join('、'));
+  fact(list, '报名身份', item.fields.categories.map(value => registrationIdentityLabels.get(value) ?? value).join('、'));
+  fact(list, '报名参与意向', item.fields.participationInterests.map(value => registrationInterestLabels.get(value) ?? value).join('、'));
+  fact(list, '原始出席意向', ({ expected: '预计可到场', uncertain: '尚待确定', unavailable: '暂无法出席' })[item.fields.attendance] || '待核对');
+  fact(list, '原始住宿申请', ({ needed: '申请住宿，需单独审核', not_needed: '不需要', uncertain: '尚不确定' })[item.fields.accommodationChoice] || '待核对');
   if (item.review.deletionRequested) fact(list, '资料维护', '已登记删除申请，尚未宣称完成擦除');
   output.append(list);
   if (item.provenance.kind !== 'public') output.append(node('p', '工作人员代登记保留原始来源，不代表本人完成网站隐私同意。', 'person-note'));
@@ -239,7 +247,7 @@ $('[data-person-login]').addEventListener('submit', async event => {
   finally { login.password = ''; if (operation === authSequence) form.elements.namedItem('password').value = ''; if (authController === controller) authController = null; if (operation === authSequence) authBusy = false; lock(); }
 });
 $('[data-person-logout]').addEventListener('click', async () => {
-  if (authBusy || !user) return; personController?.abort(); sequence++; reading = false;
+  if (authBusy || !user) return; personController?.abort(); sequence++; reading = false; clearRecord();
   const operation = ++authSequence;
   authBusy = true; const epoch = generation, controller = new AbortController(); authController = controller; lock();
   try { await request('/api/admin/logout', { method: 'POST', controller, epoch }); if (epoch !== generation) return; clearPrivateState(); announce('已退出，当前页的人员资料已清空。'); }

@@ -25,7 +25,8 @@ async function fixture({width=1280,mode='normal'}={}){
   const content=createInitialContent();
   content.guests=[{id:'synthetic-image-guest',name:'合成图片嘉宾',company:'合成组织',ggjRole:'',portraitId:seedId,contactId:'',status:'confirmed',publicConsent:true,internalNotes:'PRIVATE-ORIGINAL-NOTE'}];
   content.organizations=[{id:'synthetic-image-organization',name:'合成图片组织',logoId:seedId,website:'https://example.invalid/organization',participation:'attendee',status:'confirmed',publicConsent:true,internalNotes:'PRIVATE-ORGANIZATION-NOTE'}];
-  let account=0,authenticated=true,releaseUpload=null,settleLate;
+  let account=0,authenticated=true,releaseUpload=null,settleLate,dismissConfirm=false;
+  const dialogEvents=[];
   const lateDone=new Promise(resolve=>{settleLate=resolve;});
   if(mode==='delayed-encode')await context.addInitScript(()=>{
     const original=HTMLCanvasElement.prototype.toBlob;
@@ -39,7 +40,7 @@ async function fixture({width=1280,mode='normal'}={}){
       },...options);
     };
   });
-  page.on('pageerror',error=>errors.push(mode+':'+error.message));page.on('dialog',dialog=>dialog.accept());
+  page.on('pageerror',error=>errors.push(mode+':'+error.message));page.on('dialog',dialog=>{dialogEvents.push(dialog.type());return dismissConfirm&&dialog.type()==='confirm'?dialog.dismiss():dialog.accept();});
   await context.route('**/*',async route=>{
     const request=route.request(),url=new URL(request.url()),path=url.pathname;
     assert.equal(url.origin,SITE,'all HTTP requests must stay on the intercepted origin');
@@ -81,7 +82,7 @@ async function fixture({width=1280,mode='normal'}={}){
     };
   });
   await page.goto(SITE+'/admin/',{waitUntil:'networkidle'});await page.locator('[data-admin-workspace]:visible').waitFor();
-  return {page,context,uploads,writes,content,release:async()=>{assert.ok(releaseUpload,'the held upload must exist');releaseUpload();await lateDone;}};
+  return {page,context,uploads,writes,content,dialogEvents,setDismissConfirm:value=>{dismissConfirm=value;},release:async()=>{assert.ok(releaseUpload,'the held upload must exist');releaseUpload();await lateDone;}};
 }
 
 const config={
@@ -183,12 +184,18 @@ try{
     assert.equal(await form.locator('[name=publicConsent]').isChecked(),true);
     editor=await choose(f,kind,'shape');await editor.locator('[data-image-editor-apply]').click();await f.page.locator(config[kind].retry).waitFor({state:'visible'});
     assert.equal(await form.locator('[name=publicConsent]').isChecked(),true,'the original picture retains its prior authorization before a new picture is linked');
+    const confirmations=f.dialogEvents.filter(type=>type==='confirm').length;
+    f.setDismissConfirm(true);await f.page.locator(config[kind].close).first().click();f.setDismissConfirm(false);
+    assert.equal(f.dialogEvents.filter(type=>type==='confirm').length,confirmations+1,kind+' pending image alone requires a close confirmation');
+    assert.equal(await form.isVisible(),true,kind+' dismissing close keeps the image form open');
+    assert.equal(await f.page.locator(config[kind].retry).isVisible(),true,kind+' dismissing close retains the prepared image');
+    assert.equal(f.uploads.length,1,'dismissing close neither discards nor retries the pending image');
     await f.page.locator(kind==='guest'?'[data-guest-portrait-discard]':'[data-organization-image-discard]').click();
     assert.equal(await form.locator(`[name=${config[kind].id}]`).inputValue(),seedId);
     assert.equal(await form.locator('[name=publicConsent]').isChecked(),true,'discarding the pending photo does not revoke unchanged original data');
     editor=await choose(f,kind,'shape');await editor.locator('[data-image-editor-apply]').click();await waitUploaded(f,kind);
     assert.equal(await form.locator('[name=publicConsent]').isChecked(),false,'a successfully linked new picture requires renewed authorization');
-    await f.context.close();reports.push({kind,discardPreservesOriginalPhotoAndAuthorization:true,newPhotoRequiresRenewedConsent:true});
+    await f.context.close();reports.push({kind,pendingImageCloseRequiresConfirmation:true,dismissClosePreservesPreparedImage:true,discardPreservesOriginalPhotoAndAuthorization:true,newPhotoRequiresRenewedConsent:true});
   }
 
   for(const kind of ['guest','organization']){

@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { CONTACT_SCHEMA_VERSION, MAX_CONTACTS, INVITATION_CHANNELS, validateImportedContact,
-  validateStoredContact, validateContactOperations, validateInvitationSettings, createEmptyContactOperations, preserveContactOperationDefaults } from '../../shared/contacts-schema.mjs';
+  validateStoredContact, validateContactOperations, validateInvitationSettings, createEmptyContactOperations, preserveContactOperationDefaults, validateContactOrganizationMembershipChanges } from '../../shared/contacts-schema.mjs';
 import { validateManualContactProfile, validateContactProfileEdit, guestPrefillFromContact } from '../../shared/contact-editor.mjs';
 import { CloudContentError } from './errors.mjs';
 import { readMigrationSource } from '../intent-invitations/contact-snapshot.mjs';
@@ -56,7 +56,7 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
     for (const contact of input.contacts) {
       const optional = Object.hasOwn(contact ?? {}, 'sourceProfile') ? ['sourceProfile', 'sourceProfileDigest'] : [];
       const operationFields = Object.keys(createEmptyContactOperations());
-      const missingOperationDefaults = ['participationForms', 'sessionRoles'].filter(key => !Object.hasOwn(contact?.operations ?? {}, key));
+      const missingOperationDefaults = ['participationForms', 'sessionRoles', 'organizationMemberships'].filter(key => !Object.hasOwn(contact?.operations ?? {}, key));
       if (!keys(contact, ['id', 'source', 'profile', 'operations', 'invitation', 'createdAt', 'updatedAt', ...optional])
         || !keys(contact.source, ['key', 'rowId', 'digest', 'importedAt']) || !validateStoredContact(contact)
         || !iso(contact.createdAt) || !iso(contact.updatedAt) || !iso(contact.source.importedAt)
@@ -158,7 +158,7 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
     const normalized = structuredClone(input);
     // Old snapshots are interpreted conservatively, without a write or revision
     // change. A later explicit mutation persists the empty operations default.
-    for (const contact of normalized.contacts) for (const field of ['participationForms', 'sessionRoles']) if (!Object.hasOwn(contact.operations, field)) contact.operations[field] = [];
+    for (const contact of normalized.contacts) for (const field of ['participationForms', 'sessionRoles', 'organizationMemberships']) if (!Object.hasOwn(contact.operations, field)) contact.operations[field] = [];
     if (size(normalized) > MAX_CONTACT_STATE_BYTES) throw unavailable();
     return normalized;
   }
@@ -283,7 +283,9 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
       const contact = find(state, id);
       let content; try { content = (await contentStore.read()).draft.content; } catch { throw unavailable(); }
       const update = preserveContactOperationDefaults(input, contact.operations);
-      contact.operations = checked(validateContactOperations(update, content), '跟进资料或安排未通过校验。');
+      const next = checked(validateContactOperations(update, content), '跟进资料或安排未通过校验。');
+      checked(validateContactOrganizationMembershipChanges(next, contact.operations, content.organizations ?? []), '组织成员关系未通过校验。');
+      contact.operations = next;
       return { contact, action: 'save_contact_operations' };
     }),
     recordGenerated: (id, expected, input, actorId) => mutate(expected, actorId, (state, at) => {

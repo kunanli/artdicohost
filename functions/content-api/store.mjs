@@ -1,7 +1,7 @@
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { validateContent, toPublicContent } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, validateBoothOrganizationChanges } from '../../shared/content-schema.mjs';
 import { createInitialContent } from '../../src/config/content.mjs';
 
 const queues = new Map();
@@ -60,7 +60,7 @@ function preserveArrangementFields(input, current) {
       if (row[field] === undefined) {
         row[field] = existing?.[field] ?? fallback;
       }
-      if (collection === 'booths' && existing) for (const name of ['contactName', 'contactMethods', 'description', 'website']) {
+      if (collection === 'booths' && existing) for (const name of ['contactName', 'contactMethods', 'description', 'website', 'organizationId']) {
         if (!Object.hasOwn(row, name) && Object.hasOwn(existing, name)) row[name] = existing[name];
       }
       return row;
@@ -70,7 +70,7 @@ function preserveArrangementFields(input, current) {
     const row = copy(item, 'guests');
     const id = typeof row.id === 'string' ? row.id.normalize('NFC').trim() : '';
     const existing = current.guests.find(candidate => candidate.id === id);
-    for (const name of ['title','bio','website','publicRoles']) {
+    for (const name of ['title','bio','website','publicRoles','contactId']) {
       if (!Object.hasOwn(row,name) && existing && Object.hasOwn(existing,name)) row[name] = structuredClone(existing[name]);
     }
     return row;
@@ -146,7 +146,10 @@ export function createFileContentStore({ directory, portraitStore, initialConten
 
   return {
     read: () => serial(async () => envelope(await load())),
-    save: (expectedRevision, input, actorId) => serial(async () => {
+    save: (expectedRevision, input, actorId, options = {}) => serial(async () => {
+      if (options === null || typeof options !== 'object' || Array.isArray(options) || ![Object.prototype, null].includes(Object.getPrototypeOf(options))
+        || Reflect.ownKeys(options).some(key => key !== 'beforeCommit')
+        || Object.hasOwn(options, 'beforeCommit') && typeof Object.getOwnPropertyDescriptor(options, 'beforeCommit')?.value !== 'function') throw new TypeError('Content save guard unavailable.');
       const state = await load();
       checkRevision(expectedRevision, state.draft.revision);
       // A legacy client may omit the newly added array. It cannot silently
@@ -159,6 +162,9 @@ export function createFileContentStore({ directory, portraitStore, initialConten
       }
       const content = checkedContent(preserveArrangementFields(input, state.draft.content));
       if (content.eventId !== state.draft.content.eventId) throw new ContentError('VALIDATION_ERROR', '本后台只维护当前活动。', 422, { eventId: '活动 ID 不可更改。' });
+      const relationships = validateBoothOrganizationChanges(content, state.draft.content);
+      if (!relationships.valid) throw new ContentError('VALIDATION_ERROR', '组织关联未通过校验。', 422, relationships.errors);
+      await Object.getOwnPropertyDescriptor(options, 'beforeCommit')?.value({ current: structuredClone(state.draft.content), next: structuredClone(content) });
       await verifyPortraits(content);
       state.draft = { revision: state.draft.revision + 1, content };
       state.audit.push({ action: 'save_draft', actorId, revision: state.draft.revision, at: new Date(now()).toISOString() });

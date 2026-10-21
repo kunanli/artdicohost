@@ -88,6 +88,8 @@ export function toContactPlanningContent(content) {
   if (!plain(content) || !Array.isArray(content.sessions) || !Array.isArray(content.booths)) throw new TypeError('场次或展位资料不可读取。');
   return {
     sessions: content.sessions.map(({ id, start, end, zone, title, status }) => ({ id, start, end, zone, title, status })),
-    booths: content.booths.map(({ id, code, zone, organization, project, status }) => ({ id, code, zone, organization, project, status })),
+    booths: content.booths.map(({ id, code, zone, organization, project, status, organizationId }) => ({ id, code, zone, organization, project, status,
+      ...(organizationId === undefined ? {} : { organizationId }) })),
+    ...(Object.hasOwn(content, 'organizations') ? { organizations: content.organizations.map(({ id, name, participation, status }) => ({ id, name, participation, status })) } : {}),
   };
 }

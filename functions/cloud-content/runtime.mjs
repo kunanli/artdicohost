@@ -35,6 +35,9 @@ import { createAppleWalletApi, isAppleWalletPath } from '../apple-wallet/handler
 import { loadEncryptedSigningBundle, walletSigningObjectKey } from '../apple-wallet/bundle.mjs';
 import { createRegistrationXlsxApi, createContactsXlsxApi } from '../registration-admin/xlsx-handler.mjs';
 import { createPersonWorkspaceApi } from '../person-workspace/handler.mjs';
+import { createVolunteerRepository } from '../volunteers/repository.mjs';
+import { createVolunteerService } from '../volunteers/service.mjs';
+import { createVolunteersApi, isVolunteersPath } from '../volunteers/handler.mjs';
 
 const credentialFields = ['ALIBABA_CLOUD_ACCESS_KEY_ID', 'ALIBABA_CLOUD_ACCESS_KEY_SECRET', 'ALIBABA_CLOUD_SECURITY_TOKEN'];
 const PUBLIC_ALIASES = new Map([
@@ -195,6 +198,19 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     } : undefined });
   const admissionsHandle = createAdmissionsApi({ enabled: Boolean(registrationService), auth, service: registrationService,
     onCommitted: async ({ result }) => notifyPromoted(result.promotedIds) });
+  const eventId = createInitialContent().eventId;
+  const volunteerRepository = createVolunteerRepository({ journal: journalFor(`cms/v1/volunteers/${eventId}`), eventId, clock: now });
+  const volunteerService = createVolunteerService({ repository: volunteerRepository, clock: now,
+    getSources: async actor => {
+      if (!registrationService || !reviewStore || !intentService) throw new Error('Volunteer sources are unavailable.');
+      const [contacts, intent, registrations, admissions, { draft }, inactiveRegistrationIds] = await Promise.all([
+        contactsStore.read(), intentService.read({ actor }), registrationService.repository.list(),
+        registrationService.getAdmissions({ actor }), store.read(), reviewStore.inactiveRegistrationIds(),
+      ]);
+      return { contacts, intent: { revision: intent.revision, conversions: intent.conversions }, registrations, admissions,
+        content: draft, inactiveRegistrationIds };
+    } });
+  const volunteerHandle = createVolunteersApi({ authenticate: request => auth.authenticate(request), service: volunteerService });
   const tasksHandle = createOrganizerTasksApi({ authenticate: request => auth.authenticate(request), now,
     getSources: async actor => {
       const [roster, { draft }, intent, admissions, withdrawnIds] = await Promise.all([
@@ -213,9 +229,9 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     loadRegistration: reviewStore ? id => reviewStore.detail(id) : undefined,
     loadAdmission: registrationService ? id => registrationService.getAdmissionStatus(id) : undefined,
     loadContent: async () => { const snapshot = await store.read(); return { ...snapshot.draft, published: snapshot.published }; },
+    loadVolunteers: input => volunteerService.readPerson(input),
     loadConfirmations: confirmationService ? (id, actor) => confirmationService.staffHistory({ actor, registrationId: id }) : undefined });
   const intentHandle = intentService ? createIntentInvitationApi({ service: intentService, authenticate: request => auth.authenticate(request) }) : null;
-  const eventId = createInitialContent().eventId;
   const configurationKeys = [];
   for (const [name, keyFor] of [['APPLE_WALLET_BUNDLE_ID', walletSigningObjectKey], ['ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID', confirmationMailObjectKey]]) {
     if (typeof env[name] === 'string' && /^[a-f0-9]{64}$/u.test(env[name])) configurationKeys.push(keyFor({ eventId, bundleId: env[name] }));
@@ -224,7 +240,8 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     additionalKeys: configurationKeys,
     audit: createMaintenanceAuditStore({ journal: journalFor('cms/v1/maintenance'), clock: now }),
     journalPrefixes: ['cms/v1/content', 'cms/v1/contacts', 'cms/v1/intent-invitations', 'cms/v1/maintenance',
-      `cms/v1/registrations/${eventId}/index`, `cms/v1/registration-reviews/${eventId}`, `cms/v1/registration-confirmations/${eventId}`, `cms/v1/group-invites/${eventId}/state`] });
+      `cms/v1/registrations/${eventId}/index`, `cms/v1/registration-reviews/${eventId}`, `cms/v1/registration-confirmations/${eventId}`,
+      `cms/v1/volunteers/${eventId}`, `cms/v1/group-invites/${eventId}/state`] });
   const registrationEnabled = Boolean(policy?.enabled);
   const handle = async request => {
     const url = new URL(request.url);
@@ -239,6 +256,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     if (alias) return registrationHandle(remap(request, alias));
     if (['/api/registration/config', '/api/registration/token', '/api/registrations'].includes(url.pathname)) return registrationHandle(request);
     if (url.pathname === '/api/admin/users') return userHandle(request);
+    if (isVolunteersPath(url.pathname)) return volunteerHandle(request);
     if (url.pathname === '/api/admin/people' || url.pathname.startsWith('/api/admin/people/')) return personHandle(request);
     if (url.pathname === '/api/admin/tasks') return tasksHandle(request);
     if (url.pathname === '/api/admin/admissions' || url.pathname.startsWith('/api/admin/admissions/')) return admissionsHandle(request);
@@ -269,5 +287,6 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     }
     return result;
   };
-  return { handle, store, contactsStore, userStore, auth, registrationService, reviewStore, intentService, groupService, confirmationService, walletService, registrationEnabled };
+  return { handle, store, contactsStore, userStore, auth, registrationService, reviewStore, intentService, groupService, confirmationService, walletService,
+    volunteerRepository, volunteerService, registrationEnabled };
 }

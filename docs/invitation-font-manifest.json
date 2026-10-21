@@ -18,8 +18,8 @@
       "id": "medium-1",
       "file": "invitation-medium-part1.woff2",
       "weight": 500,
-      "bytes": 1464512,
-      "sha256": "66d6c23ee6fd0fbbd6ad5ced166efb1e823ca49d3d1ca162c8b807ccf5cb520f",
+      "bytes": 1466372,
+      "sha256": "1189f9f21d27cf56be74a17c9ce2f188579d23b2da9db3a00f994d5c86612c73",
       "codePointCount": 10296,
       "codePointRanges": [
         [
@@ -697,8 +697,8 @@
       "id": "medium-2",
       "file": "invitation-medium-part2.woff2",
       "weight": 500,
-      "bytes": 1463768,
-      "sha256": "51362876134f38d6eb15bbbeaad39149bd33cb68e9bf100c7ec6b22471cc9bea",
+      "bytes": 1465500,
+      "sha256": "4763e739996d1e84bac756f170e21d9c24bb56d199ba486ca8352effb8c96ecb",
       "codePointCount": 10297,
       "codePointRanges": [
         [
@@ -712,8 +712,8 @@
       "id": "medium-3",
       "file": "invitation-medium-part3.woff2",
       "weight": 500,
-      "bytes": 1631200,
-      "sha256": "50d5c494f1e8fa2ee5ec40ec0bcb40545c601f9ecd241484c3fa55db3083e4cf",
+      "bytes": 1633220,
+      "sha256": "a88841376a7873207bd8131a887448039d1bffeee29b0f9a5076deb882d7ac7a",
       "codePointCount": 10297,
       "codePointRanges": [
         [
@@ -1852,8 +1852,8 @@
     "id": "regular",
     "file": "invitation-regular.woff2",
     "weight": 400,
-    "bytes": 40920,
-    "sha256": "23a88e679f7eb54269780a304af98a4388142d237d2068008ee99fef748a62bf",
+    "bytes": 42844,
+    "sha256": "1567d40b73342a9a93bb14cdd7ed0b2f6e194409829c567ec520699d2b5ac508",
     "codePointCount": 300,
     "codePointRanges": [
       [

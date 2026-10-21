@@ -18,7 +18,7 @@ def ranges(points):
     return result
 
 
-def build(source, points, output, weight, identifier):
+def build(source, points, output, weight, identifier, license_text):
     font = TTFont(source, recalcTimestamp=False)
     opts = subset.Options()
     opts.name_IDs = ['*']
@@ -36,6 +36,8 @@ def build(source, points, output, weight, identifier):
     for record in font['name'].names:
         if record.nameID in renamed:
             record.string = renamed[record.nameID].encode(record.getEncoding())
+        elif record.nameID == 13:
+            record.string = license_text.encode(record.getEncoding())
     font.flavor = 'woff2'
     font.save(output)
     result = TTFont(output)
@@ -59,6 +61,9 @@ def main():
     parser.add_argument('--root', default=Path(__file__).resolve().parents[1], type=Path)
     args = parser.parse_args()
     root = args.root.resolve()
+    license_text = (root / 'docs/licenses/invitation-fonts-OFL.txt').read_text()
+    if 'SIL OPEN FONT LICENSE Version 1.1' not in license_text or 'PERMISSION & CONDITIONS' not in license_text:
+        raise ValueError('The complete redistribution license must accompany each font')
     target = root / 'src/assets/fonts'
     target.mkdir(parents=True, exist_ok=True)
     medium_points = sorted(TTFont(args.medium).getBestCmap())
@@ -68,12 +73,12 @@ def main():
         points = medium_points[len(medium_points) * i // 3:len(medium_points) * (i + 1) // 3]
         assert not union.intersection(points)
         union.update(points)
-        parts.append(build(args.medium, points, target / ('invitation-medium-part%d.woff2' % (i + 1)), 500, 'medium-%d' % (i + 1)))
+        parts.append(build(args.medium, points, target / ('invitation-medium-part%d.woff2' % (i + 1)), 500, 'medium-%d' % (i + 1), license_text))
     assert union == set(medium_points)
     available = set(TTFont(args.regular).getBestCmap())
     date_chars = '年月日时分至点零一二三四五六七八九十星期周上午下午时间地点诚邀相聚一起创意不息深圳前海号楼—–：／（）·'
     requested = set(range(0x20, 0x180)) | set(range(0x2000, 0x2070)) | set(map(ord, date_chars))
-    regular = build(args.regular, sorted(available & requested), target / 'invitation-regular.woff2', 400, 'regular')
+    regular = build(args.regular, sorted(available & requested), target / 'invitation-regular.woff2', 400, 'regular', license_text)
     def js_entry(item):
         minimal = {key: item[key] for key in ('id', 'unicodeRange', 'codePointRanges')}
         encoded = json.dumps(minimal, ensure_ascii=True, separators=(',', ':'))

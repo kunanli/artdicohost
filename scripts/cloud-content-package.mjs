@@ -13,18 +13,19 @@ const MiB = 1024 * 1024;
 const BUILD_SCOPES = ['src', 'shared', 'public', 'astro.config.mjs', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json'];
 export const CANDIDATE_SOURCES = Object.freeze([
   ['functions/cloud-content/bootstrap', 'bootstrap', '0755'],
-  ...['launch.py', 'server.mjs', 'runtime.mjs', 'http-server.mjs', 'handler.mjs', 'auth.mjs', 'oss-client.mjs', 'object-journal.mjs', 'store.mjs', 'portrait-store.mjs', 'contacts-store.mjs', 'errors.mjs', 'acceptance.mjs', 'scoped-objects.mjs', 'user-store.mjs', 'user-handler.mjs'].map(name => ['functions/cloud-content/' + name, 'functions/cloud-content/' + name, '0644']),
+  ...['launch.py', 'server.mjs', 'runtime.mjs', 'http-server.mjs', 'handler.mjs', 'auth.mjs', 'oss-client.mjs', 'object-journal.mjs', 'store.mjs', 'portrait-store.mjs', 'contacts-store.mjs', 'errors.mjs', 'acceptance.mjs', 'scoped-objects.mjs', 'user-store.mjs', 'user-handler.mjs', 'contact-admission-guard.mjs'].map(name => ['functions/cloud-content/' + name, 'functions/cloud-content/' + name, '0644']),
   ...['handler.mjs', 'launch.py'].map(name => ['functions/fc-api/' + name, 'functions/fc-api/' + name, '0644']),
   ...['auth.mjs', 'store.mjs', 'communications.mjs'].map(name => ['functions/content-api/' + name, 'functions/content-api/' + name, '0644']),
-  ...['handler.mjs', 'policy.mjs', 'validation.mjs', 'tokens.mjs', 'rate-limit.mjs', 'repository.mjs', 'service.mjs', 'group-invite.mjs', 'group-invite-handler.mjs'].map(name => ['functions/registration-api/' + name, 'functions/registration-api/' + name, '0644']),
-  ...['handler.mjs', 'store.mjs', 'errors.mjs', 'maintenance.mjs', 'maintenance-handler.mjs'].map(name => ['functions/registration-admin/' + name, 'functions/registration-admin/' + name, '0644']),
-  ...['handler.mjs', 'service.mjs', 'repository.mjs', 'email-provider.mjs', 'errors.mjs', 'importer.mjs', 'contact-snapshot.mjs', 'import-handler.mjs'].map(name => ['functions/intent-invitations/' + name, 'functions/intent-invitations/' + name, '0644']),
-  ...['content-schema.mjs', 'contacts-schema.mjs', 'contact-editor.mjs', 'arrangement-overview.mjs', 'portrait-codec.mjs', 'registration-schema.mjs'].map(name => ['shared/' + name, 'shared/' + name, '0644']),
+  ...['handler.mjs', 'policy.mjs', 'validation.mjs', 'tokens.mjs', 'rate-limit.mjs', 'repository.mjs', 'service.mjs', 'group-invite.mjs', 'group-invite-handler.mjs', 'admissions.mjs', 'admission-service.mjs'].map(name => ['functions/registration-api/' + name, 'functions/registration-api/' + name, '0644']),
+  ...['handler.mjs', 'store.mjs', 'errors.mjs', 'maintenance.mjs', 'maintenance-handler.mjs', 'admissions-handler.mjs'].map(name => ['functions/registration-admin/' + name, 'functions/registration-admin/' + name, '0644']),
+  ...['handler.mjs', 'service.mjs', 'repository.mjs', 'email-provider.mjs', 'errors.mjs', 'importer.mjs', 'contact-snapshot.mjs', 'import-handler.mjs', 'batch.mjs'].map(name => ['functions/intent-invitations/' + name, 'functions/intent-invitations/' + name, '0644']),
+  ['functions/organizer-tasks/handler.mjs', 'functions/organizer-tasks/handler.mjs', '0644'],
+  ...['content-schema.mjs', 'contacts-schema.mjs', 'contact-editor.mjs', 'arrangement-overview.mjs', 'portrait-codec.mjs', 'registration-schema.mjs', 'organizer-progress.mjs'].map(name => ['shared/' + name, 'shared/' + name, '0644']),
   ...['content.mjs', 'event.mjs'].map(name => ['src/config/' + name, 'src/config/' + name, '0644']),
 ]);
 const FIXED_ASSETS = Object.freeze([
   ['/admin/', 'admin/index.html'], ['/admin/contacts/', 'admin/contacts/index.html'],
-  ['/admin/registrations/', 'admin/registrations/index.html'],
+  ['/admin/registrations/', 'admin/registrations/index.html'], ['/admin/tasks/', 'admin/tasks/index.html'],
   ['/invitations/template-blank.png', 'invitations/template-blank.png'],
 ]);
 const ASSET = /^\/_astro\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,200}\.(?:css|m?js|woff2?)$/u;
@@ -81,7 +82,7 @@ export function candidateAssetPath(url) {
   return 'admin-assets' + url;
 }
 
-/** Generated references are traversed only from the two selected pages, never by scanning dist. */
+/** Generated references are traversed only from the selected admin pages, never by scanning dist. */
 export function candidateReferences(bytes, url) {
   const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   const found = new Set();
@@ -214,7 +215,8 @@ export function candidateFileRecords(value) {
     let mode = expected.get(item.path);
     if (!mode && typeof item.path === 'string' && item.path.startsWith('admin-assets/')) {
       const url = item.path === 'admin-assets/admin/index.html' ? '/admin/' : item.path === 'admin-assets/admin/contacts/index.html' ? '/admin/contacts/'
-        : item.path === 'admin-assets/admin/registrations/index.html' ? '/admin/registrations/' : '/' + item.path.slice('admin-assets/'.length);
+        : item.path === 'admin-assets/admin/registrations/index.html' ? '/admin/registrations/'
+          : item.path === 'admin-assets/admin/tasks/index.html' ? '/admin/tasks/' : '/' + item.path.slice('admin-assets/'.length);
       if (candidateAssetPath(url) !== item.path) fail('Unexpected candidate asset file');
       mode = '0644';
     }
@@ -252,7 +254,7 @@ export function candidateZipEntries(bytes, records) {
 }
 
 export function validateCandidateAssets(release, contents) {
-  if (!Array.isArray(release.assets) || release.assets.length < 4 || release.assets.length > 40) fail('Invalid candidate asset map');
+  if (!Array.isArray(release.assets) || release.assets.length < FIXED_ASSETS.length || release.assets.length > 40) fail('Invalid candidate asset map');
   const urls = new Set(), paths = new Set(); let total = 0;
   for (const item of release.assets) {
     exactKeys(item, ['url', 'path', 'bytes', 'sha256', 'mode'], 'asset');

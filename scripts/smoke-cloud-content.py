@@ -115,13 +115,14 @@ for configured in [False, True]:
             for path, method in [('/admin/', 'GET'),
                                  ('/admin/contacts/', 'GET'),
                                  ('/admin/registrations/', 'GET'),
+                                 ('/admin/tasks/', 'GET'),
                                  ('/api/admin/login', 'POST'),
                                  ('/api/registrations', 'POST')]:
                 status, headers, body = request(path, method)
                 assert status == 503 and headers.get('cache-control') == 'no-store'
                 assert json.loads(body)['error']['code'] == 'CONTENT_NOT_READY'
         else:
-            for path in ['/admin/', '/admin/contacts/', '/admin/registrations/']:
+            for path in ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/']:
                 status, headers, body = request(path)
                 assert status == 200 and 'text/html' in headers['content-type']
                 assert headers.get('cache-control') == 'no-store'

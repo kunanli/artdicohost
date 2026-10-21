@@ -7,7 +7,8 @@ const ROOT = 'https://api.artdico.host/api/admin/admissions', operationId = 'a'.
 const methods = ['getAdmissions', 'setAdmissionSettings', 'setAdmissionKind', 'withdrawAdmission', 'promoteAdmissions', 'saveAdmissionTeam', 'removeAdmissionTeam', 'addStaffMember'];
 function setup(roles = ['superadmin'], outcome = 'updated') {
   const calls = [], actor = { id: 'synthetic-owner', roles };
-  const service = Object.fromEntries(methods.map(method => [method, async input => { calls.push({ method, input }); return { outcome, revision: 1 }; }]));
+  const service = Object.fromEntries(methods.map(method => [method, async input => { calls.push({ method, input });
+    return { outcome, revision: 1, settings: { capacity: 3, staffReserve: 0, waitlistEnabled: true }, summary: {}, people: [], teams: [], auditCount: 1 }; }]));
   const handle = createAdmissionsApi({ enabled: true, auth: { authenticate: async () => ({ user: actor, csrfToken: 'synthetic-csrf' }) }, service });
   return { calls, handle, actor };
 }
@@ -56,11 +57,17 @@ test('exact methods, origin, CSRF, bounded plain JSON and operation identity are
 });
 
 test('service conflicts and unknown outcomes remain safe without retrying an admission mutation', async () => {
-  for (const [outcome, status] of [['conflict', 409], ['capacity_conflict', 409], ['invalid', 400], ['not_found', 404], ['forbidden', 403], ['unavailable', 503], ['constructor', 503], ['__proto__', 503], ['PRIVATE_PROVIDER_DETAIL', 503]]) {
+  for (const [outcome, status] of [['conflict', 409], ['capacity_conflict', 409], ['closed', 409], ['invalid', 400], ['not_found', 404], ['forbidden', 403], ['unavailable', 503], ['constructor', 503], ['__proto__', 503], ['PRIVATE_PROVIDER_DETAIL', 503]]) {
     const f = setup(['superadmin'], outcome), response = await f.handle(request('/promote', 'POST', { expectedRevision: 0, operationId }));
     assert.equal(response.status, status); assert.doesNotMatch(await response.text(), /PRIVATE_PROVIDER_DETAIL/u); assert.equal(f.calls.length, 1);
   }
   const denied = createAdmissionsApi({ enabled: true, auth: { authenticate() { throw new CloudContentError('AUTH_REQUIRED', 'PRIVATE', 401); } }, service: Object.fromEntries(methods.map(method => [method, () => {}])) });
   assert.equal((await denied(request())).status, 401);
   assert.equal((await createAdmissionsApi()(request())).status, 503);
+});
+
+test('a failed private admissions read never becomes an HTTP 200 empty snapshot', async () => {
+  const service = Object.fromEntries(methods.map(method => [method, async () => ({ outcome: 'unavailable', privateDetails: 'PRIVATE_PROVIDER' })]));
+  const api = createAdmissionsApi({ enabled: true, auth: { authenticate: async () => ({ user: { id: 'synthetic', roles: ['reviewer'] } }) }, service });
+  const response = await api(request()); assert.equal(response.status, 503); assert.doesNotMatch(await response.text(), /PRIVATE_PROVIDER/u);
 });

@@ -21,10 +21,15 @@ const specs = {
   METHOD_NOT_ALLOWED: [405, '此接口不接受该方法。'], BODY_TOO_LARGE: [413, '请求内容过大。'],
   UNSUPPORTED_MEDIA_TYPE: [415, '请发送 UTF-8 JSON 请求。'], CONFLICT: [409, '资料已更新，请重新载入后再决定。'],
   CAPACITY_CONFLICT: [409, '当前名额安排无法容纳这项变更。'], UNAVAILABLE: [503, '名额管理暂不可用，请稍后重新检查。'],
+  CLOSED: [409, '当前未开放新增人员登记。'],
 };
 const safe = new WeakSet();
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
 const exact = (value, fields) => plain(value) && Object.keys(value).sort().join(',') === [...fields].sort().join(',');
+const snapshot = value => Number.isSafeInteger(value?.revision) && value.revision >= 0 && plain(value.settings) && plain(value.summary)
+  && Array.isArray(value.people) && Array.isArray(value.teams) && Number.isSafeInteger(value.auditCount) && value.auditCount >= 0;
+const failures = { invalid: 'INVALID_REQUEST', conflict: 'CONFLICT', forbidden: 'FORBIDDEN', not_found: 'NOT_FOUND', capacity_conflict: 'CAPACITY_CONFLICT', unavailable: 'UNAVAILABLE', closed: 'CLOSED' };
+const resultFailure = result => Object.hasOwn(failures, result?.outcome) ? failures[result.outcome] : 'UNAVAILABLE';
 function fail(code = 'UNAVAILABLE') { const error = new Error(code); error.code = code; safe.add(error); throw error; }
 const json = (value, status = 200, extra = {}) => new Response(JSON.stringify(value), { status, headers: { ...SECURITY, ...extra, 'content-type': 'application/json; charset=utf-8' } });
 async function inputBody(request) {
@@ -72,15 +77,18 @@ export function createAdmissionsApi({ enabled = false, auth, service } = {}) {
       if (origin !== null && origin !== ORIGIN || !reading && origin !== ORIGIN) fail('ORIGIN_REJECTED');
       const session = await auth.authenticate(request), roles = session?.user?.roles;
       if (!Array.isArray(roles) || !roles.some(role => ['reviewer', 'superadmin'].includes(role))) fail('FORBIDDEN');
-      if (reading) return json(await service.getAdmissions({ actor: session.user }));
+      if (reading) {
+        const result = await service.getAdmissions({ actor: session.user });
+        if (!snapshot(result)) fail(resultFailure(result));
+        return json(result);
+      }
       if (route[3] && !roles.includes('superadmin')) fail('FORBIDDEN');
       if (!equalToken(request.headers.get('x-csrf-token'), session.csrfToken)) fail('CSRF_REJECTED');
       const input = await inputBody(request);
       if (!exact(input, ['expectedRevision', 'operationId', ...route[2]]) || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0
         || typeof input.operationId !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/u.test(input.operationId)) fail('INVALID_REQUEST');
       const result = await service[route[1]]({ ...input, actor: session.user });
-      const failures = { invalid: 'INVALID_REQUEST', conflict: 'CONFLICT', forbidden: 'FORBIDDEN', not_found: 'NOT_FOUND', capacity_conflict: 'CAPACITY_CONFLICT', unavailable: 'UNAVAILABLE' };
-      if (!['updated', 'replayed'].includes(result?.outcome)) fail(Object.hasOwn(failures, result?.outcome) ? failures[result.outcome] : 'UNAVAILABLE');
+      if (!['updated', 'replayed'].includes(result?.outcome) || !snapshot(result)) fail(resultFailure(result));
       return json(result);
     } catch (error) {
       let code = safe.has(error) ? error.code : 'UNAVAILABLE';

@@ -252,10 +252,11 @@ export function createRegistrationConfirmationService({ registrationService, jou
     return { outcome: 'updated', revision: saved.value.revision, operationId,
       status: stop ? 'partial' : 'completed', results };
   }
-  async function notifyPromoted({ registrationIds } = {}) {
-    if (!Array.isArray(registrationIds) || registrationIds.length > MAX_CONFIRMATION_BATCH || registrationIds.some(id => !ID.test(id))) failure('INVALID_REQUEST', 400);
+  async function notifyPromoted({ registrationIds, timeoutMs = batchTimeoutMs } = {}) {
+    if (!Array.isArray(registrationIds) || registrationIds.length > MAX_CONFIRMATION_BATCH || registrationIds.some(id => !ID.test(id))
+      || new Set(registrationIds).size !== registrationIds.length || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > batchTimeoutMs) failure('INVALID_REQUEST', 400);
     if (!(await providerState()).ready) return { status: 'not_configured', results: [] };
-    const deadline = monotonicNow() + batchTimeoutMs, results = []; let stop = false;
+    const deadline = monotonicNow() + timeoutMs, results = []; let stop = false;
     for (const registrationId of registrationIds) {
       if (monotonicNow() >= deadline) stop = true;
       if (stop) { results.push({ registrationId, status: 'not_attempted' }); continue; }

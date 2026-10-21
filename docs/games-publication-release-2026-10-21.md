@@ -1,5 +1,11 @@
 # 公开状态、游戏／作品与跟进人标签发布记录
 
+## 后续实际验收：尚未全流程成功
+
+根因检查点：PR43／3090dca／CI39637287514的1303项通过，实际只读安全报告`{"verified":false,"failure":"CREDENTIALS","status":200}`。该码仅为响应ACAC存在，不能据此推断请求带凭证；请求固定omit。正在按浏览器Fetch语义修正这一过严判断，保留其他匿名读取保护，待新准确PR与main完整验证。
+
+PR42 head46af17e4e957fffa409053c3af8d2d46adf75e28的CI39633825508全绿后，合并main0164330ef64e00295ea5017e9fe7e9b981e4b913。实际run39634798298：check119342274919于16:31:13 UTC成功（1298项、545源码、Astro406、23页／审计、准确两ZIP）。FC119344702856的真实私有OSS十阶段／2clients／1FC、共同300政策与激活16:34:35.926 UTC通过，13后台路径HTTPS16:34:41.615 UTC通过；但新匿名public data／CORS验证16:34:42 UTC固定失败，无typed code／status／revision／counts，不能推测原因。FC job失败16:34:45 UTC，公开OSS119346599307跳过，46个新公开文件没有发布。下一步先补隐私安全诊断与只读PR观察，再按实际原因修复；不盲重试、不写真实资料、不自动发布草稿。下文保留本机及开发中检查点，不能代替正式成功证据。
+
 当前 `feat/publication-games` 开发阶段，**尚未正式发布**。基准是已实际发布main `d504ecc` 与证据 `3d04822`；不把定向测试或旧dist当新功能上线。[计划](games-publication-plan.md)、[操作](publication-games-operations.md)。所有业务验证均合成隔离，不写真实联系人／报名／授权或发信。
 
 ## 已集成的最终行为

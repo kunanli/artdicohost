@@ -168,8 +168,9 @@ try{
   assert.ok(await mobile.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await mobile.page.screenshot({path:resolve(evidence,'staff-image-editor-mobile.png')});
   await editor.locator('[data-image-editor-cancel]').click();assert.equal(mobile.uploads.length,0);await mobile.context.close();reports.push({mobileTouchMovesPixels:true,mobileNoHorizontalOverflow:true,touchCancelDoesNotUpload:true});
 
-  const encoding=await fixture({mode:'delayed-encode'}),encodingForm=await open(encoding,'guest');editor=await choose(encoding,'guest');
-  await encodingForm.locator('[name=name]').fill('合成取消编码仍保留');await editor.locator('[data-image-editor-apply]').click();await encoding.page.waitForFunction(()=>window.syntheticImageEncode.ready);
+  const encoding=await fixture({mode:'delayed-encode'}),encodingForm=await open(encoding,'guest');
+  await encodingForm.locator('[name=name]').fill('合成取消编码仍保留');editor=await choose(encoding,'guest');
+  await editor.locator('[data-image-editor-apply]').click();await encoding.page.waitForFunction(()=>window.syntheticImageEncode.ready);
   await editor.locator('[data-image-editor-cancel]').click();await encoding.page.evaluate(()=>window.syntheticImageEncode.release());await encoding.page.waitForTimeout(50);
   assert.equal(encoding.uploads.length,0);assert.equal(await encodingForm.locator('[name=portraitId]').inputValue(),seedId);assert.equal(await encodingForm.locator('[name=name]').inputValue(),'合成取消编码仍保留');await encoding.context.close();reports.push({lateEncodedPixelsDiscardedAfterCancel:true});
 

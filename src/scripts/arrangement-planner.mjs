@@ -1,5 +1,6 @@
 import { boothReadiness, prepareContactAssignments } from '../lib/arrangement-planner.mjs';
 import { organizationChoices } from '../lib/content-relationships.mjs';
+import { readContentForm,writeContentForm } from '../lib/content-local-drafts.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const fields = ['code','organization','project','contactName','contactMethods','description','status'];
@@ -9,7 +10,7 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
   const $ = selector => root.querySelector(selector);
   const boothForm = $('[data-planner-booth]'), assignmentForm = $('[data-planner-assignment]');
   let selected = null, original = null, roster = null, intents = null, generation = 0, working = false, uncertain = false;
-  let baseline = '', unapplied = false;
+  let baseline = '', unapplied = false, assignmentDirty = false, restoredAssignment = null;
   function message(text, error = false) {
     $('[data-planner-error]').textContent = error ? text : ''; $('[data-planner-error]').hidden = !error;
     $('[data-planner-result]').textContent = error ? '' : text;
@@ -17,7 +18,7 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
   function configure() {
     const context = getContext();
     if (!context.allowed) { if (selected || roster || !root.hidden) clear(); return; }
-    for (const control of root.querySelectorAll('input,textarea,select,button')) control.disabled = working || context.busy;
+    for (const control of root.querySelectorAll('input,textarea,select,button')) if(!control.hasAttribute('data-admin-save'))control.disabled = working || context.busy;
     $('[data-planner-save]').disabled = working || context.busy || context.dirty || uncertain || !roster || !assignmentForm.elements.namedItem('contactId').value;
     if (selected && selected.revision !== context.revision) {
       $('[data-planner-apply]').disabled = true; $('[data-planner-save]').disabled = true;
@@ -27,7 +28,7 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
   }
   function clear() {
     const wasWorking = working;
-    generation++; selected = null; original = null; roster = null; intents = null; working = false; uncertain = false; baseline = ''; unapplied = false;
+    generation++; selected = null; original = null; roster = null; intents = null; working = false; uncertain = false; baseline = ''; unapplied = false; assignmentDirty = false;restoredAssignment=null;
     root.hidden = true; boothForm.reset(); assignmentForm.reset();
     for (const key of ['session-choices','booth-choices','readiness']) $('[data-planner-' + key + ']').replaceChildren();
     assignmentForm.elements.namedItem('contactId').replaceChildren(node('option', '请选择'));
@@ -73,10 +74,15 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
         select.append(option);
       }
       choices(); message('已读取名单；选择人员后核对全部分配，再明确保存。');
+      if(restoredAssignment){
+        const recovered=restoredAssignment;restoredAssignment=null;
+        if(recovered.contactsRevision!==people.revision||!people.contacts.some(contact=>contact.id===recovered.assignment.contactId)){message('人员名单已有变化，暂存选择未套用；请复制暂存后重新核对。',true);restoredAssignment=recovered;}
+        else{assignmentForm.elements.namedItem('contactId').value=recovered.assignment.contactId;choices();for(const [name,values]of[['sessionIds',recovered.assignment.sessionIds],['boothIds',recovered.assignment.boothIds]])for(const field of assignmentForm.querySelectorAll('[name='+name+']'))field.checked=values.includes(field.value);assignmentDirty=true;uncertain=recovered.uncertain;message(uncertain?'上次人员保存结果待核对。请先重新读取名单比较，不会自动重送。':'已恢复人员选择，请核对后明确保存。');}
+      }
     } catch (error) { if (current === generation) { roster = null; intents = null; message(error.message || '名单未能读取。', true); } }
     finally { if (current === generation) { working = false; onBusy(false); configure(); } }
   }
-  async function open(type, id, slotNumber = 0) {
+  async function open(type, id, slotNumber = 0, {load=true} = {}) {
     const context = getContext();
     if (!context.allowed || context.busy || !['booth','session'].includes(type) || id && !ID.test(id)) return;
     if (unapplied) { message('请先应用当前展位编辑，或明确关闭编辑面板后再切换。', true); return; }
@@ -100,7 +106,7 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
       readiness();
     }
     configure(); root.scrollIntoView({ block: 'nearest', behavior: 'auto' });
-    if (!context.dirty) await loadPeople(); else message('可继续编辑内容草稿；请先保存草稿，再配置人员。');
+    if (load&&!context.dirty) await loadPeople(); else message('可继续编辑内容草稿；保存内容后可明确读取人员名单。');
   }
   function readiness() {
     const output = $('[data-planner-readiness]'); output.replaceChildren();
@@ -120,6 +126,7 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
     } catch (error) { message(error.message || '展位资料未应用。', true); }
   });
   assignmentForm.addEventListener('change', () => {
+    assignmentDirty=true;onDraftChange();
     const contact = selectedContact();
     if (!contact) return;
     try {
@@ -152,12 +159,16 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
       const latestRoster = await request('/api/admin/contacts');
       if (current !== generation || !getContext().allowed) return;
       if (!Array.isArray(latestRoster.contacts) || !Number.isSafeInteger(latestRoster.revision)) throw new Error('安排已保存，但最新名单未能读取；请重新读取核对。');
-      roster = latestRoster; uncertain = false; choices(); message('人员安排已保存；没有自动修改出席回复或发布个人资料。');
+      roster = latestRoster; uncertain = false;assignmentDirty=false;choices();onDraftChange();message('人员安排已保存；没有自动修改出席回复或发布个人资料。');
     } catch (error) { if (current === generation) message((committed ? '安排已保存，后续刷新未完成。' : '') + (error.message || '保存结果未能确认。') + (uncertain ? ' 请先重新读取名单核对，不要重复保存。' : ''), true); }
     finally { if (current === generation) { working = false; onBusy(false); configure(); } }
   });
   $('[data-planner-close]').addEventListener('click', clear);
   $('[data-planner-refresh]').addEventListener('click', () => loadPeople());
   clear();
-  return { open, configure, clear, hasUnapplied: () => unapplied };
+  return { open, configure, clear, hasUnapplied: () => unapplied,hasLocalChanges:()=>unapplied||assignmentDirty||uncertain||Boolean(restoredAssignment),
+    localDraft(){if(!selected||!unapplied&&!assignmentDirty&&!uncertain&&!restoredAssignment)return null;return{selected:{type:selected.type,id:selected.id,slotNumber:selected.slotNumber},booth:selected.type==='booth'?readContentForm(boothForm,'plannerBooth'):null,
+      assignment:restoredAssignment?.assignment??(assignmentForm.elements.namedItem('contactId').value?{contactId:assignmentForm.elements.namedItem('contactId').value,sessionIds:new FormData(assignmentForm).getAll('sessionIds'),boothIds:new FormData(assignmentForm).getAll('boothIds')}:null),contactsRevision:restoredAssignment?.contactsRevision??roster?.revision??null,uncertain};},
+    async restoreLocalDraft(record){await open(record.selected.type,record.selected.id,record.selected.slotNumber,{load:false});if(!selected)throw new Error('原场次或展位已不存在，未套用暂存。');if(record.booth){writeContentForm(boothForm,'plannerBooth',record.booth);readiness();}if(record.assignment){restoredAssignment={assignment:structuredClone(record.assignment),contactsRevision:record.contactsRevision,uncertain:record.uncertain};assignmentDirty=true;message('已保留原人员选择；请明确读取名单并核对，不会自动保存安排。');}onDraftChange();configure();},
+  };
 }

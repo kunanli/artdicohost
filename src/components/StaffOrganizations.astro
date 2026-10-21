@@ -1,5 +1,5 @@
 <section class="ah-admin-panel ah-organizations" data-organizations aria-labelledby="organizations-title">
-  <div class="ah-admin-section-heading"><div><h2 id="organizations-title">参与组织</h2><p>维护组织图片、名称及对方页面。参展与一般参与分别记录，保存草稿后再发布。</p></div><button type="button" class="ah-admin-button" data-organization-add>＋ 新增组织</button></div>
+  <div class="ah-admin-section-heading"><div><h2 id="organizations-title">参与组织</h2><p>维护组织图片、名称及对方页面。参展与一般参与分别记录，保存草稿后再发布。</p></div><button type="button" class="ah-admin-button" data-admin-save data-admin-save-location="organization" disabled>保存到云端</button><button type="button" class="ah-admin-button" data-organization-add>＋ 新增组织</button></div>
   <p class="ah-admin-small" data-organizations-legacy hidden>以下是网站已有的组织名称，尚未加入这份后台草稿。首次应用组织修改后，完整名单才会随草稿保存；没有预设图片、网址或参展身份。</p>
   <p class="ah-admin-small">组织参展身份不代表已分配展位，也不增加个人参会人数。具体展位仍在下方展位与总览中安排。</p>
   <div class="ah-organization-list" data-organization-list></div>
@@ -17,7 +17,7 @@
       <label class="ah-admin-guest-consent" for="organization-consent"><input id="organization-consent" name="publicConsent" type="checkbox" /><span>已核实组织同意公开这份名称、图片、链接与参与形式。</span></label>
       <p class="ah-admin-small" data-organization-consent-note>更改公开资料或图片后，请重新核对授权；保存草稿不会自动公开。</p>
       <div class="ah-admin-field"><label for="organization-notes">内部备注 · 不公开</label><textarea id="organization-notes" name="internalNotes" rows="3" maxlength="4000"></textarea></div>
-      <div class="ah-admin-dialog-actions"><button type="button" class="ah-admin-button" data-organization-close>取消</button><button type="submit" class="ah-admin-button ah-admin-primary" data-organization-submit>应用组织修改</button></div>
+      <div class="ah-admin-dialog-actions"><button type="button" class="ah-admin-button" data-organization-close>取消</button><button type="button" class="ah-admin-button" data-content-copy="organization">复制填写内容</button><button type="submit" class="ah-admin-button ah-admin-primary" data-organization-submit>应用到本页</button></div>
     </form>
   </dialog>
 </section>

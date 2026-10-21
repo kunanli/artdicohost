@@ -1,4 +1,5 @@
 ---
+import { CONTENT_PAGES, SETTINGS_PAGES, resolveContentPage, resolveSettingsPage } from '../lib/admin-sections.mjs';
 interface Props { current: 'content' | 'tasks' | 'contacts' | 'registrations' | 'settings' | 'person' | 'volunteers' }
 const { current } = Astro.props;
 const pages = [
@@ -9,32 +10,18 @@ const pages = [
   { key: 'content', href: '/admin/', label: '活动与内容' },
   { key: 'settings', href: '/admin/settings/', label: '设置与通知' },
 ];
-const contentSections = [
-  ['workspace-title', '工作区概况'],
-  ['event-editor-title', '活动基本资料'],
-  ['arrangements-title', '现场配置总览'],
-  ['guests-title', '嘉宾与讲者'],
-  ['organizations-title', '参与组织'],
-  ['showcases-title', '学生作品'],
-  ['sessions-title', '活动场次'],
-  ['booths-title', '十五个展位'],
-];
-const sections = current === 'content' ? contentSections : current === 'settings' ? [
-  ['delivery-settings-heading', '报名确认与票券'],
-  ['group-settings-title', '微信群入口'],
-  ['invitation-settings-title', '工作人员邀请'],
-  ['staff-accounts-title', '用户管理'],
-] : [];
+const sections = current === 'content' ? CONTENT_PAGES : current === 'settings' ? SETTINGS_PAGES : [];
+const section = current === 'content' ? resolveContentPage(Astro.url.pathname) : current === 'settings' ? resolveSettingsPage(Astro.url.pathname) : null;
 ---
-<aside class="ah-staff-navigation" data-staff-navigation>
+<aside class="ah-staff-navigation" data-staff-navigation={current}>
   <details data-staff-navigation-menu>
     <summary>快捷导航 <span aria-hidden="true">⌄</span></summary>
     <nav aria-label="后台快捷导航">
       <div class="ah-staff-navigation-pages">
-        {pages.map(page => <a href={page.href} aria-current={current === page.key ? 'page' : current === 'person' && page.key === 'contacts' ? 'location' : undefined}>{page.label}</a>)}
+        {pages.map(page => <a href={page.href} data-staff-page={page.key} aria-current={current === page.key ? sections.length ? 'location' : 'page' : current === 'person' && page.key === 'contacts' ? 'location' : undefined}>{page.label}</a>)}
       </div>
-      {sections.length > 0 && <div class="ah-staff-navigation-sections" aria-label={current === 'settings' ? '设置区块' : '活动内容区块'}>
-        {sections.map(([id, label]) => <a href={'#' + id} data-staff-section-link data-staff-admin-link={id === 'staff-accounts-title' ? '' : undefined} hidden={id === 'staff-accounts-title'}>{label}</a>)}
+      {sections.length > 0 && <div class="ah-staff-navigation-sections" aria-label={current === 'settings' ? '设置页面' : '活动内容页面'}>
+        {sections.map(page => <a href={page.href} data-staff-section-link data-staff-section={page.key} data-staff-admin-link={page.key === 'accounts' ? '' : undefined} hidden={page.key === 'accounts'} aria-current={section === page.key ? 'page' : undefined}>{page.label}</a>)}
       </div>}
     </nav>
   </details>

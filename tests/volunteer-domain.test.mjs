@@ -228,6 +228,38 @@ test('only explicit stable identity links deduplicate people; unresolved duplica
   const distinct = context(value); assert.equal(projectVolunteerCoverage(value, distinct).summary.activeVolunteerCount, 2, 'same synthetic names/email do not merge distinct IDs');
 });
 
+test('restoring availability or confirmed collaboration cannot overfill a slot that was replaced during historical invalidation', () => {
+  const original = state({ volunteers: [volunteer(), volunteer('person-two')] }), sources = context(original);
+  const unavailable = structuredClone(original); unavailable.volunteers[0].availability = [{ start: '11:00', end: '12:00' }];
+  assert.equal(assertVolunteerPlanChange(original, unavailable, { action: 'volunteer_upsert', id: 'person-one' }, sources).summary.confirmedSlots, 0);
+  const replacement = structuredClone(unavailable); replacement.assignments.push(assignment('replacement', { volunteerId: 'person-two' }));
+  assert.equal(assertVolunteerPlanChange(unavailable, replacement, { action: 'assignment_upsert', id: 'replacement' }, sources).summary.confirmedSlots, 1);
+  const restored = structuredClone(replacement); restored.volunteers[0].availability = original.volunteers[0].availability;
+  assert.throws(() => assertVolunteerPlanChange(replacement, restored, { action: 'volunteer_upsert', id: 'person-one' }, sources), error => errorCode('PLAN_CONFLICT', 422)(error) && error.details.some(item => item.code === 'SHIFT_OVER_CAPACITY'));
+  const pending = structuredClone(original); pending.volunteers[0].workflowStatus = 'invited'; pending.assignments.push(assignment('replacement', { volunteerId: 'person-two' }));
+  const accepted = structuredClone(pending); accepted.volunteers[0].workflowStatus = 'confirmed';
+  assert.throws(() => assertVolunteerPlanChange(pending, accepted, { action: 'volunteer_upsert', id: 'person-one' }, sources), errorCode('PLAN_CONFLICT', 422));
+  assert.equal(replacement.assignments.length, 2, 'failed restoration retains both historical rows');
+  const corrected = structuredClone(restored); corrected.assignments[0].status = 'cancelled';
+  assert.equal(assertVolunteerPlanChange(replacement, corrected, { action: 'assignment_upsert', id: 'allocation-one' }, sources).summary.confirmedSlots, 1);
+});
+
+test('restoring an inactive person or position cannot introduce an overlapping reservation', () => {
+  const original = state({ positions: [position(), position('stage')], shifts: [shift(), shift('next', { positionId: 'stage', start: '10:30', end: '11:30' })],
+    assignments: [assignment(), assignment('allocation-two', { shiftId: 'next', status: 'proposed' })] });
+  const sources = context(original), inactive = structuredClone(original); inactive.positions[1].status = 'inactive';
+  assert.equal(projectVolunteerCoverage(inactive, sources).summary.confirmedSlots, 1);
+  assert.throws(() => assertVolunteerPlanChange(inactive, original, { action: 'position_upsert', id: 'stage' }, sources), error => errorCode('PLAN_CONFLICT', 422)(error) && error.details.some(item => item.code === 'TIME_CONFLICT'));
+  const pending = structuredClone(original); pending.volunteers[0].workflowStatus = 'inactive';
+  assert.equal(projectVolunteerCoverage(pending, sources).summary.confirmedSlots, 0);
+  assert.throws(() => assertVolunteerPlanChange(pending, original, { action: 'volunteer_upsert', id: 'person-one' }, sources), errorCode('PLAN_CONFLICT', 422));
+  const invalidated = assertVolunteerPlanChange(original, inactive, { action: 'position_upsert', id: 'stage' }, sources);
+  assert.equal(invalidated.summary.confirmedSlots, 1); assert.equal(inactive.assignments.length, 2);
+  const overstaffed = state({ volunteers: [volunteer(), volunteer('person-two')], assignments: [assignment(), assignment('allocation-two', { volunteerId: 'person-two' })] });
+  const disabled = structuredClone(overstaffed); disabled.positions[0].status = 'inactive';
+  assert.throws(() => assertVolunteerPlanChange(disabled, overstaffed, { action: 'position_upsert', id: 'welcome' }, context(overstaffed)), error => errorCode('PLAN_CONFLICT', 422)(error) && error.details.some(item => item.code === 'SHIFT_OVER_CAPACITY'));
+});
+
 test('missing, restricted, declined and waitlisted sources cannot count confirmed coverage', () => {
   const value = state();
   for (const mutate of [sources => { sources.identities = {}; }, sources => { sources.identities['contact:contact-person-one'].eligible = false; }, sources => { sources.identities['contact:contact-person-one'].admissionStatus = 'withdrawn'; },

@@ -125,9 +125,22 @@ export function projectVolunteerCoverage(input, context) {
 }
 
 function conflict(details) { const error = new Error('这项安排与已保存的时段、参与状态或岗位需求冲突，请先核对。'); error.code = 'PLAN_CONFLICT'; error.status = 422; error.details = details; throw error; }
-/** Availability/status edits preserve history; only an explicit new allocation or shift move must be currently valid. */
+/** Invalidating edits preserve history; restoring eligibility must not introduce new scheduling conflicts. */
 export function assertVolunteerPlanChange(before, after, { action, id } = {}, context) {
   const next = projectVolunteerCoverage(after, context);
+  if (action === 'volunteer_upsert' && ACTIVE.has(after.volunteers.find(item => item.id === id)?.workflowStatus)
+    || action === 'position_upsert' && after.positions.find(item => item.id === id)?.status === 'active') {
+    const old = projectVolunteerCoverage(before, context), reasons = [];
+    for (const item of next.assignments) if (item.issues.includes('TIME_CONFLICT')
+      && !old.assignments.find(candidate => candidate.id === item.id)?.issues.includes('TIME_CONFLICT'))
+      reasons.push({ code: 'TIME_CONFLICT', assignmentId: item.id, volunteerId: item.volunteerId, shiftId: item.shiftId });
+    for (const item of next.shifts) {
+      const previous = old.shifts.find(candidate => candidate.id === item.id);
+      if (item.issues.includes('SHIFT_OVER_CAPACITY') && (!previous?.issues.includes('SHIFT_OVER_CAPACITY')
+        || item.confirmedCount + item.proposedCount > previous.confirmedCount + previous.proposedCount)) reasons.push({ code: 'SHIFT_OVER_CAPACITY', shiftId: item.id });
+    }
+    if (reasons.length) conflict(reasons);
+  }
   if (action === 'assignment_upsert') {
     const target = next.assignments.find(item => item.id === id);
     if (!target) conflict([{ code: 'SOURCE_UNAVAILABLE', assignmentId: id }]);

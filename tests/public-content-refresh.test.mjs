@@ -32,6 +32,7 @@ test('published envelope requires real metadata and bounded readable public coll
 test('public reads omit cookies and deduplicate an in-flight request; duplicate revision does not repaint',async()=>{
   const f=fixture(),first=f.controller.refresh(),same=f.controller.refresh();assert.equal(first,same);assert.equal(f.requests.length,1);
   assert.equal(f.requests[0].init.credentials,'omit');assert.equal(f.requests[0].init.cache,'no-store');assert.deepEqual(f.requests[0].init.headers,{Accept:'application/json'});
+  assert.equal(f.requests[0].init.method,'GET');assert.equal(f.requests[0].init.redirect,'error');assert.equal(f.requests[0].init.referrer,'');assert.equal(f.requests[0].init.referrerPolicy,'no-referrer');
   f.waiting[0].resolve(response(snapshot()));assert.equal(await first,true);assert.equal(f.contents.length,1);
   const again=f.controller.refresh();f.waiting[1].resolve(response(snapshot()));assert.equal(await again,true);assert.equal(f.contents.length,1);
   assert.equal(f.states.at(-1).status,'published');f.controller.close();
@@ -103,4 +104,26 @@ test('timeout bounds fetch and JSON body work even when transport ignores abort'
 test('oversized responses never render or replace known publication',async()=>{
   const f=fixture({fetchFn:async()=>new Response('{}',{headers:{'content-length':String(2*1024*1024+1)}})});
   assert.equal(await f.controller.refresh(),false);assert.deepEqual(f.contents,[]);assert.equal(f.states.at(-1).status,'unavailable');f.controller.close();
+});
+
+test('deadline, suspend and close release a stalled reader even when stream cancellation never acknowledges',async()=>{
+  for(const action of ['timeout','suspend','close']){
+    const clock=timers();let cancelled=0;
+    const body=new ReadableStream({cancel(){cancelled++;return new Promise(()=>{});}});
+    const f=fixture({...clock,timeoutMs:500,fetchFn:async()=>new Response(body)}),pending=f.controller.refresh();
+    await Promise.resolve();await Promise.resolve();assert.equal(body.locked,true);
+    if(action==='timeout')clock.advance(500);else f.controller[action]();
+    // The source ignores its cancellation acknowledgement, but no reader or
+    // reader.read promise survives to accumulate on the next public refresh.
+    if(action!=='timeout')clock.advance(500);
+    assert.equal(await pending,false);assert.equal(cancelled,1);assert.equal(body.locked,false);assert.deepEqual(f.contents,[]);
+    f.controller.close();
+  }
+});
+
+test('response arriving after timeout is cancelled without acquiring a reader or changing current state',async()=>{
+  const clock=timers(),f=fixture({...clock,timeoutMs:500});const pending=f.controller.refresh();clock.advance(500);assert.equal(await pending,false);
+  let cancelled=0;const body=new ReadableStream({cancel(){cancelled++;return new Promise(()=>{});}});
+  f.waiting[0].resolve(new Response(body));await Promise.resolve();await Promise.resolve();
+  assert.equal(cancelled,1);assert.equal(body.locked,false);assert.deepEqual(f.contents,[]);assert.equal(f.states.at(-1).status,'unavailable');f.controller.close();
 });

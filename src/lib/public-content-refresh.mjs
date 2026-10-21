@@ -26,12 +26,18 @@ export function publicContentEnvelope(input,{eventId='ggj-cn-2026'}={}){
   return {revision,publishedAt,content:JSON.parse(fingerprint),fingerprint};
 }
 
-async function readJson(response){
-  const length=response.headers?.get('content-length');if(length&&Number(length)>MAX_BYTES)throw new Error('Public content too large');
-  if(!response.body?.getReader){const text=await response.text();if(new TextEncoder().encode(text).length>MAX_BYTES)throw new Error('Public content too large');return JSON.parse(text);}
+function cancelResponse(response){try{response.body?.cancel()?.catch(()=>{});}catch{}}
+async function readJson(response,signal){
+  if(signal.aborted){cancelResponse(response);throw new Error('Public read cancelled');}
+  const length=response.headers?.get('content-length');if(length&&Number(length)>MAX_BYTES){cancelResponse(response);throw new Error('Public content too large');}
+  if(!response.body?.getReader){const text=await response.text();if(signal.aborted)throw new Error('Public read cancelled');if(new TextEncoder().encode(text).length>MAX_BYTES)throw new Error('Public content too large');return JSON.parse(text);}
   const reader=response.body.getReader(),parts=[];let size=0;
-  try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>MAX_BYTES){await reader.cancel();throw new Error('Public content too large');}parts.push(value);}}
-  finally{reader.releaseLock();}
+  // Do not await cancel(): an underlying source can ignore abort or leave its
+  // cancellation promise pending. Releasing the reader also settles a held read.
+  const cancel=()=>{try{reader.cancel().catch(()=>{});}catch{}try{reader.releaseLock();}catch{}};
+  signal.addEventListener('abort',cancel,{once:true});
+  try{for(;;){if(signal.aborted)throw new Error('Public read cancelled');const {done,value}=await reader.read();if(signal.aborted)throw new Error('Public read cancelled');if(done)break;size+=value.byteLength;if(size>MAX_BYTES){cancel();throw new Error('Public content too large');}parts.push(value);}}
+  finally{signal.removeEventListener('abort',cancel);try{reader.releaseLock();}catch{}}
   const bytes=new Uint8Array(size);let offset=0;for(const part of parts){bytes.set(part,offset);offset+=part.byteLength;}
   return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
 }
@@ -56,10 +62,11 @@ export function createPublicContentRefresh({url,eventId='ggj-cn-2026',fetchFn=gl
       let deadline;
       try{
         const result=await Promise.race([
-          (async()=>{const response=await fetchFn(url,{credentials:'omit',cache:'no-store',headers:{Accept:'application/json'},signal:controller.signal});
-            if(response.status===404){const missing=await readJson(response);if(missing?.error?.code==='NOT_PUBLISHED')return null;throw new Error('Invalid publication status');}
-            if(!response.ok)throw new Error('Public content unavailable');
-            const value=publicContentEnvelope(await readJson(response),{eventId});if(!value)throw new Error('Invalid published content');return value;})(),
+          (async()=>{const response=await fetchFn(url,{method:'GET',credentials:'omit',cache:'no-store',redirect:'error',referrer:'',referrerPolicy:'no-referrer',headers:{Accept:'application/json'},signal:controller.signal});
+            if(controller.signal.aborted){cancelResponse(response);throw new Error('Public read cancelled');}
+            if(response.status===404){const missing=await readJson(response,controller.signal);if(missing?.error?.code==='NOT_PUBLISHED')return null;throw new Error('Invalid publication status');}
+            if(!response.ok){cancelResponse(response);throw new Error('Public content unavailable');}
+            const value=publicContentEnvelope(await readJson(response,controller.signal),{eventId});if(!value)throw new Error('Invalid published content');return value;})(),
           new Promise((_,reject)=>{deadline=setTimer(()=>{controller.abort();reject(new Error('Public content timeout'));},timeoutMs);}),
         ]);
         if(closed||generation!==epoch||!visible())return false;

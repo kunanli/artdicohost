@@ -6,6 +6,8 @@
 
 目前仍是开发候选，尚未宣称新页面正式上线。分工在独立 worktree；主 agent 整合 runtime、文档、完整测试、浏览器、精确 PR／CI／实际部署。用户已回报名单画面有 39 人及 EmailJS 可用，并自行配置 key；过去段落的「未导入／未配置」属于当时历史，不能当成当前实际状态。本轮不读取真实名单或密钥、不发送实际邮件。Apple Developer enrollment 进行中，Wallet 仍待真实证书与真机验收。
 
+本轮新增优先修复：用户明确展位修改后没有按保存，刷新丢失本页输入，并同意重填但要求防呆。已确认代码的「应用」仅改浏览器内存，真正 PUT 在长页上端；未套用的展位／场次输入也缺少完整离页守卫。正在补可见云端保存状态、就近入口、输入即保护及 ACK／冲突提示。没有证据表明已保存 OSS 记录被清空，不读取真实内容或用旧快照恢复覆盖。
+
 ## 当前：邮件正常回报与 Apple Wallet 开户指引（2026-10-21）
 
 使用者回報 Email 已正常發送，此部分暫時 OK，轉問 Apple Wallet 是否需要 Apple Business。以使用者回報記錄郵件狀態；本開發工作沒有重新讀取 FC 配置或聲稱新的獨立實寄驗收。Wallet 需要 Apple Developer Program／Pass Type ID／簽章證書，Apple Business Manager 不是這項會員。已依官方資料補上會員選擇、99 USD 年費（依地區幣別）、組織 D-U-N-S／法人核驗及後續入口，見[Wallet 設定](apple-wallet-setup.md)。尚未實際申請帳號、購買會員、取得真實憑證或啟用 Wallet；先完成會員，再接現有受控簽章與 iPhone／Safari 真機驗收。

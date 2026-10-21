@@ -9,9 +9,10 @@ import {validDraftFields,captureDraftFields,applyDraftFields} from './operations
 export {validDraftFields,captureDraftFields,applyDraftFields} from './operations-draft-fields.mjs';
 const plain=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const draftPolicy=(validate=()=>true)=>({fields:['fields','path','method','payloadJson'],pendingFields:['path','method','payloadJson'],jsonFields:['payloadJson'],validate(value,{kind}){return plain(value)&&validDraftFields(value.fields)&&validate(value.fields)&&(kind==='editing'?Object.keys(value).every(key=>key==='fields'):typeof value.path==='string'&&/^\/api\/admin\/[A-Za-z0-9_/?=&%-]+$/u.test(value.path)&&['POST','PUT','PATCH'].includes(value.method)&&typeof value.payloadJson==='string'&&value.payloadJson.length<=500000);}});
-export async function removeOperationsDraft({actorId,page,entity,isCurrent}){
+export async function removeOperationsDraft({actorId,page,entity,isCurrent,expectedRevision}){
   const scope={actorId,eventId:eventConfig.id,page,entityId:entity},storage=operationsDraftStore(),snapshot=await storage.read(scope,draftPolicy());
   if(!isCurrent())throw new Error('会话已改变，本机草稿未被清除。');
+  if(expectedRevision!==undefined&&snapshot.revision!==expectedRevision)return false;
   if(snapshot.record)await storage.remove(scope,{expectedRevision:snapshot.revision,actorEpoch:snapshot.actorEpoch,allowPending:false});
 }
 /** Small shared view for daily-operation forms. Loading a draft never submits or applies it. */

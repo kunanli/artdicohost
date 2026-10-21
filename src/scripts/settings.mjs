@@ -7,7 +7,7 @@ import {eventConfig} from '../config/event.mjs';
 
 const root=document.querySelector('[data-settings-admin]'),$=selector=>root.querySelector(selector);
 const secure=location.protocol==='https:'||['127.0.0.1','localhost'].includes(location.hostname);
-let user=null,busy=false,epoch=0,groupState=null;
+let user=null,busy=false,epoch=0,groupState=null,logoutPending=false;
 function announce(message,error=false){$('[data-settings-page-status]').textContent=error?'':message;$('[data-settings-page-error]').textContent=error?message:'';$('[data-settings-page-error]').hidden=!error;if(error)$('[data-settings-page-error]').focus();}
 const transport=createSettingsSession({
   onExpired(path){const hadUser=Boolean(user);clear();if(path==='/api/admin/login')announce('账号或密码未通过验证。',true);else if(hadUser)announce('会话已结束，请重新登录。',true);},
@@ -21,13 +21,13 @@ const deliverySettings=createDeliverySettings({root:deliveryRoot,request,draftSt
 const pending=()=>staffSettings.pending||deliverySettings.pending;
 const dirty=()=>staffSettings.dirty||deliverySettings.dirty;
 function lock(){
-  for(const field of $('[data-settings-login]').querySelectorAll('input,button'))field.disabled=busy||!secure;
+  for(const field of $('[data-settings-login]').querySelectorAll('input,button'))field.disabled=busy||logoutPending||!secure;
   $('[data-settings-refresh]').disabled=busy||!canManageEventOperations(user);
   $('[data-settings-logout]').disabled=busy;
   staffSettings.lock(busy);deliverySettings.lock(busy);
 }
-function clear(){
-  epoch++;transport.clear();user=null;busy=false;groupState=null;staffSettings.clear();deliverySettings.clear();
+function clear({keepTransport=false}={}){
+  epoch++;if(!keepTransport)transport.clear();user=null;busy=false;groupState=null;staffSettings.clear();deliverySettings.clear();
   $('[data-settings-workspace]').hidden=true;$('[data-settings-account]').hidden=true;$('[data-settings-login-panel]').hidden=false;
   $('[data-settings-authorized]').hidden=true;$('[data-settings-access-denied]').hidden=true;$('[data-settings-user]').textContent='';
   $('[data-settings-login]').reset();for(const selector of ['[data-settings-mail-summary]','[data-settings-group-summary]','[data-settings-wallet-summary]'])$(selector).textContent='状态尚未载入';
@@ -56,7 +56,7 @@ async function acceptSession(result){
   }
 }
 async function action(callback){
-  if(busy)return;const started=epoch;busy=true;lock();
+  if(busy||logoutPending)return;const started=epoch;busy=true;lock();
   try{await callback(started);}catch(error){if(started===epoch)announce(error.message||'设置操作尚未完成，请重新核对。',true);}
   finally{if(started===epoch){busy=false;lock();}}
 }
@@ -83,9 +83,17 @@ $('[data-settings-refresh]').addEventListener('click',()=>{
   if(pending()){announce('有操作正在进行或结果尚待确认，请先在对应区块确认原操作。刷新不会发送邮件。',true);return;}
   action(async started=>{await load();if(started===epoch)announce('已重新读取状态；未保存的表单仍保留。请同时核对各区块的读取结果。');});
 });
-$('[data-settings-logout]').addEventListener('click',()=>{
+$('[data-settings-logout]').addEventListener('click',async()=>{
+  if(busy||logoutPending)return;
   if((pending()||dirty())&&!confirm(pending()?'有操作正在进行或结果尚待确认。建议先核对原操作，退出会清空本页的重试入口。仍要退出吗？':'有未保存的设置内容，确定退出并清空本页吗？'))return;
-  action(async started=>{const actorId=user?.id;await request('/api/admin/logout',{method:'POST'});if(started!==epoch)return;clear();let cleared=true;try{if(actorId)await draftStore.clearActor(actorId);}catch{cleared=false;}announce(cleared?'已退出，本页资料与此账号的本机草稿已清空。':'已退出并清空本页。此浏览器的本机草稿尚未确认清除，请在共用设备清除本站数据。',!cleared);});
+  const actorId=user?.id;logoutPending=true;clear({keepTransport:true});busy=true;lock();
+  const localClear=(async()=>{try{if(actorId)await draftStore.clearActor(actorId);return true;}catch{return false;}})();
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);let loggedOut=false;
+  try{const result=await request('/api/admin/logout',{method:'POST',signal:controller.signal});loggedOut=result.ok===true;}catch{}finally{clearTimeout(timer);}
+  const cleared=await localClear;
+  // Login is locked until this explicit logout finishes, so an old completion cannot clear a new actor.
+  logoutPending=false;if(user){lock();return;}clear();
+  announce(!cleared?'本页资料已清空；本机草稿尚未确认清除，请清除本站数据。':loggedOut?'已退出，本页资料与本机草稿已清空。':'本页资料与本机草稿已清空；云端退出结果待核对，请重新登录。',!cleared||!loggedOut);
 });
 window.addEventListener('beforeunload',event=>{if(dirty()||pending()){event.preventDefault();event.returnValue='';}});
 window.addEventListener('pagehide',()=>staffSettings.wipeSecrets());

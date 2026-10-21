@@ -40,7 +40,7 @@ export function createInvitationFontLoader({ FontFace: Face = globalThis.FontFac
     const completeMediumText = mediumText + (useRegular ? '' : regularText), needed = new Set();
     for (const character of completeMediumText) {
       const point = character.codePointAt(0), part = medium.find(candidate => covers(candidate, point));
-      if (!part) throw failure('邀请函字体不支持部分字符（U+' + point.toString(16).toUpperCase().padStart(4, '0') + '），请核对称呼或地点。');
+      if (!part) throw failure('邀请函字体不支持部分字符，请联系筹备同事核对称呼或地点。');
       needed.add(part);
     }
     try {

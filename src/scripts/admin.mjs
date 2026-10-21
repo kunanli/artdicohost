@@ -8,6 +8,7 @@ import { createArrangementPlanner } from './arrangement-planner.mjs';
 import { prepareProfileImage, processedImageSummary } from '../lib/profile-image.mjs';
 import { editStaffImage } from '../lib/staff-image-editor.mjs';
 import { createOrganizationsEditor } from './organizations.mjs';
+import { contentSaveSnapshot, confirmedContentSave, inspectContentSave, sameContent, contentSaveUiState } from '../lib/admin-save-state.mjs';
 
 const $ = selector => document.querySelector(selector);
 const status = $('[data-admin-status]');
@@ -20,6 +21,9 @@ let requestSessionGeneration = 0;
 let draft = null;
 let published = null;
 let dirty = false;
+let sessionFormDirty = false, boothFormDirty = false;
+let saveOutcome = 'loaded', saveProblem = '', pendingSave = null, confirmedSaveRevision = null;
+let savingContent = false, checkingContentSave = false, retryContentReady = false;
 let eventFormDirty = false;
 let busy = false;
 let plannerBusy = false;
@@ -102,6 +106,30 @@ function announce(message, error = false) {
 }
 function canEdit() { return user?.roles.includes('editor'); }
 function canPublish() { return user?.roles.includes('publisher'); }
+function unappliedInputs() {
+  return [[eventFormDirty, '活动基本资料'], [sessionFormDirty, '场次编辑'], [boothFormDirty, '展位编辑'],
+    [guestFormDirty || portraitUploading || portraitPending, '嘉宾资料'], [showcaseFormDirty || coverUploading, '学生作品'],
+    [planner?.hasUnapplied(), '总览展位编辑'], [organizations?.hasUnapplied(), '组织资料']].filter(([changed]) => changed).map(([, label]) => label);
+}
+function hasUnappliedInputs() { return unappliedInputs().length > 0; }
+function hasUnsavedChanges() { return dirty || hasUnappliedInputs() || savingContent || ['unknown', 'conflict'].includes(saveOutcome); }
+function renderSaveState() {
+  const state = contentSaveUiState({ loaded: Boolean(user && draft), canEdit: canEdit(), dirty, unapplied: unappliedInputs(),
+    busy: busy || plannerBusy || portraitUploading || coverUploading || organizations?.uploading || checkingContentSave,
+    saving: savingContent, outcome: saveOutcome, revision: draft?.revision, confirmedRevision: confirmedSaveRevision, problem: saveProblem, retryReady: retryContentReady });
+  for (const output of document.querySelectorAll('[data-admin-save-state],[data-admin-unsaved]')) if (output.textContent !== state.title) output.textContent = state.title;
+  for (const output of document.querySelectorAll('[data-admin-save-description]')) if (output.textContent !== state.description) output.textContent = state.description;
+  for (const output of document.querySelectorAll('[data-admin-savebar],[data-admin-save-feedback]')) output.dataset.saveState = state.state;
+  $('[data-admin-savebar]').hidden = !user || !draft;
+  for (const button of document.querySelectorAll('[data-admin-save]')) button.disabled = !state.canSave;
+  for (const button of document.querySelectorAll('[data-admin-check-save]')) { button.hidden = !pendingSave || !['unknown', 'conflict'].includes(saveOutcome); button.disabled = !state.canCheck; button.textContent = checkingContentSave ? '正在核对…' : '核对云端保存结果'; }
+  for (const button of document.querySelectorAll('[data-admin-retry-save]')) { button.hidden = !pendingSave || !retryContentReady; button.disabled = !state.canRetry; }
+  updateSavebarSpace();
+}
+function updateSavebarSpace() {
+  const bar = $('[data-admin-savebar]');
+  $('#artdico-admin').style.setProperty('--admin-savebar-space', Math.ceil(bar.hidden ? 0 : bar.getBoundingClientRect().height) + 48 + 'px');
+}
 function lockControls() {
   const controlsBusy = busy || plannerBusy;
   const organizationBusy = organizations?.uploading === true;
@@ -122,17 +150,17 @@ function lockControls() {
     $(selector).disabled = controlsBusy || portraitUploading || organizationBusy || !canEdit();
   }
   for (const node of document.querySelectorAll('[data-admin-save],[data-admin-add-session],[data-admin-add-booth],[data-admin-fill-booths],[data-admin-add-guest],[data-admin-add-showcase],[data-row-action]')) node.disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canEdit();
-  $('[data-admin-save]').disabled ||= planner?.hasUnapplied() === true || organizations?.hasUnapplied() === true;
-  $('[data-admin-publish]').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canPublish() || dirty || planner?.hasUnapplied() === true || organizations?.hasUnapplied() === true;
+  $('[data-admin-publish]').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canPublish() || dirty || hasUnappliedInputs() || savingContent || ['unknown', 'conflict'].includes(saveOutcome);
   $('[data-admin-preview]').disabled = controlsBusy || !draft;
   $('[data-admin-logout]').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy;
   arrangements.configure({ allowed: Boolean(canEdit() && user?.roles.includes('outreach')), busy: controlsBusy || portraitUploading || coverUploading || organizationBusy, dirty, draftRevision: draft?.revision });
   planner?.configure();
   organizations?.configure();
+  renderSaveState();
 }
 function setDirty(value) {
   dirty = value;
-  $('[data-admin-unsaved]').textContent = value ? '有尚未保存的修改' : '草稿已保存';
+  if (value && !['unknown', 'conflict'].includes(saveOutcome)) saveProblem = '';
   lockControls();
 }
 async function request(path, options = {}) {
@@ -202,6 +230,9 @@ function showLogin() {
   published = null;
   dirty = false;
   eventFormDirty = false;
+  sessionFormDirty = false; boothFormDirty = false;
+  saveOutcome = 'loaded'; saveProblem = ''; pendingSave = null; confirmedSaveRevision = null;
+  savingContent = false; checkingContentSave = false; retryContentReady = false;
   $('[data-event-form]').reset();
   workspace.hidden = true;
   loginPanel.hidden = false;
@@ -229,6 +260,7 @@ function showLogin() {
   guestFormDirty = false;
   showcaseFormDirty = false;
   editingShowcase = null;
+  renderSaveState();
 }
 function node(tag, value, className) {
   const result = document.createElement(tag);
@@ -363,7 +395,8 @@ function openEditor(type, item = null, allowBusy = false) {
   localError.textContent = '';
   localError.hidden = true;
   if (type === 'guest') { clearPortrait(); guestFormDirty=false; $('[data-guest-consent-note]').textContent='确认状态与公开授权分别记录。更改资料或照片后，请重新核对授权；保存草稿不会自动公开。'; }
-  if (type === 'session') fillSessionGuests();
+  if (type === 'session') { sessionFormDirty = false; fillSessionGuests(); }
+  if (type === 'booth') boothFormDirty = false;
   const id = type + '-' + [...crypto.getRandomValues(new Uint8Array(16))].map(value => value.toString(16).padStart(2, '0')).join('');
   const value = item || (type === 'session' ? { id, start: '09:30', end: '10:00', zone: 'A', title: '', format: 'other', speakerName: '', speakerStatus: 'pending', guestId: '', status: 'draft', internalNotes: '' } : type === 'booth' ? { id, code: '', organization: '', project: '', zone: 'C', slotNumber: 0, status: 'pending', internalNotes: '' } : { id, name: '', company: '', ggjRole: '', portraitId: '', contactId: '', status: 'pending', publicConsent: false, internalNotes: '' });
   for (const [key,valueText] of Object.entries(value)) {
@@ -411,6 +444,14 @@ function closeGuestEditor(){
   if((guestFormDirty||portraitUploading||portraitPending)&&!confirm('关闭将放弃本次尚未应用的嘉宾资料及图片编辑，继续吗？'))return;
   $('[data-guest-dialog]').close();
 }
+function closeSimpleEditor(type) {
+  if (busy || plannerBusy) return;
+  const changed = type === 'booth' ? boothFormDirty : sessionFormDirty;
+  if (changed && !confirm('关闭将放弃本次尚未应用的' + typeLabel(type) + '修改，继续吗？')) return;
+  $('[data-' + type + '-dialog]').close();
+  if (type === 'booth') boothFormDirty = false; else sessionFormDirty = false;
+  lockControls();
+}
 function submitEditor(type, event) {
   event.preventDefault();
   if (!canEdit() || busy || portraitUploading || coverUploading || !draft) return;
@@ -457,10 +498,12 @@ function submitEditor(type, event) {
   draft.content = result.value;
   if(type==='guest')guestFormDirty=false;
   if(type==='showcase')showcaseFormDirty=false;
+  if(type==='session')sessionFormDirty=false;
+  if(type==='booth')boothFormDirty=false;
   $('[data-' + type + '-dialog]').close();
   setDirty(true);
   render();
-  announce('修改已放入本页草稿，请保存后预览并发布。');
+  announce('修改仅应用到本页，尚未保存到云端。请点击固定保存栏的「保存到云端」；公开发布另外执行。');
 }
 function fillSessionGuests() {
   const select = $('[data-session-form]').elements.namedItem('guestId');
@@ -703,10 +746,10 @@ $('[data-showcase-cover-preview]').addEventListener('error',event=>{
   if(!$('[data-showcase-dialog]').open||!portraitIdPattern.test(id)||event.currentTarget.src!==location.origin+'/api/admin/portraits/'+id)return;
   showCover('');$('[data-showcase-form]').elements.namedItem('coverId').value='';revokeShowcaseConsent();$('[data-showcase-cover-status]').textContent='作品图预览不可用，请重新上传。';
 });
-$('[data-showcase-dialog]').addEventListener('close',()=>{clearCover();$('[data-showcase-form]').reset();editingShowcase=null;showcaseFormDirty=false;});
+$('[data-showcase-dialog]').addEventListener('close',()=>{clearCover();$('[data-showcase-form]').reset();editingShowcase=null;showcaseFormDirty=false;lockControls();});
 $('[data-showcase-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeShowcaseEditor();});
-$('[data-showcase-form]').addEventListener('input',()=>{showcaseFormDirty=true;});
-$('[data-showcase-form]').addEventListener('change',()=>{showcaseFormDirty=true;});
+$('[data-showcase-form]').addEventListener('input',()=>{showcaseFormDirty=true;lockControls();});
+$('[data-showcase-form]').addEventListener('change',()=>{showcaseFormDirty=true;lockControls();});
 for(const name of ['title','teamName','summary'])$('[data-showcase-form]').elements.namedItem(name).addEventListener('input',revokeShowcaseConsent);
 for(const field of $('[data-showcase-form]').querySelectorAll('[name=participationForms]'))field.addEventListener('change',()=>{
   if(!field.checked)$('[data-showcase-form]').elements.namedItem(field.value==='share'?'sessionId':'boothId').value='';syncShowcaseForms();
@@ -793,16 +836,16 @@ function addFaqFields(item = {question:'',answer:''}) {
   const question = node('input'); question.name = 'faqQuestion'; question.maxLength = 200; question.required = true; question.value = item.question; questionLabel.append(question);
   const answerLabel = node('label','回答');
   const answer = node('textarea'); answer.name = 'faqAnswer'; answer.maxLength = 1500; answer.required = true; answer.rows = 3; answer.value = item.answer; answerLabel.append(answer);
-  const remove = node('button','移除此问题','ah-admin-text-button'); remove.type = 'button'; remove.dataset.eventFaqRemove = ''; remove.addEventListener('click',() => { row.remove();eventFormDirty = true; });
+  const remove = node('button','移除此问题','ah-admin-text-button'); remove.type = 'button'; remove.dataset.eventFaqRemove = ''; remove.addEventListener('click',() => { row.remove();eventFormDirty = true;lockControls(); });
   row.append(questionLabel,answerLabel,remove); $('[data-event-faq]').append(row);
 }
 $('[data-event-add-faq]').addEventListener('click',() => {
   if (!canEdit() || busy) return;
   if ($('[data-event-faq]').children.length >= 20) { announce('常见问题最多 20 条。',true);return; }
-  addFaqFields();eventFormDirty = true;
+  addFaqFields();eventFormDirty = true;lockControls();
 });
-$('[data-event-form]').addEventListener('input', () => { eventFormDirty = true; });
-$('[data-event-form]').addEventListener('change', () => { eventFormDirty = true; });
+$('[data-event-form]').addEventListener('input', () => { eventFormDirty = true;lockControls(); });
+$('[data-event-form]').addEventListener('change', () => { eventFormDirty = true;lockControls(); });
 $('[data-event-form]').addEventListener('submit', event => {
   event.preventDefault();
   if (!draft || busy || !canEdit()) return;
@@ -820,24 +863,95 @@ $('[data-event-form]').addEventListener('submit', event => {
   setDirty(true); render();
   announce('活动基本资料已应用到本页草稿。请保存草稿，再预览与发布。');
 });
-$('[data-admin-save]').addEventListener('click', () => action(async () => {
-  if (organizations?.hasUnapplied()) throw new Error('组织资料仍在编辑，请先应用或关闭，再保存草稿。');
-  if (planner?.hasUnapplied()) throw new Error('总览展位仍有未应用编辑，请先应用到内容草稿。');
-  if (eventFormDirty) throw new Error('活动基本资料尚未应用。请先点击“应用基本资料修改”，再保存草稿。');
-  const validation = validateContent(draft.content);
-  if (!validation.valid) throw new Error([...new Set(Object.values(validation.errors))].join(' '));
-  const result = await request('/api/admin/content', { method: 'PUT', body: JSON.stringify({ expectedRevision: draft.revision, content: validation.value }) });
-  draft = result.draft;
-  setDirty(false);
-  render();
-  await arrangements.refresh();
-  if (!user || !draft) return;
-  announce('草稿已保存，前台尚未改变。可先预览，再发布。');
-}));
+async function timedContentRequest(options = {}) {
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 15_000);
+  try { return await request('/api/admin/content', { ...options, signal: controller.signal }); }
+  finally { clearTimeout(timer); }
+}
+function acceptSavedContent(saved, submitted) {
+  const unchanged = sameContent(draft.content, submitted.content), localContent = draft.content;
+  draft = { revision: saved.revision, content: unchanged ? saved.content : localContent };
+  confirmedSaveRevision = saved.revision; saveOutcome = 'saved'; saveProblem = ''; pendingSave = null; savingContent = false; retryContentReady = false;
+  setDirty(!unchanged); render();
+  return unchanged;
+}
+async function reportSavedContent({ checked = false, unchanged = true, epoch }) {
+  announce(checked ? '已核对：当前云端草稿与待核对的提交内容一致。' : '草稿已保存到云端，公开页面尚未改变。');
+  let overviewFailed = false;
+  try { await arrangements.refresh(); } catch { overviewFailed = true; }
+  if (epoch !== requestSessionGeneration || !user || !draft) return;
+  overviewFailed ||= user.roles.includes('outreach') && !$('[data-arrangements-error]').hidden;
+  announce((checked ? '已核对：当前云端草稿与待核对的提交内容一致。' : '草稿已保存到云端，公开页面尚未改变。')
+    + (!unchanged ? '后续本页修改仍未保存。' : '') + (overviewFailed ? '现场总览暂未刷新；保存已完成，可稍后刷新总览。' : ''));
+}
+async function saveContentDraft() {
+  if (!draft || !canEdit()) throw new Error('此账号没有保存活动内容的权限。');
+  if (hasUnappliedInputs()) throw new Error('还有未应用的输入，请先应用或明确取消编辑，再保存到云端。');
+  if (['unknown', 'conflict'].includes(saveOutcome)) throw new Error('请先核对云端保存结果；本页修改仍保留，不重复保存或覆盖。');
+  if (!dirty) return;
+  const submitted = contentSaveSnapshot(draft.revision, draft.content);
+  if (!submitted) throw new Error('草稿未通过校验，尚未提交保存；本页修改仍保留。');
+  await persistContentSnapshot(submitted);
+}
+async function retryContentDraft() {
+  if (!draft || !canEdit() || !pendingSave || !retryContentReady || !['unknown', 'conflict'].includes(saveOutcome)) return;
+  if (hasUnappliedInputs()) throw new Error('请先应用或明确取消正在编辑的输入；重试只保存上次提交的同一份内容。');
+  await persistContentSnapshot(pendingSave);
+}
+async function persistContentSnapshot(submitted) {
+  const epoch = requestSessionGeneration;
+  pendingSave = submitted; retryContentReady = false; savingContent = true; saveOutcome = 'saving'; saveProblem = ''; lockControls();
+  try {
+    const result = await timedContentRequest({ method: 'PUT', body: JSON.stringify(submitted) });
+    if (epoch !== requestSessionGeneration || !user || !draft) return;
+    const saved = confirmedContentSave(result, submitted);
+    if (!saved) throw new Error('保存回执内容或版本无法核对。');
+    const unchanged = acceptSavedContent(saved, submitted);
+    await reportSavedContent({ unchanged, epoch });
+  } catch (error) {
+    if (epoch !== requestSessionGeneration || !user || !draft) return;
+    savingContent = false;
+    if (error.status === 409) {
+      saveOutcome = 'conflict'; saveProblem = '云端草稿版本已变化，本页修改仍保留。请先核对本次内容是否已保存；不会自动覆盖。';
+    } else if ([400, 403, 422].includes(error.status)) {
+      saveOutcome = 'loaded'; pendingSave = null; saveProblem = '本次保存未通过验证，本页修改仍保留。' + (error.message || '请核对后再保存。');
+    } else {
+      saveOutcome = 'unknown'; saveProblem = '保存结果未确认，本页修改仍保留。请先点击「核对云端保存结果」，不要重复保存或刷新。';
+    }
+    announce(saveProblem, true);
+  } finally { if (epoch === requestSessionGeneration) { savingContent = false; lockControls(); } }
+}
+async function checkContentSave() {
+  if (!canEdit() || !draft || !pendingSave || !['unknown', 'conflict'].includes(saveOutcome)) return;
+  const submitted = pendingSave, epoch = requestSessionGeneration;
+  checkingContentSave = true; retryContentReady = false; lockControls();
+  try {
+    const result = await timedContentRequest();
+    if (epoch !== requestSessionGeneration || pendingSave !== submitted || !user || !draft) return;
+    const proof = inspectContentSave(result, submitted);
+    if (proof.state === 'confirmed') {
+      const unchanged = acceptSavedContent(proof.draft, submitted);
+      await reportSavedContent({ checked: true, unchanged, epoch });
+    } else {
+      if (proof.state === 'conflict') saveOutcome = 'conflict';
+      retryContentReady = proof.state === 'retryable';
+      saveProblem = proof.state === 'conflict' ? '云端已有不同的内容，本页修改仍保留。请先保留这份编辑，再重新载入核对；不会自动合并或覆盖。'
+        : proof.state === 'retryable' ? '云端仍为原版本，尚未证实本次保存。可明确重试同一份提交；后续本页编辑另行保存，不会混入重试。'
+          : '目前尚未证实本次修改已保存。本页内容保留，请稍后再次核对，不要重复保存或刷新。';
+      announce(saveProblem, true);
+    }
+  } catch (error) {
+    if (epoch !== requestSessionGeneration || !user || !draft) return;
+    saveProblem = '暂时无法核对云端保存结果。本页修改仍保留，请稍后再次核对，不要刷新。'; announce(saveProblem, true);
+  } finally { if (epoch === requestSessionGeneration) { checkingContentSave = false; lockControls(); } }
+}
+for (const button of document.querySelectorAll('[data-admin-save]')) button.addEventListener('click', () => action(saveContentDraft));
+for (const button of document.querySelectorAll('[data-admin-check-save]')) button.addEventListener('click', () => action(checkContentSave));
+for (const button of document.querySelectorAll('[data-admin-retry-save]')) button.addEventListener('click', () => action(retryContentDraft));
 $('[data-admin-publish]').addEventListener('click', () => action(async () => {
   if (organizations?.hasUnapplied()) throw new Error('组织资料仍在编辑，请先应用并保存草稿，再发布。');
   if (planner?.hasUnapplied()) throw new Error('总览展位仍有未应用编辑，请先应用并保存草稿。');
-  if (!canPublish() || dirty) throw new Error('请先保存草稿，并由有发布权限的工作人员发布。');
+  if (!canPublish() || dirty || hasUnappliedInputs() || ['unknown', 'conflict'].includes(saveOutcome)) throw new Error('请先应用全部编辑并确认草稿已保存，再由有发布权限的工作人员发布。');
   const result = await request('/api/admin/content/publish', { method: 'POST', body: JSON.stringify({ expectedRevision: draft.revision }) });
   published = result.published;
   render();
@@ -864,6 +978,20 @@ $('[data-showcase-form]').addEventListener('submit', event => submitEditor('show
 $('[data-showcase-filter]').addEventListener('change',renderShowcases);
 $('[data-session-form]').addEventListener('submit', event => submitEditor('session', event));
 $('[data-booth-form]').addEventListener('submit', event => submitEditor('booth', event));
+for (const type of ['session', 'booth']) {
+  const form = $('[data-' + type + '-form]'), dialog = $('[data-' + type + '-dialog]');
+  for (const eventName of ['input', 'change']) form.addEventListener(eventName, () => {
+    if (!canEdit() || busy || !dialog.open) return;
+    if (type === 'booth') boothFormDirty = true; else sessionFormDirty = true;
+    lockControls();
+  });
+  dialog.addEventListener('cancel', event => { event.preventDefault(); closeSimpleEditor(type); });
+  dialog.addEventListener('close', () => {
+    if (dialog.open) return;
+    if (type === 'booth') { boothFormDirty = false; editingBooth = null; } else { sessionFormDirty = false; editingSession = null; }
+    form.reset(); lockControls();
+  });
+}
 $('[data-guest-form]').addEventListener('submit', event => submitEditor('guest', event));
 $('[name=guestId]').addEventListener('change', syncSessionGuest);
 $('[data-guest-portrait-file]').addEventListener('change', uploadPortrait);
@@ -880,20 +1008,22 @@ $('[data-guest-portrait-discard]').addEventListener('click', () => {
   $('[data-guest-portrait-file]').focus({ preventScroll: true });
 });
 $('[data-guest-portrait-remove]').addEventListener('click', () => { clearPortrait(); revokeGuestConsent(); guestFormDirty=true; });
-$('[data-guest-dialog]').addEventListener('close',()=>{clearPortrait();$('[data-guest-form]').reset();editingGuest=null;guestFormDirty=false;});
+$('[data-guest-dialog]').addEventListener('close',()=>{clearPortrait();$('[data-guest-form]').reset();editingGuest=null;guestFormDirty=false;lockControls();});
 $('[data-guest-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeGuestEditor();});
-for (const type of ['input','change']) $('[data-guest-form]').addEventListener(type,event=>{if (!event.target.closest('[data-image-editor]') && event.target !== $('[data-guest-portrait-file]')) guestFormDirty=true;});
+for (const type of ['input','change']) $('[data-guest-form]').addEventListener(type,event=>{if (!event.target.closest('[data-image-editor]') && event.target !== $('[data-guest-portrait-file]')) {guestFormDirty=true;lockControls();}});
 for (const name of ['name','company','ggjRole','title','bio','website']) $('[data-guest-form]').elements.namedItem(name).addEventListener('input', revokeGuestConsent);
 for(const option of $('[data-guest-form]').querySelectorAll('[name=publicRoles]'))option.addEventListener('change',revokeGuestConsent);
-for (const button of document.querySelectorAll('[data-close-dialog]')) button.addEventListener('click', () => {if(button.dataset.closeDialog==='guest')closeGuestEditor();else if(button.dataset.closeDialog==='showcase')closeShowcaseEditor();else if(!busy)$('[data-' + button.dataset.closeDialog + '-dialog]').close();});
+for (const button of document.querySelectorAll('[data-close-dialog]')) button.addEventListener('click', () => {if(button.dataset.closeDialog==='guest')closeGuestEditor();else if(button.dataset.closeDialog==='showcase')closeShowcaseEditor();else closeSimpleEditor(button.dataset.closeDialog);});
 $('[data-admin-logout]').addEventListener('click', () => action(async () => {
-  if ((dirty||eventFormDirty||guestFormDirty||showcaseFormDirty||planner?.hasUnapplied()||organizations?.hasUnapplied()) && !confirm('还有未保存的修改，确定退出并放弃这些修改吗？')) return;
+  if (hasUnsavedChanges() && !confirm('还有未保存到云端的修改，确定退出并放弃这些修改吗？')) return;
   await request('/api/admin/logout', { method: 'POST' });
   pendingInvitee=null;showLogin();
   announce('已退出。');
 }));
 window.addEventListener('hashchange',()=>{const booth=takeBoothLink();if(booth){pendingBooth=booth;resumePendingLinks();return;}const id=takeInvitee();if(!id)return;pendingInvitee=id;resumePendingLinks();});
-window.addEventListener('beforeunload', event => { if (dirty||eventFormDirty||guestFormDirty||portraitUploading||portraitPending||showcaseFormDirty||planner?.hasUnapplied()||organizations?.hasUnapplied()) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (hasUnsavedChanges()) { event.preventDefault(); event.returnValue = ''; } });
+if (typeof ResizeObserver === 'function') new ResizeObserver(updateSavebarSpace).observe($('[data-admin-savebar]'));
+window.addEventListener('resize', updateSavebarSpace);
 if (location.protocol === 'file:') {
   announce('这是离线界面预览。请启动本地内容服务并配置工作人员账号后登录。');
   $('[data-admin-login] button[type="submit"]').disabled = true;

@@ -4,6 +4,7 @@ import SiteLayout from '../../layouts/SiteLayout.astro';
 import ArrangementPlanner from '../../components/ArrangementPlanner.astro';
 import StaffOrganizations from '../../components/StaffOrganizations.astro';
 import '../../styles/admin.css';
+import '../../styles/admin-save-state.css';
 import '../../styles/arrangements.css';
 import '../../styles/guests.css';
 ---
@@ -27,11 +28,11 @@ import '../../styles/guests.css';
 
       <section class="ah-admin-workspace-layout" data-admin-workspace hidden aria-labelledby="workspace-title">
         <StaffNavigation current="content" />
-        <div class="ah-admin-workspace-content">
+        <div class="ah-admin-workspace-content"><aside class="ah-admin-savebar" data-admin-savebar data-save-state="loaded" hidden aria-label="活动内容云端保存"><div role="status" aria-live="polite"><strong data-admin-save-state>尚未载入草稿</strong><p data-admin-save-description>应用修改后，还需保存到云端。</p></div><div class="ah-admin-savebar-actions"><button class="ah-admin-button" type="button" data-admin-check-save hidden>核对云端保存结果</button><button class="ah-admin-button" type="button" data-admin-retry-save hidden>重试同一份保存</button><button class="ah-admin-button ah-admin-primary" type="button" data-admin-save data-admin-save-location="bar" disabled>保存到云端</button></div></aside>
         <div class="ah-admin-page-heading"><div><span class="ah-admin-eyebrow">CONTENT & CONNECTIONS</span><h1 id="workspace-title">安排好每一次相遇。</h1><p>维护参与组织、嘉宾与学生作品，安排场次、展位，准备好后再发布到公开活动页。</p></div><div class="ah-admin-account"><span data-admin-user></span><small data-admin-role></small><button type="button" class="ah-admin-text-button" data-admin-logout>退出登录</button></div></div>
         <div class="ah-admin-event-card"><div><span class="ah-admin-eyebrow">当前活动</span><strong data-admin-event-title>活动信息加载中</strong></div><p><span data-admin-event-date></span><span data-admin-event-venue></span></p></div>
         <div class="ah-admin-summary"><article><span>嘉宾资料</span><strong data-admin-guest-count>—</strong><small>确认并获授权后才公开展示</small></article><article><span>活动场次</span><strong data-admin-session-count>—</strong><small>包含各区域草稿与已安排场次</small></article><article><span>展位记录</span><strong data-admin-booth-count>—</strong><small>待确认与已确认分别维护</small></article><article><span>公开发布</span><strong class="ah-admin-publish-status" data-admin-published-at>尚未载入</strong><small>保存草稿不会自动对外发布</small></article></div>
-        <div class="ah-admin-toolbar"><div><strong data-admin-unsaved>尚未载入草稿</strong><span>草稿版本 <span data-admin-revision>—</span></span></div><div class="ah-admin-toolbar-actions"><button class="ah-admin-button" type="button" data-admin-preview>预览公开内容</button><button class="ah-admin-button" type="button" data-admin-save>保存草稿</button><button class="ah-admin-button ah-admin-primary" type="button" data-admin-publish disabled>发布到公开页 <span aria-hidden="true">↗</span></button></div></div>
+        <div class="ah-admin-toolbar"><div><strong data-admin-unsaved>尚未载入草稿</strong><span>草稿版本 <span data-admin-revision>—</span></span></div><div class="ah-admin-toolbar-actions"><button class="ah-admin-button" type="button" data-admin-preview>预览公开内容</button><button class="ah-admin-button" type="button" data-admin-save data-admin-save-location="header">保存到云端</button><button class="ah-admin-button ah-admin-primary" type="button" data-admin-publish disabled>发布到公开页 <span aria-hidden="true">↗</span></button></div></div>
         <p class="ah-admin-small">先保存，再发布。发布需具备发布权限；其他工作人员可继续维护草稿。未确认或未获公开授权的嘉宾、照片与内部备注不会出现在公开页。</p>
 
         <section class="ah-admin-panel" aria-labelledby="event-editor-title">
@@ -82,7 +83,7 @@ import '../../styles/guests.css';
           <div class="ah-admin-showcase-grid" data-admin-showcases></div><p class="ah-admin-empty" data-admin-showcases-empty hidden>还没有学生作品记录。新增资料后，再确认出席、收齐材料并安排展示。</p>
         </section>
         <section class="ah-admin-panel" aria-labelledby="sessions-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">THE PROGRAM</span><h2 id="sessions-title">活动场次</h2><p>草稿不公开；已安排与取消状态会随发布版更新。</p></div><button type="button" class="ah-admin-button" data-admin-add-session><span aria-hidden="true">＋</span> 新增场次</button></div><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="活动场次表，可水平滚动"><table><caption class="ah-sr-only">所有活动场次及讲者确认状态</caption><thead><tr><th scope="col">时间</th><th scope="col">区域</th><th scope="col">场次与主题</th><th scope="col">讲者</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody data-admin-sessions></tbody></table></div><p class="ah-admin-empty" data-admin-sessions-empty hidden>还没有场次。添加第一场分享，开始安排这一天。</p></section>
-        <section class="ah-admin-panel" aria-labelledby="booths-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">PROJECTS ON THE FLOOR</span><h2 id="booths-title">展位与展示项目</h2><p>公开页只显示已确认展位；待确认与取消记录保留在后台。</p></div><button type="button" class="ah-admin-button" data-admin-fill-booths>补齐15个展位位置</button><button type="button" class="ah-admin-button" data-admin-add-booth><span aria-hidden="true">＋</span> 新增展位</button></div><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="展位表，可水平滚动"><table><caption class="ah-sr-only">展位编号、机构、项目及确认状态</caption><thead><tr><th scope="col">展位编号</th><th scope="col">机构 / 团队</th><th scope="col">展示项目 / 内容</th><th scope="col">负责人 / 联系方式 · 不公开</th><th scope="col">区域</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody data-admin-booths></tbody></table></div><p class="ah-admin-empty" data-admin-booths-empty hidden>展位名单尚未建立。确认项目后，可新增展位并安排编号。</p></section>
+        <section class="ah-admin-panel" aria-labelledby="booths-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">PROJECTS ON THE FLOOR</span><h2 id="booths-title">展位与展示项目</h2><p>公开页只显示已确认展位；待确认与取消记录保留在后台。</p></div><button type="button" class="ah-admin-button" data-admin-fill-booths>补齐15个展位位置</button><button type="button" class="ah-admin-button" data-admin-add-booth><span aria-hidden="true">＋</span> 新增展位</button></div><div class="ah-admin-save-feedback" data-admin-save-feedback data-save-state="loaded"><div><strong data-admin-save-state>尚未载入草稿</strong><p data-admin-save-description>展位修改应用后，还需保存到云端；公开发布另外执行。</p></div><div class="ah-admin-savebar-actions"><button class="ah-admin-button" type="button" data-admin-check-save hidden>核对云端保存结果</button><button class="ah-admin-button" type="button" data-admin-retry-save hidden>重试同一份保存</button><button class="ah-admin-button" type="button" data-admin-save data-admin-save-location="booth" disabled>保存到云端</button></div></div><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="展位表，可水平滚动"><table><caption class="ah-sr-only">展位编号、机构、项目及确认状态</caption><thead><tr><th scope="col">展位编号</th><th scope="col">机构 / 团队</th><th scope="col">展示项目 / 内容</th><th scope="col">负责人 / 联系方式 · 不公开</th><th scope="col">区域</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody data-admin-booths></tbody></table></div><p class="ah-admin-empty" data-admin-booths-empty hidden>展位名单尚未建立。确认项目后，可新增展位并安排编号。</p></section>
         <section class="ah-admin-panel ah-admin-preview" data-admin-preview-panel hidden aria-labelledby="preview-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">BEFORE IT GOES LIVE</span><h2 id="preview-title">公开内容预览</h2><p>检查本次准备发布的资料。草稿场次、未确认或未获授权的嘉宾及内部备注均不对外展示。</p></div><button type="button" class="ah-admin-button" data-admin-preview-close>关闭预览</button></div><div class="ah-admin-preview-content" data-admin-public-preview></div></section>
         </div>
       </section>
@@ -104,7 +105,7 @@ import '../../styles/guests.css';
       <div class="ah-admin-field"><label for="session-status">场次状态</label><select id="session-status" name="status" required><option value="draft">草稿 · 不公开</option><option value="scheduled">已安排</option><option value="cancelled">已取消</option></select></div>
       <div class="ah-admin-field"><label for="session-notes">内部备注（不公开）</label><textarea id="session-notes" name="internalNotes" rows="3" maxlength="4000"></textarea></div>
       <div class="ah-admin-dialog-actions"><button type="button" class="ah-admin-button" data-close-dialog="session">取消</button><button type="submit" class="ah-admin-button ah-admin-primary" data-session-submit disabled>应用场次修改</button></div>
-      <p class="ah-admin-small">应用修改后，仍需在后台保存草稿；发布后才会更新公开页面。</p>
+      <p class="ah-admin-small" data-editor-unsaved="session">此表单尚未写入云端。先应用场次修改，再点击固定保存栏的「保存到云端」；公开发布另外执行。</p>
     </form>
   </dialog>
 
@@ -124,7 +125,7 @@ import '../../styles/guests.css';
       <div class="ah-admin-field"><label for="booth-status">展位状态</label><select id="booth-status" name="status" required><option value="pending">待确认</option><option value="confirmed">已确认</option><option value="cancelled">已取消</option></select><small>已确认展位必须填妥机构与项目；发布后将显示在公开页。</small></div>
       <div class="ah-admin-field"><label for="booth-notes">内部备注（不公开）</label><textarea id="booth-notes" name="internalNotes" rows="3" maxlength="4000"></textarea></div>
       <div class="ah-admin-dialog-actions"><button type="button" class="ah-admin-button" data-close-dialog="booth">取消</button><button type="submit" class="ah-admin-button ah-admin-primary" data-booth-submit disabled>应用展位修改</button></div>
-      <p class="ah-admin-small">应用修改后，仍需保存草稿；发布后才会更新公开名单。</p>
+      <p class="ah-admin-small" data-editor-unsaved="booth">此表单尚未写入云端。先应用展位修改，再点击固定保存栏的「保存到云端」；公开发布另外执行。</p>
     </form>
   </dialog>
   <dialog class="ah-admin-dialog ah-admin-guest-dialog" data-guest-dialog aria-labelledby="guest-dialog-title">

@@ -79,7 +79,7 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onCha
     for(const [key,text]of Object.entries(value)){const field=form.elements.namedItem(key);if(field?.type==='checkbox')field.checked=text===true;else if(field)field.value=text;}
     image(value.logoId);$('[data-organization-dialog-title]').textContent=(item?'编辑':'新增')+'组织';$('[data-organization-consent-note]').textContent='更改公开资料或图片后，请重新核对授权；保存草稿不会自动公开。';dialog.showModal();notify();configure();
   }
-  function close(){if(blocked())return;if((formDirty||uploading)&&!confirm('关闭将放弃本次尚未应用的组织资料，继续吗？'))return;cancelUpload();dialog.close();reset();notify();configure();}
+  function close(){if(blocked())return;if((formDirty||uploading||pendingImage)&&!confirm('关闭将放弃本次尚未应用的组织资料，继续吗？'))return;cancelUpload();dialog.close();reset();notify();configure();}
   function imageContext(){return{content:context().content,revision:context().revision,key:accountKey,id:form.elements.namedItem('id').value};}
   function activeImage(state,started,signal){return started===generation&&!signal.aborted&&state.key===accountKey&&allowed()&&dialog.open&&context().content===state.content&&context().revision===state.revision&&form.elements.namedItem('id').value===state.id;}
   async function sendImage(pending,started,controller){

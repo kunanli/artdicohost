@@ -6,6 +6,7 @@ import {extname, resolve} from 'node:path';
 import {createInitialContent} from '../../src/config/content.mjs';
 import {buildArrangementOverview} from '../../shared/arrangement-overview.mjs';
 import {createOrganizerTasksApi} from '../../functions/organizer-tasks/handler.mjs';
+import {volunteerFixture} from '../volunteer-api-fixture.mjs';
 
 const {chromium} = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
 const project = fileURLToPath(new URL('../../', import.meta.url));
@@ -17,7 +18,7 @@ const content = createInitialContent();
 const json = (body, status = 200) => ({status, contentType:'application/json', body:JSON.stringify(body)});
 const sections = ['workspace-title','event-editor-title','arrangements-title','guests-title','organizations-title','showcases-title','sessions-title','booths-title'];
 const routes = [
-  ['/admin/', 'admin'], ['/admin/tasks/', 'tasks'], ['/admin/contacts/', 'contacts'], ['/admin/registrations/', 'review'], ['/admin/settings/', 'settings'],
+  ['/admin/', 'admin'], ['/admin/tasks/', 'tasks'], ['/admin/contacts/', 'contacts'], ['/admin/registrations/', 'review'], ['/admin/settings/', 'settings'], ['/admin/volunteers/', 'volunteer'],
 ];
 const errors = [], reports = [];
 const browser = await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless:true, args:['--no-sandbox','--disable-dev-shm-usage']});
@@ -28,6 +29,7 @@ async function fixture(width) {
   let authenticated = false;
   const writes = [];
   page.on('pageerror', error => errors.push(error.message));
+  const volunteers=await volunteerFixture({authenticate:async()=>({user:staff,csrfToken:'s'.repeat(43)})});
   const tasks = createOrganizerTasksApi({authenticate:async()=>({user:staff}), getSources:async()=>({contacts:[],contactRevision:0,content,contentRevision:0,intent:null}), now:()=>Date.parse('2026-10-21T01:00:00Z')});
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
@@ -37,6 +39,7 @@ async function fixture(width) {
         writes.push(path);
         assert.equal(path, '/api/admin/logout', 'navigation must never save, publish or send');
       }
+      if(path.startsWith('/api/admin/volunteers')){const result=await volunteers.api(new Request(request.url()));return route.fulfill({status:result.status,headers:Object.fromEntries(result.headers),body:Buffer.from(await result.arrayBuffer())});}
       if (path === '/api/admin/session') return route.fulfill(authenticated ? json({user:staff,csrfToken:'s'.repeat(43)}) : json({},401));
       if (path === '/api/admin/logout') {authenticated=false;return route.fulfill(json({ok:true}));}
       if (path === '/api/admin/content') return route.fulfill(json({draft:{revision:0,content},published:null}));
@@ -154,8 +157,8 @@ try {
     await pages.page.locator(`[data-${prefix}-login-panel]:visible`).waitFor();
     assert.equal(await pages.page.locator('[data-staff-navigation]').isVisible(),false);
   }
-  assert.deepEqual(pages.writes,Array(5).fill('/api/admin/logout'));
-  await pages.context.close();reports.push({fiveWorkspacesLinked:true,currentPageMarked:true,allWorkspacesHideNavigationAtLogout:true});
+  assert.deepEqual(pages.writes,Array(6).fill('/api/admin/logout'));
+  await pages.context.close();reports.push({sixWorkspacesLinked:true,currentPageMarked:true,allWorkspacesHideNavigationAtLogout:true});
 
   const legacy=await fixture(390);legacy.setAuthenticated(true);
   for(const [id,target] of [['delivery-settings-heading','delivery-settings-heading'],['staff-settings-title','group-settings-title']]){

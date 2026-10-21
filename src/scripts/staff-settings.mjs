@@ -71,7 +71,7 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
     if(!(kind==='users'?canManageAccounts(user):kind==='restore'?canRecoverSystem(user):canManageEventOperations(user)))throw new Error('此账号没有执行该设置操作的权限。');
     if(unknown.has(kind))throw new Error('请先核对上次操作结果，不会自动重送。');
     const started=generation;
-    const draft=drafts.get(kind);if(draft){await draft.markPending();current(started);}
+    const draft=drafts.get(kind);if(draft){const body=kind==='group'?JSON.parse(options.body):null;await draft.markPending(body?{expiresAt:body.expiresAt??'',action:options.method==='PUT'?'disable':'replace'}:undefined);current(started);}
     try{const value=await request(path,options);current(started);if(validate&&!validate(value))throw new Error('写入结果未通过核对，请保留原输入并刷新对应区块。');if(draft)await draft.discard();current(started);return value;}
     catch(error){if(started===generation){if(!Number.isInteger(error.status)||error.status>=500)unknown.add(kind);else if(!unknown.has(kind)&&draft){await draft.discard();draft.schedule();}}throw error;}
   }
@@ -112,8 +112,8 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
     if(!draftStore||!user?.id)return;
     const accountForm=$('[data-user-form]'),groupForm=$('[data-group-form]'),restoreForm=$('[data-restore-form]');
     const specs=[
-      {kind:'group',form:groupForm,ready:groupRevision!==null,revision:()=>groupRevision,fields:['expiresAt'],
-        capture:()=>({expiresAt:groupForm.elements.namedItem('expiresAt').value}),validate:value=>string(value.expiresAt,32),apply:value=>{groupForm.elements.namedItem('expiresAt').value=value.expiresAt;groupDirty=true;}},
+      {kind:'group',form:groupForm,ready:groupRevision!==null,revision:()=>groupRevision,fields:['expiresAt','action'],
+        capture:()=>({expiresAt:groupForm.elements.namedItem('expiresAt').value,action:'replace'}),validate:value=>string(value.expiresAt,32)&&['replace','disable'].includes(value.action),apply:value=>{groupForm.elements.namedItem('expiresAt').value=value.expiresAt;groupDirty=true;}},
       {kind:'users',form:accountForm,ready:canManageAccounts(user)&&usersRevision!==null,revision:()=>usersRevision,fields:['id','username','email','label','roles','active'],
         capture:()=>({id:accountForm.elements.namedItem('id').value,username:accountForm.elements.namedItem('username').value,email:accountForm.elements.namedItem('email').value,label:accountForm.elements.namedItem('label').value,roles:[...accountForm.querySelectorAll('[name=roles]:checked')].map(field=>field.value),active:accountForm.elements.namedItem('active').checked}),
         validate:value=>['id','username','email','label'].every(key=>string(value[key],key==='email'?254:120))&&Array.isArray(value.roles)&&value.roles.length<=5&&value.roles.every(role=>Object.hasOwn(roles,role))&&typeof value.active==='boolean',

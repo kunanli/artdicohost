@@ -5,6 +5,10 @@ import { own, plainObject, parseTimestamp } from './policy.mjs';
 import { AdmissionError, admissionDefaults, admissionView, validateAdmissions, admissionSnapshot, admissionFor,
   transitionAdmission, appendAdmissionAudit, addAdmission, releaseWithdrawn, promoteEligible, operationResult, validAdmissionOperation } from './admissions.mjs';
 
+// The application-count guard is distinct from the existing 1 MiB serialized
+// snapshot ceiling. For example, 1,000 pending applications plus roughly 550
+// decisions can reach that byte ceiling before the 2,000-operation audit limit.
+// Oversize next states must fail before staging/commit; prior history stays readable.
 export const MAX_REGISTRATIONS = 1000;
 const LIST_READ_CONCURRENCY = 8;
 const LIST_TIMEOUT_MS = 12000;

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { createRegistrationService } from '../functions/registration-api/service.mjs';
+import { admissionView, addAdmission, appendAdmissionAudit, transitionAdmission, operationResult } from '../functions/registration-api/admissions.mjs';
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
 import { memoryObjects } from './helpers/cloud-memory-objects.mjs';
 
@@ -184,4 +185,42 @@ test('unauthorized decisions touch no private storage and missing immutable appl
   f.objects.files.delete(`cms/v1/registrations/${EVENT}/records/${entry.recordHash}.json`);
   assert.deepEqual((await command(service, application.id)).result, { outcome: 'unavailable' }); assert.equal(f.state.indexWrites, count);
   assert.equal((await service.getAdmissions({ actor })).summary.pendingReviewCount, 1);
+});
+
+
+test('a decision exceeding the bounded snapshot size stages no state and leaves its prior durable application readable', async () => {
+  const f = fixture(), at = new Date(f.state.now).toISOString(), prefix = `cms/v1/registrations/${EVENT}`;
+  let index = admissionView({ schemaVersion: 1, kind: 'registration_index', eventId: EVENT, revision: 0, entries: [] }, { capacity: 1 });
+  for (let i = 0; i < 1000; i++) {
+    const id = key(), record = { schemaVersion: 1, kind: 'registration', id, eventId: EVENT, submittedAt: at, fields,
+      consent: { accepted: true, version: policy.privacy.version, acceptedAt: at }, provenance: { kind: 'public' } };
+    const bytes = Buffer.from(JSON.stringify(record)), recordHash = hash(bytes);
+    await f.objects.putImmutable(`${prefix}/records/${recordHash}.json`, bytes, { contentType: 'application/json' });
+    const entry = { id, keyHash: hash('bounded-key-' + i), payloadHash: hash('bounded-payload-' + i), recordHash, committedAt: at };
+    const status = addAdmission(index, entry, 'attendee', at, { reviewRequired: true });
+    appendAdmissionAudit(index, { action: 'intake', actorId: 'public', at, requestHash: entry.payloadHash,
+      details: { kind: 'attendee', status }, result: operationResult({ registrationId: id }) });
+  }
+  let decisions = 0;
+  for (; decisions < 1000; decisions++) {
+    const next = structuredClone(index), change = transitionAdmission(next, 'reject', { registrationId: index.entries[decisions].id }, at);
+    appendAdmissionAudit(next, { action: 'reject', actorId: actor.id, at, operationId: key(), requestHash: hash('bounded-decision-' + decisions), ...change });
+    if (Buffer.byteLength(JSON.stringify(next)) > 1024 * 1024) break;
+    index = next;
+  }
+  assert.ok(decisions > 300 && decisions < 1000); assert.ok(Buffer.byteLength(JSON.stringify(index)) <= 1024 * 1024);
+  let commits = 0;
+  // A pure synthetic durable cursor avoids generating gigabytes of redundant
+  // full-state history. Real repository validators and the decision path run.
+  const cursor = { version: index.revision, position: 512, hash: hash('bounded-cursor') };
+  const journal = { read: async () => ({ value: structuredClone(index), cursor: { ...cursor } }),
+    commit: async () => { commits++; assert.fail('Oversize decision must fail before journal staging or append.'); } };
+  const service = f.service({ journalFor: path => path === prefix + '/index' ? journal : f.journalFor(path) });
+  const before = await service.getAdmissions({ actor }), target = index.entries[decisions], original = Buffer.from(f.objects.files.get(`${prefix}/records/${target.recordHash}.json`).data);
+  const storedWrites = writes(f.objects);
+  const result = await service.rejectApplication({ actor, registrationId: target.id, expectedRevision: before.revision, operationId: key() });
+  assert.deepEqual(result, { outcome: 'unavailable' }); assert.equal(commits, 0); assert.equal(writes(f.objects), storedWrites);
+  assert.deepEqual(await f.service({ journalFor: () => journal }).getAdmissions({ actor }), before);
+  assert.equal((await service.getAdmissionStatus(target.id)).status, 'pending_review');
+  assert.deepEqual(f.objects.files.get(`${prefix}/records/${target.recordHash}.json`).data, original);
 });

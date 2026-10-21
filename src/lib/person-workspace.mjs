@@ -91,7 +91,7 @@ export function personWorkspaceActions(view, roles = []) {
   const actions = [];
   const contactId = view?.availability?.contact === 'available' && view.contact?.id;
   const registrationId = view?.availability?.registration === 'available' && view.registration?.id;
-  if (contactId && view.permissions.contact) {
+  if (contactId && view.permissions.contact && roles.includes('outreach')) {
     actions.push({ key: 'profile', label: '编辑联络资料', href: '/admin/contacts/#profile=' + encodeURIComponent(contactId) });
     actions.push({ key: 'arrangements', label: '跟进与活动安排', href: '/admin/contacts/#contact=' + encodeURIComponent(contactId) });
     if (view.contact.profile.contactConsent === 'consented' && view.contact.operations.responseStatus !== 'declined'

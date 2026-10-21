@@ -6,9 +6,10 @@ const errorBody = (code, message) => ({ error: { code, message } });
 export function isAppleWalletPath(path) { return PATHS.includes(path) || VERIFY.some(prefix => path.startsWith(prefix)); }
 
 /** Capability endpoints intentionally ignore staff cookies and never expose account data or credential state. */
-export function createAppleWalletApi({ service, apiOrigin = API, publicOrigins = [SITE] } = {}) {
+export function createAppleWalletApi({ service, apiOrigin = API, publicOrigins = [SITE], bodyTimeoutMs = 5000 } = {}) {
   if (!service || typeof service.download !== 'function' || typeof service.verify !== 'function' || apiOrigin !== API
-    || !Array.isArray(publicOrigins) || publicOrigins.length !== 1 || publicOrigins[0] !== SITE) throw new TypeError('Trusted Wallet API dependencies required.');
+    || !Array.isArray(publicOrigins) || publicOrigins.length !== 1 || publicOrigins[0] !== SITE
+    || !Number.isSafeInteger(bodyTimeoutMs) || bodyTimeoutMs < 1 || bodyTimeoutMs > 5000) throw new TypeError('Trusted Wallet API dependencies required.');
   return async function handle(request) {
     const url = new URL(request.url), origin = request.headers.get('origin');
     const cors = origin === SITE ? { 'access-control-allow-origin': SITE } : {};
@@ -16,9 +17,13 @@ export function createAppleWalletApi({ service, apiOrigin = API, publicOrigins =
     if (url.origin !== API || url.username || url.password || url.search || url.hash || !isAppleWalletPath(url.pathname)) return json(errorBody('NOT_FOUND', '接口不存在。'), 404);
     const download = PATHS.includes(url.pathname), verifyPrefix = VERIFY.find(prefix => url.pathname.startsWith(prefix));
     if (origin !== null && origin !== SITE || download && origin !== SITE) return json(errorBody('FORBIDDEN', '此来源不能读取票券。'), 403);
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...headers, ...cors,
-      'access-control-allow-methods': download ? 'POST, OPTIONS' : 'GET, HEAD, OPTIONS',
-      'access-control-allow-headers': 'Content-Type', 'access-control-max-age': '0' } });
+    if (request.method === 'OPTIONS') {
+      const method = request.headers.get('access-control-request-method'), names = (request.headers.get('access-control-request-headers') ?? '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
+      if (origin !== SITE || method !== null && !(download ? ['POST'] : ['GET', 'HEAD']).includes(method) || names.some(name => name !== 'content-type')) return json(errorBody('FORBIDDEN', '此预检请求不被允许。'), 403);
+      return new Response(null, { status: 204, headers: { ...headers, ...cors,
+        'access-control-allow-methods': download ? 'POST, OPTIONS' : 'GET, HEAD, OPTIONS',
+        'access-control-allow-headers': 'Content-Type', 'access-control-max-age': '0' } });
+    }
     if (download && request.method !== 'POST' || !download && !['GET', 'HEAD'].includes(request.method)) return json(errorBody('METHOD_NOT_ALLOWED', '请求方法不支持。'), 405);
     try {
       if (!download) {
@@ -32,9 +37,11 @@ export function createAppleWalletApi({ service, apiOrigin = API, publicOrigins =
       const mime = request.headers.get('content-type') ?? '', length = request.headers.get('content-length');
       if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/iu.test(mime) || length !== null && (!/^(?:0|[1-9]\d*)$/u.test(length) || Number(length) > 8192)) return json(errorBody('INVALID_INPUT', '票券请求格式无效。'), 400);
       const reader = request.body?.getReader(); if (!reader) return json(errorBody('INVALID_INPUT', '票券请求格式无效。'), 400);
-      const chunks = []; let size = 0;
-      try { for (;;) { const part = await reader.read(); if (part.done) break; if (!(part.value instanceof Uint8Array) || (size += part.value.byteLength) > 8192) return json(errorBody('INVALID_INPUT', '票券请求过大。'), 413); chunks.push(Buffer.from(part.value)); } }
-      finally { try { await reader.cancel(); } catch {} reader.releaseLock(); }
+      const chunks = []; let size = 0, timer;
+      const expired = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Wallet request timed out.')), bodyTimeoutMs); });
+      expired.catch(() => {});
+      try { for (;;) { const part = await Promise.race([reader.read(), expired]); if (part.done) break; if (!(part.value instanceof Uint8Array) || (size += part.value.byteLength) > 8192) return json(errorBody('INVALID_INPUT', '票券请求过大。'), 413); chunks.push(Buffer.from(part.value)); } }
+      finally { clearTimeout(timer); try { reader.cancel().catch(() => {}); } catch {} try { reader.releaseLock(); } catch {} }
       if (length !== null && Number(length) !== size) return json(errorBody('INVALID_INPUT', '票券请求格式无效。'), 400);
       let body;
       try { body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks, size))); } catch { return json(errorBody('INVALID_INPUT', '票券请求格式无效。'), 400); }

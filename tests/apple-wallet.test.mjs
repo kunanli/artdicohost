@@ -89,6 +89,19 @@ test('strict DER parser rejects indefinite, oversized and trailing encodings rat
   for (const bytes of [[0x30,0x80,0,0], [0x30,0x81,1,0], [0x30,0,0], [0x30,3,2,2,1]]) assert.throws(() => derChildren(Buffer.from(bytes)));
 });
 
+test('ECDSA pass keys produce CMS that independently verifies, and an ordinary client certificate cannot pose as a pass signer', async () => {
+  fixture.run(['req', '-new', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-keyout', 'ec.key', '-out', 'ec.csr', '-subj', '/C=ZZ/O=Synthetic Wallet Fixture/OU=SYNTH12345/UID=pass.org.artdico.fixture/CN=Synthetic EC Pass']);
+  fixture.run(['x509', '-req', '-in', 'ec.csr', '-CA', 'wwdr.pem', '-CAkey', 'wwdr.key', '-CAcreateserial', '-out', 'ec.pem', '-days', '100', '-extfile', 'leaf.ext']);
+  const { readFile } = await import('node:fs/promises');
+  const identity = validateSigningIdentity({ ...fixture.fields, certificate: await readFile(resolve(fixture.directory, 'ec.pem')), key: await readFile(resolve(fixture.directory, 'ec.key')), now: Date.now() });
+  const archive = buildAppleWalletPass({ identity, attendee: record, organizationName: '合成团队', verificationUrl: 'https://api.artdico.host/api/admin/registration/wallet/verify/synthetic', now: Date.now() });
+  const files = passFiles(archive); await writeFile(resolve(fixture.directory, 'ec-manifest.json'), files.get('manifest.json')); await writeFile(resolve(fixture.directory, 'ec-signature'), files.get('signature'));
+  assert.doesNotThrow(() => fixture.run(['cms', '-verify', '-binary', '-inform', 'DER', '-in', 'ec-signature', '-content', 'ec-manifest.json', '-CAfile', 'root.pem', '-purpose', 'any', '-out', 'ec-verified.json']));
+  await writeFile(resolve(fixture.directory, 'ordinary.ext'), 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=clientAuth\n');
+  fixture.run(['x509', '-req', '-in', 'ec.csr', '-CA', 'wwdr.pem', '-CAkey', 'wwdr.key', '-CAcreateserial', '-out', 'ordinary.pem', '-days', '100', '-extfile', 'ordinary.ext']);
+  assert.throws(() => validateSigningIdentity({ ...fixture.fields, certificate: Buffer.from(fixture.run(['x509', '-in', 'ordinary.pem', '-outform', 'PEM'])), key: Buffer.from(fixture.run(['pkey', '-in', 'ec.key'])), now: Date.now() }), { code: 'WALLET_CERTIFICATE_TYPE_INVALID' });
+});
+
 test('HTTP capability routes use strict site Origin/CORS, bounded JSON and safe pass MIME with no staff authentication', async () => {
   const wallet = service(), handle = createAppleWalletApi({ service: wallet });
   const request = (path = '/api/admin/registration/wallet', options = {}) => new Request('https://api.artdico.host' + path, { method: 'POST', headers: { origin: 'https://artdico.host', 'content-type': 'application/json', cookie: 'staff=unused' }, body: JSON.stringify({ receiptToken: token }), ...options });
@@ -101,7 +114,15 @@ test('HTTP capability routes use strict site Origin/CORS, bounded JSON and safe 
   assert.equal((await handle(request(undefined, { body: '{"receiptToken":"' + 'x'.repeat(9000) + '"}' }))).status, 413);
   assert.equal((await handle(request('/api/admin/registration/wallet?secret=never'))).status, 404);
   const preflight = await handle(new Request('https://api.artdico.host/api/admin/registration/wallet', { method: 'OPTIONS', headers: { origin: 'https://artdico.host' } })); assert.equal(preflight.status, 204);
+  const badPreflight = await handle(new Request('https://api.artdico.host/api/admin/registration/wallet', { method: 'OPTIONS', headers: { origin: 'https://artdico.host', 'access-control-request-method': 'PUT', 'access-control-request-headers': 'Authorization' } })); assert.equal(badPreflight.status, 403);
   const pass = JSON.parse(passFiles(Buffer.from(await valid.arrayBuffer())).get('pass.json'));
   const verified = await handle(new Request(pass.barcodes[0].message)); assert.equal(verified.status, 200); assert.equal((await verified.json()).valid, true);
   const waiting = createAppleWalletApi({ service: service({ authorize: async () => ({ ...record, admissionStatus: 'waitlisted' }) }) }); assert.equal((await waiting(request())).status, 404);
+});
+
+test('a stalled public body is cancelled within the trusted deadline without reaching signing or leaking its data', async () => {
+  let cancelled = false, calls = 0;
+  const handle = createAppleWalletApi({ service: { download: async () => { calls++; throw new Error('PRIVATE_INPUT'); }, verify: async () => ({ valid: false }) }, bodyTimeoutMs: 10 });
+  const request = new Request('https://api.artdico.host/api/admin/registration/wallet', { method: 'POST', duplex: 'half', headers: { origin: 'https://artdico.host', 'content-type': 'application/json' }, body: new ReadableStream({ cancel() { cancelled = true; } }) });
+  const response = await handle(request); assert.equal(response.status, 503); assert.equal(calls, 0); assert.equal(cancelled, true); assert.doesNotMatch(await response.text(), /PRIVATE_INPUT|timeout|stack/u);
 });

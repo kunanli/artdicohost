@@ -15,7 +15,7 @@
 
 ## HTTP 与票券边界
 
-`createAppleWalletApi({service,apiOrigin,publicOrigins})` 提供 POST `/api/admin/registration/wallet`（兼容标准 `/api/registration/wallet`），正文仅 `{receiptToken}`，8 KiB 上限。它使用收据 capability、不使用工作人员 Cookie，要求精确公开站 Origin 和无凭据 CORS。成功为私密 no-store `.pkpass`；未配置不回未签名 ZIP。
+`createAppleWalletApi({service,apiOrigin,publicOrigins})` 提供 POST `/api/admin/registration/wallet`（兼容标准 `/api/registration/wallet`），正文仅 `{receiptToken}`，8 KiB／5 秒读取上限。它使用收据 capability、不使用工作人员 Cookie，要求精确公开站 Origin 和无凭据 CORS。成功为私密 no-store `.pkpass`；未配置不回未签名 ZIP。
 
 二维码是 GET `/api/admin/registration/wallet/verify/<token>` 的用途隔离 HMAC capability（同样有标准别名）。只证明当前资格，不能下载票券或打开报名确认资料；不包含姓名／邮箱，期限最多 180 天且不超过活动当天结束。链接可进入基础访问日志，但不携带长期收据 capability。取消／候补／读取失败即时拒绝核验；此接口不记录签到、不阻止重复入场。
 
@@ -33,7 +33,7 @@ Wallet 不包含 APNs 更新／设备注册或 webServiceURL。已下载票券�
 
 ## 验证与后续
 
-`node --test --test-isolation=none tests/apple-wallet.test.mjs` 使用临时生成的合成 CA／私钥；测试后清除，不在 Git 放私钥。真实 ZIP／manifest 经独立 OpenSSL CMS 验证并确认篡改拒绝，同时覆盖错误信任根、UID／OU／私钥／期限、候补／撤回、签章间撤回、二维码用途／过期、缺配置与 loader 失效、HTTP 同源／界限／MIME。该测试不表示 Apple 接受合成证书。
+`node --test --test-isolation=none tests/apple-wallet.test.mjs tests/wallet-signing-prepare.test.mjs tests/delivery-config-bundle.test.mjs` 使用临时生成的合成 CA／私钥；测试后清除，不在 Git 放私钥。RSA 与 ECDSA 的真实 ZIP／manifest 经独立 OpenSSL CMS 验证并确认篡改拒绝，同时覆盖错误信任根、UID／OU／私钥／期限／非 Pass 证书、候补／撤回、签章间撤回、二维码用途／过期、缺配置与 loader 失效、HTTP 同源／界限／超时／MIME，以及本机密文准备／私密文件权限。17 项检查通过，该测试不表示 Apple 接受合成证书。
 
 设置步骤见后续 `apple-wallet-setup.md`。恢复时保留完整私有记录；备份 bundle 只在隔离恢复命名空间，不自动激活签章。停用 `APPLE_WALLET_ENABLED` 仅停止新签发，二维码仍核对已确认资格；如签章或应用 Secret 泄漏，应停用、在 Apple 撤销、轮替相关 Secret／bundle 并重新验收。
 

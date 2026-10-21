@@ -180,7 +180,7 @@ async function buildAssets({ repository, sourceCommit, output, nodeBinary, execu
   return [...selected].sort(([left], [right]) => left.localeCompare(right));
 }
 
-const COMPRESS = `import lzma,sys\nc=lzma.LZMACompressor(format=lzma.FORMAT_XZ,check=lzma.CHECK_CRC64,preset=6)\nwhile True:\n b=sys.stdin.buffer.read(65536)\n if not b:break\n sys.stdout.buffer.write(c.compress(b))\nsys.stdout.buffer.write(c.flush())\n`;
+export const COMPRESS = `import lzma,sys\nc=lzma.LZMACompressor(format=lzma.FORMAT_XZ,check=lzma.CHECK_CRC64,filters=[{'id':lzma.FILTER_X86},{'id':lzma.FILTER_LZMA2,'preset':6}])\nwhile True:\n b=sys.stdin.buffer.read(65536)\n if not b:break\n sys.stdout.buffer.write(c.compress(b))\nsys.stdout.buffer.write(c.flush())\n`;
 export const INSPECT_CANDIDATE_NODE = `import hashlib,json,lzma,sys\nd=lzma.LZMADecompressor(format=lzma.FORMAT_XZ,memlimit=96*1024*1024);h=hashlib.sha256();n=0;header=b''\nwhile True:\n b=sys.stdin.buffer.read(65536)\n if not b:break\n if d.eof:raise ValueError('trailing runtime')\n while True:\n  o=d.decompress(b,max_length=65536);b=b'';n+=len(o);h.update(o);header=(header+o)[:64]\n  if n>192*1024*1024:raise ValueError('runtime limit')\n  if d.eof:\n   if d.unused_data:raise ValueError('trailing runtime')\n   break\n  if d.needs_input:break\nif not d.eof or d.check!=lzma.CHECK_CRC64:raise ValueError('incomplete runtime')\nprint(json.dumps({'bytes':n,'sha256':h.hexdigest(),'header':header.hex()}))\n`;
 
 /** Candidate-only builder. It never updates FC, changes configuration, or reads credentials. */

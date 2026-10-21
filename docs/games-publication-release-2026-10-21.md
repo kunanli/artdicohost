@@ -27,3 +27,9 @@
 冻结bundle的原生flow5、games11、refresh9、people5已经分组全部通过、pageErrors为空；最终单次合并30及前阶段受影响回归仍在执行。根已整合测试修正 `edaffd4`：真实anchor而非虚构子a、URL对象请求探针、等待弹窗内镜像核对按钮、instant滚动后实际hit-test。320已证实green状态及编辑按钮可见可点，最初截图是在smooth-scroll尚未完成时截取，没有确认产品遮挡问题。证据在`/workspace/games-browser/.local-data/browser-evidence/games-publication/`。
 
 下一步：等待全部浏览器完成退出，再提交准确证据并交domain按最终head空目录封装、完整verify及受限实际ZIP启动；之后准确PR CI、merge及实际部署。不得现在将main前进，不重复合成fixture为真实业务操作。
+
+## 最终冻结验收
+
+同一15:52:05 UTC冻结dist，**新增30、后台核心39、组织4、人员关系23、图片编辑12全部原生通过，所有pageErrors为空**。源功能9bdad45未再修改。公开HTML SHA256 `78e5de9ba8ba2440ee8ecc45d7a527cf603da8e7c3b16c058b2f23189bd147bc`；新30完整JSON记录实际root source／dist路径及mtime。320／390／1440实际滚动完成后的状态标记hit-test、原生编辑按钮点击及截图通过，root另目视公开首字／作品与人员色标。没有已知未解产品问题。
+
+旧浏览器脚本只校正已退休的成功文案与旧publishedfilter语义，并加强实际store publishedrevision、旧快照不变、当前draft不同、public无contactId及changed提示断言；没有放宽关系写入防护。相容旧raw／原unknownbody精确重试／proof区退出、新默认indie及授权重核、容量不变均经实际隔离runtime验证。所有Chromium已退出，允许顺序封装／实际ZIP受限启动，不与XZ并发。最终准确head封装、PR CI及实际部署尚待记录。

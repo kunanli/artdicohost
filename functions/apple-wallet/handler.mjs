@@ -34,6 +34,8 @@ export function createAppleWalletApi({ service, apiOrigin = API, publicOrigins =
         const body = { valid: true, eventId: value.eventId, admissionStatus: 'confirmed', verifiedAt: value.verifiedAt };
         const response = json(body, 200); return request.method === 'HEAD' ? new Response(null, { status: response.status, headers: response.headers }) : response;
       }
+      const encoding = request.headers.get('content-encoding');
+      if (encoding !== null && encoding.toLowerCase() !== 'identity') return json(errorBody('UNSUPPORTED_MEDIA_TYPE', '票券请求格式不支持，请重新打开确认页。'), 415);
       const mime = request.headers.get('content-type') ?? '', length = request.headers.get('content-length');
       if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/iu.test(mime) || length !== null && (!/^(?:0|[1-9]\d*)$/u.test(length) || Number(length) > 8192)) return json(errorBody('INVALID_INPUT', '票券请求格式无效。'), 400);
       const reader = request.body?.getReader(); if (!reader) return json(errorBody('INVALID_INPUT', '票券请求格式无效。'), 400);

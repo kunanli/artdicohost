@@ -127,3 +127,18 @@ test('a stalled public body is cancelled within the trusted deadline without rea
   const request = new Request('https://api.artdico.host/api/admin/registration/wallet', { method: 'POST', duplex: 'half', headers: { origin: 'https://artdico.host', 'content-type': 'application/json' }, body: new ReadableStream({ cancel() { cancelled = true; } }) });
   const response = await handle(request); assert.equal(response.status, 503); assert.equal(calls, 0); assert.equal(cancelled, true); assert.doesNotMatch(await response.text(), /PRIVATE_INPUT|timeout|stack/u);
 });
+
+test('encoded Wallet requests are rejected before parsing or invoking the signing service', async () => {
+  let calls = 0;
+  const handle = createAppleWalletApi({ service: { download: async () => { calls++; return { outcome: 'not_ready' }; }, verify: async () => ({ valid: false }) } });
+  for (const encoding of ['gzip', 'br', 'deflate', 'identity, gzip']) {
+    const request = new Request('https://api.artdico.host/api/admin/registration/wallet', { method: 'POST', headers: { origin: 'https://artdico.host', 'content-type': 'application/json', 'content-encoding': encoding }, body: JSON.stringify({ receiptToken: token }) });
+    const response = await handle(request); assert.equal(response.status, 415); assert.equal(calls, 0);
+    assert.doesNotMatch(await response.text(), /synthetic\.receipt|b{43}/u);
+  }
+  for (const encoding of [undefined, 'identity']) {
+    const response = await handle(new Request('https://api.artdico.host/api/admin/registration/wallet', { method: 'POST', headers: { origin: 'https://artdico.host', 'content-type': 'application/json', ...(encoding ? { 'content-encoding': encoding } : {}) }, body: JSON.stringify({ receiptToken: token }) }));
+    assert.equal(response.status, 503);
+  }
+  assert.equal(calls, 2, 'only absent or identity encoding reaches the trusted service');
+});

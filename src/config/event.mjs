@@ -7,7 +7,7 @@ export const eventConfig = {
   siteRegistration: {
     existing: { title: '我已是 GGJ 站点负责人', categories: ['so', 'ro'], description: '登记现任或曾任 SO / RO 的站点、城市、组织年份、当前 / 历史角色与交流经历。' },
     prospective: { title: '我想在城市组织 GGJ 站点', categories: ['new_site'], description: '了解本地负责人、团队与场地准备，并通过 GGJ 官网 Start a Jam Site 申请。' },
-    notice: '两种身份可以同时选择；本次聚会与现场咨询不替代 GGJ 官方申请，正式结果由 GGJ 官方确认。',
+    notice: '现场咨询不替代 GGJ 官方申请，正式结果由 GGJ 官方确认。',
   },
   status: 'confirmed',
   language: 'zh-CN',

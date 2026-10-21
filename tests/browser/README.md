@@ -66,3 +66,10 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 该脚本与本阶段调整后的 `people-relationships-smoke.mjs` 才采用「新公开申请先待审」语义；后者在真实 300 人场景明确核准新申请后再验证候补，不能直接把提交当成占位。较早 `registration-smoke.mjs`／`confirmation-smoke.mjs` 的三步骤表单部分是旧流程验收，不能作为新版简表的通过证据。邮件只由合成 provider stub 记录，不代表真实 EmailJS 寄送或收件；没有真实报名、群码、Apple 凭证或名单输入。
 
 `settings-collaborators-smoke.mjs` 使用真实 runtime、账号服务与内存 OSS，覆盖 320／390／1440px 管理员账号入口、两位协作者的明确建立及真实登录、独立密码与四项活动权限。完整协作者读取群码和通知设置，完全不请求账号或维护 API；部分角色不读取私有设置。检查真实账号保存失回执和坏回执、目录 GET 不能证明密码、刷新后保持待核对且不重送；本机草稿仅保存非敏感填写，明确恢复不创建账号，密码／密钥／图片不进入 IndexedDB。另核对登出清除本机资料、401 清空私有 DOM 和密码后仍能重新登录，以及同一账号验证后恢复填写。全部账号、密码与通知均是隔离内存合成资料，不创建或联络正式工作人员；输出不包含密码。
+`public-drafts-smoke.mjs` 使用真实 Chromium IndexedDB、实际隔离 runtime 和内存 OSS，拦截全部 HTTP。覆盖 320／390／1440px、本机草稿刷新恢复且不恢复隐私勾选、尚未落盘的立即刷新提醒、已落盘刷新免提醒、容量失败不假报保存、两个页签的 CAS 与明确恢复。提交回执丢失后刷新，仍保留原正文及幂等键；即使申请关闭或告知版本改变，也只在明确操作时取得新令牌并核对原申请。另验证未知结果后的 422 不清原记录、首次明确 422 的原子恢复／失败保留，以及跨页签提示碰上延迟本机 ACK 或飞行中的提交时不会假报已同步或提前解锁。运行方式：
+
+```sh
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/public-drafts-smoke.mjs
+```
+
+本机自动暂存仍有短暂写入时间；浏览器关闭、进程崩溃或存储配额中断时无法承诺最后一个字符已落盘。页面只在 IndexedDB 完成回执后显示已暂存；离页提醒用于尚未完成的本机写入与结果未明的原申请。该脚本不使用内存存储替身，也不连接正式服务或发送真实邮件。

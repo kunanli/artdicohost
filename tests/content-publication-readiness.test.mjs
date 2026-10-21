@@ -67,7 +67,7 @@ test('order and event changes are tracked without claiming unchanged rows change
 });
 
 test('unavailable or malformed source never becomes an empty publication or a ready record',()=>{
-  for(const change of [s=>delete s.published,s=>s.published=undefined,s=>s.draft.revision=-1,s=>s.published.revision=9,s=>s.published.publishedAt='bad',s=>s.published.publishedAt='2026-02-30T10:00:00Z',s=>s.published.content.eventId='other-event',s=>delete s.published.content.guests,s=>s.published.content.guests.push({...s.published.content.guests[0]}),s=>s.published.content.guests[0].privateNotes='must not be published',s=>s.draft.content.guests[0].portraitId='https://example.invalid/photo']){
+  for(const change of [s=>delete s.published,s=>s.published=undefined,s=>s.draft.revision=-1,s=>delete s.draft.content.guests,s=>s.published.revision=9,s=>s.published.publishedAt='bad',s=>s.published.publishedAt='2026-02-30T10:00:00Z',s=>s.published.content.eventId='other-event',s=>delete s.published.content.guests,s=>s.published.content.guests.push({...s.published.content.guests[0]}),s=>s.published.content.guests[0].privateNotes='must not be published',s=>s.draft.content.guests[0].portraitId='https://example.invalid/photo']){
     const source=state();change(source);assert.equal(contentPublicationReadiness(source),null);
   }
   for(const value of [null,undefined,{},[],{draft:null,published:null}])assert.equal(contentPublicationReadiness(value),null);
@@ -77,4 +77,34 @@ test('report reason, change, and optional suggestion codes have stable display l
   const source=state();source.published=null;source.draft.content.guests[0].status='pending';source.draft.content.guests[0].publicConsent=false;source.draft.content.guests[0].portraitId='';
   const report=contentPublicationReadiness(source);for(const list of Object.values(report.items))for(const item of list){assert.ok(PUBLICATION_CHANGE_LABELS[item.change]);for(const reason of item.reasons)assert.ok(PUBLICATION_REASON_LABELS[reason]);for(const suggestion of item.suggestions)assert.ok(PUBLICATION_SUGGESTION_LABELS[suggestion]);}
   assert.deepEqual(report.items.guests[0].suggestions,['portrait_optional','public_roles_optional']);
+});
+
+
+test('a cancelled booth retains actual publication and says cancelled rather than awaiting confirmation',()=>{
+  const source=state();source.draft.content.showcases=[];source.draft.content.booths[0].status='cancelled';
+  const item=row(contentPublicationReadiness(source),'booths','booth-1');assert.equal(item.published,true);assert.equal(item.change,'removed');assert.deepEqual(item.reasons,['booth_cancelled']);assert.equal(PUBLICATION_REASON_LABELS[item.reasons[0]],'展位已取消');
+});
+test('a withdrawn organization says withdrawn rather than awaiting confirmation',()=>{
+  const source=state();source.draft.content.organizations[0].status='withdrawn';
+  const item=row(contentPublicationReadiness(source),'organizations','org-1');assert.equal(item.published,true);assert.equal(item.change,'removed');assert.deepEqual(item.reasons,['organization_withdrawn']);assert.equal(PUBLICATION_REASON_LABELS[item.reasons[0]],'组织已退出');
+});
+
+
+test('confirmed authorized guests without photo or public roles agree with the actual optional-photo projection',()=>{
+  const content=fixture();content.guests[0].portraitId='';delete content.guests[0].publicRoles;
+  let source={draft:{revision:8,content},published:null},item=row(contentPublicationReadiness(source),'guests','guest-1');
+  assert.equal(item.ready,true);assert.equal(item.change,'new');assert.deepEqual(item.reasons,[]);assert.deepEqual(item.suggestions,['portrait_optional','public_roles_optional']);
+  source.published={revision:8,publishedAt:AT,content:toPublicContent(content)};
+  item=row(contentPublicationReadiness(source),'guests','guest-1');assert.equal(item.published,true);assert.equal(item.change,'unchanged');
+  assert.equal(source.published.content.guests[0].portraitId,'');assert.equal(source.published.content.guests[0].portraitUrl,'');
+});
+
+test('work kind and independently public organization affect only their real public rendering',()=>{
+  const content=fixture();content.showcases[0].kind='indie';content.showcases[0].organizationId='org-1';const source=state(content);
+  assert.equal(row(contentPublicationReadiness(source),'showcases','work-1').change,'unchanged');
+  source.draft.content.showcases[0].kind='team';assert.equal(row(contentPublicationReadiness(source),'showcases','work-1').change,'updated');
+  source.draft.content.showcases[0].kind='indie';source.draft.content.organizations[0].publicConsent=false;
+  const report=contentPublicationReadiness(source);assert.equal(row(report,'showcases','work-1').ready,true);assert.equal(row(report,'showcases','work-1').change,'updated');assert.equal(row(report,'organizations','org-1').change,'removed');
+  source.published.content=toPublicContent(source.draft.content);source.draft.content.showcases[0].organizationId='orphan-history';
+  assert.equal(row(contentPublicationReadiness(source),'showcases','work-1').change,'unchanged','a private/unknown organization link never becomes a public update or blocks the work');
 });

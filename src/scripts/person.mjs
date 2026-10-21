@@ -1,4 +1,5 @@
 import { parsePersonSelection, personWorkspacePath, personWorkspaceView, personWorkspaceActions, personWorkspaceSteps, personAvailabilityText } from '../lib/person-workspace.mjs';
+import { attendancePresentation, profilePublicationPresentation } from '../lib/people-relationships.mjs';
 import { SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
 import { sourceLabels } from '../../shared/contact-import.mjs';
 import { identityOptions, participationOptions } from '../../shared/registration-schema.mjs';
@@ -11,7 +12,6 @@ const interestLabels = new Map(sourceLabels.interests.map(item => [item.value, i
 const registrationIdentityLabels = new Map(identityOptions.map(item => [item.value, item.label]));
 const registrationInterestLabels = new Map(participationOptions.map(item => [item.value, item.label]));
 const participationLabels = { guest: '嘉宾', speaker: '讲者', panelist: '圆桌嘉宾', host: '主持', organizer: '研讨会组织者', booth: '展位', student_showcase: '学生作品展示', attendee: '现场参与' };
-const responseLabels = { pending: '尚未确认', attending: '已确认出席', declined: '不出席' };
 const admissionLabels = { confirmed: '已确认参会名额', waitlisted: '已核准候补，名额尚未确认', pending_review: '申请待审核，尚无参会名额', rejected: '申请未通过，尚无参会名额', withdrawn: '已取消／撤回' };
 const reviewLabels = { new: '新报名', in_review: '核查中', awaiting_maria: '待 Maria 审阅', approved: '审核已确认', discussion: '待讨论', not_this_time: '本次不邀请', withdrawn: '已撤回' };
 const accommodationLabels = { not_requested: '未申请', requested: '已申请', pending: '待核对', approved: '已批准', declined: '未批准' };
@@ -108,6 +108,7 @@ function showSession(value) {
 }
 function fact(output, label, value) { if (value === '' || value === null || value === undefined) return; output.append(node('dt', label), node('dd', String(value))); }
 function facts() { return node('dl', undefined, 'person-facts'); }
+function statusBadge(label,tone) { const badge=node('span',label,'ah-status');badge.dataset.statusTone=tone;return badge; }
 function stateMessage(output, state) { const paragraph = node('p', personAvailabilityText(state), 'person-state'); paragraph.dataset.state = state; output.append(paragraph); }
 function dateLabel(value) {
   if (!value || !Number.isFinite(Date.parse(value))) return '时间未记录';
@@ -138,7 +139,7 @@ function renderAdmission(view) {
   const output = $('[data-person-admission]');
   if (view.availability.admission === 'available') { const group = node('p', undefined, 'person-badges'); group.append(badge(admissionLabels[view.admission.status], view.admission.status), badge(view.admission.kind === 'crew' ? '工作人员名额' : '一般参会名额')); output.append(group); }
   else stateMessage(output, view.availability.admission);
-  if (view.contact) { const list = facts(); fact(list, '本人出席回复', responseLabels[view.contact.operations.responseStatus] ?? '待核对'); output.append(node('h3', '实际回复'), list); }
+  if (view.contact) { const list = facts(),status=attendancePresentation(view.contact.operations.responseStatus),value=node('dd'),badge=statusBadge(status.label,status.tone);badge.dataset.attendanceStatus=view.contact.operations.responseStatus;value.append(badge);list.append(node('dt','本人出席回复'),value);output.append(node('h3', '实际回复'), list); }
   else if (view.availability.contact === 'restricted') output.append(node('p', '本人回复及人员跟进资料需要人员邀约权限。', 'person-note'));
   output.append(node('p', '参会名额、本人回复、审核与住宿分别核对。', 'person-note'));
 }
@@ -174,12 +175,14 @@ function renderArrangements(view) {
   for (const item of view.arrangements.booths) { const row = node('li'); row.append(node('strong', item.missing ? '历史展位已不存在' : [item.code, item.organization || item.project || '资料待完善'].filter(Boolean).join(' · ')), node('p', item.missing ? '保留原关联，需在人员安排中核对。' : [item.position ? '位置 ' + item.position : '', item.project, item.status === 'cancelled' ? '已取消' : ''].filter(Boolean).join(' · '))); booths.append(row); }
   output.append(booths.childNodes.length ? booths : node('p', '尚未关联出席展位。', 'person-muted'));
   output.append(node('h3', '关联的公开人物资料'));
-  if (view.publicProfile.state !== 'available') stateMessage(output, view.publicProfile.state);
+  if (view.publicProfile.state !== 'available') {const badge=statusBadge(view.publicProfile.state==='unlinked'?'尚未关联人物资料':'公开状态待核对','neutral');badge.dataset.profilePublication='';badge.dataset.publicationState='unknown';output.append(badge);stateMessage(output, view.publicProfile.state);}
   else {
     const profiles = node('ul', undefined, 'person-list');
     for (const item of view.publicProfile.profiles) {
       const row = node('li'); row.append(node('strong', item.name || '姓名待完善'), node('p', [item.company, item.title].filter(Boolean).join(' · ')));
-      row.append(node('p', [item.status === 'confirmed' ? '草稿已确认' : '草稿待确认', item.publicConsent ? '已记录公开授权' : '未记录公开授权', item.hasPortrait ? '已有照片' : '尚未上传照片', item.published ? item.publishedMatchesDraft ? '已发布内容与当前人物草稿一致' : '资料有历史公开版本，当前人员关联及内容待核对' : '尚未在已发布快照找到此人物'].join(' · ')));
+      const status=profilePublicationPresentation(item),badge=statusBadge(status.label,status.tone),change=statusBadge(status.changeLabel,status.change==='unchanged'?'neutral':'warning');
+      badge.dataset.profilePublication=item.id;badge.dataset.publicationState=item.published?'published':'unpublished';change.dataset.profilePublicationChange=item.id;
+      row.append(badge,change,node('p',status.detail),node('p',[...status.reasons,...status.suggestions].join(' · ')));
       if (item.publicRoles.length) row.append(node('p', '公开职责：' + item.publicRoles.map(role => ({ speaker: '讲者', guest: '嘉宾', organizer: '研讨会组织者', moderator: '主持人' })[role] || role).join('、')));
       profiles.append(row);
     }

@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPersonRelationshipsApi, isPersonRelationshipsPath, personRelationshipsProjection } from '../functions/person-workspace/relationships.mjs';
 import { publicProfileProjection, contentSource } from '../functions/person-workspace/projection.mjs';
+import { createInitialContent } from '../src/config/content.mjs';
+import { toPublicContent } from '../shared/content-schema.mjs';
 import { fixture, actor, ORIGIN, CONTACT } from './person-workspace-fixture.mjs';
 
 const ROOT = '/api/admin/people/', ORGANIZATION = 'synthetic-organization';
@@ -168,4 +170,11 @@ test('401 or aborted source reads discard assembled relationship data and stop l
   const controller = new AbortController(), api = f.api({ loadContent: async () => { controller.abort(); return f.data.content; } });
   const response = await api(f.request(ROOT + 'organizations/' + ORGANIZATION + '/members', { signal: controller.signal }));
   assert.equal(response.status, 503); assert.equal(f.calls.length, 0); assert.doesNotMatch(await response.text(), /PRIVATE|合成/u);
+});
+
+
+test('catalog publication equality agrees with actual no-photo no-role public guest projection',async()=>{
+  const f=setup(),guest={...f.data.content.content.guests[0],portraitId:''};delete guest.publicRoles;
+  const content=createInitialContent();content.guests=[guest];f.data.content.content=content;f.data.content.published={revision:4,publishedAt:'2026-10-21T00:00:00Z',content:toPublicContent(content)};
+  const {response,body}=await f.read();assert.equal(response.status,200);assert.equal(body.profiles[0].hasPortrait,false);assert.deepEqual(body.profiles[0].publicRoles,[]);assert.equal(body.profiles[0].published,true);assert.equal(body.profiles[0].publishedMatchesDraft,true);
 });

@@ -67,7 +67,7 @@ export const PUBLICATION_REASON_LABELS = Object.freeze({
   confirmation_required: '待确认', public_consent_required: '待核实公开授权',
   attendance_required: '未确认参加', attendance_declined: '已回复不参加',
   cover_required: '作品封面待补', allocation_required: '展位或分享场次待安排',
-  session_draft: '场次尚未安排', record_removed: '草稿已移除',
+  session_draft: '场次尚未安排', booth_cancelled:'展位已取消', organization_withdrawn:'组织已退出', record_removed: '草稿已移除',
   not_in_public_projection: '公开条件待核对',
 });
 export const PUBLICATION_CHANGE_LABELS = Object.freeze({new:'待发布',updated:'变更待发布',removed:'待撤下',unchanged:'已同步',blocked:'待补充'});
@@ -87,7 +87,7 @@ function publicationReasons(kind,item,content,ready) {
   if (kind==='sessions') {
     if(item.status==='draft')reasons.push('session_draft');
   } else {
-    if(item.status!=='confirmed')reasons.push('confirmation_required');
+    if(item.status!=='confirmed')reasons.push(kind==='booths'&&item.status==='cancelled'?'booth_cancelled':kind==='organizations'&&item.status==='withdrawn'?'organization_withdrawn':'confirmation_required');
     if(['guests','organizations','showcases'].includes(kind)&&item.publicConsent!==true)reasons.push('public_consent_required');
     if(kind==='showcases') {
       if(item.responseStatus!=='attending')reasons.push(item.responseStatus==='declined'?'attendance_declined':'attendance_required');
@@ -106,7 +106,7 @@ export function contentPublicationReadiness(input) {
   try {
     if(!plain(input)||!Object.hasOwn(input,'published')||!plain(input.draft)||!revision(input.draft.revision))return null;
     const content=canonicalContent(input.draft.content);
-    if(!content)return null;
+    if(!content||!['guests','showcases','sessions','booths'].every(key=>Array.isArray(input.draft.content[key])))return null;
     const next=toPublicContent(content),publication=input.published;
     let saved=null,publishedRevision=null,publishedAt=null;
     if(publication!==null) {

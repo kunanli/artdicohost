@@ -210,16 +210,16 @@ export function personWorkspaceSteps(view, roles = []) {
   }
   const needsPublic = forms.some(value => ['guest', 'speaker', 'panelist', 'host', 'organizer'].includes(value));
   const publicState = view.availability.publicProfile, profiles = view.publicProfile.profiles;
-  const published = profiles.filter(item => item.published), currentEligible = profiles.filter(item => item.status === 'confirmed' && item.publicConsent && item.hasPortrait && item.publicRoles.length);
+  const published = profiles.filter(item => item.published), currentEligible = profiles.filter(item => item.status === 'confirmed' && item.publicConsent);
   const unpublished = currentEligible.some(item => !item.published), liveOldDraft = published.some(item => !item.publishedMatchesDraft);
   steps.push(!contact ? step('public', '核对公开资料', unavailable('contact'), personAvailabilityText(view.availability.contact), 'review')
     : publicState === 'restricted' ? step('public', '核对公开资料', 'restricted', personAvailabilityText(publicState))
           : publicState === 'unavailable' ? step('public', '核对公开资料', 'review', '公开资料或已发布快照暂时无法完整核对，请重新读取后确认。', 'guest')
-            : liveOldDraft ? step('public', '核对公开资料', 'review', '资料有历史公开版本，当前人员关联及内容待核对；请核对照片、文字、职责及授权，再发布更新。', 'guest')
+            : liveOldDraft ? step('public', '核对公开资料', 'review', '资料有历史公开版本，当前人员关联及内容待核对；请核对文字、当前关联及授权，再发布更新或撤下。', 'guest')
               : !forms.length ? step('public', '核对公开资料', 'pending', '先确认参与身份，再决定是否需要公开人物资料。', 'arrangements')
                 : !needsPublic ? step('public', '核对公开资料', 'complete', '当前内部职责不要求公开人物页；组织展示资料另在活动与内容维护。', 'arrangements')
               : publicState === 'unlinked' || !profiles.length ? step('public', '核对公开资料', 'pending', '尚未通过此人员的固定编号关联公开嘉宾资料；按需要创建并核对公开授权。', 'guest')
-                : unpublished || !currentEligible.length ? step('public', '核对公开资料', 'pending', '已有公开资料草稿，仍需核对照片、公开职责、确认状态与授权，并发布活动内容。', 'guest')
-                  : step('public', '核对公开资料', 'complete', '已有已发布版本；本次草稿的照片、简介或职责变更仍需核对并发布，不代表最新草稿已同步。', 'guest'));
+                : unpublished || !currentEligible.length ? step('public', '核对公开资料', 'pending', '已有公开资料草稿，核对确认状态与授权后发布；照片与公开职责可稍后补充。', 'guest')
+                  : step('public', '核对公开资料', 'complete', '已发布内容与当前人物草稿一致；照片与公开职责可稍后补充。', 'guest'));
   return steps;
 }

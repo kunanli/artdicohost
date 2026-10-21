@@ -13,6 +13,8 @@ for (const navigation of document.querySelectorAll('[data-staff-navigation]')) {
     for (const heading of headings) {
       if (heading.getBoundingClientRect().top <= 100) current = heading;
     }
+    // The last section can be too short to reach the top of the viewport.
+    if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) current = headings.at(-1);
     for (const link of links) {
       if (link.hash === '#' + current?.id) link.setAttribute('aria-current', 'location');
       else link.removeAttribute('aria-current');

@@ -18,7 +18,6 @@ if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('报�
 ---
 <section class="ah-registration ah-section" id="registration" aria-labelledby="registration-heading" data-registration-api-origin={apiOrigin || undefined}>
   <div class="ah-register-intro">
-    <span class="ah-kicker">JOIN THE DAY</span>
     <h2 id="registration-heading">一起参与这一天。</h2>
     <p data-registration-notice>活动报名已开放，欢迎组织者、学生、游戏创作者与社群伙伴。本页表单仅供流程预览，不发送或保存资料。</p>
     <details class="ah-stay-details"><summary>外地嘉宾住宿支持</summary><p>{eventConfig.accommodation.notice}入住 / 离店暂定为 {stayDate(eventConfig.accommodation.checkIn)}至 {stayDate(eventConfig.accommodation.checkOut)}。</p></details>

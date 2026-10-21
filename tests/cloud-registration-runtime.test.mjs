@@ -45,6 +45,15 @@ async function issued(runtime, key = randomBytes(32).toString('base64url')) {
   assert.equal(response.status, 200);
   return { 'Idempotency-Key': key, 'X-Registration-Token': (await response.json()).submissionToken };
 }
+async function approveApplication(runtime, headers, registrationId, expectedRevision) {
+  const operationId = randomBytes(32).toString('base64url');
+  const response = await runtime.handle(request('/api/admin/admissions/approve', { method: 'POST', origin: API, headers,
+    body: { registrationId, expectedRevision, operationId } }));
+  assert.equal(response.status, 200, await response.clone().text());
+  const result = await response.json();
+  assert.deepEqual(result.operation, { operationId, action: 'approve', registrationId, revision: expectedRevision + 1 });
+  return result;
+}
 
 test('exact public aliases compose the real durable service while protected plural review routes retain authorization', async () => {
   const f = fixture();
@@ -53,8 +62,9 @@ test('exact public aliases compose the real durable service while protected plur
   const config = await f.first.handle(request('/api/admin/registration/config', { origin: PUBLIC }));
   assert.equal(config.status, 200); assert.equal(config.headers.get('access-control-allow-origin'), PUBLIC);
   assert.equal(config.headers.get('access-control-allow-credentials'), null);
-  assert.deepEqual(await config.json(), { ...POLICY, opensAt: new Date(POLICY.opensAt).toISOString(), closesAt: new Date(POLICY.closesAt).toISOString(),
-    admissions: { capacity: 3, staffReserve: 0, waitlistEnabled: false, confirmedCount: 0, attendeeConfirmedCount: 0, crewConfirmedCount: 0, waitlistCount: 0, remainingPublic: 3, remainingTotal: 3 } });
+  assert.deepEqual(await config.json(), { ...POLICY, attendeeReviewRequired: true, opensAt: new Date(POLICY.opensAt).toISOString(), closesAt: new Date(POLICY.closesAt).toISOString(),
+    admissions: { capacity: 3, staffReserve: 0, waitlistEnabled: false, confirmedCount: 0, attendeeConfirmedCount: 0, crewConfirmedCount: 0, waitlistCount: 0,
+      pendingReviewCount: 0, rejectedCount: 0, remainingPublic: 3, remainingTotal: 3 } });
   const preflight = await f.first.handle(request('/api/admin/registration/token', { method: 'OPTIONS', origin: PUBLIC, headers: { 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' } }));
   assert.equal(preflight.status, 204); assert.equal(preflight.headers.get('access-control-allow-credentials'), null);
   for (const path of ['/api/admin/registration/config', '/api/admin/registration/token']) {
@@ -65,8 +75,8 @@ test('exact public aliases compose the real durable service while protected plur
   const saved = await f.first.handle(request('/api/admin/registration/submit', submission));
   assert.equal(saved.status, 201);
   const receipt = await saved.json(); assert.deepEqual(Object.keys(receipt).sort(), ['admissionKind', 'admissionRevision', 'admissionStatus', 'confirmation', 'groupInvite', 'reference_code', 'status']);
-  assert.equal(receipt.status, 'registered'); assert.equal(receipt.groupInvite, null);
-  assert.equal(receipt.confirmation.email.status, 'not_configured');
+  assert.equal(receipt.status, 'pending_review'); assert.equal(receipt.admissionStatus, 'pending_review'); assert.equal(receipt.groupInvite, null);
+  assert.equal(receipt.confirmation.email.status, 'not_applicable');
   assert.equal(receipt.confirmation.confirmationUrl, PUBLIC + '/registration/confirmation/#r=' + receipt.confirmation.receiptToken);
   assert.doesNotMatch(JSON.stringify(receipt), /private\.synthetic|passwordHash|scrypt\$|cms\/v1/u);
   const replay = await f.second.handle(request('/api/admin/registration/submit', submission));
@@ -78,6 +88,10 @@ test('exact public aliases compose the real durable service while protected plur
   assert.equal((await f.second.handle(request('/api/admin/maintenance', { headers: editor }))).status, 403);
   assert.equal((await f.second.handle(request('/api/admin/contacts/import/preview', { method: 'POST', origin: API, headers: editor, body: {} }))).status, 403);
   const owner = await login(f.second);
+  const approved = await approveApplication(f.second, owner, receipt.reference_code, 1);
+  assert.equal(approved.summary.confirmedCount, 1); assert.equal(approved.summary.pendingReviewCount, 0);
+  const admitted = await (await f.first.handle(request('/api/admin/registration/submit', submission))).json();
+  assert.equal(admitted.status, 'registered'); assert.equal(admitted.confirmation.email.status, 'not_applicable', 'saved public replay never initiates formal mail');
   const listed = await f.first.handle(request('/api/admin/registrations', { headers: owner }));
   assert.equal(listed.status, 200); const list = await listed.json(); assert.equal(list.total, 1);
   assert.equal(JSON.stringify(list).includes('private.synthetic@example.invalid'), false);
@@ -119,7 +133,10 @@ test('receipt-bound group aliases, review withdrawal and deletion requests share
   const headers = await issued(f.first), submission = { method: 'POST', origin: PUBLIC, headers, body: payload() };
   const saved = await f.second.handle(request('/api/admin/registration/submit', submission));
   assert.equal(saved.status, 201); const receipt = await saved.json();
-  const imagePath = new URL(receipt.groupInvite.qrImageUrl).pathname;
+  assert.equal(receipt.status, 'pending_review'); assert.equal(receipt.groupInvite, null);
+  await approveApplication(f.first, owner, receipt.reference_code, 1);
+  const admitted = await (await f.second.handle(request('/api/admin/registration/submit', submission))).json();
+  const imagePath = new URL(admitted.groupInvite.qrImageUrl).pathname;
   assert.match(imagePath, /^\/api\/admin\/registration\/group-invite\//u);
   const image = await f.first.handle(request(imagePath, { origin: PUBLIC }));
   assert.equal(image.status, 200); assert.equal(image.headers.get('content-type'), 'image/png');
@@ -138,7 +155,7 @@ test('receipt-bound group aliases, review withdrawal and deletion requests share
   assert.doesNotMatch(JSON.stringify(safe), /passwordHash|scrypt\$|synthetic-role-secret|cms\/v1/u);
 });
 
-test('shared admission reservation, public waitlist, actual crew, teams and cancellation govern old and new QR links', async () => {
+test('shared admission reservation, reviewed public waitlist, actual crew, teams and cancellation govern old and new QR links', async () => {
   const f = fixture({ ...ENV, ARTDICO_REGISTRATION_WAITLIST_ENABLED: 'true' }), owner = await login(f.first);
   const mutate = async (path, method, expectedRevision, input) => {
     const response = await f.first.handle(request('/api/admin/admissions/' + path, { method, origin: API, headers: owner,
@@ -150,20 +167,29 @@ test('shared admission reservation, public waitlist, actual crew, teams and canc
   assert.equal((await f.first.handle(request('/api/admin/group-invite', { method: 'POST', origin: API, headers: owner,
     body: { expectedRevision: 0, contentType: 'image/png', dataBase64: PNG, expiresAt: '2026-10-21T00:00:00.000Z' } }))).status, 200);
   const firstInput = { method: 'POST', origin: PUBLIC, headers: await issued(f.first), body: payload() };
+  const firstApplication = await (await f.first.handle(request('/api/admin/registration/submit', firstInput))).json();
+  assert.equal(firstApplication.status, 'pending_review'); assert.equal(firstApplication.groupInvite, null);
+  const firstApproval = await approveApplication(f.second, owner, firstApplication.reference_code, 2);
+  assert.equal(firstApproval.summary.confirmedCount, 1);
   const confirmed = await (await f.first.handle(request('/api/admin/registration/submit', firstInput))).json();
   assert.equal(confirmed.status, 'registered'); const oldImage = new URL(confirmed.groupInvite.qrImageUrl).pathname;
   const secondInput = { method: 'POST', origin: PUBLIC, headers: await issued(f.second), body: { ...payload(), fields: { ...payload().fields, name: '合成候补人' } } };
   const waitingResponse = await f.second.handle(request('/api/admin/registration/submit', secondInput)), waiting = await waitingResponse.json();
-  assert.equal(waitingResponse.status, 201); assert.equal(waiting.status, 'waitlisted'); assert.equal(waiting.groupInvite, null);
-  const crew = await mutate('staff', 'POST', 3, { input: { kind: 'crew', fields: { name: '合成工作人员', wechat: 'synthetic-staff' }, permissionReference: '合成线下登记授权' } });
+  assert.equal(waitingResponse.status, 201); assert.equal(waiting.status, 'pending_review'); assert.equal(waiting.groupInvite, null);
+  const waitingApproval = await approveApplication(f.first, owner, waiting.reference_code, 4);
+  assert.equal(waitingApproval.people.find(person => person.registrationId === waiting.reference_code).status, 'waitlisted');
+  assert.equal(waitingApproval.approvalEmail, undefined, 'approved waitlist has no formal invitation send');
+  const waitingReplay = await (await f.second.handle(request('/api/admin/registration/submit', secondInput))).json();
+  assert.equal(waitingReplay.status, 'waitlisted'); assert.equal(waitingReplay.groupInvite, null);
+  const crew = await mutate('staff', 'POST', 5, { input: { kind: 'crew', fields: { name: '合成工作人员', wechat: 'synthetic-staff' }, permissionReference: '合成线下登记授权' } });
   assert.equal(crew.summary.confirmedCount, 2); assert.equal(crew.summary.crewConfirmedCount, 1);
-  const team = await mutate('teams', 'POST', 4, { team: { name: '合成已登记团队', memberIds: [confirmed.reference_code, crew.registrationId] } });
+  const team = await mutate('teams', 'POST', 6, { team: { name: '合成已登记团队', memberIds: [confirmed.reference_code, crew.registrationId] } });
   assert.equal(team.teams[0].memberIds.length, 2); assert.equal(team.summary.confirmedCount, 2);
   const editor = await login(f.second, 'synthetic.editor'), before = f.remote.calls.length;
   assert.equal((await f.second.handle(request('/api/admin/admissions', { headers: editor }))).status, 403);
   assert.equal((await f.second.handle(request('/api/admin/tasks', { headers: editor }))).status, 403);
   assert.ok(f.remote.calls.slice(before).every(call => !/\/(?:registrations|contacts|intent-invitations)\//u.test(call.key)));
-  const cancelled = await mutate('withdraw', 'POST', 5, { registrationId: confirmed.reference_code });
+  const cancelled = await mutate('withdraw', 'POST', 7, { registrationId: confirmed.reference_code });
   assert.ok(cancelled.promotedIds.includes(waiting.reference_code)); assert.equal(cancelled.summary.confirmedCount, 2);
   assert.deepEqual(cancelled.promotionEmail, { status: 'not_configured', attemptedCount: 0, pendingCount: 1 });
   assert.equal((await f.second.handle(request(oldImage, { origin: PUBLIC }))).status, 404);
@@ -184,10 +210,14 @@ test('composed capability reads current withdrawal, protected readiness and real
     assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'private, no-store');
     assert.equal(response.headers.get('access-control-allow-origin'), PUBLIC); assert.equal(response.headers.get('access-control-allow-credentials'), null);
     const value = await response.json(); assert.equal(value.referenceCode, receipt.reference_code); assert.equal(value.attendee.name, payload().fields.name);
-    assert.equal(value.admission.status, 'confirmed'); assert.equal(value.email.status, 'not_configured'); assert.equal(value.wallet.ready, false);
+    assert.equal(value.admission.status, 'pending_review'); assert.equal(value.email.status, 'not_applicable'); assert.equal(value.wallet.ready, false); assert.equal(value.groupInvite, null);
     assert.doesNotMatch(JSON.stringify(value), /private\.synthetic|privacy@example|tokenSecret|cms\/v1|passwordHash/u);
     assert.ok(f.remote.calls.slice(before).every(call => call.method === 'GET'), 'confirmation reads do not send or mutate');
   }
+  await approveApplication(f.second, owner, receipt.reference_code, 1);
+  const admittedResponse = await f.first.handle(request('/api/registration/confirmation', { method: 'POST', origin: PUBLIC, body: input }));
+  const admitted = await admittedResponse.json();
+  assert.equal(admitted.admission.status, 'confirmed'); assert.equal(admitted.email.status, 'not_configured');
   const rejectedAt = f.remote.calls.length;
   assert.equal((await f.first.handle(request('/api/admin/registration/confirmation', { method: 'POST', origin: 'https://foreign.invalid', body: input }))).status, 403);
   assert.equal((await f.first.handle(request('/api/admin/registration/confirmation?receiptToken=private', { method: 'POST', origin: PUBLIC, body: input }))).status, 404);
@@ -211,7 +241,7 @@ test('composed capability reads current withdrawal, protected readiness and real
   const contactExport = await f.second.handle(request('/api/admin/contacts/export.xlsx', { method: 'POST', origin: API, headers: owner, body: { expectedRevision: 0 } }));
   assert.equal(contactExport.status, 200, await contactExport.clone().text()); assert.equal(contactExport.headers.get('x-export-count'), '0');
   const withdrawal = await f.second.handle(request('/api/admin/admissions/withdraw', { method: 'POST', origin: API, headers: owner,
-    body: { expectedRevision: 1, operationId: randomBytes(32).toString('base64url'), registrationId: receipt.reference_code } }));
+    body: { expectedRevision: 2, operationId: randomBytes(32).toString('base64url'), registrationId: receipt.reference_code } }));
   assert.equal(withdrawal.status, 200);
   const after = await f.first.handle(request('/api/admin/registration/confirmation', { method: 'POST', origin: PUBLIC, body: input }));
   assert.equal(after.status, 200); const revoked = await after.json();

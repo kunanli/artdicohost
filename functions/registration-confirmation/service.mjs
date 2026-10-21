@@ -5,6 +5,7 @@ import { CloudContentError } from '../cloud-content/errors.mjs';
 import { createConfirmationTokens } from './tokens.mjs';
 import { createConfirmationRepository, canonicalConfirmationKind, confirmationNoticeId, confirmationRequestHash, validConfirmationOperation, MAX_CONFIRMATION_BATCH } from './repository.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
+import { buildPosterInvitationSettings } from '../../shared/organizer-progress.mjs';
 
 const SITE = 'https://artdico.host';
 const ID = /^[A-Za-z0-9_-]{43}$/u;
@@ -84,10 +85,19 @@ export function createRegistrationConfirmationService({ registrationService, jou
       event: { ...eventFacts }, submittedAt: entry.committedAt, hasEmail: typeof record.fields.email === 'string' && Boolean(record.fields.email) };
   }
   async function authorizedRegistration(registrationId) { return trustedProjection(registrationId, await loadRegistration(registrationId)); }
-  async function authorize(input) {
+  async function authorizedContext(input) {
     const claims = tokens.verify(own(input, 'receiptToken'));
     if (!claims) failure('CONFIRMATION_NOT_FOUND', 404);
-    return authorizedRegistration(claims.registrationId);
+    return { registrationId: claims.registrationId, loaded: await loadRegistration(claims.registrationId) };
+  }
+  async function authorize(input) {
+    const { registrationId, loaded } = await authorizedContext(input);
+    return trustedProjection(registrationId, loaded);
+  }
+  function invitationProjection({ record, admission }) {
+    if (record.provenance.kind !== 'public' || admission.status !== 'confirmed') return { ready: false };
+    try { return { ready: true, settings: buildPosterInvitationSettings(record.fields.name, event) }; }
+    catch { return { ready: false }; }
   }
   function capability(registrationId) {
     const signed = tokens.issue(registrationId);
@@ -163,7 +173,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const text = [record.fields.name + '，你好：', '', '你的参会名额已确认。',
       '登记编号：' + registrationId, '日期：' + eventFacts.date, '活动时间：' + eventFacts.time + '（UTC+8）',
       '签到：' + eventFacts.checkIn, '地点：' + eventFacts.venue,
-      '查看最新状态与打印确认页：' + link.confirmationUrl,
+      '查看最新状态、打印确认页及下载个人邀请函：' + link.confirmationUrl,
       '请保管此私人链接，不要转发；确认页始终以当前名额状态为准。',
       '住宿、讲者、展位与其他职责分别确认。需要更正或取消，请通过原联系渠道联系筹备团队。'].join('\n');
     let result;
@@ -196,7 +206,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     catch { return { ...result, email: { status: 'unknown' } }; }
   }
   async function confirmation(input) {
-    const value = await authorize(input);
+    const { registrationId, loaded } = await authorizedContext(input), value = trustedProjection(registrationId, loaded);
     let email;
     if (['pending_review', 'rejected'].includes(value.admissionStatus)) email = { status: 'not_applicable' };
     else try { email = await readEmail(value.registrationId, value.hasEmail, value.admissionStatus); } catch { email = { status: 'unknown' }; }
@@ -213,6 +223,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     return { event: value.event, referenceCode: value.referenceCode, submittedAt: value.submittedAt,
       attendee: { name: value.name, organization: value.organization },
       admission: { status: value.admissionStatus, kind: value.admissionKind, revision: value.admissionRevision },
+      invitation: invitationProjection(loaded),
       email, wallet: value.admissionStatus === 'confirmed' ? await walletState() : { ready: false, reason: 'ADMISSION_NOT_CONFIRMED' }, groupInvite };
   }
   async function settings({ actor } = {}) {

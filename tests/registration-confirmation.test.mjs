@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { createRegistrationService } from '../functions/registration-api/service.mjs';
+import { admissionView } from '../functions/registration-api/admissions.mjs';
 import { createAdmissionsApi } from '../functions/registration-admin/admissions-handler.mjs';
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
 import { createOssObjectClient } from '../functions/cloud-content/oss-client.mjs';
 import { createRegistrationConfirmationService } from '../functions/registration-confirmation/service.mjs';
+import { createRegistrationConfirmationApi } from '../functions/registration-confirmation/handler.mjs';
 import { createConfirmationTokens } from '../functions/registration-confirmation/tokens.mjs';
 import { createConfirmationRepository } from '../functions/registration-confirmation/repository.mjs';
 import { createConfirmationEmailProvider } from '../functions/registration-confirmation/email-provider.mjs';
@@ -20,6 +22,8 @@ const policy = { enabled: true, eventId: EVENT, opensAt: '2026-10-19T00:00:00Z',
   version: 'synthetic-v1', processor: '合成处理者', contactEmail: 'privacy@example.invalid', purpose: '合成报名', storageRegion: '合成地区',
   retention: '合成期限', rightsRequest: '合成权利申请', sharing: '合成分享规则' } };
 const event = { id: EVENT, title: '合成活动', date: { value: '2026-12-05' }, time: { label: '10:00–18:00', start: '09:30', timezone: 'Asia/Shanghai' }, venue: { address: '合成地址' } };
+const posterEvent = { ...event, status: 'confirmed', date: { ...event.date, status: 'confirmed' },
+  venue: { address: '深圳市前海合作区梦海大道5188号前海5号楼', confirmed: true } };
 const fields = { name: 'PRIVATE-SYNTHETIC-NAME', city: '合成城市', organization: 'PRIVATE-SYNTHETIC-ORG', email: 'private-synthetic@example.invalid', categories: ['other'],
   participationInterests: ['attend'], attendance: 'expected', accommodationChoice: 'not_needed', cooperationInterest: 'none' };
 function fixture(patch = {}) {
@@ -65,6 +69,144 @@ async function register(f, value = fields, approve = true) {
   }
   return { saved, input };
 }
+async function legacyRegistration(f, schemaVersion, recordFields = fields) {
+  const hash = value => createHash('sha256').update(value).digest('hex');
+  const id = operationId(), committedAt = new Date(f.state.now).toISOString(), prefix = `cms/v1/registrations/${EVENT}`;
+  const record = { schemaVersion: 1, kind: 'registration', id, eventId: EVENT, submittedAt: committedAt, fields: recordFields,
+    consent: { accepted: true, version: policy.privacy.version, acceptedAt: committedAt }, provenance: { kind: 'public' } };
+  const bytes = Buffer.from(JSON.stringify(record)), recordHash = hash(bytes);
+  await f.objects.putImmutable(prefix + '/records/' + recordHash + '.json', bytes, { contentType: 'application/json' });
+  let index = { schemaVersion: 1, kind: 'registration_index', eventId: EVENT, revision: 1,
+    entries: [{ id, keyHash: hash('synthetic-legacy-key'), payloadHash: hash('synthetic-legacy-payload'), recordHash, committedAt }] };
+  if (schemaVersion === 2) index = { ...admissionView(index, { capacity: 1, staffReserve: 0, waitlistEnabled: true }), schemaVersion: 2 };
+  const journal = f.journalFor(prefix + '/index'); await journal.commit((await journal.read()).cursor, index);
+  return { journal, index, receipt: { committed: true, eventId: EVENT, registrationId: id, referenceCode: id, committedAt,
+    admissionStatus: 'confirmed', admissionKind: 'attendee', admissionRevision: 1 } };
+}
+
+test('private poster descriptor follows current public admission, including a later crew change, without mail or writes', async () => {
+  const f = fixture({ event: posterEvent }), { saved } = await register(f, fields, false), c = f.confirmation();
+  const { receiptToken } = await c.forSavedReceipt({ receipt: saved.receipt, notify: false });
+  assert.deepEqual((await c.confirmation({ receiptToken })).invitation, { ready: false });
+  const approved = await f.service.approveApplication({ actor, registrationId: saved.receipt.registrationId,
+    expectedRevision: saved.receipt.admissionRevision, operationId: operationId() });
+  const page = await c.confirmation({ receiptToken });
+  assert.deepEqual(page.invitation, { ready: true, settings: { recipientName: fields.name, date: '2026-12-05', time: '10:00–18:00',
+    venue: '深圳前海5号楼3F', confirmed: true, renderVersion: 'ggj2026-poster-v2' } });
+  assert.equal(page.event.venue, posterEvent.venue.address, 'the legacy confirmation and Wallet facts retain the full address');
+  const authorized = await c.authorize({ receiptToken });
+  assert.deepEqual(authorized, await c.authorizedRegistration(saved.receipt.registrationId));
+  assert.equal(Object.hasOwn(authorized, 'invitation'), false, 'Wallet authorization projection is unchanged');
+  const crew = await f.service.setAdmissionKind({ actor, registrationId: saved.receipt.registrationId,
+    expectedRevision: approved.revision, operationId: operationId(), kind: 'crew' });
+  assert.equal(crew.outcome, 'updated');
+  const crewPage = await f.confirmation().confirmation({ receiptToken });
+  assert.equal(crewPage.admission.kind, 'crew'); assert.deepEqual(crewPage.invitation, page.invitation);
+  f.state.withdrawn.add(saved.receipt.registrationId);
+  assert.deepEqual((await c.confirmation({ receiptToken })).invitation, { ready: false });
+  f.state.reviewFailure = true;
+  await assert.rejects(c.confirmation({ receiptToken }), error => error.code === 'CONFIRMATION_UNAVAILABLE');
+  assert.equal(f.state.confirmationWrites, 0); assert.equal(f.state.messages.length, 0);
+});
+
+test('rejected, approved waitlist and withdrawn applications expose only a false poster descriptor', async () => {
+  const rejected = fixture({ event: posterEvent }), pending = await register(rejected, fields, false), c = rejected.confirmation();
+  const { receiptToken } = await c.forSavedReceipt({ receipt: pending.saved.receipt, notify: false });
+  await rejected.service.rejectApplication({ actor, registrationId: pending.saved.receipt.registrationId,
+    expectedRevision: pending.saved.receipt.admissionRevision, operationId: operationId() });
+  assert.deepEqual((await c.confirmation({ receiptToken })).invitation, { ready: false });
+  const f = fixture({ event: posterEvent }); await register(f);
+  const waiting = await register(f), waitingService = f.confirmation(), cap = await waitingService.forSavedReceipt({ receipt: waiting.saved.receipt, notify: false });
+  assert.equal(waiting.saved.receipt.admissionStatus, 'waitlisted');
+  assert.deepEqual((await waitingService.confirmation({ receiptToken: cap.receiptToken })).invitation, { ready: false });
+  const withdrawn = await f.service.withdrawAdmission({ actor, registrationId: waiting.saved.receipt.registrationId,
+    expectedRevision: waiting.saved.receipt.admissionRevision, operationId: operationId() });
+  assert.equal(withdrawn.outcome, 'updated');
+  assert.deepEqual((await waitingService.confirmation({ receiptToken: cap.receiptToken })).invitation, { ready: false });
+  assert.equal(f.state.confirmationWrites + rejected.state.confirmationWrites, 0);
+});
+
+test('staff-assisted and manually entered people never gain a public poster descriptor from confirmed seats', async () => {
+  const f = fixture({ capacity: 3, event: posterEvent }), c = f.confirmation();
+  const converted = await f.service.submitStaffRegistration({ sourceContactId: 'synthetic-private-contact', actor,
+    input: { fields: { name: '合成受托登记人', email: 'synthetic-assisted@example.invalid' }, permissionReference: 'PRIVATE-PERMISSION' } });
+  const current = await f.service.getAdmissions({ actor });
+  const manual = await f.service.addStaffMember({ actor, expectedRevision: current.revision, operationId: operationId(),
+    input: { kind: 'crew', fields: { name: '合成手动工作人员', wechat: 'synthetic-wechat' }, permissionReference: 'PRIVATE-PERMISSION' } });
+  assert.equal(converted.outcome, 'created'); assert.equal(manual.outcome, 'updated');
+  for (const receipt of [converted.receipt, manual.receipt]) {
+    assert.equal(receipt.admissionStatus, 'confirmed');
+    const cap = await c.forSavedReceipt({ receipt, notify: false }), page = await c.confirmation({ receiptToken: cap.receiptToken });
+    assert.deepEqual(page.invitation, { ready: false });
+    assert.doesNotMatch(JSON.stringify(page), /provenance|sourceContactId|PRIVATE-PERMISSION|synthetic-private-contact|synthetic-assisted@/u);
+  }
+  assert.equal(f.state.confirmationWrites, 0); assert.equal(f.state.messages.length, 0);
+});
+
+test('legacy v1 and v2 public acceptance gets a full-name poster without retroactive approval, migration or extra source reads', async () => {
+  for (const version of [1, 2]) {
+    const f = fixture({ event: posterEvent, groupInviteProvider: undefined }), legacyFields = { ...fields, name: '許'.repeat(120) }; delete legacyFields.email;
+    const legacy = await legacyRegistration(f, version, legacyFields), c = f.confirmation();
+    const cap = await c.forSavedReceipt({ receipt: legacy.receipt, notify: false });
+    const before = f.remote.calls.length; await c.authorize({ receiptToken: cap.receiptToken });
+    const authorizationReads = f.remote.calls.length - before, confirmationStart = f.remote.calls.length;
+    const page = await c.confirmation({ receiptToken: cap.receiptToken });
+    assert.equal(page.invitation.ready, true); assert.equal(page.invitation.settings.recipientName, legacyFields.name);
+    assert.equal(f.remote.calls.length - confirmationStart, authorizationReads, 'poster projection adds no source reads');
+    assert.deepEqual((await legacy.journal.read()).value, legacy.index, 'read-only confirmation must not upgrade the ledger');
+    assert.equal(f.state.confirmationWrites, 0); assert.equal(f.state.messages.length, 0);
+  }
+});
+
+test('unconfirmed or unusable poster facts disable the descriptor without changing the existing confirmation facts', async () => {
+  const f = fixture(), { saved } = await register(f), c = f.confirmation();
+  const { receiptToken } = await c.forSavedReceipt({ receipt: saved.receipt, notify: false });
+  for (const candidate of [event, { ...posterEvent, status: 'tentative' }, { ...posterEvent, venue: { ...posterEvent.venue, confirmed: false } },
+    { ...posterEvent, time: { ...posterEvent.time, label: '09:30 开始签到' } }]) {
+    const page = await f.confirmation({ event: candidate }).confirmation({ receiptToken });
+    assert.equal(page.admission.status, 'confirmed'); assert.deepEqual(page.invitation, { ready: false });
+    assert.equal(page.event.time, candidate.time.label); assert.equal(page.event.venue, candidate.venue.address);
+  }
+});
+
+test('public confirmation aliases add only the exact poster descriptor and never write or send', async () => {
+  const custom = { ...posterEvent, date: { value: '2026-12-06', status: 'confirmed' },
+    time: { label: '11:00–19:00', start: '10:30', timezone: 'Asia/Shanghai' }, venue: { address: '合成自订地址', confirmed: true } };
+  const f = fixture({ event: custom }), { saved } = await register(f), c = f.confirmation();
+  const cap = await c.forSavedReceipt({ receipt: saved.receipt, notify: false });
+  const handle = createRegistrationConfirmationApi({ service: c, auth: { authenticate: async () => assert.fail('public capability never loads a staff session') } });
+  for (const path of ['/api/registration/confirmation', '/api/admin/registration/confirmation']) {
+    const response = await handle(new Request('https://api.artdico.host' + path, { method: 'POST', headers: { origin: SITE, 'content-type': 'application/json' },
+      body: JSON.stringify({ receiptToken: cap.receiptToken }) }));
+    assert.equal(response.status, 200); assert.match(response.headers.get('cache-control'), /no-store/u);
+    const page = await response.json();
+    assert.deepEqual(page.invitation, { ready: true, settings: { recipientName: fields.name, date: '2026-12-06', time: '11:00–19:00',
+      venue: '合成自订地址', confirmed: true, renderVersion: 'ggj2026-poster-v2' } });
+    assert.doesNotMatch(JSON.stringify(page), /provenance|sourceContactId|receiptToken|private-synthetic@|payloadHash|keyHash/u);
+  }
+  assert.equal(f.state.confirmationWrites, 0); assert.equal(f.state.messages.length, 0);
+});
+
+test('future confirmation email links to personal downloads while durable identities and unknown-send protection remain unchanged', async () => {
+  const f = fixture({ event: posterEvent }), { saved } = await register(f), c = f.confirmation();
+  const cap = await c.forSavedReceipt({ receipt: saved.receipt });
+  assert.equal(f.state.messages.length, 1);
+  const message = f.state.messages[0];
+  assert.ok(message.text.includes('查看最新状态、打印确认页及下载个人邀请函：' + cap.confirmationUrl));
+  assert.ok(message.text.includes('地点：' + posterEvent.venue.address), 'email keeps its original event facts');
+  assert.equal(message.templateVariables.invitation_text, message.text);
+  assert.deepEqual(Object.keys(message.templateVariables).sort(), ['to_name', 'to_email', 'event_title', 'event_date', 'event_time', 'event_venue', 'reference_code', 'invitation_text'].sort());
+  const stored = await createConfirmationRepository({ journal: f.journalFor(c.prefix), eventId: EVENT }).read();
+  assert.equal(stored.value.notices.length, 1); assert.equal(stored.value.notices[0].kind, 'registration');
+  assert.doesNotMatch(JSON.stringify(stored.value), /ggj2026-poster-v2|PRIVATE-SYNTHETIC|receiptToken|confirmationUrl/u);
+  await c.confirmation({ receiptToken: cap.receiptToken }); await f.confirmation().forSavedReceipt({ receipt: saved.receipt });
+  assert.equal(f.state.messages.length, 1);
+  const unknown = fixture({ event: posterEvent }); unknown.state.providerThrow = true;
+  const uncertain = await register(unknown), first = await unknown.confirmation().forSavedReceipt({ receipt: uncertain.saved.receipt });
+  assert.equal(first.email.status, 'unknown');
+  await unknown.confirmation().forSavedReceipt({ receipt: uncertain.saved.receipt });
+  assert.equal(unknown.state.messages.length, 1);
+});
 
 test('receipt capability is stable, bounded, purpose separated and contains no personal data', () => {
   let now = Date.parse('2026-10-21T00:00:00Z'); const id = 'a'.repeat(43), expiry = now + 10_000;

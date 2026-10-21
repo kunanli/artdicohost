@@ -1,5 +1,6 @@
 import { validateContent } from '../../shared/content-schema.mjs';
 import { validateContactOperations } from '../../shared/contacts-schema.mjs';
+import { boothOrganizationField } from './content-relationships.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const fields = ['code','organization','project','contactName','contactMethods','description','status'];
@@ -25,6 +26,7 @@ export function prepareBoothDraft(content, { boothId = null, slotNumber, origina
     if (typeof changes[key] !== 'string') throw new Error('请完整填写本次展位编辑字段。');
     candidate[key] = changes[key];
   }
+  if (Object.hasOwn(changes, 'organizationId')) Object.assign(candidate, boothOrganizationField(previous, changes.organizationId));
   candidate.slotNumber = slotNumber;
   if (!previous) next.booths.push(candidate);
   const result = validateContent(next);

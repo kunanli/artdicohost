@@ -1,4 +1,4 @@
-import { validateContent, toPublicContent, PORTRAIT_ID_PATTERN } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, PORTRAIT_ID_PATTERN, validateBoothOrganizationChanges } from '../../shared/content-schema.mjs';
 import { createInitialContent } from '../../src/config/content.mjs';
 import { CloudContentError } from './errors.mjs';
 import { isDeepStrictEqual } from 'node:util';
@@ -61,7 +61,7 @@ function preserveArrangementFields(input, current) {
       if (row[field] === undefined) {
         row[field] = existing?.[field] ?? fallback;
       }
-      if (collection === 'booths' && existing) for (const name of ['contactName', 'contactMethods', 'description', 'website']) {
+      if (collection === 'booths' && existing) for (const name of ['contactName', 'contactMethods', 'description', 'website', 'organizationId']) {
         if (!Object.hasOwn(row, name) && Object.hasOwn(existing, name)) row[name] = existing[name];
       }
       return row;
@@ -71,7 +71,7 @@ function preserveArrangementFields(input, current) {
     const row = copy(item, 'guests');
     const id = typeof row.id === 'string' ? row.id.normalize('NFC').trim() : '';
     const existing = current.guests.find(candidate => candidate.id === id);
-    for (const name of ['title','bio','website','publicRoles']) {
+    for (const name of ['title','bio','website','publicRoles','contactId']) {
       if (!Object.hasOwn(row,name) && existing && Object.hasOwn(existing,name)) row[name] = structuredClone(existing[name]);
     }
     return row;
@@ -174,8 +174,10 @@ export function createOssContentStore({ journal, portraitStore, initialContent =
   }
   return {
     read: async () => envelope((await load()).state),
-    save: async (expectedRevision, input, actorId) => {
+    save: async (expectedRevision, input, actorId, options = {}) => {
       checkActor(actorId);
+      if (!record(options) || Reflect.ownKeys(options).some(key => key !== 'beforeCommit')
+        || Object.hasOwn(options, 'beforeCommit') && typeof Object.getOwnPropertyDescriptor(options, 'beforeCommit')?.value !== 'function') throw new TypeError('Content save guard unavailable.');
       const { state, cursor } = await load();
       checkRevision(expectedRevision, state.draft.revision);
       if (state.draft.content.guests.length && (!record(input) || !Object.hasOwn(input, 'guests'))) {
@@ -186,6 +188,9 @@ export function createOssContentStore({ journal, portraitStore, initialContent =
       }
       const content = checkedContent(preserveArrangementFields(input, state.draft.content));
       if (content.eventId !== seed.eventId) throw new CloudContentError('VALIDATION_ERROR', '本后台只维护当前活动。', 422, { eventId: '活动 ID 不可更改。' });
+      const relationships = validateBoothOrganizationChanges(content, state.draft.content);
+      if (!relationships.valid) throw new CloudContentError('VALIDATION_ERROR', '组织关联未通过校验。', 422, relationships.errors);
+      await Object.getOwnPropertyDescriptor(options, 'beforeCommit')?.value({ current: structuredClone(state.draft.content), next: structuredClone(content), published: structuredClone(state.published) });
       await verifyPortraits(content);
       if (!Number.isSafeInteger(state.draft.revision + 1)) throw capacity();
       state.draft = { revision: state.draft.revision + 1, content };

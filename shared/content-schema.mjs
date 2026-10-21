@@ -28,7 +28,7 @@ export const contentSchema = Object.freeze({
 });
 
 /** @typedef {{id:string,start:string,end:string,zone:string,title:string,guestId:string,speakerName:string,speakerStatus:string,status:string,internalNotes:string,format:string}} Session */
-/** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string,slotNumber:number,contactName?:string,contactMethods?:string,description?:string,website?:string}} Booth */
+/** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string,slotNumber:number,organizationId?:string,contactName?:string,contactMethods?:string,description?:string,website?:string}} Booth */
 /** @typedef {{id:string,name:string,company:string,ggjRole:string,portraitId:string,status:string,publicConsent:boolean,internalNotes:string,contactId:string,title?:string,bio?:string,website?:string,publicRoles?:string[]}} Guest */
 /** @typedef {{id:string,name:string,logoId:string,website:string,participation:string,status:string,publicConsent:boolean,internalNotes:string}} Organization */
 /** @typedef {{id:string,title:string,teamName:string,school:string,contactName:string,email:string,wechat:string,memberCount:number,participationForms:string[],responseStatus:string,materialLinks:string,summary:string,coverId:string,status:string,publicConsent:boolean,sessionId:string,boothId:string,internalNotes:string}} Showcase */
@@ -100,11 +100,22 @@ function booth(input) {
     slotNumber: item.slotNumber === undefined ? 0 : /** @type {number} */ (item.slotNumber),
   };
   // Optional additions must not change legacy normalized or published snapshots.
-  for (const name of ['contactName', 'contactMethods', 'description', 'website']) {
+  for (const name of ['contactName', 'contactMethods', 'description', 'website', 'organizationId']) {
     const descriptor = Object.getOwnPropertyDescriptor(item, name);
     if (descriptor) result[name] = text('value' in descriptor ? descriptor.value : undefined);
   }
   return result;
+}
+
+/** Read-time syntax preserves orphan history. A changed relation must target an
+ * explicitly saved organization in this candidate, without inferring by name. */
+export function validateBoothOrganizationChanges(next, current) {
+  const errors = {}, known = new Set((next?.organizations ?? []).map(item => item.id));
+  for (const [index, item] of (next?.booths ?? []).entries()) {
+    const previous = current?.booths?.find(candidate => candidate.id === item.id);
+    if (item.organizationId && item.organizationId !== previous?.organizationId && !known.has(item.organizationId)) errors[`booths.${index}.organizationId`] = '请选择已保存的组织，或明确解除这项关联。';
+  }
+  return { valid: Object.keys(errors).length === 0, errors };
 }
 
 /** @param {unknown} input @returns {Showcase} */
@@ -318,7 +329,7 @@ export function validateContent(input) {
         || supplied.some(role => typeof role !== 'string') || item.publicRoles.some(role => !GUEST_PUBLIC_ROLES.includes(role))
         || new Set(item.publicRoles).size !== item.publicRoles.length) errors[`${key}.publicRoles`] = '请选择已核对的讲者、嘉宾、研讨会组织者或主持职责。';
     }
-    if (raw.contactId !== undefined && typeof raw.contactId !== 'string') errors[`${key}.contactId`] = '关联人员 ID 无效。';
+    if (Object.hasOwn(raw, 'contactId') && typeof raw.contactId !== 'string') errors[`${key}.contactId`] = '关联人员 ID 无效。';
     for (const name of ['name', 'company', 'ggjRole']) {
       if (typeof raw[name] === 'string' && /[\u0000-\u001f\u007f]/u.test(raw[name])) errors[`${key}.${name}`] = '请填写不含换行或控制字符的单行内容。';
     }
@@ -381,6 +392,9 @@ export function validateContent(input) {
       if (!descriptor?.enumerable || typeof supplied !== 'string' || controls.test(supplied)) errors[`${key}.${name}`] = name === 'contactName' ? '负责人姓名须为不含换行或控制字符的文字。' : '请填写有效文字，不得含无效控制字符。';
     }
     if (item.website && !isPublicWebsite(item.website)) errors[`${key}.website`] = '组织网站须为有效的 HTTP 或 HTTPS 网址，不含帐号或密码。';
+    const organizationLink = Object.getOwnPropertyDescriptor(raw, 'organizationId');
+    if (organizationLink && (!organizationLink.enumerable || !('value' in organizationLink) || typeof organizationLink.value !== 'string'
+      || organizationLink.value !== '' && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(organizationLink.value))) errors[`${key}.organizationId`] = '组织关联须为明确的稳定编号，或空字串解除关联。';
   }
 
   for (const [index, item] of value.showcases.entries()) {

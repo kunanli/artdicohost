@@ -68,6 +68,23 @@ function arrangementValues(contact, content) {
   return [list(operations.participationForms).map(role => roles[role] ?? role).join(' / '), response[operations.responseStatus] ?? value(operations.responseStatus), value(operations.owner), allocations, duties, places];
 }
 
+function organizationMembershipValue(contact, content) {
+  const memberships = contact?.operations?.organizationMemberships;
+  if (memberships === undefined) return '';
+  if (!Array.isArray(memberships) || memberships.length > 20
+    || content.organizations !== undefined && !Array.isArray(content.organizations)) fail('STORAGE_UNAVAILABLE');
+  const organizations = new Map((content.organizations ?? []).map(item => [item.id, item])), seen = new Set();
+  return memberships.map(item => {
+    if (!item || !CONTACT_ID.test(item.organizationId ?? '') || seen.has(item.organizationId)
+      || !['lead', 'member'].includes(item.role) || typeof item.title !== 'string' || [...item.title].length > 120
+      || /[\u0000-\u001f\u007f]/u.test(item.title)) fail('STORAGE_UNAVAILABLE');
+    seen.add(item.organizationId);
+    const organization = organizations.get(item.organizationId);
+    return [organization ? organization.name : item.organizationId + ' · 历史组织已不存在',
+      item.role === 'lead' ? '负责人' : '成员', item.title, organization?.status === 'withdrawn' ? '组织已退出' : ''].filter(Boolean).join(' · ');
+  }).join('\n');
+}
+
 export function registrationWorkbook({ registrations, admissions, arrangements = null, includeContact = false, includeAnswers = false, includeArrangements = false, applicationRevision, reviewRevision, exportedAt }) {
   if (!Array.isArray(registrations) || registrations.length > 1000 || !validRevision(applicationRevision) || !validRevision(reviewRevision)
     || [includeContact, includeAnswers, includeArrangements].some(flag => typeof flag !== 'boolean')) fail('INVALID_REQUEST');
@@ -82,8 +99,8 @@ export function registrationWorkbook({ registrations, admissions, arrangements =
         effective, person.status, person.kind, teams.get(person.teamId), review.status, review.accommodationStatus, review.invitationStatus, record.provenance.kind, record.consent.accepted, record.submittedAt,
         ...(includeContact ? [record.fields.email, record.fields.wechat] : [])].map(value);
     }) }];
-  if (includeArrangements) sheets.push({ name: '当前参与职责与安排', headers: ['报名编号', '姓名', '来源联系人编号', '实际参与角色', '本人实际回复', '筹备负责人', '场次与时间', '逐场次职责', '展位与组织'],
-    rows: registrations.map(record => { const contact = linkedContacts.get(record.id); return [record.referenceCode, record.fields.name, contact?.id ?? '', ...arrangementValues(contact, arrangements.content)].map(value); }) });
+  if (includeArrangements) sheets.push({ name: '当前参与职责与安排', headers: ['报名编号', '姓名', '来源联系人编号', '实际参与角色', '本人实际回复', '筹备负责人', '场次与时间', '逐场次职责', '展位与组织', '已关联参与组织与成员职责'],
+    rows: registrations.map(record => { const contact = linkedContacts.get(record.id); return [record.referenceCode, record.fields.name, contact?.id ?? '', ...arrangementValues(contact, arrangements.content), organizationMembershipValue(contact, arrangements.content)].map(value); }) });
   if (includeAnswers) sheets.push(answerSheet('已保存原始回答', registrations, includeContact, record => record.fields, record => record.referenceCode));
   sheets.push({ name: '资料说明', headers: ['项目', '说明'], rows: [
     ['导出范围', '仅当前明确筛选的已保存报名；包含撤回及取消状态，除非主动按状态筛选。'], ['导出记录数', registrations.length], ['导出时间 UTC', exportedAt],
@@ -103,9 +120,9 @@ export function contactsWorkbook({ contacts, content, contactRevision, contentRe
     || typeof includeContact !== 'boolean' || typeof includeAnswers !== 'boolean') fail('STORAGE_UNAVAILABLE');
   const ids = new Set();
   for (const contact of contacts) { if (!CONTACT_ID.test(contact.id ?? '') || ids.has(contact.id) || !contact.profile || !contact.operations || !contact.source) fail('STORAGE_UNAVAILABLE'); ids.add(contact.id); }
-  const sheets = [{ name: '全部筹备人员', headers: ['联系人编号', '姓名', '显示姓名', '机构', '职位', '城市', '原身份', '原兴趣', '联络授权', '来源行号', '实际参与角色', '本人实际回复', '筹备负责人', '场次与时间', '逐场次职责', '展位与组织', ...(includeContact ? ['邮箱', '微信', '电话'] : []), ...(includeAnswers ? ['筹备备注'] : [])],
+  const sheets = [{ name: '全部筹备人员', headers: ['联系人编号', '姓名', '显示姓名', '机构', '职位', '城市', '原身份', '原兴趣', '联络授权', '来源行号', '实际参与角色', '本人实际回复', '筹备负责人', '场次与时间', '逐场次职责', '展位与组织', ...(includeContact ? ['邮箱', '微信', '电话'] : []), ...(includeAnswers ? ['筹备备注'] : []), '已关联参与组织与成员职责'],
     rows: contacts.map(contact => [contact.id, contact.profile.name, contact.profile.displayName, contact.profile.organization, contact.profile.position, contact.profile.city, list(contact.profile.categories).join(' / '), list(contact.profile.interests).join(' / '), contact.profile.contactConsent, contact.source.rowId,
-      ...arrangementValues(contact, content), ...(includeContact ? [contact.profile.email, contact.profile.wechat, contact.profile.phone] : []), ...(includeAnswers ? [contact.operations.notes] : [])].map(value)) }];
+      ...arrangementValues(contact, content), ...(includeContact ? [contact.profile.email, contact.profile.wechat, contact.profile.phone] : []), ...(includeAnswers ? [contact.operations.notes] : []), organizationMembershipValue(contact, content)].map(value)) }];
   if (includeAnswers) {
     sheets.push(answerSheet('已保存意向回答', contacts, includeContact, contact => contact.profile, contact => contact.id));
     sheets.push(answerSheet('首次保存原件', contacts, includeContact, contact => ({ _原件状态: contact.sourceProfile ? '已保留首次保存原件' : '旧记录未附首次原件，未以现况冒充', ...(contact.sourceProfile ?? {}) }), contact => contact.id));

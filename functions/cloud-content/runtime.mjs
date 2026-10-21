@@ -35,6 +35,8 @@ import { createAppleWalletApi, isAppleWalletPath } from '../apple-wallet/handler
 import { loadEncryptedSigningBundle, walletSigningObjectKey } from '../apple-wallet/bundle.mjs';
 import { createRegistrationXlsxApi, createContactsXlsxApi } from '../registration-admin/xlsx-handler.mjs';
 import { createPersonWorkspaceApi } from '../person-workspace/handler.mjs';
+import { createPersonRelationshipsApi, isPersonRelationshipsPath } from '../person-workspace/relationships.mjs';
+import { createAttendanceSynchronizer } from '../people-operations/service.mjs';
 import { createVolunteerRepository } from '../volunteers/repository.mjs';
 import { createVolunteerService } from '../volunteers/service.mjs';
 import { createVolunteersApi, isVolunteersPath } from '../volunteers/handler.mjs';
@@ -112,7 +114,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const userStore = createCloudUserStore({ journal: journalFor('cms/v1/users'), bootstrapUsers: env.ADMIN_USERS_JSON, now });
   const auth = createCloudAuth({ users: env.ADMIN_USERS_JSON, usersProvider: () => userStore.users(), journalFor, now });
   const userHandle = createCloudUserApi({ enabled: true, auth, store: userStore });
-  let registrationService, reviewStore, intentService, groupService, confirmationService, walletService;
+  let registrationService, reviewStore, intentService, groupService, confirmationService, walletService, attendanceSynchronizer;
   // Notification is optional after a proven admission commit. Unknown mail
   // acknowledgements remain in the outbox; remaining people require explicit
   // administrator dispatch and must never turn a saved mutation into a failure.
@@ -134,7 +136,8 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       if (!registrationService) throw new Error('Admission state is unavailable.');
       return registrationService.getAdmissionStatus(id);
     } });
-  const contentHandle = createCloudContentApi({ enabled: true, store, portraitStore, auth, contactsStore, beforeContactMutation });
+  const contentHandle = createCloudContentApi({ enabled: true, store, portraitStore, auth, contactsStore, beforeContactMutation,
+    onContactOperationsCommitted: input => attendanceSynchronizer ? attendanceSynchronizer(input) : { status: 'unavailable', reason: 'NOT_CONFIGURED' } });
   const importHandle = createIntentContactImportApi({ importer: createIntentContactImporter({ contactsStore, now }), authenticate: request => auth.authenticate(request) });
   const policy = registrationPolicy(env);
   if (policy) {
@@ -177,6 +180,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
           secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId: env.ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID }) } : {}) }),
       walletReadiness: () => walletService.readiness(), groupInviteProvider: input => groupService.forReceipt(input) });
   }
+  if (registrationService && intentService) attendanceSynchronizer = createAttendanceSynchronizer({ intentService, registrationService, contactsStore });
   const registrationHandle = createRegistrationApi({ allowedOrigins: [PUBLIC_SITE_ORIGIN], submissionService: registrationService, allowedGroupInviteOrigins: [CLOUD_API_ORIGIN], clock: now });
   const confirmationHandle = createRegistrationConfirmationApi({ service: confirmationService, auth, apiOrigin: CLOUD_API_ORIGIN, publicOrigins: [PUBLIC_SITE_ORIGIN] });
   const walletHandle = createAppleWalletApi({ service: walletService ?? { download: async () => ({ outcome: 'not_ready' }), verify: async () => ({ valid: false }) }, apiOrigin: CLOUD_API_ORIGIN, publicOrigins: [PUBLIC_SITE_ORIGIN] });
@@ -223,12 +227,15 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
         inactiveRegistrationIds: withdrawnIds,
         admissionStatuses: (admissions?.people ?? []).map(({ registrationId, status }) => ({ registrationId, status })) };
     } });
+  const loadPeopleContent = async () => { const snapshot = await store.read(); return { ...snapshot.draft, published: snapshot.published }; };
+  const relationshipsHandle = createPersonRelationshipsApi({ authenticate: request => auth.authenticate(request),
+    loadContent: loadPeopleContent, loadContacts: () => contactsStore.read() });
   const personHandle = createPersonWorkspaceApi({ authenticate: request => auth.authenticate(request),
     loadContacts: () => contactsStore.read(),
     loadIntent: intentService ? actor => intentService.read({ actor }) : undefined,
     loadRegistration: reviewStore ? id => reviewStore.detail(id) : undefined,
     loadAdmission: registrationService ? id => registrationService.getAdmissionStatus(id) : undefined,
-    loadContent: async () => { const snapshot = await store.read(); return { ...snapshot.draft, published: snapshot.published }; },
+    loadContent: loadPeopleContent,
     loadVolunteers: input => volunteerService.readPerson(input),
     loadConfirmations: confirmationService ? (id, actor) => confirmationService.staffHistory({ actor, registrationId: id }) : undefined });
   const intentHandle = intentService ? createIntentInvitationApi({ service: intentService, authenticate: request => auth.authenticate(request) }) : null;
@@ -257,6 +264,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     if (['/api/registration/config', '/api/registration/token', '/api/registrations'].includes(url.pathname)) return registrationHandle(request);
     if (url.pathname === '/api/admin/users') return userHandle(request);
     if (isVolunteersPath(url.pathname)) return volunteerHandle(request);
+    if (isPersonRelationshipsPath(url.pathname)) return relationshipsHandle(request);
     if (url.pathname === '/api/admin/people' || url.pathname.startsWith('/api/admin/people/')) return personHandle(request);
     if (url.pathname === '/api/admin/tasks') return tasksHandle(request);
     if (url.pathname === '/api/admin/admissions' || url.pathname.startsWith('/api/admin/admissions/')) return admissionsHandle(request);

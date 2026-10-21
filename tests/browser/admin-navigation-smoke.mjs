@@ -44,6 +44,8 @@ async function fixture(width) {
       if (path === '/api/admin/logout') {authenticated=false;return route.fulfill(json({ok:true}));}
       if (path === '/api/admin/content') return route.fulfill(json({draft:{revision:0,content},published:null}));
       if (path === '/api/admin/arrangements') return route.fulfill(json(buildArrangementOverview({content,contacts:[],contentRevision:0,contactsRevision:0})));
+      if(path==='/api/admin/people/relationships')return route.fulfill(json({schemaVersion:1,contentRevision:0,publishedRevision:null,organizations:[],profiles:[],boothOrganizations:[],publicationAttributionUnavailable:false}));
+      if(path==='/api/admin/people/candidates')return route.fulfill(json({schemaVersion:1,contactsRevision:0,candidates:url.searchParams.get('id')==='synthetic-navigation-invitee'?[{id:'synthetic-navigation-invitee',name:'合成深链嘉宾',organization:'合成组织',eligible:true}]:[],total:url.searchParams.get('id')==='synthetic-navigation-invitee'?1:0,nextCursor:null}));
       if (path === '/api/admin/contacts') return route.fulfill(json({revision:0,contacts:[]}));
       if (path === '/api/admin/contacts/synthetic-navigation-invitee/guest-prefill') return route.fulfill(json({prefill:{name:'合成深链嘉宾',company:'合成组织',ggjRole:'',contactId:'synthetic-navigation-invitee'},responseStatus:'pending'}));
       if (path === '/api/admin/planning') return route.fulfill(json({content,features:{}}));

@@ -9,6 +9,18 @@
 .ah-organization-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 .ah-organization-actions button{border:1px solid #d1daea;background:white;color:#244d94;padding:6px 10px;border-radius:5px;font:inherit;font-size:12px;min-height:34px;cursor:pointer}
 .ah-organization-actions button:disabled{cursor:default;opacity:.45}
+.ah-organization-actions a{align-self:center}
+.ah-organization-actions a[aria-disabled=true]{color:#667187;text-decoration:none}
+.ah-organization-members{border-top:1px solid #e1e6ef;margin-top:14px;padding-top:8px}
+.ah-organization-members ul{padding:0;list-style:none;margin:10px 0}
+.ah-organization-members li{display:flex;flex-wrap:wrap;gap:5px 12px;align-items:baseline;margin:7px 0;font-size:12px}
+.ah-organization-members li span{color:#667187;overflow-wrap:anywhere}
+.ah-organization-members button{font:inherit;font-size:12px;border:1px solid #d1daea;background:#fff;border-radius:5px;color:#244d94;min-height:34px;padding:6px 10px}
+.ah-admin-person-picker{padding:18px;border:1px solid #dce4f0;border-radius:8px;margin-block:20px}
+.ah-admin-person-picker h3{font-size:14px;margin:0 0 12px}
+.ah-admin-person-picker .ah-admin-toolbar-actions{display:flex;gap:8px;margin-block:8px 14px}
+.ah-admin-person-picker .ah-admin-toolbar-actions input{min-width:0;flex:1}
+.ah-admin-person-picker .ah-admin-toolbar-actions button{flex-shrink:0}
 .ah-organization-image-editor{display:grid;grid-template-columns:160px minmax(0,1fr);gap:18px;margin-bottom:22px}
 .ah-organization-image-editor .ah-organization-image{align-self:start;min-height:130px}
 .ah-organization-image-editor .ah-organization-image:has(img:not([hidden])){min-height:0}

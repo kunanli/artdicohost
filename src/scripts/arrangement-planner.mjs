@@ -1,4 +1,5 @@
 import { boothReadiness, prepareContactAssignments } from '../lib/arrangement-planner.mjs';
+import { organizationChoices } from '../lib/content-relationships.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const fields = ['code','organization','project','contactName','contactMethods','description','status'];
@@ -30,6 +31,7 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
     root.hidden = true; boothForm.reset(); assignmentForm.reset();
     for (const key of ['session-choices','booth-choices','readiness']) $('[data-planner-' + key + ']').replaceChildren();
     assignmentForm.elements.namedItem('contactId').replaceChildren(node('option', '请选择'));
+    const organization = boothForm.elements.namedItem('organizationId'), unlinked = node('option', '未关联组织'); unlinked.value = ''; organization.replaceChildren(unlinked);
     for (const key of ['title','note','person-state','preflight']) $('[data-planner-' + key + ']').textContent = '';
     message(''); if (wasWorking) onBusy(false); onDraftChange();
   }
@@ -91,6 +93,9 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
       let code = item?.code || 'C-' + String(selected.slotNumber).padStart(2,'0');
       let suffix = 1; while (!item && context.content.booths.some(booth => booth.code === code)) code = 'C-' + String(selected.slotNumber).padStart(2,'0') + '-' + suffix++;
       for (const key of fields) boothForm.elements.namedItem(key).value = item?.[key] ?? (key === 'code' ? code : key === 'status' ? 'pending' : '');
+      const organization = boothForm.elements.namedItem('organizationId'), unlinked = node('option', '未关联组织'); unlinked.value = ''; organization.replaceChildren(unlinked);
+      for (const choice of organizationChoices(context.content, item?.organizationId ?? '')) { const option = node('option', choice.name + (choice.missing ? ' · 请核对原关联' : choice.status === 'withdrawn' ? ' · 已退出' : choice.status === 'pending' ? ' · 待确认' : '')); option.value = choice.id; organization.append(option); }
+      organization.value = item?.organizationId ?? '';
       baseline = JSON.stringify(Object.fromEntries(new FormData(boothForm)));
       readiness();
     }

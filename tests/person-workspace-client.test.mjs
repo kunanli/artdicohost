@@ -112,14 +112,14 @@ test('restricted or unavailable sources produce no completed steps from missing 
   assert.equal(steps(unavailable).get('arrangements').state, 'review');
 });
 
-test('public completion requires a published, confirmed, consented profile with a portrait; withdrawn draft warns about a live old version', () => {
+test('public completion requires a published, confirmed, consented profile with a portrait; historical attribution needs verification', () => {
   const value = fixture(); assert.equal(steps(value).get('public').state, 'complete'); assert.match(steps(value).get('public').detail, /不代表最新草稿已同步/u);
   value.publicProfile.profiles[0].publishedMatchesDraft = false; assert.equal(steps(value).get('public').state, 'review');
   value.publicProfile.profiles[0].publishedMatchesDraft = true;
   value.publicProfile.profiles[0].hasPortrait = false; assert.equal(steps(value).get('public').state, 'pending');
   value.publicProfile.profiles[0].hasPortrait = true; value.publicProfile.profiles[0].published = false; assert.equal(steps(value).get('public').state, 'pending');
   value.publicProfile.profiles[0].published = true; value.publicProfile.profiles[0].publicConsent = false; value.publicProfile.profiles[0].publishedMatchesDraft = false;
-  value.contact.operations.participationForms = ['attendee']; assert.equal(steps(value).get('public').state, 'review'); assert.match(steps(value).get('public').detail, /旧版公开资料仍在.*显示/u);
+  value.contact.operations.participationForms = ['attendee']; assert.equal(steps(value).get('public').state, 'review'); assert.match(steps(value).get('public').detail, /资料有历史公开版本，当前人员关联及内容待核对/u);
   value.publicProfile = { state: 'unavailable', profiles: [], publishedRevision: null, publishedAt: null }; value.availability.publicProfile = 'unavailable'; assert.equal(steps(value).get('public').state, 'review');
 });
 
@@ -190,4 +190,33 @@ test('volunteer browser projection strips extras while preserving per-shift stat
   assert.equal(view.admission.status, 'waitlisted'); assert.equal(view.contact.operations.responseStatus, 'pending');
   assert.equal(steps(view).get('reply').state, 'pending');
   assert.equal(personWorkspaceSteps(view, ['superadmin']).length, 5, 'volunteer reply cannot complete attendance or public profile steps');
+});
+
+function organizationFixture() {
+  const value = fixture(); value.availability.organizations = 'available';
+  value.organizations = { state: 'available', memberships: [{ organizationId: 'synthetic-organization', name: '合成组织', role: 'lead', title: '技术联系人',
+    organizationStatus: 'confirmed', participation: 'exhibitor', missing: false }] };
+  return value;
+}
+test('legacy person organization omission is unavailable and partial or contradictory extensions fail closed', () => {
+  const legacy = personWorkspaceView(fixture(), selection); assert.equal(legacy.availability.organizations, 'unavailable');
+  assert.deepEqual(legacy.organizations, { state: 'unavailable', memberships: [] });
+  for (const change of [value => { delete value.availability.organizations; }, value => { delete value.organizations; },
+    value => { value.availability.organizations = 'unlinked'; }, value => { value.organizations.state = 'unavailable'; },
+    value => { value.organizations.memberships = []; }, value => { value.permissions.arrangements = false; }]) {
+    const value = organizationFixture(); change(value); assert.equal(personWorkspaceView(value, selection), null);
+  }
+});
+test('person organization projection retains exact missing IDs, bounds roles and strips unknown private fields', () => {
+  const value = organizationFixture(); value.organizations.internalNotes = 'PRIVATE'; value.organizations.memberships[0].notes = 'PRIVATE';
+  const view = personWorkspaceView(value, selection); assert.equal(view.organizations.memberships[0].organizationId, 'synthetic-organization');
+  assert.doesNotMatch(JSON.stringify(view.organizations), /PRIVATE|notes|internalNotes/u);
+  value.organizations.memberships[0] = { organizationId: 'missing-history', name: '', role: 'member', title: '', organizationStatus: 'missing', participation: '', missing: true };
+  assert.ok(personWorkspaceView(value, selection));
+  for (const change of [item => { item.role = 'owner'; }, item => { item.organizationId = '../organization'; }, item => { item.title = 'x'.repeat(121); },
+    item => { item.title = 'multi\nline'; }, item => { item.name = 'false missing name'; }, item => { item.participation = 'exhibitor'; }, item => { item.organizationStatus = 'confirmed'; }]) {
+    const invalid = structuredClone(value); change(invalid.organizations.memberships[0]); assert.equal(personWorkspaceView(invalid, selection), null);
+  }
+  const duplicate = organizationFixture(); duplicate.organizations.memberships.push({ ...duplicate.organizations.memberships[0] });
+  assert.equal(personWorkspaceView(duplicate, selection), null);
 });

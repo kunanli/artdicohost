@@ -4,7 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { ContentError } from './store.mjs';
 import {
   CONTACT_SCHEMA_VERSION, MAX_IMPORT_ROWS, MAX_CONTACTS, INVITATION_CHANNELS,
-  validateImportedContact, validateContactOperations, validateInvitationSettings, preserveContactOperationDefaults,
+  validateImportedContact, validateContactOperations, validateInvitationSettings, preserveContactOperationDefaults, validateContactOrganizationMembershipChanges,
   validateStoredContact, createEmptyContactOperations,
 } from '../../shared/contacts-schema.mjs';
 import { validateManualContactProfile, validateContactProfileEdit, guestPrefillFromContact } from '../../shared/contact-editor.mjs';
@@ -257,6 +257,7 @@ export function createFileContactsStore({ directory, contentStore, now = () => D
       const { draft } = await contentStore.read();
       const inputWithForms = preserveContactOperationDefaults(input, contact.operations);
       const operations = validationError(validateContactOperations(inputWithForms, draft.content), '跟进资料或安排未通过校验。');
+      validationError(validateContactOrganizationMembershipChanges(operations, contact.operations, draft.content.organizations ?? []), '组织成员关系未通过校验。');
       contact.operations = operations;
       contact.updatedAt = new Date(now()).toISOString();
       state.revision += 1;

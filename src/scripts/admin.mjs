@@ -8,6 +8,8 @@ import { createArrangementPlanner } from './arrangement-planner.mjs';
 import { prepareProfileImage, processedImageSummary } from '../lib/profile-image.mjs';
 import { editStaffImage } from '../lib/staff-image-editor.mjs';
 import { createOrganizationsEditor } from './organizations.mjs';
+import { createGuestContactPicker } from './guest-contact-picker.mjs';
+import { organizationChoices, boothOrganizationField } from '../lib/content-relationships.mjs';
 import { contentSaveSnapshot, confirmedContentSave, inspectContentSave, sameContent, contentSaveUiState } from '../lib/admin-save-state.mjs';
 
 const $ = selector => document.querySelector(selector);
@@ -29,6 +31,8 @@ let busy = false;
 let plannerBusy = false;
 let planner = null;
 let organizations = null;
+let guestPeople = null;
+let savedGuestContacts = new Map();
 let pendingBooth = takeBoothLink();
 let editingSession = null;
 let editingBooth = null;
@@ -45,6 +49,12 @@ let portraitController = null;
 let portraitPending = null;
 let guestFormDirty = false;
 let pendingInvitee = takeInvitee();
+let pendingOrganization = takeOrganizationLink();
+function takeOrganizationLink() {
+  const match = /^#organization=([A-Za-z0-9][A-Za-z0-9_-]{0,79})$/u.exec(location.hash);
+  if (!match) return null;
+  history.replaceState(null, '', location.pathname + location.search); return match[1];
+}
 function takeBoothLink() {
   const match = /^#booth=([A-Za-z0-9][A-Za-z0-9_-]{0,79})$/u.exec(location.hash);
   if (!match) return null;
@@ -90,7 +100,7 @@ planner = createArrangementPlanner({
 });
 organizations = createOrganizationsEditor({
   root: $('[data-organizations]'), request,
-  getContext: () => ({ content: draft?.content, revision: draft?.revision, user, busy: busy || plannerBusy || portraitUploading || coverUploading }),
+  getContext: () => ({ content: draft?.content, revision: draft?.revision, user, dirty, busy: busy || plannerBusy || portraitUploading || coverUploading }),
   onApply: records => {
     if (!canEdit() || busy || plannerBusy || !draft) throw new Error('请重新读取可编辑草稿后，再应用组织资料。');
     const candidate = { ...draft.content, organizations: records }, checked = validateContent(candidate);
@@ -98,6 +108,15 @@ organizations = createOrganizationsEditor({
     draft.content = checked.value; setDirty(true);
   },
   onChange: () => { lockControls(); resumePendingLinks(); }, announce,
+});
+guestPeople = createGuestContactPicker({
+  root: $('[data-guest-person-picker]'), request,
+  getContext: () => ({ user, content: draft?.content, revision: draft?.revision, guestId: $('[data-guest-form]').elements.namedItem('id').value,
+    publishedIdentity: Boolean(published?.content?.guests?.some(guest => guest.id === $('[data-guest-form]').elements.namedItem('id').value)),
+    busy: busy || plannerBusy || portraitUploading || coverUploading || Boolean(portraitPending) || organizations?.uploading }),
+  getValue: () => $('[data-guest-form]').elements.namedItem('contactId').value,
+  setValue: id => { $('[data-guest-form]').elements.namedItem('contactId').value = id; },
+  onChange: () => { revokeGuestConsent(); guestFormDirty = true; lockControls(); },
 });
 function announce(message, error = false) {
   status.textContent = error ? '' : message;
@@ -142,6 +161,9 @@ function lockControls() {
   $('[data-showcase-cover-remove]').disabled = controlsBusy || organizationBusy || !canEdit();
   $('[data-booth-submit]').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canEdit();
   $('[data-guest-submit]').disabled = controlsBusy || portraitUploading || Boolean(portraitPending) || coverUploading || organizationBusy || !canEdit();
+  const guestForm = $('[data-guest-form]'), pendingIdentity = $('[data-guest-dialog]').open && guestForm.elements.namedItem('contactId').value !== (savedGuestContacts.get(guestForm.elements.namedItem('id').value) ?? '');
+  guestForm.elements.namedItem('publicConsent').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canEdit() || pendingIdentity;
+  if (pendingIdentity) { guestForm.elements.namedItem('publicConsent').checked = false; $('[data-guest-consent-note]').textContent = '人员关联已变更。请先应用并保存这份不公开的关联，再重新打开嘉宾资料核对本人的公开授权。'; }
   $('[data-guest-portrait-file]').disabled = controlsBusy || portraitUploading || Boolean(portraitPending) || organizationBusy || !canEdit();
   $('[data-guest-portrait-remove]').disabled = controlsBusy || organizationBusy || !canEdit();
   $('[data-guest-portrait-edit]').disabled = controlsBusy || portraitUploading || Boolean(portraitPending) || organizationBusy || !canEdit() || !portraitIdPattern.test($('[data-guest-form]').elements.namedItem('portraitId').value);
@@ -156,6 +178,7 @@ function lockControls() {
   arrangements.configure({ allowed: Boolean(canEdit() && user?.roles.includes('outreach')), busy: controlsBusy || portraitUploading || coverUploading || organizationBusy, dirty, draftRevision: draft?.revision });
   planner?.configure();
   organizations?.configure();
+  guestPeople?.configure();
   renderSaveState();
 }
 function setDirty(value) {
@@ -165,16 +188,24 @@ function setDirty(value) {
 }
 async function request(path, options = {}) {
   const sessionGeneration = requestSessionGeneration;
-  const { binaryImage = false, ...fetchOptions } = options;
+  const { binaryImage = false, isCurrent = () => true, ...fetchOptions } = options;
   const headers = { Accept: binaryImage ? 'image/png,image/jpeg,image/webp' : 'application/json', ...options.headers };
   if (options.body) headers['Content-Type'] = 'application/json';
   if (options.method && options.method !== 'GET' && csrfToken) headers['X-CSRF-Token'] = csrfToken;
   const response = await fetch(path, { ...fetchOptions, headers, credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
-  if (sessionGeneration !== requestSessionGeneration) throw new Error('会话已变化，请在当前工作区重新操作。');
+  if (sessionGeneration !== requestSessionGeneration) { await response.body?.cancel().catch(() => {}); throw new Error('会话已变化，请重新操作。'); }
+  const expired = response.status === 401 && path !== '/api/admin/login';
+  const restricted = response.status === 403 && path.startsWith('/api/admin/people/');
+  if (expired || restricted) {
+    await response.body?.cancel().catch(() => {});
+    const message = expired ? '会话已结束，请重新登录。' : '人员资料权限已变化，请重新登录核对当前权限。';
+    showLogin(); announce(message, true);
+    const failure = new Error(message); failure.status = response.status; throw failure;
+  }
+  if (!isCurrent()) { await response.body?.cancel().catch(() => {}); throw new Error('当前选择已变化，请重新操作。'); }
   const result = binaryImage && response.ok ? null : await response.json().catch(() => ({}));
-  if (sessionGeneration !== requestSessionGeneration) throw new Error('会话已变化，请在当前工作区重新操作。');
+  if (sessionGeneration !== requestSessionGeneration || !isCurrent()) throw new Error('会话或当前选择已变化，请重新操作。');
   if (!response.ok) {
-    if (response.status === 401 && path !== '/api/admin/login') { showLogin(); announce('会话已结束，请重新登录。', true); }
     const message = response.status === 503 && result?.error?.code === 'CONTENT_NOT_READY' ? '后台服务暂不可用，可能正在更新。请稍后重试。' : response.status === 409 ? '草稿已被其他工作人员更新。你的修改仍保留在本页；请先复制需要保留的内容，再重新载入最新草稿。' : result?.error?.message || '操作暂未完成，请重试。';
     const failure = new Error(message); failure.status = response.status;
     failure.code = result?.error?.code === 'CONTENT_NOT_READY' ? 'CONTENT_NOT_READY' : '';
@@ -215,6 +246,7 @@ async function action(callback) {
 function resumePendingLinks() {
   if (!user || !draft || busy || plannerBusy || portraitUploading || portraitPending || organizations?.hasUnapplied()) return;
   if (pendingBooth) { const id = pendingBooth; pendingBooth = null; planner.open('booth', id); return; }
+  if (pendingOrganization) { const id = pendingOrganization; pendingOrganization = null; organizations.openById(id); return; }
   if (pendingInvitee) queueMicrotask(() => action(prepareInvitedGuest));
 }
 function showLogin() {
@@ -222,11 +254,13 @@ function showLogin() {
   clearPortrait();
   clearCover();
   organizations?.clear();
+  guestPeople?.clear();
   arrangements.clear();
   planner?.clear();
   user = null;
   csrfToken = '';
   draft = null;
+  savedGuestContacts.clear();
   published = null;
   dirty = false;
   eventFormDirty = false;
@@ -254,6 +288,7 @@ function showLogin() {
   const guestSelect=$('[data-session-form]').elements.namedItem('guestId');
   guestSelect.replaceChildren();
   const unlinked=node('option','手动维护讲者 · 未关联嘉宾');unlinked.value='';guestSelect.append(unlinked);
+  fillBoothOrganizations('');
   editingSession = null;
   editingBooth = null;
   editingGuest = null;
@@ -349,7 +384,8 @@ function render() {
     const row = node('tr');
     const codeCell = cell(row, '编号', item.code);
     codeCell.append(node('small', item.slotNumber ? String(item.slotNumber).padStart(2,'0')+' 号位置' : '未指定位置', 'ah-admin-row-format'));
-    cell(row, '出席单位', item.organization || '待确认');
+    const organizationCell = cell(row, '出席单位', item.organization || '待确认');
+    if (item.organizationId) { const organization = draft.content.organizations?.find(value => value.id === item.organizationId); organizationCell.append(node('small', organization ? '关联组织：' + organization.name : '关联组织暂不可核对')); }
     const projectCell=cell(row, '展示内容', item.project || '待确认');
     if(item.description)projectCell.append(node('small',item.description));
     const contactCell=cell(row,'负责人 / 联系方式',item.contactName||'负责人待填写');
@@ -375,6 +411,7 @@ function render() {
     } else photo.append(node('span', '待上传', 'ah-admin-guest-no-photo'));
     const identity=cell(row,'姓名 / 公开职责',item.name||'待填写');
     if(item.publicRoles?.length)identity.append(node('small',item.publicRoles.map(role=>GUEST_PUBLIC_ROLE_LABELS[role]).join(' · ')));
+    if (item.contactId) { if (user?.roles.includes('outreach')) { const link = node('a', '个人工作页'); link.href = '/admin/person/#contact=' + encodeURIComponent(item.contactId); identity.append(link); } else identity.append(node('small', '已关联内部人员')); }
     const affiliation=cell(row,'机构 / 职称',item.company||'待填写');if(item.title)affiliation.append(node('small',item.title));
     cell(row,'GGJ 职务',item.ggjRole||'—');
     cell(row, '确认与授权', (item.status === 'confirmed' ? '已确认' : '待确认') + ' · ' + (item.publicConsent ? '已获公开授权' : '未获公开授权'));
@@ -396,7 +433,7 @@ function openEditor(type, item = null, allowBusy = false) {
   localError.hidden = true;
   if (type === 'guest') { clearPortrait(); guestFormDirty=false; $('[data-guest-consent-note]').textContent='确认状态与公开授权分别记录。更改资料或照片后，请重新核对授权；保存草稿不会自动公开。'; }
   if (type === 'session') { sessionFormDirty = false; fillSessionGuests(); }
-  if (type === 'booth') boothFormDirty = false;
+  if (type === 'booth') { boothFormDirty = false; fillBoothOrganizations(item?.organizationId ?? ''); }
   const id = type + '-' + [...crypto.getRandomValues(new Uint8Array(16))].map(value => value.toString(16).padStart(2, '0')).join('');
   const value = item || (type === 'session' ? { id, start: '09:30', end: '10:00', zone: 'A', title: '', format: 'other', speakerName: '', speakerStatus: 'pending', guestId: '', status: 'draft', internalNotes: '' } : type === 'booth' ? { id, code: '', organization: '', project: '', zone: 'C', slotNumber: 0, status: 'pending', internalNotes: '' } : { id, name: '', company: '', ggjRole: '', portraitId: '', contactId: '', status: 'pending', publicConsent: false, internalNotes: '' });
   for (const [key,valueText] of Object.entries(value)) {
@@ -412,6 +449,7 @@ function openEditor(type, item = null, allowBusy = false) {
   else { editingGuest = item?.id ?? null; showPortrait(value.portraitId); }
   $('[data-' + type + '-dialog-title]').textContent = (item ? '编辑' : '新增') + typeLabel(type);
   $('[data-' + type + '-dialog]').showModal();
+  if (type === 'guest') guestPeople?.open();
   lockControls();
 }
 async function prepareInvitedGuest(){
@@ -436,6 +474,7 @@ async function prepareInvitedGuest(){
     $('[data-guest-consent-note]').textContent='已从邀约名单预填资料，实际回复：'+({pending:'待回复',attending:'确认参加',declined:'不参加'}[result.responseStatus]??'待核实')+'。请另行核实资料、出席与公开授权；尚未保存或公开。';
     if(Array.isArray(result.omittedFields)&&result.omittedFields.some(field=>['title','bio','website'].includes(field)))$('[data-guest-consent-note]').textContent+=' 部分原始资料超出公开栏位限制或网址格式无效，未自动带入；原始名单资料仍完整保留，请另行核对。';
     announce('已准备关联嘉宾资料表，尚未保存。请核实职务、照片与公开同意，再应用修改。');
+    guestPeople?.open();
   }
   return true;
 }
@@ -462,7 +501,12 @@ function submitEditor(type, event) {
   const key = contentKey(type);
   const editingId = ({ session: editingSession, booth: editingBooth, guest: editingGuest, showcase: editingShowcase })[type];
   const value = Object.fromEntries(new FormData(form));
-  if (type === 'booth') value.slotNumber = Number(form.elements.namedItem('slotNumber').value);
+  if (type === 'booth') {
+    value.slotNumber = Number(form.elements.namedItem('slotNumber').value);
+    const previous = editingId ? candidate.booths.find(item => item.id === editingId) : null;
+    const relation = boothOrganizationField(previous, form.elements.namedItem('organizationId').value);
+    delete value.organizationId; Object.assign(value, relation);
+  }
   if (type === 'guest') {
     delete value.portraitFile;
     value.publicConsent = form.elements.namedItem('publicConsent').checked;
@@ -523,6 +567,15 @@ function syncSessionGuest() {
 function revokeGuestConsent() {
   $('[data-guest-form]').elements.namedItem('publicConsent').checked = false;
   $('[data-guest-consent-note]').textContent = '资料或照片已变更，请重新核对这份资料与照片的公开授权。保存草稿不会自动公开。';
+}
+function fillBoothOrganizations(selected) {
+  const select = $('[data-booth-organization-id]'); select.replaceChildren();
+  const blank = node('option', '未关联组织'); blank.value = ''; select.append(blank);
+  for (const item of organizationChoices(draft?.content, selected)) {
+    const option = node('option', item.name + (item.missing ? ' · 请核对原关联' : item.status === 'withdrawn' ? ' · 已退出' : item.status === 'pending' ? ' · 待确认' : ''));
+    option.value = item.id; select.append(option);
+  }
+  select.value = selected;
 }
 function showPortrait(id) {
   const previous = $('[data-guest-portrait-preview]'), image = previous.cloneNode(false), stamp = ++portraitPreviewGeneration;
@@ -815,6 +868,7 @@ $('[data-admin-login]').addEventListener('submit', event => {
     csrfToken = result.csrfToken;
     const state = await request('/api/admin/content');
     draft = state.draft;
+    savedGuestContacts = new Map((draft.content.guests ?? []).map(guest => [guest.id, guest.contactId || '']));
     published = state.published;
     loginPanel.hidden = true;
     workspace.hidden = false;
@@ -871,6 +925,7 @@ async function timedContentRequest(options = {}) {
 function acceptSavedContent(saved, submitted) {
   const unchanged = sameContent(draft.content, submitted.content), localContent = draft.content;
   draft = { revision: saved.revision, content: unchanged ? saved.content : localContent };
+  savedGuestContacts = new Map((saved.content.guests ?? []).map(guest => [guest.id, guest.contactId || '']));
   confirmedSaveRevision = saved.revision; saveOutcome = 'saved'; saveProblem = ''; pendingSave = null; savingContent = false; retryContentReady = false;
   setDirty(!unchanged); render();
   return unchanged;
@@ -1008,9 +1063,9 @@ $('[data-guest-portrait-discard]').addEventListener('click', () => {
   $('[data-guest-portrait-file]').focus({ preventScroll: true });
 });
 $('[data-guest-portrait-remove]').addEventListener('click', () => { clearPortrait(); revokeGuestConsent(); guestFormDirty=true; lockControls(); });
-$('[data-guest-dialog]').addEventListener('close',()=>{clearPortrait();$('[data-guest-form]').reset();editingGuest=null;guestFormDirty=false;lockControls();});
+$('[data-guest-dialog]').addEventListener('close',()=>{guestPeople?.clear();clearPortrait();$('[data-guest-form]').reset();editingGuest=null;guestFormDirty=false;lockControls();});
 $('[data-guest-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeGuestEditor();});
-for (const type of ['input','change']) $('[data-guest-form]').addEventListener(type,event=>{if (!event.target.closest('[data-image-editor]') && event.target !== $('[data-guest-portrait-file]')) {guestFormDirty=true;lockControls();}});
+for (const type of ['input','change']) $('[data-guest-form]').addEventListener(type,event=>{if (!event.target.closest('[data-image-editor],[data-guest-person-picker]') && event.target !== $('[data-guest-portrait-file]')) {guestFormDirty=true;lockControls();}});
 for (const name of ['name','company','ggjRole','title','bio','website']) $('[data-guest-form]').elements.namedItem(name).addEventListener('input', revokeGuestConsent);
 for(const option of $('[data-guest-form]').querySelectorAll('[name=publicRoles]'))option.addEventListener('change',revokeGuestConsent);
 for (const button of document.querySelectorAll('[data-close-dialog]')) button.addEventListener('click', () => {if(button.dataset.closeDialog==='guest')closeGuestEditor();else if(button.dataset.closeDialog==='showcase')closeShowcaseEditor();else closeSimpleEditor(button.dataset.closeDialog);});
@@ -1020,7 +1075,7 @@ $('[data-admin-logout]').addEventListener('click', () => action(async () => {
   pendingInvitee=null;showLogin();
   announce('已退出。');
 }));
-window.addEventListener('hashchange',()=>{const booth=takeBoothLink();if(booth){pendingBooth=booth;resumePendingLinks();return;}const id=takeInvitee();if(!id)return;pendingInvitee=id;resumePendingLinks();});
+window.addEventListener('hashchange',()=>{const booth=takeBoothLink();if(booth){pendingBooth=booth;resumePendingLinks();return;}const organization=takeOrganizationLink();if(organization){pendingOrganization=organization;resumePendingLinks();return;}const id=takeInvitee();if(!id)return;pendingInvitee=id;resumePendingLinks();});
 window.addEventListener('beforeunload', event => { if (hasUnsavedChanges()) { event.preventDefault(); event.returnValue = ''; } });
 if (typeof ResizeObserver === 'function') new ResizeObserver(updateSavebarSpace).observe($('[data-admin-savebar]'));
 window.addEventListener('resize', updateSavebarSpace);
@@ -1038,6 +1093,7 @@ if (location.protocol === 'file:') {
     csrfToken = result.csrfToken;
     const state = await request('/api/admin/content');
     draft = state.draft;
+    savedGuestContacts = new Map((draft.content.guests ?? []).map(guest => [guest.id, guest.contactId || '']));
     published = state.published;
     loginPanel.hidden = true;
     workspace.hidden = false;

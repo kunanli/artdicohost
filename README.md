@@ -18,6 +18,8 @@
 ## 技术决策
 参考私有仓库 `kunanli/igda_shenzhen`（2026-10-18 检查）：Astro、Function Compute、GitHub Actions、静态 OSS 公共站点、私有 OSS JSON 报名。新建独立仓库和独立 OSS/FC 资源；**不要复制旧密钥、成员数据或直接改 IGDA 正式站**。
 
+2026-10-21「志愿者与分工」已上线 [PR #35](https://github.com/kunanli/artdicohost/pull/35)／main `19b0d10`。942 项 PR／main 检查、真实私有 OSS 的志愿者 CAS／完整历史恢复、300 人政策与 27/27 HTTPS 回读通过，17:47:01（UTC+08）全部成功；[操作](docs/volunteer-operations.md)、[证据](docs/volunteer-release-2026-10-21.md)。接续实施[人员关系及确认参加同步名额](docs/people-relationships.md)，再更新用户提供的邀请函及字体。
+
 ## 文档入口
 - [志愿者与分工](docs/volunteer-operations.md)：既有人员关联、沟通、可服务时段、岗位班次、缺额及 Excel；候选发布状态见接续台账
 - [人员串联与步骤指引](docs/staff-operations-workspace.md)：单人工作页、沟通与安排、云端保存防呆、权限边界及设置中心

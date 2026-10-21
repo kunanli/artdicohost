@@ -7,6 +7,8 @@ export const RESPONSE_STATUSES = Object.freeze(['pending', 'attending', 'decline
 export const PARTICIPATION_FORMS = Object.freeze(['guest', 'speaker', 'panelist', 'host', 'organizer', 'booth', 'student_showcase', 'attendee']);
 export const SESSION_ROLES = Object.freeze(['speaker', 'panelist', 'host', 'organizer', 'guest', 'attendee']);
 export const SESSION_ROLE_LABELS = Object.freeze({ speaker: '讲者', panelist: '圆桌嘉宾', host: '主持', organizer: '研讨会组织者', guest: '嘉宾', attendee: '参与者' });
+export const ORGANIZATION_MEMBER_ROLES = Object.freeze(['lead', 'member']);
+export const MAX_ORGANIZATION_MEMBERSHIPS = 20;
 export const INVITATION_CHANNELS = Object.freeze(['wechat', 'email', 'other']);
 export const CONTACT_CATEGORIES = Object.freeze(['so', 'ro', 'prospective_site', 'industry', 'developer', 'university', 'education', 'partner', 'other']);
 export const CONTACT_INTERESTS = Object.freeze(['site_experience', 'talk', 'technical_share', 'roundtable', 'industry_networking', 'exhibition', 'product_demo', 'site_resources', 'sponsorship_partnership', 'attend_only']);
@@ -83,7 +85,7 @@ export function validateImportedContact(input) {
 }
 
 export function createEmptyContactOperations() {
-  return { owner: '', priority: 'normal', followUpAt: '', notes: '', responseStatus: 'pending', participationForms: [], sessionIds: [], boothIds: [], sessionRoles: [] };
+  return { owner: '', priority: 'normal', followUpAt: '', notes: '', responseStatus: 'pending', participationForms: [], sessionIds: [], boothIds: [], sessionRoles: [], organizationMemberships: [] };
 }
 
 /** Omitted new fields in an older client's full operations update do not erase
@@ -94,6 +96,7 @@ export function preserveContactOperationDefaults(input, current) {
   if (!Object.hasOwn(input, 'participationForms')) value.participationForms = current?.participationForms ?? [];
   if (!Object.hasOwn(input, 'sessionRoles')) value.sessionRoles = (current?.sessionRoles ?? [])
     .filter(entry => !Array.isArray(input.sessionIds) || input.sessionIds.includes(entry.sessionId));
+  if (!Object.hasOwn(input, 'organizationMemberships')) value.organizationMemberships = structuredClone(current?.organizationMemberships ?? []);
   return value;
 }
 
@@ -126,6 +129,42 @@ function sessionRoleList(input, sessionIds, errors) {
   });
 }
 
+function organizationMembershipList(source, errors) {
+  const descriptor = Object.getOwnPropertyDescriptor(source, 'organizationMemberships');
+  if (!descriptor) return [];
+  const input = descriptor.value;
+  if (!descriptor.enumerable || !('value' in descriptor) || !Array.isArray(input) || input.length > MAX_ORGANIZATION_MEMBERSHIPS
+    || Reflect.ownKeys(input).length !== input.length + 1
+    || Object.keys(input).some((key, index) => key !== String(index) || !('value' in Object.getOwnPropertyDescriptor(input, key)))) { errors.organizationMemberships = '请明确提供最多 20 个组织成员关系。'; return []; }
+  const selected = new Set();
+  return Array.from(input, (entry, index) => {
+    const key = 'organizationMemberships.' + index;
+    const shape = entry !== null && typeof entry === 'object' && !Array.isArray(entry)
+      && [Object.prototype, null].includes(Object.getPrototypeOf(entry)) && Reflect.ownKeys(entry).length === 3
+      && ['organizationId', 'role', 'title'].every(name => { const property = Object.getOwnPropertyDescriptor(entry, name); return property?.enumerable && 'value' in property; });
+    const item = shape ? entry : {}, organizationId = typeof item.organizationId === 'string' ? item.organizationId : '';
+    const role = typeof item.role === 'string' ? item.role : '', title = text(item.title);
+    if (!shape || !ID.test(organizationId) || selected.has(organizationId)) errors[key] = '请选择不重复的明确组织编号与成员关系。';
+    if (!ORGANIZATION_MEMBER_ROLES.includes(role)) errors[key + '.role'] = '请选择组织负责人或成员。';
+    if (typeof item.title !== 'string' || !item.title.isWellFormed() || [...item.title].length > 120 || /[\u0000-\u001f\u007f]/u.test(item.title)) errors[key + '.title'] = '内部称谓须为最多 120 字的单行文字。';
+    selected.add(organizationId);
+    return { organizationId, role, title };
+  });
+}
+
+/** Membership is a private affiliation, not an admission or an onsite allocation.
+ * Existing orphan links may be retained or removed; only newly introduced IDs
+ * must exist in the explicitly saved organization directory. */
+export function validateContactOrganizationMembershipChanges(next, current, organizations) {
+  const errors = {}, members = next?.organizationMemberships;
+  if (!Array.isArray(members) || !Array.isArray(organizations)) errors.organizationMemberships = '组织目录暂时无法核对。';
+  else {
+    const known = new Set(organizations.map(item => item?.id)), previous = new Set((current?.organizationMemberships ?? []).map(item => item.organizationId));
+    for (const [index, membership] of members.entries()) if (!previous.has(membership.organizationId) && !known.has(membership.organizationId)) errors['organizationMemberships.' + index + '.organizationId'] = '请选择已保存的组织，不能使用机构文字或未保存的组织。';
+  }
+  return { valid: Object.keys(errors).length === 0, errors };
+}
+
 /**
  * Saving assignments validates current content. Reading historic contacts must
  * not call this with current content: deleted references remain visible to staff.
@@ -141,6 +180,7 @@ export function validateContactOperations(input, content) {
     boothIds: choiceList(source.boothIds, errors, 'boothIds', 50, 80),
   };
   value.sessionRoles = sessionRoleList(source.sessionRoles, value.sessionIds, errors);
+  value.organizationMemberships = organizationMembershipList(source, errors);
   field(errors, 'owner', value.owner, 120);
   field(errors, 'notes', value.notes, 6000);
   if (!CONTACT_PRIORITIES.includes(value.priority)) errors.priority = '请选择正常或优先跟进。';

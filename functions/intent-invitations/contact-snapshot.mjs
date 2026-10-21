@@ -17,7 +17,7 @@ export function validateSnapshotContact(contact) {
     || !validateStoredContact(contact) || !identifier(contact.id) || contact.id !== 'c_' + contactHash(contact.source.key + '\0' + contact.source.rowId).slice(0, 32)
     || !iso(contact.createdAt) || !iso(contact.updatedAt) || !iso(contact.source.importedAt)
     || contact.createdAt !== contact.source.importedAt || contact.updatedAt < contact.createdAt
-    || !exact(contact.operations, operationFields.filter(name => !['participationForms', 'sessionRoles'].includes(name) || Object.hasOwn(contact.operations, name)))
+    || !exact(contact.operations, operationFields.filter(name => !['participationForms', 'sessionRoles', 'organizationMemberships'].includes(name) || Object.hasOwn(contact.operations, name)))
     || !exact(contact.invitation, ['settings', 'generatedAt', 'sentAt', 'sentGenerationAt', 'channel'])) throw failure('INVALID_INPUT', 400);
   const normalized = validateImportedContact({ ...contact.profile, sourceRowId: contact.source.rowId });
   const { sourceRowId: _, ...profile } = normalized.value;
@@ -26,7 +26,7 @@ export function validateSnapshotContact(contact) {
   if (contact.sourceProfile && (!exact(contact.sourceProfile, profileFields) || contact.sourceProfileDigest !== contactHash(JSON.stringify(contact.sourceProfile)))
     || contact.source.digest !== contactHash(JSON.stringify(original))) throw failure('INVALID_INPUT', 400);
   const operations = validateContactOperations(contact.operations);
-  if (!operations.valid || !isDeepStrictEqual(operations.value, { ...contact.operations, participationForms: contact.operations.participationForms ?? [], sessionRoles: contact.operations.sessionRoles ?? [] })) throw failure('INVALID_INPUT', 400);
+  if (!operations.valid || !isDeepStrictEqual(operations.value, { ...contact.operations, participationForms: contact.operations.participationForms ?? [], sessionRoles: contact.operations.sessionRoles ?? [], organizationMemberships: contact.operations.organizationMemberships ?? [] })) throw failure('INVALID_INPUT', 400);
   const invitation = contact.invitation;
   if (invitation.settings !== null && !isDeepStrictEqual(validateInvitationSettings(invitation.settings).value, invitation.settings)) throw failure('INVALID_INPUT', 400);
   for (const name of ['generatedAt', 'sentAt', 'sentGenerationAt']) if (invitation[name] !== null

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPersonWorkspaceApi, isPersonWorkspacePath } from '../functions/person-workspace/handler.mjs';
+import { personWorkspaceView, personWorkspaceSteps } from '../src/lib/person-workspace.mjs';
 
 import { fixture, ORIGIN, CONTACT, REGISTRATION, OTHER_REGISTRATION, AT, actor } from './person-workspace-fixture.mjs';
 
@@ -267,6 +268,28 @@ test('eligible draft guest is never called published without its saved guest ID'
   assert.equal(body.publicProfile.profiles[0].published, false); assert.equal(body.publicProfile.publishedRevision, null);
   f.data.content.published = { revision: 4, publishedAt: AT, content: { guests: [{ id: 'different-guest', name: '合成甲' }] } };
   assert.equal((await f.read()).body.publicProfile.profiles[0].published, false, 'equal public display name does not link a snapshot');
+});
+
+test('A-to-B guest relink retains historical publication without implying the newly linked person is public', async () => {
+  const f = fixture(), guest = f.data.content.content.guests[0], contactB = structuredClone(f.data.contacts.contacts[0]);
+  contactB.id = 'synthetic-person-b'; contactB.profile.name = contactB.profile.displayName = '合成乙';
+  contactB.operations.sessionIds = []; contactB.operations.sessionRoles = []; contactB.operations.boothIds = [];
+  f.data.contacts.contacts.push(contactB);
+  const saved = { ...structuredClone(guest), portraitUrl: '/api/public/portraits/' + guest.portraitId };
+  delete saved.contactId; delete saved.internalNotes;
+  f.data.content.published.content.guests = [saved];
+  const originalPublication = structuredClone(f.data.content.published);
+  guest.contactId = contactB.id; guest.name = '合成乙'; guest.publicConsent = false;
+  const { response, body } = await f.read({}, '/api/admin/people/contacts/' + contactB.id);
+  assert.equal(response.status, 200); assert.equal(body.contact.id, contactB.id);
+  assert.equal(body.publicProfile.profiles[0].published, true, 'same guest ID retains its historical publication fact');
+  assert.equal(body.publicProfile.profiles[0].publishedMatchesDraft, false); assert.equal(body.publicProfile.profiles[0].publicConsent, false);
+  const view = personWorkspaceView(body, body.selected); assert.ok(view);
+  const step = personWorkspaceSteps(view, ['superadmin', 'outreach', 'editor']).find(item => item.key === 'public');
+  assert.equal(step.state, 'review'); assert.match(step.detail, /资料有历史公开版本，当前人员关联及内容待核对/u);
+  assert.doesNotMatch(step.detail, /仍在已发布页面显示/u);
+  assert.deepEqual(f.data.content.published, originalPublication, 'read projection never rewrites the old public snapshot to B');
+  assert.equal(f.data.content.published.content.guests[0].name, '合成甲');
 });
 
 test('missing publication source and unassignable orphan snapshot require verification without breaking arrangements', async () => {

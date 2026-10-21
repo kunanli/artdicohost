@@ -73,6 +73,11 @@ test('metadata exposes validated per-person capacity facts without leaking roste
   const invalid=fixture(null,{...policy,admissions:{...admissions,remainingTotal:1}});
   assert.equal(Object.hasOwn(await invalid.client.configure(),'admissions'),false);
 });
+test('manual review metadata forwards an explicit boolean and leaves older metadata compatible',async()=>{
+  const enabled=fixture(null,{...policy,attendeeReviewRequired:true});assert.equal((await enabled.client.configure()).attendeeReviewRequired,true);
+  const legacy=fixture();assert.equal(Object.hasOwn(await legacy.client.configure(),'attendeeReviewRequired'),false);
+  const invalid=fixture(null,{...policy,attendeeReviewRequired:'true'});assert.equal(Object.hasOwn(await invalid.client.configure(),'attendeeReviewRequired'),false);
+});
 test('configured closed registration is explicit and can never submit a new record',async()=>{
   const calls=[];
   const client=createRegistrationClient({apiOrigin:'https://api.artdico.host',pageOrigin:'https://artdico.host',fetchFn:async(url,options)=>{calls.push(options.method);return json({enabled:false,reason:'closed'});}});

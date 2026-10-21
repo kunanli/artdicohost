@@ -63,7 +63,7 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
         && PRIVACY_KEYS.every(key => typeof value.privacy?.[key] === 'string' && value.privacy[key].trim().length > 0 && value.privacy[key].length <= 4000)
         && !/demo|frontend|mock/iu.test(value.privacy.version);
       const summary = admissionSummary(value?.admissions);
-      const metadata = complete ? {eventId:value.eventId,opensAt:value.opensAt,closesAt:value.closesAt,capacity:value.capacity,privacy:Object.fromEntries(PRIVACY_KEYS.map(key=>[key,value.privacy[key]])), ...(summary ? {admissions:summary} : {})} : {};
+      const metadata = complete ? {eventId:value.eventId,opensAt:value.opensAt,closesAt:value.closesAt,capacity:value.capacity,privacy:Object.fromEntries(PRIVACY_KEYS.map(key=>[key,value.privacy[key]])), ...(summary ? {admissions:summary} : {}), ...(typeof value.attendeeReviewRequired==='boolean'?{attendeeReviewRequired:value.attendeeReviewRequired}:{})} : {};
       if (value?.enabled === false) { config = null; return {enabled:false,reason:value.reason==='closed'?'closed':'unavailable',...metadata}; }
       if (value?.enabled !== true) throw failure('CONFIG_INVALID','正式报名配置尚未完整，请稍后再来。');
       if (!complete) throw failure('CONFIG_INVALID','正式报名配置尚未完整，请稍后再来。');

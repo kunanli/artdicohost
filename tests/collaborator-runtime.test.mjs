@@ -11,6 +11,7 @@ test('two private collaborator accounts can run the event across instances while
   const f = await peopleRuntimeFixture();
   const owner = await f.login();
   const secondInstance = f.make();
+  await f.seedPublic({intake:'general-v2', name:'合成协作者导出验证'});
   const accounts = [];
   for (const username of ['synthetic-collaborator-one', 'synthetic-collaborator-two']) {
     const before = await f.app.userStore.list();
@@ -70,6 +71,14 @@ test('two private collaborator accounts can run the event across instances while
       expectedRevision:mail.revision, operationId:operationId(), enabled:false,
     }}));
     assert.equal(mailSaved.status, 200);
+    const list = await secondInstance.handle(f.request('/api/admin/registrations', {headers}));
+    const review = await list.json();
+    const workbook = await secondInstance.handle(f.request('/api/admin/registrations/export.xlsx', {method:'POST', headers, body:{
+      expectedRevision:review.revision, filters:{}, includeContact:true, includeAnswers:true, includeArrangements:true,
+    }}));
+    assert.equal(workbook.status, 200, 'full event collaborators can export the authorized registration workbook');
+    assert.match(workbook.headers.get('content-type'), /spreadsheetml/u);
+    assert.equal(Buffer.from(await workbook.arrayBuffer()).subarray(0,2).toString(), 'PK');
   }
   assert.notEqual(accounts[0].id, accounts[1].id);
   const beforeDeactivation = await f.app.userStore.list();

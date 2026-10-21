@@ -141,6 +141,12 @@ export function createRegistrationConfirmationService({ registrationService, jou
       || latest.record.fields.email !== record.fields.email || latest.record.provenance.kind !== 'public') {
       try { return await recordResult(notice, 'rejected', actorId); } catch { return { status: 'unknown' }; }
     }
+    // An administrator may have paused automatic notices after reservation.
+    // Recheck the durable switch immediately before contacting the provider.
+    const delivery = await target().read();
+    if (!delivery.value.settings.enabled) {
+      try { return await recordResult(notice, 'rejected', actorId); } catch { return { status: 'unknown' }; }
+    }
     const link = capability(registrationId), confirmed = admission.status === 'confirmed';
     const subject = eventFacts.title + (confirmed ? '｜参会名额已确认' : '｜候补登记已保存');
     const text = [record.fields.name + '，你好：', '', confirmed ? '你的参会名额已确认。' : '你的候补登记已保存，目前尚未确认参会名额。',

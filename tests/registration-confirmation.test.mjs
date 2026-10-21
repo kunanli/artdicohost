@@ -215,6 +215,19 @@ test('uncertain batch reservation replay covers every selected ID and never star
   assert.equal(f.state.messages.length, 0); assert.equal(f.state.confirmationWrites, 1);
 });
 
+test('pausing automatic delivery after reservation still prevents the external request', async () => {
+  const f = fixture(), { saved } = await register(f); let reads = 0, c;
+  const registrationService = { ...f.service, async getAdmissionStatus(id) {
+    const result = await f.service.getAdmissionStatus(id);
+    if (++reads === 2) await c.setSettings({ actor, expectedRevision: 1, operationId: operationId(), enabled: false });
+    return result;
+  } };
+  c = f.confirmation({ registrationService });
+  const receipt = await c.forSavedReceipt({ receipt: saved.receipt });
+  assert.equal(receipt.email.status, 'rejected'); assert.equal(f.state.messages.length, 0);
+  assert.equal((await c.settings({ actor })).automaticEnabled, false);
+});
+
 test('manual batch deadline leaves following recipients explicitly unattempted instead of running past the request budget', async () => {
   const f = fixture(), first = await register(f), second = await register(f); let ticks = 0;
   const c = f.confirmation({ batchTimeoutMs: 1500, monotonicNow: () => ticks++ * 1000 });

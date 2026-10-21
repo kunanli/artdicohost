@@ -40,6 +40,10 @@ jobs:
       - name: Install locked dependencies
         id: install
         run: pnpm install --frozen-lockfile
+      - name: Observe anonymous public content and CORS without credentials or business writes
+        timeout-minutes: 1
+        continue-on-error: true
+        run: node scripts/verify-public-content.mjs --observe
       - name: Check source boundaries
         run: pnpm check:source
       - name: Check types and Astro source

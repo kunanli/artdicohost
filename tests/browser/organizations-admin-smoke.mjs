@@ -17,7 +17,7 @@ async function imageInput(page){await page.evaluate(async()=>{
   const canvas=document.createElement('canvas');canvas.width=3200;canvas.height=1200;const ctx=canvas.getContext('2d'),pixels=ctx.createImageData(canvas.width,canvas.height);let seed=42;
   for(let i=0;i<pixels.data.length;i+=4){seed=(1664525*seed+1013904223)>>>0;pixels.data[i]=seed&255;pixels.data[i+1]=seed>>>8&255;pixels.data[i+2]=seed>>>16&255;pixels.data[i+3]=255;}
   ctx.putImageData(pixels,0,0);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.93)),transfer=new DataTransfer();transfer.items.add(new File([blob],'synthetic-organization.jpg',{type:'image/jpeg'}));const input=document.querySelector('[data-organization-image]');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
-});}
+});await page.locator('[data-organization-image-editor] [data-image-editor-apply]').click();}
 async function scenario(mode){
   const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage(),images=new Map(),uploads=[];
   let content=createInitialContent(),revision=0,published=null,saveCount=0,publishCount=0,loggedOut=false,unknownSaved=false,prefillCount=0;

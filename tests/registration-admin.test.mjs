@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { COLLABORATOR_ROLES } from '../shared/staff-permissions.mjs';
 import { createRegistrationReviewStore, defaultRegistrationReview } from '../functions/registration-admin/store.mjs';
 import { createRegistrationAdminApi } from '../functions/registration-admin/handler.mjs';
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
@@ -27,7 +28,7 @@ function editable(review) { const value = clone(review); delete value.deletionRe
 const request = (path, { method = 'GET', role = 'superadmin', csrf = 'synthetic-csrf', origin = method === 'GET' ? undefined : 'https://api.artdico.host', body, headers = {} } = {}) =>
   new Request('https://api.artdico.host' + path, { method, headers: { Cookie: role, ...(origin ? { Origin: origin } : {}), 'X-CSRF-Token': csrf,
     ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers }, ...(body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body) }) });
-const auth = { authenticate: async request => ({ user: { id: 'synthetic-staff', roles: [request.headers.get('cookie') ?? 'editor'] }, csrfToken: 'synthetic-csrf' }) };
+const auth = { authenticate: async request => ({ user: { id: 'synthetic-staff', roles: (request.headers.get('cookie') ?? 'editor').split(',') }, csrfToken: 'synthetic-csrf' }) };
 async function rejects(promise, code) { await assert.rejects(promise, error => error.code === code && !error.message.includes(PRIVATE) && !error.cause); }
 
 test('registration reviewer and superadmin roles require explicit account configuration and retain original roles', () => {
@@ -140,6 +141,21 @@ test('HTTP encoding, duplicate/unknown filters and storage failures never expose
   f.objects.setFailure('get');
   const response = await api(request('/api/admin/registrations')); assert.equal(response.status, 503); assert.doesNotMatch(await response.text(), /SYNTHETIC_PRIVATE_PROVIDER_DETAIL|cms\/v1/u);
   assert.equal((await createRegistrationAdminApi()(request('/api/admin/registrations'))).status, 503);
+});
+
+test('full event operators can export contact CSV but cannot request privacy deletion or grant partial roles export authority', async () => {
+  const f = fixture(), api = createRegistrationAdminApi({ enabled: true, auth, store: f.store() });
+  for (let mask = 0; mask < 15; mask++) {
+    const role = COLLABORATOR_ROLES.filter((_, index) => mask & 1 << index).join(',');
+    assert.equal((await api(request('/api/admin/registrations/export', { method: 'POST', role, body: { expectedRevision: 0, includeContact: true } }))).status, 403);
+  }
+  assert.equal(f.objects.calls.length, 0);
+  const role = COLLABORATOR_ROLES.join(',');
+  const exported = await api(request('/api/admin/registrations/export', { method: 'POST', role, body: { expectedRevision: 0, includeContact: true } }));
+  assert.equal(exported.status, 200); assert.match(await exported.text(), /synthetic@example.invalid/u);
+  const before = f.objects.calls.length;
+  assert.equal((await api(request(`/api/admin/registrations/${A}/deletion-request`, { method: 'POST', role, body: { expectedRevision: 1, reason: 'synthetic request' } }))).status, 403);
+  assert.equal(f.objects.calls.length, before);
 });
 
 test('staff-assisted provenance remains distinct and malformed stored consent or audit data fails closed', async () => {

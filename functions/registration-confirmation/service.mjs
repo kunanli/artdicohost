@@ -4,12 +4,13 @@ import { plainObject, own, parseTimestamp } from '../registration-api/policy.mjs
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { createConfirmationTokens } from './tokens.mjs';
 import { createConfirmationRepository, canonicalConfirmationKind, confirmationNoticeId, confirmationRequestHash, validConfirmationOperation, MAX_CONFIRMATION_BATCH } from './repository.mjs';
+import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 
 const SITE = 'https://artdico.host';
 const ID = /^[A-Za-z0-9_-]{43}$/u;
 const STATUS = ['pending_review', 'confirmed', 'waitlisted', 'rejected', 'withdrawn'];
 const actorValid = actor => typeof own(actor, 'id') === 'string' && /^[A-Za-z0-9_-]{1,80}$/u.test(actor.id)
-  && Array.isArray(own(actor, 'roles')) && actor.roles.includes('superadmin');
+  && canManageEventOperations(actor);
 const automaticActor = 'system-confirmation';
 const stateOf = notice => notice?.status === 'reserved' ? 'unknown' : notice?.status;
 const conflict = error => error instanceof CloudContentError && error.code === 'WRITE_CONFLICT' && error.status === 409;

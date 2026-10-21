@@ -2,6 +2,7 @@ import { equalToken } from '../content-api/auth.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { RegistrationAdminError, isRegistrationAdminError } from './errors.mjs';
 import { registrationFilters } from './store.mjs';
+import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 
 const ORIGIN = 'https://api.artdico.host';
 const MAX_BODY = 32 * 1024;
@@ -40,7 +41,7 @@ async function body(request) {
 }
 
 /** Route only /api/admin/registrations to this boundary; share the production auth instance. */
-export function createRegistrationAdminApi({ enabled = false, auth, store, canExport = user => user.roles.includes('superadmin'), onWithdrawalCommitted } = {}) {
+export function createRegistrationAdminApi({ enabled = false, auth, store, canExport = canManageEventOperations, onWithdrawalCommitted } = {}) {
   if (typeof enabled !== 'boolean' || typeof canExport !== 'function' || onWithdrawalCommitted !== undefined && typeof onWithdrawalCommitted !== 'function') throw new TypeError('报名审核配置无效。');
   if (enabled && (typeof auth?.authenticate !== 'function' || !['list', 'detail', 'saveReview', 'exportCsv', 'requestDeletion'].every(name => typeof store?.[name] === 'function'))) throw new TypeError('报名审核依赖未配置。');
   async function afterCommit(result, registrationId, actor) {
@@ -87,7 +88,7 @@ export function createRegistrationAdminApi({ enabled = false, auth, store, canEx
         keys(input, ['expectedRevision', 'filters', 'includeContact'], ['expectedRevision']);
         const includeContact = input.includeContact ?? false;
         if (typeof includeContact !== 'boolean') failure('INVALID_REQUEST');
-        if (includeContact && !session.user.roles.includes('superadmin')) failure('FORBIDDEN');
+        if (includeContact && !canManageEventOperations(session.user)) failure('FORBIDDEN');
         const result = await store.exportCsv(input.expectedRevision, input.filters ?? {}, session.user.id, { includeContact });
         return new Response(result.csv, { headers: { ...SECURITY, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="artdico-registration-review.csv"', 'x-review-revision': String(result.revision) } });
       }

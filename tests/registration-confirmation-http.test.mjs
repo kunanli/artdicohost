@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createRegistrationConfirmationApi } from '../functions/registration-confirmation/handler.mjs';
 import { ConfirmationError } from '../functions/registration-confirmation/service.mjs';
 import { CloudContentError } from '../functions/cloud-content/errors.mjs';
+import { COLLABORATOR_ROLES } from '../shared/staff-permissions.mjs';
 
 const API = 'https://api.artdico.host', SITE = 'https://artdico.host', csrf = 's'.repeat(43);
 function fixture() {
@@ -43,7 +44,7 @@ test('foreign or missing origins, query tokens and wrong public methods do not r
   assert.equal(f.state.readCalls, 0); assert.equal(f.state.authCalls, 0); assert.deepEqual(f.state.writes, []);
 });
 
-test('superadmin and CSRF boundaries run before settings reads, recipient dispatch or bounded body consumption', async () => {
+test('full operations and CSRF boundaries run before settings reads, recipient dispatch or bounded body consumption', async () => {
   const f = fixture(); f.state.actor = null;
   assert.equal((await f.handle(req('/api/admin/registration-confirmation/settings', { origin: API, method: 'GET' }))).status, 401);
   f.state.actor = { id: 'synthetic-editor', roles: ['editor', 'outreach', 'reviewer'] };
@@ -53,6 +54,17 @@ test('superadmin and CSRF boundaries run before settings reads, recipient dispat
   assert.equal((await f.handle(req('/api/admin/registration-confirmation/settings', { origin: API, method: 'PUT', input: { enabled: true } }))).status, 403);
   assert.equal((await f.handle(req('/api/admin/registration-confirmation/settings', { origin: SITE, method: 'GET' }))).status, 403);
   assert.equal(f.state.readCalls, 0); assert.deepEqual(f.state.writes, []);
+});
+
+test('only the full collaborator preset gains confirmation settings and explicit dispatch at the HTTP boundary', async () => {
+  for (let mask = 0; mask < 16; mask++) {
+    const f = fixture(); f.state.actor = { id: 'synthetic-collaborator', roles: COLLABORATOR_ROLES.filter((_, index) => mask & 1 << index) };
+    const permitted = mask === 15 ? 200 : 403;
+    assert.equal((await f.handle(req('/api/admin/registration-confirmation/settings', { origin: API, method: 'GET' }))).status, permitted);
+    assert.equal((await f.handle(req('/api/admin/registration-confirmation/settings', { origin: API, method: 'PUT', input: { expectedRevision: 0, operationId: 'o'.repeat(43), enabled: true }, headers: { 'x-csrf-token': csrf } }))).status, permitted);
+    assert.equal((await f.handle(req('/api/admin/registration-confirmation/dispatch', { origin: API, input: { expectedRevision: 1, operationId: 'p'.repeat(43), registrationIds: ['a'.repeat(43)] }, headers: { 'x-csrf-token': csrf } }))).status, permitted);
+    assert.equal(f.state.readCalls, mask === 15 ? 1 : 0); assert.equal(f.state.writes.length, mask === 15 ? 2 : 0);
+  }
 });
 
 test('authorized settings and exact dispatch bodies receive only the trusted authenticated actor', async () => {

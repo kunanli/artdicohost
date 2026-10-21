@@ -2,6 +2,7 @@ import { equalToken } from '../content-api/auth.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { GroupInviteError } from './group-invite.mjs';
 import { plainObject } from './policy.mjs';
+import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 
 const SECURITY = { 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
 const MAX_BODY = 720 * 1024;
@@ -67,7 +68,7 @@ export function createGroupInviteApi({ service, auth, apiOrigin = 'https://api.a
       if (preview && !['GET', 'HEAD'].includes(request.method) || root && !['GET', 'PUT', 'POST'].includes(request.method)) throw rejected('METHOD_NOT_ALLOWED', 405, '接口方法不被允许。');
       if (!service || !auth || typeof auth.authenticate !== 'function') throw rejected();
       const session = await auth.authenticate(request);
-      if (!Array.isArray(session?.user?.roles) || !session.user.roles.includes('superadmin')) throw rejected('FORBIDDEN', 403, '仅管理员可管理入群码。');
+      if (!canManageEventOperations(session?.user)) throw rejected('FORBIDDEN', 403, '当前账号没有管理入群码的权限。');
       if (['PUT', 'POST'].includes(request.method)) {
         if (origin !== apiOrigin || !equalToken(request.headers.get('x-csrf-token'), session.csrfToken)) throw rejected('CSRF_REJECTED', 403, '安全校验未通过，请重新载入后台。');
         const input = await body(request);
@@ -76,7 +77,7 @@ export function createGroupInviteApi({ service, auth, apiOrigin = 'https://api.a
         if (request.signal.aborted) throw rejected();
         return json(value);
       }
-      return preview ? image(await service.adminImage()) : json(await service.adminRead());
+      return preview ? image(await service.adminImage(session.user)) : json(await service.adminRead(session.user));
     } catch (error) {
       if (error instanceof RequestFailure || error instanceof GroupInviteError) return json({ error: { code: error.code, message: error.message } }, error.status);
       // Only the fixed authentication failure shape may leave a trusted auth dependency.

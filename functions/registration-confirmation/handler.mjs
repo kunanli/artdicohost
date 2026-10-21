@@ -2,6 +2,7 @@ import { equalToken } from '../content-api/auth.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { plainObject } from '../registration-api/policy.mjs';
 import { ConfirmationError } from './service.mjs';
+import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 
 const SECURITY = { 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
 const MAX_BODY = 16 * 1024;
@@ -72,7 +73,7 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
       if (typeof auth?.authenticate !== 'function' || !service) reject('CONFIRMATION_UNAVAILABLE', 503);
       const session = await auth.authenticate(request);
       if (!session?.user) reject('AUTH_REQUIRED', 401);
-      if (!Array.isArray(session.user.roles) || !session.user.roles.includes('superadmin')) reject('FORBIDDEN', 403);
+      if (!canManageEventOperations(session.user)) reject('FORBIDDEN', 403);
       if (request.method === 'GET') return json(await service.settings({ actor: session.user }));
       if (origin !== apiOrigin || !equalToken(request.headers.get('x-csrf-token'), session.csrfToken)) reject('CSRF_REJECTED', 403);
       const input = await body(request);
@@ -88,7 +89,7 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         code: error.code, message: error.code === 'AUTH_REQUIRED' ? '请先登录后台。' : '当前账号没有权限。' } }, error.code === 'AUTH_REQUIRED' ? 401 : 403);
       const safe = error instanceof ConfirmationError ? error : new ConfirmationError();
       const messages = { CONFIRMATION_NOT_FOUND: '确认链接无效或已到期，请联系工作人员核对。', AUTH_REQUIRED: '请先登录后台。',
-        FORBIDDEN: '仅管理员可管理确认通知。', ORIGIN_REJECTED: '请求来源不被允许。', CSRF_REJECTED: '安全校验未通过，请重新读取后台。',
+        FORBIDDEN: '当前账号没有管理确认通知的权限。', ORIGIN_REJECTED: '请求来源不被允许。', CSRF_REJECTED: '安全校验未通过，请重新读取后台。',
         INVALID_REQUEST: '请求格式无效。', UNSUPPORTED_MEDIA_TYPE: '请发送 UTF-8 JSON。', BODY_TOO_LARGE: '请求超过长度限制。',
         REQUEST_TIMEOUT: '请求读取未完成。', REVISION_CONFLICT: '通知记录已变化，请重新读取后核对。', METHOD_NOT_ALLOWED: '此接口不支持该方法。', NOT_FOUND: '接口不存在。' };
       return json({ error: { code: safe.code, message: messages[safe.code] ?? '确认资料暂时无法核对，请稍后重试。' } }, safe.status);

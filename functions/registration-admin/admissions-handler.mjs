@@ -1,5 +1,6 @@
 import { equalToken } from '../content-api/auth.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
+import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 
 const ORIGIN = 'https://api.artdico.host';
 const ROOT = '/api/admin/admissions';
@@ -106,7 +107,7 @@ export function createAdmissionsApi({ enabled = false, auth, service, onCommitte
         if (!snapshot(result)) fail(resultFailure(result));
         return json(result);
       }
-      if (route[3] && !roles.includes('superadmin')) fail('FORBIDDEN');
+      if (route[3] && !canManageEventOperations(session.user)) fail('FORBIDDEN');
       if (!equalToken(request.headers.get('x-csrf-token'), session.csrfToken)) fail('CSRF_REJECTED');
       const input = await inputBody(request);
       if (!exact(input, ['expectedRevision', 'operationId', ...route[2]]) || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0

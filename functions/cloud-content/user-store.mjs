@@ -82,7 +82,9 @@ export function createCloudUserStore({ journal, bootstrapUsers, now = () => Date
           action: existing ? active ? 'update_user' : 'deactivate_user' : 'create_user' }] };
       try {
         const ack = await journal.commit(state.cursor, next);
-        if (!isDeepStrictEqual(ack.value, next)) fail();
+        if (!isDeepStrictEqual(ack?.value, next) || ack?.cursor?.version !== state.cursor.version + 1
+          || ack.cursor.version !== next.revision || !Number.isSafeInteger(ack.cursor.position)
+          || ack.cursor.position <= state.cursor.position || typeof ack.cursor.hash !== 'string' || !/^[a-f0-9]{64}$/u.test(ack.cursor.hash)) fail();
       } catch (error) {
         if (error instanceof CloudContentError && error.code === 'WRITE_CONFLICT') fail('REVISION_CONFLICT', 409);
         fail();

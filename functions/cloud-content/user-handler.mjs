@@ -1,5 +1,6 @@
 import { equalToken } from '../content-api/auth.mjs';
 import { CloudContentError } from './errors.mjs';
+import { canManageAccounts } from '../../shared/staff-permissions.mjs';
 
 const ORIGIN = 'https://api.artdico.host';
 const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
@@ -16,7 +17,7 @@ export function createCloudUserApi({ auth, store, enabled = false } = {}) {
       const origin = request.headers.get('origin');
       if (origin !== null && origin !== ORIGIN || request.method === 'POST' && origin !== ORIGIN) reject('ORIGIN_REJECTED', 403);
       const session = await auth.authenticate(request);
-      if (!session.user.roles.includes('superadmin')) reject('FORBIDDEN', 403);
+      if (!canManageAccounts(session?.user)) reject('FORBIDDEN', 403);
       if (request.method === 'GET') return json(await store.list());
       if (!equalToken(request.headers.get('x-csrf-token'), session.csrfToken)) reject('CSRF_REJECTED', 403);
       if (!/^application\/json(?:\s*;\s*charset=utf-8)?\s*$/iu.test(request.headers.get('content-type') ?? '') || ![null, 'identity'].includes(request.headers.get('content-encoding'))) reject('INVALID_REQUEST', 415);

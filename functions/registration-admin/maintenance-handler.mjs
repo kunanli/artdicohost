@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import { equalToken } from '../content-api/auth.mjs';
+import { canRecoverSystem } from '../../shared/staff-permissions.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { createEncryptedObjectBackup, collectJournalBackupKeys, inspectEncryptedObjectBackup, restoreEncryptedBackupIsolated } from './maintenance.mjs';
 
@@ -137,7 +138,7 @@ export function createMaintenanceApi({ enabled = false, auth, objects, journalPr
       const origin = request.headers.get('origin');
       if (origin !== null && origin !== ORIGIN || request.method === 'POST' && origin !== ORIGIN) fail('ORIGIN_REJECTED');
       const session = await auth.authenticate(request);
-      if (!session?.user?.roles?.includes('superadmin')) fail('FORBIDDEN');
+      if (!canRecoverSystem(session?.user)) fail('FORBIDDEN');
       if (request.method === 'POST' && !equalToken(request.headers.get('x-csrf-token'), session.csrfToken)) fail('CSRF_REJECTED');
       if (url.pathname === '/api/admin/maintenance' && request.method === 'GET') return json({ enabled: true,
         backup: { available: true, maxEncryptedBytes: MAX_BROWSER_BACKUP_BYTES, confirmation: 'CREATE_ENCRYPTED_BACKUP', journalCount: journalPrefixes.length, accountDirectoryIncluded: false },

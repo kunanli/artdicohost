@@ -611,7 +611,7 @@ $('[data-profile-form]').addEventListener('submit',event=>{
     const result=await request(path,{method,body});
     if(!result.contact||!Number.isSafeInteger(result.revision)||result.revision<=revision||id&&result.contact.id!==id)throw new Error('联系人保存回执无法核对，请先手动核对云端。');
     await profileDraft.acknowledge();updateContact(result);resetProfile();announce(id?'基本资料已保存；来源答案、联络许可与跟进安排保持独立。':'联系人已保存；尚未生成邀请、发出消息或确认出席。');
-  }catch(error){if(user&&error.status>=400&&error.status<500){await profileDraft?.acknowledge();profilePending=false;}if(user){$('[data-profile-error]').textContent=error.message;$('[data-profile-error]').hidden=false;$('[data-profile-error]').focus();}throw error;}});
+  }catch(error){if(user&&error.status>=400&&error.status<500){await profileDraft?.rejectPending();profilePending=false;}else if(user)await profileDraft?.markUnknown().catch(()=>{});if(user){$('[data-profile-error]').textContent=error.message;$('[data-profile-error]').hidden=false;$('[data-profile-error]').focus();}throw error;}});
 });
 $('[data-contact-form]').addEventListener('input',()=>{operationsDirty=true;});
 for(const button of document.querySelectorAll('[data-contact-close]'))button.addEventListener('click',closeContact);
@@ -628,7 +628,7 @@ $('[data-contact-form]').addEventListener('submit',event=>{event.preventDefault(
     await contactDraft.acknowledge();contactDraft.close();contactDraft=null;updateContact(receipt);operationsDirty=false;uncertainSave=null;operationRevision=null;$('[data-contact-dialog]').close();
     const nextIntent=features.intentInvitations?await request('/api/admin/intent-invitations').catch(()=>null):null;if(generation!==sessionGeneration)return;intentState=nextIntent;render();
     announce('回复、职责与组织安排已保存。'+(receipt.admission?ADMISSION_LABELS[receipt.admission.status]+'。':'正式名额仍以报名审核记录为准。')+(operations.responseStatus==='declined'?'原报名及名额不会自动撤回，请到报名审核处理。':'')+'没有发送邀请或邮件。');
-  }catch(error){if(generation!==sessionGeneration)return;if(error.status>=400&&error.status<500)await contactDraft?.acknowledge();operationsDirty=true;if(!error.status||error.status>=500){uncertainSave={contactId,expectedRevision,operations};$('[data-contact-save-unknown]').hidden=false;}$('[data-contact-error]').textContent=error.message;$('[data-contact-error]').hidden=false;$('[data-contact-error]').focus();throw error;}
+  }catch(error){if(generation!==sessionGeneration)return;if(error.status>=400&&error.status<500)await contactDraft?.rejectPending();else await contactDraft?.markUnknown().catch(()=>{});operationsDirty=true;if(!error.status||error.status>=500){uncertainSave={contactId,expectedRevision,operations};$('[data-contact-save-unknown]').hidden=false;}$('[data-contact-error]').textContent=error.message;$('[data-contact-error]').hidden=false;$('[data-contact-error]').focus();throw error;}
 });});
 $('[data-contact-membership-add]').addEventListener('click',()=>{if(busy||!relationships||uncertainSave)return;membershipRow();membershipEdited=true;operationsDirty=true;contactDraft?.schedule();lock();});
 $('[data-contact-check-save]').addEventListener('click',()=>action(async()=>{

@@ -24,3 +24,12 @@ test('local operation scopes bind the current complete role set before any read'
   assert.notEqual(operationsDraftPage('review',['reviewer']),operationsDraftPage('review',['editor','publisher','outreach','reviewer']));
   for(const roles of [[],['reviewer','reviewer'],['unknown'],null])assert.throws(()=>operationsDraftPage('review',roles),/权限/u);
 });
+
+test('atomic known rejection derives only original typed fields and refuses historical uncertainty',async()=>{
+  const{operationsDraftPolicy}=await import('../src/lib/operations-draft-fields.mjs');let firstAttempt=true;
+  const policy=operationsDraftPolicy(()=>true,()=>firstAttempt),value={fields:{name:'synthetic typed value'},path:'/api/admin/contacts',method:'POST',payloadJson:'{}',uncertain:false};
+  assert.deepEqual(policy.rejectPending(value),{fields:value.fields});
+  assert.equal(policy.rejectPending({...value,uncertain:true}),null);const legacy={...value};delete legacy.uncertain;assert.equal(policy.rejectPending(legacy),null);
+  firstAttempt=false;assert.equal(policy.rejectPending(value),null,'a refreshed original operation is unknown even if its old flag says false');
+  assert.equal(policy.validate({fields:value.fields},{kind:'editing'}),true);assert.equal(policy.validate({...value,uncertain:'false'},{kind:'pending_submission'}),false);
+});

@@ -39,3 +39,11 @@ export function operationsDraftPage(page,roles){
   if(typeof page!=='string'||!Array.isArray(roles)||!roles.length||roles.length>5||new Set(roles).size!==roles.length||roles.some(role=>!known.includes(role)))throw new Error('工作人员权限无法核对。');
   return page+':roles='+[...roles].sort().join(',');
 }
+
+/** Pending requests can return to editing only after their first definite rejection. */
+export function operationsDraftPolicy(validate=()=>true,canReject=()=>false){
+  const policy={fields:['fields','path','method','payloadJson','uncertain'],pendingFields:['path','method','payloadJson'],jsonFields:['payloadJson'],validate(value,{kind}){
+    return plain(value)&&validDraftFields(value.fields)&&validate(value.fields)&&(kind==='editing'?Object.keys(value).every(key=>key==='fields'):typeof value.path==='string'&&/^\/api\/admin\/[A-Za-z0-9_/?=&%-]+$/u.test(value.path)&&['POST','PUT','PATCH'].includes(value.method)&&typeof value.payloadJson==='string'&&value.payloadJson.length<=500000&&(!Object.hasOwn(value,'uncertain')||typeof value.uncertain==='boolean'));
+  },rejectPending(value){return canReject()&&value?.uncertain===false&&policy.validate(value,{kind:'pending_submission'})?{fields:value.fields}:null;}};
+  return policy;
+}

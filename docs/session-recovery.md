@@ -2,7 +2,7 @@
 
 ## 当前开发
 
-后台九个内容独立页、四个设置独立页、直接保存与离页防呆已实际发布[PR41](https://github.com/kunanli/artdicohost/pull/41)。现在接续**公开可见性与游戏／作品**，随后补人员与邀约跟进人固定彩色姓名标签。[完整计划](games-publication-plan.md)。不自动授权、发布真实草稿、寄信或改名额；所有测试合成隔离。
+后台九个内容独立页、四个设置独立页、直接保存与离页防呆已实际发布[PR41](https://github.com/kunanli/artdicohost/pull/41)。现在接续**公开可见性与游戏／作品**，随后补人员与邀约跟进人固定彩色姓名标签。[完整计划](games-publication-plan.md)。不自动授权、发布真实草稿、寄信或改名额；所有测试合成隔离。root分支`feat/publication-games`，主功能及最后owner色标已集成，尚待冻结检查／原生／准确封装／PR与实际发布；[本阶段证据](games-publication-release-2026-10-21.md)。不要把各隔离worker的source-native或定向测试当已上线。
 
 ## 当前发布状态
 

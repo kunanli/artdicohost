@@ -1,8 +1,8 @@
 # 开发接续与验收计划
 
-## 当前开发：后台快捷导航（2026-10-21）
+## 当前发布：后台快捷导航（2026-10-21，部署中）
 
-`feat/admin-quick-navigation` 从组织上线后的最终证据分支接续；实际线上基线仍为下方 PR #30 的 main `a0a02e0`。本阶段实现四个后台工作区共用左侧导航、活动编辑页八个区块直达及手机收合菜单，操作见[后台快捷导航](staff-navigation.md)。开发中状态不代表已上线；继续核对该分支的浏览器回归、准确 PR／main CI 及正常发布证据。没有操作真实组织、报名、名单、邮件或 Wallet 凭证。
+[PR #31](https://github.com/kunanli/artdicohost/pull/31) 已合并 main **`b8d6818bc6da2c4d298d9f04678f90b5e5b5ffc1`**，本机完整 802 项、准确 PR 检查 39531005132 及导航浏览器回归通过。[正式运行 39531376320](https://github.com/kunanli/artdicohost/actions/runs/39531376320) 尚在进行，继续核对三个 job 及实际 FC／私有 OSS／公开 HTTPS；不能在此阶段声称上线。文档分支 `docs/navigation-release-evidence-2026-10-21` 保存检查点，勿重新实现或合并。操作见[后台快捷导航](staff-navigation.md)，来源与证据见[发布记录](navigation-release-2026-10-21.md)。没有操作真实组织、报名、名单、邮件或 Wallet 凭证。
 
 ## 当前阶段：独立参与组织（2026-10-21，已上线）
 

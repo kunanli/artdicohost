@@ -107,7 +107,7 @@ async function seedLegacy(f){
 async function navigationCases(browser,errors,reports){
   {
     const f=await fixture(browser,errors);
-    for(const key of KEYS){await open(f,key);assert.equal(new URL(f.page.url()).pathname,routeFor(key));assert.equal(await f.page.locator('#artdico-admin').getAttribute('data-content-page'),key);assert.equal(await f.page.locator('[data-content-panel]').count(),9);assert.equal(await f.page.locator('[data-content-panel]:visible').count(),1);assert.equal(await f.page.locator('[data-staff-section-link][aria-current=page]').getAttribute('href'),routeFor(key));assert.ok((await f.page.locator('[data-content-page-title]').textContent()).trim());await reload(f);assert.equal(await f.page.locator('[data-content-panel='+key+']').isVisible(),true);}
+    for(const key of KEYS){await open(f,key);assert.equal(new URL(f.page.url()).pathname,routeFor(key));assert.equal(await f.page.locator('#artdico-admin').getAttribute('data-content-page'),key);assert.equal(await f.page.locator('[data-content-panel]').count(),9);assert.equal(await f.page.locator('[data-content-panel]:visible').count(),1);assert.equal(await f.page.locator('[data-staff-section-link][aria-current=page]').getAttribute('href'),routeFor(key));const title=(await f.page.locator('[data-content-page-title]').textContent()).trim();assert.ok(title);assert.ok((await f.page.title()).includes(title),'canonical alias updates the browser title for the active page');await reload(f);assert.equal(await f.page.locator('[data-content-panel='+key+']').isVisible(),true);}
     assert.deepEqual(saves(f),[]);await noSideEffects(f);await f.close();reports.push({group:'navigation',nineContentDirectUrlsReloadAndOneVisiblePanel:true,noNavigationWrites:true});
   }
   {

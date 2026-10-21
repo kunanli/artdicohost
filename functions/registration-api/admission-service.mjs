@@ -68,6 +68,8 @@ export function createAdmissionOperations({ repository, eventId, current, policy
     },
     setAdmissionSettings: input => mutate('settings', input, own(input, 'settings'), true),
     setAdmissionKind: input => mutate('kind', input, { registrationId: own(input, 'registrationId'), kind: own(input, 'kind') }, true),
+    approveApplication: input => mutate('approve', input, { registrationId: own(input, 'registrationId') }),
+    rejectApplication: input => mutate('reject', input, { registrationId: own(input, 'registrationId') }),
     withdrawAdmission: input => mutate('withdraw', input, { registrationId: own(input, 'registrationId') }),
     promoteAdmissions: input => mutate('promote', input, {}),
     saveAdmissionTeam: input => mutate('team_save', input, own(input, 'team')),

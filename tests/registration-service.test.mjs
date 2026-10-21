@@ -90,14 +90,16 @@ test('same-key changed content conflicts, and saved replay survives cutoff/token
   assert.equal((await f.service().issueToken({ eventId: EVENT, origin: ORIGIN, idempotencyKey: makeKey() })).outcome, 'closed');
 });
 
-test('capacity is one atomic index gate across concurrent different keys', async () => {
+test('new public applications do not consume confirmed seat capacity', async () => {
   const f = fixture({ capacity: 1 }), a = f.service(), b = f.service();
   const inputs = await Promise.all([submission(a), submission(b)]);
   const results = await Promise.all([a.submit(inputs[0]), b.submit(inputs[1])]);
-  assert.deepEqual(results.map(value => value.outcome).sort(), ['closed', 'created']);
-  assert.equal((await a.repository.list()).registrations.length, 1);
-  const closed = await a.metadata();
-  assert.equal(closed.enabled, false); assert.equal(closed.reason, 'closed'); assert.equal(closed.privacy.contactEmail, policy().privacy.contactEmail);
+  assert.deepEqual(results.map(value => value.outcome), ['created', 'created']);
+  assert.deepEqual(results.map(value => value.receipt.admissionStatus), ['pending_review', 'pending_review']);
+  assert.equal((await a.repository.list()).registrations.length, 2);
+  const open = await a.metadata();
+  assert.equal(open.enabled, true); assert.equal(open.attendeeReviewRequired, true);
+  assert.equal(open.admissions.confirmedCount, 0); assert.equal(open.admissions.pendingReviewCount, 2);
 });
 
 test('a lost index append ACK returns unavailable once and the same key later replays proven storage', async () => {
@@ -146,7 +148,8 @@ test('staff intake preserves partial known facts, source and operator without fa
   assert.equal((await service.submitStaffRegistration({ ...input, actor: { id: 'editor', roles: ['editor'] } })).outcome, 'forbidden');
   assert.equal((await service.submitStaffRegistration({ ...input, sourceContactId: 'other', input: { ...input.input, fields: { name: '缺联络' } } })).outcome, 'invalid');
   assert.equal((await service.submit(await submission(service))).outcome, 'created');
-  assert.equal((await service.submitStaffRegistration({ ...input, sourceContactId: 'third' })).outcome, 'closed');
+  assert.equal((await service.submitStaffRegistration({ ...input, sourceContactId: 'third' })).outcome, 'created');
+  assert.equal((await service.submitStaffRegistration({ ...input, sourceContactId: 'fourth' })).outcome, 'closed');
 });
 
 test('public metadata and token endpoints project only approved configuration and never private values', async () => {
@@ -159,7 +162,7 @@ test('public metadata and token endpoints project only approved configuration an
   const token = await api(new Request('https://api.example.invalid/api/registration/token', { method: 'POST', headers: { origin: ORIGIN, 'content-type': 'application/json' }, body: JSON.stringify({ eventId: EVENT, idempotencyKey }) }));
   assert.equal(token.status, 200); const issued = await token.json(); assert.deepEqual(Object.keys(issued).sort(), ['eventId', 'expiresAt', 'submissionToken']);
   const response = await api(new Request('https://api.example.invalid/api/registrations', { method: 'POST', headers: { origin: ORIGIN, 'content-type': 'application/json', 'idempotency-key': idempotencyKey, 'x-registration-token': issued.submissionToken }, body: JSON.stringify(payload()) }));
-  assert.equal(response.status, 201); const saved = await response.json(); assert.equal(saved.status, 'registered'); assert.equal(JSON.stringify(saved).includes('PRIVATE-'), false);
+  assert.equal(response.status, 201); const saved = await response.json(); assert.equal(saved.status, 'pending_review'); assert.equal(JSON.stringify(saved).includes('PRIVATE-'), false);
   assert.equal(response.headers.get('cache-control'), 'no-store'); assert.equal(response.headers.has('access-control-allow-credentials'), false);
   const foreign = await api(new Request('https://api.example.invalid/api/registration/config', { headers: { origin: 'https://foreign.example.invalid' } }));
   assert.equal(foreign.status, 403); assert.equal(foreign.headers.has('access-control-allow-origin'), false);
@@ -167,7 +170,7 @@ test('public metadata and token endpoints project only approved configuration an
 
 test('disabled/incomplete policies and malformed new submissions cannot be unlocked by browser flags', async () => {
   const f = fixture({ policy: { enabled: false, eventId: EVENT } }), service = f.service();
-  assert.deepEqual(await service.metadata(), { enabled: false, reason: 'unavailable' });
+  assert.deepEqual(await service.metadata(), { enabled: false, reason: 'unavailable', attendeeReviewRequired: true });
   assert.equal((await service.issueToken({ eventId: EVENT, origin: ORIGIN, idempotencyKey: makeKey() })).outcome, 'closed');
   assert.equal([...f.remote.stored.keys()].length, 0);
   const ready = fixture(), active = ready.service(), invalid = await submission(active);
@@ -188,9 +191,9 @@ test('withdrawn or deletion-requested review state suppresses receipt and group-
   let withdrawn = false, inviteCalls = 0;
   const f = fixture({ isWithdrawn: async () => withdrawn, groupInviteProvider: async () => { inviteCalls++; return null; } });
   const service = f.service(), input = await submission(service);
-  assert.equal((await service.submit(input)).outcome, 'created'); assert.equal(inviteCalls, 1);
+  assert.equal((await service.submit(input)).outcome, 'created'); assert.equal(inviteCalls, 0);
   withdrawn = true;
-  assert.deepEqual(await service.submit(input), { outcome: 'withdrawn' }); assert.equal(inviteCalls, 1);
+  assert.deepEqual(await service.submit(input), { outcome: 'withdrawn' }); assert.equal(inviteCalls, 0);
   assert.deepEqual(await f.service({ isWithdrawn: async () => { throw new Error('PRIVATE-SYNTHETIC-REVIEW-FAILED'); } }).submit(input), { outcome: 'unavailable' });
   assert.deepEqual(await f.service({ isWithdrawn: async () => 'unknown' }).submit(input), { outcome: 'unavailable' });
 });
@@ -198,7 +201,8 @@ test('withdrawn or deletion-requested review state suppresses receipt and group-
 test('approved notice and rights contact remain public after cutoff, capacity closure or temporary storage failure', async () => {
   const f = fixture({ capacity: 1 }), service = f.service();
   assert.equal((await service.submit(await submission(service))).outcome, 'created');
-  for (const closedService of [service, f.service({ policy: { ...policy(), enabled: false } })]) {
+  assert.equal((await service.metadata()).enabled, true);
+  for (const closedService of [f.service({ policy: { ...policy(), enabled: false } })]) {
     const config = await closedService.metadata();
     assert.equal(config.enabled, false); assert.equal(config.reason, 'closed');
     assert.equal(config.privacy.rightsRequest, policy().privacy.rightsRequest);
@@ -219,7 +223,7 @@ test('approved notice and rights contact remain public after cutoff, capacity cl
 test('malformed notice contacts are never published while closed', async () => {
   const config = policy(); config.enabled = false; config.privacy.contactEmail = 'PRIVATE-INVALID-CONTACT';
   const service = fixture({ policy: config }).service();
-  assert.deepEqual(await service.metadata(), { enabled: false, reason: 'unavailable' });
+  assert.deepEqual(await service.metadata(), { enabled: false, reason: 'unavailable', attendeeReviewRequired: true });
   const handle = createRegistrationApi({ allowedOrigins: [ORIGIN], submissionService: { submit: async () => ({ outcome: 'unavailable' }), metadata: async () => ({ ...config, capacity: 300, reason: 'closed' }) } });
   const response = await handle(new Request('https://api.example.invalid/api/registration/config', { headers: { origin: ORIGIN } }));
   assert.equal(response.status, 503); assert.equal(JSON.stringify(await response.json()).includes('PRIVATE-'), false);

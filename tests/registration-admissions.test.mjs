@@ -35,18 +35,31 @@ async function prepare(service, idempotencyKey = key()) {
   assert.equal(token.outcome, 'issued');
   return { origin: ORIGIN, idempotencyKey, submissionToken: token.submissionToken, payload: { eventId: EVENT, fields, consent: { accepted: true, version: policy.privacy.version } } };
 }
-async function register(service) { const input = await prepare(service); return { input, saved: await service.submit(input) }; }
+async function register(service) {
+  const input = await prepare(service), application = await service.submit(input);
+  assert.equal(application.receipt.admissionStatus, 'pending_review');
+  const approved = await mutate(service, 'approveApplication', { registrationId: application.receipt.registrationId });
+  assert.equal(approved.outcome, 'updated');
+  return { input, saved: await service.submit(input) };
+}
 async function mutate(service, method, patch = {}, operationId = key()) {
   const current = await service.getAdmissions({ actor });
   return service[method]({ actor, expectedRevision: current.revision, operationId, ...patch });
 }
 
-test('independent instances race for one actual seat; full waitlist is durably saved and gets no group invite', async () => {
+test('independent approvals race for one actual seat; approved waitlist is durably saved and gets no group invite', async () => {
   const f = fixture({ capacity: 1 }), a = f.service(), b = f.service();
   const inputs = await Promise.all([prepare(a), prepare(b)]);
   const saved = await Promise.all([a.submit(inputs[0]), b.submit(inputs[1])]);
-  assert.deepEqual(saved.map(x => x.receipt.admissionStatus).sort(), ['confirmed', 'waitlisted']);
-  for (const value of saved) { assert.equal(value.outcome, 'created'); assert.equal(value.receipt.committed, true); assert.equal(value.groupInvite === null, value.receipt.admissionStatus === 'waitlisted'); }
+  assert.deepEqual(saved.map(x => x.receipt.admissionStatus), ['pending_review', 'pending_review']);
+  const initial = await a.getAdmissions({ actor });
+  const commands = saved.map(value => ({ actor, expectedRevision: initial.revision, operationId: key(), registrationId: value.receipt.registrationId }));
+  const approvals = await Promise.all([a.approveApplication(commands[0]), b.approveApplication(commands[1])]);
+  assert.deepEqual(approvals.map(value => value.outcome).sort(), ['conflict', 'updated']);
+  const loser = approvals.findIndex(value => value.outcome === 'conflict');
+  const retry = await mutate(a, 'approveApplication', { registrationId: commands[loser].registrationId });
+  assert.equal(retry.people.find(value => value.registrationId === commands[loser].registrationId).status, 'waitlisted');
+  for (const input of inputs) { const value = await a.submit(input); assert.equal(value.outcome, 'replayed'); assert.equal(value.groupInvite === null, value.receipt.admissionStatus === 'waitlisted'); }
   const snapshot = await f.service().getAdmissions({ actor });
   assert.equal(snapshot.summary.confirmedCount, 1); assert.equal(snapshot.summary.waitlistCount, 1); assert.equal(snapshot.summary.totalRegistered, 2);
   assert.equal((await a.metadata()).enabled, true);
@@ -55,7 +68,7 @@ test('independent instances race for one actual seat; full waitlist is durably s
 
 test('staff reserve and crew share total capacity; no name change can overfill the public pool', async () => {
   const f = fixture({ capacity: 3, staffReserve: 1 }), service = f.service();
-  const attendees = await Promise.all([register(service), register(service), register(service)]);
+  const attendees = [await register(service), await register(service), await register(service)];
   const pending = attendees.find(x => x.saved.receipt.admissionStatus === 'waitlisted').saved.receipt.registrationId;
   const result = await mutate(service, 'setAdmissionKind', { registrationId: pending, kind: 'crew' });
   assert.equal(result.outcome, 'updated'); assert.deepEqual(result.promotedIds, [pending]);
@@ -152,12 +165,12 @@ test('manual staff entry uses durable operation provenance and actual partial fa
   assert.equal((await mutate(service, 'setAdmissionSettings', { actor: reviewer, settings: { staffReserve: 0, waitlistEnabled: true } })).outcome, 'forbidden');
 });
 
-test('persisted settings override later constructor defaults; waitlist-off blocks only new full intake', async () => {
+test('persisted settings override constructor defaults; full admission does not close pending application intake', async () => {
   const f = fixture({ capacity: 1 }), service = f.service(); const first = await register(service), second = await register(service);
   await mutate(service, 'setAdmissionSettings', { settings: { staffReserve: 0, waitlistEnabled: false } });
   const restarted = f.service({ waitlistEnabled: true });
-  assert.equal((await restarted.metadata()).enabled, false);
-  assert.equal((await restarted.issueToken({ eventId: EVENT, origin: ORIGIN, idempotencyKey: key() })).outcome, 'closed');
+  assert.equal((await restarted.metadata()).enabled, true);
+  assert.equal((await restarted.issueToken({ eventId: EVENT, origin: ORIGIN, idempotencyKey: key() })).outcome, 'issued');
   const release = await mutate(restarted, 'withdrawAdmission', { registrationId: first.saved.receipt.registrationId });
   assert.deepEqual(release.promotedIds, [second.saved.receipt.registrationId]);
   await mutate(restarted, 'withdrawAdmission', { registrationId: second.saved.receipt.registrationId });
@@ -183,7 +196,7 @@ test('old v1 accepted records remain immutable and readable when the shared admi
   assert.equal((await mutate(service, 'setAdmissionSettings', { settings: { staffReserve: 2, waitlistEnabled: true } })).outcome, 'capacity_conflict');
   const upgraded = await mutate(service, 'setAdmissionSettings', { settings: { staffReserve: 0, waitlistEnabled: true } });
   assert.equal(upgraded.outcome, 'updated'); assert.equal(upgraded.revision, 3);
-  assert.equal((await service.repository.readIndex()).value.schemaVersion, 2);
+  assert.equal((await service.repository.readIndex()).value.schemaVersion, 3);
   assert.deepEqual(f.remote.stored.get(`${prefix}/records/${recordHash}.json`).data, before);
   assert.equal((await service.repository.list()).registrations[0].fields.email, fields.email);
 });

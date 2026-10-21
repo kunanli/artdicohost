@@ -3,13 +3,14 @@ import { own, plainObject, parseTimestamp } from './policy.mjs';
 
 export const MAX_ADMISSION_OPERATIONS = 2000;
 export const MAX_ADMISSION_TEAMS = 100;
-export const ADMISSION_STATUSES = Object.freeze(['confirmed', 'waitlisted', 'withdrawn']);
+export const ADMISSION_STATUSES = Object.freeze(['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected']);
+const LEGACY_STATUSES = ['confirmed', 'waitlisted', 'withdrawn'];
 export const ADMISSION_KINDS = Object.freeze(['attendee', 'crew']);
 const ID = /^[A-Za-z0-9_-]{43}$/u;
 const TEAM_ID = /^t_[A-Za-z0-9_-]{22}$/u;
 const OPERATION = /^[A-Za-z0-9_-]{32,128}$/u;
 const HASH = /^[a-f0-9]{64}$/u;
-const ACTIONS = ['intake', 'staff_intake', 'settings', 'kind', 'withdraw', 'promote', 'team_save', 'team_remove'];
+const ACTIONS = ['intake', 'staff_intake', 'settings', 'kind', 'withdraw', 'promote', 'team_save', 'team_remove', 'approve', 'reject'];
 const exact = (value, names) => plainObject(value) && Reflect.ownKeys(value).length === names.length
   && names.every(name => { const field = Object.getOwnPropertyDescriptor(value, name); return field?.enumerable && Object.hasOwn(field, 'value'); });
 
@@ -28,13 +29,13 @@ export function admissionDefaults({ capacity = 1000, staffReserve = 0, waitlistE
 
 /** A v1 index is interpreted conservatively without writing or changing any immutable person record. */
 export function admissionView(index, defaults) {
-  if (index.schemaVersion === 2) return structuredClone(index);
+  if ([2, 3].includes(index.schemaVersion)) return { ...structuredClone(index), schemaVersion: 3 };
   const requested = admissionDefaults(defaults);
   // A new initial reserve cannot retroactively invalidate historically accepted attendees.
   const settings = { ...requested, staffReserve: Math.min(requested.staffReserve, Math.max(0, requested.capacity - index.entries.length)) };
   const people = Object.fromEntries(index.entries.map((entry, position) => [entry.id,
     { kind: 'attendee', status: 'confirmed', queueNumber: position + 1, changedAt: entry.committedAt }]));
-  const result = { ...structuredClone(index), schemaVersion: 2,
+  const result = { ...structuredClone(index), schemaVersion: 3,
     admissions: { baseRevision: index.revision, settings, people, teams: [], audit: [] } };
   validateAdmissions(result, defaults);
   return result;
@@ -49,14 +50,16 @@ export function admissionSummary(index) {
   return { ...settings, confirmedCount: confirmed.length, attendeeConfirmedCount, crewConfirmedCount,
     waitlistCount: values.filter(person => person.status === 'waitlisted').length,
     withdrawnCount: values.filter(person => person.status === 'withdrawn').length,
+    pendingReviewCount: values.filter(person => person.status === 'pending_review').length,
+    rejectedCount: values.filter(person => person.status === 'rejected').length,
     totalRegistered: values.length, teamCount: teams.length,
     remainingTotal: Math.max(0, settings.capacity - confirmed.length),
     remainingPublic: Math.max(0, Math.min(settings.capacity - confirmed.length, settings.capacity - settings.staffReserve - attendeeConfirmedCount)) };
 }
 
 export function validateAdmissions(index, defaults) {
-  const value = index.admissions;
-  if (!exact(value, ['baseRevision', 'settings', 'people', 'teams', 'audit']) || !Number.isSafeInteger(value.baseRevision) || value.baseRevision < 0 || value.baseRevision > index.entries.length
+  const value = index.admissions, statuses = index.schemaVersion === 2 ? LEGACY_STATUSES : ADMISSION_STATUSES;
+  if (![2, 3].includes(index.schemaVersion) || !exact(value, ['baseRevision', 'settings', 'people', 'teams', 'audit']) || !Number.isSafeInteger(value.baseRevision) || value.baseRevision < 0 || value.baseRevision > index.entries.length
     || !exact(value.settings, ['capacity', 'staffReserve', 'waitlistEnabled']) || !plainObject(value.people)
     || Object.keys(value.people).length !== index.entries.length || !Array.isArray(value.teams) || value.teams.length > MAX_ADMISSION_TEAMS
     || !Array.isArray(value.audit) || value.audit.length > MAX_ADMISSION_OPERATIONS || value.audit.length !== index.revision - value.baseRevision) fail();
@@ -64,7 +67,7 @@ export function validateAdmissions(index, defaults) {
   if (defaults?.capacity !== undefined && value.settings.capacity !== defaults.capacity) fail();
   for (const [position, entry] of index.entries.entries()) {
     const person = own(value.people, entry.id);
-    if (!exact(person, ['kind', 'status', 'queueNumber', 'changedAt']) || !ADMISSION_KINDS.includes(person.kind) || !ADMISSION_STATUSES.includes(person.status)
+    if (!exact(person, ['kind', 'status', 'queueNumber', 'changedAt']) || !ADMISSION_KINDS.includes(person.kind) || !statuses.includes(person.status)
       || person.queueNumber !== position + 1 || parseTimestamp(person.changedAt) === null || parseTimestamp(person.changedAt) < parseTimestamp(entry.committedAt)) fail();
   }
   const ids = new Set(index.entries.map(entry => entry.id)), teamIds = new Set(), memberships = new Set();
@@ -78,7 +81,7 @@ export function validateAdmissions(index, defaults) {
   const operations = new Set(); let previousAt = -Infinity, intakes = 0;
   for (const [position, entry] of value.audit.entries()) {
     if (!exact(entry, ['revision', 'action', 'actorId', 'at', 'operationId', 'requestHash', 'details', 'result'])
-      || entry.revision !== value.baseRevision + position + 1 || !ACTIONS.includes(entry.action)
+      || entry.revision !== value.baseRevision + position + 1 || !ACTIONS.includes(entry.action) || index.schemaVersion === 2 && ['approve', 'reject'].includes(entry.action)
       || typeof entry.actorId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/u.test(entry.actorId) || parseTimestamp(entry.at) === null || parseTimestamp(entry.at) < previousAt
       || !HASH.test(entry.requestHash ?? '') || entry.operationId !== null && (!validAdmissionOperation(entry.operationId) || operations.has(entry.operationId))
       || !plainObject(entry.details) || !exact(entry.result, ['registrationId', 'teamId', 'promotedIds', 'releasedIds'])
@@ -87,11 +90,12 @@ export function validateAdmissions(index, defaults) {
     if (entry.operationId !== null) operations.add(entry.operationId);
     for (const name of ['promotedIds', 'releasedIds']) if (!Array.isArray(entry.result[name]) || entry.result[name].length > 1000
       || new Set(entry.result[name]).size !== entry.result[name].length || entry.result[name].some(id => !ids.has(id))) fail();
-    const allowedDetails = { intake: ['kind', 'status'], staff_intake: ['kind', 'status'], settings: ['staffReserve', 'waitlistEnabled'], kind: ['kind'], withdraw: [], promote: [], team_save: ['memberCount'], team_remove: [] }[entry.action];
-    if (!exact(entry.details, allowedDetails)) fail();
-    if (['intake', 'staff_intake'].includes(entry.action) && (!ADMISSION_KINDS.includes(entry.details.kind) || !ADMISSION_STATUSES.includes(entry.details.status))
+    const allowedDetails = { intake: ['kind', 'status'], staff_intake: ['kind', 'status'], settings: ['staffReserve', 'waitlistEnabled'], kind: ['kind'], withdraw: [], promote: [], team_save: ['memberCount'], team_remove: [], approve: ['status'], reject: [] }[entry.action];
+    if (!exact(entry.details, allowedDetails) || ['approve', 'reject'].includes(entry.action) && (entry.result.registrationId === null || entry.operationId === null)) fail();
+    if (['intake', 'staff_intake'].includes(entry.action) && (!ADMISSION_KINDS.includes(entry.details.kind) || !statuses.includes(entry.details.status))
       || entry.action === 'settings' && (!Number.isSafeInteger(entry.details.staffReserve) || entry.details.staffReserve < 0 || entry.details.staffReserve > value.settings.capacity || typeof entry.details.waitlistEnabled !== 'boolean')
       || entry.action === 'kind' && !ADMISSION_KINDS.includes(entry.details.kind)
+      || entry.action === 'approve' && !['confirmed', 'waitlisted'].includes(entry.details.status)
       || entry.action === 'team_save' && (!Number.isSafeInteger(entry.details.memberCount) || entry.details.memberCount < 1 || entry.details.memberCount > 50)) fail();
     if (['intake', 'staff_intake'].includes(entry.action) && entry.result.registrationId !== index.entries[value.baseRevision + intakes++]?.id) fail();
     previousAt = parseTimestamp(entry.at);
@@ -132,10 +136,18 @@ export function releaseWithdrawn(index, ids, at) {
   return releasedIds;
 }
 
-/** Oldest eligible person first; reserved crew capacity never counts as an anonymous person. */
+/** Oldest approved waitlist first; application order is never an approval. */
 export function promoteEligible(index, at) {
-  const promotedIds = [];
-  for (const entry of index.entries) {
+  const promotedIds = [], waitingSince = new Map();
+  for (const event of index.admissions.audit) {
+    if (['intake', 'staff_intake', 'approve'].includes(event.action) && event.details.status === 'waitlisted') {
+      waitingSince.set(event.result.registrationId, event.revision);
+    }
+  }
+  const waiting = index.entries.filter(entry => index.admissions.people[entry.id].status === 'waitlisted')
+    .sort((a, b) => (waitingSince.get(a.id) ?? index.admissions.people[a.id].queueNumber)
+      - (waitingSince.get(b.id) ?? index.admissions.people[b.id].queueNumber));
+  for (const entry of waiting) {
     const person = index.admissions.people[entry.id];
     if (person.status === 'waitlisted' && canConfirm(index, person.kind)) {
       person.status = 'confirmed'; person.changedAt = at; promotedIds.push(entry.id);
@@ -144,9 +156,10 @@ export function promoteEligible(index, at) {
   return promotedIds;
 }
 
-export function addAdmission(index, entry, kind, at) {
+export function addAdmission(index, entry, kind, at, { reviewRequired = false } = {}) {
   if (!ADMISSION_KINDS.includes(kind) || Object.hasOwn(index.admissions.people, entry.id)) fail('invalid');
-  const status = canConfirm(index, kind) ? 'confirmed' : index.admissions.settings.waitlistEnabled ? 'waitlisted' : null;
+  if (typeof reviewRequired !== 'boolean' || reviewRequired && (index.schemaVersion !== 3 || kind !== 'attendee')) fail('invalid');
+  const status = reviewRequired ? 'pending_review' : canConfirm(index, kind) ? 'confirmed' : index.admissions.settings.waitlistEnabled ? 'waitlisted' : null;
   if (status === null) return null;
   index.entries.push(entry);
   index.admissions.people[entry.id] = { kind, status, queueNumber: index.entries.length, changedAt: at };
@@ -170,10 +183,24 @@ export function transitionAdmission(index, action, input, at, excludedIds = []) 
     if (!exact(input, ['registrationId', 'kind']) || !validAdmissionId(input.registrationId) || !ADMISSION_KINDS.includes(input.kind)) fail('invalid');
     const person = own(index.admissions.people, input.registrationId);
     if (!person) fail('not_found');
-    if (person.status === 'withdrawn') fail('forbidden');
+    if (['withdrawn', 'rejected'].includes(person.status)) fail('forbidden');
     if (person.status === 'confirmed' && input.kind === 'attendee' && person.kind !== 'attendee'
       && admissionSummary(index).attendeeConfirmedCount >= index.admissions.settings.capacity - index.admissions.settings.staffReserve) fail('capacity_conflict');
     person.kind = input.kind; person.changedAt = at; details = { kind: input.kind }; result.registrationId = input.registrationId;
+  } else if (['approve', 'reject'].includes(action)) {
+    if (index.schemaVersion !== 3 || !exact(input, ['registrationId']) || !validAdmissionId(input.registrationId)) fail('invalid');
+    const person = own(index.admissions.people, input.registrationId);
+    if (!person) fail('not_found');
+    if (person.status !== 'pending_review') fail('conflict');
+    if (action === 'approve') {
+      // Already approved applicants keep priority; unreviewed applications never
+      // enter automatic promotion, regardless of their original queue number.
+      result.promotedIds = promoteEligible(index, at);
+      const status = canConfirm(index, person.kind) ? 'confirmed' : index.admissions.settings.waitlistEnabled ? 'waitlisted' : null;
+      if (status === null) fail('capacity_conflict');
+      person.status = status; details = { status };
+    } else person.status = 'rejected';
+    person.changedAt = at; result.registrationId = input.registrationId;
   } else if (action === 'withdraw') {
     if (!exact(input, ['registrationId']) || !validAdmissionId(input.registrationId)) fail('invalid');
     if (!Object.hasOwn(index.admissions.people, input.registrationId)) fail('not_found');
@@ -200,7 +227,7 @@ export function transitionAdmission(index, action, input, at, excludedIds = []) 
     if (position < 0) fail('not_found');
     index.admissions.teams.splice(position, 1); result.teamId = input.teamId;
   } else fail('invalid');
-  result.promotedIds = promoteEligible(index, at);
+  result.promotedIds = [...new Set([...result.promotedIds, ...promoteEligible(index, at)])];
   result.releasedIds = [...new Set(result.releasedIds)];
   return { details, result };
 }

@@ -9,6 +9,7 @@ import { createInitialContent } from '../../src/config/content.mjs';
 import { createCloudApplication } from './runtime.mjs';
 import { inspectEncryptedObjectBackup } from '../registration-admin/maintenance.mjs';
 import { CLOUD_LOGIN_POLICY } from './auth.mjs';
+import { createVolunteerRepository } from '../volunteers/repository.mjs';
 
 const DEADLINE_MS = 90_000;
 const REQUEST_LIMIT = 1000;
@@ -84,7 +85,11 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
   }
   const execution = (async () => {
     try {
-      const aObjects = objects(), bObjects = objects();
+      const aObjects = objects(), bObjects = objects(), eventId = createInitialContent().eventId;
+      const volunteerPrefix = `cms/v1/volunteers/${eventId}`;
+      const volunteers = (target, prefix = volunteerPrefix) => createVolunteerRepository({
+        journal: createObjectJournal({ objects: target, prefix }), eventId, clock: now });
+      let savedVolunteers;
       await stage('object-readback', async () => {
         const bytes = Buffer.from(JSON.stringify({ kind: 'synthetic_acceptance_probe', schemaVersion: 1 }));
         const key = `cms/v1/probes/${hash(bytes)}.json`;
@@ -93,20 +98,29 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         requireThat(read?.objectType === 'Normal' && read.contentType === 'application/json' && hash(read.data) === hash(bytes) && read.data.equals(bytes));
       });
       await stage('atomic-conflict', async () => {
-        const a = createObjectJournal({ objects: aObjects, prefix: 'cms/v1/probes/race' });
-        const b = createObjectJournal({ objects: bObjects, prefix: 'cms/v1/probes/race' });
-        const before = await a.read(); requireThat(before.value === null && before.cursor.version === 0);
-        const results = await Promise.allSettled([a.commit(before.cursor, { synthetic: 'left' }), b.commit(before.cursor, { synthetic: 'right' })]);
+        const a = volunteers(aObjects), b = volunteers(bObjects);
+        const position = side => ({ id: 'synthetic-position-' + side, name: '合成验收岗位 ' + side,
+          zone: 'A', location: '合成位置', lead: '', description: '', status: 'active' });
+        const mutate = (repository, side) => {
+          const payload = position(side);
+          return repository.mutate({ actorId: 'synthetic-owner', expectedRevision: 0,
+            operationId: 'synthetic-position-operation-' + side, action: 'position_upsert', payload }, state => ({ ...state, positions: [payload] }));
+        };
+        const results = await Promise.allSettled([mutate(a, 'left'), mutate(b, 'right')]);
         requireThat(results.filter(value => value.status === 'fulfilled').length === 1);
+        const winner = results.find(value => value.status === 'fulfilled').value;
         const rejected = results.find(value => value.status === 'rejected');
-        requireThat(rejected.reason?.code === 'WRITE_CONFLICT' && rejected.reason?.status === 409);
-        const read = await b.read();
-        requireThat(read.cursor.version === 1 && ['left', 'right'].includes(read.value.synthetic));
+        requireThat(rejected.reason?.code === 'REVISION_CONFLICT' && rejected.reason?.status === 409);
+        savedVolunteers = await volunteers(bObjects).read();
+        requireThat(winner.outcome === 'updated' && savedVolunteers.revision === 1 && savedVolunteers.audit.length === 1
+          && savedVolunteers.audit[0].action === 'position_upsert' && savedVolunteers.positions.length === 1 && savedVolunteers.volunteers.length === 0
+          && ['synthetic-position-left', 'synthetic-position-right'].includes(savedVolunteers.positions[0].id)
+          && JSON.stringify(savedVolunteers) === JSON.stringify(winner.state));
       });
       const password = randomBytes(32).toString('base64url'), passwordHash = await hashPassword(password);
       const users = [{ id: 'synthetic-owner', username: 'synthetic.acceptance', email: 'synthetic.acceptance@artdico.co', label: '合成验收账号', roles: ['editor', 'publisher', 'outreach', 'reviewer', 'superadmin'], passwordHash },
         { id: 'synthetic-editor', username: 'synthetic.editor', label: '合成编辑账号', roles: ['editor'], passwordHash }];
-      const at = now(), eventId = createInitialContent().eventId;
+      const at = now();
       const policy = { enabled: true, eventId, capacity: 3, opensAt: new Date(at - 60_000).toISOString(), closesAt: new Date(at + 3_600_000).toISOString(),
         privacy: { version: 'synthetic-notice-acceptance-v1', processor: '合成验收处理者', contactEmail: 'synthetic@example.invalid', purpose: '隔离合成报名验收',
           storageRegion: '合成私有验收位置', retention: '合成验收保留规则', rightsRequest: '合成权利申请流程', sharing: '合成资料不分享' } };
@@ -133,8 +147,11 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         owner = await login(first.api, users[0].username);
         alias = await login(second.api, users[0].email);
         editor = await login(first.api, users[1].username);
-        await call(second.api, '/api/admin/content', { headers: owner }, 200);
-        await call(first.api, '/api/admin/content', { headers: alias }, 200);
+        for (const [api, headers] of [[second.api, owner], [first.api, alias]]) {
+          const shared = await call(api, '/api/admin/session', { headers }, 200), session = await shared.json();
+          requireThat(session.user?.id === users[0].id && typeof session.csrfToken === 'string'
+            && /^[A-Za-z0-9_-]{43}$/u.test(session.csrfToken) && session.csrfToken === headers['X-CSRF-Token']);
+        }
         await call(second.api, '/api/admin/content/publish', { method: 'POST', headers: editor, body: { expectedRevision: 0 } }, 403);
         await call(first.api, '/api/admin/content/publish', { method: 'POST', headers: { Cookie: owner.Cookie }, body: { expectedRevision: 0 } }, 403);
         await call(first.api, '/api/admin/content', { headers: owner, origin: PUBLIC_SITE_ORIGIN }, 403);
@@ -144,8 +161,6 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         await call(second.api, '/api/admin/contacts', { headers: editor }, 403);
         const saved = await first.contactsStore.createContact(0, { name: '合成验收联络人', organization: '合成机构', email: 'synthetic@example.invalid', contactConsent: 'consented' }, users[0].id);
         contactId = saved.contact.id;
-        const observed = await second.contactsStore.read();
-        requireThat(observed.revision === 1 && observed.contacts.length === 1 && observed.contacts[0].id === saved.contact.id);
         const encryptionKey = randomBytes(32);
         try {
           const backup = await call(first.api, '/api/admin/maintenance/backup', { method: 'POST', headers: owner,
@@ -155,6 +170,13 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
           const inspection = inspectEncryptedObjectBackup({ bundle, key: encryptionKey, includeObjects: true });
           requireThat(inspection.objects.some(value => value.key.startsWith('cms/v1/contacts/'))
             && !inspection.objects.some(value => /^cms\/v1\/(?:users|sessions|limits)\//u.test(value.key)));
+          const contactSnapshot = inspection.objects.find(value => value.key.startsWith('cms/v1/contacts/blobs/'));
+          const backedContacts = contactSnapshot && JSON.parse(Buffer.from(contactSnapshot.dataBase64, 'base64'));
+          requireThat(backedContacts?.revision === 1 && backedContacts.contacts.length === 1 && backedContacts.contacts[0].id === saved.contact.id);
+          const volunteerObjects = inspection.objects.filter(value => value.key.startsWith(volunteerPrefix + '/'));
+          const volunteerSnapshot = volunteerObjects.find(value => value.key.startsWith(volunteerPrefix + '/blobs/'));
+          requireThat(volunteerObjects.length === 2 && volunteerObjects.some(value => value.key === volunteerPrefix + '/commits.jsonl')
+            && volunteerSnapshot && JSON.stringify(JSON.parse(Buffer.from(volunteerSnapshot.dataBase64, 'base64'))) === JSON.stringify(savedVolunteers));
           const restoreId = 'synthetic-' + randomBytes(16).toString('hex');
           const restored = await call(second.api, '/api/admin/maintenance/restore', { method: 'POST', headers: alias,
             body: { encryptionKey: encryptionKey.toString('base64url'), bundleBase64: bundle.toString('base64'), restoreId, confirmation: 'RESTORE_TO_ISOLATED_NAMESPACE' } }, 200);
@@ -162,7 +184,12 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
           requireThat(recovery.restored === true && recovery.active === false && recovery.sessionsRestored === false
             && recovery.namespace === 'cms/v1/restores/' + restoreId && recovery.objectCount === inspection.objectCount);
           const recoveredContacts = await createObjectJournal({ objects: bObjects, prefix: recovery.namespace + '/contacts' }).read();
-          requireThat(recoveredContacts.cursor.version === 1 && recoveredContacts.value.revision === 1);
+          requireThat(recoveredContacts.cursor.version === 1 && recoveredContacts.value.revision === 1
+            && recoveredContacts.value.contacts.length === 1 && recoveredContacts.value.contacts[0].id === saved.contact.id
+            && JSON.stringify(recoveredContacts.value) === JSON.stringify(backedContacts));
+          const recoveredVolunteers = await volunteers(bObjects, recovery.namespace + '/volunteers/' + eventId).read();
+          requireThat(recoveredVolunteers.revision === 1 && recoveredVolunteers.audit.length === 1
+            && JSON.stringify(recoveredVolunteers) === JSON.stringify(savedVolunteers));
           const maintenance = await call(first.api, '/api/admin/maintenance', { headers: owner }, 200);
           const readiness = await maintenance.json();
           requireThat(readiness.audit.count === 3 && readiness.audit.incompleteRestoreCount === 0 && readiness.audit.lastRestoreAt !== null);

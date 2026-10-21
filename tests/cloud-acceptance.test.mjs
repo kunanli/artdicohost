@@ -10,6 +10,7 @@ import { createCloudAuth, CLOUD_LOGIN_POLICY } from '../functions/cloud-content/
 import { hashPassword } from '../functions/content-api/auth.mjs';
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
 import { memoryObjects } from './helpers/cloud-memory-objects.mjs';
+import { createInitialContent } from '../src/config/content.mjs';
 
 const SOURCE = 'a'.repeat(40), RUN = 'r123456-a1-' + 'c'.repeat(16) + '-' + SOURCE, INSTANCE = 'b'.repeat(32);
 const ENV = { NODE_ENV: 'production', ARTDICO_CLOUD_CONTENT_ENABLED: 'false', ARTDICO_CLOUD_ACCEPTANCE_RUN_ID: RUN,
@@ -107,7 +108,24 @@ test('isolated acceptance uses only synthetic settings even when both real-mail 
   const prefix = `cms/v1/acceptance/${RUN}/${result.instanceId}/`;
   assert.ok(fixture.calls.every(call => call.key.startsWith(prefix)));
   assert.ok([...fixture.stored.keys()].every(key => key.startsWith(prefix)));
-  for (const category of ['content', 'contacts', 'portraits', 'sessions', 'limits', 'probes', 'registrations', 'registration-reviews', 'intent-invitations', 'group-invites', 'maintenance', 'restores']) assert.ok([...fixture.stored.keys()].some(key => key.startsWith(prefix + category + '/')), category);
+  for (const category of ['content', 'contacts', 'portraits', 'sessions', 'limits', 'probes', 'registrations', 'registration-reviews', 'intent-invitations', 'group-invites', 'maintenance', 'restores', 'volunteers']) assert.ok([...fixture.stored.keys()].some(key => key.startsWith(prefix + category + '/')), category);
+  const volunteerPath = 'volunteers/' + createInitialContent().eventId;
+  const liveVolunteerLog = fixture.stored.get(prefix + volunteerPath + '/commits.jsonl');
+  const volunteerCommits = liveVolunteerLog.data.toString('utf8').trimEnd().split('\n').map(line => JSON.parse(line));
+  assert.equal(volunteerCommits.length, 1); assert.equal(volunteerCommits[0].version, 1);
+  const snapshot = fixture.stored.get(prefix + volunteerPath + '/blobs/' + volunteerCommits[0].valueHash + '.json');
+  const volunteers = JSON.parse(snapshot.data);
+  assert.equal(volunteers.revision, 1); assert.equal(volunteers.audit.length, 1); assert.equal(volunteers.audit[0].action, 'position_upsert');
+  assert.equal(volunteers.volunteers.length, 0); assert.equal(volunteers.positions.length, 1);
+  assert.ok(['synthetic-position-left', 'synthetic-position-right'].includes(volunteers.positions[0].id));
+  const competingWrites = fixture.calls.filter(call => call.method === 'POST' && call.key === prefix + volunteerPath + '/commits.jsonl');
+  assert.equal(competingWrites.length, 2); assert.ok(competingWrites.every(call => new URL(call.url).search === '?append&position=0'));
+  assert.equal(fixture.calls.some(call => call.key.startsWith(prefix + 'probes/race/')), false, 'the feature repository replaces the generic conflict probe');
+  const restoredVolunteerLogs = [...fixture.stored].filter(([key]) => key.startsWith(prefix + 'restores/') && key.endsWith('/' + volunteerPath + '/commits.jsonl'));
+  assert.equal(restoredVolunteerLogs.length, 1);
+  assert.deepEqual(restoredVolunteerLogs[0][1].data, liveVolunteerLog.data);
+  const restoredSnapshotPath = restoredVolunteerLogs[0][0].slice(0, -'/commits.jsonl'.length) + '/blobs/' + volunteerCommits[0].valueHash + '.json';
+  assert.deepEqual(fixture.stored.get(restoredSnapshotPath).data, snapshot.data);
   assert.ok(fixture.calls.some(call => call.key.startsWith(prefix + 'users/')), 'bootstrap directory is checked without creating extra staff');
   assert.equal(fixture.calls.some(call => call.method === 'DELETE'), false);
   assert.equal(fixture.calls.some(call => call.method === 'POST' && !call.url.includes('?append&position=')), false);

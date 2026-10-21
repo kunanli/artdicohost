@@ -12,9 +12,10 @@ async function fixture(t) {
   const directory = await mkdtemp(resolve(tmpdir(), 'artdico-domain-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const dist = resolve(directory, 'dist'), output = resolve(directory, 'publication');
-  for (const name of ['invitation', 'invitations', '_astro']) await mkdir(resolve(dist, name), { recursive: true });
+  for (const name of ['invitation', 'invitations', 'registration/confirmation', '_astro']) await mkdir(resolve(dist, name), { recursive: true });
   await writeFile(resolve(dist, 'index.html'), '<html><script src="/_astro/public.js"></script></html>');
   await writeFile(resolve(dist, 'invitation/index.html'), '<html>合成邀请</html>');
+  await writeFile(resolve(dist, 'registration/confirmation/index.html'), '<html>合成确认页；无参会资料</html>');
   await writeFile(resolve(dist, 'invitations/template-blank.png'), Buffer.from([0, 1, 2, 255]));
   await writeFile(resolve(dist, '_astro/public.js'), '/* synthetic public script */');
   const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });

@@ -158,3 +158,10 @@ test('tasks API rejects cross-origin, malformed filters, unsupported writes and 
   assert.equal((await handle(get('',{method:'POST'}))).status,405);assert.equal(reads,0);
   const failure = await handle(get());assert.equal(failure.status,503);assert.equal((await failure.text()).includes('private synthetic'),false);
 });
+
+test('a seminar organizer needs a saved session just as a speaker or host, without implying public confirmation', () => {
+  const person=contact('synthetic-organizer',{operations:{participationForms:['organizer'],responseStatus:'attending'}});
+  const result=buildOrganizerTasks({...options,contacts:[person],intent:intentFor(person,[])});
+  assert.equal(result.tasks.some(task=>task.kind==='unassigned'&&task.contactId===person.id),true);
+  assert.equal(result.metrics.attending,1);assert.equal(result.metrics.manuallySent,0);
+});

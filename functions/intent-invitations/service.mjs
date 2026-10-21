@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { validateStoredContact, validateContactOperations, validateInvitationSettings } from '../../shared/contacts-schema.mjs';
+import { validateStoredContact, validateContactOperations, validateInvitationSettings, preserveContactOperationDefaults, hasNewContactAllocations } from '../../shared/contacts-schema.mjs';
 import { eventConfig } from '../../src/config/event.mjs';
 import { failure, IntentInvitationError, plainData, identifier, revision, iso } from './errors.mjs';
 import { createInvitationBatchOperations } from './batch.mjs';
@@ -239,16 +239,17 @@ export function createIntentInvitationService({ registrationService, contactsSto
       return { status: failures.length ? registrations.length ? 'partial' : 'unavailable' : 'completed',
         contactRevision: roster.revision, registrations, failures, skipped, warnings };
     },
-    async assignContact({ contactId, expectedContactRevision, sessionIds, boothIds, actor } = {}) {
+    async assignContact({ contactId, expectedContactRevision, sessionIds, boothIds, sessionRoles, actor } = {}) {
       const staff = actorValue(actor), roster = await rosterAt(expectedContactRevision), contact = contactValue(roster, contactId, true);
       const state = await readState();
       const registration = conversionFor(state, contactId);
       if (!registration) throw failure('REGISTRATION_REQUIRED', 409);
       let planning; try { planning = (await contentStore.read()).draft.content; } catch { throw failure(); }
-      const operations = { ...contact.operations, sessionIds, boothIds };
+      const operations = preserveContactOperationDefaults({ ...contact.operations, sessionIds, boothIds, ...(sessionRoles === undefined ? {} : { sessionRoles }) }, contact.operations);
+      if (sessionRoles === undefined) operations.sessionRoles = (contact.operations.sessionRoles ?? []).filter(entry => Array.isArray(sessionIds) && sessionIds.includes(entry.sessionId));
       const checked = validateContactOperations(operations, planning);
       if (!checked.valid) throw failure('INVALID_ASSIGNMENT', 422);
-      const adding = ['sessionIds', 'boothIds'].some(field => checked.value[field].some(id => !contact.operations[field].includes(id)));
+      const adding = hasNewContactAllocations(checked.value, contact.operations);
       if (adding) {
         if (declined(contact)) throw failure('CONTACT_DECLINED', 422);
         requireSource(contact, registration);

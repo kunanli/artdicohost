@@ -132,3 +132,12 @@ test('ambiguous slots, unsupported states and malformed snapshots fail rather th
   const input = []; Object.defineProperty(input, 0, { get: () => { accessed = true; return session('getter'); } });
   assert.throws(() => overview(content({ sessions: input })), TypeError); assert.equal(accessed, false);
 });
+
+test('saved overview shows each session duty independently of global roles and keeps person counts deduplicated', () => {
+  const person=contact('person',{participationForms:['speaker','organizer'],sessionIds:['morning','afternoon'],sessionRoles:[{sessionId:'morning',roles:['speaker']},{sessionId:'afternoon',roles:['organizer','host']}]});
+  const result=overview(content({sessions:[session('morning'),session('afternoon',{start:'13:00',end:'14:00',zone:'B'})]}),[person]);
+  assert.deepEqual(result.sessions.A[0].people[0].rolesInSession,['speaker']);assert.deepEqual(result.sessions.B[0].people[0].rolesInSession,['organizer','host']);
+  assert.equal(result.summary.people.assignedContacts,1);assert.equal(result.summary.people.attendingContacts,0);
+  assert.equal(result.sessions.A[0].primarySpeaker,null);assert.equal(result.sessions.B[0].primarySpeaker,null);
+  const invalid=structuredClone(person);invalid.operations.sessionRoles.push({sessionId:'morning',roles:['host']});assert.throws(()=>overview(content({sessions:[session('morning'),session('afternoon')]}),[invalid]));
+});

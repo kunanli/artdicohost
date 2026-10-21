@@ -25,6 +25,26 @@
 @container(max-width:600px){#artdico-host.ah-festival .ah-guest-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:34px 19px}#artdico-host.ah-festival .ah-guest-portrait{width:102px;height:102px;margin-bottom:16px}#artdico-host.ah-festival .ah-guest-name{font-size:15px}#artdico-host.ah-festival .ah-guests-empty{gap:22px;align-items:flex-start}#artdico-host.ah-festival .ah-guests-orbit{width:62px;height:62px;margin-top:6px}#artdico-host.ah-festival .ah-guests-empty h3{font-size:19px}#artdico-host.ah-festival .ah-guests-empty p{font-size:12px}}
 @container(max-width:360px){#artdico-host.ah-festival .ah-guest-grid{gap:32px 14px}#artdico-host.ah-festival .ah-guest-portrait{width:94px;height:94px}#artdico-host.ah-festival .ah-guests-empty{gap:16px}#artdico-host.ah-festival .ah-guests-orbit{width:48px;height:48px}}
 
+/* A person's name and verified contribution lead; detail expands only when needed. */
+#artdico-host.ah-festival .ah-guest-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 36px}
+#artdico-host.ah-festival .ah-guest-card{display:grid;grid-template-columns:88px minmax(0,1fr);gap:18px;text-align:left;padding:24px 0;border-top:1px solid #ffffff20;align-items:start}
+#artdico-host.ah-festival .ah-guest-portrait{width:88px;height:88px;margin:0;border-width:1px;box-shadow:none}
+#artdico-host.ah-festival .ah-guest-body{min-width:0}
+#artdico-host.ah-festival .ah-guest-name{font-size:19px}
+#artdico-host.ah-festival .ah-guest-duty{font-size:12px;line-height:1.8;margin:4px 0;color:#d9e4ff}
+#artdico-host.ah-festival .ah-guest-company{margin-top:5px}
+#artdico-host.ah-festival .ah-guest-role{margin-top:5px}
+#artdico-host.ah-festival .ah-guest-role::before{display:none}
+#artdico-host.ah-festival .ah-guest-details{margin-top:14px;font-size:12px;line-height:1.9;color:#d1d5dd}
+#artdico-host.ah-festival .ah-guest-details summary{cursor:pointer;color:#d4e0ff;width:fit-content}
+#artdico-host.ah-festival .ah-guest-details a{color:#d4e0ff;text-underline-offset:3px;overflow-wrap:anywhere}
+#artdico-host.ah-festival .ah-guest-details a:focus-visible,#artdico-host.ah-festival .ah-guest-details summary:focus-visible{outline:2px solid #a9c2ff;outline-offset:4px}
+#artdico-host.ah-festival .ah-guest-details ul{padding-left:18px;margin:12px 0}
+#artdico-host.ah-festival .ah-guest-details li+li{margin-top:8px}
+#artdico-host.ah-festival .ah-guest-bio{white-space:pre-wrap;overflow-wrap:anywhere;margin:12px 0}
+@container(max-width:1100px){#artdico-host.ah-festival .ah-guest-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container(max-width:600px){#artdico-host.ah-festival .ah-guest-grid{grid-template-columns:1fr;gap:0}#artdico-host.ah-festival .ah-guest-card{grid-template-columns:72px minmax(0,1fr);gap:18px}#artdico-host.ah-festival .ah-guest-portrait{width:72px;height:72px}}
+
 #artdico-admin .ah-admin-summary{grid-template-columns:repeat(4,minmax(0,1fr))}
 #artdico-admin .ah-admin-summary article:last-child{grid-column:auto}
 #artdico-admin .ah-admin-guest-avatar{width:54px;height:54px;object-fit:cover;border:1px solid #c5cfdf;border-radius:50%;display:block;background:#edf1f7}

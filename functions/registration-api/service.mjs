@@ -19,11 +19,12 @@ const staffSource = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-
 
 /** Real storage is required. Invalid or absent policy never opens collection or invents notice facts. */
 export function createRegistrationService({ objects, journalFor, policy, capacity, tokenSecret, allowedOrigins, clock = () => Date.now(), groupInviteProvider,
-  isWithdrawn, getWithdrawnIds, tokenLimit = 120, submissionLimit = 60, waitlistEnabled = false, staffReserve = 0 } = {}) {
+  isWithdrawn, getWithdrawnIds, onSaved, tokenLimit = 120, submissionLimit = 60, waitlistEnabled = false, staffReserve = 0 } = {}) {
   if (typeof clock !== 'function' || !Number.isSafeInteger(capacity) || capacity < 1 || capacity > MAX_REGISTRATIONS
     || !Array.isArray(allowedOrigins) || !allowedOrigins.length || !allowedOrigins.every(validOrigin)
     || isWithdrawn !== undefined && typeof isWithdrawn !== 'function'
-    || getWithdrawnIds !== undefined && typeof getWithdrawnIds !== 'function') throw new TypeError('Registration configuration is unavailable.');
+    || getWithdrawnIds !== undefined && typeof getWithdrawnIds !== 'function'
+    || onSaved !== undefined && typeof onSaved !== 'function') throw new TypeError('Registration configuration is unavailable.');
   let configured;
   try { configured = JSON.parse(registrationJson(policy).toString()); } catch { throw new TypeError('Registration policy is unavailable.'); }
   if (Object.hasOwn(configured, 'capacity') && configured.capacity !== capacity) throw new TypeError('Registration capacity configuration does not match.');
@@ -46,7 +47,18 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
     if (includeInvite && admission.status === 'confirmed' && typeof groupInviteProvider === 'function') {
       try { groupInvite = await groupInviteProvider({ receipt: saved.receipt, origin }); } catch { /* A saved registration remains saved if the invite is unavailable. */ }
     }
-    return includeInvite ? { ...saved, groupInvite } : saved;
+    if (!includeInvite) return saved;
+    let confirmation;
+    if (typeof onSaved === 'function') {
+      try {
+        // This runs only for a verified public receipt. Staff conversions do not
+        // opt another person into automated mail. A delivery failure never
+        // reverses or mutates the registration's durable commitment.
+        confirmation = await onSaved({ receipt: structuredClone(saved.receipt), origin, provenance: { kind: 'public' }, outcome: saved.outcome,
+          promotedIds: Array.isArray(saved.promotedIds) ? [...saved.promotedIds] : [] });
+      } catch { /* Keep the proven receipt even when optional delivery is unavailable. */ }
+    }
+    return { ...saved, groupInvite, ...(plainObject(confirmation) ? { confirmation } : {}) };
   }
   return Object.freeze({
     repository,

@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { CONTACT_SCHEMA_VERSION, MAX_CONTACTS, INVITATION_CHANNELS, validateImportedContact,
-  validateStoredContact, validateContactOperations, validateInvitationSettings, createEmptyContactOperations } from '../../shared/contacts-schema.mjs';
+  validateStoredContact, validateContactOperations, validateInvitationSettings, createEmptyContactOperations, preserveContactOperationDefaults } from '../../shared/contacts-schema.mjs';
 import { validateManualContactProfile, validateContactProfileEdit, guestPrefillFromContact } from '../../shared/contact-editor.mjs';
 import { CloudContentError } from './errors.mjs';
 import { readMigrationSource } from '../intent-invitations/contact-snapshot.mjs';
@@ -56,12 +56,12 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
     for (const contact of input.contacts) {
       const optional = Object.hasOwn(contact ?? {}, 'sourceProfile') ? ['sourceProfile', 'sourceProfileDigest'] : [];
       const operationFields = Object.keys(createEmptyContactOperations());
-      const legacyOperations = !Object.hasOwn(contact?.operations ?? {}, 'participationForms');
+      const missingOperationDefaults = ['participationForms', 'sessionRoles'].filter(key => !Object.hasOwn(contact?.operations ?? {}, key));
       if (!keys(contact, ['id', 'source', 'profile', 'operations', 'invitation', 'createdAt', 'updatedAt', ...optional])
         || !keys(contact.source, ['key', 'rowId', 'digest', 'importedAt']) || !validateStoredContact(contact)
         || !iso(contact.createdAt) || !iso(contact.updatedAt) || !iso(contact.source.importedAt)
         || contact.createdAt !== contact.source.importedAt || contact.updatedAt < contact.createdAt
-        || !keys(contact.operations, legacyOperations ? operationFields.filter(key => key !== 'participationForms') : operationFields)
+        || !keys(contact.operations, operationFields.filter(key => !missingOperationDefaults.includes(key)))
         || !keys(contact.invitation, ['settings', 'generatedAt', 'sentAt', 'sentGenerationAt', 'channel'])) throw unavailable();
       profileValue(contact.profile, contact.source.rowId);
       if (optional.length) {
@@ -69,7 +69,7 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
         if (contact.sourceProfileDigest !== hash(JSON.stringify(contact.sourceProfile))) throw unavailable();
       }
       if (contact.id !== 'c_' + hash(contact.source.key + '\0' + contact.source.rowId).slice(0, 32)) throw unavailable();
-      const expectedOperations = legacyOperations ? { ...contact.operations, participationForms: [] } : contact.operations;
+      const expectedOperations = { ...contact.operations, ...Object.fromEntries(missingOperationDefaults.map(key => [key, []])) };
       if (!isDeepStrictEqual(validateContactOperations(contact.operations).value, expectedOperations)) throw unavailable();
       const invitation = contact.invitation;
       if (invitation.settings !== null && !isDeepStrictEqual(validateInvitationSettings(invitation.settings).value, invitation.settings)) throw unavailable();
@@ -104,6 +104,13 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
     }
     const usedArchives = new Set(), created = new Set(), last = new Map(), generated = new Map(), sent = new Map(); let at = '';
     for (const [index, entry] of input.audit.entries()) {
+      if (entry.action === 'export_contacts') {
+        if (!keys(entry, ['action', 'actorId', 'revision', 'at', 'count', 'includeContact', 'includeAnswers', 'workbookSha256'])
+          || entry.revision !== index + 1 || !ACTOR.test(entry.actorId ?? '') || !iso(entry.at) || entry.at < at
+          || entry.count !== created.size || typeof entry.includeContact !== 'boolean' || typeof entry.includeAnswers !== 'boolean'
+          || !SHA.test(entry.workbookSha256 ?? '')) throw unavailable();
+        at = entry.at; continue;
+      }
       if (entry.action === 'import_contacts') {
         if (!keys(entry, ['action', 'actorId', 'revision', 'at', 'archiveDigest', 'contactIds']) || entry.revision !== index + 1
           || !ACTOR.test(entry.actorId) || !iso(entry.at) || entry.at < at || !archives.has(entry.archiveDigest) || usedArchives.has(entry.archiveDigest)) throw unavailable();
@@ -151,7 +158,7 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
     const normalized = structuredClone(input);
     // Old snapshots are interpreted conservatively, without a write or revision
     // change. A later explicit mutation persists the empty operations default.
-    for (const contact of normalized.contacts) if (!Object.hasOwn(contact.operations, 'participationForms')) contact.operations.participationForms = [];
+    for (const contact of normalized.contacts) for (const field of ['participationForms', 'sessionRoles']) if (!Object.hasOwn(contact.operations, field)) contact.operations[field] = [];
     if (size(normalized) > MAX_CONTACT_STATE_BYTES) throw unavailable();
     return normalized;
   }
@@ -205,6 +212,21 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
   }
   return {
     read: async () => { const { state } = await load(); return structuredClone({ revision: state.revision, contacts: state.contacts }); },
+    recordExport: async (expected, actorId, input) => {
+      if (!ACTOR.test(actorId ?? '') || !revision(expected) || !keys(input, ['count', 'includeContact', 'includeAnswers', 'workbookSha256'])
+        || !revision(input.count) || input.count > MAX_CONTACTS || typeof input.includeContact !== 'boolean'
+        || typeof input.includeAnswers !== 'boolean' || !SHA.test(input.workbookSha256 ?? '')) {
+        throw new CloudContentError('VALIDATION_ERROR', '导出范围、修订号或文件摘要无效。', 422);
+      }
+      const { state, cursor } = await load();
+      if (expected !== state.revision) throw conflict();
+      if (input.count !== state.contacts.length) throw conflict();
+      if (state.audit.length >= MAX_CONTACT_AUDIT_ENTRIES || !Number.isSafeInteger(state.revision + 1)) throw capacity();
+      const at = timestamp(state); state.revision++;
+      state.audit.push({ action: 'export_contacts', actorId, revision: state.revision, at, ...input });
+      await commit(cursor, state);
+      return { revision: state.revision };
+    },
     importContacts: async ({ expectedRevision, snapshot, sourceKind, sourceFileSha256, sourceDigest, actorId, allowPossibleDuplicates = false } = {}) => {
       if (!revision(expectedRevision) || !ACTOR.test(actorId ?? '') || !['snapshot', 'rows'].includes(sourceKind)
         || !SHA.test(sourceFileSha256 ?? '') || !SHA.test(sourceDigest ?? '') || typeof allowPossibleDuplicates !== 'boolean') throw new CloudContentError('VALIDATION_ERROR', '导入来源或修订号无效。', 422);
@@ -260,8 +282,7 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
     saveOperations: (id, expected, input, actorId) => mutate(expected, actorId, async state => {
       const contact = find(state, id);
       let content; try { content = (await contentStore.read()).draft.content; } catch { throw unavailable(); }
-      const update = record(input) && !Object.hasOwn(input, 'participationForms')
-        ? { ...input, participationForms: contact.operations.participationForms } : input;
+      const update = preserveContactOperationDefaults(input, contact.operations);
       contact.operations = checked(validateContactOperations(update, content), '跟进资料或安排未通过校验。');
       return { contact, action: 'save_contact_operations' };
     }),
@@ -284,7 +305,7 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
       const { state } = await load(), result = guestPrefillFromContact(find(state, id));
       if (!result.valid && result.errors.contactConsent) throw new CloudContentError('CONTACT_NOT_CONSENTED', '来源资料未明确同意后续联系，不能准备嘉宾草稿。', 422);
       if (!result.valid && result.errors.responseStatus) throw new CloudContentError('CONTACT_DECLINED', '对象已婉拒参加，不能准备本次嘉宾草稿。', 422);
-      return { prefill: checked(result), contactRevision: state.revision, responseStatus: result.responseStatus };
+      return { prefill: checked(result), contactRevision: state.revision, responseStatus: result.responseStatus, ...(result.omittedFields?.length ? { omittedFields: result.omittedFields } : {}) };
     },
   };
 }

@@ -130,7 +130,9 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
   }
   async function saved(index, entry, outcome, operationId = null) {
     await readRecord(entry);
-    const operation = operationId === null ? null : view(index).admissions.audit.find(item => item.operationId === operationId);
+    const operation = view(index).admissions.audit.find(item => operationId === null
+      ? ['intake', 'staff_intake'].includes(item.action) && item.result.registrationId === entry.id
+      : item.operationId === operationId);
     return { outcome, receipt: receipt(index, entry), ...(operation ? { promotedIds: operation.result.promotedIds, releasedIds: operation.result.releasedIds } : {}) };
   }
   async function exclusions(index, getExcluded) {

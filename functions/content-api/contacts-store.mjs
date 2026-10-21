@@ -4,7 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { ContentError } from './store.mjs';
 import {
   CONTACT_SCHEMA_VERSION, MAX_IMPORT_ROWS, MAX_CONTACTS, INVITATION_CHANNELS,
-  validateImportedContact, validateContactOperations, validateInvitationSettings,
+  validateImportedContact, validateContactOperations, validateInvitationSettings, preserveContactOperationDefaults,
   validateStoredContact, createEmptyContactOperations,
 } from '../../shared/contacts-schema.mjs';
 import { validateManualContactProfile, validateContactProfileEdit, guestPrefillFromContact } from '../../shared/contact-editor.mjs';
@@ -112,6 +112,23 @@ export function createFileContactsStore({ directory, contentStore, now = () => D
 
   return {
     read: () => serial(async () => contactEnvelope(await load())),
+    recordExport: (expectedRevision, actorId, input) => serial(async () => {
+      if (typeof actorId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/u.test(actorId)
+        || !input || typeof input !== 'object' || Array.isArray(input)
+        || Object.keys(input).length !== 4 || !['count','includeContact','includeAnswers','workbookSha256'].every(key => Object.hasOwn(input,key))
+        || !Number.isSafeInteger(input.count) || input.count < 0 || input.count > MAX_CONTACTS
+        || typeof input.includeContact !== 'boolean' || typeof input.includeAnswers !== 'boolean' || !/^[a-f0-9]{64}$/u.test(input.workbookSha256 ?? '')) {
+        throw new ContentError('VALIDATION_ERROR', '导出范围或文件摘要无效。', 422);
+      }
+      const state = await load(); checkRevision(expectedRevision, state.revision);
+      if (input.count !== state.contacts.length) throw new ContentError('REVISION_CONFLICT', '导出名单已变化，请重新载入。', 409);
+      if (state.audit.length >= 1000 || !Number.isSafeInteger(state.revision + 1)) throw new ContentError('CONTACT_LIMIT', '私密审计已达上限，请联系维护人员。', 422);
+      const at = new Date(now()).toISOString();
+      if (!Number.isFinite(Date.parse(at)) || state.audit.at(-1)?.at > at) throw new ContentError('CONTACT_STORAGE_ERROR', '导出审计时间未能核对。', 503);
+      state.revision++;
+      state.audit.push({ action: 'export_contacts', actorId, revision: state.revision, at, ...input });
+      await commit(state); return { revision: state.revision };
+    }),
     createContact: (expectedRevision, profileInput, actorId) => serial(async () => {
       const state = await load();
       checkRevision(expectedRevision, state.revision);
@@ -157,7 +174,7 @@ export function createFileContactsStore({ directory, contentStore, now = () => D
       const result = guestPrefillFromContact(findContact(state, id));
       if (!result.valid && result.errors.contactConsent) throw new ContentError('CONTACT_NOT_CONSENTED', '对象未明确同意联络，不能准备嘉宾草稿。', 422);
       if (!result.valid && result.errors.responseStatus) throw new ContentError('CONTACT_DECLINED', '对象已婉拒参加，不能准备本次嘉宾草稿。', 422);
-      return { prefill: structuredClone(validationError(result, '嘉宾预填资料未通过校验，请先核对基本资料。')), contactRevision: state.revision, responseStatus: result.responseStatus };
+      return { prefill: structuredClone(validationError(result, '嘉宾预填资料未通过校验，请先核对基本资料。')), contactRevision: state.revision, responseStatus: result.responseStatus, ...(result.omittedFields?.length ? { omittedFields: result.omittedFields } : {}) };
     }),
     previewImport: (keyInput, rows, actorId) => serial(async () => {
       const key = sourceKey(keyInput);
@@ -238,8 +255,7 @@ export function createFileContactsStore({ directory, contentStore, now = () => D
       checkRevision(expectedRevision, state.revision);
       const contact = findContact(state, id);
       const { draft } = await contentStore.read();
-      const inputWithForms = input !== null && typeof input === 'object' && !Array.isArray(input) && !Object.hasOwn(input, 'participationForms')
-        ? { ...input, participationForms: contact.operations.participationForms } : input;
+      const inputWithForms = preserveContactOperationDefaults(input, contact.operations);
       const operations = validationError(validateContactOperations(inputWithForms, draft.content), '跟进资料或安排未通过校验。');
       contact.operations = operations;
       contact.updatedAt = new Date(now()).toISOString();

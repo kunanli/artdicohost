@@ -146,6 +146,20 @@ test('the setup derives a runtime-valid owner only in memory, preserves unrelate
   assert.equal(f.calls.filter(call => call === 'trigger').length, 2);
 });
 
+test('delivery bundle locators remain unchanged across owner setup without increasing the FC environment limit', async () => {
+  const delivery = { APPLE_WALLET_BUNDLE_ID: 'a'.repeat(64), ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID: 'b'.repeat(64),
+    APPLE_WALLET_ENABLED: 'false', ARTDICO_CONFIRMATION_EMAIL_ENABLED: 'false' };
+  const f = fixture({ before: value => ({ ...value, environmentVariables: { ...value.environmentVariables, ...delivery } }) });
+  await configureCloudAdmin(f.options);
+  const after = f.current().environmentVariables;
+  for (const [key, value] of Object.entries(delivery)) assert.equal(after[key], value);
+  assert.ok(Buffer.byteLength(JSON.stringify(after)) < 4096);
+  const oversized = fixture({ before: value => ({ ...value, environmentVariables: { ...value.environmentVariables,
+    APPLE_WALLET_CERT_BASE64: 'S'.repeat(3000), APPLE_WALLET_KEY_BASE64: 'K'.repeat(3000) } }) });
+  await opaqueFailure(configureCloudAdmin(oversized.options), /CONFIGURATION_INPUT_INVALID/u);
+  assert.equal(oversized.updates(), 0);
+});
+
 test('known owner setup is idempotent and preserves the existing salted hash and original JSON bytes', async () => {
   const first = fixture(); await configureCloudAdmin(first.options);
   const current = first.current();

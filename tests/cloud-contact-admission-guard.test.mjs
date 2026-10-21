@@ -62,3 +62,12 @@ test('legacy HTTP hooks run after staff authorization and CSRF, before the origi
   assert.equal((await api(request('', 'PUT', 'synthetic-csrf', false))).status, 200);
   assert.deepEqual(calls, ['saveOperations']);
 });
+
+test('a new duty cannot bypass admission using an existing session while an old duty may be removed', async () => {
+  for(const status of ['waitlisted','withdrawn','unknown']){
+    const f=fixture({status});f.contact.operations.sessionRoles=[{sessionId:'old-session',roles:['guest']}];
+    await assert.rejects(f.guard(change({...operations,sessionRoles:[{sessionId:'old-session',roles:['guest','organizer']}]})),error=>error.status===(status==='unknown'?503:422));
+    await f.guard(change({...operations,sessionRoles:[]}));
+    assert.deepEqual(f.calls,['contacts','lookup','admission','contacts']);
+  }
+});

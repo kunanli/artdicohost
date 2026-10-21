@@ -60,7 +60,7 @@ export function contactProgress(contact, { intent = null, content = null, event,
   const validSessions = list(operations.sessionIds).filter(id => sessions.some(entry => entry.id === id));
   const validBooths = list(operations.boothIds).filter(id => booths.some(entry => entry.id === id));
   const forms = list(operations.participationForms);
-  const needsSession = forms.some(value => ['speaker', 'panelist', 'host'].includes(value));
+  const needsSession = forms.some(value => ['speaker', 'panelist', 'host', 'organizer'].includes(value));
   const needsBooth = forms.includes('booth');
   const needsShowcase = forms.includes('student_showcase');
   const missingAssignment = (needsSession && !validSessions.length) || (needsBooth && !validBooths.length)

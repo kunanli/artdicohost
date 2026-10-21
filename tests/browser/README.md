@@ -12,6 +12,10 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/staff-smoke.mjs
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/contacts-smoke.mjs
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/organizer-tasks-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/profile-media-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/contact-roles-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/exports-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/confirmation-smoke.mjs
 ```
 
 `registration-smoke.mjs` 在手机宽度检查：正式报名关闭时不提交且可读隐私告知；一般机构／职位／经历可省略但讲者／展商按条件必填；收据明确区分已确认和候补，候补不显示或读取群码；保存结果不明时冻结原资料，明确重试使用相同内容和幂等键。另置入合成工作人员 Cookie，验证公开 API 与入群图片均不发送该 Cookie。
@@ -26,4 +30,8 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 
 `organizer-tasks-smoke.mjs` 检查手机待办页、负责人／类型筛选、editor 不读取私有来源、人工发出与服务商接受分开统计、新旧记录按人去重，以及真正生成合成 PNG ZIP。下载不写发出记录，登出后清空名单及私有 Blob 下载链接。
 
-输出只包含固定验收项目与路由名称。截图写入忽略的 `.local-data/browser-evidence/`，只含合成资料。六组脚本均拒绝未拦截的页面来源，并检查页面执行错误。它们不在默认 `pnpm test` 中；默认测试仍覆盖纯函数与服务端边界，实际浏览器操作应在有 Chromium 的环境单独执行。
+`profile-media-smoke.mjs` 检查大照片自动缩放、EXIF 方向、过大图片在调用 API 前拒绝、人物角色／简介／网站的公开授权、工作坊链接，以及停止公开后保留后台原件。`contact-roles-smoke.mjs` 检查同一人的多重参与身份与逐场次职责、保存后总览及待办、完整联系人 Excel 下载和退出清除。
+
+`exports-smoke.mjs` 实际读回报名及原始联系人 XLSX，核对筛选／联络资料范围、权限、未知写入回执与登出清理；同时验证 superadmin 的确认信／Wallet 缺项设置面板。`confirmation-smoke.mjs` 覆盖真实报名跳转、手机确认页、A4 PDF 打印与临时隐藏私密 fragment、候补／撤回／失效链接、刷新失效后清除资料、同页换链接的晚到回应，以及使用一次性合成证书生成并下载真实签章 PKPASS。没有使用真实 Apple 凭证，也没有进行真实 iPhone 加入验收。
+
+输出只包含合成验收项目与路由名称。截图及打印 PDF 写入忽略的 `.local-data/browser-evidence/`，只含合成资料。十组脚本均拒绝未拦截的页面来源，并检查页面执行错误。它们不在默认 `pnpm test` 中；默认测试仍覆盖纯函数与服务端边界，实际浏览器操作应在有 Chromium 的环境单独执行。

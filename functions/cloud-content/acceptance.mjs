@@ -232,6 +232,15 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         requireThat(results.filter(value => value.status === 201).length === 1 && results.filter(value => value.status === 200).length === 1);
         const [left, right] = await Promise.all(results.map(value => value.json()));
         requireThat(left.reference_code === right.reference_code && /^[A-Za-z0-9_-]{43}$/u.test(left.reference_code));
+        requireThat(left.confirmation?.email?.status === 'not_configured'
+          && left.confirmation.confirmationUrl === PUBLIC_SITE_ORIGIN + '/registration/confirmation/#r=' + left.confirmation.receiptToken);
+        const confirmation = await call(second.api, '/api/admin/registration/confirmation', { method: 'POST', origin: PUBLIC_SITE_ORIGIN,
+          body: { receiptToken: left.confirmation.receiptToken } }, 200);
+        const confirmed = await confirmation.json();
+        requireThat(confirmed.referenceCode === left.reference_code && confirmed.admission.status === 'confirmed'
+          && confirmed.email.status === 'not_configured' && confirmed.wallet.ready === false
+          && confirmation.headers.get('cache-control') === 'private, no-store' && confirmation.headers.get('access-control-allow-credentials') === null
+          && !/synthetic\.public@example|passwordHash|cms\/v1/u.test(JSON.stringify(confirmed)));
         requireThat(left.groupInvite?.qrImageUrl?.startsWith(CLOUD_API_ORIGIN + '/api/admin/registration/group-invite/'));
         registrationId = left.reference_code; groupUrl = new URL(left.groupInvite.qrImageUrl).pathname;
         await call(second.api, groupUrl, { origin: PUBLIC_SITE_ORIGIN }, 200);

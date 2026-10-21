@@ -4,7 +4,9 @@ export const MAX_IMPORT_ROWS = 500;
 export const MAX_CONTACTS = 5000;
 export const CONTACT_PRIORITIES = Object.freeze(['normal', 'high']);
 export const RESPONSE_STATUSES = Object.freeze(['pending', 'attending', 'declined']);
-export const PARTICIPATION_FORMS = Object.freeze(['guest', 'speaker', 'panelist', 'host', 'booth', 'student_showcase', 'attendee']);
+export const PARTICIPATION_FORMS = Object.freeze(['guest', 'speaker', 'panelist', 'host', 'organizer', 'booth', 'student_showcase', 'attendee']);
+export const SESSION_ROLES = Object.freeze(['speaker', 'panelist', 'host', 'organizer', 'guest', 'attendee']);
+export const SESSION_ROLE_LABELS = Object.freeze({ speaker: '讲者', panelist: '圆桌嘉宾', host: '主持', organizer: '研讨会组织者', guest: '嘉宾', attendee: '参与者' });
 export const INVITATION_CHANNELS = Object.freeze(['wechat', 'email', 'other']);
 export const CONTACT_CATEGORIES = Object.freeze(['so', 'ro', 'prospective_site', 'industry', 'developer', 'university', 'education', 'partner', 'other']);
 export const CONTACT_INTERESTS = Object.freeze(['site_experience', 'talk', 'technical_share', 'roundtable', 'industry_networking', 'exhibition', 'product_demo', 'site_resources', 'sponsorship_partnership', 'attend_only']);
@@ -81,7 +83,47 @@ export function validateImportedContact(input) {
 }
 
 export function createEmptyContactOperations() {
-  return { owner: '', priority: 'normal', followUpAt: '', notes: '', responseStatus: 'pending', participationForms: [], sessionIds: [], boothIds: [] };
+  return { owner: '', priority: 'normal', followUpAt: '', notes: '', responseStatus: 'pending', participationForms: [], sessionIds: [], boothIds: [], sessionRoles: [] };
+}
+
+/** Omitted new fields in an older client's full operations update do not erase
+ * existing duties. Explicitly removing a session removes only its current link. */
+export function preserveContactOperationDefaults(input, current) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) return input;
+  const value = { ...input };
+  if (!Object.hasOwn(input, 'participationForms')) value.participationForms = current?.participationForms ?? [];
+  if (!Object.hasOwn(input, 'sessionRoles')) value.sessionRoles = (current?.sessionRoles ?? [])
+    .filter(entry => !Array.isArray(input.sessionIds) || input.sessionIds.includes(entry.sessionId));
+  return value;
+}
+
+/** Adding a duty to an already linked session is also a new allocation. */
+export function hasNewContactAllocations(next, current) {
+  if (['sessionIds', 'boothIds', 'participationForms'].some(field => Array.isArray(next?.[field])
+    && next[field].some(value => !(current?.[field] ?? []).includes(value)))) return true;
+  return Array.isArray(next?.sessionRoles) && next.sessionRoles.some(entry => Array.isArray(entry?.roles)
+    && entry.roles.some(role => !(current?.sessionRoles?.find(previous => previous.sessionId === entry.sessionId)?.roles ?? []).includes(role)));
+}
+
+function sessionRoleList(input, sessionIds, errors) {
+  if (input === undefined) return [];
+  if (!Array.isArray(input) || input.length > 50) { errors.sessionRoles = '请为最多 50 个已关联场次选择职责。'; return []; }
+  const selected = new Set();
+  return Array.from(input, (entry, index) => {
+    const key = 'sessionRoles.' + index;
+    const shape = entry !== null && typeof entry === 'object' && !Array.isArray(entry)
+      && [Object.prototype, null].includes(Object.getPrototypeOf(entry)) && Reflect.ownKeys(entry).length === 2
+      && ['sessionId', 'roles'].every(name => { const descriptor = Object.getOwnPropertyDescriptor(entry, name); return descriptor?.enumerable && Object.hasOwn(descriptor, 'value'); });
+    const source = shape ? entry : {}, sessionId = text(source.sessionId);
+    if (!shape
+      || typeof source.sessionId !== 'string' || !ID.test(sessionId) || !sessionIds.includes(sessionId) || selected.has(sessionId)) {
+      errors[key] = '职责须对应一个不重复且已关联的场次。';
+    }
+    selected.add(sessionId);
+    const roles = choiceList(source.roles, errors, key + '.roles', SESSION_ROLES.length, 40);
+    if (!roles.length || roles.some(role => !SESSION_ROLES.includes(role))) errors[key + '.roles'] = '请选择本场次的一项或多项有效职责。';
+    return { sessionId, roles };
+  });
 }
 
 /**
@@ -98,6 +140,7 @@ export function validateContactOperations(input, content) {
     sessionIds: choiceList(source.sessionIds, errors, 'sessionIds', 50, 80),
     boothIds: choiceList(source.boothIds, errors, 'boothIds', 50, 80),
   };
+  value.sessionRoles = sessionRoleList(source.sessionRoles, value.sessionIds, errors);
   field(errors, 'owner', value.owner, 120);
   field(errors, 'notes', value.notes, 6000);
   if (!CONTACT_PRIORITIES.includes(value.priority)) errors.priority = '请选择正常或优先跟进。';

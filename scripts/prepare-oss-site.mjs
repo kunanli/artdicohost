@@ -11,7 +11,7 @@ export const sha256 = (data) => createHash('sha256').update(data).digest('hex');
 export function validatePublicPath(path) {
   if (!path || path.includes('\\') || path.startsWith('/') || path.split('/').some(part => !part || part.startsWith('.') || /[\u0000-\u001f]/u.test(part))) throw new Error('Unsafe public path');
   if (path === 'release.json') return path;
-  const namedRoute = ['index.html', '404.html', 'invitation/index.html', 'admin/index.html', 'admin/contacts/index.html', 'admin/registrations/index.html', 'admin/tasks/index.html', 'invitations/template-blank.png'].includes(path);
+  const namedRoute = ['index.html', '404.html', 'invitation/index.html', 'registration/confirmation/index.html', 'admin/index.html', 'admin/contacts/index.html', 'admin/registrations/index.html', 'admin/tasks/index.html', 'invitations/template-blank.png'].includes(path);
   if (!allowedExtensions.has(extname(path).toLowerCase()) || (!namedRoute && !/^_astro\/[A-Za-z0-9_.\/-]+$/.test(path))) throw new Error('Unexpected public file: ' + path);
   return path;
 }
@@ -55,7 +55,7 @@ export async function prepareOssSite({ distDirectory = resolve(root, 'dist'), ou
   await mkdir(outputDirectory, { recursive: true });
   if ((await readdir(outputDirectory)).length) throw new Error('Publication directory must be empty');
   const selected = new Map();
-  const pending = ['index.html', 'invitation/index.html'];
+  const pending = ['index.html', 'invitation/index.html', 'registration/confirmation/index.html'];
   while (pending.length) {
     const path = validatePublicPath(pending.pop());
     if (selected.has(path)) continue;

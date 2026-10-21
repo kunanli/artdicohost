@@ -17,10 +17,13 @@ export const CANDIDATE_SOURCES = Object.freeze([
   ...['handler.mjs', 'launch.py'].map(name => ['functions/fc-api/' + name, 'functions/fc-api/' + name, '0644']),
   ...['auth.mjs', 'store.mjs', 'communications.mjs'].map(name => ['functions/content-api/' + name, 'functions/content-api/' + name, '0644']),
   ...['handler.mjs', 'policy.mjs', 'validation.mjs', 'tokens.mjs', 'rate-limit.mjs', 'repository.mjs', 'service.mjs', 'group-invite.mjs', 'group-invite-handler.mjs', 'admissions.mjs', 'admission-service.mjs'].map(name => ['functions/registration-api/' + name, 'functions/registration-api/' + name, '0644']),
-  ...['handler.mjs', 'store.mjs', 'errors.mjs', 'maintenance.mjs', 'maintenance-handler.mjs', 'admissions-handler.mjs'].map(name => ['functions/registration-admin/' + name, 'functions/registration-admin/' + name, '0644']),
+  ...['handler.mjs', 'store.mjs', 'errors.mjs', 'maintenance.mjs', 'maintenance-handler.mjs', 'admissions-handler.mjs', 'xlsx-handler.mjs', 'xlsx-export.mjs'].map(name => ['functions/registration-admin/' + name, 'functions/registration-admin/' + name, '0644']),
+  ...['tokens.mjs', 'repository.mjs', 'email-provider.mjs', 'service.mjs', 'handler.mjs', 'config-bundle.mjs'].map(name => ['functions/registration-confirmation/' + name, 'functions/registration-confirmation/' + name, '0644']),
+  ...['der.mjs', 'pkpass.mjs', 'service.mjs', 'handler.mjs', 'bundle.mjs'].map(name => ['functions/apple-wallet/' + name, 'functions/apple-wallet/' + name, '0644']),
+  ['functions/delivery-config/bundle.mjs', 'functions/delivery-config/bundle.mjs', '0644'],
   ...['handler.mjs', 'service.mjs', 'repository.mjs', 'email-provider.mjs', 'errors.mjs', 'importer.mjs', 'contact-snapshot.mjs', 'import-handler.mjs', 'batch.mjs'].map(name => ['functions/intent-invitations/' + name, 'functions/intent-invitations/' + name, '0644']),
   ['functions/organizer-tasks/handler.mjs', 'functions/organizer-tasks/handler.mjs', '0644'],
-  ...['content-schema.mjs', 'contacts-schema.mjs', 'contact-editor.mjs', 'arrangement-overview.mjs', 'portrait-codec.mjs', 'registration-schema.mjs', 'organizer-progress.mjs'].map(name => ['shared/' + name, 'shared/' + name, '0644']),
+  ...['content-schema.mjs', 'contacts-schema.mjs', 'contact-editor.mjs', 'arrangement-overview.mjs', 'portrait-codec.mjs', 'registration-schema.mjs', 'organizer-progress.mjs', 'xlsx-workbook.mjs'].map(name => ['shared/' + name, 'shared/' + name, '0644']),
   ...['content.mjs', 'event.mjs'].map(name => ['src/config/' + name, 'src/config/' + name, '0644']),
 ]);
 const FIXED_ASSETS = Object.freeze([

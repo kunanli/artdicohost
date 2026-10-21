@@ -260,3 +260,15 @@ test('new assignments require confirmed admission while waitlisted and withdrawn
   assert.deepEqual(removed.contact.operations.sessionIds, []); assert.equal(removed.contact.operations.notes, '合成历史备注保留');
   assert.equal(removed.contact.operations.responseStatus, 'declined'); assert.equal((await f.contentStore.read()).published, null);
 });
+
+test('new per-session duties need confirmed admission while omitted or removed duties preserve safe historical cleanup', async () => {
+  const f=await fixture();await f.convert();const session=(await f.contentStore.read()).draft.content.sessions.find(item=>item.status==='scheduled');
+  const saved=await f.service.assignContact({actor,contactId:f.contact.id,expectedContactRevision:1,sessionIds:[session.id],boothIds:[],sessionRoles:[{sessionId:session.id,roles:['speaker']}]});
+  assert.deepEqual(saved.contact.operations.sessionRoles,[{sessionId:session.id,roles:['speaker']}]);
+  const waiting=createIntentInvitationService({...f.dependencies,getAdmissionStatus:async()=>({status:'waitlisted',revision:1})});
+  await assert.rejects(waiting.assignContact({actor,contactId:f.contact.id,expectedContactRevision:saved.revision,sessionIds:[session.id],boothIds:[],sessionRoles:[{sessionId:session.id,roles:['speaker','organizer']}]}),{code:'REGISTRATION_WAITLISTED'});
+  const retained=await waiting.assignContact({actor,contactId:f.contact.id,expectedContactRevision:saved.revision,sessionIds:[session.id],boothIds:[]});
+  assert.deepEqual(retained.contact.operations.sessionRoles,saved.contact.operations.sessionRoles);
+  const removed=await waiting.assignContact({actor,contactId:f.contact.id,expectedContactRevision:retained.revision,sessionIds:[],boothIds:[]});assert.deepEqual(removed.contact.operations.sessionRoles,[]);
+  assert.deepEqual(removed.contact.profile,f.contact.profile);assert.equal(removed.contact.operations.responseStatus,'pending');
+});

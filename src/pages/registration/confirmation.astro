@@ -1,0 +1,58 @@
+---
+import '../../styles/confirmation.css';
+const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
+---
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow,noarchive" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>报名确认 · ARTDiCO HOST</title>
+  </head>
+  <body class="confirmation-page" data-confirmation-page data-confirmation-api={apiOrigin}>
+    <a class="confirmation-skip" href="#confirmation-main">跳到报名状态</a>
+    <header class="confirmation-header"><a href="/">ARTDiCO HOST</a><a href="/#agenda">活动日程</a></header>
+    <main id="confirmation-main">
+      <section class="confirmation-card">
+        <p class="confirmation-state" data-confirmation-state>报名确认</p>
+        <h1 data-confirmation-heading tabindex="-1">正在读取报名状态…</h1>
+        <p class="confirmation-intro" data-confirmation-intro>请稍候，我们正在核对这份报名的最新状态。</p>
+        <p class="confirmation-error" data-confirmation-error role="alert" hidden></p>
+        <div data-confirmation-content hidden>
+          <div class="confirmation-person"><strong data-confirmation-name></strong><span data-confirmation-organization></span></div>
+          <dl class="confirmation-details">
+            <dt>活动</dt><dd data-confirmation-event></dd>
+            <dt>日期</dt><dd data-confirmation-date></dd>
+            <dt>时间</dt><dd data-confirmation-time></dd>
+            <dt>地点</dt><dd data-confirmation-venue></dd>
+            <dt>登记编号</dt><dd class="confirmation-reference" data-confirmation-reference></dd>
+          </dl>
+          <p class="confirmation-note">讲者、展位与住宿安排分别确认。</p>
+          <p class="confirmation-email" data-confirmation-email></p>
+          <div class="confirmation-actions">
+            <button type="button" data-confirmation-print>打印 / 存为 PDF</button>
+            <button type="button" data-confirmation-copy>保存确认链接</button>
+            <button type="button" data-confirmation-wallet hidden>加入 Apple Wallet</button>
+          </div>
+          <p class="confirmation-action-status" data-confirmation-action-status role="status" aria-live="polite"></p>
+          <div class="confirmation-copy-fallback" data-confirmation-copy-fallback hidden><label for="confirmation-private-link">复制并私下保存此链接</label><input id="confirmation-private-link" data-confirmation-private-link readonly autocomplete="off" /></div>
+          <p class="confirmation-private">此链接可查看你的报名状态，请私下保存。</p>
+          <section class="confirmation-group" data-confirmation-group hidden aria-labelledby="confirmation-group-heading">
+            <h2 id="confirmation-group-heading">加入活动微信群</h2>
+            <div data-confirmation-group-image></div>
+            <p>用微信扫码，或长按图片识别。群码另有有效期。</p>
+          </section>
+          <p class="confirmation-printed">打印仅保留当前结果；活动前请重新打开确认页核对最新状态。</p>
+        </div>
+        <div class="confirmation-secondary"><button type="button" data-confirmation-refresh>重新读取</button><a href="/">返回活动首页</a></div>
+      </section>
+    </main>
+    <noscript><p class="confirmation-noscript">请启用 JavaScript 以核对报名状态，或通过原联系渠道联络筹备团队。</p></noscript>
+  </body>
+</html>
+<script>
+  import '../../scripts/confirmation.mjs';
+</script>

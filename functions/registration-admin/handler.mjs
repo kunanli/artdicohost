@@ -51,7 +51,13 @@ export function createRegistrationAdminApi({ enabled = false, auth, store, canEx
     if (Number.isSafeInteger(result.revision) && result.revision > 0) {
       try {
         const release = await onWithdrawalCommitted({ registrationId, reviewRevision: result.revision, actor });
-        if (release?.status === 'released' && Number.isSafeInteger(release.promotedCount) && release.promotedCount >= 0 && release.promotedCount <= 1000) admissionRelease = { status: 'released', promotedCount: release.promotedCount };
+        if (release?.status === 'released' && Number.isSafeInteger(release.promotedCount) && release.promotedCount >= 0 && release.promotedCount <= 1000) {
+          admissionRelease = { status: 'released', promotedCount: release.promotedCount };
+          const email = release.promotionEmail;
+          if (['not_configured', 'pending', 'completed'].includes(email?.status)
+            && Number.isSafeInteger(email.attemptedCount) && email.attemptedCount >= 0 && email.attemptedCount <= release.promotedCount
+            && email.pendingCount === release.promotedCount - email.attemptedCount) admissionRelease.promotionEmail = { status: email.status, attemptedCount: email.attemptedCount, pendingCount: email.pendingCount };
+        }
       } catch { /* The saved review remains authoritative; do not retry writes. */ }
     }
     return { ...result, admissionRelease };

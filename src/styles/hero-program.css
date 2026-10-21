@@ -19,12 +19,6 @@
 #artdico-host.ah-festival .ah-hero-unified .ah-hero-background-art{position:absolute;inset:0;z-index:-1;align-self:auto;min-height:0;border:0;overflow:hidden;background:none;opacity:.24;pointer-events:none;mask-image:linear-gradient(90deg,#000,transparent 40%,transparent 60%,#000)}
 #artdico-host.ah-festival .ah-hero-unified .ah-hero-background-art::before,#artdico-host.ah-festival .ah-hero-unified .ah-hero-background-art::after{display:none}
 #artdico-host.ah-festival .ah-hero-unified .ah-connection-sculpture{position:absolute;width:clamp(1100px,110cqi,1600px);max-width:none;top:46%;left:50%;transform:translate(-50%,-50%) rotate(-12deg)}
-#artdico-host.ah-festival .ah-hero-unified .ah-hero-atmosphere{position:absolute;inset:28px;z-index:-1;border:1px solid #454a5433;pointer-events:none}
-#artdico-host.ah-festival .ah-hero-unified .ah-hero-atmosphere::before,#artdico-host.ah-festival .ah-hero-unified .ah-hero-atmosphere::after{position:absolute;font-size:8px;letter-spacing:.22em;color:#a2a8b48c}
-#artdico-host.ah-festival .ah-hero-unified .ah-hero-atmosphere::before{content:'PLAY. MEET. CREATE.';top:20px;left:22px}
-#artdico-host.ah-festival .ah-hero-unified .ah-hero-atmosphere::after{content:'SHENZHEN / QIANHAI';bottom:19px;right:22px}
-#artdico-host.ah-festival .ah-hero-unified .ah-hero-atmosphere>span{position:absolute;width:5px;height:5px;top:47%;left:6%;background:var(--ah-blue)}
-#artdico-host.ah-festival .ah-hero-unified .ah-hero-atmosphere>span:last-child{top:34%;left:auto;right:6%;background:var(--ah-orange)}
 #artdico-host.ah-festival .ah-hero-unified .ah-event-countdown{display:flex;align-items:center;justify-content:center;gap:32px;width:max-content;max-width:100%;margin:32px auto 0;padding-top:22px;border-top:1px solid #5f66715c}
 #artdico-host.ah-festival .ah-hero-unified .ah-countdown-label{max-width:5em;text-align:left;margin:0;color:#b5bbc6;line-height:1.9;font-size:11px;letter-spacing:.08em}
 #artdico-host.ah-festival .ah-hero-unified .ah-countdown-timer{display:flex;gap:28px;align-items:baseline;justify-content:center}
@@ -45,9 +39,6 @@
 }
 @container(max-width:600px){
  #artdico-host.ah-festival .ah-hero.ah-hero-unified{min-height:775px;padding:66px 24px 54px}
- #artdico-host.ah-festival .ah-hero-unified .ah-hero-atmosphere{inset:14px}
- #artdico-host.ah-festival .ah-hero-unified .ah-hero-atmosphere::before{top:16px;left:15px;font-size:7px}
- #artdico-host.ah-festival .ah-hero-unified .ah-hero-atmosphere::after{bottom:16px;right:15px;font-size:7px}
  #artdico-host.ah-festival .ah-hero-unified .ah-eyebrow{font-size:10px;margin-bottom:37px}
  #artdico-host.ah-festival .ah-hero-unified h1{font-size:clamp(32px,8.9cqi,50px);letter-spacing:-.06em;line-height:1.25}
  #artdico-host.ah-festival .ah-hero-unified .ah-event-brand{font-size:.47em;letter-spacing:0;line-height:1.5;margin-bottom:6px}

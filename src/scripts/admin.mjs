@@ -1,10 +1,11 @@
-import { validateContent, toPublicContent } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, GUEST_PUBLIC_ROLES, GUEST_PUBLIC_ROLE_LABELS } from '../../shared/content-schema.mjs';
 import { showcaseSummary } from '../../shared/showcase-display.mjs';
 import { createArrangementsView } from './arrangements-view.mjs';
 import { createInitialPresentation } from '../config/content.mjs';
 import { completeBoothSlots } from '../lib/booth-slots.mjs';
 import { prepareBoothDraft } from '../lib/arrangement-planner.mjs';
 import { createArrangementPlanner } from './arrangement-planner.mjs';
+import { prepareProfileImage, processedImageSummary } from '../lib/profile-image.mjs';
 
 const $ = selector => document.querySelector(selector);
 const status = $('[data-admin-status]');
@@ -182,7 +183,8 @@ function cell(row, label, value) {
 }
 function rowActions(row, type, item) {
   const td = cell(row, '操作', undefined);
-  for (const [label, actionName] of [['编辑', 'edit'], ['删除', 'delete']]) {
+  const actions = type === 'guest' ? [['编辑','edit'],...(item.status==='confirmed'||item.publicConsent ? [['停止公开','unpublish']] : [])] : [['编辑','edit'],['删除','delete']];
+  for (const [label, actionName] of actions) {
     const button = node('button', label);
     button.type = 'button';
     button.dataset.rowAction = actionName;
@@ -190,11 +192,13 @@ function rowActions(row, type, item) {
     button.addEventListener('click', () => {
       if (!canEdit() || busy) return;
       if (actionName === 'edit') openEditor(type, item);
+      else if(actionName==='unpublish'){
+        if(!confirm('停止公开此人物？全部人物资料及场次关联会保留，保存并发布后才更新前台。'))return;
+        const current=draft.content.guests.find(guest=>guest.id===item.id);if(!current)return;
+        current.status='pending';current.publicConsent=false;setDirty(true);render();
+        announce('已在草稿停止公开人物，资料、照片与场次关联保留。仍需保存草稿及发布。');
+      }
       else {
-        if (type === 'guest' && draft.content.sessions.some(session => session.guestId === item.id)) {
-          announce('此嘉宾仍关联活动场次，请先在相关场次解除关联，再删除嘉宾。', true);
-          return;
-        }
         if (['session', 'booth'].includes(type) && (draft.content.showcases ?? []).some(showcase => showcase[type === 'session' ? 'sessionId' : 'boothId'] === item.id)) {
           announce('此记录仍关联学生作品，请先在作品安排中解除关联，再删除。', true);
           return;
@@ -276,9 +280,10 @@ function render() {
       image.addEventListener('error', () => { image.remove(); photo.append(node('span', '预览不可用', 'ah-admin-guest-no-photo')); }, { once: true });
       photo.append(image);
     } else photo.append(node('span', '待上传', 'ah-admin-guest-no-photo'));
-    cell(row, '姓名', item.name || '待填写');
-    cell(row, '所属公司', item.company || '待填写');
-    cell(row, 'GGJ 职务', item.ggjRole || '—');
+    const identity=cell(row,'姓名 / 公开职责',item.name||'待填写');
+    if(item.publicRoles?.length)identity.append(node('small',item.publicRoles.map(role=>GUEST_PUBLIC_ROLE_LABELS[role]).join(' · ')));
+    const affiliation=cell(row,'机构 / 职称',item.company||'待填写');if(item.title)affiliation.append(node('small',item.title));
+    cell(row,'GGJ 职务',item.ggjRole||'—');
     cell(row, '确认与授权', (item.status === 'confirmed' ? '已确认' : '待确认') + ' · ' + (item.publicConsent ? '已获公开授权' : '未获公开授权'));
     rowActions(row, 'guest', item);
     guests.append(row);
@@ -300,6 +305,7 @@ function openEditor(type, item = null, allowBusy = false) {
   const id = type + '-' + [...crypto.getRandomValues(new Uint8Array(16))].map(value => value.toString(16).padStart(2, '0')).join('');
   const value = item || (type === 'session' ? { id, start: '09:30', end: '10:00', zone: 'A', title: '', format: 'other', speakerName: '', speakerStatus: 'pending', guestId: '', status: 'draft', internalNotes: '' } : type === 'booth' ? { id, code: '', organization: '', project: '', zone: 'C', slotNumber: 0, status: 'pending', internalNotes: '' } : { id, name: '', company: '', ggjRole: '', portraitId: '', contactId: '', status: 'pending', publicConsent: false, internalNotes: '' });
   for (const [key,valueText] of Object.entries(value)) {
+    if(type==='guest'&&key==='publicRoles'){for(const option of form.querySelectorAll('[name=publicRoles]'))option.checked=valueText.includes(option.value);continue;}
     const field = form.elements.namedItem(key);
     if (field?.type === 'checkbox') field.checked = valueText === true;
     else if (field) field.value = valueText;
@@ -319,7 +325,7 @@ async function prepareInvitedGuest(){
   if(!canEdit()||!user?.roles.includes('outreach'))throw new Error('准备邀约对象的嘉宾草稿需要同时具备人员邀约与活动编辑权限。');
   const result=await request('/api/admin/contacts/'+encodeURIComponent(id)+'/guest-prefill');
   const prefill=result.prefill;
-  if(!prefill||!['name','company','ggjRole','contactId'].every(key=>typeof prefill[key]==='string')||Object.keys(prefill).some(key=>!['name','company','ggjRole','contactId'].includes(key))||prefill.contactId!==id)throw new Error('嘉宾预填资料无效，请返回人员工作区重新核对。');
+  if(!prefill||!['name','company','ggjRole','contactId'].every(key=>typeof prefill[key]==='string')||Object.keys(prefill).some(key=>!['name','company','ggjRole','contactId','title','bio','website','publicRoles'].includes(key))||prefill.contactId!==id||['title','bio','website'].some(key=>prefill[key]!==undefined&&typeof prefill[key]!=='string')||prefill.publicRoles!==undefined&&(!Array.isArray(prefill.publicRoles)||prefill.publicRoles.length>4||prefill.publicRoles.some(role=>!GUEST_PUBLIC_ROLES.includes(role))||new Set(prefill.publicRoles).size!==prefill.publicRoles.length))throw new Error('嘉宾预填资料无效，请返回人员工作区重新核对。');
   const existing=(draft.content.guests??[]).find(guest=>guest.contactId===prefill.contactId);
   openEditor('guest',existing??null,true);
   const form=$('[data-guest-form]');
@@ -327,10 +333,12 @@ async function prepareInvitedGuest(){
     $('[data-guest-consent-note]').textContent='已打开该邀约对象关联的嘉宾资料。名单回复与嘉宾公开状态分别维护；请核实当前回复，再决定是否发布。';
     announce('已打开关联嘉宾，未重复新增。现有照片、资料与授权保持原记录。');
   }else{
-    for(const key of ['name','company','ggjRole','contactId'])form.elements.namedItem(key).value=prefill[key];
+    for(const key of ['name','company','ggjRole','contactId','title','bio','website'])if(prefill[key]!==undefined)form.elements.namedItem(key).value=prefill[key];
+    for(const option of form.querySelectorAll('[name=publicRoles]'))option.checked=prefill.publicRoles?.includes(option.value)??false;
     form.elements.namedItem('status').value='pending';form.elements.namedItem('publicConsent').checked=false;
     form.elements.namedItem('portraitId').value='';showPortrait('');guestFormDirty=true;
     $('[data-guest-consent-note]').textContent='已从邀约名单预填资料，实际回复：'+({pending:'待回复',attending:'确认参加',declined:'不参加'}[result.responseStatus]??'待核实')+'。请另行核实资料、出席与公开授权；尚未保存或公开。';
+    if(Array.isArray(result.omittedFields)&&result.omittedFields.some(field=>['title','bio','website'].includes(field)))$('[data-guest-consent-note]').textContent+=' 部分原始资料超出公开栏位限制或网址格式无效，未自动带入；原始名单资料仍完整保留，请另行核对。';
     announce('已准备关联嘉宾资料表，尚未保存。请核实职务、照片与公开同意，再应用修改。');
   }
   return true;
@@ -353,6 +361,7 @@ function submitEditor(type, event) {
   if (type === 'guest') {
     delete value.portraitFile;
     value.publicConsent = form.elements.namedItem('publicConsent').checked;
+    value.publicRoles = new FormData(form).getAll('publicRoles');
   }
   if (type === 'showcase') {
     delete value.coverFile;
@@ -428,42 +437,6 @@ function clearPortrait() {
   showPortrait('');
   lockControls();
 }
-async function portraitBytes(file) {
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('请选择 JPEG、PNG 或 WebP 照片。');
-  if (!file.size || file.size > 8 * 1024 * 1024) throw new Error('请选择不超过 8 MiB 的照片。');
-  let source;
-  try {
-    if (typeof createImageBitmap === 'function') source = await createImageBitmap(file);
-    else {
-      const dataUrl = await new Promise((accept, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => accept(reader.result);
-        reader.onerror = () => reject(new Error('照片读取失败。'));
-        reader.readAsDataURL(file);
-      });
-      source = new Image(); source.src = dataUrl; await source.decode();
-    }
-    const width = source.width || source.naturalWidth;
-    const height = source.height || source.naturalHeight;
-    if (!width || !height || width > 10000 || height > 10000 || width * height > 40_000_000) throw new Error('照片尺寸过大，请先缩小后重试。');
-    const scale = Math.min(1, 1024 / Math.max(width, height));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(width * scale)); canvas.height = Math.max(1, Math.round(height * scale));
-    const context = canvas.getContext('2d', { alpha: false });
-    if (!context) throw new Error('当前浏览器无法处理照片，请换用受支持的浏览器。');
-    context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(source, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .86));
-    if (!blob || !blob.size || blob.size > 512 * 1024) throw new Error('处理后的照片仍超过 512 KiB，请选择较小的照片。');
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    let binary = '';
-    for (let offset = 0; offset < bytes.length; offset += 32768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
-    return { contentType: 'image/jpeg', dataBase64: btoa(binary) };
-  } catch (error) {
-    if (error instanceof Error && /^(?:请选择|照片尺寸|当前浏览器|处理后的)/u.test(error.message)) throw error;
-    throw new Error('无法读取这张照片，请使用有效的 JPEG、PNG 或 WebP 图片重试。');
-  } finally { source?.close?.(); }
-}
 async function uploadPortrait(event) {
   const file = event.currentTarget.files?.[0];
   clearPortrait(); revokeGuestConsent();
@@ -474,14 +447,15 @@ async function uploadPortrait(event) {
   portraitUploading = true; lockControls();
   $('[data-guest-portrait-status]').textContent = '正在处理并上传照片…';
   try {
-    const payload = await portraitBytes(file);
+    const prepared = await prepareProfileImage(file,{maxEdge:800,signal:controller.signal});
+    const payload = prepared.payload;
     if (generation !== portraitGeneration || controller.signal.aborted) return;
     const result = await request('/api/admin/portraits', { method: 'POST', body: JSON.stringify(payload), signal: controller.signal });
     if (generation !== portraitGeneration || controller.signal.aborted || !$('[data-guest-dialog]').open) return;
     if (!portraitIdPattern.test(result.portrait?.id) || result.portrait.contentType !== payload.contentType || !Number.isSafeInteger(result.portrait.bytes) || result.portrait.bytes < 1 || result.portrait.bytes > 512 * 1024) throw new Error('照片上传结果无效，请重试。');
     $('[data-guest-form]').elements.namedItem('portraitId').value = result.portrait.id;
     showPortrait(result.portrait.id);
-    $('[data-guest-portrait-status]').textContent = '照片已上传。应用并保存嘉宾资料后才会关联；尚未公开。';
+    $('[data-guest-portrait-status]').textContent = processedImageSummary(prepared)+' 照片已上传；应用并保存后才会关联，尚未公开。';
   } catch (error) {
     if (generation !== portraitGeneration || controller.signal.aborted) return;
     $('[data-guest-form]').elements.namedItem('portraitId').value = '';
@@ -604,13 +578,13 @@ async function uploadCover(event) {
   const generation=coverGeneration;const controller=new AbortController();coverController=controller;coverUploading=true;lockControls();
   $('[data-showcase-cover-status]').textContent='正在处理并上传作品图…';
   try{
-    const payload=await portraitBytes(file);
+    const prepared=await prepareProfileImage(file,{maxEdge:1600,signal:controller.signal}),payload=prepared.payload;
     if(generation!==coverGeneration||controller.signal.aborted)return;
     const result=await request('/api/admin/portraits',{method:'POST',body:JSON.stringify(payload),signal:controller.signal});
     if(generation!==coverGeneration||controller.signal.aborted||!$('[data-showcase-dialog]').open)return;
     if(!portraitIdPattern.test(result.portrait?.id)||result.portrait.contentType!==payload.contentType||!Number.isSafeInteger(result.portrait.bytes)||result.portrait.bytes<1||result.portrait.bytes>512*1024)throw new Error('图片上传结果无效，请重试。');
     $('[data-showcase-form]').elements.namedItem('coverId').value=result.portrait.id;showCover(result.portrait.id);
-    $('[data-showcase-cover-status]').textContent='作品图已上传；应用并保存后才会关联，尚未公开。';
+    $('[data-showcase-cover-status]').textContent=processedImageSummary(prepared)+' 作品图已上传；应用并保存后才会关联，尚未公开。';
   }catch(error){
     if(generation!==coverGeneration||controller.signal.aborted)return;
     $('[data-showcase-form]').elements.namedItem('coverId').value='';showCover('');$('[data-showcase-cover-status]').textContent='作品图上传未完成，未关联新图片。';localError.textContent=error.message||'图片上传失败。';localError.hidden=false;
@@ -653,7 +627,10 @@ function previewPublic() {
       portrait.addEventListener('error', () => { portrait.remove(); }, { once: true });
       card.append(portrait);
     }
-    card.append(node('h4', item.name), node('p', item.company));
+    card.append(node('h4',item.name),node('p',[item.title,item.company].filter(Boolean).join(' · ')));
+    if(item.publicRoles?.length)card.append(node('p',item.publicRoles.map(role=>GUEST_PUBLIC_ROLE_LABELS[role]).join(' · ')));
+    if(item.bio)card.append(node('p',item.bio));
+    if(item.website){const link=node('a','个人 / 机构网站');link.href=item.website;link.target='_blank';link.rel='noopener noreferrer';card.append(link);}
     if (item.ggjRole) card.append(node('p', item.ggjRole));
     guestGrid.append(card);
   }
@@ -784,7 +761,8 @@ $('[data-guest-dialog]').addEventListener('close',()=>{clearPortrait();$('[data-
 $('[data-guest-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeGuestEditor();});
 $('[data-guest-form]').addEventListener('input',()=>{guestFormDirty=true;});
 $('[data-guest-form]').addEventListener('change',()=>{guestFormDirty=true;});
-for (const name of ['name', 'company', 'ggjRole']) $('[data-guest-form]').elements.namedItem(name).addEventListener('input', revokeGuestConsent);
+for (const name of ['name','company','ggjRole','title','bio','website']) $('[data-guest-form]').elements.namedItem(name).addEventListener('input', revokeGuestConsent);
+for(const option of $('[data-guest-form]').querySelectorAll('[name=publicRoles]'))option.addEventListener('change',revokeGuestConsent);
 for (const button of document.querySelectorAll('[data-close-dialog]')) button.addEventListener('click', () => {if(button.dataset.closeDialog==='guest')closeGuestEditor();else if(button.dataset.closeDialog==='showcase')closeShowcaseEditor();else if(!busy)$('[data-' + button.dataset.closeDialog + '-dialog]').close();});
 $('[data-admin-logout]').addEventListener('click', () => action(async () => {
   if ((dirty||eventFormDirty||guestFormDirty||showcaseFormDirty||planner?.hasUnapplied()) && !confirm('还有未保存的修改，确定退出并放弃这些修改吗？')) return;

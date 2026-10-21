@@ -43,7 +43,7 @@ export async function verifyPublication(directory, expectedCommit) {
     const stat = await lstat(resolve(directory, item.path));
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_FILE_BYTES || stat.size !== item.bytes || sha256(await readFile(resolve(directory, item.path))) !== item.sha256) throw new Error('Publication checksum mismatch');
   }
-  for (const path of ['index.html', '404.html', 'invitation/index.html', 'admin/index.html', 'admin/contacts/index.html', 'invitations/template-blank.png', 'release.json']) if (!expected.includes(path)) throw new Error('Required public route missing');
+  for (const path of ['index.html', '404.html', 'invitation/index.html', 'registration/confirmation/index.html', 'admin/index.html', 'admin/contacts/index.html', 'invitations/template-blank.png', 'release.json']) if (!expected.includes(path)) throw new Error('Required public route missing');
   const release = JSON.parse(await readFile(resolve(directory, 'release.json'), 'utf8'));
   if (release.schemaVersion !== 1 || release.commit !== expectedCommit || JSON.stringify(release.files) !== JSON.stringify(manifest.files.filter(item => item.path !== 'release.json'))) throw new Error('Public release receipt differs from publication');
   return manifest;

@@ -52,12 +52,21 @@ function preserveArrangementFields(input, current) {
       if (row[field] === undefined) {
         row[field] = existing?.[field] ?? fallback;
       }
-      if (collection === 'booths' && existing) for (const name of ['contactName', 'contactMethods', 'description']) {
+      if (collection === 'booths' && existing) for (const name of ['contactName', 'contactMethods', 'description', 'website']) {
         if (!Object.hasOwn(row, name) && Object.hasOwn(existing, name)) row[name] = existing[name];
       }
       return row;
     });
   }
+  if (Array.isArray(result.guests)) result.guests = result.guests.map(item => {
+    const row = copy(item, 'guests');
+    const id = typeof row.id === 'string' ? row.id.normalize('NFC').trim() : '';
+    const existing = current.guests.find(candidate => candidate.id === id);
+    for (const name of ['title','bio','website','publicRoles']) {
+      if (!Object.hasOwn(row,name) && existing && Object.hasOwn(existing,name)) row[name] = structuredClone(existing[name]);
+    }
+    return row;
+  });
   return result;
 }
 

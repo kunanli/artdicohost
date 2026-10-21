@@ -26,6 +26,14 @@ import { createIntentContactImportApi, isIntentContactImportPath } from '../inte
 import { createAdmissionsApi } from '../registration-admin/admissions-handler.mjs';
 import { createOrganizerTasksApi } from '../organizer-tasks/handler.mjs';
 import { createContactAdmissionGuard } from './contact-admission-guard.mjs';
+import { createRegistrationConfirmationService } from '../registration-confirmation/service.mjs';
+import { createRegistrationConfirmationApi } from '../registration-confirmation/handler.mjs';
+import { createConfirmationEmailProvider } from '../registration-confirmation/email-provider.mjs';
+import { loadEncryptedConfirmationMail, confirmationMailObjectKey } from '../registration-confirmation/config-bundle.mjs';
+import { createAppleWalletService } from '../apple-wallet/service.mjs';
+import { createAppleWalletApi, isAppleWalletPath } from '../apple-wallet/handler.mjs';
+import { loadEncryptedSigningBundle, walletSigningObjectKey } from '../apple-wallet/bundle.mjs';
+import { createRegistrationXlsxApi, createContactsXlsxApi } from '../registration-admin/xlsx-handler.mjs';
 
 const credentialFields = ['ALIBABA_CLOUD_ACCESS_KEY_ID', 'ALIBABA_CLOUD_ACCESS_KEY_SECRET', 'ALIBABA_CLOUD_SECURITY_TOKEN'];
 const PUBLIC_ALIASES = new Map([
@@ -100,7 +108,19 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const userStore = createCloudUserStore({ journal: journalFor('cms/v1/users'), bootstrapUsers: env.ADMIN_USERS_JSON, now });
   const auth = createCloudAuth({ users: env.ADMIN_USERS_JSON, usersProvider: () => userStore.users(), journalFor, now });
   const userHandle = createCloudUserApi({ enabled: true, auth, store: userStore });
-  let registrationService, reviewStore, intentService, groupService;
+  let registrationService, reviewStore, intentService, groupService, confirmationService, walletService;
+  // Notification is optional after a proven admission commit. Unknown mail
+  // acknowledgements remain in the outbox; remaining people require explicit
+  // administrator dispatch and must never turn a saved mutation into a failure.
+  const notifyPromoted = async (registrationIds, timeoutMs = 5000) => {
+    if (!Array.isArray(registrationIds) || !registrationIds.length) return undefined;
+    let result;
+    try { result = await confirmationService?.notifyPromoted({ registrationIds: registrationIds.slice(0, 100), timeoutMs }); } catch { /* Saved admissions remain authoritative. */ }
+    const attemptedCount = Array.isArray(result?.results) ? result.results.filter(item => !['not_attempted', 'unavailable'].includes(item.status)).length : 0;
+    const pendingCount = Math.max(0, registrationIds.length - attemptedCount);
+    const uncertain = result?.results?.some(item => ['unknown', 'unavailable'].includes(item.status));
+    return { status: result?.status === 'not_configured' ? 'not_configured' : uncertain || pendingCount ? 'pending' : 'completed', attemptedCount, pendingCount };
+  };
   const beforeContactMutation = createContactAdmissionGuard({ contactsStore,
     lookupRegistration: async ({ contactId, actor }) => {
       if (!intentService) throw new Error('Registration linkage is unavailable.');
@@ -127,6 +147,13 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, allowedOrigins: [PUBLIC_SITE_ORIGIN], clock: now,
       isWithdrawn, getWithdrawnIds: () => reviewStore.inactiveRegistrationIds(),
       waitlistEnabled: env.ARTDICO_REGISTRATION_WAITLIST_ENABLED === 'true', staffReserve: 0,
+      onSaved: async ({ receipt, promotedIds }) => {
+        const started = performance.now();
+        const confirmation = await confirmationService.forSavedReceipt({ receipt, notify: true });
+        const remaining = Math.floor(5000 - (performance.now() - started));
+        if (remaining > 0) await notifyPromoted(promotedIds, remaining);
+        return confirmation;
+      },
       groupInviteProvider: input => groupService.forReceipt(input) });
     reviewStore = createRegistrationReviewStore({ journal: journalFor(`cms/v1/registration-reviews/${policy.eventId}`),
       loadRegistrations: () => registrationService.repository.list(), eventId: policy.eventId, clock: now });
@@ -135,8 +162,26 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       emailProvider: createInvitationEmailProvider({ env, fetchFn }), now,
       isRegistrationActive: async ({ registrationId }) => !await isWithdrawn(registrationId),
       getAdmissionStatus: id => registrationService.getAdmissionStatus(id) });
+    walletService = createAppleWalletService({ env, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now,
+      authorize: input => confirmationService.authorize(input),
+      authorizedRegistration: id => confirmationService.authorizedRegistration(id),
+      loadSigningBundle: ({ bundleId }) => loadEncryptedSigningBundle({ objects, secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId }) });
+    confirmationService = createRegistrationConfirmationService({ registrationService, journalFor,
+      tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now, batchTimeoutMs: 5000,
+      emailProvider: createConfirmationEmailProvider({ env, fetchFn, timeoutMs: 4000,
+        ...(env.ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID ? { loadConfiguration: () => loadEncryptedConfirmationMail({ objects,
+          secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId: env.ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID }) } : {}) }),
+      walletReadiness: () => walletService.readiness(), groupInviteProvider: input => groupService.forReceipt(input) });
   }
   const registrationHandle = createRegistrationApi({ allowedOrigins: [PUBLIC_SITE_ORIGIN], submissionService: registrationService, allowedGroupInviteOrigins: [CLOUD_API_ORIGIN], clock: now });
+  const confirmationHandle = createRegistrationConfirmationApi({ service: confirmationService, auth, apiOrigin: CLOUD_API_ORIGIN, publicOrigins: [PUBLIC_SITE_ORIGIN] });
+  const walletHandle = createAppleWalletApi({ service: walletService ?? { download: async () => ({ outcome: 'not_ready' }), verify: async () => ({ valid: false }) }, apiOrigin: CLOUD_API_ORIGIN, publicOrigins: [PUBLIC_SITE_ORIGIN] });
+  const registrationXlsxHandle = createRegistrationXlsxApi({ enabled: Boolean(reviewStore), auth, store: reviewStore,
+    loadAdmissions: () => registrationService.repository.getAdmissions(), loadArrangements: async actor => {
+      const [roster, { draft }, intent] = await Promise.all([contactsStore.read(), store.read(), intentService.read({ actor })]);
+      return { contactRevision: roster.revision, contentRevision: draft.revision, contacts: roster.contacts, content: draft.content, conversions: intent.conversions };
+    } });
+  const contactsXlsxHandle = createContactsXlsxApi({ enabled: true, auth, contactsStore, clock: now, loadContent: async () => (await store.read()).draft });
   const groupHandle = createGroupInviteApi({ service: groupService, auth, apiOrigin: CLOUD_API_ORIGIN, publicOrigins: [PUBLIC_SITE_ORIGIN] });
   const reviewHandle = createRegistrationAdminApi({ enabled: Boolean(reviewStore), auth, store: reviewStore,
     onWithdrawalCommitted: registrationService ? async ({ registrationId, reviewRevision, actor }) => {
@@ -145,9 +190,10 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       const operationId = createHash('sha256').update('review-withdraw\0' + registrationId + '\0' + reviewRevision).digest('hex');
       const saved = await registrationService.withdrawAdmission({ actor, registrationId, expectedRevision: current.revision, operationId });
       if (!['updated', 'replayed'].includes(saved.outcome) || !Array.isArray(saved.promotedIds)) return { status: 'pending' };
-      return { status: 'released', promotedCount: saved.promotedIds.length };
+      return { status: 'released', promotedCount: saved.promotedIds.length, promotionEmail: await notifyPromoted(saved.promotedIds) };
     } : undefined });
-  const admissionsHandle = createAdmissionsApi({ enabled: Boolean(registrationService), auth, service: registrationService });
+  const admissionsHandle = createAdmissionsApi({ enabled: Boolean(registrationService), auth, service: registrationService,
+    onCommitted: async ({ result }) => notifyPromoted(result.promotedIds) });
   const tasksHandle = createOrganizerTasksApi({ authenticate: request => auth.authenticate(request), now,
     getSources: async actor => {
       const [roster, { draft }, intent, admissions, withdrawnIds] = await Promise.all([
@@ -162,14 +208,23 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     } });
   const intentHandle = intentService ? createIntentInvitationApi({ service: intentService, authenticate: request => auth.authenticate(request) }) : null;
   const eventId = createInitialContent().eventId;
+  const configurationKeys = [];
+  for (const [name, keyFor] of [['APPLE_WALLET_BUNDLE_ID', walletSigningObjectKey], ['ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID', confirmationMailObjectKey]]) {
+    if (typeof env[name] === 'string' && /^[a-f0-9]{64}$/u.test(env[name])) configurationKeys.push(keyFor({ eventId, bundleId: env[name] }));
+  }
   const maintenanceHandle = createMaintenanceApi({ enabled: true, auth, objects, clock: now,
+    additionalKeys: configurationKeys,
     audit: createMaintenanceAuditStore({ journal: journalFor('cms/v1/maintenance'), clock: now }),
     journalPrefixes: ['cms/v1/content', 'cms/v1/contacts', 'cms/v1/intent-invitations', 'cms/v1/maintenance',
-      `cms/v1/registrations/${eventId}/index`, `cms/v1/registration-reviews/${eventId}`, `cms/v1/group-invites/${eventId}/state`] });
+      `cms/v1/registrations/${eventId}/index`, `cms/v1/registration-reviews/${eventId}`, `cms/v1/registration-confirmations/${eventId}`, `cms/v1/group-invites/${eventId}/state`] });
   const registrationEnabled = Boolean(policy?.enabled);
   const handle = async request => {
     const url = new URL(request.url);
     if (url.origin !== CLOUD_API_ORIGIN || url.username || url.password) return contentHandle(request);
+    if (['/api/registration/confirmation', '/api/admin/registration/confirmation', '/api/admin/registration-confirmation/settings', '/api/admin/registration-confirmation/dispatch'].includes(url.pathname)) return confirmationHandle(request);
+    if (isAppleWalletPath(url.pathname)) return walletHandle(request);
+    if (url.pathname === '/api/admin/registrations/export.xlsx') return registrationXlsxHandle(request);
+    if (url.pathname === '/api/admin/contacts/export.xlsx') return contactsXlsxHandle(request);
     if (url.pathname === '/api/admin/group-invite' || url.pathname === '/api/admin/group-invite/image'
       || url.pathname.startsWith('/api/registration/group-invite/') || url.pathname.startsWith('/api/admin/registration/group-invite/')) return groupHandle(request);
     const alias = publicRegistrationPath(url.pathname);
@@ -200,9 +255,10 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     }
     if (result.status === 200 && url.pathname === '/api/admin/planning' && request.method === 'GET') {
       const value = await result.json();
-      return withJson(result, { ...value, features: { ...value.features, contactImport: true, protectedContactImport: true, intentInvitations: Boolean(intentService), batchInvitations: Boolean(intentService) } });
+      return withJson(result, { ...value, features: { ...value.features, contactImport: true, protectedContactImport: true, intentInvitations: Boolean(intentService), batchInvitations: Boolean(intentService),
+        contactXlsxExport: true, registrationXlsxExport: Boolean(reviewStore), registrationConfirmation: Boolean(confirmationService), appleWallet: Boolean(walletService) } });
     }
     return result;
   };
-  return { handle, store, contactsStore, userStore, auth, registrationService, reviewStore, intentService, groupService, registrationEnabled };
+  return { handle, store, contactsStore, userStore, auth, registrationService, reviewStore, intentService, groupService, confirmationService, walletService, registrationEnabled };
 }

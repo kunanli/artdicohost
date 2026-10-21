@@ -1,6 +1,8 @@
 import {registrationSchema} from '../../shared/registration-schema.mjs';
 import {createStaffSettings} from './staff-settings.mjs';
 import {createStaffAdmissions} from './staff-admissions.mjs';
+import {createDeliverySettings} from './delivery-settings.mjs';
+import {downloadPrivateXlsx} from '../lib/xlsx-download.mjs';
 
 const $=selector=>document.querySelector(selector);
 const statuses={new:'新报名',in_review:'核查中',awaiting_maria:'待 Maria 审阅',approved:'已确认',discussion:'待讨论',not_this_time:'本次不邀请',withdrawn:'已撤回'};
@@ -10,7 +12,9 @@ const reviewFields=['status','accommodationStatus','recommendation','proposedRol
 let user=null,csrfToken='',revision=0,nextCursor=null,selected=null,busy=false,dirty=false;
 let sessionGeneration=0;
 let filters={};
+const privateExportUrls=new Set();
 const staffAdmissions=createStaffAdmissions({root:$('[data-staff-admissions]'),request,openRecord:id=>action(()=>openRecord(id)),onChange:()=>load()});
+const deliverySettings=createDeliverySettings({root:$('[data-delivery-settings]'),request});
 const staffSettings=createStaffSettings({root:$('[data-staff-settings]'),request,binaryRequest:async(path,body)=>{
   const generation=sessionGeneration;
   const response=await fetch(path,{method:'POST',credentials:'same-origin',cache:'no-store',redirect:'error',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(body)});
@@ -29,16 +33,22 @@ function lock(){
   for(const element of document.querySelectorAll('[data-review-workspace] button,[data-review-workspace] input,[data-review-workspace] select,[data-review-form] input,[data-review-form] select,[data-review-form] textarea,[data-review-form] button'))element.disabled=busy||!allowed();
   $('[data-review-logout]').disabled=busy;
   $('[data-review-deletion]').disabled=busy||!user?.roles.includes('superadmin')||!selected;
+  for(const selector of ['[data-review-export]','[data-review-export-xlsx]','[data-review-export-contact]','[data-review-export-answers]'])$(selector).disabled=busy||!user?.roles.includes('superadmin');
+  $('[data-review-export-arrangements]').disabled=busy||!user?.roles.includes('superadmin');
   staffAdmissions.lock(busy||!allowed());
+  deliverySettings.lock(busy||!allowed());
 }
 function clear(){
   sessionGeneration+=1;
+  for(const url of privateExportUrls)URL.revokeObjectURL(url);privateExportUrls.clear();
   staffSettings.clear();
   staffAdmissions.clear();
+  deliverySettings.clear();
   user=null;csrfToken='';revision=0;nextCursor=null;selected=null;dirty=false;filters={};
   $('[data-review-workspace]').hidden=true;$('[data-review-account]').hidden=true;$('[data-review-login-panel]').hidden=false;
   for(const selector of ['[data-review-rows]','[data-review-metrics]','[data-review-details]'])$(selector).replaceChildren();
   $('[data-review-form]').reset();$('[data-review-filters]').reset();$('[data-review-export-contact]').checked=false;
+  $('[data-review-export-answers]').checked=false;$('[data-review-export-arrangements]').checked=false;
   if($('[data-review-dialog]').open)$('[data-review-dialog]').close();
 }
 async function request(path,options={}){
@@ -95,6 +105,8 @@ async function load(cursor){
   await staffSettings.configure(user);
   if(generation!==sessionGeneration)return;
   await staffAdmissions.configure(user,state.registrations);
+  if(generation!==sessionGeneration)return;
+  await deliverySettings.configure(user);
 }
 function pair(output,label,value){if(value===undefined||value===null||value==='')return;output.append(node('dt',label),node('dd',Array.isArray(value)?value.join(' / '):String(value)));}
 function renderDetails(record){
@@ -128,7 +140,7 @@ $('[data-review-login]').addEventListener('submit',event=>{
   event.preventDefault();const form=event.currentTarget;if(!form.reportValidity())return;const login=Object.fromEntries(new FormData(form));
   action(async()=>{let result;try{result=await request('/api/admin/login',{method:'POST',body:JSON.stringify(login)});}finally{form.elements.namedItem('password').value='';login.password='';}user=result.user;csrfToken=result.csrfToken;await load();announce('已登录。请按需要核查，避免导出或分享无关个人资料。');});
 });
-$('[data-review-logout]').addEventListener('click',()=>action(async()=>{if((dirty||staffAdmissions.pending)&&!confirm(staffAdmissions.pending?'名额操作结果尚未确认，退出将清空本页的原操作重试入口。请优先确认同一操作结果；仍要退出吗？':'还有未保存修改，确定退出吗？'))return;await request('/api/admin/logout',{method:'POST'});clear();announce('已退出，当前页的报名资料已清空。');}));
+$('[data-review-logout]').addEventListener('click',()=>action(async()=>{if((dirty||staffAdmissions.pending||deliverySettings.pending)&&!confirm(staffAdmissions.pending||deliverySettings.pending?'有操作结果尚未确认，退出将清空本页的原操作重试入口。请优先确认同一操作结果；仍要退出吗？':'还有未保存修改，确定退出吗？'))return;await request('/api/admin/logout',{method:'POST'});clear();announce('已退出，当前页的报名资料已清空。');}));
 $('[data-review-filters]').addEventListener('submit',event=>{event.preventDefault();filters=readFilters();action(()=>load());});
 $('[data-review-filters]').addEventListener('reset',()=>{filters={};queueMicrotask(()=>action(()=>load()));});
 $('[data-review-refresh]').addEventListener('click',()=>action(async()=>{if(dirty&&!confirm('有未保存修改，放弃后刷新吗？'))return;dirty=false;selected=null;if($('[data-review-dialog]').open)$('[data-review-dialog]').close();await load();announce('已读取最新保存记录。');}));
@@ -147,6 +159,17 @@ $('[data-review-deletion]').addEventListener('click',()=>{
   const reason=prompt('填写收到删除申请的依据（不要重复输入证件或其他敏感资料）。此操作仅登记申请，不表示资料已被擦除。');if(!reason?.trim())return;
   const id=selected.id,expectedRevision=selected.revision;action(async()=>{await request('/api/admin/registrations/'+encodeURIComponent(id)+'/deletion-request',{method:'POST',body:JSON.stringify({expectedRevision,reason:reason.trim()})});await openRecord(id);announce('已登记删除申请。实际删除及历史快照、备份处理仍需受控维护流程。');});
 });
+$('[data-review-export-xlsx]').addEventListener('click',()=>action(async()=>{
+  const generation=sessionGeneration;
+  if(dirty)throw new Error('请先保存或放弃核查修改，再导出。');
+  const includeContact=$('[data-review-export-contact]').checked,includeAnswers=$('[data-review-export-answers]').checked,includeArrangements=$('[data-review-export-arrangements]').checked;
+  if(!confirm('确认导出当前筛选的 Excel？'+(includeContact?'包含联络字段。':'不含结构化联络字段。')+(includeAnswers?'包含完整原始回答；请特别核对自由文本。':'')+(includeArrangements?'另含当前角色与场次／展位。':'')+'请核对接收范围。'))return;
+  let result;
+  try{result=await downloadPrivateXlsx({path:'/api/admin/registrations/export.xlsx',body:{expectedRevision:revision,filters,includeContact,includeAnswers,includeArrangements},csrfToken,filename:'artdico-registration-attendance.xlsx',isCurrent:()=>generation===sessionGeneration&&Boolean(user),onPrivateUrl:url=>privateExportUrls.add(url)});}catch(error){if(error.status===401)clear();throw error;}
+  if(generation!==sessionGeneration)return;revision=result.revision;
+  try{await load();}catch(error){if(generation===sessionGeneration)announce('Excel 已开始下载且已记录审计；列表刷新未完成，请稍后明确刷新核对。',true);return;}
+  if(generation===sessionGeneration)announce('Excel 已生成并开始下载（'+result.count+' 份报名）；原始回答、当前名额与职责分别记录。请按核定范围使用。');
+}));
 $('[data-review-export]').addEventListener('click',()=>action(async()=>{
   const generation=sessionGeneration;
   if(dirty)throw new Error('请先保存或放弃核查修改，再导出。');
@@ -161,7 +184,7 @@ $('[data-review-export]').addEventListener('click',()=>action(async()=>{
   const url=URL.createObjectURL(blob),link=node('a');link.href=url;link.download='artdico-registration-review.csv';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
   await load();announce('CSV 已生成并开始下载，服务端已记录导出操作。请按核定范围使用。');
 }));
-window.addEventListener('beforeunload',event=>{if(dirty||staffAdmissions.pending){event.preventDefault();event.returnValue='';}});
+window.addEventListener('beforeunload',event=>{if(dirty||staffAdmissions.pending||deliverySettings.pending){event.preventDefault();event.returnValue='';}});
 if(location.protocol==='https:'||location.hostname==='127.0.0.1'||location.hostname==='localhost')action(async()=>{
   const response=await fetch('/api/admin/session',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});if(response.status===401)return;if(!response.ok)throw new Error('报名后台暂未就绪，请稍后重试。');const result=await response.json();user=result.user;csrfToken=result.csrfToken;$('[data-review-account]').hidden=false;$('[data-review-user]').textContent=user?.label||user?.id||'';await load();
 });else announce('请通过已配置的 HTTPS 工作人员入口登录。');

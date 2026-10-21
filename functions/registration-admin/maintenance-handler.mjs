@@ -10,8 +10,8 @@ const SECURITY = { 'cache-control': 'no-store', 'x-content-type-options': 'nosni
 const HASH = /^[a-f0-9]{64}$/u;
 const ACTOR = /^[A-Za-z0-9_-]{1,80}$/u;
 const RESTORE_ID = /^[a-z0-9][a-z0-9-]{7,79}$/u;
-const JOURNAL_PREFIX = /^cms\/v1\/(?:content|contacts|intent-invitations|maintenance|registrations\/[A-Za-z0-9_-]{1,80}\/index|registration-reviews\/[A-Za-z0-9_-]{1,80}|group-invites\/[A-Za-z0-9_-]{1,80}\/state)$/u;
-const EXTRA_KEY = /^cms\/v1\/(?:portraits\/[a-f0-9]{64}\.(?:png|jpg|webp)|group-invites\/[A-Za-z0-9_-]{1,80}\/images\/[a-f0-9]{64}\.(?:png|jpg|webp))$/u;
+const JOURNAL_PREFIX = /^cms\/v1\/(?:content|contacts|intent-invitations|maintenance|registrations\/[A-Za-z0-9_-]{1,80}\/index|(?:registration-reviews|registration-confirmations)\/[A-Za-z0-9_-]{1,80}|group-invites\/[A-Za-z0-9_-]{1,80}\/state)$/u;
+const EXTRA_KEY = /^cms\/v1\/(?:portraits\/[a-f0-9]{64}\.(?:png|jpg|webp)|group-invites\/[A-Za-z0-9_-]{1,80}\/images\/[a-f0-9]{64}\.(?:png|jpg|webp)|(?:wallet-signing|confirmation-mail)\/[A-Za-z0-9_-]{1,80}\/[a-f0-9]{64}\.json)$/u;
 const safe = new WeakSet();
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
 const shape = (value, fields) => plain(value) && Object.keys(value).sort().join(',') === [...fields].sort().join(',');

@@ -11,6 +11,7 @@ import { hashPassword } from '../functions/content-api/auth.mjs';
 import { CloudContentError } from '../functions/cloud-content/errors.mjs';
 import { createInitialContent } from '../src/config/content.mjs';
 import { createEmptyContactOperations } from '../shared/contacts-schema.mjs';
+import { readContactSnapshot } from '../functions/intent-invitations/contact-snapshot.mjs';
 import { memoryObjects } from './helpers/cloud-memory-objects.mjs';
 
 const AT = '2026-10-20T08:00:00.000Z', now = () => Date.parse(AT), clone = value => structuredClone(value);
@@ -278,4 +279,36 @@ test('cloud preview and invitation routes never deliver, sign, enable import or 
   response = await api(request(base + '/email/preview', { method: 'POST', headers, body: { settings } })); assert.equal(response.status, 200); assert.equal((await response.json()).status, 'not_sent');
   for (const action of ['email/send', 'wallet/issue']) assert.equal((await api(request(base + '/' + action, { method: 'POST', headers, body: {} }))).status, 404);
   for (const action of ['import', 'import/preview']) assert.equal((await api(request('/api/admin/contacts/' + action, { method: 'POST', headers, body: {} }))).status, 503);
+});
+
+test('session duties survive legacy full updates and role changes preserve original contact and invitation state', async () => {
+  const { first, second, journal, content } = unitSetup();
+  const original=(await first.createContact(0,profile(),'outreach')).contact;
+  const sessions=content.sessions.filter(item=>item.status==='scheduled'),a=sessions[0],b=sessions.find(item=>item.start>=a.end);
+  assert.ok(b);
+  const legacy=journal.snapshot().value;delete legacy.contacts[0].operations.participationForms;delete legacy.contacts[0].operations.sessionRoles;journal.corrupt(legacy);
+  assert.deepEqual((await second.read()).contacts[0].operations.sessionRoles,[]);assert.equal(journal.snapshot().attempts,1);
+  assert.equal(Object.hasOwn(journal.snapshot().value.contacts[0].operations,'sessionRoles'),false);
+  let saved=await first.saveOperations(original.id,1,{...createEmptyContactOperations(),participationForms:['speaker','organizer'],sessionIds:[a.id,b.id],sessionRoles:[{sessionId:a.id,roles:['speaker']},{sessionId:b.id,roles:['organizer','host']}]},'outreach');
+  assert.deepEqual(saved.contact.source,original.source);assert.deepEqual(saved.contact.profile,original.profile);assert.deepEqual(saved.contact.invitation,original.invitation);assert.equal(saved.contact.operations.responseStatus,'pending');
+  const oldClient={...saved.contact.operations,notes:'合成旧客户端备注'};delete oldClient.sessionRoles;
+  saved=await second.saveOperations(original.id,2,oldClient,'outreach');assert.equal(saved.contact.operations.sessionRoles.length,2);
+  await fails(()=>first.saveOperations(original.id,2,oldClient,'outreach'),'REVISION_CONFLICT',409);
+  saved=await first.saveOperations(original.id,3,{...oldClient,sessionIds:[a.id]},'outreach');assert.deepEqual(saved.contact.operations.sessionRoles,[{sessionId:a.id,roles:['speaker']}]);
+  assert.equal(journal.snapshot().value.audit.at(-1).action,'save_contact_operations');
+});
+
+test('complete roster export audit uses one CAS without modifying a person and rejects stale, false-count and unknown ACK success', async () => {
+  const journal=journalFixture();let current=Date.parse(AT);const contentStore={read:async()=>({draft:{content:createInitialContent()}})};
+  const make=()=>createOssContactsStore({journal:journal.client(),contentStore,now:()=>current});const first=make(),second=make();await first.createContact(0,profile(),'outreach');
+  current+=1000;const before=await first.read(),exported={count:1,includeContact:false,includeAnswers:true,workbookSha256:'a'.repeat(64)};
+  assert.deepEqual(await first.recordExport(1,'outreach',exported),{revision:2});assert.deepEqual((await second.read()).contacts,before.contacts);
+  assert.deepEqual(journal.snapshot().value.audit.at(-1),{action:'export_contacts',actorId:'outreach',revision:2,at:new Date(current).toISOString(),...exported});
+  assert.deepEqual(readContactSnapshot(JSON.stringify(journal.snapshot().value)).contacts,before.contacts);
+  await fails(()=>first.recordExport(1,'outreach',exported),'REVISION_CONFLICT',409);
+  await fails(()=>first.recordExport(2,'outreach',{...exported,count:0}),'REVISION_CONFLICT',409);
+  for(const input of [{...exported,includeContact:'yes'},{...exported,workbookSha256:'bad'},{...exported,recipient:'private@example.invalid'}])await fails(()=>first.recordExport(2,'outreach',input),'VALIDATION_ERROR',422);
+  journal.mode('after');await fails(()=>first.recordExport(2,'outreach',exported),'CONTACT_STORAGE_ERROR',503);journal.mode(null);
+  assert.equal((await second.read()).revision,3);assert.equal(journal.snapshot().value.audit.filter(entry=>entry.action==='export_contacts').length,2);
+  assert.deepEqual((await second.read()).contacts,before.contacts);
 });

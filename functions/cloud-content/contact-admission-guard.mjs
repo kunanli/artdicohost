@@ -1,3 +1,4 @@
+import { hasNewContactAllocations } from '../../shared/contacts-schema.mjs';
 import { CloudContentError } from './errors.mjs';
 
 const fail = (code, message, status) => { throw new CloudContentError(code, message, status); };
@@ -16,8 +17,7 @@ export function createContactAdmissionGuard({ contactsStore, lookupRegistration,
     const contact = roster.contacts.find(value => value.id === contactId);
     if (!contact) fail('CONTACT_NOT_FOUND', '此联系人不存在，请重新载入。', 404);
     if (action === 'operations') {
-      const adding = ['sessionIds', 'boothIds', 'participationForms'].some(field => Array.isArray(input.operations?.[field])
-        && input.operations[field].some(value => !(contact.operations[field] ?? []).includes(value)));
+      const adding = hasNewContactAllocations(input.operations, contact.operations);
       if (!adding) return; // Notes and removing historical assignments remain possible.
       if (contact.profile.contactConsent === 'declined' || contact.operations.responseStatus === 'declined' || input.operations.responseStatus === 'declined') fail('CONTACT_DECLINED', '对象已拒绝联络或婉拒参加，不能新增安排。', 422);
     } else if (action !== 'invitation') unavailable();

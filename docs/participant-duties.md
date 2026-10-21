@@ -1,0 +1,25 @@
+# 人员角色与逐场次职责
+
+原始意向、实际出席回复、工作人员职责、报名名额及公开授权分别保存。修改角色不重建联系人或报名，不修改 `profile`／`source`／`sourceProfile`，不确认名额、住宿、公开姓名或肖像。日常取消仅改变状态与当前关联，完整 journal 继续保留历史。
+
+全活动 `operations.participationForms` 可多选：`guest,speaker,panelist,host,organizer,booth,student_showcase,attendee`。新增 `organizer` 表示研讨会组织者，`host` 表示主持；不把原始问卷的意向改写成正式职责。
+
+`operations.sessionRoles` 为可省略、最多 50 项的数组：
+
+```json
+[{"sessionId":"session-morning","roles":["speaker"]},{"sessionId":"session-afternoon","roles":["organizer","host"]}]
+```
+
+每项须对应已关联的 `sessionIds`，同一场次一项，职责非空且不重复，只接受 `speaker,panelist,host,organizer,guest,attendee`。场次时间冲突、已取消或不存在的安排沿用服务端校验。联系人详情按场次选择职责，列表和已保存总览显示本场职责，不把全活动标签套用到每一场。
+
+旧记录只读时解释为空数组，不追加修订或覆写旧 bytes。旧客户端保存完整 operations 时省略 `sessionRoles`／`participationForms`，服务端保留已有值；明确移除场次才移除该场当前职责。明确传空数组才清空本次关联。未知字段、重复职责或未知角色不能进入持久快照。旧快照及迁移档案继续按原 bytes／digest 校验。
+
+已有名额关联者，在旧联系人 PUT 或 `POST /api/admin/contacts/:id/assignments` 新增场次、展位、全活动职责或本场职责前，均核对最新 confirmed 名额。`assignments` 可额外传 `sessionRoles`；省略保留。候补／撤回／读取失败不得新增，移除或保留历史职责不需要重新分配名额，仍需原有 Origin、角色、CSRF 及 contacts CAS 修订。未转报名者只作私有筹备安排。
+
+嘉宾预填只准备未保存草稿。`title,bio,website,publicRoles` 为可选建议；内部 host 映射为 moderator。过长简介／无效网址不截断或改原件，返回 `omittedFields` 供编辑者核对。实际公开仍需独立确认、照片授权及发布，不自动授予 publicConsent。
+
+## 全名单双向导出审计
+
+云端及本机 contactsStore 提供 `recordExport(expectedRevision,actorId,{count,includeContact,includeAnswers,workbookSha256}) -> {revision}`。count 必须等于当前完整名单数量，范围与 hash 校验后以同一 contacts CAS 追加 `export_contacts` 审计。此全局事件不修改任何联系人的 updatedAt、原件或实际回复；旧快照解析器认识这一固定事件。导出 bytes 只能在已收到审计确认后交给浏览器；未知 ACK 不假称成功。联系人、未转换对象及拒绝者均可按明确导出范围保留，不把筛选结果当作完整名单。
+
+代码验证使用合成资料，覆盖旧快照不写迁移、角色独立性、逐场职责校验、旧客户端保存、撤回后清理、两个入口的名额保护、CAS 与未知 ACK，以及导出全局审计不改个人原件。真实 39 行未作为夹具或写入生产。

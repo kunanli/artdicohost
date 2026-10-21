@@ -17,7 +17,7 @@ export function validateSnapshotContact(contact) {
     || !validateStoredContact(contact) || !identifier(contact.id) || contact.id !== 'c_' + contactHash(contact.source.key + '\0' + contact.source.rowId).slice(0, 32)
     || !iso(contact.createdAt) || !iso(contact.updatedAt) || !iso(contact.source.importedAt)
     || contact.createdAt !== contact.source.importedAt || contact.updatedAt < contact.createdAt
-    || !exact(contact.operations, Object.hasOwn(contact.operations, 'participationForms') ? operationFields : operationFields.filter(name => name !== 'participationForms'))
+    || !exact(contact.operations, operationFields.filter(name => !['participationForms', 'sessionRoles'].includes(name) || Object.hasOwn(contact.operations, name)))
     || !exact(contact.invitation, ['settings', 'generatedAt', 'sentAt', 'sentGenerationAt', 'channel'])) throw failure('INVALID_INPUT', 400);
   const normalized = validateImportedContact({ ...contact.profile, sourceRowId: contact.source.rowId });
   const { sourceRowId: _, ...profile } = normalized.value;
@@ -26,7 +26,7 @@ export function validateSnapshotContact(contact) {
   if (contact.sourceProfile && (!exact(contact.sourceProfile, profileFields) || contact.sourceProfileDigest !== contactHash(JSON.stringify(contact.sourceProfile)))
     || contact.source.digest !== contactHash(JSON.stringify(original))) throw failure('INVALID_INPUT', 400);
   const operations = validateContactOperations(contact.operations);
-  if (!operations.valid || !isDeepStrictEqual(operations.value, { ...contact.operations, participationForms: contact.operations.participationForms ?? [] })) throw failure('INVALID_INPUT', 400);
+  if (!operations.valid || !isDeepStrictEqual(operations.value, { ...contact.operations, participationForms: contact.operations.participationForms ?? [], sessionRoles: contact.operations.sessionRoles ?? [] })) throw failure('INVALID_INPUT', 400);
   const invitation = contact.invitation;
   if (invitation.settings !== null && !isDeepStrictEqual(validateInvitationSettings(invitation.settings).value, invitation.settings)) throw failure('INVALID_INPUT', 400);
   for (const name of ['generatedAt', 'sentAt', 'sentGenerationAt']) if (invitation[name] !== null
@@ -56,6 +56,7 @@ export function readContactSnapshot(snapshot) {
     const optionalSource = Object.hasOwn(entry ?? {}, 'sourceDigest') ? ['sourceDigest'] : [];
     const optionalSettings = Object.hasOwn(entry ?? {}, 'settingsDigest') ? ['settingsDigest'] : [];
     const extras = entry?.action === 'import_contacts' ? ['added', 'unchanged', 'duplicateReviewAccepted']
+      : entry?.action === 'export_contacts' ? ['count', 'includeContact', 'includeAnswers', 'workbookSha256']
       : entry?.action === 'create_contact' ? ['contactId', 'consentSource', 'contactConsent', ...optionalSource]
         : entry?.action === 'record_invitation_generated' ? ['contactId', ...optionalSettings]
           : entry?.action === 'record_invitation_manually_sent' ? ['contactId', 'channel']
@@ -63,6 +64,11 @@ export function readContactSnapshot(snapshot) {
     if (!extras || !exact(entry, [...names, ...extras]) || !identifier(entry.actorId) || entry.revision !== index + 1
       || !iso(entry.at) || entry.at < previous) throw failure('INVALID_INPUT', 400);
     previous = entry.at;
+    if (entry.action === 'export_contacts') {
+      if (entry.count !== created.size || typeof entry.includeContact !== 'boolean' || typeof entry.includeAnswers !== 'boolean'
+        || !HASH.test(entry.workbookSha256 ?? '')) throw failure('INVALID_INPUT', 400);
+      continue;
+    }
     if (entry.action === 'import_contacts') {
       if (!Number.isSafeInteger(entry.added) || entry.added < 1 || entry.added > MAX_CONTACTS
         || !revision(entry.unchanged) || typeof entry.duplicateReviewAccepted !== 'boolean') throw failure('INVALID_INPUT', 400);

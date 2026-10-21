@@ -59,13 +59,28 @@ export function guestPrefillFromContact(contact) {
   if (!plain(contact.profile)) return result({ profile: '联系人资料不可读取，请重新载入。' }, null);
   const profile = contact.profile;
   const value = { name: profile.displayName || profile.name, company: profile.organization, ggjRole: profile.siteRole || '', contactId: contact.id };
+  const omittedFields = [];
+  for (const [field, source, maximum] of [['title', 'position', 200], ['bio', 'background', 4000], ['website', 'website', 500]]) {
+    const candidate = profile[source];
+    if (typeof candidate !== 'string' || !candidate.trim()) continue;
+    let valid = candidate.isWellFormed() && [...candidate].length <= maximum && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(candidate);
+    if (field !== 'bio' && /[\r\n\t]/u.test(candidate)) valid = false;
+    if (field === 'website') {
+      try { const url = new URL(candidate); valid &&= /^https?:\/\//iu.test(candidate) && ['https:', 'http:'].includes(url.protocol) && !!url.hostname && !url.username && !url.password; }
+      catch { valid = false; }
+    }
+    if (valid) value[field] = candidate; else omittedFields.push(field);
+  }
+  const roleMap = { guest: 'guest', speaker: 'speaker', organizer: 'organizer', host: 'moderator' };
+  const publicRoles = [...new Set((contact.operations?.participationForms ?? []).map(role => roleMap[role]).filter(Boolean))];
+  if (publicRoles.length) value.publicRoles = publicRoles;
   const errors = {};
   if (typeof contact.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(contact.id)) errors.contactId = '联系人关联标识无效，请重新载入。';
   for (const [key, max] of [['name', 120], ['company', 160], ['ggjRole', 160]]) {
     const text = value[key];
     if (typeof text !== 'string' || !text.trim() && key !== 'ggjRole' || typeof text === 'string' && ([...text].length > max || /[\u0000-\u001f\u007f]/u.test(text))) errors[key] = '请先核对嘉宾称呼、机构和 GGJ 职务的完整单行资料。';
   }
-  return { ...result(errors, value), responseStatus: contact.operations.responseStatus };
+  return { ...result(errors, value), responseStatus: contact.operations.responseStatus, omittedFields };
 }
 
 /** Scheduling choices for outreach. No guest identities, private notes or event draft envelope. */

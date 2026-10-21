@@ -1,6 +1,7 @@
 import {createDefaultOrganizations} from '../config/exhibiting-partners.mjs';
 import {isPublicWebsite} from '../../shared/content-schema.mjs';
 import {prepareProfileImage,processedImageSummary} from '../lib/profile-image.mjs';
+import {editStaffImage} from '../lib/staff-image-editor.mjs';
 import '../styles/organizations-admin.css';
 
 const portrait=/^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
@@ -11,13 +12,13 @@ function node(tag,text,className){const result=document.createElement(tag);if(te
 /** Owns only local organization editing; the existing content controller saves and publishes. */
 export function createOrganizationsEditor({root,request,getContext,onApply,onChange,announce}){
   const $=selector=>root.querySelector(selector),dialog=$('[data-organization-dialog]'),form=$('[data-organization-form]');
-  let generation=0,uploadController=null,uploading=false,formDirty=false,accountKey='',editingId=null,editContext=null,imageGeneration=0;
+  let generation=0,uploadController=null,uploading=false,pendingImage=null,formDirty=false,accountKey='',editingId=null,editContext=null,imageGeneration=0;
   const context=()=>getContext(),allowed=()=>Boolean(context().content&&context().user?.roles.includes('editor'));
   const blocked=()=>context().busy===true;
   const records=()=>Object.hasOwn(context().content??{},'organizations')?context().content.organizations:createDefaultOrganizations();
   const notify=()=>onChange?.();
   function error(message=''){const box=$('[data-organization-error]');box.textContent=message;box.hidden=!message;if(message)box.focus();}
-  function changed(){formDirty=true;notify();}
+  function changed(event){if(event?.target?.closest('[data-image-editor]')||event?.target===$('[data-organization-image]'))return;formDirty=true;notify();}
   function revoke(){form.elements.namedItem('publicConsent').checked=false;$('[data-organization-consent-note]').textContent='公开资料或图片已变更，请重新核实这份组织资料的公开授权。';changed();}
   function image(id){
     const previous=$('[data-organization-preview]'),preview=previous.cloneNode(false),stamp=++imageGeneration;
@@ -30,7 +31,7 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onCha
     },{once:true});
     preview.src=path;preview.hidden=false;$('[data-organization-image-empty]').hidden=true;
   }
-  function cancelUpload(){generation++;uploadController?.abort();uploadController=null;uploading=false;}
+  function cancelUpload(){generation++;uploadController?.abort();uploadController=null;uploading=false;pendingImage=null;$('[data-organization-image-editor]').replaceChildren();$('[data-organization-image-editor]').hidden=true;}
   function reset(){cancelUpload();form.reset();editingId=null;editContext=null;formDirty=false;image('');error();$('[data-organization-image-status]').textContent='';}
   function clear(){reset();accountKey='';if(dialog.open)dialog.close();$('[data-organization-list]').replaceChildren();$('[data-organizations-legacy]').hidden=true;$('[data-organizations-empty]').hidden=true;}
   function configure(){
@@ -38,8 +39,12 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onCha
     if(next!==accountKey){clear();accountKey=next;}
     const locked=blocked()||!allowed();
     for(const button of root.querySelectorAll('[data-organization-add],[data-organization-action]'))button.disabled=locked||uploading||dialog.open||button.dataset.edge==='true';
-    for(const field of form.querySelectorAll('input,textarea,select,button'))field.disabled=locked||uploading;
+    for(const field of form.querySelectorAll('input,textarea,select,button'))if(!field.closest('[data-image-editor]'))field.disabled=locked||uploading;
     for(const button of root.querySelectorAll('[data-organization-close]'))button.disabled=blocked();
+    $('[data-organization-submit]').disabled=locked||uploading||Boolean(pendingImage);
+    $('[data-organization-image]').disabled=locked||uploading||Boolean(pendingImage);
+    $('[data-organization-image-edit]').disabled=locked||uploading||Boolean(pendingImage)||!portrait.test(form.elements.namedItem('logoId').value);
+    for(const selector of ['[data-organization-image-retry]','[data-organization-image-discard]']){$(selector).hidden=!pendingImage;$(selector).disabled=locked||uploading;}
   }
   function apply(next,message){if(!allowed()||blocked()||uploading)return;onApply(next);render();announce(message+' 请保存草稿，再发布到公开页。');}
   function render(){
@@ -75,18 +80,38 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onCha
     image(value.logoId);$('[data-organization-dialog-title]').textContent=(item?'编辑':'新增')+'组织';$('[data-organization-consent-note]').textContent='更改公开资料或图片后，请重新核对授权；保存草稿不会自动公开。';dialog.showModal();notify();configure();
   }
   function close(){if(blocked())return;if((formDirty||uploading)&&!confirm('关闭将放弃本次尚未应用的组织资料，继续吗？'))return;cancelUpload();dialog.close();reset();notify();configure();}
-  async function upload(event){
-    const file=event.currentTarget.files?.[0];if(!allowed()||blocked()||!dialog.open)return;
-    cancelUpload();form.elements.namedItem('logoId').value='';image('');revoke();error();$('[data-organization-image-status]').textContent='';if(!file){configure();return;}
-    const started=generation,current=context(),content=current.content,revision=current.revision,key=accountKey,id=form.elements.namedItem('id').value;
-    const controller=new AbortController();uploadController=controller;uploading=true;notify();configure();$('[data-organization-image-status]').textContent='正在处理并上传组织图片…';
-    const active=()=>started===generation&&!controller.signal.aborted&&key===accountKey&&allowed()&&dialog.open&&context().content===content&&context().revision===revision&&form.elements.namedItem('id').value===id;
+  function imageContext(){return{content:context().content,revision:context().revision,key:accountKey,id:form.elements.namedItem('id').value};}
+  function activeImage(state,started,signal){return started===generation&&!signal.aborted&&state.key===accountKey&&allowed()&&dialog.open&&context().content===state.content&&context().revision===state.revision&&form.elements.namedItem('id').value===state.id;}
+  async function sendImage(pending,started,controller){
+    const result=await request('/api/admin/portraits',{method:'POST',body:JSON.stringify(pending.prepared.payload),signal:controller.signal});if(!activeImage(pending.context,started,controller.signal))return;
+    const proof=result.portrait;if(!portrait.test(proof?.id??'')||proof.contentType!==pending.prepared.payload.contentType||!Number.isSafeInteger(proof.bytes)||proof.bytes<1||proof.bytes>512*1024)throw new Error('图片上传结果尚未核对，可重试同一份图片。');
+    form.elements.namedItem('logoId').value=proof.id;image(proof.id);pendingImage=null;$('[data-organization-image-status]').textContent=processedImageSummary(pending.prepared)+' 请应用、保存并发布。';
+  }
+  function imageFailure(reason){$('[data-organization-image-status]').textContent=pendingImage?'已保留待上传图片与当前组织资料，原图片仍保留。请稍后重试上传，或取消本次图片。':'图片编辑未完成，原有图片与组织资料仍保留。';error(reason.message||'图片上传暂未完成。');}
+  async function editImage(fileOrLoader){
+    if(!allowed()||blocked()||!dialog.open||uploading||pendingImage)return;
+    cancelUpload();error();
+    const started=generation,state=imageContext(),returnFocus=$(typeof fileOrLoader==='function'?'[data-organization-image-edit]':'[data-organization-image]');
+    const controller=new AbortController();uploadController=controller;uploading=true;notify();configure();$('[data-organization-image-status]').textContent='正在准备图片编辑…';
+    const active=()=>activeImage(state,started,controller.signal);
     try{
-      const prepared=await prepareProfileImage(file,{maxEdge:800,signal:controller.signal});if(!active())return;
-      const result=await request('/api/admin/portraits',{method:'POST',body:JSON.stringify(prepared.payload),signal:controller.signal});if(!active())return;
-      const proof=result.portrait;if(!portrait.test(proof?.id??'')||proof.contentType!==prepared.payload.contentType||!Number.isSafeInteger(proof.bytes)||proof.bytes<1||proof.bytes>512*1024)throw new Error('图片上传结果尚未核对，请重新选择图片后再应用。');
-      form.elements.namedItem('logoId').value=proof.id;image(proof.id);$('[data-organization-image-status]').textContent=processedImageSummary(prepared)+' 请应用、保存并发布。';
-    }catch(reason){if(active()){$('[data-organization-image-status]').textContent='图片未确认上传，请重新选择；组织资料尚未应用。';error(reason.message||'图片上传暂未完成。');}}
+      const file=typeof fileOrLoader==='function'?await fileOrLoader(controller.signal):fileOrLoader;if(!active())return;
+      $('[data-organization-image-editor]').hidden=false;
+      const edited=await editStaffImage(file,{root:$('[data-organization-image-editor]'),kind:'organization',signal:controller.signal});if(!active())return;
+      $('[data-organization-image-editor]').hidden=true;
+      if(!edited){$('[data-organization-image-status]').textContent='已取消图片编辑，原有图片与组织资料保留。';return;}
+      revoke();$('[data-organization-image-status]').textContent='正在处理并上传编辑后的组织图片…';
+      const prepared=await prepareProfileImage(edited,{maxEdge:800,preserveTransparency:true,signal:controller.signal});if(!active())return;
+      pendingImage={prepared,context:state};await sendImage(pendingImage,started,controller);
+    }catch(reason){if(active())imageFailure(reason);}
+    finally{if(started===generation){uploading=false;uploadController=null;$('[data-organization-image-editor]').hidden=true;$('[data-organization-image]').value='';notify();configure();if(dialog.open&&document.activeElement===document.body)(pendingImage?$('[data-organization-image-retry]'):returnFocus).focus({preventScroll:true});}}
+  }
+  function upload(event){const file=event.currentTarget.files?.[0];if(file)return editImage(file);}
+  async function retryImage(){
+    const pending=pendingImage;if(!pending||uploading||blocked()||!allowed())return;
+    const started=generation,controller=new AbortController();if(!activeImage(pending.context,started,controller.signal))return;
+    uploadController=controller;uploading=true;error();notify();configure();$('[data-organization-image-status]').textContent='正在重试上传同一份图片…';
+    try{await sendImage(pending,started,controller);}catch(reason){if(activeImage(pending.context,started,controller.signal))imageFailure(reason);}
     finally{if(started===generation){uploading=false;uploadController=null;notify();configure();}}
   }
   form.addEventListener('input',changed);form.addEventListener('change',changed);
@@ -98,9 +123,12 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onCha
   dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
   dialog.addEventListener('close',()=>{if(dialog.open)return;reset();notify();configure();});
   $('[data-organization-image]').addEventListener('change',upload);
+  $('[data-organization-image-edit]').addEventListener('click',()=>{const id=form.elements.namedItem('logoId').value;if(portrait.test(id))return editImage(signal=>request('/api/admin/portraits/'+id,{binaryImage:true,signal}));});
+  $('[data-organization-image-retry]').addEventListener('click',retryImage);
+  $('[data-organization-image-discard]').addEventListener('click',()=>{if(uploading||blocked()||!allowed())return;cancelUpload();error();image(form.elements.namedItem('logoId').value);$('[data-organization-image-status]').textContent='已取消待上传图片，原有图片与组织资料保留。';notify();configure();$('[data-organization-image]').focus({preventScroll:true});});
   $('[data-organization-image-remove]').addEventListener('click',()=>{if(!allowed()||blocked())return;cancelUpload();form.elements.namedItem('logoId').value='';$('[data-organization-image]').value='';$('[data-organization-image-status]').textContent='';image('');revoke();configure();});
   form.addEventListener('submit',event=>{
-    event.preventDefault();if(!allowed()||blocked()||uploading||!form.reportValidity())return;
+    event.preventDefault();if(!allowed()||blocked()||uploading||pendingImage||!form.reportValidity())return;
     if(!editContext||editContext.content!==context().content||editContext.revision!==context().revision||editContext.accountKey!==accountKey){error('草稿版本已变化，请关闭本次编辑，重新读取组织资料后再修改。');return;}
     const item=Object.fromEntries(['id','name','logoId','website','participation','status','internalNotes'].map(name=>[name,form.elements.namedItem(name).value]));item.publicConsent=form.elements.namedItem('publicConsent').checked;
     if(item.website&&!isPublicWebsite(item.website)){error('请填写不含账号密码的 HTTP 或 HTTPS 网址。');return;}

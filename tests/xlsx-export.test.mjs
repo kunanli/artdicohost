@@ -9,6 +9,7 @@ import {createOssContactsStore} from '../functions/cloud-content/contacts-store.
 import {createInitialContent} from '../src/config/content.mjs';
 import {memoryObjects} from './helpers/cloud-memory-objects.mjs';
 import {XLSX_MIME} from '../shared/xlsx-workbook.mjs';
+import {contactsWorkbook} from '../functions/registration-admin/xlsx-export.mjs';
 
 const AT='2026-10-21T00:00:00.000Z',EVENT='ggj-cn-2026',A='A'.repeat(43),B='B'.repeat(43),C='C'.repeat(43),TEAM='t_'+'a'.repeat(22);
 const clone=value=>structuredClone(value),digest=value=>createHash('sha256').update(value).digest('hex');
@@ -47,6 +48,24 @@ test('explicit contact, original-answer and arrangement scopes stay separate and
   assert.equal(cell(rows,'邮箱'),'synthetic@example.invalid');assert.equal(cell(rows,'团队'),'合成团队');assert.match(cell(duties,'逐场次职责'),/合成研讨会：讲者 \/ 研讨会组织者/u);assert.match(cell(duties,'展位与组织'),/已取消/u);assert.equal(cell(answers,'background'),'合成原回答');
   assert.equal(cell(rows,'原参与意向'),'attend');assert.equal(cell(duties,'实际参与角色'),'讲者 / 研讨会组织者');assert.equal(f.calls.arrangements,1);
   const meta=(await f.base.read()).value.audit[0].metadata;assert.equal(meta.contactIncluded,true);assert.equal(meta.answersIncluded,true);assert.equal(meta.arrangementsIncluded,true);assert.deepEqual(meta.sourceRevisions,{applications:3,admissions:3,contacts:7,content:9});
+});
+test('both Excel views preserve explicit organization membership roles and orphan history without inferring employers',async()=>{
+  const f=fixture(),contact=f.arrangements.contacts[0];
+  contact.operations.organizationMemberships=[{organizationId:'organization_one',role:'lead',title:'合成联络负责人'},
+    {organizationId:'organization_missing',role:'member',title:''}];
+  f.arrangements.content.organizations=[{id:'organization_one',name:'=SUM(A1)',status:'withdrawn'},
+    {id:'organization_unlinked',name:'合成来源称呼',status:'confirmed'}];
+  const original=clone(f.arrangements),response=await f.api(request(undefined,{body:{expectedRevision:0,includeArrangements:true}}));
+  assert.equal(response.status,200);
+  const arrangements=await table(await response.arrayBuffer(),'当前参与职责与安排');
+  const expected='=SUM(A1) · 负责人 · 合成联络负责人 · 组织已退出\norganization_missing · 历史组织已不存在 · 成员';
+  assert.equal(cell(arrangements,'已关联参与组织与成员职责'),expected);
+  assert.equal(cell(arrangements,'已关联参与组织与成员职责',2),null,'an unlinked registration does not inherit a matching employer');
+  const bytes=contactsWorkbook({contacts:[{...contact,source:{rowId:'1'}}],content:f.arrangements.content,
+    contactRevision:7,contentRevision:9,exportedAt:AT});
+  const contacts=await table(bytes,'全部筹备人员');
+  assert.equal(cell(contacts,'已关联参与组织与成员职责'),expected);assert.equal(contacts[0].includes('邮箱'),false);
+  assert.deepEqual(f.arrangements,original,'exports never rewrite source relationships');
 });
 test('review withdrawal does not remove raw data and is never exported as a valid admission during a release gap',async()=>{
   const f=fixture(),detail=await f.store.detail(A),review={...detail.review,status:'withdrawn'};delete review.deletionRequested;

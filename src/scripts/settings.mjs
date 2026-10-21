@@ -3,6 +3,7 @@ import {createDeliverySettings} from './delivery-settings.mjs';
 import {createSettingsSession} from '../lib/settings-session.mjs';
 import {canManageEventOperations,canManageAccounts} from '../../shared/staff-permissions.mjs';
 import {createBrowserDraftStore} from '../lib/browser-drafts.mjs';
+import {eventConfig} from '../config/event.mjs';
 
 const root=document.querySelector('[data-settings-admin]'),$=selector=>root.querySelector(selector);
 const secure=location.protocol==='https:'||['127.0.0.1','localhost'].includes(location.hostname);
@@ -15,8 +16,8 @@ const transport=createSettingsSession({
 const request=(path,options)=>transport.request(path,options);
 const draftStore=createBrowserDraftStore();
 const staffRoot=$('[data-staff-settings]'),deliveryRoot=$('[data-delivery-settings]');
-const staffSettings=createStaffSettings({root:staffRoot,request,draftStore,binaryRequest:(path,body)=>request(path,{method:'POST',body:JSON.stringify(body),binary:true})});
-const deliverySettings=createDeliverySettings({root:deliveryRoot,request,draftStore});
+const staffSettings=createStaffSettings({root:staffRoot,request,draftStore,eventId:eventConfig.id,binaryRequest:(path,body)=>request(path,{method:'POST',body:JSON.stringify(body),binary:true})});
+const deliverySettings=createDeliverySettings({root:deliveryRoot,request,draftStore,eventId:eventConfig.id});
 const pending=()=>staffSettings.pending||deliverySettings.pending;
 const dirty=()=>staffSettings.dirty||deliverySettings.dirty;
 function lock(){

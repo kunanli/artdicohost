@@ -43,7 +43,7 @@ export function generateInitialStaffPassword(random=globalThis.crypto){
 }
 
 /** Superadmin tools never retain passwords, recovery keys or images in browser storage. */
-export function createStaffSettings({root,request,binaryRequest,draftStore}){
+export function createStaffSettings({root,request,binaryRequest,draftStore,eventId}){
   const $=selector=>root.querySelector(selector);
   let user=null,busy=false,externalBusy=false,usersRevision=null,groupRevision=null,groupConfigured=false,maintenance=null;
   let accountKey='',userDirty=false,groupDirty=false,restoreDirty=false,groupImageGeneration=0;
@@ -121,7 +121,7 @@ export function createStaffSettings({root,request,binaryRequest,draftStore}){
       {kind:'restore',form:restoreForm,ready:canRecoverSystem(user),revision:()=>0,fields:['restoreId'],capture:()=>({restoreId:restoreForm.elements.namedItem('restoreId').value}),validate:value=>string(value.restoreId,80),apply:value=>{restoreForm.elements.namedItem('restoreId').value=value.restoreId;restoreDirty=true;}},
     ];
     for(const spec of specs){if(!spec.ready||drafts.has(spec.kind)||started!==generation)continue;
-      const draft=createSettingsFormDraft({store:draftStore,actorId:user.id,entity:spec.kind,form:spec.form,policy:{fields:spec.fields,pendingFields:spec.fields,validate:spec.validate},baseRevision:spec.revision,isCurrent:()=>started===generation&&canManageEventOperations(user),capture:spec.capture,apply:spec.apply,onChange:lock,
+      const draft=createSettingsFormDraft({store:draftStore,actorId:user.id,eventId,entity:spec.kind,form:spec.form,policy:{fields:spec.fields,pendingFields:spec.fields,validate:spec.validate},baseRevision:spec.revision,isCurrent:()=>started===generation&&canManageEventOperations(user),capture:spec.capture,apply:spec.apply,onChange:lock,
         onPending:()=>{unknown.add(spec.kind);},onDiscard:()=>{unknown.delete(spec.kind);spec.form.reset();if(spec.kind==='users')resetUser();else if(spec.kind==='group')groupDirty=false;else restoreDirty=false;lock();}});
       drafts.set(spec.kind,draft);try{await draft.load();}catch{}if(started!==generation)return;
     }lock();

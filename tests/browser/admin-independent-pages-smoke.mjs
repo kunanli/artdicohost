@@ -11,6 +11,8 @@ const dist=resolve(process.env.ARTDICO_DIST_DIRECTORY||resolve(source,'dist'));
 const evidence=resolve(project,'.local-data/browser-evidence/admin-independent-pages');
 const {peopleRuntimeFixture,PEOPLE_FIXTURE_API:SITE,PEOPLE_FIXTURE_PASSWORD}=await import(pathToFileURL(resolve(source,'tests/helpers/people-runtime-fixture.mjs')));
 const {validateContent}=await import(pathToFileURL(resolve(source,'shared/content-schema.mjs')));
+const {CLOUD_ADMIN_PAGE_ALIASES}=await import(pathToFileURL(resolve(source,'functions/cloud-content/http-server.mjs')));
+const aliases=new Map(CLOUD_ADMIN_PAGE_ALIASES);
 const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright-core');
 const KEYS=['overview','event','arrangements','guests','organizations','showcases','sessions','booths','publish'];
 const routeFor=key=>'/admin/content/'+key+'/';
@@ -69,7 +71,7 @@ async function fixture(browser,errors,{width=1440,mode='normal',username='owner'
       return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
     }
     const fromSource=path.startsWith('/__test_source__/'),base=fromSource?source:dist;
-    const pathname=fromSource?path.slice('/__test_source__'.length):path.endsWith('/')?path+'index.html':path;
+    const served=fromSource?path.slice('/__test_source__'.length):aliases.get(path)||path;const pathname=served.endsWith('/')?served+'index.html':served;
     const file=resolve(base,'.'+pathname);assert.ok(file.startsWith(base+'/'));
     try{return await route.fulfill({status:200,contentType:mime(file),body:await readFile(file)});}catch{return route.fulfill({status:404,body:''});}
   });
@@ -113,8 +115,8 @@ async function navigationCases(browser,errors,reports){
   }
   {
     const f=await fixture(browser,errors);for(const[key,hash]of[['event','event-editor-title'],['arrangements','arrangements-title'],['guests','guests-title'],['organizations','organizations-title'],['showcases','showcases-title'],['sessions','sessions-title'],['booths','booths-title']]){await f.page.goto(SITE+'/admin/#'+hash,{waitUntil:'networkidle'});await f.page.locator('[data-content-panel='+key+']:visible').waitFor();assert.equal(new URL(f.page.url()).pathname,routeFor(key));}
-    for(const[key,hash,form,id]of[['booths','booth='+BOOTH,'booth',BOOTH],['guests','guest='+GUEST,'guest',GUEST],['sessions','session='+f.initial.sessions[0].id,'session',f.initial.sessions[0].id],['showcases','showcase='+SHOWCASE,'showcase',SHOWCASE],['organizations','organization='+ORG,'organization',ORG]]){await f.page.goto(SITE+'/admin/#'+hash,{waitUntil:'networkidle'});await f.page.locator('[data-'+form+'-dialog][open]').waitFor();assert.equal(new URL(f.page.url()).pathname,routeFor(key));assert.equal(await f.page.locator('[data-'+form+'-form] [name=id]').inputValue(),id);await f.page.locator(form==='organization'?'[data-organization-close]':'[data-close-dialog='+form+']').first().click();}
-    const invitee=(await f.runtime.createContact({name:'合成深链受邀人'})).contact;await f.page.goto(SITE+'/admin/#invitee='+invitee.id,{waitUntil:'networkidle'});await f.page.locator('[data-guest-dialog][open]').waitFor();assert.equal(new URL(f.page.url()).pathname,routeFor('guests'));assert.equal(await f.page.locator('[data-guest-form] [name=contactId]').inputValue(),invitee.id);assert.equal(await f.page.locator('[data-guest-form] [name=publicConsent]').isChecked(),false);
+    for(const[key,hash,form,id]of[['booths','booth='+BOOTH,'booth',BOOTH],['guests','guest='+GUEST,'guest',GUEST],['sessions','session='+f.initial.sessions[0].id,'session',f.initial.sessions[0].id],['showcases','showcase='+SHOWCASE,'showcase',SHOWCASE],['organizations','organization='+ORG,'organization',ORG]]){await f.page.goto(SITE+'/admin/#'+hash,{waitUntil:'networkidle'});await f.page.locator('[data-'+form+'-dialog][open]').waitFor();assert.equal(new URL(f.page.url()).pathname,routeFor(key));assert.equal(await f.page.locator('[data-'+form+'-form] [name=id]').inputValue(),id);await f.page.locator(form==='organization'?'[data-organization-close]':'[data-close-dialog='+form+']').first().click();await f.page.locator('[data-'+form+'-dialog]').waitFor({state:'hidden'});await f.page.waitForTimeout(550);assert.equal((await draftRows(f.page)).some(row=>row.scope.page==='content'),false,'explicit '+form+' cancellation leaves no delayed recovery');}
+    const invitee=(await f.runtime.createContact({name:'合成深链受邀人'})).contact;await f.page.goto(SITE+'/admin/#invitee='+invitee.id,{waitUntil:'networkidle'});await f.page.locator('[data-guest-dialog][open]').waitFor().catch(async error=>{await f.page.screenshot({path:resolve(evidence,'failed-invitee.png'),fullPage:true});console.error(JSON.stringify({diagnostic:'invitee',url:f.page.url(),status:await f.page.locator('[data-admin-status]').textContent(),error:await f.page.locator('[data-admin-error]').textContent(),recovery:await f.page.locator('[data-admin-local-message]').textContent(),rows:(await draftRows(f.page)).map(row=>({kind:row.kind,section:row.value.section,forms:Object.keys(row.value.forms),pending:Boolean(row.value.pendingSave)})),calls:f.calls.map(({path,method,status})=>({path,method,status}))},null,2));throw error;});assert.equal(new URL(f.page.url()).pathname,routeFor('guests'));assert.equal(await f.page.locator('[data-guest-form] [name=contactId]').inputValue(),invitee.id);assert.equal(await f.page.locator('[data-guest-form] [name=publicConsent]').isChecked(),false);
     assert.deepEqual(saves(f),[]);await noSideEffects(f);await f.close();reports.push({group:'navigation',legacySectionAndEntityLinksCanonicalAndReadOnly:true,inviteePrefillPreservesStablePersonAndFreshConsent:true});
   }
   {

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {readFile,mkdir} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {createInitialContent} from '../../src/config/content.mjs';
 import {validateContent,toPublicContent} from '../../shared/content-schema.mjs';
@@ -10,6 +10,9 @@ import {normalizePortraitBytes} from '../../shared/portrait-codec.mjs';
 import {profileImageDimensions} from '../../src/lib/profile-image.mjs';
 const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright-core');
 const project=fileURLToPath(new URL('../../',import.meta.url)),dist=resolve(process.env.ARTDICO_DIST_DIRECTORY||resolve(project,'dist'));
+const actualSource=resolve(process.env.ARTDICO_SOURCE_DIRECTORY||project);
+const {CLOUD_ADMIN_PAGE_ALIASES}=await import(pathToFileURL(resolve(actualSource,'functions/cloud-content/http-server.mjs')));
+const pageAliases=new Map(CLOUD_ADMIN_PAGE_ALIASES);
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const SITE='https://api.artdico.host',errors=[],reports=[];
 const json=(body,status=200)=>({status,contentType:'application/json',body:JSON.stringify(body)});
@@ -51,7 +54,7 @@ async function scenario(mode){
       if(path==='/api/admin/planning')return route.fulfill(json({sessions:[],booths:[],features:{intentInvitations:false}}));
       return route.fulfill(json({},404));
     }
-    const file=resolve(dist,'.'+(path.endsWith('/')?path+'index.html':path));assert.ok(file.startsWith(dist+'/'));
+    const served=pageAliases.get(path)||path;const file=resolve(dist,'.'+(served.endsWith('/')?served+'index.html':served));assert.ok(file.startsWith(dist+'/'));
     try{return route.fulfill({status:200,body:await readFile(file),contentType:({html:'text/html',js:'text/javascript',css:'text/css',png:'image/png',jpg:'image/jpeg',svg:'image/svg+xml',webp:'image/webp',woff2:'font/woff2'})[extname(file).slice(1)]||'application/octet-stream'});}catch{return route.fulfill({status:404,body:''});}
   });
   await page.goto(SITE+'/admin/content/organizations/',{waitUntil:'networkidle'});

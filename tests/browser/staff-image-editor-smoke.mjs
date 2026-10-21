@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {readFile,mkdir} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import {createInitialContent} from '../../src/config/content.mjs';
 import {normalizePortraitBytes} from '../../shared/portrait-codec.mjs';
@@ -16,6 +16,9 @@ const seed=normalizePortraitBytes(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADC
 const seedId=createHash('sha256').update(seed).digest('hex')+'.png';
 const errors=[],reports=[];
 const json=(body,status=200)=>({status,contentType:'application/json',body:JSON.stringify(body)});
+const actualSource=resolve(process.env.ARTDICO_SOURCE_DIRECTORY||project);
+const {CLOUD_ADMIN_PAGE_ALIASES}=await import(pathToFileURL(resolve(actualSource,'functions/cloud-content/http-server.mjs')));
+const pageAliases=new Map(CLOUD_ADMIN_PAGE_ALIASES);
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 
 async function fixture({width=1280,mode='normal'}={}){
@@ -69,7 +72,7 @@ async function fixture({width=1280,mode='normal'}={}){
       if(path.startsWith('/api/admin/portraits/')){const image=images.get(path.split('/').at(-1));return route.fulfill(image?{status:200,contentType:image.type,body:image.bytes}:{status:404,body:''});}
       throw new Error('Unimplemented synthetic API: '+path);
     }
-    const file=resolve(dist,'.'+(path.endsWith('/')?path+'index.html':path));assert.ok(file.startsWith(dist+'/'));
+    const served=pageAliases.get(path)||path;const file=resolve(dist,'.'+(served.endsWith('/')?served+'index.html':served));assert.ok(file.startsWith(dist+'/'));
     return route.fulfill({status:200,body:await readFile(file),contentType:({html:'text/html',js:'text/javascript',css:'text/css',png:'image/png',jpg:'image/jpeg',svg:'image/svg+xml',webp:'image/webp',woff2:'font/woff2'})[extname(file).slice(1)]||'application/octet-stream'});
   });
   if(mode==='late-401-ignore-abort')await context.addInitScript(()=>{

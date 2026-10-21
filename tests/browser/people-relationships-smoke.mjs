@@ -2,13 +2,16 @@
 // All people, pictures, mail and account credentials here are synthetic.
 import assert from 'node:assert/strict';
 import {readFile,mkdir} from 'node:fs/promises';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {resolve,extname} from 'node:path';
 import {peopleRuntimeFixture,PEOPLE_FIXTURE_API as SITE,PEOPLE_FIXTURE_PASSWORD,PEOPLE_FIXTURE_PRIVATE} from '../helpers/people-runtime-fixture.mjs';
 import {createOssPortraitStore} from '../../functions/cloud-content/portrait-store.mjs';
 const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright-core');
 const project=fileURLToPath(new URL('../../',import.meta.url)),dist=resolve(process.env.ARTDICO_DIST_DIRECTORY||resolve(project,'dist'));
 const evidence=resolve(project,'.local-data/browser-evidence'),errors=[],reports=[];
+const actualSource=resolve(process.env.ARTDICO_SOURCE_DIRECTORY||project);
+const {CLOUD_ADMIN_PAGE_ALIASES}=await import(pathToFileURL(resolve(actualSource,'functions/cloud-content/http-server.mjs')));
+const pageAliases=new Map(CLOUD_ADMIN_PAGE_ALIASES);
 const PNG='iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFElEQVR4nGN0KFjAwMDAxMDAgKAAGOQBVgs9CEsAAAAASUVORK5CYII=';
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const json=(value,status=200)=>({status,contentType:'application/json',body:JSON.stringify(value)});
@@ -49,7 +52,7 @@ async function fixture({width=1280,username='owner',mode='normal',relations=true
       if(hold&&path===heldPath){hold=false;await new Promise(resolve=>{held=resolve;released=new Promise(done=>{finishHeld=done;});});try{return await route.fulfill(mode.endsWith('401')?json({},401):mode.endsWith('403')?json({},403):{status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});}finally{finishHeld();}}
       return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
     }
-    const file=resolve(dist,'.'+(path.endsWith('/')?path+'index.html':path));assert.ok(file.startsWith(dist+'/'));
+    const served=pageAliases.get(path)||path;const file=resolve(dist,'.'+(served.endsWith('/')?served+'index.html':served));assert.ok(file.startsWith(dist+'/'));
     return route.fulfill({status:200,body:await readFile(file),contentType:({html:'text/html',js:'text/javascript',css:'text/css',png:'image/png',jpg:'image/jpeg',webp:'image/webp',svg:'image/svg+xml',woff2:'font/woff2'})[extname(file).slice(1)]||'application/octet-stream'});
   });
   return {runtime,ids,context,page,writes,reads,dialogs,allowPublicationOnce:()=>{publicationBudget++;},setCatalogFailure:value=>{catalogFailure=value;},holdNext:path=>{hold=true;heldPath=path;},async waitHeld(){for(let index=0;index<1000&&!held;index++)await page.waitForTimeout(10);assert.ok(held,'synthetic response is held');},async release(){assert.ok(held);held();await released;await page.evaluate(()=>new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done))));}};

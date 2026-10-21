@@ -39,7 +39,7 @@ test('confirmation hook runs after a proven public record and cannot mutate or u
   let calls = 0, f;
   f = setup(async context => {
     calls++; assert.equal((await f.service.repository.list()).registrations.length, 1);
-    assert.equal(context.provenance.kind, 'public'); assert.equal(context.origin, ORIGIN);
+    assert.equal(context.provenance.kind, 'public'); assert.equal(context.origin, ORIGIN); assert.equal(context.notify, false);
     context.receipt.committed = false;
     if (calls === 1) throw new Error('SYNTHETIC_DELIVERY_UNAVAILABLE');
     return confirmation;
@@ -64,7 +64,8 @@ test('unknown registration acknowledgement never runs optional delivery until an
 });
 
 test('HTTP keeps a valid saved receipt and exposes only exact safe confirmation fields', async () => {
-  const receipt = { committed: true, eventId: EVENT, registrationId: 'r'.repeat(43), referenceCode: 'r'.repeat(43), committedAt: new Date(NOW).toISOString() };
+  const receipt = { committed: true, eventId: EVENT, registrationId: 'r'.repeat(43), referenceCode: 'r'.repeat(43), committedAt: new Date(NOW).toISOString(),
+    admissionStatus: 'pending_review', admissionKind: 'attendee', admissionRevision: 1 };
   const send = async child => {
     const handler = createRegistrationApi({ allowedOrigins: [ORIGIN], clock: () => NOW,
       submissionService: { submit: async () => ({ outcome: 'created', receipt, confirmation: child }) } });
@@ -77,6 +78,6 @@ test('HTTP keeps a valid saved receipt and exposes only exact safe confirmation 
   assert.deepEqual(valid.confirmation, confirmation); assert.doesNotMatch(JSON.stringify(valid), /SYNTHETIC_PRIVATE|private@example/u);
   for (const child of [{ ...confirmation, confirmationUrl: 'https://foreign.example.invalid/#r=' + receiptToken },
     { ...confirmation, expiresAt: '2026-01-01T00:00:00Z' }, { ...confirmation, email: { status: 'delivered' } }]) {
-    const result = await send(child); assert.equal(result.status, 'registered'); assert.equal(result.confirmation, undefined);
+    const result = await send(child); assert.equal(result.status, 'pending_review'); assert.equal(result.confirmation, undefined);
   }
 });

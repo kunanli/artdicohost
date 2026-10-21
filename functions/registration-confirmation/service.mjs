@@ -7,7 +7,7 @@ import { createConfirmationRepository, canonicalConfirmationKind, confirmationNo
 
 const SITE = 'https://artdico.host';
 const ID = /^[A-Za-z0-9_-]{43}$/u;
-const STATUS = ['confirmed', 'waitlisted', 'withdrawn'];
+const STATUS = ['pending_review', 'confirmed', 'waitlisted', 'rejected', 'withdrawn'];
 const actorValid = actor => typeof own(actor, 'id') === 'string' && /^[A-Za-z0-9_-]{1,80}$/u.test(actor.id)
   && Array.isArray(own(actor, 'roles')) && actor.roles.includes('superadmin');
 const automaticActor = 'system-confirmation';
@@ -92,15 +92,17 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const signed = tokens.issue(registrationId);
     return { ...signed, confirmationUrl: SITE + '/registration/confirmation/#r=' + signed.receiptToken };
   }
-  async function readEmail(registrationId, hasEmail) {
+  async function readEmail(registrationId, hasEmail, admissionStatus) {
     if (!hasEmail) return { status: 'not_applicable' };
     const current = await target().read(), notices = current.value.notices.filter(item => item.registrationId === registrationId);
     const notice = notices.find(item => item.kind === 'promotion') ?? notices.find(item => item.kind === 'registration');
     if (notice) return noticeEmail(notice);
+    if (admissionStatus !== 'confirmed') return { status: 'not_applicable' };
     if (!current.value.settings.enabled) return { status: 'disabled' };
     return { status: (await providerState()).ready ? 'pending' : 'not_configured' };
   }
   async function reserve(registrationId, admission, actorId, retryRejected, deadline) {
+    if (admission.status !== 'confirmed') return { status: 'not_applicable' };
     for (let tries = 0; tries < 4; tries++) {
       if (monotonicNow() >= deadline) return { status: 'not_attempted' };
       const current = await target().read(), kind = canonicalConfirmationKind(current.value, registrationId, admission.status);
@@ -131,8 +133,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const loaded = await loadRegistration(registrationId), { record, admission } = loaded;
     if (record.provenance.kind !== 'public') return { status: 'not_public' };
     if (admission.status === 'withdrawn') return { status: 'withdrawn' };
+    if (admission.status !== 'confirmed') return { status: 'not_applicable' };
     if (typeof record.fields.email !== 'string' || !record.fields.email) return { status: 'not_applicable' };
-    if (kind === 'promotion' && admission.status !== 'confirmed') return { status: 'not_attempted' };
     const reserved = await reserve(registrationId, admission, actorId, retryRejected, deadline);
     if (reserved.status) return reserved;
     if (!reserved.owned) return noticeEmail(reserved.notice);
@@ -142,7 +144,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     let latest;
     try { latest = await loadRegistration(registrationId); }
     catch { try { return await recordResult(notice, 'rejected', actorId); } catch { return { status: 'unknown' }; } }
-    if (latest.admission.status !== admission.status
+    if (latest.admission.status !== 'confirmed' || latest.admission.status !== admission.status
       || latest.record.fields.email !== record.fields.email || latest.record.provenance.kind !== 'public') {
       try { return await recordResult(notice, 'rejected', actorId); } catch { return { status: 'unknown' }; }
     }
@@ -155,9 +157,9 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (monotonicNow() >= deadline) {
       try { await recordResult(notice, 'rejected', actorId); return { status: 'not_attempted' }; } catch { return { status: 'unknown' }; }
     }
-    const link = capability(registrationId), confirmed = admission.status === 'confirmed';
-    const subject = eventFacts.title + (confirmed ? '｜参会名额已确认' : '｜候补登记已保存');
-    const text = [record.fields.name + '，你好：', '', confirmed ? '你的参会名额已确认。' : '你的候补登记已保存，目前尚未确认参会名额。',
+    const link = capability(registrationId);
+    const subject = eventFacts.title + '｜参会名额已确认';
+    const text = [record.fields.name + '，你好：', '', '你的参会名额已确认。',
       '登记编号：' + registrationId, '日期：' + eventFacts.date, '活动时间：' + eventFacts.time + '（UTC+8）',
       '签到：' + eventFacts.checkIn, '地点：' + eventFacts.venue,
       '查看最新状态与打印确认页：' + link.confirmationUrl,
@@ -178,11 +180,15 @@ export function createRegistrationConfirmationService({ registrationService, jou
   async function forSavedReceipt({ receipt, notify: send = true } = {}) {
     if (receipt?.committed !== true || receipt.eventId !== eventId || !ID.test(receipt.registrationId ?? '')
       || receipt.referenceCode !== receipt.registrationId || parseTimestamp(receipt.committedAt) === null
-      || !['confirmed', 'waitlisted'].includes(receipt.admissionStatus)) failure();
+      || !STATUS.includes(receipt.admissionStatus) || !['attendee', 'crew'].includes(receipt.admissionKind)
+      || !Number.isSafeInteger(receipt.admissionRevision) || receipt.admissionRevision < 0 || typeof send !== 'boolean') failure();
     const result = capability(receipt.registrationId), deadline = monotonicNow() + batchTimeoutMs;
+    // An application receipt has no formal notification reservation. The same
+    // capability reads the current decision after a later explicit approval.
+    if (!send || receipt.admissionStatus !== 'confirmed') return { ...result, email: { status: 'not_applicable' } };
     // Unconfigured notification adds no object access to the successful write.
     // This is configuration state, not a claim about historical delivery.
-    if (!send || !(await providerState()).ready) return { ...result, email: { status: 'not_configured' } };
+    if (!(await providerState()).ready) return { ...result, email: { status: 'not_configured' } };
     try { const email = await notify(receipt.registrationId, { deadline }); return { ...result,
       email: ['not_public', 'withdrawn'].includes(email.status) ? { status: 'not_applicable' }
         : email.status === 'not_attempted' ? { status: 'pending' } : email }; }
@@ -191,7 +197,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
   async function confirmation(input) {
     const value = await authorize(input);
     let email;
-    try { email = await readEmail(value.registrationId, value.hasEmail); } catch { email = { status: 'unknown' }; }
+    if (['pending_review', 'rejected'].includes(value.admissionStatus)) email = { status: 'not_applicable' };
+    else try { email = await readEmail(value.registrationId, value.hasEmail, value.admissionStatus); } catch { email = { status: 'unknown' }; }
     let groupInvite = null;
     if (value.admissionStatus === 'confirmed' && groupInviteProvider) {
       try { const offered = await groupInviteProvider({ receipt: { committed: true, eventId, registrationId: value.registrationId,
@@ -268,7 +275,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     return { outcome: 'updated', revision: saved.value.revision, operationId,
       status: stop ? 'partial' : 'completed', results };
   }
-  async function notifyPromoted({ registrationIds, timeoutMs = batchTimeoutMs } = {}) {
+  async function notifyBatch({ registrationIds, timeoutMs = batchTimeoutMs } = {}, kind) {
     if (!Array.isArray(registrationIds) || registrationIds.length > MAX_CONFIRMATION_BATCH || registrationIds.some(id => !ID.test(id))
       || new Set(registrationIds).size !== registrationIds.length || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > batchTimeoutMs) failure('INVALID_REQUEST', 400);
     const deadline = monotonicNow() + timeoutMs;
@@ -277,7 +284,11 @@ export function createRegistrationConfirmationService({ registrationService, jou
     for (const registrationId of registrationIds) {
       if (monotonicNow() >= deadline) stop = true;
       if (stop) { results.push({ registrationId, status: 'not_attempted' }); continue; }
-      try { const email = await notify(registrationId, { kind: 'promotion', deadline }); results.push({ registrationId, status: email.status }); if (['unknown', 'not_attempted'].includes(email.status)) stop = true; }
+      try {
+        const email = await notify(registrationId, { kind, deadline });
+        const status = kind === 'registration' && ['not_public', 'withdrawn'].includes(email.status) ? 'not_applicable' : email.status;
+        results.push({ registrationId, status }); if (['unknown', 'not_attempted'].includes(status)) stop = true;
+      }
       catch { results.push({ registrationId, status: 'unavailable' }); stop = true; }
     }
     return { results };
@@ -293,5 +304,6 @@ export function createRegistrationConfirmationService({ registrationService, jou
       .map(item => ({ id: item.id, kind: item.kind, status: stateOf(item), admissionStatus: item.admissionStatus, attempt: item.attempt,
         createdAt: item.createdAt, updatedAt: item.updatedAt })) };
   }
-  return Object.freeze({ prefix, forSavedReceipt, authorize, authorizedRegistration, confirmation, settings, setSettings, dispatch, notifyPromoted, staffHistory });
+  return Object.freeze({ prefix, forSavedReceipt, authorize, authorizedRegistration, confirmation, settings, setSettings, dispatch,
+    notifyApproved: input => notifyBatch(input, 'registration'), notifyPromoted: input => notifyBatch(input, 'promotion'), staffHistory });
 }

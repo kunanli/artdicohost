@@ -84,7 +84,9 @@ async function fixture({width=1280,role='superadmin',mode='normal'}={}){
           try{return await route.fulfill(['late-401','person-account-late-401'].includes(mode)?json({},401):json(syntheticPerson({kind,id,name:'PRIVATE-STALE-PERSON'})));}
           finally{finishHeld();}
         }
-        return route.fulfill(json(syntheticPerson({kind,id,restricted:mode==='restricted',unlinked:mode==='unlinked',unavailable:mode==='unavailable',attendee:mode==='attendee',draftPublic:mode==='public-draft',name:account>0?'合成新账号人员':id==='contact-next'?'合成下一位人员':'合成人员'})));
+        const value=syntheticPerson({kind,id,restricted:mode==='restricted',unlinked:mode==='unlinked',unavailable:mode==='unavailable',attendee:mode==='attendee',draftPublic:mode==='public-draft',name:account>0?'合成新账号人员':id==='contact-next'?'合成下一位人员':'合成人员'});
+        if(mode==='legacy-unavailable'){value.availability.invitations='unavailable';value.revisions.invitations=null;value.communications=communicationHistory({invitations:false,confirmations:false});value.communications.invitationTotal=value.communications.timelineTotal=1;value.communications.timeline=[{source:'legacy_invitation',id:'legacy-synthetic',status:'generated',channel:'manual',kind:null,at:AT}];}
+        return route.fulfill(json(value));
       }
       unknown.push(path);return route.fulfill(json({error:{code:'UNIMPLEMENTED_SYNTHETIC_API'}},503));
     }
@@ -151,6 +153,8 @@ try{
   const publicDraft=await fixture({mode:'public-draft'});await openPerson(publicDraft);assert.equal(await publicDraft.page.locator('[data-person-step=public]').getAttribute('data-step-state'),'review');assert.match(await publicDraft.page.locator('[data-person-step=public]').textContent(),/待发布|旧版/u);assert.deepEqual(publicDraft.writes,[]);await publicDraft.context.close();reports.push({publicProfileRequiresCurrentPublishedDraft:true});
 
   const attendee=await fixture({mode:'attendee',width:390});await openPerson(attendee);assert.equal(await attendee.page.locator('[data-person-step=arrangements]').getAttribute('data-step-state'),'complete');assert.match(await attendee.page.locator('[data-person-step=arrangements]').textContent(),/当前职责不要求/u);assert.equal(await attendee.page.locator('[data-person-step=reply]').getAttribute('data-step-state'),'pending');assert.match(await attendee.page.locator('[data-person-step=reply]').textContent(),/服务商接受.*仍待本人回复/u);assert.match(await attendee.page.locator('[data-person-admission]').textContent(),/尚未确认/u);assert.deepEqual(attendee.writes,[]);await attendee.context.close();reports.push({attendeeNeedsNoSpeakerOrBooth:true,providerAcceptedIsNotPersonReply:true});
+
+  const legacyPartial=await fixture({mode:'legacy-unavailable'});await openPerson(legacyPartial);assert.match(await legacyPartial.page.locator('[data-person-profile]').textContent(),/synthetic@example.invalid/u);assert.match(await legacyPartial.page.locator('[data-person-communications]').textContent(),/暂时无法核对/u);assert.match(await legacyPartial.page.locator('[data-person-communications]').textContent(),/手工邀请函记录.*已生成/u);assert.deepEqual(legacyPartial.writes,[]);await legacyPartial.context.close();reports.push({contactLegacyHistorySurvivesUnavailableInvitationSource:true});
 
   const editorPerson=await fixture({role:'editor'});await editorPerson.page.goto(SITE+'/admin/person/#contact='+CONTACT,{waitUntil:'networkidle'});assert.equal(editorPerson.reads.some(path=>path.startsWith('/api/admin/people/')),false);assert.equal(await editorPerson.page.locator('[data-person-record]').isVisible(),false);await editorPerson.context.close();reports.push({editorCannotReadPrivatePersonSources:true});
 

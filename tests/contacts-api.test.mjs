@@ -158,9 +158,10 @@ test('imported correction retains first original snapshot and exact source reimp
   const imported = await importOne(api, session), original = imported.contacts[0];
   const operations = { ...original.operations, notes: '合成跟进保留', responseStatus: 'attending' };
   assert.equal((await request(api, '/api/admin/contacts/' + original.id, { method: 'PUT', session, payload: { expectedRevision: 1, operations } })).status, 200);
-  const first = await (await request(api, '/api/admin/contacts/' + original.id + '/profile', { method: 'PUT', session, payload: { expectedRevision: 2, profile: { name: '合成修正甲', organization: '合成修正组织' } } })).json();
+  const first = await (await request(api, '/api/admin/contacts/' + original.id + '/profile', { method: 'PUT', session, payload: { expectedRevision: 2, profile: { name: '合成修正甲', organization: '合成修正组织', categories: ['student'] } } })).json();
   const second = await (await request(api, '/api/admin/contacts/' + original.id + '/profile', { method: 'PUT', session, payload: { expectedRevision: 3, profile: { name: '合成修正乙' } } })).json();
   assert.deepEqual(first.contact.sourceProfile, original.profile); assert.deepEqual(second.contact.sourceProfile, original.profile);
+  assert.deepEqual(first.contact.profile.categories, ['student']); assert.deepEqual(second.contact.profile.categories, ['student']);
   assert.deepEqual(second.contact.source, original.source); assert.deepEqual(second.contact.operations, operations);
   const plan = await preview(api, session); assert.equal(plan.summary.unchanged, 1);
   const before = await readFile(join(directory, 'contacts.json'), 'utf8');

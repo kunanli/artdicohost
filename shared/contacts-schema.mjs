@@ -10,7 +10,7 @@ export const SESSION_ROLE_LABELS = Object.freeze({ speaker: '讲者', panelist: 
 export const ORGANIZATION_MEMBER_ROLES = Object.freeze(['lead', 'member']);
 export const MAX_ORGANIZATION_MEMBERSHIPS = 20;
 export const INVITATION_CHANNELS = Object.freeze(['wechat', 'email', 'other']);
-export const CONTACT_CATEGORIES = Object.freeze(['so', 'ro', 'prospective_site', 'industry', 'developer', 'university', 'education', 'partner', 'other']);
+export const CONTACT_CATEGORIES = Object.freeze(['so', 'ro', 'prospective_site', 'industry', 'developer', 'university', 'education', 'partner', 'other', 'student']);
 export const CONTACT_INTERESTS = Object.freeze(['site_experience', 'talk', 'technical_share', 'roundtable', 'industry_networking', 'exhibition', 'product_demo', 'site_resources', 'sponsorship_partnership', 'attend_only']);
 export const CONTACT_SOURCE_CHOICES = Object.freeze({
   contactConsent: ['consented', 'declined', 'unknown'],
@@ -30,6 +30,8 @@ export const EDITABLE_CONTACT_FIELDS = Object.freeze([
   'name', 'displayName', 'city', 'organization', 'position', 'email', 'wechat', 'phone',
   'website', 'siteName', 'siteRole', 'topics', 'background',
 ]);
+// Typed current identities are separate from text edits and immutable source answers.
+export const EDITABLE_CONTACT_ARRAY_FIELDS = Object.freeze(['categories']);
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u;
 
@@ -239,9 +241,9 @@ export function validateStoredContact(input) {
       || fields.some(key => { const descriptor = Object.getOwnPropertyDescriptor(snapshot, key); return !descriptor || !('value' in descriptor) || !descriptor.enumerable; })) return false;
     const original = validateImportedContact({ ...snapshot, sourceRowId: source.source.rowId });
     if (!original.valid || fields.some(key => JSON.stringify(snapshot[key]) !== JSON.stringify(original.value[key]))) return false;
-    // Corrections may change basic contact fields, never historic questionnaire
-    // choices, original answer codes/labels or consent captured in the snapshot.
-    if (fields.some(key => !EDITABLE_CONTACT_FIELDS.includes(key)
+    // Current identities and basic contact fields may change. Original choices,
+    // answer codes/labels and consent remain captured in the immutable snapshot.
+    if (fields.some(key => !EDITABLE_CONTACT_FIELDS.includes(key) && !EDITABLE_CONTACT_ARRAY_FIELDS.includes(key)
       && JSON.stringify(original.value[key]) !== JSON.stringify(profileResult.value[key]))) return false;
   } else if (Object.hasOwn(source, 'sourceProfileDigest')) return false;
   for (const date of [source.source?.importedAt, source.createdAt, source.updatedAt]) if (typeof date !== 'string' || !Number.isFinite(Date.parse(date))) return false;

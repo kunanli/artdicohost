@@ -96,7 +96,8 @@ const interestDefinitions = [
 ];
 const options = (definitions) => Object.freeze(definitions.map(([value, label]) => Object.freeze({ value, label })));
 export const sourceLabels = Object.freeze({
-  categories: options(categoryDefinitions),
+  // Display only: the original nine questionnaire columns above never move.
+  categories: options([...categoryDefinitions, ['student', '学生']]),
   interests: options(interestDefinitions),
 });
 

@@ -18,6 +18,7 @@ const ASSETS = () => new Map([
   ['/admin/tasks/', Buffer.from('<!doctype html><html><body>合成筹备待办页面</body></html>')],
   ['/admin/settings/', Buffer.from('<!doctype html><html><body>合成设置页面</body></html>')],
   ['/admin/person/', Buffer.from('<!doctype html><html><body>合成人员工作区</body></html>')],
+  ['/admin/volunteers/', Buffer.from('<!doctype html><html><body>合成志愿者工作区</body></html>')],
   ['/invitations/template-blank.png', Buffer.from('synthetic-png-template')],
   ['/_astro/staff-test.js', Buffer.from('export const syntheticStaff = true;')],
   ['/_astro/staff-test.css', Buffer.from('body { color: #222; }')],
@@ -129,7 +130,7 @@ test('actual HTTP serves copied allowlisted bytes, exact inline CSP hashes, safe
   assert.equal((await send(port, '/admin/registrations')).headers.location, '/admin/registrations/');
   assert.match((await send(port, '/admin/tasks/')).text, /合成筹备待办页面/u);
   assert.equal((await send(port, '/admin/tasks')).headers.location, '/admin/tasks/');
-  for (const [path, text] of [['/admin/settings/', '合成设置页面'], ['/admin/person/', '合成人员工作区']]) {
+  for (const [path, text] of [['/admin/settings/', '合成设置页面'], ['/admin/person/', '合成人员工作区'], ['/admin/volunteers/', '合成志愿者工作区']]) {
     const page = await send(port, path);
     assert.equal(page.status, 200); secure(page);
     assert.equal(page.headers['content-type'], 'text/html; charset=utf-8');
@@ -188,7 +189,7 @@ test('exact application Host and fixed HTTPS origin cannot be overridden with pr
 
 test('closed configuration serves no admin bytes while process health keeps the full source marker and no readiness claim', async t => {
   const { port } = await loopback(t, { runtime: { configured: false, handle: createCloudContentApi({ enabled: false }) } });
-  for (const path of ['/admin', '/admin/', '/admin/contacts', '/admin/contacts/', '/invitations/template-blank.png', '/_astro/staff-test.js', '/api/admin/session', '/api/admin/login']) {
+  for (const path of ['/admin', '/admin/', '/admin/contacts', '/admin/contacts/', '/admin/volunteers', '/admin/volunteers/', '/invitations/template-blank.png', '/_astro/staff-test.js', '/api/admin/session', '/api/admin/login']) {
     const response = await send(port, path);
     assert.equal(response.status, 503, path); secure(response);
     assert.equal(response.text.includes('合成后台页面'), false);
@@ -276,7 +277,8 @@ test('public capability and protected export/settings bodies are bounded before 
   const { port } = await loopback(t, { runtime: { configured: true, handle: async request => { calls++; return json({ bytes: (await request.arrayBuffer()).byteLength }); } } });
   for (const [path, limit] of [['/api/registration/wallet', 8192], ['/api/admin/registration/wallet', 8192], ['/api/registration/confirmation', 16384],
     ['/api/admin/registration/confirmation', 16384], ['/api/admin/registration-confirmation/settings', 16384], ['/api/admin/registration-confirmation/dispatch', 16384],
-    ['/api/admin/registrations/export.xlsx', 16384], ['/api/admin/contacts/export.xlsx', 16384]]) {
+    ['/api/admin/registrations/export.xlsx', 16384], ['/api/admin/contacts/export.xlsx', 16384],
+    ['/api/admin/volunteers/operations', 65536], ['/api/admin/volunteers/export.xlsx', 65536]]) {
     const before = calls;
     assert.equal((await send(port, path, { method: 'POST', headers: { 'content-length': String(limit + 1) } })).status, 413);
     assert.equal((await send(port, path, { method: 'POST', chunks: [Buffer.alloc(limit), Buffer.from('private-overflow')] })).status, 413);

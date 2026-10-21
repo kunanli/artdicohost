@@ -73,16 +73,16 @@ async function acceptanceAcrossLoginWindow(boundary) {
 test('all logical object categories are mapped to one private acceptance namespace and nested or malformed scopes are rejected', async () => {
   const seen = [], objects = Object.fromEntries(['get', 'putImmutable', 'append'].map(operation => [operation, (...args) => { seen.push([operation, ...args]); return Promise.resolve(null); }]));
   const scoped = createAcceptanceObjects({ objects, runId: RUN, instanceId: INSTANCE });
-  for (const category of ['content', 'contacts', 'portraits', 'sessions', 'limits', 'probes', 'registrations', 'registration-reviews', 'registration-confirmations', 'wallet-signing', 'confirmation-mail', 'intent-invitations', 'group-invites', 'users', 'maintenance', 'restores']) {
+  for (const category of ['content', 'contacts', 'portraits', 'sessions', 'limits', 'probes', 'registrations', 'registration-reviews', 'registration-confirmations', 'wallet-signing', 'confirmation-mail', 'intent-invitations', 'group-invites', 'users', 'maintenance', 'restores', 'volunteers']) {
     const logical = `cms/v1/${category}/synthetic.json`;
     await scoped.get(logical); await scoped.putImmutable(logical, Buffer.from('{}')); await scoped.append(logical, 0, Buffer.from('{}'));
   }
-  assert.equal(seen.length, 48);
+  assert.equal(seen.length, 51);
   assert.ok(seen.every(([, key]) => key.startsWith(`cms/v1/acceptance/${RUN}/${INSTANCE}/`)));
   for (const value of ['cms/v1/acceptance/existing/probe.json', 'cms/v1/content/../private.json', 'cms/v1/other/probe.json', 'cms/v1/content//probe.json', 'other/content/probe.json', null, ['cms/v1/content/probe.json']]) {
     assert.throws(() => scoped.get(value), { message: 'Acceptance object scope is invalid.' });
   }
-  assert.equal(seen.length, 48);
+  assert.equal(seen.length, 51);
   for (const runId of ['production', 'r0-a1-' + 'c'.repeat(16) + '-' + SOURCE, 'r1-a0-' + 'c'.repeat(16) + '-' + SOURCE,
     'r1-' + SOURCE, 'r1-a1-../' + SOURCE, 'r1-a1-' + 'c'.repeat(16) + '-' + 'A'.repeat(40), RUN + '/extra']) {
     assert.throws(() => createAcceptanceObjects({ objects, runId, instanceId: INSTANCE }));

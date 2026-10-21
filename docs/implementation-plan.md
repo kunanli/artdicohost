@@ -1,5 +1,18 @@
 # ARTDiCO HOST 实施计划
 
+## 2026-10-21 当前阶段：人员关系、总览与确认参加同步名额
+
+志愿者阶段已在 PR #35／main `19b0d105b4a61ebc76f3395d7c389cb5fc4b5194` 实际上线，942/942、真实 OSS、300 人政策和 27/27 HTTPS 通过。现从实际 main 加最终证据 `9c4d7f5` 开始 `feat/people-relationships`，执行用户已授权的下一阶段及最新「确认参加须更新 300 人」要求；具体契约见[人员关系计划](people-relationships.md)。邀请函参考与字体已保存，必须本阶段完成后接续，不与本阶段混做。
+
+1. 数据层：在原 contacts.operations 添加有界私有 organizationMemberships，按明确 organizationId／lead 或 member／内部 title 关联；兼容省略、明确解除、旧快照和 migrationArchives，历史失效 ID 保留提醒。展位 optional organizationId 同样兼容旧 bytes/hash 和旧客户端，不按机构字串匹配，不在公网发布人員关系。组织成员不是现场职责或名额。
+2. 正式名额：联系人操作的有效保存 ACK 后才运行可注入 callback；attending 对象按原 contactId 复用既有 staff conversion 与 admission CAS，核对真实关联及当前名额，再独立回传 confirmed／waitlisted／requiresReviewer／unavailable。保存未知不触发，转换未知不谎报，原回覆保留。历史已答应且未关联者明确预览／同步，每批最多 100，绑定名单修订；无登入或 GET 暗写，无实际寄信，无姓名／邮箱合并。共同 300 统计只读原 admission，婉拒后的撤回仍明示原流程。
+3. 只读关系服务：literal outreach 在内容或名单 I/O 前校验，返回最小嘉宾／讲者公开状态及组织目录；个人页按当前人 ID 显示组织，组织成员列表只回必要姓名／角色／个人页 ID。编辑端新增 guest.contactId 与 booth.organizationId 的明确选择，维护私有人物关系须同时有 editor＋outreach，服务端检查新关联及公开授权，不让旧客户端抹去既有 ID。
+4. 人员与邀约：统一显示实际沟通、已核对名额、公开身份、组织关系与安排；按组织 ID、嘉宾／讲者、公开状态筛选并有下一步入口。减少多余卡片／标签，保留既有邀请、逐场职责及导出。目录失效不用「未建立」假事实筛选；资料未保存、未知 ACK、会话／换号和迟到回应均保护，手机可用。
+5. 隔离工作树：成员／展位 schema 与双存储兼容、确认参加 callback／关联写入校验、关系 API／个人页、联系人 UI／筛选／同步、内容编辑嘉宾／组织／展位 UI、合成 Chromium 分工；root 负责 runtime、打包闭包、整合／文档及实际发布。沿用 Astro／Node24／既有 FC 与私有 OSS，零新增服务／IAM／DNS／费用／生产依赖／凭证，复用原日志和完整备份。
+6. 验证旧资料及来源档案、旧客户端保存、明确解除、权限先于 I/O、公开字段最小化、最后名额竞争／候补／相同 contact 去重、保存及转换未知 ACK、来源并行改变、组织及嘉宾双向跳转、目录失败和手机／帐号竞态。完成源码／Astro／全套／必要真实浏览器、准确来源 ZIP／离线启动，再走准确 PR／main 实际 OSS、政策和 HTTPS；记录真实结果后进入邀请函，不代填生产人员或发送邮件。
+
+资源预估：只增加有界字段、少量最小投影与已有页面脚本，至多少数来源文件与静态资源，无新 journal、背景任务或云资源。没有新增政策／帐号审批，Apple 证书仍是独立待输入项。
+
 ## 2026-10-21 当前阶段：志愿者与分工
 
 用户已同意新增独立志愿者分页面，包含名单／联络与答应状态、可服务时段、岗位区域及负责人、班次需求／已安排／缺额、冲突提醒和 Excel，串连既有个人工作页。以已上线 main `ddf7a2ea0b9c81d9222aefbef3e5155d7432b8a4` 与发布证据文档接续，分支 `feat/volunteer-operations`；不重复上一轮 PR #34 或重导名单。

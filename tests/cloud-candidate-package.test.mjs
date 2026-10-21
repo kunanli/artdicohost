@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { crc32 } from 'node:zlib';
 import { CANDIDATE_SOURCES, CANDIDATE_NODE, CANDIDATE_KIND, CANDIDATE_ARCHIVE,
   candidateAssetPath, candidateReferences, candidateFileRecords, candidateZipEntries,
   candidateSha256, validateCandidateAssets, parseCandidateArguments,
@@ -42,6 +43,10 @@ async function fixture(t) {
   const sourceCommit = git(repositoryDirectory, ['rev-parse', 'HEAD']);
   const outputDirectory = resolve(directory, 'candidate');
   const execute = (command, args, options) => {
+    if (command === 'zip') {
+      assert.deepEqual(args.slice(0, 5), ['-X', '-q', '-6', '-n', '.xz:.woff:.woff2:.png:.webp']);
+      assert.equal(options.timeout, 120_000);
+    }
     if (args[0]?.endsWith('/node_modules/astro/bin/astro.mjs')) {
       const source = args[args.indexOf('--root') + 1], output = args[args.indexOf('--outDir') + 1];
       assert.equal(existsSync(resolve(source, '.env.local')), false);
@@ -120,8 +125,8 @@ test('candidate ZIP inspection rejects unknown data, path traversal, duplicate e
   const record = { path: 'release.json', bytes: 1, sha256: candidateSha256(Buffer.from('x')), mode: '0644' };
   const body = Buffer.from('x'), name = Buffer.from(record.path);
   function zip(mode = 0o100644, zipName = name) {
-    const local = Buffer.alloc(30 + zipName.length); local.writeUInt32LE(0x04034b50); local.writeUInt16LE(10, 4); local.writeUInt32LE(1, 18); local.writeUInt32LE(1, 22); local.writeUInt16LE(zipName.length, 26); zipName.copy(local, 30);
-    const central = Buffer.alloc(46 + zipName.length); central.writeUInt32LE(0x02014b50); central.writeUInt16LE(0x031e, 4); central.writeUInt16LE(10, 6); central.writeUInt32LE(1, 20); central.writeUInt32LE(1, 24); central.writeUInt16LE(zipName.length, 28); central.writeUInt32LE(mode * 65536, 38); zipName.copy(central, 46);
+    const local = Buffer.alloc(30 + zipName.length); local.writeUInt32LE(0x04034b50); local.writeUInt16LE(10, 4); local.writeUInt32LE(crc32(body), 14); local.writeUInt32LE(1, 18); local.writeUInt32LE(1, 22); local.writeUInt16LE(zipName.length, 26); zipName.copy(local, 30);
+    const central = Buffer.alloc(46 + zipName.length); central.writeUInt32LE(0x02014b50); central.writeUInt16LE(0x031e, 4); central.writeUInt16LE(10, 6); central.writeUInt32LE(crc32(body), 16); central.writeUInt32LE(1, 20); central.writeUInt32LE(1, 24); central.writeUInt16LE(zipName.length, 28); central.writeUInt32LE(mode * 65536, 38); zipName.copy(central, 46);
     const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10); end.writeUInt32LE(central.length, 12); end.writeUInt32LE(local.length + body.length, 16);
     return Buffer.concat([local, body, central, end]);
   }
@@ -130,7 +135,7 @@ test('candidate ZIP inspection rejects unknown data, path traversal, duplicate e
   assert.throws(() => candidateZipEntries(zip(0o100644, Buffer.from('../secret')), [record]));
   assert.throws(() => candidateZipEntries(valid, [record, record]));
   const deflated = Buffer.from(valid);
-  deflated.writeUInt16LE(8, 8); deflated.writeUInt16LE(8, 30 + name.length + body.length + 10);
+  deflated.writeUInt16LE(9, 8); deflated.writeUInt16LE(9, 30 + name.length + body.length + 10);
   assert.throws(() => candidateZipEntries(deflated, [record]), /metadata/);
   const altered = Buffer.from(valid); altered[30 + name.length] = 121;
   assert.throws(() => candidateZipEntries(altered, [record]), /hash mismatch/);

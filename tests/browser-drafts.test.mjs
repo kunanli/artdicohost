@@ -6,7 +6,7 @@ import { createStaffFormDraft } from '../src/lib/staff-form-draft.mjs';
 // Synthetic IndexedDB transaction model: connections share a serializable
 // read/write cursor, writes stage privately, and abort never commits a prefix.
 function indexedFixture() {
-  const databases = new Map(), state = { failWrites: false, opens: 0 };
+  const databases = new Map(), state = { failWrites: false, opens: 0, writes: 0, failAt: null };
   const later = callback => setImmediate(callback), copy = value => structuredClone(value);
   const indexedDB = { open(name) {
     const request = {}; state.opens++;
@@ -45,7 +45,7 @@ function indexedFixture() {
           tx.objectStore = key => ({
             getAll: () => request(() => [...working.get(key).values()].map(copy)),
             put: value => request(() => {
-              if (mode !== 'readwrite' || state.failWrites) throw new Error();
+              if (mode !== 'readwrite' || state.failWrites || ++state.writes === state.failAt) throw new Error();
               const stored = copy(value); working.get(key).set(stored[data.stores.get(key).keyPath], stored); return stored.key;
             }),
             delete: keyValue => request(() => { if (mode !== 'readwrite' || state.failWrites) throw new Error(); working.get(key).delete(keyValue); }),
@@ -269,4 +269,52 @@ test('logout during a held initial read cannot expose the old private draft afte
   await f.store.clearActor(scope().actorId); release();
   await assert.rejects(loading, { code: 'STALE_ACTOR' }); assert.equal(b.form.snapshot, null); assert.equal(b.state.applies, 0);
   assert.equal(b.state.events.includes('available'), false); b.form.close();
+});
+
+test('a first definitive rejection atomically recovers exact request fields or retains the original pending on write failure', async () => {
+  const f = fixture(), key = scope('application', 'public');
+  const rejectionPolicy = { ...policy, rejectPending(value) {
+    if (value.attempted !== true || value.uncertain !== false) return false;
+    return { name: JSON.parse(value.payloadJson).fields.name };
+  } };
+  const original = await write(f.store, key, { ...pending(), attempted: true }, 'pending_submission');
+  // Abort after staging the new editable record, before its CAS head commits.
+  f.state.failAt = f.state.writes + 2;
+  await assert.rejects(f.store.rejectPending(key, { expectedRevision: original.revision, actorEpoch: original.actorEpoch }, rejectionPolicy), { code: 'UNAVAILABLE' });
+  assert.deepEqual(await f.make().read(key, rejectionPolicy), original);
+  f.state.failAt = null;
+  const recovered = await f.store.rejectPending(key, { expectedRevision: original.revision, actorEpoch: original.actorEpoch }, rejectionPolicy);
+  assert.equal(recovered.revision, original.revision + 1); assert.equal(recovered.record.kind, 'editing');
+  assert.equal(recovered.record.baseRevision, original.record.baseRevision);
+  assert.deepEqual(recovered.record.value, { name: '合成申请人' });
+  await assert.rejects(f.store.rejectPending(key, { expectedRevision: original.revision, actorEpoch: original.actorEpoch }, rejectionPolicy), { code: 'CONFLICT' });
+  for (const value of [{ ...pending(), attempted: false }, { ...pending(), attempted: true, uncertain: true }]) {
+    const other = scope('blocked-' + value.uncertain, 'public'), saved = await write(f.store, other, value, 'pending_submission');
+    await assert.rejects(f.store.rejectPending(other, { expectedRevision: saved.revision, actorEpoch: saved.actorEpoch }, rejectionPolicy), { code: 'PENDING_IMMUTABLE' });
+    assert.deepEqual(await f.store.read(other, rejectionPolicy), saved);
+    if (value.uncertain) await assert.rejects(f.store.write(other, { expectedRevision: saved.revision, actorEpoch: saved.actorEpoch,
+      kind: 'pending_submission', baseRevision: saved.record.baseRevision, value: { ...value, uncertain: false } }, rejectionPolicy), { code: 'PENDING_IMMUTABLE' });
+  }
+});
+
+test('unsettled input warns before unload until its own durable ACK, including edits made during a held older ACK', async () => {
+  const listeners = new Map(), priorWindow = globalThis.window;
+  globalThis.window = { addEventListener: (type, callback) => listeners.set(type, callback), removeEventListener: type => listeners.delete(type) };
+  const f = fixture(); let release, ready;
+  const gate = new Promise(resolve => { release = resolve; }), committed = new Promise(resolve => { ready = resolve; });
+  let first = true;
+  const held = { ...f.store, write: async (...args) => { const saved = await f.store.write(...args); if (first) { first = false; ready(); await gate; } return saved; } };
+  const b = binding(f, { store: held, delayMs: 5000 });
+  try {
+    await b.form.load(); assert.equal(b.form.unsettled, false);
+    b.form.schedule(); assert.equal(b.form.unsettled, true);
+    let prevented = 0; const event = { preventDefault() { prevented++; }, returnValue: null };
+    listeners.get('beforeunload')(event); assert.equal(prevented, 1); assert.equal(event.returnValue, '');
+    const saving = b.form.flush({ value: { name: '较早输入' } }); await committed;
+    b.state.value.name = '较新末字'; b.form.schedule(); release(); await saving;
+    assert.equal(b.form.unsettled, true); assert.equal(b.state.events.at(-1), 'saving');
+    await b.form.flush(); assert.equal(b.form.unsettled, false); assert.equal(b.state.events.at(-1), 'saved');
+    listeners.get('beforeunload')(event); assert.equal(prevented, 1);
+    b.form.close(); assert.equal(listeners.size, 0);
+  } finally { release(); b.form.close(); if (priorWindow === undefined) delete globalThis.window; else globalThis.window = priorWindow; }
 });

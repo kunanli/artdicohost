@@ -60,10 +60,11 @@ function scopeValue(input) {
 }
 const scopeKey = scope => JSON.stringify([scope.actorId, scope.eventId, scope.page, scope.entityId]);
 function policyValue(input) {
-  if (!ownData(input) || Object.keys(input).some(key => !['fields', 'validate', 'pendingFields', 'jsonFields'].includes(key))
+  if (!ownData(input) || Object.keys(input).some(key => !['fields', 'validate', 'pendingFields', 'jsonFields', 'rejectPending'].includes(key))
     || !Array.isArray(input.fields) || !input.fields.length || input.fields.length > 100 || typeof input.validate !== 'function') fail('INVALID');
+  if (input.rejectPending !== undefined && typeof input.rejectPending !== 'function') fail('INVALID');
   if (['pendingFields', 'jsonFields'].some(key => input[key] !== undefined && !Array.isArray(input[key]))) fail('INVALID');
-  const result = { fields: [...input.fields], validate: input.validate, pendingFields: [...(input.pendingFields ?? [])], jsonFields: [...(input.jsonFields ?? [])] };
+  const result = { fields: [...input.fields], validate: input.validate, pendingFields: [...(input.pendingFields ?? [])], jsonFields: [...(input.jsonFields ?? [])], rejectPending: input.rejectPending };
   for (const key of ['fields', 'pendingFields', 'jsonFields']) {
     if (result[key].some(value => typeof value !== 'string' || !/^[A-Za-z][A-Za-z0-9_]{0,79}$/u.test(value) || forbidden(value))
       || new Set(result[key]).size !== result[key].length || key !== 'fields' && result[key].some(value => !result.fields.includes(value))) fail('INVALID');
@@ -174,6 +175,23 @@ export function createBrowserDraftStore({ indexedDB = globalThis.indexedDB, cloc
     if (input.actorEpoch !== current.actorEpoch) fail('STALE_ACTOR');
     if (input.expectedRevision !== current.revision) fail('CONFLICT');
   }
+  function saveRecord(values, tx, current, scope, policy, { kind, baseRevision, value }, now) {
+    const record = { key: current.key, scope, revision: current.revision + 1, actorEpoch: current.actorEpoch, kind,
+      baseRevision, value, updatedAt: now, expiresAt: kind === 'editing' ? now + BROWSER_DRAFT_TTL_MS : null, pendingFields: policy.pendingFields };
+    checkedRecord(record, scope, policy);
+    const drafts = values.drafts.filter(item => item.key !== current.key && !(item.kind === 'editing' && item.expiresAt <= now));
+    const heads = values.heads.filter(item => item.key !== current.key), head = { key: current.key, actorId: scope.actorId, revision: record.revision };
+    const actors = values.actors.filter(item => item.actorId !== scope.actorId), actor = { actorId: scope.actorId, epoch: current.actorEpoch };
+    if (drafts.length + 1 > BROWSER_DRAFT_LIMITS.records || heads.length + 1 > MAX_HEADS || actors.length + 1 > MAX_ACTORS
+      || bytes([...drafts, record, ...heads, head, ...actors, actor]) > BROWSER_DRAFT_LIMITS.totalBytes) fail('LIMIT');
+    for (const expired of values.drafts) if (expired.key !== current.key && expired.kind === 'editing' && expired.expiresAt <= now) tx.objectStore('drafts').delete(expired.key);
+    tx.objectStore('drafts').put(record); tx.objectStore('heads').put(head); tx.objectStore('actors').put(actor);
+    return snapshot({ ...current, revision: record.revision }, record);
+  }
+  function changed(scope, result) {
+    notify({ type: 'change', key: scopeKey(scope), actorId: scope.actorId, revision: result.revision, actorEpoch: result.actorEpoch });
+    return result;
+  }
   const store = {
     async read(input, suppliedPolicy) {
       const scope = scopeValue(input), policy = policyValue(suppliedPolicy);
@@ -190,21 +208,32 @@ export function createBrowserDraftStore({ indexedDB = globalThis.indexedDB, cloc
           checkedRecord(current.record, scope, policy);
           if (current.record.kind === 'pending_submission' && (update.kind !== 'pending_submission' || update.baseRevision !== current.record.baseRevision
             || policy.pendingFields.some(key => JSON.stringify(value[key]) !== JSON.stringify(current.record.value[key])))) fail('PENDING_IMMUTABLE');
+          if (current.record.kind === 'pending_submission' && typeof policy.rejectPending === 'function'
+            && ['attempted', 'uncertain'].some(key => current.record.value[key] === true && value[key] !== true)) fail('PENDING_IMMUTABLE');
         }
-        const record = { key: current.key, scope, revision: current.revision + 1, actorEpoch: current.actorEpoch, kind: update.kind,
-          baseRevision: update.baseRevision, value, updatedAt: now, expiresAt: update.kind === 'editing' ? now + BROWSER_DRAFT_TTL_MS : null, pendingFields: policy.pendingFields };
-        checkedRecord(record, scope, policy);
-        const drafts = values.drafts.filter(item => item.key !== current.key && !(item.kind === 'editing' && item.expiresAt <= now));
-        const heads = values.heads.filter(item => item.key !== current.key), head = { key: current.key, actorId: scope.actorId, revision: record.revision };
-        const actors = values.actors.filter(item => item.actorId !== scope.actorId), actor = { actorId: scope.actorId, epoch: current.actorEpoch };
-        if (drafts.length + 1 > BROWSER_DRAFT_LIMITS.records || heads.length + 1 > MAX_HEADS || actors.length + 1 > MAX_ACTORS
-          || bytes([...drafts, record, ...heads, head, ...actors, actor]) > BROWSER_DRAFT_LIMITS.totalBytes) fail('LIMIT');
-        for (const expired of values.drafts) if (expired.key !== current.key && expired.kind === 'editing' && expired.expiresAt <= now) tx.objectStore('drafts').delete(expired.key);
-        tx.objectStore('drafts').put(record); tx.objectStore('heads').put(head); tx.objectStore('actors').put(actor);
-        return snapshot({ ...current, revision: record.revision }, record);
+        return saveRecord(values, tx, current, scope, policy, { ...update, value }, now);
       });
-      notify({ type: 'change', key: scopeKey(scope), actorId: scope.actorId, revision: result.revision, actorEpoch: result.actorEpoch });
-      return result;
+      return changed(scope, result);
+    },
+    // Only the public controller receiving its first definitive rejection may
+    // request this transition. A policy derives editable fields from the exact
+    // durable request; unknown outcomes never become ordinary expiring drafts.
+    async rejectPending(input, update, suppliedPolicy) {
+      const scope = scopeValue(input), policy = policyValue(suppliedPolicy);
+      if (!exact(update, ['expectedRevision', 'actorEpoch']) || typeof policy.rejectPending !== 'function') fail('INVALID');
+      const now = clock(); if (!revision(now)) fail('UNAVAILABLE');
+      const result = await transaction('readwrite', (values, tx) => {
+        const current = cursor(values, scope); expected(current, update);
+        if (!current.record || current.record.kind !== 'pending_submission') fail('PENDING_IMMUTABLE');
+        checkedRecord(current.record, scope, policy);
+        if (current.record.value.uncertain !== false) fail('PENDING_IMMUTABLE');
+        let derived;
+        try { derived = policy.rejectPending(clone(current.record.value)); } catch { fail('INVALID'); }
+        if (derived === false || derived === null || derived === undefined) fail('PENDING_IMMUTABLE');
+        const value = checkedValue(derived, 'editing', policy);
+        return saveRecord(values, tx, current, scope, policy, { kind: 'editing', baseRevision: current.record.baseRevision, value }, now);
+      });
+      return changed(scope, result);
     },
     async remove(input, update) {
       const scope = scopeValue(input);

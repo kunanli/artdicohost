@@ -9,6 +9,7 @@ export function createStaffFormDraft({ store, scope, policy, baseRevision, isCur
     || ![isCurrent, capture, apply, onState].every(value => typeof value === 'function')
     || !Number.isSafeInteger(delayMs) || delayMs < 0 || delayMs > 5000) throw new BrowserDraftError('INVALID');
   let current = null, loaded = false, loading = null, blocked = false, closed = false, epoch = 0, timer = null, writing = false, conflictEpoch = 0;
+  let changeVersion = 0, settledVersion = 0;
   let queue = Promise.resolve();
   const clone = value => structuredClone(value);
   const active = generation => !closed && generation === epoch && isCurrent() === true;
@@ -62,6 +63,7 @@ export function createStaffFormDraft({ store, scope, policy, baseRevision, isCur
   const binding = {
     get snapshot() { return current ? clone(current) : null; },
     get blocked() { return blocked || closed; },
+    get unsettled() { return !closed && changeVersion > settledVersion; },
     load,
     restore({ pendingOnly = false } = {}) {
       return enqueue(async generation => {
@@ -86,7 +88,7 @@ export function createStaffFormDraft({ store, scope, policy, baseRevision, isCur
     },
     schedule() {
       if (closed || !isCurrent() || blocked) return;
-      clearTimeout(timer); emit('saving');
+      changeVersion++; clearTimeout(timer); emit('saving');
       timer = setTimeout(() => { timer = null; binding.flush().catch(() => {}); }, delayMs);
     },
     flush(options = {}) {
@@ -94,6 +96,7 @@ export function createStaffFormDraft({ store, scope, policy, baseRevision, isCur
       try {
         if (Object.hasOwn(options, 'value')) { explicitValue = copyBrowserDraftValue(options.value); explicitBase = base(); }
       } catch (error) { return Promise.reject(problem(error)); }
+      const queuedVersion = ++changeVersion; emit('saving');
       clearTimeout(timer); timer = null;
       return enqueue(async generation => {
         try {
@@ -101,6 +104,9 @@ export function createStaffFormDraft({ store, scope, policy, baseRevision, isCur
           if (blocked) throw new BrowserDraftError('CONFLICT');
           const kind = options.kind ?? current.record?.kind ?? 'editing';
           const value = Object.hasOwn(options, 'value') ? explicitValue : capture();
+          // A queued later request has its own durable obligation even when
+          // this capture happens to include newer visible form fields.
+          const capturedVersion = queuedVersion;
           const cloudRevision = base();
           if (explicitBase !== undefined && explicitBase !== cloudRevision) throw new BrowserDraftError('CONFLICT');
           if (current.record?.kind === 'pending_submission' && current.record.baseRevision !== cloudRevision) throw new BrowserDraftError('CONFLICT');
@@ -109,7 +115,8 @@ export function createStaffFormDraft({ store, scope, policy, baseRevision, isCur
           const saved = await store.write(scope, { expectedRevision: current.revision, actorEpoch: current.actorEpoch, kind, baseRevision: cloudRevision, value }, policy);
           assertCurrent(generation);
           if (conflictEpoch !== writeConflict) throw new BrowserDraftError('CONFLICT');
-          current = saved; emit('saved'); return clone(current);
+          current = saved; settledVersion = Math.max(settledVersion, capturedVersion);
+          emit(binding.unsettled ? 'saving' : 'saved'); return clone(current);
         } catch (error) { throw problem(error); }
         finally { writing = false; }
       });
@@ -119,11 +126,12 @@ export function createStaffFormDraft({ store, scope, policy, baseRevision, isCur
       clearTimeout(timer); timer = null;
       return enqueue(async generation => {
         try {
-          await load(); assertCurrent(generation); const removeConflict = conflictEpoch; writing = true;
+          await load(); assertCurrent(generation); const removeConflict = conflictEpoch, discardedVersion = changeVersion; writing = true;
           const removed = await store.remove(scope, { expectedRevision: current.revision, actorEpoch: current.actorEpoch, allowPending });
           assertCurrent(generation);
           if (conflictEpoch !== removeConflict) throw new BrowserDraftError('CONFLICT');
-          current = removed; blocked = false; emit('discarded'); return clone(current);
+          current = removed; blocked = false; settledVersion = Math.max(settledVersion, discardedVersion);
+          emit(binding.unsettled ? 'saving' : 'discarded'); return clone(current);
         } catch (error) { throw problem(error); }
         finally { writing = false; }
       });
@@ -143,10 +151,15 @@ export function createStaffFormDraft({ store, scope, policy, baseRevision, isCur
   }
   function removeLifecycle() {
     globalThis.window?.removeEventListener?.('pagehide', flushOnLeave);
+    globalThis.window?.removeEventListener?.('beforeunload', guardUnsettled);
     globalThis.document?.removeEventListener?.('visibilitychange', flushOnHidden);
   }
   function flushOnHidden() { if (globalThis.document?.visibilityState === 'hidden') flushOnLeave(); }
+  function guardUnsettled(event) {
+    if (binding.unsettled && isCurrent() === true) { event.preventDefault(); event.returnValue = ''; }
+  }
   globalThis.window?.addEventListener?.('pagehide', flushOnLeave);
+  globalThis.window?.addEventListener?.('beforeunload', guardUnsettled);
   globalThis.document?.addEventListener?.('visibilitychange', flushOnHidden);
   return Object.freeze(binding);
 }

@@ -1,8 +1,8 @@
 # 开发接续与验收计划
 
-## 当前接续：参会体验六项扩展（2026-10-21，已合并待发布验收）
+## 当前接续：参会体验六项扩展（2026-10-21，已上线）
 
-[PR #29](https://github.com/kunanli/artdicohost/pull/29) 已合并 main **`d66582e60a7cf3da3a4e2d851a633496bdb02ba4`**，最终 PR CI **785/785** 通过。[正式运行 39525987286](https://github.com/kunanli/artdicohost/actions/runs/39525987286) 的三个 job 尚待核对，不能只凭合并宣称新版上线；详见[本轮发布证据](attendee-release-2026-10-21.md)。当前文档分支 `docs/attendee-release-evidence-2026-10-21` 不另触发业务部署。下方旧候选步骤是开发历史，接续先读取上述运行，不重新实现或合并。
+[PR #29](https://github.com/kunanli/artdicohost/pull/29) 已上线 main **`d66582e60a7cf3da3a4e2d851a633496bdb02ba4`**，最终 PR／main CI **785/785** 通过。[正式运行 39525987286](https://github.com/kunanli/artdicohost/actions/runs/39525987286) 三个 job 全部成功：十阶段真实私有 OSS、01:19:38 UTC 业务激活、01:19:40 UTC 核定政策／300 人容量，以及 01:20:25 UTC 的 23 个公开 HTTPS 对象全部验证。详见[本轮发布证据](attendee-release-2026-10-21.md)。文档分支 `docs/attendee-release-evidence-2026-10-21` 保存最终证据，不另触发业务部署；下方候选状态是历史，不重新实现、合并或导入。
 
 | 本阶段能力 | 入口与当前行为 | 详细说明 |
 | --- | --- | --- |
@@ -17,11 +17,11 @@
 
 接续顺序：
 
-1. 核对主工作区 `git status`、`feat/attendee-experience` 最新提交、main 和最新 Actions。各模块已整合，不重做旧 worktree 或重复 cherry-pick；原始媒体提交 `ef3b115` 在主分支以 `25e601a` 整合。
-2. runtime、真实 Excel、通知与受控配置备份已由主集成装配；继续核对两个候选包、严格资源白名单及维护闭包，确认通知 journal 与已配置加密对象均在范围内。配置缺失时仍应保存报名、显示确认页且不发送，最终检查必须使用同一个准确来源。
-3. 核对大图与 EXIF、旧快照／旧客户端保存、两场不同职责、保留原件的真实 OOXML 读回、确认跳转／打印／同页换链接、候补／撤回及会话晚到回应。合成浏览器脚本见[本阶段界面检查](attendee-experience-ui.md)，不能替代实际云端结果。
-4. 沿用既有授权完成最终 PR／CI、main 发布、FC 源码标记及公开 HTTPS／隔离 OSS 读回；补登准确 SHA、PR、Actions、测试结果与实际启用状态到本节和[早晨验收](morning-acceptance.md)。这些证据当前待主集成填入。
-5. 新版验证后由 owner 使用现有后台账号核对实际名单、名额及公开授权，再明确执行真实导入／邀请。自动邮件和工作人员邀请是两套流程；启用自动确认设置不会补寄历史 39 人。
+1. 核对主工作区 `git status`、main 及最新 Actions。上述正式运行已成功，不重跑已完成部署、不重复 cherry-pick。文档分支只记录实际证据，功能部署来源仍为 main d66582e。
+2. owner 按[早晨验收](morning-acceptance.md)使用现有后台账号核对实际名单、名额及公开授权，再明确导入原始问卷、代登记和准备邀请。自动邮件和工作人员邀请是两套流程；启用自动确认设置不会补寄历史 39 人。
+3. 根据实际用途核对照片、逐场职责、完整 Excel 及确认／打印页面；十组合成浏览器与正式云端证据已完成，使用者验收不需要向生产提交虚构报名。
+4. 有真实寄件设置后，按[受控配置](delivery-configuration.md)先保存后台停用、配置并核对，再明确开启；保持 unknown 不盲重送。没有实际凭证就保留未设置，不猜测密钥或收件地址。
+5. 主办方取得 Apple 帐号及签章链后按[设置指引](apple-wallet-setup.md)完成受控配置与真实 iPhone 验收，再开放票券。其他开发变更另按最新 main 建分支，不因补填文档重新关闭服务。
 
 未知写入或发送 ACK 保留原 operationId／正文，先读取核对再明确重试，不换键盲发。通知 `unknown` 不重送，provider 接受不等于送达。升级后的回退必须兼容 `sessionRoles`、Excel 审计及通知预留历史；先暂停新写入／通知、完整私密备份，再修复，不能旧快照覆盖现有报名。Wallet 已存设备票券不会自动撤除或推送更新。
 

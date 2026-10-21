@@ -1,6 +1,6 @@
 # 2026-10-21 参会体验发布验收
 
-六项参会体验更新已合并 [PR #29](https://github.com/kunanli/artdicohost/pull/29)，来源 main **`d66582e60a7cf3da3a4e2d851a633496bdb02ba4`**。[正式运行 39525987286](https://github.com/kunanli/artdicohost/actions/runs/39525987286) 正在检查及部署；**此记录尚未确认新版已上线**。若 session 中断，先读取该运行的三个 job，不重新合并或重送部署。
+六项参会体验更新已上线。[PR #29](https://github.com/kunanli/artdicohost/pull/29) 的正式来源为 main **`d66582e60a7cf3da3a4e2d851a633496bdb02ba4`**，[正式运行 39525987286](https://github.com/kunanli/artdicohost/actions/runs/39525987286) 的检查、完整香港生命周期及公开 OSS 三个 job 全部成功。2026-10-21 01:20 UTC 再次只读核对 main 仍为同一来源。若 session 中断，从这些证据及最新 Actions 接续，不重新合并、部署或导入名单。
 
 ## 功能与入口
 
@@ -15,7 +15,7 @@
 
 ## 已取得的检查证据
 
-- 最终 PR CI [39525474250](https://github.com/kunanli/artdicohost/actions/runs/39525474250)：**785/785** 通过，零失败／跳过；Astro 279 文件零错误／警告、1 项既有提示，七页构建，372 文件来源扫描及依赖稽核通过。两种真实部署 ZIP 在无网络、只读代码的夹具中启动成功。
+- 最终 PR CI [39525474250](https://github.com/kunanli/artdicohost/actions/runs/39525474250) 及正式 main 检查均为 **785/785** 通过，零失败／跳过；Astro 279 文件零错误／警告、1 项既有提示，七页构建，372 文件来源扫描及依赖稽核通过。两种真实部署 ZIP 在无网络、只读代码的夹具中启动成功；main 的启动夹具分别为 6.471 秒及 14.178 秒，后者含 23 个静态资源。
 - 本机完整 **784/784** 通过；最后 Wallet 设置补充后 6 项针对性测试通过。十组真实 Chromium 脚本通过，最后确认页／设置页再核对成功，零页面错误。覆盖大图与 EXIF、身份及逐场职责、真正 Excel 读回、未知回执／会话竞态、报名跳转、A4 PDF、候补／撤回与同页换链接。
 - PKPASS 使用一次性合成证书实际生成并下载，RSA／ECDSA 的 CMS 签章另经 OpenSSL 独立核验。未使用正式 Apple 凭证，不能称为通过 iPhone 加入验收。
 - 固定十阶段本机隔离验收为 **979 requests／79 objects**，原 **1000 次／90 秒**限制不变。加入一次自己的确认能力只读核验；该计数不是实际云端请求数。
@@ -23,7 +23,10 @@
 
 ## 正式发布证据
 
-待核对 main 运行的检查、完整香港生命周期及公开 OSS 三个 job，并补记实际隔离 OSS、业务启用、正式报名政策／300 人容量、公开 HTTPS 精确文件 SHA／大小／MIME 结果。前一版 main `37a679b7d3a8cfef8d7c2bfcca648756d095fc54` 的成功见[前阶段证据](organizer-release-2026-10-21.md)，不能代替本轮。
+- 完整香港生命周期 job `118981807461` 成功，十阶段真实私有 OSS 隔离验收通过；两个独立客户端、一个 FC 进程，来源及本次 run ID 绑定。1000 次请求／90 秒硬限制不变；实际日志没有列请求数，不把本机 979 次误称云端计数。
+- **01:19:38 UTC**：正式内容与报名服务激活；**01:19:40 UTC**：HTTPS 报名别名与核定政策／300 人容量核对通过。没有改变已有 trigger、角色或其他项目资料。
+- **01:20:25 UTC**：公开 OSS job `118982803089` 经 **https://artdico.host** 逐一核对 **23 个精确公开对象**的 SHA、字节数、MIME、有效 HTTPS 及可呈现 HTML，全部通过，包括 `registration/confirmation/index.html` 及其资源。
+- 最终 workflow 状态为 success，source SHA 与当时最新 main 相符。前阶段 main `37a679b7d3a8cfef8d7c2bfcca648756d095fc54` 的证据另存于[前阶段记录](organizer-release-2026-10-21.md)，不混用测试或文件数量。
 
 ## 实际设置与数据
 

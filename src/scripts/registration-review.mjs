@@ -1,5 +1,6 @@
 import {createOperationsFormDraft,operationsDraftStore,captureDraftFields,applyDraftFields} from '../lib/operations-form-draft.mjs';
 import {canManageEventOperations} from '../../shared/staff-permissions.mjs';
+import {reviewRegistrationSelection} from '../lib/registration-review-selection.mjs';
 import {registrationSchema} from '../../shared/registration-schema.mjs';
 import {admissionLabels} from '../lib/admission-view.mjs';
 import {createStaffAdmissions} from './staff-admissions.mjs';
@@ -23,7 +24,7 @@ const privateExportUrls=new Set();
 const staffAdmissions=createStaffAdmissions({root:$('[data-staff-admissions]'),request,openRecord:id=>action(()=>openRecord(id)),onChange:()=>load(),onStateChange:renderAdmissionDecision,onActorCleared:clear,onNotice:message=>{$('[data-review-admission-notice]').textContent=message;}});
 let pendingRegistration=null;
 let pendingSettingsAnchor=['#staff-settings-title','#delivery-settings-heading'].includes(location.hash)?location.hash:null;
-if(location.hash.startsWith('#registration=')){try{const raw=decodeURIComponent(location.hash.slice(14));if(/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/u.test(raw))pendingRegistration=raw;}catch{}history.replaceState(null,'',location.pathname+location.search);}
+if(location.hash.startsWith('#registration=')){pendingRegistration=reviewRegistrationSelection(location.hash);history.replaceState(null,'',location.pathname+location.search);}
 function node(tag,text,className){const element=document.createElement(tag);if(text!==undefined)element.textContent=text;if(className)element.className=className;return element;}
 function announce(message,error=false){$('[data-review-status]').textContent=error?'':message;$('[data-review-error]').textContent=error?message:'';$('[data-review-error]').hidden=!error;}
 function allowed(){return user?.roles.some(role=>['reviewer','superadmin'].includes(role));}

@@ -29,7 +29,7 @@ export async function peopleRuntimeFixture({capacity=3,mail=false}={}){
     ARTDICO_REGISTRATION_TOKEN_SECRET:'synthetic-people-registration-token-secret-123456',ARTDICO_CONFIRMATION_EMAIL_ENABLED:mail?'true':'false',
     EMAILJS_SERVICE_ID:'synthetic-service',EMAILJS_CONFIRMATION_TEMPLATE_ID:'synthetic-confirmation-template',EMAILJS_PUBLIC_KEY:'synthetic-public-key',
     EMAILJS_PRIVATE_KEY:'synthetic-private-key-never-project',EMAIL_FROM_ADDRESS:'synthetic@artdico.co',EMAIL_FROM_NAME:'合成筹备团队'};
-  const make=()=>createCloudApplication({objects,env,now:()=>Date.parse('2026-10-21T09:00:00.000Z'),fetchFn:async(url,options)=>{
+  const make=({objects:runtimeObjects=objects}={})=>createCloudApplication({objects:runtimeObjects,env,now:()=>Date.parse('2026-10-21T09:00:00.000Z'),fetchFn:async(url,options)=>{
     assert.equal(url,'https://api.emailjs.com/api/v1.0/email/send','all fixture mail must remain synthetic');messages.push(JSON.parse(options.body));
     return new Response('OK',{status:200,headers:{'content-type':'text/plain'}});
   }});

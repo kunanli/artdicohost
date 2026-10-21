@@ -26,7 +26,7 @@ export const CANDIDATE_SOURCES = Object.freeze([
   ...['handler.mjs', 'projection.mjs', 'relationships.mjs'].map(name => ['functions/person-workspace/' + name, 'functions/person-workspace/' + name, '0644']),
   ['functions/people-operations/service.mjs', 'functions/people-operations/service.mjs', '0644'],
   ...['repository.mjs', 'planning.mjs', 'service.mjs', 'handler.mjs', 'xlsx.mjs'].map(name => ['functions/volunteers/' + name, 'functions/volunteers/' + name, '0644']),
-  ...['content-schema.mjs', 'contacts-schema.mjs', 'contact-editor.mjs', 'arrangement-overview.mjs', 'portrait-codec.mjs', 'registration-schema.mjs', 'organizer-progress.mjs', 'volunteer-schema.mjs', 'xlsx-workbook.mjs'].map(name => ['shared/' + name, 'shared/' + name, '0644']),
+  ...['content-schema.mjs', 'contacts-schema.mjs', 'contact-editor.mjs', 'arrangement-overview.mjs', 'portrait-codec.mjs', 'registration-schema.mjs', 'general-application.mjs', 'organizer-progress.mjs', 'volunteer-schema.mjs', 'xlsx-workbook.mjs'].map(name => ['shared/' + name, 'shared/' + name, '0644']),
   ...['content.mjs', 'event.mjs'].map(name => ['src/config/' + name, 'src/config/' + name, '0644']),
 ]);
 const FIXED_ASSETS = Object.freeze([

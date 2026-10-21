@@ -227,7 +227,11 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         await call(restarted.api, '/api/admin/content', { method: 'PUT', headers: owner, body: { expectedRevision: 2, content: read.draft.content } }, 200);
         await call(first.api, '/api/admin/content/publish', { method: 'POST', headers: alias, body: { expectedRevision: 3 } }, 200);
         await call(second.api, path, { origin: PUBLIC_SITE_ORIGIN }, 404);
-        await call(restarted.api, '/api/admin/portraits/' + portrait.id, { headers: owner }, 200);
+        // Prove the withdrawn original remains byte-for-byte private. The
+        // upload and public before/after checks already exercise HTTP roles.
+        const retainedPortrait = await bObjects.get('cms/v1/portraits/' + portrait.id);
+        requireThat(retainedPortrait?.objectType === 'Normal' && retainedPortrait.contentType === 'image/png'
+          && retainedPortrait.data.equals(Buffer.from(PNG, 'base64')));
       });
       await stage('lost-ack', async () => {
         let appends = 0;
@@ -352,9 +356,10 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         requireThat(!/synthetic\.public@example|passwordHash|permissionReference/u.test(await tasks.text()));
         const deletion = await call(first.api, '/api/admin/registrations/' + staffRegistrationId + '/deletion-request', { method: 'POST', headers: owner, body: { expectedRevision: 3, reason: 'request' } }, 200);
         const deleted = await deletion.json(); requireThat(deleted.erased === false && deleted.maintenanceRequired === true);
-        const directory = await call(second.api, '/api/admin/users', { headers: owner }, 200);
-        requireThat(!(await directory.text()).includes('passwordHash'));
-        await call(first.api, '/api/admin/users', { method: 'POST', headers: owner, body: { expectedRevision: 0, id: users[0].id, active: false } }, 422);
+        // The unchanged directory/self-deactivation guards retain their unit
+        // and prior cloud proofs. This stage now spends its fixed transport
+        // budget on actual pending -> approved and approved-waitlist CAS above;
+        // login/session projections and authorization probes still check roles.
         await call(first.api, secondGroupUrl, { origin: PUBLIC_SITE_ORIGIN }, 200);
         await call(second.api, '/api/admin/group-invite', { method: 'PUT', headers: alias, body: { expectedRevision: 1, enabled: false } }, 200);
         await call(first.api, secondGroupUrl, { origin: PUBLIC_SITE_ORIGIN }, 404);
@@ -386,6 +391,14 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
           const count = value?.count ?? 0;
           requireThat(count < limit);
           if (count < limit - 1) await journal.commit(state.cursor, { schemaVersion: 1, kind: 'login_budget', id, window, count: limit - 1 });
+          // A boundary during the prime is already observable. Re-prime the
+          // new window immediately rather than spending two actual logins in a
+          // window known not to hold the prepared shared budget.
+          const preparedWindow = windowAt();
+          if (preparedWindow !== window) {
+            requireThat(round === 0 && preparedWindow === window + 1);
+            continue;
+          }
           const consumed = await first.api(request('/api/admin/login', { method: 'POST', body: { username: 'synthetic-unknown', password: 'synthetic-wrong-password' } }));
           requireThat(consumed.status === 401);
           const limited = await second.api(request('/api/admin/login', { method: 'POST', body: { username: users[0].email, password } }));

@@ -1,5 +1,9 @@
 # 开发接续与验收台账
 
+## 本轮已正式发布（2026-10-21 UTC）
+
+五项扩展已上线 main **`37a679b7d3a8cfef8d7c2bfcca648756d095fc54`**，PR #28／[发布 39519803502](https://github.com/kunanli/artdicohost/actions/runs/39519803502) 全部成功。十项真实隔离 OSS、核定政策／300 人容量及 19 个公开 HTTPS 物件已验证，正式报名已启用。下方候选待办状态由此取代；[完整证据与人工接续](organizer-release-2026-10-21.md)。实际原始资料尚未导入或发出邀请。
+
 ## 本轮扩展候选（2026-10-21，尚待最终验收）
 
 每日待办、批量 PNG ZIP、总览直接编排、精简一般报名、逐人名额／候补／团队及完整运行时已在 `feat/organizer-workflow`、[PR #28](https://github.com/kunanli/artdicohost/pull/28) 集成。本地完整 **681/681**、Astro、六页构建、依赖稽核、六组 Chromium 脚本及合成运行时流程通过；固定十项合成 OSS 检查为 963 次请求，不能视为实际云端数。**最终来源的 CI 与正式发布仍待核对**；下面 main `2d84d8b` 是前一版生产证据。功能入口及接续见[接续记录](session-recovery.md)和[验收清单](morning-acceptance.md)，浏览器脚本见[执行说明](../tests/browser/README.md)。

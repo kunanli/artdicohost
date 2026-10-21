@@ -1,5 +1,7 @@
 # ARTDiCO HOST 驗收與接續
 
+**最新版已上線：main `37a679b7d3a8cfef8d7c2bfcca648756d095fc54`，PR #28。** [正式發布](https://github.com/kunanli/artdicohost/actions/runs/39519803502) 三個 job 成功，十項真實隔離驗收及 19 個公開 HTTPS 檔案讀回通過。下方 PR #27 與「待新版發布」為歷史基準；新版五項功能均已可驗收。[完整證據](organizer-release-2026-10-21.md)。原始 39 行仍須 owner 登入後實際匯入、核對名額及派發。
+
 發布來源：main `2d84d8b74ece04cc4cc9fa95e6847abf06de116c`。
 [最終修正 PR #27](https://github.com/kunanli/artdicohost/pull/27)；[正式發布執行紀錄](https://github.com/kunanli/artdicohost/actions/runs/39458653245)。三個發布 job 全部成功；十項實際 OSS 驗收通過，內容與正式報名已啟用，18 個公開物件已從正式 HTTPS 網域逐檔核對。
 

@@ -452,3 +452,5 @@ CSV 和 Excel 导出先通过事件授权、字段白名单及用途检查，在
 分工：報名名額服務（registration_service）；精簡表單與名額管理介面（registration_review）；人員進度／待辦及 contacts 整合（admin_completion）；批次邀請與 ZIP（docs_recovery）；總覽直接編排（reference_review）；HTTP／runtime／受控設定／包與合成驗收（cloud_acceptance）；主 agent 負責契約協調、集成、回歸、文件、PR 與實際發布。
 
 各工作使用獨立 worktree，主分支逐項集成。階段完成條件：有意義的並發／撤回／幂等／角色與統計測試、前後端與包檢查、手機及桌面端到端、準確 main 的實際隔離 OSS 驗收、公開網域逐檔驗證。真實 39 行名單及外部發信不作測試，不宣稱已代入或送達。新增候補及額度語義須在實作前由服務與 UI 維護者確認契約，日誌保留更新及復原方法。
+
+本階段已由主 agent 完成直接編排與集成，PR #28 合併為 main `37a679b7d3a8cfef8d7c2bfcca648756d095fc54`。2026-10-21 正式發布三個 job 全部成功，十項實際隔離 OSS、核定政策／300 人容量及 19 個正式 HTTPS 物件均通過；[最終證據及真實資料接續](organizer-release-2026-10-21.md)。不再重做已完成開發與部署。

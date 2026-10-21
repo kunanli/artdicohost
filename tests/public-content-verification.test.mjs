@@ -41,7 +41,12 @@ test('CORS, credentials, caching, redirects and transport errors cannot claim pu
     { 'content-length': '1048577' }, { 'content-length': '3' }, { 'content-length': '-1' },
   ]) await rejects(verifyPublicContent({ fetchFn: async () => json(snapshot(), { headers: { ...headers, ...changed } }) }));
   for (const status of [201, 301, 403, 500, 503]) await rejects(verifyPublicContent({ fetchFn: async () => json({ message: PRIVATE }, { status }) }));
-  for (const changes of [{ redirected: true }, { url: 'https://other.invalid/' }]) await rejects(verifyPublicContent({ fetchFn: async () => Object.assign(json(snapshot()), changes) }));
+  for (const [key, value] of [['redirected', true], ['url', 'https://other.invalid/']]) {
+    const response = json(snapshot());
+    Object.defineProperty(response, key, { value });
+    assert.equal(response[key], value, 'fixture overrides the returned Response metadata');
+    await rejects(verifyPublicContent({ fetchFn: async () => response }));
+  }
   await rejects(verifyPublicContent({ fetchFn: async () => { throw new Error(PRIVATE); } }));
 });
 

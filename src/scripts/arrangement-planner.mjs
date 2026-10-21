@@ -133,13 +133,16 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
     }catch(error){if(current===generation)message(error.message||'展位尚未保存，填写仍保留。',true);return false;}
     finally{if(current===generation){working=false;onBusy(false);configure();}}
   }
-  function acknowledgeSaved(record,{clearBooth=true}={}){
-    if(!selected||selected.type!=='booth'||!record||record.selected.type!=='booth')return false;
-    const context=getContext(),item=context.content?.booths.find(booth=>booth.id===selected.id||!selected.id&&booth.slotNumber===selected.slotNumber);
+  function acknowledgeSaved(record=null,{clearBooth=true}={}){
+    if(!selected)return false;
+    const context=getContext(),items=context.content?.[selected.type==='booth'?'booths':'sessions'];
+    const item=items?.find(value=>value.id===selected.id||selected.type==='booth'&&!selected.id&&value.slotNumber===selected.slotNumber);
     if(!item)return false;
+    // Other content fields may have been saved while a separate personnel
+    // selection remained open. Only our proven full snapshot advances this base.
     selected.id=item.id;selected.revision=context.revision;original=structuredClone(item);
-    const current=readContentForm(boothForm,'plannerBooth');
-    const same=JSON.stringify(current)===JSON.stringify(record.booth);
+    if(selected.type!=='booth'||!record||record.selected.type!=='booth'){configure();return true;}
+    const current=readContentForm(boothForm,'plannerBooth'),same=JSON.stringify(current)===JSON.stringify(record.booth);
     if(same&&clearBooth){baseline=JSON.stringify(current);unapplied=false;}
     onDraftChange();configure();return same;
   }

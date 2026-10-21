@@ -748,7 +748,7 @@ function finalizeAcknowledgedForms(content){
   if(forms.event&&formAlreadySaved('event',forms.event,content))eventFormDirty=false;
   for(const type of ['session','booth','guest','showcase'])if(forms[type]&&formAlreadySaved(type,forms[type],content)){$('[data-'+type+'-dialog]').close();delete editorStableIds[type];}
   if(forms.organization)organizations?.acknowledgeSaved(pendingForms?.organization??forms.organization,{keepOpen:!formAlreadySaved('organization',forms.organization,content)});
-  if(forms.planner)planner?.acknowledgeSaved(forms.planner,{clearBooth:formAlreadySaved('planner',{...forms.planner,assignment:null,uncertain:false},content)});
+  planner?.acknowledgeSaved(forms.planner??null,{clearBooth:Boolean(forms.planner&&formAlreadySaved('planner',{...forms.planner,assignment:null,uncertain:false},content))});
   render();
 }
 async function saveEditor(type){

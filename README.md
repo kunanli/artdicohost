@@ -2,7 +2,7 @@
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
 
-当前更新：[PR #39](https://github.com/kunanli/artdicohost/pull/39) 新版邀请函、上传字体与个人 PNG 已合并 main `29c9bd3`，1194 项 PR 检查通过，实际发布待核验；[发布证据](docs/invitation-release-2026-10-21.md)。上一个已验证正式版本是 [PR #38](https://github.com/kunanli/artdicohost/pull/38) 的本机暂存、就近保存、精简界面与协作者权限。[最新接续](docs/session-recovery.md)、[验收步骤](docs/morning-acceptance.md)。
+2026-10-21 新版邀请函、上传字体与私人PNG已上线 [PR #39](https://github.com/kunanli/artdicohost/pull/39)／[PR #40](https://github.com/kunanli/artdicohost/pull/40)，正式main **`9b9c418`**。1194项main检查、真实私有OSS、共同300政策与**33/33 HTTPS**全部通过，**22:00:20（UTC+08）**完成。[发布证据](docs/invitation-release-2026-10-21.md)、[最新接续](docs/session-recovery.md)、[验收步骤](docs/morning-acceptance.md)。本机暂存、就近保存、精简界面与协作者权限已在前一阶段上线。
 
 **仍需主办方操作：**现有管理员在[用户管理](https://api.artdico.host/admin/settings/#staff-accounts-title)保存建立 `zhouyufei`、`wangying`；Wallet 等 Apple Developer enrollment／签章证书与真机验收。快捷预填不是已建立账号。EmailJS 用户已确认正常，保留现有受控设置。
 
@@ -19,7 +19,7 @@
 | 人员、嘉宾／讲者、组织、场次与展位关联，共同300名额 | [人员关系](docs/people-relationships.md) | [PR #36](docs/people-release-2026-10-21.md) |
 | 学生、精简申请与人工审核 | [报名与审核](docs/public-application-review.md) | [PR #37](docs/application-release-2026-10-21.md) |
 | 本机自动暂存、刷新恢复、就近保存与协作者 | [保存与权限](docs/usability-autosave-accounts.md)、[账号](docs/staff-accounts.md) | [PR #38](docs/usability-release-2026-10-21.md) |
-| 新版邀请函、字体与私人PNG | [邀请函操作](docs/invitation-poster-v2.md) | [PR #39](docs/invitation-release-2026-10-21.md)（发布待核验） |
+| 新版邀请函、字体与私人PNG | [邀请函操作](docs/invitation-poster-v2.md) | [PR #39／#40](docs/invitation-release-2026-10-21.md) |
 | 志愿者名单、排班及缺额 | [志愿者](docs/volunteer-operations.md) | [PR #35](docs/volunteer-release-2026-10-21.md) |
 
 - [志愿者与分工](docs/volunteer-operations.md)：既有人员关联、沟通、可服务时段、岗位班次、缺额及 Excel
@@ -36,7 +36,7 @@
 - `docs/03-agenda.md`：三场地日程
 - `docs/04-form.md`：报名字段、分支与提示语
 - `docs/05-admin.md`：后台审核与 Maria 导出
-- `docs/backend-readiness.md`：后台账号、编辑及报名统计的本机实现和云端待办
+- `docs/backend-readiness.md`：后台账号、编辑及报名统计的早期设计；当前上线状态见接续台账
 - `docs/cloud-content-setup.md`：云端内容内核、专用 FC 执行角色与接入过程；当前发布证据见接续台账
 - `docs/invitation-planning-workflow.md`：人员安排、微信邀请图、基本资料修正与嘉宾草稿交接
 - `docs/06-architecture-data.md`：存储结构及 API 契约

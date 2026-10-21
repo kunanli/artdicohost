@@ -1,6 +1,6 @@
 # ARTDiCO HOST 验收与接续
 
-当前正式版本：[PR #38](https://github.com/kunanli/artdicohost/pull/38)／main `19fe621`，**2026-10-21 20:44:48（UTC+08）**完成。1131 项 PR／main 检查、真实私有 OSS、共同 300 政策及 28/28 HTTPS 全通过。[发布证据](usability-release-2026-10-21.md)。新版邀请函 PR #39 已合并 main `29c9bd3`，1194项PR检查通过，实际发布待核验，不先当已上线。
+当前正式版本：[PR #39](https://github.com/kunanli/artdicohost/pull/39)／[PR #40](https://github.com/kunanli/artdicohost/pull/40)，main **`9b9c418`**，**2026-10-21 22:00:20（UTC+08）**完成。1194项main检查、真实私有OSS、共同300政策及33/33 HTTPS全通过，内容与报名已启用；[发布证据](invitation-release-2026-10-21.md)。
 
 ## 先验收这些流程
 
@@ -13,6 +13,7 @@
 | 300 人名额 | 所有参会与工作人员共用 300，不因多个角色或团队关系重复计数。候补、拒绝、撤回及待审核不算已确认；分配与审核分别保存。 |
 | 志愿者与分工 | 选择既有人，填沟通与服务时间，建立岗位／班次后安排；人数与人次分列，冲突由后端拒绝，取消保留历史。 |
 | 暂存与未知回执 | 刷新后明确恢复，不自动云端提交／发布／寄信；首次明确拒绝保留填写。结果未知只核对原请求，不能换键盲建。云端版本不同只查看旧填写。 |
+| 邀请函 | 人员与邀约打开邀请函，按「使用本次活动信息准备新版」，核对姓名、日期、时段及地点后预览／保存／下载；旧派发历史保留。已核准且有名额的公开申请人在私人确认页按「生成个人邀请函 PNG」，核对完成后可下载或手机长按。生成图片不会发信或标记已派发。 |
 | 用户管理 | 现有管理员登录[用户管理](https://api.artdico.host/admin/settings/#staff-accounts-title)，分别按「准备 zhouyufei」「准备 wangying」自动生成独立初始密码；按「保存工作人员账号」，取得有效回执后从「本页已确认保存的登录资料」私下交付。**两个正式账号尚未建立**，密码不进缓存／Git／链接，离页后清除。 |
 | 权限 | 两个协作者使用 editor／publisher／outreach／reviewer 完整组合，可日常编辑、发布、人员安排、审核、Excel 与通知。只有管理员可管理账号及系统备份／恢复；停用立即撤销旧会话。 |
 | Excel | 人员及报名各自导出当前保存资料；联络、完整原回答、安排另选。Excel 用实际软件打开核对中文、前导零和状态；导出不代替完整备份。 |
@@ -31,10 +32,10 @@
 
 - Apple Developer enrollment、Pass Type ID、签章私钥及完整证书链由主办方完成，再依[Wallet 设置](apple-wallet-setup.md)受控加入与 iPhone 验收；不在聊天传私钥。
 - 两个协作账号须现有管理员登录保存建立，开发测试账号不算正式账号。
-- 新版邀请函／上传字体／个人 PNG 以[接续记录](session-recovery.md)的实际发布状态为准。
+- 真实组织、嘉宾公开授权及群码图片／有效期，按后台实际资料核对；不使用开发合成资料。
 
 ## 操作与历史证据
 
 [人员关系](people-relationships.md)、[志愿者](volunteer-operations.md)、[组织](participating-organizations.md)、[图片](profile-media.md)、[Excel](excel-export.md)、[确认信](registration-confirmation.md)、[账号](staff-accounts.md)、[本机草稿](usability-autosave-accounts.md)、[备份与恢复](maintenance-backup.md)。
 
-历史发布：[PR #35](volunteer-release-2026-10-21.md)、[PR #36](people-release-2026-10-21.md)、[PR #37](application-release-2026-10-21.md)、[PR #38](usability-release-2026-10-21.md)。恢复先读[接续台账](session-recovery.md)，不要重做已成功部署、重复导入或盲重送邮件。
+历史发布：[PR #35](volunteer-release-2026-10-21.md)、[PR #36](people-release-2026-10-21.md)、[PR #37](application-release-2026-10-21.md)、[PR #38](usability-release-2026-10-21.md)、[PR #39／#40](invitation-release-2026-10-21.md)。恢复先读[接续台账](session-recovery.md)，不要重做已成功部署、重复导入或盲重送邮件。

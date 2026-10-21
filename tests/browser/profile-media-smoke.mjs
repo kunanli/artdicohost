@@ -62,6 +62,7 @@ try{
   context.putImageData(pixels,0,0);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.93));if(blob.size<=512*1024||blob.size>12*1024*1024)throw new Error('Synthetic original fixture bounds failed');
   const data=new DataTransfer();data.items.add(new File([blob],'synthetic-large.jpg',{type:'image/jpeg'}));const input=document.querySelector('[data-guest-portrait-file]');input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));
  });
+ await page.locator('[data-guest-image-editor] [data-image-editor-ratio]').selectOption('original');await page.locator('[data-guest-image-editor] [data-image-editor-apply]').click();
  await page.locator('[data-guest-portrait-status]').filter({hasText:'800 × 600'}).waitFor();assert.equal(uploads.length,1);assert.deepEqual({width:uploads[0].width,height:uploads[0].height},{width:800,height:600});
  await form.locator('[name=title]').fill('合成策展人');await form.locator('[name=bio]').fill('合成嘉宾的经验与分享方向。');await form.locator('[name=website]').fill('https://example.invalid/person');
  await form.locator('[name=publicRoles][value=speaker]').check();await form.locator('[name=publicRoles][value=organizer]').check();await form.locator('[name=status]').selectOption('confirmed');

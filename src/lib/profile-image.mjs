@@ -70,13 +70,19 @@ export function profileImageDimensions(bytes, contentType) {
 }
 
 function ensureActive(signal) { if (signal?.aborted) throw new DOMException('Image processing aborted.', 'AbortError'); }
-function encode(canvas, quality) { return new Promise(resolve => canvas.toBlob(resolve,'image/jpeg',quality)); }
+function encode(canvas, contentType, quality) { return new Promise(resolve => canvas.toBlob(resolve,contentType,quality)); }
+function hasTransparency(context, width, height) {
+  const pixels = context.getImageData(0,0,width,height).data;
+  for (let offset = 3; offset < pixels.length; offset += 4) if (pixels[offset] < 255) return true;
+  return false;
+}
 
-/** Local-only decode/orientation/resize/re-encode. Only the returned JPEG payload is uploaded. */
-export async function prepareProfileImage(file, { maxEdge = 800, signal } = {}) {
+/** Local-only decode/orientation/resize/re-encode. Transparency is opt-in; opaque images stay JPEG. */
+export async function prepareProfileImage(file, { maxEdge = 800, signal, preserveTransparency = false } = {}) {
   if (!file || !TYPES.includes(file.type)) throw new Error('请选择 JPEG、PNG 或 WebP 图片。');
   if (!Number.isSafeInteger(file.size) || file.size < 1 || file.size > MAX_ORIGINAL_IMAGE_BYTES) throw new Error('请选择不超过 12 MiB 的图片。');
   if (!Number.isSafeInteger(maxEdge) || maxEdge < 64 || maxEdge > 1600) throw new TypeError('Invalid image size.');
+  if (typeof preserveTransparency !== 'boolean') throw new TypeError('Invalid image transparency option.');
   ensureActive(signal);
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.byteLength !== file.size) throw invalid();
@@ -92,27 +98,36 @@ export async function prepareProfileImage(file, { maxEdge = 800, signal } = {}) 
     const width = source.width || source.naturalWidth, height = source.height || source.naturalHeight;
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || width * height > MAX_IMAGE_PIXELS) throw invalid();
     const canvas = document.createElement('canvas');
-    let blob, quality;
-    for (let sizeAttempt = 0; sizeAttempt < 3 && !blob; sizeAttempt++) {
+    let blob, quality, transparent = false, contentType = 'image/jpeg';
+    for (let sizeAttempt = 0; sizeAttempt < (transparent ? 8 : 3) && !blob; sizeAttempt++) {
       const scale = Math.min(1,maxEdge * .8 ** sizeAttempt / Math.max(width,height));
       canvas.width = Math.max(1,Math.round(width * scale)); canvas.height = Math.max(1,Math.round(height * scale));
-      const context = canvas.getContext('2d',{alpha:false});
+      const context = canvas.getContext('2d',{alpha:preserveTransparency,willReadFrequently:preserveTransparency});
       if (!context) throw new Error('当前浏览器无法处理图片，请更换浏览器。');
-      context.fillStyle = '#fff'; context.fillRect(0,0,canvas.width,canvas.height);
+      if (!preserveTransparency) { context.fillStyle = '#fff'; context.fillRect(0,0,canvas.width,canvas.height); }
       context.imageSmoothingEnabled = true; context.imageSmoothingQuality = 'high';
       context.drawImage(source,0,0,canvas.width,canvas.height);
+      if (preserveTransparency && !transparent) transparent = hasTransparency(context,canvas.width,canvas.height);
+      if (transparent) {
+        contentType = 'image/png'; quality = null;
+        ensureActive(signal);
+        const candidate = await encode(canvas,contentType);
+        if (candidate?.type === contentType && candidate.size > 0 && candidate.size <= MAX_PROCESSED_IMAGE_BYTES) blob = candidate;
+        continue;
+      }
       for (quality of [.88,.8,.7,.6]) {
         ensureActive(signal);
-        const candidate = await encode(canvas,quality);
-        if (candidate?.type === 'image/jpeg' && candidate.size > 0 && candidate.size <= MAX_PROCESSED_IMAGE_BYTES) { blob = candidate; break; }
+        const candidate = await encode(canvas,contentType,quality);
+        if (candidate?.type === contentType && candidate.size > 0 && candidate.size <= MAX_PROCESSED_IMAGE_BYTES) { blob = candidate; break; }
       }
     }
     if (!blob) throw new Error('图片处理后仍超过 512 KiB，请选择较小的原图。');
     ensureActive(signal);
     const processed = new Uint8Array(await blob.arrayBuffer()); let binary = '';
+    ensureActive(signal);
     for (let offset = 0; offset < processed.length; offset += 32768) binary += String.fromCharCode(...processed.subarray(offset,offset+32768));
-    return { payload:{contentType:'image/jpeg',dataBase64:btoa(binary)},
-      source:{width,height,bytes:file.size}, processed:{width:canvas.width,height:canvas.height,bytes:blob.size,quality} };
+    return { payload:{contentType,dataBase64:btoa(binary)},
+      source:{width,height,bytes:file.size}, processed:{width:canvas.width,height:canvas.height,bytes:blob.size,quality,transparencyPreserved:transparent} };
   } catch (error) {
     if (error?.name === 'AbortError' || error instanceof Error && /^(?:请选择|图片|当前浏览器)/u.test(error.message)) throw error;
     throw invalid();
@@ -121,5 +136,6 @@ export async function prepareProfileImage(file, { maxEdge = 800, signal } = {}) 
 
 export function processedImageSummary(image) {
   return '原图 ' + image.source.width + ' × ' + image.source.height + ' → ' + image.processed.width + ' × ' + image.processed.height
-    + '，' + Math.ceil(image.processed.bytes / 1024) + ' KiB；已校正方向并移除照片元数据。';
+    + '，' + Math.ceil(image.processed.bytes / 1024) + ' KiB；已校正方向并移除照片元数据。'
+    + (image.processed.transparencyPreserved ? ' 透明背景已保留。' : '');
 }

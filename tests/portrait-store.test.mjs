@@ -4,7 +4,11 @@ import { mkdtemp, rm, readFile, writeFile, stat, mkdir, symlink, chmod } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { deflateSync, inflateSync } from 'node:zlib';
 import { createFilePortraitStore, MAX_PORTRAIT_BYTES } from '../functions/content-api/portrait-store.mjs';
+import { createOssPortraitStore } from '../functions/cloud-content/portrait-store.mjs';
+import { normalizePortraitBytes } from '../shared/portrait-codec.mjs';
+import { memoryObjects } from './helpers/cloud-memory-objects.mjs';
 
 // Generated once from a solid 2×3 RGB image. No portraits or external material.
 const fixtures = {
@@ -25,6 +29,48 @@ function pngChunk(type, body) {
   for (const byte of Buffer.concat([Buffer.from(type), body])) { crc ^= byte; for (let i = 0; i < 8; i++) crc = crc & 1 ? 0xedb88320 ^ crc >>> 1 : crc >>> 1; }
   const result = Buffer.alloc(body.length + 12); result.writeUInt32BE(body.length); result.write(type, 4); body.copy(result, 8); result.writeUInt32BE((crc ^ 0xffffffff) >>> 0, result.length - 4); return result;
 }
+
+function transparentPng(indexed) {
+  const header = Buffer.alloc(13); header.writeUInt32BE(3); header.writeUInt32BE(1, 4); header[8] = 8; header[9] = indexed ? 3 : 6;
+  const pixels = indexed ? Buffer.from([0, 0, 1, 2]) : Buffer.from([0, 255, 0, 0, 0, 0, 255, 0, 127, 0, 0, 255, 255]);
+  return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), pngChunk('IHDR', header),
+    ...(indexed ? [pngChunk('PLTE', Buffer.from([255, 0, 0, 0, 255, 0, 0, 0, 255])), pngChunk('tRNS', Buffer.from([0, 127, 255]))] : []),
+    pngChunk('IDAT', deflateSync(pixels)), pngChunk('IEND', Buffer.alloc(0))]);
+}
+
+function transparentPixelAlphas(data) {
+  const compressed = [];
+  let transparency, colorType;
+  for (let offset = 8; offset < data.length;) {
+    const length = data.readUInt32BE(offset), type = data.toString('ascii', offset + 4, offset + 8), body = data.subarray(offset + 8, offset + 8 + length);
+    if (type === 'IHDR') colorType = body[9];
+    if (type === 'tRNS') transparency = body;
+    if (type === 'IDAT') compressed.push(body);
+    offset += length + 12;
+  }
+  const raw = inflateSync(Buffer.concat(compressed));
+  assert.equal(raw[0], 0, 'the synthetic pixel row uses the unfiltered encoding');
+  return colorType === 6 ? [raw[4], raw[8], raw[12]] : [...raw.subarray(1)].map(index => transparency[index]);
+}
+
+for (const indexed of [false, true]) test(`${indexed ? 'palette tRNS' : 'RGBA'} PNG transparency survives normalization, metadata stripping and rebuilt local/cloud stores`, async t => {
+  const clean = transparentPng(indexed), privateText = Buffer.from('synthetic-source\0PRIVATE-SYNTHETIC-PHOTO-LOCATION');
+  const tagged = Buffer.concat([clean.subarray(0, 33), pngChunk('tEXt', privateText), clean.subarray(33)]);
+  assert.deepEqual(normalizePortraitBytes(tagged, 'image/png'), clean);
+  assert.deepEqual(transparentPixelAlphas(clean), [0, 127, 255]);
+  const { directory, store: local } = await fixture(t), objects = memoryObjects(), cloud = createOssPortraitStore({ objects });
+  for (const [store, rebuild] of [[local, () => createFilePortraitStore({ directory })], [cloud, () => createOssPortraitStore({ objects })]]) {
+    const portrait = await store.upload(input('image/png', tagged));
+    assert.equal(portrait.contentType, 'image/png');
+    assert.equal(portrait.id, createHash('sha256').update(clean).digest('hex') + '.png');
+    assert.deepEqual(await store.upload(input('image/png', clean)), portrait, 'metadata never changes the canonical rendering identifier');
+    const restored = await rebuild().read(portrait.id);
+    assert.deepEqual(restored.data, clean);
+    assert.equal(restored.data.includes(privateText), false);
+    assert.deepEqual(transparentPixelAlphas(restored.data), [0, 127, 255], 'fully and partially transparent pixels are not flattened onto a background');
+    assert.deepEqual(await rebuild().verify(portrait.id), portrait);
+  }
+});
 
 test('actual PNG, JPEG and WebP uploads survive restart with private modes, canonical IDs and verified bytes', async t => {
   const { directory, store } = await fixture(t);

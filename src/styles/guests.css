@@ -7,6 +7,8 @@
 #artdico-host.ah-festival .ah-guest-portrait{position:relative;display:grid;place-items:center;width:116px;height:116px;margin:0 auto 20px;border:2px solid #ecece8;border-radius:50%;overflow:hidden;box-shadow:0 7px 18px #0004;background:#363b43;color:#e7e8ec}
 #artdico-host.ah-festival .ah-guest-portrait img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;border-radius:50%;z-index:1}
 #artdico-host.ah-festival .ah-guest-portrait img[hidden]{display:none}
+#artdico-host.ah-festival .ah-guest-portrait:has(img:not([hidden])){background:transparent;border:0}
+#artdico-host.ah-festival .ah-guest-portrait:has(img:not([hidden]))>.ah-guest-initial{visibility:hidden}
 #artdico-host.ah-festival .ah-guest-initial{font-size:35px;font-weight:400;letter-spacing:-.04em;line-height:1}
 #artdico-host.ah-festival .ah-guest-name{margin:0;color:#f1f0ec;font-size:16px;font-weight:600;line-height:1.5;overflow-wrap:anywhere}
 #artdico-host.ah-festival .ah-guest-company{margin:8px 0 0;color:#bcc1cb;font-size:12px;line-height:1.8;overflow-wrap:anywhere}
@@ -47,11 +49,12 @@
 
 #artdico-admin .ah-admin-summary{grid-template-columns:repeat(4,minmax(0,1fr))}
 #artdico-admin .ah-admin-summary article:last-child{grid-column:auto}
-#artdico-admin .ah-admin-guest-avatar{width:54px;height:54px;object-fit:cover;border:1px solid #c5cfdf;border-radius:50%;display:block;background:#edf1f7}
+#artdico-admin .ah-admin-guest-avatar{width:54px;height:54px;object-fit:cover;border:0;border-radius:50%;display:block;background:#fff}
 #artdico-admin .ah-admin-guest-no-photo{display:grid;place-items:center;width:54px;height:54px;border:1px dashed #b5c0d2;border-radius:50%;font-size:10px;color:#63738c}
 .ah-admin-guest-dialog .ah-admin-portrait-upload{display:grid;grid-template-columns:116px minmax(0,1fr);gap:23px;align-items:start;margin:0 0 25px}
 .ah-admin-guest-dialog .ah-admin-portrait-frame{width:116px;height:116px;border:1px solid #bfcbdc;border-radius:50%;background:#f1f5fa;display:grid;place-items:center;overflow:hidden;color:#66778f;font-size:13px}
-.ah-admin-guest-dialog .ah-admin-portrait-frame img{width:100%;height:100%;object-fit:cover}
+.ah-admin-guest-dialog .ah-admin-portrait-frame img{display:block;width:100%;height:100%;object-fit:cover}
+.ah-admin-guest-dialog .ah-admin-portrait-frame:has(img:not([hidden])){background:#fff;border:0}
 .ah-admin-guest-dialog .ah-admin-portrait-frame:has(img:not([hidden]))>span{display:none}
 .ah-admin-guest-dialog .ah-admin-portrait-upload input[type=file]{padding:8px;font-size:12px}
 .ah-admin-guest-dialog .ah-admin-portrait-upload .ah-admin-text-button{text-align:left;width:max-content;font-size:11px;min-height:32px}
@@ -60,7 +63,7 @@
 .ah-admin-guest-dialog [data-guest-consent-note]{margin:10px 0 22px}
 #artdico-admin .ah-admin-guest-preview-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:24px 20px;margin:22px 0 30px;white-space:normal}
 #artdico-admin .ah-admin-guest-preview-grid article{text-align:center;border:0;padding:0}
-#artdico-admin .ah-admin-guest-preview-grid img{width:92px;height:92px;object-fit:cover;border-radius:50%;border:1px solid #b8c6dc}
+#artdico-admin .ah-admin-guest-preview-grid img{width:92px;height:92px;object-fit:cover;border-radius:50%;border:0;background:#fff}
 #artdico-admin .ah-admin-guest-preview-grid h4{font-size:14px;line-height:1.5;margin:10px 0 5px}
 #artdico-admin .ah-admin-guest-preview-grid p{font-size:11px;line-height:1.8;margin:3px 0}
 @media(max-width:900px){#artdico-admin .ah-admin-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}

@@ -6,6 +6,7 @@ import { completeBoothSlots } from '../lib/booth-slots.mjs';
 import { prepareBoothDraft } from '../lib/arrangement-planner.mjs';
 import { createArrangementPlanner } from './arrangement-planner.mjs';
 import { prepareProfileImage, processedImageSummary } from '../lib/profile-image.mjs';
+import { editStaffImage } from '../lib/staff-image-editor.mjs';
 import { createOrganizationsEditor } from './organizations.mjs';
 
 const $ = selector => document.querySelector(selector);
@@ -15,6 +16,7 @@ const loginPanel = $('[data-admin-login-panel]');
 const workspace = $('[data-admin-workspace]');
 let user = null;
 let csrfToken = '';
+let requestSessionGeneration = 0;
 let draft = null;
 let published = null;
 let dirty = false;
@@ -34,7 +36,9 @@ let coverGeneration = 0;
 let coverController = null;
 let portraitUploading = false;
 let portraitGeneration = 0;
+let portraitPreviewGeneration = 0;
 let portraitController = null;
+let portraitPending = null;
 let guestFormDirty = false;
 let pendingInvitee = takeInvitee();
 function takeBoothLink() {
@@ -109,9 +113,14 @@ function lockControls() {
   $('[data-showcase-cover-file]').disabled = controlsBusy || organizationBusy || !canEdit();
   $('[data-showcase-cover-remove]').disabled = controlsBusy || organizationBusy || !canEdit();
   $('[data-booth-submit]').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canEdit();
-  $('[data-guest-submit]').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canEdit();
-  $('[data-guest-portrait-file]').disabled = controlsBusy || organizationBusy || !canEdit();
+  $('[data-guest-submit]').disabled = controlsBusy || portraitUploading || Boolean(portraitPending) || coverUploading || organizationBusy || !canEdit();
+  $('[data-guest-portrait-file]').disabled = controlsBusy || portraitUploading || Boolean(portraitPending) || organizationBusy || !canEdit();
   $('[data-guest-portrait-remove]').disabled = controlsBusy || organizationBusy || !canEdit();
+  $('[data-guest-portrait-edit]').disabled = controlsBusy || portraitUploading || Boolean(portraitPending) || organizationBusy || !canEdit() || !portraitIdPattern.test($('[data-guest-form]').elements.namedItem('portraitId').value);
+  for (const selector of ['[data-guest-portrait-retry]','[data-guest-portrait-discard]']) {
+    $(selector).hidden = !portraitPending;
+    $(selector).disabled = controlsBusy || portraitUploading || organizationBusy || !canEdit();
+  }
   for (const node of document.querySelectorAll('[data-admin-save],[data-admin-add-session],[data-admin-add-booth],[data-admin-fill-booths],[data-admin-add-guest],[data-admin-add-showcase],[data-row-action]')) node.disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canEdit();
   $('[data-admin-save]').disabled ||= planner?.hasUnapplied() === true || organizations?.hasUnapplied() === true;
   $('[data-admin-publish]').disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canPublish() || dirty || planner?.hasUnapplied() === true || organizations?.hasUnapplied() === true;
@@ -127,15 +136,44 @@ function setDirty(value) {
   lockControls();
 }
 async function request(path, options = {}) {
-  const headers = { Accept: 'application/json', ...options.headers };
+  const sessionGeneration = requestSessionGeneration;
+  const { binaryImage = false, ...fetchOptions } = options;
+  const headers = { Accept: binaryImage ? 'image/png,image/jpeg,image/webp' : 'application/json', ...options.headers };
   if (options.body) headers['Content-Type'] = 'application/json';
   if (options.method && options.method !== 'GET' && csrfToken) headers['X-CSRF-Token'] = csrfToken;
-  const response = await fetch(path, { ...options, headers, credentials: 'same-origin', cache: 'no-store' });
-  const result = await response.json().catch(() => ({}));
+  const response = await fetch(path, { ...fetchOptions, headers, credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
+  if (sessionGeneration !== requestSessionGeneration) throw new Error('会话已变化，请在当前工作区重新操作。');
+  const result = binaryImage && response.ok ? null : await response.json().catch(() => ({}));
+  if (sessionGeneration !== requestSessionGeneration) throw new Error('会话已变化，请在当前工作区重新操作。');
   if (!response.ok) {
     if (response.status === 401 && path !== '/api/admin/login') { showLogin(); announce('会话已结束，请重新登录。', true); }
-    const message = response.status === 409 ? '草稿已被其他工作人员更新。你的修改仍保留在本页；请先复制需要保留的内容，再重新载入最新草稿。' : result.error?.message || '操作暂未完成，请重试。';
-    throw new Error(message);
+    const message = response.status === 503 && result?.error?.code === 'CONTENT_NOT_READY' ? '后台服务暂不可用，可能正在更新。请稍后重试。' : response.status === 409 ? '草稿已被其他工作人员更新。你的修改仍保留在本页；请先复制需要保留的内容，再重新载入最新草稿。' : result?.error?.message || '操作暂未完成，请重试。';
+    const failure = new Error(message); failure.status = response.status;
+    failure.code = result?.error?.code === 'CONTENT_NOT_READY' ? 'CONTENT_NOT_READY' : '';
+    throw failure;
+  }
+  if (binaryImage) {
+    const id = path.split('/').at(-1), type = response.headers.get('content-type')?.split(';')[0].trim();
+    const expectedType = id?.endsWith('.jpg') ? 'image/jpeg' : id?.endsWith('.png') ? 'image/png' : 'image/webp';
+    if (!portraitIdPattern.test(id ?? '') || type !== expectedType) throw new Error('原图片格式未能核对，请重新选择图片。');
+    const reader = response.body?.getReader(); if (!reader) throw new Error('原图片暂时无法读取，请稍后重试。');
+    const parts = []; let length = 0;
+    try {
+      while (true) {
+        const chunk = await reader.read(); if (chunk.done) break;
+        length += chunk.value.byteLength;
+        if (length > 512 * 1024) throw new Error('原图片超过安全读取范围，请重新选择图片。');
+        parts.push(chunk.value);
+      }
+    } catch (failure) { await reader.cancel().catch(() => {}); throw failure; }
+    finally { reader.releaseLock(); }
+    if (!length) throw new Error('原图片暂时无法读取，请重新选择图片。');
+    const file = new File(parts, id, { type });
+    if (!globalThis.crypto?.subtle) throw new Error('当前浏览器无法校验原图片，请从本机重新选择图片。');
+    const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))].map(byte => byte.toString(16).padStart(2,'0')).join('');
+    if (digest !== id.split('.')[0]) throw new Error('原图片内容未能核对，请重新选择图片。');
+    if (sessionGeneration !== requestSessionGeneration) throw new Error('会话已变化，请在当前工作区重新操作。');
+    return file;
   }
   return result;
 }
@@ -147,11 +185,12 @@ async function action(callback) {
   finally { busy = false; lockControls(); resumePendingLinks(); }
 }
 function resumePendingLinks() {
-  if (!user || !draft || busy || plannerBusy || organizations?.hasUnapplied()) return;
+  if (!user || !draft || busy || plannerBusy || portraitUploading || portraitPending || organizations?.hasUnapplied()) return;
   if (pendingBooth) { const id = pendingBooth; pendingBooth = null; planner.open('booth', id); return; }
   if (pendingInvitee) queueMicrotask(() => action(prepareInvitedGuest));
 }
 function showLogin() {
+  requestSessionGeneration += 1;
   clearPortrait();
   clearCover();
   organizations?.clear();
@@ -176,6 +215,7 @@ function showLogin() {
   for (const dialog of document.querySelectorAll('dialog')) if (dialog.open) dialog.close();
   for (const type of ['session', 'booth', 'guest', 'showcase']) {
     $('[data-' + type + '-form]').reset();
+    for (const field of $('[data-' + type + '-form]').querySelectorAll('input[type=hidden]')) field.value = '';
     const error = $('[data-' + type + '-error]');
     error.textContent = '';
     error.hidden = true;
@@ -339,6 +379,7 @@ function openEditor(type, item = null, allowBusy = false) {
   else { editingGuest = item?.id ?? null; showPortrait(value.portraitId); }
   $('[data-' + type + '-dialog-title]').textContent = (item ? '编辑' : '新增') + typeLabel(type);
   $('[data-' + type + '-dialog]').showModal();
+  lockControls();
 }
 async function prepareInvitedGuest(){
   if(!pendingInvitee||organizations?.hasUnapplied())return false;
@@ -366,13 +407,14 @@ async function prepareInvitedGuest(){
   return true;
 }
 function closeGuestEditor(){
-  if(busy||portraitUploading)return;
-  if(guestFormDirty&&!confirm('关闭将放弃本次尚未应用的嘉宾资料，继续吗？'))return;
+  if(busy)return;
+  if((guestFormDirty||portraitUploading||portraitPending)&&!confirm('关闭将放弃本次尚未应用的嘉宾资料及图片编辑，继续吗？'))return;
   $('[data-guest-dialog]').close();
 }
 function submitEditor(type, event) {
   event.preventDefault();
   if (!canEdit() || busy || portraitUploading || coverUploading || !draft) return;
+  if (type === 'guest' && portraitPending) return;
   const form = event.currentTarget;
   if (!form.reportValidity()) return;
   const candidate = structuredClone(draft.content);
@@ -440,18 +482,31 @@ function revokeGuestConsent() {
   $('[data-guest-consent-note]').textContent = '资料或照片已变更，请重新核对这份资料与照片的公开授权。保存草稿不会自动公开。';
 }
 function showPortrait(id) {
-  const image = $('[data-guest-portrait-preview]');
+  const previous = $('[data-guest-portrait-preview]'), image = previous.cloneNode(false), stamp = ++portraitPreviewGeneration;
+  previous.removeAttribute('src'); previous.replaceWith(image);
   const empty = $('[data-guest-portrait-empty]');
   image.hidden = true; image.removeAttribute('src');
   empty.hidden = false;
   if (typeof id !== 'string' || !portraitIdPattern.test(id)) return;
-  image.src = '/api/admin/portraits/' + id;
+  const path = '/api/admin/portraits/' + id;
+  image.addEventListener('error', () => {
+    if (stamp !== portraitPreviewGeneration || !image.isConnected || $('[data-guest-portrait-preview]') !== image || !$('[data-guest-dialog]').open || $('[data-guest-form]').elements.namedItem('portraitId').value !== id || image.getAttribute('src') !== path) return;
+    image.hidden = true; empty.hidden = false;
+    $('[data-guest-portrait-status]').textContent = '照片预览暂不可用，原照片引用仍保留。服务恢复后可重新编辑或选择图片。';
+  }, { once: true });
+  image.src = path;
   image.hidden = false; empty.hidden = true;
 }
-function clearPortrait() {
+function cancelPortraitWork() {
   portraitGeneration += 1;
   portraitController?.abort(); portraitController = null;
   portraitUploading = false;
+  portraitPending = null;
+  $('[data-guest-image-editor]').replaceChildren();
+  $('[data-guest-image-editor]').hidden = true;
+}
+function clearPortrait() {
+  cancelPortraitWork();
   const form = $('[data-guest-form]');
   form.elements.namedItem('portraitId').value = '';
   $('[data-guest-portrait-file]').value = '';
@@ -459,44 +514,73 @@ function clearPortrait() {
   showPortrait('');
   lockControls();
 }
-async function uploadPortrait(event) {
-  const file = event.currentTarget.files?.[0];
-  clearPortrait(); revokeGuestConsent();
+function portraitContext() {
+  return { content: draft?.content, revision: draft?.revision, account: user?.id + '|' + [...(user?.roles ?? [])].sort().join(','), id: $('[data-guest-form]').elements.namedItem('id').value };
+}
+function portraitContextMatches(context) {
+  const current = portraitContext();
+  return canEdit() && $('[data-guest-dialog]').open && current.content === context.content && current.revision === context.revision && current.account === context.account && current.id === context.id;
+}
+async function sendPortrait(pending, generation, controller) {
+  const result = await request('/api/admin/portraits', { method: 'POST', body: JSON.stringify(pending.prepared.payload), signal: controller.signal });
+  if (generation !== portraitGeneration || controller.signal.aborted || !portraitContextMatches(pending.context)) return;
+  const payload = pending.prepared.payload;
+  if (!portraitIdPattern.test(result.portrait?.id) || result.portrait.contentType !== payload.contentType || !Number.isSafeInteger(result.portrait.bytes) || result.portrait.bytes < 1 || result.portrait.bytes > 512 * 1024) throw new Error('照片上传结果无效，可重试同一份图片。');
+  revokeGuestConsent(); guestFormDirty = true;
+  $('[data-guest-form]').elements.namedItem('portraitId').value = result.portrait.id;
+  showPortrait(result.portrait.id);
+  portraitPending = null;
+  $('[data-guest-portrait-status]').textContent = processedImageSummary(pending.prepared)+' 照片已上传；应用并保存后才会关联，尚未公开。';
+}
+function portraitFailure(error) {
+  const localError = $('[data-guest-error]');
+  $('[data-guest-portrait-status]').textContent = portraitPending ? '已保留待上传图片及当前填写资料，原照片仍保留。请稍后重试上传，或取消本次图片。' : '图片编辑未完成，原有照片与填写资料仍保留。';
+  localError.textContent = error.message || '照片上传未完成，请重试。'; localError.hidden = false;
+}
+async function editPortrait(fileOrLoader) {
+  if (!canEdit() || busy || !draft || !$('[data-guest-dialog]').open) return;
+  cancelPortraitWork();
   const localError = $('[data-guest-error]'); localError.textContent = ''; localError.hidden = true;
-  if (!file || !canEdit() || busy || !draft || !$('[data-guest-dialog]').open) return;
-  const generation = portraitGeneration;
+  const generation = portraitGeneration, context = portraitContext(), returnFocus = $(typeof fileOrLoader === 'function' ? '[data-guest-portrait-edit]' : '[data-guest-portrait-file]');
   const controller = new AbortController(); portraitController = controller;
   portraitUploading = true; lockControls();
-  $('[data-guest-portrait-status]').textContent = '正在处理并上传照片…';
+  const active = () => generation === portraitGeneration && !controller.signal.aborted && portraitContextMatches(context);
+  $('[data-guest-portrait-status]').textContent = '正在准备图片编辑…';
   try {
-    const prepared = await prepareProfileImage(file,{maxEdge:800,signal:controller.signal});
-    const payload = prepared.payload;
-    if (generation !== portraitGeneration || controller.signal.aborted) return;
-    const result = await request('/api/admin/portraits', { method: 'POST', body: JSON.stringify(payload), signal: controller.signal });
-    if (generation !== portraitGeneration || controller.signal.aborted || !$('[data-guest-dialog]').open) return;
-    if (!portraitIdPattern.test(result.portrait?.id) || result.portrait.contentType !== payload.contentType || !Number.isSafeInteger(result.portrait.bytes) || result.portrait.bytes < 1 || result.portrait.bytes > 512 * 1024) throw new Error('照片上传结果无效，请重试。');
-    $('[data-guest-form]').elements.namedItem('portraitId').value = result.portrait.id;
-    showPortrait(result.portrait.id);
-    $('[data-guest-portrait-status]').textContent = processedImageSummary(prepared)+' 照片已上传；应用并保存后才会关联，尚未公开。';
+    const file = typeof fileOrLoader === 'function' ? await fileOrLoader(controller.signal) : fileOrLoader;
+    if (!active()) return;
+    $('[data-guest-image-editor]').hidden = false;
+    const edited = await editStaffImage(file, { root: $('[data-guest-image-editor]'), kind: 'guest', signal: controller.signal });
+    if (!active()) return;
+    $('[data-guest-image-editor]').hidden = true;
+    if (!edited) { $('[data-guest-portrait-status]').textContent = '已取消图片编辑，原有照片与资料保留。'; return; }
+    guestFormDirty = true;
+    $('[data-guest-portrait-status]').textContent = '正在处理并上传编辑后的照片…';
+    const prepared = await prepareProfileImage(edited,{maxEdge:800,preserveTransparency:true,signal:controller.signal});
+    if (!active()) return;
+    portraitPending = { prepared, context };
+    await sendPortrait(portraitPending, generation, controller);
   } catch (error) {
-    if (generation !== portraitGeneration || controller.signal.aborted) return;
-    $('[data-guest-form]').elements.namedItem('portraitId').value = '';
-    showPortrait('');
-    $('[data-guest-portrait-status]').textContent = '照片未上传成功，未关联任何新照片。';
-    localError.textContent = error.message || '照片上传未完成，请重试。'; localError.hidden = false;
+    if (active()) portraitFailure(error);
   } finally {
-    if (generation === portraitGeneration) { portraitUploading = false; portraitController = null; lockControls(); }
+    if (generation === portraitGeneration) {
+      portraitUploading = false; portraitController = null; $('[data-guest-image-editor]').hidden = true; $('[data-guest-portrait-file]').value = ''; lockControls();
+      if ($('[data-guest-dialog]').open && document.activeElement === document.body) (portraitPending ? $('[data-guest-portrait-retry]') : returnFocus).focus({ preventScroll: true });
+    }
   }
 }
-$('[data-guest-portrait-preview]').addEventListener('error', event => {
-  const id = $('[data-guest-form]').elements.namedItem('portraitId').value;
-  if (!$('[data-guest-dialog]').open || !portraitIdPattern.test(id) || event.currentTarget.src !== location.origin + '/api/admin/portraits/' + id) return;
-  event.currentTarget.hidden = true;
-  $('[data-guest-portrait-empty]').hidden = false;
-  $('[data-guest-portrait-status]').textContent = '照片预览不可用，请重新上传后再应用修改。';
-  $('[data-guest-form]').elements.namedItem('portraitId').value = '';
-  revokeGuestConsent();
-});
+function uploadPortrait(event) { const file = event.currentTarget.files?.[0]; if (file) return editPortrait(file); }
+async function retryPortrait() {
+  const pending = portraitPending;
+  if (!pending || portraitUploading || busy || !portraitContextMatches(pending.context)) return;
+  const generation = portraitGeneration, controller = new AbortController(); portraitController = controller;
+  portraitUploading = true; lockControls();
+  $('[data-guest-error]').hidden = true;
+  $('[data-guest-portrait-status]').textContent = '正在重试上传同一份图片…';
+  try { await sendPortrait(pending, generation, controller); }
+  catch (error) { if (generation === portraitGeneration && !controller.signal.aborted && portraitContextMatches(pending.context)) portraitFailure(error); }
+  finally { if (generation === portraitGeneration) { portraitUploading = false; portraitController = null; lockControls(); if ($('[data-guest-dialog]').open && document.activeElement === document.body) (portraitPending ? $('[data-guest-portrait-retry]') : $('[data-guest-portrait-edit]')).focus({ preventScroll: true }); } }
+}
 function showcaseAssignment(item) {
   const parts=[];
   for (const [field,entries,label] of [['sessionId',draft.content.sessions,'分享'],['boothId',draft.content.booths,'展位']]) {
@@ -683,6 +767,7 @@ $('[data-admin-login]').addEventListener('submit', event => {
     let result;
     try { result = await request('/api/admin/login', { method: 'POST', body: JSON.stringify(body) }); }
     finally { form.elements.namedItem('password').value = ''; }
+    requestSessionGeneration += 1;
     user = result.user;
     csrfToken = result.csrfToken;
     const state = await request('/api/admin/content');
@@ -782,11 +867,22 @@ $('[data-booth-form]').addEventListener('submit', event => submitEditor('booth',
 $('[data-guest-form]').addEventListener('submit', event => submitEditor('guest', event));
 $('[name=guestId]').addEventListener('change', syncSessionGuest);
 $('[data-guest-portrait-file]').addEventListener('change', uploadPortrait);
+$('[data-guest-portrait-edit]').addEventListener('click', () => {
+  const id = $('[data-guest-form]').elements.namedItem('portraitId').value;
+  if (portraitIdPattern.test(id) && !portraitPending && !portraitUploading) return editPortrait(signal => request('/api/admin/portraits/' + id, { binaryImage: true, signal }));
+});
+$('[data-guest-portrait-retry]').addEventListener('click', retryPortrait);
+$('[data-guest-portrait-discard]').addEventListener('click', () => {
+  cancelPortraitWork();
+  $('[data-guest-portrait-status]').textContent = '已取消待上传图片，原有照片与填写资料保留。';
+  $('[data-guest-error]').hidden = true;
+  showPortrait($('[data-guest-form]').elements.namedItem('portraitId').value); lockControls();
+  $('[data-guest-portrait-file]').focus({ preventScroll: true });
+});
 $('[data-guest-portrait-remove]').addEventListener('click', () => { clearPortrait(); revokeGuestConsent(); guestFormDirty=true; });
 $('[data-guest-dialog]').addEventListener('close',()=>{clearPortrait();$('[data-guest-form]').reset();editingGuest=null;guestFormDirty=false;});
 $('[data-guest-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeGuestEditor();});
-$('[data-guest-form]').addEventListener('input',()=>{guestFormDirty=true;});
-$('[data-guest-form]').addEventListener('change',()=>{guestFormDirty=true;});
+for (const type of ['input','change']) $('[data-guest-form]').addEventListener(type,event=>{if (!event.target.closest('[data-image-editor]') && event.target !== $('[data-guest-portrait-file]')) guestFormDirty=true;});
 for (const name of ['name','company','ggjRole','title','bio','website']) $('[data-guest-form]').elements.namedItem(name).addEventListener('input', revokeGuestConsent);
 for(const option of $('[data-guest-form]').querySelectorAll('[name=publicRoles]'))option.addEventListener('change',revokeGuestConsent);
 for (const button of document.querySelectorAll('[data-close-dialog]')) button.addEventListener('click', () => {if(button.dataset.closeDialog==='guest')closeGuestEditor();else if(button.dataset.closeDialog==='showcase')closeShowcaseEditor();else if(!busy)$('[data-' + button.dataset.closeDialog + '-dialog]').close();});
@@ -797,7 +893,7 @@ $('[data-admin-logout]').addEventListener('click', () => action(async () => {
   announce('已退出。');
 }));
 window.addEventListener('hashchange',()=>{const booth=takeBoothLink();if(booth){pendingBooth=booth;resumePendingLinks();return;}const id=takeInvitee();if(!id)return;pendingInvitee=id;resumePendingLinks();});
-window.addEventListener('beforeunload', event => { if (dirty||eventFormDirty||guestFormDirty||showcaseFormDirty||planner?.hasUnapplied()||organizations?.hasUnapplied()) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (dirty||eventFormDirty||guestFormDirty||portraitUploading||portraitPending||showcaseFormDirty||planner?.hasUnapplied()||organizations?.hasUnapplied()) { event.preventDefault(); event.returnValue = ''; } });
 if (location.protocol === 'file:') {
   announce('这是离线界面预览。请启动本地内容服务并配置工作人员账号后登录。');
   $('[data-admin-login] button[type="submit"]').disabled = true;
@@ -807,6 +903,7 @@ if (location.protocol === 'file:') {
     if (response.status === 401) return;
     if (!response.ok) throw new Error('请确认本地内容服务已启动并完成账号配置。');
     const result = await response.json();
+    requestSessionGeneration += 1;
     user = result.user;
     csrfToken = result.csrfToken;
     const state = await request('/api/admin/content');

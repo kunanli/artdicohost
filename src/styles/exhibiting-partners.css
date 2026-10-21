@@ -10,8 +10,8 @@
 #artdico-host.ah-festival .ah-exhibiting-partners h3{margin:0;color:var(--ah-ink);font-size:clamp(21px,2.1cqi,30px);font-weight:550;line-height:1.35;letter-spacing:-.035em}
 #artdico-host.ah-festival .ah-organization-participation{font-size:11px;line-height:1.7;color:var(--ah-muted)}
 #artdico-host.ah-festival .ah-organization-external{display:inline-block;margin-left:.55em;font-size:.55em;vertical-align:middle;color:var(--ah-muted)}
-#artdico-host.ah-festival .ah-organization-image{width:100%;height:100px;display:flex;align-items:center;justify-content:flex-start;margin-bottom:4px}
-#artdico-host.ah-festival .ah-organization-image img{display:block;width:100%;max-height:100%;height:100%;object-fit:contain;object-position:left center}
+#artdico-host.ah-festival .ah-organization-image{width:fit-content;max-width:100%;height:auto;display:block;margin-bottom:4px;background:transparent}
+#artdico-host.ah-festival .ah-organization-image img{display:block;width:auto;max-width:100%;height:auto;max-height:120px;object-fit:contain;object-position:left center}
 #artdico-host.ah-festival .ah-organizations-message{font-size:13px;line-height:1.8;color:var(--ah-muted);padding:24px 0;margin:0;border-block:1px solid var(--ah-line)}
 #artdico-host.ah-festival .ah-exhibition-details{margin-top:22px;color:var(--ah-ink)}
 #artdico-host.ah-festival .ah-exhibition-details>summary{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:52px;padding:12px 0;list-style:none;font-size:13px}

@@ -69,13 +69,14 @@ async function noOverflow(page){assert.equal(await page.evaluate(()=>document.do
 
 async function permitReload(f){f.page.removeAllListeners('dialog');f.page.on('dialog',async dialog=>{f.dialogs.push(dialog.type());await dialog.accept();});}
 async function localSaved(f){await f.page.locator('[data-admin-local-status]').filter({hasText:'已暂存本机'}).waitFor();}
+async function restoreLocal(f){await f.page.locator('[data-admin-local-restore]').click();await f.page.locator('[data-admin-status]').filter({hasText:/已恢复本机填写|已恢复原保存信息/u}).waitFor();}
 try{
   await mkdir(evidence,{recursive:true});
   {
     const f=await fixture();await open(f);await permitReload(f);await editBooth(f);await localSaved(f);
     const stableId=await f.page.locator('[data-booth-form] [name=id]').inputValue();
     await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-admin-local-restore]:visible').waitFor();assert.deepEqual(f.writes,[]);
-    await f.page.locator('[data-admin-local-restore]').click();await f.page.locator('[data-booth-dialog][open]').waitFor();
+    await restoreLocal(f);await f.page.locator('[data-booth-dialog][open]').waitFor();
     assert.equal(await f.page.locator('[data-booth-form] [name=project]').inputValue(),UPDATED);assert.equal(await f.page.locator('[data-booth-form] [name=id]').inputValue(),stableId);assert.deepEqual(f.writes,[],'restoration never applies or saves');
     await f.page.locator('[data-booth-submit]').click();await saveNearBooth(f);await waitState(f,'saved');assert.equal(f.writes.length,1);await assertNoPublication(f);await f.context.close();reports.push('incomplete raw booth input survives refresh with same stable ID; explicit apply and cloud save remain separate');
   }
@@ -86,7 +87,7 @@ try{
     await form.locator('[name='+field+']').fill(value);
     if(['guest','showcase','organization'].includes(type))await form.locator('[name=publicConsent]').check();
     await localSaved(f);const id=await form.locator('[name=id]').inputValue();assert.ok(id);
-    await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-admin-local-restore]:visible').waitFor();await f.page.locator('[data-admin-local-restore]').click();
+    await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-admin-local-restore]:visible').waitFor();await restoreLocal(f);
     await f.page.locator('[data-'+type+'-dialog][open]').waitFor();assert.equal(await form.locator('[name='+field+']').inputValue(),value);assert.equal(await form.locator('[name=id]').inputValue(),id);
     if(['guest','showcase','organization'].includes(type))assert.equal(await form.locator('[name=publicConsent]').isChecked(),false,'restoration never reaffirms public authorization');
     assert.deepEqual(f.writes,[],'restoring incomplete fields never submits or publishes');await f.context.close();reports.push(type+' incomplete form keeps stable ID and fresh authorization check after native IDB reload');
@@ -95,7 +96,7 @@ try{
     const f=await fixture();await open(f);await permitReload(f);
     await f.page.locator('[data-event-form] [name=title]').fill('合成未应用活动名称');
     await f.page.locator('[data-event-add-faq]').click();await f.page.locator('[data-event-faq] [name=faqQuestion]').last().fill('合成未完成问题');
-    await localSaved(f);await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-admin-local-restore]:visible').waitFor();await f.page.locator('[data-admin-local-restore]').click();
+    await localSaved(f);await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-admin-local-restore]:visible').waitFor();await restoreLocal(f);
     await f.page.waitForFunction(()=>document.querySelector('[data-event-form] [name=title]').value==='合成未应用活动名称');
     assert.equal(await f.page.locator('[data-event-form] [name=title]').inputValue(),'合成未应用活动名称');assert.equal(await f.page.locator('[data-event-faq] [name=faqQuestion]').last().inputValue(),'合成未完成问题');assert.equal(await f.page.locator('[data-event-faq] [name=faqAnswer]').last().inputValue(),'');
     assert.deepEqual(f.writes,[]);await assertNoPublication(f);await f.context.close();reports.push('incomplete event and FAQ inputs explicitly recover without applying or writing cloud content');
@@ -104,14 +105,14 @@ try{
     const f=await fixture();await open(f);await permitReload(f);
     await f.page.locator('[data-arrangements-slots] [data-slot-number="1"] [data-arrangements-plan=booth]').click();
     await f.page.locator('[data-planner-booth] [name=project]').fill('合成未应用规划项目');await localSaved(f);
-    await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-admin-local-restore]:visible').waitFor();await f.page.locator('[data-admin-local-restore]').click();
+    await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-admin-local-restore]:visible').waitFor();await restoreLocal(f);
     await f.page.locator('[data-arrangement-planner]:visible').waitFor();await f.page.waitForFunction(()=>document.querySelector('[data-planner-booth] [name=project]').value==='合成未应用规划项目');assert.equal(await f.page.locator('[data-planner-booth] [name=project]').inputValue(),'合成未应用规划项目');
     assert.equal(f.reads.filter(path=>path==='/api/admin/contacts').length,1,'restoring a planner does not automatically reload or save people assignments');assert.deepEqual(f.writes,[]);await assertNoPublication(f);await f.context.close();reports.push('planner booth raw inputs recover by stable saved position without automatic people requests or assignments');
   }
   for(const mode of ['unknown-committed','unknown-uncommitted']){
     const f=await fixture({mode});await open(f);await permitReload(f);await applyBooth(f);await saveNearBooth(f);await waitState(f,'unknown');assert.equal(f.writes.length,1);
     const original=structuredClone(f.writes[0]);await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-admin-local-restore]:visible').waitFor();
-    await f.page.locator('[data-admin-local-restore]').click();await waitState(f,'unknown');assert.equal(f.writes.length,1,'refresh/restore does not repeat PUT');
+    await restoreLocal(f);await waitState(f,'unknown');assert.equal(f.writes.length,1,'refresh/restore does not repeat PUT');
     await state(f).locator('[data-admin-check-save]').click();
     if(mode==='unknown-committed'){await waitState(f,'saved');assert.equal(f.writes.length,1,'readback proof alone completes the old saved result');}
     else{await state(f).locator('[data-admin-retry-save]:visible').waitFor();await state(f).locator('[data-admin-retry-save]').click();await waitState(f,'saved');assert.equal(f.writes.length,2);assert.deepEqual(f.writes[1],original,'explicit retry keeps exact original submitted content and cloud revision');}
@@ -137,7 +138,7 @@ try{
     const f=await fixture();await open(f);await permitReload(f);await applyBooth(f);await localSaved(f);f.expireArrangement();
     await f.page.locator('[data-arrangements-refresh]').click();await assertPrivateCleared(f);await loginAgain(f);
     await f.page.locator('[data-admin-local-restore]:visible').waitFor();assert.equal(f.writes.filter(write=>write.path==='/api/admin/content').length,0,'expiry keeps disk recovery without resubmitting');
-    await f.page.locator('[data-admin-local-restore]').click();assert.match(await f.page.locator('[data-admin-booths]').textContent(),new RegExp(UPDATED,'u'));
+    await restoreLocal(f);assert.match(await f.page.locator('[data-admin-booths]').textContent(),new RegExp(UPDATED,'u'));
     assert.equal(f.writes.filter(write=>write.path==='/api/admin/content').length,0);await f.context.close();reports.push('current 401 clears private DOM but fresh same-actor authentication can explicitly recover');
   }
   {
@@ -151,7 +152,7 @@ try{
     if(mode==='unknown-committed'){await saveNearBooth(f);await waitState(f,'unknown');}
     await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-admin-local-restore]:visible').waitFor();await f.page.locator('[data-admin-status]').filter({hasText:'已恢复工作人员会话。'}).waitFor();
     assert.equal(await f.page.locator('[data-admin-logout]').isEnabled(),true,'inactive recovery never prevents leaving the account');
-    if(mode==='unknown-committed'){await f.page.locator('[data-admin-local-restore]').click();await waitState(f,'unknown');assert.equal(await f.page.locator('[data-admin-logout]').isEnabled(),true,'read-only pending archive permits explicit logout');}
+    if(mode==='unknown-committed'){await restoreLocal(f);await waitState(f,'unknown');assert.equal(await f.page.locator('[data-admin-logout]').isEnabled(),true,'read-only pending archive permits explicit logout');}
     const before=f.writes.filter(write=>write.path==='/api/admin/content').length;await f.page.locator('[data-admin-logout]').click();await assertPrivateCleared(f);await loginAgain(f);
     assert.equal(await f.page.locator('[data-admin-local-recovery]').isVisible(),false);assert.equal(f.writes.filter(write=>write.path==='/api/admin/content').length,before,'logout does not retry the old cloud request');assert.ok(f.dialogs.includes('confirm'));await assertNoPublication(f);await f.context.close();reports.push(mode+' inactive recovery permits explicit logout, confirms local removal and never repeats cloud save');
   }

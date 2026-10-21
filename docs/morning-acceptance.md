@@ -1,5 +1,7 @@
 # ARTDiCO HOST 驗收與接續
 
+後台快捷導覽已上線 [PR #31](https://github.com/kunanli/artdicohost/pull/31)／main `b8d6818`，802 項檢查與六組相關瀏覽器流程通過。[正式運行 39531376320 attempt 2](https://github.com/kunanli/artdicohost/actions/runs/39531376320) 已恢復服務，十階段私有 OSS、300 人政策與 23/23 HTTPS 對象完成，**10:22:22（UTC+08）** 成功結束；首次窗口切換失敗與恢復證據見[發布紀錄](navigation-release-2026-10-21.md)。桌面左欄與手機收合的驗收步驟在下方。
+
 獨立「參與組織」功能已上線 [PR #30](https://github.com/kunanli/artdicohost/pull/30)／main `a0a02e009d5c547e5683a6b5c37f1c3ff7ea99b2`。本機／最終 PR／main **802/802** 與十二組 Chromium 通過；[正式發布 39528912033](https://github.com/kunanli/artdicohost/actions/runs/39528912033) 三個 job、十項真實私有 OSS、核定政策／300 人容量及 23 個公開 HTTPS 對象全部驗證，**2026-10-21 09:50:51（UTC+08）** 完成公開回讀。[本輪完整證據](organization-release-2026-10-21.md)。下段 PR #29 為前輪已完成紀錄。
 
 六項參會體驗更新已上線。[PR #29](https://github.com/kunanli/artdicohost/pull/29) 的 main `d66582e60a7cf3da3a4e2d851a633496bdb02ba4` 通過最終 PR／main **785/785** 測試；[正式發布 39525987286](https://github.com/kunanli/artdicohost/actions/runs/39525987286) 三個 job 全部成功，十項真實隔離 OSS、正式政策／300 人容量，以及 23 個公開 HTTPS 檔案回讀已驗證。01:19:38 UTC 業務啟用、01:20:25 UTC 公開回讀完成；[完整發布證據](attendee-release-2026-10-21.md)。前階段 [PR #28 證據](organizer-release-2026-10-21.md)另行保留。

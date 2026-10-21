@@ -16,6 +16,26 @@ const nullableId = (value, rule) => value === null || typeof value === 'string' 
 const lines = (value, keys) => plain(value) && keys.every(key => text(value[key]));
 const volunteerTime = value => typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(value);
 
+function personOrganizations(value) {
+  const section = Object.hasOwn(value, 'organizations'), state = Object.hasOwn(value.availability, 'organizations');
+  if (!section && !state) return { state: 'unavailable', memberships: [] };
+  if (!section || !state || !plain(value.organizations) || !STATES.has(value.organizations.state)
+    || value.availability.organizations !== value.organizations.state || !list(value.organizations.memberships, 20)) return null;
+  const source = value.organizations, seen = new Set(), memberships = [];
+  if (source.state !== 'available' && source.memberships.length || source.state === 'available' && !source.memberships.length
+    || source.state === 'available' && (!value.permissions.arrangements || value.availability.contact !== 'available')
+    || source.state === 'restricted' && value.permissions.arrangements) return null;
+  for (const item of source.memberships) {
+    if (!plain(item) || !CONTACT.test(item.organizationId ?? '') || seen.has(item.organizationId) || !['lead', 'member'].includes(item.role)
+      || !text(item.title, 120) || /[\r\n\t]/u.test(item.title) || !text(item.name, 160) || /[\r\n\t]/u.test(item.name) || typeof item.missing !== 'boolean'
+      || item.missing && (item.name !== '' || item.organizationStatus !== 'missing' || item.participation !== '')
+      || !item.missing && (!item.name.trim() || !['pending', 'confirmed', 'withdrawn'].includes(item.organizationStatus) || !['undecided', 'exhibitor', 'attendee'].includes(item.participation))) return null;
+    seen.add(item.organizationId);
+    memberships.push(Object.fromEntries(['organizationId', 'name', 'role', 'title', 'organizationStatus', 'participation', 'missing'].map(key => [key, item[key]])));
+  }
+  return { state: source.state, memberships };
+}
+
 function personVolunteers(value) {
   const supplied = [Object.hasOwn(value, 'volunteers'), Object.hasOwn(value.permissions, 'volunteers'),
     Object.hasOwn(value.availability, 'volunteers'), Object.hasOwn(value.revisions, 'volunteers')];
@@ -121,11 +141,12 @@ export function personWorkspaceView(value, selection) {
       || !(publicProfile.publishedRevision === null || integer(publicProfile.publishedRevision)) || !date(publicProfile.publishedAt)
       || publicProfile.state !== 'available' && publicProfile.profiles.length) return null;
     const volunteering = personVolunteers(value);
-    if (!volunteering) return null;
+    const organizations = personOrganizations(value);
+    if (!volunteering || !organizations) return null;
     // Only the fields below reach the DOM. API additions cannot silently become UI/private links.
     return { schemaVersion: 1, selected: { ...value.selected }, person: { ...value.person }, linkage: { ...value.linkage }, permissions: { ...value.permissions, volunteers: volunteering.permission },
-      availability: { ...value.availability, volunteers: volunteering.state }, revisions: { ...value.revisions, volunteers: volunteering.revision },
-      contact, registration, admission, arrangements, communications, publicProfile, volunteers: volunteering.value };
+      availability: { ...value.availability, volunteers: volunteering.state, organizations: organizations.state }, revisions: { ...value.revisions, volunteers: volunteering.revision },
+      contact, registration, admission, arrangements, communications, publicProfile, organizations, volunteers: volunteering.value };
   } catch { return null; }
 }
 

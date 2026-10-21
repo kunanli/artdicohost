@@ -115,8 +115,42 @@ export function admissionSource(value) {
 export function contentSource(value) {
   if (!plain(value) || !plain(value.content)) fail();
   return { revision: revisionValue(value.revision), content: { sessions: records(value.content.sessions, CONTACT_ID, 200),
-    booths: records(value.content.booths, CONTACT_ID, 200), guests: value.content.guests },
+    booths: records(value.content.booths, CONTACT_ID, 200), guests: value.content.guests,
+    ...(Object.hasOwn(value.content, 'organizations') ? { organizations: value.content.organizations } : {}) },
     hasPublished: Object.hasOwn(value, 'published'), published: value.published };
+}
+/** Legacy contacts have no memberships. Explicit malformed new values are never empty. */
+export function organizationMemberships(operations) {
+  if (!plain(operations)) fail();
+  const field = Object.getOwnPropertyDescriptor(operations, 'organizationMemberships');
+  if (!field) return [];
+  if (!field.enumerable || !('value' in field)) fail();
+  const seen = new Set();
+  return Array.from(list(field.value, 20), item => {
+    if (!plain(item) || Reflect.ownKeys(item).length !== 3 || !['organizationId', 'role', 'title'].every(key => {
+      const property = Object.getOwnPropertyDescriptor(item, key); return property?.enumerable && 'value' in property;
+    })) fail();
+    const organizationId = identifier(item.organizationId), title = text(item.title, 120);
+    if (typeof item.title !== 'string' || /[\u0000-\u001f\u007f]/u.test(title) || seen.has(organizationId)) fail();
+    seen.add(organizationId);
+    return { organizationId, role: oneOf(item.role, ['lead', 'member']), title };
+  });
+}
+export function organizationLookupProjection(source) {
+  return records(Object.hasOwn(source.content, 'organizations') ? source.content.organizations : [], CONTACT_ID, 200).map(item => {
+    const name = text(item.name, 160);
+    if (!name.trim() || /[\u0000-\u001f\u007f]/u.test(name)) fail();
+    return { id: item.id, name, status: oneOf(item.status, ['pending', 'confirmed', 'withdrawn']),
+      participation: oneOf(item.participation, ['undecided', 'exhibitor', 'attendee']) };
+  });
+}
+export function organizationsProjection(contactRaw, source) {
+  const organizations = organizationLookupProjection(source), memberships = organizationMemberships(contactRaw.operations).map(item => {
+    const organization = organizations.find(entry => entry.id === item.organizationId);
+    return { ...item, name: organization?.name ?? '', organizationStatus: organization?.status ?? 'missing',
+      participation: organization?.participation ?? '', missing: !organization };
+  });
+  return { state: memberships.length ? 'available' : 'unlinked', memberships };
 }
 function publicGuestValue(item, saved = false) {
   if (!item || item.status !== 'confirmed' || item.publicConsent !== true || !PORTRAIT_ID_PATTERN.test(item.portraitId ?? '')) return null;

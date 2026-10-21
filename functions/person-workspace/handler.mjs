@@ -1,5 +1,5 @@
 import { CONTACT_ID, REGISTRATION_ID, contactsSource, contactProjection, intentSource, registrationSource, admissionSource,
-  contentSource, arrangementsProjection, publicProfileProjection, confirmationsSource, volunteersSource, communicationProjection, personPermissions } from './projection.mjs';
+  contentSource, arrangementsProjection, publicProfileProjection, organizationsProjection, confirmationsSource, volunteersSource, communicationProjection, personPermissions } from './projection.mjs';
 
 const ORIGIN = 'https://api.artdico.host';
 const ROOT = '/api/admin/people/';
@@ -35,7 +35,7 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
       const availability = { contact: permissions.contact ? 'unlinked' : 'restricted', registration: permissions.registration ? 'unlinked' : 'restricted',
         admission: 'unlinked', arrangements: permissions.arrangements ? 'unlinked' : 'restricted',
         invitations: permissions.invitations ? 'unlinked' : 'restricted', confirmations: permissions.confirmations ? 'unlinked' : 'restricted',
-        publicProfile: permissions.arrangements ? 'unlinked' : 'restricted', volunteers: permissions.volunteers ? 'unlinked' : 'restricted' };
+        publicProfile: permissions.arrangements ? 'unlinked' : 'restricted', organizations: permissions.arrangements ? 'unlinked' : 'restricted', volunteers: permissions.volunteers ? 'unlinked' : 'restricted' };
       const revisions = { contacts: null, content: null, invitations: null, registration: null, admission: null, confirmations: null, volunteers: null };
       async function attempt(loader, args, validate) {
         aborted(request);
@@ -119,7 +119,8 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
         if (permissions.registration && !registration) availability.registration = 'unavailable';
         if (permissions.confirmations) availability.confirmations = 'unavailable';
       }
-      let arrangements = { sessions: [], booths: [] }, publicProfile = { state: availability.publicProfile, profiles: [], publishedRevision: null, publishedAt: null };
+      let arrangements = { sessions: [], booths: [] }, publicProfile = { state: availability.publicProfile, profiles: [], publishedRevision: null, publishedAt: null },
+        organizations = { state: availability.organizations, memberships: [] };
       if (permissions.arrangements && contact) {
         const loaded = await attempt(loadContent, [actor], contentSource);
         availability.arrangements = loaded.state;
@@ -129,10 +130,14 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
           try { publicProfile = publicProfileProjection(contactId, loaded.value); }
           catch { publicProfile.state = 'unavailable'; }
           availability.publicProfile = publicProfile.state;
+          try { organizations = organizationsProjection(contactRaw, loaded.value); }
+          catch { organizations.state = 'unavailable'; }
+          availability.organizations = organizations.state;
         }
-        else availability.publicProfile = publicProfile.state = 'unavailable';
+        else { availability.publicProfile = publicProfile.state = 'unavailable'; availability.organizations = organizations.state = 'unavailable'; }
       } else if (permissions.arrangements && availability.contact === 'unavailable') {
         availability.arrangements = availability.publicProfile = publicProfile.state = 'unavailable';
+        availability.organizations = organizations.state = 'unavailable';
       }
       let volunteers = { revision: null, entries: [] };
       if (permissions.volunteers) {
@@ -154,7 +159,7 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
       aborted(request);
       return json({ schemaVersion: 1, selected: { kind, id }, person,
         linkage: { state: linkageState, contactId: permissions.contact ? contactId : null, registrationId },
-        permissions, availability, revisions, contact, registration, admission, arrangements, publicProfile, communications, volunteers });
+        permissions, availability, revisions, contact, registration, admission, arrangements, publicProfile, organizations, communications, volunteers });
     } catch (failure) {
       if (failure?.status === 401 || failure?.code === 'AUTH_REQUIRED') return error('AUTH_REQUIRED', '会话已结束，请重新登录。', 401);
       return unavailable();

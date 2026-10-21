@@ -191,3 +191,32 @@ test('volunteer browser projection strips extras while preserving per-shift stat
   assert.equal(steps(view).get('reply').state, 'pending');
   assert.equal(personWorkspaceSteps(view, ['superadmin']).length, 5, 'volunteer reply cannot complete attendance or public profile steps');
 });
+
+function organizationFixture() {
+  const value = fixture(); value.availability.organizations = 'available';
+  value.organizations = { state: 'available', memberships: [{ organizationId: 'synthetic-organization', name: '合成组织', role: 'lead', title: '技术联系人',
+    organizationStatus: 'confirmed', participation: 'exhibitor', missing: false }] };
+  return value;
+}
+test('legacy person organization omission is unavailable and partial or contradictory extensions fail closed', () => {
+  const legacy = personWorkspaceView(fixture(), selection); assert.equal(legacy.availability.organizations, 'unavailable');
+  assert.deepEqual(legacy.organizations, { state: 'unavailable', memberships: [] });
+  for (const change of [value => { delete value.availability.organizations; }, value => { delete value.organizations; },
+    value => { value.availability.organizations = 'unlinked'; }, value => { value.organizations.state = 'unavailable'; },
+    value => { value.organizations.memberships = []; }, value => { value.permissions.arrangements = false; }]) {
+    const value = organizationFixture(); change(value); assert.equal(personWorkspaceView(value, selection), null);
+  }
+});
+test('person organization projection retains exact missing IDs, bounds roles and strips unknown private fields', () => {
+  const value = organizationFixture(); value.organizations.internalNotes = 'PRIVATE'; value.organizations.memberships[0].notes = 'PRIVATE';
+  const view = personWorkspaceView(value, selection); assert.equal(view.organizations.memberships[0].organizationId, 'synthetic-organization');
+  assert.doesNotMatch(JSON.stringify(view.organizations), /PRIVATE|notes|internalNotes/u);
+  value.organizations.memberships[0] = { organizationId: 'missing-history', name: '', role: 'member', title: '', organizationStatus: 'missing', participation: '', missing: true };
+  assert.ok(personWorkspaceView(value, selection));
+  for (const change of [item => { item.role = 'owner'; }, item => { item.organizationId = '../organization'; }, item => { item.title = 'x'.repeat(121); },
+    item => { item.title = 'multi\nline'; }, item => { item.name = 'false missing name'; }, item => { item.participation = 'exhibitor'; }, item => { item.organizationStatus = 'confirmed'; }]) {
+    const invalid = structuredClone(value); change(invalid.organizations.memberships[0]); assert.equal(personWorkspaceView(invalid, selection), null);
+  }
+  const duplicate = organizationFixture(); duplicate.organizations.memberships.push({ ...duplicate.organizations.memberships[0] });
+  assert.equal(personWorkspaceView(duplicate, selection), null);
+});

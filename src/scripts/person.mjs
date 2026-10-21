@@ -4,7 +4,7 @@ import { sourceLabels } from '../../shared/contact-import.mjs';
 import { identityOptions, participationOptions } from '../../shared/registration-schema.mjs';
 
 const $ = selector => document.querySelector(selector);
-const profileFields = ['[data-person-profile]', '[data-person-registration]', '[data-person-admission]', '[data-person-arrangements]', '[data-person-volunteers]', '[data-person-communications]', '[data-person-actions]', '[data-person-steps]'];
+const profileFields = ['[data-person-profile]', '[data-person-registration]', '[data-person-admission]', '[data-person-arrangements]', '[data-person-organizations]', '[data-person-volunteers]', '[data-person-communications]', '[data-person-actions]', '[data-person-steps]'];
 const categoryLabels = new Map(sourceLabels.categories.map(item => [item.value, item.label]));
 const interestLabels = new Map(sourceLabels.interests.map(item => [item.value, item.label]));
 const registrationIdentityLabels = new Map(identityOptions.map(item => [item.value, item.label]));
@@ -199,6 +199,23 @@ function renderCommunications(view) {
   else if (['invitations', 'confirmations'].some(key => view.availability[key] === 'available')) output.append(node('p', '目前没有可显示的邀请或通知记录。', 'person-muted'));
   if (view.communications.historyTruncated) output.append(node('p', '仅显示最近 200 条记录，完整历史仍保留。', 'person-note'));
 }
+function renderOrganizations(view) {
+  const output = $('[data-person-organizations]');
+  if (view.organizations.state !== 'available') { stateMessage(output, view.organizations.state); return; }
+  const list = node('ul', undefined, 'person-list');
+  for (const membership of view.organizations.memberships) {
+    const item = node('li'); item.append(node('strong', membership.name || '历史组织关联待核对'));
+    item.append(node('p', [membership.role === 'lead' ? '组织负责人' : '组织成员', membership.title].filter(Boolean).join(' · ')));
+    if (membership.missing) item.append(node('p', '保存的组织编号已无法对应目前资料。请核对原关联，未按名称重新匹配。', 'person-state'));
+    else {
+      item.append(node('p', ({ pending: '组织待确认', confirmed: '组织已确认', withdrawn: '组织已撤回' })[membership.organizationStatus] + ' · '
+        + ({ undecided: '参与形式待定', exhibitor: '组织参展', attendee: '组织参加交流' })[membership.participation]));
+      if (user.roles.includes('outreach')) { const link = node('a', '查看此组织人员'); link.href = '/admin/contacts/#organization=' + encodeURIComponent(membership.organizationId); link.dataset.personOrganization = membership.organizationId; item.append(link); }
+    }
+    list.append(item);
+  }
+  output.append(list);
+}
 function renderVolunteers(view) {
   const output = $('[data-person-volunteers]');
   if (view.availability.volunteers !== 'available') { stateMessage(output, view.availability.volunteers); return; }
@@ -232,7 +249,7 @@ function render(view) {
     if (step.action) { const link = node('a', step.action.label); link.href = step.action.href; link.dataset.personStepAction = step.key; row.append(link); }
     $('[data-person-steps]').append(row);
   }
-  renderProfile(view); renderAdmission(view); renderRegistration(view); renderArrangements(view); renderVolunteers(view); renderCommunications(view);
+  renderProfile(view); renderAdmission(view); renderRegistration(view); renderArrangements(view); renderOrganizations(view); renderVolunteers(view); renderCommunications(view);
   const revisions = Object.entries(view.revisions).filter(([, revision]) => revision !== null).map(([key, revision]) => ({ contacts: '人员', content: '活动', invitations: '邀请', registration: '核查', admission: '名额', confirmations: '确认通知', volunteers: '志愿分工' })[key] + '版本 ' + revision);
   $('[data-person-meta]').textContent = '本页仅呈现已保存记录，各来源独立更新。' + (revisions.length ? ' ' + revisions.join(' · ') : '');
   $('[data-person-empty]').hidden = true; $('[data-person-record]').hidden = false;

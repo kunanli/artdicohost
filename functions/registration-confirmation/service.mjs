@@ -282,5 +282,16 @@ export function createRegistrationConfirmationService({ registrationService, jou
     }
     return { results };
   }
-  return Object.freeze({ prefix, forSavedReceipt, authorize, authorizedRegistration, confirmation, settings, setSettings, dispatch, notifyPromoted });
+  /** Trusted staff projection reads durable notices only; no capability or provider access. */
+  async function staffHistory({ actor, registrationId } = {}) {
+    const roles = own(actor, 'roles');
+    if (typeof own(actor, 'id') !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/u.test(actor.id)
+      || !Array.isArray(roles) || !roles.some(role => ['reviewer', 'superadmin'].includes(role))) failure('FORBIDDEN', 403);
+    if (!ID.test(registrationId ?? '')) failure('INVALID_REQUEST', 400);
+    const current = await target().read();
+    return { revision: current.value.revision, notices: current.value.notices.filter(item => item.registrationId === registrationId)
+      .map(item => ({ id: item.id, kind: item.kind, status: stateOf(item), admissionStatus: item.admissionStatus, attempt: item.attempt,
+        createdAt: item.createdAt, updatedAt: item.updatedAt })) };
+  }
+  return Object.freeze({ prefix, forSavedReceipt, authorize, authorizedRegistration, confirmation, settings, setSettings, dispatch, notifyPromoted, staffHistory });
 }

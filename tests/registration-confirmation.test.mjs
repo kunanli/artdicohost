@@ -365,3 +365,42 @@ test('confirmation provider uses a separate template, never loads disabled confi
   const broken = createConfirmationEmailProvider({ env: { ARTDICO_CONFIRMATION_EMAIL_ENABLED: 'true' }, loadConfiguration: async () => { throw new Error('PRIVATE-LOAD-ERROR'); }, fetchFn: async () => assert.fail('no network') });
   assert.equal((await broken.readiness()).ready, false); assert.equal((await broken.send({})).status, 'rejected');
 });
+
+test('trusted staff notice history is role gated before I/O and exposes only the selected durable metadata', async () => {
+  const f = fixture(), first = await register(f), second = await register(f), c = f.confirmation();
+  await c.forSavedReceipt({ receipt: first.saved.receipt }); await c.forSavedReceipt({ receipt: second.saved.receipt });
+  const deny = async () => assert.fail('history cannot read applications, capabilities or provider configuration');
+  const history = f.confirmation({ registrationService: { repository: { readIndex: deny, readRecord: deny }, getAdmissionStatus: deny },
+    emailProvider: { readiness: deny, send: deny }, walletReadiness: deny, groupInviteProvider: deny });
+  const beforeCalls = f.remote.calls.length, beforeWrites = f.state.confirmationWrites, beforeMessages = f.state.messages.length;
+  for (const deniedActor of [undefined, { id: 'outreach', roles: ['outreach'] }, { id: 'editor', roles: ['editor'] }, { id: 'invalid actor', roles: ['reviewer'] }])
+    await assert.rejects(history.staffHistory({ actor: deniedActor, registrationId: first.saved.receipt.registrationId }), error => error.code === 'FORBIDDEN');
+  for (const id of ['', 'short', 'a'.repeat(44), 'a'.repeat(42) + '/'])
+    await assert.rejects(history.staffHistory({ actor, registrationId: id }), error => error.code === 'INVALID_REQUEST');
+  assert.equal(f.remote.calls.length, beforeCalls, 'authorization and ID validation precede even journal reads');
+  const selected = await history.staffHistory({ actor: { id: 'synthetic-reviewer', roles: ['reviewer'] }, registrationId: first.saved.receipt.registrationId });
+  assert.equal(selected.revision, 4); assert.equal(selected.notices.length, 1);
+  assert.equal(selected.notices[0].admissionStatus, 'confirmed'); assert.equal(selected.notices[0].status, 'provider_accepted');
+  assert.deepEqual(Object.keys(selected).sort(), ['notices', 'revision']);
+  assert.deepEqual(Object.keys(selected.notices[0]).sort(), ['admissionStatus', 'attempt', 'createdAt', 'id', 'kind', 'status', 'updatedAt']);
+  assert.doesNotMatch(JSON.stringify(selected), /PRIVATE-|private-synthetic@|receiptToken|confirmationUrl|settings|audit|actorId|registrationId/u);
+  const absent = await history.staffHistory({ actor, registrationId: 'z'.repeat(43) }); assert.deepEqual(absent.notices, []);
+  assert.equal(f.state.confirmationWrites, beforeWrites); assert.equal(f.state.messages.length, beforeMessages);
+  assert.equal(f.remote.calls.slice(beforeCalls).every(item => item.method === 'GET'), true, 'staff projection performs only storage reads');
+});
+
+test('trusted staff history treats an uncertain reservation as unknown and refuses a forged journal without repair', async () => {
+  const f = fixture(), { saved } = await register(f), c = f.confirmation();
+  const repository = createConfirmationRepository({ eventId: EVENT, journal: f.journalFor(c.prefix), clock: () => f.state.now });
+  const current = await repository.read();
+  await repository.append(current, 'reserve', {
+    registrationId: saved.receipt.registrationId, kind: 'registration', admissionStatus: 'confirmed', admissionRevision: 1, retryRejected: false }, actor.id);
+  const writes = f.state.confirmationWrites;
+  const result = await c.staffHistory({ actor, registrationId: saved.receipt.registrationId });
+  assert.equal(result.notices[0].status, 'unknown'); assert.equal(result.notices[0].attempt, 1);
+  assert.equal(f.state.messages.length, 0); assert.equal(f.state.confirmationWrites, writes);
+  const persisted = await f.journalFor(c.prefix).read(), forged = structuredClone(persisted.value); forged.notices[0].status = 'provider_accepted';
+  const bad = f.confirmation({ journalFor: () => ({ read: async () => ({ ...persisted, value: forged }), commit: async () => assert.fail('no journal repair') }) });
+  await assert.rejects(bad.staffHistory({ actor, registrationId: saved.receipt.registrationId }), /unavailable/u);
+  assert.equal(f.state.messages.length, 0); assert.equal(f.state.confirmationWrites, writes);
+});

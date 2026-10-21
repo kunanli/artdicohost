@@ -1,0 +1,20 @@
+.settings-workspace-account{display:flex;align-items:center;justify-content:flex-end;gap:20px}
+.settings-workspace-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.settings-workspace-overview a{display:flex;flex-direction:column;gap:9px;padding:22px;border:1px solid var(--admin-line);border-radius:8px;background:#fff}
+.settings-workspace-overview strong{font-size:16px}
+.settings-workspace-overview span{color:var(--admin-blue);font-size:13px}
+.settings-workspace-overview small{color:var(--admin-muted);font-size:12px;line-height:1.8}
+.settings-workspace-overview a:hover{border-color:#9eb4ea}
+.settings-workspace-overview a:focus-visible{outline:2px solid var(--admin-blue);outline-offset:3px}
+.settings-invitation-help{padding:24px}.settings-invitation-help h2{font-size:19px;margin:0 0 12px}.settings-invitation-help p{font-size:13px;color:var(--admin-muted);margin-bottom:20px}
+.settings-workspace-tools{margin-top:26px;border:1px solid var(--admin-line);border-radius:8px;background:#fff;padding:18px 22px}
+.settings-workspace-tools>summary{font-size:15px;font-weight:600;cursor:pointer}
+.settings-workspace-tools[open]>summary{margin-bottom:18px}
+.settings-workspace-tools .ah-admin-panel{margin-top:18px;border-radius:7px}
+.settings-workspace-tools>section:first-of-type{margin-top:0}
+.settings-workspace-tools .ah-admin-section-heading{padding:20px}.settings-workspace-tools .ah-admin-section-heading h2{font-size:19px}
+.settings-workspace-tools .settings-form{padding:0 20px 20px}
+[data-settings-workspace] [data-staff-settings]>.ah-admin-page-heading{margin-top:34px}
+[data-settings-workspace] [data-staff-settings]>.ah-admin-page-heading h2{font-size:22px}
+[data-settings-workspace] [data-staff-settings]>.ah-admin-panel{margin-top:18px}
+@media(max-width:720px){.settings-workspace-overview{grid-template-columns:1fr;gap:10px}.settings-workspace-overview a{padding:18px}.settings-workspace-tools{padding:16px}.settings-invitation-help{padding:20px}.settings-workspace-account{font-size:12px}.settings-workspace-tools .settings-form{padding:0 16px 16px}.settings-workspace-tools .ah-admin-section-heading{padding:16px}}

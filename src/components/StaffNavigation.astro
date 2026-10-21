@@ -1,13 +1,14 @@
 ---
-interface Props { current: 'content' | 'tasks' | 'contacts' | 'registrations' }
+interface Props { current: 'content' | 'tasks' | 'contacts' | 'registrations' | 'settings' | 'person' }
 const { current } = Astro.props;
 const pages = [
   { key: 'tasks', href: '/admin/tasks/', label: '今日待办' },
   { key: 'contacts', href: '/admin/contacts/', label: '人员与邀约' },
   { key: 'registrations', href: '/admin/registrations/', label: '报名与审核' },
   { key: 'content', href: '/admin/', label: '活动与内容' },
+  { key: 'settings', href: '/admin/settings/', label: '设置与通知' },
 ];
-const sections = [
+const contentSections = [
   ['workspace-title', '工作区概况'],
   ['event-editor-title', '活动基本资料'],
   ['arrangements-title', '现场配置总览'],
@@ -17,15 +18,20 @@ const sections = [
   ['sessions-title', '活动场次'],
   ['booths-title', '十五个展位'],
 ];
+const sections = current === 'content' ? contentSections : current === 'settings' ? [
+  ['delivery-settings-heading', '报名确认与票券'],
+  ['group-settings-title', '微信群入口'],
+  ['invitation-settings-title', '工作人员邀请'],
+] : [];
 ---
 <aside class="ah-staff-navigation" data-staff-navigation>
   <details data-staff-navigation-menu>
     <summary>快捷导航 <span aria-hidden="true">⌄</span></summary>
     <nav aria-label="后台快捷导航">
       <div class="ah-staff-navigation-pages">
-        {pages.map(page => <a href={page.href} aria-current={current === page.key ? 'page' : undefined}>{page.label}</a>)}
+        {pages.map(page => <a href={page.href} aria-current={current === page.key ? 'page' : current === 'person' && page.key === 'contacts' ? 'location' : undefined}>{page.label}</a>)}
       </div>
-      {current === 'content' && <div class="ah-staff-navigation-sections" aria-label="活动内容区块">
+      {sections.length > 0 && <div class="ah-staff-navigation-sections" aria-label={current === 'settings' ? '设置区块' : '活动内容区块'}>
         {sections.map(([id, label]) => <a href={'#' + id} data-staff-section-link>{label}</a>)}
       </div>}
     </nav>

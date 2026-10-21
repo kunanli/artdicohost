@@ -1,5 +1,5 @@
 import { CONTACT_ID, REGISTRATION_ID, contactsSource, contactProjection, intentSource, registrationSource, admissionSource,
-  contentSource, arrangementsProjection, publicProfileProjection, confirmationsSource, communicationProjection, personPermissions } from './projection.mjs';
+  contentSource, arrangementsProjection, publicProfileProjection, confirmationsSource, volunteersSource, communicationProjection, personPermissions } from './projection.mjs';
 
 const ORIGIN = 'https://api.artdico.host';
 const ROOT = '/api/admin/people/';
@@ -14,9 +14,9 @@ const aborted = request => { if (request.signal.aborted) throw new Error('Person
 /** Read-only aggregate. Each trusted source is requested only after its own role gate.
  * Full original answers, capability links and provider configuration never enter the projection.
  */
-export function createPersonWorkspaceApi({ authenticate, loadContacts, loadIntent, loadRegistration, loadAdmission, loadContent, loadConfirmations } = {}) {
+export function createPersonWorkspaceApi({ authenticate, loadContacts, loadIntent, loadRegistration, loadAdmission, loadContent, loadConfirmations, loadVolunteers } = {}) {
   if (typeof authenticate !== 'function') throw new TypeError('Person authentication required.');
-  for (const loader of [loadContacts, loadIntent, loadRegistration, loadAdmission, loadContent, loadConfirmations])
+  for (const loader of [loadContacts, loadIntent, loadRegistration, loadAdmission, loadContent, loadConfirmations, loadVolunteers])
     if (loader !== undefined && typeof loader !== 'function') throw new TypeError('Trusted person source required.');
   return async function handle(request) {
     const url = new URL(request.url), origin = request.headers.get('origin');
@@ -35,8 +35,8 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
       const availability = { contact: permissions.contact ? 'unlinked' : 'restricted', registration: permissions.registration ? 'unlinked' : 'restricted',
         admission: 'unlinked', arrangements: permissions.arrangements ? 'unlinked' : 'restricted',
         invitations: permissions.invitations ? 'unlinked' : 'restricted', confirmations: permissions.confirmations ? 'unlinked' : 'restricted',
-        publicProfile: permissions.arrangements ? 'unlinked' : 'restricted' };
-      const revisions = { contacts: null, content: null, invitations: null, registration: null, admission: null, confirmations: null };
+        publicProfile: permissions.arrangements ? 'unlinked' : 'restricted', volunteers: permissions.volunteers ? 'unlinked' : 'restricted' };
+      const revisions = { contacts: null, content: null, invitations: null, registration: null, admission: null, confirmations: null, volunteers: null };
       async function attempt(loader, args, validate) {
         aborted(request);
         if (!loader) return { state: 'unavailable', value: null };
@@ -134,6 +134,18 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
       } else if (permissions.arrangements && availability.contact === 'unavailable') {
         availability.arrangements = availability.publicProfile = publicProfile.state = 'unavailable';
       }
+      let volunteers = { revision: null, entries: [] };
+      if (permissions.volunteers) {
+        if (linkageState === 'unavailable') availability.volunteers = 'unavailable';
+        else {
+          const loaded = await attempt(loadVolunteers, [{ actor, contactId: contact?.id ?? null, registrationId: registration?.id ?? null }], volunteersSource);
+          availability.volunteers = loaded.state;
+          if (loaded.value) {
+            volunteers = loaded.value; revisions.volunteers = volunteers.revision;
+            availability.volunteers = volunteers.entries.length ? 'available' : 'unlinked';
+          }
+        }
+      }
       const profile = contact?.profile ?? registration?.fields;
       const person = Object.fromEntries(['name', 'displayName', 'organization', 'position', 'city'].map(key => [key, profile?.[key] ?? (key === 'displayName' ? profile?.name ?? '' : '')]));
       let communications;
@@ -142,7 +154,7 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
       aborted(request);
       return json({ schemaVersion: 1, selected: { kind, id }, person,
         linkage: { state: linkageState, contactId: permissions.contact ? contactId : null, registrationId },
-        permissions, availability, revisions, contact, registration, admission, arrangements, publicProfile, communications });
+        permissions, availability, revisions, contact, registration, admission, arrangements, publicProfile, communications, volunteers });
     } catch (failure) {
       if (failure?.status === 401 || failure?.code === 'AUTH_REQUIRED') return error('AUTH_REQUIRED', '会话已结束，请重新登录。', 401);
       return unavailable();

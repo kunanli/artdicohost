@@ -4,7 +4,7 @@ import { sourceLabels } from '../../shared/contact-import.mjs';
 import { identityOptions, participationOptions } from '../../shared/registration-schema.mjs';
 
 const $ = selector => document.querySelector(selector);
-const profileFields = ['[data-person-profile]', '[data-person-registration]', '[data-person-admission]', '[data-person-arrangements]', '[data-person-communications]', '[data-person-actions]', '[data-person-steps]'];
+const profileFields = ['[data-person-profile]', '[data-person-registration]', '[data-person-admission]', '[data-person-arrangements]', '[data-person-volunteers]', '[data-person-communications]', '[data-person-actions]', '[data-person-steps]'];
 const categoryLabels = new Map(sourceLabels.categories.map(item => [item.value, item.label]));
 const interestLabels = new Map(sourceLabels.interests.map(item => [item.value, item.label]));
 const registrationIdentityLabels = new Map(identityOptions.map(item => [item.value, item.label]));
@@ -199,6 +199,26 @@ function renderCommunications(view) {
   else if (['invitations', 'confirmations'].some(key => view.availability[key] === 'available')) output.append(node('p', '目前没有可显示的邀请或通知记录。', 'person-muted'));
   if (view.communications.historyTruncated) output.append(node('p', '仅显示最近 200 条记录，完整历史仍保留。', 'person-note'));
 }
+function renderVolunteers(view) {
+  const output = $('[data-person-volunteers]');
+  if (view.availability.volunteers !== 'available') { stateMessage(output, view.availability.volunteers); return; }
+  const list = node('ul', undefined, 'person-list');
+  for (const entry of view.volunteers.entries) {
+    const item = node('li');
+    item.append(node('strong', '志愿协作 · ' + ({ pending: '待核对', invited: '已记录邀约，待本人回复', confirmed: '本人已答应志愿协作', declined: '本人已婉拒', inactive: '已停止安排' })[entry.workflowStatus]));
+    item.append(node('p', '可服务时间：' + (entry.availability.length ? entry.availability.map(window => window.start + '–' + window.end).join('、') : '尚未填写')));
+    if (!entry.assignments.length) item.append(node('p', '尚未保存班次安排。', 'person-muted'));
+    for (const assignment of entry.assignments) {
+      const status = ({ proposed: '排班提案', confirmed: '已记录逐班确认', cancelled: '安排已取消' })[assignment.status];
+      const label = [assignment.positionName || '岗位待命名', assignment.start + '–' + assignment.end,
+        assignment.zone === 'other' ? '' : assignment.zone + ' 区', assignment.location].filter(Boolean).join(' · ');
+      item.append(node('h3', label), node('p', status + (assignment.shiftStatus === 'cancelled' ? ' · 班次已取消' : '')));
+      if (assignment.issues.length || assignment.status === 'confirmed' && !assignment.eligible) item.append(node('p', '此安排仍需核对，不计入已确认覆盖；请到志愿者工作区查看原因。', 'person-state'));
+    }
+    list.append(item);
+  }
+  output.append(list);
+}
 function render(view) {
   clearRecord();
   $('[data-person-name]').textContent = view.person.displayName || view.person.name || '未填写姓名';
@@ -212,8 +232,8 @@ function render(view) {
     if (step.action) { const link = node('a', step.action.label); link.href = step.action.href; link.dataset.personStepAction = step.key; row.append(link); }
     $('[data-person-steps]').append(row);
   }
-  renderProfile(view); renderAdmission(view); renderRegistration(view); renderArrangements(view); renderCommunications(view);
-  const revisions = Object.entries(view.revisions).filter(([, revision]) => revision !== null).map(([key, revision]) => ({ contacts: '人员', content: '活动', invitations: '邀请', registration: '核查', admission: '名额', confirmations: '确认通知' })[key] + '版本 ' + revision);
+  renderProfile(view); renderAdmission(view); renderRegistration(view); renderArrangements(view); renderVolunteers(view); renderCommunications(view);
+  const revisions = Object.entries(view.revisions).filter(([, revision]) => revision !== null).map(([key, revision]) => ({ contacts: '人员', content: '活动', invitations: '邀请', registration: '核查', admission: '名额', confirmations: '确认通知', volunteers: '志愿分工' })[key] + '版本 ' + revision);
   $('[data-person-meta]').textContent = '本页仅呈现已保存记录，各来源独立更新。' + (revisions.length ? ' ' + revisions.join(' · ') : '');
   $('[data-person-empty]').hidden = true; $('[data-person-record]').hidden = false;
 }

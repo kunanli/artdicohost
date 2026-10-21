@@ -24,13 +24,15 @@ export const CANDIDATE_SOURCES = Object.freeze([
   ...['handler.mjs', 'service.mjs', 'repository.mjs', 'email-provider.mjs', 'errors.mjs', 'importer.mjs', 'contact-snapshot.mjs', 'import-handler.mjs', 'batch.mjs'].map(name => ['functions/intent-invitations/' + name, 'functions/intent-invitations/' + name, '0644']),
   ['functions/organizer-tasks/handler.mjs', 'functions/organizer-tasks/handler.mjs', '0644'],
   ...['handler.mjs', 'projection.mjs'].map(name => ['functions/person-workspace/' + name, 'functions/person-workspace/' + name, '0644']),
-  ...['content-schema.mjs', 'contacts-schema.mjs', 'contact-editor.mjs', 'arrangement-overview.mjs', 'portrait-codec.mjs', 'registration-schema.mjs', 'organizer-progress.mjs', 'xlsx-workbook.mjs'].map(name => ['shared/' + name, 'shared/' + name, '0644']),
+  ...['repository.mjs', 'planning.mjs', 'service.mjs', 'handler.mjs', 'xlsx.mjs'].map(name => ['functions/volunteers/' + name, 'functions/volunteers/' + name, '0644']),
+  ...['content-schema.mjs', 'contacts-schema.mjs', 'contact-editor.mjs', 'arrangement-overview.mjs', 'portrait-codec.mjs', 'registration-schema.mjs', 'organizer-progress.mjs', 'volunteer-schema.mjs', 'xlsx-workbook.mjs'].map(name => ['shared/' + name, 'shared/' + name, '0644']),
   ...['content.mjs', 'event.mjs'].map(name => ['src/config/' + name, 'src/config/' + name, '0644']),
 ]);
 const FIXED_ASSETS = Object.freeze([
   ['/admin/', 'admin/index.html'], ['/admin/contacts/', 'admin/contacts/index.html'],
   ['/admin/registrations/', 'admin/registrations/index.html'], ['/admin/tasks/', 'admin/tasks/index.html'],
   ['/admin/settings/', 'admin/settings/index.html'], ['/admin/person/', 'admin/person/index.html'],
+  ['/admin/volunteers/', 'admin/volunteers/index.html'],
   ['/invitations/template-blank.png', 'invitations/template-blank.png'],
 ]);
 const ASSET = /^\/_astro\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,200}\.(?:css|m?js|woff2?)$/u;

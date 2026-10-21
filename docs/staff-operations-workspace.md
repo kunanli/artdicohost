@@ -1,6 +1,6 @@
 # 人员串联、步骤指引与设置中心
 
-本轮开发候选：`feat/staff-operations-workspace`，正式发布与验证结果以[接续台账](session-recovery.md)最新段落为准。只读整合既有记录，不自动转换报名、发送邮件或公开人物。
+本轮已上线 [PR #34](https://github.com/kunanli/artdicohost/pull/34)／main `ddf7a2ea0b9c81d9222aefbef3e5155d7432b8a4`，877 项检查、实际私有 OSS、300 人政策及 26/26 HTTPS 对象均通过。[完整证据](staff-operations-release-2026-10-21.md)、[接续台账](session-recovery.md)。只读整合既有记录，不自动转换报名、发送邮件或公开人物。
 
 ## 怎样安排这份意向名单
 

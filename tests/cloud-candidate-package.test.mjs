@@ -55,6 +55,7 @@ async function fixture(t) {
         ['admin/tasks/index.html', '<html><script type="module" src="/_astro/contacts.hash.js"></script></html>'],
         ['admin/settings/index.html', '<html><script type="module" src="/_astro/settings.hash.js"></script></html>'],
         ['admin/person/index.html', '<html><script type="module" src="/_astro/person.hash.js"></script></html>'],
+        ['admin/volunteers/index.html', '<html><script type="module" src="/_astro/volunteers.hash.js"></script></html>'],
         ['invitations/template-blank.png', 'SYNTHETIC-PNG-BYTES'],
         ['_astro/admin.hash.js', 'export const version = 1;'],
         ['_astro/admin.hash.css', '@font-face{src:url("./font.hash.woff2")}'],
@@ -63,6 +64,7 @@ async function fixture(t) {
         ['_astro/xlsx.hash.js', 'export const reader = true;'],
         ['_astro/settings.hash.js', 'export const settings = true;'],
         ['_astro/person.hash.js', 'import "./contacts.hash.js";export const person = true;'],
+        ['_astro/volunteers.hash.js', 'import "./contacts.hash.js";export const volunteers = true;'],
         ['index.html', 'SYNTHETIC-PUBLIC-HOMEPAGE-NOT-PACKAGED'],
         ['_astro/unreferenced.hash.js', 'SYNTHETIC-UNREFERENCED-NOT-PACKAGED'],
       ]) { mkdirSync(dirname(resolve(output, path)), { recursive: true }); writeFileSync(resolve(output, path), body); }
@@ -80,6 +82,7 @@ test('candidate CLI requires exact distinct arguments and isolated candidate ass
   assert.equal(candidateAssetPath('/admin/contacts/'), 'admin-assets/admin/contacts/index.html');
   assert.equal(candidateAssetPath('/admin/settings/'), 'admin-assets/admin/settings/index.html');
   assert.equal(candidateAssetPath('/admin/person/'), 'admin-assets/admin/person/index.html');
+  assert.equal(candidateAssetPath('/admin/volunteers/'), 'admin-assets/admin/volunteers/index.html');
   assert.equal(candidateAssetPath('/_astro/chunk.hash.js'), 'admin-assets/_astro/chunk.hash.js');
   for (const path of ['/admin/index.html', '/_astro/../secret.js', '/_astro/.secret.js', '/_astro/file.js.map', '/_astro/nested/file.js', '/invitations/group.png', '/_astro/x.js?token=1', '/_astro/x..js']) assert.throws(() => candidateAssetPath(path));
 });
@@ -145,10 +148,11 @@ test('the real candidate archive binds source, isolates its build and remains re
   assert.equal(result.manifest.sourceCommit, options.sourceCommit);
   assert.ok(result.release.assets.some(item => item.url === '/_astro/xlsx.hash.js'));
   assert.ok(result.release.assets.some(item => item.url === '/_astro/font.hash.woff2'));
-  for (const url of ['/admin/settings/', '/admin/person/', '/_astro/settings.hash.js', '/_astro/person.hash.js']) {
+  for (const url of ['/admin/settings/', '/admin/person/', '/admin/volunteers/', '/_astro/settings.hash.js', '/_astro/person.hash.js', '/_astro/volunteers.hash.js']) {
     assert.ok(result.release.assets.some(item => item.url === url), url);
   }
-  for (const source of ['functions/person-workspace/handler.mjs', 'functions/person-workspace/projection.mjs']) {
+  for (const source of ['functions/person-workspace/handler.mjs', 'functions/person-workspace/projection.mjs', 'shared/volunteer-schema.mjs',
+    ...['repository', 'planning', 'service', 'handler', 'xlsx'].map(name => 'functions/volunteers/' + name + '.mjs')]) {
     assert.ok(result.manifest.files.some(item => item.path === source), source);
   }
   assert.equal(result.manifest.files.some(item => /contacts\.json|\.env|unreferenced|^index\.html$/u.test(item.path)), false);
@@ -162,7 +166,7 @@ test('the real candidate archive binds source, isolates its build and remains re
   await writeFile(resolve(publication, 'package-manifest.json'), original);
   const missing = structuredClone(result.release); missing.assets = missing.assets.filter(item => !item.url.endsWith('xlsx.hash.js'));
   assert.throws(() => validateCandidateAssets(missing, contents), /Incomplete|missing/);
-  for (const url of ['/admin/settings/', '/admin/person/']) {
+  for (const url of ['/admin/settings/', '/admin/person/', '/admin/volunteers/']) {
     const missingPage = structuredClone(result.release); missingPage.assets = missingPage.assets.filter(item => item.url !== url);
     assert.throws(() => validateCandidateAssets(missingPage, contents), /Incomplete/);
   }

@@ -32,7 +32,7 @@ test('outreach reads only its contact, arrangements, invitation metadata and exi
   const { response, body } = await f.read({ loadRegistration: deny, loadConfirmations: deny });
   assert.equal(response.status, 200); assert.equal(body.registration, null); assert.equal(body.admission.status, 'confirmed');
   assert.equal(body.availability.registration, 'restricted'); assert.equal(body.availability.confirmations, 'restricted');
-  assert.deepEqual(body.permissions, { contact: true, registration: false, invitations: true, confirmations: false, arrangements: true });
+  assert.deepEqual(body.permissions, { contact: true, registration: false, invitations: true, confirmations: false, arrangements: true, volunteers: false });
   assert.equal(body.contact.profile.email, 'contact@example.invalid');
   assert.doesNotMatch(JSON.stringify(body), /registration@example|PRIVATE-|in_review|accommodationChoice/u);
   assert.deepEqual(f.calls.map(item => item.source), ['contacts', 'intent', 'admission', 'content']);

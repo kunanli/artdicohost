@@ -2,6 +2,8 @@
 
 最新回報（2026-10-21）：使用者確認 Email 已正常發送、此部分暫時 OK，接續改為 Apple Wallet 設定。以下保留實際模板與操作流程；此回報不冒充開發端新取得的 FC 狀態或獨立實寄證據。
 
+操作入口已移到 [設置與通知](https://api.artdico.host/admin/settings/) 的「报名确认与票券」（PR #34 已上線），原報名頁保留明確連結。既有可用配置不用重新設定；以下停用／啟用順序供首次配置或輪替使用。
+
 2026-10-21。根據使用者提供的 EmailJS 畫面，已有 Service `LoginPlan`，SMTP `smtp.feishu.cn`／465／SSL，帳號 `support@artdico.co`。這證明已有設定，尚不代表本次活動已寄信或收件成功。
 
 使用者已保存並提供實際 **Template ID `template_89mgpj9`**。使用者已確認 EmailJS Test It 收到信、寄件人與排版正常；目前沒有由本開發工作修改 FC 或啟用寄件。
@@ -72,7 +74,7 @@
 
 啟用順序：
 
-1. 在[報名後台](https://api.artdico.host/admin/registrations/)的「报名确认与票券」先取消自動確認信並保存。
+1. 首次配置或輪替時，在[設置與通知](https://api.artdico.host/admin/settings/)的「报名确认与票券」先取消自動確認信並保存。
 2. 準備／上傳加密 bundle，核對 bytes／SHA，設置 locator 與 `ARTDICO_CONFIRMATION_EMAIL_ENABLED=true`。
 3. 重新讀取後台，確認沒有缺項且自動通知仍關閉。此時就緒只代表配置完整。
 4. 先在 EmailJS 新模板的 Test 選擇 `LoginPlan`，收件人填自己可驗收的郵箱，以明確標示「設定測試，非正式報名」的合成文字核對模板及 SMTP。這不建立正式報名、不含真實私人確認連結，也不證明網站流程已啟用。

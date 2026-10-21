@@ -1,10 +1,21 @@
 const plain=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const states=['provider_accepted','rejected','unknown','disabled','not_configured','not_applicable','not_public','withdrawn','unavailable','not_attempted'];
+const walletReasons=new Set(['WALLET_NOT_CONFIGURED','WALLET_DISABLED','CONFIGURED_SIGNER_DEVICE_TEST_REQUIRED','WALLET_BUNDLE_UNAVAILABLE',
+  'WALLET_CERTIFICATE_INVALID','WALLET_CERTIFICATE_EXPIRED','WALLET_CERTIFICATE_CHAIN_INVALID','WALLET_CERTIFICATE_ID_MISMATCH',
+  'WALLET_CERTIFICATE_TYPE_INVALID','WALLET_IDENTITY_INVALID','WALLET_PRIVATE_KEY_INVALID','WALLET_UNAVAILABLE']);
+const validExpiry=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;
 export function deliverySettingsView(value){
   if(!plain(value)||!Number.isSafeInteger(value.revision)||value.revision<0||typeof value.automaticEnabled!=='boolean'||typeof value.email?.ready!=='boolean'
     ||!Array.isArray(value.email.missing)||value.email.missing.length>30||value.email.missing.some(key=>typeof key!=='string'||!/^[A-Z][A-Z0-9_]{0,100}$/u.test(key))
-    ||typeof value.wallet?.ready!=='boolean'||!plain(value.counts)||['total','providerAccepted','rejected','unknown'].some(key=>!Number.isSafeInteger(value.counts[key])||value.counts[key]<0||value.counts[key]>10000))return null;
-  return{revision:value.revision,automaticEnabled:value.automaticEnabled,email:{ready:value.email.ready,missing:[...value.email.missing]},wallet:{ready:value.wallet.ready},
+    ||typeof value.wallet?.ready!=='boolean'||value.wallet.missing!==undefined&&(!Array.isArray(value.wallet.missing)||value.wallet.missing.length>20||value.wallet.missing.some(key=>typeof key!=='string'||!/^[A-Z][A-Z0-9_]{0,79}$/u.test(key)))
+    ||value.wallet.deviceTestRequired!==undefined&&typeof value.wallet.deviceTestRequired!=='boolean'
+    ||value.wallet.certificateExpiresAt!==undefined&&!validExpiry(value.wallet.certificateExpiresAt)
+    ||!plain(value.counts)||['total','providerAccepted','rejected','unknown'].some(key=>!Number.isSafeInteger(value.counts[key])||value.counts[key]<0||value.counts[key]>10000))return null;
+  const reason=value.wallet.reason===undefined?(value.wallet.ready?'CONFIGURED_SIGNER_DEVICE_TEST_REQUIRED':'WALLET_NOT_CONFIGURED')
+    :walletReasons.has(value.wallet.reason)?value.wallet.reason:'WALLET_UNAVAILABLE';
+  return{revision:value.revision,automaticEnabled:value.automaticEnabled,email:{ready:value.email.ready,missing:[...value.email.missing]},
+    wallet:{ready:value.wallet.ready,reason,missing:[...(value.wallet.missing??[])],deviceTestRequired:value.wallet.deviceTestRequired!==false,
+      ...(value.wallet.certificateExpiresAt===undefined?{}:{certificateExpiresAt:value.wallet.certificateExpiresAt})},
     counts:Object.fromEntries(['total','providerAccepted','rejected','unknown'].map(key=>[key,value.counts[key]]))};
 }
 export function deliveryDispatchView(value,operationId){

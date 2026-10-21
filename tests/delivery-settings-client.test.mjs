@@ -8,6 +8,14 @@ test('settings projection excludes credentials and rejects unverified counts or 
   assert.equal(deliverySettingsView({...state(),email:{ready:false,missing:['private value with spaces']}}),null);
   assert.equal(deliverySettingsView({...state(),counts:{...state().counts,unknown:-1}}),null);
 });
+test('wallet setup projection preserves bounded safe diagnostics and valid expiry without exposing arbitrary errors',()=>{
+  const wallet={ready:false,reason:'WALLET_DISABLED',missing:['APPLE_WALLET_PASS_TYPE_ID'],certificateExpiresAt:'2027-10-21T00:00:00.000Z',deviceTestRequired:true,privateKey:'PRIVATE'};
+  assert.deepEqual(deliverySettingsView({...state(),wallet}).wallet,{ready:false,reason:wallet.reason,missing:wallet.missing,certificateExpiresAt:wallet.certificateExpiresAt,deviceTestRequired:true});
+  assert.equal(deliverySettingsView({...state(),wallet:{...wallet,reason:'PRIVATE signing error'}}).wallet.reason,'WALLET_UNAVAILABLE');
+  assert.equal(deliverySettingsView({...state(),wallet:{...wallet,reason:'WALLET_CERTIFICATE_EXPIRED'}}).wallet.reason,'WALLET_CERTIFICATE_EXPIRED');
+  for(const change of [{missing:Array(21).fill('APPLE_WALLET_TEAM_ID')},{missing:['private value']},{certificateExpiresAt:'2027-02-30T00:00:00.000Z'},{certificateExpiresAt:'2027-10-21'},{deviceTestRequired:'true'}])assert.equal(deliverySettingsView({...state(),wallet:{...wallet,...change}}),null);
+  assert.deepEqual(deliverySettingsView(state()).wallet,{ready:false,reason:'WALLET_NOT_CONFIGURED',missing:[],deviceTestRequired:true});
+});
 test('uncertain settings acknowledgement retries the exact original operation and body',async()=>{
   const calls=[];let attempt=0;
   const controller=createDeliveryMutations({operationId:()=>operationId,revision:()=>0,request:async(path,options)=>{calls.push({path,...options});if(!attempt++)throw Object.assign(new Error('uncertain'),{status:503});return{...state(),outcome:'replayed'};}});

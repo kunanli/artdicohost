@@ -86,6 +86,21 @@ function publicAdmissions(value, capacity) {
   return projected;
 }
 
+/** Only an exact public receipt URL and bounded delivery states leave the API. */
+function publicConfirmation(result, clock) {
+  try {
+    const value = own(result, 'confirmation'), receiptToken = own(value, 'receiptToken'), confirmationUrl = own(value, 'confirmationUrl'), expiresAt = own(value, 'expiresAt');
+    if (typeof receiptToken !== 'string' || receiptToken.length > 4096 || !TOKEN_PATTERN.test(receiptToken)
+      || typeof confirmationUrl !== 'string' || confirmationUrl.length > 4600 || confirmationUrl !== 'https://artdico.host/registration/confirmation/#r=' + receiptToken
+      || parseTimestamp(expiresAt) === null || typeof clock !== 'function') return null;
+    const current = clockTime(clock());
+    if (current === null || parseTimestamp(expiresAt) <= current) return null;
+    const status = own(own(value, 'email'), 'status');
+    if (!['not_configured','not_applicable','disabled','pending','prepared','provider_accepted','rejected','unknown','issuing'].includes(status)) return null;
+    return { receiptToken, confirmationUrl, expiresAt, email: { status } };
+  } catch { return null; }
+}
+
 /** Optional post-commit information; an unavailable invite never reverses a saved registration. */
 function groupInvite(result, origins, clock) {
   try {
@@ -204,8 +219,10 @@ export function createRegistrationApi({ allowedOrigins, submissionService, allow
         const receipt = committedReceipt(result, payload);
         if (!receipt) return failure('UNAVAILABLE');
         const { referenceCode, ...admission } = receipt, waitlisted = receipt.admissionStatus === 'waitlisted';
+        const confirmation = publicConfirmation(result, clock);
         return reply({ status: waitlisted ? 'waitlisted' : 'registered', reference_code: referenceCode,
-          groupInvite: waitlisted ? null : groupInvite(result, inviteOrigins, clock), ...admission }, outcome === 'created' ? 201 : 200);
+          groupInvite: waitlisted ? null : groupInvite(result, inviteOrigins, clock), ...admission,
+          ...(confirmation ? { confirmation } : {}) }, outcome === 'created' ? 201 : 200);
       }
       if (outcome === 'rate_limited' && Number.isSafeInteger(own(result, 'retryAfter')) && own(result, 'retryAfter') >= 1 && own(result, 'retryAfter') <= 86400) headers['retry-after'] = String(own(result, 'retryAfter'));
       return failure(Object.hasOwn(OUTCOMES, outcome) ? OUTCOMES[outcome] : 'UNAVAILABLE');

@@ -203,7 +203,7 @@ function renderPageView(){
   const page=CONTENT_PAGES.find(item=>item.key===activePage);if(!page)return;
   $('#artdico-admin').dataset.contentPage=activePage;
   for(const panel of document.querySelectorAll('[data-content-panel]'))panel.hidden=panel.dataset.contentPanel!==activePage;
-  for(const[selector,value]of[['[data-content-page-title]',page.title],['[data-content-page-description]',page.description],['[data-content-breadcrumb]',page.label]])if($(selector))$(selector).textContent=value;
+  for(const[selector,value]of[['[data-content-page-title]',page.title],['[data-content-page-description]',page.description],['[data-content-breadcrumb-current]',page.label]])if($(selector))$(selector).textContent=value;
   for(const link of document.querySelectorAll('[data-staff-section-link]')){
     const target=new URL(link.href,location.href),selected=resolveContentPage(target.pathname,target.hash)===activePage;
     if(selected)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');

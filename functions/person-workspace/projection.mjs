@@ -155,9 +155,13 @@ export function organizationsProjection(contactRaw, source) {
   return { state: memberships.length ? 'available' : 'unlinked', memberships };
 }
 function publicGuestValue(item, saved = false) {
-  if (!item || item.status !== 'confirmed' || item.publicConsent !== true || !PORTRAIT_ID_PATTERN.test(item.portraitId ?? '')) return null;
+  if (!item || item.status !== 'confirmed' || item.publicConsent !== true) return null;
+  const portraitId=text(item.portraitId,80);
+  if(portraitId&&!PORTRAIT_ID_PATTERN.test(portraitId))return null;
+  const portraitUrl=portraitId?'/api/public/portraits/'+portraitId:'';
+  if(saved&&item.portraitUrl!==portraitUrl)return null;
   const result = { id: item.id, name: text(item.name, 120), company: text(item.company, 160), ggjRole: text(item.ggjRole, 160),
-    portraitId: item.portraitId, portraitUrl: saved ? text(item.portraitUrl, 160) : '/api/public/portraits/' + item.portraitId,
+    portraitId, portraitUrl,
     status: 'confirmed', publicConsent: true };
   for (const [key, maximum] of Object.entries({ title: 200, bio: 4000, website: 500 })) if (Object.hasOwn(item, key)) result[key] = text(item[key], maximum);
   if (Object.hasOwn(item, 'publicRoles')) result.publicRoles = strings(item.publicRoles, GUEST_PUBLIC_ROLES.length, 40, GUEST_PUBLIC_ROLES);

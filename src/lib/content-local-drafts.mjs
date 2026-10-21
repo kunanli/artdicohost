@@ -13,7 +13,7 @@ export const CONTENT_FORM_FIELDS = Object.freeze({
   session: ['id','start','end','zone','title','format','speakerName','speakerStatus','guestId','status','internalNotes'],
   booth: ['id','code','organization','organizationId','project','zone','slotNumber','contactName','contactMethods','description','website','status','internalNotes'],
   guest: ['id','name','company','ggjRole','portraitId','contactId','title','bio','website','status','internalNotes','publicConsent','publicRoles'],
-  showcase: ['id','title','teamName','school','contactName','email','wechat','memberCount','participationForms','responseStatus','materialLinks','summary','coverId','status','publicConsent','sessionId','boothId','internalNotes'],
+  showcase: ['id','kind','organizationId','title','teamName','school','contactName','email','wechat','memberCount','participationForms','responseStatus','materialLinks','summary','coverId','status','publicConsent','sessionId','boothId','internalNotes'],
   organization: ['id','name','logoId','website','participation','status','publicConsent','internalNotes'],
   plannerBooth: ['code','organization','organizationId','project','contactName','contactMethods','description','status'],
 });
@@ -27,6 +27,26 @@ export function contentFormValue(type, input) {
     else if (arrays.has(key)) { if (!Array.isArray(value) || value.length > 8 || value.some(item => !text(item, 40)) || new Set(value).size !== value.length) return null; }
     else if (!text(value)) return null;
     result[key] = structuredClone(value);
+  }
+  return result;
+}
+/** New work fields preserve the old own-property shape; a blank legacy kind is display-only. */
+export function showcaseOptionalFields(previous, raw, {isNew=false}={}) {
+  if(!plain(raw)||previous!==null&&previous!==undefined&&!plain(previous))throw new TypeError('作品分类或组织关联无法核对。');
+  const result={},kinds=['student','indie','team'];
+  for(const key of ['kind','organizationId']){
+    const supplied=Object.getOwnPropertyDescriptor(raw,key),saved=Object.getOwnPropertyDescriptor(previous??{},key);
+    if(supplied&&!Object.hasOwn(supplied,'value')||saved&&!Object.hasOwn(saved,'value'))throw new TypeError('作品分类或组织关联须为明确值。');
+    if(!supplied){if(saved)result[key]=saved.value;else if(key==='kind'&&isNew)throw new TypeError('请选择作品分类。');continue;}
+    const value=supplied.value;if(typeof value!=='string')throw new TypeError('作品分类或组织关联须为明确文字。');
+    if(key==='kind'){
+      if(value===''){if(saved||isNew)throw new TypeError('请选择作品分类。');}
+      else if(kinds.includes(value))result.kind=value;
+      else throw new TypeError('请选择有效的作品分类。');
+    }else{
+      if(value!==''&&!ID.test(value))throw new TypeError('请选择已保存的参与组织，或明确解除关联。');
+      if(value||saved)result.organizationId=value;
+    }
   }
   return result;
 }

@@ -198,3 +198,6 @@ jobs:
       - name: Verify all fixed admin subpages through the activated HTTPS API domain without credentials
         timeout-minutes: 1
         run: node scripts/verify-cloud-admin-pages.mjs .local-data/cloud-content-publication
+      - name: Verify anonymous public content and frontend CORS without credentials
+        timeout-minutes: 1
+        run: node scripts/verify-public-content.mjs

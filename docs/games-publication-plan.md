@@ -1,10 +1,12 @@
 # 下一阶段：公开可见性与游戏／作品
 
-本文件是已授权下一阶段计划。先完成[后台独立页面与直接保存](admin-independent-pages.md)的实际发布，再实施本阶段，不在前一阶段混入数据契约变更。
+本阶段已开始，根分支`feat/publication-games`，基准为实际main d504ecc及证据3d04822。前一[后台独立页面与直接保存](admin-independent-pages.md)已于23:33:20（UTC+08）实际发布，准确证据见[发布记录](admin-pages-release-2026-10-21.md)。本阶段尚未发布；[操作说明](publication-games-operations.md)随实现核对。
 
 ## 实际诊断
 
 公开页读取 `/api/public/content` 已发布快照，不读取工作人员draft；保存不等于发布。当前首次加载读取一次、no-store、不带cookie。404／旧快照缺organizations沿用初始四组织；200明确空数组才清空。用户先前截图的嘉宾pending／consentfalse、两院校consentfalse不具当时公开条件，不代为确认／授权。后续截图中多位嘉宾已confirmed但consent仍false，组织则已核实授权；须按实际最新草稿与发布快照诊断，不继续沿用旧截图状态。现有嘉宾「停止公开」动作仅凭confirmed或consent任一成立即出现，不能证明前台已公开，须改为准确状态与明确动作。
+
+既有CI的`probe-content-endpoint.mjs`实际只GET `/admin/`，不能当匿名公开快照或前端CORS证明。下一阶段部署后须固定Origin `https://artdico.host`、不带cookie／认证、限时限量读取`https://api.artdico.host/api/public/content`，只记录revision／发布时间／各类数量或明确无publication，验证CORS和公开投影；不得输出姓名／原正文或自动发布真实草稿。404是尚未发布，不能称数据已同步；503／无效快照不能通过实际可见性检查。
 
 ## 公开进度
 
@@ -37,6 +39,14 @@
 
 继续沿用Node24／Astro／既有FC和OSS及128files／40assets／原容量预算，不增依赖、权限、DNS或服务。发布只验证合成隔离资料；真实人物状态、授权、名单与寄信不由开发测试代填。准确源码／完整测试／构建／审计／ZIP／受限启动与PR通过后，保持main稳定核对真实私有OSS、300政策及HTTPS再交付。
 
+附带UX：前阶段unknown组织弹窗已有可达核对／重试／复制，但API持续不可用时没有直接退出入口。可在原proof区复用既有显式logout确认与actor清理，不能以关闭弹窗／新autosave覆盖原pending或rawforms；不更动写入协议。
+
 ## 完成主功能后的跟进人标记
 
 用户最后追加：前述功能完成后，「人员与邀约」跟进人名称改彩色姓名标签。同一位跟进人固定同色，保留原姓名文字与筛选；未分配用中性标记，不能与红绿出席／公开状态混淆。不改负责人数据、权限或联系记录；主流程完成后补此项并验证桌面／手机辨识与对比。
+
+## 实作分工与恢复点
+
+统一隔离base `3d04822cb039220331760a4b4863333fc52404ed`。root负责匿名公开数据／CORS验收脚本、workflow、打包闭包、整合、文档与实际发布。`games-domain`负责schema／publicguest／双store与备份；`games-readiness`负责共享readiness、person projection及人员／个人页；`games-admin`负责内容／组织controller与旧raw草稿；`games-ui`负责既有Astro／CSS及统一标签；`games-public`负责公开renderer／返回刷新；`games-browser`负责两个origin真实合成runtime与手机原生验收。各worker仅跑定向检查，完整suite／build／Chromium／XZ由root顺序协调，不能将旧dist当新功能通过。main保持d504ecc直到准确PR合并。
+
+root `74fb950`先加入部署激活后的固定匿名公开data／CORS检查：15项含前阶段alias回归定向通过；没有访问生产私有资料或发布草稿。尚须本阶段完整实现／原生／准确封装及实际部署。

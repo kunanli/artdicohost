@@ -10,6 +10,38 @@ const choice = (value, values) => { check(values.includes(value)); return value;
 function rows(value, max, map, key = 'id') { check(Array.isArray(value) && value.length <= max); const result = value.map(row => { check(plain(row)); return map(row); }); check(new Set(result.map(row => row[key])).size === result.length); return result; }
 const boolean = value => { check(typeof value === 'boolean'); return value; };
 export const PUBLIC_ROLE_LABELS = Object.freeze({ speaker: '讲者', guest: '嘉宾', organizer: '研讨会组织者', moderator: '主持人' });
+
+/** Display-only palette: normalized name determines color, original name remains
+ * the label and filter value. No roster order, stored assignments or identities change. */
+export function ownerTagPresentation(value) {
+  const label=typeof value==='string'?value:'',name=label.normalize('NFC').trim();
+  if(!name)return{label:'待分配',tone:'neutral'};
+  let hash=2166136261;
+  for(const character of name)hash=Math.imul(hash^character.codePointAt(0),16777619)>>>0;
+  return{label,tone:String(hash%6)};
+}
+/** Attendance is the recorded personal reply, independently of seat or guest status. */
+export function attendancePresentation(status) {
+  return status==='attending'?{label:'已确认出席',tone:'positive'}
+    :status==='pending'?{label:'未确认出席',tone:'negative'}
+      :status==='declined'?{label:'不出席',tone:'negative'}:{label:'出席回复待核对',tone:'neutral'};
+}
+/** Published means this guest ID actually exists in the public snapshot. A newer
+ * private draft cannot remove its green badge before explicit publication.
+ * `known:false` comes from an unrelated orphan publication in the same catalog;
+ * the API still proves each positive `published` by this exact guest ID. */
+export function profilePublicationPresentation(profile,{known=true}={}) {
+  const ready=Boolean(profile&&profile.status==='confirmed'&&profile.publicConsent===true);
+  const reasons=profile?[profile.status!=='confirmed'?'待确认':'',profile.publicConsent!==true?'待核实公开授权':''].filter(Boolean):[];
+  const suggestions=profile?[!profile.hasPortrait?'照片可稍后补充':'',!profile.publicRoles?.length?'公开职责可稍后补充':''].filter(Boolean):[];
+  if(profile?.published===true) {
+    const change=profile.publishedMatchesDraft?'unchanged':ready?'updated':'removed';
+    return {label:'已公开',tone:'positive',ready,change,changeLabel:({unchanged:'已同步',updated:'变更待发布',removed:'待撤下'})[change],
+      detail:change==='unchanged'?'已发布内容与当前人物草稿一致':'资料有历史公开版本，当前人员关联及内容待核对',reasons,suggestions};
+  }
+  if(!profile||known!==true||profile.published!==false)return{label:'公开状态待核对',tone:'neutral',ready:false,change:'unknown',changeLabel:'待核对',detail:'公开快照暂时无法核对',reasons:[],suggestions};
+  return{label:'未公开',tone:'negative',ready,change:ready?'new':'blocked',changeLabel:ready?'待发布':'待补充',detail:ready?'资料已确认并核实授权，仍需明确发布':'请先核对确认状态与公开授权',reasons,suggestions};
+}
 export function privateResponseAction({requestGeneration,currentGeneration,status,selectionCurrent=()=>true,login=false}){if(requestGeneration!==currentGeneration)return'ignore_session';if(!login&&[401,403].includes(status))return'clear_session';return selectionCurrent()?'accept':'ignore_selection';}
 export function peopleRelationships(value) {
   check(plain(value) && value.schemaVersion === 1);
@@ -29,12 +61,12 @@ export function relationshipForContact(contact, catalog) {
   return { available: true, memberships: memberships.map(row => { const organization = catalog.organizations.find(item => item.id === row.organizationId); return { ...row, name: organization?.name || row.organizationId, state: !organization ? 'missing' : organization.status === 'withdrawn' ? 'withdrawn' : 'available' }; }), profiles: catalog.profiles.filter(row => row.contactId === contact.id), publicationKnown: !catalog.publicationAttributionUnavailable };
 }
 export function matchesPeopleRelationships(contact, catalog, { organization = '', publicRole = '', publicState = '' } = {}) {
-  if (!catalog) return true;
+  if (!catalog) return publicState !== 'unpublished';
   const related = relationshipForContact(contact, catalog), profiles = related.profiles;
   if (organization && (organization === '__none' ? related.memberships.length !== 0 : !related.memberships.some(row => row.organizationId === organization))) return false;
   if (publicRole && !profiles.some(row => row.publicRoles.includes(publicRole))) return false;
   if (!publicState) return true;
-  return ({ linked: profiles.length > 0, unlinked: profiles.length === 0, published: profiles.some(row => row.publishedMatchesDraft), unpublished: !related.publicationKnown || profiles.length > 0 && profiles.every(row => !row.published), changed: profiles.some(row => row.published && !row.publishedMatchesDraft), no_consent: profiles.some(row => !row.publicConsent), no_portrait: profiles.some(row => !row.hasPortrait) })[publicState] === true;
+  return ({ linked: profiles.length > 0, unlinked: profiles.length === 0, published: profiles.some(row => row.published), unpublished: related.publicationKnown && profiles.length > 0 && profiles.every(row => !row.published), changed: profiles.some(row => row.published && !row.publishedMatchesDraft), ready: profiles.some(row => row.status==='confirmed' && row.publicConsent), blocked: profiles.some(row => row.status!=='confirmed' || !row.publicConsent), no_consent: profiles.some(row => !row.publicConsent), no_portrait: profiles.some(row => !row.hasPortrait) })[publicState] === true;
 }
 export function parseOrganizationSelection(hash) { if (typeof hash !== 'string' || hash.length > 150) return null; const match = /^#organization=([^&#=]+)$/u.exec(hash); if (!match) return null; try { return id(decodeURIComponent(match[1])); } catch { return null; } }
 export function admissionForContact(contact, intent, receipts = new Map()) {

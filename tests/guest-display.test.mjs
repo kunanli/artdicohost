@@ -22,6 +22,21 @@ test('portraits cannot point to remote hosts, traversal paths or active image fo
   for (const extension of ['jpg', 'png', 'webp']) assert.equal(publicGuestCards([person({ portraitId: 'a'.repeat(64) + '.' + extension })]).length, 1);
 });
 
+test('an authorized confirmed guest without a photo keeps a card without any image URL', () => {
+  const content = createInitialContent();
+  content.guests = [person({ portraitId: '', publicRoles: [] })];
+  const published = toPublicContent(content), cards = publicGuestCards(published.guests);
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].portraitId, ''); assert.equal(cards[0].portraitUrl, '');
+  assert.deepEqual(toPublicContent(published), published);
+  for (const changes of [{ status: 'pending' }, { publicConsent: false }]) {
+    assert.deepEqual(publicGuestCards([{ ...content.guests[0], ...changes }]), []);
+  }
+  for (const portraitId of [null, undefined, false, {}, '../not-an-image']) {
+    assert.deepEqual(publicGuestCards([person({ portraitId })]), []);
+  }
+});
+
 test('malformed, duplicate or over-limit entries cannot introduce misleading guest cards', () => {
   for (const value of [undefined, null, {}, new Array(201).fill(person())]) assert.deepEqual(publicGuestCards(value), []);
   for (const override of [{ id: '__proto__' }, { name: '' }, { name: 'x'.repeat(121) }, { company: '' }, { ggjRole: 12 }, { company: 'hidden\nrole' }]) {

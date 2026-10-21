@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateImportedContact, createEmptyContactOperations } from '../shared/contacts-schema.mjs';
-import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, savedContactReceipt, conversionPreview, conversionReceipt, admissionForContact, privateResponseAction } from '../src/lib/people-relationships.mjs';
+import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, savedContactReceipt, conversionPreview, conversionReceipt, admissionForContact, privateResponseAction, ownerTagPresentation, attendancePresentation, profilePublicationPresentation } from '../src/lib/people-relationships.mjs';
 
 const registrationId='r'.repeat(43),referenceCode='c'.repeat(43);
 function contact(){const {sourceRowId,...profile}=validateImportedContact({sourceRowId:'synthetic-1',name:'合成人员',displayName:'合成称呼',organization:'同名组织',email:'fixture@example.invalid',categories:['so'],interests:['talk'],contactConsent:'consented'}).value;return{id:'contact_1',source:{key:'synthetic',rowId:sourceRowId,digest:'a'.repeat(64),importedAt:'2026-10-21T00:00:00Z'},profile,operations:createEmptyContactOperations(),invitation:{generatedAt:null,settings:null,sentAt:null,channel:null,sentGenerationAt:null},createdAt:'2026-10-21T00:00:00Z',updatedAt:'2026-10-21T00:00:00Z'};}
@@ -25,11 +25,11 @@ test('organization and public role filters use exact relationships and retain or
   assert.equal(matchesPeopleRelationships(item,source,{organization:'org_2',publicRole:'speaker',publicState:'changed'}),true);assert.equal(matchesPeopleRelationships(item,source,{organization:'org_1'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicState:'unlinked'}),false);
   assert.deepEqual(relationshipForContact(item,source).memberships.map(row=>row.state),['withdrawn','missing']);
 });
-test('unattributed publication disables unpublished inference while retaining positive filters',()=>{
-  const source=peopleRelationships({...catalog(),publicationAttributionUnavailable:true}),item=contact();assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicRole:'organizer',publicState:'unpublished'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicState:'published'}),false);
+test('unattributed publication is excluded from unpublished filters while exact positive facts remain usable',()=>{
+  const source=peopleRelationships({...catalog(),publicationAttributionUnavailable:true}),item=contact();assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicRole:'organizer',publicState:'unpublished'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicState:'published'}),true);
 });
-test('historical public guest identity never claims the current linked contact is published',()=>{
-  const source=peopleRelationships(catalog()),item=contact();assert.equal(relationshipForContact(item,source).profiles[0].published,true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'published'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicState:'changed'}),true);
+test('actual guest ID publication remains visible while current identity and contents await verification',()=>{
+  const source=peopleRelationships(catalog()),item=contact();assert.equal(relationshipForContact(item,source).profiles[0].published,true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'published'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'changed'}),true);
   source.profiles[0].publishedMatchesDraft=true;assert.equal(matchesPeopleRelationships(item,source,{publicState:'published'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'changed'}),false);
 });
 test('same-session expiry clears private data before stale selection checks; old-account expiry is ignored',()=>{
@@ -57,4 +57,65 @@ test('conversion preview binds exact selected IDs, revision and bounded explicit
 test('conversion receipt partitions exact selections and contains no admission promise',()=>{
   const draft={contactRevision:4,eligibleIds:['contact_1','contact_2']},value={status:'partial',contactRevision:4,registrations:[{contactId:'contact_1',registrationId,referenceCode}],failures:[{contactId:'contact_2',code:'STORAGE_UNAVAILABLE'}],skipped:[]};const result=conversionReceipt(value,draft);assert.equal(result.failureCount,1);assert.equal(result.admission,undefined);
   for(const mutate of [v=>{v.registrations[0].contactId='foreign';},v=>{v.failures[0].contactId='contact_1';},v=>{v.failures=[];},v=>{v.status='completed';},v=>{v.contactRevision=5;},v=>{v.registrations[0].referenceCode='bad';}]){const input=structuredClone(value);mutate(input);assert.throws(()=>conversionReceipt(input,draft));}
+});
+
+
+test('attendance colors describe only the personal reply, never infer guest status or admission',()=>{
+  assert.deepEqual(attendancePresentation('attending'),{label:'已确认出席',tone:'positive'});
+  assert.deepEqual(attendancePresentation('pending'),{label:'未确认出席',tone:'negative'});
+  assert.deepEqual(attendancePresentation('declined'),{label:'不出席',tone:'negative'});
+  for(const status of [undefined,null,'confirmed','provider_accepted'])assert.deepEqual(attendancePresentation(status),{label:'出席回复待核对',tone:'neutral'});
+});
+
+test('public presentation keeps live snapshots green through updates and withdrawals; missing knowledge stays neutral',()=>{
+  const profile=catalog().profiles[0];
+  let status=profilePublicationPresentation(profile);assert.equal(status.tone,'positive');assert.equal(status.label,'已公开');assert.equal(status.change,'updated');assert.match(status.detail,/历史公开版本.*待核对/u);
+  profile.publicConsent=false;status=profilePublicationPresentation(profile);assert.equal(status.tone,'positive');assert.equal(status.change,'removed');assert.equal(status.changeLabel,'待撤下');assert.deepEqual(status.reasons,['待核实公开授权']);
+  profile.published=false;status=profilePublicationPresentation(profile);assert.equal(status.tone,'negative');assert.equal(status.label,'未公开');assert.equal(status.change,'blocked');
+  assert.equal(profilePublicationPresentation(profile,{known:false}).tone,'neutral');assert.equal(profilePublicationPresentation(null).tone,'neutral');
+});
+
+test('a confirmed consented profile needs neither photo nor public role to be ready or synchronized',()=>{
+  const profile={...catalog().profiles[0],publicRoles:[],hasPortrait:false,published:false};
+  let status=profilePublicationPresentation(profile);assert.equal(status.ready,true);assert.equal(status.change,'new');assert.deepEqual(status.reasons,[]);assert.deepEqual(status.suggestions,['照片可稍后补充','公开职责可稍后补充']);
+  const source=peopleRelationships({...catalog(),profiles:[profile]}),item=contact();assert.equal(matchesPeopleRelationships(item,source,{publicState:'ready'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'blocked'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),true);
+  profile.published=true;profile.publishedMatchesDraft=true;status=profilePublicationPresentation(profile);assert.equal(status.change,'unchanged');assert.equal(status.label,'已公开');
+  source.profiles[0].status='pending';assert.equal(matchesPeopleRelationships(item,source,{publicState:'blocked'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'ready'}),false);
+});
+
+
+test('unpublished filter requires known publication metadata and an existing linked profile',()=>{
+  const item=contact(),source=peopleRelationships(catalog());source.profiles[0].published=false;
+  assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),true);
+  assert.equal(profilePublicationPresentation(source.profiles[0]).tone,'negative');
+  source.publicationAttributionUnavailable=true;
+  assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),false);
+  assert.equal(profilePublicationPresentation(source.profiles[0],{known:false}).tone,'neutral');
+  assert.equal(matchesPeopleRelationships(item,null,{publicState:'unpublished'}),false);
+  source.publicationAttributionUnavailable=false;source.profiles=[];
+  assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),false,'unlinked is separate from a known unpublished profile');
+});
+
+test('an unrelated orphan does not erase a linked guest ID that the server positively found published',()=>{
+  const profile=catalog().profiles[0],status=profilePublicationPresentation(profile,{known:false});
+  assert.equal(status.label,'已公开');assert.equal(status.tone,'positive');assert.equal(status.change,'updated');assert.match(status.detail,/历史公开版本.*待核对/u);
+});
+
+
+test('owner palette is deterministic across ordering, reloads and NFC without changing names or filters',()=>{
+  const names=['合成同事甲','合成同事乙','Café','Cafe\u0301','🎮策展人','同事 <example>'];
+  const before=structuredClone(names),first=new Map(names.map(name=>[name,ownerTagPresentation(name)]));
+  for(const name of [...names].reverse()){
+    assert.deepEqual(ownerTagPresentation(name),first.get(name));assert.match(first.get(name).tone,/^[0-5]$/u);assert.equal(first.get(name).label,name);
+  }
+  const serialized=JSON.parse(JSON.stringify(names));assert.deepEqual(serialized.map(ownerTagPresentation),names.map(ownerTagPresentation));
+  assert.equal(ownerTagPresentation('Café').tone,ownerTagPresentation('Cafe\u0301').tone);assert.equal(ownerTagPresentation('  合成同事甲  ').tone,ownerTagPresentation('合成同事甲').tone);
+  assert.equal(ownerTagPresentation('  合成同事甲  ').label,'  合成同事甲  ');
+  assert.deepEqual(names,before,'palette does not sort or normalize stored names');
+  assert.deepEqual(names.filter(name=>name==='Cafe\u0301'),['Cafe\u0301'],'existing exact filter values remain distinct');
+});
+
+test('unassigned owner is neutral and markup-like owner names remain plain display text',()=>{
+  for(const value of ['', '  ', '\n\t', null,undefined,42])assert.deepEqual(ownerTagPresentation(value),{label:'待分配',tone:'neutral'});
+  const value='<img src=x onerror="throw 1"> & 合成同事';const status=ownerTagPresentation(value);assert.equal(status.label,value);assert.match(status.tone,/^[0-5]$/u);
 });

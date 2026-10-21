@@ -1,7 +1,7 @@
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { validateContent, toPublicContent, validateBoothOrganizationChanges } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, validateBoothOrganizationChanges, validateShowcaseOrganizationChanges } from '../../shared/content-schema.mjs';
 import { createInitialContent } from '../../src/config/content.mjs';
 
 const queues = new Map();
@@ -36,7 +36,10 @@ function preserveArrangementFields(input, current) {
       || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new ContentError('VALIDATION_ERROR', '请提供完整的内容资料。', 422, { [field]: '请提供普通资料对象。' });
     const result = Object.create(null);
     for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
-      if (!descriptor.enumerable) continue;
+      if (!descriptor.enumerable) {
+        if (field === 'showcases' && ['kind', 'organizationId'].includes(key)) throw new ContentError('VALIDATION_ERROR', '作品字段无效。', 422, { [field]: '请提供明确的作品分类与组织关联。' });
+        continue;
+      }
       if (!('value' in descriptor)) throw new ContentError('VALIDATION_ERROR', '内容字段无效。', 422, { [field]: '请提供明确的资料值。' });
       result[key] = descriptor.value;
     }
@@ -72,6 +75,15 @@ function preserveArrangementFields(input, current) {
     const existing = current.guests.find(candidate => candidate.id === id);
     for (const name of ['title','bio','website','publicRoles','contactId']) {
       if (!Object.hasOwn(row,name) && existing && Object.hasOwn(existing,name)) row[name] = structuredClone(existing[name]);
+    }
+    return row;
+  });
+  if (Array.isArray(result.showcases)) result.showcases = result.showcases.map(item => {
+    const row = copy(item, 'showcases');
+    const id = typeof row.id === 'string' ? row.id.normalize('NFC').trim() : '';
+    const existing = current.showcases.find(candidate => candidate.id === id);
+    for (const name of ['kind', 'organizationId']) {
+      if (!Object.hasOwn(row, name) && existing && Object.hasOwn(existing, name)) row[name] = existing[name];
     }
     return row;
   });
@@ -158,12 +170,13 @@ export function createFileContentStore({ directory, portraitStore, initialConten
         throw new ContentError('VALIDATION_ERROR', '现有嘉宾资料不可因字段缺失被清空，请重新载入完整草稿。', 422, { guests: '请保留完整嘉宾数组；删除须明确提交修改。' });
       }
       if (state.draft.content.showcases?.length && (input === null || typeof input !== 'object' || !Object.hasOwn(input, 'showcases'))) {
-        throw new ContentError('VALIDATION_ERROR', '现有学生展示不可因字段缺失被清空，请重新载入完整草稿。', 422, { showcases: '请保留完整展示数组；删除须明确提交修改。' });
+        throw new ContentError('VALIDATION_ERROR', '现有游戏与作品不可因字段缺失被清空，请重新载入完整草稿。', 422, { showcases: '请保留完整展示数组；删除须明确提交修改。' });
       }
       const content = checkedContent(preserveArrangementFields(input, state.draft.content));
       if (content.eventId !== state.draft.content.eventId) throw new ContentError('VALIDATION_ERROR', '本后台只维护当前活动。', 422, { eventId: '活动 ID 不可更改。' });
       const relationships = validateBoothOrganizationChanges(content, state.draft.content);
-      if (!relationships.valid) throw new ContentError('VALIDATION_ERROR', '组织关联未通过校验。', 422, relationships.errors);
+      const workRelationships = validateShowcaseOrganizationChanges(content, state.draft.content);
+      if (!relationships.valid || !workRelationships.valid) throw new ContentError('VALIDATION_ERROR', '组织关联未通过校验。', 422, { ...relationships.errors, ...workRelationships.errors });
       await Object.getOwnPropertyDescriptor(options, 'beforeCommit')?.value({ current: structuredClone(state.draft.content), next: structuredClone(content), published: structuredClone(state.published) });
       await verifyPortraits(content);
       state.draft = { revision: state.draft.revision + 1, content };

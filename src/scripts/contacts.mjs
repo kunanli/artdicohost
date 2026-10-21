@@ -5,10 +5,9 @@ import { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS } from '../../sh
 import { SESSION_ROLES, SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
 import { eventConfig } from '../config/event.mjs';
 import { contactProgress, summarizeContactProgress, invitationProgressLabels, contactDeclined,buildPosterInvitationSettings,INVITATION_POSTER_RENDER_VERSION } from '../../shared/organizer-progress.mjs';
-import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, admissionForContact, ADMISSION_LABELS, PUBLIC_ROLE_LABELS, savedContactReceipt, conversionPreview, conversionReceipt, privateResponseAction } from '../lib/people-relationships.mjs';
+import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, admissionForContact, ADMISSION_LABELS, PUBLIC_ROLE_LABELS, savedContactReceipt, conversionPreview, conversionReceipt, privateResponseAction, ownerTagPresentation, attendancePresentation, profilePublicationPresentation } from '../lib/people-relationships.mjs';
 
 const $ = value => document.querySelector(value);
-const responses = { pending: '尚未确认', attending: '已确认出席', declined: '不出席' };
 const categoryLabels = new Map(sourceLabels.categories.map(item => [item.value, item.label]));
 const interestLabels = new Map(sourceLabels.interests.map(item => [item.value, item.label]));
 const participationLabels = new Map([...document.querySelectorAll('[data-contact-participation] input')].map(input => [input.value, input.dataset.participationLabel]));
@@ -323,8 +322,8 @@ function render() {
     const linked=intentState?.conversions?.find(value=>value.sourceContactId===item.id);
     if(linked){const link=node('a','已代登记 · 查看报名');link.href='/admin/registrations/#registration='+encodeURIComponent(linked.registrationId);invitation.append(link);}
     row.append(invitation);
-    const follow=node('td',item.operations.owner||'待分配');follow.append(node('small',item.operations.followUpAt||'未安排跟进日期'));if(item.operations.priority==='high')follow.append(node('small','优先跟进'));row.append(follow);
-    const reply=node('td',responses[item.operations.responseStatus]),admission=admissionForContact(item,intentState,admissionReceipts);reply.append(node('small',ADMISSION_LABELS[admission.status]));if(admission.registrationId){const link=node('a',admission.status==='withdrawn'?'前往审核／撤回记录':'查看正式报名');link.href='/admin/registrations/#registration='+encodeURIComponent(admission.registrationId);reply.append(link);}if(item.operations.responseStatus==='declined'&&admission.status==='confirmed')reply.append(node('small','本人不出席，原名额仍在；请明确撤回。','people-relationship-warning'));row.append(reply);
+    const follow=node('td'),owner=ownerTagPresentation(item.operations.owner),ownerBadge=node('span',owner.label,'ah-owner-tag');ownerBadge.dataset.ownerTone=owner.tone;ownerBadge.dataset.contactOwner=item.id;follow.append(ownerBadge,node('small',item.operations.followUpAt||'未安排跟进日期'));if(item.operations.priority==='high')follow.append(node('small','优先跟进'));row.append(follow);
+    const reply=node('td'),attendance=attendancePresentation(item.operations.responseStatus),replyBadge=statusBadge(attendance.label,attendance.tone),admission=admissionForContact(item,intentState,admissionReceipts);replyBadge.dataset.attendanceStatus=item.operations.responseStatus;reply.append(replyBadge,node('small',ADMISSION_LABELS[admission.status]));if(admission.registrationId){const link=node('a',admission.status==='withdrawn'?'前往审核／撤回记录':'查看正式报名');link.href='/admin/registrations/#registration='+encodeURIComponent(admission.registrationId);reply.append(link);}if(item.operations.responseStatus==='declined'&&admission.status==='confirmed')reply.append(node('small','本人不出席，原名额仍在；请明确撤回。','people-relationship-warning'));row.append(reply);
     const participationCell=node('td',undefined,'contacts-participation-cell');
     for(const value of item.operations.participationForms??[])participationCell.append(node('span',participationLabels.get(value)||value,'contacts-tag'));
     if(!participationCell.childNodes.length)participationCell.append(node('small','尚未标记'));
@@ -376,11 +375,18 @@ async function prepareRegistrationInvitation(item,linked,channel,renderVersion){
   const next=await request('/api/admin/intent-invitations');if(generation!==sessionGeneration)return;intentState=next;render();
 }
 
+function statusBadge(label,tone){const badge=node('span',label,'ah-status');badge.dataset.statusTone=tone;return badge;}
 function detailPair(dl,label,value){if(!value)return;dl.append(node('dt',label),node('dd',value));}
 function renderContactRelationships(output,item){
   const related=relationshipForContact(item,relationships);
-  if(!related.available){output.append(node('small','公开身份与组织目录待核对','people-relationship-warning'));for(const row of related.memberships)output.append(node('small','已保存组织编号：'+row.organizationId));return;}
-  for(const profile of related.profiles){output.append(node('small','公开职责：'+(profile.publicRoles.map(role=>PUBLIC_ROLE_LABELS[role]).join('、')||'尚未标记')));output.append(node('small',[profile.publicConsent?'已记录公开授权':'公开授权待核对',profile.hasPortrait?'已有照片':'照片待补',profile.published?profile.publishedMatchesDraft?'当前资料已发布':'资料有历史公开版本，当前人员关联及内容待核对':related.publicationKnown?'尚未发布':'公开归属待核对'].join(' · ')));}
+  if(!related.available){const badge=statusBadge('公开状态待核对','neutral');badge.dataset.profilePublication='';badge.dataset.publicationState='unknown';output.append(badge,node('small','公开身份与组织目录待核对','people-relationship-warning'));for(const row of related.memberships)output.append(node('small','已保存组织编号：'+row.organizationId));return;}
+  for(const profile of related.profiles){
+    const status=profilePublicationPresentation(profile,{known:related.publicationKnown}),badge=statusBadge(status.label,status.tone),change=statusBadge(status.changeLabel,status.change==='unchanged'?'neutral':'warning');
+    badge.dataset.profilePublication=profile.id;badge.dataset.publicationState=profile.published?'published':related.publicationKnown?'unpublished':'unknown';change.dataset.profilePublicationChange=profile.id;
+    output.append(badge,change,node('small',status.detail));
+    if(profile.publicRoles.length)output.append(node('small','公开职责：'+profile.publicRoles.map(role=>PUBLIC_ROLE_LABELS[role]).join('、')));
+    if(status.reasons.length||status.suggestions.length)output.append(node('small',[...status.reasons,...status.suggestions].join(' · ')));
+  }
   if(!related.profiles.length)output.append(node('small','尚未关联人物资料'));
   for(const member of related.memberships){const line=node('small',member.name+' · '+(member.role==='lead'?'负责人':'成员')+(member.title?' · '+member.title:'')+(member.state==='missing'?'（组织已失效，保留关联）':member.state==='withdrawn'?'（组织已退出）':''),member.state!=='available'?'people-relationship-warning':undefined);output.append(line);if(user?.roles.includes('editor')&&member.state!=='missing'){const link=node('a','查看组织','people-profile-link');link.href='/admin/#organization='+encodeURIComponent(member.organizationId);output.append(link);}}
   if(!related.memberships.length)output.append(node('small','尚未关联组织'));

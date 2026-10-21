@@ -114,11 +114,11 @@ test('restricted or unavailable sources produce no completed steps from missing 
   assert.equal(steps(unavailable).get('arrangements').state, 'review');
 });
 
-test('public completion requires a published, confirmed, consented profile with a portrait; historical attribution needs verification', () => {
-  const value = fixture(); assert.equal(steps(value).get('public').state, 'complete'); assert.match(steps(value).get('public').detail, /不代表最新草稿已同步/u);
+test('public completion follows actual confirmed consented publication with optional portrait and duties; historical attribution needs verification', () => {
+  const value = fixture(); assert.equal(steps(value).get('public').state, 'complete'); assert.match(steps(value).get('public').detail, /已发布内容与当前人物草稿一致/u);
   value.publicProfile.profiles[0].publishedMatchesDraft = false; assert.equal(steps(value).get('public').state, 'review');
   value.publicProfile.profiles[0].publishedMatchesDraft = true;
-  value.publicProfile.profiles[0].hasPortrait = false; assert.equal(steps(value).get('public').state, 'pending');
+  value.publicProfile.profiles[0].hasPortrait = false;value.publicProfile.profiles[0].publicRoles=[];assert.equal(steps(value).get('public').state, 'complete');
   value.publicProfile.profiles[0].hasPortrait = true; value.publicProfile.profiles[0].published = false; assert.equal(steps(value).get('public').state, 'pending');
   value.publicProfile.profiles[0].published = true; value.publicProfile.profiles[0].publicConsent = false; value.publicProfile.profiles[0].publishedMatchesDraft = false;
   value.contact.operations.participationForms = ['attendee']; assert.equal(steps(value).get('public').state, 'review'); assert.match(steps(value).get('public').detail, /资料有历史公开版本，当前人员关联及内容待核对/u);

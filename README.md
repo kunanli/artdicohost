@@ -2,7 +2,7 @@
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
 
-2026-10-21 新版邀请函、上传字体与私人PNG已上线 [PR #39](https://github.com/kunanli/artdicohost/pull/39)／[PR #40](https://github.com/kunanli/artdicohost/pull/40)，正式main **`9b9c418`**。1194项main检查、真实私有OSS、共同300政策与**33/33 HTTPS**全部通过，**22:00:20（UTC+08）**完成。[发布证据](docs/invitation-release-2026-10-21.md)、[最新接续](docs/session-recovery.md)、[验收步骤](docs/morning-acceptance.md)。本机暂存、就近保存、精简界面与协作者权限已在前一阶段上线。
+2026-10-21 [PR #41](https://github.com/kunanli/artdicohost/pull/41) 后台独立页面、就近直接保存与离页防呆已上线，正式main **`d504ecc`**。1235项main检查、真实私有OSS、共同300政策、**13个API子页及46个公开对象HTTPS**全部通过，**23:33:20（UTC+08）**完成。[准确发布证据](docs/admin-pages-release-2026-10-21.md)、[最新接续](docs/session-recovery.md)。下一阶段处理公开状态、前台返回刷新、统一游戏与作品，最后加跟进人彩色姓名标签；不把待开发功能称已上线。
 
 **仍需主办方操作：**现有管理员在[用户管理](https://api.artdico.host/admin/settings/#staff-accounts-title)保存建立 `zhouyufei`、`wangying`；Wallet 等 Apple Developer enrollment／签章证书与真机验收。快捷预填不是已建立账号。EmailJS 用户已确认正常，保留现有受控设置。
 

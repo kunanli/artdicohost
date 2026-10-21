@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPersonWorkspaceApi, isPersonWorkspacePath } from '../functions/person-workspace/handler.mjs';
+import { createInitialContent } from '../src/config/content.mjs';
+import { toPublicContent } from '../shared/content-schema.mjs';
 import { personWorkspaceView, personWorkspaceSteps } from '../src/lib/person-workspace.mjs';
 
 import { fixture, ORIGIN, CONTACT, REGISTRATION, OTHER_REGISTRATION, AT, actor } from './person-workspace-fixture.mjs';
@@ -315,4 +317,17 @@ test('aborted reads do not continue to later sources or return the assembled pri
   const handle = f.api({ loadContacts: async () => { controller.abort(); return f.data.contacts; } });
   const response = await handle(f.request(undefined, { signal: controller.signal }));
   assert.equal(response.status, 503); assert.equal(f.calls.length, 0); assert.doesNotMatch(await response.text(), /合成甲|contact@example/u);
+});
+
+
+test('actual optional-photo public projection remains synchronized in the private person workspace without public duties',async()=>{
+  for(const roles of [undefined,[]]){
+    const f=fixture(),guest={...f.data.content.content.guests[0],portraitId:''};delete guest.publicRoles;if(roles)guest.publicRoles=roles;
+    const content=createInitialContent();content.guests=[guest];f.data.content.content=content;f.data.content.published={revision:4,publishedAt:AT,content:toPublicContent(content)};
+    const {response,body}=await f.read();assert.equal(response.status,200);const profile=body.publicProfile.profiles[0];
+    assert.equal(profile.hasPortrait,false);assert.deepEqual(profile.publicRoles,[]);assert.equal(profile.published,true);assert.equal(profile.publishedMatchesDraft,true);
+    const view=personWorkspaceView(body,{kind:'contact',id:CONTACT});assert.ok(view);const step=personWorkspaceSteps(view,actor().roles).find(item=>item.key==='public');assert.equal(step.state,'complete');
+    f.data.content.revision++;guest.internalNotes='PRIVATE-NEW-NOTE';assert.equal((await f.read()).body.publicProfile.profiles[0].publishedMatchesDraft,true);
+    f.data.content.published.content.guests[0].portraitUrl='/api/public/portraits/';assert.equal((await f.read()).body.publicProfile.profiles[0].publishedMatchesDraft,false,'even an empty photo cannot manufacture an image endpoint');
+  }
 });

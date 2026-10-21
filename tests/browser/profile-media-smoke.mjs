@@ -67,7 +67,7 @@ try{
  await form.locator('[name=title]').fill('合成策展人');await form.locator('[name=bio]').fill('合成嘉宾的经验与分享方向。');await form.locator('[name=website]').fill('https://example.invalid/person');
  await form.locator('[name=publicRoles][value=speaker]').check();await form.locator('[name=publicRoles][value=organizer]').check();await form.locator('[name=status]').selectOption('confirmed');
  await form.locator('[name=publicConsent]').check();await form.locator('[name=title]').fill('合成研究员');assert.equal(await form.locator('[name=publicConsent]').isChecked(),false);await form.locator('[name=publicConsent]').check();
- await page.locator('[data-guest-submit]').click();await page.locator('[data-admin-save]').click();await page.locator('[data-admin-status]').filter({hasText:'草稿已保存'}).waitFor();
+ await page.locator('[data-guest-submit]').click();await page.locator('[data-admin-save-location=header]').click();await page.locator('[data-admin-status]').filter({hasText:'草稿已保存'}).waitFor();
  assert.equal(content.guests[0].internalNotes,'PRIVATE-ORIGINAL-NOTE');assert.deepEqual(content.guests[0].publicRoles,['speaker','organizer']);await page.locator('[data-admin-publish]').click();await page.locator('[data-admin-status]').filter({hasText:'发布成功'}).waitFor();
  assert.doesNotMatch(JSON.stringify(published),/PRIVATE-/u);
  const oriented=await page.evaluate(async()=>{
@@ -89,7 +89,7 @@ try{
  await page.locator('[data-public-guests]').screenshot({path:resolve(evidence,'profile-media-card-mobile.png')});
  await page.goto('https://api.artdico.host/admin/',{waitUntil:'networkidle'});
  await page.locator('[data-admin-guests] button').filter({hasText:'停止公开'}).click();
- await page.locator('[data-admin-save]').click();await page.locator('[data-admin-status]').filter({hasText:'草稿已保存'}).waitFor();
+ await page.locator('[data-admin-save-location=header]').click();await page.locator('[data-admin-status]').filter({hasText:'草稿已保存'}).waitFor();
  assert.equal(content.guests.length,1);assert.equal(content.guests[0].bio,'合成嘉宾的经验与分享方向。');assert.equal(content.guests[0].internalNotes,'PRIVATE-ORIGINAL-NOTE');assert.equal(content.sessions.find(item=>item.id===session.id).guestId,'synthetic-person');assert.equal(content.guests[0].publicConsent,false);
  await page.locator('[data-admin-publish]').click();await page.locator('[data-admin-status]').filter({hasText:'发布成功'}).waitFor();assert.equal(published.content.guests.length,0);
  assert.deepEqual(errors,[]);

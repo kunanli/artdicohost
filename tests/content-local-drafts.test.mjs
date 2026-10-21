@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createInitialContent } from '../src/config/content.mjs';
 import { validateContent } from '../shared/content-schema.mjs';
 import { contentSaveSnapshot } from '../src/lib/admin-save-state.mjs';
-import { contentFormValue,contentLocalDraftValue,contentDraftCopy,CONTENT_DRAFT_SECTIONS,CONTENT_DRAFT_POLICY,contentDraftLocation } from '../src/lib/content-local-drafts.mjs';
+import { contentFormValue,readContentForm,writeContentForm,contentLocalDraftValue,contentDraftCopy,CONTENT_DRAFT_SECTIONS,CONTENT_DRAFT_POLICY,contentDraftLocation } from '../src/lib/content-local-drafts.mjs';
 
 const content = () => validateContent(createInitialContent()).value;
 const bundle = () => ({schemaVersion:1,roleKey:'editor,outreach',content:content(),forms:{},pendingSave:null});
@@ -102,4 +102,22 @@ test('first known rejection derives an editable draft atomically without losing 
   }
   assert.equal(CONTENT_DRAFT_POLICY.rejectPending({...value,section:'not-a-section'}),false);
   const copied=JSON.parse(contentDraftCopy(value));assert.equal(copied.section,'guests');assert.equal(Object.hasOwn(copied,'uncertain'),false);assert.equal(Object.hasOwn(copied,'pendingSave'),false);
+});
+
+test('booth website raw edits and explicit clearing survive form recovery while old raw values remain unchanged', () => {
+  const fields={id:{type:'hidden',value:'booth-synthetic'},website:{type:'url',value:'https://example.invalid/previous'}};
+  const form={elements:{namedItem:name=>fields[name]??null},querySelectorAll:()=>[]};
+  const legacy={id:'booth-synthetic'},original=structuredClone(legacy);
+  assert.deepEqual(contentFormValue('booth',legacy),legacy);writeContentForm(form,'booth',legacy);
+  assert.equal(fields.website.value,'https://example.invalid/previous','an older raw snapshot omitting website must not clear the existing field');
+  assert.deepEqual(legacy,original);assert.equal(Object.hasOwn(legacy,'website'),false);
+  for(const website of ['https://example.invalid/new-path','https://尚未填完','']){
+    fields.website.value=website;const raw=readContentForm(form,'booth');assert.equal(raw.website,website);
+    fields.website.value='different-current-value';writeContentForm(form,'booth',raw);assert.equal(fields.website.value,website);
+    const value=bundle();value.forms.booth={editingId:null,fields:raw,imageNeedsReselect:false};
+    assert.equal(contentLocalDraftValue(value,{kind:'editing'}),true);assert.equal(JSON.parse(contentDraftCopy(value)).unappliedForms.booth.fields.website,website);
+  }
+  const pending=bundle();pending.forms.booth={editingId:null,fields:legacy,imageNeedsReselect:false};pending.pendingSave=contentSaveSnapshot(4,pending.content);
+  const frozen=JSON.stringify(pending);assert.equal(contentLocalDraftValue(pending,{kind:'pending_submission'}),true);assert.equal(JSON.stringify(pending),frozen);
+  assert.equal(Object.hasOwn(pending.forms.booth.fields,'website'),false,'recognizing the field cannot backfill a legacy unknown request');
 });

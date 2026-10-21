@@ -11,7 +11,7 @@ const formSections = Object.freeze({event:'event',guest:'guests',organization:'o
 export const CONTENT_FORM_FIELDS = Object.freeze({
   event: ['title','date','timezone','venue','status','dateStatus','venueStatus','heroDescription','aboutTitle','aboutText','checkInTime','openingTime','endTime','contactEmail','mapUrl'],
   session: ['id','start','end','zone','title','format','speakerName','speakerStatus','guestId','status','internalNotes'],
-  booth: ['id','code','organization','organizationId','project','zone','slotNumber','contactName','contactMethods','description','status','internalNotes'],
+  booth: ['id','code','organization','organizationId','project','zone','slotNumber','contactName','contactMethods','description','website','status','internalNotes'],
   guest: ['id','name','company','ggjRole','portraitId','contactId','title','bio','website','status','internalNotes','publicConsent','publicRoles'],
   showcase: ['id','title','teamName','school','contactName','email','wechat','memberCount','participationForms','responseStatus','materialLinks','summary','coverId','status','publicConsent','sessionId','boothId','internalNotes'],
   organization: ['id','name','logoId','website','participation','status','publicConsent','internalNotes'],

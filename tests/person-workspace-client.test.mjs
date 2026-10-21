@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parsePersonSelection, personWorkspacePath, personWorkspaceView, personWorkspaceActions, personWorkspaceSteps } from '../src/lib/person-workspace.mjs';
+import { volunteersFixture, addVolunteers } from './person-workspace-volunteers-fixture.mjs';
 
 const CONTACT = 'synthetic-person', REGISTRATION = 'a'.repeat(43), AT = '2026-10-21T00:00:00.000Z';
 const selection = { kind: 'contact', id: CONTACT };
@@ -120,4 +121,73 @@ test('public completion requires a published, confirmed, consented profile with 
   value.publicProfile.profiles[0].published = true; value.publicProfile.profiles[0].publicConsent = false; value.publicProfile.profiles[0].publishedMatchesDraft = false;
   value.contact.operations.participationForms = ['attendee']; assert.equal(steps(value).get('public').state, 'review'); assert.match(steps(value).get('public').detail, /旧版公开资料仍在.*显示/u);
   value.publicProfile = { state: 'unavailable', profiles: [], publishedRevision: null, publishedAt: null }; value.availability.publicProfile = 'unavailable'; assert.equal(steps(value).get('public').state, 'review');
+});
+
+test('legacy person responses omit the entire volunteer extension and normalize to unavailable without fabricated zero counts', () => {
+  const view = personWorkspaceView(fixture(), selection);
+  assert.equal(view.permissions.volunteers, false); assert.equal(view.availability.volunteers, 'unavailable');
+  assert.equal(view.revisions.volunteers, null); assert.deepEqual(view.volunteers, { revision: null, entries: [] });
+  for (const key of ['volunteers', 'permissions', 'availability', 'revisions']) {
+    const value = fixture();
+    if (key === 'volunteers') value.volunteers = { revision: null, entries: [] };
+    else value[key].volunteers = key === 'permissions' ? true : key === 'availability' ? 'unavailable' : null;
+    assert.equal(personWorkspaceView(value, selection), null, 'partial extension must not be treated as legacy');
+  }
+});
+
+test('volunteer actions use selected stable identity and require the combined roles independently of response permission', () => {
+  for (const kind of ['contact', 'registration']) {
+    const value = addVolunteers(fixture()); value.selected = { kind, id: kind === 'contact' ? CONTACT : REGISTRATION };
+    const view = personWorkspaceView(value, value.selected); assert.ok(view);
+    for (const roles of [['superadmin'], ['outreach', 'reviewer']]) {
+      assert.equal(personWorkspaceActions(view, roles).find(action => action.key === 'volunteers').href,
+        '/admin/volunteers/#' + kind + '=' + value.selected.id);
+    }
+    for (const roles of [['outreach'], ['reviewer'], ['editor'], []]) assert.equal(personWorkspaceActions(view, roles).some(action => action.key === 'volunteers'), false);
+  }
+  const value = addVolunteers(fixture(), { revision: 2, entries: [] }), view = personWorkspaceView(value, selection);
+  assert.equal(view.availability.volunteers, 'unlinked');
+  assert.ok(personWorkspaceActions(view, ['outreach', 'reviewer']).some(action => action.key === 'volunteers'), 'manual add opens the workspace without writing');
+});
+
+test('volunteer unavailable and restricted states cannot retain previous assignments or claim a source revision', () => {
+  for (const state of ['restricted', 'unavailable']) {
+    const value = addVolunteers(fixture(), { revision: null, entries: [] });
+    value.permissions.volunteers = state !== 'restricted'; value.availability.volunteers = state;
+    assert.ok(personWorkspaceView(value, selection));
+    value.volunteers.entries = volunteersFixture().entries; assert.equal(personWorkspaceView(value, selection), null);
+    value.volunteers.entries = []; value.revisions.volunteers = value.volunteers.revision = 4;
+    assert.equal(personWorkspaceView(value, selection), null);
+  }
+  for (const change of [value => { value.permissions.volunteers = false; }, value => { value.availability.volunteers = 'unlinked'; },
+    value => { value.revisions.volunteers++; }, value => { value.volunteers.entries = []; }, value => { value.volunteers.revision = null; }]) {
+    const value = addVolunteers(fixture()); change(value); assert.equal(personWorkspaceView(value, selection), null);
+  }
+});
+
+test('volunteer projection validation rejects foreign shapes, duplicate IDs, invalid time and excessive assignments', () => {
+  const changes = [value => { value.volunteers.entries[0].workflowStatus = 'attending'; },
+    value => { value.volunteers.entries[0].availability[0].start = '24:00'; }, value => { value.volunteers.entries[0].availability[0].end = '08:00'; },
+    value => { value.volunteers.entries[0].assignments[0].eligible = undefined; }, value => { value.volunteers.entries[0].assignments[0].status = 'ready'; },
+    value => { value.volunteers.entries[0].assignments[0].shiftId = '../shift'; }, value => { value.volunteers.entries[0].assignments[0].end = '09:30'; },
+    value => { value.volunteers.entries[0].assignments[0].issues = ['hidden\u0000text']; }, value => { value.volunteers.entries[0].assignments[0].issues = ['PRIVATE-DIAGNOSTIC']; },
+    value => { value.volunteers.entries[0].assignments[0].issues = ['TIME_CONFLICT', 'TIME_CONFLICT']; },
+    value => { value.volunteers.entries[0].availability = Array(13).fill({ start: '09:00', end: '18:00' }); },
+    value => { value.volunteers.entries[0].assignments[0].positionName = 'x'.repeat(201); },
+    value => { value.volunteers.entries.push(structuredClone(value.volunteers.entries[0])); },
+    value => { const entry = structuredClone(value.volunteers.entries[0]); entry.id = 'another-volunteer'; value.volunteers.entries.push(entry); },
+    value => { value.volunteers.entries[0].assignments = Array.from({ length: 1001 }, (_, index) => ({ ...value.volunteers.entries[0].assignments[0], id: 'assignment-' + index })); }];
+  for (const change of changes) { const value = addVolunteers(fixture()); change(value); assert.equal(personWorkspaceView(value, selection), null); }
+});
+
+test('volunteer browser projection strips extras while preserving per-shift status and independent attendance', () => {
+  const value = addVolunteers(fixture()); value.admission.status = 'waitlisted';
+  value.volunteers.notes = 'PRIVATE-JOURNAL'; value.volunteers.entries[0].notes = 'PRIVATE-VOLUNTEER';
+  value.volunteers.entries[0].availability[0].notes = 'PRIVATE-AVAILABILITY';
+  value.volunteers.entries[0].assignments[0].notes = 'PRIVATE-SHIFT';
+  const view = personWorkspaceView(value, selection);
+  assert.deepEqual(view.volunteers, volunteersFixture()); assert.doesNotMatch(JSON.stringify(view.volunteers), /PRIVATE/u);
+  assert.equal(view.admission.status, 'waitlisted'); assert.equal(view.contact.operations.responseStatus, 'pending');
+  assert.equal(steps(view).get('reply').state, 'pending');
+  assert.equal(personWorkspaceSteps(view, ['superadmin']).length, 5, 'volunteer reply cannot complete attendance or public profile steps');
 });

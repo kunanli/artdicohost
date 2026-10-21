@@ -5,6 +5,11 @@ import { parseTimestamp } from '../registration-api/policy.mjs';
 export const CONTACT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 export const REGISTRATION_ID = /^[A-Za-z0-9_-]{43}$/u;
 export const HISTORY_LIMIT = 200;
+// Minimal person projection deliberately excludes the volunteer journal's detailed
+// source diagnostics. Keep this allowlist aligned with VOLUNTEER_ISSUE_LABELS.
+const VOLUNTEER_ISSUES = ['SOURCE_UNAVAILABLE', 'SOURCE_INELIGIBLE', 'DUPLICATE_PERSON', 'VOLUNTEER_INACTIVE',
+  'VOLUNTEER_NOT_CONFIRMED', 'ADMISSION_NOT_CONFIRMED', 'SHIFT_CANCELLED', 'POSITION_INACTIVE',
+  'CONTENT_LINK_INVALID', 'OUTSIDE_AVAILABILITY', 'TIME_CONFLICT', 'SHIFT_OVER_CAPACITY'];
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && [Object.prototype, null].includes(Object.getPrototypeOf(value));
 const fail = () => { throw new TypeError('Person source is unavailable.'); };
@@ -170,6 +175,41 @@ export function confirmationsSource(value) {
     createdAt: timestamp(item.createdAt, false), updatedAt: timestamp(item.updatedAt, false) }));
   return { revision: revisionValue(value.revision), notices };
 }
+
+/** Selected-person-only volunteer projection. Private notes, source profiles,
+ * roster totals and unrelated people never cross this boundary. */
+export function volunteersSource(value) {
+  if (!plain(value)) fail();
+  const revision = revisionValue(value.revision), assignmentsSeen = new Set();
+  const time = value => {
+    const result = text(value, 5);
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(result)) fail();
+    return result;
+  };
+  const entries = records(value.entries, CONTACT_ID, 500).map(entry => ({
+    id: entry.id,
+    workflowStatus: oneOf(entry.workflowStatus, ['pending', 'invited', 'confirmed', 'declined', 'inactive']),
+    availability: list(entry.availability, 12).map(window => {
+      if (!plain(window)) fail();
+      const start = time(window.start), end = time(window.end);
+      if (end <= start) fail();
+      return { start, end };
+    }),
+    assignments: records(entry.assignments, CONTACT_ID, 1000).map(item => {
+      if (assignmentsSeen.has(item.id) || assignmentsSeen.size >= 1000 || typeof item.eligible !== 'boolean' || !Array.isArray(item.issues)) fail();
+      assignmentsSeen.add(item.id);
+      const start = time(item.start), end = time(item.end);
+      if (end <= start) fail();
+      return { id: item.id, status: oneOf(item.status, ['proposed', 'confirmed', 'cancelled']),
+        shiftId: identifier(item.shiftId), positionId: identifier(item.positionId),
+        positionName: text(item.positionName, 200), zone: oneOf(item.zone, ['A', 'B', 'C', 'other']),
+        location: text(item.location, 300), start, end,
+        shiftStatus: oneOf(item.shiftStatus, ['active', 'cancelled']), eligible: item.eligible,
+        issues: strings(item.issues, VOLUNTEER_ISSUES.length, 40, VOLUNTEER_ISSUES) };
+    }),
+  }));
+  return { revision, entries };
+}
 const descending = (a, b) => (b.updatedAt ?? b.at ?? '').localeCompare(a.updatedAt ?? a.at ?? '') || a.id.localeCompare(b.id);
 export function communicationProjection({ contactRaw, contactId, registrationId, intent, confirmations }) {
   const invitations = (intent?.invitations ?? []).filter(item => item.sourceContactId === contactId && item.registrationId === registrationId)
@@ -196,5 +236,6 @@ export function communicationProjection({ contactRaw, contactId, registrationId,
 export function personPermissions(actor) {
   const roles = Array.isArray(actor?.roles) ? actor.roles : [];
   const contact = roles.includes('superadmin') || roles.includes('outreach'), registration = roles.includes('superadmin') || roles.includes('reviewer');
-  return { contact, registration, invitations: contact, confirmations: registration, arrangements: contact };
+  return { contact, registration, invitations: contact, confirmations: registration, arrangements: contact,
+    volunteers: roles.includes('superadmin') || roles.includes('outreach') && roles.includes('reviewer') };
 }

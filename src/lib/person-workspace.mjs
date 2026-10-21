@@ -1,6 +1,9 @@
 const CONTACT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const REGISTRATION = /^[A-Za-z0-9_-]{43}$/u;
 const STATES = new Set(['available', 'unlinked', 'restricted', 'unavailable']);
+const VOLUNTEER_ISSUES = new Set(['SOURCE_UNAVAILABLE', 'SOURCE_INELIGIBLE', 'DUPLICATE_PERSON', 'VOLUNTEER_INACTIVE',
+  'VOLUNTEER_NOT_CONFIRMED', 'ADMISSION_NOT_CONFIRMED', 'SHIFT_CANCELLED', 'POSITION_INACTIVE',
+  'CONTENT_LINK_INVALID', 'OUTSIDE_AVAILABILITY', 'TIME_CONFLICT', 'SHIFT_OVER_CAPACITY']);
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
 const wellFormed = value => { for (const character of value) { const point = character.codePointAt(0); if (point >= 0xd800 && point <= 0xdfff) return false; } return true; };
 const text = (value, max = 4000) => typeof value === 'string' && value.length <= max * 2 && wellFormed(value) && [...value].length <= max && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value);
@@ -11,6 +14,44 @@ const date = value => value === null || text(value, 80) && (value === '' || Numb
 const id = value => text(value, 100) && /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/u.test(value);
 const nullableId = (value, rule) => value === null || typeof value === 'string' && rule.test(value);
 const lines = (value, keys) => plain(value) && keys.every(key => text(value[key]));
+const volunteerTime = value => typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(value);
+
+function personVolunteers(value) {
+  const supplied = [Object.hasOwn(value, 'volunteers'), Object.hasOwn(value.permissions, 'volunteers'),
+    Object.hasOwn(value.availability, 'volunteers'), Object.hasOwn(value.revisions, 'volunteers')];
+  // Older saved/browser fixtures remain readable; no missing source is called empty.
+  if (supplied.every(present => !present)) return { permission: false, state: 'unavailable', revision: null, value: { revision: null, entries: [] } };
+  if (supplied.some(present => !present)) return null;
+  const permission = value.permissions.volunteers, state = value.availability.volunteers, revision = value.revisions.volunteers, source = value.volunteers;
+  if (typeof permission !== 'boolean' || !STATES.has(state) || !plain(source) || !list(source.entries, 500)
+    || !(revision === null || integer(revision)) || source.revision !== revision
+    || !permission && state !== 'restricted' || permission && state === 'restricted'
+    || ['restricted', 'unavailable'].includes(state) && (revision !== null || source.entries.length)
+    || ['available', 'unlinked'].includes(state) && !integer(revision)
+    || state === 'available' && !source.entries.length || state === 'unlinked' && source.entries.length) return null;
+  const entryIds = new Set(), assignmentIds = new Set(), entries = [];
+  for (const entry of source.entries) {
+    if (!plain(entry) || !CONTACT.test(entry.id ?? '') || entryIds.has(entry.id)
+      || !['pending', 'invited', 'confirmed', 'declined', 'inactive'].includes(entry.workflowStatus)
+      || !list(entry.availability, 12) || !entry.availability.every(window => plain(window) && volunteerTime(window.start) && volunteerTime(window.end) && window.end > window.start)
+      || !list(entry.assignments, 1000)) return null;
+    entryIds.add(entry.id);
+    const assignments = [];
+    for (const item of entry.assignments) {
+      if (!plain(item) || !CONTACT.test(item.id ?? '') || assignmentIds.has(item.id) || assignmentIds.size >= 1000
+        || !['proposed', 'confirmed', 'cancelled'].includes(item.status) || !CONTACT.test(item.shiftId ?? '') || !CONTACT.test(item.positionId ?? '')
+        || !text(item.positionName, 200) || !['A', 'B', 'C', 'other'].includes(item.zone) || !text(item.location, 300)
+        || !volunteerTime(item.start) || !volunteerTime(item.end) || item.end <= item.start || !['active', 'cancelled'].includes(item.shiftStatus)
+        || typeof item.eligible !== 'boolean' || !list(item.issues, VOLUNTEER_ISSUES.size)
+        || !item.issues.every(issue => VOLUNTEER_ISSUES.has(issue)) || new Set(item.issues).size !== item.issues.length) return null;
+      assignmentIds.add(item.id);
+      assignments.push(Object.fromEntries(['id', 'status', 'shiftId', 'positionId', 'positionName', 'zone', 'location', 'start', 'end', 'shiftStatus', 'eligible'].map(key => [key, item[key]])));
+      assignments.at(-1).issues = [...item.issues];
+    }
+    entries.push({ id: entry.id, workflowStatus: entry.workflowStatus, availability: entry.availability.map(window => ({ start: window.start, end: window.end })), assignments });
+  }
+  return { permission, state, revision, value: { revision, entries } };
+}
 
 /** Fragment links contain only an explicit stable record ID, never search/name matching. */
 export function parsePersonSelection(hash) {
@@ -79,9 +120,12 @@ export function personWorkspaceView(value, selection) {
         && typeof item.publicConsent === 'boolean' && typeof item.hasPortrait === 'boolean' && typeof item.published === 'boolean' && typeof item.publishedMatchesDraft === 'boolean' && strings(item.publicRoles, 10))
       || !(publicProfile.publishedRevision === null || integer(publicProfile.publishedRevision)) || !date(publicProfile.publishedAt)
       || publicProfile.state !== 'available' && publicProfile.profiles.length) return null;
+    const volunteering = personVolunteers(value);
+    if (!volunteering) return null;
     // Only the fields below reach the DOM. API additions cannot silently become UI/private links.
-    return { schemaVersion: 1, selected: { ...value.selected }, person: { ...value.person }, linkage: { ...value.linkage }, permissions: { ...value.permissions },
-      availability: { ...value.availability }, revisions: { ...value.revisions }, contact, registration, admission, arrangements, communications, publicProfile };
+    return { schemaVersion: 1, selected: { ...value.selected }, person: { ...value.person }, linkage: { ...value.linkage }, permissions: { ...value.permissions, volunteers: volunteering.permission },
+      availability: { ...value.availability, volunteers: volunteering.state }, revisions: { ...value.revisions, volunteers: volunteering.revision },
+      contact, registration, admission, arrangements, communications, publicProfile, volunteers: volunteering.value };
   } catch { return null; }
 }
 
@@ -99,6 +143,11 @@ export function personWorkspaceActions(view, roles = []) {
     if (roles.includes('editor') && view.contact.profile.contactConsent === 'consented' && view.contact.operations.responseStatus !== 'declined') actions.push({ key: 'guest', label: '管理公开嘉宾资料', href: '/admin/#invitee=' + encodeURIComponent(contactId) });
   }
   if (registrationId && view.permissions.registration) actions.push({ key: 'review', label: '核查报名与住宿', href: '/admin/registrations/#registration=' + encodeURIComponent(registrationId) });
+  if (view.permissions.volunteers && (roles.includes('superadmin') || roles.includes('outreach') && roles.includes('reviewer'))) {
+    const source = view.selected.kind === 'registration' && registrationId ? { kind: 'registration', id: registrationId }
+      : contactId ? { kind: 'contact', id: contactId } : null;
+    if (source) actions.push({ key: 'volunteers', label: '志愿者与分工', href: '/admin/volunteers/#' + source.kind + '=' + encodeURIComponent(source.id) });
+  }
   if (roles.includes('superadmin')) actions.push({ key: 'settings', label: '设置与通知', href: '/admin/settings/' });
   return actions;
 }

@@ -67,7 +67,7 @@ async function saveNearBooth(f){await f.page.locator('[data-admin-save-location=
 async function assertNoPublication(f){assert.equal(f.writes.some(write=>write.path==='/api/admin/content/publish'),false,'saving a draft never publishes');assert.deepEqual(f.unknown,[]);}
 async function noOverflow(page){assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,'no full-page horizontal overflow');}
 
-async function permitReload(f){f.page.removeAllListeners('dialog');f.page.on('dialog',dialog=>dialog.accept());}
+async function permitReload(f){f.page.removeAllListeners('dialog');f.page.on('dialog',async dialog=>{f.dialogs.push(dialog.type());await dialog.accept();});}
 async function localSaved(f){await f.page.locator('[data-admin-local-status]').filter({hasText:'已暂存本机'}).waitFor();}
 try{
   await mkdir(evidence,{recursive:true});

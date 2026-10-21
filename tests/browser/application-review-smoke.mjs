@@ -221,7 +221,7 @@ try {
     assert.equal(f.runtime.messages.length, 1); assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(second.reference_code)).status, 'waitlisted');
     const unreviewed = await f.runtime.seedPublic(pendingFields('合成尚未审核申请'));
     await openReview(f); await f.page.locator('[data-admissions-people]').getByRole('button', { name: '取消并释放名额' }).first().click();
-    await f.page.locator('[data-admissions-status]').filter({ hasText: /候补转正/u }).waitFor();
+    await f.page.locator('[data-admissions-people] tr').filter({ hasText: second.reference_code }).filter({ hasText: /已确认参会名额/u }).waitFor();
     assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(second.reference_code)).status, 'confirmed');
     assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(unreviewed.reference_code)).status, 'pending_review');
     assert.equal(f.runtime.messages.length, 2); assert.equal((await f.runtime.app.registrationService.getAdmissions({ actor: f.runtime.users[0] })).summary.confirmedCount, 1);
@@ -250,6 +250,8 @@ try {
     await f.page.locator('[data-review-approve]').click(); await f.page.locator('[data-review-workspace]').waitFor({ state: 'hidden' });
     assert.equal(await f.page.locator('[data-review-dialog]').isVisible(), false);
     assert.equal(await f.page.locator('[data-admissions-people] tr').count(), 0);
+    assert.equal((await f.page.locator('body').textContent()).includes('合成审核同事申请'), false, 'expired decisions erase applicant text even inside the closed modal');
+    assert.equal(await f.page.locator('[data-review-user]').textContent(), '');
     assert.equal(await f.page.locator('[data-review-login-submit]').isEnabled(), true, 'an expired in-flight decision must not leave the login controls busy');
     assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(pending.reference_code)).status, 'pending_review'); assert.equal(f.runtime.messages.length, 0);
     await f.page.locator('[data-review-login] [name=username]').fill('reviewer');
@@ -259,7 +261,7 @@ try {
     await f.page.locator('[data-admissions-status]').filter({ hasText: /已确认参会名额/u }).waitFor(); assert.equal(f.runtime.messages.length, 1);
     f.expireAdmissionRead(); await f.page.locator('[data-admissions-refresh]').click(); await f.page.locator('[data-review-workspace]').waitFor({ state: 'hidden' });
     assert.equal(await f.page.locator('[data-admissions-people] tr').count(), 0); assert.equal(await f.page.locator('[data-admissions-metrics]').textContent(), '');
-    assert.doesNotMatch(await f.page.locator('body').textContent(), /合成审核同事申请/u);
+    assert.equal((await f.page.locator('body').textContent()).includes('合成审核同事申请'), false, 'read expiry also erases retained applicant text');
     await f.context.close(); reports.push({ reviewerCanReviewWithoutSuperadminTools: true, detailDecisionExpiryClearsAndUnlocksLogin: true, reloginAfterExpiredDecisionWorks: true, sessionExpiryClearsPrivateReviewState: true });
   }
   {

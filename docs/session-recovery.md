@@ -1,5 +1,11 @@
 # 开发接续与验收计划
 
+## 当前发布中：PR #34 已合并，等待正式云端证据（2026-10-21）
+
+[PR #34](https://github.com/kunanli/artdicohost/pull/34) 已合并 main `ddf7a2ea0b9c81d9222aefbef3e5155d7432b8a4`；准确 PR head `12af0bb0550bd90fd1827296bed14b876ec7b430` 的 [39569950865](https://github.com/kunanli/artdicohost/actions/runs/39569950865) 检查成功：877/877、422 文件源码、314 文件 Astro（0 errors／warnings，1 既有 hint）、九页构建、依赖审计及两个 ZIP 离线启动全通过。个人／设置及保存防呆的合成 Chromium 已通过。
+
+正式 [main run 39570671725](https://github.com/kunanli/artdicohost/actions/runs/39570671725) attempt 1 正在进行；尚未宣称已上线。接续先查该运行的 check、完整云生命周期、公开 OSS 三个 job，继续取证，不重复合并或另触发部署。证据分支 `docs/staff-operations-release-evidence-2026-10-21` 从该 main 建立，仅记录验证，不重启业务。实际十阶段私有 OSS、300 人政策与 HTTPS 文件回读成功后，再以新的已上线段落替换这里。
+
 ## 当前开发：人员步骤指引、单人工作页与设置中心（2026-10-21）
 
 分支 `feat/staff-operations-workspace` 从正式图片编辑 main `4a9b49b` 与已保存设置文档接续。用户同意先做设置／通知与单人工作页，随后要求意向人员、嘉宾／讲者、场次与展位串联、直观沟通状态及步骤指引。本轮通过稳定内部 ID 只读整合既有资料，并以实际角色／回复／安排给出下一步；不按姓名邮箱合并，也不在浏览时自动代登记、发送或公开。[操作与契约](staff-operations-workspace.md)、[实施计划](implementation-plan.md)记录范围。

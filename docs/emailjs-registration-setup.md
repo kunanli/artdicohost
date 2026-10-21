@@ -1,5 +1,7 @@
 # support@artdico.co 報名確認信設定
 
+最新回報（2026-10-21）：使用者確認 Email 已正常發送、此部分暫時 OK，接續改為 Apple Wallet 設定。以下保留實際模板與操作流程；此回報不冒充開發端新取得的 FC 狀態或獨立實寄證據。
+
 2026-10-21。根據使用者提供的 EmailJS 畫面，已有 Service `LoginPlan`，SMTP `smtp.feishu.cn`／465／SSL，帳號 `support@artdico.co`。這證明已有設定，尚不代表本次活動已寄信或收件成功。
 
 使用者已保存並提供實際 **Template ID `template_89mgpj9`**。使用者已確認 EmailJS Test It 收到信、寄件人與排版正常；目前沒有由本開發工作修改 FC 或啟用寄件。

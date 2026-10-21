@@ -1,5 +1,9 @@
 # 开发接续与验收计划
 
+## 当前：邮件正常回报与 Apple Wallet 开户指引（2026-10-21）
+
+使用者回報 Email 已正常發送，此部分暫時 OK，轉問 Apple Wallet 是否需要 Apple Business。以使用者回報記錄郵件狀態；本開發工作沒有重新讀取 FC 配置或聲稱新的獨立實寄驗收。Wallet 需要 Apple Developer Program／Pass Type ID／簽章證書，Apple Business Manager 不是這項會員。已依官方資料補上會員選擇、99 USD 年費（依地區幣別）、組織 D-U-N-S／法人核驗及後續入口，見[Wallet 設定](apple-wallet-setup.md)。尚未實際申請帳號、購買會員、取得真實憑證或啟用 Wallet；先完成會員，再接現有受控簽章與 iPhone／Safari 真機驗收。
+
 ## 设置接续：support@artdico.co 自动报名确认信（2026-10-21）
 
 最新：使用者已保存模板並提供 **`template_89mgpj9`**，使用者已確認 Test It 收件、寄件人與排版正常。已確認目前 provider 支援直接 FC 六欄＋寄件開關（完整環境仍須 ≤4096 bytes），初次可先保持 `false`，後台自動通知先停用；若超限使用原加密 bundle 流程。現有 GitHub workflow 不讀 EmailJS Secrets，加入 Secrets 本身不會配置；部署公開桶身分不寫私有配置。開發工作尚未取得 API key、改 FC 或實寄，勿把新 ID 記錄當作已啟用。實際步驟見下方連結。

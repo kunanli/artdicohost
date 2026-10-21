@@ -1,5 +1,9 @@
 # ARTDiCO HOST 实施计划
 
+## 2026-10-21 Apple Wallet 开户与证书接续
+
+用户回报邮件已正常发送、此阶段暂时 OK，转问 Wallet 是否需要 Apple Business。按 Apple 官方当前资料核对：本活动的普通网页票券需要 Apple Developer Program 与 Pass Type ID 签章，不是 Apple Business Manager 设备管理；网页分发无需上架 App。先说明个人／组织会员选择、99 USD 年费与组织 D-U-N-S 等核验条件，再接现有 CSR／证书／私钥／加密 bundle／真机验收流程。仅补操作与恢复记录，不开户、付款、修改生产 Wallet 或发送测试邮件。邮件成功记录为用户回报，不伪造新的独立云端验证。
+
 ## 2026-10-21 设置接续：support@artdico.co 报名确认信
 
 用户已回报实际确认模板 ID `template_89mgpj9`，用户已确认 Test It 收件、寄件人与排版正常。代码复查确认无 bundle locator 时可读六项直接 FC 环境；若完整 map 在既有 4096 bytes 内，可先保留原值并以寄件关闭配置，测试通过后再分步核对 readiness／通知开关。当前 GitHub workflow 不读取 EmailJS Secrets，部署身份也不用于私有桶写入，不能把加入 Secrets 当作已配置；超限继续按已有受控私有桶身份走加密 bundle，不新增 IAM。

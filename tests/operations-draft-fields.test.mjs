@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {captureDraftFields,applyDraftFields,validDraftFields} from '../src/lib/operations-draft-fields.mjs';
+import {captureDraftFields,applyDraftFields,validDraftFields,operationsDraftPage} from '../src/lib/operations-draft-fields.mjs';
 const input=(name,value,type='text')=>({name,value,type,tagName:'INPUT',checked:false});
 const select=(name,options,value)=>({name,value,type:'select-one',tagName:'SELECT',options:options.map(value=>({value}))});
 test('daily-operation draft capture uses an explicit allowlist and omits consent and credentials',()=>{
@@ -17,4 +17,10 @@ test('restore checks every selected exact ID before changing any current field',
 test('restore rejects unknown fields and excessive local records',()=>{
   assert.equal(validDraftFields({notes:'x'.repeat(32001)}),false);assert.equal(validDraftFields({list:Array(101).fill('x')}),false);
   assert.throws(()=>applyDraftFields({elements:[input('name','cloud')]},{password:'value'},['name']),/字段/u);
+});
+
+test('local operation scopes bind the current complete role set before any read',()=>{
+  assert.equal(operationsDraftPage('review',['reviewer','outreach']),operationsDraftPage('review',['outreach','reviewer']));
+  assert.notEqual(operationsDraftPage('review',['reviewer']),operationsDraftPage('review',['editor','publisher','outreach','reviewer']));
+  for(const roles of [[],['reviewer','reviewer'],['unknown'],null])assert.throws(()=>operationsDraftPage('review',roles),/权限/u);
 });

@@ -32,3 +32,10 @@ export function applyDraftFields(form, values, names) {
   }
 }
 
+
+/** A fresh login with changed privileges cannot read an older privilege scope. */
+export function operationsDraftPage(page,roles){
+  const known=['editor','publisher','outreach','reviewer','superadmin'];
+  if(typeof page!=='string'||!Array.isArray(roles)||!roles.length||roles.length>5||new Set(roles).size!==roles.length||roles.some(role=>!known.includes(role)))throw new Error('工作人员权限无法核对。');
+  return page+':roles='+[...roles].sort().join(',');
+}

@@ -1008,8 +1008,8 @@ function openShowcaseEditor(item=null) {
   const form=$('[data-showcase-form]');clearCover();form.reset();fillShowcaseAssignments(item?.organizationId??'');
   const localError=$('[data-showcase-error]');localError.textContent='';localError.hidden=true;
   const id='showcase-'+[...crypto.getRandomValues(new Uint8Array(16))].map(value=>value.toString(16).padStart(2,'0')).join('');
-  const kind=form.elements.namedItem('kind');if(kind){const blank=kind.querySelector('option[value=""]');blank.textContent=item?'学生作品（原记录）':'请选择作品分类';blank.disabled=Boolean(item&&Object.hasOwn(item,'kind'));kind.required=!item;kind.value=item?.kind??'';}
-  const value=item??{id,title:'',teamName:'',school:'',contactName:'',email:'',wechat:'',memberCount:1,participationForms:[],responseStatus:'pending',materialLinks:'',summary:'',coverId:'',status:'pending',publicConsent:false,sessionId:'',boothId:'',internalNotes:''};
+  const kind=form.elements.namedItem('kind');if(kind){const blank=kind.querySelector('option[value=""]');blank.textContent=item?'学生作品（原记录）':'请选择作品分类';blank.disabled=Boolean(item&&Object.hasOwn(item,'kind'));kind.required=!item;kind.value=item?(item.kind??''):'indie';}
+  const value=item??{id,kind:'indie',title:'',teamName:'',school:'',contactName:'',email:'',wechat:'',memberCount:1,participationForms:[],responseStatus:'pending',materialLinks:'',summary:'',coverId:'',status:'pending',publicConsent:false,sessionId:'',boothId:'',internalNotes:''};
   for(const[key,valueText]of Object.entries(value)){
     if(key==='participationForms')continue;
     const field=form.elements.namedItem(key);

@@ -71,6 +71,12 @@ try{
     await f.page.locator('[data-settings-logout]').click();await f.page.locator('[data-settings-login-panel]:visible').waitFor();assert.equal((await draftRecords(f.page)).filter(row=>row.scope.actorId===f.runtime.users[0].id).length,0);
     await f.context.close();reports.push({refreshOffersExplicitNonsecretRestore:true,noPasswordInIndexedDB:true,restoreNeverCreatesAccount:true,logoutErasesActorDrafts:true});
   }
+  {
+    const f=await fixture();await open(f);const{form}=await prepare(f,'zhouyufei');await waitDraft(f.page);
+    const directory=await f.api('/api/admin/users');await f.api('/api/admin/users',{method:'POST',body:{expectedRevision:directory.revision,username:'synthetic-other-tab',label:'合成另一页账号',roles:['reviewer'],active:true,password:'synthetic-other-tab-strong-password'}});
+    await f.page.reload({waitUntil:'networkidle'});const draft=f.page.locator('[data-settings-local-draft=users]');await draft.locator('p').filter({hasText:'后台版本已改变'}).waitFor();assert.equal(await draft.getByRole('button',{name:'恢复本机填写'}).isVisible(),false);assert.equal(await form.locator('button[type=submit]').isDisabled(),true);
+    await draft.getByRole('button',{name:'查看本机内容'}).click();assert.match(await draft.locator('pre').textContent(),/zhouyufei/u);assert.equal(usersWrites(f).length,0);await f.context.close();reports.push({staleCloudDraftReadOnly:true,noOverwriteOrAutomaticCreate:true});
+  }
   for(const mode of['lost','malformed']){
     const f=await fixture({lostAck:mode==='lost',badAck:mode==='malformed'});await open(f);const{form}=await prepare(f,'zhouyufei');await form.locator('button[type=submit]').click();await f.page.locator('[data-user-unknown]:visible').waitFor();
     assert.equal(usersWrites(f).length,1);assert.equal(await f.page.locator('[data-user-credentials]').isVisible(),false);assert.equal(await form.locator('[name=password]').inputValue(),'');

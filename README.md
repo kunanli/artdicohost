@@ -2,7 +2,7 @@
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
 
-2026-10-21「学生、精简申请与人工审核」已上线 [PR #37](https://github.com/kunanli/artdicohost/pull/37)／main `7ab7d94`。1065 项 PR／main 检查、真实私有 OSS、300 人政策及 27/27 HTTPS 通过，19:40:43（UTC+08）全成功。[操作](docs/public-application-review.md)、[证据](docs/application-release-2026-10-21.md)。接续[本机草稿、简化界面与协作账号](docs/usability-autosave-accounts.md)，之后继续新版邀请函和字体。
+2026-10-21「本机草稿、简化界面与协作账号」已上线 [PR #38](https://github.com/kunanli/artdicohost/pull/38)／main `19fe621`。准确 PR／main 1131 项、真实私有 OSS、300 人政策及 28/28 HTTPS 通过，20:44:48（UTC+08）完成。[操作](docs/usability-autosave-accounts.md)、[证据](docs/usability-release-2026-10-21.md)、[验收](docs/morning-acceptance.md)。接续新版邀请函、上传字体与私人 PNG；协作者真实账号须管理员在已上线入口保存建立。
 
 2026-10-21 人员步骤指引、个人工作页、设置与通知中心及内容保存防呆已上线 [PR #34](https://github.com/kunanli/artdicohost/pull/34)／main `ddf7a2e`。877 项本机／PR／main 检查、真私有 OSS、300 人政策及 26/26 HTTPS 回读通过，16:45:43（UTC+08）全成功；[完整发布证据](docs/staff-operations-release-2026-10-21.md)、[人员与保存操作](docs/staff-operations-workspace.md)。
 

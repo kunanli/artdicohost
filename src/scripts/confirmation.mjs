@@ -1,3 +1,4 @@
+import { renderInvitation, invitationPngBlob } from '../lib/invitation-renderer.mjs';
 import { confirmationToken, confirmationLink, confirmationEmailMessage, confirmationStatusLabels, createConfirmationClient, confirmationInvitationFacts, prepareConfirmationInvitation, CONFIRMATION_INVITATION_FILENAME } from '../lib/confirmation-client.mjs';
 
 const root = document.querySelector('[data-confirmation-page]');
@@ -71,7 +72,7 @@ if (root) {
     clearInvitation();controls();$('[data-confirmation-action-status]').textContent='正在核对并准备邀请函…';
     try{
       const result=await prepareConfirmationInvitation({receiptToken,initial,read:client.read,isCurrent,signal,generate:async settings=>{
-        const {renderInvitation,invitationPngBlob}=await import('../lib/invitation-renderer.mjs');if(!isCurrent())throw new Error('已取消生成。');
+        if(!isCurrent())throw new Error('已取消生成。');
         const canvas=document.createElement('canvas');canvases.add(canvas);
         try{await renderInvitation(canvas,settings);if(!isCurrent())throw new Error('已取消生成。');const blob=await invitationPngBlob(canvas);if(!isCurrent())throw new Error('已取消生成。');return blob;}
         finally{canvas.width=0;canvas.height=0;canvases.delete(canvas);}

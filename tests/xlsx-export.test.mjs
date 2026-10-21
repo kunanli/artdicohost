@@ -82,11 +82,13 @@ test('separate contacts Excel includes unconverted and declined people, preserve
   const first=await store.createContact(0,{name:'合成未代登记者',organization:'合成机构',email:'synthetic@example.invalid',contactConsent:'consented'},'synthetic-staff');
   await store.createContact(1,{name:'合成拒绝者',organization:'合成机构',contactConsent:'declined'},'synthetic-staff');
   const session=content.sessions[0];await store.saveOperations(first.contact.id,2,{...first.contact.operations,participationForms:['speaker','organizer'],sessionIds:[session.id],sessionRoles:[{sessionId:session.id,roles:['speaker','organizer']}]},'synthetic-staff');
+  await store.saveProfile(first.contact.id,3,{name:'合成更正姓名'},'synthetic-staff');
   const before=await store.read();let loads=0;
   const api=createContactsXlsxApi({enabled:true,auth,contactsStore:store,loadContent:async()=>{loads++;return {revision:5,content};},clock:()=>Date.parse(AT)});
-  assert.equal((await api(request('/api/admin/contacts/export.xlsx',{role:'reviewer',body:{expectedRevision:3}}))).status,403);assert.equal(loads,0);
-  const response=await api(request('/api/admin/contacts/export.xlsx',{role:'outreach',body:{expectedRevision:3,includeContact:true,includeAnswers:true}}));assert.equal(response.status,200);
-  const bytes=Buffer.from(await response.arrayBuffer()),rows=await table(bytes,'全部筹备人员');assert.equal(rows.length,3);assert.equal(cell(rows,'姓名'),'合成未代登记者');assert.equal(cell(rows,'联络授权',2),'declined');assert.match(cell(rows,'逐场次职责'),/研讨会组织者/u);
-  const after=await store.read();assert.equal(after.revision,4);assert.deepEqual(after.contacts,before.contacts);const event=(await journal.read()).value.audit.at(-1);assert.equal(event.action,'export_contacts');assert.equal(event.workbookSha256,digest(bytes));
-  assert.equal((await api(request('/api/admin/contacts/export.xlsx',{role:'outreach',body:{expectedRevision:3}}))).status,409);
+  assert.equal((await api(request('/api/admin/contacts/export.xlsx',{role:'reviewer',body:{expectedRevision:4}}))).status,403);assert.equal(loads,0);
+  const response=await api(request('/api/admin/contacts/export.xlsx',{role:'outreach',body:{expectedRevision:4,includeContact:true,includeAnswers:true}}));assert.equal(response.status,200);
+  const bytes=Buffer.from(await response.arrayBuffer()),rows=await table(bytes,'全部筹备人员');assert.equal(rows.length,3);assert.equal(cell(rows,'姓名'),'合成更正姓名');assert.equal(cell(rows,'联络授权',2),'declined');assert.match(cell(rows,'逐场次职责'),/研讨会组织者/u);
+  const original=await table(bytes,'首次保存原件');assert.equal(cell(original,'name'),'合成未代登记者');assert.equal(cell(original,'email'),'synthetic@example.invalid');
+  const after=await store.read();assert.equal(after.revision,5);assert.deepEqual(after.contacts,before.contacts);const event=(await journal.read()).value.audit.at(-1);assert.equal(event.action,'export_contacts');assert.equal(event.workbookSha256,digest(bytes));
+  assert.equal((await api(request('/api/admin/contacts/export.xlsx',{role:'outreach',body:{expectedRevision:4}}))).status,409);
 });

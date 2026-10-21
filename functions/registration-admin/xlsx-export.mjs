@@ -106,12 +106,16 @@ export function contactsWorkbook({ contacts, content, contactRevision, contentRe
   const sheets = [{ name: '全部筹备人员', headers: ['联系人编号', '姓名', '显示姓名', '机构', '职位', '城市', '原身份', '原兴趣', '联络授权', '来源行号', '实际参与角色', '本人实际回复', '筹备负责人', '场次与时间', '逐场次职责', '展位与组织', ...(includeContact ? ['邮箱', '微信', '电话'] : []), ...(includeAnswers ? ['筹备备注'] : [])],
     rows: contacts.map(contact => [contact.id, contact.profile.name, contact.profile.displayName, contact.profile.organization, contact.profile.position, contact.profile.city, list(contact.profile.categories).join(' / '), list(contact.profile.interests).join(' / '), contact.profile.contactConsent, contact.source.rowId,
       ...arrangementValues(contact, content), ...(includeContact ? [contact.profile.email, contact.profile.wechat, contact.profile.phone] : []), ...(includeAnswers ? [contact.operations.notes] : [])].map(value)) }];
-  if (includeAnswers) sheets.push(answerSheet('已保存意向回答', contacts, includeContact, contact => contact.profile, contact => contact.id));
+  if (includeAnswers) {
+    sheets.push(answerSheet('已保存意向回答', contacts, includeContact, contact => contact.profile, contact => contact.id));
+    sheets.push(answerSheet('首次保存原件', contacts, includeContact, contact => ({ _原件状态: contact.sourceProfile ? '已保留首次保存原件' : '旧记录未附首次原件，未以现况冒充', ...(contact.sourceProfile ?? {}) }), contact => contact.id));
+  }
   sheets.push({ name: '资料说明', headers: ['项目', '说明'], rows: [
     ['导出范围', '全部已保存联系人，包含尚未代登记、拒绝联络及婉拒者；不套用报名筛选。'], ['导出记录数', contacts.length], ['导出时间 UTC', exportedAt], ['联系人修订（导出前）', contactRevision], ['内容修订', contentRevision],
     ['联络字段', includeContact ? '主动选择包含结构化邮箱、微信及电话。' : '不包含结构化邮箱、微信及电话。'], ['完整回答', includeAnswers ? '主动选择已保存意向回答与筹备备注；自由文本可能含联络信息。' : '不包含完整回答及筹备备注。'],
     ['资料与状态保留', '角色、回复及分配改变不会删除原报名；本文件保留当前已保存资料，拒绝状态不等于已擦除，不能将导出用于向拒绝者发信。'],
     ['名额', '联系人不等于确认参会；实际名额须在报名与名额后台分别核对。'], ['安全使用', '所有单元格均为文字，公式样式原文不作为公式执行。导出审计成功后才返回下载；不创建公开链接。'],
+    ['首次保存原件', '完整回答另列首次保存快照。旧记录缺少该快照时明确标记，不以可能已经更正的现况填成原件。'],
   ].map(row => row.map(value)) });
   try { return createXlsxWorkbook(sheets); } catch { fail('CAPACITY_REACHED'); }
 }

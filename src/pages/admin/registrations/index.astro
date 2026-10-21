@@ -2,6 +2,7 @@
 import SiteLayout from '../../../layouts/SiteLayout.astro';
 import StaffSettings from '../../../components/StaffSettings.astro';
 import StaffAdmissions from '../../../components/StaffAdmissions.astro';
+import StaffDeliverySettings from '../../../components/StaffDeliverySettings.astro';
 import {registrationSchema} from '../../../../shared/registration-schema.mjs';
 import '../../../styles/admin.css';
 import '../../../styles/registration-review.css';
@@ -21,6 +22,7 @@ const accommodation=[['not_requested','未申请'],['requested','已申请'],['p
         <div class="ah-admin-page-heading"><div><span class="ah-admin-eyebrow">PEOPLE, WITH CONTEXT</span><h1 id="review-title">报名与审核</h1><p>原始填写资料保留，内部核查单独保存；一般参会、讲者、展位与住宿分别确认。</p></div><button class="ah-admin-button" type="button" data-review-refresh>刷新已保存记录</button></div>
         <div class="review-metrics" data-review-metrics></div>
         <StaffAdmissions />
+        <StaffDeliverySettings />
         <section class="ah-admin-panel"><div class="ah-admin-section-heading"><div><h2>查找与分类</h2><p>多身份属于同一份报名，分类数量不直接相加为总人数。</p></div></div>
           <form class="review-filters" data-review-filters><div class="ah-admin-field"><label for="review-query">姓名 / 机构 / 报名编号</label><input id="review-query" name="query" type="search" maxlength="200" /></div><div class="ah-admin-field"><label for="review-city">城市</label><input id="review-city" name="city" maxlength="100" /></div><div class="ah-admin-field"><label for="review-category">身份类别</label><select id="review-category" name="category"><option value="">全部身份</option>{registrationSchema.identityOptions.map(item=><option value={item.value}>{item.label}</option>)}</select></div><div class="ah-admin-field"><label for="review-status-filter">审核状态</label><select id="review-status-filter" name="status"><option value="">全部状态</option>{statuses.map(([value,label])=><option value={value}>{label}</option>)}</select></div><div class="ah-admin-field"><label for="review-accommodation-filter">住宿审核</label><select id="review-accommodation-filter" name="accommodation"><option value="">全部住宿状态</option>{accommodation.map(([value,label])=><option value={value}>{label}</option>)}</select></div><div class="ah-admin-field"><label for="review-attendance">到场意向</label><select id="review-attendance" name="attendance"><option value="">全部意向</option><option value="expected">预计到场</option><option value="uncertain">尚待确定</option><option value="unavailable">暂无法到场</option></select></div><div class="review-filter-actions"><button class="ah-admin-button ah-admin-primary" type="submit">应用筛选</button><button class="ah-admin-button" type="reset">清除筛选</button></div></form>
           <div class="review-results"><p data-review-result-count role="status" aria-live="polite"></p><button class="ah-admin-button" data-review-next type="button" hidden>下一页</button></div>

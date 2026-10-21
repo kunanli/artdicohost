@@ -35,7 +35,8 @@ export function prepareBoothDraft(content, { boothId = null, slotNumber, origina
 /** Keep follow-up, consent and actual reply unchanged when adjusting private allocations. */
 export function prepareContactAssignments(contact, { sessionIds, boothIds }, content) {
   if (!ID.test(contact?.id ?? '') || contact.profile?.contactConsent === 'declined' || contact.operations?.responseStatus === 'declined') throw new Error('已拒绝联络或出席的对象不能新增安排。');
-  const checked = validateContactOperations({ ...clone(contact.operations), sessionIds, boothIds }, content);
+  const sessionRoles = (contact.operations.sessionRoles ?? []).filter(entry => Array.isArray(sessionIds) && sessionIds.includes(entry.sessionId));
+  const checked = validateContactOperations({ ...clone(contact.operations), sessionIds, boothIds, sessionRoles }, content);
   if (!checked.valid) throw new Error([...new Set(Object.values(checked.errors))].join(' '));
   return checked.value;
 }

@@ -1,5 +1,5 @@
 import { contentSchema } from './content-schema.mjs';
-import { PARTICIPATION_FORMS } from './contacts-schema.mjs';
+import { PARTICIPATION_FORMS, SESSION_ROLES } from './contacts-schema.mjs';
 
 const CAPACITY = 15;
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
@@ -46,6 +46,15 @@ function forms(value, allowed = PARTICIPATION_FORMS) {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > allowed.length || Array.from(value).some(item => !allowed.includes(item)) || new Set(value).size !== value.length) throw new TypeError('参与形式无效。');
   return [...value];
+}
+function sessionDuties(value, sessionIds) {
+  const seen = new Set();
+  return list(value, 50, true).map(entry => {
+    const sessionId = id(own(entry, 'sessionId')), roles = forms(own(entry, 'roles'), SESSION_ROLES);
+    if (!roles.length || !sessionIds.includes(sessionId) || seen.has(sessionId)) throw new TypeError('场次职责关联无效。');
+    seen.add(sessionId);
+    return { sessionId, roles };
+  });
 }
 function indexed(items) {
   const result = new Map();
@@ -108,7 +117,8 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
     if (!plain(profile) || !plain(operations)) throw new TypeError('人员显示资料无效。');
     return { id: id(own(item, 'id')), name: text(own(profile, 'displayName'), 120) || text(own(profile, 'name'), 120), organization: text(own(profile, 'organization'), 300),
       responseStatus: status(own(operations, 'responseStatus'), ['pending', 'attending', 'declined']), participationForms: forms(own(operations, 'participationForms')),
-      sessionIds: identifiers(own(operations, 'sessionIds')), boothIds: identifiers(own(operations, 'boothIds')) };
+      sessionIds: identifiers(own(operations, 'sessionIds')), boothIds: identifiers(own(operations, 'boothIds')),
+      sessionRoles: sessionDuties(own(operations, 'sessionRoles'), identifiers(own(operations, 'sessionIds'))) };
   });
   const sessionById = indexed(sessions), boothById = indexed(booths), guestById = indexed(guests), contactById = indexed(people);
   indexed(teams);
@@ -144,8 +154,8 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
       : booth.slotNumber ? String(booth.slotNumber).padStart(2, '0') + '号位置' : '尚未指定位置',
     booth: { ...booth }, people: [], teams: [], warnings: [] }]));
   const activePeople = new Map(), activeTeams = new Map();
-  function addPerson(row, person, active) {
-    if (!row.people.some(item => item.id === person.id)) row.people.push(person);
+  function addPerson(row, person, active, rolesInSession = []) {
+    if (!row.people.some(item => item.id === person.id)) row.people.push(rolesInSession.length ? {...person,rolesInSession:[...rolesInSession]} : person);
     if (active) activePeople.set(person.id, person);
     if (person.responseStatus === 'declined') warn(row.warnings, 'PERSON_DECLINED', person.id, (person.name || person.id) + '：已回复不出席，仍有安排需要核对。');
     if (person.responseStatus === 'pending') warn(row.warnings, 'PERSON_REPLY_PENDING', person.id, (person.name || person.id) + '：尚待实际出席回复，不代表已确认参加。');
@@ -164,7 +174,7 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
       for (const reference of references) {
         const record = records.get(reference), row = rows.get(reference);
         if (!record) { warn(null, 'MISSING_' + kind + '_REFERENCE', contact.id, (guestByContact.get(contact.id)?.name || contact.name || contact.id) + '：关联的' + (kind === 'SESSION' ? '场次' : '展位') + '已不存在，请重新核对。'); continue; }
-        addPerson(row, contactPerson(contact), record.status !== 'cancelled');
+        addPerson(row, contactPerson(contact), record.status !== 'cancelled',kind==='SESSION'?(contact.sessionRoles.find(entry=>entry.sessionId===reference)?.roles??[]):[]);
         if (record.status === 'cancelled') warn(row.warnings, 'CANCELLED_' + kind + '_ASSIGNMENT', contact.id, '人员仍关联已取消的安排；不计入有效安排人数。');
       }
     }

@@ -1,6 +1,7 @@
 import { parseContactImport, WORKBOOK_SOURCE_KEY, sourceLabels } from '../../shared/contact-import.mjs';
 import { renderInvitation, invitationPngBlob, invitationFilename } from '../lib/invitation-renderer.mjs';
 import { EDITABLE_CONTACT_FIELDS } from '../../shared/contact-editor.mjs';
+import { SESSION_ROLES, SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
 import { eventConfig } from '../config/event.mjs';
 import { contactProgress, summarizeContactProgress, invitationProgressLabels, contactDeclined } from '../../shared/organizer-progress.mjs';
 
@@ -20,6 +21,7 @@ const selectedContacts = new Set();
 let visibleContactIds = [];
 let pendingContactId=null,sessionGeneration=0;
 let batchDownloadUrl = null;
+const privateExportUrls = new Set();
 if(location.hash.startsWith('#contact=')){try{const id=decodeURIComponent(location.hash.slice(9));if(/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(id))pendingContactId=id;}catch{}history.replaceState(null,'',location.pathname+location.search);}
 const consentLabels = { unknown: '尚未核实', consented: '已明确同意联络', declined: '不同意联络' };
 
@@ -70,6 +72,8 @@ function lock() {
   for (const button of document.querySelectorAll('[data-profile-close]')) button.disabled = busy;
   $('[data-contact-save]').disabled = busy || !permitted();
   $('[data-contact-fields]').disabled = busy || !permitted();
+  $('[data-contacts-export]').disabled = busy || !permitted() || !features.contactXlsxExport;
+  for(const option of document.querySelectorAll('[data-contacts-export-contact],[data-contacts-export-answers]'))option.disabled=busy||!permitted()||!features.contactXlsxExport;
   for (const field of document.querySelectorAll('[data-invitation-form] input,[data-invitation-form] select')) field.disabled = busy || !permitted();
   $('[data-import-confirm]').disabled = busy || !permitted() || !features.contactImport || !importPreview?.canCommit || !$('[data-import-source-confirm]').checked || !!importPreview?.summary.possibleDuplicates && !$('[data-import-duplicates]').checked;
   $('[data-invitation-download]').disabled = busy || !renderedSettings || !mayInvite(contactById(invitationContactId));
@@ -121,6 +125,8 @@ function clearImport() {
 }
 function clearPrivateState() {
   sessionGeneration+=1;
+  for(const url of privateExportUrls)URL.revokeObjectURL(url);privateExportUrls.clear();
+  $('[data-contacts-export-contact]').checked=false;$('[data-contacts-export-answers]').checked=false;$('[data-contacts-export-panel]').hidden=true;
   clearBatchResult();
   selectedContacts.clear();intentState=null;visibleContactIds=[];
   user = null; csrfToken = ''; revision = 0; contacts = []; content = null; communications = null; features = { contactImport: false, communicationsPreview: false };
@@ -165,17 +171,20 @@ function clearPrivateState() {
   if ($('[data-contact-dialog]').open) $('[data-contact-dialog]').close();
 }
 async function loadWorkspace() {
+  const generation=sessionGeneration;
   if (!permitted()) throw new Error('此账号没有邀约管理权限，请由维护人员为账号配置 outreach 权限。');
   const state = await request('/api/admin/contacts');
   const program = await request('/api/admin/planning');
-  const nextFeatures = { contactImport: program.features?.contactImport === true, communicationsPreview: program.features?.communicationsPreview === true, intentInvitations: program.features?.intentInvitations === true, protectedContactImport: program.features?.protectedContactImport === true, batchInvitations: program.features?.batchInvitations === true };
+  const nextFeatures = { contactImport: program.features?.contactImport === true, communicationsPreview: program.features?.communicationsPreview === true, intentInvitations: program.features?.intentInvitations === true, protectedContactImport: program.features?.protectedContactImport === true, batchInvitations: program.features?.batchInvitations === true, contactXlsxExport: program.features?.contactXlsxExport === true };
   const nextCommunications = nextFeatures.communicationsPreview ? await request('/api/admin/communications') : null;
+  const nextIntent = nextFeatures.intentInvitations ? await request('/api/admin/intent-invitations').catch(()=>null) : null;
+  if(generation!==sessionGeneration||!permitted())throw new Error('会话已改变，未载入旧私人名单。');
   revision = state.revision; contacts = state.contacts; content = program.content;
-  features = nextFeatures; communications = nextCommunications;
-  intentState = nextFeatures.intentInvitations ? await request('/api/admin/intent-invitations').catch(()=>null) : null;
+  features = nextFeatures; communications = nextCommunications; intentState=nextIntent;
   for(const id of selectedContacts)if(!contacts.some(contact=>contact.id===id))selectedContacts.delete(id);
   $('[data-contacts-conversion-note]').textContent = intentState ? '将已核对的既有意向登记为工作人员代登记，保留原始来源；不会代替申请人的网站隐私同意，也不会自动发送邀请。' : '报名转换服务尚未就绪；现有名单、跟进与现场安排仍可分别维护。';
   $('[data-contacts-import-panel]').hidden = !features.contactImport;
+  $('[data-contacts-export-panel]').hidden = !features.contactXlsxExport;
   $('[data-communications-panel]').hidden = !features.communicationsPreview;
   if (!features.contactImport) clearImport();
   $('[data-contacts-login-panel]').hidden = true;
@@ -244,7 +253,8 @@ function render() {
       const record=list.find(entry=>entry.id===id);
       const warning=!record||record.status==='cancelled';
       const label=!record?(key==='sessionIds'?'场次已删除 · 请核对':'展位已删除 · 请核对'):key==='sessionIds'?record.start+'–'+record.end+' / '+record.zone+'区 · '+record.title:record.code+' / '+record.zone+'区 · '+(record.organization||'待确认');
-      arrangements.append(node('span',label+(record?.status==='cancelled'?'（已取消）':''),'contacts-tag'+(warning?' contacts-tag-warning':'')));
+      const duties=key==='sessionIds'?(item.operations.sessionRoles??[]).find(entry=>entry.sessionId===id)?.roles??[]:[];
+      arrangements.append(node('span',label+(duties.length?' · 本场：'+duties.map(role=>SESSION_ROLE_LABELS[role]||role).join('、'):'')+(record?.status==='cancelled'?'（已取消）':''),'contacts-tag'+(warning?' contacts-tag-warning':'')));
     }
     if(!arrangements.childNodes.length)arrangements.append(node('small','尚未安排'));
     row.append(arrangements);
@@ -301,7 +311,18 @@ function openContact(item){
   for(const input of form.querySelectorAll('[name=participationForms]'))input.checked=(item.operations.participationForms??[]).includes(input.value);
   for(const [key,list,target]of[['sessionIds',content.sessions,'[data-contact-sessions]'],['boothIds',content.booths,'[data-contact-booths]']]){
     const holder=$(target);holder.replaceChildren();
-    for(const record of list){const label=node('label');const input=node('input');input.type='checkbox';input.name=key;input.value=record.id;input.checked=record.status!=='cancelled'&&item.operations[key].includes(record.id);input.disabled=record.status==='cancelled';label.append(input,document.createTextNode(key==='sessionIds'?record.start+'–'+record.end+' / '+record.zone+' 区 · '+record.title+(record.status==='cancelled'?'（已取消）':''):record.code+' · '+(record.organization||'待确认')+' · '+(record.project||'待确认')));holder.append(label);}
+    for(const record of list){
+      const choice=node('div',undefined,'contacts-session-choice'),label=node('label'),input=node('input');
+      input.type='checkbox';input.name=key;input.value=record.id;input.checked=record.status!=='cancelled'&&item.operations[key].includes(record.id);input.disabled=record.status==='cancelled';
+      label.append(input,document.createTextNode(key==='sessionIds'?record.start+'–'+record.end+' / '+record.zone+' 区 · '+record.title+(record.status==='cancelled'?'（已取消）':''):record.code+' · '+(record.organization||'待确认')+' · '+(record.project||'待确认')));choice.append(label);
+      if(key==='sessionIds'&&record.status!=='cancelled'){
+        const duties=node('fieldset',undefined,'contacts-session-roles');duties.dataset.sessionRoles=record.id;duties.append(node('legend','这场的职责（可多选）'));
+        const selected=(item.operations.sessionRoles??[]).find(entry=>entry.sessionId===record.id)?.roles??[];
+        for(const role of SESSION_ROLES){const roleLabel=node('label'),box=node('input');box.type='checkbox';box.name='sessionRoles:'+record.id;box.value=role;box.checked=selected.includes(role);roleLabel.append(box,document.createTextNode(SESSION_ROLE_LABELS[role]));duties.append(roleLabel);}
+        const sync=()=>{duties.disabled=!input.checked;duties.hidden=!input.checked;};input.addEventListener('change',sync);sync();choice.append(duties);
+      }
+      holder.append(choice);
+    }
     const missing=item.operations[key].filter(id=>!list.some(record=>record.id===id));
     if(item.operations[key].some(id=>list.some(record=>record.id===id&&record.status==='cancelled')))holder.append(node('p','原安排含已取消项目。本次保存将移除该关联，请核对。','contacts-empty-hint'));
     if(missing.length)holder.append(node('p','有 '+missing.length+' 条原安排已删除，请核对后重新选择。','contacts-empty-hint'));
@@ -453,6 +474,19 @@ $('[data-import-confirm]').addEventListener('click',()=>action(async()=>{
   revision=result.revision;contacts=result.contacts;const summary=result.summary;clearImport();render();
   announce('已确认写入 '+summary.new+' 位，已有 '+summary.unchanged+' 位保持不变。尚未自动代登记、生成邀请或确认出席。');
 }));
+$('[data-contacts-export]').addEventListener('click',()=>action(async()=>{
+  if(!permitted()||!features.contactXlsxExport)return;
+  const generation=sessionGeneration,isCurrent=()=>generation===sessionGeneration&&permitted();
+  const body={expectedRevision:revision,includeContact:$('[data-contacts-export-contact]').checked,includeAnswers:$('[data-contacts-export-answers]').checked};
+  try{
+    const {downloadPrivateXlsx}=await import('../lib/xlsx-download.mjs');
+    if(!isCurrent())return;
+    const result=await downloadPrivateXlsx({path:'/api/admin/contacts/export.xlsx',body,csrfToken,filename:'artdico-all-contacts.xlsx',isCurrent,onPrivateUrl:url=>{if(!isCurrent()){URL.revokeObjectURL(url);return;}privateExportUrls.add(url);setTimeout(()=>privateExportUrls.delete(url),15000);}});
+    if(!isCurrent())return;
+    revision=result.revision;
+    announce('完整人员 Excel 已准备下载，共 '+result.count+' 位；原始资料及当前未保存编辑均保留。');
+  }catch(error){if(generation!==sessionGeneration)return;if(error.status===401)clearPrivateState();throw error;}
+}));
 $('[data-contact-new]').addEventListener('click',()=>openProfile());
 for(const button of document.querySelectorAll('[data-profile-close]'))button.addEventListener('click',closeProfile);
 $('[data-profile-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeProfile();});
@@ -472,7 +506,7 @@ $('[data-profile-form]').addEventListener('submit',event=>{
 $('[data-contact-form]').addEventListener('input',()=>{operationsDirty=true;});
 for(const button of document.querySelectorAll('[data-contact-close]'))button.addEventListener('click',closeContact);
 $('[data-contact-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeContact();});
-$('[data-contact-form]').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;if(!form.reportValidity())return;const data=new FormData(form);action(async()=>{const operations=Object.fromEntries(['owner','priority','followUpAt','notes','responseStatus'].map(key=>[key,data.get(key)||'']));operations.sessionIds=data.getAll('sessionIds');operations.boothIds=data.getAll('boothIds');operations.participationForms=data.getAll('participationForms');try{const result=await request('/api/admin/contacts/'+encodeURIComponent(currentContactId),{method:'PUT',body:JSON.stringify({expectedRevision:revision,operations})});updateContact(result);operationsDirty=false;$('[data-contact-dialog]').close();announce('跟进与安排已保存。此操作没有改变公开讲者或展位名单。');}catch(error){$('[data-contact-error]').textContent=error.message;$('[data-contact-error]').hidden=false;$('[data-contact-error]').focus();throw error;}});});
+$('[data-contact-form]').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;if(!form.reportValidity())return;const data=new FormData(form);action(async()=>{const operations=Object.fromEntries(['owner','priority','followUpAt','notes','responseStatus'].map(key=>[key,data.get(key)||'']));operations.sessionIds=data.getAll('sessionIds');operations.boothIds=data.getAll('boothIds');operations.participationForms=data.getAll('participationForms');operations.sessionRoles=operations.sessionIds.map(sessionId=>({sessionId,roles:data.getAll('sessionRoles:'+sessionId)})).filter(entry=>entry.roles.length);try{const result=await request('/api/admin/contacts/'+encodeURIComponent(currentContactId),{method:'PUT',body:JSON.stringify({expectedRevision:revision,operations})});updateContact(result);operationsDirty=false;$('[data-contact-dialog]').close();announce('职责、跟进与安排已保存。原始问卷及报名保留，名额与公开名单仍分别确认。');}catch(error){$('[data-contact-error]').textContent=error.message;$('[data-contact-error]').hidden=false;$('[data-contact-error]').focus();throw error;}});});
 $('[data-invitation-form]').addEventListener('input',event=>{if(!['recipientName','date','time','venue','confirmed'].includes(event.target.name))return;renderedSettings=null;$('[data-invitation-image]').hidden=true;$('[data-invitation-image]').removeAttribute('src');$('[data-invitation-sent-confirm]').checked=false;clearCommunicationPreviews();lock();});
 $('[data-invitation-form]').addEventListener('submit',event=>{event.preventDefault();if(!event.currentTarget.reportValidity())return;action(async()=>{requireInviteConsent();const settings=settingsFromForm();await renderInvitation($('[data-invitation-canvas]'),{templateUrl:'/invitations/template-blank.png',...settings});renderedSettings=settings;$('[data-invitation-canvas]').dataset.ready='true';$('[data-invitation-image]').src=$('[data-invitation-canvas]').toDataURL('image/png');$('[data-invitation-image]').hidden=false;$('[data-invitation-caption]').textContent=settings.recipientName+' · '+(settings.confirmed?'正式版预览':'暂定版预览')+' · 仅预览，不会发送';announce('邀请函预览已生成。下载只保存图片，不会发送给对象。');});});
 $('[data-invitation-download]').addEventListener('click',()=>action(async()=>{requireInviteConsent();if(!renderedSettings||!invitationContactId)throw new Error('请先生成当前设置的邀请函预览。');const blob=await invitationPngBlob($('[data-invitation-canvas]'));if(!blob.size)throw new Error('图片生成未完成，请重试。');const link=node('a');const url=URL.createObjectURL(blob);try{link.href=url;link.download=invitationFilename(renderedSettings.recipientName,renderedSettings.confirmed);document.body.append(link);link.click();}finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);}const result=await request('/api/admin/contacts/'+encodeURIComponent(invitationContactId)+'/invitation/generated',{method:'POST',body:JSON.stringify({expectedRevision:revision,settings:renderedSettings})});updateContact(result);$('[data-invitation-sent-confirm]').checked=false;announce('PNG 已生成并开始下载，已记录生成时间；尚未记录发出。');}));

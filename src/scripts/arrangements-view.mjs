@@ -1,8 +1,9 @@
+import { SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
 import { sessionTimeline } from '../lib/arrangement-planner.mjs';
 
 const formats = { talk: '演讲', workshop: '工作坊', roundtable: '圆桌', showcase: '作品分享', social: '交流活动', break: '休息 / 签到', other: '待分类 / 其他' };
 const replies = { pending: '待回复', attending: '确认参加', declined: '不参加' };
-const forms = { guest: '嘉宾', speaker: '演讲', panelist: '圆桌', host: '主持', booth: '展位', student_showcase: '学生展示', attendee: '参会' };
+const forms = { guest: '嘉宾', speaker: '讲者', panelist: '圆桌嘉宾', host: '主持', organizer:'研讨会组织者', booth: '展位', student_showcase: '学生展示', attendee: '参会' };
 const stableId = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 function node(tag, text, className) {
   const element = document.createElement(tag);
@@ -104,7 +105,8 @@ export function createArrangementsView({ root, load, edit, plan = edit }) {
       badge.dataset.reply = person.responseStatus || 'unlinked'; item.append(badge);
       if (person.guestStatus && person.responseStatus) item.append(node('small', person.guestStatus === 'confirmed' ? '嘉宾资料已确认' : '嘉宾资料待确认'));
       const participation = list(person.participationForms).map(value => forms[value]).filter(Boolean).join(' / ');
-      if (participation) item.append(node('small', '全活动参与：' + participation));
+      if (participation) item.append(node('small', '全活动职责：' + participation));
+      if (list(person.rolesInSession).length) item.append(node('small','本场职责：'+person.rolesInSession.map(role=>SESSION_ROLE_LABELS[role]||role).join(' / '),'ah-arrangements-person-role'));
       if (person.guestId) item.append(editButton('guest', person.guestId, '嘉宾资料'));
       if(stableId.test(person.contactId??'')){const link=node('a','人员详情与关联报名','ah-arrangements-edit');link.href='/admin/contacts/#contact='+encodeURIComponent(person.contactId);item.append(link);}
       output.append(item);

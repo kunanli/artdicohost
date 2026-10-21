@@ -58,3 +58,10 @@ test('timeline orders start times, keeps actual zone columns and excludes duplic
   assert.deepEqual(result.map(row=>row.start),['10:00','11:00']);
   assert.equal(result[0].zones.B.length,1); assert.equal(result[0].zones.C[0].id,'session-c'); assert.equal(result[1].zones.A.length,1);
 });
+
+test('direct assignment preserves current session duties and drops only links for explicitly removed sessions', () => {
+  const base=content();base.sessions=[{id:'morning',title:'合成早场',start:'10:00',end:'11:00',zone:'A',status:'scheduled'}, {id:'afternoon',title:'合成午场',start:'13:00',end:'14:00',zone:'B',status:'scheduled'}];
+  const contact={id:'contact-a',profile:{contactConsent:'consented'},operations:{...createEmptyContactOperations(),sessionIds:['morning','afternoon'],sessionRoles:[{sessionId:'morning',roles:['speaker']},{sessionId:'afternoon',roles:['organizer']}]}};
+  const result=prepareContactAssignments(contact,{sessionIds:['afternoon'],boothIds:[]},base);
+  assert.deepEqual(result.sessionRoles,[{sessionId:'afternoon',roles:['organizer']}]);assert.equal(contact.operations.sessionRoles.length,2);
+});

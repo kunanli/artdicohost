@@ -23,3 +23,13 @@
 云端及本机 contactsStore 提供 `recordExport(expectedRevision,actorId,{count,includeContact,includeAnswers,workbookSha256}) -> {revision}`。count 必须等于当前完整名单数量，范围与 hash 校验后以同一 contacts CAS 追加 `export_contacts` 审计。此全局事件不修改任何联系人的 updatedAt、原件或实际回复；旧快照解析器认识这一固定事件。导出 bytes 只能在已收到审计确认后交给浏览器；未知 ACK 不假称成功。联系人、未转换对象及拒绝者均可按明确导出范围保留，不把筛选结果当作完整名单。
 
 代码验证使用合成资料，覆盖旧快照不写迁移、角色独立性、逐场职责校验、旧客户端保存、撤回后清理、两个入口的名额保护、CAS 与未知 ACK，以及导出全局审计不改个人原件。真实 39 行未作为夹具或写入生产。
+
+## 界面与下载
+
+人员页提供全活动职责多选及逐场次职责；保存后总览只展示该场实际标记，不把其变成公开讲者。直接编排只改变场次／展位 ID，保留仍关联场次的职责，移除所选场次时一并移除当前职责链接，不改原始来源。
+
+完整人员 Excel 面板独立于搜索筛选，必须由服务端广告 `features.contactXlsxExport:true` 后启用。联络资料和完整原问卷均默认不勾选；客户端只在精确 MIME、大小、SHA 与审计修订验证完成后下载，更新到已确认的 audit revision，不重置当前未保存编辑。登出清理 Blob URL 和导出选择；会话在载入可选日志期间失效，不会把旧私有名单重新填回页面。
+
+可选浏览器验证：先用正式 API origins 构建，再执行 `tests/browser/contact-roles-smoke.mjs`（设置 `ARTDICO_PLAYWRIGHT_MODULE` 与 `ARTDICO_CHROMIUM_BINARY`）。真实 Chromium 使用合成拦截接口验证手机角色选择、两场不同职责、原件保留、筛选无结果仍导出完整名单、实际 OOXML 读回，以及 ledger 401 不重开私人工作区。没有访问正式 API。
+
+升级后回退须采用认识 `sessionRoles` 及 `export_contacts` 的兼容版本。不能让旧本机写入者重新规范化并覆盖新职责；先暂停新写入、保存完整私密 journal，再用兼容版本修复。公开授权及名额撤回仍须分别核对。

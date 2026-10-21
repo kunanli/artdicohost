@@ -66,6 +66,18 @@ test('order and event changes are tracked without claiming unchanged rows change
   assert.ok(contentPublicationReadiness(source),'JSON object key order is not malformed metadata');
 });
 
+test('a shared draft and publication revision requires the same public fields and row order',()=>{
+  const content=fixture();content.guests.push({...content.guests[0],id:'guest-2',contactId:'contact-2',name:'另一合成嘉宾'});
+  for(const mutate of [source=>{source.draft.content.guests[0].name='合成不一致姓名';},source=>{source.draft.content.guests.reverse();}]){
+    const source=state(content);source.published.revision=source.draft.revision;mutate(source);
+    assert.equal(contentPublicationReadiness(source),null,'inconsistent same-revision source is unavailable, not a pending change');
+  }
+  const source=state(content);source.published.revision=source.draft.revision;
+  source.draft.content.guests[0].internalNotes='合成私人备注更新';source.draft.content.showcases[0].memberCount=9;
+  const report=contentPublicationReadiness(source);
+  assert.ok(report);assert.equal(report.hasPublicChanges,false);assert.ok(report.items.guests.every(item=>item.change==='unchanged'));
+});
+
 test('unavailable or malformed source never becomes an empty publication or a ready record',()=>{
   for(const change of [s=>delete s.published,s=>s.published=undefined,s=>s.draft.revision=-1,s=>delete s.draft.content.guests,s=>s.published.revision=9,s=>s.published.publishedAt='bad',s=>s.published.publishedAt='2026-02-30T10:00:00Z',s=>s.published.content.eventId='other-event',s=>delete s.published.content.guests,s=>s.published.content.guests.push({...s.published.content.guests[0]}),s=>s.published.content.guests[0].privateNotes='must not be published',s=>s.draft.content.guests[0].portraitId='https://example.invalid/photo']){
     const source=state();change(source);assert.equal(contentPublicationReadiness(source),null);

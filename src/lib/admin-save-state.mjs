@@ -119,6 +119,7 @@ export function contentPublicationReadiness(input) {
       saved=toPublicContent(publication.content);
       if(saved.eventId!==content.eventId||!samePublic(saved,publication.content))return null;
       publishedRevision=publication.revision;publishedAt=publication.publishedAt;
+      if(publishedRevision===input.draft.revision&&!samePublic(next,saved))return null;
     }
     const items={},summary={new:0,updated:0,removed:0,unchanged:0,blocked:0},orderChanged={};
     for(const kind of publicationCollections) {

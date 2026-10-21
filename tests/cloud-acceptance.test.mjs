@@ -20,12 +20,15 @@ const ENV = { NODE_ENV: 'production', ARTDICO_CLOUD_CONTENT_ENABLED: 'false', AR
 const options = fixture => ({ env: ENV, sourceCommit: SOURCE, fetchFn: fixture.fetchFn, now: () => fixedClock().getTime() });
 
 // Inject boundaries at observable durable operations, not at a guessed number of
-// now() calls. The last scenario moves time after the unknown account's budget
-// commit and directory read, so the independent correct alias really can log in.
+// now() calls. One scenario moves time after the unknown account's budget commit
+// and directory read, so the independent correct alias really can log in. The
+// final boundary occurs after the known alias is limited but before the last
+// unknown account reserves, exercising the second response's clock check too.
 async function acceptanceAcrossLoginWindow(boundary) {
   const fixture = objectFixture(), budgets = [], lateSessions = [];
   let at = fixedClock().getTime(), revoking = false, rollovers = 0;
   let saturated = false, deferredRollover = false;
+  let knownAliasReady = false, afterKnownClockTicks = 0;
   const advance = () => { at += 15 * 60 * 1000; rollovers++; };
   const fetchFn = async (url, settings) => {
     const key = new URL(url).pathname;
@@ -47,10 +50,20 @@ async function acceptanceAcrossLoginWindow(boundary) {
       }
     }
     if (boundary === 'between-clients' && saturated && !rollovers && settings.method === 'GET' && key.endsWith('/users/commits.jsonl')) deferredRollover = true;
+    if (boundary === 'after-known-limit' && saturated && !rollovers && settings.method === 'GET') {
+      if (key.endsWith('/users/commits.jsonl')) knownAliasReady = true;
+      if (knownAliasReady && key.includes('/limits/') && key.includes('/blobs/')) {
+        const stored = fixture.stored.get(key.slice(1));
+        if (stored && JSON.parse(stored.data).count === 10) afterKnownClockTicks = 2;
+      }
+    }
     return fixture.fetchFn(url, settings);
   };
   const now = () => {
     if (deferredRollover) {deferredRollover=false;advance();}
+    // The first tick observes the known 429's window; the second is the last
+    // unknown login's reservation. A missing final API call cannot pass this case.
+    if (afterKnownClockTicks && --afterKnownClockTicks === 0) advance();
     return at;
   };
   const result = await startCloudAcceptance({...options(fixture),fetchFn,now}).completion;
@@ -144,6 +157,17 @@ test('a correct alias accepted across the client boundary cannot masquerade as a
   assert.equal(result.completed.length,10);
   assert.ok(result.requests<1000);
   assert.equal(lateSessions.length,1,'the independent client really receives a successful new-window session');
+  assert.deepEqual(budgets.map(value=>value.count),[9,10,1,9,10]);
+  assert.equal(budgets.at(-1).window,budgets[0].window+1);
+});
+
+test('a boundary after the known alias is limited also re-proves the unknown account in the new actual window', async () => {
+  const {result,budgets,lateSessions,rollovers} = await acceptanceAcrossLoginWindow('after-known-limit');
+  assert.equal(rollovers,1,'the last unknown API call actually reserves in the next window');
+  assert.equal(result.status,'passed',JSON.stringify(result));
+  assert.equal(result.completed.length,10);
+  assert.ok(result.requests<1000);
+  assert.equal(lateSessions.length,0,'the new-window attempt is an unknown account, not an accepted alias');
   assert.deepEqual(budgets.map(value=>value.count),[9,10,1,9,10]);
   assert.equal(budgets.at(-1).window,budgets[0].window+1);
 });

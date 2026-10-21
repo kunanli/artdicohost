@@ -1,5 +1,13 @@
 # 开发接续与验收计划
 
+## 当前开发：志愿者与分工；完成后继续人员关系总览（2026-10-21）
+
+使用者已同意新增志愿者名册、沟通／答复、可服务时间、岗位／区域／负责人、班次需求与缺额、冲突检查、Excel，以及既有个人页关联。分支 `feat/volunteer-operations`，从已验证 main `ddf7a2e` 和文档证据 `0cc60e7` 接续；计划提交 `8735756`，追加下一阶段计划 `94eec4c`。尚未宣称志愿者已上线。[操作与契约范围](volunteer-operations.md)、[实施计划](implementation-plan.md)。
+
+隔离 worktree：`/workspace/volunteer-domain`（校验／排程／仓库）、`volunteer-api`（来源／HTTP／Excel）、`volunteer-ui`（新页面／入口）、`volunteer-pack`（静态路由／来源包／备份）、`volunteer-person`（个人页最小摘要）、`volunteer-browser`（合成 Chromium）。root 整合 runtime、完整验证、文档与发布；新文件必须纳入准确来源白名单及完整备份。真实人员与邮件不用作测试，不重新导入名单，不购买服务或更改 IAM／DNS。
+
+使用者随后明确：志愿者做好后，人員与邀约须进一步串连嘉宾／讲者及参与组织中的人，并能看总览与筛选。按顺序先完成并验证发布志愿者，再进入该阶段；已有稳定 contactId→guest 与报名来源关系继续使用，组织成员关系只明确选择 ID，不按文字猜测。接续不能遗漏这个已授权后续，也不能把志愿者上线当成两阶段全部完成。
+
 ## 已上线：人员步骤指引、设置中心与保存防呆（2026-10-21）
 
 [PR #34](https://github.com/kunanli/artdicohost/pull/34) 已合并 main `ddf7a2ea0b9c81d9222aefbef3e5155d7432b8a4`；准确 PR head `12af0bb0550bd90fd1827296bed14b876ec7b430` 的 [39569950865](https://github.com/kunanli/artdicohost/actions/runs/39569950865) 检查成功：877/877、422 文件源码、314 文件 Astro（0 errors／warnings，1 既有 hint）、九页构建、依赖审计及两个 ZIP 离线启动全通过。个人／设置及保存防呆的合成 Chromium 已通过。

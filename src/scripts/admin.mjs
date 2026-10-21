@@ -124,7 +124,7 @@ function scheduleLocalDraft(){
   if(hasUnsavedChanges()){
     if(!localDraftBinding.blocked){$('[data-admin-local-status]').textContent='正在暂存本机…';localDraftBinding.schedule();}
   }
-  else if(localDraftBinding.snapshot?.record?.kind==='editing')localDraftBinding.discard().catch(()=>{});
+  else if(localDraftBinding.snapshot?.record?.kind==='editing'||localDraftBinding.unsettled&&!localDraftBinding.snapshot?.record) localDraftBinding.discard().catch(()=>{});
 }
 async function bindLocalDraft(){
   localDraftBinding?.close();localDraftReady=false;localRecovery=null;localPendingArchive=null;localDraftProblem='';
@@ -202,6 +202,7 @@ async function copyLocalContent(type){
 function renderPageView(){
   const page=CONTENT_PAGES.find(item=>item.key===activePage);if(!page)return;
   $('#artdico-admin').dataset.contentPage=activePage;
+  document.title=page.title+'｜内容管理｜ARTDiCO HOST';
   for(const panel of document.querySelectorAll('[data-content-panel]'))panel.hidden=panel.dataset.contentPanel!==activePage;
   for(const[selector,value]of[['[data-content-page-title]',page.title],['[data-content-page-description]',page.description],['[data-content-breadcrumb-current]',page.label]])if($(selector))$(selector).textContent=value;
   for(const link of document.querySelectorAll('[data-staff-section-link]')){

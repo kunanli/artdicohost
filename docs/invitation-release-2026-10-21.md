@@ -21,3 +21,9 @@
 准确候选来源 `d02c573dfdca4c72f9bc50fb6feb689169443e61`：128 files／40 assets／7,326,049 static bytes 符合原资源限额，但旧 Node XZ preset6 29,494,612B 令 stored ZIP 为 **37,769,494B**，对应 code-only JSON **50,359,351B**，超过既有 **48,000,000B** request／**35,999,982B** ZIP预算，builder正确拒绝，没有 manifest成功或任何实际部署。
 
 不提高任何限额、不删旧模板或字形、不改官方 Node pin。正在/tmp比较 X86 BCJ＋LZMA2 无损压缩；preset6/7/8 已保持 CRC64、原官方 SHA、96MiB decoder 通过，但还不够小，继续验证。120秒是 producer压缩／打包子程序限制，INSPECT是30秒；launcher有限输入／输出和平台启动边界不变，不能宣称其另有120秒内部计时器。最终方案需通过同一官方 Node、准确候选ZIP和 Docker512MiB/.35CPU/no-network启动，才创建PR并继续发布。
+
+### 已选择的容量修复（实现／验证中）
+
+纯XZ的BCJ6/7/8/9及极端选项均不足；最佳28,218,632B runtime仍差约494KB。保留原全部字体与历史图，不采用删字／改水平字形／垂直功能裁剪。方案为 **BCJ6＋仅明确文字文件的ZIP deflate6**：/tmp实测文字从1,831,809B降至562,706B，省1,269,103B；加BCJ6预估ZIP35,642,219B，原35,999,982B cap不变。
+
+新验包只对现有白名单文字允许method8；图片、字体和runtime仍stored；文字总解压预算额外限制4MiB，每件仍原1MiB/2MiB/64KiB限制。Node24 `inflateRawSync` 限output，严格检查engine.bytesWritten等于全部compressed bytes，拒绝尾随／串联；实际CRC32、原SHA、local/central、顺序／模式／无gap都核对。旧stored包继续接受。未改bootstrap/XZdecoder/官方pin/96MiB/192MiB/上传与静态上限。最终仍须准确来源实包及受限Docker冷启动，当前不视为发布完成。

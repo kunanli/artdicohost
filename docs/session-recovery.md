@@ -4,7 +4,7 @@
 
 根分支 `feat/invitation-poster-v2`，产品来源 `f9e5ea8`，**13:06:38 UTC** 冻结十页构建。上传字体已转为四包、完整 OFL 在每包，Medium 原 30890 cmap 全保留；新 blank WebP 与旧 PNG 共存。V2 manual digest ID／旧hash／历史contacted与unknown保留，私人 PNG 仅 public confirmed，前后freshread与切换取消完成。独立 review 修正 batch pagehide、首 -/_ 合法编号、skiplink覆盖 #r，以及旧发送同时间戳混入新版；24组个人/字体、11组手动/批次 Chromium 全绿、零pageerrors。
 
-完整本机第一轮1176/1176（86.740681932秒），之后149定向、18file-store、42lifecycle检查全过；最终完整 **1182/1182**（84.139525025秒）通过，512源码／380Astro／十页／审计通过。[本阶段计划与操作](invitation-poster-v2.md)、[验证／剩余](invitation-release-2026-10-21.md)。当前准确候选d02c573在128files/40assets/7,326,049静态bytes内，但ZIP37,769,494B超过原35,999,982B上限；正确拒绝，尚无PR或部署。正在/tmp测试官方Node X86BCJ无损压缩，不能放宽48MB上传／decoder96MiB／producer120s等限制，也不删字形/旧模板。详见验证记录阻挡段落；完成后准确最终head候选ZIP／离线启动、PR精确CI、main真实私有OSS/300政策与exactHTTPS；不可先说新版已上线。PR #38已经实际完成，不重跑旧部署。
+完整本机第一轮1176/1176（86.740681932秒），之后149定向、18file-store、42lifecycle检查全过；最终完整 **1182/1182**（84.139525025秒）通过，512源码／380Astro／十页／审计通过。[本阶段计划与操作](invitation-poster-v2.md)、[验证／剩余](invitation-release-2026-10-21.md)。当前准确候选d02c573在128files/40assets/7,326,049静态bytes内，但ZIP37,769,494B超过原35,999,982B上限；正确拒绝，尚无PR或部署。纯BCJ/preset均未够，现按/tmp实测选择BCJ6＋仅白名单文字bounded ZIP deflate6（预计35.64MB），API agent负责parser/ZIP producer，domain仅COMPRESS与独占测试；额外4MiB文字输出预算、逐件输出/全部输入消耗/CRC/SHA严格核对。不能放宽48MB上传／decoder96MiB／producer120s等限制，也不删字形/旧模板。详见验证记录阻挡段落；完成后准确最终head候选ZIP／离线启动、PR精确CI、main真实私有OSS/300政策与exactHTTPS；不可先说新版已上线。PR #38已经实际完成，不重跑旧部署。
 
 ## 最新：本机草稿与协作账号 PR #38 已实际上线（2026-10-21）
 

@@ -66,6 +66,7 @@ function renderGroup(){
   $('[data-settings-group-summary]').textContent=!groupState.configured?'尚未配置 · 上传入群原图':groupState.expired||remaining<=0?'已过期 · 请替换二维码':(remaining<=86400000?'24 小时内到期 · ':'已配置 · ')+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit',hour12:false}).format(new Date(expires))+' 到期（UTC+8）';
 }
 staffRoot.addEventListener('staff-settings-state',event=>{groupState=event.detail;renderGroup();});
+root.addEventListener('settings-actor-cleared',event=>{if(event.detail?.actorId===user?.id){clear();announce('此账号已在另一页面清除本机资料，请重新登录。',true);}});
 deliveryRoot.addEventListener('delivery-settings-state',event=>{
   const {email,wallet}=event.detail;
   $('[data-settings-mail-summary]').textContent=email.ready?(email.automaticEnabled?'设置可用 · 自动确认已开启':'设置可用 · 自动确认未开启'):'尚未就绪 · 核对受控配置与寄件开关';

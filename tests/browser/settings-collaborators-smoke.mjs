@@ -9,7 +9,7 @@ const project=fileURLToPath(new URL('../../',import.meta.url)),dist=resolve(proc
 const evidence=resolve(project,'.local-data/browser-evidence'),reports=[],errors=[];
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const json=(body,status=200)=>({status,contentType:'application/json',body:JSON.stringify(body)});
-async function fixture({width=1280,role='owner',lostAck=false,badAck=false}={}){
+async function fixture({width=1280,role='owner',lostAck=false,badAck=false,logoutMode='normal'}={}){
   const runtime=await peopleRuntimeFixture({mail:true}),auth=await runtime.login(role),context=await browser.newContext({viewport:{width,height:900}});
   const [name,...value]=auth.Cookie.split('=');await context.addCookies([{domain:new URL(SITE).hostname,path:'/api/admin',name,value:value.join('='),secure:true,httpOnly:true,sameSite:'Strict'}]);
   const page=await context.newPage();page.setDefaultTimeout(10000);await page.clock.setFixedTime(new Date('2026-10-21T09:00:00.000Z'));
@@ -19,6 +19,8 @@ async function fixture({width=1280,role='owner',lostAck=false,badAck=false}={}){
     const req=route.request(),url=new URL(req.url()),path=url.pathname;assert.equal(url.origin,SITE,'all requests remain intercepted');
     if(path.startsWith('/api/')){
       const headers=await req.allHeaders(),body=req.postData()?JSON.parse(req.postData()):null,entry={path,method:req.method(),body};calls.push(entry);
+      if(path==='/api/admin/logout'&&logoutMode==='expired')return route.fulfill(json({},401));
+      if(path==='/api/admin/logout'&&logoutMode==='network')return route.abort('failed');
       if(expire&&path==='/api/admin/group-invite'){expire=false;return route.fulfill(json({},401));}
       const response=await runtime.app.handle(new Request(req.url(),{method:req.method(),headers,...(['GET','HEAD'].includes(req.method())?{}:{body:req.postData()})}));entry.status=response.status;
       if(path==='/api/admin/users'&&req.method()==='POST'&&response.ok){
@@ -93,6 +95,11 @@ try{
   }
   {
     const f=await fixture({role:'reviewer'});await f.page.goto(SITE+'/admin/settings/',{waitUntil:'networkidle'});await f.page.locator('[data-settings-access-denied]:visible').waitFor();assert.deepEqual(f.calls.map(row=>row.path),['/api/admin/session']);await f.context.close();reports.push({partialRoleNoSettingsOrAccountReads:true});
+  }
+  for(const logoutMode of['expired','network']){
+    const f=await fixture({logoutMode});await open(f);await create(f,'zhouyufei');await f.page.locator('[data-user-form] [name=username]').fill('synthetic-unsaved-before-logout');await waitDraft(f.page);await f.page.locator('[data-settings-logout]').click();
+    await f.page.locator('[data-settings-page-error]').filter({hasText:'云端退出结果待核对'}).waitFor();assert.equal(await f.page.locator('[data-user-credential-list] input').count(),0);assert.equal(await f.page.locator('[data-user-form] [name=password]').inputValue(),'');assert.equal(await f.page.locator('[data-user-form] [name=username]').inputValue(),'');assert.equal((await draftRecords(f.page)).filter(row=>row.scope.actorId===f.runtime.users[0].id).length,0);assert.equal(await f.page.locator('[data-settings-login] button').isEnabled(),true);
+    await f.context.close();reports.push({logoutMode,explicitLogoutClearsSecretsAndActorDraftEvenWithoutServerAck:true,honestUnknownLogout:true});
   }
   {
     const f=await fixture();await open(f);const password=await create(f,'zhouyufei');const login=await f.runtime.app.handle(f.runtime.request('/api/admin/login',{method:'POST',body:{username:'zhouyufei',password}}));assert.equal(login.status,200);const cookie=login.headers.get('set-cookie').split(';')[0];

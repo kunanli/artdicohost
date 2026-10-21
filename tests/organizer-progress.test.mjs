@@ -9,7 +9,7 @@ const contact = (id = 'synthetic-person', patch = {}) => ({ id,
   profile: { name: '合成人员', displayName: '合成人员', organization: '合成机构', contactConsent: 'consented', email: 'synthetic@example.invalid', ...patch.profile },
   operations: { owner: '合成同事', responseStatus: 'pending', sessionIds: [], boothIds: [], participationForms: [], followUpAt: '', ...patch.operations },
   invitation: { generatedAt: null, sentAt: null, settings: null, ...patch.invitation } });
-const conversion = id => ({ sourceContactId: id, registrationId: 'synthetic-registration', referenceCode: 'synthetic-reference' });
+const conversion = id => ({ sourceContactId: id, registrationId: 'synthetic-registration', referenceCode: 'synthetic-reference', admissionStatus: 'confirmed' });
 const settings = { recipientName: '合成人员', date: event.date.value, time: event.time.start + '–' + event.time.end, venue: event.venue.address, confirmed: true };
 const invitation = (id, status = 'manually_sent', patch = {}) => ({ id: 'synthetic-invitation', sourceContactId: id, registrationId: 'synthetic-registration',
   channel: status === 'manually_sent' ? 'manual' : 'email', status, createdAt: '2026-10-21T01:00:00.000Z', updatedAt: '2026-10-21T02:00:00.000Z',
@@ -93,6 +93,37 @@ test('unavailable ledger does not create fake unconverted tasks, and inactive re
   assert.equal(unavailable.available.registrationProgress, false);assert.ok(!unavailable.tasks.some(task => task.kind === 'unconverted'));
   const result = buildOrganizerTasks({ contacts: [person], ...options, intent: intentFor(person, [invitation(person.id)]), inactiveRegistrationIds: ['synthetic-registration'] });
   assert.ok(!result.tasks.some(task => task.contactId));assert.equal(result.metrics.manuallySent, 0);
+});
+
+test('current admission snapshot overrides conversion metadata and keeps waitlisting distinct from withdrawal', () => {
+  const person = contact('synthetic-person', { operations: { responseStatus: 'attending', participationForms: ['speaker'] } });
+  const intent = intentFor(person, []);
+  const waitlisted = buildOrganizerTasks({ contacts: [person], ...options, intent,
+    admissionStatuses: [{ registrationId: 'synthetic-registration', status: 'waitlisted' }] });
+  const pending = waitlisted.tasks.filter(task => task.contactId === person.id);
+  assert.deepEqual(pending.map(task => task.kind), ['admission_pending']);assert.match(pending[0].detail, /候补登记，名额尚未确认/u);
+  assert.equal(waitlisted.metrics.waitlisted, 1);assert.equal(waitlisted.metrics.converted, 1);
+  const progress = contactProgress(person, { ...options, intent, admissionStatuses: [{ registrationId: 'synthetic-registration', status: 'waitlisted' }] });
+  assert.equal(progress.state, 'waitlisted');assert.equal(progress.inactive, false);
+  const withdrawn = contactProgress(person, { ...options, intent, admissionStatuses: [{ registrationId: 'synthetic-registration', status: 'withdrawn' }] });
+  assert.equal(withdrawn.state, 'inactive');assert.equal(withdrawn.admissionPending, false);
+  const deleted = contactProgress(person, { ...options, intent, admissionStatuses: [{ registrationId: 'synthetic-registration', status: 'confirmed' }], inactiveRegistrationIds: ['synthetic-registration'] });
+  assert.equal(deleted.admissionStatus, 'withdrawn');assert.equal(deleted.state, 'inactive');
+});
+
+test('missing or explicitly unknown admission fails closed for formal invitation tasks without hiding unknown send ACKs', () => {
+  const person = contact(), intent = intentFor(person, [invitation(person.id, 'unknown')]);
+  delete intent.conversions[0].admissionStatus;
+  for(const admissionStatuses of [[],[{registrationId:'synthetic-registration',status:'unknown'}]]){
+    const result = buildOrganizerTasks({ contacts: [person], ...options, intent, admissionStatuses });
+    assert.equal(result.metrics.admissionUnknown, 1);assert.ok(result.tasks.some(task => task.kind === 'admission_pending'));
+    assert.ok(result.tasks.some(task => task.kind === 'invitation_unknown'));assert.ok(!result.tasks.some(task => ['unsent','unreplied','unassigned'].includes(task.kind)));
+    const progress = contactProgress(person, { ...options, intent, admissionStatuses });assert.equal(progress.state,'admission_unknown');assert.equal(progress.inactive,false);
+  }
+  intent.conversions[0].admissionStatus='waitlisted';
+  assert.equal(contactProgress(person,{...options,intent}).state,'waitlisted');
+  intent.conversions[0].admissionStatus='confirmed';
+  assert.ok(buildOrganizerTasks({contacts:[person],...options,intent:{...intent,invitations:[]}}).tasks.some(task=>task.kind==='unsent'));
 });
 
 const source = () => ({ contacts: [contact()], contactRevision: 4, content: { sessions: [], booths: [] }, contentRevision: 2,

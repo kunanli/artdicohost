@@ -9,7 +9,7 @@ const time = value => typeof value === 'string' && Number.isFinite(Date.parse(va
 export const organizerTaskLabels = Object.freeze({
   verify_consent: '核实联络授权', unconverted: '待代登记', unsent: '待准备或人工发出邀请',
   invitation_unknown: '核对发送结果', unreplied: '已联系待回复', unassigned: '待安排参与场次 / 展位',
-  follow_up: '到期跟进', missing_booth_details: '补齐展位资料',
+  follow_up: '到期跟进', missing_booth_details: '补齐展位资料', admission_pending: '候补 / 名额待确认',
 });
 export function contactDeclined(contact) {
   return contact?.profile?.contactConsent === 'declined' || contact?.operations?.responseStatus === 'declined';
@@ -34,10 +34,13 @@ function latestByChannel(invitations) {
   }
   return [...values.values()];
 }
-export function contactProgress(contact, { intent = null, content = null, event, now = Date.now(), inactiveRegistrationIds = [] } = {}) {
+export function contactProgress(contact, { intent = null, content = null, event, now = Date.now(), inactiveRegistrationIds = [], admissionStatuses = [] } = {}) {
   const id = contact.id, excluded = contactDeclined(contact), operations = contact.operations ?? {};
   const conversion = list(intent?.conversions).find(entry => entry.sourceContactId === id) ?? null;
-  const inactive = conversion && list(inactiveRegistrationIds).includes(conversion.registrationId);
+  const admission = conversion ? list(admissionStatuses).find(entry => entry.registrationId === conversion.registrationId)?.status ?? conversion.admissionStatus ?? 'unknown' : null;
+  const admissionStatus = conversion ? (list(inactiveRegistrationIds).includes(conversion.registrationId) ? 'withdrawn' : ['confirmed','waitlisted','withdrawn'].includes(admission) ? admission : 'unknown') : null;
+  const inactive = admissionStatus === 'withdrawn';
+  const admissionPending = ['waitlisted','unknown'].includes(admissionStatus);
   const legacy = contact.invitation ?? {};
   const legacyCurrent = Boolean(time(legacy.generatedAt) >= 0 && time(legacy.generatedAt) <= now && settingsCurrent(legacy.settings, contact, event));
   const legacySent = Boolean(legacyCurrent && time(legacy.sentAt) >= time(legacy.generatedAt) && time(legacy.sentAt) <= now && legacy.sentGenerationAt === legacy.generatedAt);
@@ -62,10 +65,10 @@ export function contactProgress(contact, { intent = null, content = null, event,
   const needsShowcase = forms.includes('student_showcase');
   const missingAssignment = (needsSession && !validSessions.length) || (needsBooth && !validBooths.length)
     || (needsShowcase && !validSessions.length && !validBooths.length);
-  const state = excluded ? 'excluded' : inactive ? 'inactive' : manuallySent ? 'manually_sent' : unknown ? 'unknown'
+  const state = excluded ? 'excluded' : inactive ? 'inactive' : admissionStatus === 'waitlisted' ? 'waitlisted' : admissionPending ? 'admission_unknown' : manuallySent ? 'manually_sent' : unknown ? 'unknown'
     : providerAccepted ? 'provider_accepted' : prepared ? 'prepared' : stale ? 'stale' : 'not_prepared';
   return { contactId: id, owner: text(operations.owner), excluded, consented: contact.profile?.contactConsent === 'consented',
-    conversion, inactive: Boolean(inactive), state, manuallySent, providerAccepted, unknown, prepared, stale,
+    conversion, admissionStatus, admissionPending, inactive, state, manuallySent, providerAccepted, unknown, prepared, stale,
     response: operations.responseStatus ?? 'pending', contacted: manuallySent || providerAccepted,
     assigned: validSessions.length + validBooths.length > 0, missingAssignment,
     followUpAt: text(operations.followUpAt), needsSession, needsBooth, needsShowcase };
@@ -78,18 +81,21 @@ export function summarizeContactProgress(contacts, options = {}) {
     manuallySent: active.filter(entry => entry.manuallySent).length,
     providerAccepted: active.filter(entry => entry.providerAccepted).length,
     unknown: active.filter(entry => entry.unknown).length,
+    waitlisted: active.filter(entry => entry.admissionStatus === 'waitlisted').length,
+    admissionUnknown: active.filter(entry => entry.admissionStatus === 'unknown').length,
     attending: active.filter(entry => entry.response === 'attending').length,
     awaitingReply: active.filter(entry => entry.response === 'pending' && entry.contacted).length,
     progress };
 }
 export const invitationProgressLabels = Object.freeze({ excluded: '已拒绝联络或出席 · 不邀请', inactive: '关联报名已停用 · 请核对',
+  waitlisted: '已登记候补 · 名额尚未确认', admission_unknown: '名额状态待核对 · 暂不准备正式邀请',
   manually_sent: '当前版已记录人工发出', provider_accepted: '服务商已接受 · 未证明送达', unknown: '发送结果不明 · 勿重复发送',
   prepared: '当前版已准备 · 未记录发出', stale: '历史版本 · 当前版尚未记录发出', not_prepared: '当前版尚未准备' });
 
 /** No contact methods or original answers leave this projection. */
 export function buildOrganizerTasks({ contacts = [], contactRevision = 0, content = {}, contentRevision = 0,
-  intent = null, inactiveRegistrationIds = [], event, now = Date.now() } = {}) {
-  const options = { intent, content, inactiveRegistrationIds, event, now };
+  intent = null, inactiveRegistrationIds = [], admissionStatuses = [], event, now = Date.now() } = {}) {
+  const options = { intent, content, inactiveRegistrationIds, admissionStatuses, event, now };
   const summary = summarizeContactProgress(contacts, options), tasks = [];
   const date = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date(now));
   const add = (contact, progress, kind, detail) => tasks.push({ id: kind + ':' + contact.id, kind, label: organizerTaskLabels[kind],
@@ -103,6 +109,12 @@ export function buildOrganizerTasks({ contacts = [], contactRevision = 0, conten
     if (!progress.consented) add(contact, progress, 'verify_consent', '先核对本人联络许可；未核实前不准备或发送邀请。');
     if (intent && !progress.conversion) add(contact, progress, 'unconverted', '核对原始来源后，可在人员页预览并代登记。');
     if (progress.unknown) add(contact, progress, 'invitation_unknown', '服务商结果尚未确认；先人工核对，勿重试发送。');
+    if (progress.admissionPending) {
+      add(contact, progress, 'admission_pending', progress.admissionStatus === 'waitlisted'
+        ? '已保存候补登记，名额尚未确认；待筹备团队核对并按已获授权的渠道通知。此时不准备正式入场邀请。'
+        : '后台尚未核对名额状态，请刷新或到关联报名核对；确认前不准备正式邀请。');
+      continue;
+    }
     if (progress.consented && !progress.contacted && !progress.unknown) add(contact, progress, 'unsent', progress.prepared ? '邀请已准备，实际发出后再记录渠道。' : progress.stale ? '旧版记录不计为当前版已发出，请核对最新资料。' : '先准备并核对邀请内容；下载不等于发出。');
     if (progress.response === 'pending' && progress.contacted) add(contact, progress, 'unreplied', progress.providerAccepted && !progress.manuallySent ? '邮件服务商仅接受请求，尚无送达或本人回复证明。' : '已记录人工发出，仍需核对本人实际回复。');
     if (progress.response === 'attending' && progress.missingAssignment) add(contact, progress, 'unassigned', [progress.needsSession ? '场次' : '', progress.needsBooth ? '展位' : '', progress.needsShowcase ? '作品分享或展位' : ''].filter(Boolean).join(' / ') + '仍需关联有效安排；普通参会不需要分配场次。');

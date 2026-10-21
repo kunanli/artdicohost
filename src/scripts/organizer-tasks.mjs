@@ -35,7 +35,7 @@ async function load(next = null) {
   if(!Array.isArray(state.tasks) || !state.metrics || !Number.isSafeInteger(state.total) || !state.byKind)throw new Error('待办资料不完整，请稍后刷新。');
   cursor = next;nextCursor = state.nextCursor;
   const metrics = $('[data-tasks-metrics]');metrics.replaceChildren();
-  for(const [label,value] of [['全部名单',state.metrics.total],['已代登记',state.available?.registrationProgress ? state.metrics.converted : '待核对'],['人工已发出 · 当前版',state.metrics.manuallySent],['服务商已接受 · 未证明送达',state.metrics.providerAccepted],['发送结果待核对',state.metrics.unknown],['本人确认出席',state.metrics.attending]]){
+  for(const [label,value] of [['全部名单',state.metrics.total],['已代登记（含候补）',state.available?.registrationProgress ? state.metrics.converted : '待核对'],['人工已发出 · 当前版',state.metrics.manuallySent],['服务商已接受 · 未证明送达',state.metrics.providerAccepted],['发送结果待核对',state.metrics.unknown],['候补 · 名额尚未确认',state.metrics.waitlisted],['名额状态待核对',state.metrics.admissionUnknown],['本人确认出席',state.metrics.attending]]){
     const card = element('article');card.append(element('span',label), element('strong',String(value ?? '—')));metrics.append(card);
   }
   const owner = $('[data-tasks-owner]');owner.replaceChildren(new Option('全部负责人',''), new Option('尚未分配负责人','__unassigned'));

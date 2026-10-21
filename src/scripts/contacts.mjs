@@ -54,12 +54,13 @@ function announce(message, error = false) {
 }
 function contactById(id) { return contacts.find(item => item.id === id); }
 function permitted() { return user?.roles.includes('outreach'); }
-function mayInvite(item) { return item?.profile.contactConsent === 'consented' && !contactDeclined(item); }
+function mayInvite(item) { if(item?.profile.contactConsent!=='consented'||contactDeclined(item))return false;const progress=contactProgress(item,progressOptions());return !progress.conversion||progress.admissionStatus==='confirmed'; }
+function invitationBlockReason(item) { if(contactDeclined(item))return '已拒绝联络或出席，不准备或发出邀请。';if(item?.profile.contactConsent!=='consented')return '联络授权尚未核实，暂不能准备邀请。';const progress=contactProgress(item,progressOptions());return progress.admissionStatus==='waitlisted'?'已登记候补，名额尚未确认，暂不准备正式邀请。':progress.inactive?'关联报名已停用，请先核对。':'名额状态尚未核对，确认前不准备正式邀请。'; }
 function progressOptions() { return { intent: intentState, content, event: eventConfig }; }
 function maySelect(item) { return Boolean(item) && permitted() && !contactDeclined(item) && (mayConvert(item) || mayInvite(item)); }
 function clearBatchResult() { if(batchDownloadUrl)URL.revokeObjectURL(batchDownloadUrl);batchDownloadUrl=null;$('[data-batch-download]').hidden=true;$('[data-batch-download]').removeAttribute('href');$('[data-batch-results]').replaceChildren();$('[data-batch-summary]').textContent='';$('[data-batch-panel]').hidden=true; }
 function mayConvert(item) { return Boolean(item)&&permitted()&&user.roles.some(role=>['reviewer','superadmin'].includes(role))&&item.profile.contactConsent!=='declined'&&item.operations.responseStatus!=='declined'; }
-function requireInviteConsent() { if (!mayInvite(contactById(invitationContactId))) throw new Error('此对象未同意联络或授权尚未核对，不能生成或记录发出邀请。'); }
+function requireInviteConsent() { if (!mayInvite(contactById(invitationContactId))) throw new Error(invitationBlockReason(contactById(invitationContactId))); }
 function lock() {
   $('[data-contacts-login-submit]').disabled = busy || location.protocol === 'file:';
   for (const field of document.querySelectorAll('[data-contacts-workspace] button,[data-contacts-file]')) field.disabled = busy || !permitted() || field.hasAttribute('data-consent-blocked') || field.hasAttribute('data-role-blocked');
@@ -189,13 +190,13 @@ function invitationState(item) { return invitationProgressLabels[contactProgress
 function render() {
   const metrics = $('[data-contacts-metrics]'); metrics.replaceChildren();
   const summary = summarizeContactProgress(contacts, progressOptions());
-  for (const [label, count] of [['对象总数',summary.total],['已记录人工发出 · 当前版',summary.manuallySent],['服务商已接受 · 未证明送达',summary.providerAccepted],['发送结果待核对',summary.unknown],['出席已确认',summary.attending],['已联系待回复',summary.awaitingReply]]) {
+  for (const [label, count] of [['对象总数',summary.total],['已记录人工发出 · 当前版',summary.manuallySent],['服务商已接受 · 未证明送达',summary.providerAccepted],['发送结果待核对',summary.unknown],['候补 · 名额尚未确认',summary.waitlisted],['名额状态待核对',summary.admissionUnknown],['出席已确认',summary.attending],['已联系待回复',summary.awaitingReply]]) {
     const card=node('article');card.append(node('span',label),node('strong',String(count)));metrics.append(card);
   }
   $('[data-contacts-progress-note]').textContent = '按人去重，拒绝联络或出席 '+summary.excluded+' 位不计入联络进度；旧版已发出不计作当前版。'+(features.intentInvitations&&!intentState?'新版报名邀请记录暂时无法读取，当前统计仅含可核对的旧邀请函。':'人工发出与服务商接受分别统计，均不表示本人回复或邮件送达。');
   const ownerSelect = $('[data-contacts-owner]'), previousOwner = ownerSelect.value;
   ownerSelect.replaceChildren();for(const [value,label] of [['','全部负责同事'],['__unassigned','尚未分配负责人'],...[...new Set(contacts.map(item=>item.operations.owner).filter(Boolean))].sort().map(value=>[value,value])]){const option=node('option',label);option.value=value;ownerSelect.append(option);}ownerSelect.value=previousOwner;
-  $('[data-contacts-planning]').textContent='原问卷意向：自报 SO / RO '+contacts.filter(item=>item.profile.categories.some(value=>['so','ro'].includes(value))).length+' 位，筹备新站点 '+contacts.filter(item=>item.profile.categories.includes('prospective_site')).length+' 位，展示意向 '+contacts.filter(item=>item.profile.interests.includes('exhibition')).length+' 位，需要住宿 '+contacts.filter(item=>item.profile.accommodationIntent==='needed').length+' 位；同意联络 '+contacts.filter(mayInvite).length+' 位。意向不代表安排已确认。';
+  $('[data-contacts-planning]').textContent='原问卷意向：自报 SO / RO '+contacts.filter(item=>item.profile.categories.some(value=>['so','ro'].includes(value))).length+' 位，筹备新站点 '+contacts.filter(item=>item.profile.categories.includes('prospective_site')).length+' 位，展示意向 '+contacts.filter(item=>item.profile.interests.includes('exhibition')).length+' 位，需要住宿 '+contacts.filter(item=>item.profile.accommodationIntent==='needed').length+' 位；同意联络 '+contacts.filter(item=>item.profile.contactConsent==='consented'&&!contactDeclined(item)).length+' 位。意向不代表安排已确认。';
   const search=$('[data-contacts-search]').value.trim().toLowerCase();
   const type=$('[data-contacts-category]').value;
   const response=$('[data-contacts-response]').value;
@@ -211,7 +212,7 @@ function render() {
     const matchesParticipation=!participation||(participation==='__none'?forms.length===0:forms.includes(participation));
     const progress=contactProgress(item,progressOptions());
     const matchesOwner=!owner||(owner==='__unassigned'?!progress.owner:progress.owner===owner);
-    const progressMatches={unconverted:!progress.excluded&&Boolean(intentState)&&!progress.conversion,unreplied:!progress.excluded&&progress.response==='pending'&&progress.contacted,unassigned:!progress.excluded&&progress.response==='attending'&&progress.missingAssignment,unsent:!progress.excluded&&progress.consented&&!progress.contacted&&!progress.unknown,excluded:progress.excluded,manually_sent:progress.manuallySent,provider_accepted:progress.providerAccepted,unknown:progress.unknown,stale:progress.state==='stale'};
+    const progressMatches={unconverted:!progress.excluded&&Boolean(intentState)&&!progress.conversion,unreplied:!progress.excluded&&progress.response==='pending'&&progress.contacted,unassigned:!progress.excluded&&!progress.inactive&&!progress.admissionPending&&progress.response==='attending'&&progress.missingAssignment,unsent:!progress.excluded&&!progress.inactive&&!progress.admissionPending&&progress.consented&&!progress.contacted&&!progress.unknown,excluded:progress.excluded,manually_sent:progress.manuallySent,provider_accepted:progress.providerAccepted,unknown:progress.unknown,stale:progress.state==='stale',waitlisted:progress.admissionStatus==='waitlisted',admission_unknown:progress.admissionStatus==='unknown'};
     const matchesProgress=!progressFilter||progressMatches[progressFilter]===true;
     return matchesOwner&&matchesProgress&&matchesParticipation&&matchesArrangement&&(!search||[p.name,p.displayName,p.organization,p.city,p.email,p.wechat].some(value=>value.toLowerCase().includes(search)))&&(!response||item.operations.responseStatus===response)&&(!onlyDue||due(item))&&(!type||(type.startsWith('category:')?p.categories.includes(type.slice(9)):p.interests.includes(type.slice(9))));
   });
@@ -228,7 +229,7 @@ function render() {
     for(const value of item.profile.interests)tags.append(node('span',interestLabels.get(value)||value,'contacts-tag'));
     if(!tags.childNodes.length)tags.append(node('small','未记录'));
     row.append(tags);
-    const invitation=node('td',invitationState(item));const progress=contactProgress(item,progressOptions());if(progress.manuallySent&&progress.providerAccepted)invitation.append(node('small','服务商也已接受 · 未证明送达'));if(progress.unknown&&progress.manuallySent)invitation.append(node('small','另有发送结果待核对 · 勿重复发送'));if(progress.stale)invitation.append(node('small','另有历史版本记录，不计入当前版发出'));if(item.invitation.generatedAt)invitation.append(node('small',item.invitation.settings?.confirmed?'手工邀请函：正式版':'手工邀请函：暂定版'));
+    const invitation=node('td',invitationState(item));const progress=contactProgress(item,progressOptions());if(progress.manuallySent&&progress.providerAccepted)invitation.append(node('small','服务商也已接受 · 未证明送达'));if(progress.unknown&&progress.state!=='unknown')invitation.append(node('small','另有发送结果待核对 · 勿重复发送'));if(progress.stale)invitation.append(node('small','另有历史版本记录，不计入当前版发出'));if(item.invitation.generatedAt)invitation.append(node('small',item.invitation.settings?.confirmed?'手工邀请函：正式版':'手工邀请函：暂定版'));
     const linked=intentState?.conversions?.find(value=>value.sourceContactId===item.id);
     if(linked){const link=node('a','已代登记 · 查看报名');link.href='/admin/registrations/#registration='+encodeURIComponent(linked.registrationId);invitation.append(link);}
     row.append(invitation);
@@ -247,16 +248,16 @@ function render() {
     }
     if(!arrangements.childNodes.length)arrangements.append(node('small','尚未安排'));
     row.append(arrangements);
-    const actions=node('td',undefined,'contacts-row-actions');for(const [text,handler]of[['编辑资料',()=>openProfile(item)],['详情与安排',()=>openContact(item)],['邀请函',()=>openInvitation(item)]]){const button=node('button',text);button.type='button';if(text==='邀请函'&&!mayInvite(item)){button.textContent='联络未获同意';button.dataset.consentBlocked='true';button.disabled=true;}button.addEventListener('click',handler);actions.append(button);}const guest=node('button','管理嘉宾资料');guest.type='button';
-    if(!user.roles.includes('editor')||!mayInvite(item)||!['pending','attending'].includes(item.operations.responseStatus)){guest.dataset.roleBlocked='true';guest.title=!user.roles.includes('editor')?'同时需要活动编辑权限':!mayInvite(item)?'须先核对明确的联络同意':'对象已回复不出席；请先核对最新实际回复';}
+    const actions=node('td',undefined,'contacts-row-actions');for(const [text,handler]of[['编辑资料',()=>openProfile(item)],['详情与安排',()=>openContact(item)],['邀请函',()=>openInvitation(item)]]){const button=node('button',text);button.type='button';if(text==='邀请函'&&!mayInvite(item)){button.textContent=progress.admissionPending?'名额待确认':progress.inactive?'报名已停用':'联络未获同意';button.title=invitationBlockReason(item);button.dataset.consentBlocked='true';button.disabled=true;}button.addEventListener('click',handler);actions.append(button);}const guest=node('button','管理嘉宾资料');guest.type='button';
+    if(!user.roles.includes('editor')||!mayInvite(item)||!['pending','attending'].includes(item.operations.responseStatus)){guest.dataset.roleBlocked='true';guest.title=!user.roles.includes('editor')?'同时需要活动编辑权限':!mayInvite(item)?invitationBlockReason(item):'对象已回复不出席；请先核对最新实际回复';}
     guest.addEventListener('click',()=>{if(busy||!permitted()||!user.roles.includes('editor')||!mayInvite(item)||!['pending','attending'].includes(item.operations.responseStatus))return;location.assign('/admin/#invitee='+encodeURIComponent(item.id));});actions.append(guest);
     if(linked){
-      const prepare=node('button','生成报名邀请');prepare.type='button';prepare.addEventListener('click',()=>action(()=>prepareRegistrationInvitation(item,linked,'manual')));actions.append(prepare);
+      const prepare=node('button',mayInvite(item)?'生成报名邀请':progress.admissionPending?'名额待确认 · 暂不准备正式邀请':'报名邀请暂不可用');prepare.type='button';if(!mayInvite(item)){prepare.dataset.roleBlocked='true';prepare.title=invitationBlockReason(item);}prepare.addEventListener('click',()=>action(()=>prepareRegistrationInvitation(item,linked,'manual')));actions.append(prepare);
       const email=node('button','邮件发送报名邀请');email.type='button';
-      if(!intentState?.email?.ready){email.dataset.roleBlocked='true';email.title='寄件服务尚未配置，无法发送邮件';}
+      if(!mayInvite(item)){email.dataset.roleBlocked='true';email.textContent='名额或授权待核对 · 不发送邀请';email.title=invitationBlockReason(item);}else if(!intentState?.email?.ready){email.dataset.roleBlocked='true';email.title='寄件服务尚未配置，无法发送邮件';}
       email.addEventListener('click',()=>action(()=>prepareRegistrationInvitation(item,linked,'email')));actions.append(email);
       const manual=intentState.invitations?.find(value=>value.sourceContactId===item.id&&value.channel==='manual');
-      if(manual){const state=node('small',({prepared:'报名邀请已准备，未记录发出',manually_sent:'报名邀请已记录人工发出',provider_accepted:'服务商已接受发送',unknown:'发送结果不明，勿重复发送',rejected:'服务商拒绝发送'})[manual.status]||'邀请状态待核对');actions.append(state);if(manual.status==='prepared'){const sent=node('button','记录报名邀请已发出');sent.type='button';sent.addEventListener('click',()=>action(async()=>{const named=prompt('确认已经实际发出后，填写实际渠道：微信、邮件或其他。此操作只记录，不发送消息。');const channel=({微信:'wechat',邮件:'email',其他:'other'})[named?.trim()];if(!channel)return;await request('/api/admin/intent-invitations/'+encodeURIComponent(manual.id)+'/manual-sent',{method:'POST',body:JSON.stringify({channel})});intentState=await request('/api/admin/intent-invitations');render();announce('已记录报名邀请经'+named.trim()+'人工发出；没有自动确认对方出席。');}));actions.append(sent);}}
+      if(manual){const state=node('small',({prepared:'报名邀请已准备，未记录发出',manually_sent:'报名邀请已记录人工发出',provider_accepted:'服务商已接受发送',unknown:'发送结果不明，勿重复发送',rejected:'服务商拒绝发送'})[manual.status]||'邀请状态待核对');actions.append(state);if(manual.status==='prepared'&&mayInvite(item)){const sent=node('button','记录报名邀请已发出');sent.type='button';sent.addEventListener('click',()=>action(async()=>{const named=prompt('确认已经实际发出后，填写实际渠道：微信、邮件或其他。此操作只记录，不发送消息。');const channel=({微信:'wechat',邮件:'email',其他:'other'})[named?.trim()];if(!channel)return;await request('/api/admin/intent-invitations/'+encodeURIComponent(manual.id)+'/manual-sent',{method:'POST',body:JSON.stringify({channel})});intentState=await request('/api/admin/intent-invitations');render();announce('已记录报名邀请经'+named.trim()+'人工发出；没有自动确认对方出席。');}));actions.append(sent);}}
     }
     row.append(actions);
     ['对象','原始身份与意向','邀请函 / 发出记录','跟进','出席回复','参与形式','现场安排','操作'].forEach((label,index)=>{row.children[index].dataset.label=label;});body.append(row);
@@ -268,6 +269,7 @@ function render() {
 }
 async function prepareRegistrationInvitation(item,linked,channel){
   if(!features.intentInvitations||!intentState)throw new Error('报名邀请服务尚未就绪。');
+  if(!mayInvite(item))throw new Error(invitationBlockReason(item));
   if(channel==='email'&&!confirm('确认现在向 '+item.profile.displayName+' 发送这份报名邀请邮件？服务商接受不等于送达；结果不明时不要重复发送。'))return;
   const result=await request('/api/admin/contacts/'+encodeURIComponent(item.id)+'/invitation',{method:'POST',body:JSON.stringify({expectedContactRevision:revision,channel,expectedRegistrationId:linked.registrationId,...(channel==='email'?{confirmEmail:true}:{})})});
   const invitation=result.invitation;
@@ -349,7 +351,7 @@ function closeProfile(){
 }
 function openInvitation(item){
   if(busy||!permitted())return;
-  if(!mayInvite(item)){announce('此对象未同意联络或授权尚未核对，不能生成邀请函。',true);return;}
+  if(!mayInvite(item)){announce(invitationBlockReason(item),true);return;}
   invitationContactId=item.id;renderedSettings=null;clearCommunicationPreviews();
   const form=$('[data-invitation-form]');form.reset();
   const settings=item.invitation.settings||{recipientName:item.profile.displayName,date:eventConfig.date.value,time:eventConfig.time.label,venue:eventConfig.venue.address,confirmed:false};

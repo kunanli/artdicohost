@@ -23,7 +23,7 @@ export function publicGuestCards(input) {
     const company = line(ownValue(value, 'company'), 160);
     const ggjRole = line(ownValue(value, 'ggjRole') ?? '', 160, false);
     if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(id) || seen.has(id)
-      || typeof portraitId !== 'string' || !portrait.test(portraitId) || name === null || company === null || ggjRole === null) return [];
+      || typeof portraitId !== 'string' || portraitId !== '' && !portrait.test(portraitId) || name === null || company === null || ggjRole === null) return [];
     const extras = {};
     for (const [key,limit] of [['title',200],['bio',4000],['website',500]]) {
       if (!Object.hasOwn(value,key)) continue;
@@ -39,7 +39,7 @@ export function publicGuestCards(input) {
       extras.publicRoles = [...roles];
     }
     seen.add(id);
-    return [{ id, name, company, ggjRole, portraitId, portraitUrl: '/api/public/portraits/' + portraitId, ...extras }];
+    return [{ id, name, company, ggjRole, portraitId, portraitUrl: portraitId ? '/api/public/portraits/' + portraitId : '', ...extras }];
   });
 }
 

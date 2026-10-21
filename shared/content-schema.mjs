@@ -21,6 +21,7 @@ export const contentSchema = Object.freeze({
   factStatuses: ['tentative', 'confirmed'],
   guestStatuses: ['pending', 'confirmed'],
   showcaseStatuses: ['pending', 'confirmed'],
+  showcaseKinds: ['student', 'indie', 'team'],
   responseStatuses: ['pending', 'attending', 'declined'],
   showcaseParticipationForms: ['booth', 'share'],
   organizationParticipationForms: ['undecided', 'exhibitor', 'attendee'],
@@ -31,7 +32,7 @@ export const contentSchema = Object.freeze({
 /** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string,slotNumber:number,organizationId?:string,contactName?:string,contactMethods?:string,description?:string,website?:string}} Booth */
 /** @typedef {{id:string,name:string,company:string,ggjRole:string,portraitId:string,status:string,publicConsent:boolean,internalNotes:string,contactId:string,title?:string,bio?:string,website?:string,publicRoles?:string[]}} Guest */
 /** @typedef {{id:string,name:string,logoId:string,website:string,participation:string,status:string,publicConsent:boolean,internalNotes:string}} Organization */
-/** @typedef {{id:string,title:string,teamName:string,school:string,contactName:string,email:string,wechat:string,memberCount:number,participationForms:string[],responseStatus:string,materialLinks:string,summary:string,coverId:string,status:string,publicConsent:boolean,sessionId:string,boothId:string,internalNotes:string}} Showcase */
+/** @typedef {{id:string,title:string,teamName:string,school:string,contactName:string,email:string,wechat:string,memberCount:number,participationForms:string[],responseStatus:string,materialLinks:string,summary:string,coverId:string,status:string,publicConsent:boolean,sessionId:string,boothId:string,internalNotes:string,kind?:string,organizationId?:string}} Showcase */
 /** @typedef {{heroDescription:string,aboutTitle:string,aboutText:string,faqItems:{question:string,answer:string}[],contactEmail:string,mapUrl:string,openingTime:string,endTime:string,checkInTime:string}} EventPresentation */
 /** @typedef {{schemaVersion:number,eventId:string,event:{title:string,date:string,timezone:string,venue:string,status:string,dateStatus:string,venueStatus:string,presentation?:EventPresentation},sessions:Session[],booths:Booth[],guests:Guest[],showcases:Showcase[],organizations?:Organization[]}} Content */
 
@@ -118,10 +119,21 @@ export function validateBoothOrganizationChanges(next, current) {
   return { valid: Object.keys(errors).length === 0, errors };
 }
 
+/** Existing orphan relations remain historical data; only newly chosen links
+ * must resolve to an explicitly saved organization in this candidate. */
+export function validateShowcaseOrganizationChanges(next, current) {
+  const errors = {}, known = new Set((next?.organizations ?? []).map(item => item.id));
+  const previousById = new Map((current?.showcases ?? []).map(item => [item.id, item]));
+  for (const [index, item] of (next?.showcases ?? []).entries()) {
+    if (item.organizationId && item.organizationId !== previousById.get(item.id)?.organizationId && !known.has(item.organizationId)) errors[`showcases.${index}.organizationId`] = '请选择已保存的组织，或明确解除这项关联。';
+  }
+  return { valid: Object.keys(errors).length === 0, errors };
+}
+
 /** @param {unknown} input @returns {Showcase} */
 function showcase(input) {
   const item = object(input);
-  return {
+  const result = {
     id: text(item.id), title: text(item.title), teamName: text(item.teamName), school: text(item.school),
     contactName: text(item.contactName), email: text(item.email).toLowerCase(), wechat: text(item.wechat),
     memberCount: item.memberCount === undefined ? 1 : /** @type {number} */ (item.memberCount),
@@ -131,6 +143,12 @@ function showcase(input) {
     status: item.status === undefined ? 'pending' : text(item.status), publicConsent: item.publicConsent === true,
     sessionId: text(item.sessionId), boothId: text(item.boothId), internalNotes: text(item.internalNotes),
   };
+  // Display defaults must never migrate historical snapshots or pending bodies.
+  for (const name of ['kind', 'organizationId']) {
+    const field = Object.getOwnPropertyDescriptor(item, name);
+    if (field) result[name] = text('value' in field ? field.value : undefined);
+  }
+  return result;
 }
 
 /** Only the assigned forms which are currently confirmed may enter public content. */
@@ -263,8 +281,8 @@ export function validateContent(input) {
   if (source.guests !== undefined && !Array.isArray(source.guests)) errors.guests = '嘉宾须为数组。';
   else if (rawGuests.length > MAX_CONTENT_ITEMS) errors.guests = `嘉宾最多 ${MAX_CONTENT_ITEMS} 位。`;
 
-  if (source.showcases !== undefined && !Array.isArray(source.showcases)) errors.showcases = '学生作品须为数组。';
-  else if (rawShowcases.length > MAX_CONTENT_ITEMS) errors.showcases = `学生作品最多 ${MAX_CONTENT_ITEMS} 组。`;
+  if (source.showcases !== undefined && !Array.isArray(source.showcases)) errors.showcases = '游戏与作品须为数组。';
+  else if (rawShowcases.length > MAX_CONTENT_ITEMS) errors.showcases = `游戏与作品最多 ${MAX_CONTENT_ITEMS} 项。`;
   if (organizationsField && (!organizationsField.enumerable || !('value' in organizationsField) || !Array.isArray(organizationsField.value))) errors.organizations = '参与组织须为明确的数组。';
   else if (rawOrganizations.length > MAX_CONTENT_ITEMS) errors.organizations = `参与组织最多 ${MAX_CONTENT_ITEMS} 个。`;
 
@@ -336,7 +354,6 @@ export function validateContent(input) {
     if (raw.publicConsent !== undefined && typeof raw.publicConsent !== 'boolean') errors[`${key}.publicConsent`] = '请明确勾选是否已获公开授权。';
     if (raw.portraitId !== undefined && typeof raw.portraitId !== 'string') errors[`${key}.portraitId`] = '请选择后台已上传的头像。';
     if (item.portraitId && !PORTRAIT_ID_PATTERN.test(item.portraitId)) errors[`${key}.portraitId`] = '请选择后台已上传的头像。';
-    if (item.status === 'confirmed' && item.publicConsent && !item.portraitId) errors[`${key}.portraitId`] = '公开嘉宾前请先上传已获授权的头像。';
   }
   for (const [index, item] of value.sessions.entries()) {
     const key = `sessions.${index}`;
@@ -400,6 +417,11 @@ export function validateContent(input) {
   for (const [index, item] of value.showcases.entries()) {
     const key = `showcases.${index}`;
     const raw = object(rawShowcases[index]);
+    const kind = Object.getOwnPropertyDescriptor(raw, 'kind');
+    if (kind && (!kind.enumerable || !('value' in kind) || !contentSchema.showcaseKinds.includes(kind.value))) errors[`${key}.kind`] = '请选择学生作品、独立游戏或团队作品。';
+    const organizationLink = Object.getOwnPropertyDescriptor(raw, 'organizationId');
+    if (organizationLink && (!organizationLink.enumerable || !('value' in organizationLink) || typeof organizationLink.value !== 'string'
+      || organizationLink.value !== '' && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(organizationLink.value))) errors[`${key}.organizationId`] = '组织关联须为明确的稳定编号，或空字串解除关联。';
     stableId(`${key}.id`, item.id);
     if (ids.has(item.id)) errors[`${key}.id`] = 'ID 重复，请保留每条内容独立的稳定 ID。';
     ids.add(item.id);
@@ -461,8 +483,10 @@ export function toPublicContent(input) {
   const result = validateContent(input);
   if (!result.valid) throw new TypeError('内容校验未通过，不能生成公开内容。');
   const { value } = result;
-  const publicGuests = value.guests.filter(item => item.status === 'confirmed' && item.publicConsent && PORTRAIT_ID_PATTERN.test(item.portraitId));
+  const publicGuests = value.guests.filter(item => item.status === 'confirmed' && item.publicConsent);
   const guestsById = new Map(publicGuests.map(item => [item.id, item]));
+  const publicOrganizations = (value.organizations ?? []).filter(item => item.status === 'confirmed' && item.publicConsent);
+  const publicOrganizationIds = new Set(publicOrganizations.map(item => item.id));
   return {
     schemaVersion: value.schemaVersion,
     eventId: value.eventId,
@@ -490,17 +514,19 @@ export function toPublicContent(input) {
         coverUrl: '/api/public/portraits/' + item.coverId, ...allocated,
         participationForms: [allocated.boothId ? 'booth' : '', allocated.sessionId ? 'share' : ''].filter(Boolean),
         status: 'confirmed', responseStatus: 'attending', publicConsent: true,
+        ...(Object.hasOwn(item, 'kind') ? { kind: item.kind } : {}),
+        ...(item.organizationId && publicOrganizationIds.has(item.organizationId) ? { organizationId: item.organizationId } : {}),
       };
     }),
     guests: publicGuests.map(item => ({
       id: item.id, name: item.name, company: item.company, ggjRole: item.ggjRole, portraitId: item.portraitId,
-      portraitUrl: '/api/public/portraits/' + item.portraitId,
+      portraitUrl: item.portraitId ? '/api/public/portraits/' + item.portraitId : '',
       // These affirmative publication fields keep the public snapshot idempotent
       // when it is validated again on restart; consent history stays private.
       status: 'confirmed', publicConsent: true,
       ...Object.fromEntries(['title','bio','website','publicRoles'].filter(name => Object.hasOwn(item,name)).map(name => [name,structuredClone(item[name])])),
     })),
-    ...(Object.hasOwn(value, 'organizations') ? { organizations: value.organizations.filter(item => item.status === 'confirmed' && item.publicConsent).map(item => ({
+    ...(Object.hasOwn(value, 'organizations') ? { organizations: publicOrganizations.map(item => ({
       id: item.id, name: item.name, participation: item.participation, website: item.website,
       logoId: item.logoId, status: 'confirmed', publicConsent: true,
       logoUrl: item.logoId ? '/api/public/portraits/' + item.logoId : '',

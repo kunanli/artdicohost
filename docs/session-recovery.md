@@ -1,5 +1,11 @@
 # 开发接续与验收计划
 
+## 当前恢复：新版邀请函已集成，待准确发布（2026-10-21）
+
+根分支 `feat/invitation-poster-v2`，产品来源 `f9e5ea8`，**13:06:38 UTC** 冻结十页构建。上传字体已转为四包、完整 OFL 在每包，Medium 原 30890 cmap 全保留；新 blank WebP 与旧 PNG 共存。V2 manual digest ID／旧hash／历史contacted与unknown保留，私人 PNG 仅 public confirmed，前后freshread与切换取消完成。独立 review 修正 batch pagehide、首 -/_ 合法编号、skiplink覆盖 #r，以及旧发送同时间戳混入新版；24组个人/字体、11组手动/批次 Chromium 全绿、零pageerrors。
+
+完整本机第一轮1176/1176（86.740681932秒），之后149定向、18file-store、42lifecycle检查全过；最终完整 **1182/1182**（84.139525025秒）通过，512源码／380Astro／十页／审计通过。[本阶段计划与操作](invitation-poster-v2.md)、[验证／剩余](invitation-release-2026-10-21.md)。下一步准确最终head候选ZIP／离线启动、PR精确CI、main真实私有OSS/300政策与exactHTTPS；不可先说新版已上线。PR #38已经实际完成，不重跑旧部署。
+
 ## 最新：本机草稿与协作账号 PR #38 已实际上线（2026-10-21）
 
 main **`19fe62132518a51d2ca83b0d97df2003f4526506`** 已实际发布，[run 39600944892](https://github.com/kunanli/artdicohost/actions/runs/39600944892) attempt 1 三个 job 全 success；准确 PR／main **1131/1131**、125 文件／37 静态资源、真实私有 OSS、共同 300 政策及 **28/28 HTTPS** 通过，**20:44:48（UTC+08）**完成。[完整证据](usability-release-2026-10-21.md)。本机暂存、刷新恢复、就近云端保存、简化说明及全业务协作者权限已上线。`zhouyufei`／`wangying` 的快速准备入口已上线，**正式账号尚未建立**：现有管理员须登录用户管理生成密码并保存；本次未读取凭证或实寄邮件。

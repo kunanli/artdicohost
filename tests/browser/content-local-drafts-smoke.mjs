@@ -96,6 +96,7 @@ try{
     await f.page.locator('[data-event-form] [name=title]').fill('合成未应用活动名称');
     await f.page.locator('[data-event-add-faq]').click();await f.page.locator('[data-event-faq] [name=faqQuestion]').last().fill('合成未完成问题');
     await localSaved(f);await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-admin-local-restore]:visible').waitFor();await f.page.locator('[data-admin-local-restore]').click();
+    await f.page.waitForFunction(()=>document.querySelector('[data-event-form] [name=title]').value==='合成未应用活动名称');
     assert.equal(await f.page.locator('[data-event-form] [name=title]').inputValue(),'合成未应用活动名称');assert.equal(await f.page.locator('[data-event-faq] [name=faqQuestion]').last().inputValue(),'合成未完成问题');assert.equal(await f.page.locator('[data-event-faq] [name=faqAnswer]').last().inputValue(),'');
     assert.deepEqual(f.writes,[]);await assertNoPublication(f);await f.context.close();reports.push('incomplete event and FAQ inputs explicitly recover without applying or writing cloud content');
   }
@@ -104,7 +105,7 @@ try{
     await f.page.locator('[data-arrangements-slots] [data-slot-number="1"] [data-arrangements-plan=booth]').click();
     await f.page.locator('[data-planner-booth] [name=project]').fill('合成未应用规划项目');await localSaved(f);
     await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-admin-local-restore]:visible').waitFor();await f.page.locator('[data-admin-local-restore]').click();
-    await f.page.locator('[data-arrangement-planner]:visible').waitFor();assert.equal(await f.page.locator('[data-planner-booth] [name=project]').inputValue(),'合成未应用规划项目');
+    await f.page.locator('[data-arrangement-planner]:visible').waitFor();await f.page.waitForFunction(()=>document.querySelector('[data-planner-booth] [name=project]').value==='合成未应用规划项目');assert.equal(await f.page.locator('[data-planner-booth] [name=project]').inputValue(),'合成未应用规划项目');
     assert.equal(f.reads.filter(path=>path==='/api/admin/contacts').length,1,'restoring a planner does not automatically reload or save people assignments');assert.deepEqual(f.writes,[]);await assertNoPublication(f);await f.context.close();reports.push('planner booth raw inputs recover by stable saved position without automatic people requests or assignments');
   }
   for(const mode of ['unknown-committed','unknown-uncommitted']){

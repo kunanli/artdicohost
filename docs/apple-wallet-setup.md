@@ -1,6 +1,16 @@
 # Apple Wallet 设置步骤
 
-当前主办方还没有 Apple Developer 帐号、Pass Type ID 或签章凭证。后台会显示缺项及未启用；公开确认页不会出现可用票券按钮。以下是后续由主办方／受控运维完成的流程，不表示已经开户、付费、取得证书或通过 iPhone 验收。
+当前尚未取得本活动可用的 Apple Developer 身份、Pass Type ID 或签章凭证。后台会显示缺项及未启用；公开确认页不会出现可用票券按钮。以下是后续由主办方／受控运维完成的流程，不表示已经开户、付费、取得证书或通过 iPhone 验收。
+
+## 先选对 Apple 服务
+
+2026-10-21 已重新核对官方说明。活动普通二维码票券使用 **Apple Developer Program** 的 Pass Type ID 与证书。[Apple Business Manager](https://support.apple.com/en-gb/guide/apple-business-manager/axm3a8bb0ab8/1/web/1) 用于组织设备、账号及 App／书籍部署，不是本次签发票券所需的会员。
+
+Apple 当前列 [Developer Program](https://developer.apple.com/programs/enroll/) 年费为 **99 USD**，实际按注册地显示币别／价格；现有有效会员可直接使用自己的团队创建本站票券标识。可选个人或组织会员，ARTDiCO 若需长期由公司持有与维护，建议按真实法人主体申请组织会员。组织申请需要法人身份、具有签约权限的申请人、D-U-N-S（政府组织除外）、组织域名邮箱与公开可用的网站；个人会员按本人法定身份申请。加入 Apple Business 不会代替这项会员资格。
+
+普通票券可以从网站或邮件分发，**不用先开发或上架 iOS App**，见 [Apple Wallet 入门](https://developer.apple.com/wallet/get-started/)。本项目采用报名私人确认页下载签章 `.pkpass`，仅确认名额可下载；现有基础实现不是 NFC 或推送更新服务。
+
+开通会员后，到 **Certificates, Identifiers & Profiles → Identifiers → ＋ → Pass Type IDs**，填写描述及本站专用标识（例如建议值 `pass.co.artdico.host`，尚未建立）。再按下节生成 CSR 并申请 **Pass Type ID Certificate**。Apple 要求 Account Holder 或 Admin 操作，见 [官方步骤](https://developer.apple.com/help/account/capabilities/create-wallet-identifiers-and-certificates/)。记录真实 Team ID 和实际注册的 Pass Type ID，证书及匹配私钥使用受控渠道配置，不贴聊天。
 
 ## 主办方先准备
 

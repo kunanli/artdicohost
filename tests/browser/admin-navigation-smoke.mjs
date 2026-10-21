@@ -17,7 +17,7 @@ const content = createInitialContent();
 const json = (body, status = 200) => ({status, contentType:'application/json', body:JSON.stringify(body)});
 const sections = ['workspace-title','event-editor-title','arrangements-title','guests-title','organizations-title','showcases-title','sessions-title','booths-title'];
 const routes = [
-  ['/admin/', 'admin'], ['/admin/tasks/', 'tasks'], ['/admin/contacts/', 'contacts'], ['/admin/registrations/', 'review'],
+  ['/admin/', 'admin'], ['/admin/tasks/', 'tasks'], ['/admin/contacts/', 'contacts'], ['/admin/registrations/', 'review'], ['/admin/settings/', 'settings'],
 ];
 const errors = [], reports = [];
 const browser = await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless:true, args:['--no-sandbox','--disable-dev-shm-usage']});
@@ -48,6 +48,7 @@ async function fixture(width) {
       if (path === '/api/admin/registrations') return route.fulfill(json({revision:0,registrations:[],total:0,overallTotal:0,nextCursor:null,stats:{}}));
       if (path === '/api/admin/users') return route.fulfill(json({revision:0,users:[{...staff,username:'synthetic.navigation',active:true,protected:true}]}));
       if (path === '/api/admin/group-invite') return route.fulfill(json({revision:0,configured:false,expired:false,expiresAt:null}));
+      if (path === '/api/admin/intent-invitations') return route.fulfill(json({revision:0,conversions:[],invitations:[],email:{ready:false,reason:'EMAIL_NOT_READY'}}));
       if (path === '/api/admin/maintenance') return route.fulfill(json({enabled:false,backup:{available:false}}));
       if (path === '/api/admin/registration-confirmation/settings') return route.fulfill(json({revision:0,automaticEnabled:false,email:{ready:false,missing:['EMAILJS_CONFIRMATION_TEMPLATE_ID']},wallet:{ready:false},counts:{total:0,providerAccepted:0,rejected:0,unknown:0}}));
       if (path === '/api/admin/admissions') return route.fulfill(json({revision:0,settings:{capacity:300,staffReserve:0,waitlistEnabled:true},summary:{capacity:300,staffReserve:0,waitlistEnabled:true,confirmedCount:0,attendeeConfirmedCount:0,crewConfirmedCount:0,waitlistCount:0,remainingPublic:300,remainingTotal:300},people:[],teams:[],auditCount:0}));
@@ -153,8 +154,15 @@ try {
     await pages.page.locator(`[data-${prefix}-login-panel]:visible`).waitFor();
     assert.equal(await pages.page.locator('[data-staff-navigation]').isVisible(),false);
   }
-  assert.deepEqual(pages.writes,Array(4).fill('/api/admin/logout'));
-  await pages.context.close();reports.push({fourWorkspacesLinked:true,currentPageMarked:true,allWorkspacesHideNavigationAtLogout:true});
+  assert.deepEqual(pages.writes,Array(5).fill('/api/admin/logout'));
+  await pages.context.close();reports.push({fiveWorkspacesLinked:true,currentPageMarked:true,allWorkspacesHideNavigationAtLogout:true});
+
+  const legacy=await fixture(390);legacy.setAuthenticated(true);
+  for(const [id,target] of [['delivery-settings-heading','delivery-settings-heading'],['staff-settings-title','group-settings-title']]){
+    await legacy.page.goto(SITE+'/admin/registrations/?legacy='+id+'#'+id,{waitUntil:'networkidle'});await legacy.page.locator('[data-review-workspace]:visible').waitFor();
+    await legacy.page.waitForFunction(id=>document.activeElement?.id===id,id);assert.equal(await legacy.page.locator('#'+id).count(),1);assert.equal(await legacy.page.locator('a[href="/admin/settings/#'+target+'"]').count(),1);assert.equal(await legacy.page.locator('[data-delivery-settings]').count(),0);assert.equal(await legacy.page.locator('[data-staff-settings]').count(),0);
+  }
+  assert.deepEqual(legacy.writes,[]);await legacy.context.close();reports.push({legacySettingsAnchorsRemainUseful:true,reviewDoesNotMountSettingsWidgets:true});
 
   const dirty=await fixture(1280);await load(dirty,'/admin/','admin');
   let dialogCount=0;

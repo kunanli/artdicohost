@@ -9,7 +9,7 @@ import { startCloudAcceptance } from './acceptance.mjs';
 
 const MiB = 1024 * 1024;
 const NODE = Object.freeze({ version: 'v24.19.0', platform: 'linux', arch: 'x64', sha256: 'bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12' });
-const REQUIRED = ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/invitations/template-blank.png'];
+const REQUIRED = ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/invitations/template-blank.png'];
 const failure = () => new Error('Cloud content package verification failed.');
 const exactKeys = (value, keys) => value !== null && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
@@ -48,6 +48,8 @@ function assetPath(url) {
   if (url === '/admin/contacts/') return 'admin-assets/admin/contacts/index.html';
   if (url === '/admin/registrations/') return 'admin-assets/admin/registrations/index.html';
   if (url === '/admin/tasks/') return 'admin-assets/admin/tasks/index.html';
+  if (url === '/admin/settings/') return 'admin-assets/admin/settings/index.html';
+  if (url === '/admin/person/') return 'admin-assets/admin/person/index.html';
   return 'admin-assets' + url;
 }
 
@@ -60,7 +62,7 @@ export async function loadCloudContentRelease({ codeDirectory } = {}) {
     if (!exactKeys(release, ['schemaVersion', 'kind', 'sourceCommit', 'node', 'files', 'assets'])
       || release.schemaVersion !== 1 || release.kind !== 'fc-cloud-content-candidate' || typeof release.sourceCommit !== 'string' || !/^[a-f0-9]{40}$/u.test(release.sourceCommit)
       || !exactKeys(release.node, Object.keys(NODE)) || Object.keys(NODE).some(key => release.node[key] !== NODE[key])
-      || !Array.isArray(release.files) || release.files.length > 100 || !release.files.every(validRecord)
+      || !Array.isArray(release.files) || release.files.length > 128 || !release.files.every(validRecord)
       || new Set(release.files.map(file => file.path)).size !== release.files.length
       || !Array.isArray(release.assets) || release.assets.length > 40 || release.assets.length < REQUIRED.length) throw failure();
     const records = new Map(release.files.map(file => [file.path, file]));

@@ -150,6 +150,30 @@ function registrationEnvironment(env, previous) {
     ARTDICO_REGISTRATION_WAITLIST_ENABLED: String(approvedAdmissionDefaults({ enabled }).waitlistEnabled) };
 }
 
+/** Check every planned full map before the lifecycle closes a working deployment. */
+export async function assertCloudLifecycleConfigurationFits(options) {
+  try {
+    if (!plain(options) || Reflect.ownKeys(options).some(key => !['env', 'previous', 'acceptanceRunId'].includes(key)
+      || !Object.hasOwn(Object.getOwnPropertyDescriptor(options, key), 'value'))) throw stage('CONFIGURATION_INPUT_INVALID');
+    const env = setupEnvironment(descriptorValue(options, 'env'));
+    requireCloudAdminSetupContext(env);
+    const runId = descriptorValue(options, 'acceptanceRunId');
+    if (typeof runId !== 'string' || !/^r[1-9][0-9]{0,19}-a[1-9][0-9]{0,9}-[a-f0-9]{16}-[a-f0-9]{40}$/u.test(runId)
+      || !runId.endsWith('-' + env.GITHUB_SHA)) throw stage('CONFIGURATION_INPUT_INVALID');
+    const previous = environmentFrom({ environmentVariables: descriptorValue(options, 'previous') });
+    const closed = { ...previous, ARTDICO_CLOUD_CONTENT_ENABLED: 'false' };
+    delete closed.ARTDICO_CLOUD_ACCEPTANCE_RUN_ID;
+    const owner = await accountJson(env, closed.ADMIN_USERS_JSON);
+    // New scrypt hashes and token secrets have fixed encoded lengths. Reuse
+    // setup's exact existing-account preservation or legacy-role upgrade.
+    const configured = { ...closed, ...OWNED, ...registrationEnvironment(env, closed), ADMIN_USERS_JSON: owner.json };
+    const armed = { ...configured, ARTDICO_CLOUD_ACCEPTANCE_RUN_ID: runId };
+    const active = { ...configured, ARTDICO_CLOUD_CONTENT_ENABLED: 'true' };
+    for (const variables of [closed, configured, armed, active]) assertFcEnvironmentMap(variables, { allowContentActivation: true });
+    return true;
+  } catch { throw stage('CONFIGURATION_INPUT_INVALID'); }
+}
+
 /** Trusted one-time account configuration only. No business activation, storage probe, filesystem output or secret return. */
 export async function configureCloudAdmin(options = {}) {
   try {

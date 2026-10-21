@@ -53,12 +53,16 @@ async function fixture(t) {
         ['admin/contacts/index.html', '<html><script type="module" src="/_astro/contacts.hash.js"></script></html>'],
         ['admin/registrations/index.html', '<html><script type="module" src="/_astro/contacts.hash.js"></script></html>'],
         ['admin/tasks/index.html', '<html><script type="module" src="/_astro/contacts.hash.js"></script></html>'],
+        ['admin/settings/index.html', '<html><script type="module" src="/_astro/settings.hash.js"></script></html>'],
+        ['admin/person/index.html', '<html><script type="module" src="/_astro/person.hash.js"></script></html>'],
         ['invitations/template-blank.png', 'SYNTHETIC-PNG-BYTES'],
         ['_astro/admin.hash.js', 'export const version = 1;'],
         ['_astro/admin.hash.css', '@font-face{src:url("./font.hash.woff2")}'],
         ['_astro/font.hash.woff2', 'SYNTHETIC-FONT-BYTES'],
         ['_astro/contacts.hash.js', 'export async function read(){return import("./xlsx.hash.js")}'],
         ['_astro/xlsx.hash.js', 'export const reader = true;'],
+        ['_astro/settings.hash.js', 'export const settings = true;'],
+        ['_astro/person.hash.js', 'import "./contacts.hash.js";export const person = true;'],
         ['index.html', 'SYNTHETIC-PUBLIC-HOMEPAGE-NOT-PACKAGED'],
         ['_astro/unreferenced.hash.js', 'SYNTHETIC-UNREFERENCED-NOT-PACKAGED'],
       ]) { mkdirSync(dirname(resolve(output, path)), { recursive: true }); writeFileSync(resolve(output, path), body); }
@@ -74,6 +78,8 @@ test('candidate CLI requires exact distinct arguments and isolated candidate ass
   assert.equal(parseCandidateArguments(args).sourceCommit, 'b'.repeat(40));
   for (const invalid of [[], args.slice(0, -2), [...args, '--out', '/other'], [...args, '--dist', '/untrusted']]) assert.throws(() => parseCandidateArguments(invalid));
   assert.equal(candidateAssetPath('/admin/contacts/'), 'admin-assets/admin/contacts/index.html');
+  assert.equal(candidateAssetPath('/admin/settings/'), 'admin-assets/admin/settings/index.html');
+  assert.equal(candidateAssetPath('/admin/person/'), 'admin-assets/admin/person/index.html');
   assert.equal(candidateAssetPath('/_astro/chunk.hash.js'), 'admin-assets/_astro/chunk.hash.js');
   for (const path of ['/admin/index.html', '/_astro/../secret.js', '/_astro/.secret.js', '/_astro/file.js.map', '/_astro/nested/file.js', '/invitations/group.png', '/_astro/x.js?token=1', '/_astro/x..js']) assert.throws(() => candidateAssetPath(path));
 });
@@ -139,6 +145,12 @@ test('the real candidate archive binds source, isolates its build and remains re
   assert.equal(result.manifest.sourceCommit, options.sourceCommit);
   assert.ok(result.release.assets.some(item => item.url === '/_astro/xlsx.hash.js'));
   assert.ok(result.release.assets.some(item => item.url === '/_astro/font.hash.woff2'));
+  for (const url of ['/admin/settings/', '/admin/person/', '/_astro/settings.hash.js', '/_astro/person.hash.js']) {
+    assert.ok(result.release.assets.some(item => item.url === url), url);
+  }
+  for (const source of ['functions/person-workspace/handler.mjs', 'functions/person-workspace/projection.mjs']) {
+    assert.ok(result.manifest.files.some(item => item.path === source), source);
+  }
   assert.equal(result.manifest.files.some(item => /contacts\.json|\.env|unreferenced|^index\.html$/u.test(item.path)), false);
   const contents = candidateZipEntries(result.zipBytes, result.manifest.files);
   validateCandidateAssets(result.release, contents);
@@ -150,6 +162,10 @@ test('the real candidate archive binds source, isolates its build and remains re
   await writeFile(resolve(publication, 'package-manifest.json'), original);
   const missing = structuredClone(result.release); missing.assets = missing.assets.filter(item => !item.url.endsWith('xlsx.hash.js'));
   assert.throws(() => validateCandidateAssets(missing, contents), /Incomplete|missing/);
+  for (const url of ['/admin/settings/', '/admin/person/']) {
+    const missingPage = structuredClone(result.release); missingPage.assets = missingPage.assets.filter(item => item.url !== url);
+    assert.throws(() => validateCandidateAssets(missingPage, contents), /Incomplete/);
+  }
   const extra = structuredClone(result.release); extra.assets.push({ url: '/_astro/extra.js', path: 'admin-assets/_astro/extra.js', bytes: 1, sha256: candidateSha256(Buffer.from('x')), mode: '0644' }); extra.files.push({ ...extra.assets.at(-1) }); delete extra.files.at(-1).url;
   const withExtra = new Map(contents); withExtra.set('admin-assets/_astro/extra.js', Buffer.from('x'));
   assert.throws(() => validateCandidateAssets(extra, withExtra), /unreferenced/);

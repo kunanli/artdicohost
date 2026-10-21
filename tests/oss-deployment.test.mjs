@@ -18,12 +18,14 @@ async function fixture(t) {
   });
   const dist = resolve(directory, 'dist');
   const output = resolve(directory, 'publication');
-  for (const part of ['_astro', 'invitation', 'invitations', 'registration/confirmation', 'admin/contacts']) await mkdir(resolve(dist, part), { recursive: true });
+  for (const part of ['_astro', 'invitation', 'invitations', 'registration/confirmation', 'admin/contacts', 'admin/settings', 'admin/person']) await mkdir(resolve(dist, part), { recursive: true });
   await writeFile(resolve(dist, 'index.html'), '<script type="module" src="/_astro/public.hash.js"></script><a href="/admin/">后台</a>');
   await writeFile(resolve(dist, '_astro/public.hash.js'), 'import "./shared.hash.js";');
   await writeFile(resolve(dist, '_astro/shared.hash.js'), 'console.log("public-only");');
   await writeFile(resolve(dist, '_astro/private.hash.js'), 'private-admin-code');
   await writeFile(resolve(dist, 'admin/contacts/index.html'), 'private-admin-form');
+  await writeFile(resolve(dist, 'admin/settings/index.html'), 'private-settings-form');
+  await writeFile(resolve(dist, 'admin/person/index.html'), 'private-person-workspace');
   await writeFile(resolve(dist, 'invitation/index.html'), '<h1>图片邀请函</h1>');
   await writeFile(resolve(dist, 'registration/confirmation/index.html'), '<h1>报名确认</h1><script type="module" src="/_astro/receipt.hash.js"></script>');
   await writeFile(resolve(dist, '_astro/receipt.hash.js'), '/* Synthetic empty receipt controller; no participant data. */');
@@ -35,7 +37,7 @@ async function fixture(t) {
 test('publication selects reachable public assets and replaces local admin with notices', async t => {
   const { dist, output } = await fixture(t);
   const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
-  assert.equal(manifest.files.length, 13);
+  assert.equal(manifest.files.length, 15);
   const receipt = JSON.parse(await readFile(resolve(output, 'release.json'), 'utf8'));
   assert.equal(receipt.commit, commit);
   assert.deepEqual(receipt.files, manifest.files.filter(item => item.path !== 'release.json'));
@@ -46,6 +48,12 @@ test('publication selects reachable public assets and replaces local admin with 
   assert.match(await readFile(resolve(output, 'admin/contacts/index.html'), 'utf8'), /https:\/\/api\.artdico\.host\/admin\//);
   assert.match(await readFile(resolve(output, 'admin/registrations/index.html'), 'utf8'), /工作人员后台入口/);
   assert.match(await readFile(resolve(output, 'admin/tasks/index.html'), 'utf8'), /工作人员后台入口/);
+  for (const path of ['admin/settings/index.html', 'admin/person/index.html']) {
+    const page = await readFile(resolve(output, path), 'utf8');
+    assert.match(page, /工作人员后台入口/u);
+    assert.match(page, /https:\/\/api\.artdico\.host\/admin\//u);
+    assert.doesNotMatch(page, /private-settings-form|private-person-workspace/u);
+  }
   assert.doesNotMatch(await readFile(resolve(output, 'admin/contacts/index.html'), 'utf8'), /<form|private-admin-form/);
   assert.equal((await verifyPublication(output, commit)).commit, commit);
   await assert.rejects(prepareOssSite({ distDirectory: dist, outputDirectory: output, commit }), /must be empty/);
@@ -65,6 +73,8 @@ test('publication rejects added files, corrupt content and a mismatched commit b
 test('path validation rejects private names, traversal, encoded extensions and unexpected routes', () => {
   for (const path of ['../index.html', '/index.html', '_astro/../index.html', '.env', 'contacts.json', 'data.xlsx', 'backup.html', 'private/index.html', '_astro/x.map', '_astro/x%2ejs']) assert.throws(() => validatePublicPath(path));
   assert.equal(validatePublicPath('admin/contacts/index.html'), 'admin/contacts/index.html');
+  assert.equal(validatePublicPath('admin/settings/index.html'), 'admin/settings/index.html');
+  assert.equal(validatePublicPath('admin/person/index.html'), 'admin/person/index.html');
   assert.deepEqual(referencedAssets('import "./shared.hash.js";url("/_astro/style.hash.css")', '_astro/public.hash.js'), ['_astro/shared.hash.js', '_astro/style.hash.css']);
 });
 

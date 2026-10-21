@@ -6,6 +6,8 @@
 
 ## 确认信
 
+使用现有 `support@artdico.co`／EmailJS `LoginPlan` 的具体控制台字段、独立模板及启用顺序见 [报名确认设置](emailjs-registration-setup.md)。可复用既有 SMTP 服务，不修改 `artdico-deck` 模板；实际密钥不在此文档提供。
+
 需要实际已验证的寄件邮箱／服务、独立 `EMAILJS_CONFIRMATION_TEMPLATE_ID`、EmailJS 服务／公钥／服务端私钥及发件人名称。邀请函模板与自动确认模板分别配置。开启只代表服务可接受发送请求；`provider_accepted` 不能称为已送达。
 
 1. 在受控机器准备 **0600** JSON 文件，字段仅为 `EMAILJS_SERVICE_ID`、`EMAILJS_CONFIRMATION_TEMPLATE_ID`、`EMAILJS_PUBLIC_KEY`、`EMAILJS_PRIVATE_KEY`、`EMAIL_FROM_ADDRESS`、`EMAIL_FROM_NAME`。不要在聊天、命令行字面量、公开工件或仓库中写实际值。

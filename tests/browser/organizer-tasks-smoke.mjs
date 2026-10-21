@@ -6,7 +6,7 @@ import { extname, resolve } from 'node:path';
 import { createOrganizerTasksApi } from '../../functions/organizer-tasks/handler.mjs';
 import { eventConfig as event } from '../../src/config/event.mjs';
 const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
-const dist = resolve(fileURLToPath(new URL('../../', import.meta.url)), 'dist');
+const dist = resolve(process.env.ARTDICO_DIST_DIRECTORY || resolve(fileURLToPath(new URL('../../', import.meta.url)), 'dist'));
 const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless: true, args: ['--no-sandbox','--disable-dev-shm-usage'] });
 const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
 const page = await context.newPage(), errors = [], requests = [];
@@ -57,7 +57,7 @@ try{
   assert.equal(await page.locator('[data-tasks-list]').getByText('合成拒绝对象').count(),0);
   await page.locator('[data-tasks-owner]').selectOption('合成乙');await page.locator('[data-tasks-kind]').selectOption('invitation_unknown');await page.locator('[data-tasks-filters]').getByRole('button',{name:'应用筛选'}).click();
   await page.locator('[data-tasks-result]').filter({hasText:'当前筛选 1 项'}).waitFor();assert.equal(await page.locator('[data-tasks-list] li').count(),1);
-  assert.equal(await page.locator('[data-tasks-list] a').first().getAttribute('href'),'/admin/contacts/#contact=synthetic-unknown');
+  assert.equal(await page.locator('[data-tasks-list] a').first().getAttribute('href'),'/admin/person/#contact=synthetic-unknown');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
   await page.locator('[data-tasks-logout]').click();await page.locator('[data-tasks-login-panel]:visible').waitFor();assert.equal(await page.locator('[data-tasks-list]').textContent(),'');
   actor={id:'synthetic-editor',roles:['editor']};const before=sourceReads;

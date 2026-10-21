@@ -15,6 +15,11 @@ const ENV = { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push', GITHUB_REF: 're
   ARTDICO_CLOUD_LIFECYCLE_ENABLED: 'true', ARTDICO_CLOUD_ADMIN_SETUP_ENABLED: 'true', ARTDICO_FC_ACCOUNT_ID: '1954121651395178',
   FC_ACCESS_KEY_ID: 'SYNTHETICKEY', FC_ACCESS_KEY_SECRET: 'synthetic-deployment-secret', ARTDICO_ADMIN_PASSWORD: 'synthetic-owner-password-123',
   ARTDICO_ADMIN_USERNAME: 'synthetic.owner', ARTDICO_ADMIN_EMAIL: 'synthetic.owner@artdico.co', ARTDICO_REGISTRATION_SETUP_ENABLED: 'false' };
+const MAIL = { EMAILJS_SERVICE_ID: 'synthetic_service', EMAILJS_TEMPLATE_ID: 'synthetic_invitation',
+  EMAILJS_CONFIRMATION_TEMPLATE_ID: 'synthetic_confirmation', EMAILJS_PUBLIC_KEY: 'PRIVATE-SYNTHETIC-PUBLIC-KEY',
+  EMAILJS_PRIVATE_KEY: 'PRIVATE-SYNTHETIC-PRIVATE-KEY', EMAIL_FROM_ADDRESS: 'synthetic.sender@artdico.co',
+  EMAIL_FROM_NAME: '合成通知团队', ARTDICO_INVITATION_EMAIL_ENABLED: 'true', ARTDICO_CONFIRMATION_EMAIL_ENABLED: 'true',
+  ARTDICO_DELIVERY_CONFIG_BUNDLE_ID: 'synthetic-bundle' };
 function proof() {
   return { schemaVersion: 1, status: 'passed', runId: RUN, sourceCommit: COMMIT, instanceId: 'c'.repeat(32), completed: [...STAGES],
     requests: 30, touchedObjects: 20, independentClients: 2, fcProcesses: 1, cleanupPerformed: false };
@@ -131,6 +136,47 @@ test('enabled code is quiesced before code-only deployment, owner setup and sign
   assert.deepEqual(result, { sourceCommit: COMMIT, contentEnabled: true, registrationEnabled: false,
     acceptanceRunId: f.updates[2].ARTDICO_CLOUD_ACCEPTANCE_RUN_ID, privateOssAcceptance: 'passed', independentClients: 2, fcProcesses: 1 });
   assert.equal(JSON.stringify(f.reports).includes(PRIVATE), false);
+});
+
+test('the full 4096-byte acceptance map preserves every existing mail setting through closed and active phases', async () => {
+  const prepared = fixture(); await deployCloudLifecycle(prepared.options);
+  const configured = { ...prepared.updates[1], ...MAIL, SYNTHETIC_PADDING: '' };
+  const padding = 4096 - Buffer.byteLength(JSON.stringify({ ...configured, ARTDICO_CLOUD_ACCEPTANCE_RUN_ID: RUN }));
+  assert.ok(padding > 0); configured.SYNTHETIC_PADDING = 'x'.repeat(padding);
+  const f = fixture({ before: value => ({ ...value, environmentVariables: { ...configured, ARTDICO_CLOUD_CONTENT_ENABLED: 'true' } }) });
+  const result = await deployCloudLifecycle(f.options);
+  assert.equal(result.contentEnabled, true);
+  const armed = f.updates.find(variables => variables.ARTDICO_CLOUD_ACCEPTANCE_RUN_ID);
+  assert.equal(Buffer.byteLength(JSON.stringify(armed)), 4096);
+  for (const variables of f.updates) {
+    assert.ok(Buffer.byteLength(JSON.stringify(variables)) <= 4096);
+    for (const [key, value] of Object.entries(MAIL)) assert.equal(variables[key], value, key);
+    assert.equal(variables.ADMIN_USERS_JSON, configured.ADMIN_USERS_JSON);
+  }
+  assert.doesNotMatch(JSON.stringify(f.reports), /PRIVATE-SYNTHETIC|synthetic\.sender/u);
+});
+
+test('an armed environment overflow is rejected before quiescing, including first setup and legacy-owner upgrade', async () => {
+  const prepared = fixture(); await deployCloudLifecycle(prepared.options);
+  const configured = { ...prepared.updates[1], ...MAIL, SYNTHETIC_PADDING: '' };
+  configured.SYNTHETIC_PADDING = 'x'.repeat(4096 - Buffer.byteLength(JSON.stringify(configured)));
+  assert.equal(Buffer.byteLength(JSON.stringify(configured)), 4096);
+  for (const kind of ['existing', 'first-setup', 'legacy-upgrade']) {
+    let previous = { ...configured, ARTDICO_CLOUD_CONTENT_ENABLED: 'true' };
+    if (kind === 'first-setup') previous = { ARTDICO_CLOUD_CONTENT_ENABLED: 'true', SYNTHETIC_PRIVATE_SETTING: PRIVATE,
+      ...MAIL, SYNTHETIC_PADDING: configured.SYNTHETIC_PADDING };
+    if (kind === 'legacy-upgrade') {
+      const users = JSON.parse(previous.ADMIN_USERS_JSON); users[0].roles = ['editor', 'publisher', 'outreach'];
+      previous.ADMIN_USERS_JSON = JSON.stringify(users);
+    }
+    assert.ok(Buffer.byteLength(JSON.stringify(previous)) <= 4096);
+    const f = fixture({ before: value => ({ ...value, environmentVariables: previous }) });
+    await safeFailure(f, /CONFIGURATION_PREFLIGHT_INVALID/u);
+    assert.equal(f.updates.length, 0, kind);
+    assert.equal(f.calls.includes('code'), false, kind);
+    assert.equal(f.source(), OLD, kind);
+    assert.deepEqual(f.current().environmentVariables, previous, kind);
+  }
 });
 
 test('failed or malformed acceptance remains closed and never attempts activation', async () => {

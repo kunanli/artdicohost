@@ -19,10 +19,11 @@ let intentState = null;
 let importSource = null;
 const selectedContacts = new Set();
 let visibleContactIds = [];
-let pendingContactId=null,sessionGeneration=0;
+let pendingContactId=null,pendingContactAction='contact',sessionGeneration=0;
 let batchDownloadUrl = null;
 const privateExportUrls = new Set();
-if(location.hash.startsWith('#contact=')){try{const id=decodeURIComponent(location.hash.slice(9));if(/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(id))pendingContactId=id;}catch{}history.replaceState(null,'',location.pathname+location.search);}
+const contactFragment=location.hash.match(/^#(contact|profile|invitation)=([^&?#]+)$/u);
+if(contactFragment){try{const id=decodeURIComponent(contactFragment[2]);if(/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(id)){pendingContactId=id;pendingContactAction=contactFragment[1];}}catch{}history.replaceState(null,'',location.pathname+location.search);}
 const consentLabels = { unknown: '尚未核实', consented: '已明确同意联络', declined: '不同意联络' };
 
 function matchesSavedInvitation() {
@@ -38,8 +39,8 @@ function clearCommunicationPreviews() {
 }
 function renderCommunicationStatus() {
   const item = contactById(invitationContactId);
-  $('[data-wallet-status]').textContent = communications?.wallet.reason || 'Apple Wallet 账号与签名凭证尚未配置，目前可查看未签名卡片预览。';
-  $('[data-email-status]').textContent = communications?.email.reason || 'EmailJS 服务与邮件模板尚未配置，目前仅提供确认信预览。';
+  $('[data-wallet-status]').textContent = '这里只生成未签名卡片预览。正式票券配置请到「设置与通知」核对。';
+  $('[data-email-status]').textContent = '这里只预览旧版确认信文字，不代表实际寄件服务状态。正式邮件与发送记录请到「设置与通知」核对。';
   $('[data-email-eligibility]').textContent = item?.operations.responseStatus === 'attending' ? '对象已确认出席，可核对确认信内容。预览不会发送邮件。' : '请先核实对方回复，并在「详情与安排」中保存「已确认出席」，才可预览确认信。历史报名意向不会自动作为出席确认。';
 }
 
@@ -80,8 +81,6 @@ function lock() {
   $('[data-invitation-record-sent]').disabled = busy || !$('[data-invitation-sent-confirm]').checked || !matchesSavedInvitation() || !mayInvite(contactById(invitationContactId));
   $('[data-wallet-preview-button]').disabled = busy || !permitted() || !features.communicationsPreview || !mayInvite(contactById(invitationContactId));
   $('[data-email-preview-button]').disabled = busy || !permitted() || !features.communicationsPreview || !mayInvite(contactById(invitationContactId)) || contactById(invitationContactId)?.operations.responseStatus !== 'attending';
-  $('[data-wallet-add]').disabled = true;
-  $('[data-email-send]').disabled = true;
   renderCommunicationStatus();
   $('[data-contacts-logout]').disabled = busy;
   $('[data-contacts-convert]').disabled = busy || !permitted() || !user?.roles.some(role=>['reviewer','superadmin'].includes(role)) || !features.intentInvitations || !intentState || selectedContacts.size === 0;
@@ -110,7 +109,7 @@ async function action(callback) {
   if (busy) return;
   busy = true; lock();
   try { await callback(); } catch (error) { announce(error.message || '操作未完成。', true); }
-  finally { busy = false; lock();if(pendingContactId&&user&&contacts.length){const id=pendingContactId;pendingContactId=null;const contact=contactById(id);if(contact)openContact(contact);else announce('关联人员已不在当前名单中，请核对最新资料。',true);} }
+  finally { busy = false; lock();if(pendingContactId&&user&&permitted()&&!$('[data-contacts-workspace]').hidden){const id=pendingContactId,kind=pendingContactAction;pendingContactId=null;const contact=contactById(id);if(contact){if(kind==='profile')openProfile(contact);else if(kind==='invitation')openInvitation(contact);else openContact(contact);}else announce('关联人员已不在当前名单中，请核对最新资料。',true);} }
 }
 function clearImport() {
   importSource = null;
@@ -135,6 +134,7 @@ function clearPrivateState() {
   resetProfile();
   $('[data-contacts-import-panel]').hidden = true;
   $('[data-communications-panel]').hidden = true;
+  $('[data-communications-panel]').open = false;
   $('[data-contacts-workspace]').hidden = true;
   $('[data-contacts-account]').hidden = true;
   $('[data-contacts-login-panel]').hidden = false;
@@ -258,7 +258,7 @@ function render() {
     }
     if(!arrangements.childNodes.length)arrangements.append(node('small','尚未安排'));
     row.append(arrangements);
-    const actions=node('td',undefined,'contacts-row-actions');for(const [text,handler]of[['编辑资料',()=>openProfile(item)],['详情与安排',()=>openContact(item)],['邀请函',()=>openInvitation(item)]]){const button=node('button',text);button.type='button';if(text==='邀请函'&&!mayInvite(item)){button.textContent=features.intentInvitations&&!intentState?'名额暂无法核对':progress.admissionPending?'名额待确认':progress.inactive?'报名已停用':'联络未获同意';button.title=invitationBlockReason(item);button.dataset.consentBlocked='true';button.disabled=true;}button.addEventListener('click',handler);actions.append(button);}const guest=node('button','管理嘉宾资料');guest.type='button';
+    const actions=node('td',undefined,'contacts-row-actions');const person=node('a','个人工作页','ah-admin-button');person.href='/admin/person/#contact='+encodeURIComponent(item.id);person.dataset.personWorkspaceLink='';actions.append(person);for(const [text,handler]of[['编辑资料',()=>openProfile(item)],['详情与安排',()=>openContact(item)],['邀请函',()=>openInvitation(item)]]){const button=node('button',text);button.type='button';if(text==='邀请函'&&!mayInvite(item)){button.textContent=features.intentInvitations&&!intentState?'名额暂无法核对':progress.admissionPending?'名额待确认':progress.inactive?'报名已停用':'联络未获同意';button.title=invitationBlockReason(item);button.dataset.consentBlocked='true';button.disabled=true;}button.addEventListener('click',handler);actions.append(button);}const guest=node('button','管理嘉宾资料');guest.type='button';
     if(!user.roles.includes('editor')||!mayInvite(item)||!['pending','attending'].includes(item.operations.responseStatus)){guest.dataset.roleBlocked='true';guest.title=!user.roles.includes('editor')?'同时需要活动编辑权限':!mayInvite(item)?invitationBlockReason(item):'对象已回复不出席；请先核对最新实际回复';}
     guest.addEventListener('click',()=>{if(busy||!permitted()||!user.roles.includes('editor')||!mayInvite(item)||!['pending','attending'].includes(item.operations.responseStatus))return;location.assign('/admin/#invitee='+encodeURIComponent(item.id));});actions.append(guest);
     if(linked){

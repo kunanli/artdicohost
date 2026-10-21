@@ -34,6 +34,7 @@ import { createAppleWalletService } from '../apple-wallet/service.mjs';
 import { createAppleWalletApi, isAppleWalletPath } from '../apple-wallet/handler.mjs';
 import { loadEncryptedSigningBundle, walletSigningObjectKey } from '../apple-wallet/bundle.mjs';
 import { createRegistrationXlsxApi, createContactsXlsxApi } from '../registration-admin/xlsx-handler.mjs';
+import { createPersonWorkspaceApi } from '../person-workspace/handler.mjs';
 
 const credentialFields = ['ALIBABA_CLOUD_ACCESS_KEY_ID', 'ALIBABA_CLOUD_ACCESS_KEY_SECRET', 'ALIBABA_CLOUD_SECURITY_TOKEN'];
 const PUBLIC_ALIASES = new Map([
@@ -206,6 +207,13 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
         inactiveRegistrationIds: withdrawnIds,
         admissionStatuses: (admissions?.people ?? []).map(({ registrationId, status }) => ({ registrationId, status })) };
     } });
+  const personHandle = createPersonWorkspaceApi({ authenticate: request => auth.authenticate(request),
+    loadContacts: () => contactsStore.read(),
+    loadIntent: intentService ? actor => intentService.read({ actor }) : undefined,
+    loadRegistration: reviewStore ? id => reviewStore.detail(id) : undefined,
+    loadAdmission: registrationService ? id => registrationService.getAdmissionStatus(id) : undefined,
+    loadContent: async () => { const snapshot = await store.read(); return { ...snapshot.draft, published: snapshot.published }; },
+    loadConfirmations: confirmationService ? (id, actor) => confirmationService.staffHistory({ actor, registrationId: id }) : undefined });
   const intentHandle = intentService ? createIntentInvitationApi({ service: intentService, authenticate: request => auth.authenticate(request) }) : null;
   const eventId = createInitialContent().eventId;
   const configurationKeys = [];
@@ -231,6 +239,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     if (alias) return registrationHandle(remap(request, alias));
     if (['/api/registration/config', '/api/registration/token', '/api/registrations'].includes(url.pathname)) return registrationHandle(request);
     if (url.pathname === '/api/admin/users') return userHandle(request);
+    if (url.pathname === '/api/admin/people' || url.pathname.startsWith('/api/admin/people/')) return personHandle(request);
     if (url.pathname === '/api/admin/tasks') return tasksHandle(request);
     if (url.pathname === '/api/admin/admissions' || url.pathname.startsWith('/api/admin/admissions/')) return admissionsHandle(request);
     if (isIntentContactImportPath(url.pathname)) return importHandle(request);

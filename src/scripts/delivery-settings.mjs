@@ -10,7 +10,7 @@ const walletMessages={WALLET_NOT_CONFIGURED:'尚未开放；请先完成 Apple D
 const walletFields={APPLE_WALLET_TEAM_ID:'Apple 团队 ID',APPLE_WALLET_PASS_TYPE_ID:'Pass Type ID',APPLE_WALLET_ORGANIZATION_NAME:'主办单位名称',
   APPLE_WALLET_CERT_BASE64:'签章证书',APPLE_WALLET_KEY_BASE64:'签章私钥',APPLE_WALLET_WWDR_CERT_BASE64:'Apple WWDR 证书',APPLE_WALLET_ROOT_CERT_BASE64:'Apple 根证书'};
 export function createDeliverySettings({root,request}){
-  const $=selector=>root.querySelector(selector);let user=null,state=null,busy=false,externalBusy=false,generation=0,accountKey='',settingsDirty=false,readSequence=0;
+  const $=selector=>root.querySelector(selector);let user=null,state=null,busy=false,externalBusy=false,generation=0,accountKey='',settingsDirty=false,dispatchDirty=false,readSequence=0;
   const mutations=createDeliveryMutations({request,revision:()=>state?.revision}),allowed=()=>user?.roles.includes('superadmin');
   function status(message,error=false){$('[data-delivery-status]').textContent=error?'':message;$('[data-delivery-error]').textContent=error?message:'';$('[data-delivery-error]').hidden=!error;}
   function lock(){
@@ -26,6 +26,7 @@ export function createDeliverySettings({root,request}){
     const walletMissing=$('[data-delivery-wallet-missing]');walletMissing.replaceChildren();walletMissing.hidden=!state.wallet.missing.length;
     for(const key of state.wallet.missing)walletMissing.append(element('li','待配置：'+(walletFields[key]?walletFields[key]+'（'+key+'）':'其他签章设置')));
     const expiry=$('[data-delivery-wallet-expiry]');expiry.hidden=!state.wallet.certificateExpiresAt;
+    root.dispatchEvent(new CustomEvent('delivery-settings-state',{detail:{email:{ready:state.email.ready,automaticEnabled:state.automaticEnabled},wallet:{ready:state.wallet.ready,reason:state.wallet.reason,deviceTestRequired:state.wallet.deviceTestRequired,certificateExpiresAt:state.wallet.certificateExpiresAt}}}));
     expiry.textContent=state.wallet.certificateExpiresAt?'签章证书到期：'+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',dateStyle:'medium',timeStyle:'short'}).format(new Date(state.wallet.certificateExpiresAt))+'（UTC+8）':'';
     $('[data-delivery-wallet-device]').hidden=!state.wallet.deviceTestRequired;
     if(!settingsDirty)$('[data-delivery-automatic] [name=enabled]').checked=state.automaticEnabled;
@@ -43,9 +44,9 @@ export function createDeliverySettings({root,request}){
   }
   async function accept(result,started){
     if(started!==generation||!allowed())return;
-    if(result.kind==='settings'){settingsDirty=false;state=result.value;render();status('自动确认邮件设置已保存。不会自动向历史意向名单群发。');}
+    if(result.kind==='settings'){readSequence++;settingsDirty=false;state=result.value;render();status('自动确认邮件设置已保存。不会自动向历史意向名单群发。');}
     else{
-      const labels={provider_accepted:'服务商已接受',rejected:'明确未发出',unknown:'结果不明，不重发',disabled:'自动邮件未开启',not_configured:'设置未完成',not_applicable:'未提供邮箱',not_public:'工作人员代登记，不在公开报名补发范围',withdrawn:'报名已取消',unavailable:'暂时无法核对',not_attempted:'尚未处理'};
+      dispatchDirty=false;const labels={provider_accepted:'服务商已接受',rejected:'明确未发出',unknown:'结果不明，不重发',disabled:'自动邮件未开启',not_configured:'设置未完成',not_applicable:'未提供邮箱',not_public:'工作人员代登记，不在公开报名补发范围',withdrawn:'报名已取消',unavailable:'暂时无法核对',not_attempted:'尚未处理'};
       const output=$('[data-delivery-results]');output.replaceChildren();for(const row of result.value.results)output.append(element('p',row.registrationId+' · '+labels[row.status]));
       status('已核对本次所选结果；服务商接受不等于本人收到。');await load(started);
     }
@@ -56,6 +57,8 @@ export function createDeliverySettings({root,request}){
   $('[data-delivery-automatic]').addEventListener('submit',event=>{event.preventDefault();if(mutations.pending)return;const enabled=event.currentTarget.elements.namedItem('enabled').checked;
     if(enabled&&!state?.email.ready){status('请先完成寄件设置，待状态可用后再开启自动确认信。',true);return;}action(async started=>accept(await mutations.run('settings',{enabled}),started));
   });
+  $('[data-delivery-dispatch]').addEventListener('input',()=>{dispatchDirty=true;});
+  $('[data-delivery-dispatch]').addEventListener('change',()=>{dispatchDirty=true;});
   $('[data-delivery-dispatch]').addEventListener('submit',event=>{
     event.preventDefault();if(mutations.pending||!event.currentTarget.reportValidity())return;
     const form=event.currentTarget,ids=[...new Set(form.elements.namedItem('registrationIds').value.split(/[\s,;，；]+/u).filter(Boolean))];
@@ -65,7 +68,7 @@ export function createDeliverySettings({root,request}){
     action(async started=>accept(await mutations.run('dispatch',{registrationIds:ids,retryRejected:form.elements.namedItem('retryRejected').checked}),started));
   });
   function clear(){
-    generation++;readSequence++;user=null;state=null;busy=false;accountKey='';settingsDirty=false;mutations.clear();root.hidden=true;
+    generation++;readSequence++;user=null;state=null;busy=false;accountKey='';settingsDirty=false;dispatchDirty=false;mutations.clear();root.hidden=true;
     for(const form of root.querySelectorAll('form'))form.reset();for(const selector of ['[data-delivery-mail-missing]','[data-delivery-wallet-missing]','[data-delivery-counts]','[data-delivery-results]'])$(selector).replaceChildren();
     for(const selector of ['[data-delivery-mail-ready]','[data-delivery-wallet-ready]','[data-delivery-wallet-expiry]'])$(selector).textContent='';
     for(const selector of ['[data-delivery-wallet-missing]','[data-delivery-wallet-expiry]','[data-delivery-wallet-device]'])$(selector).hidden=true;
@@ -73,7 +76,7 @@ export function createDeliverySettings({root,request}){
   }
   clear();
   return Object.freeze({
-    get pending(){return mutations.pending;},clear,lock(value){externalBusy=value;lock();},
+    get pending(){return mutations.pending||busy;},get dirty(){return settingsDirty||dispatchDirty;},clear,lock(value){externalBusy=value;lock();},
     async configure(account){
       const next=account?.id+'|'+[...(account?.roles??[])].sort().join(',');if(next!==accountKey)clear();user=account;accountKey=next;root.hidden=!allowed();if(!allowed()){clear();return;}
       const started=generation;try{await load(started);}catch(error){if(started===generation)status(error.message||'设置暂时无法读取，请稍后重试。',true);}if(started===generation)lock();

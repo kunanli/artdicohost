@@ -23,12 +23,14 @@ export const CANDIDATE_SOURCES = Object.freeze([
   ['functions/delivery-config/bundle.mjs', 'functions/delivery-config/bundle.mjs', '0644'],
   ...['handler.mjs', 'service.mjs', 'repository.mjs', 'email-provider.mjs', 'errors.mjs', 'importer.mjs', 'contact-snapshot.mjs', 'import-handler.mjs', 'batch.mjs'].map(name => ['functions/intent-invitations/' + name, 'functions/intent-invitations/' + name, '0644']),
   ['functions/organizer-tasks/handler.mjs', 'functions/organizer-tasks/handler.mjs', '0644'],
+  ...['handler.mjs', 'projection.mjs'].map(name => ['functions/person-workspace/' + name, 'functions/person-workspace/' + name, '0644']),
   ...['content-schema.mjs', 'contacts-schema.mjs', 'contact-editor.mjs', 'arrangement-overview.mjs', 'portrait-codec.mjs', 'registration-schema.mjs', 'organizer-progress.mjs', 'xlsx-workbook.mjs'].map(name => ['shared/' + name, 'shared/' + name, '0644']),
   ...['content.mjs', 'event.mjs'].map(name => ['src/config/' + name, 'src/config/' + name, '0644']),
 ]);
 const FIXED_ASSETS = Object.freeze([
   ['/admin/', 'admin/index.html'], ['/admin/contacts/', 'admin/contacts/index.html'],
   ['/admin/registrations/', 'admin/registrations/index.html'], ['/admin/tasks/', 'admin/tasks/index.html'],
+  ['/admin/settings/', 'admin/settings/index.html'], ['/admin/person/', 'admin/person/index.html'],
   ['/invitations/template-blank.png', 'invitations/template-blank.png'],
 ]);
 const ASSET = /^\/_astro\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,200}\.(?:css|m?js|woff2?)$/u;
@@ -197,7 +199,7 @@ export async function prepareCloudContentCandidate({ repositoryDirectory, nodeBi
   for (const [url, bytes] of assets) { const path = candidateAssetPath(url); await writeKnown(resolve(code, path), bytes); files.push(record(path, bytes)); }
   const release = { schemaVersion: 1, kind: CANDIDATE_KIND, sourceCommit, node: CANDIDATE_NODE, files: [...files], assets: assets.map(([url, bytes]) => assetRecord(url, bytes)) };
   const releaseBytes = Buffer.from(JSON.stringify(release, null, 2) + '\n');
-  if (releaseBytes.length > 64 * 1024 || files.length >= 100) fail('Candidate manifest capacity exceeded');
+  if (releaseBytes.length > 64 * 1024 || files.length >= 128) fail('Candidate manifest capacity exceeded');
   await writeKnown(resolve(code, 'release.json'), releaseBytes); files.push(record('release.json', releaseBytes));
   const publication = resolve(output, 'publication'); await mkdir(publication, { mode: 0o700 });
   const archive = resolve(publication, CANDIDATE_ARCHIVE);
@@ -209,7 +211,7 @@ export async function prepareCloudContentCandidate({ repositoryDirectory, nodeBi
 }
 
 export function candidateFileRecords(value) {
-  if (!Array.isArray(value) || value.length < CANDIDATE_SOURCES.length + 5 || value.length > 100) fail('Invalid candidate file list');
+  if (!Array.isArray(value) || value.length < CANDIDATE_SOURCES.length + 5 || value.length > 128) fail('Invalid candidate file list');
   const expected = new Map(CANDIDATE_SOURCES.map(([, path, mode]) => [path, mode]));
   expected.set('runtime/node/bin/node.xz', '0644'); expected.set('release.json', '0644');
   const seen = new Set();
@@ -217,9 +219,8 @@ export function candidateFileRecords(value) {
     exactKeys(item, ['path', 'bytes', 'sha256', 'mode'], 'file');
     let mode = expected.get(item.path);
     if (!mode && typeof item.path === 'string' && item.path.startsWith('admin-assets/')) {
-      const url = item.path === 'admin-assets/admin/index.html' ? '/admin/' : item.path === 'admin-assets/admin/contacts/index.html' ? '/admin/contacts/'
-        : item.path === 'admin-assets/admin/registrations/index.html' ? '/admin/registrations/'
-          : item.path === 'admin-assets/admin/tasks/index.html' ? '/admin/tasks/' : '/' + item.path.slice('admin-assets/'.length);
+      const url = FIXED_ASSETS.find(([, path]) => item.path === 'admin-assets/' + path)?.[0]
+        ?? '/' + item.path.slice('admin-assets/'.length);
       if (candidateAssetPath(url) !== item.path) fail('Unexpected candidate asset file');
       mode = '0644';
     }

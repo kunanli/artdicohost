@@ -1,0 +1,41 @@
+---
+import StaffNavigation from '../../../components/StaffNavigation.astro';
+import SiteLayout from '../../../layouts/SiteLayout.astro';
+import '../../../styles/admin.css';
+import '../../../styles/person.css';
+---
+<SiteLayout title="个人工作页｜ARTDiCO HOST" description="工作人员核对同一人的名额、回复、职责、活动安排及邀请记录。">
+  <div class="ah-admin person-app" data-person-app>
+    <header class="ah-admin-header"><a class="ah-admin-brand" href="/admin/">ARTDiCO <span>HOST</span></a><nav aria-label="公开活动页面"><a class="ah-admin-back" href="https://artdico.host">查看活动页面 ↗</a></nav></header>
+    <main class="ah-admin-main" id="main-content">
+      <p class="ah-admin-status" data-person-status role="status" aria-live="polite"></p>
+      <p class="ah-admin-alert" data-person-error role="alert" tabindex="-1" hidden></p>
+      <section class="ah-admin-login-card" data-person-login-panel aria-labelledby="person-login-title">
+        <h1 id="person-login-title">个人工作页</h1><p class="ah-admin-intro">登录后核对一位人员的报名、安排及通知记录。资料范围按工作人员权限显示。</p>
+        <form method="post" data-person-login><div class="ah-admin-field"><label for="person-user">用户名或邮箱</label><input id="person-user" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="160" required /></div><div class="ah-admin-field"><label for="person-password">密码</label><input id="person-password" name="password" type="password" autocomplete="current-password" maxlength="1024" required /></div><button class="ah-admin-button ah-admin-primary" type="submit" data-person-login-submit disabled>登录个人工作页</button></form>
+        <noscript><p>启用 JavaScript 后才可登录与读取资料。</p></noscript>
+      </section>
+      <section class="ah-admin-workspace-layout" data-person-workspace hidden>
+        <StaffNavigation current="person" />
+        <div class="ah-admin-workspace-content">
+          <div class="ah-admin-page-heading"><div><p class="person-kicker">个人工作页</p><h1 data-person-name tabindex="-1">选择一位人员</h1><p data-person-identity></p></div><div class="person-account"><span data-person-user></span><button class="ah-admin-button" type="button" data-person-refresh>重新读取记录</button><button class="ah-admin-text-button" type="button" data-person-logout>退出登录</button></div></div>
+          <section class="ah-admin-panel person-empty" data-person-empty><h2>从名单打开一位人员</h2><p data-person-empty-message>到人员或报名列表，选择「个人工作页」即可查看同一人的已保存记录。</p><div class="person-actions"><a class="ah-admin-button" href="/admin/contacts/">人员与邀约</a><a class="ah-admin-button" href="/admin/registrations/">报名与审核</a></div></section>
+          <article data-person-record hidden>
+            <nav class="person-actions" data-person-actions aria-label="继续处理这位人员"></nav>
+            <p class="person-note" data-person-linkage></p>
+            <section class="ah-admin-panel person-panel" aria-labelledby="person-steps-title"><h2 id="person-steps-title">接下来怎么安排</h2><p class="person-note">按已保存事实提示下一步。意向、沟通、本人回复、名额和公开资料分别核对。</p><ol class="person-steps" data-person-steps></ol></section>
+            <div class="person-grid">
+              <section class="ah-admin-panel person-panel" aria-labelledby="person-profile-title"><h2 id="person-profile-title">联络与跟进</h2><div data-person-profile></div></section>
+              <section class="ah-admin-panel person-panel" aria-labelledby="person-admission-title"><h2 id="person-admission-title">参会名额与回复</h2><div data-person-admission></div></section>
+            </div>
+            <section class="ah-admin-panel person-panel" aria-labelledby="person-registration-title"><h2 id="person-registration-title">报名与内部核查</h2><div data-person-registration></div></section>
+            <section class="ah-admin-panel person-panel" aria-labelledby="person-arrangements-title"><h2 id="person-arrangements-title">职责与活动安排</h2><div data-person-arrangements></div></section>
+            <section class="ah-admin-panel person-panel" aria-labelledby="person-communications-title"><h2 id="person-communications-title">邀请与通知记录</h2><p class="person-note">人工发出、服务商接受及本人回复分别保存；服务商接受不等于送达。</p><div data-person-communications></div></section>
+            <p class="person-note person-meta" data-person-meta></p>
+          </article>
+        </div>
+      </section>
+    </main><footer class="ah-admin-footer"><span>ARTDiCO HOST</span><p>打开此页只读取已保存资料；通过原工作区继续处理。</p><a href="/admin/contacts/">返回人员名单</a></footer>
+  </div>
+  <script>import '../../../scripts/person.mjs';</script>
+</SiteLayout>

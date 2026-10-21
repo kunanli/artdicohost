@@ -1,8 +1,34 @@
 # 开发接续与验收计划
 
-## 当前开发：嘉宾／组织图片编辑与上传恢复（2026-10-21）
+## 当前开发：人员步骤指引、单人工作页与设置中心（2026-10-21）
 
-分支 `feat/staff-image-editor` 从已验证的 b51 导航／验收修复接续。用户要求现有／新图片可缩放、拖动、裁切与去背景，并报告部署期间的 `CONTENT_NOT_READY` 上传失败。共用本地编辑器、透明 PNG、紧贴图片预览及手动原 payload 重试已整合，12 组专用 Chromium、相关既有图片／导航／工作人员流程及独立透明公开页检查通过；新功能尚未上线。操作与边界见[图片编辑](staff-image-editing.md)，首先核对工作区与新分支，再完成合成浏览器／完整检查／准确 PR／main 发布。真实用户组织、姓名及照片不作夹具，不覆盖其已保存记录。
+分支 `feat/staff-operations-workspace` 从正式图片编辑 main `4a9b49b` 与已保存设置文档接续。用户同意先做设置／通知与单人工作页，随后要求意向人员、嘉宾／讲者、场次与展位串联、直观沟通状态及步骤指引。本轮通过稳定内部 ID 只读整合既有资料，并以实际角色／回复／安排给出下一步；不按姓名邮箱合并，也不在浏览时自动代登记、发送或公开。[操作与契约](staff-operations-workspace.md)、[实施计划](implementation-plan.md)记录范围。
+
+目前仍是开发候选，尚未宣称新页面正式上线。分工在独立 worktree；主 agent 整合 runtime、文档、完整测试、浏览器、精确 PR／CI／实际部署。用户已回报名单画面有 39 人及 EmailJS 可用，并自行配置 key；过去段落的「未导入／未配置」属于当时历史，不能当成当前实际状态。本轮不读取真实名单或密钥、不发送实际邮件。Apple Developer enrollment 进行中，Wallet 仍待真实证书与真机验收。
+
+本轮新增优先修复：用户明确展位修改后没有按保存，刷新丢失本页输入，并同意重填但要求防呆。已确认代码的「应用」仅改浏览器内存，真正 PUT 在长页上端；未套用的展位／场次输入也缺少完整离页守卫。正在补可见云端保存状态、就近入口、输入即保护及 ACK／冲突提示。没有证据表明已保存 OSS 记录被清空，不读取真实内容或用旧快照恢复覆盖。
+
+候选封版进度：代码与浏览器回归已整合到 `b1d16b31fe16e78a1285513defccf0bd2d8f58c5`，完整本机 **877/877** 无失败／跳过；源码与 Astro 通过（0 error／warning，1 既有 hint）、九页构建、依赖审计无已知漏洞。新保存 9 组、个人／设置 22 组，以及 staff／Excel／名单／导航／待办／图片／职责／组织等相关 Chromium 通过。独立来源候选含 **109** 个白名单文件；准确 PR CI 与实际发布仍待执行，此段不是上线证明。保存防呆已实现，早前「正在补」是问题接入时状态。不要重复开发，也不要把这些合成结果称为实际名单操作或邮件实寄。
+
+## 当前：邮件正常回报与 Apple Wallet 开户指引（2026-10-21）
+
+使用者回報 Email 已正常發送，此部分暫時 OK，轉問 Apple Wallet 是否需要 Apple Business。以使用者回報記錄郵件狀態；本開發工作沒有重新讀取 FC 配置或聲稱新的獨立實寄驗收。Wallet 需要 Apple Developer Program／Pass Type ID／簽章證書，Apple Business Manager 不是這項會員。已依官方資料補上會員選擇、99 USD 年費（依地區幣別）、組織 D-U-N-S／法人核驗及後續入口，見[Wallet 設定](apple-wallet-setup.md)。尚未實際申請帳號、購買會員、取得真實憑證或啟用 Wallet；先完成會員，再接現有受控簽章與 iPhone／Safari 真機驗收。
+
+## 设置接续：support@artdico.co 自动报名确认信（2026-10-21）
+
+最新：使用者已保存模板並提供 **`template_89mgpj9`**，使用者已確認 Test It 收件、寄件人與排版正常。已確認目前 provider 支援直接 FC 六欄＋寄件開關（完整環境仍須 ≤4096 bytes），初次可先保持 `false`，後台自動通知先停用；若超限使用原加密 bundle 流程。現有 GitHub workflow 不讀 EmailJS Secrets，加入 Secrets 本身不會配置；部署公開桶身分不寫私有配置。開發工作尚未取得 API key、改 FC 或實寄，勿把新 ID 記錄當作已啟用。實際步驟見下方連結。
+
+用户已有 EmailJS `LoginPlan`／飞书 SSL SMTP，并要求参考 `artdico-deck`。已只读核对原仓库邮件参数，为本项目准备[独立模板、控制台字段及受控启用步骤](emailjs-registration-setup.md)。原 Deck 使用 welcome／notify，活动站使用独立 `EMAILJS_CONFIRMATION_TEMPLATE_ID` 和 `invitation_text`；不能直接套原 `message` 模板。本轮只有文档及模板材料，没有取得实际 API key、修改 EmailJS／FC、启用自动通知或发信；下一步保存独立模板并取得实际 Template ID，再按受控配置验收，不重部署已成功的图片功能。
+
+用户随后要求带入正式活动介绍；[HTML 模板](templates/emailjs-registration-confirmation.html) 已加入「GGJ 中国交流聚会 × ARTDiCO HOST 2026」、12 月 5 日深圳前海、参与对象及计划活动内容，后接真实确认／候补正文。EmailJS 控制台仍须由现有账号保存新模板；本机文件更新不代表线上模板已更改或已寄信。
+
+## 已上线：嘉宾／组织图片编辑与上传恢复（2026-10-21）
+
+[PR #33](https://github.com/kunanli/artdicohost/pull/33) 已上线 main **`4a9b49bc8f285deb2551c9b0b55dab9454f3f970`**；本机／准确 PR／main **817/817**、12 组专用 Chromium、相关既有流程与独立透明公开页检查通过。[正式运行 39536595824](https://github.com/kunanli/artdicohost/actions/runs/39536595824) attempt 1 三个 job 全部成功：真实十阶段私有 OSS、11:12:06（UTC+08）启用、11:12:07 核定政策／300 人容量、11:12:53 的 **23/23** HTTPS 对象回读，11:12:56 完成；远端 main 已核对。
+
+嘉宾／组织现有或新图片支持本地裁切、缩放、移动、取色去背与擦除／还原画笔，透明 PNG 保留，图片框贴合自然比例。503 保留原照片、公开同意和表单，明确原 payload 重试；待上传关闭确认、401 清理及旧回应隔离均重验。没有使用实际用户照片作夹具或修改真实组织资料。[操作、验证与回退](staff-image-editing.md)。
+
+最终证据分支 `docs/image-editor-release-evidence-2026-10-21` 只保存结果，不重启业务。接续先核对工作区、main 与最新 Actions，不重复本次合并／部署。用户追问的邀请 PNG／ZIP、微信群码、实际 EmailJS 与旧预览面板区别见[操作状态](invitation-delivery-status-2026-10-21.md)；实际 39 人匯入／代登记／派发、有效群码与寄件设置仍由现有工作人员在私密后台核对，不能把本次代码发布当作这些业务已执行。
 
 ## 已上线：跨登录窗口隔离验收修复（2026-10-21）
 

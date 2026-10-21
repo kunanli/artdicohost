@@ -1,12 +1,16 @@
 # 开发接续与验收计划
 
-## 当前发布中：PR #34 已合并，等待正式云端证据（2026-10-21）
+## 已上线：人员步骤指引、设置中心与保存防呆（2026-10-21）
 
 [PR #34](https://github.com/kunanli/artdicohost/pull/34) 已合并 main `ddf7a2ea0b9c81d9222aefbef3e5155d7432b8a4`；准确 PR head `12af0bb0550bd90fd1827296bed14b876ec7b430` 的 [39569950865](https://github.com/kunanli/artdicohost/actions/runs/39569950865) 检查成功：877/877、422 文件源码、314 文件 Astro（0 errors／warnings，1 既有 hint）、九页构建、依赖审计及两个 ZIP 离线启动全通过。个人／设置及保存防呆的合成 Chromium 已通过。
 
-正式 [main run 39570671725](https://github.com/kunanli/artdicohost/actions/runs/39570671725) attempt 1 正在进行；尚未宣称已上线。接续先查该运行的 check、完整云生命周期、公开 OSS 三个 job，继续取证，不重复合并或另触发部署。证据分支 `docs/staff-operations-release-evidence-2026-10-21` 从该 main 建立，仅记录验证，不重启业务。实际十阶段私有 OSS、300 人政策与 HTTPS 文件回读成功后，再以新的已上线段落替换这里。
+正式 [main run 39570671725](https://github.com/kunanli/artdicohost/actions/runs/39570671725) attempt 1 三个 job 已全部 **success**：check `119123737827` 再次 **877/877**；FC `119125663285` 的真实十阶段私有 OSS、两客户端／单 FC 通过，**16:44:51（UTC+08）**启用、16:44:52 核定政策／整场 **300 人**；public `119126927516` 于 **16:45:39** 完成 **26/26** 精确 HTTPS 对象 SHA／大小／MIME／HTML 回读，**16:45:43** 全流程成功。已再次只读核对远端 main 为同一完整 `ddf7a2e…`。[完整证据](staff-operations-release-2026-10-21.md)。
 
-## 当前开发：人员步骤指引、单人工作页与设置中心（2026-10-21）
+从人员名单打开「个人工作页」，依五步核对原意向、实际回复、身份、场次／展位及公开资料。内容页的「应用」仍只改本页；页首、展位旁或固定栏点击「保存到云端」，看到有效保存确认后才刷新。未应用输入与未保存修改均保护离页；未知结果先 GET 核对，确认仍为原版本后才明确重试原快照，409 不覆盖他人更新。保存成功与总览刷新失败分别提示。EmailJS 既有环境与开关保留；Wallet enrollment／正式证书／真机验收仍待完成，没有实际代登记、派发或测试寄信。
+
+证据分支 `docs/staff-operations-release-evidence-2026-10-21` 从实际 main 建立，仅记录验证，不重启业务。接续先核对最新 main／Actions 与本节，不重复本次合并、部署或开发。原生任务附加 PR 工具两次未返回回执，PR #34 的真实网址与运行证据已在本文保存，不能因此重开 PR。
+
+## 本轮实施范围与开发过程（以下候选状态为历史）
 
 分支 `feat/staff-operations-workspace` 从正式图片编辑 main `4a9b49b` 与已保存设置文档接续。用户同意先做设置／通知与单人工作页，随后要求意向人员、嘉宾／讲者、场次与展位串联、直观沟通状态及步骤指引。本轮通过稳定内部 ID 只读整合既有资料，并以实际角色／回复／安排给出下一步；不按姓名邮箱合并，也不在浏览时自动代登记、发送或公开。[操作与契约](staff-operations-workspace.md)、[实施计划](implementation-plan.md)记录范围。
 

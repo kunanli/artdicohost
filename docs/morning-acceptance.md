@@ -1,12 +1,14 @@
 # ARTDiCO HOST 驗收與接續
 
+最新 PR #34／main `ddf7a2e` 已於 **2026-10-21 16:45:43（UTC+08）** 完整上線：877 項檢查、真實私有 OSS、300 人政策與 26/26 HTTPS 回讀通過。[完整證據](staff-operations-release-2026-10-21.md)。先驗收：內容表單輸入後離頁有提醒；套用後固定欄明示未存雲端；按「保存到云端」並收到確認後刷新仍可讀回。人員名單打開「個人工作頁」有五步指引、實際回覆與場次／展位；「設置與通知」集中寄信、群碼與 Wallet。以下舊版本發布數據保留作歷史。
+
 後台快捷導覽已上線 [PR #31](https://github.com/kunanli/artdicohost/pull/31)／main `b8d6818`，802 項檢查與六組相關瀏覽器流程通過。[正式運行 39531376320 attempt 2](https://github.com/kunanli/artdicohost/actions/runs/39531376320) 已恢復服務，十階段私有 OSS、300 人政策與 23/23 HTTPS 對象完成，**10:22:22（UTC+08）** 成功結束；首次窗口切換失敗與恢復證據見[發布紀錄](navigation-release-2026-10-21.md)。桌面左欄與手機收合的驗收步驟在下方。
 
 獨立「參與組織」功能已上線 [PR #30](https://github.com/kunanli/artdicohost/pull/30)／main `a0a02e009d5c547e5683a6b5c37f1c3ff7ea99b2`。本機／最終 PR／main **802/802** 與十二組 Chromium 通過；[正式發布 39528912033](https://github.com/kunanli/artdicohost/actions/runs/39528912033) 三個 job、十項真實私有 OSS、核定政策／300 人容量及 23 個公開 HTTPS 對象全部驗證，**2026-10-21 09:50:51（UTC+08）** 完成公開回讀。[本輪完整證據](organization-release-2026-10-21.md)。下段 PR #29 為前輪已完成紀錄。
 
 六項參會體驗更新已上線。[PR #29](https://github.com/kunanli/artdicohost/pull/29) 的 main `d66582e60a7cf3da3a4e2d851a633496bdb02ba4` 通過最終 PR／main **785/785** 測試；[正式發布 39525987286](https://github.com/kunanli/artdicohost/actions/runs/39525987286) 三個 job 全部成功，十項真實隔離 OSS、正式政策／300 人容量，以及 23 個公開 HTTPS 檔案回讀已驗證。01:19:38 UTC 業務啟用、01:20:25 UTC 公開回讀完成；[完整發布證據](attendee-release-2026-10-21.md)。前階段 [PR #28 證據](organizer-release-2026-10-21.md)另行保留。
 
-真實 39 行仍未雲端匯入、轉報名或發信。郵件寄件憑證尚未提供或未核驗，沒有實際收件驗收。主辦方尚無 Apple Developer 帳號及票券簽章憑證，已要求先完成設定流程與操作指引；此時不應看到可用 Wallet 按鈕。
+使用者後續畫面已顯示 39 人，名單與邀請現況以私密後台已保存資料為準；本次開發沒有重新匯入或派發。使用者已回報 EmailJS 收件正常並完成 key 設定，這是使用者回報，不冒充本次獨立實寄驗收。Apple Developer enrollment 進行中，Wallet 仍待正式證書及真機驗收；缺憑證時不應看到可用票券。
 
 ## 图片编辑验收（已上线）
 
@@ -21,14 +23,15 @@
 - [公開網站](https://artdico.host/)
 - [活動、人物、作品、場次與 15 個攤位](https://api.artdico.host/admin/)
 - [人員、意向匯入、逐場職責與邀請](https://api.artdico.host/admin/contacts/)
-- [正式報名、名額、住宿、Excel 與確認通知設定](https://api.artdico.host/admin/registrations/)
+- [正式報名、名額、住宿與 Excel](https://api.artdico.host/admin/registrations/)
+- [設置與通知、確認信、群碼及 Wallet](https://api.artdico.host/admin/settings/)
 - [每日待辦](https://api.artdico.host/admin/tasks/)
 
 使用原有管理員帳號登入；帳號、密碼、寄件密鑰及 Apple 私鑰不保存在文件或聊天。以下新版步驟以主集成確認部署完成後為準；本機合成驗收不表示真實名單已遷移。
 
 ## 六項新版驗收
 
-快捷導覽驗收：桌面登入後，左側應能切換「今日待辦、人员与邀约、报名与审核、活动与内容」；活動內容頁可直達概況、基本資料、總覽、嘉賓、組織、學生作品、場次及十五個展位，並標記目前位置。手機預設收合，開啟「快捷导航」點選區塊後自動收起，捲動後仍可再開；鍵盤 Enter／Escape 可操作。頁內跳轉應保留未套用表單，跨頁仍提示未保存；導覽本身不保存或發布。見[操作說明](staff-navigation.md)與[本輪發布紀錄](navigation-release-2026-10-21.md)。
+快捷導覽驗收：桌面登入後，左側應能切換「今日待辦、人员与邀约、报名与审核、活动与内容、设置与通知」；活動內容頁可直達概況、基本資料、總覽、嘉賓、組織、學生作品、場次及十五個展位，並標記目前位置。手機預設收合，開啟「快捷导航」點選區塊後自動收起，捲動後仍可再開；鍵盤 Enter／Escape 可操作。頁內跳轉應保留未套用表單，跨頁仍提示未保存；導覽本身不保存或發布。見[操作說明](staff-navigation.md)與[本輪發布紀錄](staff-operations-release-2026-10-21.md)。
 
 在活動後台「參與組織」新增或編輯組織，填名稱、上傳圖片、填對方頁面，分別選擇「參展／一般參與／待確定」及參加確認。核對公開授權後應用、保存、發布；前台顯示完整比例圖片，圖片和名稱可跳轉有效連結，沒有網址則不可點。停止公開只撤銷公開授權，參加狀態與原件仍在，一般參與不占用攤位；詳見[組織操作](participating-organizations.md)。
 
@@ -45,7 +48,7 @@
 
 ## 確認信與 Apple Wallet
 
-superadmin 登入報名後台「報名確認與票券」，先核對缺項及未就緒狀態。頁面顯示固定設定名稱與開關，不輸入私鑰或寄件密鑰。由現有受控運維按[加密設定流程](delivery-configuration.md)準備、上傳並讀回設定包，再核對後台 readiness。寄件設定可用後，明確啟用自動確認信；它只處理後續公開報名，不會向原始意向名單群發。
+superadmin 登入「設置與通知」的「報名確認與票券」，先核對真實狀態；已有寄件設定不必為驗收重設或關閉。頁面顯示固定設定名稱與開關，不輸入私鑰或寄件密鑰。首次配置／輪替才由現有受控運維按[加密設定流程](delivery-configuration.md)準備、上傳並讀回設定包，再核對後台 readiness。自動確認信只處理後續公開報名，不會向原始意向名單群發。
 
 確認信和工作人員邀請函分開。無郵箱、未設定、停用、待處理、服務商接受、明確未發出及結果不明分別呈現；服務商接受不表示本人已收到。重開確認頁與重新讀取設定不發信。若操作回覆不明，保留本頁並按「再次確認同一操作」，不得換鍵盲發；`unknown` 不重送。補發只明確選擇合資格的公開報名，代登記人員使用既有邀請流程。[確認信說明](registration-confirmation.md)。
 

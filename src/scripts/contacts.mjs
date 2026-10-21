@@ -1,3 +1,4 @@
+import {createOperationsFormDraft,operationsDraftStore,captureDraftFields,applyDraftFields} from '../lib/operations-form-draft.mjs';
 import { parseContactImport, WORKBOOK_SOURCE_KEY, sourceLabels } from '../../shared/contact-import.mjs';
 import { renderInvitation, invitationPngBlob, invitationFilename } from '../lib/invitation-renderer.mjs';
 import { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS } from '../../shared/contact-editor.mjs';
@@ -22,6 +23,20 @@ const selectedContacts = new Set();
 let visibleContactIds = [];
 let relationships = null, relationshipSequence = 0, operationRevision = null, membershipEdited = false, uncertainSave = null, conversionDraft = null;
 const admissionReceipts = new Map();
+let profileDraft=null,contactDraft=null,profilePending=false;
+const operationNames=()=>['owner','priority','followUpAt','notes','responseStatus','participationForms','sessionIds','boothIds',...content.sessions.map(item=>'sessionRoles:'+item.id)];
+function openContactDraft(){
+  contactDraft?.close();const id=currentContactId,generation=sessionGeneration,form=$('[data-contact-form]');
+  const names=operationNames();
+  contactDraft=createOperationsFormDraft({actorId:user.id,page:'people',entity:'operations:'+id,form,baseRevision:()=>operationRevision,isCurrent:()=>generation===sessionGeneration&&currentContactId===id&&Boolean(user),
+    capture:()=>({...captureDraftFields(form,names),...(relationships?{membershipsJson:JSON.stringify([...$('[data-contact-memberships]').children].map(row=>({organizationId:row.querySelector('[name=organizationId]').value,role:row.querySelector('[name=role]').value,title:row.querySelector('[name=title]').value})))}:{})}),
+    apply:fields=>{const{membershipsJson,...values}=fields;let members=null;if(membershipsJson){members=organizationMemberships(JSON.parse(membershipsJson));if(!relationships||members.some(member=>!relationships.organizations.some(item=>item.id===member.organizationId)))throw new Error('组织关联已改变，请手动核对本机草稿。');}applyDraftFields(form,values,names);if(members){$('[data-contact-memberships]').replaceChildren();for(const member of members)membershipRow(member);membershipEdited=true;}for(const input of form.querySelectorAll('[name=sessionIds]'))input.dispatchEvent(new Event('change'));operationsDirty=true;},
+    manualPending:true,onPending:request=>{const body=JSON.parse(request.body);if(request.path!=='/api/admin/contacts/'+encodeURIComponent(id)||request.method!=='PUT'||!body.operations||!Number.isSafeInteger(body.expectedRevision))throw new Error('原保存操作无法核对。');uncertainSave={contactId:id,expectedRevision:body.expectedRevision,operations:body.operations};$('[data-contact-save-unknown]').hidden=false;},onChange:event=>{if(event.error?.code==='STALE_ACTOR'){clearPrivateState();return;}if(event.status==='discarded'){uncertainSave=null;$('[data-contact-save-unknown]').hidden=true;}lock();}});void contactDraft.load();
+}
+function openProfileDraft(){
+  profileDraft?.close();profilePending=false;const id=profileContactId,generation=sessionGeneration,form=$('[data-profile-form]'),names=[...EDITABLE_CONTACT_FIELDS,...EDITABLE_CONTACT_ARRAY_FIELDS];
+  profileDraft=createOperationsFormDraft({actorId:user.id,page:'people',entity:'profile:'+(id||'new'),form,baseRevision:revision,isCurrent:()=>generation===sessionGeneration&&profileContactId===id&&Boolean(user),capture:()=>captureDraftFields(form,names),apply:fields=>{applyDraftFields(form,fields,names);profileDirty=true;form.elements.namedItem('contactConsent').value='unknown';$('[data-profile-duplicates-confirm]').checked=false;syncProfileDuplicates();},manualPending:true,onPending:request=>{const expected='/api/admin/contacts'+(id?'/'+encodeURIComponent(id)+'/profile':'');if(request.path!==expected||request.method!==(id?'PUT':'POST'))throw new Error('原联系人保存操作无法核对。');profilePending=true;},onChange:event=>{if(event.error?.code==='STALE_ACTOR'){clearPrivateState();return;}if(event.status==='discarded')profilePending=false;lock();}});void profileDraft.load();
+}
 let organizationSelection = parseOrganizationSelection(location.hash);
 let pendingContactId=null,pendingContactAction='contact',sessionGeneration=0;
 let batchDownloadUrl = null;
@@ -72,11 +87,11 @@ function lock() {
   $('[data-contacts-login-submit]').disabled = busy || location.protocol === 'file:';
   for (const field of document.querySelectorAll('[data-contacts-workspace] button,[data-contacts-file]')) field.disabled = busy || !permitted() || field.hasAttribute('data-consent-blocked') || field.hasAttribute('data-role-blocked');
   $('[data-contacts-file]').disabled = busy || !permitted() || !features.contactImport;
-  $('[data-profile-fields]').disabled = busy || !permitted();
-  $('[data-profile-save]').disabled = busy || !permitted() || (!$('[data-profile-duplicates]').hidden && !$('[data-profile-duplicates-confirm]').checked);
+  $('[data-profile-fields]').disabled = busy || !permitted() || profilePending || Boolean(profileDraft?.blocked);
+  $('[data-profile-save]').disabled = busy || !permitted() || profilePending || Boolean(profileDraft?.blocked) || (!$('[data-profile-duplicates]').hidden && !$('[data-profile-duplicates-confirm]').checked);
   for (const button of document.querySelectorAll('[data-profile-close]')) button.disabled = busy;
-  $('[data-contact-save]').disabled = busy || !permitted() || Boolean(uncertainSave);
-  $('[data-contact-fields]').disabled = busy || !permitted() || Boolean(uncertainSave);
+  $('[data-contact-save]').disabled = busy || !permitted() || Boolean(uncertainSave) || Boolean(contactDraft?.blocked);
+  $('[data-contact-fields]').disabled = busy || !permitted() || Boolean(uncertainSave) || Boolean(contactDraft?.blocked);
   $('[data-contacts-export]').disabled = busy || !permitted() || !features.contactXlsxExport;
   for(const option of document.querySelectorAll('[data-contacts-export-contact],[data-contacts-export-answers]'))option.disabled=busy||!permitted()||!features.contactXlsxExport;
   for (const field of document.querySelectorAll('[data-invitation-form] input,[data-invitation-form] select')) field.disabled = busy || !permitted();
@@ -147,6 +162,7 @@ function clearImport() {
   $('[data-contacts-file-name]').textContent = '支持原始 Excel 问卷或旧后台 contacts.json 快照';
 }
 function clearPrivateState() {
+  profileDraft?.close();profileDraft=null;contactDraft?.close();contactDraft=null;profilePending=false;
   sessionGeneration+=1;
   relationshipSequence+=1;relationships=null;admissionReceipts.clear();operationRevision=null;membershipEdited=false;uncertainSave=null;conversionDraft=null;busy=false;
   for(const url of privateExportUrls)URL.revokeObjectURL(url);privateExportUrls.clear();
@@ -354,7 +370,7 @@ function membershipRow(member={organizationId:'',role:'member',title:''}){
   organization.value=member.organizationId;organizationLabel.append(organization);
   const roleLabel=node('label','关系'),role=node('select');role.name='role';for(const [value,label]of[['member','成员'],['lead','负责人']]){const option=node('option',label);option.value=value;role.append(option);}role.value=member.role;roleLabel.append(role);
   const titleLabel=node('label','组织内职务／说明（内部）'),title=node('input');title.name='title';title.maxLength=120;title.value=member.title;titleLabel.append(title);
-  const remove=node('button','解除这项关联','ah-admin-button');remove.type='button';remove.dataset.contactMembershipRemove='';remove.addEventListener('click',()=>{if(busy||uncertainSave)return;row.remove();membershipEdited=true;operationsDirty=true;lock();});
+  const remove=node('button','解除这项关联','ah-admin-button');remove.type='button';remove.dataset.contactMembershipRemove='';remove.addEventListener('click',()=>{if(busy||uncertainSave)return;row.remove();membershipEdited=true;operationsDirty=true;contactDraft?.schedule();lock();});
   row.addEventListener('input',()=>{membershipEdited=true;operationsDirty=true;});row.addEventListener('change',()=>{membershipEdited=true;operationsDirty=true;});row.append(organizationLabel,roleLabel,titleLabel,remove);output.append(row);
 }
 function membershipValues(){return organizationMemberships([...$('[data-contact-memberships]').children].map(row=>({organizationId:row.querySelector('[name="organizationId"]').value,role:row.querySelector('[name="role"]').value,title:row.querySelector('[name="title"]').value.normalize('NFC').trim()})));}
@@ -400,11 +416,12 @@ function openContact(item){
   }
   $('[data-contact-error]').hidden=true;$('[data-contact-error]').textContent='';
   $('[data-contact-dialog]').showModal();
-  lock();
+  openContactDraft();lock();
 }
-function closeContact(){if(busy)return;if((operationsDirty||uncertainSave)&&!confirm(uncertainSave?'保存结果尚待核对。关闭会清除本页草稿，之后请重新读取云端核对，不能据此判断保存失败。确定关闭？':'关闭将放弃未保存的跟进修改，继续吗？'))return;operationsDirty=false;uncertainSave=null;operationRevision=null;membershipEdited=false;$('[data-contact-save-unknown]').hidden=true;$('[data-contact-dialog]').close();$('[data-contact-form]').reset();$('[data-contact-profile]').replaceChildren();$('[data-contact-memberships]').replaceChildren();}
+async function closeContact(){if(busy)return;const generation=sessionGeneration;if((operationsDirty||uncertainSave)&&!confirm('关闭表单并保留本机草稿及待核对操作？'))return;if(operationsDirty&&!contactDraft?.blocked&&!uncertainSave)await contactDraft?.flush().catch(()=>{});if(generation!==sessionGeneration)return;contactDraft?.close();contactDraft=null;operationsDirty=false;uncertainSave=null;operationRevision=null;membershipEdited=false;$('[data-contact-save-unknown]').hidden=true;$('[data-contact-dialog]').close();$('[data-contact-form]').reset();$('[data-contact-profile]').replaceChildren();$('[data-contact-memberships]').replaceChildren();}
 function updateContact(result){revision=result.revision;const exists=contacts.some(item=>item.id===result.contact.id);contacts=exists?contacts.map(item=>item.id===result.contact.id?result.contact:item):[...contacts,result.contact];render();}
 function resetProfile(){
+  profileDraft?.close();profileDraft=null;profilePending=false;
   profileContactId=null;profileDirty=false;
   const dialog=$('[data-profile-dialog]');if(dialog.open)dialog.close();
   $('[data-profile-form]').reset();$('[data-profile-title]').textContent='新增联系人';
@@ -437,12 +454,12 @@ function openProfile(item=null){
   form.elements.namedItem('contactConsent').disabled=Boolean(item);
   $('[data-profile-consent-readonly]').hidden=!item;
   $('[data-profile-consent-readonly]').textContent=item?'已记录的联络许可（只读）：'+(consentLabels[item.profile.contactConsent]||consentLabels.unknown):'';
-  syncProfileDuplicates();$('[data-profile-dialog]').showModal();
+  syncProfileDuplicates();$('[data-profile-dialog]').showModal();openProfileDraft();
 }
-function closeProfile(){
-  if(busy)return;
-  if(profileDirty&&!confirm('关闭将放弃未保存的基本资料，继续吗？'))return;
-  resetProfile();lock();
+async function closeProfile(){
+  if(busy)return;const generation=sessionGeneration;
+  if(profileDirty&&!confirm('关闭表单并保留本机草稿？'))return;
+  if(profileDirty&&!profileDraft?.blocked&&!profilePending)await profileDraft?.flush().catch(()=>{});if(generation!==sessionGeneration)return;resetProfile();lock();
 }
 function openInvitation(item){
   if(busy||!permitted())return;
@@ -461,8 +478,8 @@ function openInvitation(item){
 function settingsFromForm(){const form=$('[data-invitation-form]');return{recipientName:form.elements.namedItem('recipientName').value.trim(),date:form.elements.namedItem('date').value,time:form.elements.namedItem('time').value.trim(),venue:form.elements.namedItem('venue').value.trim(),confirmed:form.elements.namedItem('confirmed').checked};}
 
 $('[data-contacts-login]').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;if(!form.reportValidity())return;action(async()=>{let result;try{result=await request('/api/admin/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});}finally{form.elements.namedItem('password').value='';}user=result.user;csrfToken=result.csrfToken;$('[data-contacts-account]').hidden=false;$('[data-contacts-user]').textContent=user.label||user.id;await loadWorkspace();announce('已登录。名单和联系方式仅在此私有工作区显示。');});});
-$('[data-contacts-logout]').addEventListener('click',()=>action(async()=>{if((operationsDirty||profileDirty)&&!confirm('退出将清空未保存的修改，继续吗？'))return;await request('/api/admin/logout',{method:'POST'});clearPrivateState();announce('已退出，已清空本页的名单与邀请函预览。');}));
-$('[data-contacts-refresh]').addEventListener('click',()=>action(async()=>{if((operationsDirty||profileDirty)&&!confirm('有未保存的修改，刷新将放弃这些修改。继续刷新吗？'))return;operationsDirty=false;resetProfile();if($('[data-contact-dialog]').open)$('[data-contact-dialog]').close();await loadWorkspace();clearImport();announce('已载入最新名单。');}));
+$('[data-contacts-logout]').addEventListener('click',()=>action(async()=>{if((operationsDirty||profileDirty)&&!confirm('退出并清除本机草稿？'))return;const actorId=user?.id;profileDraft?.close();contactDraft?.close();try{if(actorId)await operationsDraftStore().clearActor(actorId);}finally{try{await request('/api/admin/logout',{method:'POST'});}finally{clearPrivateState();}}announce('已退出，本机填写与名单预览已清空。');}));
+$('[data-contacts-refresh]').addEventListener('click',()=>action(async()=>{if((operationsDirty||profileDirty)&&!confirm('有未保存的修改，刷新将放弃这些修改。继续刷新吗？'))return;if(operationsDirty&&!contactDraft?.blocked&&!uncertainSave)await contactDraft?.flush().catch(()=>{});if(profileDirty&&!profileDraft?.blocked&&!profilePending)await profileDraft?.flush().catch(()=>{});contactDraft?.close();contactDraft=null;operationsDirty=false;resetProfile();if($('[data-contact-dialog]').open)$('[data-contact-dialog]').close();await loadWorkspace();clearImport();announce('已载入最新名单。');}));
 $('[data-contacts-select-visible]').addEventListener('click',()=>{for(const id of visibleContactIds)selectedContacts.add(id);render();});
 $('[data-contacts-clear-selection]').addEventListener('click',()=>{selectedContacts.clear();render();});
 $('[data-contacts-batch-invite]').addEventListener('click',()=>action(async()=>{
@@ -581,39 +598,43 @@ $('[data-profile-dialog]').addEventListener('cancel',event=>{event.preventDefaul
 $('[data-profile-form]').addEventListener('input',event=>{if(!event.target.name)return;profileDirty=true;$('[data-profile-duplicates-confirm]').checked=false;syncProfileDuplicates();});
 $('[data-profile-duplicates-confirm]').addEventListener('change',lock);
 $('[data-profile-form]').addEventListener('submit',event=>{
-  event.preventDefault();const form=event.currentTarget;if(!permitted()||!form.reportValidity())return;
+  event.preventDefault();const form=event.currentTarget;if(!permitted()||profilePending||profileDraft?.blocked||!form.reportValidity())return;
   if(profileDuplicates()&&!$('[data-profile-duplicates-confirm]').checked){syncProfileDuplicates();return;}
   const profile=Object.fromEntries(EDITABLE_CONTACT_FIELDS.map(key=>[key,form.elements.namedItem(key).value.trim()]));
   for(const key of EDITABLE_CONTACT_ARRAY_FIELDS)profile[key]=Array.from(form.querySelectorAll('[name='+key+']:checked'),input=>input.value);
   if(!profileContactId)profile.contactConsent=form.elements.namedItem('contactConsent').value;
   const id=profileContactId;
   action(async()=>{try{
-    const result=await request('/api/admin/contacts'+(id?'/'+encodeURIComponent(id)+'/profile':''),{method:id?'PUT':'POST',body:JSON.stringify({expectedRevision:revision,profile})});
-    updateContact(result);resetProfile();announce(id?'基本资料已保存；来源答案、联络许可与跟进安排保持独立。':'联系人已保存；尚未生成邀请、发出消息或确认出席。');
-  }catch(error){if(user){$('[data-profile-error]').textContent=error.message;$('[data-profile-error]').hidden=false;$('[data-profile-error]').focus();}throw error;}});
+    const path='/api/admin/contacts'+(id?'/'+encodeURIComponent(id)+'/profile':''),method=id?'PUT':'POST',body=JSON.stringify({expectedRevision:revision,profile});
+    await profileDraft.markPending({path,method,body});profilePending=true;lock();
+    const result=await request(path,{method,body});
+    if(!result.contact||!Number.isSafeInteger(result.revision)||result.revision<=revision||id&&result.contact.id!==id)throw new Error('联系人保存回执无法核对，请先手动核对云端。');
+    await profileDraft.acknowledge();updateContact(result);resetProfile();announce(id?'基本资料已保存；来源答案、联络许可与跟进安排保持独立。':'联系人已保存；尚未生成邀请、发出消息或确认出席。');
+  }catch(error){if(user&&error.status>=400&&error.status<500){await profileDraft?.acknowledge();profilePending=false;}if(user){$('[data-profile-error]').textContent=error.message;$('[data-profile-error]').hidden=false;$('[data-profile-error]').focus();}throw error;}});
 });
 $('[data-contact-form]').addEventListener('input',()=>{operationsDirty=true;});
 for(const button of document.querySelectorAll('[data-contact-close]'))button.addEventListener('click',closeContact);
 $('[data-contact-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeContact();});
-$('[data-contact-form]').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;if(uncertainSave||!form.reportValidity())return;const data=new FormData(form);action(async()=>{
+$('[data-contact-form]').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;if(uncertainSave||contactDraft?.blocked||!form.reportValidity())return;const data=new FormData(form);action(async()=>{
   const generation=sessionGeneration,contactId=currentContactId,expectedRevision=operationRevision;
   const operations=Object.fromEntries(['owner','priority','followUpAt','notes','responseStatus'].map(key=>[key,String(data.get(key)||'').normalize('NFC').trim()]));operations.sessionIds=data.getAll('sessionIds');operations.boothIds=data.getAll('boothIds');operations.participationForms=data.getAll('participationForms');operations.sessionRoles=operations.sessionIds.map(sessionId=>({sessionId,roles:data.getAll('sessionRoles:'+sessionId)})).filter(entry=>entry.roles.length);
   if(relationships&&(membershipEdited||Object.hasOwn(contactById(contactId).operations,'organizationMemberships')))operations.organizationMemberships=membershipValues();
   try{
-    const receipt=savedContactReceipt(await request('/api/admin/contacts/'+encodeURIComponent(contactId),{method:'PUT',body:JSON.stringify({expectedRevision,operations})}),{contactId,expectedRevision,operations});
+    const path='/api/admin/contacts/'+encodeURIComponent(contactId),body=JSON.stringify({expectedRevision,operations});await contactDraft.markPending({path,method:'PUT',body});
+    const receipt=savedContactReceipt(await request(path,{method:'PUT',body}),{contactId,expectedRevision,operations});
     if(generation!==sessionGeneration)return;
     if(receipt.admission)admissionReceipts.set(contactId,receipt.admission);else admissionReceipts.delete(contactId);
-    updateContact(receipt);operationsDirty=false;uncertainSave=null;operationRevision=null;$('[data-contact-dialog]').close();
+    await contactDraft.acknowledge();contactDraft.close();contactDraft=null;updateContact(receipt);operationsDirty=false;uncertainSave=null;operationRevision=null;$('[data-contact-dialog]').close();
     const nextIntent=features.intentInvitations?await request('/api/admin/intent-invitations').catch(()=>null):null;if(generation!==sessionGeneration)return;intentState=nextIntent;render();
     announce('回复、职责与组织安排已保存。'+(receipt.admission?ADMISSION_LABELS[receipt.admission.status]+'。':'正式名额仍以报名审核记录为准。')+(operations.responseStatus==='declined'?'原报名及名额不会自动撤回，请到报名审核处理。':'')+'没有发送邀请或邮件。');
-  }catch(error){if(generation!==sessionGeneration)return;operationsDirty=true;if(!error.status||error.status>=500){uncertainSave={contactId,expectedRevision,operations};$('[data-contact-save-unknown]').hidden=false;}$('[data-contact-error]').textContent=error.message;$('[data-contact-error]').hidden=false;$('[data-contact-error]').focus();throw error;}
+  }catch(error){if(generation!==sessionGeneration)return;if(error.status>=400&&error.status<500)await contactDraft?.acknowledge();operationsDirty=true;if(!error.status||error.status>=500){uncertainSave={contactId,expectedRevision,operations};$('[data-contact-save-unknown]').hidden=false;}$('[data-contact-error]').textContent=error.message;$('[data-contact-error]').hidden=false;$('[data-contact-error]').focus();throw error;}
 });});
-$('[data-contact-membership-add]').addEventListener('click',()=>{if(busy||!relationships||uncertainSave)return;membershipRow();membershipEdited=true;operationsDirty=true;lock();});
+$('[data-contact-membership-add]').addEventListener('click',()=>{if(busy||!relationships||uncertainSave)return;membershipRow();membershipEdited=true;operationsDirty=true;contactDraft?.schedule();lock();});
 $('[data-contact-check-save]').addEventListener('click',()=>action(async()=>{
   const pending=uncertainSave,generation=sessionGeneration;if(!pending)return;
   const state=await request('/api/admin/contacts');if(generation!==sessionGeneration||uncertainSave!==pending)return;
   const contact=state.contacts?.find(item=>item.id===pending.contactId);if(!Number.isSafeInteger(state.revision)||state.revision<=pending.expectedRevision||!contact||!Object.entries(pending.operations).every(([key,value])=>JSON.stringify(contact.operations?.[key])===JSON.stringify(value)))throw new Error('当前云端记录与这份草稿尚未一致，请保留填写内容，关闭后刷新并核对差异。');
-  revision=state.revision;contacts=state.contacts;uncertainSave=null;operationsDirty=false;operationRevision=null;$('[data-contact-save-unknown]').hidden=true;$('[data-contact-dialog]').close();
+  await contactDraft?.acknowledge();contactDraft?.close();contactDraft=null;revision=state.revision;contacts=state.contacts;uncertainSave=null;operationsDirty=false;operationRevision=null;$('[data-contact-save-unknown]').hidden=true;$('[data-contact-dialog]').close();
   intentState=features.intentInvitations?await request('/api/admin/intent-invitations').catch(()=>null):null;if(generation!==sessionGeneration)return;render();announce('已核对当前云端记录与这份填写一致。本人回复、正式名额及邀请发送仍分别核对；没有自动重送或代登记。');
 }));
 $('[data-invitation-form]').addEventListener('input',event=>{if(!['recipientName','date','time','venue','confirmed'].includes(event.target.name))return;renderedSettings=null;$('[data-invitation-image]').hidden=true;$('[data-invitation-image]').removeAttribute('src');$('[data-invitation-sent-confirm]').checked=false;clearCommunicationPreviews();lock();});

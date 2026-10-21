@@ -196,3 +196,49 @@ test('clearing an in-flight operation discards its late success or rejection wit
     assert.equal(operations.pending,false);
   }
 });
+
+test('durable original operation is saved before any request and a storage failure never sends it', async () => {
+  const events=[];
+  const operations=createAdmissionOperations({revision:()=>5,operationId:()=> 'o'.repeat(43),
+    savePending:async operation=>{events.push(['persist',operation]);},clearPending:async()=>{events.push(['clear']);},
+    request:async(path,options)=>{events.push(['request',{path,...options}]);return decisionResult();}});
+  await operations.run('/api/admin/admissions/approve',{registrationId:ids[2]});
+  assert.deepEqual(events.map(item=>item[0]),['persist','request','clear']);
+  assert.deepEqual(events[0][1],events[1][1]);
+  let writes=0;
+  const unavailable=createAdmissionOperations({revision:()=>5,operationId:()=> 'o'.repeat(43),savePending:async()=>{throw new Error('storage unavailable');},request:async()=>{writes++;}});
+  await assert.rejects(unavailable.run('/api/admin/admissions/approve',{registrationId:ids[2]}),/storage/u);
+  assert.equal(writes,0);assert.equal(unavailable.pending,false);
+});
+
+test('a refreshed original operation does not send until explicit retry and survives a later 409', async () => {
+  let persisted,calls=[],clears=0;
+  const first=createAdmissionOperations({revision:()=>5,operationId:()=> 'o'.repeat(43),savePending:async value=>{persisted=structuredClone(value);},request:async()=>{throw new Error('lost ACK');}});
+  await assert.rejects(first.run('/api/admin/admissions/approve',{registrationId:ids[2]}));
+  const restored=createAdmissionOperations({revision:()=>9,clearPending:async()=>{clears++;},request:async(path,options)=>{calls.push({path,...options});if(calls.length===1)throw rejection(409);return decisionResult({outcome:'replayed',revision:9,operationRevision:6});}});
+  restored.restore(persisted);assert.equal(calls.length,0);assert.equal(restored.pending,true);
+  await assert.rejects(restored.retry());assert.equal(restored.pending,true);assert.equal(clears,0);
+  await assert.rejects(restored.run('/api/admin/admissions/reject',{registrationId:ids[2]}));
+  await restored.retry();assert.equal(restored.pending,false);assert.equal(clears,1);
+  assert.deepEqual(calls,[persisted,persisted]);assert.equal(JSON.parse(calls[0].body).expectedRevision,5);
+});
+
+test('an uncertain in-memory request also preserves its original operation after a later validation rejection',async()=>{
+  let calls=0;const operations=createAdmissionOperations({revision:()=>5,operationId:()=> 'o'.repeat(43),request:async()=>{if(++calls===1)throw new Error('lost');throw rejection(422);}});
+  await assert.rejects(operations.run('/api/admin/admissions/approve',{registrationId:ids[2]}));const original=operations.pendingRequest;
+  await assert.rejects(operations.retry());assert.deepEqual(operations.pendingRequest,original);assert.equal(operations.pending,true);
+});
+
+test('clearing while local persistence is pending prevents every late cloud request',async()=>{
+  let finish,writes=0;const wait=new Promise(resolve=>{finish=resolve;});
+  const operations=createAdmissionOperations({revision:()=>5,operationId:()=> 'o'.repeat(43),savePending:()=>wait,request:async()=>{writes++;}});
+  const work=operations.run('/api/admin/admissions/approve',{registrationId:ids[2]});operations.clear();finish();
+  await assert.rejects(work,/会话/u);assert.equal(writes,0);assert.equal(operations.pending,false);
+});
+
+test('pending recovery refuses other API paths, verbs and unexpected operation fields',()=>{
+  const operations=createAdmissionOperations({revision:()=>5,request:async()=>{throw new Error('must not send');}});
+  const saved={path:'/api/admin/admissions/approve',method:'POST',body:JSON.stringify({registrationId:ids[2],expectedRevision:5,operationId:'o'.repeat(43)})};
+  for(const item of [{...saved,path:'/api/admin/logout'},{...saved,method:'PUT'},{...saved,body:'not JSON'},{...saved,body:JSON.stringify({...JSON.parse(saved.body),password:'forbidden'})}])assert.throws(()=>operations.restore(item),/无法核对/u);
+  assert.equal(operations.pending,false);
+});

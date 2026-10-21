@@ -1,19 +1,34 @@
+import {createOperationsFormDraft,captureDraftFields,applyDraftFields} from '../lib/operations-form-draft.mjs';
+import {canManageEventOperations} from '../../shared/staff-permissions.mjs';
 import { admissionAdminState, createAdmissionOperations } from '../lib/admission-admin.mjs';
 import { admissionLabels } from '../lib/admission-view.mjs';
 
 function element(tag,text){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;return node;}
 /** Private capacity management uses the same authenticated request boundary as review. */
-export function createStaffAdmissions({root,request,openRecord,onChange=async()=>{},onStateChange=()=>{},onNotice=()=>{}}){
+export function createStaffAdmissions({root,request,openRecord,onChange=async()=>{},onStateChange=()=>{},onActorCleared=()=>{},onNotice=()=>{}}){
   const $=selector=>root.querySelector(selector);
   let user=null,state=null,busy=false,externalBusy=false,generation=0,loadSequence=0,accountKey=null,labels=new Map(),successCleanup=null,settingsDirty=false,reviewQueueOpened=false;
-  const operations=createAdmissionOperations({request,revision:()=>state?.revision});
+  let pendingDraft=null,formRevision=null;const formDrafts=new Map(),dirtyForms=new Set();
+  async function flushForms(){for(const kind of dirtyForms){const draft=formDrafts.get(kind);if(draft&&!draft.blocked)await draft.flush();}}
+  const operations=createAdmissionOperations({request,revision:()=>state?.revision,savePending:operation=>pendingDraft.markPending(operation),clearPending:async({acknowledged,operation})=>{if(acknowledged){const kind=operation.path.endsWith('/settings')?'settings':operation.path.endsWith('/teams')?'team':operation.path.endsWith('/staff')?'staff':null;if(kind)await formDrafts.get(kind)?.acknowledge();}await pendingDraft?.acknowledge();}});
+  function setupDrafts(){
+    if(!state||!allowed())return;const started=generation;
+    if(!pendingDraft)pendingDraft=createOperationsFormDraft({actorId:user.id,page:'review',entity:'admission-pending',autoSave:false,form:root,baseRevision:()=>state?.revision,isCurrent:()=>current(started),capture:()=>({}),apply:()=>{},onPending:operation=>{operations.restore(operation);onStateChange();},onDiscard:()=>{operations.clear();lock();onStateChange();},onChange:event=>{if(event.error?.code==='STALE_ACTOR'){onActorCleared();return;}lock();onStateChange();}});void pendingDraft.load();
+    if(formRevision===state.revision)return;for(const draft of formDrafts.values())draft.close();formDrafts.clear();dirtyForms.clear();formRevision=state.revision;settingsDirty=false;for(const form of root.querySelectorAll('form'))form.reset();
+    for(const[kind,names]of[['settings',['staffReserve','waitlistEnabled']],['team',['id','name','memberIds']],['staff',['name','kind','email','wechat','permissionReference']]]){
+      if(kind!=='team'&&!admin())continue;const form=$('[data-admissions-'+kind+']');
+      const draft=createOperationsFormDraft({actorId:user.id,page:'review',entity:'admission-form:'+kind,form,baseRevision:()=>state?.revision,isCurrent:()=>current(started),onEdit:()=>dirtyForms.add(kind),capture:()=>{if(state?.revision!==formRevision)throw new Error('云端名额版本已改变，请刷新核对。');return captureDraftFields(form,names);},apply:fields=>{applyDraftFields(form,fields,names);if(kind==='settings')settingsDirty=true;if(kind==='staff')form.elements.namedItem('confirmed').checked=false;dirtyForms.add(kind);},onChange:event=>{if(event.error?.code==='STALE_ACTOR'){onActorCleared();return;}lock();}});formDrafts.set(kind,draft);void draft.load();
+    }
+  }
   const allowed=()=>user?.roles.some(role=>['reviewer','superadmin'].includes(role));
-  const admin=()=>user?.roles.includes('superadmin');
+  const admin=()=>canManageEventOperations(user);
   const current=started=>started===generation&&allowed();
   function status(message,error=false){$('[data-admissions-status]').textContent=error?'':message;$('[data-admissions-error]').textContent=error?message:'';$('[data-admissions-error]').hidden=!error;if(error)$('[data-admissions-error]').focus();onNotice(message,error);}
   function lock(){
-    for(const field of root.querySelectorAll('button,input,select,textarea'))field.disabled=busy||externalBusy||!allowed()||operations.pending;
-    for(const section of root.querySelectorAll('[data-admissions-superadmin]')){section.hidden=!admin();for(const field of section.querySelectorAll('button,input,select,textarea'))field.disabled=busy||externalBusy||!admin()||operations.pending;}
+    for(const field of root.querySelectorAll('button,input,select,textarea'))field.disabled=busy||externalBusy||!allowed()||operations.pending||Boolean(pendingDraft?.blocked);
+    for(const section of root.querySelectorAll('[data-admissions-superadmin]')){section.hidden=!admin();for(const field of section.querySelectorAll('button,input,select,textarea'))field.disabled=busy||externalBusy||!admin()||operations.pending||Boolean(pendingDraft?.blocked);}
+    for(const[kind,draft]of formDrafts){for(const field of $('[data-admissions-'+kind+']').elements)field.disabled=busy||externalBusy||!allowed()||operations.pending||Boolean(pendingDraft?.blocked)||draft.blocked;}
+    for(const target of root.querySelectorAll('.operations-local-draft button'))target.disabled=busy||externalBusy||!allowed();
     $('[data-admissions-pending]').hidden=!operations.pending;
     $('[data-admissions-retry]').disabled=busy||externalBusy||!allowed()||!operations.pending;
     // Read refresh never clears a pending operation; it can help inspect a saved result.
@@ -60,7 +75,7 @@ export function createStaffAdmissions({root,request,openRecord,onChange=async()=
     }
     lock();
   }
-  async function load(started){const sequence=++loadSequence;let result;try{result=await request('/api/admin/admissions');}catch(error){if(!current(started)||sequence!==loadSequence)return false;throw error;}if(!current(started)||sequence!==loadSequence)return false;const next=admissionAdminState(result);if(!next)throw new Error('名额统计未通过核对，请刷新后重试。');if(state&&next.revision<state.revision)return false;state=next;render();return true;}
+  async function load(started){await flushForms();if(!current(started))return false;const sequence=++loadSequence;let result;try{result=await request('/api/admin/admissions');}catch(error){if(!current(started)||sequence!==loadSequence)return false;throw error;}if(!current(started)||sequence!==loadSequence)return false;const next=admissionAdminState(result);if(!next)throw new Error('名额统计未通过核对，请刷新后重试。');if(state&&next.revision<state.revision)return false;state=next;setupDrafts();render();return true;}
   async function action(callback){if(busy||externalBusy||!allowed())return;busy=true;lock();const started=generation;try{return await callback(started);}catch(error){if(current(started))status(error.message||'名额操作尚未确认，请保留本页并再次确认。',true);}finally{if(current(started)){busy=false;lock();}}}
   function emailMessage(email){
     if(!email||!['not_configured','pending','completed','not_applicable'].includes(email.status)||!Number.isSafeInteger(email.attemptedCount)||!Number.isSafeInteger(email.pendingCount)||email.attemptedCount<0||email.pendingCount<0)return '通知结果请到发送记录核对。';
@@ -84,13 +99,13 @@ export function createStaffAdmissions({root,request,openRecord,onChange=async()=
     return '名额安排已保存。'+(count?'本次有 '+count+' 位已核准候补转正。'+emailMessage(result.promotionEmail):'未产生新的正式邀请。');
   }
   async function accept(result,started){if(!current(started))return;loadSequence++;state=result;
-    if(successCleanup){const cleanup=successCleanup;successCleanup=null;cleanup();}if(!current(started))return;render();const message=resultMessage(result);status(message);
+    if(successCleanup){const cleanup=successCleanup;successCleanup=null;await cleanup();}if(!current(started))return;setupDrafts();render();const message=resultMessage(result);status(message);
     if(current(started))try{await onChange();}catch{if(current(started))status(message+' 报名列表刷新未完成，请稍后明确刷新核对。');}
     return true;
   }
-  function mutate(suffix,data,method='POST',cleanup=null){if(operations.pending||busy||externalBusy||!allowed())return;successCleanup=cleanup;return action(async started=>accept(await operations.run('/api/admin/admissions'+suffix,data,method),started));}
+  function mutate(suffix,data,method='POST',cleanup=null){if(operations.pending||pendingDraft?.blocked||busy||externalBusy||!allowed())return;const draftKind=suffix==='/settings'?'settings':suffix==='/teams'?'team':suffix==='/staff'?'staff':null;if(draftKind&&formDrafts.get(draftKind)?.blocked)return;successCleanup=async()=>{if(draftKind)await formDrafts.get(draftKind)?.acknowledge();cleanup?.();};return action(async started=>{await flushForms();if(!current(started))return;return accept(await operations.run('/api/admin/admissions'+suffix,data,method),started);});}
   function reviewApplication(registrationId,decision){
-    if(!['approve','reject'].includes(decision)||operations.pending||busy||externalBusy||!allowed())return;
+    if(!['approve','reject'].includes(decision)||operations.pending||pendingDraft?.blocked||busy||externalBusy||!allowed())return;
     if(!state?.people.some(person=>person.registrationId===registrationId&&person.status==='pending_review')){status('当前申请不是待审核状态，请刷新名额核对。',true);return;}
     if(!confirm(decision==='approve'?'确认审核通过？系统先分配已核准候补，再按共同上限分配此人的名额或候补；真正取得名额后按通知设置自动发送正式邀请。':'确认不通过这份申请？原始申请与审核记录保留，不占名额，也不会标记为本人婉拒。'))return;
     return mutate('/'+decision,{registrationId});
@@ -106,7 +121,7 @@ export function createStaffAdmissions({root,request,openRecord,onChange=async()=
   $('[data-admissions-team]').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;if(!form.reportValidity())return;const data=new FormData(form),memberIds=data.getAll('memberIds');if(memberIds.length>50){status('一个团队最多关联 50 位已登记成员。',true);return;}mutate('/teams',{team:{...(data.get('id')?{id:data.get('id')}:{}),name:data.get('name').trim(),memberIds}},'POST',resetTeam);});
   $('[data-admissions-staff]').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;if(!form.reportValidity()||!admin())return;const data=new FormData(form);if(!data.get('email').trim()&&!data.get('wechat').trim()){status('请填写本人邮箱或微信，至少一项。',true);return;}const fields=Object.fromEntries(['name','email','wechat'].map(key=>[key,data.get(key).trim()]).filter(([,value])=>value));mutate('/staff',{input:{fields,permissionReference:data.get('permissionReference').trim(),kind:data.get('kind')}},'POST',()=>form.reset());});
   return Object.freeze({
-    get pending(){return operations.pending;},
+    get pending(){return operations.pending||Boolean(pendingDraft?.blocked);},
     person(id){const person=state?.people.find(item=>item.registrationId===id);return allowed()&&person?{registrationId:person.registrationId,status:person.status,kind:person.kind}:null;},
     reviewApplication,
     retry(){return action(async started=>accept(await operations.retry(),started));},
@@ -116,10 +131,10 @@ export function createStaffAdmissions({root,request,openRecord,onChange=async()=
       accountKey=key;user={id:account.id,roles:[...account.roles]};const started=generation;root.hidden=false;
       for(const record of registrations)if(typeof record.id==='string'&&typeof record.fields?.name==='string')labels.set(record.id,record.fields.name);
       const sequence=loadSequence+1;
-      try{await load(started);}catch(error){if(current(started)&&sequence===loadSequence)status(error.message||'名额功能尚未就绪，请刷新核对。',true);}if(current(started))lock();
+      try{await load(started);if(current(started))setupDrafts();}catch(error){if(current(started)&&sequence===loadSequence)status(error.message||'名额功能尚未就绪，请刷新核对。',true);}if(current(started))lock();
     },
     lock(value){externalBusy=value;lock();},
     clear,
   });
-  function clear(){generation++;loadSequence++;accountKey=null;user=null;state=null;busy=false;labels.clear();operations.clear();successCleanup=null;settingsDirty=false;reviewQueueOpened=false;root.hidden=true;for(const form of root.querySelectorAll('form'))form.reset();$('[data-admissions-filter]').value='';resetTeam();for(const selector of ['[data-admissions-people]','[data-admissions-teams]','[data-admissions-metrics]','[data-admissions-team] [name=memberIds]'])$(selector).replaceChildren();status('');lock();onStateChange();}
+  function clear(){for(const draft of formDrafts.values())draft.close();formDrafts.clear();dirtyForms.clear();formRevision=null;pendingDraft?.close();pendingDraft=null;generation++;loadSequence++;accountKey=null;user=null;state=null;busy=false;labels.clear();operations.clear();successCleanup=null;settingsDirty=false;reviewQueueOpened=false;root.hidden=true;for(const form of root.querySelectorAll('form'))form.reset();$('[data-admissions-filter]').value='';resetTeam();for(const selector of ['[data-admissions-people]','[data-admissions-teams]','[data-admissions-metrics]','[data-admissions-team] [name=memberIds]'])$(selector).replaceChildren();status('');lock();onStateChange();}
 }

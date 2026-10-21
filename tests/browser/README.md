@@ -21,6 +21,7 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/admin-navigation-smoke.mjs
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/profile-transparency-smoke.mjs
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/staff-image-editor-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/staff-operations-smoke.mjs
 ```
 
 `registration-smoke.mjs` 在手机宽度检查：正式报名关闭时不提交且可读隐私告知；一般机构／职位／经历可省略但讲者／展商按条件必填；收据明确区分已确认和候补，候补不显示或读取群码；保存结果不明时冻结原资料，明确重试使用相同内容和幂等键。另置入合成工作人员 Cookie，验证公开 API 与入群图片均不发送该 Cookie。
@@ -37,12 +38,14 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 
 `profile-media-smoke.mjs` 检查大照片自动缩放、EXIF 方向、过大图片在调用 API 前拒绝、人物角色／简介／网站的公开授权、工作坊链接，以及停止公开后保留后台原件。`contact-roles-smoke.mjs` 检查同一人的多重参与身份与逐场次职责、保存后总览及待办、完整联系人 Excel 下载和退出清除。
 
-`exports-smoke.mjs` 实际读回报名及原始联系人 XLSX，核对筛选／联络资料范围、权限、未知写入回执与登出清理；同时验证 superadmin 的确认信／Wallet 缺项设置面板。`confirmation-smoke.mjs` 覆盖真实报名跳转、手机确认页、A4 PDF 打印与临时隐藏私密 fragment、候补／撤回／失效链接、刷新失效后清除资料、同页换链接的晚到回应，以及使用一次性合成证书生成并下载真实签章 PKPASS。没有使用真实 Apple 凭证，也没有进行真实 iPhone 加入验收。
+`exports-smoke.mjs` 实际读回报名及原始联系人 XLSX，核对筛选／联络资料范围、权限、未知写入回执与登出清理；并确认报名审核不再读取已集中到设置页的通知资料。`confirmation-smoke.mjs` 覆盖真实报名跳转、手机确认页、A4 PDF 打印与临时隐藏私密 fragment、候补／撤回／失效链接、刷新失效后清除资料、同页换链接的晚到回应，以及使用一次性合成证书生成并下载真实签章 PKPASS。没有使用真实 Apple 凭证，也没有进行真实 iPhone 加入验收。
 
 组织后台检查覆盖独立名录、旧草稿只读不迁移、真实图片缩放及保存／发布、一般参与不占用展位、停止公开保留原件与会话／晚到回应。`organizations-public-smoke.mjs` 核对 320／390／1440px 卡片、保留比例的匿名图片、安全链接、姓名可读回退，以及显式空名单、503 或坏回应不会重新显示旧四个名称。
 
-`admin-navigation-smoke.mjs` 核对四个工作人员工作区的左侧入口及当前页面标记、登录前／退出后的隐藏、桌面长页固定导览，以及 320／390／768／1099px 的手机收合、键盘开启／Escape、区块焦点与表格局部滚动。页内跳转保留未应用的修改，跨页仍触发既有未保存提示；直接重开区块链接恢复位置，既有嘉宾私密深链保持表单焦点。导览不得保存、发布或发送。可用 `ARTDICO_DIST_DIRECTORY` 指定另一个已构建目录，默认读取本项目 `dist`。
+`admin-navigation-smoke.mjs` 核对五个工作人员主工作区的左侧入口及当前页面标记、登录前／退出后的隐藏、桌面长页固定导览，以及 320／390／768／1099px 的手机收合、键盘开启／Escape、区块焦点与表格局部滚动。页内跳转保留未应用的修改，跨页仍触发既有未保存提示；直接重开区块链接恢复位置，既有嘉宾私密深链保持表单焦点。导览不得保存、发布或发送。可用 `ARTDICO_DIST_DIRECTORY` 指定另一个已构建目录，默认读取本项目 `dist`。
 
 `profile-transparency-smoke.mjs` 直接加载源码并拦截全部网络，验证真实 PNG 透明像素、默认白底 JPEG、不透明 JPEG、EXIF 与大噪声图有界压缩。`staff-image-editor-smoke.mjs` 验证现有／新图片的真实裁切像素、缩放／拖动／触控、取色去背和画笔、明确应用／取消、晚到编码结果、503 原内容手动重试、401 清理、授权随新图关联重核，以及旧 401 不会清掉新帐号。
 
-输出只包含合成验收项目与路由名称。截图及打印 PDF 写入忽略的 `.local-data/browser-evidence/`，只含合成资料。十五组脚本均拒绝未拦截的页面来源，并检查页面执行错误。它们不在默认 `pnpm test` 中；默认测试仍覆盖纯函数与服务端边界，实际浏览器操作应在有 Chromium 的环境单独执行。
+`staff-operations-smoke.mjs` 检查设置中心的真实就绪／过期状态、权限隔离、明确设置变更与未知回执原操作重试，以及单人工作页的名额／身份／安排、权限受限／未关联／暂不可用、私密资料清理和晚到回应。它不测试实际寄件，不调用真实账号或读取正式资料。
+
+输出只包含合成验收项目与路由名称。截图及打印 PDF 写入忽略的 `.local-data/browser-evidence/`，只含合成资料。十六组脚本均拒绝未拦截的页面来源，并检查页面执行错误。它们不在默认 `pnpm test` 中；默认测试仍覆盖纯函数与服务端边界，实际浏览器操作应在有 Chromium 的环境单独执行。

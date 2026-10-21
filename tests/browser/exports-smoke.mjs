@@ -9,7 +9,7 @@ import {createRegistrationXlsxApi} from '../../functions/registration-admin/xlsx
 import {createObjectJournal} from '../../functions/cloud-content/object-journal.mjs';
 import {memoryObjects} from '../helpers/cloud-memory-objects.mjs';
 const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright-core');
-const project=fileURLToPath(new URL('../../',import.meta.url)),dist=resolve(project,'dist'),ID='A'.repeat(43),AT='2026-10-21T00:00:00.000Z';
+const project=fileURLToPath(new URL('../../',import.meta.url)),dist=resolve(process.env.ARTDICO_DIST_DIRECTORY||resolve(project,'dist')),ID='A'.repeat(43),AT='2026-10-21T00:00:00.000Z';
 const record={id:ID,referenceCode:ID,eventId:'ggj-cn-2026',submittedAt:AT,fields:{name:'合成报名者',organization:'合成机构',position:'合成职位',city:'深圳',email:'synthetic@example.invalid',wechat:'SYNTHETIC-WECHAT',categories:['industry'],participationInterests:['attend'],attendance:'expected',accommodationChoice:'not_needed',background:'合成原始回答'},provenance:{kind:'public'},consent:{accepted:true,version:'synthetic-notice-v1',acceptedAt:AT}};
 const json=body=>({status:200,contentType:'application/json',body:JSON.stringify(body)}),reports=[],errors=[];
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
@@ -46,16 +46,16 @@ async function scenario(role,{unknownAck=false}={}){
   await page.goto('https://api.artdico.host/admin/registrations/',{waitUntil:'networkidle'});await page.locator('[data-review-workspace]:visible').waitFor();
   const button=page.locator('[data-review-export-xlsx]');
   if(role==='reviewer'){
-    assert.equal(await button.isDisabled(),true);assert.equal(await page.locator('[data-review-export-contact]').isDisabled(),true);assert.equal(writes,0);assert.equal(deliveryReads,0);assert.equal(await page.locator('[data-delivery-settings]').isVisible(),false);reports.push({role,scopeControlsDisabled:true,deliverySettingsNotRead:true});
+    assert.equal(await button.isDisabled(),true);assert.equal(await page.locator('[data-review-export-contact]').isDisabled(),true);assert.equal(writes,0);assert.equal(deliveryReads,0);assert.equal(await page.locator('[data-delivery-settings]').count(),0);reports.push({role,scopeControlsDisabled:true,deliverySettingsNotRead:true});
   }else if(unknownAck){
     await button.click();await page.locator('[data-review-error]:visible').waitFor();assert.equal(downloads.length,0);assert.equal(writes,1);assert.equal((await base.read()).value.audit.length,1);reports.push({role,unknownAcknowledgementNoDownload:true,noAutomaticRetry:true});
   }else{
-    await page.locator('[data-delivery-state]:visible').waitFor();assert.match(await page.locator('[data-delivery-mail-ready]').textContent(),/尚未完成/u);assert.match(await page.locator('[data-delivery-wallet-ready]').textContent(),/尚未开放/u);
+    assert.equal(deliveryReads,0,'registration review does not read notification settings');assert.equal(await page.locator('[data-delivery-settings]').count(),0);
     await page.locator('[data-review-export-contact]').check();await page.locator('[data-review-export-answers]').check();await page.locator('[data-review-export-arrangements]').check();
     const waiting=page.waitForEvent('download');await button.click();const download=await waiting;
     const bytes=await readFile(await download.path()),rows=await readSheet(bytes,'报名与参会');assert.equal(download.suggestedFilename(),'artdico-registration-attendance.xlsx');assert.equal(rows[1][rows[0].indexOf('邮箱')],'synthetic@example.invalid');assert.equal((await base.read()).value.audit[0].metadata.answersIncluded,true);
     await page.locator('[data-review-status]').filter({hasText:'Excel 已生成'}).waitFor();await page.locator('[data-review-logout]').click();await page.locator('[data-review-login-panel]:visible').waitFor();
-    const evidence=await page.evaluate(()=>window.privateExportEvidence);assert.ok(evidence.created.every(url=>evidence.revoked.includes(url)));assert.equal(await page.locator('[data-review-export-contact]').isChecked(),false);assert.equal(await page.locator('[data-delivery-settings]').isVisible(),false);assert.equal(await page.locator('[data-delivery-mail-ready]').textContent(),'');reports.push({role,realXlsxDownloaded:true,explicitScopesAudited:true,logoutRevokesPrivateUrls:true,missingDeliverySettingsHonest:true});
+    const evidence=await page.evaluate(()=>window.privateExportEvidence);assert.ok(evidence.created.every(url=>evidence.revoked.includes(url)));assert.equal(await page.locator('[data-review-export-contact]').isChecked(),false);assert.equal(await page.locator('[data-delivery-settings]').count(),0);reports.push({role,realXlsxDownloaded:true,explicitScopesAudited:true,logoutRevokesPrivateUrls:true,settingsMovedOutOfReview:true});
   }
   await context.close();
 }

@@ -57,7 +57,7 @@ try{
   assert.equal(await page.locator('[data-tasks-list]').getByText('合成拒绝对象').count(),0);
   await page.locator('[data-tasks-owner]').selectOption('合成乙');await page.locator('[data-tasks-kind]').selectOption('invitation_unknown');await page.locator('[data-tasks-filters]').getByRole('button',{name:'应用筛选'}).click();
   await page.locator('[data-tasks-result]').filter({hasText:'当前筛选 1 项'}).waitFor();assert.equal(await page.locator('[data-tasks-list] li').count(),1);
-  assert.equal(await page.locator('[data-tasks-list] a').first().getAttribute('href'),'/admin/contacts/#contact=synthetic-unknown');
+  assert.equal(await page.locator('[data-tasks-list] a').first().getAttribute('href'),'/admin/person/#contact=synthetic-unknown');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
   await page.locator('[data-tasks-logout]').click();await page.locator('[data-tasks-login-panel]:visible').waitFor();assert.equal(await page.locator('[data-tasks-list]').textContent(),'');
   actor={id:'synthetic-editor',roles:['editor']};const before=sourceReads;

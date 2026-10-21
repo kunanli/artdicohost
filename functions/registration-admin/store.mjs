@@ -112,6 +112,21 @@ function csv(items, includeContact) {
   return '\uFEFF' + lines.map(line => line.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 
+function validExportMetadata(meta) {
+  const common = Number.isSafeInteger(meta.count) && meta.count >= 0 && meta.count <= 1000 && typeof meta.contactIncluded === 'boolean'
+    && Array.isArray(meta.filterNames) && meta.filterNames.every(key => FILTER_NAMES.includes(key)) && new Set(meta.filterNames).size === meta.filterNames.length;
+  if (!common) return false;
+  if (meta.format === undefined) return Object.keys(meta).sort().join(',') === 'contactIncluded,count,filterNames';
+  const source = meta.sourceRevisions;
+  return Object.keys(meta).sort().join(',') === 'answersIncluded,arrangementsIncluded,contactIncluded,count,filterNames,format,sourceRevisions,workbookSha256'
+    && meta.format === 'xlsx' && typeof meta.answersIncluded === 'boolean' && typeof meta.arrangementsIncluded === 'boolean'
+    && typeof meta.workbookSha256 === 'string' && /^[a-f0-9]{64}$/u.test(meta.workbookSha256)
+    && ownValues(source) && Object.keys(source).sort().join(',') === 'admissions,applications,contacts,content'
+    && ['applications', 'admissions'].every(key => Number.isSafeInteger(source[key]) && source[key] >= 0)
+    && source.applications === source.admissions
+    && ['contacts', 'content'].every(key => meta.arrangementsIncluded ? Number.isSafeInteger(source[key]) && source[key] >= 0 : source[key] === null);
+}
+
 /** Independent review journal; accepted applications remain immutable and never get overwritten by staff. */
 export function createRegistrationReviewStore({ journal, loadRegistrations, eventId, clock = Date.now } = {}) {
   if (!journal || !['read', 'commit'].every(name => typeof journal[name] === 'function') || typeof loadRegistrations !== 'function' || typeof eventId !== 'string' || !EVENT.test(eventId) || typeof clock !== 'function') throw new TypeError('报名审核依赖未配置。');
@@ -144,8 +159,7 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
         || entry.registrationId !== null && !Object.hasOwn(state.reviews, entry.registrationId) || !ownValues(entry.metadata)) fail('STORAGE_UNAVAILABLE');
       const meta = entry.metadata;
       if (entry.action === 'update_review' && (Object.keys(meta).join(',') !== 'changedFields' || !Array.isArray(meta.changedFields) || meta.changedFields.some(key => !REVIEW_KEYS.includes(key)) || new Set(meta.changedFields).size !== meta.changedFields.length)
-        || entry.action === 'export' && (entry.registrationId !== null || Object.keys(meta).sort().join(',') !== 'contactIncluded,count,filterNames' || !Number.isSafeInteger(meta.count) || meta.count < 0 || meta.count > 1000 || typeof meta.contactIncluded !== 'boolean'
-          || !Array.isArray(meta.filterNames) || meta.filterNames.some(key => !FILTER_NAMES.includes(key)) || new Set(meta.filterNames).size !== meta.filterNames.length)
+        || entry.action === 'export' && (entry.registrationId !== null || !validExportMetadata(meta))
         || entry.action === 'deletion_requested' && (Object.keys(meta).join(',') !== 'reason' || !['request', 'retention', 'duplicate', 'other'].includes(meta.reason))) fail('STORAGE_UNAVAILABLE');
       previousAt = entry.at;
     }
@@ -248,6 +262,20 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
       return mutation(expectedRevision, actor, (current) => {
         const selected = current.registrations.filter(item => matches(item, filters));
         return { action: 'export', metadata: { count: selected.length, contactIncluded: includeContact, filterNames: Object.keys(filters) }, value: { csv: csv(selected, includeContact), count: selected.length } };
+      });
+    }); },
+    /** Build scoped bytes before the CAS audit; return them only after a proven acknowledgement. */
+    async exportXlsx(expectedRevision, input, actor, { includeContact = false, includeAnswers = false, includeArrangements = false, build } = {}) { return guarded(() => {
+      if ([includeContact, includeAnswers, includeArrangements].some(flag => typeof flag !== 'boolean') || typeof build !== 'function') fail('INVALID_REQUEST');
+      const filters = registrationFilters(input);
+      return mutation(expectedRevision, actor, (current, next, timestamp) => {
+        const selected = current.registrations.filter(item => matches(item, filters));
+        const result = build({ registrations: selected, applicationRevision: current.applicationRevision, reviewRevision: current.state.revision, exportedAt: timestamp });
+        if (!(result?.workbook instanceof Uint8Array) || result.workbook.length < 22 || result.workbook.length > 8 * 1024 * 1024) fail('STORAGE_UNAVAILABLE');
+        const metadata = { count: selected.length, contactIncluded: includeContact, filterNames: Object.keys(filters), format: 'xlsx', answersIncluded: includeAnswers,
+          arrangementsIncluded: includeArrangements, workbookSha256: hash(result.workbook), sourceRevisions: clone(result.sourceRevisions) };
+        if (!validExportMetadata(metadata) || metadata.sourceRevisions.applications !== current.applicationRevision) fail('STORAGE_UNAVAILABLE');
+        return { action: 'export', metadata, value: { workbook: result.workbook, count: selected.length, workbookSha256: metadata.workbookSha256, sourceRevisions: metadata.sourceRevisions } };
       });
     }); },
     async requestDeletion(id, expectedRevision, reason, actor) { return guarded(() => mutation(expectedRevision, actor, (current, next, timestamp) => {

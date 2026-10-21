@@ -177,6 +177,7 @@ function clearPrivateState() {
   $('[data-contacts-progress]').value = '';
   $('[data-contacts-result-count]').textContent = '';
   for(const selector of ['[data-contacts-organization]','[data-contacts-public-role]','[data-contacts-public-state]'])$(selector).value='';
+  const organizationFilter=$('[data-contacts-organization]');organizationFilter.replaceChildren();for(const [value,label]of[['','全部组织关系'],['__none','尚未关联组织']]){const option=node('option',label);option.value=value;organizationFilter.append(option);}organizationSelection=null;
   $('[data-people-relationships-status]').textContent='';$('[data-contact-memberships]').replaceChildren();$('[data-contact-membership-status]').textContent='';$('[data-contact-save-unknown]').hidden=true;
   $('[data-conversion-dialog]').close();$('[data-conversion-entries]').replaceChildren();$('[data-conversion-summary]').textContent='';$('[data-conversion-error]').textContent='';$('[data-conversion-error]').hidden=true;
   $('[data-contact-profile]').replaceChildren();
@@ -209,7 +210,7 @@ async function loadWorkspace() {
   if(generation!==sessionGeneration||!permitted())throw new Error('会话已改变，未载入旧私人名单。');
   revision = state.revision; contacts = state.contacts; content = program.content;
   features = nextFeatures; communications = nextCommunications; intentState=nextIntent;
-  relationships=nextRelationships;admissionReceipts.clear();renderRelationshipFilters();
+  relationships=nextRelationships;admissionReceipts.clear();organizationSelection=parseOrganizationSelection(location.hash)||organizationSelection;renderRelationshipFilters();
   for(const id of selectedContacts)if(!contacts.some(contact=>contact.id===id))selectedContacts.delete(id);
   $('[data-contacts-conversion-note]').textContent = intentState ? '将已核对的既有意向登记为工作人员代登记，保留原始来源；不会代替申请人的网站隐私同意，也不会自动发送邀请。' : '报名转换服务尚未就绪；现有名单、跟进与现场安排仍可分别维护。';
   $('[data-contacts-import-panel]').hidden = !features.contactImport;

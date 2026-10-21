@@ -169,6 +169,7 @@ async function request(path, options = {}) {
     finally { reader.releaseLock(); }
     if (!length) throw new Error('原图片暂时无法读取，请重新选择图片。');
     const file = new File(parts, id, { type });
+    if (!globalThis.crypto?.subtle) throw new Error('当前浏览器无法校验原图片，请从本机重新选择图片。');
     const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))].map(byte => byte.toString(16).padStart(2,'0')).join('');
     if (digest !== id.split('.')[0]) throw new Error('原图片内容未能核对，请重新选择图片。');
     if (sessionGeneration !== requestSessionGeneration) throw new Error('会话已变化，请在当前工作区重新操作。');
@@ -214,6 +215,7 @@ function showLogin() {
   for (const dialog of document.querySelectorAll('dialog')) if (dialog.open) dialog.close();
   for (const type of ['session', 'booth', 'guest', 'showcase']) {
     $('[data-' + type + '-form]').reset();
+    for (const field of $('[data-' + type + '-form]').querySelectorAll('input[type=hidden]')) field.value = '';
     const error = $('[data-' + type + '-error]');
     error.textContent = '';
     error.hidden = true;
@@ -576,7 +578,7 @@ async function retryPortrait() {
   $('[data-guest-portrait-status]').textContent = '正在重试上传同一份图片…';
   try { await sendPortrait(pending, generation, controller); }
   catch (error) { if (generation === portraitGeneration && !controller.signal.aborted && portraitContextMatches(pending.context)) portraitFailure(error); }
-  finally { if (generation === portraitGeneration) { portraitUploading = false; portraitController = null; lockControls(); } }
+  finally { if (generation === portraitGeneration) { portraitUploading = false; portraitController = null; lockControls(); if ($('[data-guest-dialog]').open && document.activeElement === document.body) (portraitPending ? $('[data-guest-portrait-retry]') : $('[data-guest-portrait-edit]')).focus({ preventScroll: true }); } }
 }
 function showcaseAssignment(item) {
   const parts=[];

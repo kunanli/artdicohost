@@ -32,7 +32,7 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onCha
     preview.src=path;preview.hidden=false;$('[data-organization-image-empty]').hidden=true;
   }
   function cancelUpload(){generation++;uploadController?.abort();uploadController=null;uploading=false;pendingImage=null;$('[data-organization-image-editor]').replaceChildren();$('[data-organization-image-editor]').hidden=true;}
-  function reset(){cancelUpload();form.reset();editingId=null;editContext=null;formDirty=false;image('');error();$('[data-organization-image-status]').textContent='';}
+  function reset(){cancelUpload();form.reset();for(const field of form.querySelectorAll('input[type=hidden]'))field.value='';editingId=null;editContext=null;formDirty=false;image('');error();$('[data-organization-image-status]').textContent='';}
   function clear(){reset();accountKey='';if(dialog.open)dialog.close();$('[data-organization-list]').replaceChildren();$('[data-organizations-legacy]').hidden=true;$('[data-organizations-empty]').hidden=true;}
   function configure(){
     const current=context(),next=current.user?current.user.id+'|'+[...current.user.roles].sort().join(','):'';
@@ -85,7 +85,7 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onCha
   async function sendImage(pending,started,controller){
     const result=await request('/api/admin/portraits',{method:'POST',body:JSON.stringify(pending.prepared.payload),signal:controller.signal});if(!activeImage(pending.context,started,controller.signal))return;
     const proof=result.portrait;if(!portrait.test(proof?.id??'')||proof.contentType!==pending.prepared.payload.contentType||!Number.isSafeInteger(proof.bytes)||proof.bytes<1||proof.bytes>512*1024)throw new Error('图片上传结果尚未核对，可重试同一份图片。');
-    form.elements.namedItem('logoId').value=proof.id;image(proof.id);pendingImage=null;$('[data-organization-image-status]').textContent=processedImageSummary(pending.prepared)+' 请应用、保存并发布。';
+    form.elements.namedItem('logoId').value=proof.id;image(proof.id);pendingImage=null;$('[data-organization-image-status]').textContent=processedImageSummary(pending.prepared)+' 图片已上传；请应用组织修改、保存并发布。';
   }
   function imageFailure(reason){$('[data-organization-image-status]').textContent=pendingImage?'已保留待上传图片与当前组织资料，原图片仍保留。请稍后重试上传，或取消本次图片。':'图片编辑未完成，原有图片与组织资料仍保留。';error(reason.message||'图片上传暂未完成。');}
   async function editImage(fileOrLoader){

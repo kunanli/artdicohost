@@ -257,8 +257,14 @@ try {
     await f.page.locator('[data-review-login] [name=username]').fill('reviewer');
     await f.page.locator('[data-review-login] [name=password]').fill(PEOPLE_FIXTURE_PASSWORD); await f.page.locator('[data-review-login-submit]').click();
     await f.page.locator('[data-review-workspace]:visible').waitFor();
-    await f.page.locator('[data-admissions-approve="' + pending.reference_code + '"]').click();
+    assert.equal(f.writes.filter(item => item.path.endsWith('/admissions/approve')).length, 1, 'relogin never retries the original decision automatically');
+    assert.equal(await f.page.locator('[data-admissions-approve="' + pending.reference_code + '"]').isDisabled(), true, 'the durable original decision blocks a fresh approval');
+    await f.page.locator('[data-operations-local-draft="admission-pending"]').getByRole('button', { name: '恢复待核对操作', exact: true }).click();
+    await f.page.locator('[data-admissions-retry]').click();
     await f.page.locator('[data-admissions-status]').filter({ hasText: /已确认参会名额/u }).waitFor(); assert.equal(f.runtime.messages.length, 1);
+    const attempts = f.writes.filter(item => item.path.endsWith('/admissions/approve'));
+    assert.equal(attempts.length, 2); assert.deepEqual(attempts[0].body, attempts[1].body, 'the restored decision keeps its original operationId and expected revision');
+    await f.page.locator('[data-operations-local-draft="admission-pending"][data-operations-draft-state=discarded]').waitFor();
     f.expireAdmissionRead(); await f.page.locator('[data-admissions-refresh]').click(); await f.page.locator('[data-review-workspace]').waitFor({ state: 'hidden' });
     assert.equal(await f.page.locator('[data-admissions-people] tr').count(), 0); assert.equal(await f.page.locator('[data-admissions-metrics]').textContent(), '');
     assert.equal((await f.page.locator('body').textContent()).includes('合成审核同事申请'), false, 'read expiry also erases retained applicant text');

@@ -1,4 +1,4 @@
-import { confirmationToken, confirmationLink, confirmationEmailLabels, createConfirmationClient } from '../lib/confirmation-client.mjs';
+import { confirmationToken, confirmationLink, confirmationEmailMessage, confirmationStatusLabels, createConfirmationClient } from '../lib/confirmation-client.mjs';
 
 const root = document.querySelector('[data-confirmation-page]');
 if (root) {
@@ -15,9 +15,10 @@ if (root) {
   }
   function render(value) {
     state=value;root.dataset.admission=value.admission.status;
-    const labels={confirmed:['名额已确认','报名已确认','期待在现场与你相见。请保存登记编号，方便签到和后续核对。'],waitlisted:['尚未确认名额','候补登记已保存','你已进入候补队列，目前尚未确认参会名额。请等待筹备团队的后续通知，无需重复报名。'],withdrawn:['名额已取消','这份报名已取消','这份报名当前不再占用参会名额。如需调整，请通过原联系渠道向筹备团队核对。']}[value.admission.status];
+    const labels=confirmationStatusLabels[value.admission.status];
     $('[data-confirmation-state]').textContent=labels[0];$('[data-confirmation-heading]').textContent=labels[1];$('[data-confirmation-intro]').textContent=labels[2];
-    for(const[key,text]of Object.entries({name:value.attendee.name,organization:value.attendee.organization,event:value.event.title,date:value.event.date,time:value.event.time+'（UTC+8），'+value.event.checkIn+' 开始签到',venue:value.event.venue,reference:value.referenceCode,email:confirmationEmailLabels[value.email.status]}))$('[data-confirmation-'+key+']').textContent=text;
+    for(const[key,text]of Object.entries({name:value.attendee.name,organization:value.attendee.organization,event:value.event.title,date:value.event.date,time:value.event.time+'（UTC+8）'+(value.admission.status==='confirmed'?'，'+value.event.checkIn+' 开始签到':''),venue:value.event.venue,reference:value.referenceCode,email:confirmationEmailMessage(value.admission.status,value.email.status)}))$('[data-confirmation-'+key+']').textContent=text;
+    $('[data-confirmation-print]').textContent=labels[3];$('[data-confirmation-copy]').textContent='保存私人查询链接';document.title=labels[1]+' · ARTDiCO HOST';
     $('.confirmation-person').hidden=value.admission.status==='withdrawn';
     $('[data-confirmation-wallet]').hidden=!value.wallet.ready;
     clearGroup();

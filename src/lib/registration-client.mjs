@@ -95,10 +95,11 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
         const result = await request('/api/admin/registration/submit',JSON.parse(pending.json),{'Idempotency-Key':pending.key,'X-Registration-Token':token.submissionToken});
         const admissionState = registrationReceiptState(result.value);
         if ([200,201].includes(result.status) && admissionState && KEY.test(result.value.reference_code)) {
-          const receipt = {httpStatus:result.status,body:{status:admissionState==='waitlisted'?'waitlisted':'registered',admissionStatus:admissionState,reference_code:result.value.reference_code,groupInvite:null}};
+          const receipt = {httpStatus:result.status,body:{status:admissionState==='confirmed'?'registered':admissionState,admissionStatus:admissionState,reference_code:result.value.reference_code,groupInvite:null}};
           if (result.value.admissionKind !== undefined) receipt.body.admissionKind = result.value.admissionKind;
           if (result.value.admissionRevision !== undefined) receipt.body.admissionRevision = result.value.admissionRevision;
           const confirmation = savedConfirmation(result.value.confirmation,clock());
+          if (confirmation && ['pending_review','rejected'].includes(admissionState)) confirmation.email.status = 'not_applicable';
           if (confirmation) receipt.body.confirmation = confirmation;
           const invite = result.value.groupInvite;
           if (admissionState==='confirmed' && invite?.platform === 'wechat' && timestamp(invite.expiresAt) && Date.parse(invite.expiresAt) > clock()) {

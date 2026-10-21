@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { confirmationLink, confirmationToken, savedConfirmation, confirmationView, createConfirmationClient } from '../src/lib/confirmation-client.mjs';
+import { confirmationLink, confirmationToken, savedConfirmation, confirmationView, createConfirmationClient, confirmationEmailMessage, confirmationStatusLabels } from '../src/lib/confirmation-client.mjs';
 
 const token='v1.'+'x'.repeat(100)+'.'+'y'.repeat(43),api='https://api.artdico.host',site='https://artdico.host',now=Date.parse('2026-10-21T00:00:00Z');
 const value=()=>({referenceCode:'r'.repeat(43),submittedAt:'2026-10-21T00:00:00Z',event:{id:'synthetic-event',title:'合成活动',date:'2026-12-05',time:'10:00–18:00',venue:'合成场地',timezone:'Asia/Shanghai',checkIn:'09:30'},admission:{status:'confirmed',kind:'attendee',revision:1},attendee:{name:'合成报名人',organization:'合成机构',email:'PRIVATE-SHOULD-NOT-RENDER'},email:{status:'not_configured',recipient:'PRIVATE-SHOULD-NOT-RENDER'},wallet:{ready:false},provenance:{permissionReference:'PRIVATE-SHOULD-NOT-RENDER'}});
@@ -20,13 +20,25 @@ test('a saved receipt redirects only to its matching fixed-origin capability, wi
 test('confirmation projection suppresses personal extras and all waitlist/withdrawn Wallet or group access',()=>{
   const confirmed=value();confirmed.groupInvite={platform:'wechat',qrImageUrl:api+'/api/admin/registration/group-invite/v1.a.b',expiresAt:'2026-12-05T00:00:00Z'};
   const safe=confirmationView(confirmed,now);assert.ok(safe.groupInvite);assert.doesNotMatch(JSON.stringify(safe),/PRIVATE-SHOULD-NOT-RENDER/u);
-  for(const status of ['waitlisted','withdrawn']){
+  for(const status of ['pending_review','waitlisted','rejected','withdrawn']){
     const candidate={...confirmed,admission:{...confirmed.admission,status},wallet:{ready:true}};
     const output=confirmationView(candidate,now);assert.equal(output.groupInvite,null);assert.equal(output.wallet.ready,false);
     if(status==='withdrawn')assert.deepEqual(output.attendee,{name:'',organization:''});
+    if(['pending_review','rejected'].includes(status))assert.equal(output.email.status,'not_applicable');
   }
   assert.equal(confirmationView({...confirmed,groupInvite:{...confirmed.groupInvite,qrImageUrl:'https://evil.invalid/qr'}},now).groupInvite,null);
   for(const patch of [{admission:{status:'registered',kind:'attendee',revision:1}},{admission:{status:'confirmed',kind:'attendee',revision:-1}},{email:{status:'delivered'}},{referenceCode:'unknown'}])assert.equal(confirmationView({...confirmed,...patch},now),null);
+});
+
+test('pending/rejected application receipt has no invitation or email-pending promise and prints its actual state',()=>{
+  for(const status of ['pending_review','rejected']){
+    const input={...value(),admission:{status,kind:'attendee',revision:4},wallet:{ready:true},email:{status:'pending'},groupInvite:{platform:'wechat',qrImageUrl:api+'/api/admin/registration/group-invite/v1.a.b',expiresAt:'2026-12-05T00:00:00Z'}};
+    const view=confirmationView(input,now);assert.equal(view.admission.status,status);assert.equal(view.wallet.ready,false);assert.equal(view.groupInvite,null);assert.equal(view.email.status,'not_applicable');
+    const message=confirmationEmailMessage(status,'pending');assert.doesNotMatch(message,/邮件待处理|准备.*邀请|名额已确认/u);assert.match(confirmationStatusLabels[status][3],status==='pending_review'?/申请收据/u:/审核结果/u);
+  }
+  assert.match(confirmationEmailMessage('waitlisted','provider_accepted'),/不提供正式邀请/u);
+  assert.equal(confirmationStatusLabels.pending_review[1],'申请已收到，待审核');
+  assert.equal(confirmationEmailMessage('unknown','pending'),'');
 });
 
 test('confirmation reads are bounded public POSTs with no staff credentials and never request a send endpoint',async()=>{

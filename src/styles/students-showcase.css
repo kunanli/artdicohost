@@ -149,6 +149,10 @@
 #artdico-host.ah-festival .ah-students-showcase :is(.ah-showcase-organization,.ah-showcase-arrangement) a{color:#e7c79c;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
 #artdico-host.ah-festival .ah-students-showcase :is(.ah-showcase-organization,.ah-showcase-arrangement) a:focus-visible{outline:2px solid #e0bc83;outline-offset:4px}
 #artdico-host.ah-festival :is([id^="work-"],[id^="guest-"],[id^="organization-"],[id^="booth-"]){scroll-margin-top:88px}
+#artdico-host.ah-festival .ah-showcase-related{display:grid;gap:2px;min-width:0;list-style:none;margin:12px 0 0;padding:10px 0 0;border-top:1px solid #65594e}
+#artdico-host.ah-festival .ah-showcase-related li{min-width:0;margin:0;padding:0}
+#artdico-host.ah-festival .ah-showcase-related a{display:flex;align-items:center;min-height:44px;max-width:100%;padding:6px 0;color:#e7c79c;font-size:12px;line-height:1.7;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
+#artdico-host.ah-festival .ah-showcase-related a:focus-visible{outline:2px solid #e0bc83;outline-offset:2px;border-radius:2px}
 @container(max-width:700px){
   #artdico-host.ah-festival .ah-students-showcase .ah-showcase-filters{align-items:stretch;gap:12px}
   #artdico-host.ah-festival .ah-students-showcase .ah-showcase-filters label{flex:1 1 100%}

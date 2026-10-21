@@ -1,4 +1,5 @@
 /** Private outreach data. Nothing in this contract belongs in public content. */
+import { INVITATION_POSTER_RENDER_VERSION } from './organizer-progress.mjs';
 export const CONTACT_SCHEMA_VERSION = 1;
 export const MAX_IMPORT_ROWS = 500;
 export const MAX_CONTACTS = 5000;
@@ -223,6 +224,12 @@ export function validateInvitationSettings(input) {
     value.time = start + '–' + end;
   }
   if (source.confirmed !== undefined && typeof source.confirmed !== 'boolean') errors.confirmed = '确认状态必须为布尔值。';
+  // Absence is the original five-field format. Never default this field on a
+  // read: old JSON digests and generated/sent evidence must remain unchanged.
+  if (Object.hasOwn(source, 'renderVersion')) {
+    if (source.renderVersion !== INVITATION_POSTER_RENDER_VERSION) errors.renderVersion = '邀请函视觉版本无效。';
+    else value.renderVersion = source.renderVersion;
+  }
   return { valid: Object.keys(errors).length === 0, errors, value };
 }
 

@@ -4,6 +4,7 @@ import { validateStoredContact, validateContactOperations, validateInvitationSet
 import { eventConfig } from '../../src/config/event.mjs';
 import { failure, IntentInvitationError, plainData, identifier, revision, iso } from './errors.mjs';
 import { createInvitationBatchOperations } from './batch.mjs';
+import { buildPosterInvitationSettings, INVITATION_POSTER_RENDER_VERSION, INVITATION_POSTER_FACTS } from '../../shared/organizer-progress.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const CATEGORY = { prospective_site: 'new_site', developer: 'industry', university: 'education' };
@@ -62,25 +63,38 @@ function selectedContacts(roster, contactIds) {
 }
 
 /** Confirmed event facts, without granting a speaker, booth, lodging or GGJ credential. */
-export function buildRegistrationInvitation(contact, registration, event = eventConfig) {
+export function buildRegistrationInvitation(contact, registration, event = eventConfig, { renderVersion } = {}) {
   if (!plainData(event) || event.status !== 'confirmed' || event.date?.status !== 'confirmed' || event.venue?.confirmed !== true
     || typeof event.title !== 'string' || !event.title.trim() || event.title.length > 300 || /[\u0000-\u001f\u007f]/u.test(event.title)
     || !identifier(event.id) || !identifier(registration?.registrationId) || !identifier(registration.referenceCode)) throw failure('INVALID_INPUT', 400);
-  const checked = validateInvitationSettings({ recipientName: contact.profile.displayName || contact.profile.name,
+  if (renderVersion !== undefined && renderVersion !== INVITATION_POSTER_RENDER_VERSION) throw failure('INVALID_INPUT', 400);
+  let poster;
+  if (renderVersion !== undefined) {
+    try { poster = buildPosterInvitationSettings(contact.profile.displayName || contact.profile.name, event); }
+    catch { throw failure('INVALID_INPUT', 400); }
+  }
+  const checked = validateInvitationSettings(poster ?? { recipientName: contact.profile.displayName || contact.profile.name,
     date: event.date.value, time: event.time?.start + '–' + event.time?.end,
     venue: event.venue.address || event.venue.name, confirmed: true });
   if (!checked.valid) throw failure('INVALID_INPUT', 400);
-  const settings = checked.value;
+  const settings = checked.value, title = poster ? INVITATION_POSTER_FACTS.title : event.title;
   return {
-    kind: 'registered_attendee_invitation', eventId: event.id, title: event.title,
+    kind: 'registered_attendee_invitation', eventId: event.id, title,
     registrationId: registration.registrationId, referenceCode: registration.referenceCode, settings,
-    subject: event.title + '｜活动邀请函',
-    text: [settings.recipientName + '，你好：', '', '筹备团队已为你登记本次活动报名，邀请你参加' + event.title + '。',
+    subject: title + '｜活动邀请函',
+    text: [settings.recipientName + '，你好：', '', '筹备团队已为你登记本次活动报名，邀请你参加' + title + '。',
       '报名编号：' + registration.referenceCode, '日期：' + settings.date, '时间：' + settings.time, '地点：' + settings.venue,
-      '09:30 签到，10:00 正式活动开始；楼层、入口和交通资讯另行公布。',
+      ...(poster ? [/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(event.time?.start ?? '') ? '签到：' + event.time.start + '；活动时间以本邀请所列时段为准。' : '活动时间以本邀请所列时段为准。']
+        : ['09:30 签到，10:00 正式活动开始；楼层、入口和交通资讯另行公布。']),
       '演讲、圆桌、展位、住宿及 GGJ 官方站点资格分别沟通；本邀请不自动授予上述安排。',
       '如不能参加或需要更正、撤回资料，请通过原联系渠道告知筹备团队。'].join('\n'),
   };
+}
+function invitationId(eventId, registrationId, channel, digest, renderVersion) {
+  // A new manual design/content has its own durable preparation identity. The
+  // legacy manual and all email identities retain their original bytes.
+  return 'i_' + hash(eventId + '\0' + registrationId + '\0' + channel
+    + (channel === 'manual' && renderVersion === INVITATION_POSTER_RENDER_VERSION ? '\0' + digest : '')).slice(0, 32);
 }
 
 /** Selected, audited staff conversion. Source data and public-applicant consent are never fabricated. */
@@ -134,7 +148,7 @@ export function createIntentInvitationService({ registrationService, contactsSto
     if (safe.status === 'issuing') safe.status = 'unknown';
     return safe;
   }
-  async function inspectBatch({ contactIds, expectedContactRevision, actor }) {
+  async function inspectBatch({ contactIds, expectedContactRevision, actor, renderVersion }) {
     const roster = await rosterAt(expectedContactRevision), selected = selectedContacts(roster, contactIds), state = await readState();
     const entries = [], bindings = [];
     for (const contact of selected) {
@@ -148,9 +162,10 @@ export function createIntentInvitationService({ registrationService, contactsSto
           requireSource(contact, registration);
           await requireActive(registration.registrationId, actor);
           admission = await requireConfirmed(registration.registrationId);
-          const content = buildRegistrationInvitation(contact, registration, event);
+          const content = buildRegistrationInvitation(contact, registration, event, { renderVersion });
           contentDigest = hash(JSON.stringify(content));
-          const previous = state.value.invitations.find(item => item.sourceContactId === contact.id && item.channel === 'manual');
+          const id = invitationId(event.id, registration.registrationId, 'manual', contentDigest, renderVersion);
+          const previous = state.value.invitations.find(item => item.id === id);
           const dispatch = state.value.invitations.find(item => item.sourceContactId === contact.id
             && ['issuing', 'unknown', 'provider_accepted', 'manually_sent'].includes(item.status));
           if (dispatch) reason = ['issuing', 'unknown'].includes(dispatch.status) ? 'INVITATION_STATUS_UNKNOWN' : 'INVITATION_DISPATCH_RECORDED';
@@ -265,9 +280,10 @@ export function createIntentInvitationService({ registrationService, contactsSto
         throw failure();
       }
     },
-    async issueInvitation({ contactId, expectedContactRevision, channel = 'manual', expectedRegistrationId, actor, confirmEmail = false, batchId } = {}) {
+    async issueInvitation({ contactId, expectedContactRevision, channel = 'manual', expectedRegistrationId, actor, confirmEmail = false, batchId, renderVersion } = {}) {
       const staff = actorValue(actor), roster = await rosterAt(expectedContactRevision), contact = contactValue(roster, contactId);
       if (!['manual', 'email'].includes(channel) || typeof confirmEmail !== 'boolean' || !identifier(expectedRegistrationId)
+        || renderVersion !== undefined && (channel !== 'manual' || renderVersion !== INVITATION_POSTER_RENDER_VERSION)
         || batchId !== undefined && (channel !== 'manual' || typeof batchId !== 'string' || !/^b_[a-f0-9]{64}$/u.test(batchId))) throw failure('INVALID_INPUT', 400);
       if (contact.profile.contactConsent !== 'consented') throw failure('CONTACT_NOT_CONSENTED', 422);
       const state = await readState(), registration = conversionFor(state, contactId);
@@ -276,8 +292,8 @@ export function createIntentInvitationService({ registrationService, contactsSto
       requireSource(contact, registration);
       await requireActive(registration.registrationId, staff);
       await requireConfirmed(registration.registrationId);
-      const content = buildRegistrationInvitation(contact, registration, event), digest = hash(JSON.stringify(content));
-      const id = 'i_' + hash(event.id + '\0' + registration.registrationId + '\0' + channel).slice(0, 32);
+      const content = buildRegistrationInvitation(contact, registration, event, { renderVersion }), digest = hash(JSON.stringify(content));
+      const id = invitationId(event.id, registration.registrationId, channel, digest, renderVersion);
       const previous = state.value.invitations.find(item => item.id === id);
       if (batchId && state.value.invitations.some(item => item.sourceContactId === contactId
         && ['issuing', 'unknown', 'provider_accepted', 'manually_sent'].includes(item.status))) throw failure('INVITATION_CHANGED', 409);
@@ -292,7 +308,7 @@ export function createIntentInvitationService({ registrationService, contactsSto
         const latest = contactValue(await rosterAt(expectedContactRevision), contactId);
         if (latest.profile.contactConsent !== 'consented') throw failure('CONTACT_NOT_CONSENTED', 422);
         requireSource(latest, registration);
-        if (!isDeepStrictEqual(buildRegistrationInvitation(latest, registration, event), content)) throw failure('REVISION_CONFLICT', 409);
+        if (!isDeepStrictEqual(buildRegistrationInvitation(latest, registration, event, { renderVersion }), content)) throw failure('REVISION_CONFLICT', 409);
         await requireActive(registration.registrationId, staff);
         await requireConfirmed(registration.registrationId);
       }
@@ -308,7 +324,7 @@ export function createIntentInvitationService({ registrationService, contactsSto
       try {
         const latest = contactValue(await rosterAt(expectedContactRevision), contactId);
         if (latest.profile.contactConsent !== 'consented' || latest.profile.email !== contact.profile.email
-          || !isDeepStrictEqual(buildRegistrationInvitation(latest, registration, event), content)) throw failure('REVISION_CONFLICT', 409);
+          || !isDeepStrictEqual(buildRegistrationInvitation(latest, registration, event, { renderVersion }), content)) throw failure('REVISION_CONFLICT', 409);
         await requireActive(registration.registrationId, staff);
         await requireConfirmed(registration.registrationId);
       } catch {

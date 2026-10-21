@@ -10,6 +10,7 @@ import { createIntentInvitationService } from '../functions/intent-invitations/s
 import { createIntentInvitationApi } from '../functions/intent-invitations/handler.mjs';
 import { createInvitationBatchOperations } from '../functions/intent-invitations/batch.mjs';
 import { failure } from '../functions/intent-invitations/errors.mjs';
+import { INVITATION_POSTER_RENDER_VERSION } from '../shared/organizer-progress.mjs';
 import { memoryObjects } from './helpers/cloud-memory-objects.mjs';
 
 const actor = { id: 'synthetic-batch-staff', roles: ['outreach', 'reviewer'] };
@@ -68,6 +69,38 @@ test('explicit preparation replays the stable individual ledger after reconstruc
   assert.equal(first.summary.prepared, 3);
   const replay = await prepare(createIntentInvitationService(f.dependencies), f.input, preview);
   assert.equal(replay.summary.replayed, 3); assert.deepEqual(await f.repository.read(), before); assert.equal(f.providerCalls(), 0);
+});
+
+test('explicit versioned batch prepares a new digest beside legacy prepared history and binds the exact version', async () => {
+  const f = await fixture(['consented']), legacyPreview = await f.service.previewInvitations(f.input);
+  await prepare(f.service, f.input, legacyPreview);
+  const legacy = structuredClone((await f.repository.read()).value.invitations[0]);
+  const input = { ...f.input, renderVersion: INVITATION_POSTER_RENDER_VERSION }, preview = await f.service.previewInvitations(input);
+  assert.equal(preview.summary.eligible, 1); assert.notEqual(preview.previewToken, legacyPreview.previewToken);
+  const before = await f.repository.read();
+  await assert.rejects(prepare(f.service, input, legacyPreview), { code: 'REVISION_CONFLICT' });
+  assert.deepEqual(await f.repository.read(), before);
+  const result = await prepare(f.service, input, preview);
+  assert.equal(result.summary.prepared, 1); assert.equal(result.results[0].invitation.content.settings.renderVersion, INVITATION_POSTER_RENDER_VERSION);
+  assert.notEqual(result.results[0].invitation.id, legacy.id);
+  assert.deepEqual((await f.repository.read()).value.invitations[0], legacy);
+  const stable = await f.repository.read(); assert.equal((await prepare(createIntentInvitationService(f.dependencies), input, preview)).summary.replayed, 1);
+  assert.deepEqual(await f.repository.read(), stable); assert.equal(f.providerCalls(), 0);
+});
+
+test('versioned batch still skips all historical dispatches and unknown outcomes without writes or resends', async () => {
+  const f = await fixture(['consented', 'consented']);
+  const first = f.contacts[0], second = f.contacts[1];
+  const prepared = await f.service.issueInvitation({ actor, contactId: first.id, expectedContactRevision: f.input.expectedContactRevision,
+    expectedRegistrationId: f.receipts.get(first.id).registrationId });
+  await f.service.markManualSent({ actor, invitationId: prepared.invitation.id, channel: 'wechat' });
+  const unknown = createIntentInvitationService({ ...f.dependencies, emailProvider: { readiness: () => ({ ready: true }), send: async () => ({ status: 'unknown' }) } });
+  await unknown.issueInvitation({ actor, contactId: second.id, expectedContactRevision: f.input.expectedContactRevision,
+    expectedRegistrationId: f.receipts.get(second.id).registrationId, channel: 'email', confirmEmail: true });
+  const before = await f.repository.read(), input = { ...f.input, renderVersion: INVITATION_POSTER_RENDER_VERSION };
+  const preview = await f.service.previewInvitations(input);
+  assert.deepEqual(preview.entries.map(entry => entry.reason), ['INVITATION_DISPATCH_RECORDED', 'INVITATION_STATUS_UNKNOWN']);
+  assert.equal((await prepare(f.service, input, preview)).summary.skipped, 2); assert.deepEqual(await f.repository.read(), before);
 });
 
 test('precheck binding rejects changed actor, selection, roster, source relation and admission revision before writes', async () => {
@@ -162,6 +195,24 @@ test('HTTP batch routes enforce private origin, CSRF and exact payload fields; n
   assert.equal((await api(request('/api/admin/contacts/invitations/preview', input, { 'x-csrf-token': 'wrong' }))).status, 403);
   const prepared = await api(request('/api/admin/contacts/invitations/prepare-batch', { ...input, previewToken: preview.previewToken, confirmPrepare: true }));
   assert.equal(prepared.status, 200); assert.equal((await prepared.json()).summary.prepared, 3); assert.equal(f.providerCalls(), 0);
+});
+
+test('HTTP accepts only the exact optional manual poster version and keeps version-specific preview binding', async () => {
+  const f = await fixture(['consented']), csrf = 'synthetic-version-csrf';
+  const api = createIntentInvitationApi({ service: f.service, authenticate: async () => ({ user: actor, csrfToken: csrf }) });
+  const request = (path, body) => new Request('https://api.artdico.host' + path, { method: 'POST',
+    headers: { origin: 'https://api.artdico.host', 'content-type': 'application/json', 'x-csrf-token': csrf }, body: JSON.stringify(body) });
+  const input = { contactIds: f.input.contactIds, expectedContactRevision: f.input.expectedContactRevision, renderVersion: INVITATION_POSTER_RENDER_VERSION };
+  const response = await api(request('/api/admin/contacts/invitations/preview', input)); assert.equal(response.status, 200);
+  const preview = await response.json();
+  const prepared = await api(request('/api/admin/contacts/invitations/prepare-batch', { ...input, previewToken: preview.previewToken, confirmPrepare: true }));
+  assert.equal(prepared.status, 200); assert.equal((await prepared.json()).results[0].invitation.content.settings.renderVersion, INVITATION_POSTER_RENDER_VERSION);
+  for (const renderVersion of [2, '2', null, 'unknown']) assert.equal((await api(request('/api/admin/contacts/invitations/preview', { ...input, renderVersion }))).status, 400);
+  const path = '/api/admin/contacts/' + f.contacts[0].id + '/invitation', individual = { expectedContactRevision: f.input.expectedContactRevision,
+    expectedRegistrationId: f.receipts.get(f.contacts[0].id).registrationId, channel: 'manual', renderVersion: INVITATION_POSTER_RENDER_VERSION };
+  assert.equal((await api(request(path, individual))).status, 200);
+  assert.equal((await api(request(path, { ...individual, channel: 'email', confirmEmail: true }))).status, 400);
+  assert.equal(f.providerCalls(), 0);
 });
 
 test('per-person admission or consent changes after preview cannot reserve a confirmed invitation', async () => {

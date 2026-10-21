@@ -11,6 +11,8 @@ import { hashPassword } from '../functions/content-api/auth.mjs';
 import { CloudContentError } from '../functions/cloud-content/errors.mjs';
 import { createInitialContent } from '../src/config/content.mjs';
 import { createEmptyContactOperations } from '../shared/contacts-schema.mjs';
+import { buildPosterInvitationSettings } from '../shared/organizer-progress.mjs';
+import { eventConfig } from '../src/config/event.mjs';
 import { readContactSnapshot } from '../functions/intent-invitations/contact-snapshot.mjs';
 import { memoryObjects } from './helpers/cloud-memory-objects.mjs';
 
@@ -88,6 +90,24 @@ test('profile edits keep stable source, original answers and consent separate fr
   await second.saveOperations(id, 7, { ...createEmptyContactOperations(), responseStatus: 'declined' }, 'outreach');
   await fails(() => first.guestPrefill(id), 'CONTACT_DECLINED', 422);
   assert.equal((await first.read()).revision, 8);
+});
+
+test('versioned contact invitation settings survive restart and snapshot validation without mutating legacy hashes on read', async () => {
+  const { first, second, journal } = unitSetup();
+  const created = await first.createContact(0, profile(), 'outreach'), id = created.contact.id;
+  const legacy = await first.recordGenerated(id, 1, settings, 'outreach'), oldState = journal.snapshot();
+  assert.equal(Object.hasOwn((await second.read()).contacts[0].invitation.settings, 'renderVersion'), false);
+  assert.deepEqual(journal.snapshot(), oldState, 'reading old settings must not stage a new normalized version');
+  const poster = buildPosterInvitationSettings(profile().displayName, eventConfig);
+  const saved = await second.recordGenerated(id, legacy.revision, poster, 'outreach');
+  const durable = journal.snapshot();
+  assert.deepEqual((await first.read()).contacts[0].invitation.settings, poster);
+  assert.equal(durable.value.audit.at(-1).settingsDigest, sha(poster));
+  assert.deepEqual(readContactSnapshot(JSON.stringify(durable.value)).contacts[0].invitation.settings, poster);
+  assert.deepEqual(journal.snapshot(), durable);
+  const sent = await first.recordSent(id, saved.revision, 'wechat', saved.contact.invitation.generatedAt, poster, 'outreach');
+  assert.equal(sent.contact.invitation.settings.renderVersion, poster.renderVersion);
+  await fails(() => second.recordGenerated(id, sent.revision, { ...poster, renderVersion: 2 }, 'outreach'), 'VALIDATION_ERROR', 422);
 });
 
 test('current student identity survives cloud restart without changing first original categories or source digest', async () => {

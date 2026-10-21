@@ -6,7 +6,9 @@ import { createOssContentStore } from '../functions/cloud-content/store.mjs';
 import { createOssContactsStore } from '../functions/cloud-content/contacts-store.mjs';
 import { createOssPortraitStore } from '../functions/cloud-content/portrait-store.mjs';
 import { createIntentInvitationRepository } from '../functions/intent-invitations/repository.mjs';
-import { createIntentInvitationService } from '../functions/intent-invitations/service.mjs';
+import { createIntentInvitationService, buildRegistrationInvitation } from '../functions/intent-invitations/service.mjs';
+import { INVITATION_POSTER_RENDER_VERSION, buildPosterInvitationSettings } from '../shared/organizer-progress.mjs';
+import { eventConfig } from '../src/config/event.mjs';
 import { createIntentInvitationApi } from '../functions/intent-invitations/handler.mjs';
 import { prepareIntentContactImport, createIntentContactImporter } from '../functions/intent-invitations/importer.mjs';
 import { memoryObjects } from './helpers/cloud-memory-objects.mjs';
@@ -105,6 +107,51 @@ test('manual invitation uses confirmed real event facts, prepares PNG settings a
   assert.equal((await f.service.markManualSent({ invitationId: prepared.invitation.id, channel: 'wechat', actor })).replayed, true);
   await assert.rejects(f.service.markManualSent({ invitationId: prepared.invitation.id, channel: 'email', actor }), { code: 'INVITATION_CHANGED' });
   assert.equal(f.providerCalls(), 0);
+});
+
+test('versioned manual preparation preserves old records and derives a stable new ID from exact content', async () => {
+  const f = await fixture(); await f.convert();
+  const legacy = await f.service.issueInvitation(f.invitationInput('manual'));
+  await f.service.markManualSent({ actor, invitationId: legacy.invitation.id, channel: 'wechat' });
+  const original = (await f.repository.read()).value.invitations[0];
+  const input = { ...f.invitationInput('manual'), renderVersion: INVITATION_POSTER_RENDER_VERSION };
+  const created = await f.service.issueInvitation(input), content = created.invitation.content;
+  assert.deepEqual(content.settings, buildPosterInvitationSettings('合成称呼', eventConfig));
+  assert.equal(created.invitation.id, 'i_' + hash(eventConfig.id + '\0r_synthetic\0manual\0' + hash(JSON.stringify(content))).slice(0, 32));
+  assert.notEqual(created.invitation.id, original.id); assert.doesNotMatch(content.text, /楼层.*另行公布/u);
+  let state = await f.repository.read(); assert.deepEqual(state.value.invitations[0], original);
+  const replay = await createIntentInvitationService(f.dependencies).issueInvitation(input);
+  assert.equal(replay.replayed, true); assert.deepEqual(await f.repository.read(), state);
+  const updated = await f.contactsStore.saveProfile(f.contact.id, 1, { displayName: '合成新称呼' }, actor.id);
+  const revised = await f.service.issueInvitation({ ...input, expectedContactRevision: updated.revision });
+  assert.notEqual(revised.invitation.id, created.invitation.id);
+  state = await f.repository.read(); assert.equal(state.value.invitations.length, 3); assert.deepEqual(state.value.invitations[0], original);
+  assert.equal(f.providerCalls(), 0);
+});
+
+test('new poster preparation cannot alter an existing email identity, unknown result or legacy builder bytes', async () => {
+  const f = await fixture(); await f.convert(); f.setProviderStatus('unknown');
+  const email = await f.service.issueInvitation(f.invitationInput('email'));
+  assert.equal(email.invitation.id, 'i_' + hash(eventConfig.id + '\0r_synthetic\0email').slice(0, 32));
+  assert.equal(Object.hasOwn(email.invitation.content.settings, 'renderVersion'), false);
+  const legacyBytes = JSON.stringify(buildRegistrationInvitation(f.contact, { registrationId: 'r_synthetic', referenceCode: 'R_SYNTHETIC' }));
+  const before = structuredClone(email.invitation);
+  await f.service.issueInvitation({ ...f.invitationInput('manual'), renderVersion: INVITATION_POSTER_RENDER_VERSION });
+  assert.equal((await f.service.issueInvitation(f.invitationInput('email'))).invitation.status, 'unknown');
+  assert.equal(f.providerCalls(), 1); assert.deepEqual((await f.repository.read()).value.invitations[0], before);
+  assert.equal(JSON.stringify(buildRegistrationInvitation(f.contact, { registrationId: 'r_synthetic', referenceCode: 'R_SYNTHETIC' })), legacyBytes);
+  for (const renderVersion of [INVITATION_POSTER_RENDER_VERSION, 2, 'unknown']) await assert.rejects(f.service.issueInvitation({ ...f.invitationInput('email'), renderVersion }), { code: 'INVALID_INPUT' });
+  assert.equal(f.providerCalls(), 1);
+});
+
+test('a lost versioned manual ACK is recovered by exact ID after restart without duplicate history or provider calls', async () => {
+  const f = await fixture(); await f.convert(); let commits = 0;
+  const interrupted = createIntentInvitationService({ ...f.dependencies, repository: { read: () => f.repository.read(), async commit(...args) { await f.repository.commit(...args); commits++; throw Error('SYNTHETIC_LOST_MANUAL_ACK'); } } });
+  const input = { ...f.invitationInput('manual'), renderVersion: INVITATION_POSTER_RENDER_VERSION };
+  await assert.rejects(interrupted.issueInvitation(input), { code: 'STORAGE_UNAVAILABLE' });
+  const durable = await f.repository.read();
+  assert.equal((await createIntentInvitationService(f.dependencies).issueInvitation(input)).replayed, true);
+  assert.deepEqual(await f.repository.read(), durable); assert.equal(commits, 1); assert.equal(f.providerCalls(), 0);
 });
 
 test('real-email branch requires explicit send intent and acknowledged reservation before the single provider call', async () => {

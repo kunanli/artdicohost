@@ -1,17 +1,18 @@
 import { createHash } from 'node:crypto';
 import { IntentInvitationError, failure, identifier, plainData, revision } from './errors.mjs';
+import { INVITATION_POSTER_RENDER_VERSION } from '../../shared/organizer-progress.mjs';
 
 export const MAX_BATCH_INVITATIONS = 100;
 export function validateBatchSelection(contactIds) {
   if (!Array.isArray(contactIds) || !contactIds.length || contactIds.length > MAX_BATCH_INVITATIONS
     || contactIds.some(id => !identifier(id)) || new Set(contactIds).size !== contactIds.length) throw failure('INVALID_INPUT', 400);
 }
-function token(snapshot, actor) {
+function token(snapshot, actor, renderVersion) {
   return 'b_' + createHash('sha256').update(JSON.stringify(['manual-invitation-batch-v1', actor.id,
-    snapshot.contactRevision, snapshot.bindings])).digest('hex');
+    snapshot.contactRevision, snapshot.bindings, ...(renderVersion !== undefined ? [renderVersion] : [])])).digest('hex');
 }
-function previewValue(snapshot, actor) {
-  return { contactRevision: snapshot.contactRevision, previewToken: token(snapshot, actor), entries: snapshot.entries,
+function previewValue(snapshot, actor, renderVersion) {
+  return { contactRevision: snapshot.contactRevision, previewToken: token(snapshot, actor, renderVersion), entries: snapshot.entries,
     summary: { selected: snapshot.entries.length, eligible: snapshot.entries.filter(item => item.eligible).length,
       skipped: snapshot.entries.filter(item => !item.eligible).length } };
 }
@@ -23,8 +24,8 @@ export function createInvitationBatchOperations({ inspect, issueManual, authoriz
   async function checked(input) {
     const actor = authorize(input.actor);
     validateBatchSelection(input.contactIds);
-    if (!revision(input.expectedContactRevision)) throw failure('INVALID_INPUT', 400);
-    const snapshot = await inspect({ contactIds: input.contactIds, expectedContactRevision: input.expectedContactRevision, actor });
+    if (!revision(input.expectedContactRevision) || input.renderVersion !== undefined && input.renderVersion !== INVITATION_POSTER_RENDER_VERSION) throw failure('INVALID_INPUT', 400);
+    const snapshot = await inspect({ contactIds: input.contactIds, expectedContactRevision: input.expectedContactRevision, actor, renderVersion: input.renderVersion });
     if (!plainData(snapshot) || snapshot.contactRevision !== input.expectedContactRevision
       || !Array.isArray(snapshot.entries) || !Array.isArray(snapshot.bindings) || snapshot.entries.length !== input.contactIds.length
       || snapshot.entries.some((entry, index) => entry.contactId !== input.contactIds[index])) throw failure();
@@ -33,21 +34,22 @@ export function createInvitationBatchOperations({ inspect, issueManual, authoriz
   return Object.freeze({
     async preview(input = {}) {
       const { actor, snapshot } = await checked(input);
-      return previewValue(snapshot, actor);
+      return previewValue(snapshot, actor, input.renderVersion);
     },
     async prepare(input = {}) {
       if (input.confirmPrepare !== true || typeof input.previewToken !== 'string' || !/^b_[a-f0-9]{64}$/u.test(input.previewToken)) throw failure('INVALID_INPUT', 400);
       const { actor, snapshot } = await checked(input);
       // The hash is a state binding, never an authorization token. Every call
       // authenticates and recomputes consent/source/admission/review checks.
-      if (input.previewToken !== token(snapshot, actor)) throw failure('REVISION_CONFLICT', 409);
+      if (input.previewToken !== token(snapshot, actor, input.renderVersion)) throw failure('REVISION_CONFLICT', 409);
       const results = []; let stopped = false;
       for (const entry of snapshot.entries) {
         if (!entry.eligible) { results.push({ contactId: entry.contactId, status: 'skipped', code: entry.reason }); continue; }
         if (stopped) { results.push({ contactId: entry.contactId, status: 'failed', code: 'BATCH_NOT_ATTEMPTED' }); continue; }
         try {
           const result = await issueManual({ contactId: entry.contactId, expectedContactRevision: snapshot.contactRevision,
-            expectedRegistrationId: entry.registrationId, channel: 'manual', actor, batchId: input.previewToken });
+            expectedRegistrationId: entry.registrationId, channel: 'manual', actor, batchId: input.previewToken,
+            ...(input.renderVersion !== undefined ? { renderVersion: input.renderVersion } : {}) });
           if (!plainData(result) || !plainData(result.invitation) || result.invitation.channel !== 'manual'
             || result.invitation.status !== 'prepared' || result.invitation.registrationId !== entry.registrationId
             || result.contactRevision !== snapshot.contactRevision || typeof result.replayed !== 'boolean') throw failure();

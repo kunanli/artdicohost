@@ -81,7 +81,7 @@ async function fixture({width=1280,mode='normal'}={}){
       return original(input,options);
     };
   });
-  await page.goto(SITE+'/admin/',{waitUntil:'networkidle'});await page.locator('[data-admin-workspace]:visible').waitFor();
+  await page.goto(SITE+'/admin/content/guests/',{waitUntil:'networkidle'});await page.locator('[data-admin-workspace]:visible').waitFor();
   return {page,context,uploads,writes,content,dialogEvents,setDismissConfirm:value=>{dismissConfirm=value;},release:async()=>{assert.ok(releaseUpload,'the held upload must exist');releaseUpload();await lateDone;}};
 }
 
@@ -89,7 +89,7 @@ const config={
   guest:{open:'[data-admin-guests] tr:first-child button:first-child',form:'[data-guest-form]',file:'[data-guest-portrait-file]',host:'[data-guest-image-editor]',id:'portraitId',status:'[data-guest-portrait-status]',error:'[data-guest-error]',retry:'[data-guest-portrait-retry]',close:'[data-guest-dialog] [data-close-dialog=guest]'},
   organization:{open:'[data-organization-action=edit]',form:'[data-organization-form]',file:'[data-organization-image]',host:'[data-organization-image-editor]',id:'logoId',status:'[data-organization-image-status]',error:'[data-organization-error]',retry:'[data-organization-image-retry]',close:'[data-organization-dialog] [data-organization-close]'},
 };
-async function open(f,kind){const c=config[kind];await f.page.locator(c.open).first().click();await f.page.locator(c.form).waitFor({state:'visible'});return f.page.locator(c.form);}
+async function open(f,kind){const target='/admin/content/'+(kind==='guest'?'guests':'organizations')+'/';if(new URL(f.page.url()).pathname!==target){await f.page.goto(SITE+target,{waitUntil:'networkidle'});await f.page.locator('[data-admin-workspace]:visible').waitFor();}const c=config[kind];await f.page.locator(c.open).first().click();await f.page.locator(c.form).waitFor({state:'visible'});return f.page.locator(c.form);}
 async function choose(f,kind,pattern='gradient'){
   const selector=config[kind].file;
   await f.page.evaluate(async({selector,pattern})=>{

@@ -38,7 +38,7 @@ async function fixture(browser,errors,{width=1440,mode='normal',username='owner'
   const runtime=await peopleRuntimeFixture({capacity:3,mail:false}),initial=await seedContent(runtime);
   const context=await browser.newContext({viewport:{width,height:900},acceptDownloads:true});
   const page=await context.newPage();page.setDefaultTimeout(12000);await page.clock.setFixedTime(new Date(AT));
-  const calls=[],dialogs=[],held=deferred(),holdReady=deferred();let fault=mode,used=false,holdSave=false,activeUser=username,logoutMode='normal',expirePath=null;
+  const calls=[],dialogs=[],held=deferred(),holdReady=deferred();let fault=mode,used=false,holdSave=false,activeUser=username,logoutMode='normal',expirePath=null,expireStatus=401;
   // The late-response case deliberately delivers an old reply despite abort, proving epoch guards.
   if(mode==='late-save')await context.addInitScript(()=>{const original=fetch.bind(window);window.fetch=(input,options={})=>{const url=new URL(typeof input==='string'?input:input.url,location.href);return original(input,url.pathname==='/api/admin/content'&&options.method==='PUT'?{...options,signal:undefined}:options);};});
   page.on('pageerror',error=>errors.push(mode+': '+error.message));page.on('dialog',async dialog=>{dialogs.push(dialog.type());await dialog.accept();});
@@ -50,7 +50,7 @@ async function fixture(browser,errors,{width=1440,mode='normal',username='owner'
       const body=req.postData()?JSON.parse(req.postData()):null,entry={path,method:req.method(),body};calls.push(entry);
       assert.equal(/\/(?:dispatch|send|sent|manual-sent)$/u.test(path),false,'editing/navigation must never send');
       assert.equal(path.endsWith('/publish'),false,'publication is outside these save scenarios');
-      if(expirePath===path){expirePath=null;return route.fulfill(json({},401));}
+      if(expirePath===path){expirePath=null;return route.fulfill(json({},expireStatus));}
       if(path==='/api/admin/logout'&&logoutMode!=='normal'){if(logoutMode==='network')return route.abort('failed');return route.fulfill(json({},401));}
       const isSave=path==='/api/admin/content'&&req.method()==='PUT';
       if(isSave&&!used){used=true;
@@ -72,7 +72,7 @@ async function fixture(browser,errors,{width=1440,mode='normal',username='owner'
     const file=resolve(base,'.'+pathname);assert.ok(file.startsWith(base+'/'));
     try{return await route.fulfill({status:200,contentType:mime(file),body:await readFile(file)});}catch{return route.fulfill({status:404,body:''});}
   });
-  return{runtime,initial,page,context,calls,dialogs,mode,actor:()=>activeUser,setActor,setFault:value=>{fault=value;used=false;},setLogoutMode:value=>{logoutMode=value;},expireNext:path=>{expirePath=path;},waitHeld:()=>holdReady.promise,release:()=>held.resolve(),held:()=>holdSave,async close(){held.resolve();await context.close();}};
+  return{runtime,initial,page,context,calls,dialogs,mode,actor:()=>activeUser,setActor,setFault:value=>{fault=value;used=false;},setLogoutMode:value=>{logoutMode=value;},expireNext:(path,status=401)=>{expirePath=path;expireStatus=status;},waitHeld:()=>holdReady.promise,release:()=>held.resolve(),held:()=>holdSave,async close(){held.resolve();await context.close();}};
 }
 const saves=f=>f.calls.filter(call=>call.path==='/api/admin/content'&&call.method==='PUT');
 const workspace=f=>f.page.locator('[data-admin-workspace]');
@@ -186,8 +186,8 @@ async function draftCases(browser,errors,reports){
   for(const logoutMode of['expired','network']){
     const f=await fixture(browser,errors);await open(f);await editBooth(f);await waitLocal(f);f.setLogoutMode(logoutMode);await f.page.locator('[data-admin-logout]').evaluate(node=>node.click());await assertPrivateCleared(f);assert.equal((await draftRows(f.page)).some(row=>row.scope.actorId===f.runtime.users[0].id),false);assert.deepEqual(saves(f),[]);await f.close();reports.push({group:'drafts',logoutMode,explicitLogoutClearsPrivateDomAndActorCacheEvenWithoutAck:true});
   }
-  {
-    const f=await fixture(browser,errors);await open(f);await editBooth(f);await waitLocal(f);f.expireNext('/api/admin/content');await submitBooth(f);await assertPrivateCleared(f);await login(f,'editoroutreach');assert.equal(await f.page.locator('[data-admin-local-recovery]').isVisible(),false);assert.equal((await f.page.locator('[data-booth-form] [name=project]').inputValue()).includes(UPDATED),false);await f.page.locator('[data-admin-logout]').click();await login(f,'owner');await f.page.locator('[data-admin-local-restore]:visible').waitFor();assert.deepEqual(saves(f),[]);await f.close();reports.push({group:'drafts',expiryRetainsOnlySameActorRecovery:true,otherActorNeverSeesOrRestoresPriorFields:true});
+  for(const status of[401,403]){
+    const f=await fixture(browser,errors);await open(f);await editBooth(f);await waitLocal(f);f.expireNext('/api/admin/content',status);await submitBooth(f);await assertPrivateCleared(f);await login(f,'editoroutreach');assert.equal(await f.page.locator('[data-admin-local-recovery]').isVisible(),false);assert.equal((await f.page.locator('[data-booth-form] [name=project]').inputValue()).includes(UPDATED),false);await f.page.locator('[data-admin-logout]').click();await login(f,'owner');await f.page.locator('[data-admin-local-restore]:visible').waitFor();assert.deepEqual(saves(f),[]);await f.close();reports.push({group:'drafts',status,expiryRetainsOnlySameActorRecovery:true,otherActorNeverSeesOrRestoresPriorFields:true});
   }
   {
     const f=await fixture(browser,errors,{mode:'late-save'});await open(f);await editBooth(f);await submitBooth(f);await f.waitHeld();const sibling=await f.context.newPage();sibling.on('pageerror',error=>errors.push('late-save-sibling: '+error.message));sibling.on('dialog',dialog=>dialog.accept());await sibling.goto(SITE+routeFor('event'),{waitUntil:'networkidle'});await sibling.locator('[data-admin-workspace]:visible').waitFor();await sibling.locator('[data-admin-logout]').click();await sibling.locator('[data-admin-login-panel]:visible').waitFor();await assertPrivateCleared(f);await login(f,'editoroutreach');f.release();await f.page.waitForLoadState('networkidle');assert.equal(await workspace(f).isVisible(),true);assert.match(await f.page.locator('[data-admin-user]').textContent(),/editoroutreach/u);assert.doesNotMatch(await f.page.locator('[data-admin-status]').textContent(),/已确认保存|草稿已保存/u);assert.equal((await draftRows(f.page)).some(row=>row.scope.actorId===f.runtime.users[0].id),false);assert.equal(saves(f).length,1);await f.close();reports.push({group:'drafts',lateOldSaveDoesNotMutateNewActorSessionOrShowOldSuccess:true});

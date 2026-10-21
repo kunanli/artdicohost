@@ -192,12 +192,19 @@ async function request(path, options = {}) {
   if (options.body) headers['Content-Type'] = 'application/json';
   if (options.method && options.method !== 'GET' && csrfToken) headers['X-CSRF-Token'] = csrfToken;
   const response = await fetch(path, { ...fetchOptions, headers, credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
-  if (sessionGeneration !== requestSessionGeneration || !isCurrent()) { await response.body?.cancel().catch(() => {}); throw new Error('会话或当前选择已变化，请重新操作。'); }
+  if (sessionGeneration !== requestSessionGeneration) { await response.body?.cancel().catch(() => {}); throw new Error('会话已变化，请重新操作。'); }
+  const expired = response.status === 401 && path !== '/api/admin/login';
+  const restricted = response.status === 403 && path.startsWith('/api/admin/people/');
+  if (expired || restricted) {
+    await response.body?.cancel().catch(() => {});
+    const message = expired ? '会话已结束，请重新登录。' : '人员资料权限已变化，请重新登录核对当前权限。';
+    showLogin(); announce(message, true);
+    const failure = new Error(message); failure.status = response.status; throw failure;
+  }
+  if (!isCurrent()) { await response.body?.cancel().catch(() => {}); throw new Error('当前选择已变化，请重新操作。'); }
   const result = binaryImage && response.ok ? null : await response.json().catch(() => ({}));
   if (sessionGeneration !== requestSessionGeneration || !isCurrent()) throw new Error('会话或当前选择已变化，请重新操作。');
   if (!response.ok) {
-    if (response.status === 401 && path !== '/api/admin/login') { showLogin(); announce('会话已结束，请重新登录。', true); }
-    if (response.status === 403 && path.startsWith('/api/admin/people/')) { showLogin(); announce('人员资料权限已变化，请重新登录核对当前权限。', true); }
     const message = response.status === 503 && result?.error?.code === 'CONTENT_NOT_READY' ? '后台服务暂不可用，可能正在更新。请稍后重试。' : response.status === 409 ? '草稿已被其他工作人员更新。你的修改仍保留在本页；请先复制需要保留的内容，再重新载入最新草稿。' : result?.error?.message || '操作暂未完成，请重试。';
     const failure = new Error(message); failure.status = response.status;
     failure.code = result?.error?.code === 'CONTENT_NOT_READY' ? 'CONTENT_NOT_READY' : '';

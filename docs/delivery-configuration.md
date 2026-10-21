@@ -17,8 +17,8 @@
    ```
 
    脚本只输出配置对象的安全路径和 SHA，输出文件为加密 bytes、0600，不自动联网或启用发送。
-4. 使用已有受控 OSS 角色把加密文件按脚本返回的固定 `cms/v1/confirmation-mail/<event>/<sha>.json` 路径作不可变上传，类型 `application/json`。核对 bytes/SHA；不用公开桶、不做公开链接、不覆盖已有对象。FC 放入 `ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID=<sha>` 和 `ARTDICO_CONFIRMATION_EMAIL_ENABLED=true`，保留原有环境变量、角色和严格总量限制。
-5. 后台核对配置状态，再明确启用自动确认信设置。新公开报名在持久化后才通知；代登记和历史资料不会被设置页读取自动补寄。明确补寄只选实际已知未发出的记录；未知外部结果不自动重送。正式收件人测试需真实业务操作授权，CI 只使用注入的合成 provider。
+4. 在 FC 寄件开关仍为 false 时，先在后台取消勾选「自动发送新公开报名的确认邮件」并保存。全新通知日志的业务开关初始为开启，不能误以为配置服务后还会等待另一次确认。使用已有受控 OSS 角色把加密文件按脚本返回的固定 `cms/v1/confirmation-mail/<event>/<sha>.json` 路径作不可变上传，类型 `application/json`。核对 bytes/SHA；不用公开桶、不做公开链接、不覆盖已有对象。FC 放入 `ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID=<sha>` 和 `ARTDICO_CONFIRMATION_EMAIL_ENABLED=true`，保留原有环境变量、角色和严格总量限制。
+5. 后台核对配置状态及业务开关仍为关闭，再明确开启自动确认信。新公开报名在持久化后才通知；代登记和历史资料不会被设置页读取自动补寄。明确补寄只选实际已知未发出的记录；未知外部结果不自动重送。正式收件人测试需真实业务操作授权，CI 只使用注入的合成 provider。
 
 没有邮箱的报名显示不适用，配置不完整显示未设置；两者都不阻止已保存报名及确认页使用。普通重新打开确认页不能发信。
 

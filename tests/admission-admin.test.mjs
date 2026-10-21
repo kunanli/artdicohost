@@ -24,7 +24,7 @@ function rejection(status) { const error = new Error('synthetic rejection'); err
 
 test('admin state counts individual registrations, including linked teams, crew, waitlist and withdrawals', () => {
   const value=state();
-  assert.deepEqual(admissionAdminState(value),value);
+  assert.deepEqual(admissionAdminState(value),{...value,summary:{...value.summary,pendingReviewCount:0,rejectedCount:0}});
   assert.equal(admissionAdminState(value).summary.confirmedCount,2);
   assert.equal(admissionAdminState(value).teams[0].memberIds.length,2);
   const noTeam=state({teams:[],people:state().people.map(person=>({...person,teamId:''}))});
@@ -59,6 +59,68 @@ test('admin state rejects missing, duplicate and contradictory team membership r
   assert.equal(admissionAdminState(unknown),null);
   const blank=state();blank.teams[0].name='  ';
   assert.equal(admissionAdminState(blank),null);
+});
+
+function reviewState(patch = {}) {
+  const value = state({ revision: 6 });
+  value.summary.pendingReviewCount = 1; value.summary.rejectedCount = 1;
+  value.summary.waitlistCount = 0;
+  value.people[2].status = 'pending_review'; value.people[3].status = 'rejected';
+  return { ...value, ...patch };
+}
+function decisionResult({ action = 'approve', operationId = 'o'.repeat(43), status = 'confirmed', outcome = 'updated', revision = 6, operationRevision = 6 } = {}) {
+  const value = reviewState({ revision, outcome });
+  value.people[2].status = status;
+  value.summary.pendingReviewCount = 0;
+  if (status === 'confirmed') { value.summary.confirmedCount++; value.summary.attendeeConfirmedCount++; value.summary.remainingPublic--; value.summary.remainingTotal--; }
+  if (status === 'waitlisted') value.summary.waitlistCount++;
+  if (status === 'rejected') value.summary.rejectedCount++;
+  return { ...value, registrationId: ids[2], operation: { operationId, action, registrationId: ids[2], revision: operationRevision } };
+}
+
+test('pending and rejected applicants count separately without consuming confirmed seats or approved waitlist', () => {
+  const value = reviewState(); assert.ok(admissionAdminState(value));
+  assert.equal(admissionAdminState(value).summary.confirmedCount, 2);
+  for (const key of ['pendingReviewCount','rejectedCount']) {
+    const missing = structuredClone(value); delete missing.summary[key]; assert.equal(admissionAdminState(missing), null);
+    const contradictory = structuredClone(value); contradictory.summary[key] = 0; assert.equal(admissionAdminState(contradictory), null);
+  }
+  const legacyMismatch=structuredClone(value);delete legacyMismatch.summary.pendingReviewCount;delete legacyMismatch.summary.rejectedCount;
+  assert.equal(admissionAdminState(legacyMismatch),null);
+});
+
+test('approve and reject need a matching durable operation receipt before clearing the original retry', async () => {
+  for (const change of [
+    value => { delete value.operation; },
+    value => { value.operation.operationId = 'x'.repeat(43); },
+    value => { value.operation.action = 'reject'; },
+    value => { value.operation.registrationId = ids[1]; },
+    value => { value.registrationId = ids[1]; },
+    value => { value.operation.revision = 5; },
+    value => { value.operation.revision = 7; },
+  ]) {
+    const calls = []; let attempt = 0;
+    const operations = createAdmissionOperations({ revision: () => 5, operationId: () => 'o'.repeat(43), request: async(path, options) => {
+      calls.push({path,...options}); const result = decisionResult(); if (++attempt === 1) change(result); return result;
+    } });
+    await assert.rejects(operations.run('/api/admin/admissions/approve', { registrationId: ids[2] }), /回执/u);
+    assert.equal(operations.pending, true);
+    await operations.retry(); assert.equal(operations.pending, false); assert.deepEqual(calls[0], calls[1]);
+  }
+  const rejecting = createAdmissionOperations({ revision: () => 5, operationId: () => 'o'.repeat(43), request: async() => decisionResult({action:'reject',status:'rejected'}) });
+  assert.equal((await rejecting.run('/api/admin/admissions/reject',{registrationId:ids[2]})).people[2].status, 'rejected');
+});
+
+test('lost approval ACK retries only the original request and trusts the current replayed withdrawn snapshot', async () => {
+  const calls = []; let attempt = 0;
+  const operations = createAdmissionOperations({ revision: () => 5, operationId: () => 'o'.repeat(43), request: async(path,options) => {
+    calls.push({path,...options}); if (++attempt === 1) throw new Error('synthetic lost ACK');
+    return decisionResult({status:'withdrawn',outcome:'replayed',revision:9,operationRevision:6});
+  } });
+  await assert.rejects(operations.run('/api/admin/admissions/approve',{registrationId:ids[2]}));
+  const replayed = await operations.retry();
+  assert.deepEqual(calls[0], calls[1]); assert.equal(replayed.people[2].status, 'withdrawn');
+  assert.equal(replayed.summary.confirmedCount, 2); assert.equal(operations.pending, false);
 });
 
 test('uncertain network, 503 and invalid success preserve the exact serialized operation for explicit retry', async () => {

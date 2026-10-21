@@ -54,9 +54,19 @@ export async function peopleRuntimeFixture({capacity=3,mail=false}={}){
       body:{eventId:PEOPLE_FIXTURE_EVENT,idempotencyKey:key}}));assert.equal(token.status,200);
     const response=await app.handle(request('/api/admin/registration/submit',{method:'POST',origin:PEOPLE_FIXTURE_PUBLIC,
       headers:{'Idempotency-Key':key,'X-Registration-Token':(await token.json()).submissionToken},body:{eventId:PEOPLE_FIXTURE_EVENT,
-        fields:{name:'合成公开参会者',city:'合成城市',organization:'合成组织文字',position:'合成开发者',email:'synthetic.public@example.invalid',categories:['industry'],participationInterests:['attend'],
-          background:PEOPLE_FIXTURE_PRIVATE,attendance:'expected',accommodationChoice:'not_needed',cooperationInterest:'none',...fields},consent:{accepted:true,version:policy.privacy.version}}}));
+        fields:fields.intake==='general-v2'
+          ?{name:'合成公开申请人',email:'synthetic.public@example.invalid',categories:['student'],participationInterests:['attend'],...fields}
+          :{name:'合成公开参会者',city:'合成城市',organization:'合成组织文字',position:'合成开发者',email:'synthetic.public@example.invalid',categories:['industry'],participationInterests:['attend'],
+            background:PEOPLE_FIXTURE_PRIVATE,attendance:'expected',accommodationChoice:'not_needed',cooperationInterest:'none',...fields},consent:{accepted:true,version:policy.privacy.version}}}));
     assert.equal(response.status,201,'synthetic public registration');return response.json();
   }
-  return {app,make,objects,messages,users,request,login,createContact,seedPublic};
+  async function approvePublic(registrationId,{headers,expectedRevision,operationId=randomBytes(32).toString('base64url')}={}){
+    headers??=await login();
+    expectedRevision??=(await app.registrationService.getAdmissions({actor:users[0]})).revision;
+    const response=await app.handle(request('/api/admin/admissions/approve',{method:'POST',headers,body:{registrationId,expectedRevision,operationId}}));
+    const value=await response.json();assert.equal(response.status,200,JSON.stringify(value));
+    assert.equal(value.operation?.operationId,operationId);assert.equal(value.operation?.registrationId,registrationId);
+    return value;
+  }
+  return {app,make,objects,messages,users,request,login,createContact,seedPublic,approvePublic};
 }

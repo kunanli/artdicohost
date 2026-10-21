@@ -4,6 +4,7 @@ import { parseAdminUsers, findAdminUser, publicUser, verifyPassword, equalToken 
 import { CloudContentError } from './errors.mjs';
 
 export const CLOUD_SESSION_COOKIE = '__Secure-artdico_staff_session';
+export const CLOUD_LOGIN_POLICY = Object.freeze({ limit: 10, globalLimit: 60, windowMs: 15 * 60 * 1000 });
 const TOKEN = /^[A-Za-z0-9_-]{43}$/u;
 const SHA = /^[a-f0-9]{64}$/u;
 const MAX_CONFLICT_RETRIES = 8;
@@ -69,8 +70,8 @@ function sessionValue(value) {
 
 /** Shared journals provide persistence and CAS; this module has no session or rate-limit cache. */
 export function createCloudAuth({ users, usersProvider, journalFor, now = () => Date.now(),
-  sessionTtlMs = 8 * 60 * 60 * 1000, loginLimit = 10, globalLoginLimit = 60,
-  loginWindowMs = 15 * 60 * 1000 } = {}) {
+  sessionTtlMs = 8 * 60 * 60 * 1000, loginLimit = CLOUD_LOGIN_POLICY.limit, globalLoginLimit = CLOUD_LOGIN_POLICY.globalLimit,
+  loginWindowMs = CLOUD_LOGIN_POLICY.windowMs } = {}) {
   const bootstrapAccounts = configuredAccounts(users);
   if (usersProvider !== undefined && typeof usersProvider !== 'function') throw new TypeError('云端账号目录无效。');
   async function loadAccounts() {

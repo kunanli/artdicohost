@@ -1,6 +1,8 @@
 /** Local content-management contract. It grants no administrative or cloud access. */
 export const CONTENT_SCHEMA_VERSION = 1;
 export const MAX_CONTENT_ITEMS = 200;
+export const GUEST_PUBLIC_ROLES = Object.freeze(['speaker', 'guest', 'organizer', 'moderator']);
+export const GUEST_PUBLIC_ROLE_LABELS = Object.freeze({speaker:'讲者',guest:'嘉宾',organizer:'研讨会组织者',moderator:'主持人'});
 
 export const contentSchema = Object.freeze({
   schemaVersion: CONTENT_SCHEMA_VERSION,
@@ -22,8 +24,8 @@ export const contentSchema = Object.freeze({
 });
 
 /** @typedef {{id:string,start:string,end:string,zone:string,title:string,guestId:string,speakerName:string,speakerStatus:string,status:string,internalNotes:string,format:string}} Session */
-/** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string,slotNumber:number,contactName?:string,contactMethods?:string,description?:string}} Booth */
-/** @typedef {{id:string,name:string,company:string,ggjRole:string,portraitId:string,status:string,publicConsent:boolean,internalNotes:string,contactId:string}} Guest */
+/** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string,slotNumber:number,contactName?:string,contactMethods?:string,description?:string,website?:string}} Booth */
+/** @typedef {{id:string,name:string,company:string,ggjRole:string,portraitId:string,status:string,publicConsent:boolean,internalNotes:string,contactId:string,title?:string,bio?:string,website?:string,publicRoles?:string[]}} Guest */
 /** @typedef {{id:string,title:string,teamName:string,school:string,contactName:string,email:string,wechat:string,memberCount:number,participationForms:string[],responseStatus:string,materialLinks:string,summary:string,coverId:string,status:string,publicConsent:boolean,sessionId:string,boothId:string,internalNotes:string}} Showcase */
 /** @typedef {{heroDescription:string,aboutTitle:string,aboutText:string,faqItems:{question:string,answer:string}[],contactEmail:string,mapUrl:string,openingTime:string,endTime:string,checkInTime:string}} EventPresentation */
 /** @typedef {{schemaVersion:number,eventId:string,event:{title:string,date:string,timezone:string,venue:string,status:string,dateStatus:string,venueStatus:string,presentation?:EventPresentation},sessions:Session[],booths:Booth[],guests:Guest[],showcases:Showcase[]}} Content */
@@ -40,6 +42,13 @@ function object(input) {
 /** @param {unknown} input */
 function text(input) { return typeof input === 'string' ? input.normalize('NFC').trim() : ''; }
 
+export function isPublicWebsite(value) {
+  if (typeof value !== 'string' || value.length > 500 || /[\s\\\u0000-\u001f\u007f]/u.test(value)) return false;
+  if (!value) return true;
+  try { const url = new URL(value); return ['http:','https:'].includes(url.protocol) && Boolean(url.hostname) && !url.username && !url.password; }
+  catch { return false; }
+}
+
 /** @param {unknown} input @returns {Session} */
 function session(input) {
   const item = object(input);
@@ -53,11 +62,19 @@ function session(input) {
 /** @param {unknown} input @returns {Guest} */
 function guest(input) {
   const item = object(input);
-  return {
+  const result = {
     id: text(item.id), name: text(item.name), company: text(item.company), ggjRole: text(item.ggjRole),
     portraitId: text(item.portraitId), status: text(item.status), publicConsent: item.publicConsent === true,
     internalNotes: text(item.internalNotes), contactId: text(item.contactId),
   };
+  // Do not backfill optional profile keys into historical snapshots.
+  for (const name of ['title','bio','website']) {
+    const field = Object.getOwnPropertyDescriptor(item,name);
+    if (field) result[name] = text('value' in field ? field.value : undefined);
+  }
+  const roles = Object.getOwnPropertyDescriptor(item,'publicRoles');
+  if (roles) result.publicRoles = Array.isArray(roles.value) ? roles.value.slice(0,5).map(text) : [];
+  return result;
 }
 
 /** @param {unknown} input @returns {Booth} */
@@ -69,7 +86,7 @@ function booth(input) {
     slotNumber: item.slotNumber === undefined ? 0 : /** @type {number} */ (item.slotNumber),
   };
   // Optional additions must not change legacy normalized or published snapshots.
-  for (const name of ['contactName', 'contactMethods', 'description']) {
+  for (const name of ['contactName', 'contactMethods', 'description', 'website']) {
     const descriptor = Object.getOwnPropertyDescriptor(item, name);
     if (descriptor) result[name] = text('value' in descriptor ? descriptor.value : undefined);
   }
@@ -241,6 +258,20 @@ export function validateContent(input) {
     stringField(`${key}.ggjRole`, item.ggjRole, 160, false);
     stringField(`${key}.internalNotes`, item.internalNotes, 4000, false);
     const raw = object(rawGuests[index]);
+    for (const [name,maximum] of Object.entries({title:200,bio:4000,website:500})) {
+      if (!Object.hasOwn(raw,name)) continue;
+      const field = Object.getOwnPropertyDescriptor(raw,name), supplied = field && 'value' in field ? field.value : undefined;
+      stringField(`${key}.${name}`,item[name],maximum,false);
+      const controls = name === 'bio' ? /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u : /[\u0000-\u001f\u007f]/u;
+      if (!field?.enumerable || typeof supplied !== 'string' || controls.test(supplied)) errors[`${key}.${name}`] = '请填写有效的公开资料文字。';
+    }
+    if (item.website && !isPublicWebsite(item.website)) errors[`${key}.website`] = '公开网站须为有效的 HTTP 或 HTTPS 网址，不含帐号或密码。';
+    if (Object.hasOwn(raw,'publicRoles')) {
+      const field = Object.getOwnPropertyDescriptor(raw,'publicRoles'), supplied = field && 'value' in field ? field.value : undefined;
+      if (!field?.enumerable || !Array.isArray(supplied) || supplied.length > GUEST_PUBLIC_ROLES.length
+        || supplied.some(role => typeof role !== 'string') || item.publicRoles.some(role => !GUEST_PUBLIC_ROLES.includes(role))
+        || new Set(item.publicRoles).size !== item.publicRoles.length) errors[`${key}.publicRoles`] = '请选择已核对的讲者、嘉宾、研讨会组织者或主持职责。';
+    }
     if (raw.contactId !== undefined && typeof raw.contactId !== 'string') errors[`${key}.contactId`] = '关联人员 ID 无效。';
     for (const name of ['name', 'company', 'ggjRole']) {
       if (typeof raw[name] === 'string' && /[\u0000-\u001f\u007f]/u.test(raw[name])) errors[`${key}.${name}`] = '请填写不含换行或控制字符的单行内容。';
@@ -295,7 +326,7 @@ export function validateContent(input) {
     stringField(`${key}.organization`, item.organization, 160, item.status === 'confirmed');
     stringField(`${key}.project`, item.project, 200, item.status === 'confirmed');
     stringField(`${key}.internalNotes`, item.internalNotes, 4000, false);
-    for (const [name, maximum] of Object.entries({ contactName: 120, contactMethods: 500, description: 2000 })) {
+    for (const [name, maximum] of Object.entries({ contactName: 120, contactMethods: 500, description: 2000, website: 500 })) {
       if (!Object.hasOwn(raw, name)) continue;
       const descriptor = Object.getOwnPropertyDescriptor(raw, name);
       const supplied = descriptor && 'value' in descriptor ? descriptor.value : undefined;
@@ -303,6 +334,7 @@ export function validateContent(input) {
       const controls = name === 'contactName' ? /[\u0000-\u001f\u007f]/u : /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u;
       if (!descriptor?.enumerable || typeof supplied !== 'string' || controls.test(supplied)) errors[`${key}.${name}`] = name === 'contactName' ? '负责人姓名须为不含换行或控制字符的文字。' : '请填写有效文字，不得含无效控制字符。';
     }
+    if (item.website && !isPublicWebsite(item.website)) errors[`${key}.website`] = '组织网站须为有效的 HTTP 或 HTTPS 网址，不含帐号或密码。';
   }
 
   for (const [index, item] of value.showcases.entries()) {
@@ -389,6 +421,7 @@ export function toPublicContent(input) {
       id: item.id, code: item.code, organization: item.organization, project: item.project, zone: item.zone, status: item.status,
       ...(item.slotNumber > 0 ? { slotNumber: item.slotNumber } : {}),
       ...(Object.hasOwn(item, 'description') ? { description: item.description } : {}),
+      ...(Object.hasOwn(item, 'website') ? { website: item.website } : {}),
     })),
     showcases: value.showcases.filter(item => isPublicShowcase(item, value)).map(item => {
       const allocated = showcaseAllocations(item, value);
@@ -405,6 +438,7 @@ export function toPublicContent(input) {
       // These affirmative publication fields keep the public snapshot idempotent
       // when it is validated again on restart; consent history stays private.
       status: 'confirmed', publicConsent: true,
+      ...Object.fromEntries(['title','bio','website','publicRoles'].filter(name => Object.hasOwn(item,name)).map(name => [name,structuredClone(item[name])])),
     })),
   };
 }

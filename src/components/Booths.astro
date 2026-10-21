@@ -5,7 +5,7 @@ import { exhibitingPartners } from '../config/exhibiting-partners.mjs';
 import '../styles/exhibiting-partners.css';
 ---
 <section class="ah-booths ah-section" id="booths" aria-labelledby="booths-heading">
-  <div class="ah-section-heading" id="exhibition"><div><span class="ah-kicker">MEET THE COMMUNITIES</span><h2 id="booths-heading">参展伙伴</h2></div><p>在现场，与这些组织相遇。<br />C 区 · 展示、试玩与交流</p></div>
+  <div class="ah-section-heading" id="exhibition"><div><h2 id="booths-heading">参展伙伴</h2></div><p>在现场，与这些组织相遇。<br />C 区 · 展示、试玩与交流</p></div>
   <ul class="ah-exhibiting-partners" aria-label="已确认参展伙伴">
     {exhibitingPartners.map(partner => <li><h3>{partner.name}</h3><span>现场参展</span></li>)}
   </ul>
@@ -27,5 +27,8 @@ import '../styles/exhibiting-partners.css';
   .ah-public-booths :global(h3){font-size:17px;line-height:1.5;margin:9px 0;color:#15243b}
   .ah-public-booths :global(p){font-size:13px;line-height:1.8;color:#667187;margin:5px 0}
   .ah-public-booths :global(small){font-size:11px;color:#1448ef}
+  .ah-public-booths :global(.ah-booth-project){font-weight:600;color:#314560;margin-bottom:9px}
+  .ah-public-booths :global(.ah-booth-description){white-space:pre-wrap;overflow-wrap:anywhere;border-top:1px solid #e0e7f2;padding-top:12px;margin-top:14px}
+  .ah-public-booths :global(.ah-booth-website){display:inline-block;font-size:12px;color:#1448ef;text-underline-offset:3px;margin-top:12px}
   @media(max-width:700px){.ah-public-booths{grid-template-columns:1fr}.ah-booths-empty{padding:24px 20px}}
 </style>

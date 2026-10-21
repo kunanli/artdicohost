@@ -1,4 +1,5 @@
-import { publicGuestCards } from '../../shared/guest-display.mjs';
+import { publicGuestCards, publicGuestSessions } from '../../shared/guest-display.mjs';
+import { GUEST_PUBLIC_ROLE_LABELS, isPublicWebsite } from '../../shared/content-schema.mjs';
 import { publicShowcaseCards } from '../../shared/showcase-display.mjs';
 import { resolvePublicContentSource } from '../../shared/public-content-source.mjs';
 import { eventTimeInstant } from '../lib/event-presentation.mjs';
@@ -54,6 +55,7 @@ async function loadPublishedContent(url) {
     list.replaceChildren();
     for (const item of rows) {
       const row = element('article', undefined, 'ah-agenda-row');
+      if (/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(item.id)) row.id = 'program-' + item.id;
       row.dataset.agendaStart = item.start;
       row.classList.toggle('ah-featured', item.start === '15:30' || item.start === '16:30');
       row.append(element('time', item.start + '–' + item.end));
@@ -85,8 +87,35 @@ async function loadPublishedContent(url) {
       photo.referrerPolicy = 'no-referrer';
       photo.src = new URL(guest.portraitUrl, url.origin).href;
       portrait.append(initial, photo);
-      card.append(portrait, element('h3', guest.name, 'ah-guest-name'), element('p', guest.company, 'ah-guest-company'));
-      if (guest.ggjRole) card.append(element('p', guest.ggjRole, 'ah-guest-role'));
+      const body = element('div',undefined,'ah-guest-body');
+      body.append(element('h3',guest.name,'ah-guest-name'));
+      if (guest.publicRoles?.length) body.append(element('p',guest.publicRoles.map(role => GUEST_PUBLIC_ROLE_LABELS[role]).join(' · '),'ah-guest-duty'));
+      body.append(element('p',[guest.title,guest.company].filter(Boolean).join(' · '),'ah-guest-company'));
+      if (guest.ggjRole) body.append(element('p',guest.ggjRole,'ah-guest-role'));
+      const sessions = publicGuestSessions(content.sessions,guest.id);
+      if (guest.bio || sessions.length || guest.website) {
+        const details = element('details',undefined,'ah-guest-details');
+        details.append(element('summary',guest.bio ? sessions.length ? '简介与参与场次' : '人物简介' : sessions.length ? '参与场次' : '相关网站'));
+        if (guest.bio) details.append(element('p',guest.bio,'ah-guest-bio'));
+        if (sessions.length) {
+          const list = element('ul');
+          for (const session of sessions) {
+            const item = element('li'), link = element('a',session.start + '–' + session.end + ' · ' + session.zone + ' 区 · ' + session.title);
+            link.href = '#program-' + session.id;
+            link.addEventListener('click',() => {
+              const panel = document.getElementById('program-' + session.id)?.closest('[data-agenda-panel]');
+              if(fullProgram)fullProgram.open=true;
+              const period=agenda?.querySelector('[data-program-period]');if(period){period.value='all';period.dispatchEvent(new Event('change'));}
+              agenda?.querySelector('[data-zone="' + panel?.dataset.agendaPanel + '"]')?.click();
+            });
+            item.append(link);list.append(item);
+          }
+          details.append(list);
+        }
+        if (guest.website) { const link = element('a','个人 / 机构网站');link.href=guest.website;link.target='_blank';link.rel='noopener noreferrer';details.append(link); }
+        body.append(details);
+      }
+      card.append(portrait,body);
       guestGrid.append(card);
     }
     guestGrid.hidden = cards.length === 0;
@@ -98,8 +127,9 @@ async function loadPublishedContent(url) {
     booths.replaceChildren();
     for (const item of content.booths.filter(item => item.status === 'confirmed')) {
       const card = element('article', undefined, 'ah-booth-card');
-      card.append(element('span', item.code + ' · ' + item.zone + ' 区', 'ah-kicker'), element('h3', item.organization), element('p', item.project));
-      if(typeof item.description==='string'&&item.description)card.append(element('p',item.description));
+      card.append(element('h3',item.organization),element('p',item.project,'ah-booth-project'),element('small',item.code + ' · ' + item.zone + ' 区'));
+      if(typeof item.description==='string'&&item.description)card.append(element('p',item.description,'ah-booth-description'));
+      if(typeof item.website==='string'&&item.website&&isPublicWebsite(item.website)){const link=element('a','组织网站','ah-booth-website');link.href=item.website;link.target='_blank';link.rel='noopener noreferrer';card.append(link);}
       booths.append(card);
     }
     const empty = document.querySelector('[data-public-booths-empty]');

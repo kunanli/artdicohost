@@ -2,6 +2,8 @@
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
 
+2026-10-21 后台左侧快捷导航已上线 [PR #31](https://github.com/kunanli/artdicohost/pull/31)：四工作区切换、活动编辑八区直达、当前区块标记及手机收合。802 项检查、六组相关浏览器流程、真实私有 OSS 与 23 个 HTTPS 对象通过；首次验收的窗口切换失败及恢复见[发布记录](docs/navigation-release-2026-10-21.md)，[操作说明](docs/staff-navigation.md)。
+
 2026-10-21 独立「参与组织」已上线 [PR #30](https://github.com/kunanli/artdicohost/pull/30)：后台维护组织图片、名称、链接及参展／一般参与；不必占用展位，保存和发布分别执行。802 项检查与实际部署通过，[操作说明](docs/participating-organizations.md)及[完整证据](docs/organization-release-2026-10-21.md)。
 
 2026-10-21 参会体验更新跟踪 [PR #29](https://github.com/kunanli/artdicohost/pull/29)：人物与照片、逐场职责、精简 VI、保留原件的 Excel、报名确认／打印，以及确认信和 Wallet 的受控设置。合并与实际上线分别核对最新 main／Actions；邮件凭证和 Apple Developer／签章证书仍未提供，不将合成测试称为实际寄信或设备验收。原始 39 行的实际云端导入及邀请未执行。

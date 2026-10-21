@@ -6,6 +6,10 @@ import { createCloudContentServer } from '../functions/cloud-content/http-server
 import { createCloudContentApi } from '../functions/cloud-content/handler.mjs';
 import { objectFixture, fakeCredentials, fixedClock } from './cloud-oss-fixture.mjs';
 import { request as httpRequest } from 'node:http';
+import { createCloudAuth, CLOUD_LOGIN_POLICY } from '../functions/cloud-content/auth.mjs';
+import { hashPassword } from '../functions/content-api/auth.mjs';
+import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
+import { memoryObjects } from './helpers/cloud-memory-objects.mjs';
 
 const SOURCE = 'a'.repeat(40), RUN = 'r123456-a1-' + 'c'.repeat(16) + '-' + SOURCE, INSTANCE = 'b'.repeat(32);
 const ENV = { NODE_ENV: 'production', ARTDICO_CLOUD_CONTENT_ENABLED: 'false', ARTDICO_CLOUD_ACCEPTANCE_RUN_ID: RUN,
@@ -14,6 +18,57 @@ const ENV = { NODE_ENV: 'production', ARTDICO_CLOUD_CONTENT_ENABLED: 'false', AR
   ALIBABA_CLOUD_ACCESS_KEY_ID: fakeCredentials.accessKeyId, ALIBABA_CLOUD_ACCESS_KEY_SECRET: fakeCredentials.accessKeySecret,
   ALIBABA_CLOUD_SECURITY_TOKEN: fakeCredentials.securityToken };
 const options = fixture => ({ env: ENV, sourceCommit: SOURCE, fetchFn: fixture.fetchFn, now: () => fixedClock().getTime() });
+
+// Inject boundaries at observable durable operations, not at a guessed number of
+// now() calls. One scenario moves time after the unknown account's budget commit
+// and directory read, so the independent correct alias really can log in. The
+// final boundary occurs after the known alias is limited but before the last
+// unknown account reserves, exercising the second response's clock check too.
+async function acceptanceAcrossLoginWindow(boundary) {
+  const fixture = objectFixture(), budgets = [], lateSessions = [];
+  let at = fixedClock().getTime(), revoking = false, rollovers = 0;
+  let saturated = false, deferredRollover = false;
+  let knownAliasReady = false, afterKnownClockTicks = 0;
+  const advance = () => { at += 15 * 60 * 1000; rollovers++; };
+  const fetchFn = async (url, settings) => {
+    const key = new URL(url).pathname;
+    if (settings.method === 'PUT' && key.includes('/sessions/')) {
+      const value = JSON.parse(Buffer.from(settings.body));
+      if (value.kind === 'staff_session' && value.revoked === true) {
+        revoking = true;
+        if (boundary === 'revocation' && !rollovers) advance();
+      } else if (revoking && value.kind === 'staff_session') {
+        lateSessions.push({createdAt:value.createdAt,revoked:value.revoked});
+      }
+    }
+    if (revoking && settings.method === 'PUT' && key.includes('/limits/')) {
+      const value = JSON.parse(Buffer.from(settings.body));
+      if (value.kind === 'login_budget') {
+        budgets.push({window:value.window,count:value.count});
+        if (value.count === 9 && (boundary === 'every-prime' || boundary === 'prime' && !rollovers)) advance();
+        if (value.count === 10 && !rollovers) saturated = true;
+      }
+    }
+    if (boundary === 'between-clients' && saturated && !rollovers && settings.method === 'GET' && key.endsWith('/users/commits.jsonl')) deferredRollover = true;
+    if (boundary === 'after-known-limit' && saturated && !rollovers && settings.method === 'GET') {
+      if (key.endsWith('/users/commits.jsonl')) knownAliasReady = true;
+      if (knownAliasReady && key.includes('/limits/') && key.includes('/blobs/')) {
+        const stored = fixture.stored.get(key.slice(1));
+        if (stored && JSON.parse(stored.data).count === 10) afterKnownClockTicks = 2;
+      }
+    }
+    return fixture.fetchFn(url, settings);
+  };
+  const now = () => {
+    if (deferredRollover) {deferredRollover=false;advance();}
+    // The first tick observes the known 429's window; the second is the last
+    // unknown login's reservation. A missing final API call cannot pass this case.
+    if (afterKnownClockTicks && --afterKnownClockTicks === 0) advance();
+    return at;
+  };
+  const result = await startCloudAcceptance({...options(fixture),fetchFn,now}).completion;
+  return {result,fixture,budgets,lateSessions,rollovers};
+}
 
 test('all logical object categories are mapped to one private acceptance namespace and nested or malformed scopes are rejected', async () => {
   const seen = [], objects = Object.fromEntries(['get', 'putImmutable', 'append'].map(operation => [operation, (...args) => { seen.push([operation, ...args]); return Promise.resolve(null); }]));
@@ -67,6 +122,91 @@ test('all stages also pass with an advancing clock across durable operations', a
   assert.equal(result.status, 'passed', JSON.stringify(result));
   assert.equal(result.completed.length, 10);
   assert.ok(ticks > 100 && result.requests < 1000);
+});
+
+test('a login-window boundary at durable session revocation still proves all ten stages inside the original request budget', async () => {
+  // Before the bounded CAS preparation, this exact boundary exhausted 1000
+  // requests at nine stages and 83 touched objects on main b8d6818.
+  const {result,fixture,budgets,rollovers} = await acceptanceAcrossLoginWindow('revocation');
+  assert.equal(rollovers,1);
+  assert.equal(result.status,'passed',JSON.stringify(result));
+  assert.equal(result.completed.length,10);
+  assert.ok(result.requests<1000);
+  assert.equal(result.requests,fixture.calls.length);
+  assert.deepEqual(budgets.map(value=>value.count),[9,10],'a real unknown login reserves the last slot after bounded preparation');
+  assert.ok(fixture.calls.every(call=>call.key.startsWith(`cms/v1/acceptance/${RUN}/${result.instanceId}/`)));
+});
+
+test('rollover after preparing nine attempts re-primes the new actual window and obtains the shared limit', async () => {
+  const {result,budgets,lateSessions,rollovers} = await acceptanceAcrossLoginWindow('prime');
+  assert.equal(rollovers,1);
+  assert.equal(result.status,'passed',JSON.stringify(result));
+  assert.equal(result.completed.length,10);
+  assert.ok(result.requests<1000);
+  const primes=budgets.filter(value=>value.count===9);
+  assert.equal(primes.length,2);
+  assert.equal(primes[1].window,primes[0].window+1);
+  assert.deepEqual(budgets.slice(-2).map(value=>value.count),[9,10]);
+  assert.equal(lateSessions.length,1,'the correct alias was accepted in the fresh window before the second bounded proof');
+});
+
+test('a correct alias accepted across the client boundary cannot masquerade as a shared 429 proof', async () => {
+  const {result,budgets,lateSessions,rollovers} = await acceptanceAcrossLoginWindow('between-clients');
+  assert.equal(rollovers,1);
+  assert.equal(result.status,'passed',JSON.stringify(result));
+  assert.equal(result.completed.length,10);
+  assert.ok(result.requests<1000);
+  assert.equal(lateSessions.length,1,'the independent client really receives a successful new-window session');
+  assert.deepEqual(budgets.map(value=>value.count),[9,10,1,9,10]);
+  assert.equal(budgets.at(-1).window,budgets[0].window+1);
+});
+
+test('a boundary after the known alias is limited also re-proves the unknown account in the new actual window', async () => {
+  const {result,budgets,lateSessions,rollovers} = await acceptanceAcrossLoginWindow('after-known-limit');
+  assert.equal(rollovers,1,'the last unknown API call actually reserves in the next window');
+  assert.equal(result.status,'passed',JSON.stringify(result));
+  assert.equal(result.completed.length,10);
+  assert.ok(result.requests<1000);
+  assert.equal(lateSessions.length,0,'the new-window attempt is an unknown account, not an accepted alias');
+  assert.deepEqual(budgets.map(value=>value.count),[9,10,1,9,10]);
+  assert.equal(budgets.at(-1).window,budgets[0].window+1);
+});
+
+test('a second boundary fails closed after two rounds instead of repeatedly preparing windows or exhausting transport', async () => {
+  const {result,fixture,budgets,rollovers} = await acceptanceAcrossLoginWindow('every-prime');
+  assert.equal(rollovers,2);
+  assert.equal(result.status,'failed');
+  assert.equal(result.completed.length,9);
+  assert.equal(result.completed.at(-1),'session-revocation');
+  assert.ok(result.requests<1000);
+  assert.equal(result.requests,fixture.calls.length);
+  assert.equal(budgets.filter(value=>value.count===9).length,2,'no third preparation round');
+  assert.equal(fixture.calls.some(call=>call.method==='DELETE'),false);
+});
+
+test('unmodified cloud auth defaults enforce ten attempts in a shared fifteen-minute window across independent clients', async () => {
+  const password='synthetic acceptance policy password only';
+  const users=[{id:'synthetic_policy',username:'synthetic-policy',email:'synthetic-policy@artdico.co',label:'合成限流账号',roles:['editor'],passwordHash:await hashPassword(password)}];
+  const objects=memoryObjects(),prefixes=new Set();
+  const journalFor=prefix=>{prefixes.add(prefix);return createObjectJournal({objects,prefix});};
+  const started=fixedClock().getTime();let at=started;
+  const first=createCloudAuth({users,journalFor,now:()=>at});
+  const second=createCloudAuth({users,journalFor,now:()=>at});
+  for(let attempt=0;attempt<10;attempt++) {
+    await assert.rejects((attempt%2?first:second).login({identifier:'synthetic-unknown',password:'synthetic-wrong-password'}),error=>error.status===401&&error.code==='AUTH_FAILED');
+  }
+  await assert.rejects(second.login({identifier:users[0].email,password}),error=>error.status===429&&error.code==='LOGIN_RATE_LIMITED'&&error.retryAfter===900);
+  at=started+15*60*1000-1;
+  await assert.rejects(first.login({identifier:users[0].username,password}),error=>error.status===429&&error.retryAfter===1);
+  at++;
+  const session=await second.login({identifier:users[0].email,password});
+  assert.equal(session.user.id,users[0].id);
+  const windows=[...prefixes].filter(prefix=>prefix.startsWith('cms/v1/limits/')).map(prefix=>Number(prefix.split('/')[3]));
+  assert.deepEqual(windows,[Math.floor(started/900000),Math.floor(started/900000)+1]);
+  const counts=[...objects.files].filter(([key])=>key.includes('/limits/')&&key.includes('/blobs/')).map(([,item])=>JSON.parse(item.data).count);
+  assert.deepEqual(counts,[1,2,3,4,5,6,7,8,9,10,1]);
+  assert.deepEqual(CLOUD_LOGIN_POLICY,{limit:10,globalLimit:60,windowMs:900000});
+  assert.equal(Object.isFrozen(CLOUD_LOGIN_POLICY),true);
 });
 
 test('missing acceptance setting does no credential, clock or network work and returns no health claim', async () => {

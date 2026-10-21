@@ -8,6 +8,7 @@ import { hashPassword } from '../content-api/auth.mjs';
 import { createInitialContent } from '../../src/config/content.mjs';
 import { createCloudApplication } from './runtime.mjs';
 import { inspectEncryptedObjectBackup } from '../registration-admin/maintenance.mjs';
+import { CLOUD_LOGIN_POLICY } from './auth.mjs';
 
 const DEADLINE_MS = 90_000;
 const REQUEST_LIMIT = 1000;
@@ -323,14 +324,46 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         await call(first.api, '/api/admin/logout', { method: 'POST', headers: editor, body: {} }, 200);
       });
       await stage('shared-login-budget', async () => {
-        let limited = false;
-        for (let attempt = 0; attempt < 12; attempt++) {
-          const result = await first.api(request('/api/admin/login', { method: 'POST', body: { username: 'synthetic-unknown', password: 'synthetic-wrong-password' } }));
-          if (result.status === 429) { requireThat(/^[1-9][0-9]*$/u.test(result.headers.get('retry-after') ?? '')); limited = true; break; }
-          requireThat(result.status === 401);
+        const id = hash('global'), limit = Math.min(CLOUD_LOGIN_POLICY.limit, CLOUD_LOGIN_POLICY.globalLimit);
+        const windowAt = () => {
+          const at = now(); requireThat(Number.isSafeInteger(at) && at >= 0);
+          return Math.floor(at / CLOUD_LOGIN_POLICY.windowMs);
+        };
+        // Prepare only this run's private synthetic bucket through the real CAS
+        // journal. The API must still reserve the final slot and the independent
+        // client must observe the actual shared 429. Production time/policy and
+        // the 1000-request/90-second proof limits remain unchanged.
+        for (let round = 0; round < 2; round++) {
+          const window = windowAt();
+          const journal = createObjectJournal({ objects: aObjects, prefix: `cms/v1/limits/${window}/${id}` });
+          const state = await journal.read(), value = state.value;
+          requireThat(value === null || value.schemaVersion === 1 && value.kind === 'login_budget'
+            && value.id === id && value.window === window && Number.isSafeInteger(value.count) && value.count >= 0 && value.count <= 60
+            && Object.keys(value).sort().join(',') === 'count,id,kind,schemaVersion,window');
+          const count = value?.count ?? 0;
+          requireThat(count < limit);
+          if (count < limit - 1) await journal.commit(state.cursor, { schemaVersion: 1, kind: 'login_budget', id, window, count: limit - 1 });
+          const consumed = await first.api(request('/api/admin/login', { method: 'POST', body: { username: 'synthetic-unknown', password: 'synthetic-wrong-password' } }));
+          requireThat(consumed.status === 401);
+          const limited = await second.api(request('/api/admin/login', { method: 'POST', body: { username: users[0].email, password } }));
+          const after = windowAt();
+          if (after !== window) {
+            // A real boundary can fall during either login. A successful alias
+            // login in the new window is never reported as rate-limit proof.
+            requireThat(round === 0 && after === window + 1 && [200, 429].includes(limited.status));
+            continue;
+          }
+          requireThat(limited.status === 429 && /^[1-9][0-9]*$/u.test(limited.headers.get('retry-after') ?? ''));
+          const unknownLimited = await first.api(request('/api/admin/login', { method: 'POST', body: { username: 'synthetic-unknown', password: 'synthetic-wrong-password' } }));
+          const afterUnknown = windowAt();
+          if (afterUnknown !== window) {
+            requireThat(round === 0 && afterUnknown === window + 1 && [401, 429].includes(unknownLimited.status));
+            continue;
+          }
+          requireThat(unknownLimited.status === 429 && /^[1-9][0-9]*$/u.test(unknownLimited.headers.get('retry-after') ?? ''));
+          return;
         }
-        requireThat(limited);
-        await call(second.api, '/api/admin/login', { method: 'POST', body: { username: users[0].email, password } }, 429);
+        throw fail();
       });
       status = 'passed';
     } catch { status = 'failed'; }

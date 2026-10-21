@@ -1,5 +1,11 @@
 # 开发接续与验收计划
 
+## 当前开发：人员步骤指引、单人工作页与设置中心（2026-10-21）
+
+分支 `feat/staff-operations-workspace` 从正式图片编辑 main `4a9b49b` 与已保存设置文档接续。用户同意先做设置／通知与单人工作页，随后要求意向人员、嘉宾／讲者、场次与展位串联、直观沟通状态及步骤指引。本轮通过稳定内部 ID 只读整合既有资料，并以实际角色／回复／安排给出下一步；不按姓名邮箱合并，也不在浏览时自动代登记、发送或公开。[操作与契约](staff-operations-workspace.md)、[实施计划](implementation-plan.md)记录范围。
+
+目前仍是开发候选，尚未宣称新页面正式上线。分工在独立 worktree；主 agent 整合 runtime、文档、完整测试、浏览器、精确 PR／CI／实际部署。用户已回报名单画面有 39 人及 EmailJS 可用，并自行配置 key；过去段落的「未导入／未配置」属于当时历史，不能当成当前实际状态。本轮不读取真实名单或密钥、不发送实际邮件。Apple Developer enrollment 进行中，Wallet 仍待真实证书与真机验收。
+
 ## 当前：邮件正常回报与 Apple Wallet 开户指引（2026-10-21）
 
 使用者回報 Email 已正常發送，此部分暫時 OK，轉問 Apple Wallet 是否需要 Apple Business。以使用者回報記錄郵件狀態；本開發工作沒有重新讀取 FC 配置或聲稱新的獨立實寄驗收。Wallet 需要 Apple Developer Program／Pass Type ID／簽章證書，Apple Business Manager 不是這項會員。已依官方資料補上會員選擇、99 USD 年費（依地區幣別）、組織 D-U-N-S／法人核驗及後續入口，見[Wallet 設定](apple-wallet-setup.md)。尚未實際申請帳號、購買會員、取得真實憑證或啟用 Wallet；先完成會員，再接現有受控簽章與 iPhone／Safari 真機驗收。

@@ -17,6 +17,7 @@
 参考私有仓库 `kunanli/igda_shenzhen`（2026-10-18 检查）：Astro、Function Compute、GitHub Actions、静态 OSS 公共站点、私有 OSS JSON 报名。新建独立仓库和独立 OSS/FC 资源；**不要复制旧密钥、成员数据或直接改 IGDA 正式站**。
 
 ## 文档入口
+- [人员串联与步骤指引](docs/staff-operations-workspace.md)：单人工作页、沟通与安排、权限边界及设置中心（本轮开发候选，正式状态见接续台账）
 - [嘉宾与组织图片编辑](docs/staff-image-editing.md)：裁切／缩放／去背景、透明 PNG、上传失败保留与重试（发布状态见接续台账）
 - [后台快捷导航](docs/staff-navigation.md)：四个工作区切换、活动区块直达与手机收合选单
 - [参与组织](docs/participating-organizations.md)：独立维护组织图片、名称、链接及参展／一般参与，保存与发布分别执行

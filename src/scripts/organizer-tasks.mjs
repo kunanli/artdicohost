@@ -54,7 +54,7 @@ async function load(next = null) {
     body.append(element('p',task.detail));
     const meta = [task.owner ? '负责：' + task.owner : '负责人待分配',task.dueAt ? '下次跟进：' + task.dueAt : ''].filter(Boolean).join(' · ');body.append(element('small',meta));
     const actions = element('div',undefined,'tasks-item-actions');
-    for(const [href,label] of [[task.href,task.kind === 'missing_booth_details' ? '补齐展位资料 →' : '查看人员与下一步 →'],[task.registrationHref,'关联报名']])if(safeLink(href)){const link = element('a',label,'ah-admin-button');link.href = href;actions.append(link);}
+    for(const [href,label] of [[task.href,task.kind === 'missing_booth_details' ? '补齐展位资料 →' : '个人工作页 →'],[task.registrationHref,'关联报名']])if(safeLink(href)){const link = element('a',label,'ah-admin-button');link.href = href.startsWith('/admin/contacts/#contact=') ? href.replace('/admin/contacts/#contact=','/admin/person/#contact=') : href;actions.append(link);}
     row.append(body,actions);output.append(row);
   }
   $('[data-tasks-empty]').hidden = state.tasks.length > 0;

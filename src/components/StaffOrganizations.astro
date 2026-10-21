@@ -2,8 +2,9 @@
   <div class="ah-admin-section-heading"><div><h2 id="organizations-title">参与组织</h2><p>维护组织图片、名称及对方页面。参展与一般参与分别记录，保存草稿后再发布。</p></div><button type="button" class="ah-admin-button" data-organization-add>＋ 新增组织</button></div>
   <p class="ah-admin-small" data-organizations-legacy hidden>以下是网站已有的组织名称，尚未加入这份后台草稿。请核对后保存；没有预设图片、网址或参展身份。</p>
   <p class="ah-admin-small">组织参展身份不代表已分配展位，也不增加个人参会人数。具体位置请到展位或现场配置页安排。</p>
+  <div class="ah-admin-content-filters"><label for="organization-publication-filter">公开状态<select id="organization-publication-filter" data-organization-publication-filter><option value="">全部公开状态</option><option value="published">已公开</option><option value="unpublished">未公开</option><option value="ready">可发布</option><option value="changed">变更待发布</option><option value="blocked">资料待补</option></select></label></div>
   <div class="ah-organization-list" data-organization-list></div>
-  <p class="ah-admin-empty" data-organizations-empty hidden>还没有组织记录。组织确认参加并获公开授权后，才会随发布显示。</p>
+  <p class="ah-admin-empty" data-organizations-empty hidden>还没有符合筛选的组织。组织确认参加并获公开授权后，再明确发布。</p>
   <dialog class="ah-admin-dialog" data-organization-dialog aria-labelledby="organization-dialog-title">
     <div class="ah-admin-dialog-heading"><h2 id="organization-dialog-title" data-organization-dialog-title>新增组织</h2><button type="button" class="ah-admin-icon-button" data-organization-close aria-label="关闭组织编辑">×</button></div>
     <p class="ah-admin-alert" data-organization-error role="alert" tabindex="-1" hidden></p>

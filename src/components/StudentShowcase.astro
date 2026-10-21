@@ -9,30 +9,36 @@ const feedback = agenda.find(item => item.id === 'student-feedback');
 ---
 <section class="ah-students ah-students-showcase ah-section" id="students" aria-labelledby="students-heading">
   <div class="ah-section-heading">
-    <div><span class="ah-kicker">ARTDiCO HOST 学生嘉年华</span><h2 id="students-heading">把作品带到现场。</h2></div>
-    <p>让大家玩到你的作品，也听见你的想法。</p>
+    <div><span class="ah-kicker">作品现场</span><h2 id="students-heading">游戏与作品</h2></div>
+    <p>学生作品、独立游戏与团队创作，让大家玩到你的作品，也听见你的想法。</p>
   </div>
   <figure class="ah-showcase-media" data-public-showcases-concept>
     <Image src={studentShowcaseConcept} alt="学生嘉年华创作概念视觉" width={1600} height={900} fit="cover" format="webp" quality={85} loading="lazy" decoding="async" />
     <figcaption>
       <h3>下一个被玩到的想法，会是你的吗？</h3>
-      <p>创作概念视觉 · 学生作品陆续公布</p>
+      <p>创作概念视觉 · 游戏与作品陆续公布</p>
     </figcaption>
   </figure>
-  <ul class="ah-showcase-grid" data-public-showcases aria-label="已公布的学生作品" hidden></ul>
+  <div class="ah-showcase-filters" data-public-works-controls hidden>
+    <label for="public-works-filter">作品分类<select id="public-works-filter" data-public-works-filter><option value="all">全部作品</option><option value="student">学生作品</option><option value="indie">独立游戏</option><option value="team">团队作品</option></select></label>
+    <p data-public-works-count role="status" aria-live="polite"></p>
+  </div>
+  <p class="ah-showcase-filter-empty" data-public-works-filter-empty role="status" hidden>这个分类的作品尚未公布。</p>
+  <ul class="ah-showcase-grid" data-public-showcases aria-label="已公布的游戏与作品" hidden></ul>
   <div class="ah-showcase-empty" data-public-showcases-empty hidden>
     <span class="ah-kicker">作品现场</span>
     <h3>下一个被玩到的想法，会是你的吗？</h3>
-    <p>学生作品陆续公布。</p>
+    <p>游戏与作品陆续公布。</p>
   </div>
-  <div class="ah-showcase-timeline" aria-label="学生作品参与方式与现场时段">
+  <div class="ah-showcase-timeline" aria-label="作品参与方式与现场时段">
     <article><span class="ah-showcase-time">现场体验</span><h3>展位试玩</h3><p>C 区 · 外围展位区</p></article>
     <article data-public-static-hours><time>{sharing?.time}</time><h3>作品分享</h3><p>A 区 · 阶梯展示厅</p></article>
     <article data-public-static-hours><time>{feedback?.time}</time><h3>试玩与反馈</h3><p>C 区 · 外围展位区</p></article>
   </div>
   <div class="ah-student-actions">
     <a class="ah-primary" href="#registration" data-recruit="student">学生参会申请 <span aria-hidden="true">↗</span></a>
+    <a href="#registration" class="ah-text-action">其他创作者参会申请 <span aria-hidden="true">↗</span></a>
     <a href="#agenda" class="ah-text-action">查看全天日程 <span aria-hidden="true">↗</span></a>
-    <small>入选与时段另行确认 · 本页表单仅供预览，不发送或保存资料</small>
+    <small>作品展示、分享时段与正式参会名额分别确认。</small>
   </div>
 </section>

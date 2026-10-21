@@ -60,8 +60,8 @@ async function inputBody(request) {
 }
 
 /** Exact same-origin private boundary; service mutations retain their journal CAS and operation ID. */
-export function createAdmissionsApi({ enabled = false, auth, service } = {}) {
-  if (typeof enabled !== 'boolean') throw new TypeError('名额管理配置无效。');
+export function createAdmissionsApi({ enabled = false, auth, service, onCommitted } = {}) {
+  if (typeof enabled !== 'boolean' || onCommitted !== undefined && typeof onCommitted !== 'function') throw new TypeError('名额管理配置无效。');
   if (enabled && (typeof auth?.authenticate !== 'function' || !['getAdmissions', ...[...routes.values()].map(value => value[1])].every(name => typeof service?.[name] === 'function'))) throw new TypeError('名额管理依赖未配置。');
   return async request => {
     let allow;
@@ -89,7 +89,17 @@ export function createAdmissionsApi({ enabled = false, auth, service } = {}) {
         || typeof input.operationId !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/u.test(input.operationId)) fail('INVALID_REQUEST');
       const result = await service[route[1]]({ ...input, actor: session.user });
       if (!['updated', 'replayed'].includes(result?.outcome) || !snapshot(result)) fail(resultFailure(result));
-      return json(result);
+      let promotionEmail;
+      if (onCommitted && Array.isArray(result.promotedIds) && result.promotedIds.length) {
+        promotionEmail = { status: 'pending', attemptedCount: 0, pendingCount: result.promotedIds.length };
+        try {
+          const value = await onCommitted({ result: structuredClone(result), actor: session.user });
+          if (['not_configured', 'pending', 'completed'].includes(value?.status)
+            && Number.isSafeInteger(value.attemptedCount) && value.attemptedCount >= 0 && value.attemptedCount <= result.promotedIds.length
+            && value.pendingCount === result.promotedIds.length - value.attemptedCount) promotionEmail = { status: value.status, attemptedCount: value.attemptedCount, pendingCount: value.pendingCount };
+        } catch { /* A proven admission commit remains successful even when delivery is unavailable. */ }
+      }
+      return json({ ...result, ...(promotionEmail ? { promotionEmail } : {}) });
     } catch (error) {
       let code = safe.has(error) ? error.code : 'UNAVAILABLE';
       if (error instanceof CloudContentError && error.code === 'AUTH_REQUIRED' && error.status === 401) code = 'AUTH_REQUIRED';

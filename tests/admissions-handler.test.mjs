@@ -71,3 +71,18 @@ test('a failed private admissions read never becomes an HTTP 200 empty snapshot'
   const api = createAdmissionsApi({ enabled: true, auth: { authenticate: async () => ({ user: { id: 'synthetic', roles: ['reviewer'] } }) }, service });
   const response = await api(request()); assert.equal(response.status, 503); assert.doesNotMatch(await response.text(), /PRIVATE_PROVIDER/u);
 });
+
+test('promotion delivery runs only after a proven saved snapshot and cannot turn committed admissions into a failed request', async () => {
+  const result = { outcome: 'updated', revision: 2, settings: {}, summary: {}, people: [], teams: [], auditCount: 2, promotedIds: [id] };
+  let outcome = result, notifications = 0, mutations = 0;
+  const service = Object.fromEntries(methods.map(method => [method, async () => { mutations++; return structuredClone(outcome); }]));
+  const api = createAdmissionsApi({ enabled: true, service, auth: { authenticate: async () => ({ user: { id: 'synthetic-owner', roles: ['superadmin'] }, csrfToken: 'synthetic-csrf' }) },
+    onCommitted: async ({ result: saved }) => { notifications++; saved.revision = 999; throw new Error('PRIVATE_PROVIDER_DETAIL'); } });
+  const response = await api(request('/promote', 'POST', { expectedRevision: 1, operationId }));
+  assert.equal(response.status, 200); const value = await response.json(); assert.equal(value.revision, 2);
+  assert.deepEqual(value.promotionEmail, { status: 'pending', attemptedCount: 0, pendingCount: 1 });
+  assert.equal(notifications, 1); assert.equal(mutations, 1); assert.doesNotMatch(JSON.stringify(value), /PRIVATE_PROVIDER_DETAIL/u);
+  outcome = { outcome: 'unavailable' };
+  assert.equal((await api(request('/promote', 'POST', { expectedRevision: 1, operationId }))).status, 503);
+  assert.equal(notifications, 1, 'an unknown mutation acknowledgement never starts optional delivery');
+});

@@ -54,7 +54,8 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         // This runs only for a verified public receipt. Staff conversions do not
         // opt another person into automated mail. A delivery failure never
         // reverses or mutates the registration's durable commitment.
-        confirmation = await onSaved({ receipt: structuredClone(saved.receipt), origin, provenance: { kind: 'public' }, outcome: saved.outcome });
+        confirmation = await onSaved({ receipt: structuredClone(saved.receipt), origin, provenance: { kind: 'public' }, outcome: saved.outcome,
+          promotedIds: Array.isArray(saved.promotedIds) ? [...saved.promotedIds] : [] });
       } catch { /* Keep the proven receipt even when optional delivery is unavailable. */ }
     }
     return { ...saved, groupInvite, ...(plainObject(confirmation) ? { confirmation } : {}) };

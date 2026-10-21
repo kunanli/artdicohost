@@ -259,6 +259,21 @@ test('larger protected import and restore bodies are allowed only on their exact
   assert.equal(seen.length, 2);
 });
 
+test('public capability and protected export/settings bodies are bounded before runtime buffering', async t => {
+  let calls = 0;
+  const { port } = await loopback(t, { runtime: { configured: true, handle: async request => { calls++; return json({ bytes: (await request.arrayBuffer()).byteLength }); } } });
+  for (const [path, limit] of [['/api/registration/wallet', 8192], ['/api/admin/registration/wallet', 8192], ['/api/registration/confirmation', 16384],
+    ['/api/admin/registration/confirmation', 16384], ['/api/admin/registration-confirmation/settings', 16384], ['/api/admin/registration-confirmation/dispatch', 16384],
+    ['/api/admin/registrations/export.xlsx', 16384], ['/api/admin/contacts/export.xlsx', 16384]]) {
+    const before = calls;
+    assert.equal((await send(port, path, { method: 'POST', headers: { 'content-length': String(limit + 1) } })).status, 413);
+    assert.equal((await send(port, path, { method: 'POST', chunks: [Buffer.alloc(limit), Buffer.from('private-overflow')] })).status, 413);
+    assert.equal(calls, before);
+    const accepted = await send(port, path, { method: 'POST', body: Buffer.alloc(limit) });
+    assert.equal(accepted.status, 200); assert.deepEqual(JSON.parse(accepted.text), { bytes: limit });
+  }
+});
+
 test('runtime and HTTP parser failures stay opaque and leave the actual server responsive', async t => {
   const { port } = await loopback(t, { runtime: { configured: true, handle: async () => { throw new Error('PRIVATE-SYNTHETIC-ERROR-AND-CREDENTIAL'); } } });
   const error = await send(port, '/api/admin/session', { headers: { authorization: 'PRIVATE-SYNTHETIC-REQUEST-CREDENTIAL' } });

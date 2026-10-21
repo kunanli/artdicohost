@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { readSheet } from 'read-excel-file/node';
 import { hashPassword } from '../functions/content-api/auth.mjs';
-import { createCloudContentRuntime } from '../functions/cloud-content/runtime.mjs';
+import { createCloudContentRuntime, createCloudApplication } from '../functions/cloud-content/runtime.mjs';
 import { objectFixture, fakeCredentials, fixedClock } from './cloud-oss-fixture.mjs';
+import { memoryObjects } from './helpers/cloud-memory-objects.mjs';
+import { encodeSigningBundle, walletSigningObjectKey } from '../functions/apple-wallet/bundle.mjs';
+import { encodeConfirmationMailBundle, confirmationMailObjectKey } from '../functions/registration-confirmation/config-bundle.mjs';
+import { inspectEncryptedObjectBackup } from '../functions/registration-admin/maintenance.mjs';
 
 const API = 'https://api.artdico.host', PUBLIC = 'https://artdico.host', EVENT = 'ggj-cn-2026';
 const PASSWORD = 'synthetic-runtime-password-only', SECRET = 'synthetic-registration-token-key-with-enough-entropy';
@@ -59,8 +64,10 @@ test('exact public aliases compose the real durable service while protected plur
   const headers = await issued(f.first), submission = { method: 'POST', origin: PUBLIC, headers, body: payload() };
   const saved = await f.first.handle(request('/api/admin/registration/submit', submission));
   assert.equal(saved.status, 201);
-  const receipt = await saved.json(); assert.deepEqual(Object.keys(receipt).sort(), ['admissionKind', 'admissionRevision', 'admissionStatus', 'groupInvite', 'reference_code', 'status']);
+  const receipt = await saved.json(); assert.deepEqual(Object.keys(receipt).sort(), ['admissionKind', 'admissionRevision', 'admissionStatus', 'confirmation', 'groupInvite', 'reference_code', 'status']);
   assert.equal(receipt.status, 'registered'); assert.equal(receipt.groupInvite, null);
+  assert.equal(receipt.confirmation.email.status, 'not_configured');
+  assert.equal(receipt.confirmation.confirmationUrl, PUBLIC + '/registration/confirmation/#r=' + receipt.confirmation.receiptToken);
   assert.doesNotMatch(JSON.stringify(receipt), /private\.synthetic|passwordHash|scrypt\$|cms\/v1/u);
   const replay = await f.second.handle(request('/api/admin/registration/submit', submission));
   assert.equal(replay.status, 200); assert.equal((await replay.json()).reference_code, receipt.reference_code);
@@ -158,10 +165,87 @@ test('shared admission reservation, public waitlist, actual crew, teams and canc
   assert.ok(f.remote.calls.slice(before).every(call => !/\/(?:registrations|contacts|intent-invitations)\//u.test(call.key)));
   const cancelled = await mutate('withdraw', 'POST', 5, { registrationId: confirmed.reference_code });
   assert.ok(cancelled.promotedIds.includes(waiting.reference_code)); assert.equal(cancelled.summary.confirmedCount, 2);
+  assert.deepEqual(cancelled.promotionEmail, { status: 'not_configured', attemptedCount: 0, pendingCount: 1 });
   assert.equal((await f.second.handle(request(oldImage, { origin: PUBLIC }))).status, 404);
   assert.equal((await f.first.handle(request('/api/admin/registration/submit', firstInput))).status, 410);
   const promoted = await (await f.second.handle(request('/api/admin/registration/submit', secondInput))).json();
   assert.equal(promoted.status, 'registered'); assert.equal(promoted.admissionStatus, 'confirmed'); assert.ok(promoted.groupInvite?.qrImageUrl);
   const daily = await f.first.handle(request('/api/admin/tasks', { headers: owner }));
   assert.equal(daily.status, 200); assert.doesNotMatch(await daily.text(), /private\.synthetic@example|permissionReference|passwordHash/u);
+});
+
+test('composed capability reads current withdrawal, protected readiness and real Excel exports without sending email', async () => {
+  const f = fixture(), owner = await login(f.first), editor = await login(f.first, 'synthetic.editor');
+  const saved = await f.first.handle(request('/api/admin/registration/submit', { method: 'POST', origin: PUBLIC, headers: await issued(f.first), body: payload() }));
+  assert.equal(saved.status, 201); const receipt = await saved.json(), input = { receiptToken: receipt.confirmation.receiptToken };
+  for (const path of ['/api/registration/confirmation', '/api/admin/registration/confirmation']) {
+    const before = f.remote.calls.length;
+    const response = await f.second.handle(request(path, { method: 'POST', origin: PUBLIC, headers: { Cookie: 'irrelevant-public-cookie' }, body: input }));
+    assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'private, no-store');
+    assert.equal(response.headers.get('access-control-allow-origin'), PUBLIC); assert.equal(response.headers.get('access-control-allow-credentials'), null);
+    const value = await response.json(); assert.equal(value.referenceCode, receipt.reference_code); assert.equal(value.attendee.name, payload().fields.name);
+    assert.equal(value.admission.status, 'confirmed'); assert.equal(value.email.status, 'not_configured'); assert.equal(value.wallet.ready, false);
+    assert.doesNotMatch(JSON.stringify(value), /private\.synthetic|privacy@example|tokenSecret|cms\/v1|passwordHash/u);
+    assert.ok(f.remote.calls.slice(before).every(call => call.method === 'GET'), 'confirmation reads do not send or mutate');
+  }
+  const rejectedAt = f.remote.calls.length;
+  assert.equal((await f.first.handle(request('/api/admin/registration/confirmation', { method: 'POST', origin: 'https://foreign.invalid', body: input }))).status, 403);
+  assert.equal((await f.first.handle(request('/api/admin/registration/confirmation?receiptToken=private', { method: 'POST', origin: PUBLIC, body: input }))).status, 404);
+  assert.equal(f.remote.calls.length, rejectedAt, 'rejected capability requests do no object work');
+  assert.equal((await f.first.handle(request('/api/admin/registration/wallet', { method: 'POST', origin: PUBLIC, body: input }))).status, 503);
+  assert.ok(f.remote.calls.slice(rejectedAt).every(call => call.method === 'GET'), 'unconfigured Wallet only revalidates the current admission');
+  for (const path of ['/api/admin/registration-confirmation/settings', '/api/admin/registrations/export.xlsx', '/api/admin/contacts/export.xlsx']) {
+    const response = await f.first.handle(request(path, { method: path.endsWith('.xlsx') ? 'POST' : 'GET', origin: API, headers: editor,
+      ...(path.endsWith('.xlsx') ? { body: { expectedRevision: 0 } } : {}) }));
+    assert.equal(response.status, 403);
+  }
+  const readiness = await f.second.handle(request('/api/admin/registration-confirmation/settings', { headers: owner }));
+  assert.equal(readiness.status, 200); const settings = await readiness.json();
+  assert.equal(settings.email.ready, false); assert.equal(settings.wallet.ready, false); assert.equal(settings.wallet.deviceTestRequired, true);
+  assert.doesNotMatch(JSON.stringify(settings), /synthetic-registration|private\.synthetic|scrypt\$|BEGIN |cms\/v1/u);
+  const exported = await f.first.handle(request('/api/admin/registrations/export.xlsx', { method: 'POST', origin: API, headers: owner,
+    body: { expectedRevision: 0, includeContact: true, includeAnswers: true, includeArrangements: true } }));
+  assert.equal(exported.status, 200, await exported.clone().text()); assert.equal(exported.headers.get('content-type'), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  const rows = await readSheet(Buffer.from(await exported.arrayBuffer()), '报名与参会', { trim: false });
+  assert.ok(rows.flat().includes(payload().fields.name)); assert.ok(rows.flat().includes(payload().fields.email));
+  const contactExport = await f.second.handle(request('/api/admin/contacts/export.xlsx', { method: 'POST', origin: API, headers: owner, body: { expectedRevision: 0 } }));
+  assert.equal(contactExport.status, 200, await contactExport.clone().text()); assert.equal(contactExport.headers.get('x-export-count'), '0');
+  const withdrawal = await f.second.handle(request('/api/admin/admissions/withdraw', { method: 'POST', origin: API, headers: owner,
+    body: { expectedRevision: 1, operationId: randomBytes(32).toString('base64url'), registrationId: receipt.reference_code } }));
+  assert.equal(withdrawal.status, 200);
+  const after = await f.first.handle(request('/api/admin/registration/confirmation', { method: 'POST', origin: PUBLIC, body: input }));
+  assert.equal(after.status, 200); const revoked = await after.json();
+  assert.equal(revoked.admission.status, 'withdrawn'); assert.deepEqual(revoked.attendee, { name: '', organization: '' }); assert.equal(revoked.wallet.ready, false); assert.equal(revoked.groupInvite, null);
+});
+
+test('runtime backup closes over all confirmation journal revisions and only encrypted current delivery bundles', async () => {
+  const objects = memoryObjects();
+  const wallet = encodeSigningBundle({ secret: SECRET, eventId: EVENT, config: { APPLE_WALLET_TEAM_ID: 'SYNTHETIC1', APPLE_WALLET_PASS_TYPE_ID: 'pass.example.invalid.synthetic',
+    APPLE_WALLET_ORGANIZATION_NAME: '合成组织', APPLE_WALLET_CERT_BASE64: 'U1lOVEhFVElDLUNFUlQ=', APPLE_WALLET_KEY_BASE64: 'U1lOVEhFVElDLVBSSVZBVEUtS0VZ',
+    APPLE_WALLET_WWDR_CERT_BASE64: 'U1lOVEhFVElDLVdXRFI=', APPLE_WALLET_ROOT_CERT_BASE64: 'U1lOVEhFVElDLVJPT1Q=' } });
+  const mail = encodeConfirmationMailBundle({ secret: SECRET, eventId: EVENT, config: { EMAILJS_SERVICE_ID: 'synthetic-service', EMAILJS_CONFIRMATION_TEMPLATE_ID: 'synthetic-confirmation',
+    EMAILJS_PUBLIC_KEY: 'SYNTHETIC-PUBLIC', EMAILJS_PRIVATE_KEY: 'SYNTHETIC-PRIVATE-PROVIDER-KEY', EMAIL_FROM_ADDRESS: 'synthetic@artdico.co', EMAIL_FROM_NAME: '合成团队' } });
+  const walletKey = walletSigningObjectKey({ eventId: EVENT, bundleId: wallet.bundleId }), mailKey = confirmationMailObjectKey({ eventId: EVENT, bundleId: mail.bundleId });
+  await objects.putImmutable(walletKey, wallet.data); await objects.putImmutable(mailKey, mail.data);
+  const app = createCloudApplication({ objects, env: { ...ENV, APPLE_WALLET_BUNDLE_ID: wallet.bundleId, ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID: mail.bundleId }, now: () => fixedClock().getTime(),
+    fetchFn: () => { throw new Error('No external mail may be sent in this test.'); } });
+  const owner = await login(app);
+  for (const [expectedRevision, enabled] of [[0, false], [1, true]]) {
+    const saved = await app.handle(request('/api/admin/registration-confirmation/settings', { method: 'PUT', origin: API, headers: owner,
+      body: { expectedRevision, enabled, operationId: randomBytes(32).toString('base64url') } }));
+    assert.equal(saved.status, 200, await saved.clone().text());
+  }
+  const key = randomBytes(32), response = await app.handle(request('/api/admin/maintenance/backup', { method: 'POST', origin: API, headers: owner,
+    body: { encryptionKey: key.toString('base64url'), confirmation: 'CREATE_ENCRYPTED_BACKUP' } }));
+  assert.equal(response.status, 200, await response.clone().text());
+  const bundle = Buffer.from(await response.arrayBuffer()), inspection = inspectEncryptedObjectBackup({ bundle, key, includeObjects: true });
+  const entries = inspection.objects;
+  assert.ok(entries.some(item => item.key === walletKey)); assert.ok(entries.some(item => item.key === mailKey));
+  assert.equal(entries.filter(item => item.key.startsWith(`cms/v1/registration-confirmations/${EVENT}/blobs/`)).length, 2);
+  assert.ok(entries.some(item => item.key === `cms/v1/registration-confirmations/${EVENT}/commits.jsonl`));
+  assert.doesNotMatch(JSON.stringify(inspection), /SYNTHETIC-PRIVATE-PROVIDER-KEY|synthetic-registration-token|BEGIN PRIVATE KEY|scrypt\$/u);
+  const restored = await app.handle(request('/api/admin/maintenance/restore', { method: 'POST', origin: API, headers: owner,
+    body: { encryptionKey: key.toString('base64url'), bundleBase64: bundle.toString('base64'), restoreId: 'synthetic-delivery-restore-01', confirmation: 'RESTORE_TO_ISOLATED_NAMESPACE' } }));
+  assert.equal(restored.status, 200, await restored.clone().text()); assert.equal((await restored.json()).active, false);
+  assert.equal((await objects.get('cms/v1/restores/synthetic-delivery-restore-01/' + walletKey.slice('cms/v1/'.length))).data.equals(wallet.data), true);
 });

@@ -1,7 +1,11 @@
 import { registrationSchema, getActiveBranches } from '../../shared/registration-schema.mjs';
+import { validateGeneralApplicationFields } from '../../shared/general-application.mjs';
 
 /** Strict API types and current branches only; demo consent metadata never leaves the page. */
 export function registrationFields(value) {
+  if(Object.hasOwn(value??{},'intake')){
+    const source={...value};delete source.consentAccepted;const checked=validateGeneralApplicationFields(source);if(!checked.valid)throw new Error('申请字段尚未通过核对。');return checked.value;
+  }
   const fields = {};
   const active = getActiveBranches(value);
   function copy(source,target,definitions) {

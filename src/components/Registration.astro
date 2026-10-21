@@ -1,88 +1,39 @@
 ---
-import { eventConfig } from '../config/event.mjs';
-import { publicRegistrationSchema as registrationSchema } from '../../shared/public-registration-schema.mjs';
+import { generalApplicationSchema } from '../../shared/public-registration-schema.mjs';
 import FormField from './FormField.astro';
-import BranchFields from './BranchFields.astro';
 import RegistrationSuccess from './RegistrationSuccess.astro';
 import '../styles/registration-success.css';
 import '../styles/registration-policy.css';
+import '../styles/general-application.css';
 const field = (name: string) => {
-  const definition = registrationSchema.baseFields.find(item => item.name === name);
-  if (!definition) throw new Error(`Missing form field: ${name}`);
+  const definition = generalApplicationSchema.fields.find(item => item.name === name);
+  if (!definition) throw new Error(`Missing application field: ${name}`);
   return definition;
 };
-const identitySublabels: Record<string,string> = {so:'SITE ORGANIZER',ro:'REGIONAL ORGANIZER',new_site:'START A SITE',industry:'MAKE & PLAY',education:'LEARN & GROW',partner:'COMMUNITY',other:'JUST CURIOUS'};
-const stayDate = (value: string) => { const [, month, day] = value.split('-'); return `${Number(month)} 月 ${Number(day)} 日`; };
 const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
-if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('报名 API 必须使用指定的 HTTPS 来源。');
+if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('申请 API 必须使用指定的 HTTPS 来源。');
 ---
 <section class="ah-registration ah-section" id="registration" aria-labelledby="registration-heading" data-registration-api-origin={apiOrigin || undefined}>
-  <div class="ah-register-intro">
-    <h2 id="registration-heading">一起参与这一天。</h2>
-    <p data-registration-notice>活动报名已开放，欢迎组织者、学生、游戏创作者与社群伙伴。本页表单仅供流程预览，不发送或保存资料。</p>
-    <details class="ah-stay-details"><summary>外地嘉宾住宿支持</summary><p>{eventConfig.accommodation.notice}入住 / 离店暂定为 {stayDate(eventConfig.accommodation.checkIn)}至 {stayDate(eventConfig.accommodation.checkOut)}。</p></details>
-  </div>
-  <details class="ah-registration-preview" data-registration-preview>
-    <summary><strong data-registration-open-label>预览报名表</strong><small>了解参与身份与填写内容</small><span aria-hidden="true">＋</span></summary>
+  <div class="ah-register-intro"><h2 id="registration-heading">申请参加。</h2><p data-registration-notice>欢迎学生、组织者、游戏创作者与社群伙伴。申请收到后由主办方审核，通过并确认名额后再发送正式邀请。</p></div>
+  <div class="ah-registration-preview ah-general-application" data-registration-preview>
     <div class="ah-form-card">
-    <div class="ah-form-top"><span>{eventConfig.registration.formTitle}</span><span class="ah-demo-tag" data-registration-mode-label>预览 · 不提交</span></div>
-    <form data-registration-form data-registration-mode="mock" method="post" novalidate autocomplete="off">
-      <div class="ah-form-progress" aria-label="填写进度"><span data-step-dot="0" class="ah-step-active" aria-current="step">1 身份</span><span aria-hidden="true"></span><span data-step-dot="1">2 资料</span><span aria-hidden="true"></span><span data-step-dot="2">3 参与方式</span></div>
-      <p class="ah-form-error" data-form-error role="alert" tabindex="-1" hidden></p>
-      <section data-form-step="0" aria-labelledby="identity-heading">
-        <h3 id="identity-heading" tabindex="-1">你想以什么身份参与？</h3>
-        <p class="ah-form-hint">可多选，现有 GGJ 站点负责人和新站点筹备者分别登记。</p>
-        <fieldset class="ah-identity-field" data-field="categories" aria-describedby="categories-error">
-          <legend class="ah-sr-only">目前的参与身份（必填，可多选）</legend>
-          <div class="ah-identity-grid">
-            {registrationSchema.identityOptions.map(option => <label><input type="checkbox" name="categories" value={option.value} data-identity={option.value} /><span>{option.label}</span><small>{identitySublabels[option.value]}</small><b aria-hidden="true">+</b></label>)}
-          </div>
-          <p class="ah-form-error" id="categories-error" data-error-for="categories" hidden></p>
-        </fieldset>
-        <button type="button" data-next-step class="ah-primary ah-full">继续填写 <span aria-hidden="true">→</span></button>
-      </section>
-      <section data-form-step="1" hidden aria-labelledby="details-heading">
-        <h3 id="details-heading" tabindex="-1">先认识一下你。</h3>
-        <p class="ah-form-hint" data-registration-data-hint>带 * 为必填。体验时请填写虚构资料；资料仅留在当前页面内存。</p>
-        <div class="ah-fields-grid">{['name','city','email','wechat'].map(name => <FormField field={field(name)} />)}</div>
-        <p class="ah-form-hint">普通参会先填写姓名、城市与联络方式即可；讲者、展商和社群交流的补充资料在下一步填写。</p>
-        <BranchFields name="soRo" />
-        <BranchFields name="newSite" />
-        <div class="ah-form-actions"><button type="button" data-prev-step class="ah-secondary">上一步</button><button type="button" data-next-step class="ah-primary">参与方式 <span aria-hidden="true">→</span></button></div>
-      </section>
-      <section data-form-step="2" hidden aria-labelledby="interests-heading">
-        <h3 id="interests-heading" tabindex="-1">你期待怎样的交流？</h3>
-        <p class="ah-form-hint">普通参会直接报名。讲者、展位、站点咨询与住宿安排另行沟通。</p>
-        <FormField field={field('participationInterests')} />
-        <details class="ah-registration-extra" data-registration-profile>
-          <summary>机构与经历补充 <small data-registration-profile-label>普通参会可跳过</small></summary>
-          <div class="ah-fields-grid">{['organization','position','website'].map(name => <FormField field={field(name)} />)}</div>
-          <FormField field={field('background')} />
-          <FormField field={field('caseLinks')} />
-        </details>
-        <BranchFields name="speaker" />
-        <BranchFields name="exhibitor" />
-        <BranchFields name="partner" />
-        <FormField field={field('attendance')} />
-        <FormField field={field('accommodationChoice')} />
-        <BranchFields name="accommodation" />
-        <FormField field={field('topics')} />
-        <FormField field={field('cooperationInterest')} />
-        <FormField field={field('cooperationForms')} />
-        <section class="ah-registration-policy" data-registration-policy hidden aria-labelledby="registration-policy-title"><h4 id="registration-policy-title">个人信息处理告知</h4><p>请阅读以下说明，再决定是否提交。住宿、讲者及展位申请分别审核。</p><dl data-registration-policy-details></dl></section>
+      <div class="ah-form-top"><strong data-registration-open-label>活动申请</strong><span class="ah-demo-tag" data-registration-mode-label>预览 · 不提交</span></div>
+      <form data-registration-form data-registration-mode="mock" data-application-intake="general-v2" method="post" novalidate autocomplete="off">
+        <p class="ah-form-hint" data-registration-data-hint>带 * 为必填。此处预览不提交资料。</p>
+        <p class="ah-form-error" data-form-error role="alert" tabindex="-1" hidden></p>
+        <div class="ah-fields-grid">{['name','email','categories'].map(name => <FormField field={field(name)} />)}</div>
+        <details class="ah-registration-extra ah-general-extra"><summary>学校、机构与其他联络信息（选填）</summary><div class="ah-fields-grid">{['organization','city','wechat'].map(name => <FormField field={field(name)} />)}</div></details>
+        <label class="ah-general-proposal-toggle"><input type="checkbox" name="submitProposal" data-proposal-toggle /><span>我也想申请分享一个主题</span></label>
+        <fieldset class="ah-general-proposal" data-speaker-proposal hidden disabled><legend>分享主题（选填申请）</legend><p class="ah-form-hint">与本次参会共用一份申请。主题和讲者身份另行审核，不代表已获安排。</p>{generalApplicationSchema.proposal.map(definition => <FormField field={definition} prefix="speaker" />)}</fieldset>
+        <details class="ah-registration-policy" data-registration-policy hidden><summary id="registration-policy-title">查看个人信息处理告知</summary><dl data-registration-policy-details></dl></details>
         <FormField field={field('consentAccepted')} />
-        <div class="ah-form-actions"><button type="button" data-prev-step class="ah-secondary">上一步</button><button type="submit" data-submit class="ah-primary" disabled>检查并完成体验 <span aria-hidden="true">↗</span></button></div>
-      </section>
-      <section data-form-step="3" class="ah-demo-complete" hidden aria-labelledby="complete-heading">
-        <div class="ah-complete-mark" aria-hidden="true">✓</div><h3 id="complete-heading" tabindex="-1">体验到这里，<br />连接才刚刚开始。</h3>
-        <p data-form-result role="status" aria-live="polite">{eventConfig.registration.completedNotice}</p>
-        <button type="button" data-reset-form class="ah-secondary">重新体验</button>
-      </section>
-      <p class="ah-form-disclaimer" data-registration-disclaimer>报名预览不会受理真实资料或生成报名编号。</p>
-    </form>
-    <noscript><p class="ah-form-disclaimer">本页互动预览需要启用 JavaScript，不发送或保存资料。活动信息和全部日程仍可直接阅读。</p></noscript>
+        <button type="submit" data-submit class="ah-primary ah-full" disabled>检查预览</button>
+        <p class="ah-form-disclaimer" data-registration-disclaimer>申请需经人工审核。待审核不占参会名额，不提供正式邀请、入群码或 Wallet。</p>
+      </form>
+      <p class="ah-form-result" data-form-result role="status" aria-live="polite"></p>
+      <noscript><p class="ah-form-disclaimer">申请需要启用 JavaScript。活动信息和日程仍可直接阅读。</p></noscript>
     </div>
-  </details>
+  </div>
   <RegistrationSuccess />
 </section>
 <script>

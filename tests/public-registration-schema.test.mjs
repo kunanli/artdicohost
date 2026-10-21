@@ -44,16 +44,15 @@ test('public labels preserve every field, required answer and existing validatio
 
 test('speaker, site and student CTAs select only their explicit supported interests', () => {
   assert.deepEqual(getRecruitmentChoices('speaker'), { categories: [], participationInterests: ['talk'] });
-  assert.deepEqual(getRecruitmentChoices('site'), { categories: ['new_site'], participationInterests: ['site_support'] });
-  assert.deepEqual(getRecruitmentChoices('student'), { categories: [], participationInterests: ['student_exchange', 'exhibition'] });
+  assert.deepEqual(getRecruitmentChoices('site'), { categories: ['new_site'], participationInterests: ['attend'] });
+  assert.deepEqual(getRecruitmentChoices('student'), { categories: ['student'], participationInterests: ['attend'] });
   assert.deepEqual(getActiveBranches({ ...example(), ...getRecruitmentChoices('site') }), ['newSite']);
-  const student = { ...example(), participationInterests: getRecruitmentChoices('student').participationInterests };
-  assert.deepEqual(getActiveBranches(student), ['exhibitor']);
-  assert.ok(Object.hasOwn(validateRegistration(student).errors, 'exhibitor.summary'));
-  assert.equal(validateRegistration({ ...student, exhibitor: { projectType: '合成游戏', summary: '合成作品说明', attendeeCount: '2' } }).valid, true);
+  const student = { ...example(), ...getRecruitmentChoices('student') };
+  assert.deepEqual(getActiveBranches(student), []);
+  assert.equal(validateRegistration(student).valid, true);
   const first = getRecruitmentChoices('student');
   first.participationInterests.push('talk');
-  assert.deepEqual(getRecruitmentChoices('student').participationInterests, ['student_exchange', 'exhibition']);
+  assert.deepEqual(getRecruitmentChoices('student').participationInterests, ['attend']);
   for (const unknown of [undefined, null, '', 'sponsor', 'unexpected', '__proto__', 'constructor', {}, ['student']]) {
     assert.equal(getRecruitmentChoices(unknown), null);
   }

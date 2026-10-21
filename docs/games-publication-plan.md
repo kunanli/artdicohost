@@ -16,6 +16,8 @@
 
 嘉宾照片改为选填：本人资料已确认并核实公开授权后，可先以姓名首字展示；不放宽确认或授权。空图ID不请求图片端点，非空图仍严格验证／公开引用校验。姓名／职责／机构等授权范围与照片变更后重新核对保留；公开职责是可选，不能在个人页另加与实际public projection不同的阻挡。头像与职责待补应显示为建议完善，不冒称无法公开。
 
+照片选填须同时覆盖`shared/content-schema.mjs`、`shared/guest-display.mjs`、`functions/person-workspace/projection.mjs`的publicGuestValue／publishedMatchesDraft，以及个人步骤指引和前台图片构造；不能只修嘉宾列表而留下另一套必填判定。沿用已包装模块，不增加FC runtime源码条目。
+
 ## 统一作品
 
 前后台统一「游戏与作品」，分类学生作品／独立游戏／团队作品，复用现有`showcases[]`稳定ID、原件、历史与备份。每件作品关联单一boothId即可同一展位多作品，不增加反向booth.workIds或新journal，不将作品数／填报组员总数当去重参会人数，不改变共同300名额。

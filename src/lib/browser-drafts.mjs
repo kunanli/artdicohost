@@ -235,6 +235,22 @@ export function createBrowserDraftStore({ indexedDB = globalThis.indexedDB, cloc
       });
       return changed(scope, result);
     },
+    // The controller must first prove the original cloud submission's ACK or
+    // exact readback. One local transaction then keeps all remaining edits;
+    // an unknown cloud outcome must never call this explicit completion path.
+    async completePending(input, update, suppliedPolicy) {
+      const scope=scopeValue(input),policy=policyValue(suppliedPolicy);
+      if(!exact(update,['expectedRevision','actorEpoch','baseRevision','value'])||!revision(update.baseRevision))fail('INVALID');
+      const value=checkedValue(update.value,'editing',policy),now=clock();if(!revision(now))fail('UNAVAILABLE');
+      const result=await transaction('readwrite',(values,tx)=>{
+        const current=cursor(values,scope);expected(current,update);
+        if(!current.record||current.record.kind!=='pending_submission')fail('PENDING_IMMUTABLE');
+        checkedRecord(current.record,scope,policy);
+        if(!revision(current.record.baseRevision)||update.baseRevision<=current.record.baseRevision)fail('CONFLICT');
+        return saveRecord(values,tx,current,scope,policy,{kind:'editing',baseRevision:update.baseRevision,value},now);
+      });
+      return changed(scope,result);
+    },
     async remove(input, update) {
       const scope = scopeValue(input);
       if (!ownData(update) || Object.keys(update).some(key => !['expectedRevision', 'actorEpoch', 'allowPending'].includes(key))

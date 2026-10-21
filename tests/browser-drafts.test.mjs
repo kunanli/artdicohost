@@ -367,3 +367,56 @@ test('late atomic rejection ACK cannot clear a newer local conflict or a logout 
     b.form.close();
   }
 });
+
+test('proven completion replaces pending and advances its cloud base atomically, retaining the original on quota abort', async () => {
+  const f=fixture(),key=scope(),original=await write(f.store,key,{...pending(),uncertain:true},'pending_submission');
+  const update={expectedRevision:original.revision,actorEpoch:original.actorEpoch,baseRevision:5,value:{name:'其他页面尚未完成的合成填写'}};
+  f.state.failAt=f.state.writes+2;
+  await assert.rejects(f.store.completePending(key,update,policy),{code:'UNAVAILABLE'});
+  assert.deepEqual(await f.make().read(key,policy),original,'staging the editable record must not delete the exact original request');
+  f.state.failAt=null;
+  const saved=await f.store.completePending(key,update,policy);
+  assert.equal(saved.revision,original.revision+1);assert.equal(saved.record.kind,'editing');assert.equal(saved.record.baseRevision,5);
+  assert.deepEqual(saved.record.value,update.value);assert.equal(saved.record.expiresAt,f.time.now+BROWSER_DRAFT_TTL_MS);
+  await assert.rejects(f.store.completePending(key,update,policy),{code:'CONFLICT'});
+});
+
+test('completion rejects an unadvanced cloud base, unsafe value or lost local lease without forgetting the pending request', async () => {
+  const f=fixture(),key=scope(),original=await write(f.store,key,pending(),'pending_submission');
+  const update={expectedRevision:original.revision,actorEpoch:original.actorEpoch,baseRevision:5,value:{name:'保留的填写'}};
+  for(const baseRevision of [0,4,null,-1,'5'])await assert.rejects(f.store.completePending(key,{...update,baseRevision},policy),{code:typeof baseRevision==='number'&&baseRevision>=0?'CONFLICT':'INVALID'});
+  for(const value of [{name:'合成',password:'PRIVATE'}, {name:new Blob(['PRIVATE'])}, {name:'字'.repeat(1024*1024)}])await assert.rejects(f.store.completePending(key,{...update,value},policy));
+  assert.deepEqual(await f.make().read(key,policy),original);
+  const other=await write(f.make(),key,{...pending(),uncertain:true},'pending_submission',original);
+  await assert.rejects(f.store.completePending(key,update,policy),{code:'CONFLICT'});assert.deepEqual(await f.store.read(key,policy),other);
+  await f.make().clearActor(key.actorId);
+  await assert.rejects(f.store.completePending(key,{...update,expectedRevision:0},policy),{code:'STALE_ACTOR'});assert.equal((await f.store.read(key,policy)).record,null);
+});
+
+test('binding completion freezes remaining input and can finish a restored original only after explicit pending recovery', async () => {
+  const f=fixture(),b=binding(f);await b.form.load();await b.form.markPending({...pending(),uncertain:true});b.form.close();
+  const restored=binding(f);restored.state.base=5;await restored.form.load();
+  await assert.rejects(restored.form.completePending({name:'尚未明确恢复'}),{code:'CONFLICT'});
+  await restored.form.restore({pendingOnly:true});assert.equal(restored.form.blocked,true);
+  const value={name:'保留原始未完成栏位'},saving=restored.form.completePending(value);value.name='调用后不能偷换的内容';
+  const saved=await saving;assert.equal(saved.record.kind,'editing');assert.equal(saved.record.baseRevision,5);
+  assert.equal(saved.record.value.name,'保留原始未完成栏位');assert.equal(restored.form.blocked,false);assert.equal(restored.form.unsettled,false);
+  assert.equal(restored.state.events.at(-1),'saved');restored.form.close();
+});
+
+test('late completion cannot clear a newer cross-tab draft, logout epoch, or changed cloud base', async () => {
+  for(const action of ['competing_edit','logout','new_cloud_base']){
+    const f=fixture();let release,ready;
+    const gate=new Promise(resolve=>{release=resolve;}),committed=new Promise(resolve=>{ready=resolve;});
+    const held={...f.store,completePending:async(...args)=>{const value=await f.store.completePending(...args);ready();await gate;return value;}};
+    const b=binding(f,{store:held});await b.form.load();await b.form.markPending(pending());b.state.base=5;
+    const completing=b.form.completePending({name:'较早剩余填写'});await committed;
+    if(action==='logout')await f.store.clearActor(scope().actorId);
+    else if(action==='competing_edit')await write(f.store,scope(),{name:'另一页较新填写'});
+    else b.state.base=6;
+    release();await assert.rejects(completing,{code:action==='logout'?'STALE_ACTOR':'CONFLICT'});assert.equal(b.form.blocked,true);
+    if(action==='logout')assert.equal((await f.store.read(scope(),policy)).record,null);
+    else if(action==='competing_edit')assert.equal((await f.store.read(scope(),policy)).record.value.name,'另一页较新填写');
+    b.form.close();
+  }
+});

@@ -21,6 +21,7 @@ const json=(body,status=200)=>({status,contentType:'application/json',body:JSON.
 const mime=file=>({html:'text/html',mjs:'text/javascript',js:'text/javascript',css:'text/css',png:'image/png',webp:'image/webp',svg:'image/svg+xml',woff2:'font/woff2'})[extname(file).slice(1)]||'application/octet-stream';
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};};
 const clone=value=>structuredClone(value);
+async function bounded(promise,message){let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(message)),12000);})]);}finally{clearTimeout(timer);}}
 
 async function seedContent(runtime){
   const content=(await runtime.app.store.read()).draft.content;
@@ -72,9 +73,9 @@ async function fixture(browser,errors,{width=1440,mode='normal',username='owner'
     const file=resolve(base,'.'+pathname);assert.ok(file.startsWith(base+'/'));
     try{return await route.fulfill({status:200,contentType:mime(file),body:await readFile(file)});}catch{return route.fulfill({status:404,body:''});}
   });
-  return{runtime,initial,page,context,calls,dialogs,mode,actor:()=>activeUser,setActor,setFault:value=>{fault=value;used=false;},setLogoutMode:value=>{logoutMode=value;},expireNext:(path,status=401)=>{expirePath=path;expireStatus=status;},waitHeld:()=>holdReady.promise,release:()=>held.resolve(),held:()=>holdSave,async close(){held.resolve();await context.close();}};
+  return{runtime,initial,page,context,calls,dialogs,mode,actor:()=>activeUser,setActor,setFault:value=>{fault=value;used=false;},setLogoutMode:value=>{logoutMode=value;},expireNext:(path,status=401)=>{expirePath=path;expireStatus=status;},waitHeld:()=>bounded(holdReady.promise,'actual content PUT did not reach the held ACK'),release:()=>held.resolve(),held:()=>holdSave,async close(){held.resolve();await context.close();}};
 }
-const saves=f=>f.calls.filter(call=>call.path==='/api/admin/content'&&call.method==='PUT');
+const saves=f=>f.calls.filter(call=>call.path==='/api/admin/content'&&call.method==='PUT').map(({path,method,body})=>({path,method,body}));
 const workspace=f=>f.page.locator('[data-admin-workspace]');
 const savebar=f=>f.page.locator('[data-admin-savebar]');
 async function waitState(f,state){await f.page.locator('[data-admin-savebar][data-save-state='+state+']').waitFor({state:'attached'});}
@@ -187,7 +188,7 @@ async function draftCases(browser,errors,reports){
     const f=await fixture(browser,errors);await open(f);await editBooth(f);await waitLocal(f);f.setLogoutMode(logoutMode);await f.page.locator('[data-admin-logout]').evaluate(node=>node.click());await assertPrivateCleared(f);assert.equal((await draftRows(f.page)).some(row=>row.scope.actorId===f.runtime.users[0].id),false);assert.deepEqual(saves(f),[]);await f.close();reports.push({group:'drafts',logoutMode,explicitLogoutClearsPrivateDomAndActorCacheEvenWithoutAck:true});
   }
   for(const status of[401,403]){
-    const f=await fixture(browser,errors);await open(f);await editBooth(f);await waitLocal(f);f.expireNext('/api/admin/content',status);await submitBooth(f);await assertPrivateCleared(f);await login(f,'editoroutreach');assert.equal(await f.page.locator('[data-admin-local-recovery]').isVisible(),false);assert.equal((await f.page.locator('[data-booth-form] [name=project]').inputValue()).includes(UPDATED),false);await f.page.locator('[data-admin-logout]').click();await login(f,'owner');await f.page.locator('[data-admin-local-restore]:visible').waitFor();assert.deepEqual(saves(f),[]);await f.close();reports.push({group:'drafts',status,expiryRetainsOnlySameActorRecovery:true,otherActorNeverSeesOrRestoresPriorFields:true});
+    const f=await fixture(browser,errors);await open(f);await editBooth(f);await waitLocal(f);f.expireNext('/api/admin/content',status);await submitBooth(f);await assertPrivateCleared(f);await login(f,'editoroutreach');assert.equal(await f.page.locator('[data-admin-local-recovery]').isVisible(),false);assert.equal((await f.page.locator('[data-booth-form] [name=project]').inputValue()).includes(UPDATED),false);await f.page.locator('[data-admin-logout]').click();await login(f,'owner');await f.page.locator('[data-admin-local-restore]:visible').waitFor();assert.equal(saves(f).length,1,'the denied original PUT is never retried on account switch');await f.close();reports.push({group:'drafts',status,expiryRetainsOnlySameActorRecovery:true,otherActorNeverSeesOrRestoresPriorFields:true});
   }
   {
     const f=await fixture(browser,errors,{mode:'late-save'});await open(f);await editBooth(f);await submitBooth(f);await f.waitHeld();const sibling=await f.context.newPage();sibling.on('pageerror',error=>errors.push('late-save-sibling: '+error.message));sibling.on('dialog',dialog=>dialog.accept());await sibling.goto(SITE+routeFor('event'),{waitUntil:'networkidle'});await sibling.locator('[data-admin-workspace]:visible').waitFor();await sibling.locator('[data-admin-logout]').click();await sibling.locator('[data-admin-login-panel]:visible').waitFor();await assertPrivateCleared(f);await login(f,'editoroutreach');f.release();await f.page.waitForLoadState('networkidle');assert.equal(await workspace(f).isVisible(),true);assert.match(await f.page.locator('[data-admin-user]').textContent(),/editoroutreach/u);assert.doesNotMatch(await f.page.locator('[data-admin-status]').textContent(),/已确认保存|草稿已保存/u);assert.equal((await draftRows(f.page)).some(row=>row.scope.actorId===f.runtime.users[0].id),false);assert.equal(saves(f).length,1);await f.close();reports.push({group:'drafts',lateOldSaveDoesNotMutateNewActorSessionOrShowOldSuccess:true});

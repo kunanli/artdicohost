@@ -190,7 +190,7 @@ export function createOssContentStore({ journal, portraitStore, initialContent =
       if (content.eventId !== seed.eventId) throw new CloudContentError('VALIDATION_ERROR', '本后台只维护当前活动。', 422, { eventId: '活动 ID 不可更改。' });
       const relationships = validateBoothOrganizationChanges(content, state.draft.content);
       if (!relationships.valid) throw new CloudContentError('VALIDATION_ERROR', '组织关联未通过校验。', 422, relationships.errors);
-      await Object.getOwnPropertyDescriptor(options, 'beforeCommit')?.value({ current: structuredClone(state.draft.content), next: structuredClone(content) });
+      await Object.getOwnPropertyDescriptor(options, 'beforeCommit')?.value({ current: structuredClone(state.draft.content), next: structuredClone(content), published: structuredClone(state.published) });
       await verifyPortraits(content);
       if (!Number.isSafeInteger(state.draft.revision + 1)) throw capacity();
       state.draft = { revision: state.draft.revision + 1, content };

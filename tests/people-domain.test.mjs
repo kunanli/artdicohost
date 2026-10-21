@@ -158,7 +158,36 @@ for (const mode of ['local', 'cloud']) {
     await assert.rejects(f.store.save(2, saved.content, ACTOR, getter), TypeError);
     assert.equal((await f.make().read()).draft.revision, 2);
   });
+
+  test(`${mode} guard receives a detached already-loaded publication envelope without modifying saved history`, async t => {
+    const f = await contentFixture(mode, t), initial = (await f.store.read()).draft.content;
+    await f.store.save(0, initial, ACTOR, { beforeCommit: ({ published }) => assert.equal(published, null) });
+    const publication = await f.store.publish(1, ACTOR), before = await f.raw();
+    const rejection = new Error('SYNTHETIC_PUBLICATION_GUARD_REJECTED');
+    await assert.rejects(f.store.save(1, initial, ACTOR, { beforeCommit: ({ published }) => {
+      assert.deepEqual(published, publication); published.content.booths[0].project = 'never-written'; published.revision = 999; throw rejection;
+    } }), error => error === rejection);
+    assert.equal(await f.raw(), before);
+    const updated = clone(initial); updated.event.title = '合成后续草稿';
+    await f.store.save(1, updated, ACTOR, { beforeCommit: ({ published, current, next }) => {
+      assert.deepEqual(published, publication); assert.equal(current.event.title, initial.event.title); assert.equal(next.event.title, updated.event.title);
+      published.content.booths[0].project = 'never-written'; published.publishedAt = 'never-written';
+    } });
+    assert.deepEqual((await f.make().read()).published, publication);
+  });
 }
+
+test('including publication in a cloud guard uses the same exact OSS operations as an unguarded save', async t => {
+  const observed = [];
+  for (const guarded of [false, true]) {
+    const f = await contentFixture('cloud', t), initial = (await f.store.read()).draft.content;
+    await f.store.save(0, initial, ACTOR); await f.store.publish(1, ACTOR);
+    const start = f.objects.calls.length, updated = clone(initial); updated.event.title = '合成同一份草稿更新';
+    await f.store.save(1, updated, ACTOR, guarded ? { beforeCommit: ({ published }) => assert.equal(published.revision, 1) } : {});
+    observed.push(f.objects.calls.slice(start));
+  }
+  assert.deepEqual(observed[1], observed[0]);
+});
 
 test('legacy contacts missing membership defaults read without rewriting local bytes or a cloud journal', async t => {
   const source = await contactsFixture('cloud', t), created = await source.store.createContact(0, profile, ACTOR), raw = await source.raw();

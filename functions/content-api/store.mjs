@@ -164,7 +164,7 @@ export function createFileContentStore({ directory, portraitStore, initialConten
       if (content.eventId !== state.draft.content.eventId) throw new ContentError('VALIDATION_ERROR', '本后台只维护当前活动。', 422, { eventId: '活动 ID 不可更改。' });
       const relationships = validateBoothOrganizationChanges(content, state.draft.content);
       if (!relationships.valid) throw new ContentError('VALIDATION_ERROR', '组织关联未通过校验。', 422, relationships.errors);
-      await Object.getOwnPropertyDescriptor(options, 'beforeCommit')?.value({ current: structuredClone(state.draft.content), next: structuredClone(content) });
+      await Object.getOwnPropertyDescriptor(options, 'beforeCommit')?.value({ current: structuredClone(state.draft.content), next: structuredClone(content), published: structuredClone(state.published) });
       await verifyPortraits(content);
       state.draft = { revision: state.draft.revision + 1, content };
       state.audit.push({ action: 'save_draft', actorId, revision: state.draft.revision, at: new Date(now()).toISOString() });

@@ -178,3 +178,10 @@ test('catalog publication equality agrees with actual no-photo no-role public gu
   const content=createInitialContent();content.guests=[guest];f.data.content.content=content;f.data.content.published={revision:4,publishedAt:'2026-10-21T00:00:00Z',content:toPublicContent(content)};
   const {response,body}=await f.read();assert.equal(response.status,200);assert.equal(body.profiles[0].hasPortrait,false);assert.deepEqual(body.profiles[0].publicRoles,[]);assert.equal(body.profiles[0].published,true);assert.equal(body.profiles[0].publishedMatchesDraft,true);
 });
+
+
+test('an unrelated unassignable publication warns globally without erasing an exact linked guest publication fact',async()=>{
+  const f=setup(),guest=f.data.content.content.guests[0];
+  f.data.content.published.content.guests=[{...structuredClone(guest),portraitUrl:'/api/public/portraits/'+guest.portraitId},{id:'unassignable-history',name:'same display name proves nothing'}];
+  const {response,body}=await f.read();assert.equal(response.status,200);assert.equal(body.publicationAttributionUnavailable,true);assert.equal(body.profiles.length,1);assert.equal(body.profiles[0].id,guest.id);assert.equal(body.profiles[0].contactId,CONTACT);assert.equal(body.profiles[0].published,true);assert.equal(body.profiles[0].publishedMatchesDraft,true);
+});

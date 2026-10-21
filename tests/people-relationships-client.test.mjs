@@ -25,8 +25,8 @@ test('organization and public role filters use exact relationships and retain or
   assert.equal(matchesPeopleRelationships(item,source,{organization:'org_2',publicRole:'speaker',publicState:'changed'}),true);assert.equal(matchesPeopleRelationships(item,source,{organization:'org_1'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicState:'unlinked'}),false);
   assert.deepEqual(relationshipForContact(item,source).memberships.map(row=>row.state),['withdrawn','missing']);
 });
-test('unattributed publication disables unpublished inference while retaining positive filters',()=>{
-  const source=peopleRelationships({...catalog(),publicationAttributionUnavailable:true}),item=contact();assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicRole:'organizer',publicState:'unpublished'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicState:'published'}),true);
+test('unattributed publication is excluded from unpublished filters while exact positive facts remain usable',()=>{
+  const source=peopleRelationships({...catalog(),publicationAttributionUnavailable:true}),item=contact();assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicRole:'organizer',publicState:'unpublished'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicState:'published'}),true);
 });
 test('actual guest ID publication remains visible while current identity and contents await verification',()=>{
   const source=peopleRelationships(catalog()),item=contact();assert.equal(relationshipForContact(item,source).profiles[0].published,true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'published'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'changed'}),true);
@@ -81,4 +81,22 @@ test('a confirmed consented profile needs neither photo nor public role to be re
   const source=peopleRelationships({...catalog(),profiles:[profile]}),item=contact();assert.equal(matchesPeopleRelationships(item,source,{publicState:'ready'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'blocked'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),true);
   profile.published=true;profile.publishedMatchesDraft=true;status=profilePublicationPresentation(profile);assert.equal(status.change,'unchanged');assert.equal(status.label,'已公开');
   source.profiles[0].status='pending';assert.equal(matchesPeopleRelationships(item,source,{publicState:'blocked'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'ready'}),false);
+});
+
+
+test('unpublished filter requires known publication metadata and an existing linked profile',()=>{
+  const item=contact(),source=peopleRelationships(catalog());source.profiles[0].published=false;
+  assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),true);
+  assert.equal(profilePublicationPresentation(source.profiles[0]).tone,'negative');
+  source.publicationAttributionUnavailable=true;
+  assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),false);
+  assert.equal(profilePublicationPresentation(source.profiles[0],{known:false}).tone,'neutral');
+  assert.equal(matchesPeopleRelationships(item,null,{publicState:'unpublished'}),false);
+  source.publicationAttributionUnavailable=false;source.profiles=[];
+  assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),false,'unlinked is separate from a known unpublished profile');
+});
+
+test('an unrelated orphan does not erase a linked guest ID that the server positively found published',()=>{
+  const profile=catalog().profiles[0],status=profilePublicationPresentation(profile,{known:false});
+  assert.equal(status.label,'已公开');assert.equal(status.tone,'positive');assert.equal(status.change,'updated');assert.match(status.detail,/历史公开版本.*待核对/u);
 });

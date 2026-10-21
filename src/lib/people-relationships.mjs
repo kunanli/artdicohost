@@ -18,7 +18,9 @@ export function attendancePresentation(status) {
       :status==='declined'?{label:'不出席',tone:'negative'}:{label:'出席回复待核对',tone:'neutral'};
 }
 /** Published means this guest ID actually exists in the public snapshot. A newer
- * private draft cannot remove its green badge before explicit publication. */
+ * private draft cannot remove its green badge before explicit publication.
+ * `known:false` comes from an unrelated orphan publication in the same catalog;
+ * the API still proves each positive `published` by this exact guest ID. */
 export function profilePublicationPresentation(profile,{known=true}={}) {
   const ready=Boolean(profile&&profile.status==='confirmed'&&profile.publicConsent===true);
   const reasons=profile?[profile.status!=='confirmed'?'待确认':'',profile.publicConsent!==true?'待核实公开授权':''].filter(Boolean):[];
@@ -50,12 +52,12 @@ export function relationshipForContact(contact, catalog) {
   return { available: true, memberships: memberships.map(row => { const organization = catalog.organizations.find(item => item.id === row.organizationId); return { ...row, name: organization?.name || row.organizationId, state: !organization ? 'missing' : organization.status === 'withdrawn' ? 'withdrawn' : 'available' }; }), profiles: catalog.profiles.filter(row => row.contactId === contact.id), publicationKnown: !catalog.publicationAttributionUnavailable };
 }
 export function matchesPeopleRelationships(contact, catalog, { organization = '', publicRole = '', publicState = '' } = {}) {
-  if (!catalog) return true;
+  if (!catalog) return publicState !== 'unpublished';
   const related = relationshipForContact(contact, catalog), profiles = related.profiles;
   if (organization && (organization === '__none' ? related.memberships.length !== 0 : !related.memberships.some(row => row.organizationId === organization))) return false;
   if (publicRole && !profiles.some(row => row.publicRoles.includes(publicRole))) return false;
   if (!publicState) return true;
-  return ({ linked: profiles.length > 0, unlinked: profiles.length === 0, published: profiles.some(row => row.published), unpublished: !related.publicationKnown || profiles.length > 0 && profiles.every(row => !row.published), changed: profiles.some(row => row.published && !row.publishedMatchesDraft), ready: profiles.some(row => row.status==='confirmed' && row.publicConsent), blocked: profiles.some(row => row.status!=='confirmed' || !row.publicConsent), no_consent: profiles.some(row => !row.publicConsent), no_portrait: profiles.some(row => !row.hasPortrait) })[publicState] === true;
+  return ({ linked: profiles.length > 0, unlinked: profiles.length === 0, published: profiles.some(row => row.published), unpublished: related.publicationKnown && profiles.length > 0 && profiles.every(row => !row.published), changed: profiles.some(row => row.published && !row.publishedMatchesDraft), ready: profiles.some(row => row.status==='confirmed' && row.publicConsent), blocked: profiles.some(row => row.status!=='confirmed' || !row.publicConsent), no_consent: profiles.some(row => !row.publicConsent), no_portrait: profiles.some(row => !row.hasPortrait) })[publicState] === true;
 }
 export function parseOrganizationSelection(hash) { if (typeof hash !== 'string' || hash.length > 150) return null; const match = /^#organization=([^&#=]+)$/u.exec(hash); if (!match) return null; try { return id(decodeURIComponent(match[1])); } catch { return null; } }
 export function admissionForContact(contact, intent, receipts = new Map()) {

@@ -102,10 +102,13 @@ for (const mode of ['local', 'cloud']) {
     assert.deepEqual((await make().read()).published, published, 'saving a draft does not change the public list');
     await assert.rejects(first.save(saved.revision, saved.content, actor), error => error.code === 'REVISION_CONFLICT');
     await assert.rejects(first.publish(saved.revision, actor), error => error.code === 'REVISION_CONFLICT');
+    const omittedNotes = structuredClone(preserved.content); delete omittedNotes.organizations[0].internalNotes;
+    const notesRetained = await make().save(preserved.revision, omittedNotes, actor);
+    assert.equal(notesRetained.content.organizations[0].internalNotes, 'PRIVATE-ORG-NOTE', 'omitting an optional private note cannot clear it');
 
-    const stopped = structuredClone(preserved.content); stopped.organizations.reverse();
+    const stopped = structuredClone(notesRetained.content); stopped.organizations.reverse();
     Object.assign(stopped.organizations[1], { status: 'withdrawn', publicConsent: false });
-    const withdrawn = await make().save(preserved.revision, stopped, actor), live = await make().publish(withdrawn.revision, actor);
+    const withdrawn = await make().save(notesRetained.revision, stopped, actor), live = await make().publish(withdrawn.revision, actor);
     assert.deepEqual(live.content.organizations.map(row => row.id), ['synthetic-exhibitor']);
     const original = (await make().read()).draft.content.organizations[1];
     assert.equal(original.logoId, receipt.id); assert.equal(original.website, organization().website); assert.equal(original.internalNotes, 'PRIVATE-ORG-NOTE');

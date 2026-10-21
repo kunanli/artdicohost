@@ -65,7 +65,7 @@ try{
   }
   {
     const f=await fixture();await open(f);const{form,password}=await prepare(f,'zhouyufei');await form.locator('[name=label]').fill('合成本机账号填写');await waitDraft(f.page);
-    const records=await draftRecords(f.page);assert.equal(JSON.stringify(records).includes(password),false);assert.doesNotMatch(JSON.stringify(records),/password|encryptionKey|dataBase64/u);
+    const records=await draftRecords(f.page);assert.equal(JSON.stringify(records).includes(password),false);assert.doesNotMatch(JSON.stringify(records),/password|encryptionKey|dataBase64/u);assert.ok(records.every(row=>row.scope.eventId==='ggj-cn-2026'));
     await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-settings-local-draft=users] p').filter({hasText:'找到本机填写'}).waitFor();assert.equal(await form.locator('[name=password]').inputValue(),'');assert.equal(await form.locator('[name=username]').inputValue(),'');assert.equal(usersWrites(f).length,0);
     await f.page.locator('[data-settings-local-draft=users]').getByRole('button',{name:'恢复本机填写'}).click();assert.equal(await form.locator('[name=username]').inputValue(),'zhouyufei');assert.equal(await form.locator('[name=label]').inputValue(),'合成本机账号填写');assert.equal(await form.locator('[name=password]').inputValue(),'');assert.equal(usersWrites(f).length,0);
     await f.page.locator('[data-settings-logout]').click();await f.page.locator('[data-settings-login-panel]:visible').waitFor();assert.equal((await draftRecords(f.page)).filter(row=>row.scope.actorId===f.runtime.users[0].id).length,0);
@@ -93,6 +93,11 @@ try{
   }
   {
     const f=await fixture({role:'reviewer'});await f.page.goto(SITE+'/admin/settings/',{waitUntil:'networkidle'});await f.page.locator('[data-settings-access-denied]:visible').waitFor();assert.deepEqual(f.calls.map(row=>row.path),['/api/admin/session']);await f.context.close();reports.push({partialRoleNoSettingsOrAccountReads:true});
+  }
+  {
+    const f=await fixture();await open(f);const password=await create(f,'zhouyufei');const login=await f.runtime.app.handle(f.runtime.request('/api/admin/login',{method:'POST',body:{username:'zhouyufei',password}}));assert.equal(login.status,200);const cookie=login.headers.get('set-cookie').split(';')[0];
+    await f.page.locator('[data-users-list] tr').filter({hasText:'zhouyufei'}).getByRole('button',{name:'编辑账号'}).click();const form=f.page.locator('[data-user-form]');await form.locator('[name=active]').uncheck();await form.locator('button[type=submit]').click();await f.page.locator('[data-settings-status]').filter({hasText:'账号已保存'}).waitFor();
+    const row=(await f.api('/api/admin/users')).users.find(user=>user.username==='zhouyufei');assert.equal(row.active,false);assert.equal((await f.runtime.app.handle(f.runtime.request('/api/admin/session',{headers:{Cookie:cookie}}))).status,401);assert.equal((await f.runtime.app.handle(f.runtime.request('/api/admin/login',{method:'POST',body:{username:'zhouyufei',password}}))).status,401);await f.context.close();reports.push({explicitDisableKeepsAccountRecord:true,disableRevokesExistingSessionAndLogin:true});
   }
   assert.deepEqual(errors,[]);console.log(JSON.stringify({cases:reports.length,reports,pageErrors:errors},null,2));
 }finally{await browser.close();}

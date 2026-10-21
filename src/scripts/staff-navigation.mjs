@@ -27,6 +27,18 @@ for (const navigation of document.querySelectorAll('[data-staff-navigation]')) {
     menu.open = desktop.matches;
     scheduleCurrent();
   }
+  function restoreSection() {
+    if (workspace.hidden) return;
+    const heading = headings.find(item => '#' + item.id === location.hash);
+    if (!heading) return;
+    requestAnimationFrame(() => {
+      if (workspace.hidden || '#' + heading.id !== location.hash) return;
+      heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
+      heading.scrollIntoView({ block: 'start', behavior: 'instant' });
+      scheduleCurrent();
+    });
+  }
   desktop.addEventListener('change', resetMenu);
   // Desktop navigation stays expanded; the mobile summary is the toggle.
   menu.addEventListener('toggle', () => {
@@ -53,6 +65,7 @@ for (const navigation of document.querySelectorAll('[data-staff-navigation]')) {
   });
   window.addEventListener('scroll', scheduleCurrent, { passive: true });
   window.addEventListener('resize', scheduleCurrent, { passive: true });
-  new MutationObserver(resetMenu).observe(workspace, { attributes: true, attributeFilter: ['hidden'] });
+  new MutationObserver(() => { resetMenu(); restoreSection(); }).observe(workspace, { attributes: true, attributeFilter: ['hidden'] });
   resetMenu();
+  restoreSection();
 }

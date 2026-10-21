@@ -122,7 +122,7 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onSav
   function open(item=null){
     if(!allowed()||!pageActive()||blocked()||saving||uploading)return;
     if(!item&&records().length>=200){announce('参与组织最多 200 条，请先核对现有记录。',true);return;}
-    reset();const value=item??{id:'organization-'+crypto.randomUUID().replaceAll('-',''),name:'',logoId:'',website:'',participation:'undecided',status:'pending',publicConsent:false,internalNotes:''};editingId=item?.id??null;editContext={content:context().content,revision:context().revision,accountKey};
+    reset();const value=item??{id:'organization-'+crypto.randomUUID().replaceAll('-',''),name:'',logoId:'',website:'',participation:'undecided',status:'pending',publicConsent:false,internalNotes:''};editingId=item?.id??null;editContext={content:context().content,revision:context().revision,accountKey,formId:value.id,newRecordSubmitted:false};
     for(const [key,text]of Object.entries(value)){const field=form.elements.namedItem(key);if(field?.type==='checkbox')field.checked=text===true;else if(field)field.value=text;}
     image(value.logoId);$('[data-organization-dialog-title]').textContent=(item?'编辑':'新增')+'组织';$('[data-organization-consent-note]').textContent='更改公开资料或图片后，请重新核对授权；保存草稿不会自动公开。';dialog.showModal();notify();configure();
   }
@@ -177,11 +177,11 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onSav
   $('[data-organization-image-remove]').addEventListener('click',()=>{if(!allowed()||blocked())return;cancelUpload();form.elements.namedItem('logoId').value='';$('[data-organization-image]').value='';$('[data-organization-image-status]').textContent='';image('');revoke();configure();});
   function localDraft(){return dialog.open?{editingId,fields:readContentForm(form,'organization'),imageNeedsReselect:Boolean(uploading||pendingImage)}:null;}
   function acknowledgeSaved(record,{keepOpen=false}={}){
-    if(!record||!dialog.open||!allowed()||editContext?.accountKey!==accountKey||record.editingId!==editingId||record.fields?.id!==form.elements.namedItem('id').value)return false;
+    if(!record||!dialog.open||!allowed()||editContext?.accountKey!==accountKey||record.editingId!==editingId||record.fields?.id!==form.elements.namedItem('id').value||record.fields.id!==editContext.formId)return false;
     const current=localDraft(),matches=JSON.stringify(current)===JSON.stringify(record);
     // The controller calls this only after proving its own CAS acknowledgement.
     // A later raw edit remains open against that newly acknowledged base.
-    editContext={content:context().content,revision:context().revision,accountKey};
+    editContext={...editContext,content:context().content,revision:context().revision,accountKey};
     if(keepOpen&&activeSave?.key===accountKey)activeSave.keepOpen=true;
     if(!matches||keepOpen)return false;
     if(activeSave?.key===accountKey)activeSave.acknowledged=true;
@@ -193,11 +193,13 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onSav
     if(!editContext||(!cloudSave&&editContext.content!==state.content)||editContext.revision!==state.revision||editContext.accountKey!==accountKey){error('草稿版本已变化，请保留填写并重新读取组织资料后核对。');return false;}
     const submitted=localDraft(),item=readContentForm(form,'organization');
     if(!item){error('组织资料尚未通过校验，填写内容仍保留。');return false;}
-    if(editingId)item.id=editingId;
+    if(item.id!==editContext.formId){error('组织记录编号已变化，填写内容仍保留；请恢复原编号后核对。');return false;}
     if(item.website&&!isPublicWebsite(item.website)){error('请填写不含账号密码的 HTTP 或 HTTPS 网址。');return false;}
-    const next=structuredClone(records()),position=editingId?next.findIndex(value=>value.id===editingId):-1;
+    const next=structuredClone(records()),position=next.findIndex(value=>value.id===item.id);
     if(editingId&&position<0){error('此组织记录已变化，请保留填写并重新读取草稿后核对。');return false;}
+    if(!editingId&&position>=0&&!editContext.newRecordSubmitted){error('此组织编号已存在，请保留填写并重新核对记录。');return false;}
     if(position>=0)next[position]=item;else next.push(item);
+    if(!editingId)editContext.newRecordSubmitted=true;
     const operation={key:accountKey,id:item.id,acknowledged:false};activeSave=operation;saving=true;error();configure();
     const current=()=>activeSave===operation&&operation.key===accountKey&&allowed();
     try{
@@ -206,7 +208,7 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onSav
         if(!current())return false;
         if(saved!==true){
           if(dialog.open&&form.elements.namedItem('id').value===operation.id){
-            if(context().revision===state.revision)editContext={content:context().content,revision:state.revision,accountKey};
+            if(context().revision===state.revision)editContext={...editContext,content:context().content,revision:state.revision,accountKey};
             error('组织资料尚未确认保存，填写内容仍保留。');
           }
           return false;
@@ -228,7 +230,7 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onSav
       if(!allowed()||!pageActive()||blocked()||saving)throw new Error('当前不能恢复组织编辑。');
       const item=record.editingId?records().find(value=>value.id===record.editingId):null;
       if(record.editingId&&!item)throw new Error('原组织已不存在，请复制暂存后核对。');
-      open(item);editingId=record.editingId;writeContentForm(form,'organization',record.fields);formDirty=true;image(record.fields.logoId);
+      open(item);editingId=record.editingId;editContext={...editContext,formId:record.fields.id,newRecordSubmitted:record.editingId===null};writeContentForm(form,'organization',record.fields);formDirty=true;image(record.fields.logoId);
       $('[data-organization-consent-note]').textContent='已恢复本机填写，公开授权请重新核对。';
       if(record.imageNeedsReselect)$('[data-organization-image-status]').textContent='未上传的图片编辑无法恢复，请重新选择图片。';
       notify();configure();

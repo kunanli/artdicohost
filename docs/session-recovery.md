@@ -1,5 +1,11 @@
 # 开发接续与验收计划
 
+## 最新恢复：新版邀请函 PR #39 已送检查，候选／离线验证通过
+
+feature分支 `feat/invitation-poster-v2` 精确head **`58f8ae9f87c4d84f29a1b4664af5d0235a1a20ee`**，[PR #39](https://github.com/kunanli/artdicohost/pull/39)，[run39608895601](https://github.com/kunanli/artdicohost/actions/runs/39608895601)执行中。128files/40assets准确包ZIP35,642,099B、JSON47,522,823B，原cap未变；strict验包与Docker512MiB/.35CPU/no-network离线启动14.97s全过。此前37.77MB超限已用BCJ6＋严格bounded plaintext deflate解决，完整字体/旧图/官方Node pin/decoder上限均保留；不要再次删除字形或放宽限制。
+
+本机1182完整、12新增包装边界，514源码/382Astro/10页/审计，以及最终24个人/字体+11contacts原生浏览器通过。**下一步先查精确PR检查，不重复实现或新建PR；success后按exact head合并，验证main实际私有OSS/300政策/HTTPS，再补正式发布证据。当前仍只有PR #38已经上线，新邀请函不可称已上线。** [完整记录](invitation-release-2026-10-21.md)。两个正式协作者仍需现有管理员保存建立，Wallet等真实证书。
+
 ## 当前恢复：新版邀请函已集成，待准确发布（2026-10-21）
 
 根分支 `feat/invitation-poster-v2`，产品来源 `f9e5ea8`，**13:06:38 UTC** 冻结十页构建。上传字体已转为四包、完整 OFL 在每包，Medium 原 30890 cmap 全保留；新 blank WebP 与旧 PNG 共存。V2 manual digest ID／旧hash／历史contacted与unknown保留，私人 PNG 仅 public confirmed，前后freshread与切换取消完成。独立 review 修正 batch pagehide、首 -/_ 合法编号、skiplink覆盖 #r，以及旧发送同时间戳混入新版；24组个人/字体、11组手动/批次 Chromium 全绿、零pageerrors。

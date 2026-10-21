@@ -1,41 +1,80 @@
-# 公开状态、游戏／作品与跟进人标签发布记录
+# 公开状态、游戏／作品与跟进人标签：最终发布证据
 
-## 后续实际验收：尚未全流程成功
+[PR #42](https://github.com/kunanli/artdicohost/pull/42)／[PR #43](https://github.com/kunanli/artdicohost/pull/43) 已实际发布，main **`d9d0dd2cc52eac755aef8deda5de9c91024b741d`**，2026-10-22 **01:05:35（UTC+08）**完成。[正式运行 39639330823](https://github.com/kunanli/artdicohost/actions/runs/39639330823) attempt 1 的 check／deploy-fc／deploy 全成功。 本文件替代开发中检查点的待发布状态；旧检查点可从Git历史追溯。[操作](publication-games-operations.md)、[新session入口](session-recovery.md)。所有写入与业务端到端验证均合成隔离；正式HTTPS及匿名CORS只读实际发布内容，没有真实名单、报名、授权或发信写入。
 
-根因检查点：PR43／3090dca／CI39637287514的1303项通过，实际只读安全报告`{"verified":false,"failure":"CREDENTIALS","status":200}`。该码仅为响应ACAC存在，不能据此推断请求带凭证；请求固定omit。正在按浏览器Fetch语义修正这一过严判断，保留其他匿名读取保护，待新准确PR与main完整验证。
+## 最终行为
 
-PR42 head46af17e4e957fffa409053c3af8d2d46adf75e28的CI39633825508全绿后，合并main0164330ef64e00295ea5017e9fe7e9b981e4b913。实际run39634798298：check119342274919于16:31:13 UTC成功（1298项、545源码、Astro406、23页／审计、准确两ZIP）。FC119344702856的真实私有OSS十阶段／2clients／1FC、共同300政策与激活16:34:35.926 UTC通过，13后台路径HTTPS16:34:41.615 UTC通过；但新匿名public data／CORS验证16:34:42 UTC固定失败，无typed code／status／revision／counts，不能推测原因。FC job失败16:34:45 UTC，公开OSS119346599307跳过，46个新公开文件没有发布。下一步先补隐私安全诊断与只读PR观察，再按实际原因修复；不盲重试、不写真实资料、不自动发布草稿。下文保留本机及开发中检查点，不能代替正式成功证据。
+- 以同次已保存draft与实际published公开投影、稳定ID核对状态：绿色已公开，红色未公开，未知中性；待更新／待撤下保留前台旧版事实。独立发布页集中差异与原因，只有精确ACK的云端base可明确发布；保存、出席确认或路由不会自动公开。
+- 嘉宾停止公开仅撤consent，不重置确认；照片及公开职责选填，空照片显示姓名首字且不请求空图片地址，姓名／机构、确认与授权校验仍在。
+- 学生／独立／团队统一「游戏与作品」，稳定ID关联创作者组织与展位，同展位可多作品；创作者组织与展位占用组织独立。旧缺kind仅显示学生，新记录默认indie；两store兼容漏字段、明确解除、旧孤儿关系、原unknown正文及完整加密备份，不提高schemaVersion／storageVersion，不改共同300。
+- 前台focus／visibility／pageshow有界重读；去重、取消reader与晚到response、较旧版本及同revision内容冲突保护。读失败保留最后已核对版本并提示，200明确空集合可撤下。
+- 人员列表与个人页按真实回复显示出席红绿；未知不进入未公开筛选。跟进人固定彩色姓名标签、未指派灰色，原姓名与筛选值不变，颜色不代表权限；实际小字对比达AA。
+- 部署激活后固定匿名公开data／CORS验证，无cookie／认证／跳转，日志仅版本／时间／数量，不输出姓名或正文。404只称未有发布，不假称同步。
 
-当前 `feat/publication-games` 开发阶段，**尚未正式发布**。基准是已实际发布main `d504ecc` 与证据 `3d04822`；不把定向测试或旧dist当新功能上线。[计划](games-publication-plan.md)、[操作](publication-games-operations.md)。所有业务验证均合成隔离，不写真实联系人／报名／授权或发信。
+## 来源分别绑定
 
-## 已集成的最终行为
+| 来源 | 准确标识 |
+| --- | --- |
+| 前阶段正式main | `d504ecc83d4c5bd90e7d4142c5ab7879d07b1b77`，PR41已部署 |
+| 产品UI冻结 | `9bdad4597b6f632dab02940fed69dedcbac59e51`；之后为测试／文档、匿名验证及workflow修正，UI不再改 |
+| 最终PR43 head | `a5c7125bb2914300ae7d10cf3367909e1e44987a` |
+| Git完整树 | `bfee4bbcbf023f411e3ee9092cbf2ed6a28fd76d`；最终head与合并main一致，原产品阶段f81c964／46af17e同树3b157ac |
+| 原产品PR42检查（历史） | [39633825508](https://github.com/kunanli/artdicohost/actions/runs/39633825508)，attempt1；check119338842021，16:20:13–16:23:26 UTC；运行16:23:28成功 |
+| 原产品PR42合并测试来源（历史） | `baa7d97fa2bcde131fc3c966276b6b0eee575960`，不是本机head包或实际main |
+| 最终PR43检查 | [run 39638495519](https://github.com/kunanli/artdicohost/actions/runs/39638495519)，check119355514144，2026-10-21 16:51:16–16:55:24 UTC成功，运行16:55:25完成；1304项／545源码／Astro406／23页／审计、两ZIP及实际只读公开版本12／CORS通过 |
+| 最终PR43合并测试来源 | `bfd7fb56d650a467fb11d5aaaf33271eec6e4b56`，与本机head／实际main分别绑定 |
+| 实际合并main | `d9d0dd2cc52eac755aef8deda5de9c91024b741d`，父提交0164330及a5c7125 |
+| 实际main运行 | [39639330823](https://github.com/kunanli/artdicohost/actions/runs/39639330823)，attempt1；创建2026-10-21 16:56:48 UTC，最终2026-10-21 17:05:35 UTC成功 |
+| 最终文档 | `docs/games-final-release-proof-2026-10-21`，从同一实际main保存证据；不为文档另行部署 |
 
-- 实际同次draft／published公开投影按稳定ID核对；绿色已公开、红色未公开、未知中性，待更新／撤下明确保留前台旧版事实。发布页集中原因与差异，只有已ACK云端base可发布；保存不自动公开。嘉宾停止公开只撤授权，不取消已确认事实。
-- 嘉宾照片与公开职责选填，名单与个人页及publicprojection一致；空照片显示首字而且不请求空图片路径。姓名／机构及确认、公开授权仍校验，非空图片引用严格校验。
-- 学生／独立／团队统一游戏与作品；new默认独立游戏，旧缺分类只显示为学生，不自动补字段。创作者组织与展位占用组织独立，一个展位可多作品，前台提供分类与双向链接；私密联系人／材料／备注不上网。
-- 两store兼容旧client漏字段与明确解除，原ID／历史bytes／未知提交正文保持，新增失效组织关系拒绝而旧孤儿关系保留提醒。完整加密备份含旧新历史及图片，名额仍为共同300，不把作品数或填报成员数当去重人数。
-- 前台返回／可见／焦点重读，限时、去重、迟到／低版本／同revision内容冲突保护；读失败保留最后已核对版本并提示，200明确空集合可撤下。reader／晚到response实际取消，不留持续未完成读取。
-- 人员与个人页按实际回复显示出席红绿；未知不会列进未公开筛选。同一跟进人姓名固定色标，原姓名／筛选值／资料不改，未指派灰色，色盘与出席红绿分开，小字对比均达AA。
-- 部署激活后新增固定匿名公开data／CORS HTTPS验证，无cookie／凭据／跳转，只记版本、发布时间及数量；404明确尚未发布，不假称同步。
+Git原生push认证失效后，以已连接GitHub的Git Data接口上传相同blob／tree，验证parent／ref后公开fetch核对；未读取凭证、未force push。f81c964与46af17e只有提交元数据不同，不重新cherry-pick旧分支。
 
-## 来源与验证
+## 本机产品冻结验证与原生验收（随后另增诊断回归）
 
-定向结果：domain92项、person96项／owner彩标38项、公开刷新与display24项、controller34项、root匿名CORS与既有APIalias15项；不同分组有重叠，不加总冒充独立总数。UI Astro compiler-rs／PostCSS语法通过；source-native公开renderer8组、零pageerrors，尚不能替代冻结built+actualruntime原生验收。
+源码545通过；Astro406为0错误／0警告／1项既有hint；**1298/1298**测试、82.946300422秒，23页建置与依赖审计零已知漏洞。冻结dist为2026-10-21 15:52:05.958540559 UTC；公开HTML SHA256 `78e5de9ba8ba2440ee8ecc45d7a527cf603da8e7c3b16c058b2f23189bd147bc`。
 
-原生harness准备30reports：两origin save→anonymous不变→explicitpublish→returnrender、三分类／多作品／同快照组织／私密字段、旧raw与unknown exactretry、unknownproof logout、空照片、红绿及owner固定色、320／390／1440。必须待root冻结最终dist后执行，再记实际结果。
+同一实际建置与隔离FC runtime、两个origin及native IndexedDB：**新增30／后台核心39／组织4／人员关系23／图片12全部通过，零pageErrors**。覆盖保存→匿名不变→明确发布→返回前台显示、三分类与多作品／组织链接、旧raw／unknown精确重试、proof区退出、空照片、出席／公开红绿及owner颜色一致；320／390／1440实际滚动完成后hit-test、原生编辑按钮点击及截图通过。root目视手机头像首字、作品卡及桌面负责人标签。各组不同范围，不冒称全部是独立断言。
 
-待完整source／Astro／suite／build／audit、准确ZIP／受限启动与PR CI。main保持d504ecc，准确合并后保持main稳定，核对真实私有OSS／300政策／13API别名／公开对象HTTPS及匿名公开快照／CORS，才能标正式完成；各证据分别记录，不借用前阶段数值。原128files／40assets／8MiB及单资产、ZIP／CodeJSON预算不放宽，无新依赖或FC源码条目。
+本机证据位于忽略目录 `/workspace/games-browser/.local-data/browser-evidence/games-publication/`：results、a-pages、a-organizations、a-relationships、a-image-editor及provenance JSON和截图；不上传合成业务正文作正式数据。旧浏览器脚本更新已退休文案、真实anchor／URL对象及actualpublished语义，并加强旧快照不变／隐私断言，没有放宽写入防护。
 
-## 16:01 UTC 接续检查点（未发布）
+## 原产品46af17e准确head包：历史证明，非最终诊断修正包
 
-产品来源冻结 `9bdad4597b6f632dab02940fed69dedcbac59e51`；其后只有测试脚本修正及文档。root完整验证 **545源码／Astro406（0errors、0warnings、1既有hint）／1298测试全过（82.946300422秒）／23页／依赖审计零已知漏洞**。dist于2026-10-21 **15:52:05.958540559 UTC**生成，未重建。实际既有admin闭包40资产／7,367,526 B／最大1,661,625 B，46份public publication准备通过；这不是最终准确来源ZIP或正式部署证明。
+46af17e从空目录按已提交来源构建并完整verify，2026-10-21 **16:19:11.987 UTC**完成；目录 `.local-data/games-exact-46af17e4e957fffa409053c3af8d2d46adf75e28/publication`。
 
-冻结bundle的原生flow5、games11、refresh9、people5已经分组全部通过、pageErrors为空；最终单次合并30及前阶段受影响回归仍在执行。根已整合测试修正 `edaffd4`：真实anchor而非虚构子a、URL对象请求探针、等待弹窗内镜像核对按钮、instant滚动后实际hit-test。320已证实green状态及编辑按钮可见可点，最初截图是在smooth-scroll尚未完成时截取，没有确认产品遮挡问题。证据在`/workspace/games-browser/.local-data/browser-evidence/games-publication/`。
+| 项目 | 实际／上限 |
+| --- | --- |
+| 包条目 | 128文件／86源码／40静态资产 |
+| 静态合计 | 7,366,917／8,388,608 B |
+| 最大资产 | 1,661,625／2,097,152 B |
+| deflate文字合计 | 1,877,689／4,194,304 B；121 deflated／7 stored |
+| Runtime XZ | 28,636,324 B，原BCJ6及官方Node pin不变 |
+| ZIP | 35,652,580／35,999,982 B，余347,402 B |
+| Code JSON | 47,536,799／48,000,000 B，余463,201 B |
 
-下一步：等待全部浏览器完成退出，再提交准确证据并交domain按最终head空目录封装、完整verify及受限实际ZIP启动；之后准确PR CI、merge及实际部署。不得现在将main前进，不重复合成fixture为真实业务操作。
+ZIP SHA256 **`70ed0f1ef195460d93eb039d3fca0f976da94102a81bcdf44701f66ef8dcda5f`**。Node24.19.0，官方二进制SHA256 `bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12`。实际ZIP在networknone／只读／nonroot1000／pids64／512MiB／0.35CPU／tmpfs192MiB／capdropALL／no-new-privileges Docker **17.006秒**启动通过，40资产与13路由、bootstrap／closed／synthetic配置均核对。此本机包不冒充main实际部署artifact；旧f81c964包只留历史。
 
-## 最终冻结验收
+## 最终a5c7125准确head包
 
-同一15:52:05 UTC冻结dist，**新增30、后台核心39、组织4、人员关系23、图片编辑12全部原生通过，所有pageErrors为空**。源功能9bdad45未再修改。公开HTML SHA256 `78e5de9ba8ba2440ee8ecc45d7a527cf603da8e7c3b16c058b2f23189bd147bc`；新30完整JSON记录实际root source／dist路径及mtime。320／390／1440实际滚动完成后的状态标记hit-test、原生编辑按钮点击及截图通过，root另目视公开首字／作品与人员色标。没有已知未解产品问题。
+最终head a5c7125bb2914300ae7d10cf3367909e1e44987a，2026-10-21 16:53:57.320 UTC完成，目录 `.local-data/games-exact-a5c7125bb2914300ae7d10cf3367909e1e44987a/publication`。128文件／86源码／40资产，静态7,366,917／8,388,608 B、最大1,661,625／2,097,152 B、文字deflate1,877,689／4,194,304 B（121 deflated／7 stored），runtimeXZ28,636,324 B。ZIP **35,652,584／35,999,982 B**（余347,398），CodeJSON **47,536,803／48,000,000 B**（余463,197）；SHA256 **`6dc970f364437b1598e6982f4d490d9c2c3eb82986d944ef62367962f1fdb0f0`**。隔离已提交源码构建、完整verify、同一官方Node pin及原受限实际ZIP Docker **14.611秒**启动均通过，40资产／13路由、bootstrap／closed／synthetic核对，容器退出并移除。没有放宽任何预算或使用真实配置。
 
-旧浏览器脚本只校正已退休的成功文案与旧publishedfilter语义，并加强实际store publishedrevision、旧快照不变、当前draft不同、public无contactId及changed提示断言；没有放宽关系写入防护。相容旧raw／原unknownbody精确重试／proof区退出、新默认indie及授权重核、容量不变均经实际隔离runtime验证。所有Chromium已退出，允许顺序封装／实际ZIP受限启动，不与XZ并发。最终准确head封装、PR CI及实际部署尚待记录。
+这是最终PR43准确来源的本机包；与原46af17e包、CI合成合并包及实际main包分别绑定，不借用SHA。产品界面仍为9bdad45冻结来源，新增诊断／CORS验证修正不改UI。
+
+## 已解决的正式验收失败
+
+原PR42合并0164330的run39634798298通过1298项、真实OSS／300、激活及13后台HTTPS，但新增匿名验证失败，公开OSS跳过。PR43早期诊断3090dca／run39637287514的1303项通过，实际观察是固定码CREDENTIALS／HTTP200；验证器错误地把响应ACAC存在当作请求带凭证。固定请求原本credentials:omit；现在按Fetch匿名模式忽略这项响应授权旗标，仍禁止Cookie／Authorization请求、Set-Cookie回应、跳转及非法投影，11项回归通过。以下是修复后全成功的实际结果，不把前次失败写成成功或隐去。
+
+## 实际main检查、激活与HTTPS
+
+| Job | 准确结果 |
+| --- | --- |
+| check `119358417584` | 2026-10-21 16:56:50–17:01:05 UTC成功；1304/1304、零失败／跳过；545源码、Astro406（0错误／0警告／1既有hint）、23页及审计零已知漏洞。准确main的6文件29,507,159 B启动包6.499秒与128文件／40资产／13路由内容包15.096秒受限离线启动、完整verify通过；46份公开文件准备完成。 |
+| deploy-fc `119360636421` | 2026-10-21 17:01:08–17:04:07 UTC成功；quiesced17:01:30.580→acceptance-armed17:03:39.553→activated17:03:58.144。真实私有OSS十阶段／两独立客户端／一个FC通过；内容与报名启用，共同300政策及报名别名17:03:59.613核对；13个后台HTTPS路径17:04:03.280通过；新严格匿名公开data／CORS于17:04:04.190验证。 |
+| deploy `119362247573` | 2026-10-21 17:04:09–17:05:31 UTC成功；46个对象实际上传及OSS SHA256回读17:04:23.824–17:05:17.263；46个正式HTTPS对象的大小／MIME／SHA256／可呈现HTML核对17:05:18.689–17:05:29.431通过，来源均为同一d9d0dd2。全运行17:05:35 UTC成功（2026-10-22 01:05:35 UTC+08），远端main仍同一SHA。 |
+
+新增公开验证的安全报告：`{"verified":true,"cors":true,"publication":"published","revision":12,"publishedAt":"2026-10-21T15:24:23.594Z","counts":{"guests":0,"organizations":2,"showcases":0,"booths":13,"sessions":43}}`。
+
+实际已发布版本12，发布时间2026-10-21T15:24:23.594Z；公开快照为嘉宾0、组织2、作品0、展位13、场次43。数量只计已发布快照，不是私人人员／报名／出席／草稿总数。验证只匿名读取已发布快照，不读私有草稿，不自动发布。旧`probe-content-endpoint`的admin页观察不是公开内容／CORS证据；本次以激活后的新固定公开data验证为准。真实十阶段保持原1000次／90秒边界，不用本机计数冒充云端实际请求数。main保持同一SHA直到三个job成功，未用补文档重跑或启停业务。
+
+## 保留与后续
+
+无新依赖、IAM、DNS、服务、凭证或资源预算放宽；128／40、2MiB／8MiB、ZIP／CodeJSON及XZ边界保持。EmailJS现有配置不重置，人工审核、名额、历史、未知回执、旧海报与字体不删改。没有代建zhouyufei／wangying，现有管理员先核对再创建；Wallet真实证书与iPhone仍待主办方。真实授权／照片／群码／安排由工作人员维护。回退先备份，使用理解新增可选字段的兼容写入版本，不用旧完整快照覆盖新业务。[恢复入口](session-recovery.md)。

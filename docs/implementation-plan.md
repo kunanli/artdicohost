@@ -1,14 +1,16 @@
 # ARTDiCO HOST 实施计划
 
-## 2026-10-21 当前：公开可见性与游戏／作品
+## 2026-10-22 当前已完成：公开状态、游戏／作品与跟进人标签
 
-后台独立页与直接保存已实际发布PR41／main **d504ecc**，2026-10-21 23:33:20（UTC+08）完成，1235项、真实私有OSS／300政策、13API页和46公开对象HTTPS通过。[证据](admin-pages-release-2026-10-21.md)。按[本阶段计划](games-publication-plan.md)实现真实发布状态与原因、匿名公开数据／CORS部署验收、前台返回刷新、学生／独立／团队作品整合及组织／展位关联；之后补跟进人固定彩色姓名标签。保留现有ID、历史bytes、授权／人工审核／名额／未知回执与原资源预算。使用隔离worktree、合成验证、准确ZIP／CI／实际发布；不代填真实公开授权或发信。
+[PR #42](https://github.com/kunanli/artdicohost/pull/42)／[PR #43](https://github.com/kunanli/artdicohost/pull/43) 已实际发布，main **`d9d0dd2cc52eac755aef8deda5de9c91024b741d`**，2026-10-22 **01:05:35（UTC+08）**完成。[正式运行 39639330823](https://github.com/kunanli/artdicohost/actions/runs/39639330823) attempt 1 的 check／deploy-fc／deploy 全成功。 1304项、真实私有OSS十阶段、共同300政策、13API路径／46公开对象HTTPS及新的匿名公开内容／CORS核对通过。已完成真实发布状态／原因、前台返回刷新、统一学生／独立／团队作品与组织／展位关系、嘉宾照片选填、出席红绿及负责人固定彩色标签。[完整证据](games-publication-release-2026-10-21.md)、[操作](publication-games-operations.md)、[新session入口](session-recovery.md)。后台独立页与直接保存PR41已保留，无待合并worker／待发布代码。
+
+保留原ID、历史bytes、schemaVersion／storageVersion、unknown原正文、人工审核、授权、共同名额及资源预算。没有代填真实公开授权、发布草稿、报名或寄信；EmailJS现有配置不改。剩余真实条件为主办方Apple签章与iPhone验收、管理员核对／创建两个协作账号，以及实际资料授权／安排。最终文档保存在 `docs/games-final-release-proof-2026-10-21`，不为补记录再次部署。下文为历史计划，不按其旧待办重做。
 
 ## 2026-10-21 已完成：新版邀请函、字体与私人 PNG
 
 本阶段已实际上线PR #39／#40，main **`9b9c418`**，**2026-10-21 22:00:20（UTC+08）**完成：1194项main检查、真实私有OSS／共同300政策及33/33 HTTPS通过。用户海报与上传字体、完整120字姓名、旧邀请历史及public confirmed私人PNG完成；先后资格核对、无自动补寄，原资源限额保持。[操作](invitation-poster-v2.md)、[完整证据](invitation-release-2026-10-21.md)。
 
-学生／精简申请／人工审核、人员关系／共同名额、志愿者，以及本机自动暂存／就近保存／协作者权限均已完成此前分阶段发布。剩余真实条件：现有管理员保存建立zhouyufei／wangying，主办方完成Apple签章与iPhone验收。新业务开发另按最新main建阶段，不重复下面历史计划，不重新导入或群发。恢复入口见[接续文件](session-recovery.md)。
+学生／精简申请／人工审核、人员关系／共同名额、志愿者，以及本机自动暂存／就近保存／协作者权限均已完成此前分阶段发布。剩余真实条件：现有管理员先核对再保存建立zhouyufei／wangying（本次未代建），主办方完成Apple签章与iPhone验收。新业务开发另按最新main建阶段，不重复下面历史计划，不重新导入或群发。恢复入口见[接续文件](session-recovery.md)。
 
 ## 历史分阶段计划
 

@@ -1,4 +1,4 @@
-import { validateContent } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, showcaseAllocations, PORTRAIT_ID_PATTERN } from '../../shared/content-schema.mjs';
 
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
 const revision = value => Number.isSafeInteger(value) && value >= 0;
@@ -60,4 +60,86 @@ export function contentSaveUiState({ loaded, canEdit, dirty, unapplied = [], bus
   return { state, title, description, canSave: Boolean(loaded && canEdit && (direct?(dirty||unapplied.length):dirty&&!unapplied.length) && !busy && !saving && !['unknown', 'conflict'].includes(outcome)),
     canCheck: Boolean(loaded && canEdit && !busy && !saving && ['unknown', 'conflict'].includes(outcome)),
     canRetry: Boolean(loaded && canEdit && retryReady && (direct||!unapplied.length) && !busy && !saving && ['unknown', 'conflict'].includes(outcome)) };
+}
+
+
+export const PUBLICATION_REASON_LABELS = Object.freeze({
+  confirmation_required: '待确认', public_consent_required: '待核实公开授权',
+  attendance_required: '未确认参加', attendance_declined: '已回复不参加',
+  cover_required: '作品封面待补', allocation_required: '展位或分享场次待安排',
+  session_draft: '场次尚未安排', record_removed: '草稿已移除',
+  not_in_public_projection: '公开条件待核对',
+});
+export const PUBLICATION_CHANGE_LABELS = Object.freeze({new:'待发布',updated:'变更待发布',removed:'待撤下',unchanged:'已同步',blocked:'待补充'});
+export const PUBLICATION_SUGGESTION_LABELS = Object.freeze({portrait_optional:'照片可稍后补充',public_roles_optional:'公开职责可稍后补充'});
+const publicationCollections = Object.freeze(['guests','organizations','showcases','sessions','booths']);
+// Property order is not a public change; list order and optional-field presence are.
+function publicFingerprint(value) {
+  if (Array.isArray(value)) return '[' + value.map(publicFingerprint).join(',') + ']';
+  if (plain(value)) return '{' + Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+publicFingerprint(value[key])).join(',') + '}';
+  return JSON.stringify(value);
+}
+const samePublic = (left,right) => publicFingerprint(left) === publicFingerprint(right);
+function publicationReasons(kind,item,content,ready) {
+  if (!item) return ['record_removed'];
+  if (ready) return [];
+  const reasons=[];
+  if (kind==='sessions') {
+    if(item.status==='draft')reasons.push('session_draft');
+  } else {
+    if(item.status!=='confirmed')reasons.push('confirmation_required');
+    if(['guests','organizations','showcases'].includes(kind)&&item.publicConsent!==true)reasons.push('public_consent_required');
+    if(kind==='showcases') {
+      if(item.responseStatus!=='attending')reasons.push(item.responseStatus==='declined'?'attendance_declined':'attendance_required');
+      if(!PORTRAIT_ID_PATTERN.test(item.coverId))reasons.push('cover_required');
+      const allocated=showcaseAllocations(item,content);
+      if(!allocated.sessionId&&!allocated.boothId)reasons.push('allocation_required');
+    }
+  }
+  return reasons.length?reasons:['not_in_public_projection'];
+}
+/** A read-only view of one acknowledged draft and its actual publication snapshot.
+ * Missing/invalid publication metadata is unavailable, never an empty publication.
+ * Readiness derives from the same sanitized public projection used by publish.
+ */
+export function contentPublicationReadiness(input) {
+  try {
+    if(!plain(input)||!Object.hasOwn(input,'published')||!plain(input.draft)||!revision(input.draft.revision))return null;
+    const content=canonicalContent(input.draft.content);
+    if(!content)return null;
+    const next=toPublicContent(content),publication=input.published;
+    let saved=null,publishedRevision=null,publishedAt=null;
+    if(publication!==null) {
+      if(!plain(publication)||!revision(publication.revision)||publication.revision>input.draft.revision
+        ||typeof publication.publishedAt!=='string'||publication.publishedAt.length>40
+        ||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/u.test(publication.publishedAt)
+        ||!Number.isFinite(Date.parse(publication.publishedAt))
+        ||new Date(publication.publishedAt).toISOString().slice(0,19)!==publication.publishedAt.slice(0,19)||!plain(publication.content)
+        ||!['guests','showcases','sessions','booths'].every(key=>Array.isArray(publication.content[key])))return null;
+      saved=toPublicContent(publication.content);
+      if(saved.eventId!==content.eventId||!samePublic(saved,publication.content))return null;
+      publishedRevision=publication.revision;publishedAt=publication.publishedAt;
+    }
+    const items={},summary={new:0,updated:0,removed:0,unchanged:0,blocked:0},orderChanged={};
+    for(const kind of publicationCollections) {
+      const draftRows=content[kind]??[],nextRows=next[kind]??[],savedRows=saved?.[kind]??[];
+      const draftById=new Map(draftRows.map(row=>[row.id,row])),nextById=new Map(nextRows.map(row=>[row.id,row])),savedById=new Map(savedRows.map(row=>[row.id,row]));
+      items[kind]=[...new Set([...draftById.keys(),...savedById.keys()])].map(id=>{
+        const draft=draftById.get(id),current=nextById.get(id),previous=savedById.get(id),published=Boolean(previous),ready=Boolean(current);
+        const change=published?ready?samePublic(current,previous)?'unchanged':'updated':'removed':ready?'new':'blocked';
+        const suggestions=[];
+        if(kind==='guests'&&draft) {
+          if(!draft.portraitId)suggestions.push('portrait_optional');
+          if(!draft.publicRoles?.length)suggestions.push('public_roles_optional');
+        }
+        summary[change]++;
+        return {kind,id,label:draft?.name||draft?.title||draft?.code||previous?.name||previous?.title||previous?.code||id,
+          inDraft:Boolean(draft),published,ready,change,reasons:publicationReasons(kind,draft,content,ready),suggestions};
+      });
+      orderChanged[kind]=!samePublic(nextRows.map(row=>row.id),savedRows.map(row=>row.id));
+    }
+    return {draftRevision:input.draft.revision,publishedRevision,publishedAt,
+      organizationSource:saved&&Object.hasOwn(saved,'organizations')?'published':'initial',
+      hasPublicChanges:!saved||!samePublic(next,saved),eventChanged:!saved||!samePublic(next.event,saved.event),items,summary,orderChanged};
+  } catch { return null; }
 }

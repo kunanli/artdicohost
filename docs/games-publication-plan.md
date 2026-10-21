@@ -6,6 +6,8 @@
 
 公开页读取 `/api/public/content` 已发布快照，不读取工作人员draft；保存不等于发布。当前首次加载读取一次、no-store、不带cookie。404／旧快照缺organizations沿用初始四组织；200明确空数组才清空。用户先前截图的嘉宾pending／consentfalse、两院校consentfalse不具当时公开条件，不代为确认／授权。后续截图中多位嘉宾已confirmed但consent仍false，组织则已核实授权；须按实际最新草稿与发布快照诊断，不继续沿用旧截图状态。现有嘉宾「停止公开」动作仅凭confirmed或consent任一成立即出现，不能证明前台已公开，须改为准确状态与明确动作。
 
+既有CI的`probe-content-endpoint.mjs`实际只GET `/admin/`，不能当匿名公开快照或前端CORS证明。下一阶段部署后须固定Origin `https://artdico.host`、不带cookie／认证、限时限量读取`https://api.artdico.host/api/public/content`，只记录revision／发布时间／各类数量或明确无publication，验证CORS和公开投影；不得输出姓名／原正文或自动发布真实草稿。404是尚未发布，不能称数据已同步；503／无效快照不能通过实际可见性检查。
+
 ## 公开进度
 
 复用已鉴权content GET同次draft＋published，按稳定ID比较实际sanitize后的public projection，不按private JSON或全局revision猜测。展示「待确认／待授权／资料待补／可发布／变更待发布／已同步／待撤下」及对应编辑入口。公布快照仍有、草稿已撤下的记录须明确前台仍显示旧版，下一次发布才撤下；旧publication缺字段／无publication明确标初始内容。未知或无法验证来源不称同步。
@@ -36,6 +38,8 @@
 - 单元及真实合成运行时覆盖旧client漏字段／明确清除／失效新旧关系／多作品一展位／公開投影幂等与隐私、缺图嘉宾、readiness与投影一致、前台返回刷新及晚回失败；原生桌面／手机验证保存→发布→前台显示／撤下链路。
 
 继续沿用Node24／Astro／既有FC和OSS及128files／40assets／原容量预算，不增依赖、权限、DNS或服务。发布只验证合成隔离资料；真实人物状态、授权、名单与寄信不由开发测试代填。准确源码／完整测试／构建／审计／ZIP／受限启动与PR通过后，保持main稳定核对真实私有OSS、300政策及HTTPS再交付。
+
+附带UX：前阶段unknown组织弹窗已有可达核对／重试／复制，但API持续不可用时没有直接退出入口。可在原proof区复用既有显式logout确认与actor清理，不能以关闭弹窗／新autosave覆盖原pending或rawforms；不更动写入协议。
 
 ## 完成主功能后的跟进人标记
 

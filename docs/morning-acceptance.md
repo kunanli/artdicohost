@@ -1,7 +1,8 @@
 # ARTDiCO HOST 验收与接续
 
-当前正式版本：[PR #39](https://github.com/kunanli/artdicohost/pull/39)／[PR #40](https://github.com/kunanli/artdicohost/pull/40)，main **`9b9c418`**，**2026-10-21 22:00:20（UTC+08）**完成。1194项main检查、真实私有OSS、共同300政策及33/33 HTTPS全通过，内容与报名已启用；[发布证据](invitation-release-2026-10-21.md)。
+当前正式版本：[PR #41](https://github.com/kunanli/artdicohost/pull/41)，main **`d504ecc`**，**2026-10-21 23:33:20（UTC+08）**完成。1235项main检查、真实私有OSS、共同300政策、13个API子页及46个公开对象HTTPS通过，内容与报名已启用；[准确证据](admin-pages-release-2026-10-21.md)。
 
+内容九个子页及设置四个子页已独立：每页只展示本区块，区块底部保存；编辑后直接保存取得云端回执，离开时可保存后前往／留在本页／明确舍弃，未知回执先核对原请求。公开同步、游戏与作品及红绿状态属于[接续阶段](games-publication-plan.md)，尚未发布。
 ## 先验收这些流程
 
 | 入口 | 操作与预期 |

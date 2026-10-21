@@ -2,13 +2,13 @@
 
 ## 当前开发
 
-用户新增：后台子卡片独立页与就近直接保存；随后追加前端组织／嘉宾／作品未同步、作品整合、公开／出席红绿状态，最后再补跟进人固定彩色姓名标签。当前分支`feat/admin-independent-pages`从main9b9c418与证据9de61c6接续，[草稿PR41](https://github.com/kunanli/artdicohost/pull/41)已附加。先页面／保存阶段实际发布，再继续可见性／游戏与作品及最后姓名标签；[完整计划](admin-independent-pages.md)。控制器与原子草稿均已集成；产品rootb2997ad／dist15:07:51 UTC冻结，39核心＋组织4＋关系23＋图片12＋planner9全部原生通过，零pageerror。初版09dae51的CI run39622289096已绿（1234单元／128files／两ZIP离线／46公开对象），不得当最后website修补版或已上线。最终准确head CI／ZIP及实际发布仍待完成；[本阶段记录](admin-pages-release-2026-10-21.md)。不代替真实人物授权、不把图片／作品数当参会人数，不因一次查无Actions run而再前进main。
+后台九个内容独立页、四个设置独立页、直接保存与离页防呆已实际发布[PR41](https://github.com/kunanli/artdicohost/pull/41)。现在接续**公开可见性与游戏／作品**，随后补人员与邀约跟进人固定彩色姓名标签。[完整计划](games-publication-plan.md)。不自动授权、发布真实草稿、寄信或改名额；所有测试合成隔离。
 
 ## 当前发布状态
 
-新版邀请函 [PR #39](https://github.com/kunanli/artdicohost/pull/39) 与文档 [PR #40](https://github.com/kunanli/artdicohost/pull/40) 已合并并实际发布，正式main **`9b9c418ca32a5c93b5c0260732dc5630bc5793c7`**。**2026-10-21 22:00:20（UTC+08）**完成；[run39611733126](https://github.com/kunanli/artdicohost/actions/runs/39611733126) attempt1三个job全success：1194项、真实私有OSS、共同300政策及**33/33 HTTPS**通过。内容与正式报名已启用，先前延迟触发／维护已恢复。[完整证据](invitation-release-2026-10-21.md)。
+正式main **`d504ecc83d4c5bd90e7d4142c5ab7879d07b1b77`**，2026-10-21 **23:33:20（UTC+08）**完成。[run39625274283](https://github.com/kunanli/artdicohost/actions/runs/39625274283) attempt1三个job全成功：1235测试、真实私有OSS十阶段／2clients／1FC、核定共同300政策、**13个API子页及46个公开对象HTTPS**。内容与报名均已启用。[准确证据](admin-pages-release-2026-10-21.md)。邀请函PR39／40是此前版本，不再称当前main。
 
-当前仅文档证据分支 **`docs/invitation-final-release-proof-2026-10-21`** 以该main为基准；不要为补证据重新部署或重跑旧失败运行。
+实际发布后先保存文档证据分支，再从同一main祖先建立下一阶段独立分支；不为仅补证据触发main部署，不重跑历史失败run。来源与本机ZIP、CI合成及实际云端证据分别记录。
 
 本页是恢复入口；[历史记录](session-history-2026-10-21.md)只供追溯，不重做其中旧待办。
 
@@ -25,12 +25,12 @@
 
 ## 下一步，只做尚未完成的事项
 
-1. 先按[验收清单](morning-acceptance.md)核对实际界面；正式run39611733126已全成功，远端main同一SHA。不重跑旧39610687104、不再因文件记录启停服务。
+1. 先按[验收清单](morning-acceptance.md)核对实际界面；正式run39625274283已全成功，远端main同一SHA。不重跑历史失败运行、不再因文件记录启停服务。
 2. 现有管理员在 [用户管理](https://api.artdico.host/admin/settings/#staff-accounts-title) 分别按「准备 zhouyufei」「准备 wangying」，核对权限并按「保存工作人员账号」，成功后私下交付各自初始密码。**正式账号尚未建立**；快捷预填、合成测试、部署均不等于创建。本环境没有既有管理员会话，不绕过认证或读取凭证。[操作](staff-accounts.md)。
 3. Apple Developer enrollment完成后，按[Wallet指引](apple-wallet-setup.md)加入真实Pass Type ID／签章链并做iPhone验收；目前不冒称票券可用。
 4. 真实名册、组织／嘉宾公开授权、群码与现场安排由工作人员在私密后台核对；不因开发接续重复导入、代登记或发信。若继续新功能，以最新main建立独立阶段及验证。
 
-## 当前阶段的准确来源与验证
+## 前一邀请函阶段的历史来源与验证
 
 正式main9b9c418，check119262059603 **1194/1194、62.058392723秒**，515源码／382Astro／10页／审计与准确两ZIP启动通过；FC119263914746于13:59:08.6727580 UTC激活，13:59:10.0583066政策／300验证，public119265823486于14:00:17.4400904完成33/33 HTTPS。真实OSS为2clients／1FC，保留1000次／90秒边界，不编造实际请求数。额外本机API五资产GET受egress限制未验证，正式流程已独立验证public五资产，详见发布证据。
 

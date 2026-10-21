@@ -1,6 +1,6 @@
 # 后台独立页阶段：开发与发布记录
 
-当前feature分支 `feat/admin-independent-pages`，来源为已正式发布main9b9c418与最终证据9de61c6。**本阶段尚未发布，不将代码／合成验收当已上线。**[契约](admin-independent-pages.md)；用户追加的公开同步与统一作品另在[下一阶段计划](games-publication-plan.md)，须本阶段实际发布后继续。
+当前feature分支 `feat/admin-independent-pages`，[草稿PR41](https://github.com/kunanli/artdicohost/pull/41)，来源为已正式发布main9b9c418与最终证据9de61c6。**本阶段尚未发布，不将代码／合成验收当已上线。**[契约](admin-independent-pages.md)；用户追加的公开同步、红绿状态与统一作品另在[下一阶段计划](games-publication-plan.md)，须本阶段实际发布后继续。
 
 ## 已集成
 
@@ -15,7 +15,13 @@
 
 ## 当前验证
 
-root语法边界 **529文件**通过。Astro初次7个implicit-any已用共用metadata JSDoc修正，重跑 **393文件、0errors／0warnings／1既有hint**通过。路由／草稿／保存状态／设置定向 **35/35**、新别名HTTPS verifier **10/10**通过。原子暂存owner **45/45**定向、controller owner **51/51**定向通过。路由owner **67/67** HTTP／production-entry／OSS／HTTPS-verifier边界通过，Python离线smoke语法通过；未以此替代准确来源ZIP或云端证据。完整suite正在执行，之后才冻结构建与原生浏览器。
+root完整suite **1234/1234**通过（82.249933344秒），依赖审计无已知漏洞，源码边界 **530文件**通过。Astro **393文件、0errors／0warnings／1既有hint**通过。路由／草稿／保存状态／设置定向 **35/35**、新别名HTTPS verifier **10/10**、原子暂存owner **45/45**、controller owner **51/51**通过。原始路由owner **67/67**与Python语法通过；未以此替代准确来源ZIP或云端证据。
+
+原生验收已找出并修正：取消编辑时尚未执行的暂存timer留下空恢复记录；FC共用HTML需运行时同步tab标题；核对成功后继续前往不能再多写一次；展位编辑须保留表单外已有website，否则兼容store补回字段造成严格ACK拒绝。另将已证明的写入与其后UI／本机清理错误分别处理，不能把已保存状态退为未知写入。保留严格ACK与原稳定ID。
+
+最新产品冻结rootb2997ad／dist **15:07:51 UTC**、23页；原生脚本以FC实际canonical HTML别名而非各自生成页测试，**39/39核心、组织4组、人员关系23组、图片编辑12组、planner组件9组全部通过，零pageerror**。展位网站可修改及清空，刷新后核对；旧raw缺website仍相容，原未知正文不变。root另核对可编辑字段与暂存白名单，仅原图file输入刻意排除；20项保存／草稿定向通过。320／390／1440保存按钮实际hit-test与截图通过，无整页横向溢出。证据在browser工作树`.local-data/browser-evidence/admin-independent-pages/`，provenance记录冻结来源与canonical HTML SHA；planner9于root执行。图片测试仅修正先填原姓名、再打开会锁定表单的图片编辑器顺序，保留图像／晚回断言。
+
+构建初次42资产超限已用三个无启动副作用的草稿helper共用chunk解决；已测闭包 **40资产／7,342,238字节／最大1,661,625字节**（网站最后修补前，最终以准确ZIP为准），无放宽限制或删除旧图／字体。PR41初版09dae51的run39622289096／job119298631755全绿：1234单元、Astro394文件、两个实际ZIP离线启动、128files云候选及46公开入口均通过，候选绑定PR merge b69dee3d3e92fb3d0849f82e584f3beef14918c5；该证据不冒称最后website修补版或已部署。最终准确head CI／ZIP／本机受限启动仍须完成。
 
 ## 接续顺序
 

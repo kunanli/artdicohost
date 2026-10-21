@@ -2,7 +2,7 @@
 
 ## 当前开发
 
-用户新增：后台每个子卡片独立页面、区块底部／右侧直接保存、操作更直观；随后追加前端组织／嘉宾／作品未显示及作品整合。当前分支`feat/admin-independent-pages`从main9b9c418与证据9de61c6接续，先页面／保存阶段，再可见性／游戏与作品阶段；[完整计划](admin-independent-pages.md)。页面／路由／设置／草稿helper与合成脚本已集成，controller与完整验收／发布仍待完成；[本阶段记录](admin-pages-release-2026-10-21.md)。当前尚未发布，不重做之前已上线功能，也不代替真实人物确认公开授权。
+用户新增：后台子卡片独立页与就近直接保存；随后追加前端组织／嘉宾／作品未同步、作品整合、公开／出席红绿状态，最后再补跟进人固定彩色姓名标签。当前分支`feat/admin-independent-pages`从main9b9c418与证据9de61c6接续，[草稿PR41](https://github.com/kunanli/artdicohost/pull/41)已附加。先页面／保存阶段实际发布，再继续可见性／游戏与作品及最后姓名标签；[完整计划](admin-independent-pages.md)。控制器与原子草稿均已集成；产品rootb2997ad／dist15:07:51 UTC冻结，39核心＋组织4＋关系23＋图片12＋planner9全部原生通过，零pageerror。初版09dae51的CI run39622289096已绿（1234单元／128files／两ZIP离线／46公开对象），不得当最后website修补版或已上线。最终准确head CI／ZIP及实际发布仍待完成；[本阶段记录](admin-pages-release-2026-10-21.md)。不代替真实人物授权、不把图片／作品数当参会人数，不因一次查无Actions run而再前进main。
 
 ## 当前发布状态
 

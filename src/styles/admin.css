@@ -15,7 +15,7 @@
 .ah-staff-navigation a[aria-current=location]{color:var(--admin-blue);background:#f1f5fc;font-weight:700;box-shadow:inset 3px 0 var(--admin-blue)}
 .ah-staff-navigation-sections{margin-top:8px;padding-top:8px;border-top:1px solid var(--admin-line)}
 .ah-staff-navigation-sections a{font-size:12px}
-.ah-staff-navigation :focus-visible,.ah-admin-workspace-content h1:focus,.ah-admin-workspace-content h2:focus{outline:2px solid var(--admin-blue);outline-offset:3px}
+.ah-staff-navigation :focus-visible,.ah-admin-workspace-content h1:focus-visible,.ah-admin-workspace-content h2:focus-visible{outline:2px solid var(--admin-blue);outline-offset:3px}
 .ah-admin-workspace-content h1,.ah-admin-workspace-content h2{scroll-margin-top:80px}
 @media(min-width:1100px){
   .ah-admin-main:has(.ah-admin-workspace-layout){max-width:1440px}

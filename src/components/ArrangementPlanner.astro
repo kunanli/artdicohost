@@ -5,6 +5,7 @@
   <form data-planner-booth hidden>
     <div class="ah-admin-field-row ah-admin-two-columns"><div class="ah-admin-field"><label for="planner-booth-code">展位编号</label><input id="planner-booth-code" name="code" maxlength="16" required /></div><div class="ah-admin-field"><label for="planner-booth-status">确认状态</label><select id="planner-booth-status" name="status"><option value="pending">待确认</option><option value="confirmed">已确认</option><option value="cancelled">已取消</option></select></div></div>
     <div class="ah-admin-field"><label for="planner-booth-org">机构 / 团队</label><input id="planner-booth-org" name="organization" maxlength="200" /></div>
+    <div class="ah-admin-field"><label for="planner-booth-organization-id">关联参与组织（内部，选填）</label><select id="planner-booth-organization-id" name="organizationId" data-planner-organization-id><option value="">未关联组织</option></select><small>仅从内容草稿的组织明确选择，不按名称推断成员或展位安排。</small></div>
     <div class="ah-admin-field"><label for="planner-booth-project">展示项目</label><input id="planner-booth-project" name="project" maxlength="200" /></div>
     <div class="ah-admin-field"><label for="planner-booth-person">负责人姓名（不公开）</label><input id="planner-booth-person" name="contactName" maxlength="120" autocomplete="off" /></div>
     <div class="ah-admin-field"><label for="planner-booth-contact">联系方式（不公开）</label><textarea id="planner-booth-contact" name="contactMethods" rows="2" maxlength="500" autocomplete="off"></textarea></div>

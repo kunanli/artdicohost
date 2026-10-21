@@ -2,6 +2,7 @@ import {createDefaultOrganizations} from '../config/exhibiting-partners.mjs';
 import {isPublicWebsite} from '../../shared/content-schema.mjs';
 import {prepareProfileImage,processedImageSummary} from '../lib/profile-image.mjs';
 import {editStaffImage} from '../lib/staff-image-editor.mjs';
+import {organizationMemberPage,personContactPath} from '../lib/content-relationships.mjs';
 import '../styles/organizations-admin.css';
 
 const portrait=/^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
@@ -13,10 +14,13 @@ function node(tag,text,className){const result=document.createElement(tag);if(te
 export function createOrganizationsEditor({root,request,getContext,onApply,onChange,announce}){
   const $=selector=>root.querySelector(selector),dialog=$('[data-organization-dialog]'),form=$('[data-organization-form]');
   let generation=0,uploadController=null,uploading=false,pendingImage=null,formDirty=false,accountKey='',editingId=null,editContext=null,imageGeneration=0;
+  let membersEpoch=0;const memberControllers=new Set();
   const context=()=>getContext(),allowed=()=>Boolean(context().content&&context().user?.roles.includes('editor'));
   const blocked=()=>context().busy===true;
   const records=()=>Object.hasOwn(context().content??{},'organizations')?context().content.organizations:createDefaultOrganizations();
   const notify=()=>onChange?.();
+  function cancelMembers(){membersEpoch++;for(const controller of memberControllers)controller.abort();memberControllers.clear();}
+  const canViewMembers=()=>Boolean(context().user?.roles.includes('outreach'));
   function error(message=''){const box=$('[data-organization-error]');box.textContent=message;box.hidden=!message;if(message)box.focus();}
   function changed(event){if(event?.target?.closest('[data-image-editor]')||event?.target===$('[data-organization-image]'))return;formDirty=true;notify();}
   function revoke(){form.elements.namedItem('publicConsent').checked=false;$('[data-organization-consent-note]').textContent='公开资料或图片已变更，请重新核实这份组织资料的公开授权。';changed();}
@@ -33,12 +37,14 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onCha
   }
   function cancelUpload(){generation++;uploadController?.abort();uploadController=null;uploading=false;pendingImage=null;$('[data-organization-image-editor]').replaceChildren();$('[data-organization-image-editor]').hidden=true;}
   function reset(){cancelUpload();form.reset();for(const field of form.querySelectorAll('input[type=hidden]'))field.value='';editingId=null;editContext=null;formDirty=false;image('');error();$('[data-organization-image-status]').textContent='';}
-  function clear(){reset();accountKey='';if(dialog.open)dialog.close();$('[data-organization-list]').replaceChildren();$('[data-organizations-legacy]').hidden=true;$('[data-organizations-empty]').hidden=true;}
+  function clear(){cancelMembers();reset();accountKey='';if(dialog.open)dialog.close();$('[data-organization-list]').replaceChildren();$('[data-organizations-legacy]').hidden=true;$('[data-organizations-empty]').hidden=true;}
   function configure(){
     const current=context(),next=current.user?current.user.id+'|'+[...current.user.roles].sort().join(','):'';
     if(next!==accountKey){clear();accountKey=next;}
     const locked=blocked()||!allowed();
     for(const button of root.querySelectorAll('[data-organization-add],[data-organization-action]'))button.disabled=locked||uploading||dialog.open||button.dataset.edge==='true';
+    for(const button of root.querySelectorAll('[data-organization-members],[data-organization-members-more]'))button.disabled=blocked()||uploading||context().dirty||!canViewMembers()||button.hasAttribute('data-organization-members-more')&&button.dataset.loading==='true';
+    for(const link of root.querySelectorAll('[data-organization-people]')){const disabled=context().dirty||!canViewMembers();link.setAttribute('aria-disabled',String(disabled));if(disabled)link.removeAttribute('href');else link.href=link.dataset.target;}
     for(const field of form.querySelectorAll('input,textarea,select,button'))if(!field.closest('[data-image-editor]'))field.disabled=locked||uploading;
     for(const button of root.querySelectorAll('[data-organization-close]'))button.disabled=blocked();
     $('[data-organization-submit]').disabled=locked||uploading||Boolean(pendingImage);
@@ -49,6 +55,7 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onCha
   function apply(next,message){if(!allowed()||blocked()||uploading)return;onApply(next);render();announce(message+' 请保存草稿，再发布到公开页。');}
   function render(){
     configure();if(!context().content)return;
+    cancelMembers();
     const current=records(),output=$('[data-organization-list]');output.replaceChildren();
     $('[data-organizations-legacy]').hidden=Object.hasOwn(context().content,'organizations');$('[data-organizations-empty]').hidden=current.length>0;
     for(const [index,item]of current.entries()){
@@ -68,9 +75,36 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onCha
           else{const target=position+(action==='up'?-1:1);if(target<0||target>=next.length)return;[next[position],next[target]]=[next[target],next[position]];apply(next,'组织显示顺序已应用到草稿。');}
         });actions.append(button);
       }
-      body.append(actions);card.append(frame,body);output.append(card);
+      body.append(actions);if(canViewMembers()&&Object.hasOwn(context().content,'organizations'))appendMembers(item,body);card.append(frame,body);output.append(card);
     }
     configure();
+  }
+  function appendMembers(item,body){
+    const tools=node('div',undefined,'ah-organization-actions'),button=node('button','查看成员');button.type='button';button.dataset.organizationMembers=item.id;button.setAttribute('aria-label','查看组织成员 '+item.name);
+    const link=node('a','在人员与邀约中筛选');link.dataset.organizationPeople='';link.dataset.target='/admin/contacts/#organization='+encodeURIComponent(item.id);link.href=link.dataset.target;
+    tools.append(button,link);const panel=node('section',undefined,'ah-organization-members');panel.dataset.organizationMembersPanel=item.id;panel.hidden=true;
+    const status=node('p'),list=node('ul'),more=node('button','载入更多成员');status.setAttribute('role','status');status.setAttribute('aria-live','polite');list.dataset.organizationMembersList='';more.type='button';more.dataset.organizationMembersMore=item.id;more.hidden=true;panel.append(status,list,more);body.append(tools,panel);
+    const stamp=membersEpoch,state=context(),key=accountKey;let controller=null,contactsRevision=null,contentRevision=null,nextCursor=null,members=[];
+    const active=()=>stamp===membersEpoch&&accountKey===key&&canViewMembers()&&context().content===state.content&&context().revision===state.revision&&panel.isConnected&&!panel.hidden&&!context().dirty;
+    function erase(){controller?.abort();if(controller)memberControllers.delete(controller);controller=null;members=[];contactsRevision=null;contentRevision=null;nextCursor=null;list.replaceChildren();more.hidden=true;button.dataset.loading='false';more.dataset.loading='false';}
+    async function load(append=false){
+      if(!active()||blocked()||uploading||append&&!nextCursor)return;
+      controller?.abort();if(controller)memberControllers.delete(controller);controller=new AbortController();memberControllers.add(controller);const pending=controller;
+      button.dataset.loading='true';more.dataset.loading='true';configure();status.textContent='正在读取已保存成员…';
+      const params=new URLSearchParams({limit:'100'});if(append)params.set('cursor',nextCursor);
+      const cursor=nextCursor,timer=setTimeout(()=>pending.abort(),15_000);
+      try{
+        const page=organizationMemberPage(await request('/api/admin/people/organizations/'+encodeURIComponent(item.id)+'/members?'+params,{signal:pending.signal,isCurrent:()=>active()&&controller===pending&&!pending.signal.aborted}),item.id);
+        if(!active()||controller!==pending)return;
+        if(page.contentRevision!==state.revision||append&&(page.contactsRevision!==contactsRevision||page.contentRevision!==contentRevision||page.total<members.length+page.members.length||page.nextCursor!==null&&Number(page.nextCursor)<=Number(cursor)||page.members.some(member=>members.some(previous=>previous.contactId===member.contactId))))throw new Error('成员或组织资料已变化，请重新读取内容后再核对。');
+        members=append?[...members,...page.members]:page.members;contactsRevision=page.contactsRevision;contentRevision=page.contentRevision;nextCursor=page.nextCursor;list.replaceChildren();
+        for(const member of members){const row=node('li'),person=node('a',member.name);person.href=personContactPath(member.contactId);row.append(person,node('span',(member.role==='lead'?'负责人':'成员')+(member.title?' · '+member.title:'')));list.append(row);}
+        status.textContent='已显示 '+members.length+' / '+page.total+' 位已保存成员。成员关系不代表已确认参会或获分配展位。';more.hidden=!nextCursor;
+      }catch(reason){if(active()&&controller===pending){const timeout=pending.signal.aborted;erase();status.textContent=timeout?'成员读取超时，请稍后重新读取。':reason.status?reason.message:'成员资料暂不可核对，请稍后重新读取。';configure();}}
+      finally{clearTimeout(timer);memberControllers.delete(pending);if(controller===pending){controller=null;button.dataset.loading='false';more.dataset.loading='false';configure();}}
+    }
+    button.addEventListener('click',()=>{if(!canViewMembers()||blocked()||uploading||context().dirty)return;if(!panel.hidden){erase();panel.hidden=true;status.textContent='';button.textContent='查看成员';configure();return;}panel.hidden=false;button.textContent='收起成员';void load();});
+    more.addEventListener('click',()=>void load(true));
   }
   function open(item=null){
     if(!allowed()||blocked()||uploading)return;
@@ -139,7 +173,7 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onCha
     try{onApply(next);dialog.close();reset();render();notify();announce('组织修改已应用到草稿。请保存草稿，再发布到公开页。');}catch(reason){error(reason.message||'组织资料尚未应用，请核对后重试。');}
   });
   clear();
-  return Object.freeze({render,configure,clear,get uploading(){return uploading;},hasUnapplied:()=>dialog.open||uploading,
+  return Object.freeze({render,configure,clear,openById(id){const item=Object.hasOwn(context().content??{},'organizations')?records().find(item=>item.id===id):null;if(!item){announce('此组织尚未保存或已不存在，请重新读取内容后核对。',true);return;}open(item);},get uploading(){return uploading;},hasUnapplied:()=>dialog.open||uploading,
     appendPublicPreview(content,output){
       const list=Object.hasOwn(content,'organizations')?content.organizations:createDefaultOrganizations();output.append(node('h3','参与组织'));if(!list.length)output.append(node('p','暂未公布参与组织。'));
       for(const item of list){const card=node('article',undefined,'ah-organization-row'),body=node('div');const logo=(item.logoUrl??'').split('/').at(-1);if(portrait.test(logo??'')){const picture=node('img');picture.src='/api/admin/portraits/'+logo;picture.alt=item.name+'组织图片';picture.width=110;picture.height=90;picture.style.objectFit='contain';card.append(picture);}body.append(node('h4',item.name),node('p',participationLabels[item.participation]??participationLabels.undecided));if(item.website&&isPublicWebsite(item.website)){const link=node('a','组织页面 ↗');link.href=item.website;link.target='_blank';link.rel='noopener noreferrer';body.append(link);}card.append(body);output.append(card);}

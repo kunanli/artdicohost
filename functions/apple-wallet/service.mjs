@@ -43,7 +43,7 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
     if (!line(organizationName, 80)) configFailure('WALLET_IDENTITY_INVALID');
     const identity = validateSigningIdentity({ certificate: decode(own(config, 'APPLE_WALLET_CERT_BASE64')),
       key: decode(own(config, 'APPLE_WALLET_KEY_BASE64')), wwdr: decode(own(config, 'APPLE_WALLET_WWDR_CERT_BASE64')),
-      root: decode(own(config, 'APPLE_WALLET_ROOT_CERT_BASE64')), passphrase: own(config, 'APPLE_WALLET_KEY_PASSPHRASE'),
+      root: decode(own(config, 'APPLE_WALLET_ROOT_CERT_BASE64')), passphrase: own(config, 'APPLE_WALLET_KEY_PASSPHRASE') === '' ? undefined : own(config, 'APPLE_WALLET_KEY_PASSPHRASE'),
       teamId: own(config, 'APPLE_WALLET_TEAM_ID'), passTypeIdentifier: own(config, 'APPLE_WALLET_PASS_TYPE_ID'), now: current(), trustedRootFingerprints });
     return { identity, organizationName, missing: [] };
   }

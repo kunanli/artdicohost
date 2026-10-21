@@ -34,6 +34,7 @@ test('production identity refuses synthetic roots even when env asks to trust th
   assert.throws(() => validateSigningIdentity({ ...fixture.fields, key: Buffer.from(other) }), { code: 'WALLET_PRIVATE_KEY_INVALID' });
   const production = service({ trustedRootFingerprints: undefined, env: { ...fixture.env, APPLE_WALLET_TRUST_ROOT: fixture.rootHash } });
   assert.equal((await production.readiness()).ready, false); assert.equal((await production.download({ receiptToken: token })).outcome, 'not_ready');
+  assert.equal((await service({ env: { ...fixture.env, APPLE_WALLET_KEY_PASSPHRASE: '' } }).readiness()).ready, true, 'empty optional dotenv placeholder means no key password');
 });
 
 test('real pkpass contains bounded ZIP, exact manifest hashes and a detached CMS signature independently verified by OpenSSL', async () => {

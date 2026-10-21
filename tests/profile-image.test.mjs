@@ -20,4 +20,5 @@ test('oversized originals, unsafe headers and cancellation fail before any brows
  await assert.rejects(prepareProfileImage({type:'image/jpeg',size:MAX_ORIGINAL_IMAGE_BYTES+1,arrayBuffer(){reads++;}}),/12 MiB/u);assert.equal(reads,0);
  const bytes=png(10000,10000);await assert.rejects(prepareProfileImage({type:'image/png',size:bytes.length,arrayBuffer:async()=>bytes}),/像素/u);
  const controller=new AbortController();controller.abort();await assert.rejects(prepareProfileImage({type:'image/png',size:33,arrayBuffer(){assert.fail('cancelled file must not be read');}},{signal:controller.signal}),error=>error.name==='AbortError');
+ await assert.rejects(prepareProfileImage({type:'image/png',size:33,arrayBuffer(){assert.fail('invalid options must not decode');}},{preserveTransparency:'yes'}),TypeError);
 });

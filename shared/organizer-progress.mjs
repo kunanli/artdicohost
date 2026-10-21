@@ -83,7 +83,8 @@ export function contactProgress(contact, { intent = null, content = null, event,
   const inactive = ['withdrawn', 'rejected'].includes(admissionStatus);
   const admissionPending = ['pending_review','waitlisted','unknown'].includes(admissionStatus);
   const legacy = contact.invitation ?? {};
-  const legacyCurrent = Boolean(time(legacy.generatedAt) >= 0 && time(legacy.generatedAt) <= now && settingsCurrent(legacy.settings, contact, event));
+  const legacyCurrent = Boolean(legacy.settings?.renderVersion === INVITATION_POSTER_RENDER_VERSION
+    && time(legacy.generatedAt) >= 0 && time(legacy.generatedAt) <= now && settingsCurrent(legacy.settings, contact, event));
   const legacySent = Boolean(legacyCurrent && time(legacy.sentAt) >= time(legacy.generatedAt) && time(legacy.sentAt) <= now && legacy.sentGenerationAt === legacy.generatedAt);
   const related = list(intent?.invitations).filter(entry => entry.sourceContactId === id);
   const versions = latestByChannel(related);
@@ -91,7 +92,9 @@ export function contactProgress(contact, { intent = null, content = null, event,
     && entry.content?.registrationId === conversion.registrationId && entry.content?.referenceCode === conversion.referenceCode
     && entry.content?.eventId === event?.id && time(entry.createdAt) >= 0 && time(entry.createdAt) <= now);
   const current = versions.filter(entry => linked.includes(entry)
-    && entry.content?.title === (entry.content?.settings?.renderVersion === INVITATION_POSTER_RENDER_VERSION ? INVITATION_POSTER_FACTS.title : event?.title)
+    && (entry.channel === 'manual' ? entry.content?.settings?.renderVersion === INVITATION_POSTER_RENDER_VERSION
+      : !has(entry.content?.settings, 'renderVersion'))
+    && entry.content?.title === (entry.channel === 'manual' ? INVITATION_POSTER_FACTS.title : event?.title)
     && settingsCurrent(entry.content?.settings, contact, event) && time(entry.createdAt) >= 0 && time(entry.createdAt) <= now
     && (!has(entry, 'expiresAt') || time(entry.expiresAt) > now));
   const manuallySent = !excluded && !inactive && (legacySent || current.some(entry => entry.channel === 'manual' && entry.status === 'manually_sent'));

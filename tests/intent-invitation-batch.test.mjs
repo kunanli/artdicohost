@@ -101,6 +101,9 @@ test('versioned batch still skips all historical dispatches and unknown outcomes
   const preview = await f.service.previewInvitations(input);
   assert.deepEqual(preview.entries.map(entry => entry.reason), ['INVITATION_DISPATCH_RECORDED', 'INVITATION_STATUS_UNKNOWN']);
   assert.equal((await prepare(f.service, input, preview)).summary.skipped, 2); assert.deepEqual(await f.repository.read(), before);
+  await unknown.issueInvitation({ actor, contactId: first.id, expectedContactRevision: f.input.expectedContactRevision,
+    expectedRegistrationId: f.receipts.get(first.id).registrationId, channel: 'email', confirmEmail: true });
+  assert.equal((await f.service.previewInvitations(input)).entries[0].reason, 'INVITATION_STATUS_UNKNOWN', 'an older manual send never hides an unresolved email attempt');
 });
 
 test('precheck binding rejects changed actor, selection, roster, source relation and admission revision before writes', async () => {

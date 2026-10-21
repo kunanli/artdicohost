@@ -67,35 +67,49 @@ test('regenerating a legacy contact image preserves its prior dispatch evidence 
   assert.equal(buildOrganizerTasks({ contacts: [person], ...options }).tasks.some(task => task.kind === 'unsent'), false);
 });
 
-test('current manual invitations merge legacy and ledger once per person, separately from provider acknowledgement', () => {
+test('legacy manual history merges once per person without claiming the current poster was sent', () => {
   const person = contact('synthetic-person', { invitation: legacySent });
   const summary = summarizeContactProgress([person], { ...options, intent: intentFor(person, [invitation(person.id), invitation(person.id, 'provider_accepted', { id: 'synthetic-email' })]) });
-  assert.equal(summary.manuallySent, 1);assert.equal(summary.providerAccepted, 1);assert.equal(summary.awaitingReply, 1);
+  assert.equal(summary.manuallySent, 0);assert.equal(summary.providerAccepted, 1);assert.equal(summary.awaitingReply, 1);
+  assert.equal(summary.progress[0].historyManuallySent, true);assert.equal(summary.progress[0].contacted, true);
   assert.equal(Object.hasOwn(summary, 'delivered'), false);
   const providerOnly = contactProgress(contact(), { ...options, intent: intentFor(person, [invitation(person.id, 'provider_accepted')]) });
   assert.equal(providerOnly.manuallySent, false);assert.equal(providerOnly.state, 'provider_accepted');assert.equal(providerOnly.response, 'pending');
 });
 
-test('legacy sent records require the current generated version and verified current facts', () => {
-  const person = contact('synthetic-person', { invitation: legacySent });
+test('current contact-generated sends require the literal poster version, exact generation and verified current facts', () => {
+  const currentSettings = buildPosterInvitationSettings('合成人员', event);
+  const currentSent = { ...legacySent, settings: currentSettings };
+  const person = contact('synthetic-person', { invitation: currentSent });
   assert.equal(contactProgress(person, options).manuallySent, true);
-  for (const patch of [{ generatedAt: '2026-10-21T01:00:00.000Z' }, { settings: { ...settings, date: '2026-12-04' } },
-    { settings: { ...settings, confirmed: false } }, { settings: { ...settings, recipientName: '历史称呼' } },
+  for (const patch of [{ generatedAt: '2026-10-21T01:00:00.000Z' }, { settings: { ...currentSettings, date: '2026-12-04' } },
+    { settings: { ...currentSettings, confirmed: false } }, { settings: { ...currentSettings, recipientName: '历史称呼' } },
     { sentAt: '2026-10-19T01:00:00.000Z' }]) {
-    const result = contactProgress(contact('synthetic-person', { invitation: { ...legacySent, ...patch } }), options);
+    const result = contactProgress(contact('synthetic-person', { invitation: { ...currentSent, ...patch } }), options);
     assert.equal(result.manuallySent, false);assert.equal(result.stale, true);
   }
 });
 
+test('unversioned manual images with otherwise identical facts are history, never current preparation or current sends', () => {
+  const sameFacts = buildPosterInvitationSettings('合成人员', event); delete sameFacts.renderVersion;
+  const old = invitation('synthetic-person'); old.content = { ...old.content, title: INVITATION_POSTER_FACTS.title, settings: sameFacts };
+  const person = contact('synthetic-person', { invitation: { ...legacySent, settings: sameFacts } });
+  const result = contactProgress(person, { ...options, intent: intentFor(person, [old]) });
+  assert.equal(result.prepared, false); assert.equal(result.manuallySent, false); assert.equal(result.historyManuallySent, true); assert.equal(result.contacted, true);
+  assert.equal(buildOrganizerTasks({ contacts: [person], ...options, intent: intentFor(person, [old]) }).tasks.some(task => task.kind === 'unsent'), false);
+  const unsent = { ...old, status: 'prepared' };
+  assert.equal(contactProgress(contact(), { ...options, intent: intentFor(person, [unsent]) }).prepared, false);
+});
+
 test('expired, stale registration, event facts and superseded invitation versions do not count as current sends', () => {
   const person = contact();
-  for (const item of [invitation(person.id, 'manually_sent', { expiresAt: '2026-10-21T23:00:00.000Z' }),
-    invitation(person.id, 'manually_sent', { registrationId: 'old-registration' }),
-    invitation(person.id, 'manually_sent', { content: { ...invitation(person.id).content, title: '历史标题' } })]) {
+  const manual = { ...invitation(person.id), content: { ...invitation(person.id).content, title: INVITATION_POSTER_FACTS.title, settings: buildPosterInvitationSettings('合成人员', event) } };
+  for (const item of [{ ...manual, expiresAt: '2026-10-21T23:00:00.000Z' },
+    { ...manual, registrationId: 'old-registration' }, { ...manual, content: { ...manual.content, title: '历史标题' } }]) {
     assert.equal(contactProgress(person, { ...options, intent: intentFor(person, [item]) }).manuallySent, false);
   }
-  const old = invitation(person.id, 'manually_sent', { updatedAt: '2026-10-22T01:00:00.000Z' });
-  const latest = invitation(person.id, 'prepared', { channel: 'manual', createdAt: '2026-10-21T12:00:00.000Z', updatedAt: '2026-10-21T12:00:00.000Z' });
+  const old = { ...manual, updatedAt: '2026-10-22T01:00:00.000Z' };
+  const latest = { ...manual, status: 'prepared', channel: 'manual', createdAt: '2026-10-21T12:00:00.000Z', updatedAt: '2026-10-21T12:00:00.000Z' };
   const result = contactProgress(person, { ...options, intent: intentFor(person, [latest, old]) });
   assert.equal(result.manuallySent, false);assert.equal(result.state, 'prepared');
 });

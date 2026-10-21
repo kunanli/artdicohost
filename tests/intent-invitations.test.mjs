@@ -135,6 +135,8 @@ test('new poster preparation cannot alter an existing email identity, unknown re
   assert.equal(email.invitation.id, 'i_' + hash(eventConfig.id + '\0r_synthetic\0email').slice(0, 32));
   assert.equal(Object.hasOwn(email.invitation.content.settings, 'renderVersion'), false);
   const legacyBytes = JSON.stringify(buildRegistrationInvitation(f.contact, { registrationId: 'r_synthetic', referenceCode: 'R_SYNTHETIC' }));
+  // Golden value measured from the released, unversioned builder at 3c60c4c.
+  assert.equal(hash(legacyBytes), '4a19b101e0edc4930e3759221eb294ec37b44285c295c381071c8a2cf25d376b');
   const before = structuredClone(email.invitation);
   await f.service.issueInvitation({ ...f.invitationInput('manual'), renderVersion: INVITATION_POSTER_RENDER_VERSION });
   assert.equal((await f.service.issueInvitation(f.invitationInput('email'))).invitation.status, 'unknown');

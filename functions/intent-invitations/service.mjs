@@ -166,8 +166,9 @@ export function createIntentInvitationService({ registrationService, contactsSto
           contentDigest = hash(JSON.stringify(content));
           const id = invitationId(event.id, registration.registrationId, 'manual', contentDigest, renderVersion);
           const previous = state.value.invitations.find(item => item.id === id);
-          const dispatch = state.value.invitations.find(item => item.sourceContactId === contact.id
+          const dispatched = state.value.invitations.filter(item => item.sourceContactId === contact.id
             && ['issuing', 'unknown', 'provider_accepted', 'manually_sent'].includes(item.status));
+          const dispatch = dispatched.find(item => ['issuing', 'unknown'].includes(item.status)) ?? dispatched[0];
           if (dispatch) reason = ['issuing', 'unknown'].includes(dispatch.status) ? 'INVITATION_STATUS_UNKNOWN' : 'INVITATION_DISPATCH_RECORDED';
           else if (previous && (previous.digest !== contentDigest || !isDeepStrictEqual(previous.content, content))) reason = 'INVITATION_CHANGED';
         } catch (error) {

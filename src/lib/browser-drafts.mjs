@@ -215,7 +215,7 @@ export function createBrowserDraftStore({ indexedDB = globalThis.indexedDB, cloc
       });
       return changed(scope, result);
     },
-    // Only the public controller receiving its first definitive rejection may
+    // Only a trusted controller receiving its first definitive rejection may
     // request this transition. A policy derives editable fields from the exact
     // durable request; unknown outcomes never become ordinary expiring drafts.
     async rejectPending(input, update, suppliedPolicy) {

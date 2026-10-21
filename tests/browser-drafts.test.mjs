@@ -318,3 +318,52 @@ test('unsettled input warns before unload until its own durable ACK, including e
     b.form.close(); assert.equal(listeners.size, 0);
   } finally { release(); b.form.close(); if (priorWindow === undefined) delete globalThis.window; else globalThis.window = priorWindow; }
 });
+
+test('binding definitive rejection preserves typed fields atomically and never downgrades an unknown or freshly restored request', async () => {
+  const rejectionPolicy = { ...policy, rejectPending: value => value.uncertain === false ? { name: JSON.parse(value.payloadJson).fields.name } : false };
+  const f = fixture(), b = binding(f, { policy: rejectionPolicy }); await b.form.load();
+  const original = await b.form.markPending({ ...pending(), attempted: true });
+  f.state.failAt = f.state.writes + 2;
+  await assert.rejects(b.form.rejectPending(), { code: 'UNAVAILABLE' });
+  assert.deepEqual(b.form.snapshot, original); assert.deepEqual(await f.make().read(scope(), rejectionPolicy), original);
+  f.state.failAt = null;
+  const recovered = await b.form.rejectPending();
+  assert.equal(recovered.revision, original.revision + 1); assert.equal(recovered.record.kind, 'editing');
+  assert.deepEqual(recovered.record.value, { name: '合成申请人' }); assert.equal(b.form.blocked, false);
+  assert.equal(b.state.events.at(-1), 'saved');
+  await b.form.markPending({ ...pending(), attempted: true, uncertain: true });
+  await assert.rejects(b.form.rejectPending(), { code: 'PENDING_IMMUTABLE' });
+  assert.equal(b.form.snapshot.record.kind, 'pending_submission'); b.form.close();
+  const restored = binding(f, { policy: rejectionPolicy }); await restored.form.load();
+  await assert.rejects(restored.form.rejectPending(), { code: 'CONFLICT' });
+  assert.equal(restored.form.snapshot.record.kind, 'pending_submission'); restored.form.close();
+  const other = fixture(); await write(other.store, scope(), pending(), 'pending_submission');
+  const ambiguous = binding(other, { policy: rejectionPolicy }); await ambiguous.form.load();
+  await ambiguous.form.restore({ pendingOnly: true });
+  await assert.rejects(ambiguous.form.rejectPending(), { code: 'CONFLICT' });
+  assert.equal(ambiguous.form.snapshot.record.value.uncertain, false); ambiguous.form.close();
+});
+
+test('late atomic rejection ACK cannot clear a newer local conflict or a logout lease', async () => {
+  const rejectionPolicy = { ...policy, rejectPending: value => ({ name: JSON.parse(value.payloadJson).fields.name }) };
+  for (const action of ['competing_edit', 'logout']) {
+    const f = fixture(); let release, ready;
+    const gate = new Promise(resolve => { release = resolve; }), committed = new Promise(resolve => { ready = resolve; });
+    const held = { ...f.store, rejectPending: async (...args) => { const result = await f.store.rejectPending(...args); ready(); await gate; return result; } };
+    const b = binding(f, { store: held, policy: rejectionPolicy }); await b.form.load();
+    await b.form.markPending(pending()); const rejecting = b.form.rejectPending(); await committed;
+    if (action === 'logout') await f.store.clearActor(scope().actorId);
+    else {
+      const other = await f.store.read(scope(), rejectionPolicy);
+      await f.store.write(scope(), { expectedRevision: other.revision, actorEpoch: other.actorEpoch, kind: 'editing', baseRevision: 4, value: { name: '较新另一页填写' } }, rejectionPolicy);
+    }
+    release(); await assert.rejects(rejecting, { code: action === 'logout' ? 'STALE_ACTOR' : 'CONFLICT' });
+    assert.equal(b.form.blocked, true);
+    if (action === 'logout') assert.equal(b.form.snapshot, null);
+    else {
+      assert.equal(b.state.events.at(-1), 'conflict');
+      assert.equal((await f.store.read(scope(), rejectionPolicy)).record.value.name, '较新另一页填写');
+    }
+    b.form.close();
+  }
+});

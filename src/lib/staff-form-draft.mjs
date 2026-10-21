@@ -122,6 +122,25 @@ export function createStaffFormDraft({ store, scope, policy, baseRevision, isCur
       });
     },
     markPending(value) { return binding.flush({ kind: 'pending_submission', value }); },
+    rejectPending() {
+      clearTimeout(timer); timer = null;
+      return enqueue(async generation => {
+        try {
+          await load(); assertCurrent(generation);
+          // Restored or competing requests are unknown, even when an older
+          // browser record did not yet persist its uncertainty flag.
+          if (blocked) throw new BrowserDraftError('CONFLICT');
+          if (typeof store.rejectPending !== 'function') throw new BrowserDraftError('INVALID');
+          const rejectConflict = conflictEpoch, rejectedVersion = changeVersion; writing = true;
+          const recovered = await store.rejectPending(scope, { expectedRevision: current.revision, actorEpoch: current.actorEpoch }, policy);
+          assertCurrent(generation);
+          if (conflictEpoch !== rejectConflict) throw new BrowserDraftError('CONFLICT');
+          current = recovered; blocked = false; settledVersion = Math.max(settledVersion, rejectedVersion);
+          emit(binding.unsettled ? 'saving' : 'saved'); return clone(current);
+        } catch (error) { throw problem(error); }
+        finally { writing = false; }
+      });
+    },
     discard({ allowPending = false } = {}) {
       clearTimeout(timer); timer = null;
       return enqueue(async generation => {

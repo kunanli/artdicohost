@@ -1,4 +1,5 @@
 ---
+import StaffNavigation from '../../components/StaffNavigation.astro';
 import SiteLayout from '../../layouts/SiteLayout.astro';
 import ArrangementPlanner from '../../components/ArrangementPlanner.astro';
 import StaffOrganizations from '../../components/StaffOrganizations.astro';
@@ -8,7 +9,7 @@ import '../../styles/guests.css';
 ---
 <SiteLayout title="工作人员后台｜ARTDiCO HOST" description="ARTDiCO HOST 工作人员组织、嘉宾、场次、展位及学生作品管理。">
   <div id="artdico-admin" class="ah-admin">
-    <header class="ah-admin-header"><a class="ah-admin-brand" href="https://artdico.host">ARTDiCO <span>HOST / STAFF</span></a><nav class="ah-admin-account"><a class="ah-admin-back" href="/admin/tasks/">今日待办</a><a class="ah-admin-back" href="/admin/registrations/">报名 / 审核</a><a class="ah-admin-back" href="/admin/contacts/">人员 / 邀约</a><a class="ah-admin-back" href="https://artdico.host">查看活动页面 <span aria-hidden="true">↗</span></a></nav></header>
+    <header class="ah-admin-header"><a class="ah-admin-brand" href="https://artdico.host">ARTDiCO <span>HOST / STAFF</span></a><nav aria-label="公开活动页面"><a class="ah-admin-back" href="https://artdico.host">查看活动页面 <span aria-hidden="true">↗</span></a></nav></header>
     <main id="main-content" class="ah-admin-main">
       <div class="ah-admin-environment" data-admin-environment><span class="ah-admin-dot" aria-hidden="true"></span><p><strong>活动 / 嘉宾 / 学生作品</strong>保存草稿与公开发布分别执行；人员联系方式在独立邀约工作区维护。</p></div>
       <p class="ah-admin-alert" data-admin-error role="alert" tabindex="-1" hidden></p>
@@ -24,7 +25,9 @@ import '../../styles/guests.css';
         <noscript><p class="ah-admin-alert">后台操作需要启用 JavaScript。当前没有登录，也不会提交账号资料。</p></noscript>
       </section>
 
-      <section data-admin-workspace hidden aria-labelledby="workspace-title">
+      <section class="ah-admin-workspace-layout" data-admin-workspace hidden aria-labelledby="workspace-title">
+        <StaffNavigation current="content" />
+        <div class="ah-admin-workspace-content">
         <div class="ah-admin-page-heading"><div><span class="ah-admin-eyebrow">CONTENT & CONNECTIONS</span><h1 id="workspace-title">安排好每一次相遇。</h1><p>维护参与组织、嘉宾与学生作品，安排场次、展位，准备好后再发布到公开活动页。</p></div><div class="ah-admin-account"><span data-admin-user></span><small data-admin-role></small><button type="button" class="ah-admin-text-button" data-admin-logout>退出登录</button></div></div>
         <div class="ah-admin-event-card"><div><span class="ah-admin-eyebrow">当前活动</span><strong data-admin-event-title>活动信息加载中</strong></div><p><span data-admin-event-date></span><span data-admin-event-venue></span></p></div>
         <div class="ah-admin-summary"><article><span>嘉宾资料</span><strong data-admin-guest-count>—</strong><small>确认并获授权后才公开展示</small></article><article><span>活动场次</span><strong data-admin-session-count>—</strong><small>包含各区域草稿与已安排场次</small></article><article><span>展位记录</span><strong data-admin-booth-count>—</strong><small>待确认与已确认分别维护</small></article><article><span>公开发布</span><strong class="ah-admin-publish-status" data-admin-published-at>尚未载入</strong><small>保存草稿不会自动对外发布</small></article></div>
@@ -81,6 +84,7 @@ import '../../styles/guests.css';
         <section class="ah-admin-panel" aria-labelledby="sessions-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">THE PROGRAM</span><h2 id="sessions-title">活动场次</h2><p>草稿不公开；已安排与取消状态会随发布版更新。</p></div><button type="button" class="ah-admin-button" data-admin-add-session><span aria-hidden="true">＋</span> 新增场次</button></div><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="活动场次表，可水平滚动"><table><caption class="ah-sr-only">所有活动场次及讲者确认状态</caption><thead><tr><th scope="col">时间</th><th scope="col">区域</th><th scope="col">场次与主题</th><th scope="col">讲者</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody data-admin-sessions></tbody></table></div><p class="ah-admin-empty" data-admin-sessions-empty hidden>还没有场次。添加第一场分享，开始安排这一天。</p></section>
         <section class="ah-admin-panel" aria-labelledby="booths-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">PROJECTS ON THE FLOOR</span><h2 id="booths-title">展位与展示项目</h2><p>公开页只显示已确认展位；待确认与取消记录保留在后台。</p></div><button type="button" class="ah-admin-button" data-admin-fill-booths>补齐15个展位位置</button><button type="button" class="ah-admin-button" data-admin-add-booth><span aria-hidden="true">＋</span> 新增展位</button></div><div class="ah-admin-table-wrap" tabindex="0" role="region" aria-label="展位表，可水平滚动"><table><caption class="ah-sr-only">展位编号、机构、项目及确认状态</caption><thead><tr><th scope="col">展位编号</th><th scope="col">机构 / 团队</th><th scope="col">展示项目 / 内容</th><th scope="col">负责人 / 联系方式 · 不公开</th><th scope="col">区域</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody data-admin-booths></tbody></table></div><p class="ah-admin-empty" data-admin-booths-empty hidden>展位名单尚未建立。确认项目后，可新增展位并安排编号。</p></section>
         <section class="ah-admin-panel ah-admin-preview" data-admin-preview-panel hidden aria-labelledby="preview-title"><div class="ah-admin-section-heading"><div><span class="ah-admin-eyebrow">BEFORE IT GOES LIVE</span><h2 id="preview-title">公开内容预览</h2><p>检查本次准备发布的资料。草稿场次、未确认或未获授权的嘉宾及内部备注均不对外展示。</p></div><button type="button" class="ah-admin-button" data-admin-preview-close>关闭预览</button></div><div class="ah-admin-preview-content" data-admin-public-preview></div></section>
+        </div>
       </section>
     </main>
     <footer class="ah-admin-footer"><span>ARTDiCO HOST / STAFF</span><p>从细节出发，让连接发生。</p><a href="/admin/contacts/">人员 / 邀约</a><a href="https://artdico.host">返回活动页面</a></footer>

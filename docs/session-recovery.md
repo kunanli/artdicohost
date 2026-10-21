@@ -1,8 +1,12 @@
 # 开发接续与验收计划
 
-## 当前阶段：独立参与组织（2026-10-21，候选整合中）
+## 当前开发：后台快捷导航（2026-10-21）
 
-用户新增要求为组织独立上传图片、名称及对方页面，区分参展与一般参与。分支 `feat/participating-organizations` 基于已验证 main d66582e 及已保存文档；schema／两个 store／匿名图片撤回及完整历史备份已整合，前后台及最终来源验证继续整合。[组织操作与数据契约](participating-organizations.md)、[实施计划](implementation-plan.md)是接续入口。没有实际修改四个组织、导入名单或寄信；旧快照读取不迁移，明确编辑才保存新名录。**本阶段尚未部署，下面 785 项与 PR #29 均为前轮证据。**
+`feat/admin-quick-navigation` 从组织上线后的最终证据分支接续；实际线上基线仍为下方 PR #30 的 main `a0a02e0`。本阶段实现四个后台工作区共用左侧导航、活动编辑页八个区块直达及手机收合菜单，操作见[后台快捷导航](staff-navigation.md)。开发中状态不代表已上线；继续核对该分支的浏览器回归、准确 PR／main CI 及正常发布证据。没有操作真实组织、报名、名单、邮件或 Wallet 凭证。
+
+## 当前阶段：独立参与组织（2026-10-21，已上线）
+
+[PR #30](https://github.com/kunanli/artdicohost/pull/30) 已上线 main **`a0a02e009d5c547e5683a6b5c37f1c3ff7ea99b2`**，本机／最终 PR／main CI 均为 **802/802**，十二组 Chromium 通过。[正式运行 39528912033](https://github.com/kunanli/artdicohost/actions/runs/39528912033) 三个 job 全部成功：十阶段真实私有 OSS，09:49:58（UTC+08）业务启用、09:49:59 核定政策／300 人容量及 09:50:51 的 23 个公开 HTTPS 对象全部验证。[完整证据](organization-release-2026-10-21.md)、[组织操作](participating-organizations.md)及[实施计划](implementation-plan.md)是接续入口，文档分支 `docs/organization-release-evidence-2026-10-21` 保存最终状态，不另触发部署。没有实际修改四个组织、导入名单或寄信；旧快照读取不迁移，明确编辑才保存新名录。下方 785 项与 PR #29 均为前轮证据；接续先核对最新 main／Actions，不重复实现、合并或部署。
 
 ## 当前接续：参会体验六项扩展（2026-10-21，已上线）
 

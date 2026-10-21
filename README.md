@@ -2,6 +2,8 @@
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
 
+2026-10-21 独立「参与组织」已上线 [PR #30](https://github.com/kunanli/artdicohost/pull/30)：后台维护组织图片、名称、链接及参展／一般参与；不必占用展位，保存和发布分别执行。802 项检查与实际部署通过，[操作说明](docs/participating-organizations.md)及[完整证据](docs/organization-release-2026-10-21.md)。
+
 2026-10-21 参会体验更新跟踪 [PR #29](https://github.com/kunanli/artdicohost/pull/29)：人物与照片、逐场职责、精简 VI、保留原件的 Excel、报名确认／打印，以及确认信和 Wallet 的受控设置。合并与实际上线分别核对最新 main／Actions；邮件凭证和 Apple Developer／签章证书仍未提供，不将合成测试称为实际寄信或设备验收。原始 39 行的实际云端导入及邀请未执行。
 
 ## 目标
@@ -11,6 +13,7 @@
 参考私有仓库 `kunanli/igda_shenzhen`（2026-10-18 检查）：Astro、Function Compute、GitHub Actions、静态 OSS 公共站点、私有 OSS JSON 报名。新建独立仓库和独立 OSS/FC 资源；**不要复制旧密钥、成员数据或直接改 IGDA 正式站**。
 
 ## 文档入口
+- [后台快捷导航](docs/staff-navigation.md)：四个工作区切换、活动区块直达与手机收合选单
 - [参与组织](docs/participating-organizations.md)：独立维护组织图片、名称、链接及参展／一般参与，保存与发布分别执行
 - [接续台账](docs/session-recovery.md)、[验收清单](docs/morning-acceptance.md)：中断恢复、准确发布证据与实际资料操作
 - [人物与媒体](docs/profile-media.md)、[逐场职责](docs/participant-duties.md)、[Excel 导出](docs/excel-export.md)：本轮后台资料与保留范围

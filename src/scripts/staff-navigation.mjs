@@ -6,16 +6,18 @@ for (const navigation of document.querySelectorAll('[data-staff-navigation]')) {
   const links = [...navigation.querySelectorAll('[data-staff-section-link]')];
   const headings = links.map(link => document.getElementById(link.hash.slice(1))).filter(Boolean);
   let frame = 0;
+  const visibleHeadings = () => headings.filter(heading => !heading.closest('[hidden]') && heading.getClientRects().length > 0);
   function markCurrent() {
     frame = 0;
     if (workspace.hidden) return;
-    let current = headings[0];
-    for (const heading of headings) {
+    const visible = visibleHeadings();
+    let current = visible[0];
+    for (const heading of visible) {
       // Allow subpixel rounding around the mobile scroll margin plus page padding.
       if (heading.getBoundingClientRect().top <= 102) current = heading;
     }
     // The last section can be too short to reach the top of the viewport.
-    if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) current = headings.at(-1);
+    if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) current = visible.at(-1);
     for (const link of links) {
       if (link.hash === '#' + current?.id) link.setAttribute('aria-current', 'location');
       else link.removeAttribute('aria-current');
@@ -30,8 +32,8 @@ for (const navigation of document.querySelectorAll('[data-staff-navigation]')) {
   }
   function restoreSection() {
     if (workspace.hidden) return;
-    const heading = headings.find(item => '#' + item.id === location.hash);
-    if (!heading) return;
+    const heading = visibleHeadings().find(item => '#' + item.id === location.hash);
+    if (!heading || heading.closest('[hidden]')) return;
     requestAnimationFrame(() => {
       if (workspace.hidden || '#' + heading.id !== location.hash) return;
       heading.tabIndex = -1;

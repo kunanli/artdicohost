@@ -31,6 +31,7 @@ async function fixture(t) {
   await writeFile(resolve(dist, 'registration/confirmation/index.html'), '<h1>报名确认</h1><script type="module" src="/_astro/receipt.hash.js"></script>');
   await writeFile(resolve(dist, '_astro/receipt.hash.js'), '/* Synthetic empty receipt controller; no participant data. */');
   await writeFile(resolve(dist, 'invitations/template-blank.png'), 'synthetic-test-image');
+  await writeFile(resolve(dist, 'invitations/ggj2026-poster-v2.webp'), 'synthetic-test-image');
   await writeFile(resolve(dist, 'contacts.json'), 'synthetic-private-contact');
   return { directory, dist, output };
 }
@@ -38,7 +39,7 @@ async function fixture(t) {
 test('publication selects reachable public assets and replaces local admin with notices', async t => {
   const { dist, output } = await fixture(t);
   const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
-  assert.equal(manifest.files.length, 16);
+  assert.equal(manifest.files.length, 17);
   const receipt = JSON.parse(await readFile(resolve(output, 'release.json'), 'utf8'));
   assert.equal(receipt.commit, commit);
   assert.deepEqual(receipt.files, manifest.files.filter(item => item.path !== 'release.json'));

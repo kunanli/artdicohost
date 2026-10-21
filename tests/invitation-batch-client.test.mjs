@@ -176,3 +176,44 @@ test('email/unknown invitations are never rendered and unknown HTTP acknowledgem
   assert.equal(renders,0);assert.equal(result.summary.unknown,1);
   assert.equal((await readZip(result.blob)).size,2);
 });
+
+test('explicit poster version is bound to both batch requests and retained in private records', async () => {
+  const renderVersion='ggj2026-poster-v2',calls=[];
+  const preview=await previewBatchInvitations({contactIds:['contact_1'],expectedContactRevision:7,renderVersion,request:async(path,options)=>{
+    calls.push([path,JSON.parse(options.body)]);return{contactRevision:7,previewToken:'synthetic-version-token',entries:[{contactId:'contact_1',eligible:true,registrationId:'registration_1',referenceCode:'reference_1'}]};
+  }});
+  assert.equal(preview.renderVersion,renderVersion);
+  assert.deepEqual(calls[0][1],{contactIds:['contact_1'],expectedContactRevision:7,renderVersion});
+  const resultEntry=entry('contact_1');resultEntry.invitation.content.settings.renderVersion=renderVersion;
+  const result=await prepare([resultEntry],{renderVersion:preview.renderVersion,previewToken:preview.previewToken,request:async(path,options)=>{
+    calls.push([path,JSON.parse(options.body)]);return{contactRevision:7,results:[resultEntry]};
+  },renderInvitation:async value=>{assert.equal(value.content.settings.renderVersion,renderVersion);return png();}});
+  assert.deepEqual(calls[1][1],{contactIds:['contact_1'],expectedContactRevision:7,previewToken:'synthetic-version-token',confirmPrepare:true,renderVersion});
+  const files=await readZip(result.blob),metadata=JSON.parse(decoder.decode(files.get('results-private.json')));
+  assert.equal(metadata.results[0].renderVersion,renderVersion);assert.match(decoder.decode(files.get('dispatch-checklist-private.csv')),/ggj2026-poster-v2/u);
+  assert.equal(metadata.batchPerformedSending,false);assert.equal(metadata.downloadMarksSent,false);
+});
+
+test('unknown versions fail before I/O and mismatched saved image versions fail before rendering', async () => {
+  let calls=0,renders=0;const request=async()=>{calls++;return{};};
+  for(const renderVersion of [null,'legacy','unknown',{},42]){
+    await assert.rejects(previewBatchInvitations({contactIds:['contact_1'],expectedContactRevision:7,renderVersion,request}),/版本无效/u);
+    await assert.rejects(prepare([entry('contact_1')],{renderVersion,request}),/版本无效/u);
+  }
+  assert.equal(calls,0);
+  await assert.rejects(prepare([entry('contact_1')],{renderVersion:'ggj2026-poster-v2',renderInvitation:async()=>{renders++;return png();}}),/内容无效/u);
+  const changed=entry('contact_1');changed.invitation.content.settings.renderVersion='ggj2026-poster-v2';
+  await assert.rejects(prepare([changed],{renderInvitation:async()=>{renders++;return png();}}),/内容无效/u);
+  assert.equal(renders,0);
+});
+
+test('leading underscore and dash registration tokens survive preview, preparation and private manifest without relaxing contact IDs', async () => {
+  const registrationId='_'+'A'.repeat(42),referenceCode='-'+'b'.repeat(42),renderVersion='ggj2026-poster-v2';
+  const preview=await previewBatchInvitations({contactIds:['contact_1'],expectedContactRevision:7,renderVersion,request:async()=>({contactRevision:7,previewToken:'synthetic-token',entries:[{contactId:'contact_1',eligible:true,registrationId,referenceCode}]})});
+  assert.equal(preview.entries[0].registrationId,registrationId);assert.equal(preview.entries[0].referenceCode,referenceCode);
+  const resultEntry=entry('contact_1');Object.assign(resultEntry.invitation,{registrationId,referenceCode});resultEntry.invitation.content.settings.renderVersion=renderVersion;
+  const result=await prepare([resultEntry],{renderVersion});const files=await readZip(result.blob),metadata=JSON.parse(decoder.decode(files.get('results-private.json')));
+  assert.equal(result.summary.pngCreated,1);assert.equal(metadata.results[0].registrationId,registrationId);assert.equal(metadata.results[0].referenceCode,referenceCode);
+  let calls=0;await assert.rejects(previewBatchInvitations({contactIds:['_contact'],expectedContactRevision:7,request:async()=>{calls++;}}),/名单或版本/u);assert.equal(calls,0);
+  for(const token of ['../bad','~bad','A'.repeat(101)])await assert.rejects(previewBatchInvitations({contactIds:['contact_1'],expectedContactRevision:7,request:async()=>({contactRevision:7,previewToken:'synthetic-token',entries:[{contactId:'contact_1',eligible:true,registrationId:token,referenceCode}]})}),/预检无效/u);
+});

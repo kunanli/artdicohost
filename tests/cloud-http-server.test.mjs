@@ -20,6 +20,7 @@ const ASSETS = () => new Map([
   ['/admin/person/', Buffer.from('<!doctype html><html><body>合成人员工作区</body></html>')],
   ['/admin/volunteers/', Buffer.from('<!doctype html><html><body>合成志愿者工作区</body></html>')],
   ['/invitations/template-blank.png', Buffer.from('synthetic-png-template')],
+  ['/invitations/ggj2026-poster-v2.webp', Buffer.from('synthetic-webp-template')],
   ['/_astro/staff-test.js', Buffer.from('export const syntheticStaff = true;')],
   ['/_astro/staff-test.css', Buffer.from('body { color: #222; }')],
 ]);
@@ -150,6 +151,13 @@ test('actual HTTP serves copied allowlisted bytes, exact inline CSP hashes, safe
   assert.equal(templateHead.status, 200);
   assert.equal(templateHead.body.length, 0);
   assert.equal(templateHead.headers['content-length'], template.headers['content-length']);
+  const poster = await send(port, '/invitations/ggj2026-poster-v2.webp');
+  assert.equal(poster.status, 200); secure(poster);
+  assert.equal(poster.headers['content-type'], 'image/webp');
+  assert.equal(poster.text, 'synthetic-webp-template');
+  const posterHead = await send(port, '/invitations/ggj2026-poster-v2.webp', { method: 'HEAD' });
+  assert.equal(posterHead.status, 200); assert.equal(posterHead.body.length, 0);
+  assert.equal(posterHead.headers['content-length'], poster.headers['content-length']);
   assert.equal(calls, 0, 'static routes cannot enter the API runtime');
 });
 
@@ -189,7 +197,7 @@ test('exact application Host and fixed HTTPS origin cannot be overridden with pr
 
 test('closed configuration serves no admin bytes while process health keeps the full source marker and no readiness claim', async t => {
   const { port } = await loopback(t, { runtime: { configured: false, handle: createCloudContentApi({ enabled: false }) } });
-  for (const path of ['/admin', '/admin/', '/admin/contacts', '/admin/contacts/', '/admin/volunteers', '/admin/volunteers/', '/invitations/template-blank.png', '/_astro/staff-test.js', '/api/admin/session', '/api/admin/login']) {
+  for (const path of ['/admin', '/admin/', '/admin/contacts', '/admin/contacts/', '/admin/volunteers', '/admin/volunteers/', '/invitations/template-blank.png', '/invitations/ggj2026-poster-v2.webp', '/_astro/staff-test.js', '/api/admin/session', '/api/admin/login']) {
     const response = await send(port, path);
     assert.equal(response.status, 503, path); secure(response);
     assert.equal(response.text.includes('合成后台页面'), false);

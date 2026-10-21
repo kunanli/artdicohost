@@ -8,7 +8,7 @@ const SECURITY = { 'cache-control': 'no-store', 'x-content-type-options': 'nosni
 const MIME = { '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.woff': 'font/woff', '.woff2': 'font/woff2' };
 
 export function isCloudAdminAssetUrl(path) {
-  return ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/invitations/template-blank.png'].includes(path)
+  return ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/invitations/template-blank.png', '/invitations/ggj2026-poster-v2.webp'].includes(path)
     || typeof path === 'string' && /^\/_astro\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,200}\.(?:css|js|mjs|woff|woff2)$/u.test(path) && !path.includes('..');
 }
 
@@ -17,12 +17,12 @@ function staticAssets(input) {
   const result = new Map(); let total = 0;
   for (const [path, bytes] of input) {
     const html = ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/'].includes(path);
-    const invitation = path === '/invitations/template-blank.png';
+    const invitation = path === '/invitations/template-blank.png' ? 'image/png' : path === '/invitations/ggj2026-poster-v2.webp' ? 'image/webp' : null;
     const suffix = typeof path === 'string' ? /\.[a-z0-9]+$/u.exec(path)?.[0] : null;
     if (!isCloudAdminAssetUrl(path)) throw new TypeError('后台静态资源路径无效。');
     if (!(bytes instanceof Uint8Array) || !bytes.byteLength || bytes.byteLength > 2 * 1024 * 1024 || (total += bytes.byteLength) > 8 * 1024 * 1024) throw new TypeError('后台静态资源容量无效。');
     const data = Buffer.from(bytes);
-    const headers = { ...SECURITY, 'content-type': html ? 'text/html; charset=utf-8' : invitation ? 'image/png' : MIME[suffix], 'content-length': String(data.length) };
+    const headers = { ...SECURITY, 'content-type': html ? 'text/html; charset=utf-8' : invitation || MIME[suffix], 'content-length': String(data.length) };
     if (html) {
       const hashes = new Set();
       for (const script of data.toString('utf8').matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/giu)) {

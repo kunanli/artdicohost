@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { extname, resolve } from 'node:path';
 import { createOrganizerTasksApi } from '../../functions/organizer-tasks/handler.mjs';
 import { eventConfig as event } from '../../src/config/event.mjs';
+import { buildPosterInvitationSettings, INVITATION_POSTER_FACTS } from '../../shared/organizer-progress.mjs';
 const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
 const dist = resolve(process.env.ARTDICO_DIST_DIRECTORY || resolve(fileURLToPath(new URL('../../', import.meta.url)), 'dist'));
 const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless: true, args: ['--no-sandbox','--disable-dev-shm-usage'] });
@@ -19,7 +20,9 @@ const settings = person => ({ recipientName: person.profile.name, date: event.da
 const conversion = person => ({ sourceContactId: person.id, registrationId: 'r-' + person.id, referenceCode: 'ref-' + person.id, admissionStatus: 'confirmed' });
 const invitation = (person, status) => ({ id: 'i-' + person.id, sourceContactId: person.id, registrationId: 'r-' + person.id, referenceCode: 'ref-' + person.id,
   channel: status === 'provider_accepted' || status === 'unknown' ? 'email' : 'manual', status, createdAt: '2026-10-19T01:00:00.000Z', updatedAt: '2026-10-19T02:00:00.000Z',
-  content: { eventId: event.id, title: event.title, registrationId: 'r-' + person.id, referenceCode: 'ref-' + person.id, settings: settings(person) } });
+  content: { eventId: event.id, title: status === 'provider_accepted' || status === 'unknown' ? event.title : INVITATION_POSTER_FACTS.title,
+    registrationId: 'r-' + person.id, referenceCode: 'ref-' + person.id,
+    settings: status === 'provider_accepted' || status === 'unknown' ? settings(person) : buildPosterInvitationSettings(person.profile.name, event) } });
 const legacy = contacts[0];legacy.invitation = { generatedAt: '2026-10-19T01:00:00.000Z', sentAt: '2026-10-19T02:00:00.000Z', sentGenerationAt: '2026-10-19T01:00:00.000Z', settings: settings(legacy) };
 const ledger = { revision: 1, conversions: contacts.slice(0,4).map(conversion), invitations: [invitation(contacts[0],'manually_sent'),invitation(contacts[1],'provider_accepted'),invitation(contacts[2],'unknown')], email: { ready: false } };
 const waitlisted = make('synthetic-waitlisted','合成候补对象'), admissionUnknown = make('synthetic-admission-unknown','合成名额待核对象');

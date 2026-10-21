@@ -65,3 +65,69 @@ test('missing/foreign configuration or malformed capability performs no request;
   await assert.rejects(valid.read('bad'));assert.equal(calls,0);
   const pass=await valid.wallet(token);assert.equal(pass.type,'application/vnd.apple.pkpass');assert.equal(calls,1);
 });
+
+const poster=()=>({ready:true,settings:{recipientName:'合成报名人',date:'2026-12-05',time:'10:00–18:00',venue:'深圳前海5号楼3F',confirmed:true,renderVersion:'ggj2026-poster-v2'}});
+const ready=()=>confirmationView({...value(),invitation:poster()},now);
+const png=()=>new Blob([new Uint8Array([137,80,78,71,13,10,26,10,1])],{type:'image/png'});
+
+test('private invitation descriptor is exact and never inferred from legacy confirmation or non-confirmed admission',async()=>{
+  const{confirmationInvitation}=await import('../src/lib/confirmation-client.mjs');
+  assert.deepEqual(confirmationView(value(),now).invitation,{ready:false});
+  assert.deepEqual(ready().invitation,poster());
+  const supplied=poster();supplied.settings.recipientName='e\u0301';assert.equal(confirmationInvitation(supplied,'confirmed','é').ready,false);
+  for(const status of ['pending_review','waitlisted','rejected','withdrawn'])assert.deepEqual(confirmationView({...value(),admission:{...value().admission,status},invitation:poster()},now).invitation,{ready:false});
+  for(const bad of [null,{}, {ready:'true',settings:poster().settings},{ready:false,settings:poster().settings},{...poster(),source:'private'},...[
+    {recipientName:'other person'},{recipientName:'name\nline'},{recipientName:'称'.repeat(121)},{venue:'地'.repeat(301)}, {date:'2026-02-30'},{date:20261205},{time:'09:30-18:00'},{time:'18:00–10:00'},{time:'25:00–26:00'}, {confirmed:'true'},{renderVersion:'unrecognized'},{privateNotes:'do not copy'},
+  ].map(patch=>({ready:true,settings:{...poster().settings,...patch}}))])assert.deepEqual(confirmationView({...value(),invitation:bad},now).invitation,{ready:false});
+});
+
+test('poster names and venues support the complete codepoint contract without truncation or event-time guessing',()=>{
+  const name='𠮷'.repeat(120),venue='场'.repeat(300),input=value();input.attendee.name=name;input.invitation=poster();input.invitation.settings.recipientName=name;input.invitation.settings.venue=venue;input.event.time='09:30–18:00';
+  const output=confirmationView(input,now);assert.equal(output.invitation.ready,true);assert.equal(output.invitation.settings.recipientName,name);assert.equal(output.invitation.settings.venue,venue);assert.equal(output.invitation.settings.time,'10:00–18:00');assert.equal(output.event.time,'09:30–18:00');
+});
+
+test('private invitation generation performs a fresh read before generation and after PNG encoding',async()=>{
+  const{prepareConfirmationInvitation,CONFIRMATION_INVITATION_FILENAME}=await import('../src/lib/confirmation-client.mjs');
+  const steps=[];let calls=0;const initial=ready(),first=ready();first.invitation.settings.venue='合成更新场地';
+  const final=structuredClone(first);final.admission.revision=50;final.email.status='provider_accepted';final.wallet.ready=true;
+  const result=await prepareConfirmationInvitation({receiptToken:token,initial,read:async()=>{steps.push('read');return ++calls===1?first:final;},generate:async settings=>{steps.push('render+blob');assert.equal(settings.venue,'合成更新场地');return png();}});
+  assert.deepEqual(steps,['read','render+blob','read']);assert.equal(result.view,final);assert.equal(result.blob.type,'image/png');assert.equal(CONFIRMATION_INVITATION_FILENAME,'artdico-host-invitation.png');assert.doesNotMatch(CONFIRMATION_INVITATION_FILENAME,/合成|r{43}|v1\./u);
+});
+
+test('a lost seat or unavailable descriptor before rendering causes zero renderer calls',async()=>{
+  const{prepareConfirmationInvitation}=await import('../src/lib/confirmation-client.mjs');
+  for(const status of ['pending_review','waitlisted','rejected','withdrawn','confirmed']){
+    const changed=ready();changed.admission.status=status;changed.invitation={ready:false};let renders=0,reads=0;
+    await assert.rejects(prepareConfirmationInvitation({receiptToken:token,initial:ready(),read:async()=>{reads++;return changed;},generate:async()=>{renders++;return png();}}),error=>error.view===changed);
+    assert.equal(reads,1);assert.equal(renders,0);
+  }
+  let calls=0;await assert.rejects(prepareConfirmationInvitation({receiptToken:token,initial:confirmationView(value(),now),read:async()=>{calls++;},generate:async()=>{calls++;}}));assert.equal(calls,0);
+});
+
+test('any own descriptor or identity change after PNG encoding discards the result; global revision changes do not',async()=>{
+  const{prepareConfirmationInvitation}=await import('../src/lib/confirmation-client.mjs');
+  for(const alter of [view=>{view.admission.status='withdrawn';},view=>{view.invitation={ready:false};},view=>{view.invitation.settings.venue='已变更场地';},view=>{view.invitation.settings.time='11:00–18:00';},view=>{view.attendee.organization='新组织';},view=>{view.admission.kind='crew';},view=>{view.referenceCode='z'.repeat(43);},view=>{view.submittedAt='2026-10-22T00:00:00Z';},view=>{view.event.id='different-event';}]){
+    const final=ready();alter(final);let reads=0,renders=0;
+    await assert.rejects(prepareConfirmationInvitation({receiptToken:token,initial:ready(),read:async()=>++reads===1?ready():final,generate:async()=>{renders++;return png();}}),/已更新/u);assert.equal(reads,2);assert.equal(renders,1);
+  }
+});
+
+test('a capability response for a different registration is never exposed as the current person',async()=>{
+  const{prepareConfirmationInvitation}=await import('../src/lib/confirmation-client.mjs');
+  const foreign=ready();foreign.referenceCode='z'.repeat(43);let renders=0;
+  await assert.rejects(prepareConfirmationInvitation({receiptToken:token,initial:ready(),read:async()=>foreign,generate:async()=>{renders++;return png();}}),error=>error.view===undefined);assert.equal(renders,0);
+});
+
+test('hash/page lifecycle cancellation after an awaited renderer cannot cause a final read or a download',async()=>{
+  const{prepareConfirmationInvitation}=await import('../src/lib/confirmation-client.mjs');
+  let active=true,reads=0;const controller=new AbortController();
+  await assert.rejects(prepareConfirmationInvitation({receiptToken:token,initial:ready(),isCurrent:()=>active,signal:controller.signal,read:async()=>{reads++;return ready();},generate:async()=>{active=false;controller.abort();return png();}}),error=>error.cancelled===true);assert.equal(reads,1);
+});
+
+test('an external aborted confirmation read never fetches, and a late response is ignored',async()=>{
+  const before=new AbortController();before.abort();let calls=0;
+  const client=createConfirmationClient({apiOrigin:api,pageOrigin:site,fetchFn:async()=>{calls++;return json(value());}});
+  await assert.rejects(client.read(token,{signal:before.signal}),error=>error.cancelled===true);assert.equal(calls,0);
+  const during=new AbortController();let finish;const waiting=new Promise(resolve=>{finish=resolve;});const held=createConfirmationClient({apiOrigin:api,pageOrigin:site,fetchFn:async()=>{calls++;await waiting;return json(value());}});
+  const request=held.read(token,{signal:during.signal});during.abort();finish();await assert.rejects(request,error=>error.cancelled===true);assert.equal(calls,1);
+});

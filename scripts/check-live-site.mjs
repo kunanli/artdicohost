@@ -14,7 +14,7 @@ export function validateRelease(release, commit) {
     if (file.path === 'release.json' || seen.has(file.path) || !Number.isSafeInteger(file.bytes) || file.bytes < 0 || file.bytes > MAX_FILE_BYTES || !/^[a-f0-9]{64}$/.test(file.sha256)) throw new Error('Invalid public object in release receipt');
     seen.add(file.path);
   }
-  for (const path of [...routes.keys(), '404.html', 'invitations/template-blank.png']) if (!seen.has(path)) throw new Error('Release receipt is missing a required public route');
+  for (const path of [...routes.keys(), '404.html', 'invitations/template-blank.png', 'invitations/ggj2026-poster-v2.webp']) if (!seen.has(path)) throw new Error('Release receipt is missing a required public route');
   return release;
 }
 

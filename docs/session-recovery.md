@@ -1,5 +1,17 @@
 # 开发接续与验收计划
 
+## 当前恢复：新版邀请函已集成，待准确发布（2026-10-21）
+
+根分支 `feat/invitation-poster-v2`，产品来源 `f9e5ea8`，**13:06:38 UTC** 冻结十页构建。上传字体已转为四包、完整 OFL 在每包，Medium 原 30890 cmap 全保留；新 blank WebP 与旧 PNG 共存。V2 manual digest ID／旧hash／历史contacted与unknown保留，私人 PNG 仅 public confirmed，前后freshread与切换取消完成。独立 review 修正 batch pagehide、首 -/_ 合法编号、skiplink覆盖 #r，以及旧发送同时间戳混入新版；24组个人/字体、11组手动/批次 Chromium 全绿、零pageerrors。
+
+完整本机第一轮1176/1176（86.740681932秒），之后149定向、18file-store、42lifecycle检查全过；最终完整 **1182/1182**（84.139525025秒）通过，512源码／380Astro／十页／审计通过。[本阶段计划与操作](invitation-poster-v2.md)、[验证／剩余](invitation-release-2026-10-21.md)。当前准确候选d02c573在128files/40assets/7,326,049静态bytes内，但ZIP37,769,494B超过原35,999,982B上限；正确拒绝，尚无PR或部署。纯BCJ/preset均未够，现按/tmp实测选择BCJ6＋仅白名单文字bounded ZIP deflate6（预计35.64MB），已集成BCJ6 `783126d`＋bounded deflate `bf69169`，root新12项边界测试全过；额外4MiB文字输出预算、逐件输出/全部输入消耗/CRC/SHA严格核对。不能放宽48MB上传／decoder96MiB／producer120s等限制，也不删字形/旧模板。详见验证记录阻挡段落；完成后准确最终head候选ZIP／离线启动、PR精确CI、main真实私有OSS/300政策与exactHTTPS；不可先说新版已上线。PR #38已经实际完成，不重跑旧部署。
+
+## 最新：本机草稿与协作账号 PR #38 已实际上线（2026-10-21）
+
+main **`19fe62132518a51d2ca83b0d97df2003f4526506`** 已实际发布，[run 39600944892](https://github.com/kunanli/artdicohost/actions/runs/39600944892) attempt 1 三个 job 全 success；准确 PR／main **1131/1131**、125 文件／37 静态资源、真实私有 OSS、共同 300 政策及 **28/28 HTTPS** 通过，**20:44:48（UTC+08）**完成。[完整证据](usability-release-2026-10-21.md)。本机暂存、刷新恢复、就近云端保存、简化说明及全业务协作者权限已上线。`zhouyufei`／`wangying` 的快速准备入口已上线，**正式账号尚未建立**：现有管理员须登录用户管理生成密码并保存；本次未读取凭证或实寄邮件。
+
+接续新邀请函阶段：使用用户空名海报和两款 Noto Sans SC，动态姓名完整支持 120 字；新 visual version 与旧记录分开，旧邮件／unknown 去重不变；public confirmed（含后改 crew）私人 PNG 需服务器授权并在生成前后重新核对。先完成计划和分工，再代码／测试／准确包／PR／实际发布。Wallet 仍等证书。下面各节是历史恢复点，不重新执行 PR #35–38 或重复导入名单。
+
 ## 最新接续：人工审核已上线；正在做本机草稿、界面简化、两个协作账号（2026-10-21）
 
 PR #37 **已实际发布** main **`7ab7d94eb9e45b7455e45a168df69618b6b12709`**。准确 PR／main 均 **1065/1065**；[main 运行 39592767314](https://github.com/kunanli/artdicohost/actions/runs/39592767314) attempt 1 三个 job 全 success：121 文件／34 静态资源离线包、真实私有 OSS、共同 300 政策及 **27/27 HTTPS** 全通过，**19:40:43（UTC+08）**结束，远端 main 已复核。[完整证据](application-release-2026-10-21.md)。不要重做本次发布，下面的候选／尚待上线段落均为历史。

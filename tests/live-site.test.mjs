@@ -8,7 +8,7 @@ const commit = 'a'.repeat(40);
 const origin = 'https://preview.example.invalid';
 
 function fixture(change = () => {}) {
-  const objects = new Map(['index.html', 'invitation/index.html', 'admin/index.html', 'admin/contacts/index.html', '404.html', 'invitations/template-blank.png', '_astro/public.js'].map(path => [path, Buffer.from('synthetic public ' + path)]));
+  const objects = new Map(['index.html', 'invitation/index.html', 'admin/index.html', 'admin/contacts/index.html', '404.html', 'invitations/template-blank.png', 'invitations/ggj2026-poster-v2.webp', '_astro/public.js'].map(path => [path, Buffer.from('synthetic public ' + path)]));
   const release = { schemaVersion: 1, commit, files: [...objects].map(([path, data]) => ({ path, bytes: data.length, sha256: sha256(data) })) };
   objects.set('release.json', Buffer.from(JSON.stringify(release)));
   const fetchPublic = async (url, options) => {
@@ -28,8 +28,8 @@ function fixture(change = () => {}) {
 
 test('live verification checks exact public bytes, HTTPS origin, directory pages and a genuine 404', async () => {
   const result = await checkLiveSite({ origin, commit, ...fixture() });
-  assert.equal(result.publicObjects, 7);
-  assert.equal(result.checkedResponses, 14);
+  assert.equal(result.publicObjects, 8);
+  assert.equal(result.checkedResponses, 15);
 });
 
 test('unsafe origins and missing exact commits fail before any network request', async () => {

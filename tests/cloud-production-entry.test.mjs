@@ -21,6 +21,7 @@ const syntheticAssets = [
   { url: '/admin/person/', path: 'admin-assets/admin/person/index.html', data: '<!doctype html><p>synthetic person workspace</p>' },
   { url: '/admin/volunteers/', path: 'admin-assets/admin/volunteers/index.html', data: '<!doctype html><p>synthetic volunteer workspace</p>' },
   { url: '/invitations/template-blank.png', path: 'admin-assets/invitations/template-blank.png', data: 'synthetic blank image' },
+  { url: '/invitations/ggj2026-poster-v2.webp', path: 'admin-assets/invitations/ggj2026-poster-v2.webp', data: 'synthetic blank image' },
   { url: '/_astro/staff-test.js', path: 'admin-assets/_astro/staff-test.js', data: 'export const synthetic=true;' },
 ];
 

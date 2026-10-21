@@ -6,6 +6,40 @@ const list = value => Array.isArray(value) ? value : [];
 const text = value => typeof value === 'string' ? value.trim() : '';
 const has = (value, key) => Object.prototype.hasOwnProperty.call(value ?? {}, key);
 const time = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? Date.parse(value) : -1;
+export const INVITATION_POSTER_RENDER_VERSION = 'ggj2026-poster-v2';
+export const INVITATION_POSTER_FACTS = Object.freeze({
+  title: 'GGJ中国组织者交流会 × ARTDiCO 嘉年华', tagline: '相聚一起，创意不息',
+  date: '2026-12-05', time: '10:00–18:00', venue: '深圳前海5号楼3F',
+  canonicalAddress: '深圳市前海合作区梦海大道5188号前海5号楼',
+});
+const own = (value, key) => {
+  if (!value || typeof value !== 'object' || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return undefined;
+  const field = Object.getOwnPropertyDescriptor(value, key);
+  return field?.enumerable && Object.hasOwn(field, 'value') ? field.value : undefined;
+};
+const posterText = (value, max) => {
+  if (typeof value !== 'string' || /[\u0000-\u001f\u007f-\u009f]/u.test(value)) throw new TypeError('邀请函资料尚未核实。');
+  const result = value.normalize('NFC').trim();
+  if (!result || [...result].length > max || /[\u0000-\u001f\u007f-\u009f]/u.test(result)) throw new TypeError('邀请函资料尚未核实。');
+  return result;
+};
+/** New poster facts only. Existing invitation settings and global event facts
+ * are never rewritten; custom dates, times and addresses remain authoritative. */
+export function buildPosterInvitationSettings(name, event) {
+  const date = own(event, 'date'), venue = own(event, 'venue'), schedule = own(event, 'time');
+  if (own(event, 'status') !== 'confirmed' || own(date, 'status') !== 'confirmed' || own(venue, 'confirmed') !== true) throw new TypeError('邀请函资料尚未核实。');
+  const dateValue = posterText(own(date, 'value'), 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(dateValue) || !Number.isFinite(Date.parse(dateValue + 'T00:00:00Z'))
+    || new Date(dateValue + 'T00:00:00Z').toISOString().slice(0, 10) !== dateValue) throw new TypeError('邀请函资料尚未核实。');
+  const timeValue = posterText(own(schedule, 'label') || own(schedule, 'opening') + '–' + own(schedule, 'end'), 40);
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d\s*[-–]\s*(?:[01]\d|2[0-3]):[0-5]\d$/u.test(timeValue)) throw new TypeError('邀请函资料尚未核实。');
+  const [start, end] = timeValue.split(/\s*[-–]\s*/u);
+  if (end <= start) throw new TypeError('邀请函资料尚未核实。');
+  const address = own(venue, 'address');
+  return { recipientName: posterText(name, 120), date: dateValue, time: start + '–' + end,
+    venue: posterText(address === INVITATION_POSTER_FACTS.canonicalAddress ? INVITATION_POSTER_FACTS.venue : address || own(venue, 'name'), 300),
+    confirmed: true, renderVersion: INVITATION_POSTER_RENDER_VERSION };
+}
 export const organizerTaskLabels = Object.freeze({
   verify_consent: '核实联络授权', unconverted: '待代登记', unsent: '待准备或人工发出邀请',
   invitation_unknown: '核对发送结果', unreplied: '已联系待回复', unassigned: '待安排参与场次 / 展位',
@@ -17,6 +51,13 @@ export function contactDeclined(contact) {
 function settingsCurrent(settings, contact, event) {
   if (!settings || settings.confirmed !== true || !event) return false;
   const names = [contact?.profile?.displayName, contact?.profile?.name].map(text).filter(Boolean);
+  if (has(settings, 'renderVersion')) {
+    if (settings.renderVersion !== INVITATION_POSTER_RENDER_VERSION) return false;
+    try {
+      const expected = buildPosterInvitationSettings(settings.recipientName, event);
+      return names.includes(text(settings.recipientName)) && ['date', 'time', 'venue'].every(key => settings[key] === expected[key]);
+    } catch { return false; }
+  }
   const times = [event.time?.label, event.time?.start && event.time?.end ? event.time.start + '–' + event.time.end : ''].filter(Boolean);
   return names.includes(text(settings.recipientName)) && settings.date === event.date?.value
     && times.includes(settings.time) && settings.venue === (event.venue?.address || event.venue?.name);
@@ -42,17 +83,28 @@ export function contactProgress(contact, { intent = null, content = null, event,
   const inactive = ['withdrawn', 'rejected'].includes(admissionStatus);
   const admissionPending = ['pending_review','waitlisted','unknown'].includes(admissionStatus);
   const legacy = contact.invitation ?? {};
-  const legacyCurrent = Boolean(time(legacy.generatedAt) >= 0 && time(legacy.generatedAt) <= now && settingsCurrent(legacy.settings, contact, event));
+  const legacyCurrent = Boolean(legacy.settings?.renderVersion === INVITATION_POSTER_RENDER_VERSION
+    && time(legacy.generatedAt) >= 0 && time(legacy.generatedAt) <= now && settingsCurrent(legacy.settings, contact, event));
   const legacySent = Boolean(legacyCurrent && time(legacy.sentAt) >= time(legacy.generatedAt) && time(legacy.sentAt) <= now && legacy.sentGenerationAt === legacy.generatedAt);
-  const versions = latestByChannel(list(intent?.invitations).filter(entry => entry.sourceContactId === id));
-  const current = versions.filter(entry => conversion && entry.registrationId === conversion.registrationId
+  const related = list(intent?.invitations).filter(entry => entry.sourceContactId === id);
+  const versions = latestByChannel(related);
+  const linked = related.filter(entry => conversion && entry.registrationId === conversion.registrationId
     && entry.content?.registrationId === conversion.registrationId && entry.content?.referenceCode === conversion.referenceCode
-    && entry.content?.eventId === event?.id && entry.content?.title === event?.title
+    && entry.content?.eventId === event?.id && time(entry.createdAt) >= 0 && time(entry.createdAt) <= now);
+  const current = versions.filter(entry => linked.includes(entry)
+    && (entry.channel === 'manual' ? entry.content?.settings?.renderVersion === INVITATION_POSTER_RENDER_VERSION
+      : !has(entry.content?.settings, 'renderVersion'))
+    && entry.content?.title === (entry.channel === 'manual' ? INVITATION_POSTER_FACTS.title : event?.title)
     && settingsCurrent(entry.content?.settings, contact, event) && time(entry.createdAt) >= 0 && time(entry.createdAt) <= now
     && (!has(entry, 'expiresAt') || time(entry.expiresAt) > now));
   const manuallySent = !excluded && !inactive && (legacySent || current.some(entry => entry.channel === 'manual' && entry.status === 'manually_sent'));
   const providerAccepted = !excluded && !inactive && current.some(entry => entry.channel === 'email' && entry.status === 'provider_accepted');
-  const unknown = !excluded && !inactive && current.some(entry => ['issuing', 'unknown'].includes(entry.status));
+  // A new image can supersede preparation, never a recorded human contact or
+  // unresolved provider attempt. Keep these facts across all linked versions.
+  const legacyHistorySent = time(legacy.sentGenerationAt) >= 0 && time(legacy.sentAt) >= time(legacy.sentGenerationAt) && time(legacy.sentAt) <= now;
+  const historyManuallySent = !excluded && !inactive && (legacyHistorySent || linked.some(entry => entry.channel === 'manual' && entry.status === 'manually_sent'));
+  const historyProviderAccepted = !excluded && !inactive && linked.some(entry => entry.channel === 'email' && entry.status === 'provider_accepted');
+  const unknown = !excluded && !inactive && linked.some(entry => ['issuing', 'unknown'].includes(entry.status));
   const prepared = !excluded && !inactive && (legacyCurrent || current.some(entry => entry.status === 'prepared'));
   const stale = Boolean(legacy.generatedAt && !legacyCurrent || legacy.sentAt && !legacySent || versions.some(entry => !current.includes(entry)));
   const sessions = list(content?.sessions).filter(entry => entry.status !== 'cancelled');
@@ -68,8 +120,8 @@ export function contactProgress(contact, { intent = null, content = null, event,
   const state = excluded ? 'excluded' : admissionStatus === 'rejected' ? 'rejected' : inactive ? 'inactive' : admissionStatus === 'pending_review' ? 'pending_review' : admissionStatus === 'waitlisted' ? 'waitlisted' : admissionPending ? 'admission_unknown' : manuallySent ? 'manually_sent' : unknown ? 'unknown'
     : providerAccepted ? 'provider_accepted' : prepared ? 'prepared' : stale ? 'stale' : 'not_prepared';
   return { contactId: id, owner: text(operations.owner), excluded, consented: contact.profile?.contactConsent === 'consented',
-    conversion, admissionStatus, admissionPending, inactive, state, manuallySent, providerAccepted, unknown, prepared, stale,
-    response: operations.responseStatus ?? 'pending', contacted: manuallySent || providerAccepted,
+    conversion, admissionStatus, admissionPending, inactive, state, manuallySent, providerAccepted, historyManuallySent, historyProviderAccepted, unknown, prepared, stale,
+    response: operations.responseStatus ?? 'pending', contacted: manuallySent || providerAccepted || historyManuallySent || historyProviderAccepted,
     assigned: validSessions.length + validBooths.length > 0, missingAssignment,
     followUpAt: text(operations.followUpAt), needsSession, needsBooth, needsShowcase };
 }

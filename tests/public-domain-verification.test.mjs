@@ -17,6 +17,7 @@ async function fixture(t) {
   await writeFile(resolve(dist, 'invitation/index.html'), '<html>合成邀请</html>');
   await writeFile(resolve(dist, 'registration/confirmation/index.html'), '<html>合成确认页；无参会资料</html>');
   await writeFile(resolve(dist, 'invitations/template-blank.png'), Buffer.from([0, 1, 2, 255]));
+  await writeFile(resolve(dist, 'invitations/ggj2026-poster-v2.webp'), Buffer.from([0, 1, 2, 255]));
   await writeFile(resolve(dist, '_astro/public.js'), '/* synthetic public script */');
   const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
   const calls = [];

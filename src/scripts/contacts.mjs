@@ -4,7 +4,7 @@ import { renderInvitation, invitationPngBlob, invitationFilename } from '../lib/
 import { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS } from '../../shared/contact-editor.mjs';
 import { SESSION_ROLES, SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
 import { eventConfig } from '../config/event.mjs';
-import { contactProgress, summarizeContactProgress, invitationProgressLabels, contactDeclined } from '../../shared/organizer-progress.mjs';
+import { contactProgress, summarizeContactProgress, invitationProgressLabels, contactDeclined,buildPosterInvitationSettings,INVITATION_POSTER_RENDER_VERSION } from '../../shared/organizer-progress.mjs';
 import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, admissionForContact, ADMISSION_LABELS, PUBLIC_ROLE_LABELS, savedContactReceipt, conversionPreview, conversionReceipt, privateResponseAction } from '../lib/people-relationships.mjs';
 
 const $ = value => document.querySelector(value);
@@ -15,6 +15,7 @@ const participationLabels = new Map([...document.querySelectorAll('[data-contact
 let user = null, csrfToken = '', revision = 0, contacts = [], content = null;
 let busy = false, importPreview = null, currentContactId = null, invitationContactId = null, renderedSettings = null;
 let operationsDirty = false, communications = null;
+let invitationRenderVersion,invitationGeneration=0;
 let profileContactId = null, profileDirty = false;
 let features = { contactImport: false, communicationsPreview: false };
 let intentState = null;
@@ -49,8 +50,26 @@ function matchesSavedInvitation() {
   const invitation = contactById(invitationContactId)?.invitation;
   if (!invitation?.generatedAt || !invitation.settings) return false;
   const current = settingsFromForm();
-  return ['recipientName','date','time','venue','confirmed'].every(key => current[key] === invitation.settings[key]);
+  return ['recipientName','date','time','venue','confirmed','renderVersion'].every(key => current[key] === invitation.settings[key]);
 }
+const invitationVersionLabel=settings=>settings?.renderVersion===INVITATION_POSTER_RENDER_VERSION?'新版海报':settings?.renderVersion===undefined?'旧版图片':'未知图片版本';
+const dispatchLabel=status=>({prepared:'已准备，未记录发出',manually_sent:'已记录人工发出',provider_accepted:'服务商已接受，未证明送达',issuing:'发送结果待核对，勿重送',unknown:'发送结果待核对，勿重送',rejected:'服务商拒绝发送'})[status]??'状态待核对';
+function invitationHistory(item){
+  const records=[];
+  if(item.invitation?.generatedAt&&item.invitation.settings)records.push({id:'custom',settings:item.invitation.settings,at:item.invitation.generatedAt,label:'自订图片',status:item.invitation.sentGenerationAt===item.invitation.generatedAt&&item.invitation.sentAt?'已记录人工发出':'已生成，未记录本版发出',historySentAt:item.invitation.sentAt&&item.invitation.sentGenerationAt!==item.invitation.generatedAt?item.invitation.sentAt:null});
+  for(const entry of intentState?.invitations??[])if(entry.sourceContactId===item.id&&entry.content?.settings)records.push({id:entry.id,settings:entry.content.settings,at:entry.createdAt,label:entry.channel==='manual'?'报名邀请图片':'报名邀请邮件',status:dispatchLabel(entry.status),manual:entry.channel==='manual'});
+  return records;
+}
+function renderInvitationHistory(item){
+  const output=$('[data-invitation-history]');output.replaceChildren();const records=invitationHistory(item);$('[data-invitation-history-panel]').hidden=!records.length;
+  for(const record of records){const article=node('article');article.dataset.invitationHistoryRow=record.id;article.append(node('strong',record.label+' · '+invitationVersionLabel(record.settings)),node('p',record.status),node('p',[record.settings.recipientName,record.settings.date,record.settings.time,record.settings.venue].join(' · ')),node('small',record.at));if(record.historySentAt)article.append(node('p','另有历史版本人工发出记录：'+record.historySentAt));
+    if(record.id==='custom'||record.manual){const button=node('button','下载此版本 PNG','ah-admin-button');button.type='button';button.addEventListener('click',()=>action(()=>downloadSavedInvitation(item,record.settings)));article.append(button);}output.append(article);}
+}
+function invalidateInvitationPreview(){invitationGeneration++;renderedSettings=null;$('[data-invitation-image]').hidden=true;$('[data-invitation-image]').removeAttribute('src');$('[data-invitation-sent-confirm]').checked=false;const canvas=$('[data-invitation-canvas]');canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);canvas.removeAttribute('data-ready');clearCommunicationPreviews();}
+function syncInvitationVersion(){$('[data-invitation-version]').textContent=invitationVersionLabel({...(invitationRenderVersion===undefined?{}:{renderVersion:invitationRenderVersion})})+' · 请核对本次填写';}
+async function renderedPng(settings,current){const canvas=document.createElement('canvas');await renderInvitation(canvas,settings);if(!current())throw new Error('当前人员或会话已变化，未提供旧图片。');const blob=await invitationPngBlob(canvas);if(!current()||!blob.size)throw new Error('图片未完成或会话已变化，请重新核对。');return{canvas,blob};}
+function downloadPng(blob,settings){const url=URL.createObjectURL(blob),link=node('a');privateExportUrls.add(url);link.href=url;link.download=invitationFilename(settings.recipientName,settings.confirmed).replace(/\.png$/u,settings.renderVersion===INVITATION_POSTER_RENDER_VERSION?'-新版海报.png':'.png');document.body.append(link);link.click();link.remove();setTimeout(()=>{URL.revokeObjectURL(url);privateExportUrls.delete(url);},10000);}
+async function downloadSavedInvitation(item,settings){if(!mayInvite(contactById(item.id)))throw new Error(invitationBlockReason(contactById(item.id)));const generation=sessionGeneration,selection=invitationGeneration;const{blob}=await renderedPng(settings,()=>generation===sessionGeneration&&selection===invitationGeneration&&invitationContactId===item.id&&mayInvite(contactById(item.id)));downloadPng(blob,settings);announce('已按保存的版本和活动信息准备下载；没有更新生成或发出记录。');}
 function clearCommunicationPreviews() {
   $('[data-wallet-preview]').hidden = true;
   $('[data-email-preview]').hidden = true;
@@ -163,6 +182,7 @@ function clearImport() {
   $('[data-contacts-file-name]').textContent = '支持原始 Excel 问卷或旧后台 contacts.json 快照';
 }
 function clearPrivateState() {
+  invitationGeneration++;invitationRenderVersion=undefined;
   profileDraft?.close();profileDraft=null;contactDraft?.close();contactDraft=null;profilePending=false;
   sessionGeneration+=1;
   relationshipSequence+=1;relationships=null;admissionReceipts.clear();operationRevision=null;membershipEdited=false;uncertainSave=null;conversionDraft=null;busy=false;
@@ -206,6 +226,7 @@ function clearPrivateState() {
   $('[data-invitation-form]').reset();
   $('[data-invitation-form] [name=recipientName]').value = '';
   $('[data-invitation-panel]').hidden = true;
+  $('[data-invitation-version]').textContent='';$('[data-invitation-history]').replaceChildren();$('[data-invitation-history-panel]').hidden=true;$('[data-invitation-history-panel]').open=false;
   clearCommunicationPreviews();
   renderCommunicationStatus();
   const canvas = $('[data-invitation-canvas]');
@@ -298,7 +319,7 @@ function render() {
     for(const value of item.profile.interests)tags.append(node('span',interestLabels.get(value)||value,'contacts-tag'));
     if(!tags.childNodes.length)tags.append(node('small','未记录'));
     row.append(tags);
-    const invitation=node('td',invitationState(item));const progress=contactProgress(item,progressOptions());if(progress.manuallySent&&progress.providerAccepted)invitation.append(node('small','服务商也已接受 · 未证明送达'));if(progress.unknown&&progress.state!=='unknown')invitation.append(node('small','另有发送结果待核对 · 勿重复发送'));if(progress.stale)invitation.append(node('small','另有历史版本记录，不计入当前版发出'));if(item.invitation.generatedAt)invitation.append(node('small',item.invitation.settings?.confirmed?'手工邀请函：正式版':'手工邀请函：暂定版'));
+    const invitation=node('td',invitationState(item));const progress=contactProgress(item,progressOptions());if(progress.manuallySent&&progress.providerAccepted)invitation.append(node('small','服务商也已接受 · 未证明送达'));if(progress.unknown&&progress.state!=='unknown')invitation.append(node('small','另有发送结果待核对 · 勿重复发送'));if(progress.stale)invitation.append(node('small','另有历史版本记录，不计入当前版发出'));if(item.invitation.generatedAt)invitation.append(node('small',invitationVersionLabel(item.invitation.settings)+' · '+(item.invitation.settings?.confirmed?'正式版':'暂定版')));if(progress.historyManuallySent)invitation.append(node('small','历史版本已记录人工发出'));if(progress.historyProviderAccepted)invitation.append(node('small','历史邮件服务商已接受，未证明送达'));const versions=invitationHistory(item);if(versions.length){const history=node('details',undefined,'contacts-version-history');history.dataset.invitationVersionHistory=item.id;history.append(node('summary','版本与发出记录（'+versions.length+'）'));for(const entry of versions)history.append(node('small',invitationVersionLabel(entry.settings)+' · '+entry.status+' · '+entry.settings.date+' '+entry.settings.time+' · '+entry.settings.venue));invitation.append(history);}
     const linked=intentState?.conversions?.find(value=>value.sourceContactId===item.id);
     if(linked){const link=node('a','已代登记 · 查看报名');link.href='/admin/registrations/#registration='+encodeURIComponent(linked.registrationId);invitation.append(link);}
     row.append(invitation);
@@ -323,12 +344,12 @@ function render() {
     if(!user.roles.includes('editor')||!mayInvite(item)||!['pending','attending'].includes(item.operations.responseStatus)){guest.dataset.roleBlocked='true';guest.title=!user.roles.includes('editor')?'同时需要活动编辑权限':!mayInvite(item)?invitationBlockReason(item):'对象已回复不出席；请先核对最新实际回复';}
     guest.addEventListener('click',()=>{if(busy||!permitted()||!user.roles.includes('editor')||!mayInvite(item)||!['pending','attending'].includes(item.operations.responseStatus))return;location.assign('/admin/#invitee='+encodeURIComponent(item.id));});actions.append(guest);
     if(linked){
-      const prepare=node('button',mayInvite(item)?'生成报名邀请':progress.admissionPending?'名额待确认 · 暂不准备正式邀请':'报名邀请暂不可用');prepare.type='button';if(!mayInvite(item)){prepare.dataset.roleBlocked='true';prepare.title=invitationBlockReason(item);}prepare.addEventListener('click',()=>action(()=>prepareRegistrationInvitation(item,linked,'manual')));actions.append(prepare);
+      const prepare=node('button',mayInvite(item)?'准备新版报名邀请':progress.admissionPending?'名额待确认 · 暂不准备正式邀请':'报名邀请暂不可用');prepare.type='button';prepare.dataset.registrationInvitationPoster=item.id;if(!mayInvite(item)){prepare.dataset.roleBlocked='true';prepare.title=invitationBlockReason(item);}prepare.addEventListener('click',()=>action(()=>prepareRegistrationInvitation(item,linked,'manual',INVITATION_POSTER_RENDER_VERSION)));actions.append(prepare);
       const email=node('button','邮件发送报名邀请');email.type='button';
       if(!mayInvite(item)){email.dataset.roleBlocked='true';email.textContent='名额或授权待核对 · 不发送邀请';email.title=invitationBlockReason(item);}else if(!intentState?.email?.ready){email.dataset.roleBlocked='true';email.title='寄件服务尚未配置，无法发送邮件';}
       email.addEventListener('click',()=>action(()=>prepareRegistrationInvitation(item,linked,'email')));actions.append(email);
-      const manual=intentState.invitations?.find(value=>value.sourceContactId===item.id&&value.channel==='manual');
-      if(manual){const state=node('small',({prepared:'报名邀请已准备，未记录发出',manually_sent:'报名邀请已记录人工发出',provider_accepted:'服务商已接受发送',unknown:'发送结果不明，勿重复发送',rejected:'服务商拒绝发送'})[manual.status]||'邀请状态待核对');actions.append(state);if(manual.status==='prepared'&&mayInvite(item)){const sent=node('button','记录报名邀请已发出');sent.type='button';sent.addEventListener('click',()=>action(async()=>{const named=prompt('确认已经实际发出后，填写实际渠道：微信、邮件或其他。此操作只记录，不发送消息。');const channel=({微信:'wechat',邮件:'email',其他:'other'})[named?.trim()];if(!channel)return;await request('/api/admin/intent-invitations/'+encodeURIComponent(manual.id)+'/manual-sent',{method:'POST',body:JSON.stringify({channel})});intentState=await request('/api/admin/intent-invitations');render();announce('已记录报名邀请经'+named.trim()+'人工发出；没有自动确认对方出席。');}));actions.append(sent);}}
+      const manual=[...(intentState.invitations??[])].reverse().find(value=>value.sourceContactId===item.id&&value.channel==='manual');
+      if(manual){const state=node('small',({prepared:'报名邀请已准备，未记录发出',manually_sent:'报名邀请已记录人工发出',provider_accepted:'服务商已接受发送',unknown:'发送结果不明，勿重复发送',rejected:'服务商拒绝发送'})[manual.status]||'邀请状态待核对');actions.append(state);if(manual.status==='prepared'&&mayInvite(item)){const sent=node('button','记录'+invitationVersionLabel(manual.content?.settings)+'报名邀请已发出');sent.type='button';sent.addEventListener('click',()=>action(async()=>{const named=prompt('确认已经实际发出后，填写实际渠道：微信、邮件或其他。此操作只记录，不发送消息。');const channel=({微信:'wechat',邮件:'email',其他:'other'})[named?.trim()];if(!channel)return;await request('/api/admin/intent-invitations/'+encodeURIComponent(manual.id)+'/manual-sent',{method:'POST',body:JSON.stringify({channel})});intentState=await request('/api/admin/intent-invitations');render();announce('已记录报名邀请经'+named.trim()+'人工发出；没有自动确认对方出席。');}));actions.append(sent);}}
     }
     row.append(actions);
     ['对象','原始身份与意向','邀请函 / 发出记录','跟进','回复与正式名额','身份与组织','现场安排','操作'].forEach((label,index)=>{row.children[index].dataset.label=label;});body.append(row);
@@ -338,20 +359,23 @@ function render() {
   $('[data-contacts-result-count]').textContent='显示 '+matches.length+' / '+contacts.length+' 位';
   lock();
 }
-async function prepareRegistrationInvitation(item,linked,channel){
+async function prepareRegistrationInvitation(item,linked,channel,renderVersion){
   if(!features.intentInvitations||!intentState)throw new Error('报名邀请服务尚未就绪。');
   if(!mayInvite(item))throw new Error(invitationBlockReason(item));
+  const generation=sessionGeneration,selection=invitationGeneration;
+  if(channel==='manual'&&renderVersion===INVITATION_POSTER_RENDER_VERSION){const settings=buildPosterInvitationSettings(item.profile.displayName,eventConfig);if(!confirm('使用本次活动信息准备新版图片：'+settings.date+' '+settings.time+' · '+settings.venue+'。仅准备下载，不会发送邮件或记录已发出。继续？'))return;}
   if(channel==='email'&&!confirm('确认现在向 '+item.profile.displayName+' 发送这份报名邀请邮件？服务商接受不等于送达；结果不明时不要重复发送。'))return;
-  const result=await request('/api/admin/contacts/'+encodeURIComponent(item.id)+'/invitation',{method:'POST',body:JSON.stringify({expectedContactRevision:revision,channel,expectedRegistrationId:linked.registrationId,...(channel==='email'?{confirmEmail:true}:{})})});
+  const result=await request('/api/admin/contacts/'+encodeURIComponent(item.id)+'/invitation',{method:'POST',body:JSON.stringify({expectedContactRevision:revision,channel,expectedRegistrationId:linked.registrationId,...(channel==='manual'&&renderVersion!==undefined?{renderVersion}:{}),...(channel==='email'?{confirmEmail:true}:{})})});
+  if(generation!==sessionGeneration)return;
   const invitation=result.invitation;
   if(channel==='manual'){
-    const settings=invitation?.content?.settings;if(!settings)throw new Error('邀请内容未完成，请刷新后核对。');
-    await renderInvitation($('[data-invitation-canvas]'),{templateUrl:'/invitations/template-blank.png',...settings});
-    const blob=await invitationPngBlob($('[data-invitation-canvas]'));const url=URL.createObjectURL(blob),link=node('a');link.href=url;link.download=invitationFilename(settings.recipientName,true);document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
-    announce('报名邀请 PNG 已准备并开始下载。尚未发出；实际发送后再记录渠道。');
+    const settings=invitation?.content?.settings;if(!settings||settings.renderVersion!==renderVersion)throw new Error('邀请版本未能核对，请刷新后查看保存记录。');
+    const {blob}=await renderedPng(settings,()=>generation===sessionGeneration&&selection===invitationGeneration&&mayInvite(contactById(item.id)));downloadPng(blob,settings);
+    announce(invitationVersionLabel(settings)+'报名邀请 PNG 已准备并开始下载。尚未发出；实际发送后再记录渠道。');
   }else announce(invitation?.status==='provider_accepted'?'邮件服务商已接受发送请求，尚无送达证明。':invitation?.status==='unknown'?'邮件结果尚未确认，系统不会自动重送；请先人工核对。':'邮件未确认发送成功，请核对服务状态。',invitation?.status!=='provider_accepted');
-  intentState=await request('/api/admin/intent-invitations');render();
+  const next=await request('/api/admin/intent-invitations');if(generation!==sessionGeneration)return;intentState=next;render();
 }
+
 function detailPair(dl,label,value){if(!value)return;dl.append(node('dt',label),node('dd',value));}
 function renderContactRelationships(output,item){
   const related=relationshipForContact(item,relationships);
@@ -465,18 +489,18 @@ async function closeProfile(){
 function openInvitation(item){
   if(busy||!permitted())return;
   if(!mayInvite(item)){announce(invitationBlockReason(item),true);return;}
-  invitationContactId=item.id;renderedSettings=null;clearCommunicationPreviews();
+  invitationContactId=item.id;invalidateInvitationPreview();
   const form=$('[data-invitation-form]');form.reset();
   const settings=item.invitation.settings||{recipientName:item.profile.displayName,date:eventConfig.date.value,time:eventConfig.time.label,venue:eventConfig.venue.address,confirmed:false};
   for(const key of ['recipientName','date','time','venue'])form.elements.namedItem(key).value=settings[key];
-  form.elements.namedItem('confirmed').checked=settings.confirmed===true;
+  form.elements.namedItem('confirmed').checked=settings.confirmed===true;invitationRenderVersion=settings.renderVersion;syncInvitationVersion();renderInvitationHistory(item);
   $('[data-invitation-sent-confirm]').checked=false;
   const canvas=$('[data-invitation-canvas]');canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);canvas.removeAttribute('data-ready');$('[data-invitation-image]').hidden=true;$('[data-invitation-image]').removeAttribute('src');
   $('[data-invitation-caption]').textContent=item.profile.displayName+' · '+invitationState(item);
   $('[data-invitation-panel]').hidden=false;
   $('[data-invitation-panel]').scrollIntoView({behavior:'smooth',block:'start'});lock();
 }
-function settingsFromForm(){const form=$('[data-invitation-form]');return{recipientName:form.elements.namedItem('recipientName').value.trim(),date:form.elements.namedItem('date').value,time:form.elements.namedItem('time').value.trim(),venue:form.elements.namedItem('venue').value.trim(),confirmed:form.elements.namedItem('confirmed').checked};}
+function settingsFromForm(){const form=$('[data-invitation-form]');return{recipientName:form.elements.namedItem('recipientName').value.trim(),date:form.elements.namedItem('date').value,time:form.elements.namedItem('time').value.trim(),venue:form.elements.namedItem('venue').value.trim(),confirmed:form.elements.namedItem('confirmed').checked,...(invitationRenderVersion===undefined?{}:{renderVersion:invitationRenderVersion})};}
 
 $('[data-contacts-login]').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;if(!form.reportValidity())return;action(async()=>{let result;try{result=await request('/api/admin/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});}finally{form.elements.namedItem('password').value='';}user=result.user;csrfToken=result.csrfToken;$('[data-contacts-account]').hidden=false;$('[data-contacts-user]').textContent=user.label||user.id;await loadWorkspace();announce('已登录。名单和联系方式仅在此私有工作区显示。');});});
 $('[data-contacts-logout]').addEventListener('click',()=>action(async()=>{if((operationsDirty||profileDirty)&&!confirm('退出并清除本机草稿？'))return;const actorId=user?.id;profileDraft?.close();contactDraft?.close();try{if(actorId)await operationsDraftStore().clearActor(actorId);}finally{try{await request('/api/admin/logout',{method:'POST'});}finally{clearPrivateState();}}announce('已退出，本机填写与名单预览已清空。');}));
@@ -486,19 +510,19 @@ $('[data-contacts-clear-selection]').addEventListener('click',()=>{selectedConta
 $('[data-contacts-batch-invite]').addEventListener('click',()=>action(async()=>{
   if(!features.batchInvitations||!intentState||!selectedContacts.size)throw new Error('请先选择已核对的对象。');
   if(selectedContacts.size>100)throw new Error('每次最多准备 100 位，请分批核对。');
-  const generation=sessionGeneration, contactIds=[...selectedContacts], expectedContactRevision=revision;
+  const generation=sessionGeneration,selection=invitationGeneration,contactIds=[...selectedContacts],expectedContactRevision=revision;
   const {previewBatchInvitations,prepareBatchInvitations}=await import('../lib/invitation-batch.mjs');
-  const preview=await previewBatchInvitations({contactIds,expectedContactRevision,request});
-  if(generation!==sessionGeneration)throw new Error('会话已改变，请重新登录。');
+  const renderVersion=INVITATION_POSTER_RENDER_VERSION;const preview=await previewBatchInvitations({contactIds,expectedContactRevision,request,renderVersion});
+  if(generation!==sessionGeneration||selection!==invitationGeneration)throw new Error('会话或页面已改变，未继续准备邀请。');
   clearBatchResult();$('[data-batch-panel]').hidden=false;
   for(const entry of preview.entries){const item=contactById(entry.contactId);$('[data-batch-results]').append(node('li',(item?.profile.displayName||'所选对象')+' · '+(entry.eligible?'可准备邀请':'跳过：'+batchReason(entry.reason))));}
   $('[data-batch-summary]').textContent='预检 '+preview.summary.selected+' 位，可准备 '+preview.summary.eligible+' 位，跳过 '+preview.summary.skipped+' 位。';
   if(!preview.summary.eligible){announce('本次没有符合条件的邀请，未准备或发送任何消息。');return;}
-  if(!confirm('已预检所选对象：可准备 '+preview.summary.eligible+' 位，跳过 '+preview.summary.skipped+' 位。确认批量准备具名邀请与 ZIP？仅准备、下载，不会发送或记录已发出。'))return;
-  const result=await prepareBatchInvitations({contactIds,expectedContactRevision,previewToken:preview.previewToken,request,
-    renderInvitation:async invitation=>{const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1920;await renderInvitation(canvas,{templateUrl:'/invitations/template-blank.png',...invitation.content.settings});return invitationPngBlob(canvas);},
+  const facts=buildPosterInvitationSettings(contactById(contactIds[0]).profile.displayName,eventConfig);if(!confirm('已预检新版邀请：可准备 '+preview.summary.eligible+' 位，跳过 '+preview.summary.skipped+' 位。使用 '+facts.date+' '+facts.time+' · '+facts.venue+' 准备新版具名邀请与 ZIP？仅准备、下载；旧已发出与结果不明者跳过。'))return;
+  const result=await prepareBatchInvitations({contactIds,expectedContactRevision,previewToken:preview.previewToken,request,renderVersion:preview.renderVersion,
+    renderInvitation:async invitation=>{const{blob}=await renderedPng(invitation.content.settings,()=>generation===sessionGeneration&&selection===invitationGeneration&&permitted());return blob;},
     onProgress:progress=>{if(generation===sessionGeneration)$('[data-batch-summary]').textContent=typeof progress==='string'?progress:'正在准备本次邀请 ZIP，请保留此页。';}});
-  if(generation!==sessionGeneration)throw new Error('会话已改变，未提供私有下载。');
+  if(generation!==sessionGeneration||selection!==invitationGeneration)throw new Error('会话或页面已改变，未提供私有下载。');
   $('[data-batch-results]').replaceChildren();
   for(const entry of result.results??[]){const item=contactById(entry.contactId);const label=({prepared:'已准备，尚未发出',replayed:'沿用已保存版本，未重复准备',skipped:'已跳过',failed:'未完成',unknown:'结果不明，先核对勿重试'})[entry.status]||'待核对';$('[data-batch-results]').append(node('li',(item?.profile.displayName||'所选对象')+' · '+label+(entry.pngStatus==='failed'?' · 图片未完成，ZIP 中仅保留结果记录':'')+(entry.code?' · '+batchReason(entry.code):'')));}
   if(result.blob?.size){batchDownloadUrl=URL.createObjectURL(result.blob);const download=$('[data-batch-download]');download.href=batchDownloadUrl;download.download=result.fileName;download.hidden=false;}
@@ -638,14 +662,15 @@ $('[data-contact-check-save]').addEventListener('click',()=>action(async()=>{
   await contactDraft?.acknowledge();contactDraft?.close();contactDraft=null;revision=state.revision;contacts=state.contacts;uncertainSave=null;operationsDirty=false;operationRevision=null;$('[data-contact-save-unknown]').hidden=true;$('[data-contact-dialog]').close();
   intentState=features.intentInvitations?await request('/api/admin/intent-invitations').catch(()=>null):null;if(generation!==sessionGeneration)return;render();announce('已核对当前云端记录与这份填写一致。本人回复、正式名额及邀请发送仍分别核对；没有自动重送或代登记。');
 }));
-$('[data-invitation-form]').addEventListener('input',event=>{if(!['recipientName','date','time','venue','confirmed'].includes(event.target.name))return;renderedSettings=null;$('[data-invitation-image]').hidden=true;$('[data-invitation-image]').removeAttribute('src');$('[data-invitation-sent-confirm]').checked=false;clearCommunicationPreviews();lock();});
-$('[data-invitation-form]').addEventListener('submit',event=>{event.preventDefault();if(!event.currentTarget.reportValidity())return;action(async()=>{requireInviteConsent();const settings=settingsFromForm();await renderInvitation($('[data-invitation-canvas]'),{templateUrl:'/invitations/template-blank.png',...settings});renderedSettings=settings;$('[data-invitation-canvas]').dataset.ready='true';$('[data-invitation-image]').src=$('[data-invitation-canvas]').toDataURL('image/png');$('[data-invitation-image]').hidden=false;$('[data-invitation-caption]').textContent=settings.recipientName+' · '+(settings.confirmed?'正式版预览':'暂定版预览')+' · 仅预览，不会发送';announce('邀请函预览已生成。下载只保存图片，不会发送给对象。');});});
-$('[data-invitation-download]').addEventListener('click',()=>action(async()=>{requireInviteConsent();if(!renderedSettings||!invitationContactId)throw new Error('请先生成当前设置的邀请函预览。');const blob=await invitationPngBlob($('[data-invitation-canvas]'));if(!blob.size)throw new Error('图片生成未完成，请重试。');const link=node('a');const url=URL.createObjectURL(blob);try{link.href=url;link.download=invitationFilename(renderedSettings.recipientName,renderedSettings.confirmed);document.body.append(link);link.click();}finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);}const result=await request('/api/admin/contacts/'+encodeURIComponent(invitationContactId)+'/invitation/generated',{method:'POST',body:JSON.stringify({expectedRevision:revision,settings:renderedSettings})});updateContact(result);$('[data-invitation-sent-confirm]').checked=false;announce('PNG 已生成并开始下载，已记录生成时间；尚未记录发出。');}));
+$('[data-invitation-use-poster]').addEventListener('click',()=>{if(busy||!permitted())return;try{requireInviteConsent();const form=$('[data-invitation-form]'),item=contactById(invitationContactId),settings=buildPosterInvitationSettings(form.elements.namedItem('recipientName').value.trim()||item.profile.displayName,eventConfig);for(const key of ['recipientName','date','time','venue'])form.elements.namedItem(key).value=settings[key];form.elements.namedItem('confirmed').checked=false;invitationRenderVersion=INVITATION_POSTER_RENDER_VERSION;invalidateInvitationPreview();syncInvitationVersion();announce('已填入本次活动信息；请重新核实后预览新版，尚未更新保存记录。');lock();}catch(error){announce(error.message,true);}});
+$('[data-invitation-form]').addEventListener('input',event=>{if(!['recipientName','date','time','venue','confirmed'].includes(event.target.name))return;invalidateInvitationPreview();lock();});
+$('[data-invitation-form]').addEventListener('submit',event=>{event.preventDefault();if(!event.currentTarget.reportValidity())return;action(async()=>{requireInviteConsent();const settings=settingsFromForm(),generation=sessionGeneration,selection=invitationGeneration,id=invitationContactId;const{canvas}=await renderedPng(settings,()=>generation===sessionGeneration&&selection===invitationGeneration&&invitationContactId===id&&mayInvite(contactById(id)));const output=$('[data-invitation-canvas]');output.width=canvas.width;output.height=canvas.height;output.getContext('2d').drawImage(canvas,0,0);renderedSettings=structuredClone(settings);output.dataset.ready='true';$('[data-invitation-image]').src=canvas.toDataURL('image/png');$('[data-invitation-image]').hidden=false;$('[data-invitation-caption]').textContent=settings.recipientName+' · '+invitationVersionLabel(settings)+' · '+(settings.confirmed?'正式版预览':'暂定版预览')+' · 仅预览';announce('邀请函预览已生成。下载只保存图片，不会发送给对象。');});});
+$('[data-invitation-download]').addEventListener('click',()=>action(async()=>{requireInviteConsent();if(!renderedSettings||!invitationContactId)throw new Error('请先生成当前设置的邀请函预览。');const settings=structuredClone(renderedSettings),id=invitationContactId,generation=sessionGeneration,selection=invitationGeneration;const blob=await invitationPngBlob($('[data-invitation-canvas]'));if(generation!==sessionGeneration||selection!==invitationGeneration||id!==invitationContactId||!mayInvite(contactById(id))||!blob.size)throw new Error('图片未完成或会话已变化，请重新核对。');downloadPng(blob,settings);const result=await request('/api/admin/contacts/'+encodeURIComponent(id)+'/invitation/generated',{method:'POST',body:JSON.stringify({expectedRevision:revision,settings})});if(generation!==sessionGeneration||id!==invitationContactId)return;updateContact(result);renderInvitationHistory(contactById(id));$('[data-invitation-sent-confirm]').checked=false;announce('PNG 已生成并开始下载，已记录生成时间；尚未记录发出。');}));
 $('[data-invitation-sent-confirm]').addEventListener('change',lock);
 $('[data-invitation-channel]').addEventListener('change',()=>{$('[data-invitation-sent-confirm]').checked=false;lock();});
-$('[data-invitation-record-sent]').addEventListener('click',()=>action(async()=>{requireInviteConsent();if(!$('[data-invitation-sent-confirm]').checked)throw new Error('请先确认你已经实际发出邀请。');if(!matchesSavedInvitation())throw new Error('当前设置与最近一次生成记录不同，请重新生成并下载，再核对实际发出的版本。');const result=await request('/api/admin/contacts/'+encodeURIComponent(invitationContactId)+'/invitation/sent',{method:'POST',body:JSON.stringify({expectedRevision:revision,channel:$('[data-invitation-channel]').value,generatedAt:contactById(invitationContactId).invitation.generatedAt,settings:settingsFromForm()})});updateContact(result);$('[data-invitation-sent-confirm]').checked=false;announce('已保存工作人员的手动发出记录。系统没有发送任何消息，也没有自动确认对方出席。');}));
+$('[data-invitation-record-sent]').addEventListener('click',()=>action(async()=>{requireInviteConsent();if(!$('[data-invitation-sent-confirm]').checked)throw new Error('请先确认你已经实际发出邀请。');if(!matchesSavedInvitation())throw new Error('当前设置与最近一次生成记录不同，请重新生成并下载，再核对实际发出的版本。');const result=await request('/api/admin/contacts/'+encodeURIComponent(invitationContactId)+'/invitation/sent',{method:'POST',body:JSON.stringify({expectedRevision:revision,channel:$('[data-invitation-channel]').value,generatedAt:contactById(invitationContactId).invitation.generatedAt,settings:settingsFromForm()})});updateContact(result);$('[data-invitation-sent-confirm]').checked=false;renderInvitationHistory(contactById(invitationContactId));announce('已保存工作人员的手动发出记录。系统没有发送任何消息，也没有自动确认对方出席。');}));
 $('[data-invitation-close]').addEventListener('click',()=>{
-  $('[data-invitation-panel]').hidden=true;invitationContactId=null;renderedSettings=null;
+  $('[data-invitation-panel]').hidden=true;invitationContactId=null;invitationRenderVersion=undefined;invalidateInvitationPreview();$('[data-invitation-version]').textContent='';$('[data-invitation-history]').replaceChildren();$('[data-invitation-history-panel]').hidden=true;$('[data-invitation-history-panel]').open=false;
   $('[data-invitation-form]').reset();$('[data-invitation-form] [name=recipientName]').value='';
   $('[data-invitation-image]').hidden=true;$('[data-invitation-image]').removeAttribute('src');
   const canvas=$('[data-invitation-canvas]');canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);canvas.removeAttribute('data-ready');
@@ -656,3 +681,5 @@ $('[data-email-preview-button]').addEventListener('click',()=>{if(!$('[data-invi
 window.addEventListener('beforeunload',event=>{if(operationsDirty||profileDirty||conversionDraft?.unknown){event.preventDefault();event.returnValue='';}});
 window.addEventListener('hashchange',()=>{const organization=parseOrganizationSelection(location.hash);if(!organization)return;organizationSelection=organization;if(user&&permitted()&&!$('[data-contacts-workspace]').hidden){renderRelationshipFilters();render();}});
 if(location.protocol==='file:'){announce('这是离线界面预览。请启动本地服务，使用有邀约管理权限的账号登录。');lock();}else{action(async()=>{const session=await request('/api/admin/session');user=session.user;csrfToken=session.csrfToken;$('[data-contacts-account]').hidden=false;$('[data-contacts-user]').textContent=user.label||user.id;await loadWorkspace();announce('已恢复工作人员会话。');});}
+
+window.addEventListener('pagehide',()=>{invalidateInvitationPreview();clearBatchResult();for(const url of privateExportUrls)URL.revokeObjectURL(url);privateExportUrls.clear();});

@@ -2,6 +2,7 @@ import { constants } from 'node:fs';
 import { lstat, open, mkdir, writeFile, chmod, readdir, symlink } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { crc32, inflateRawSync } from 'node:zlib';
 import { dirname, parse, posix, resolve, sep } from 'node:path';
 import { verifyNodeBytes } from './prepare-fc-bootstrap.mjs';
 import { assertFcCodeRequestFits, MAX_FC_ZIP_BYTES } from './fc-upload-limits.mjs';
@@ -35,6 +36,7 @@ const FIXED_ASSETS = Object.freeze([
   ['/admin/settings/', 'admin/settings/index.html'], ['/admin/person/', 'admin/person/index.html'],
   ['/admin/volunteers/', 'admin/volunteers/index.html'],
   ['/invitations/template-blank.png', 'invitations/template-blank.png'],
+  ['/invitations/ggj2026-poster-v2.webp', 'invitations/ggj2026-poster-v2.webp'],
 ]);
 const ASSET = /^\/_astro\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,200}\.(?:css|m?js|woff2?)$/u;
 const HASH = /^[a-f0-9]{64}$/u;
@@ -179,7 +181,7 @@ async function buildAssets({ repository, sourceCommit, output, nodeBinary, execu
   return [...selected].sort(([left], [right]) => left.localeCompare(right));
 }
 
-const COMPRESS = `import lzma,sys\nc=lzma.LZMACompressor(format=lzma.FORMAT_XZ,check=lzma.CHECK_CRC64,preset=6)\nwhile True:\n b=sys.stdin.buffer.read(65536)\n if not b:break\n sys.stdout.buffer.write(c.compress(b))\nsys.stdout.buffer.write(c.flush())\n`;
+export const COMPRESS = `import lzma,sys\nc=lzma.LZMACompressor(format=lzma.FORMAT_XZ,check=lzma.CHECK_CRC64,filters=[{'id':lzma.FILTER_X86},{'id':lzma.FILTER_LZMA2,'preset':6}])\nwhile True:\n b=sys.stdin.buffer.read(65536)\n if not b:break\n sys.stdout.buffer.write(c.compress(b))\nsys.stdout.buffer.write(c.flush())\n`;
 export const INSPECT_CANDIDATE_NODE = `import hashlib,json,lzma,sys\nd=lzma.LZMADecompressor(format=lzma.FORMAT_XZ,memlimit=96*1024*1024);h=hashlib.sha256();n=0;header=b''\nwhile True:\n b=sys.stdin.buffer.read(65536)\n if not b:break\n if d.eof:raise ValueError('trailing runtime')\n while True:\n  o=d.decompress(b,max_length=65536);b=b'';n+=len(o);h.update(o);header=(header+o)[:64]\n  if n>192*1024*1024:raise ValueError('runtime limit')\n  if d.eof:\n   if d.unused_data:raise ValueError('trailing runtime')\n   break\n  if d.needs_input:break\nif not d.eof or d.check!=lzma.CHECK_CRC64:raise ValueError('incomplete runtime')\nprint(json.dumps({'bytes':n,'sha256':h.hexdigest(),'header':header.hex()}))\n`;
 
 /** Candidate-only builder. It never updates FC, changes configuration, or reads credentials. */
@@ -206,11 +208,33 @@ export async function prepareCloudContentCandidate({ repositoryDirectory, nodeBi
   await writeKnown(resolve(code, 'release.json'), releaseBytes); files.push(record('release.json', releaseBytes));
   const publication = resolve(output, 'publication'); await mkdir(publication, { mode: 0o700 });
   const archive = resolve(publication, CANDIDATE_ARCHIVE);
-  run(execute, 'zip', ['-X', '-q', '-0', archive, ...files.map(item => item.path)], { cwd: code, limit: 4096, timeout: 120_000 });
+  run(execute, 'zip', ['-X', '-q', '-6', '-n', '.xz:.woff:.woff2:.png:.webp', archive, ...files.map(item => item.path)], { cwd: code, limit: 4096, timeout: 120_000 });
   const zip = await candidateBytes(archive, MAX_FC_ZIP_BYTES); assertFcCodeRequestFits(zip.length);
   const manifest = { schemaVersion: 1, kind: CANDIDATE_KIND, sourceCommit, node: CANDIDATE_NODE, files, archive: { path: CANDIDATE_ARCHIVE, bytes: zip.length, sha256: candidateSha256(zip) }, verification: 'Candidate only. Committed allowlisted server sources and an isolated locked Astro build are packaged; hashes are checked locally. Generated assets are not an independent reproducible-build attestation. No cloud persistence or deployment is claimed.' };
   await writeKnown(resolve(publication, 'package-manifest.json'), Buffer.from(JSON.stringify(manifest, null, 2) + '\n'));
   return manifest;
+}
+
+function candidateRecord(item, seen) {
+  const expected = new Map(CANDIDATE_SOURCES.map(([, path, mode]) => [path, mode]));
+  expected.set('runtime/node/bin/node.xz', '0644'); expected.set('release.json', '0644');
+  exactKeys(item, ['path', 'bytes', 'sha256', 'mode'], 'file');
+  let mode = expected.get(item.path);
+  if (!mode && typeof item.path === 'string' && item.path.startsWith('admin-assets/')) {
+    const url = FIXED_ASSETS.find(([, path]) => item.path === 'admin-assets/' + path)?.[0]
+      ?? '/' + item.path.slice('admin-assets/'.length);
+    if (candidateAssetPath(url) !== item.path) fail('Unexpected candidate asset file');
+    mode = '0644';
+  }
+  const limit = item.path === 'runtime/node/bin/node.xz' ? MAX_FC_ZIP_BYTES : item.path === 'release.json' ? 64 * 1024 : typeof item.path === 'string' && item.path.startsWith('admin-assets/') ? 2 * MiB : MiB;
+  if (!mode || mode !== item.mode || seen.has(item.path) || !Number.isSafeInteger(item.bytes) || item.bytes < 1 || item.bytes > limit || !HASH.test(item.sha256 ?? '')) fail('Invalid candidate file record');
+  seen.add(item.path);
+}
+
+function candidateTextPath(path) {
+  return path === 'release.json' || CANDIDATE_SOURCES.some(([, target]) => path === target)
+    || FIXED_ASSETS.some(([, target]) => target.endsWith('.html') && path === 'admin-assets/' + target)
+    || /^admin-assets\/_astro\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,200}\.(?:css|m?js)$/u.test(path);
 }
 
 export function candidateFileRecords(value) {
@@ -218,25 +242,21 @@ export function candidateFileRecords(value) {
   const expected = new Map(CANDIDATE_SOURCES.map(([, path, mode]) => [path, mode]));
   expected.set('runtime/node/bin/node.xz', '0644'); expected.set('release.json', '0644');
   const seen = new Set();
-  for (const item of value) {
-    exactKeys(item, ['path', 'bytes', 'sha256', 'mode'], 'file');
-    let mode = expected.get(item.path);
-    if (!mode && typeof item.path === 'string' && item.path.startsWith('admin-assets/')) {
-      const url = FIXED_ASSETS.find(([, path]) => item.path === 'admin-assets/' + path)?.[0]
-        ?? '/' + item.path.slice('admin-assets/'.length);
-      if (candidateAssetPath(url) !== item.path) fail('Unexpected candidate asset file');
-      mode = '0644';
-    }
-    const limit = item.path === 'runtime/node/bin/node.xz' ? MAX_FC_ZIP_BYTES : item.path === 'release.json' ? 64 * 1024 : item.path.startsWith('admin-assets/') ? 2 * MiB : MiB;
-    if (!mode || mode !== item.mode || seen.has(item.path) || !Number.isSafeInteger(item.bytes) || item.bytes < 1 || item.bytes > limit || !HASH.test(item.sha256 ?? '')) fail('Invalid candidate file record');
-    seen.add(item.path);
-  }
+  for (const item of value) candidateRecord(item, seen);
   if ([...expected.keys()].some(path => !seen.has(path))) fail('Missing explicit candidate source or runtime');
 }
 
 /** Strict ZIP inspection; no artifact member is extracted to the filesystem. */
 export function candidateZipEntries(bytes, records) {
-  if (!Buffer.isBuffer(bytes) || bytes.length < 22) fail('Invalid candidate ZIP');
+  if (!Buffer.isBuffer(bytes) || bytes.length < 22 || bytes.length > MAX_FC_ZIP_BYTES) fail('Invalid candidate ZIP');
+  if (!Array.isArray(records) || !records.length || records.length > 128) fail('Invalid candidate file list');
+  // Validate all declared output before native inflation; legacy stored text
+  // shares the same aggregate budget and binary members never inflate.
+  const seen = new Set(); let textBytes = 0;
+  for (const item of records) {
+    candidateRecord(item, seen);
+    if (candidateTextPath(item.path) && (textBytes += item.bytes) > 4 * MiB) fail('Candidate ZIP text output budget exceeded');
+  }
   let end = -1;
   for (let offset = bytes.length - 22; offset >= Math.max(0, bytes.length - 65557); offset--) if (bytes.readUInt32LE(offset) === 0x06054b50 && offset + 22 + bytes.readUInt16LE(offset + 20) === bytes.length) { end = offset; break; }
   if (end < 0 || bytes.readUInt16LE(end + 4) || bytes.readUInt16LE(end + 6) || bytes.readUInt16LE(end + 8) !== records.length || bytes.readUInt16LE(end + 10) !== records.length || bytes.readUInt16LE(end + 20)) fail('Candidate ZIP must contain exactly the declared entries in one disk');
@@ -247,13 +267,21 @@ export function candidateZipEntries(bytes, records) {
     if (offset + 46 > end || bytes.readUInt32LE(offset) !== 0x02014b50) fail('Invalid candidate ZIP central entry');
     const length = bytes.readUInt16LE(offset + 28), next = offset + 46 + length;
     const name = bytes.subarray(offset + 46, next), method = bytes.readUInt16LE(offset + 10), local = bytes.readUInt32LE(offset + 42), size = bytes.readUInt32LE(offset + 24);
-    if (next > end || !name.equals(Buffer.from(item.path)) || bytes[offset + 5] !== 3 || bytes.readUInt16LE(offset + 6) > 20 || bytes.readUInt16LE(offset + 8) || method !== 0 || bytes.readUInt16LE(offset + 30) || bytes.readUInt16LE(offset + 32) || bytes.readUInt16LE(offset + 34) || (bytes.readUInt32LE(offset + 38) >>> 16) !== (0o100000 | parseInt(item.mode, 8)) || size !== item.bytes || local !== previousEnd || local + 30 > central || bytes.readUInt32LE(local) !== 0x04034b50) fail('Candidate ZIP metadata differs from the exact file list');
+    if (next > end || !name.equals(Buffer.from(item.path)) || bytes[offset + 5] !== 3 || bytes.readUInt16LE(offset + 6) > 20 || bytes.readUInt16LE(offset + 8) || (method !== 0 && (method !== 8 || !candidateTextPath(item.path))) || bytes.readUInt16LE(offset + 30) || bytes.readUInt16LE(offset + 32) || bytes.readUInt16LE(offset + 34) || (bytes.readUInt32LE(offset + 38) >>> 16) !== (0o100000 | parseInt(item.mode, 8)) || size !== item.bytes || local !== previousEnd || local + 30 > central || bytes.readUInt32LE(local) !== 0x04034b50) fail('Candidate ZIP metadata differs from the exact file list');
     const start = local + 30 + bytes.readUInt16LE(local + 26), finish = start + bytes.readUInt32LE(offset + 20);
     if (finish > central || bytes.readUInt16LE(local + 4) > 20 || bytes.readUInt16LE(local + 6) || bytes.readUInt16LE(local + 8) !== method || bytes.readUInt16LE(local + 28) || !bytes.subarray(local + 30, start).equals(name) || !bytes.subarray(local + 14, local + 26).equals(bytes.subarray(offset + 16, offset + 28))) fail('Candidate ZIP local entry differs from its directory');
-    // Our producer uses zip -0. Stored-only members make every archived byte
-    // part of its declared file hash; deflate streams may ignore trailing data.
-    const data = bytes.subarray(start, finish);
+    const compressed = bytes.subarray(start, finish); let data;
+    try {
+      if (method === 0) data = compressed;
+      else {
+        const result = inflateRawSync(compressed, { info: true, maxOutputLength: item.bytes });
+        // A raw deflate decoder otherwise accepts bytes after its end marker.
+        if (result.engine.bytesWritten !== compressed.length) fail('Candidate ZIP deflate has trailing data');
+        data = result.buffer;
+      }
+    } catch { fail('Candidate ZIP compressed content is invalid or exceeds its declared size'); }
     if (data.length !== item.bytes || candidateSha256(data) !== item.sha256) fail('Candidate ZIP content hash mismatch');
+    if (crc32(data) !== bytes.readUInt32LE(offset + 16)) fail('Candidate ZIP content CRC mismatch');
     contents.set(item.path, data); previousEnd = finish; offset = next;
   }
   if (offset !== end || previousEnd !== central) fail('Candidate ZIP contains unlisted bytes');

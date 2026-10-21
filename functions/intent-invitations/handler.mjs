@@ -53,8 +53,8 @@ export function createIntentInvitationApi({ service, authenticate, permissionRef
       if (request.method !== 'POST') return json({ error: { code: 'METHOD_NOT_ALLOWED', message: '此操作只接受明确提交。' } }, 405);
       const input = await readIntentBody(request);
       if (['/api/admin/contacts/invitations/preview', '/api/admin/contacts/invitations/prepare-batch'].includes(url.pathname)) {
-        shape(input, url.pathname.endsWith('/preview') ? ['contactIds', 'expectedContactRevision']
-          : ['contactIds', 'expectedContactRevision', 'previewToken', 'confirmPrepare']);
+        shape(input, url.pathname.endsWith('/preview') ? ['contactIds', 'expectedContactRevision', 'renderVersion']
+          : ['contactIds', 'expectedContactRevision', 'previewToken', 'confirmPrepare', 'renderVersion']);
         const operation = url.pathname.endsWith('/preview') ? service.previewInvitations : service.prepareInvitations;
         if (typeof operation !== 'function') throw failure();
         return json(await operation({ ...input, actor }));
@@ -65,7 +65,7 @@ export function createIntentInvitationApi({ service, authenticate, permissionRef
       }
       const match = url.pathname.match(/^\/api\/admin\/contacts\/([A-Za-z0-9][A-Za-z0-9_-]{0,79})\/(invitation|assignments)$/u);
       if (match) {
-        shape(input, match[2] === 'invitation' ? ['expectedContactRevision', 'channel', 'expectedRegistrationId', 'confirmEmail'] : ['expectedContactRevision', 'sessionIds', 'boothIds']);
+        shape(input, match[2] === 'invitation' ? ['expectedContactRevision', 'channel', 'expectedRegistrationId', 'confirmEmail', 'renderVersion'] : ['expectedContactRevision', 'sessionIds', 'boothIds']);
         return json(await service[match[2] === 'invitation' ? 'issueInvitation' : 'assignContact']({ ...input, contactId: match[1], actor }));
       }
       const manual = url.pathname.match(/^\/api\/admin\/intent-invitations\/([A-Za-z0-9][A-Za-z0-9_-]{0,99})\/manual-sent$/u);

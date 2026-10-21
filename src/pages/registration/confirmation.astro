@@ -15,7 +15,7 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
   <body class="confirmation-page" data-confirmation-page data-confirmation-api={apiOrigin}>
     <a class="confirmation-skip" href="#confirmation-main">跳到报名状态</a>
     <header class="confirmation-header"><a href="/">ARTDiCO HOST</a><a href="/#agenda">活动日程</a></header>
-    <main id="confirmation-main">
+    <main id="confirmation-main" tabindex="-1">
       <section class="confirmation-card">
         <p class="confirmation-state" data-confirmation-state>报名确认</p>
         <h1 data-confirmation-heading tabindex="-1">正在读取报名状态…</h1>

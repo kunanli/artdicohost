@@ -4,6 +4,7 @@ import { confirmationToken, confirmationLink, confirmationEmailMessage, confirma
 const root = document.querySelector('[data-confirmation-page]');
 if (root) {
   const $ = selector => root.querySelector(selector);
+  $('.confirmation-skip').addEventListener('click',event=>{event.preventDefault();$('#confirmation-main').focus();});
   let token = confirmationToken(location.hash);
   const client = createConfirmationClient({apiOrigin:root.dataset.confirmationApi,pageOrigin:location.origin});
   let state = null, busy = false, generation = 0, walletUrl = null, printUrl = null, invitationUrl = null, controller = null;

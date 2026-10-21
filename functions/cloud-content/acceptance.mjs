@@ -346,16 +346,20 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
           const consumed = await first.api(request('/api/admin/login', { method: 'POST', body: { username: 'synthetic-unknown', password: 'synthetic-wrong-password' } }));
           requireThat(consumed.status === 401);
           const limited = await second.api(request('/api/admin/login', { method: 'POST', body: { username: users[0].email, password } }));
-          const unknownLimited = await first.api(request('/api/admin/login', { method: 'POST', body: { username: 'synthetic-unknown', password: 'synthetic-wrong-password' } }));
           const after = windowAt();
           if (after !== window) {
             // A real boundary can fall during either login. A successful alias
             // login in the new window is never reported as rate-limit proof.
-            requireThat(round === 0 && after === window + 1 && [200, 429].includes(limited.status)
-              && [401, 429].includes(unknownLimited.status));
+            requireThat(round === 0 && after === window + 1 && [200, 429].includes(limited.status));
             continue;
           }
           requireThat(limited.status === 429 && /^[1-9][0-9]*$/u.test(limited.headers.get('retry-after') ?? ''));
+          const unknownLimited = await first.api(request('/api/admin/login', { method: 'POST', body: { username: 'synthetic-unknown', password: 'synthetic-wrong-password' } }));
+          const afterUnknown = windowAt();
+          if (afterUnknown !== window) {
+            requireThat(round === 0 && afterUnknown === window + 1 && [401, 429].includes(unknownLimited.status));
+            continue;
+          }
           requireThat(unknownLimited.status === 429 && /^[1-9][0-9]*$/u.test(unknownLimited.headers.get('retry-after') ?? ''));
           return;
         }

@@ -1,4 +1,4 @@
-import { validateContent, toPublicContent, PORTRAIT_ID_PATTERN, validateBoothOrganizationChanges, validateShowcaseOrganizationChanges } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, PORTRAIT_ID_PATTERN, validateBoothOrganizationChanges, validateShowcaseOrganizationChanges, matchesPublishedContent } from '../../shared/content-schema.mjs';
 import { createInitialContent } from '../../src/config/content.mjs';
 import { CloudContentError } from './errors.mjs';
 import { isDeepStrictEqual } from 'node:util';
@@ -38,7 +38,7 @@ function preserveArrangementFields(input, current) {
     const result = Object.create(null);
     for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
       if (!descriptor.enumerable) {
-        if (field === 'showcases' && ['kind', 'organizationId'].includes(key)) throw new CloudContentError('VALIDATION_ERROR', '作品字段无效。', 422, { [field]: '请提供明确的作品分类与组织关联。' });
+        if (key === 'visibility' || field === 'showcases' && ['kind', 'organizationId'].includes(key)) throw new CloudContentError('VALIDATION_ERROR', '作品字段无效。', 422, { [field]: '请提供明确的作品分类与组织关联。' });
         continue;
       }
       if (!('value' in descriptor)) throw new CloudContentError('VALIDATION_ERROR', '内容字段无效。', 422, { [field]: '请提供明确的资料值。' });
@@ -88,6 +88,15 @@ function preserveArrangementFields(input, current) {
     }
     return row;
   });
+  // Old clients cannot erase an explicit opt-out simply by omitting the new key.
+  for (const collection of ['guests', 'organizations', 'showcases', 'booths']) {
+    if (!Array.isArray(result[collection])) continue;
+    for (const row of result[collection]) {
+      const id = typeof row.id === 'string' ? row.id.normalize('NFC').trim() : '';
+      const existing = current[collection]?.find(item => item.id === id);
+      if (!Object.hasOwn(row, 'visibility') && existing && Object.hasOwn(existing, 'visibility')) row.visibility = existing.visibility;
+    }
+  }
   return result;
 }
 
@@ -129,7 +138,7 @@ export function createOssContentStore({ journal, portraitStore, initialContent =
         || !lastPublication || lastPublication.revision !== input.published.revision || lastPublication.publishedAt !== input.published.publishedAt) throw unavailable();
       const content = toPublicContent(checkedContent(input.published.content));
       if (content.eventId !== seed.eventId || input.published.revision === draft.revision
-        && JSON.stringify(content) !== JSON.stringify(toPublicContent(draft.content))) throw unavailable();
+        && !matchesPublishedContent(draft.content, content)) throw unavailable();
       published = { revision: input.published.revision, publishedAt: input.published.publishedAt, content };
     } else if (lastPublication) throw unavailable();
     return { storageVersion: 1, draft, published, audit };
@@ -216,7 +225,10 @@ export function createOssContentStore({ journal, portraitStore, initialContent =
       const { state, cursor } = await load();
       checkRevision(expectedRevision, state.draft.revision);
       await verifyPortraits(state.draft.content);
-      if (state.published?.revision === state.draft.revision) return structuredClone(state.published);
+      if (state.published?.revision === state.draft.revision) {
+        if (!isDeepStrictEqual(state.published.content, toPublicContent(state.draft.content))) throw new CloudContentError('PUBLICATION_SAVE_REQUIRED', '公开规则已更新，请先保存当前草稿，再发布到前台。', 409);
+        return structuredClone(state.published);
+      }
       state.published = { revision: state.draft.revision, publishedAt: timestamp(), content: toPublicContent(state.draft.content) };
       audit(state, { action: 'publish', actorId, revision: state.draft.revision, at: state.published.publishedAt });
       await commit(cursor, state);

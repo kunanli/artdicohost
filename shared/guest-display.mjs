@@ -8,7 +8,7 @@ const line = (value, limit, required = true) => typeof value === 'string'
   && !/[\u0000-\u001f\u007f]/u.test(value) ? value.trim() : null;
 const portrait = /^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
 
-/** Returns safe display values and a same-origin image path. Unapproved and malformed entries stay hidden.
+/** Returns safe display values and a same-origin image path. Only an explicit private setting hides a valid entry.
  * @param {unknown} input
  * @returns {{id:string,name:string,company:string,ggjRole:string,portraitId:string,portraitUrl:string}[]}
  */
@@ -16,15 +16,16 @@ export function publicGuestCards(input) {
   if (!Array.isArray(input) || input.length > 200) return [];
   const seen = new Set();
   return input.flatMap(value => {
-    if (!record(value) || ownValue(value, 'status') !== 'confirmed' || ownValue(value, 'publicConsent') !== true) return [];
+    if (!record(value) || Object.hasOwn(value, 'visibility') && ownValue(value, 'visibility') !== 'public'
+      || !['pending','confirmed'].includes(ownValue(value, 'status'))) return [];
     const id = ownValue(value, 'id');
     const portraitId = ownValue(value, 'portraitId');
-    const name = line(ownValue(value, 'name'), 120);
-    const company = line(ownValue(value, 'company'), 160);
+    const name = line(ownValue(value, 'name'), 120, ownValue(value, 'status') === 'confirmed');
+    const company = line(ownValue(value, 'company'), 160, ownValue(value, 'status') === 'confirmed');
     const ggjRole = line(ownValue(value, 'ggjRole') ?? '', 160, false);
     if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(id) || seen.has(id)
       || typeof portraitId !== 'string' || portraitId !== '' && !portrait.test(portraitId) || name === null || company === null || ggjRole === null) return [];
-    const extras = {};
+    const extras = ownValue(value, 'status') === 'pending' ? { status: 'pending' } : {};
     for (const [key,limit] of [['title',200],['bio',4000],['website',500]]) {
       if (!Object.hasOwn(value,key)) continue;
       const supplied = ownValue(value,key);
@@ -39,7 +40,7 @@ export function publicGuestCards(input) {
       extras.publicRoles = [...roles];
     }
     seen.add(id);
-    return [{ id, name, company, ggjRole, portraitId, portraitUrl: portraitId ? '/api/public/portraits/' + portraitId : '', ...extras }];
+    return [{ id, name: name || '嘉宾姓名待补', company, ggjRole, portraitId, portraitUrl: portraitId ? '/api/public/portraits/' + portraitId : '', ...extras }];
   });
 }
 

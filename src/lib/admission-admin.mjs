@@ -43,6 +43,59 @@ export function savedAdmissionOperation(value) {
   return {path:value.path,method:value.method,body:value.body};
 }
 
+const operationActions = Object.freeze({settings:'settings',teams:'team_save','teams/remove':'team_remove',staff:'staff_intake',withdraw:'withdraw',kind:'kind',promote:'promote',approve:'approve',reject:'reject'});
+/** Bind every success to this exact durable operation, not an unrelated valid snapshot. */
+export function confirmedAdmissionOperation(result, operation) {
+  const saved = savedAdmissionOperation(operation), state = admissionAdminState(result);
+  if (!saved || !state || !['updated','replayed'].includes(result.outcome)) return null;
+  const suffix = saved.path.slice('/api/admin/admissions/'.length), action = operationActions[suffix], body = JSON.parse(saved.body), receipt = result.operation;
+  if (!plain(receipt) || receipt.operationId !== body.operationId || receipt.action !== action
+    || receipt.revision !== body.expectedRevision + 1 || receipt.revision > state.revision) return null;
+  const target = body.registrationId ?? (action === 'staff_intake' ? result.registrationId : null);
+  if (receipt.registrationId !== target || target !== null && (!ID.test(target ?? '') || result.registrationId !== target || !state.people.some(person => person.registrationId === target))) return null;
+  if (action === 'settings' && (!plain(receipt.settings) || receipt.settings.staffReserve !== body.settings?.staffReserve || receipt.settings.waitlistEnabled !== body.settings?.waitlistEnabled)) return null;
+  if (['kind','staff_intake'].includes(action) && receipt.kind !== (action === 'kind' ? body.kind : body.input?.kind)) return null;
+  if (['team_save','team_remove'].includes(action) && (!TEAM.test(receipt.teamId ?? '') || result.teamId !== receipt.teamId
+    || (body.teamId ?? body.team?.id) && receipt.teamId !== (body.teamId ?? body.team?.id))) return null;
+  if (action === 'staff_intake' && (!plain(result.receipt) || result.receipt.committed !== true || result.receipt.registrationId !== target)) return null;
+  if (result.outcome === 'updated' && state.revision === receipt.revision) {
+    if (action === 'settings' && ['staffReserve','waitlistEnabled'].some(key => state.settings[key] !== body.settings[key])) return null;
+    if (action === 'kind' && state.people.find(person => person.registrationId === target)?.kind !== body.kind) return null;
+    if (action === 'team_save') {
+      const team = state.teams.find(team => team.id === receipt.teamId);
+      if (!team || team.name !== body.team.name.normalize('NFC').trim() || JSON.stringify(team.memberIds) !== JSON.stringify(body.team.memberIds)) return null;
+    }
+    if (action === 'team_remove' && state.teams.some(team => team.id === receipt.teamId)) return null;
+  }
+  return state;
+}
+
+/** A recovered create receipt cannot turn its old form into a fresh person entry. */
+export function admissionStaffRecovery(fields, operation) {
+  const saved=savedAdmissionOperation(operation);if(!saved||!saved.path.endsWith('/staff'))return null;
+  const input=JSON.parse(saved.body).input;if(!plain(input)||!plain(input.fields)||!['crew','attendee'].includes(input.kind)||typeof input.permissionReference!=='string')return null;
+  const names=['name','email','wechat'],normalize=value=>typeof value==='string'?value.normalize('NFC').trim():null;
+  if(names.some(name=>input.fields[name]!==undefined&&typeof input.fields[name]!=='string'))return null;
+  const original={...Object.fromEntries(names.map(name=>[name,normalize(input.fields[name]??'')])),kind:input.kind,permissionReference:normalize(input.permissionReference)};
+  const current=Object.fromEntries([...names,'kind','permissionReference'].map(name=>[name,normalize(fields?.[name]??'')]));
+  const empty=[...names,'permissionReference'].every(name=>current[name]==='');
+  return {state:empty||Object.keys(original).every(name=>current[name]===original[name])?'saved':'different',fields:original};
+}
+
+/** Only fields shared with the edited form can make retained input stale. */
+export function admissionFormScope(state, kind, fields = {}) {
+  if (!state) return null;
+  if (kind === 'settings') return { staffReserve: state.settings.staffReserve, waitlistEnabled: state.settings.waitlistEnabled };
+  if (kind === 'staff') return {};
+  if (kind !== 'team') return null;
+  const selected = Array.isArray(fields.memberIds) ? fields.memberIds : [], current = fields.id ? state.teams.find(team => team.id === fields.id) : null;
+  return { team: fields.id ? current ? { id: current.id, name: current.name, memberIds: [...current.memberIds] } : { id: fields.id, missing: true } : null,
+    members: selected.map(id => { const person = state.people.find(person => person.registrationId === id); return { id, exists: Boolean(person), teamId: person?.teamId ?? null }; }) };
+}
+export function admissionFormChanged(base, next, kind, fields = {}) {
+  return JSON.stringify(admissionFormScope(base, kind, fields)) !== JSON.stringify(admissionFormScope(next, kind, fields));
+}
+
 export function createAdmissionOperations({ request, revision, savePending, clearPending, operationId = () => {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return btoa(String.fromCharCode(...bytes)).replace(/\+/gu,'-').replace(/\//gu,'_').replace(/=+$/u,'');
@@ -55,18 +108,8 @@ export function createAdmissionOperations({ request, revision, savePending, clea
     try {
       const result = await request(operation.path, { method: operation.method, body: operation.body });
       if (started !== generation) throw new Error('会话已改变，原操作结果已丢弃。');
-      const state = admissionAdminState(result);
-      if (!state || !['updated','replayed'].includes(result.outcome)) throw new Error('名额结果尚未通过核对，请保留本页并再次确认同一操作。');
-      const action = operation.path.match(/^\/api\/admin\/admissions\/(approve|reject)$/u)?.[1];
-      if (action) {
-        const body = JSON.parse(operation.body), receipt = result.operation;
-        if (!plain(receipt) || receipt.operationId !== body.operationId || receipt.action !== action
-          || receipt.registrationId !== body.registrationId || result.registrationId !== body.registrationId
-          || !Number.isSafeInteger(receipt.revision) || receipt.revision <= body.expectedRevision || receipt.revision > state.revision
-          || !state.people.some(person => person.registrationId === body.registrationId)) {
-          throw new Error('审核回执尚未通过核对，请保留本页并再次确认同一操作。');
-        }
-      }
+      const state = confirmedAdmissionOperation(result, operation);
+      if (!state) throw new Error('名额回执尚未通过核对，请保留本页并再次确认同一操作。');
       if(clearPending)await clearPending({acknowledged:true,operation:{...operation}});
       if (started !== generation) throw new Error('会话已改变，原操作结果已丢弃。');
       pending = null; return state;

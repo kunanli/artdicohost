@@ -1,4 +1,4 @@
-import { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS, CONTACT_CATEGORIES, validateImportedContact } from './contacts-schema.mjs';
+import { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS, CONTACT_CATEGORIES, validateImportedContact, validateStoredContact, createEmptyContactOperations } from './contacts-schema.mjs';
 
 export { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS } from './contacts-schema.mjs';
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -62,6 +62,24 @@ export function validateContactProfileEdit(input, currentProfile) {
   if (!original.valid) return result({ profile: '原联系人资料未通过校验，不能覆盖。' }, null);
   const imported = validateImportedContact({ ...profileFrom(original.value), ...checked.value, sourceRowId: 'existing' });
   return result({ ...imported.errors, ...checked.errors }, profileFrom(imported.value));
+}
+
+/** A 200 response alone cannot acknowledge another person's or an older field set. */
+export function savedContactProfileReceipt(input,{expectedRevision,profile,previous=null}={}) {
+  const fail=()=>{throw new Error('联系人保存回执与本次填写不一致，请保留表单并核对云端结果。');};
+  const stable=value=>JSON.stringify(value,(_,part)=>plain(part)?Object.fromEntries(Object.keys(part).sort().map(key=>[key,part[key]])):part);
+  if(!Number.isSafeInteger(expectedRevision)||expectedRevision<0||!plain(input)||input.revision!==expectedRevision+1||!validateStoredContact(input.contact))fail();
+  const expected=previous?validateContactProfileEdit(profile,previous.profile):validateManualContactProfile(profile);
+  if(!expected.valid||stable(input.contact.profile)!==stable(expected.value))fail();
+  if(previous){
+    if(input.contact.id!==previous.id||stable(input.contact.source)!==stable(previous.source)
+      ||stable(input.contact.operations)!==stable(previous.operations)||stable(input.contact.invitation)!==stable(previous.invitation)
+      ||input.contact.createdAt!==previous.createdAt
+      ||Object.hasOwn(previous,'sourceProfileDigest')&&input.contact.sourceProfileDigest!==previous.sourceProfileDigest
+      ||stable(input.contact.sourceProfile)!==stable(previous.sourceProfile??previous.profile))fail();
+  }else if(input.contact.source.key!=='manual'||stable(input.contact.sourceProfile)!==stable(expected.value)
+    ||stable(input.contact.operations)!==stable(createEmptyContactOperations()))fail();
+  return {revision:input.revision,contact:input.contact};
 }
 
 /** Consented invitees can prepare a draft while their attendance is pending.

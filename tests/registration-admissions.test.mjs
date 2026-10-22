@@ -296,3 +296,29 @@ test('trusted bulk review hook reads once per mutation, validates complete IDs a
   assert.deepEqual(await mutate(bad, 'setAdmissionKind', { registrationId: third.saved.receipt.registrationId, kind: 'crew' }), { outcome: 'unavailable' });
   assert.equal(f.state.indexWrites, writes);
 });
+
+
+test('every admissions mutation exposes its durable operation proof and replay preserves the original proof', async () => {
+  const f=fixture({capacity:5}),service=f.service();
+  const first=await register(service),second=await register(service),id=first.saved.receipt.registrationId;
+  const commands=[
+    ['setAdmissionSettings','settings',{settings:{staffReserve:1,waitlistEnabled:true}}],
+    ['setAdmissionKind','kind',{registrationId:id,kind:'crew'}],
+    ['saveAdmissionTeam','team_save',{team:{name:'合成回执团队',memberIds:[id,second.saved.receipt.registrationId]}}],
+    ['promoteAdmissions','promote',{}],['withdrawAdmission','withdraw',{registrationId:id}],
+  ];
+  let teamId;
+  for(const[method,action,patch]of commands){
+    const before=await service.getAdmissions({actor}),input={actor,expectedRevision:before.revision,operationId:key(),...patch};
+    const saved=await service[method](input);assert.equal(saved.outcome,'updated');
+    assert.equal(saved.operation.operationId,input.operationId);assert.equal(saved.operation.action,action);assert.equal(saved.operation.revision,before.revision+1);
+    const replay=await f.service()[method](input);assert.equal(replay.outcome,'replayed');assert.deepEqual(replay.operation,saved.operation);
+    if(action==='settings')assert.deepEqual(saved.operation.settings,patch.settings);
+    if(action==='kind')assert.equal(saved.operation.kind,'crew');
+    if(action==='team_save'){teamId=saved.teamId;assert.equal(saved.operation.teamId,teamId);}
+  }
+  const removed=await mutate(service,'removeAdmissionTeam',{teamId});assert.equal(removed.operation.action,'team_remove');assert.equal(removed.operation.teamId,teamId);
+  const before=await service.getAdmissions({actor}),input={actor,expectedRevision:before.revision,operationId:key(),input:{fields:{name:'合成回执人员',wechat:'synthetic-contact'},permissionReference:'合成许可',kind:'crew'}};
+  const staff=await service.addStaffMember(input);assert.equal(staff.operation.action,'staff_intake');assert.equal(staff.operation.operationId,input.operationId);assert.equal(staff.operation.registrationId,staff.registrationId);assert.equal(staff.operation.kind,'crew');
+  const replay=await f.service().addStaffMember(input);assert.deepEqual(replay.operation,staff.operation);assert.equal(replay.registrationId,staff.registrationId);
+});

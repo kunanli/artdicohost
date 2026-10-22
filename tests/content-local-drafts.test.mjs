@@ -121,3 +121,28 @@ test('booth website raw edits and explicit clearing survive form recovery while 
   const frozen=JSON.stringify(pending);assert.equal(contentLocalDraftValue(pending,{kind:'pending_submission'}),true);assert.equal(JSON.stringify(pending),frozen);
   assert.equal(Object.hasOwn(pending.forms.booth.fields,'website'),false,'recognizing the field cannot backfill a legacy unknown request');
 });
+
+test('visibility form choices survive recovery independently of historical authorization and raw submissions', () => {
+  for(const type of ['guest','organization','showcase','booth']){
+    const fields={id:{type:'hidden',value:type+'-synthetic'},visibility:{type:'hidden',value:'public'},publicConsent:{type:'checkbox',checked:true}};
+    const label={textContent:''},button={dataset:{},attributes:{},setAttribute(name,value){this.attributes[name]=value;},querySelector(){return label;}};
+    const form={elements:{namedItem:name=>fields[name]??null},querySelectorAll:selector=>selector==='[data-content-visibility-switch]'?[button]:[]};
+    for(const visibility of ['public','private']){
+      fields.visibility.value=visibility;
+      const raw=readContentForm(form,type);assert.equal(raw.visibility,visibility);
+      fields.visibility.value=visibility==='public'?'private':'public';
+      writeContentForm(form,type,raw);assert.equal(fields.visibility.value,visibility);
+      assert.equal(button.attributes['aria-checked'],String(visibility==='public'));
+      assert.equal(button.dataset.visibility,visibility);assert.equal(label.textContent,visibility==='public'?'公开':'未公开');
+      if(type!=='booth')assert.equal(fields.publicConsent.checked,false,'restoring a visibility choice does not assert authorization');
+      const value=bundle();value.forms[type]={editingId:null,fields:raw,imageNeedsReselect:false};
+      assert.equal(contentLocalDraftValue(value,{kind:'editing'}),true);
+      assert.equal(JSON.parse(contentDraftCopy(value)).unappliedForms[type].fields.visibility,visibility);
+    }
+    const legacy={id:type+'-synthetic'},frozen=JSON.stringify(legacy);fields.visibility.value='private';
+    writeContentForm(form,type,legacy);
+    assert.equal(fields.visibility.value,'public','old raw form without a visibility choice restores the public default');
+    assert.equal(button.attributes['aria-checked'],'true');assert.equal(JSON.stringify(legacy),frozen);
+    for(const visibility of ['',true,false,null,'PUBLIC','hidden',{},['private']])assert.equal(contentFormValue(type,{...legacy,visibility}),null);
+  }
+});

@@ -28,23 +28,24 @@ test('readiness compares public rows by stable ID, ignoring unrelated revisions 
 });
 
 test('actual public record stays published while an edit or withdrawal awaits explicit publication',()=>{
-  const source=state();source.draft.content.guests[0].name='合成新版姓名';source.draft.content.organizations[0].publicConsent=false;
+  const source=state();source.draft.content.guests[0].name='合成新版姓名';source.draft.content.organizations[0].visibility='private';
   const report=contentPublicationReadiness(source),guest=row(report,'guests','guest-1'),organization=row(report,'organizations','org-1');
   assert.equal(guest.published,true);assert.equal(guest.ready,true);assert.equal(guest.change,'updated');
-  assert.equal(organization.published,true);assert.equal(organization.ready,false);assert.equal(organization.change,'removed');assert.deepEqual(organization.reasons,['public_consent_required']);
+  assert.equal(organization.published,true);assert.equal(organization.ready,false);assert.equal(organization.change,'removed');assert.deepEqual(organization.reasons,['visibility_private']);
   assert.equal(report.hasPublicChanges,true);assert.equal(report.eventChanged,false);
   source.draft.content.guests=[];
   const removed=row(contentPublicationReadiness(source),'guests','guest-1');assert.equal(removed.inDraft,false);assert.equal(removed.published,true);assert.equal(removed.change,'removed');assert.deepEqual(removed.reasons,['record_removed']);
 });
 
-test('unpublished eligible records are pending publication while all actual work requirements remain explanatory',()=>{
+test('default-public works await publication without fabricating confirmation, attendance or consent',()=>{
   const source=state();source.published=null;
   source.draft.content.showcases[0].status='pending';source.draft.content.showcases[0].publicConsent=false;source.draft.content.showcases[0].responseStatus='declined';source.draft.content.showcases[0].coverId='';source.draft.content.booths[0].status='pending';
   const report=contentPublicationReadiness(source),guest=row(report,'guests','guest-1'),work=row(report,'showcases','work-1');
   assert.equal(guest.published,false);assert.equal(guest.change,'new');assert.equal(guest.ready,true);
-  assert.equal(work.published,false);assert.equal(work.ready,false);assert.equal(work.change,'blocked');
-  assert.deepEqual(work.reasons,['confirmation_required','public_consent_required','attendance_declined','cover_required','allocation_required']);
-  source.draft.content.showcases[0].responseStatus='pending';assert.ok(row(contentPublicationReadiness(source),'showcases','work-1').reasons.includes('attendance_required'));
+  assert.equal(work.published,false);assert.equal(work.ready,true);assert.equal(work.change,'new');
+  assert.deepEqual(work.reasons,[]);
+  assert.equal(source.draft.content.showcases[0].status,'pending');assert.equal(source.draft.content.showcases[0].publicConsent,false);assert.equal(source.draft.content.showcases[0].responseStatus,'declined');
+  source.draft.content.showcases[0].visibility='private';const privateWork=row(contentPublicationReadiness(source),'showcases','work-1');assert.equal(privateWork.ready,false);assert.equal(privateWork.change,'blocked');assert.deepEqual(privateWork.reasons,['visibility_private']);
   assert.equal(report.publishedRevision,null);assert.equal(report.organizationSource,'initial');
 });
 
@@ -92,13 +93,15 @@ test('report reason, change, and optional suggestion codes have stable display l
 });
 
 
-test('a cancelled booth retains actual publication and says cancelled rather than awaiting confirmation',()=>{
+test('cancelled booth visibility stays public until explicitly made private',()=>{
   const source=state();source.draft.content.showcases=[];source.draft.content.booths[0].status='cancelled';
-  const item=row(contentPublicationReadiness(source),'booths','booth-1');assert.equal(item.published,true);assert.equal(item.change,'removed');assert.deepEqual(item.reasons,['booth_cancelled']);assert.equal(PUBLICATION_REASON_LABELS[item.reasons[0]],'展位已取消');
+  const item=row(contentPublicationReadiness(source),'booths','booth-1');assert.equal(item.published,true);assert.equal(item.change,'updated');assert.equal(item.ready,true);assert.deepEqual(item.reasons,[]);
+  source.draft.content.booths[0].visibility='private';const hidden=row(contentPublicationReadiness(source),'booths','booth-1');assert.equal(hidden.change,'removed');assert.deepEqual(hidden.reasons,['visibility_private']);
 });
-test('a withdrawn organization says withdrawn rather than awaiting confirmation',()=>{
+test('withdrawn organization retains its factual state without silently changing visibility',()=>{
   const source=state();source.draft.content.organizations[0].status='withdrawn';
-  const item=row(contentPublicationReadiness(source),'organizations','org-1');assert.equal(item.published,true);assert.equal(item.change,'removed');assert.deepEqual(item.reasons,['organization_withdrawn']);assert.equal(PUBLICATION_REASON_LABELS[item.reasons[0]],'组织已退出');
+  const item=row(contentPublicationReadiness(source),'organizations','org-1');assert.equal(item.published,true);assert.equal(item.change,'updated');assert.equal(item.ready,true);assert.deepEqual(item.reasons,[]);
+  source.draft.content.organizations[0].visibility='private';const hidden=row(contentPublicationReadiness(source),'organizations','org-1');assert.equal(hidden.change,'removed');assert.deepEqual(hidden.reasons,['visibility_private']);
 });
 
 
@@ -115,7 +118,7 @@ test('work kind and independently public organization affect only their real pub
   const content=fixture();content.showcases[0].kind='indie';content.showcases[0].organizationId='org-1';const source=state(content);
   assert.equal(row(contentPublicationReadiness(source),'showcases','work-1').change,'unchanged');
   source.draft.content.showcases[0].kind='team';assert.equal(row(contentPublicationReadiness(source),'showcases','work-1').change,'updated');
-  source.draft.content.showcases[0].kind='indie';source.draft.content.organizations[0].publicConsent=false;
+  source.draft.content.showcases[0].kind='indie';source.draft.content.organizations[0].visibility='private';
   const report=contentPublicationReadiness(source);assert.equal(row(report,'showcases','work-1').ready,true);assert.equal(row(report,'showcases','work-1').change,'updated');assert.equal(row(report,'organizations','org-1').change,'removed');
   source.published.content=toPublicContent(source.draft.content);source.draft.content.showcases[0].organizationId='orphan-history';
   assert.equal(row(contentPublicationReadiness(source),'showcases','work-1').change,'unchanged','a private/unknown organization link never becomes a public update or blocks the work');

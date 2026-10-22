@@ -35,3 +35,10 @@
 .settings-account-credential .contacts-action-row{display:flex;flex-wrap:wrap;gap:8px}
 [data-settings-accounts]>.ah-admin-table-wrap{padding:0 20px}[data-settings-accounts] [data-user-collaborator-preset]{margin-bottom:16px}
 @media(max-width:720px){.settings-workspace-overview{grid-template-columns:1fr;gap:10px}.settings-workspace-overview a{padding:18px}.settings-workspace-tools{padding:16px}.settings-invitation-help{padding:20px}.settings-workspace-account{font-size:12px}.settings-workspace-tools .settings-form{padding:0 16px 16px}.settings-workspace-tools .ah-admin-section-heading{padding:16px}}
+
+[data-settings-panel="group"] .settings-expiry-presets{justify-content:flex-start;gap:8px;margin-block:10px}
+[data-settings-panel="group"] .settings-expiry-presets button{font-size:12px;padding:8px 12px}
+[data-settings-panel="group"] .ah-form-save-actions,[data-settings-panel="accounts"] .ah-form-save-actions{margin-top:20px;border-top:1px solid var(--admin-line);padding-top:18px}
+[data-settings-panel="delivery"] [data-delivery-automatic]>h3{flex-basis:100%;font-size:16px;margin:0}
+[data-settings-panel="delivery"] [data-delivery-automatic]>.ah-form-save-actions{flex-basis:100%;justify-content:flex-end}
+[data-settings-panel="delivery"] .ah-form-save-actions .ah-form-save-state{margin-right:auto}

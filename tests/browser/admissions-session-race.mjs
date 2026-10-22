@@ -11,7 +11,7 @@ const A='a'.repeat(43),B='b'.repeat(43),errors=[],reports=[];
 function state(id,revision=0){return {revision,settings:{capacity:2,staffReserve:0,waitlistEnabled:true},summary:{capacity:2,staffReserve:0,waitlistEnabled:true,confirmedCount:1,attendeeConfirmedCount:1,crewConfirmedCount:0,waitlistCount:0,remainingPublic:1,remainingTotal:1},people:[{registrationId:id,kind:'attendee',status:'confirmed',queueNumber:1,teamId:''}],teams:[],auditCount:revision};}
 async function pageFor(){
   const context=await browser.newContext(),page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
-  await context.route('**/*',async route=>{const url=new URL(route.request().url());if(url.origin!=='https://api.artdico.host')return route.abort();if(url.pathname==='/race/')return route.fulfill({status:200,contentType:'text/html',body:'<!doctype html><html><body>'+component+'</body></html>'});if(paths.has(url.pathname))return route.fulfill({status:200,contentType:'text/javascript',body:await readFile(project+url.pathname.slice(1),'utf8')});return route.abort();});
+  await context.route('**/*',async route=>{const url=new URL(route.request().url());if(url.origin!=='https://api.artdico.host')return route.abort();if(url.pathname==='/race/')return route.fulfill({status:200,contentType:'text/html',body:'<!doctype html><html><body>'+component+'</body></html>'});if(/^\/(?:src|shared)\/[A-Za-z0-9_./-]+\.mjs$/u.test(url.pathname)){const source=await readFile(project+url.pathname.slice(1),'utf8');return route.fulfill({status:200,contentType:'text/javascript',body:source.replace(/^import\s+['"][^'"\n]+\.css['"];?\s*$/gmu,'')});}return route.abort();});
   await page.goto('https://api.artdico.host/race/');
   await page.evaluate(async()=>{
     const {createStaffAdmissions}=await import('/src/scripts/staff-admissions.mjs');
@@ -22,7 +22,7 @@ async function pageFor(){
   return {context,page};
 }
 async function settle(page){await page.evaluate(()=>new Promise(resolve=>setTimeout(resolve,0)));}
-async function resolve(page,index,result){await page.evaluate(({index,result})=>{window.fixture.calls[index].resolve(result);},{index,result});await settle(page);}
+async function resolve(page,index,result){await page.waitForFunction(index=>window.fixture.calls.length>index,index);await page.evaluate(({index,result})=>{const call=window.fixture.calls[index];if(result.outcome&&call.options?.body){const body=JSON.parse(call.options.body);result.operation={operationId:body.operationId,action:'promote',registrationId:null,revision:body.expectedRevision+1};}call.resolve(result);},{index,result});await settle(page);}
 async function configure(page,account,id,label){await page.evaluate(({account,id,label})=>{window.fixture.configure(account,id,label);},{account,id,label});}
 async function snapshot(page){return page.evaluate(()=>({hidden:document.querySelector('[data-staff-admissions]').hidden,people:document.querySelector('[data-admissions-people]').textContent,teams:document.querySelector('[data-admissions-teams]').textContent,metrics:document.querySelector('[data-admissions-metrics]').textContent,options:document.querySelector('[name=memberIds]').textContent,status:document.querySelector('[data-admissions-status]').textContent,error:document.querySelector('[data-admissions-error]').textContent,pending:window.fixture.api.pending,disabled:document.querySelector('[data-admissions-promote]').disabled,changes:window.fixture.changes}));}
 try{

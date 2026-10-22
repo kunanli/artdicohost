@@ -73,7 +73,7 @@ for (const mode of ['local', 'cloud']) {
       const missingImage = structuredClone(draft.content); missingImage.showcases[0].coverId = 'b'.repeat(64) + '.png';
       await assert.rejects(second.store.save(1, missingImage, 'synthetic'), error => error.status === 422 && Boolean(error.fields?.['showcases.0.coverId']));
       assert.equal((await second.store.read()).draft.revision, 1);
-      draft.content.showcases[0].publicConsent = false;
+      draft.content.showcases[0].visibility = 'private';
       await second.store.save(1, draft.content, 'synthetic');
       await second.store.publish(2, 'synthetic');
       assert.equal((await build().api(request(imagePath))).status, 404);

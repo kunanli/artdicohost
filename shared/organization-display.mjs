@@ -18,7 +18,8 @@ export function publicOrganizationCards(input) {
   const seen=new Set();
   return input.flatMap(value=>{
     if(!record(value))return[];
-    if(own(value,'status')!=='confirmed'||own(value,'publicConsent')!==true)return[];
+    if(Object.hasOwn(value,'visibility')&&own(value,'visibility')!=='public'
+      ||!['pending','confirmed','withdrawn'].includes(own(value,'status')))return[];
     const id=own(value,'id'),name=own(value,'name'),participation=own(value,'participation');
     if(typeof id!=='string'||!idPattern.test(id)||seen.has(id)||typeof name!=='string'||!name.trim()
       ||[...name.trim()].length>160||/[\u0000-\u001f\u007f]/u.test(name)||typeof participation!=='string'||!Object.hasOwn(labels,participation))return[];
@@ -28,6 +29,7 @@ export function publicOrganizationCards(input) {
     seen.add(id);
     return[{id,name:name.normalize('NFC').trim(),participation,
       website:typeof website==='string'&&isPublicWebsite(website)?website:'',
-      logoUrl:safeLogo?logoUrl:''}];
+      logoUrl:safeLogo?logoUrl:'',
+      ...(own(value,'status')!=='confirmed'?{status:own(value,'status')}:{})}];
   });
 }

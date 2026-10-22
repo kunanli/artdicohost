@@ -5,7 +5,7 @@ import {resolve, extname} from 'node:path';
 import assert from 'node:assert/strict';
 const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
 const project=fileURLToPath(new URL('../../',import.meta.url));
-const dist=resolve(project,'dist'),evidence=resolve(project,'.local-data/browser-evidence');
+const dist=resolve(process.env.ARTDICO_DIST_DIRECTORY||resolve(project,'dist')),evidence=resolve(project,'.local-data/browser-evidence');
 await mkdir(evidence,{recursive:true});
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const ids=['a','b','c','d','e'].map(value=>value.repeat(43)),teamId='t_'+'x'.repeat(22),csrf='s'.repeat(43);
@@ -35,7 +35,7 @@ async function serve(route,path){
 async function scenario(role){
  const context=await browser.newContext({viewport:{width:1280,height:950}}),page=await context.newPage();
  const user={id:'synthetic-'+role,label:'合成'+role,roles:[role]},state=syntheticState(),records=ids.slice(0,4).map(registration),writes=[];
- let staffAttempt=0,staffSavedBody=null;
+ let staffAttempt=0,staffSavedBody=null,staffOperation=null;
  page.on('pageerror',error=>errors.push(role+':'+error.message));page.on('dialog',dialog=>dialog.accept());
  await context.route('**/*',async route=>{
   const request=route.request(),url=new URL(request.url()),path=url.pathname;
@@ -60,7 +60,7 @@ async function scenario(role){
    assert.match(body.operationId,/^[A-Za-z0-9_-]{32,128}$/u);
    if(path.endsWith('/staff')&&staffAttempt++){
     assert.equal(raw,staffSavedBody,'uncertain staff save must replay the exact original operation');
-    return route.fulfill(json(envelope(state,{outcome:'replayed',promotedIds:[],registrationId:ids[4]})));
+    return route.fulfill(json(envelope(state,{outcome:'replayed',promotedIds:[],registrationId:ids[4],receipt:{committed:true,registrationId:ids[4]},operation:staffOperation})));
    }
    assert.equal(body.expectedRevision,state.revision);
    if(path.endsWith('/settings')){
@@ -74,23 +74,23 @@ async function scenario(role){
     assert.equal(Object.hasOwn(body.input.fields,'consentAccepted'),false);
     state.people.push({registrationId:ids[4],kind:'crew',status:'waitlisted',queueNumber:5,changedAt:at,teamId:''});
     records.push({...registration(ids[4],5),fields:body.input.fields,provenance:{kind:'staff_entry',actorId:user.id,recordedAt:at,permissionReference:body.input.permissionReference},consent:{accepted:false,version:null,acceptedAt:null}});
-    state.revision++;state.auditCount++;
+    state.revision++;state.auditCount++;staffOperation={operationId:body.operationId,action:'staff_intake',registrationId:ids[4],kind:body.input.kind,revision:state.revision};
     // The synthetic service saved successfully, but the first acknowledgement was lost.
     return route.fulfill(json({error:{code:'UNAVAILABLE'}},503));
    }else if(path.endsWith('/teams')){
-    assert.deepEqual(body.team,{name:'合成两人团队',memberIds:[ids[0],ids[1]]});
+    assert.deepEqual(body.team,{...(body.team.id?{id:teamId}:{}),name:'合成两人团队',memberIds:[ids[0],ids[1]]});
     state.teams=[{id:teamId,...body.team}];for(const person of state.people)if(body.team.memberIds.includes(person.registrationId))person.teamId=teamId;
    }else if(path.endsWith('/withdraw')){
     assert.equal(body.registrationId,ids[0]);
     state.people[0].status='withdrawn';
     const first=state.people.find(person=>person.status==='waitlisted');assert.equal(first.registrationId,ids[2]);first.status='confirmed';
     state.revision++;state.auditCount++;
-    return route.fulfill(json(envelope(state,{outcome:'updated',promotedIds:[ids[2]]})));
+    return route.fulfill(json(envelope(state,{outcome:'updated',registrationId:body.registrationId,promotedIds:[ids[2]],operation:{operationId:body.operationId,action:'withdraw',registrationId:body.registrationId,revision:state.revision}})));
    }else if(path.endsWith('/promote')){
     assert.equal(envelope(state).summary.remainingTotal,0);
    }else return route.fulfill(json({error:{code:'UNEXPECTED'}},400));
    state.revision++;state.auditCount++;
-   return route.fulfill(json(envelope(state,{outcome:'updated',promotedIds:[],...(path.endsWith('/teams')?{teamId}:{})})));
+   return route.fulfill(json(envelope(state,{outcome:'updated',promotedIds:[],...(path.endsWith('/teams')?{teamId}:{}),operation:{operationId:body.operationId,action:path.endsWith('/settings')?'settings':path.endsWith('/teams')?'team_save':'promote',registrationId:null,revision:state.revision,...(path.endsWith('/settings')?{settings:body.settings}:{}),...(path.endsWith('/teams')?{teamId}:{})}})));
   }
   return route.fulfill(json({error:{code:'NOT_FOUND'}},404));
  });
@@ -103,6 +103,9 @@ async function scenario(role){
   assert.match(await root.locator('[data-admissions-metrics]').textContent(),/已确认 \/ 总上限2 \/ 2/u);
   if(role==='superadmin'){
    const settings=root.locator('[data-admissions-settings]');
+   const pendingTeam=root.locator('[data-admissions-team]'),pendingStaff=root.locator('[data-admissions-staff]');await pendingTeam.locator('..').evaluate(node=>node.open=true);await pendingStaff.locator('..').evaluate(node=>node.open=true);
+   await pendingTeam.locator('[name=name]').fill('合成两人团队');await pendingTeam.locator('[name=memberIds]').selectOption([ids[0],ids[1]]);
+   for(const[name,value]of Object.entries({name:'合成工作人员',email:'crew@example.invalid',permissionReference:'synthetic-permission-1'}))await pendingStaff.locator(`[name=${name}]`).fill(value);
    assert.equal(await settings.locator('[name=staffReserve]').inputValue(),'0');
    await settings.locator('[name=staffReserve]').fill('1');
    await root.locator('[data-admissions-refresh]').click();
@@ -112,9 +115,15 @@ async function scenario(role){
    for(const reserve of ['1','0']){
     await settings.locator('[name=staffReserve]').fill(reserve);await settings.locator('button[type=submit]').click();
     await page.waitForFunction(value=>document.querySelector('[data-admissions-settings] [name=staffReserve]').value===value&&!document.querySelector('[data-admissions-promote]').disabled,reserve);
-    assert.equal(state.settings.staffReserve,Number(reserve));
+    assert.equal(state.settings.staffReserve,Number(reserve));assert.equal(await pendingTeam.locator('[name=name]').inputValue(),'合成两人团队');assert.equal(await pendingStaff.locator('[name=name]').inputValue(),'合成工作人员');
    }
-   await root.locator('[data-admissions-staff]').locator('..').locator('summary').click();
+   await settings.locator('[name=staffReserve]').fill('0');state.settings.staffReserve=1;state.revision++;state.auditCount++;
+   await root.locator('[data-admissions-refresh]').click();await settings.locator('.ah-form-save-state[data-save-state=conflict]').waitFor();
+   assert.equal(await settings.locator('[name=staffReserve]').inputValue(),'0');assert.equal(await settings.locator('button[type=submit]').isDisabled(),true);
+   assert.equal(await pendingTeam.locator('[name=name]').inputValue(),'合成两人团队');assert.equal(await pendingTeam.locator('[data-admissions-save-state]').getAttribute('data-save-state'),'dirty');
+   assert.equal(await pendingStaff.locator('[name=name]').inputValue(),'合成工作人员');
+   await settings.locator('[data-admissions-reconcile]').click();await settings.locator('button[type=submit]').click();await settings.locator('.ah-form-save-state[data-save-state=saved]').waitFor();assert.equal(state.settings.staffReserve,0);
+   await root.locator('[data-admissions-staff]').locator('..').evaluate(node=>node.open=true);
    const staff=root.locator('[data-admissions-staff]');
    for(const[name,value]of Object.entries({name:'合成工作人员',email:'crew@example.invalid',permissionReference:'synthetic-permission-1'}))await staff.locator(`[name=${name}]`).fill(value);
    await staff.locator('[name=confirmed]').check();await staff.locator('button[type=submit]').click();
@@ -124,10 +133,12 @@ async function scenario(role){
    assert.equal(await promote.isDisabled(),true);
    assert.equal(await root.locator('[data-admissions-team] button[type=submit]').isDisabled(),true);
    assert.equal(writes.filter(write=>write.path.endsWith('/staff')).length,1);
+   await page.reload({waitUntil:'networkidle'});await root.waitFor({state:'visible'});await staff.locator('..').evaluate(node=>node.open=true);
+   await root.locator('[data-operations-local-draft="admission-pending"]').getByRole('button',{name:'恢复待核对操作',exact:true}).click();
    await root.locator('[data-admissions-retry]').click();
    await root.locator('[data-admissions-pending]').waitFor({state:'hidden'});
-   await root.locator('[data-admissions-status]').filter({hasText:'尚未确认参会'}).waitFor();
-   assert.equal(await staff.locator('[name=name]').inputValue(),'');
+   await root.locator('[data-admissions-status]').filter({hasText:'实际一人的登记已保存'}).waitFor();
+   assert.equal(await staff.locator('[name=name]').inputValue(),'合成工作人员');assert.equal(await staff.locator('[name=name]').isDisabled(),true);await staff.locator('[data-admissions-staff-next]').click();assert.equal(await staff.locator('[name=name]').inputValue(),'');
    const attempts=writes.filter(write=>write.path.endsWith('/staff'));assert.equal(attempts.length,2);assert.equal(attempts[0].raw,attempts[1].raw);
    assert.equal(state.people.filter(person=>person.registrationId===ids[4]).length,1);
    assert.equal(records.at(-1).consent.accepted,false);
@@ -138,27 +149,40 @@ async function scenario(role){
    assert.equal(await root.getByRole('button',{name:'改为工作人员',exact:true}).count(),0);
    assert.equal(await promote.isEnabled(),true);
   }
-  const team=root.locator('[data-admissions-team]');await team.locator('..').locator('summary').click();
+  const team=root.locator('[data-admissions-team]');await team.locator('..').evaluate(node=>node.open=true);
+  if(role==='superadmin'){
+   const localTeam=team.locator('[data-operations-local-draft="admission-form:team"]');
+   await localTeam.getByRole('button',{name:'查看本机内容',exact:true}).click();
+   assert.equal(JSON.parse(await localTeam.locator('textarea').inputValue()).name,'合成两人团队','page reload retains the unrelated team draft for explicit review');
+   await localTeam.getByRole('button',{name:'清除本机草稿',exact:true}).click();
+   await localTeam.locator(':scope[data-operations-draft-state=discarded]').waitFor({state:'attached'});
+  }
   const beforePeople=state.people.length,beforeConfirmed=envelope(state).summary.confirmedCount;
   await team.locator('[name=name]').fill('合成两人团队');await team.locator('[name=memberIds]').selectOption([ids[0],ids[1]]);await team.locator('button[type=submit]').click();
   await root.locator('[data-admissions-teams]').filter({hasText:'2 位已登记成员'}).waitFor();
   assert.equal(state.people.length,beforePeople);assert.equal(envelope(state).summary.confirmedCount,beforeConfirmed);
+  state.teams[0].name='另一页保存的团队名';state.revision++;state.auditCount++;
+  await root.locator('[data-admissions-refresh]').click();await page.waitForFunction(()=>document.querySelector('[data-admissions-team] [name=name]').value==='另一页保存的团队名');
+  await team.locator('[name=name]').fill('合成两人团队');state.teams[0].name='另一页再次修改团队';state.revision++;state.auditCount++;
+  await root.locator('[data-admissions-refresh]').click();await team.locator('.ah-form-save-state[data-save-state=conflict]').waitFor();
+  assert.equal(await team.locator('[name=name]').inputValue(),'合成两人团队');assert.equal(await team.locator('button[type=submit]').isDisabled(),true);
+  await team.locator('[data-admissions-reconcile]').click();await team.locator('button[type=submit]').click();await team.locator('.ah-form-save-state[data-save-state=saved]').waitFor();
   await root.locator('[data-admissions-teams]').getByRole('button',{name:'编辑关联',exact:true}).click();
   assert.equal(await team.locator('[name=id]').inputValue(),teamId);
-  await root.locator('[data-admissions-team-reset]').click();
+  await root.locator('[data-admissions-team-reset]').click();await page.waitForFunction(()=>document.querySelector('[data-admissions-team] [name=id]').value==='');
   assert.equal(await team.locator('[name=id]').inputValue(),'','new team mode clears the previous hidden team ID');
   await root.locator('.admissions-people > summary').click();
   const firstRow=root.locator('[data-admissions-people] tr').filter({hasText:ids[0]});
   assert.equal(await firstRow.getByRole('button',{name:'取消并释放名额',exact:true}).isEnabled(),true);
   await firstRow.getByRole('button',{name:'取消并释放名额',exact:true}).click();
-  await root.locator('[data-admissions-status]').filter({hasText:'1 位候补转正'}).waitFor();
+  await root.locator('[data-admissions-status]').filter({hasText:'1 位已核准候补转正'}).waitFor();
   assert.equal(state.people[0].status,'withdrawn');assert.equal(state.people[2].status,'confirmed');assert.equal(state.people[3].status,'waitlisted');
   await root.locator('[data-admissions-promote]').click();
-  await root.locator('[data-admissions-status]').filter({hasText:'未自动发送通知'}).waitFor();
+  await root.locator('[data-admissions-status]').filter({hasText:'未产生新的正式邀请'}).waitFor();
   assert.equal(writes.some(write=>write.path.endsWith('/promote')),true);
   if(role==='reviewer')assert.equal(writes.some(write=>/\/(?:settings|staff|kind)$/u.test(write.path)),false);
   await root.screenshot({path:resolve(evidence,'admissions-'+role+'.png')});
-  reports.push({role,perPersonCounts:true,teamLinksOnly:true,fifoPromotion:true,...(role==='superadmin'?{zeroDefaultReserve:true,uncertainStaffRetrySameOperation:true,staffConsentNotFabricated:true}:{restrictedToolsHidden:true}),mutations:writes.map(write=>write.path)});
+  reports.push({role,perPersonCounts:true,teamLinksOnly:true,fifoPromotion:true,dirtyOtherFormsRetained:true,sameScopeConflictRequiresExplicitReview:true,cleanTeamReadUsesCurrentValues:true,...(role==='superadmin'?{zeroDefaultReserve:true,uncertainStaffRetrySameOperation:true,recoveredPageAckLocksSavedPerson:true,staffConsentNotFabricated:true}:{restrictedToolsHidden:true}),mutations:writes.map(write=>write.path)});
  }finally{await context.close();}
 }
 try{await scenario('superadmin');await scenario('reviewer');assert.deepEqual(errors,[]);console.log(JSON.stringify({reports,pageErrors:errors},null,2));}

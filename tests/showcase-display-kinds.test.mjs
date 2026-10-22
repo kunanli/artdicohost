@@ -21,3 +21,15 @@ test('stable work IDs deduplicate independently of many works sharing a booth an
   const result=publicShowcaseCards([work('one',{kind:'student',email:'PRIVATE_EMAIL',materialLinks:'https://private.invalid'}),work('two',{kind:'indie'}),work('three',{kind:'team'}),work('two',{title:'Duplicate'})]);
   assert.deepEqual(result.map(item=>item.id),['one','two','three']);assert.equal(new Set(result.map(item=>item.boothId)).size,1);assert.doesNotMatch(JSON.stringify(result),/PRIVATE|private\.invalid|materialLinks|email/u);
 });
+
+test('default public works remain visible without attendance, cover or assigned display, with factual status',()=>{
+  const value=work('unfinished',{status:'pending',responseStatus:'pending',publicConsent:false,title:'',teamName:'',coverId:'',boothId:'',participationForms:[]});
+  const original=JSON.stringify(value),cards=publicShowcaseCards([value]);
+  assert.equal(cards.length,1);assert.equal(cards[0].title,'作品名称待补');assert.equal(cards[0].coverUrl,'');
+  assert.equal(cards[0].boothId,'');assert.equal(cards[0].sessionId,'');assert.equal(cards[0].status,'pending');assert.equal(cards[0].responseStatus,'pending');
+  assert.equal(JSON.stringify(value),original);assert.deepEqual(publicShowcaseCards([{...value,visibility:'private'}]),[]);
+  assert.equal(publicShowcaseCards([{...value,visibility:'public'}]).length,1);
+  assert.equal(publicShowcaseCards([work('declined',{responseStatus:'declined'})])[0].responseStatus,'declined');
+  for(const visibility of [undefined,null,'',false,'PRIVATE'])assert.deepEqual(publicShowcaseCards([{...value,visibility}]),[]);
+  const accessor=work();Object.defineProperty(accessor,'visibility',{get(){assert.fail('visibility getter must not execute');}});assert.deepEqual(publicShowcaseCards([accessor]),[]);
+});

@@ -1,5 +1,5 @@
 import { validateContent } from '../../shared/content-schema.mjs';
-import { validateContactOperations } from '../../shared/contacts-schema.mjs';
+import { validateContactOperations, validateStoredContact } from '../../shared/contacts-schema.mjs';
 import { boothOrganizationField } from './content-relationships.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
@@ -41,6 +41,20 @@ export function prepareContactAssignments(contact, { sessionIds, boothIds }, con
   const checked = validateContactOperations({ ...clone(contact.operations), sessionIds, boothIds, sessionRoles }, content);
   if (!checked.valid) throw new Error([...new Set(Object.values(checked.errors))].join(' '));
   return checked.value;
+}
+
+/** A successful HTTP status is not proof that these personnel allocations saved.
+ * Both the direct contact and linked-registration routes return the same durable
+ * contact/revision fields; this does not infer admission or attendance. */
+export function assignmentSaveReceipt(value, {contactId,expectedRevision,operations} = {}, {readback=false} = {}) {
+  const plain=input=>input!==null&&typeof input==='object'&&!Array.isArray(input)&&[Object.prototype,null].includes(Object.getPrototypeOf(input));
+  if(!plain(value)||!ID.test(contactId??'')||!Number.isSafeInteger(expectedRevision)||expectedRevision<0
+    ||!Number.isSafeInteger(value.revision)||(readback?value.revision<=expectedRevision:value.revision!==expectedRevision+1)
+    ||!validateStoredContact(value.contact)||value.contact.id!==contactId||!plain(operations)
+    ||Object.entries(operations).some(([key,expected])=>JSON.stringify(value.contact.operations[key])!==JSON.stringify(expected))) {
+    throw new Error('人员安排保存回执与本次填写不一致，请保留填写并核对云端结果。');
+  }
+  return {revision:value.revision,contact:structuredClone(value.contact)};
 }
 
 /** One row per start time and one column per zone; workshop views never duplicate a session. */

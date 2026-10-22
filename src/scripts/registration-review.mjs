@@ -1,4 +1,4 @@
-import {createOperationsFormDraft,operationsDraftStore,captureDraftFields,applyDraftFields} from '../lib/operations-form-draft.mjs';
+import {createOperationsFormDraft,operationsDraftStore,captureDraftFields,applyDraftFields,createOperationsSaveState,operationsFieldErrors} from '../lib/operations-form-draft.mjs';
 import {canManageEventOperations} from '../../shared/staff-permissions.mjs';
 import {reviewRegistrationSelection} from '../lib/registration-review-selection.mjs';
 import {registrationSchema} from '../../shared/registration-schema.mjs';
@@ -15,9 +15,11 @@ let user=null,csrfToken='',revision=0,nextCursor=null,selected=null,busy=false,d
 let sessionGeneration=0;
 let filters={};
 let reviewDraft=null,reviewPending=null;
+const reviewSaveState=createOperationsSaveState({form:$('[data-review-form]'),button:$('[data-review-save]')});
+reviewSaveState.set('idle','修改后保存本条报名的核查意见。');
 function openReviewDraft(){
   reviewDraft?.close();reviewPending=null;const id=selected.id,generation=sessionGeneration,form=$('[data-review-form]');
-  reviewDraft=createOperationsFormDraft({actorId:user.id,roles:user.roles,page:'review',entity:id,form,baseRevision:()=>selected?.revision,isCurrent:()=>generation===sessionGeneration&&selected?.id===id&&Boolean(user),capture:()=>captureDraftFields(form,reviewFields),apply:fields=>{applyDraftFields(form,fields,reviewFields);dirty=true;renderAdmissionDecision();},manualPending:true,onPending:request=>{if(request.path!=='/api/admin/registrations/'+encodeURIComponent(id)+'/review'||request.method!=='PATCH')throw new Error('原审核保存操作无法核对。');reviewPending=JSON.parse(request.body);dirty=true;},onChange:event=>{if(event.error?.code==='STALE_ACTOR'){clear();return;}if(event.status==='discarded')reviewPending=null;lock();}});void reviewDraft.load();
+  reviewDraft=createOperationsFormDraft({actorId:user.id,roles:user.roles,page:'review',entity:id,form,baseRevision:()=>selected?.revision,isCurrent:()=>generation===sessionGeneration&&selected?.id===id&&Boolean(user),capture:()=>captureDraftFields(form,reviewFields),apply:fields=>{applyDraftFields(form,fields,reviewFields);dirty=true;reviewSaveState.set('dirty','已恢复填写，当前核查意见尚未保存。');renderAdmissionDecision();},manualPending:true,onPending:request=>{if(request.path!=='/api/admin/registrations/'+encodeURIComponent(id)+'/review'||request.method!=='PATCH')throw new Error('原审核保存操作无法核对。');reviewPending=JSON.parse(request.body);dirty=true;reviewSaveState.set('unknown','原核查提交结果待核对。');},onChange:event=>{if(event.error?.code==='STALE_ACTOR'){clear();return;}if(event.status==='discarded')reviewPending=null;lock();}});void reviewDraft.load();
 }
 
 const privateExportUrls=new Set();
@@ -38,6 +40,7 @@ function lock(){
   for(const field of $('[data-review-form]').elements)field.disabled=busy||!allowed()||Boolean(reviewDraft?.blocked)||Boolean(reviewPending);
   // Draft recovery controls remain usable while the cloud-save controls are locked.
   for(const field of $('[data-review-form]').querySelectorAll('.operations-local-draft button'))field.disabled=busy||!allowed();
+  $('[data-review-save]').disabled=busy||!allowed()||!dirty||Boolean(reviewDraft?.blocked)||Boolean(reviewPending);
   staffAdmissions.lock(busy||!allowed());
   for(const button of document.querySelectorAll('[data-review-detail-close]'))button.disabled=busy;
   renderAdmissionDecision();
@@ -51,6 +54,7 @@ function clear(){
   $('[data-review-workspace]').hidden=true;$('[data-review-account]').hidden=true;$('[data-review-login-panel]').hidden=false;
   for(const selector of ['[data-review-rows]','[data-review-metrics]','[data-review-details]'])$(selector).replaceChildren();
   $('[data-review-form]').reset();$('[data-review-filters]').reset();$('[data-review-export-contact]').checked=false;
+  reviewSaveState.set('idle');operationsFieldErrors($('[data-review-form]'));
   $('[data-review-export-answers]').checked=false;$('[data-review-export-arrangements]').checked=false;
   $('[data-review-login]').reset();
   $('[data-review-detail-title]').textContent='报名资料';
@@ -144,11 +148,15 @@ async function openRecord(id){
   const generation=sessionGeneration;if(dirty&&!reviewDraft?.blocked&&!reviewPending)await reviewDraft?.flush().catch(()=>{});if(generation!==sessionGeneration)return;
   const result=await request('/api/admin/registrations/'+encodeURIComponent(id));
   if(generation!==sessionGeneration)return;
-  if(!result.registration||!Number.isSafeInteger(result.revision))throw new Error('报名详情结果无效。');
+  adoptRecord(result,id);
+}
+function adoptRecord(result,id){
+  if(!result.registration||result.registration.id!==id||!Number.isSafeInteger(result.revision))throw new Error('报名详情结果无效。');
   const review=result.review??result.registration.review??{};selected={...result.registration,review,revision:result.revision};revision=result.revision;dirty=false;
   $('[data-review-detail-title]').textContent=(selected.fields?.name||'报名资料')+' · 内部核查';renderDetails(selected);
   $('[data-review-provenance]').textContent=['staff_assisted','staff_entry'].includes(selected.provenance?.kind)?(selected.provenance.kind==='staff_entry'?'工作人员根据已核定许可逐人登记。':'工作人员根据既有意向资料代登记。')+'此记录不代表本人完成网站隐私同意；原始来源与联络许可须分别核对。':'申请人通过正式表单提交，隐私同意版本与时间随原始报名保存。';
   const form=$('[data-review-form]');for(const name of reviewFields)form.elements.namedItem(name).value=review[name]??'';
+  reviewSaveState.set('idle','修改后点击保存，只保存当前核查意见。');operationsFieldErrors(form);
   $('[data-review-deletion-state]').textContent=review.deletionRequested?'已登记删除申请；尚未宣称完成数据擦除，后续须按受控维护流程处理。':'';
   $('[data-review-detail-error]').hidden=true;
   $('[data-review-admission-notice]').textContent='';
@@ -186,12 +194,12 @@ $('[data-review-refresh]').addEventListener('click',()=>action(async()=>{if(dirt
 $('[data-review-next]').addEventListener('click',()=>action(()=>load(nextCursor)));
 for(const button of document.querySelectorAll('[data-review-detail-close]'))button.addEventListener('click',closeDetail);
 $('[data-review-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeDetail();});
-$('[data-review-form]').addEventListener('input',()=>{dirty=true;renderAdmissionDecision();});
-$('[data-review-form]').addEventListener('change',()=>{dirty=true;renderAdmissionDecision();});
+for(const eventName of ['input','change'])$('[data-review-form]').addEventListener(eventName,event=>{if(!reviewFields.includes(event.target.name))return;dirty=true;reviewSaveState.set('dirty','当前核查意见尚未保存。');operationsFieldErrors(event.currentTarget);$('[data-review-detail-error]').hidden=true;lock();});
+$('[data-review-form]').addEventListener('invalid',()=>reviewSaveState.set('error','请检查标出的字段，填写内容仍保留。'),true);
 $('[data-review-form]').addEventListener('submit',event=>{
   event.preventDefault();if(!selected||reviewDraft?.blocked||reviewPending||!event.currentTarget.reportValidity())return;
-  const review=Object.fromEntries(reviewFields.map(name=>[name,event.currentTarget.elements.namedItem(name).value]));const id=selected.id,expectedRevision=selected.revision,generation=sessionGeneration;
-  action(async()=>{let writeAcknowledged=false;try{const path='/api/admin/registrations/'+encodeURIComponent(id)+'/review',body=JSON.stringify({expectedRevision,review});await reviewDraft.markPending({path,method:'PATCH',body});reviewPending={expectedRevision,review};await request(path,{method:'PATCH',body});writeAcknowledged=true;const checked=await request('/api/admin/registrations/'+encodeURIComponent(id));const saved=checked.review??checked.registration?.review;if(!Number.isSafeInteger(checked.revision)||checked.revision<=expectedRevision||!saved||!Object.entries(review).every(([key,value])=>saved[key]===value))throw new Error('云端核查结果尚未与本次填写一致，请手动核对。');await reviewDraft.acknowledge();reviewPending=null;dirty=false;await openRecord(id);await load();announce('核查记录已保存。未发送通知或公开报名资料。');}catch(error){if(generation===sessionGeneration&&!writeAcknowledged&&error.status>=400&&error.status<500){await reviewDraft?.rejectPending();reviewPending=null;}else if(generation===sessionGeneration)await reviewDraft?.markUnknown().catch(()=>{});if(generation===sessionGeneration&&selected?.id===id){$('[data-review-detail-error]').textContent=error.message;$('[data-review-detail-error]').hidden=false;$('[data-review-detail-error]').focus();}throw error;}});
+  const review=Object.fromEntries(reviewFields.map(name=>[name,event.currentTarget.elements.namedItem(name).value.normalize('NFC').trim()]));const id=selected.id,expectedRevision=selected.revision,generation=sessionGeneration;
+  action(async()=>{let writeAcknowledged=false,proven=null;reviewSaveState.set('saving','正在保存当前核查意见…');try{const path='/api/admin/registrations/'+encodeURIComponent(id)+'/review',body=JSON.stringify({expectedRevision,review});await reviewDraft.markPending({path,method:'PATCH',body});reviewPending={expectedRevision,review};await request(path,{method:'PATCH',body});writeAcknowledged=true;const checked=await request('/api/admin/registrations/'+encodeURIComponent(id));const saved=checked.review??checked.registration?.review;if(checked.registration?.id!==id||!Number.isSafeInteger(checked.revision)||checked.revision<=expectedRevision||!saved||!Object.entries(review).every(([key,value])=>saved[key]===value))throw new Error('云端核查结果尚未与本次填写一致，请手动核对。');proven=checked;await reviewDraft.acknowledge();reviewPending=null;dirty=false;adoptRecord(checked,id);if(generation!==sessionGeneration)return;reviewSaveState.set('saved','当前报名核查意见已保存。');try{await load();}catch{if(generation===sessionGeneration)announce('核查意见已保存；列表暂未刷新，可稍后刷新。');return;}announce('核查意见已保存。');}catch(error){if(generation===sessionGeneration&&proven){selected={...proven.registration,review:proven.review??proven.registration.review,revision:proven.revision};revision=proven.revision;reviewPending=null;dirty=false;reviewSaveState.set('saved','当前核查意见已保存；本机恢复记录尚待整理，请保留页面核对。');announce('核查意见已保存；本机恢复记录尚待整理。',true);return;}if(generation===sessionGeneration&&!writeAcknowledged&&error.status>=400&&error.status<500){await reviewDraft?.rejectPending();reviewPending=null;}else if(generation===sessionGeneration)await reviewDraft?.markUnknown().catch(()=>{});if(generation===sessionGeneration&&selected?.id===id){reviewSaveState.set(reviewPending?'unknown':error.status===409?'conflict':'error',error.message);operationsFieldErrors($('[data-review-form]'),error.fields??{});$('[data-review-detail-error]').textContent=error.message;$('[data-review-detail-error]').hidden=false;$('[data-review-detail-error]').focus();}throw error;}});
 });
 $('[data-review-deletion]').addEventListener('click',()=>{
   if(!selected||!user?.roles.includes('superadmin'))return;if(dirty){announce('请先保存或放弃核查修改，再登记删除申请。',true);return;}

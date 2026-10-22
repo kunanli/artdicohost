@@ -222,8 +222,8 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         const restarted = make(objects());
         const read = await restarted.store.read(); requireThat(read.draft.revision === 2 && read.published.revision === 1
           && read.draft.content.organizations[0].logoId === portrait.id && read.published.content.organizations[0].participation === 'attendee');
-        read.draft.content.guests[0].publicConsent = false;
-        read.draft.content.organizations[0].publicConsent = false;
+        read.draft.content.guests[0].visibility = 'private';
+        read.draft.content.organizations[0].visibility = 'private';
         await call(restarted.api, '/api/admin/content', { method: 'PUT', headers: owner, body: { expectedRevision: 2, content: read.draft.content } }, 200);
         await call(first.api, '/api/admin/content/publish', { method: 'POST', headers: alias, body: { expectedRevision: 3 } }, 200);
         await call(second.api, path, { origin: PUBLIC_SITE_ORIGIN }, 404);

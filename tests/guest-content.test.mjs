@@ -49,20 +49,26 @@ test('guest publication is explicit, minimal and idempotent; linked sessions der
   assert.equal(content.guests[0].name, '合成嘉宾');
 });
 
-test('pending, unapproved or incomplete draft guests cannot leak through linked session names', () => {
+test('default-public guests preserve pending and consent facts while explicit private guests never reach linked names', () => {
   for (const changes of [
     { status: 'pending' }, { publicConsent: false },
     { status: 'pending', name: '', company: '', portraitId: '' },
     { publicConsent: false, portraitId: '' },
   ]) {
-    const content = fixture();
-    Object.assign(content.guests[0], changes);
+    const content = fixture(); Object.assign(content.guests[0], changes);
     const published = toPublicContent(content);
-    assert.deepEqual(published.guests, []);
-    assert.equal(published.sessions[0].guestId, '');
-    assert.equal(published.sessions[0].speakerName, '');
-    assert.equal(published.sessions[0].speakerStatus, 'pending');
+    assert.equal(published.guests.length, 1);
+    assert.equal(published.guests[0].name, content.guests[0].name);
+    assert.equal(published.guests[0].status, content.guests[0].status);
+    assert.equal(published.guests[0].publicConsent, content.guests[0].publicConsent);
+    assert.equal(published.sessions[0].guestId, 'synthetic-guest');
+    assert.equal(published.sessions[0].speakerName, content.guests[0].name);
+    assert.equal(published.sessions[0].speakerStatus, content.guests[0].status);
     assert.equal(JSON.stringify(published).includes('PRIVATE-'), false);
+    content.guests[0].visibility = 'private';
+    const hidden = toPublicContent(content); assert.deepEqual(hidden.guests, []);
+    assert.equal(hidden.sessions[0].guestId, ''); assert.equal(hidden.sessions[0].speakerName, '');
+    assert.equal(hidden.sessions[0].speakerStatus, 'pending');
   }
 });
 

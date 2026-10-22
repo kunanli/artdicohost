@@ -67,7 +67,7 @@ test('invalid clock times, reversed ranges and cross-day sessions are rejected',
   }
 });
 
-test('public projection excludes draft sessions, unconfirmed speakers, internal notes and unknown contact fields', () => {
+test('public projection excludes draft sessions, private opt-outs, internal notes and unknown contact fields', () => {
   const content = emptyContent();
   content.sessions = [
     session({ speakerName: 'PRIVATE-PENDING-SPEAKER', internalNotes: 'PRIVATE-STAFF-NOTE' }),
@@ -76,9 +76,9 @@ test('public projection excludes draft sessions, unconfirmed speakers, internal 
     session({ id: 'session-cancelled', zone: 'C', status: 'cancelled', speakerName: 'PRIVATE-CANCELLED-PENDING' }),
   ];
   content.booths = [
-    booth({ organization: 'PRIVATE-PENDING-EXHIBITOR', internalNotes: 'PRIVATE-BOOTH-NOTE' }),
+    booth({ visibility: 'private', organization: 'PRIVATE-PENDING-EXHIBITOR', internalNotes: 'PRIVATE-BOOTH-NOTE' }),
     booth({ id: 'booth-confirmed', code: 'c02', status: 'confirmed', internalNotes: 'PRIVATE-CONFIRMED-NOTE' }),
-    booth({ id: 'booth-cancelled', code: 'C03', status: 'cancelled', organization: 'PRIVATE-CANCELLED-EXHIBITOR' }),
+    booth({ id: 'booth-cancelled', code: 'C03', status: 'cancelled', visibility: 'private', organization: 'PRIVATE-CANCELLED-EXHIBITOR' }),
   ];
   /** @type {Record<string,unknown>} */ (content.booths[1]).contactEmail = 'private@example.invalid';
   /** @type {Record<string,unknown>} */ (content.event).internalNotes = 'PRIVATE-EVENT-NOTE';
@@ -185,7 +185,7 @@ test('fifteen explicit booth positions are bounded and unique among active recor
       assert.ok(result.errors['booths.1.slotNumber']);
     }
   }
-  content.booths = [booth({ slotNumber: 15, status: 'cancelled' }), booth({ id: 'new-position-holder', code: 'UNRELATED', slotNumber: 15, status: 'confirmed' })];
+  content.booths = [booth({ slotNumber: 15, status: 'cancelled', visibility: 'private' }), booth({ id: 'new-position-holder', code: 'UNRELATED', slotNumber: 15, status: 'confirmed' })];
   assert.equal(validateContent(content).valid, true);
   assert.equal(toPublicContent(content).booths.length, 1);
   assert.equal(toPublicContent(content).booths[0].slotNumber, 15);

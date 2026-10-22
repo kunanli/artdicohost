@@ -1,4 +1,5 @@
 /** Explicit private relationships. Display strings never become identity keys. */
+import { isContentVisible } from '../../shared/content-schema.mjs';
 import { validateStoredContact } from '../../shared/contacts-schema.mjs';
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u, REGISTRATION = /^[A-Za-z0-9_-]{43}$/u;
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
@@ -26,28 +27,28 @@ export function attendancePresentation(status) {
     :status==='pending'?{label:'未确认出席',tone:'negative'}
       :status==='declined'?{label:'不出席',tone:'negative'}:{label:'出席回复待核对',tone:'neutral'};
 }
-/** Published means this guest ID actually exists in the public snapshot. A newer
- * private draft cannot remove its green badge before explicit publication.
- * `known:false` comes from an unrelated orphan publication in the same catalog;
- * the API still proves each positive `published` by this exact guest ID. */
+/** Primary color describes the saved editorial visibility, public by default.
+ * Change text separately reports the immutable public snapshot. `known:false`
+ * means attribution is unavailable; only exact saved guest IDs prove publication. */
 export function profilePublicationPresentation(profile,{known=true}={}) {
-  const ready=Boolean(profile&&profile.status==='confirmed'&&profile.publicConsent===true);
-  const reasons=profile?[profile.status!=='confirmed'?'待确认':'',profile.publicConsent!==true?'待核实公开授权':''].filter(Boolean):[];
-  const suggestions=profile?[!profile.hasPortrait?'照片可稍后补充':'',!profile.publicRoles?.length?'公开职责可稍后补充':''].filter(Boolean):[];
-  if(profile?.published===true) {
+  if (!profile) return {label:'公开状态待核对',tone:'neutral',ready:false,change:'unknown',changeLabel:'待核对',detail:'公开资料暂时无法核对',reasons:[],suggestions:[]};
+  const ready=isContentVisible(profile),label=ready?'公开':'未公开',tone=ready?'positive':'negative';
+  const reasons=ready?[]:['已手动设为未公开'];
+  const suggestions=[!profile.hasPortrait?'照片可稍后补充':'',!profile.publicRoles?.length?'公开职责可稍后补充':''].filter(Boolean);
+  if(profile.published===true) {
     const change=profile.publishedMatchesDraft?'unchanged':ready?'updated':'removed';
-    return {label:'已公开',tone:'positive',ready,change,changeLabel:({unchanged:'已同步',updated:'变更待发布',removed:'待撤下'})[change],
-      detail:change==='unchanged'?'已发布内容与当前人物草稿一致':'资料有历史公开版本，当前人员关联及内容待核对',reasons,suggestions};
+    return {label,tone,ready,change,changeLabel:({unchanged:'已同步',updated:'变更待发布',removed:'待撤下'})[change],
+      detail:change==='unchanged'?'已发布内容与当前人物草稿一致':ready?'当前公开资料有更新，等待发布到前台':'前台仍保留上次发布版本，等待发布后撤下',reasons,suggestions};
   }
-  if(!profile||known!==true||profile.published!==false)return{label:'公开状态待核对',tone:'neutral',ready:false,change:'unknown',changeLabel:'待核对',detail:'公开快照暂时无法核对',reasons:[],suggestions};
-  return{label:'未公开',tone:'negative',ready,change:ready?'new':'blocked',changeLabel:ready?'待发布':'待补充',detail:ready?'资料已确认并核实授权，仍需明确发布':'请先核对确认状态与公开授权',reasons,suggestions};
+  if(known!==true||profile.published!==false)return{label,tone,ready,change:'unknown',changeLabel:'发布状态待核对',detail:'公开快照暂时无法核对',reasons,suggestions};
+  return{label,tone,ready,change:ready?'new':'blocked',changeLabel:ready?'待发布':'已隐藏',detail:ready?'已设为公开，等待发布到前台':'已手动设为未公开，资料保留在后台',reasons,suggestions};
 }
 export function privateResponseAction({requestGeneration,currentGeneration,status,selectionCurrent=()=>true,login=false}){if(requestGeneration!==currentGeneration)return'ignore_session';if(!login&&[401,403].includes(status))return'clear_session';return selectionCurrent()?'accept':'ignore_selection';}
 export function peopleRelationships(value) {
   check(plain(value) && value.schemaVersion === 1);
   const contentRevision = integer(value.contentRevision), publishedRevision = value.publishedRevision === null ? null : integer(value.publishedRevision);
   const organizations = rows(value.organizations, 200, row => ({ id: id(row.id), name: text(row.name, 160), status: choice(row.status, ['pending', 'confirmed', 'withdrawn']), participation: choice(row.participation, ['undecided', 'exhibitor', 'attendee']) }));
-  const profiles = rows(value.profiles, 200, row => { check(Array.isArray(row.publicRoles) && row.publicRoles.length <= 4 && new Set(row.publicRoles).size === row.publicRoles.length); return { id: id(row.id), contactId: id(row.contactId), publicRoles: row.publicRoles.map(role => choice(role, Object.keys(PUBLIC_ROLE_LABELS))), status: choice(row.status, ['pending', 'confirmed']), publicConsent: boolean(row.publicConsent), hasPortrait: boolean(row.hasPortrait), published: boolean(row.published), publishedMatchesDraft: boolean(row.publishedMatchesDraft) }; });
+  const profiles = rows(value.profiles, 200, row => { check(Array.isArray(row.publicRoles) && row.publicRoles.length <= 4 && new Set(row.publicRoles).size === row.publicRoles.length); return { id: id(row.id), contactId: id(row.contactId), publicRoles: row.publicRoles.map(role => choice(role, Object.keys(PUBLIC_ROLE_LABELS))), status: choice(row.status, ['pending', 'confirmed']), publicConsent: boolean(row.publicConsent), ...(Object.hasOwn(row,'visibility')?{visibility:choice(row.visibility,['public','private'])}:{}), hasPortrait: boolean(row.hasPortrait), published: boolean(row.published), publishedMatchesDraft: boolean(row.publishedMatchesDraft) }; });
   const boothOrganizations = rows(value.boothOrganizations, 200, row => ({ boothId: id(row.boothId), organizationId: id(row.organizationId) }), 'boothId');
   check(organizations.every(row=>row.name.trim())&&new Set(profiles.map(row=>row.contactId)).size===profiles.length&&profiles.every(row=>!row.publishedMatchesDraft||row.published)&&(!profiles.some(row=>row.published)||publishedRevision!==null));
   return { schemaVersion: 1, contentRevision, publishedRevision, organizations, profiles, boothOrganizations, publicationAttributionUnavailable: boolean(value.publicationAttributionUnavailable) };
@@ -66,7 +67,7 @@ export function matchesPeopleRelationships(contact, catalog, { organization = ''
   if (organization && (organization === '__none' ? related.memberships.length !== 0 : !related.memberships.some(row => row.organizationId === organization))) return false;
   if (publicRole && !profiles.some(row => row.publicRoles.includes(publicRole))) return false;
   if (!publicState) return true;
-  return ({ linked: profiles.length > 0, unlinked: profiles.length === 0, published: profiles.some(row => row.published), unpublished: related.publicationKnown && profiles.length > 0 && profiles.every(row => !row.published), changed: profiles.some(row => row.published && !row.publishedMatchesDraft), ready: profiles.some(row => row.status==='confirmed' && row.publicConsent), blocked: profiles.some(row => row.status!=='confirmed' || !row.publicConsent), no_consent: profiles.some(row => !row.publicConsent), no_portrait: profiles.some(row => !row.hasPortrait) })[publicState] === true;
+  return ({ linked: profiles.length > 0, unlinked: profiles.length === 0, published: profiles.some(row => row.published), unpublished: related.publicationKnown && profiles.length > 0 && profiles.every(row => !row.published), changed: profiles.some(row => row.published && !row.publishedMatchesDraft), ready: profiles.some(row => isContentVisible(row)), blocked: profiles.some(row => !isContentVisible(row)), no_consent: profiles.some(row => !row.publicConsent), no_portrait: profiles.some(row => !row.hasPortrait) })[publicState] === true;
 }
 export function parseOrganizationSelection(hash) { if (typeof hash !== 'string' || hash.length > 150) return null; const match = /^#organization=([^&#=]+)$/u.exec(hash); if (!match) return null; try { return id(decodeURIComponent(match[1])); } catch { return null; } }
 export function admissionForContact(contact, intent, receipts = new Map()) {

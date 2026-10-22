@@ -1,3 +1,41 @@
-.ah-admin-savebar{position:sticky;z-index:20;bottom:max(10px,env(safe-area-inset-bottom));margin:24px 0 0;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:16px;border:1px solid #d0daea;border-top:2px solid #1448ef;border-radius:7px;background:#fff;box-shadow:0 4px 18px #15243b14}.ah-admin-savebar-status{min-width:0;flex:1}.ah-admin-savebar strong{font-size:13px;line-height:1.6;display:block}.ah-admin-savebar p{font-size:11px;line-height:1.7;margin:3px 0 0;color:#5d6b83;overflow-wrap:anywhere;max-width:64ch}.ah-admin-savebar small{font-size:10px;color:#68778e}.ah-admin-savebar-actions{display:flex;justify-content:flex-end;gap:8px;align-items:center;flex-wrap:wrap}.ah-admin-savebar .ah-admin-button{white-space:normal;min-height:42px}.ah-admin-savebar [data-admin-save]{min-width:92px}.ah-admin-savebar [data-content-copy]{font-size:11px;white-space:nowrap;margin-right:3px}.ah-admin-savebar[data-save-state=dirty],.ah-admin-savebar[data-save-state=unapplied]{border-top-color:#a56b00;background:#fffdf7}.ah-admin-savebar[data-save-state=unknown],.ah-admin-savebar[data-save-state=conflict]{border-top-color:#a32b3e;background:#fff7f8}.ah-admin-savebar[data-save-state=saved]{border-top-color:#197050}.ah-admin-dialog [data-editor-unsaved]{margin-top:10px;font-size:12px;line-height:1.8;color:#5d6b83}.ah-admin-savebar[hidden],.ah-admin-savebar [hidden]{display:none!important}
-@media(max-width:650px){.ah-admin-savebar{bottom:max(8px,env(safe-area-inset-bottom));padding:11px 12px;gap:9px;flex-wrap:wrap}.ah-admin-savebar-status{flex:1 1 100%}.ah-admin-savebar-actions{width:100%;gap:7px}.ah-admin-savebar-actions .ah-admin-button{min-height:42px;padding:9px 11px;font-size:12px;flex:1 1 105px}.ah-admin-savebar-actions [data-admin-save]{flex:0 1 106px}.ah-admin-savebar strong{font-size:12px}.ah-admin-savebar p{font-size:11px;line-height:1.6}.ah-admin-savebar [data-content-copy]{margin-right:auto}}
+.ah-admin-savebar{position:static;margin:24px 0 0;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:16px;border:1px solid #d0daea;border-top:2px solid #1448ef;border-radius:7px;background:#fff;box-shadow:0 4px 18px #15243b14}.ah-admin-savebar-status{min-width:0;flex:1}.ah-admin-savebar strong{font-size:13px;line-height:1.6;display:block}.ah-admin-savebar p{font-size:11px;line-height:1.7;margin:3px 0 0;color:#5d6b83;overflow-wrap:anywhere;max-width:64ch}.ah-admin-savebar small{font-size:10px;color:#68778e}.ah-admin-savebar-actions{display:flex;justify-content:flex-end;gap:8px;align-items:center;flex-wrap:wrap}.ah-admin-savebar .ah-admin-button{white-space:normal;min-height:42px}.ah-admin-savebar [data-admin-save]{min-width:92px}.ah-admin-savebar [data-content-copy]{font-size:11px;white-space:nowrap;margin-right:3px}.ah-admin-savebar[data-save-state=dirty],.ah-admin-savebar[data-save-state=unapplied]{border-top-color:#a56b00;background:#fffdf7}.ah-admin-savebar[data-save-state=unknown],.ah-admin-savebar[data-save-state=conflict]{border-top-color:#a32b3e;background:#fff7f8}.ah-admin-savebar[data-save-state=saved]{border-top-color:#197050}.ah-admin-dialog [data-editor-unsaved]{margin-top:10px;font-size:12px;line-height:1.8;color:#5d6b83}.ah-admin-savebar[hidden],.ah-admin-savebar [hidden]{display:none!important}
+@media(max-width:650px){.ah-admin-savebar{padding:11px 12px;gap:9px;flex-wrap:wrap}.ah-admin-savebar-status{flex:1 1 100%}.ah-admin-savebar-actions{width:100%;gap:7px}.ah-admin-savebar-actions .ah-admin-button{min-height:42px;padding:9px 11px;font-size:12px;flex:1 1 105px}.ah-admin-savebar-actions [data-admin-save]{flex:0 1 106px}.ah-admin-savebar strong{font-size:12px}.ah-admin-savebar p{font-size:11px;line-height:1.6}.ah-admin-savebar [data-content-copy]{margin-right:auto}}
 @media print{.ah-admin-savebar{display:none!important}}
+
+/* One save action per editing scope, with acknowledgements beside that action. */
+.ah-admin-savebar{border-top-color:#c6d2e3;background:#fff;box-shadow:0 3px 14px #15243b10}
+.ah-admin-save-scope{display:block;margin-bottom:3px;font-size:11px;color:#526078;font-weight:600}
+.ah-admin-savebar .ah-admin-save-version{display:block;margin-top:3px;font-size:10px;color:#68778e}
+.ah-admin-savebar[data-save-state=saving]{border-top-color:#1448ef;background:#f7f9ff}
+.ah-admin-savebar[data-save-state=saved]{border-top-color:#197050;background:#f7fcf9}
+.ah-admin-savebar-actions [data-admin-save]{min-width:105px;order:2}
+.ah-admin-savebar-actions [data-admin-publish]{order:3}
+.ah-admin-savebar-actions [data-admin-check-save],.ah-admin-savebar-actions [data-admin-retry-save]{order:1}
+.ah-admin-save-tools{position:relative;order:0;margin-right:3px;font-size:11px;color:#526078}
+.ah-admin-save-tools>summary{display:flex;align-items:center;min-height:40px;padding:7px;cursor:pointer;list-style:none;text-decoration:underline;text-underline-offset:3px}
+.ah-admin-save-tools>summary::-webkit-details-marker{display:none}
+.ah-admin-save-tools>div{position:absolute;bottom:calc(100% + 8px);right:0;z-index:2;min-width:150px;padding:8px 12px;border:1px solid #d0daea;border-radius:6px;background:#fff;box-shadow:0 4px 18px #15243b1a}
+.ah-admin-save-tools>div .ah-admin-text-button{width:100%;text-align:left;font-size:12px;white-space:nowrap}
+.ah-admin-save-tools>summary:focus-visible{outline:2px solid #1448ef;outline-offset:2px;border-radius:3px}
+.ah-form-save-state{margin:12px 0;padding:10px 12px;border:1px solid #dbe3ee;border-left:3px solid #a4b4c9;border-radius:5px;background:#f7f9fc;color:#526078;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.ah-form-save-state:empty,.ah-form-save-state[hidden]{display:none!important}
+.ah-form-save-state :is(strong,p){margin:0}.ah-form-save-state strong{display:block;font-size:12px}.ah-form-save-state p{margin-top:3px}
+.ah-form-save-state:is([data-save-state=unsaved],[data-save-state=dirty]){border-color:#e5d6ac;border-left-color:#a56b00;background:#fffcf3;color:#76520b}
+.ah-form-save-state[data-save-state=saving]{border-color:#c9d7fb;border-left-color:#1448ef;background:#f5f8ff;color:#244ca4}
+.ah-form-save-state[data-save-state=saved]{border-color:#b6dbc7;border-left-color:#197050;background:#f2faf5;color:#17603b}
+.ah-form-save-state:is([data-save-state=unknown],[data-save-state=conflict],[data-save-state=error]){border-color:#ecc0c7;border-left-color:#a32b3e;background:#fff5f6;color:#9d2939}
+.ah-form-save-actions{display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:10px;padding-top:14px;margin-top:18px;border-top:1px solid #dfe6f0}
+.ah-field-error{display:block;margin:5px 0 0;color:#9d2939;font-size:12px;line-height:1.7;overflow-wrap:anywhere}.ah-field-error:empty,.ah-field-error[hidden]{display:none!important}
+:is(.ah-admin,.ah-admin-dialog) :is(input,select,textarea)[aria-invalid=true]{border-color:#b83d4e;background:#fff9fa}
+:is(.ah-admin,.ah-admin-dialog) :is(input,select,textarea)[aria-invalid=true]:focus-visible{outline:2px solid #b83d4e;outline-offset:2px}
+@media(max-width:650px){
+  .ah-admin-savebar{padding:10px 12px;gap:8px}.ah-admin-savebar-status{flex:1 1 100%}
+  .ah-admin-savebar-actions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:stretch;gap:7px}
+  .ah-admin-savebar-actions>[data-admin-save]{grid-column:1;grid-row:1;min-width:0}
+  .ah-admin-savebar-actions>[data-admin-publish]{grid-column:2;grid-row:1;min-width:0}
+  .ah-admin-savebar-actions>.ah-admin-save-tools{grid-column:3;grid-row:1;margin:0;align-self:center}
+  .ah-admin-savebar-actions>[data-admin-check-save],.ah-admin-savebar-actions>[data-admin-retry-save]{grid-column:1/-1;grid-row:auto}
+  .ah-admin-savebar-actions .ah-admin-button{padding:9px 10px;font-size:12px;min-height:42px}
+  .ah-admin-savebar-actions>[data-admin-save][hidden]+[data-admin-publish]{grid-column:1/3}
+  .ah-form-save-actions>.ah-admin-primary{flex:1 1 120px}.ah-form-save-state{padding:9px 11px}
+}

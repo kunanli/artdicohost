@@ -52,11 +52,11 @@ test('work categories and optional organization syntax reject null, unknown enum
   }
 });
 
-test('public work organization links require the same snapshot organization consent and never expose private fields', () => {
-  for (const changes of [{}, { status: 'pending' }, { status: 'withdrawn' }, { publicConsent: false }]) {
+test('public work organization links use the same visible snapshot and never expose private fields', () => {
+  for (const changes of [{}, { status: 'pending' }, { status: 'withdrawn' }, { publicConsent: false }, { visibility: 'private' }]) {
     const input = content(); input.organizations = [organization(changes)];
     input.showcases[0].kind = 'indie'; input.showcases[0].organizationId = input.organizations[0].id;
-    const projected = toPublicContent(input), visible = !changes.status && changes.publicConsent !== false;
+    const projected = toPublicContent(input), visible = changes.visibility !== 'private';
     assert.equal(projected.showcases.length, 1);
     assert.equal(Object.hasOwn(projected.showcases[0], 'organizationId'), visible);
     if (visible) assert.equal(projected.showcases[0].organizationId, 'synthetic-organization');
@@ -82,7 +82,7 @@ test('new work organization links require explicit saved IDs; unchanged or expli
   assert.equal(validateShowcaseOrganizationChanges(next, current).valid, true);
 });
 
-test('several work categories share one booth without turning category or organization linkage into publication approval', () => {
+test('several default-public work categories share one booth without rewriting confirmation or attendance', () => {
   const input = content(); input.organizations = [organization()];
   input.showcases = ['student', 'indie', 'team'].map((kind, index) => work({ id: 'synthetic-work-' + index, kind, organizationId: 'synthetic-organization' }));
   assert.equal(validateContent(input).valid, true);
@@ -90,8 +90,9 @@ test('several work categories share one booth without turning category or organi
   assert.equal(publicValue.showcases.length, 3);
   assert.equal(new Set(publicValue.showcases.map(item => item.boothId)).size, 1);
   for (const changes of [{ publicConsent: false }, { status: 'pending' }, { responseStatus: 'declined' }, { participationForms: [], boothId: '' }]) {
-    Object.assign(input.showcases[0], work({ ...changes, kind: 'indie', organizationId: 'synthetic-organization' }));
-    assert.equal(toPublicContent(input).showcases.some(item => item.id === 'synthetic-work'), false);
+    input.showcases[0] = work({ ...changes, kind: 'indie', organizationId: 'synthetic-organization' });
+    const shown=toPublicContent(input).showcases.find(item => item.id === 'synthetic-work');assert.ok(shown);assert.equal(shown.status,input.showcases[0].status);assert.equal(shown.responseStatus,input.showcases[0].responseStatus);assert.equal(shown.publicConsent,input.showcases[0].publicConsent);
+    input.showcases[0].visibility='private';assert.equal(toPublicContent(input).showcases.some(item => item.id === 'synthetic-work'),false);
   }
 });
 

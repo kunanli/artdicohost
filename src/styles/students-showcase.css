@@ -58,6 +58,8 @@
   object-fit:cover;
   background:#1d1b19;
 }
+#artdico-host.ah-festival .ah-students-showcase .ah-showcase-cover-empty{display:grid;place-items:center;min-height:140px;aspect-ratio:16 / 9;padding:24px;background:#1d1b19;border-bottom:1px solid #65594e;color:#c0b8af;font-size:13px}
+#artdico-host.ah-festival .ah-students-showcase .ah-showcase-cover-empty[hidden]{display:none}
 #artdico-host.ah-festival .ah-students-showcase .ah-showcase-card-body{
   display:grid;
   gap:10px;

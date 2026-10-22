@@ -2,9 +2,9 @@
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
 
-2026-10-21 [PR #41](https://github.com/kunanli/artdicohost/pull/41) 后台独立页面、就近直接保存与离页防呆已上线，正式main **`d504ecc`**。1235项main检查、真实私有OSS、共同300政策、**13个API子页及46个公开对象HTTPS**全部通过，**23:33:20（UTC+08）**完成。[准确发布证据](docs/admin-pages-release-2026-10-21.md)、[最新接续](docs/session-recovery.md)。下一阶段处理公开状态、前台返回刷新、统一游戏与作品，最后加跟进人彩色姓名标签；不把待开发功能称已上线。
+[PR #42](https://github.com/kunanli/artdicohost/pull/42)／[PR #43](https://github.com/kunanli/artdicohost/pull/43) 已实际发布，main **`d9d0dd2cc52eac755aef8deda5de9c91024b741d`**，2026-10-22 **01:05:35（UTC+08）**完成。[正式运行 39639330823](https://github.com/kunanli/artdicohost/actions/runs/39639330823) attempt 1 的 check／deploy-fc／deploy 全成功。 1304项main检查、真实私有OSS／共同300政策、13个API后台路径、46个公开对象HTTPS及匿名公开内容／CORS核对通过。公开／出席红绿状态、前台返回刷新、统一游戏与作品及组织／展位关系、嘉宾照片选填、跟进人固定彩色标签均已上线。[准确证据](docs/games-publication-release-2026-10-21.md)、[操作](docs/publication-games-operations.md)、[新session接续](docs/session-recovery.md)。
 
-**仍需主办方操作：**现有管理员在[用户管理](https://api.artdico.host/admin/settings/#staff-accounts-title)保存建立 `zhouyufei`、`wangying`；Wallet 等 Apple Developer enrollment／签章证书与真机验收。快捷预填不是已建立账号。EmailJS 用户已确认正常，保留现有受控设置。
+**仍需主办方操作：**本次未代建 `zhouyufei`、`wangying`；现有管理员先在[用户管理](https://api.artdico.host/admin/settings/accounts/)核对，未建立才按准备／保存及回执流程创建，快捷预填不是已建立账号。Wallet待Apple真实签章与iPhone验收；EmailJS用户已确认正常，保留受控设置。
 
 ## 目标
 一页式简体中文活动落地页；展示日程和参与方式；正式报名收集 GGJ SO/RO、新站点、行业嘉宾、机构及生态合作伙伴资料，并支持独立确认讲者、赞助、展位与住宿安排。已确认 2026-12-05、09:30 签到、10:00–18:00 正式活动，场地为深圳前海5号楼；待邀嘉宾、协办署名与其他安排仍按各自确认状态展示。
@@ -14,8 +14,12 @@
 
 ## 文档入口
 
+本轮改版：[统一保存](docs/admin-save-workflow.md)、[默认公开](docs/default-public-visibility.md)、[设置回执](docs/settings-save-feedback.md)、[准确验收／发布记录](docs/admin-save-visibility-release-2026-10-22.md)。本轮正式状态以该记录为准，下面PR42／43为前一已发布基准。
+
 | 主要流程 | 操作说明 | 实际发布证据 |
 | --- | --- | --- |
+| 公开状态、游戏／作品、跟进人色标 | [当前操作](docs/publication-games-operations.md) | [PR #42／#43](docs/games-publication-release-2026-10-21.md) |
+| 后台独立页与直接保存 | [页面与保存](docs/admin-independent-pages.md) | [PR #41](docs/admin-pages-release-2026-10-21.md) |
 | 人员、嘉宾／讲者、组织、场次与展位关联，共同300名额 | [人员关系](docs/people-relationships.md) | [PR #36](docs/people-release-2026-10-21.md) |
 | 学生、精简申请与人工审核 | [报名与审核](docs/public-application-review.md) | [PR #37](docs/application-release-2026-10-21.md) |
 | 本机自动暂存、刷新恢复、就近保存与协作者 | [保存与权限](docs/usability-autosave-accounts.md)、[账号](docs/staff-accounts.md) | [PR #38](docs/usability-release-2026-10-21.md) |
@@ -25,7 +29,7 @@
 - [志愿者与分工](docs/volunteer-operations.md)：既有人员关联、沟通、可服务时段、岗位班次、缺额及 Excel
 - [人员串联与步骤指引](docs/staff-operations-workspace.md)：单人工作页、沟通与安排、云端保存防呆、权限边界及设置中心
 - [嘉宾与组织图片编辑](docs/staff-image-editing.md)：裁切／缩放／去背景、透明 PNG、上传失败保留与重试（发布状态见接续台账）
-- [后台快捷导航](docs/staff-navigation.md)：四个工作区切换、活动区块直达与手机收合选单
+- [后台快捷导航](docs/staff-navigation.md)：六个工作区、内容／设置独立子页与手机收合选单
 - [参与组织](docs/participating-organizations.md)：独立维护组织图片、名称、链接及参展／一般参与，保存与发布分别执行
 - [接续台账](docs/session-recovery.md)、[验收清单](docs/morning-acceptance.md)：中断恢复、准确发布证据与实际资料操作
 - [人物与媒体](docs/profile-media.md)、[逐场职责](docs/participant-duties.md)、[Excel 导出](docs/excel-export.md)：本轮后台资料与保留范围

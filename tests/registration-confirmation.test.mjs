@@ -491,8 +491,8 @@ test('settings and explicit dispatch are revision-bound, actor-bound and replay 
   assert.equal(f.remote.calls.length, deniedCalls);
   const settings = await c.settings({ actor }); assert.equal(settings.revision, 0);
   const setting = { actor, expectedRevision: 0, operationId: operationId(), enabled: false };
-  assert.equal((await c.setSettings(setting)).automaticEnabled, false); const after = f.state.confirmationWrites;
-  assert.equal((await c.setSettings(setting)).outcome, 'replayed'); assert.equal(f.state.confirmationWrites, after);
+  const settingSaved=await c.setSettings(setting);assert.equal(settingSaved.automaticEnabled,false);assert.equal(settingSaved.operationId,setting.operationId);assert.equal(settingSaved.enabled,false);const after=f.state.confirmationWrites;
+  const settingReplayed=await c.setSettings(setting);assert.equal(settingReplayed.outcome,'replayed');assert.equal(settingReplayed.operationId,setting.operationId);assert.equal(settingReplayed.enabled,false);assert.equal(f.state.confirmationWrites,after);
   await assert.rejects(c.setSettings({ ...setting, enabled: true }), error => error.code === 'REVISION_CONFLICT');
   assert.equal((await c.forSavedReceipt({ receipt: first.saved.receipt })).email.status, 'disabled'); assert.equal(f.state.messages.length, 0);
   await c.setSettings({ actor, expectedRevision: (await c.settings({ actor })).revision, operationId: operationId(), enabled: true });

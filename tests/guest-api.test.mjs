@@ -93,7 +93,7 @@ test('portrait upload and private reads enforce API authentication, roles, Origi
   assert.equal((await request(api, '/api/admin/content', { session: outreach })).status, 403);
 });
 
-test('uploaded and draft portraits stay private; explicit publication links the same approved guest into the schedule', async t => {
+test('uploaded and draft portraits stay private; explicit publication links the same default-public guest into the schedule', async t => {
   const path = await directory(t), { api } = apiFixture(path);
   const editor = await login(api), publisher = await login(api, 'publisher');
   const portrait = await upload(api, editor);
@@ -106,9 +106,12 @@ test('uploaded and draft portraits stay private; explicit publication links the 
   assert.equal((await request(api, '/api/public/portraits/' + portrait.id)).status, 404);
   draft = await save(api, editor, 0, draft.content);
   const pending = await publish(api, publisher, 1);
-  assert.deepEqual(pending.content.guests, []);
-  assert.equal(pending.content.sessions[0].speakerName, '');
-  assert.equal((await request(api, '/api/public/portraits/' + portrait.id)).status, 404);
+  assert.equal(pending.content.guests[0].name, '合成嘉宾');
+  assert.equal(pending.content.guests[0].status, 'pending');
+  assert.equal(pending.content.guests[0].publicConsent, false);
+  assert.equal(pending.content.sessions[0].speakerName, '合成嘉宾');
+  assert.equal(pending.content.sessions[0].speakerStatus, 'pending');
+  assert.equal((await request(api, '/api/public/portraits/' + portrait.id)).status, 200);
   Object.assign(draft.content.guests[0], { status: 'confirmed', publicConsent: true, ggjRole: '合成站点职务' });
   draft = await save(api, editor, 1, draft.content);
   const approved = await publish(api, publisher, 2);
@@ -140,7 +143,7 @@ test('withdrawn publication removes both guest metadata and public photo access 
   draft.content.sessions[0].guestId = 'synthetic-guest';
   draft = await save(api, editor, 0, draft.content);
   await publish(api, publisher, 1);
-  draft.content.guests[0].publicConsent = false;
+  draft.content.guests[0].visibility = 'private';
   draft = await save(api, editor, 1, draft.content);
   assert.equal((await request(api, '/api/public/portraits/' + portrait.id)).status, 200, 'saving a draft does not silently replace the publication');
   const withdrawn = await publish(api, publisher, 2);

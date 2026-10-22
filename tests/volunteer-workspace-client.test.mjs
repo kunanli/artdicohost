@@ -78,9 +78,9 @@ test('filters combine communication ownership, workflow and active arrangement i
   view.assignments[0].status = 'cancelled'; assert.equal(filterVolunteerRows(view, { assignment: 'unassigned' }).length, 1);
 });
 test('operation snapshot is detached and only matching original audit receipt clears pending', () => {
-  const payload = { id: 'position_1', name: '签到', zone: 'A', location: '', lead: '', description: '', status: 'active' };
+  const payload = { id: 'position_1', name: '签到', zone: 'A', location: '入口', lead: '合成同事', description: '', status: 'active' };
   const body = operationBody({ expectedRevision: 6, operationId: 'operation_1234567890', action: 'position_upsert', payload }); payload.name = 'changed'; assert.equal(body.payload.name, '签到');
   const response = { ...fixture(), outcome: 'updated', operation: { operationId: body.operationId, action: body.action, revision: 7 } }; assert.equal(operationReceipt(response, body).revision, 7);
   const replay = structuredClone(response); replay.outcome = 'replayed'; replay.revision = 9; replay.revisions.volunteers = 9; assert.equal(operationReceipt(replay, body).revision, 9);
-  for (const mutate of [value => { delete value.operation; }, value => { value.operation.operationId = 'foreign_1234567890'; }, value => { value.operation.action = 'volunteer_upsert'; }, value => { value.operation.revision = 6; }, value => { value.operation.revision = 9; }, value => { value.outcome = 'sent'; }]) { const value = structuredClone(replay); mutate(value); assert.throws(() => operationReceipt(value, body)); }
+  for (const mutate of [value => { delete value.operation; }, value => { value.operation.operationId = 'foreign_1234567890'; }, value => { value.operation.action = 'volunteer_upsert'; }, value => { value.operation.revision = 6; }, value => { value.operation.revision = 9; }, value => { value.outcome = 'sent'; },value=>{value.positions[0].location='其他地点';},value=>{value.positions[0].lead='其他同事';}]) { const value = structuredClone(replay); mutate(value); assert.throws(() => operationReceipt(value, body)); }
 });

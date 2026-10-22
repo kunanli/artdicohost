@@ -1,6 +1,8 @@
-# 下一阶段：公开可见性与游戏／作品
+# 已完成阶段：公开可见性、游戏／作品与跟进人标签
 
-本阶段已开始，根分支`feat/publication-games`，基准为实际main d504ecc及证据3d04822。前一[后台独立页面与直接保存](admin-independent-pages.md)已于23:33:20（UTC+08）实际发布，准确证据见[发布记录](admin-pages-release-2026-10-21.md)。本阶段尚未发布；[操作说明](publication-games-operations.md)随实现核对。
+[PR #42](https://github.com/kunanli/artdicohost/pull/42)／[PR #43](https://github.com/kunanli/artdicohost/pull/43) 已实际发布，main **`d9d0dd2cc52eac755aef8deda5de9c91024b741d`**，2026-10-22 **01:05:35（UTC+08）**完成。[正式运行 39639330823](https://github.com/kunanli/artdicohost/actions/runs/39639330823) attempt 1 的 check／deploy-fc／deploy 全成功。 [最终证据](games-publication-release-2026-10-21.md)、[实际操作](publication-games-operations.md)、[新session入口](session-recovery.md)。
+
+本阶段及最后追加的跟进人色标均已完成，无待合并worker或待发布代码。以下保留当时诊断、契约与分工作为设计历史；其中「下一步／须实现／main保持d504ecc」均是当时要求，不能作为当前待办或发布状态。实际部署完成后不为补文档重启服务。
 
 ## 实际诊断
 

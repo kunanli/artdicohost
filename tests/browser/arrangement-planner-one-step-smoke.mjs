@@ -13,19 +13,33 @@ const bootstrap=`
 import {createArrangementPlanner} from '/src/scripts/arrangement-planner.mjs';
 import {prepareBoothDraft} from '/src/lib/arrangement-planner.mjs';
 import {createInitialContent} from '/src/config/content.mjs';
-import {createEmptyContactOperations} from '/shared/contacts-schema.mjs';
+import {createEmptyContactOperations,validateImportedContact} from '/shared/contacts-schema.mjs';
 import {readContentForm} from '/src/lib/content-local-drafts.mjs';
 const initial=createInitialContent();
 initial.booths=[{id:'booth-existing',code:'C-01',organization:'合成组织',project:'合成原作品',zone:'C',status:'pending',internalNotes:'SYNTHETIC_PRIVATE_NOTE',slotNumber:1,contactName:'合成负责人',contactMethods:'synthetic@example.invalid',description:'合成展示内容'}];
-const person={id:'synthetic-contact',profile:{name:'合成人员',displayName:'合成人员',organization:'合成组织',contactConsent:'consented'},operations:createEmptyContactOperations()};
+const {sourceRowId,...profile}=validateImportedContact({sourceRowId:'synthetic-assignment',name:'合成人员',displayName:'合成人员',organization:'合成组织',contactConsent:'consented'}).value;
+const person={id:'synthetic-contact',source:{key:'synthetic',rowId:sourceRowId,digest:'a'.repeat(64),importedAt:'2026-10-22T00:00:00Z'},profile,operations:createEmptyContactOperations(),invitation:{generatedAt:null,settings:null,sentAt:null,channel:null,sentGenerationAt:null},createdAt:'2026-10-22T00:00:00Z',updatedAt:'2026-10-22T00:00:00Z'};
+let peopleRevision=7;
 window.state={content:initial,revision:3,dirty:false,busy:false,allowed:true,active:true,actorId:'synthetic-editor'};
 window.calls=[];window.reads=[];window.assignmentWrites=[];window.mode='reject';window.hold=false;window.release=null;window.sequence=0;window.epoch=0;window.completed=null;
+window.assignmentMode='lose';window.assignmentHold=false;window.assignmentRelease=null;
+window.assignmentDrafts=[];window.draftMode='ack';window.draftHold=false;window.draftRelease=null;
 window.planner=createArrangementPlanner({root:document.querySelector('[data-arrangement-planner]'),getContext:()=>window.state,
   onBusy:value=>window.workBusy=value,onDraftChange:()=>{},refreshArrangements:async()=>{},
+  onBeforeAssignmentSave:async()=>{window.assignmentDrafts.push(structuredClone(window.planner.localDraft()));if(window.draftHold)await new Promise(resolve=>window.draftRelease=resolve);if(window.draftMode==='reject')throw new Error('合成本机原操作暂存未完成');},
   request:async(path,options={})=>{
-    if(options.method){window.assignmentWrites.push({path,method:options.method,body:JSON.parse(options.body)});throw new Error('合成人员保存回执丢失');}
+    if(options.method){
+      const body=JSON.parse(options.body);window.assignmentWrites.push({path,method:options.method,body});
+      if(window.assignmentHold)await new Promise(resolve=>window.assignmentRelease=resolve);
+      if(window.assignmentMode==='lose')throw new Error('合成人员保存回执丢失');
+      const operations=body.operations??{...person.operations,sessionIds:body.sessionIds,boothIds:body.boothIds};
+      if(window.assignmentMode==='wrong')return {revision:peopleRevision+1,contact:{...structuredClone(person),operations:{...operations,owner:'WRONG_SYNTHETIC_OWNER'}}};
+      person.operations=structuredClone(operations);peopleRevision++;
+      if(window.assignmentMode==='lostAfterCommit')throw new Error('合成已保存但回执丢失');
+      return {revision:peopleRevision,contact:structuredClone(person)};
+    }
     window.reads.push(path);
-    if(path==='/api/admin/contacts')return {revision:7,contacts:[structuredClone(person)]};
+    if(path==='/api/admin/contacts')return {revision:peopleRevision,contacts:[structuredClone(person)]};
     if(path==='/api/admin/planning')return {features:{intentInvitations:false}};
     if(path==='/api/admin/content')return {draft:{revision:window.state.revision,content:structuredClone(window.state.content)}};
     throw new Error('Unexpected synthetic request '+path);
@@ -144,6 +158,55 @@ try{
   assert.equal(await page.evaluate(()=>window.calls[0].input.changes.contactName),'合成负责人');
   assert.deepEqual(await page.evaluate(()=>window.calls[0].formDataKeys),[]);
   reports.push('parent busy one-step entry captures disabled fields without FormData loss');
+
+  await fresh();await open({load:true});await page.locator('[data-planner-assignment] [name=contactId]').selectOption('synthetic-contact');
+  assert.equal(await page.locator('[data-planner-assignment-save-state]').getAttribute('data-save-state'),'dirty');
+  await page.evaluate(()=>{window.assignmentMode='ack';window.assignmentHold=true;});
+  await page.locator('[data-planner-save]').click();await page.waitForFunction(()=>typeof window.assignmentRelease==='function');
+  assert.equal(await page.locator('[data-planner-save]').textContent(),'正在保存…');assert.equal(await page.locator('[data-planner-save]').isDisabled(),true);
+  assert.equal(await page.locator('[data-planner-assignment-save-state]').getAttribute('data-save-state'),'saving');
+  await page.evaluate(()=>{window.assignmentHold=false;window.assignmentRelease();});await page.waitForFunction(()=>window.workBusy===false);
+  assert.equal(await page.locator('[data-planner-assignment-save-state]').getAttribute('data-save-state'),'saved');
+  assert.equal(await page.evaluate(()=>window.planner.hasLocalChanges()),false);assert.equal(await page.locator('[data-planner-save]').textContent(),'保存');
+  assert.equal(await page.evaluate(()=>window.assignmentWrites.length),1);
+  reports.push('personnel primary save shows saving until exact durable ACK then saved');
+
+  await fresh();await open({load:true});await page.locator('[data-planner-assignment] [name=contactId]').selectOption('synthetic-contact');
+  await page.evaluate(()=>window.assignmentMode='wrong');await page.locator('[data-planner-save]').click();await page.waitForFunction(()=>window.workBusy===false);
+  assert.equal(await page.locator('[data-planner-assignment-save-state]').getAttribute('data-save-state'),'unknown');
+  assert.equal(await page.evaluate(()=>window.planner.localDraft().uncertain),true);assert.equal(await page.locator('[data-planner-refresh]').textContent(),'核对云端保存结果');
+  const originalAssignment=await page.evaluate(()=>window.planner.localDraft().assignment);
+  await page.locator('[data-planner-refresh]').click();await page.waitForFunction(()=>window.workBusy===false);
+  assert.equal(await page.locator('[data-planner-assignment-save-state]').getAttribute('data-save-state'),'unknown');
+  assert.deepEqual(await page.evaluate(()=>window.planner.localDraft().assignment),originalAssignment);
+  assert.equal(await page.evaluate(()=>window.assignmentWrites.length),1);assert.equal(await page.locator('[data-planner-save]').isDisabled(),true);
+  reports.push('wrong 2xx ACK and mismatching readback retain original unknown assignment without a new write');
+
+  await fresh();await open({load:true});await page.locator('[data-planner-assignment] [name=contactId]').selectOption('synthetic-contact');
+  await page.evaluate(()=>window.assignmentMode='lostAfterCommit');await page.locator('[data-planner-save]').click();await page.waitForFunction(()=>window.workBusy===false);
+  assert.equal(await page.locator('[data-planner-assignment-save-state]').getAttribute('data-save-state'),'unknown');
+  await page.locator('[data-planner-refresh]').click();await page.waitForFunction(()=>window.workBusy===false);
+  assert.equal(await page.locator('[data-planner-assignment-save-state]').getAttribute('data-save-state'),'saved');
+  assert.equal(await page.evaluate(()=>window.planner.hasLocalChanges()),false);assert.equal(await page.evaluate(()=>window.assignmentWrites.length),1);
+  reports.push('lost post-commit ACK reconciles by exact current cloud assignments without re-posting');
+
+  await fresh();await open({load:true});await page.locator('[data-planner-assignment] [name=contactId]').selectOption('synthetic-contact');
+  await page.evaluate(()=>{window.assignmentMode='ack';window.draftHold=true;});await page.locator('[data-planner-save]').click();
+  await page.waitForFunction(()=>typeof window.draftRelease==='function');
+  assert.equal(await page.evaluate(()=>window.assignmentWrites.length),0);
+  assert.equal(await page.evaluate(()=>window.assignmentDrafts[0].uncertain),true);
+  assert.deepEqual(await page.evaluate(()=>window.assignmentDrafts[0].assignment.boothIds),['booth-existing']);
+  await page.evaluate(()=>{window.draftHold=false;window.draftRelease();});await page.waitForFunction(()=>window.workBusy===false);
+  assert.equal(await page.evaluate(()=>window.assignmentWrites.length),1);assert.equal(await page.locator('[data-planner-assignment-save-state]').getAttribute('data-save-state'),'saved');
+  reports.push('original personnel selection and unknown marker persist before the first network write');
+
+  await fresh();await open({load:true});await page.locator('[data-planner-assignment] [name=contactId]').selectOption('synthetic-contact');
+  await page.evaluate(()=>{window.assignmentMode='ack';window.draftMode='reject';});await page.locator('[data-planner-save]').click();await page.waitForFunction(()=>window.workBusy===false);
+  assert.equal(await page.evaluate(()=>window.assignmentWrites.length),0);
+  assert.equal(await page.locator('[data-planner-assignment-save-state]').getAttribute('data-save-state'),'error');
+  assert.equal(await page.locator('[data-planner-assignment] [name=contactId]').inputValue(),'synthetic-contact');
+  assert.equal(await page.evaluate(()=>window.planner.localDraft().uncertain),false);
+  reports.push('failed original-selection persistence keeps input and blocks the network write');
 
   assert.deepEqual(errors,[]);console.log(JSON.stringify({groups:reports.length,reports,pageErrors:errors,syntheticOnly:true},null,2));
 }finally{await context.close();await browser.close();}

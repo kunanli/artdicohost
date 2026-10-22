@@ -29,14 +29,16 @@ test('historical organization absence stays absent while an explicit empty publi
   assert.deepEqual(toPublicContent(toPublicContent(contentWith([]))), toPublicContent(contentWith([])));
 });
 
-test('organizations publish independently of booth allocation and only with explicit confirmation and consent', () => {
+test('organizations default public independently of booth allocation, confirmation and authorization history', () => {
   const content = contentWith([
     organization({ id: 'synthetic-attendee' }), organization({ id: 'synthetic-exhibitor', participation: 'exhibitor' }),
     organization({ id: 'synthetic-undecided', participation: 'undecided' }), organization({ id: 'synthetic-pending', status: 'pending' }),
-    organization({ id: 'synthetic-withdrawn', status: 'withdrawn' }), organization({ id: 'synthetic-private', publicConsent: false }),
+    organization({ id: 'synthetic-withdrawn', status: 'withdrawn' }), organization({ id: 'synthetic-no-consent-history', publicConsent: false }),
+    organization({ id: 'synthetic-private', visibility: 'private' }),
   ]);
   const before = structuredClone(content), published = toPublicContent(content);
-  assert.deepEqual(published.organizations.map(row => row.participation), ['attendee', 'exhibitor', 'undecided']);
+  assert.deepEqual(published.organizations.map(row => row.id), ['synthetic-attendee','synthetic-exhibitor','synthetic-undecided','synthetic-pending','synthetic-withdrawn','synthetic-no-consent-history']);
+  assert.deepEqual(published.organizations.slice(0,3).map(row => row.participation), ['attendee','exhibitor','undecided']);
   assert.equal(published.booths.length, 0, 'an organization never occupies a booth merely by being listed');
   assert.equal(published.organizations[0].logoUrl, '', 'an existing public name does not need an invented logo');
   assert.doesNotMatch(JSON.stringify(published), /PRIVATE-ORG-NOTE|internalNotes/u);
@@ -49,6 +51,7 @@ test('organization shapes, IDs, approval flags, bounded text and external links 
   const invalid = [null, 12, {}, { ...organization(), status: undefined }, { ...organization(), publicConsent: undefined },
     organization({ name: '' }), organization({ name: '字'.repeat(161) }), organization({ name: 'bad\nname' }),
     organization({ status: 'scheduled' }), organization({ participation: 'sponsor' }), organization({ publicConsent: 'yes' }),
+    organization({ visibility: 'hidden' }), organization({ visibility: false }), organization({ visibility: undefined }),
     organization({ logoId: 'https://example.invalid/logo.png' }), organization({ website: 'javascript:alert(1)' }),
     organization({ website: 'https://user:password@example.invalid/' }), organization({ website: 'https://example.invalid/\ntrack' }),
     organization({ internalNotes: 'x'.repeat(4001) }), organization({ internalNotes: 'bad\u0000note' }),
@@ -107,13 +110,18 @@ for (const mode of ['local', 'cloud']) {
     assert.equal(notesRetained.content.organizations[0].internalNotes, 'PRIVATE-ORG-NOTE', 'omitting an optional private note cannot clear it');
 
     const stopped = structuredClone(notesRetained.content); stopped.organizations.reverse();
-    Object.assign(stopped.organizations[1], { status: 'withdrawn', publicConsent: false });
+    stopped.organizations[1].visibility = 'private';
     const withdrawn = await make().save(notesRetained.revision, stopped, actor), live = await make().publish(withdrawn.revision, actor);
     assert.deepEqual(live.content.organizations.map(row => row.id), ['synthetic-exhibitor']);
     const original = (await make().read()).draft.content.organizations[1];
     assert.equal(original.logoId, receipt.id); assert.equal(original.website, organization().website); assert.equal(original.internalNotes, 'PRIVATE-ORG-NOTE');
-    const clearing = structuredClone(withdrawn.content); clearing.organizations = [];
-    const empty = await make().save(withdrawn.revision, clearing, actor); await make().publish(empty.revision, actor);
+    assert.equal(original.status, 'confirmed');assert.equal(original.publicConsent, true);
+    const oldVisibilityClient=structuredClone(withdrawn.content);delete oldVisibilityClient.organizations[1].visibility;
+    const visibilityRetained=await make().save(withdrawn.revision,oldVisibilityClient,actor);
+    assert.equal(visibilityRetained.content.organizations[1].visibility,'private','older clients cannot erase a manual privacy choice');
+    assert.equal(visibilityRetained.content.organizations[0].visibility,undefined,'old defaults stay omitted');
+    const clearing = structuredClone(visibilityRetained.content); clearing.organizations = [];
+    const empty = await make().save(visibilityRetained.revision, clearing, actor); await make().publish(empty.revision, actor);
     assert.deepEqual((await make().read()).published.content.organizations, []);
   });
 

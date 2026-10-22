@@ -1,3 +1,4 @@
+@import "./admin-save-state.css";
 .ah-admin{--admin-blue:#1448ef;--admin-ink:#15243b;--admin-muted:#5d6b83;--admin-line:#dfe6f0;--admin-pale:#edf3ff;color:var(--admin-ink);font:14px/1.7 Arial,"PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh;background:#f7f9fc}
 .ah-admin *, .ah-admin-dialog,.ah-admin-dialog *{box-sizing:border-box}
 .ah-admin [hidden],.ah-admin-dialog [hidden]{display:none!important}
@@ -108,4 +109,38 @@
   .ah-admin-content-filters select{font-size:16px}
   .ah-admin-publication{padding-inline:17px}
   .ah-admin-publication-summary{grid-template-columns:minmax(0,1fr)}
+}
+
+/* Visibility is an explicit, labelled setting; release progress is shown separately. */
+.ah-admin-section-actions{display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:9px;flex-shrink:0}
+.ah-admin-visibility-field{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 18px;padding:16px 18px;margin:0 0 24px;border:1px solid #b6dbc7;border-radius:8px;background:#f5fbf7}
+.ah-admin-visibility-field>div{flex:1 1 200px;min-width:0}.ah-admin-visibility-field strong{font-size:14px}.ah-admin-visibility-field p{margin:4px 0 0;font-size:12px;line-height:1.7;color:#526078}
+.ah-visibility-control{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:10px 0}
+:is(.ah-admin,.ah-admin-dialog) button.ah-visibility-switch{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;min-width:112px;max-width:100%;padding:9px 13px 9px 57px;margin:0;border:1px solid #a4cfb6;border-radius:6px;background:#e8f6ee;color:#17603b;font:700 13px/1.6 Arial,"PingFang SC","Microsoft YaHei",sans-serif;white-space:nowrap;cursor:pointer}
+.ah-visibility-switch::before{content:"";position:absolute;left:12px;top:50%;transform:translateY(-50%);width:34px;height:20px;border-radius:12px;background:#197047}
+.ah-visibility-switch::after{content:"";position:absolute;left:29px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:50%;background:#fff}
+:is(.ah-admin,.ah-admin-dialog) button.ah-visibility-switch[data-visibility=private]{border-color:#ecc0c7;background:#fff0f1;color:#9d2939}
+.ah-visibility-switch[data-visibility=private]::before{background:#a32b3e}.ah-visibility-switch[data-visibility=private]::after{left:15px}
+:is(.ah-admin,.ah-admin-dialog) button.ah-visibility-switch:hover:not(:disabled){box-shadow:0 0 0 2px #17603b22}
+:is(.ah-admin,.ah-admin-dialog) button.ah-visibility-switch:focus-visible{outline:3px solid #1448ef;outline-offset:3px}
+:is(.ah-admin,.ah-admin-dialog) button.ah-visibility-switch:disabled{opacity:.55;cursor:not-allowed}
+@media(max-width:650px){.ah-admin-section-actions{justify-content:flex-start;flex-shrink:1;width:100%;gap:8px}.ah-admin-section-actions>.ah-admin-button{flex:1 1 130px;white-space:normal}.ah-admin-visibility-field{padding:14px;gap:12px}.ah-admin-visibility-field>div{flex-basis:100%}.ah-admin-visibility-field .ah-visibility-switch{min-width:125px}}
+.ah-admin-record-details{margin:20px 0;padding:13px 15px;border:1px solid #dfe6f0;border-radius:6px;background:#fafbfd}.ah-admin-record-details>summary{font-size:12px;color:#526078;cursor:pointer;min-height:28px}.ah-admin-record-details[open]>summary{margin-bottom:12px}
+:is(.ah-admin,.ah-admin-dialog) .ah-admin-publish-button{border-color:#9bc9ad;background:#f5fbf7;color:#17603b}
+:is(.ah-admin,.ah-admin-dialog) .ah-admin-publish-button:hover:not(:disabled){border-color:#197047;background:#e8f6ee}
+:is(.ah-admin,.ah-admin-dialog) .ah-admin-publish-button:focus-visible{outline:3px solid #1448ef;outline-offset:3px}
+@media(max-width:650px){
+  .ah-admin [data-content-panel=guests] table,.ah-admin [data-content-panel=booths] table{display:block;min-width:0;width:100%}
+  .ah-admin :is([data-content-panel=guests],[data-content-panel=booths]) thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .ah-admin :is([data-admin-guests],[data-admin-booths]){display:grid;gap:12px;padding:16px}
+  .ah-admin :is([data-admin-guests],[data-admin-booths]) tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;padding:16px;border:1px solid #dfe6f0;border-radius:8px;background:#fff}
+  .ah-admin :is([data-admin-guests],[data-admin-booths]) td{display:block;min-width:0;max-width:none;margin:0;padding:0;border:0;white-space:normal;overflow-wrap:anywhere}
+  .ah-admin :is([data-admin-guests],[data-admin-booths]) td::before{content:attr(data-label);display:block;margin-bottom:4px;color:#5d6b83;font-size:10px;font-weight:500}
+  .ah-admin [data-admin-guests] tr{grid-template-columns:54px minmax(0,1fr)}
+  .ah-admin [data-admin-guests] td:nth-child(1){grid-column:1;grid-row:1}.ah-admin [data-admin-guests] td:nth-child(2){grid-column:2;grid-row:1;font-weight:600}
+  .ah-admin [data-admin-guests] td:nth-child(n+3){grid-column:1/-1}.ah-admin [data-admin-guests] td:nth-child(5){grid-row:2}
+  .ah-admin [data-admin-booths] td{grid-column:1/-1}.ah-admin [data-admin-booths] td:nth-child(1){grid-row:1;font-weight:600}.ah-admin [data-admin-booths] td:nth-child(7){grid-row:2}
+  .ah-admin :is([data-admin-guests],[data-admin-booths]) td[data-label=公开]{padding-block:11px;border-block:1px solid #e9eef5}
+  .ah-admin :is([data-admin-guests],[data-admin-booths]) td[data-label=公开]>small{display:block;margin-top:5px;font-size:11px;color:#5d6b83}
+  .ah-admin :is([data-admin-guests],[data-admin-booths]) td[data-label=操作]>button{min-height:42px;padding:9px 14px}
 }

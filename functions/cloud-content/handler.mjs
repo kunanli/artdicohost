@@ -100,8 +100,8 @@ export function createCloudContentApi({ enabled = false, store, portraitStore, a
       const publicPortrait = url.pathname.startsWith('/api/public/portraits/') ? url.pathname.slice('/api/public/portraits/'.length) : '';
       if (publicPortrait && ['GET', 'HEAD'].includes(request.method) && PORTRAIT_ID_PATTERN.test(publicPortrait)) {
         const { published } = await store.read();
-        const inGuest = published?.content.guests.some(guest => guest.portraitId === publicPortrait && guest.status === 'confirmed' && guest.publicConsent === true);
-        const inShowcase = published?.content.showcases?.some(showcase => showcase.coverId === publicPortrait && showcase.status === 'confirmed' && showcase.responseStatus === 'attending' && showcase.publicConsent === true);
+        const inGuest = published?.content.guests.some(guest => guest.portraitId === publicPortrait);
+        const inShowcase = published?.content.showcases?.some(showcase => showcase.coverId === publicPortrait);
         const inOrganization = published?.content.organizations?.some(organization => organization.logoUrl === '/api/public/portraits/' + publicPortrait);
         if (!inGuest && !inShowcase && !inOrganization) throw new CloudContentError('NOT_FOUND', '图片不存在。', 404);
         const portrait = await portraitStore.read(publicPortrait);

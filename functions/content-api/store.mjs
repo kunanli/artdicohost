@@ -1,7 +1,7 @@
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { validateContent, toPublicContent, validateBoothOrganizationChanges, validateShowcaseOrganizationChanges } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, validateBoothOrganizationChanges, validateShowcaseOrganizationChanges, matchesPublishedContent } from '../../shared/content-schema.mjs';
 import { createInitialContent } from '../../src/config/content.mjs';
 
 const queues = new Map();
@@ -37,7 +37,7 @@ function preserveArrangementFields(input, current) {
     const result = Object.create(null);
     for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
       if (!descriptor.enumerable) {
-        if (field === 'showcases' && ['kind', 'organizationId'].includes(key)) throw new ContentError('VALIDATION_ERROR', '作品字段无效。', 422, { [field]: '请提供明确的作品分类与组织关联。' });
+        if (key === 'visibility' || field === 'showcases' && ['kind', 'organizationId'].includes(key)) throw new ContentError('VALIDATION_ERROR', '作品字段无效。', 422, { [field]: '请提供明确的作品分类与组织关联。' });
         continue;
       }
       if (!('value' in descriptor)) throw new ContentError('VALIDATION_ERROR', '内容字段无效。', 422, { [field]: '请提供明确的资料值。' });
@@ -87,6 +87,15 @@ function preserveArrangementFields(input, current) {
     }
     return row;
   });
+  // Old clients cannot erase an explicit opt-out simply by omitting the new key.
+  for (const collection of ['guests', 'organizations', 'showcases', 'booths']) {
+    if (!Array.isArray(result[collection])) continue;
+    for (const row of result[collection]) {
+      const id = typeof row.id === 'string' ? row.id.normalize('NFC').trim() : '';
+      const existing = current[collection]?.find(item => item.id === id);
+      if (!Object.hasOwn(row, 'visibility') && existing && Object.hasOwn(existing, 'visibility')) row.visibility = existing.visibility;
+    }
+  }
   return result;
 }
 
@@ -188,7 +197,10 @@ export function createFileContentStore({ directory, portraitStore, initialConten
       const state = await load();
       checkRevision(expectedRevision, state.draft.revision);
       await verifyPortraits(state.draft.content);
-      if (state.published?.revision === state.draft.revision) return structuredClone(state.published);
+      if (state.published?.revision === state.draft.revision) {
+        if (JSON.stringify(state.published.content) !== JSON.stringify(toPublicContent(state.draft.content))) throw new ContentError('PUBLICATION_SAVE_REQUIRED', '公开规则已更新，请先保存当前草稿，再发布到前台。', 409);
+        return structuredClone(state.published);
+      }
       state.published = { revision: state.draft.revision, publishedAt: new Date(now()).toISOString(), content: toPublicContent(state.draft.content) };
       state.audit.push({ action: 'publish', actorId, revision: state.draft.revision, at: state.published.publishedAt });
       await commit(state);

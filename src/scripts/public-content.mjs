@@ -102,6 +102,7 @@ function renderPublishedContent(content,url) {
       }
       const body = element('div',undefined,'ah-guest-body');
       body.append(element('h3',guest.name,'ah-guest-name'));
+      if (guest.status === 'pending') body.append(element('p','资料待确认','ah-guest-company'));
       if (guest.publicRoles?.length) body.append(element('p',guest.publicRoles.map(role => GUEST_PUBLIC_ROLE_LABELS[role]).join(' · '),'ah-guest-duty'));
       body.append(element('p',[guest.title,guest.company].filter(Boolean).join(' · '),'ah-guest-company'));
       if (guest.ggjRole) body.append(element('p',guest.ggjRole,'ah-guest-role'));
@@ -138,10 +139,11 @@ function renderPublishedContent(content,url) {
   const booths = document.querySelector('[data-public-booths]');
   if (booths) {
     booths.replaceChildren();
-    for (const item of content.booths.filter(item => item.status === 'confirmed')) {
+    for (const item of content.booths.filter(item => item.visibility !== 'private')) {
       const card = element('article', undefined, 'ah-booth-card');
       if(/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(item.id)){card.id='booth-'+item.id;card.dataset.boothId=item.id;}
-      card.append(element('h3',item.organization),element('p',item.project,'ah-booth-project'),element('small',item.code + ' · ' + item.zone + ' 区'));
+      card.append(element('h3',item.organization || '展位待安排'),element('p',item.project || '展示内容待补','ah-booth-project'),element('small',item.code + ' · ' + item.zone + ' 区'));
+      if (item.status !== 'confirmed') card.append(element('p',item.status === 'cancelled' ? '本展位已取消' : '展位安排待确认','ah-booth-status'));
       if(typeof item.description==='string'&&item.description)card.append(element('p',item.description,'ah-booth-description'));
       if(typeof item.website==='string'&&item.website&&isPublicWebsite(item.website)){const link=element('a','组织网站','ah-booth-website');link.href=item.website;link.target='_blank';link.rel='noopener noreferrer';card.append(link);}
       appendWorkLinks(card,workCards.filter(work=>work.boothId===item.id));
@@ -230,6 +232,7 @@ function renderOrganizations(cards,url,{initial=false,works=[]}={}) {
     card.append(name);
     const label=organizationParticipationLabel(organization.participation);
     if(label)card.append(element('span',label,'ah-organization-participation'));
+    if(organization.status)card.append(element('span',organization.status==='withdrawn'?'已退出':'参与待确认','ah-organization-participation'));
     item.append(card);appendWorkLinks(item,works.filter(work=>work.organizationId===organization.id));list.append(item);
   }
   list.hidden=cards.length===0;
@@ -300,19 +303,28 @@ function renderShowcases(content, sourceUrl) {
   for (const work of cards) {
     const card = element('li', undefined, 'ah-showcase-card');
     card.id='work-'+work.id;card.dataset.showcaseId=work.id;card.dataset.workKind=work.kind;
-    const photo = document.createElement('img');
-    photo.width = 960; photo.height = 540;
-    photo.alt = work.title + '的作品图';
-    photo.loading = 'lazy'; photo.decoding = 'async';
-    photo.referrerPolicy = 'no-referrer';
-    if (sourceUrl.origin !== location.origin) photo.crossOrigin = 'anonymous';
-    // The helper constructs this path from a content-addressed image ID, never
-    // an external URL or a private materials link from the admin record.
-    photo.src = new URL(work.coverUrl, sourceUrl.origin).href;
-    photo.addEventListener('error', () => { photo.hidden = true; });
+    const fallback=element('div','作品封面待补','ah-showcase-cover-empty');
+    fallback.hidden=Boolean(work.coverUrl);
+    if(work.coverUrl){
+      const photo = document.createElement('img');
+      photo.width = 960; photo.height = 540;
+      photo.alt = work.title + '的作品图';
+      photo.loading = 'lazy'; photo.decoding = 'async';
+      photo.referrerPolicy = 'no-referrer';
+      if (sourceUrl.origin !== location.origin) photo.crossOrigin = 'anonymous';
+      // Constructed from a content-addressed image ID, never a private materials link.
+      photo.src = new URL(work.coverUrl, sourceUrl.origin).href;
+      photo.addEventListener('error', () => { photo.hidden = true; fallback.hidden=false; });
+      card.append(photo);
+    }
+    card.append(fallback);
     const detail = element('div', undefined, 'ah-showcase-card-body');
     detail.append(element('span',SHOWCASE_KIND_LABELS[work.kind],'ah-showcase-category'));
     detail.append(element('h3', work.title), element('p', work.teamName, 'ah-showcase-team'));
+    const progress=[];
+    if(work.status==='pending')progress.push('资料待确认');
+    if(work.responseStatus)progress.push(work.responseStatus==='declined'?'已回复不参加':'参加待确认');
+    if(progress.length)detail.append(element('p',progress.join(' · '),'ah-showcase-status'));
     const organization=organizations.get(work.organizationId);
     if(organization){const link=element('a',organization.name,'ah-showcase-organization');link.href='#organization-'+organization.id;detail.append(reveal(link));}
     if (work.summary) detail.append(element('p', work.summary));
@@ -323,13 +335,14 @@ function renderShowcases(content, sourceUrl) {
       const link=element('a','作品分享 · ' + session.start + '–' + session.end + ' · ' + session.zone + ' 区');link.href='#program-'+session.id;
       link.addEventListener('click',()=>{const agenda=document.querySelector('[data-agenda]'),period=agenda?.querySelector('[data-program-period]');if(period){period.value='all';period.dispatchEvent(new Event('change'));}agenda?.querySelector('[data-zone="'+session.zone+'"]')?.click();});arrangement.append(reveal(link));
     }
-    const booth = content.booths.find(item => item.id === work.boothId && item.status === 'confirmed');
+    const booth = content.booths.find(item => item.id === work.boothId && item.visibility !== 'private' && item.status === 'confirmed');
     if (booth && typeof booth.code === 'string' && /^[A-Z0-9][A-Z0-9-]{0,15}$/u.test(booth.code) && booth.zone === 'C') {
       if(arrangement.childElementCount)arrangement.append(document.createTextNode(' / '));
       const link=element('a','展位试玩 · C 区 ' + booth.code);link.href='#booth-'+booth.id;arrangement.append(reveal(link));
     }
-    if (arrangement.childElementCount) detail.append(arrangement);
-    card.append(photo, detail);
+    if (!arrangement.childElementCount) arrangement.textContent='展示安排陆续公布';
+    detail.append(arrangement);
+    card.append(detail);
     grid.append(card);
   }
   grid.hidden = cards.length === 0;

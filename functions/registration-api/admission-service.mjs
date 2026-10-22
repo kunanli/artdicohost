@@ -91,7 +91,7 @@ export function createAdmissionOperations({ repository, eventId, current, policy
         if (replay) {
           if (replay.outcome === 'conflict') return replay;
           return { outcome: 'replayed', ...await repository.getAdmissions(), registrationId: replay.receipt.registrationId, receipt: await currentReceipt(replay.receipt),
-            promotedIds: replay.promotedIds ?? [], releasedIds: replay.releasedIds ?? [] };
+            promotedIds: replay.promotedIds ?? [], releasedIds: replay.releasedIds ?? [], operation: replay.operation };
         }
         const now = current();
         if (!policyAt(now).valid) return invalid('closed');
@@ -102,7 +102,7 @@ export function createAdmissionOperations({ repository, eventId, current, policy
           operationId, expectedRevision: own(input, 'expectedRevision'), requestHash, beforeCommit: () => policyAt(current()).valid, getExcluded: getExcluded() });
         if (!['created', 'replayed'].includes(saved.outcome)) return saved;
         return { outcome: saved.outcome === 'created' ? 'updated' : 'replayed', ...await repository.getAdmissions(),
-          registrationId: saved.receipt.registrationId, receipt: await currentReceipt(saved.receipt), promotedIds: saved.promotedIds ?? [], releasedIds: saved.releasedIds ?? [] };
+          registrationId: saved.receipt.registrationId, receipt: await currentReceipt(saved.receipt), promotedIds: saved.promotedIds ?? [], releasedIds: saved.releasedIds ?? [], operation: saved.operation };
       } catch { return invalid('unavailable'); }
     },
   });

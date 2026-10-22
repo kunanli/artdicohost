@@ -4,14 +4,14 @@
  */
 /** @type {readonly AdminPageDefinition[]} */
 const contentDefinitions = [
-  ['overview', '工作区概况', '活动内容概况', 'workspace-title', '选择一项内容，完成保存后再到发布页公开。'],
+  ['overview', '工作区概况', '活动内容概况', 'workspace-title', '选择内容并保存，可在当前页直接发布到前台。'],
   ['event', '活动基本资料', '活动基本资料', 'event-editor-title', '维护日期、场地、联络方式与常见问题。'],
   ['arrangements', '现场配置总览', '现场配置总览', 'arrangements-title', '核对展位、场次与人员安排。'],
-  ['guests', '嘉宾与讲者', '嘉宾与讲者', 'guests-title', '维护人物资料、选填照片与公开授权。'],
-  ['organizations', '参与组织', '参与组织', 'organizations-title', '维护组织图片、名称、页面链接与参与形式。'],
-  ['showcases', '游戏与作品', '游戏与作品', 'showcases-title', '维护学生作品、独立游戏与团队作品的资料及参与安排。'],
+  ['guests', '嘉宾与讲者', '嘉宾与讲者', 'guests-title', '维护人物资料、选填照片与公开开关。'],
+  ['organizations', '参与组织', '参与组织', 'organizations-title', '维护组织图片、名称、参与形式与公开开关。'],
+  ['showcases', '游戏与作品', '游戏与作品', 'showcases-title', '维护学生作品、独立游戏与团队作品，直接调整公开设置。'],
   ['sessions', '活动场次', '活动场次', 'sessions-title', '维护各区域场次、时间与讲者关联。'],
-  ['booths', '十五个展位', '十五个展位', 'booths-title', '维护展位、展示项目与内部负责人资料。'],
+  ['booths', '十五个展位', '十五个展位', 'booths-title', '维护展位与公开设置；负责人资料留在后台。'],
   ['publish', '预览与发布', '预览与发布', 'preview-title', '核对已保存内容，再明确发布到活动页。'],
 ];
 /** @type {readonly AdminPageDefinition[]} */

@@ -1,4 +1,4 @@
-import { validateContent, toPublicContent, showcaseAllocations, PORTRAIT_ID_PATTERN } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, isContentVisible, matchesPublishedContent } from '../../shared/content-schema.mjs';
 
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
 const revision = value => Number.isSafeInteger(value) && value >= 0;
@@ -64,14 +64,14 @@ export function contentSaveUiState({ loaded, canEdit, dirty, unapplied = [], bus
 
 
 export const PUBLICATION_REASON_LABELS = Object.freeze({
-  confirmation_required: '待确认', public_consent_required: '待核实公开授权',
+  visibility_private: '已手动设为未公开', confirmation_required: '待确认', public_consent_required: '待核实公开授权',
   attendance_required: '未确认参加', attendance_declined: '已回复不参加',
   cover_required: '作品封面待补', allocation_required: '展位或分享场次待安排',
   session_draft: '场次尚未安排', booth_cancelled:'展位已取消', organization_withdrawn:'组织已退出', record_removed: '草稿已移除',
   not_in_public_projection: '公开条件待核对',
 });
-export const PUBLICATION_CHANGE_LABELS = Object.freeze({new:'待发布',updated:'变更待发布',removed:'待撤下',unchanged:'已同步',blocked:'待补充'});
-export const PUBLICATION_SUGGESTION_LABELS = Object.freeze({portrait_optional:'照片可稍后补充',public_roles_optional:'公开职责可稍后补充'});
+export const PUBLICATION_CHANGE_LABELS = Object.freeze({new:'待发布',updated:'变更待发布',removed:'待撤下',unchanged:'已同步',blocked:'未公开'});
+export const PUBLICATION_SUGGESTION_LABELS = Object.freeze({portrait_optional:'照片可稍后补充',public_roles_optional:'公开职责可稍后补充',cover_optional:'封面可稍后补充',allocation_optional:'展位或分享场次可稍后安排'});
 const publicationCollections = Object.freeze(['guests','organizations','showcases','sessions','booths']);
 // Property order is not a public change; list order and optional-field presence are.
 function publicFingerprint(value) {
@@ -86,15 +86,8 @@ function publicationReasons(kind,item,content,ready) {
   const reasons=[];
   if (kind==='sessions') {
     if(item.status==='draft')reasons.push('session_draft');
-  } else {
-    if(item.status!=='confirmed')reasons.push(kind==='booths'&&item.status==='cancelled'?'booth_cancelled':kind==='organizations'&&item.status==='withdrawn'?'organization_withdrawn':'confirmation_required');
-    if(['guests','organizations','showcases'].includes(kind)&&item.publicConsent!==true)reasons.push('public_consent_required');
-    if(kind==='showcases') {
-      if(item.responseStatus!=='attending')reasons.push(item.responseStatus==='declined'?'attendance_declined':'attendance_required');
-      if(!PORTRAIT_ID_PATTERN.test(item.coverId))reasons.push('cover_required');
-      const allocated=showcaseAllocations(item,content);
-      if(!allocated.sessionId&&!allocated.boothId)reasons.push('allocation_required');
-    }
+  } else if (!isContentVisible(item)) {
+    reasons.push('visibility_private');
   }
   return reasons.length?reasons:['not_in_public_projection'];
 }
@@ -119,7 +112,7 @@ export function contentPublicationReadiness(input) {
       saved=toPublicContent(publication.content);
       if(saved.eventId!==content.eventId||!samePublic(saved,publication.content))return null;
       publishedRevision=publication.revision;publishedAt=publication.publishedAt;
-      if(publishedRevision===input.draft.revision&&!samePublic(next,saved))return null;
+      if(publishedRevision===input.draft.revision&&!samePublic(next,saved)&&!matchesPublishedContent(content,saved))return null;
     }
     const items={},summary={new:0,updated:0,removed:0,unchanged:0,blocked:0},orderChanged={};
     for(const kind of publicationCollections) {
@@ -135,7 +128,7 @@ export function contentPublicationReadiness(input) {
         }
         summary[change]++;
         return {kind,id,label:draft?.name||draft?.title||draft?.code||previous?.name||previous?.title||previous?.code||id,
-          inDraft:Boolean(draft),published,ready,change,reasons:publicationReasons(kind,draft,content,ready),suggestions};
+          inDraft:Boolean(draft),visible:Boolean(draft&&isContentVisible(draft)),visibility:draft?(isContentVisible(draft)?'public':'private'):null,published,ready,change,reasons:publicationReasons(kind,draft,content,ready),suggestions};
       });
       orderChanged[kind]=!samePublic(nextRows.map(row=>row.id),savedRows.map(row=>row.id));
     }

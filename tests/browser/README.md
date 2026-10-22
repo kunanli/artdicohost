@@ -2,6 +2,17 @@
 
 这组可选检查使用真实 Chromium 运行构建后的页面，但拦截全部页面请求并提供纯合成 API。它不连接正式 API、不写真实报名、不读取原始名单，也不能代替真实 FC／OSS 端到端验收。
 
+2026-10-22本轮采用[统一保存](../../docs/admin-save-workflow.md)及[默认公开](../../docs/default-public-visibility.md)。四类内容只因手动未公开而隐藏；保存后表单保留、主要保存禁用直至重新编辑，已载入草稿浮窗移除。下文旧公开条件／自动关闭的历史描述由本轮说明替代，不能继续当成产品要求。实际源码、建置与发布验收分别绑定，不把source模式脚本冒充准确bundle通过。
+
+本轮新增主流程，先按下方方式生成一次最终构建，验收过程中不重建：
+
+```sh
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/admin-save-visibility-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/people-save-state-smoke.mjs
+```
+
+前者用实际隔离runtime、真实IndexedDB及320／390／1440页面验证四类默认绿色开关、保存与发布分开、手动隐藏与重读、连续保存同一稳定ID、旧快照同版先保存、原请求未知结果精确重试；输出记录dist实际mtime及HTML摘要。后者覆盖人员表单原位保存、422、坏回执及未知结果只读核对。`settings-save-feedback-smoke.mjs`、`admissions-save-state-smoke.mjs`和`arrangement-planner-one-step-smoke.mjs`为明确的原生source-component验收，专门注入响应错误／时间窗口／跨表单冲突；准确建置的设置与名额流程另由既有collaborators／admissions／application-review脚本验收。
+
 先安装与当前环境相容的 Playwright Core 和 Chromium，或使用环境已提供的二者。项目不因这项手工检查增加生产依赖。指定 Playwright 的模块绝对路径与 Chromium 可执行文件：
 
 ```sh

@@ -100,7 +100,7 @@ test('aborted streams and mismatched body lengths cannot consume a login or comm
   assert.equal(objects.calls.length, before);
 });
 
-test('only currently published, consenting guest portraits can be read through the public API', async () => {
+test('only currently published, visible guest portraits can be read through the public API', async () => {
   const first = setup(); const second = setup(first.objects);
   const headers = await login(first.api);
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFElEQVR4nGN0KFjAwMDAxMDAgKAAGOQBVgs9CEsAAAAASUVORK5CYII=';
@@ -118,7 +118,7 @@ test('only currently published, consenting guest portraits can be read through t
   assert.equal(photo.headers.get('access-control-allow-origin'), PUBLIC_SITE_ORIGIN);
   assert.equal(photo.headers.get('cache-control'), 'no-store');
   assert.ok((await photo.arrayBuffer()).byteLength > 0);
-  draft.content.guests[0].publicConsent = false;
+  draft.content.guests[0].visibility = 'private';
   assert.equal((await second.api(request('/api/admin/content', { method: 'PUT', headers, body: { expectedRevision: 1, content: draft.content } }))).status, 200);
   assert.equal((await first.api(request('/api/admin/content/publish', { method: 'POST', headers, body: { expectedRevision: 2 } }))).status, 200);
   assert.equal((await second.api(request(publicPath, { origin: PUBLIC_SITE_ORIGIN }))).status, 404);

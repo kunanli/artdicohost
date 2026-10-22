@@ -12,8 +12,8 @@ export function createSettingsFormDraft({store,actorId,eventId,entity,form,polic
     onState(value){
       if(value.error?.code==='STALE_ACTOR'){form.dispatchEvent(new CustomEvent('settings-actor-cleared',{bubbles:true,detail:{actorId}}));return;}
       state=value.status;const record=value.snapshot?.record;
-      const labels={empty:'',saving:'正在暂存…',saved:'本机已暂存 · 未保存云端',available:'有本机暂存，可恢复填写。',restored:'已恢复填写 · 未保存云端',stale:'云端有更新，先查看原填写。',pending:'提交结果待核对，请先核对后台；不会重送。',discarded:'',conflict:'另一页更新了暂存，请重新载入核对。',unavailable:'本机暂存未完成，请保留此页。',closed:''};
-      message.textContent=record?.kind==='pending_submission'?labels.pending:labels[state]??'';panel.hidden=['empty','discarded','closed'].includes(state);restore.hidden=!['available'].includes(state);view.hidden=!record;discard.hidden=!record||['saving','conflict'].includes(state);discard.textContent=record?.kind==='pending_submission'?'已手动核对，解除锁定':'清除暂存';
+      const labels={empty:'',saving:'正在暂存…',saved:'本机恢复草稿已更新',available:'有本机暂存，可恢复填写。',restored:'已恢复填写 · 未保存云端',stale:'云端有更新，先查看原填写。',pending:'提交结果待核对，请先核对后台；不会重送。',discarded:'',conflict:'另一页更新了暂存，请重新载入核对。',unavailable:'本机暂存未完成，请保留此页。',closed:''};
+      message.textContent=record?.kind==='pending_submission'?labels.pending:labels[state]??'';panel.hidden=['empty','saving','saved','discarded','closed'].includes(state);restore.hidden=!['available'].includes(state);view.hidden=!record;discard.hidden=!record||['saving','conflict'].includes(state);discard.textContent=record?.kind==='pending_submission'?'已手动核对，解除锁定':'清除暂存';
       if(record?.kind==='pending_submission'&&['pending','stale'].includes(state))onPending(record.value);onChange();
     }});
   restore.addEventListener('click',()=>binding.restore().catch(()=>{}));

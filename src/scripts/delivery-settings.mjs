@@ -12,16 +12,19 @@ const walletMessages={WALLET_NOT_CONFIGURED:'尚未开放；请先完成 Apple D
 const walletFields={APPLE_WALLET_TEAM_ID:'Apple 团队 ID',APPLE_WALLET_PASS_TYPE_ID:'Pass Type ID',APPLE_WALLET_ORGANIZATION_NAME:'主办单位名称',
   APPLE_WALLET_CERT_BASE64:'签章证书',APPLE_WALLET_KEY_BASE64:'签章私钥',APPLE_WALLET_WWDR_CERT_BASE64:'Apple WWDR 证书',APPLE_WALLET_ROOT_CERT_BASE64:'Apple 根证书'};
 export function createDeliverySettings({root,request,draftStore,eventId}){
-  const $=selector=>root.querySelector(selector);let user=null,state=null,busy=false,externalBusy=false,generation=0,accountKey='',settingsDirty=false,dispatchDirty=false,readSequence=0;
+  const $=selector=>root.querySelector(selector);let user=null,state=null,busy=false,externalBusy=false,generation=0,accountKey='',settingsDirty=false,dispatchDirty=false,readSequence=0,savePhase='loaded';
   const drafts=new Map(),persistedPending=new Set(),allowed=()=>canManageEventOperations(user);
   const mutations=createDeliveryMutations({request:async(path,options)=>{
     const started=generation,kind=path.endsWith('/dispatch')?'dispatch':'settings',draft=drafts.get(kind);
     if(draft){const value={...JSON.parse(options.body),action:kind};if(draft.pending){if(JSON.stringify(draft.value)!==JSON.stringify(value))throw new Error('上次设置操作仍待核对，不能另建新操作。');}else await draft.markPending(value);}
     if(started!==generation||!allowed())throw new Error('会话已改变，未提交原操作。');return request(path,options);
   },revision:()=>state?.revision});
+  function saveState(value,message){savePhase=value;const output=$('[data-delivery-save-state]');if(output){output.dataset.saveState=value;output.textContent=message??({loaded:'尚未修改',unsaved:'未保存',saving:'保存中…',saved:'已保存',unknown:'保存结果待核对',error:'未保存 · 请核对后重试'})[value]??'';}const button=$('[data-delivery-save-button]');if(button)button.textContent=value==='saving'?'保存中…':'保存';}
   function status(message,error=false){$('[data-delivery-status]').textContent=error?'':message;$('[data-delivery-error]').textContent=error?message:'';$('[data-delivery-error]').hidden=!error;}
   function lock(){
     for(const field of root.querySelectorAll('button,input,textarea'))field.disabled=busy||externalBusy||!allowed()||mutations.pending;
+    if(!busy&&(mutations.pending||persistedPending.has('settings')))saveState('unknown');
+    const saveButton=$('[data-delivery-save-button]');if(saveButton)saveButton.disabled||=savePhase==='saved';
     $('[data-delivery-refresh]').disabled=busy||externalBusy||!allowed();$('[data-delivery-retry]').disabled=busy||externalBusy||!allowed()||!mutations.pending;$('[data-delivery-pending]').hidden=!mutations.pending;
     for(const field of root.querySelectorAll('[data-delivery-automatic] button,[data-delivery-automatic] input,[data-delivery-dispatch] button,[data-delivery-dispatch] textarea,[data-delivery-dispatch] input'))field.disabled||=!state;
     for(const[kind,selector]of[['settings','[data-delivery-automatic]'],['dispatch','[data-delivery-dispatch]']])for(const field of $(selector).querySelectorAll('input,button,textarea'))field.disabled||=persistedPending.size>0||drafts.get(kind)?.blocked;
@@ -47,13 +50,13 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
   }
   async function action(callback){
     if(busy||externalBusy||!allowed())return;const started=generation;busy=true;lock();
-    try{await callback(started);}catch(error){if(started===generation){if(!mutations.pending)for(const[kind,draft]of drafts)if(draft.pending)persistedPending.add(kind);status(error.message||'结果尚未确认，请保留本页并再次确认。',true);}}
+    try{await callback(started);}catch(error){if(started===generation){if(!mutations.pending)for(const[kind,draft]of drafts)if(draft.pending)persistedPending.add(kind);if(mutations.pending||persistedPending.has('settings'))saveState('unknown');else if(savePhase==='saving')saveState('error');status(error.message||'结果尚未确认，请保留本页并再次确认。',true);}}
     finally{if(started===generation){busy=false;lock();}}
   }
   async function accept(result,started){
     if(started!==generation||!allowed())return;
     await drafts.get(result.kind)?.discard();if(started!==generation||!allowed())return;persistedPending.delete(result.kind);
-    if(result.kind==='settings'){readSequence++;settingsDirty=false;state=result.value;render();status('自动确认邮件设置已保存。不会自动向历史意向名单群发。');}
+    if(result.kind==='settings'){readSequence++;settingsDirty=false;state=result.value;saveState('saved',result.requestedEnabled===state.automaticEnabled?'已保存':'已保存 · 当前设置已由其他操作更新');render();status('自动确认邮件设置已保存。不会自动向历史意向名单群发。');}
     else{
       dispatchDirty=false;const labels={provider_accepted:'服务商已接受',rejected:'明确未发出',unknown:'结果不明，不重发',disabled:'自动邮件未开启',not_configured:'设置未完成',not_applicable:'未提供邮箱',not_public:'工作人员代登记，不在公开报名补发范围',withdrawn:'报名已取消',unavailable:'暂时无法核对',not_attempted:'尚未处理'};
       const output=$('[data-delivery-results]');output.replaceChildren();for(const row of result.value.results)output.append(element('p',row.registrationId+' · '+labels[row.status]));
@@ -67,16 +70,16 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
       const fields=kind==='settings'?['enabled','expectedRevision','operationId','action']:['registrationIds','retryRejected','expectedRevision','operationId','action'];
       const draft=createSettingsFormDraft({store:draftStore,actorId:user.id,eventId,entity:'delivery-'+kind,form,policy:{fields,pendingFields:fields,validate:(value,{kind:recordKind})=>value.action===kind&&Number.isSafeInteger(value.expectedRevision)&&value.expectedRevision>=0&&typeof value.operationId==='string'&&(recordKind!=='pending_submission'||/^[A-Za-z0-9_-]{32,128}$/u.test(value.operationId))&&(kind==='settings'?typeof value.enabled==='boolean':Array.isArray(value.registrationIds)&&value.registrationIds.length<=100&&value.registrationIds.every(id=>typeof id==='string'&&id.length<=100)&&typeof value.retryRejected==='boolean')},baseRevision:()=>state.revision,isCurrent:()=>started===generation&&allowed(),
         capture:()=>({expectedRevision:state.revision,operationId:'',action:kind,...(kind==='settings'?{enabled:form.elements.namedItem('enabled').checked}:{registrationIds:form.elements.namedItem('registrationIds').value.split(/[\s,;，；]+/u).filter(Boolean),retryRejected:form.elements.namedItem('retryRejected').checked})}),
-        apply:value=>{if(kind==='settings'){form.elements.namedItem('enabled').checked=value.enabled;settingsDirty=true;}else{form.elements.namedItem('registrationIds').value=value.registrationIds.join('\n');form.elements.namedItem('retryRejected').checked=value.retryRejected;dispatchDirty=true;}},
-        onChange:lock,onPending:()=>{persistedPending.add(kind);},onDiscard:()=>{persistedPending.delete(kind);mutations.clear();form.reset();if(kind==='settings')settingsDirty=false;else dispatchDirty=false;render();}});
+        apply:value=>{if(kind==='settings'){form.elements.namedItem('enabled').checked=value.enabled;settingsDirty=true;saveState('unsaved');}else{form.elements.namedItem('registrationIds').value=value.registrationIds.join('\n');form.elements.namedItem('retryRejected').checked=value.retryRejected;dispatchDirty=true;}},
+        onChange:lock,onPending:()=>{persistedPending.add(kind);},onDiscard:()=>{persistedPending.delete(kind);mutations.clear();form.reset();if(kind==='settings'){settingsDirty=false;saveState('loaded');}else dispatchDirty=false;render();}});
       drafts.set(kind,draft);try{await draft.load();}catch{}if(started!==generation)return;
     }lock();
   }
   $('[data-delivery-refresh]').addEventListener('click',()=>action(async started=>{if(await load(started))status(mutations.pending?'已读取最新状态；请继续确认原操作，刷新不会重新发送。':'已读取最新设置。');}));
   $('[data-delivery-retry]').addEventListener('click',()=>action(async started=>accept(await mutations.retry(),started)));
-  $('[data-delivery-automatic]').addEventListener('input',()=>{settingsDirty=true;});
+  const markSettings=()=>{settingsDirty=true;saveState('unsaved');lock();};$('[data-delivery-automatic]').addEventListener('input',markSettings);$('[data-delivery-automatic]').addEventListener('change',markSettings);
   $('[data-delivery-automatic]').addEventListener('submit',event=>{event.preventDefault();if(mutations.pending)return;const enabled=event.currentTarget.elements.namedItem('enabled').checked;
-    if(enabled&&!state?.email.ready){status('请先完成寄件设置，待状态可用后再开启自动确认信。',true);return;}action(async started=>accept(await mutations.run('settings',{enabled}),started));
+    if(enabled&&!state?.email.ready){saveState('error');status('请先完成寄件设置，待状态可用后再开启自动确认信。',true);return;}action(async started=>{saveState('saving');await accept(await mutations.run('settings',{enabled}),started);});
   });
   $('[data-delivery-dispatch]').addEventListener('input',()=>{dispatchDirty=true;});
   $('[data-delivery-dispatch]').addEventListener('change',()=>{dispatchDirty=true;});
@@ -94,7 +97,7 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
     for(const form of root.querySelectorAll('form'))form.reset();for(const selector of ['[data-delivery-mail-missing]','[data-delivery-wallet-missing]','[data-delivery-counts]','[data-delivery-results]'])$(selector).replaceChildren();
     for(const selector of ['[data-delivery-mail-ready]','[data-delivery-wallet-ready]','[data-delivery-wallet-expiry]'])$(selector).textContent='';
     for(const selector of ['[data-delivery-wallet-missing]','[data-delivery-wallet-expiry]','[data-delivery-wallet-device]'])$(selector).hidden=true;
-    $('[data-delivery-state]').hidden=true;status('');lock();
+    $('[data-delivery-state]').hidden=true;saveState('loaded');status('');lock();
   }
   clear();
   return Object.freeze({

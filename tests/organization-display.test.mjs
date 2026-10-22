@@ -29,10 +29,21 @@ test('unsafe links and foreign or mismatched logo URLs are omitted while the aut
 test('invalid, duplicate and explicitly nonpublic organizations never become display entries',()=>{
   const original=card();
   assert.equal(publicOrganizationCards([original,original]).length,1);
-  for(const change of [{id:'../other'},{name:''},{name:'bad\nname'},{name:'字'.repeat(161)},{participation:'sponsor'},{status:'withdrawn'},{publicConsent:false}])assert.deepEqual(publicOrganizationCards([card(change)]),[]);
+  for(const change of [{id:'../other'},{name:''},{name:'bad\nname'},{name:'字'.repeat(161)},{participation:'sponsor'},{status:'invalid'},{visibility:'private'},{visibility:undefined}])assert.deepEqual(publicOrganizationCards([card(change)]),[]);
   let read=false;const accessor=card();Object.defineProperty(accessor,'name',{get(){read=true;return 'PRIVATE';}});
   assert.deepEqual(publicOrganizationCards([accessor]),[]);assert.equal(read,false);
   assert.deepEqual(publicOrganizationCards(Array(201).fill(original)),[]);assert.deepEqual(publicOrganizationCards(null),[]);
+});
+
+test('pending and withdrawn organizations retain public names until manually hidden without implying confirmation',()=>{
+  for(const status of ['pending','withdrawn']){
+    const value=card({status,publicConsent:false,logoUrl:'',website:''});
+    const result=publicOrganizationCards([value]);assert.equal(result.length,1);assert.equal(result[0].status,status);
+    assert.deepEqual(publicOrganizationCards([{...value,visibility:'private'}]),[]);
+    assert.equal(publicOrganizationCards([{...value,visibility:'public'}]).length,1);
+  }
+  const accessor=card();Object.defineProperty(accessor,'visibility',{get(){assert.fail('visibility getter must not execute');}});
+  assert.deepEqual(publicOrganizationCards([accessor]),[]);
 });
 
 test('legacy defaults are fresh name-only records and never infer exhibition or organization websites',()=>{

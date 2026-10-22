@@ -67,30 +67,32 @@ test('attendance colors describe only the personal reply, never infer guest stat
   for(const status of [undefined,null,'confirmed','provider_accepted'])assert.deepEqual(attendancePresentation(status),{label:'出席回复待核对',tone:'neutral'});
 });
 
-test('public presentation keeps live snapshots green through updates and withdrawals; missing knowledge stays neutral',()=>{
+test('public presentation colors visibility intent while retaining actual snapshot progress and unknown knowledge',()=>{
   const profile=catalog().profiles[0];
-  let status=profilePublicationPresentation(profile);assert.equal(status.tone,'positive');assert.equal(status.label,'已公开');assert.equal(status.change,'updated');assert.match(status.detail,/历史公开版本.*待核对/u);
-  profile.publicConsent=false;status=profilePublicationPresentation(profile);assert.equal(status.tone,'positive');assert.equal(status.change,'removed');assert.equal(status.changeLabel,'待撤下');assert.deepEqual(status.reasons,['待核实公开授权']);
+  let status=profilePublicationPresentation(profile);assert.equal(status.tone,'positive');assert.equal(status.label,'公开');assert.equal(status.change,'updated');assert.match(status.detail,/等待发布/u);
+  profile.publicConsent=false;status=profilePublicationPresentation(profile);assert.equal(status.tone,'positive');assert.equal(status.ready,true);assert.equal(status.change,'updated');assert.deepEqual(status.reasons,[]);
+  profile.visibility='private';status=profilePublicationPresentation(profile);assert.equal(status.tone,'negative');assert.equal(status.label,'未公开');assert.equal(status.change,'removed');assert.equal(status.changeLabel,'待撤下');assert.deepEqual(status.reasons,['已手动设为未公开']);
   profile.published=false;status=profilePublicationPresentation(profile);assert.equal(status.tone,'negative');assert.equal(status.label,'未公开');assert.equal(status.change,'blocked');
-  assert.equal(profilePublicationPresentation(profile,{known:false}).tone,'neutral');assert.equal(profilePublicationPresentation(null).tone,'neutral');
+  assert.equal(profilePublicationPresentation(profile,{known:false}).tone,'negative');assert.equal(profilePublicationPresentation(profile,{known:false}).change,'unknown');assert.equal(profilePublicationPresentation(null).tone,'neutral');
 });
 
 test('a confirmed consented profile needs neither photo nor public role to be ready or synchronized',()=>{
   const profile={...catalog().profiles[0],publicRoles:[],hasPortrait:false,published:false};
   let status=profilePublicationPresentation(profile);assert.equal(status.ready,true);assert.equal(status.change,'new');assert.deepEqual(status.reasons,[]);assert.deepEqual(status.suggestions,['照片可稍后补充','公开职责可稍后补充']);
   const source=peopleRelationships({...catalog(),profiles:[profile]}),item=contact();assert.equal(matchesPeopleRelationships(item,source,{publicState:'ready'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'blocked'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),true);
-  profile.published=true;profile.publishedMatchesDraft=true;status=profilePublicationPresentation(profile);assert.equal(status.change,'unchanged');assert.equal(status.label,'已公开');
-  source.profiles[0].status='pending';assert.equal(matchesPeopleRelationships(item,source,{publicState:'blocked'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'ready'}),false);
+  profile.published=true;profile.publishedMatchesDraft=true;status=profilePublicationPresentation(profile);assert.equal(status.change,'unchanged');assert.equal(status.label,'公开');
+  source.profiles[0].status='pending';assert.equal(matchesPeopleRelationships(item,source,{publicState:'blocked'}),false);assert.equal(matchesPeopleRelationships(item,source,{publicState:'ready'}),true);
+  source.profiles[0].visibility='private';assert.equal(matchesPeopleRelationships(item,source,{publicState:'blocked'}),true);assert.equal(matchesPeopleRelationships(item,source,{publicState:'ready'}),false);
 });
 
 
 test('unpublished filter requires known publication metadata and an existing linked profile',()=>{
   const item=contact(),source=peopleRelationships(catalog());source.profiles[0].published=false;
   assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),true);
-  assert.equal(profilePublicationPresentation(source.profiles[0]).tone,'negative');
+  assert.equal(profilePublicationPresentation(source.profiles[0]).tone,'positive');assert.equal(profilePublicationPresentation(source.profiles[0]).change,'new');
   source.publicationAttributionUnavailable=true;
   assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),false);
-  assert.equal(profilePublicationPresentation(source.profiles[0],{known:false}).tone,'neutral');
+  assert.equal(profilePublicationPresentation(source.profiles[0],{known:false}).tone,'positive');assert.equal(profilePublicationPresentation(source.profiles[0],{known:false}).change,'unknown');
   assert.equal(matchesPeopleRelationships(item,null,{publicState:'unpublished'}),false);
   source.publicationAttributionUnavailable=false;source.profiles=[];
   assert.equal(matchesPeopleRelationships(item,source,{publicState:'unpublished'}),false,'unlinked is separate from a known unpublished profile');
@@ -98,7 +100,7 @@ test('unpublished filter requires known publication metadata and an existing lin
 
 test('an unrelated orphan does not erase a linked guest ID that the server positively found published',()=>{
   const profile=catalog().profiles[0],status=profilePublicationPresentation(profile,{known:false});
-  assert.equal(status.label,'已公开');assert.equal(status.tone,'positive');assert.equal(status.change,'updated');assert.match(status.detail,/历史公开版本.*待核对/u);
+  assert.equal(status.label,'公开');assert.equal(status.tone,'positive');assert.equal(status.change,'updated');assert.match(status.detail,/等待发布/u);
 });
 
 

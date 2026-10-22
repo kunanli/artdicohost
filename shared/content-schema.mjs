@@ -26,13 +26,14 @@ export const contentSchema = Object.freeze({
   showcaseParticipationForms: ['booth', 'share'],
   organizationParticipationForms: ['undecided', 'exhibitor', 'attendee'],
   organizationStatuses: ['pending', 'confirmed', 'withdrawn'],
+  visibilities: ['public', 'private'],
 });
 
 /** @typedef {{id:string,start:string,end:string,zone:string,title:string,guestId:string,speakerName:string,speakerStatus:string,status:string,internalNotes:string,format:string}} Session */
-/** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string,slotNumber:number,organizationId?:string,contactName?:string,contactMethods?:string,description?:string,website?:string}} Booth */
-/** @typedef {{id:string,name:string,company:string,ggjRole:string,portraitId:string,status:string,publicConsent:boolean,internalNotes:string,contactId:string,title?:string,bio?:string,website?:string,publicRoles?:string[]}} Guest */
-/** @typedef {{id:string,name:string,logoId:string,website:string,participation:string,status:string,publicConsent:boolean,internalNotes:string}} Organization */
-/** @typedef {{id:string,title:string,teamName:string,school:string,contactName:string,email:string,wechat:string,memberCount:number,participationForms:string[],responseStatus:string,materialLinks:string,summary:string,coverId:string,status:string,publicConsent:boolean,sessionId:string,boothId:string,internalNotes:string,kind?:string,organizationId?:string}} Showcase */
+/** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string,slotNumber:number,organizationId?:string,visibility?:string,contactName?:string,contactMethods?:string,description?:string,website?:string}} Booth */
+/** @typedef {{id:string,name:string,company:string,ggjRole:string,portraitId:string,status:string,publicConsent:boolean,internalNotes:string,contactId:string,visibility?:string,title?:string,bio?:string,website?:string,publicRoles?:string[]}} Guest */
+/** @typedef {{id:string,name:string,logoId:string,website:string,participation:string,status:string,publicConsent:boolean,internalNotes:string,visibility?:string}} Organization */
+/** @typedef {{id:string,title:string,teamName:string,school:string,contactName:string,email:string,wechat:string,memberCount:number,participationForms:string[],responseStatus:string,materialLinks:string,summary:string,coverId:string,status:string,publicConsent:boolean,sessionId:string,boothId:string,internalNotes:string,kind?:string,organizationId?:string,visibility?:string}} Showcase */
 /** @typedef {{heroDescription:string,aboutTitle:string,aboutText:string,faqItems:{question:string,answer:string}[],contactEmail:string,mapUrl:string,openingTime:string,endTime:string,checkInTime:string}} EventPresentation */
 /** @typedef {{schemaVersion:number,eventId:string,event:{title:string,date:string,timezone:string,venue:string,status:string,dateStatus:string,venueStatus:string,presentation?:EventPresentation},sessions:Session[],booths:Booth[],guests:Guest[],showcases:Showcase[],organizations?:Organization[]}} Content */
 
@@ -47,6 +48,16 @@ function object(input) {
 
 /** @param {unknown} input */
 function text(input) { return typeof input === 'string' ? input.normalize('NFC').trim() : ''; }
+
+/** Public is the editorial default; private requires an explicit saved choice. */
+export function isContentVisible(input) {
+  const field = Object.getOwnPropertyDescriptor(object(input), 'visibility');
+  return !field || 'value' in field && field.value === 'public';
+}
+function optionalVisibility(input) {
+  const field = Object.getOwnPropertyDescriptor(input, 'visibility');
+  return field ? { visibility: text('value' in field ? field.value : undefined) } : {};
+}
 
 export function isPublicWebsite(value) {
   if (typeof value !== 'string' || value.length > 500 || /[\s\\\u0000-\u001f\u007f]/u.test(value)) return false;
@@ -71,7 +82,7 @@ function guest(input) {
   const result = {
     id: text(item.id), name: text(item.name), company: text(item.company), ggjRole: text(item.ggjRole),
     portraitId: text(item.portraitId), status: text(item.status), publicConsent: item.publicConsent === true,
-    internalNotes: text(item.internalNotes), contactId: text(item.contactId),
+    internalNotes: text(item.internalNotes), contactId: text(item.contactId), ...optionalVisibility(item),
   };
   // Do not backfill optional profile keys into historical snapshots.
   for (const name of ['title','bio','website']) {
@@ -89,7 +100,7 @@ function organization(input) {
   const read = key => { const field = Object.getOwnPropertyDescriptor(item, key); return field && 'value' in field ? field.value : undefined; };
   return { id: text(read('id')), name: text(read('name')), logoId: text(read('logoId')), website: text(read('website')),
     participation: text(read('participation')), status: text(read('status')), publicConsent: read('publicConsent') === true,
-    internalNotes: text(read('internalNotes')) };
+    internalNotes: text(read('internalNotes')), ...optionalVisibility(item) };
 }
 
 /** @param {unknown} input @returns {Booth} */
@@ -97,7 +108,7 @@ function booth(input) {
   const item = object(input);
   const result = {
     id: text(item.id), code: text(item.code).toUpperCase(), organization: text(item.organization), project: text(item.project),
-    zone: text(item.zone), status: text(item.status), internalNotes: text(item.internalNotes),
+    zone: text(item.zone), status: text(item.status), internalNotes: text(item.internalNotes), ...optionalVisibility(item),
     slotNumber: item.slotNumber === undefined ? 0 : /** @type {number} */ (item.slotNumber),
   };
   // Optional additions must not change legacy normalized or published snapshots.
@@ -141,7 +152,7 @@ function showcase(input) {
     responseStatus: item.responseStatus === undefined ? 'pending' : text(item.responseStatus),
     materialLinks: text(item.materialLinks), summary: text(item.summary), coverId: text(item.coverId),
     status: item.status === undefined ? 'pending' : text(item.status), publicConsent: item.publicConsent === true,
-    sessionId: text(item.sessionId), boothId: text(item.boothId), internalNotes: text(item.internalNotes),
+    sessionId: text(item.sessionId), boothId: text(item.boothId), internalNotes: text(item.internalNotes), ...optionalVisibility(item),
   };
   // Display defaults must never migrate historical snapshots or pending bodies.
   for (const name of ['kind', 'organizationId']) {
@@ -160,11 +171,13 @@ export function showcaseAllocations(item, content) {
   return { sessionId: session?.id ?? '', boothId: booth?.id ?? '' };
 }
 
-export function isPublicShowcase(item, content) {
+function legacyPublicShowcase(item, content) {
   const allocated = showcaseAllocations(item, content);
   return item.status === 'confirmed' && item.responseStatus === 'attending' && item.publicConsent === true
     && PORTRAIT_ID_PATTERN.test(item.coverId) && Boolean(allocated.sessionId || allocated.boothId);
 }
+
+export function isPublicShowcase(item, content) { return isContentVisible(item); }
 
 /** @param {string} value */
 function validDate(value) {
@@ -286,13 +299,19 @@ export function validateContent(input) {
   if (organizationsField && (!organizationsField.enumerable || !('value' in organizationsField) || !Array.isArray(organizationsField.value))) errors.organizations = '参与组织须为明确的数组。';
   else if (rawOrganizations.length > MAX_CONTENT_ITEMS) errors.organizations = `参与组织最多 ${MAX_CONTENT_ITEMS} 个。`;
 
+  for (const [collection, rows] of [['guests', rawGuests], ['organizations', rawOrganizations], ['showcases', rawShowcases], ['booths', rawBooths]]) {
+    for (const [index, row] of rows.entries()) {
+      const field = Object.getOwnPropertyDescriptor(object(row), 'visibility');
+      if (field && (!field.enumerable || !('value' in field) || !contentSchema.visibilities.includes(field.value))) errors[`${collection}.${index}.visibility`] = '请选择公开或未公开。';
+    }
+  }
   const ids = new Set();
   const contactIds = new Set();
   const guestIds = new Set();
   for (const [index, item] of (value.organizations ?? []).entries()) {
     const key = `organizations.${index}`, raw = rawOrganizations[index];
     const fields = ['id', 'name', 'logoId', 'website', 'participation', 'status', 'publicConsent'];
-    const optional = ['internalNotes', 'logoUrl'];
+    const optional = ['internalNotes', 'logoUrl', 'visibility'];
     if (!raw || typeof raw !== 'object' || Array.isArray(raw) || ![Object.prototype, null].includes(Object.getPrototypeOf(raw))
       || Object.getOwnPropertySymbols(raw).length || Object.getOwnPropertyNames(raw).some(name => !fields.includes(name) && !optional.includes(name))
       || fields.some(name => { const descriptor = Object.getOwnPropertyDescriptor(raw, name); return !descriptor?.enumerable || !('value' in descriptor)
@@ -456,7 +475,6 @@ export function validateContent(input) {
       stableId(`${key}.boothId`, item.boothId);
       if (!item.participationForms.includes('booth') || !value.booths.some(candidate => candidate.id === item.boothId && candidate.status !== 'cancelled')) errors[`${key}.boothId`] = '请选择有效且未取消的展位，并勾选展位试玩。';
     }
-    if (item.status === 'confirmed' && item.publicConsent && item.responseStatus === 'attending' && !item.coverId) errors[`${key}.coverId`] = '公开作品前请先上传已获授权的作品图片。';
   }
 
   // Equal endpoints are allowed: one session may begin when the preceding one ends.
@@ -479,14 +497,16 @@ export function validateContent(input) {
  * Does not persist, publish, authorize a speaker, or approve a booth by itself.
  * @param {unknown} input
  */
-export function toPublicContent(input) {
+export function toPublicContent(input, { legacyVisibility = false } = {}) {
   const result = validateContent(input);
   if (!result.valid) throw new TypeError('内容校验未通过，不能生成公开内容。');
   const { value } = result;
-  const publicGuests = value.guests.filter(item => item.status === 'confirmed' && item.publicConsent);
+  const publicGuests = value.guests.filter(item => legacyVisibility ? item.status === 'confirmed' && item.publicConsent : isContentVisible(item));
   const guestsById = new Map(publicGuests.map(item => [item.id, item]));
-  const publicOrganizations = (value.organizations ?? []).filter(item => item.status === 'confirmed' && item.publicConsent);
+  const publicOrganizations = (value.organizations ?? []).filter(item => legacyVisibility ? item.status === 'confirmed' && item.publicConsent : isContentVisible(item));
   const publicOrganizationIds = new Set(publicOrganizations.map(item => item.id));
+  const publicBooths = value.booths.filter(item => legacyVisibility ? item.status === 'confirmed' : isContentVisible(item));
+  const publicBoothIds = new Set(publicBooths.map(item => item.id));
   return {
     schemaVersion: value.schemaVersion,
     eventId: value.eventId,
@@ -497,23 +517,26 @@ export function toPublicContent(input) {
         id: item.id, start: item.start, end: item.end, zone: item.zone, title: item.title,
         guestId: linked?.id ?? '',
         speakerName: item.guestId ? linked?.name ?? '' : item.speakerStatus === 'confirmed' ? item.speakerName : '',
-        speakerStatus: item.guestId ? linked ? 'confirmed' : 'pending' : item.speakerStatus, status: item.status,
+        speakerStatus: item.guestId ? linked?.status === 'confirmed' ? 'confirmed' : 'pending' : item.speakerStatus, status: item.status,
         ...(item.format !== 'other' ? { format: item.format } : {}),
       };
     }),
-    booths: value.booths.filter((item) => item.status === 'confirmed').map((item) => ({
+    booths: publicBooths.map((item) => ({
       id: item.id, code: item.code, organization: item.organization, project: item.project, zone: item.zone, status: item.status,
       ...(item.slotNumber > 0 ? { slotNumber: item.slotNumber } : {}),
       ...(Object.hasOwn(item, 'description') ? { description: item.description } : {}),
       ...(Object.hasOwn(item, 'website') ? { website: item.website } : {}),
+      ...optionalVisibility(item),
     })),
-    showcases: value.showcases.filter(item => isPublicShowcase(item, value)).map(item => {
+    showcases: value.showcases.filter(item => legacyVisibility ? legacyPublicShowcase(item, value) : isContentVisible(item)).map(item => {
       const allocated = showcaseAllocations(item, value);
+      if (!publicBoothIds.has(allocated.boothId)) allocated.boothId = '';
       return {
         id: item.id, title: item.title, teamName: item.teamName, summary: item.summary, coverId: item.coverId,
-        coverUrl: '/api/public/portraits/' + item.coverId, ...allocated,
+        coverUrl: item.coverId ? '/api/public/portraits/' + item.coverId : '', ...allocated,
         participationForms: [allocated.boothId ? 'booth' : '', allocated.sessionId ? 'share' : ''].filter(Boolean),
-        status: 'confirmed', responseStatus: 'attending', publicConsent: true,
+        status: item.status, responseStatus: item.responseStatus, publicConsent: item.publicConsent,
+        ...optionalVisibility(item),
         ...(Object.hasOwn(item, 'kind') ? { kind: item.kind } : {}),
         ...(item.organizationId && publicOrganizationIds.has(item.organizationId) ? { organizationId: item.organizationId } : {}),
       };
@@ -521,15 +544,24 @@ export function toPublicContent(input) {
     guests: publicGuests.map(item => ({
       id: item.id, name: item.name, company: item.company, ggjRole: item.ggjRole, portraitId: item.portraitId,
       portraitUrl: item.portraitId ? '/api/public/portraits/' + item.portraitId : '',
-      // These affirmative publication fields keep the public snapshot idempotent
-      // when it is validated again on restart; consent history stays private.
-      status: 'confirmed', publicConsent: true,
+      // Public visibility does not fabricate profile confirmation or consent history.
+      status: item.status, publicConsent: item.publicConsent, ...optionalVisibility(item),
       ...Object.fromEntries(['title','bio','website','publicRoles'].filter(name => Object.hasOwn(item,name)).map(name => [name,structuredClone(item[name])])),
     })),
     ...(Object.hasOwn(value, 'organizations') ? { organizations: publicOrganizations.map(item => ({
       id: item.id, name: item.name, participation: item.participation, website: item.website,
-      logoId: item.logoId, status: 'confirmed', publicConsent: true,
+      logoId: item.logoId, status: item.status, publicConsent: item.publicConsent, ...optionalVisibility(item),
       logoUrl: item.logoId ? '/api/public/portraits/' + item.logoId : '',
     })) } : {}),
   };
+}
+
+/** A policy upgrade must not rewrite a frozen publication while merely reading it.
+ * Old snapshots can share the draft revision under the earlier consent-gated policy.
+ * Once visibility is explicitly edited, only the current projection can match. */
+export function matchesPublishedContent(content, publishedContent) {
+  const actual = JSON.stringify(toPublicContent(publishedContent));
+  if (JSON.stringify(toPublicContent(content)) === actual) return true;
+  if (['guests', 'organizations', 'showcases', 'booths'].some(key => (content[key] ?? []).some(item => Object.hasOwn(item, 'visibility')))) return false;
+  return JSON.stringify(toPublicContent(content, { legacyVisibility: true })) === actual;
 }

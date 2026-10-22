@@ -8,11 +8,11 @@ const booth = (patch = {}) => ({ id: 'synthetic-booth', code: 'C01', organizatio
 const content = (...booths) => ({ ...createInitialContent(), sessions: [], booths });
 const overview = value => buildArrangementOverview({ content: value, contacts: [], contentRevision: 1, contactsRevision: 0 });
 
-test('booth occupants retain private responsible contact details and publish only confirmed description with project title', () => {
+test('booth occupants retain private responsible contact details and publish default-visible descriptions while keeping contact details private', () => {
   const source = content(
     booth({ contactName: '  PRIVATE-RESPONSIBLE  ', contactMethods: 'PRIVATE-PHONE\nPRIVATE-WECHAT', description: '  合成展位内容\n试玩与交流  ' }),
-    booth({ id: 'pending', code: 'C02', slotNumber: 2, status: 'pending', organization: '', project: '', contactName: 'PRIVATE-PENDING', contactMethods: 'PRIVATE-CONTACT', description: 'PRIVATE-PENDING-DESCRIPTION' }),
-    booth({ id: 'cancelled', code: 'C03', slotNumber: 3, status: 'cancelled', description: 'PRIVATE-CANCELLED-DESCRIPTION' }),
+    booth({ id: 'pending', code: 'C02', slotNumber: 2, status: 'pending', organization: '', project: '', contactName: 'PRIVATE-PENDING', contactMethods: 'PRIVATE-CONTACT', description: '合成待确认公开说明' }),
+    booth({ id: 'cancelled', code: 'C03', slotNumber: 3, status: 'cancelled', visibility: 'private', description: 'PRIVATE-CANCELLED-DESCRIPTION' }),
   );
   const before = structuredClone(source), checked = validateContent(source);
   assert.equal(checked.valid, true, JSON.stringify(checked.errors));
@@ -20,7 +20,7 @@ test('booth occupants retain private responsible contact details and publish onl
   assert.equal(checked.value.booths[0].contactMethods, 'PRIVATE-PHONE\nPRIVATE-WECHAT');
   assert.equal(checked.value.booths[0].description, '合成展位内容\n试玩与交流');
   const published = toPublicContent(source);
-  assert.equal(published.booths.length, 1); assert.equal(published.booths[0].project, '合成项目标题');
+  assert.equal(published.booths.length, 2); assert.equal(published.booths[1].status, 'pending'); assert.equal(published.booths[1].description, '合成待确认公开说明'); assert.equal(published.booths[0].project, '合成项目标题');
   assert.equal(published.booths[0].description, '合成展位内容\n试玩与交流');
   assert.equal(JSON.stringify(published).includes('PRIVATE-'), false);
   for (const name of ['contactName', 'contactMethods']) assert.equal(Object.hasOwn(published.booths[0], name), false);

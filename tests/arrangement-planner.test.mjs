@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialContent } from '../src/config/content.mjs';
-import { createEmptyContactOperations } from '../shared/contacts-schema.mjs';
-import { prepareBoothDraft, prepareContactAssignments, boothReadiness, sessionTimeline } from '../src/lib/arrangement-planner.mjs';
+import { createEmptyContactOperations, validateImportedContact } from '../shared/contacts-schema.mjs';
+import { prepareBoothDraft, prepareContactAssignments, boothReadiness, sessionTimeline, assignmentSaveReceipt } from '../src/lib/arrangement-planner.mjs';
 
 const changes = { code:'C-01',organization:'合成机构',project:'合成作品',contactName:'合成负责人',contactMethods:'synthetic@example.invalid',description:'合成展示内容',status:'pending' };
 const content = () => ({ ...createInitialContent(), booths: [] });
@@ -64,4 +64,18 @@ test('direct assignment preserves current session duties and drops only links fo
   const contact={id:'contact-a',profile:{contactConsent:'consented'},operations:{...createEmptyContactOperations(),sessionIds:['morning','afternoon'],sessionRoles:[{sessionId:'morning',roles:['speaker']},{sessionId:'afternoon',roles:['organizer']}]}};
   const result=prepareContactAssignments(contact,{sessionIds:['afternoon'],boothIds:[]},base);
   assert.deepEqual(result.sessionRoles,[{sessionId:'afternoon',roles:['organizer']}]);assert.equal(contact.operations.sessionRoles.length,2);
+});
+
+test('assignment success proves exact contact, revision, allocations and unchanged reply rather than accepting any 2xx',()=>{
+  const {sourceRowId,...profile}=validateImportedContact({sourceRowId:'synthetic-assignment',name:'合成人员',email:'synthetic@example.invalid',contactConsent:'consented'}).value;
+  const contact={id:'contact-a',source:{key:'synthetic',rowId:sourceRowId,digest:'a'.repeat(64),importedAt:'2026-10-22T00:00:00Z'},profile,operations:{...createEmptyContactOperations(),owner:'合成同事',notes:'PRIVATE_SYNTHETIC',sessionIds:['session-a'],boothIds:['booth-a']},invitation:{generatedAt:null,settings:null,sentAt:null,channel:null,sentGenerationAt:null},createdAt:'2026-10-22T00:00:00Z',updatedAt:'2026-10-22T00:00:00Z'};
+  const pending={contactId:contact.id,expectedRevision:6,operations:structuredClone(contact.operations)},value={revision:7,contact};
+  assert.deepEqual(assignmentSaveReceipt(value,pending),value);
+  assert.notEqual(assignmentSaveReceipt(value,pending).contact,contact);
+  for(const mutate of [v=>{v.revision=6;},v=>{v.revision=8;},v=>{v.contact.id='foreign';},v=>{v.contact.operations.boothIds=[];},v=>{v.contact.operations.owner='different';},v=>{v.contact.operations.responseStatus='attending';},v=>{delete v.contact.profile;}]){
+    const input=structuredClone(value);mutate(input);assert.throws(()=>assignmentSaveReceipt(input,pending));
+  }
+  assert.throws(()=>assignmentSaveReceipt({revision:8,contact:{...contact,operations:{...contact.operations,boothIds:[]}}},pending,{readback:true}));
+  assert.deepEqual(assignmentSaveReceipt({...value,revision:9},pending,{readback:true}).contact.operations,contact.operations);
+  assert.throws(()=>assignmentSaveReceipt({revision:6,contact},pending,{readback:true}));
 });

@@ -48,23 +48,22 @@ test('public showcases project only authorized artwork fields and are idempotent
   assert.equal(content.showcases[0].title, '合成作品');
 });
 
-test('pending attendance, declined, pending review, no consent or no confirmed allocation cannot publish', () => {
-  for (const changes of [{ responseStatus: 'pending' }, { responseStatus: 'declined' }, { status: 'pending' }, { publicConsent: false }, { participationForms: [], sessionId: '', boothId: '' }]) {
-    const content = fixture();
-    Object.assign(content.showcases[0], changes);
+test('visibility alone controls public works while reply and allocation facts stay accurate', () => {
+  for (const changes of [{ responseStatus: 'pending' }, { responseStatus: 'declined' }, { status: 'pending' }, { publicConsent: false }, { coverId: '' }, { participationForms: [], sessionId: '', boothId: '' }]) {
+    const content = fixture(); Object.assign(content.showcases[0], changes);
     assert.equal(validateContent(content).valid, true, JSON.stringify(changes));
-    assert.deepEqual(toPublicContent(content).showcases, []);
+    const shown = toPublicContent(content).showcases[0]; assert.ok(shown);
+    for (const field of ['status','responseStatus','publicConsent','coverId']) assert.equal(shown[field],content.showcases[0][field]);
+    assert.deepEqual(toPublicContent(toPublicContent(content)),toPublicContent(content));
+    content.showcases[0].visibility='private'; assert.deepEqual(toPublicContent(content).showcases,[]);
   }
-  const content = fixture();
-  content.sessions[0].status = 'draft';
-  content.booths[0].status = 'pending';
+  const content = fixture(); content.sessions[0].status = 'draft'; content.booths[0].status = 'pending';
   assert.equal(validateContent(content).valid, true);
-  assert.deepEqual(toPublicContent(content).showcases, []);
-  content.sessions[0].status = 'scheduled';
-  const published = toPublicContent(content);
+  let published = toPublicContent(content); assert.equal(published.showcases.length,1);
+  assert.deepEqual(published.showcases[0].participationForms, []); assert.equal(published.showcases[0].sessionId,'');assert.equal(published.showcases[0].boothId,'');
+  content.sessions[0].status = 'scheduled'; published = toPublicContent(content);
   assert.deepEqual(published.showcases[0].participationForms, ['share']);
-  assert.equal(published.showcases[0].boothId, '');
-  assert.deepEqual(toPublicContent(published), published);
+  assert.equal(published.showcases[0].boothId, ''); assert.deepEqual(toPublicContent(published), published);
 });
 
 test('single-form applications publish their assigned form without requiring a second allocation', () => {
@@ -81,7 +80,7 @@ test('showcase basics, images, participation choices and exact assignments rejec
   const cases = [
     ['title', ''], ['teamName', ''], ['title', '合成\n作品'], ['school', 12], ['summary', '字'.repeat(301)],
     ['email', 'bad email'], ['email', 'x@example.invalid\n'], ['memberCount', 0], ['memberCount', 51], ['memberCount', 1.1], ['memberCount', '3'], ['memberCount', true],
-    ['coverId', 'https://example.invalid/image.png'], ['coverId', '../image.png'], ['coverId', 'a'.repeat(64) + '.svg'], ['coverId', ''],
+    ['coverId', 'https://example.invalid/image.png'], ['coverId', '../image.png'], ['coverId', 'a'.repeat(64) + '.svg'],
     ['participationForms', 'share'], ['participationForms', ['share', 'share']], ['participationForms', ['speaker']], ['participationForms', [1]],
     ['responseStatus', 'confirmed'], ['status', 'approved'], ['publicConsent', 'true'], ['sessionId', 'missing'], ['boothId', 'missing'],
     ['materialLinks', 'http://example.invalid/material'], ['materialLinks', 'https://user:password@example.invalid/material'], ['materialLinks', 'javascript:alert(1)'],
@@ -124,11 +123,11 @@ test('admin showcase summary counts recorded attending group sizes and active al
   content.showcases.push(showcase({ id: 'synthetic-pending', memberCount: 4, responseStatus: 'pending' }));
   content.showcases.push(showcase({ id: 'synthetic-declined', memberCount: 5, responseStatus: 'declined' }));
   assert.deepEqual(showcaseSummary(content.showcases, content), {
-    totalTeams: 4, confirmedTeams: 2, confirmedStudents: 5, shareTeams: 2, boothTeams: 1, readyToPublishTeams: 1,
+    totalTeams: 4, confirmedTeams: 2, confirmedStudents: 5, shareTeams: 2, boothTeams: 1, readyToPublishTeams: 4,
   });
 });
 
-test('display cards ignore forged URLs and private fields, reject duplicates, unapproved and malformed cards', () => {
+test('display cards ignore forged URLs and private fields while accepting public pending work and rejecting opt-outs or malformed cards', () => {
   const published = toPublicContent(fixture());
   const card = published.showcases[0];
   const cards = publicShowcaseCards([{ ...card, coverUrl: 'https://example.invalid/forged', email: 'PRIVATE-EMAIL' }]);
@@ -136,7 +135,8 @@ test('display cards ignore forged URLs and private fields, reject duplicates, un
   assert.equal(cards[0].coverUrl, '/api/public/portraits/' + coverId);
   assert.equal(JSON.stringify(cards).includes('PRIVATE-'), false);
   assert.equal(publicShowcaseCards([card, card]).length, 1);
-  for (const changes of [{ status: 'pending' }, { responseStatus: 'pending' }, { publicConsent: false }, { coverId: '../test.png' }, { title: 'bad\nname' }, { participationForms: [] }, { boothId: '' }, { summary: '字'.repeat(301) }]) assert.deepEqual(publicShowcaseCards([{ ...card, ...changes }]), []);
+  for (const changes of [{ visibility:'private' }, { coverId: '../test.png' }, { title: 'bad\nname' }, { participationForms: [] }, { boothId: '' }, { summary: '字'.repeat(301) }]) assert.deepEqual(publicShowcaseCards([{ ...card, ...changes }]), []);
+  for (const changes of [{status:'pending'},{responseStatus:'pending'},{responseStatus:'declined'},{publicConsent:false},{coverId:''}]) assert.equal(publicShowcaseCards([{...card,...changes}]).length,1);
   assert.deepEqual(publicShowcaseCards([{ ...card, status: undefined }]), []);
   const inherited = Object.create({ ...card });
   assert.deepEqual(publicShowcaseCards([inherited]), []);

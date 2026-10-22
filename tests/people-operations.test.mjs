@@ -210,14 +210,14 @@ test('a published same-name guest cannot be relinked until its public version is
   await blocked([{ ...draft.content.guests[0], contactId: second.contact.id, publicConsent: false }]);
   await blocked([{ ...draft.content.guests[0], contactId: '', publicConsent: false }]);
   await blocked([]);
-  await save({ ...draft.content, guests: [{ ...draft.content.guests[0], publicConsent: false }] });
+  await save({ ...draft.content, guests: [{ ...draft.content.guests[0], publicConsent: false, visibility: 'private' }] });
   await blocked([{ ...draft.content.guests[0], contactId: second.contact.id }]);
   const withdrawn = await publish(); assert.equal(withdrawn.content.guests.length, 0);
   const unreviewed = { ...draft.content, guests: [{ ...draft.content.guests[0], contactId: second.contact.id, publicConsent: true }] };
   await expectError(await request(f, '/api/admin/content', { expectedRevision: draft.revision, content: unreviewed }), 422, 'CONTACT_LINK_CONSENT_REQUIRED');
   await save({ ...draft.content, guests: [{ ...draft.content.guests[0], contactId: second.contact.id, publicConsent: false }] });
   assert.equal(draft.content.guests[0].contactId, second.contact.id);
-  await save({ ...draft.content, guests: [{ ...draft.content.guests[0], publicConsent: true }] });
+  await save({ ...draft.content, guests: [{ ...draft.content.guests[0], publicConsent: true, visibility: 'public' }] });
   assert.equal((await f.store.read()).published.content.guests.length, 0, 'a fresh consent save for B cannot attribute A\'s withdrawn public snapshot to B');
   const publicB = await publish(); assert.equal(publicB.content.guests.length, 1); assert.equal(publicB.content.guests[0].id, publicA.content.guests[0].id);
   assert.equal(JSON.stringify(publicB.content.guests[0]).includes(second.contact.id), false, 'private source linkage never enters public content');

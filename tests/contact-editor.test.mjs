@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS, validateManualContactProfile, validateContactProfileEdit, guestPrefillFromContact } from '../shared/contact-editor.mjs';
+import { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS, validateManualContactProfile, validateContactProfileEdit, savedContactProfileReceipt, guestPrefillFromContact } from '../shared/contact-editor.mjs';
 import { validateImportedContact, validateStoredContact, createEmptyContactOperations, validateContactOperations, PARTICIPATION_FORMS } from '../shared/contacts-schema.mjs';
 
 function importedProfile(overrides = {}) {
@@ -30,6 +30,23 @@ test('manual profile has no inferred contact consent or historic questionnaire a
   assert.equal('sourceRowId' in result.value, false);
   assert.equal(validateManualContactProfile({ name: '合成新增', contactConsent: 'consented' }).value.contactConsent, 'consented');
   for (const contactConsent of [true, 1, 'yes', '']) assert.equal(validateManualContactProfile({ name: '合成新增', contactConsent }).valid, false);
+});
+
+test('profile save acknowledges only the exact normalized edit with original consent, source and operations',()=>{
+  const previous=contact(),profile={name:' 合成修正 ',email:'OTHER@example.invalid',displayName:''};
+  const saved={...structuredClone(previous),profile:validateContactProfileEdit(profile,previous.profile).value,sourceProfile:structuredClone(previous.profile),sourceProfileDigest:'b'.repeat(64),updatedAt:'2026-10-22T00:00:00.000Z'};
+  const receipt={revision:4,contact:saved};assert.equal(validateStoredContact(saved),true);
+  assert.equal(savedContactProfileReceipt(receipt,{expectedRevision:3,profile,previous}).contact.id,previous.id);
+  for(const change of [value=>{value.revision=5;},value=>{value.contact.id='another-contact';},value=>{value.contact.profile.name='其他填写';},value=>{value.contact.profile.email='wrong@example.invalid';},value=>{value.contact.operations.owner='其他跟进人';},value=>{value.contact.profile.contactConsent='consented';},value=>{value.contact.sourceProfile.name='伪造来源';}]){
+    const changed=structuredClone(receipt);change(changed);assert.throws(()=>savedContactProfileReceipt(changed,{expectedRevision:3,profile,previous}));
+  }
+});
+
+test('new contact save requires the normalized manual profile and cannot confirm attendance in its receipt',()=>{
+  const profile={name:' 合成新增 ',email:'NEW@example.invalid'},normalized=validateManualContactProfile(profile).value;
+  const saved=contact(normalized);saved.source.key='manual';saved.sourceProfile=structuredClone(normalized);saved.sourceProfileDigest='c'.repeat(64);
+  const receipt={revision:1,contact:saved};assert.equal(savedContactProfileReceipt(receipt,{expectedRevision:0,profile}).contact.profile.displayName,'合成新增');
+  for(const change of [value=>{value.contact.profile.name='其他人物';},value=>{value.contact.source.key='imported';},value=>{value.contact.operations.responseStatus='attending';}]){const changed=structuredClone(receipt);change(changed);assert.throws(()=>savedContactProfileReceipt(changed,{expectedRevision:0,profile}));}
 });
 
 test('profile patch preserves original noneditable answers and refuses privilege or consent mass assignment', () => {

@@ -47,7 +47,7 @@ export function personRelationshipsProjection(value) {
     const result = publicProfileProjection(guest.contactId, source), profile = result.profiles.find(item => item.id === guest.id);
     if (!profile) fail();
     profiles.push({ id: profile.id, contactId: guest.contactId, publicRoles: profile.publicRoles, status: profile.status,
-      publicConsent: profile.publicConsent, hasPortrait: profile.hasPortrait, published: profile.published, publishedMatchesDraft: profile.publishedMatchesDraft });
+      publicConsent: profile.publicConsent, ...(Object.hasOwn(profile, 'visibility') ? { visibility: profile.visibility } : {}), hasPortrait: profile.hasPortrait, published: profile.published, publishedMatchesDraft: profile.publishedMatchesDraft });
   }
   const boothOrganizations = booths.flatMap(booth => {
     if (!Object.hasOwn(booth, 'organizationId')) return [];

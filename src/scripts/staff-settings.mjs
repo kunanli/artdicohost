@@ -1,5 +1,6 @@
 import {COLLABORATOR_ROLES,canManageEventOperations,canManageAccounts,canRecoverSystem} from '../../shared/staff-permissions.mjs';
 import {createSettingsFormDraft} from '../lib/settings-form-draft.mjs';
+import {groupInviteExpiryBounds,groupInviteExpiryPreset,validateGroupInviteExpiry} from '../lib/group-invite-expiry.mjs';
 const roles={editor:'内容编辑',publisher:'公开发布',outreach:'人员邀约',reviewer:'报名审核',superadmin:'账号与维护'};
 const KEY=/^[A-Za-z0-9_-]{43}$/u;
 function element(tag,text){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;return node;}
@@ -58,9 +59,29 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
   let accountKey='',userDirty=false,groupDirty=false,restoreDirty=false,groupImageGeneration=0;
   let backupUrl=null,keyUrl=null,userEditRevision=null,generation=0;
   let usersSequence=0,groupSequence=0,maintenanceSequence=0,userDirectory=null,lastGeneratedPassword='';
+  let groupClock=null,groupClockObserved=0;
+  const formStates={users:'loaded',group:'loaded',restore:'loaded'};
   const credentials=new Map();
   const drafts=new Map();
   const unknown=new Set();
+  function saveState(kind,state,message){
+    formStates[kind]=state;const output=$('[data-settings-form-state="'+kind+'"]');
+    if(output){output.dataset.saveState=state;output.textContent=message??({loaded:'尚未修改',unsaved:'未保存',saving:'保存中…',saved:'已保存',unknown:'保存结果待核对',error:'未保存 · 请核对后重试'})[state]??'';}
+    const button=$('[data-settings-save-button="'+kind+'"]');if(button)button.textContent=state==='saving'?'保存中…':'保存';
+  }
+  function fieldError(name,message=''){
+    const field=$('[data-group-form]').elements.namedItem(name),output=$(name==='image'?'[data-group-image-error]':'[data-group-expiry-error]');
+    field.setAttribute?.('aria-invalid',String(Boolean(message)));if(output){output.textContent=message;output.hidden=!message;}
+  }
+  function expiryBounds(){return groupInviteExpiryBounds(groupClock,Math.max(0,performance.now()-groupClockObserved));}
+  function updateExpiry({initialize=false,validate=false}={}){
+    const bounds=expiryBounds(),field=$('[data-group-form]').elements.namedItem('expiresAt'),hint=$('[data-group-expiry-hint]');
+    field.min=bounds?.min??'';field.max=bounds?.max??'';
+    if(initialize&&!field.value&&bounds)field.value=bounds.defaultValue;
+    if(hint)hint.textContent=bounds?'最晚可选 '+bounds.maxLabel+'；按服务器当前时间计算。':'请刷新群码状态，读取服务器允许的到期范围。';
+    if(validate)fieldError('expiresAt',validateGroupInviteExpiry(field.value,bounds).message);return bounds;
+  }
+  function checkImage(file){return !file?'请选择要保存的二维码原图。':!['image/png','image/jpeg','image/webp'].includes(file.type)||!file.size||file.size>512*1024?'请选择不超过 512 KiB 的 PNG、JPEG 或 WebP 原图。':'';}
   function status(message,error=false){$('[data-settings-status]').textContent=error?'':message;$('[data-settings-error]').textContent=error?message:'';$('[data-settings-error]').hidden=!error;if(error)$('[data-settings-error]').focus();}
   function lock(){
     for(const field of root.querySelectorAll('button,input,select,textarea'))field.disabled=busy||externalBusy||!canManageEventOperations(user)||field.hasAttribute('data-settings-protected');
@@ -75,22 +96,31 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
     for(const field of $('[data-restore-form]').querySelectorAll('input,button'))field.disabled=busy||externalBusy||!canRecoverSystem(user)||maintenance?.enabled!==true||unknown.has('restore')||drafts.get('restore')?.blocked;
     $('[data-settings-pending]').hidden=unknown.size===0;
     $('[data-settings-pending]').textContent=unknown.size?'上次'+[...unknown].map(kind=>({users:'账号保存',group:'群码修改',restore:'隔离恢复'})[kind]).join('、')+'结果待核对。先刷新对应区块并逐项比较原输入；不会自动重送。恢复结果须按原隔离名称核对审计，不要换名重复提交。':'';
+    for(const kind of ['users','group']){if(unknown.has(kind))saveState(kind,'unknown');const button=$('[data-settings-save-button="'+kind+'"]');if(button)button.disabled||=formStates[kind]==='saved'||(kind==='group'?groupRevision===null:usersRevision===null);}
   }
   async function write(kind,path,options,validate){
     if(!(kind==='users'?canManageAccounts(user):kind==='restore'?canRecoverSystem(user):canManageEventOperations(user)))throw new Error('此账号没有执行该设置操作的权限。');
     if(unknown.has(kind))throw new Error('请先核对上次操作结果，不会自动重送。');
     const started=generation;
-    const draft=drafts.get(kind);if(draft){const body=kind==='group'?JSON.parse(options.body):null;await draft.markPending(body?{expiresAt:body.expiresAt??'',action:options.method==='PUT'?'disable':'replace'}:undefined);current(started);}
-    try{const value=await request(path,options);current(started);if(validate&&!validate(value))throw new Error('写入结果未通过核对，请保留原输入并刷新对应区块。');if(draft)await draft.discard();current(started);return value;}
-    catch(error){if(started===generation){if(!Number.isInteger(error.status)||error.status>=500){unknown.add(kind);try{await draft?.markUncertain();}catch{}}else if(!unknown.has(kind)&&draft){try{await draft.rejectPending();}catch{unknown.add(kind);}}}throw error;}
+    saveState(kind,'saving');
+    const draft=drafts.get(kind);if(draft){try{const body=kind==='group'?JSON.parse(options.body):null;await draft.markPending(body?{expiresAt:body.expiresAt??'',action:options.method==='PUT'?'disable':'replace'}:undefined);current(started);}catch(error){if(started===generation)saveState(kind,'error','未保存 · 请保留本页填写');throw error;}}
+    try{const value=await request(path,options);current(started);if(validate&&!validate(value))throw new Error('写入结果未通过核对，请保留原输入并刷新对应区块。');if(draft)await draft.discard();current(started);saveState(kind,'saved');return value;}
+    catch(error){if(started===generation){if(!Number.isInteger(error.status)||error.status>=500){unknown.add(kind);try{await draft?.markUncertain();}catch{}}else if(!unknown.has(kind)&&draft){try{await draft.rejectPending();}catch{unknown.add(kind);}}saveState(kind,unknown.has(kind)?'unknown':'error');}throw error;}
   }
-  async function action(callback,permission=canManageEventOperations){if(busy||externalBusy||!permission(user))return;const started=generation;busy=true;lock();try{await callback(started);}catch(error){if(started===generation)status(error.message||'操作尚未完成，请刷新核对后重试。',true);}finally{if(started===generation){busy=false;lock();}}}
+  async function action(callback,permission=canManageEventOperations){if(busy||externalBusy||!permission(user))return;const started=generation;busy=true;lock();try{await callback(started);}catch(error){if(started===generation){for(const kind of ['users','group','restore'])if(formStates[kind]==='saving')saveState(kind,'error');status(error.message||'操作尚未完成，请刷新核对后重试。',true);}}finally{if(started===generation){busy=false;lock();}}}
   function current(started){if(started!==generation||!canManageEventOperations(user))throw new Error('会话已改变，原操作不会写入新的账号。');}
   function resetUser(){
     userEditRevision=null;userDirty=false;
+    saveState('users','loaded');
     $('[data-user-form]').reset();$('[data-user-form] [name=id]').value='';$('[data-user-form] [name=password]').required=true;
     $('[data-user-form] [name=password]').type='password';$('[data-user-password-toggle]').textContent='显示密码';
     $('[data-user-form-title]').textContent='新增工作人员';$('[data-user-password-note]').textContent='新账号请设置至少 12 个字元的独立密码。';
+  }
+  function showUser(item){
+    if(!item||item.protected)return false;resetUser();userEditRevision=usersRevision;const form=$('[data-user-form]');
+    for(const key of ['id','username','email','label'])form.elements.namedItem(key).value=item[key]??'';
+    form.elements.namedItem('active').checked=item.active!==false;for(const input of form.querySelectorAll('[name=roles]'))input.checked=item.roles.includes(input.value);
+    form.elements.namedItem('password').required=false;$('[data-user-form-title]').textContent='编辑工作人员 · '+item.username;$('[data-user-password-note]').textContent='留空保留原密码；填写新密码将使原会话失效。';return true;
   }
   function wipeSecrets(){
     lastGeneratedPassword='';credentials.clear();$('[data-user-credential-list]').replaceChildren();$('[data-user-credentials]').hidden=true;
@@ -114,25 +144,25 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
   function generatePassword(){
     let value;for(let i=0;i<3;i++){value=generateInitialStaffPassword();if(value!==lastGeneratedPassword)break;value=null;}
     if(!value)throw new Error('未生成新的独立密码，请核对浏览器安全环境。');lastGeneratedPassword=value;
-    const input=$('[data-user-form] [name=password]');input.value=value;input.type='password';$('[data-user-password-toggle]').textContent='显示密码';userDirty=true;status('已生成本次独立密码。保存成功后才会提供已确认的登录资料。');
+    const input=$('[data-user-form] [name=password]');input.value=value;input.type='password';$('[data-user-password-toggle]').textContent='显示密码';userDirty=true;saveState('users','unsaved');lock();status('已生成本次独立密码。保存成功后才会提供已确认的登录资料。');
   }
-  function collaboratorPreset(){for(const field of $('[data-user-form]').querySelectorAll('[name=roles]'))field.checked=COLLABORATOR_ROLES.includes(field.value);userDirty=true;drafts.get('users')?.schedule();}
+  function collaboratorPreset(){for(const field of $('[data-user-form]').querySelectorAll('[name=roles]'))field.checked=COLLABORATOR_ROLES.includes(field.value);userDirty=true;saveState('users','unsaved');lock();drafts.get('users')?.schedule();}
   async function configureDrafts(started){
     if(!draftStore||!user?.id)return;
     const accountForm=$('[data-user-form]'),groupForm=$('[data-group-form]'),restoreForm=$('[data-restore-form]');
     const specs=[
       {kind:'group',form:groupForm,ready:groupRevision!==null,revision:()=>groupRevision,fields:['expiresAt','action'],
-        capture:()=>({expiresAt:groupForm.elements.namedItem('expiresAt').value,action:'replace'}),validate:value=>string(value.expiresAt,32)&&['replace','disable'].includes(value.action),apply:value=>{groupForm.elements.namedItem('expiresAt').value=value.expiresAt;groupDirty=true;}},
+        capture:()=>({expiresAt:groupForm.elements.namedItem('expiresAt').value,action:'replace'}),validate:value=>string(value.expiresAt,32)&&['replace','disable'].includes(value.action),apply:value=>{groupForm.elements.namedItem('expiresAt').value=value.expiresAt;groupDirty=true;saveState('group','unsaved');updateExpiry({validate:true});}},
       {kind:'users',form:accountForm,ready:canManageAccounts(user)&&usersRevision!==null,revision:()=>usersRevision,fields:['id','username','email','label','roles','active'],
         capture:()=>({id:accountForm.elements.namedItem('id').value,username:accountForm.elements.namedItem('username').value,email:accountForm.elements.namedItem('email').value,label:accountForm.elements.namedItem('label').value,roles:[...accountForm.querySelectorAll('[name=roles]:checked')].map(field=>field.value),active:accountForm.elements.namedItem('active').checked}),
         validate:value=>['id','username','email','label'].every(key=>string(value[key],key==='email'?254:120))&&Array.isArray(value.roles)&&value.roles.length<=5&&value.roles.every(role=>Object.hasOwn(roles,role))&&typeof value.active==='boolean',
-        apply:value=>{if(value.id&&!userDirectory?.users.some(row=>row.id===value.id&&!row.protected))throw new Error('账号已改变，请核对目录。');resetUser();for(const key of['id','username','email','label'])accountForm.elements.namedItem(key).value=value[key];for(const field of accountForm.querySelectorAll('[name=roles]'))field.checked=value.roles.includes(field.value);accountForm.elements.namedItem('active').checked=value.active;accountForm.elements.namedItem('password').required=!value.id;userEditRevision=usersRevision;userDirty=true;$('[data-user-form-title]').textContent=value.id?'编辑工作人员 · '+value.username:'新增工作人员';}},
+        apply:value=>{if(value.id&&!userDirectory?.users.some(row=>row.id===value.id&&!row.protected))throw new Error('账号已改变，请核对目录。');resetUser();for(const key of['id','username','email','label'])accountForm.elements.namedItem(key).value=value[key];for(const field of accountForm.querySelectorAll('[name=roles]'))field.checked=value.roles.includes(field.value);accountForm.elements.namedItem('active').checked=value.active;accountForm.elements.namedItem('password').required=!value.id;userEditRevision=usersRevision;userDirty=true;saveState('users','unsaved');$('[data-user-form-title]').textContent=value.id?'编辑工作人员 · '+value.username:'新增工作人员';}},
       {kind:'restore',form:restoreForm,ready:canRecoverSystem(user),revision:()=>0,fields:['restoreId'],capture:()=>({restoreId:restoreForm.elements.namedItem('restoreId').value}),validate:value=>string(value.restoreId,80),apply:value=>{restoreForm.elements.namedItem('restoreId').value=value.restoreId;restoreDirty=true;}},
     ];
     for(const spec of specs){if(!includes(spec.kind)||!spec.ready||drafts.has(spec.kind)||started!==generation)continue;
       const draft=createSettingsFormDraft({store:draftStore,actorId:user.id,eventId,entity:spec.kind,form:spec.form,policy:{fields:[...spec.fields,'uncertain'],pendingFields:spec.fields,
         validate:value=>spec.validate(value)&&(value.uncertain===undefined||typeof value.uncertain==='boolean'),rejectPending:value=>recoverRejectedSettingsDraft(spec.kind,value)},baseRevision:spec.revision,isCurrent:()=>started===generation&&canManageEventOperations(user),capture:spec.capture,apply:spec.apply,onChange:lock,
-        onPending:()=>{unknown.add(spec.kind);},onDiscard:()=>{unknown.delete(spec.kind);spec.form.reset();if(spec.kind==='users')resetUser();else if(spec.kind==='group')groupDirty=false;else restoreDirty=false;lock();}});
+        onPending:()=>{unknown.add(spec.kind);},onDiscard:()=>{unknown.delete(spec.kind);spec.form.reset();if(spec.kind==='users')resetUser();else if(spec.kind==='group'){groupDirty=false;fieldError('image');fieldError('expiresAt');updateExpiry({initialize:true});saveState('group','loaded');}else restoreDirty=false;lock();}});
       drafts.set(spec.kind,draft);try{await draft.load();}catch{}if(started!==generation)return;
     }lock();
   }
@@ -144,16 +174,16 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
       const row=element('tr'),identity=element('td',item.label||item.username);identity.append(element('small',item.username+(item.email?' · '+item.email:'')));row.append(identity,element('td',(item.roles??[]).map(role=>roles[role]??role).join(' / ')),element('td',item.active===false?'已停用':'已启用'));
       const actionCell=element('td'),button=element('button',item.protected?'受保护账号':'编辑账号');button.type='button';button.className='ah-admin-button';
       if(item.protected){button.dataset.settingsProtected='';button.disabled=true;}
-      button.addEventListener('click',()=>{if(item.protected||busy||externalBusy||unknown.has('users')||drafts.get('users')?.blocked)return;if(userDirty&&!confirm('账号表单有未保存内容，放弃后编辑另一个账号吗？'))return;resetUser();userEditRevision=usersRevision;const form=$('[data-user-form]');for(const key of ['id','username','email','label'])form.elements.namedItem(key).value=item[key]??'';form.elements.namedItem('active').checked=item.active!==false;for(const input of form.querySelectorAll('[name=roles]'))input.checked=item.roles.includes(input.value);form.elements.namedItem('password').required=false;$('[data-user-form-title]').textContent='编辑工作人员 · '+item.username;$('[data-user-password-note]').textContent='留空保留原密码；填写新密码将使原会话失效。';drafts.get('users')?.schedule();form.scrollIntoView({block:'start',behavior:'smooth'});});
+      button.addEventListener('click',()=>{if(item.protected||busy||externalBusy||unknown.has('users')||drafts.get('users')?.blocked)return;if(userDirty&&!confirm('账号表单有未保存内容，放弃后编辑另一个账号吗？'))return;showUser(item);drafts.get('users')?.schedule();$('[data-user-form]').scrollIntoView({block:'start',behavior:'smooth'});});
       actionCell.append(button);row.append(actionCell);output.append(row);
     }
   }
   async function loadGroup(){
     const started=generation,sequence=++groupSequence,state=await request('/api/admin/group-invite');current(started);if(sequence!==groupSequence)return;if(!Number.isSafeInteger(state.revision)||state.revision<0||typeof state.configured!=='boolean'||typeof state.expired!=='boolean'||state.configured&&!Number.isFinite(Date.parse(state.expiresAt)))throw new Error('群码状态结果无效。');
-    groupRevision=state.revision;groupConfigured=state.configured===true;if(unknown.has('group'))status('已重新读取群码。读取不能证明先前修改成功，请人工核对后解除本机锁定。',true);
+    groupRevision=state.revision;groupConfigured=state.configured===true;groupClock=state;groupClockObserved=performance.now();updateExpiry({initialize:true,validate:groupDirty});if(unknown.has('group'))status('已重新读取群码。读取不能证明先前修改成功，请人工核对后解除本机锁定。',true);
     $('[data-group-status]').textContent=!groupConfigured?'尚未配置入群图片，报名保存成功仍会显示编号。':(state.expired?'当前二维码已过期。':'当前二维码已配置。')+' 到期时间：'+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Taipei',dateStyle:'medium',timeStyle:'short'}).format(new Date(state.expiresAt))+'（UTC+8）';
     const old=$('[data-group-image]'),image=old.cloneNode(false),stamp=++groupImageGeneration;old.removeAttribute('src');old.replaceWith(image);image.hidden=true;image.removeAttribute('src');if(groupConfigured){image.addEventListener('error',()=>{if(started===generation&&stamp===groupImageGeneration)image.hidden=true;},{once:true});image.src='/api/admin/group-invite/image';image.hidden=false;}
-    root.dispatchEvent(new CustomEvent('staff-settings-state',{detail:{configured:groupConfigured,expired:state.expired,expiresAt:groupConfigured?state.expiresAt:null}}));
+    root.dispatchEvent(new CustomEvent('staff-settings-state',{detail:{configured:groupConfigured,expired:state.expired,expiresAt:groupConfigured?state.expiresAt:null,serverTime:state.serverTime,maxExpiresAt:state.maxExpiresAt}}));
   }
   async function loadMaintenance(){if(!canRecoverSystem(user))return;const started=generation,sequence=++maintenanceSequence,value=await request('/api/admin/maintenance');current(started);if(sequence!==maintenanceSequence)return;maintenance=value;if(unknown.has('restore'))status('维护能力已读取。不能据此确认先前恢复结果；请按原隔离恢复名称核对审计并解除本机锁定，不要换名重复提交。',true);$('[data-maintenance-status]').textContent=maintenance.enabled===true?'可创建加密备份，并验证恢复到隔离位置。旧会话不会恢复；生产切换仍须另行核对。':'维护工具尚未就绪，请使用核定的人工运维流程。';lock();}
   function clearBackup(){if(backupUrl)URL.revokeObjectURL(backupUrl);if(keyUrl)URL.revokeObjectURL(keyUrl);backupUrl=null;keyUrl=null;$('[data-backup-result]').hidden=true;for(const selector of ['[data-backup-download]','[data-backup-key-download]'])$(selector).removeAttribute('href');$('[data-backup-summary]').textContent='';}
@@ -172,7 +202,10 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
     try{generatePassword();drafts.get('users')?.schedule();form.scrollIntoView({block:'start',behavior:'smooth'});}catch(error){status(error.message,true);}
   });
   $('[data-user-discard-unknown]').addEventListener('click',async()=>{if(!canManageAccounts(user)||busy||externalBusy||!unknown.has('users'))return;if(!confirm('仅放弃本页未确认输入，不会撤销或重送服务器操作。已核对目录后继续吗？'))return;try{await drafts.get('users')?.discard();unknown.delete('users');resetUser();lock();status('已放弃本页未确认输入。若账号已存在，请编辑已有账号并设置新的独立密码。');}catch{status('本机待核对记录尚未清除，请保留当前页面。',true);}});
-  for(const [selector,mark]of [['[data-user-form]',()=>{userDirty=true;}],['[data-group-form]',()=>{groupDirty=true;}],['[data-restore-form]',()=>{restoreDirty=true;}]]){const form=$(selector);form.addEventListener('input',mark);form.addEventListener('change',mark);}
+  for(const [selector,kind,mark]of [['[data-user-form]','users',()=>{userDirty=true;}],['[data-group-form]','group',()=>{groupDirty=true;}],['[data-restore-form]','restore',()=>{restoreDirty=true;}]]){const form=$(selector);const changed=()=>{mark();saveState(kind,'unsaved');status('');lock();};form.addEventListener('input',changed);form.addEventListener('change',changed);}
+  $('[data-group-form]').elements.namedItem('expiresAt').addEventListener?.('input',()=>updateExpiry({validate:true}));
+  $('[data-group-form]').elements.namedItem('image').addEventListener?.('change',()=>{fieldError('image',checkImage($('[data-group-form]').elements.namedItem('image').files?.[0]));updateExpiry({initialize:true});});
+  for(const button of root.querySelectorAll('[data-group-expiry-days]'))button.addEventListener('click',()=>{if(busy||externalBusy||unknown.has('group'))return;const bounds=updateExpiry(),value=groupInviteExpiryPreset(bounds,Number(button.dataset.groupExpiryDays));if(!value){fieldError('expiresAt','请先刷新群码状态，再选择到期时间。');return;}$('[data-group-form]').elements.namedItem('expiresAt').value=value;groupDirty=true;saveState('group','unsaved');status('');fieldError('expiresAt');drafts.get('group')?.schedule();lock();});
   $('[data-user-form]').addEventListener('submit',event=>{
     event.preventDefault();const form=event.currentTarget;if(!form.reportValidity()||usersRevision===null)return;
     const data=new FormData(form);const input={expectedRevision:userEditRevision??usersRevision,username:data.get('username'),label:data.get('label')||data.get('username'),roles:data.getAll('roles'),active:data.has('active')};
@@ -182,22 +215,23 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
     action(async started=>{try{current(started);if(!before||before.revision!==input.expectedRevision)throw new Error('账号目录已改变，请刷新并重新核对表单。');
       const saved=await write('users','/api/admin/users',{method:'POST',body:JSON.stringify(input)},value=>staffUserSaveAcknowledged({input,before,after:value}));current(started);
       if(input.password){credentials.set(input.username.trim().toLowerCase(),input.password);renderCredentials();}
-      usersSequence++;userDirectory=staffDirectory(saved);usersRevision=saved.revision;resetUser();await loadUsers();current(started);status('工作人员账号已保存并核对权限。请私下交付本页已确认的登录资料。');
+      usersSequence++;userDirectory=staffDirectory(saved);usersRevision=saved.revision;const savedUser=userDirectory.users.find(row=>row.username===input.username.trim().toLowerCase());resetUser();await loadUsers();current(started);const currentUser=userDirectory.users.find(row=>row.id===savedUser?.id),retained=showUser(currentUser);saveState('users','saved',!retained?'已保存 · 目录已更新，请重新选择账号':rowFingerprint(currentUser)!==rowFingerprint(savedUser)?'已保存 · 当前账号已由其他操作更新':'已保存 · '+currentUser.username);status('工作人员账号已保存并核对权限。请私下交付本页已确认的登录资料。');
     }finally{if(started===generation)form.elements.namedItem('password').value='';input.password='';}},canManageAccounts);
   });
   $('[data-group-refresh]').addEventListener('click',()=>action(loadGroup));
   $('[data-group-form]').addEventListener('submit',event=>{
-    event.preventDefault();const form=event.currentTarget;if(!form.reportValidity()||groupRevision===null)return;
-    const file=form.elements.namedItem('image').files?.[0],date=form.elements.namedItem('expiresAt').value,expectedRevision=groupRevision;
+    event.preventDefault();const form=event.currentTarget;if(groupRevision===null||busy||externalBusy||unknown.has('group'))return;
+    const file=form.elements.namedItem('image').files?.[0],imageMessage=checkImage(file),bounds=updateExpiry(),expiry=validateGroupInviteExpiry(form.elements.namedItem('expiresAt').value,bounds),expectedRevision=groupRevision;
+    fieldError('image',imageMessage);fieldError('expiresAt',expiry.message);
+    if(imageMessage||!expiry.valid){saveState('group','error','未保存 · 请检查标出的字段');form.elements.namedItem(imageMessage?'image':'expiresAt').focus?.();return;}
     action(async started=>{
-      if(!file||!['image/png','image/jpeg','image/webp'].includes(file.type)||!file.size||file.size>512*1024)throw new Error('请选择不超过 512 KiB 的 PNG、JPEG 或 WebP 原图。');
-      if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u.test(date))throw new Error('请填写已核对的准确到期时间。');
-      const expiresAt=date+':00+08:00',time=Date.parse(expiresAt);if(!Number.isFinite(time)||time<=Date.now()||time>Date.now()+7*86400000)throw new Error('到期时间须在未来 7 天内，并与图片真实有效期一致。');
-      const bytes=new Uint8Array(await file.arrayBuffer());current(started);await write('group','/api/admin/group-invite',{method:'POST',body:JSON.stringify({expectedRevision,contentType:file.type,dataBase64:base64(bytes),expiresAt})},value=>value.revision===expectedRevision+1&&value.configured===true&&value.expiresAt===new Date(expiresAt).toISOString());current(started);
-      groupSequence++;form.reset();groupDirty=false;await loadGroup();current(started);status('当前入群图片已更新。旧入口失效，过期时间不会自动延长。');
+      saveState('group','saving');const bytes=new Uint8Array(await file.arrayBuffer());current(started);
+      const sourceSha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),byte=>byte.toString(16).padStart(2,'0')).join('');current(started);
+      await write('group','/api/admin/group-invite',{method:'POST',body:JSON.stringify({expectedRevision,contentType:file.type,dataBase64:base64(bytes),expiresAt:expiry.expiresAt})},value=>value.revision===expectedRevision+1&&value.configured===true&&value.expiresAt===expiry.expiresAt&&value.contentType===file.type&&value.sourceSha256===sourceSha256);current(started);
+      groupSequence++;form.reset();groupDirty=false;fieldError('image');fieldError('expiresAt');await loadGroup();current(started);saveState('group','saved');status('已保存当前入群图片。旧入口失效，到期时间不会自动延长。');
     });
   });
-  $('[data-group-disable]').addEventListener('click',()=>action(async started=>{if(!confirm('关闭后，新的报名成功收据不再提供群码。报名编号与已保存资料不受影响。确认关闭吗？'))return;const expectedRevision=groupRevision;await write('group','/api/admin/group-invite',{method:'PUT',body:JSON.stringify({expectedRevision,enabled:false})},value=>value.revision===expectedRevision+1&&value.configured===false);current(started);groupSequence++;await loadGroup();current(started);status('已关闭入群图片；已保存报名仍然有效。');}));
+  $('[data-group-disable]').addEventListener('click',()=>action(async started=>{if(!confirm('关闭后，新的报名成功收据不再提供群码。报名编号与已保存资料不受影响。确认关闭吗？'))return;const expectedRevision=groupRevision;await write('group','/api/admin/group-invite',{method:'PUT',body:JSON.stringify({expectedRevision,enabled:false})},value=>value.revision===expectedRevision+1&&value.configured===false);current(started);groupSequence++;await loadGroup();current(started);saveState('group',groupDirty?'unsaved':'saved',groupDirty?'未保存 · 新二维码填写仍保留':'已保存 · 入群图片已关闭');status('已关闭入群图片；已保存报名仍然有效。');}));
   $('[data-maintenance-refresh]').addEventListener('click',()=>action(loadMaintenance,canRecoverSystem));
   $('[data-backup-create]').addEventListener('click',()=>action(async()=>{
     const started=generation;
@@ -227,9 +261,9 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
   });
   function clear(){
     for(const draft of drafts.values())draft.close();drafts.clear();
-    generation++;usersSequence++;groupSequence++;maintenanceSequence++;groupImageGeneration++;unknown.clear();user=null;busy=false;accountKey='';userDirty=false;groupDirty=false;restoreDirty=false;usersRevision=null;userDirectory=null;groupRevision=null;groupConfigured=false;maintenance=null;root.hidden=true;wipeSecrets();
+    generation++;usersSequence++;groupSequence++;maintenanceSequence++;groupImageGeneration++;unknown.clear();user=null;busy=false;accountKey='';userDirty=false;groupDirty=false;restoreDirty=false;usersRevision=null;userDirectory=null;groupRevision=null;groupConfigured=false;groupClock=null;groupClockObserved=0;maintenance=null;root.hidden=true;wipeSecrets();
     for(const form of root.querySelectorAll('form')){form.reset();for(const field of form.querySelectorAll('input[type=hidden]'))field.value='';}
-    $('[data-users-list]').replaceChildren();$('[data-group-image]').removeAttribute('src');$('[data-group-image]').hidden=true;$('[data-restore-result]').textContent='';$('[data-group-status]').textContent='群码状态尚未载入。';$('[data-maintenance-status]').textContent='维护能力尚未载入。';status('');lock();
+    $('[data-users-list]').replaceChildren();$('[data-group-image]').removeAttribute('src');$('[data-group-image]').hidden=true;$('[data-restore-result]').textContent='';$('[data-group-status]').textContent='群码状态尚未载入。';$('[data-maintenance-status]').textContent='维护能力尚未载入。';for(const kind of ['users','group','restore'])saveState(kind,'loaded');fieldError('image');fieldError('expiresAt');status('');lock();
   }
   return Object.freeze({
     get pending(){return busy||unknown.size>0;},get dirty(){return userDirty||groupDirty||restoreDirty;},clear,wipeSecrets,lock(value){externalBusy=value;lock();},

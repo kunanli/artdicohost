@@ -13,12 +13,12 @@ test('optional public profile fields leave historical normalized and published s
  assert.deepEqual(toPublicContent(published),published);
  assert.deepEqual(publicGuestCards(published.guests)[0],{id:'synthetic-person',name:'合成嘉宾',company:'合成机构',ggjRole:'',portraitId:'a'.repeat(64)+'.jpg',portraitUrl:'/api/public/portraits/'+'a'.repeat(64)+'.jpg'});
 });
-test('new profile fields require the same explicit confirmation and public consent as the photo',()=>{
+test('profile fields follow public visibility while preserving confirmation and consent facts',()=>{
  const content=fixture();Object.assign(content.guests[0],profile);
  const published=toPublicContent(content),card=publicGuestCards(published.guests)[0];
  for(const[key,value]of Object.entries(profile))assert.deepEqual(card[key],value);
  assert.doesNotMatch(JSON.stringify(published),/PRIVATE-/u);assert.deepEqual(toPublicContent(published),published);
- for(const changes of [{publicConsent:false},{status:'pending'},{portraitId:'',publicConsent:false}]){const copy=structuredClone(content);Object.assign(copy.guests[0],changes);assert.deepEqual(toPublicContent(copy).guests,[]);}
+ for(const changes of [{publicConsent:false},{status:'pending'},{portraitId:'',publicConsent:false}]){const copy=structuredClone(content);Object.assign(copy.guests[0],changes);const visible=toPublicContent(copy).guests[0];assert.ok(visible);assert.equal(visible.status,copy.guests[0].status);assert.equal(visible.publicConsent,copy.guests[0].publicConsent);copy.guests[0].visibility='private';assert.deepEqual(toPublicContent(copy).guests,[]);}
  assert.equal(content.guests[0].contactId,'PRIVATE-CONTACT-ID');
 });
 test('malformed role lists, oversized descriptions and active or credential-bearing sites cannot enter publication',()=>{

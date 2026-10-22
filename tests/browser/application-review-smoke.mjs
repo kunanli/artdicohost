@@ -27,7 +27,7 @@ async function fixture({ width = 390, capacity = 3, mail = true, username = 'own
   // setFixedTime leaves event-loop timers running normally.
   await page.clock.setFixedTime(new Date('2026-10-21T09:00:00.000Z'));
   const calls = [], writes = [], reads = [];
-  let loseSubmit = submitAckLost, loseApproval = approvalAckLost, approving = false, rejectAdmissionRead = false, rejectNextApproval = false;
+  let loseSubmit = submitAckLost, loseApproval = approvalAckLost, approving = false, rejectAdmissionRead = false, rejectNextApproval = false, rejectReviewSave = false, failReviewList = false, wrongReviewIdentity = false;
   const append = runtime.objects.append.bind(runtime.objects);
   runtime.objects.append = async (key, ...args) => {
     const result = await append(key, ...args);
@@ -49,6 +49,8 @@ async function fixture({ width = 390, capacity = 3, mail = true, username = 'own
       if (path.endsWith('/registration/confirmation')) assert.equal(requestHeaders.referer, undefined, 'private receipt is not a Referer');
       if (rejectAdmissionRead && path === '/api/admin/admissions' && req.method() === 'GET') return route.fulfill(json({}, 401));
       if (rejectNextApproval && path === '/api/admin/admissions/approve') { rejectNextApproval = false; entry.status = 401; return route.fulfill(json({}, 401)); }
+      if(rejectReviewSave&&path.endsWith('/review')&&req.method()==='PATCH'){rejectReviewSave=false;entry.status=422;return route.fulfill(json({error:{code:'VALIDATION_ERROR',fields:{internalNotes:'合成校验失败，填写保留'}}},422));}
+      if(failReviewList&&path==='/api/admin/registrations'&&req.method()==='GET'){failReviewList=false;entry.status=503;return route.fulfill(json({error:{code:'UNAVAILABLE'}},503));}
       const request = new Request(req.url(), { method: req.method(), headers: requestHeaders,
         ...(['GET', 'HEAD'].includes(req.method()) ? {} : { body: req.postData() }) });
       approving = path === '/api/admin/admissions/approve';
@@ -59,6 +61,7 @@ async function fixture({ width = 390, capacity = 3, mail = true, username = 'own
         loseSubmit = false; await response.arrayBuffer();
         return route.fulfill(json({ error: { code: 'UNAVAILABLE' } }, 503, { 'access-control-allow-origin': SITE }));
       }
+      if(wrongReviewIdentity&&/^\/api\/admin\/registrations\/[A-Za-z0-9_-]{43}$/u.test(path)&&req.method()==='GET'){wrongReviewIdentity=false;const value=await response.json();value.registration.id='z'.repeat(43);return route.fulfill(json(value,response.status));}
       return route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: Buffer.from(await response.arrayBuffer()) });
     }
     const file = resolve(dist, '.' + (path.endsWith('/') ? path + 'index.html' : path));
@@ -70,7 +73,7 @@ async function fixture({ width = 390, capacity = 3, mail = true, username = 'own
     const response = await runtime.app.handle(runtime.request(path, { method, body, headers: useHeaders }));
     const value = await response.json(); assert.equal(response.status, status, JSON.stringify(value)); return value;
   }
-  return { runtime, context, page, headers, calls, writes, reads, api, expireNextApproval: () => { rejectNextApproval = true; }, expireAdmissionRead: () => { rejectAdmissionRead = true; } };
+  return { runtime, context, page, headers, calls, writes, reads, api, expireNextApproval: () => { rejectNextApproval = true; }, expireAdmissionRead: () => { rejectAdmissionRead = true; },rejectNextReviewSave:()=>{rejectReviewSave=true;},failNextReviewList:()=>{failReviewList=true;},wrongNextReviewIdentity:()=>{wrongReviewIdentity=true;} };
 }
 async function noOverflow(page) { assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true); }
 async function openPublic(f) {
@@ -181,7 +184,7 @@ try {
     await f.page.locator('[data-review-rows] tr').first().getByRole('button', { name: '查看与核查' }).click();
     await f.page.locator('[data-review-dialog][open]').waitFor(); await f.page.locator('[data-review-form] [name=status]').selectOption('approved');
     assert.equal(await f.page.locator('[data-review-approve]').isDisabled(), true, 'unsaved internal notes must be saved before a formal decision');
-    await f.page.locator('[data-review-save]').click(); await f.page.locator('[data-review-status]').filter({ hasText: '核查记录已保存' }).waitFor();
+    await f.page.locator('[data-review-save]').click(); await f.page.locator('[data-review-form] [data-save-state=saved]').waitFor();
     await f.page.locator('[data-review-approve]:enabled').waitFor();
     await assertPending(f, pending.reference_code);
     await f.page.locator('[data-review-approve]').click();
@@ -192,8 +195,34 @@ try {
     await noOverflow(f.page); await f.context.close(); reports.push({ studentReviewFilter: true, internalApprovedAnnotationNoSeat: true, explicitReviewActionConfirmsAndSends: true });
   }
   {
+    const f=await fixture({width:1440,mail:false}),pending=await f.runtime.seedPublic(pendingFields('合成核查保存边界'));
+    await openReview(f);await f.page.locator('[data-review-rows] tr').first().getByRole('button',{name:'查看与核查'}).click();
+    const dialog=f.page.locator('[data-review-dialog][open]'),form=dialog.locator('[data-review-form]');await dialog.waitFor();
+    await form.locator('[name=assignedTo]').fill('  Cafe\u0301  ');await form.locator('[name=internalNotes]').fill('  合成核查备注  ');
+    f.rejectNextReviewSave();await form.locator('[data-review-save]').click();await form.locator('.ah-form-save-state[data-save-state=error]').waitFor();
+    assert.equal(await dialog.isVisible(),true);assert.equal(await form.locator('[name=internalNotes]').inputValue(),'  合成核查备注  ');assert.equal(await form.locator('[data-review-save]').isEnabled(),true);
+    assert.equal((await f.api('/api/admin/registrations/'+pending.reference_code)).review.internalNotes,'');
+    const detailsBefore=f.reads.filter(entry=>entry.path==='/api/admin/registrations/'+pending.reference_code).length;
+    f.failNextReviewList();await form.locator('[data-review-save]').click();await form.locator('.ah-form-save-state[data-save-state=saved]').waitFor();
+    await f.page.locator('[data-review-status]').filter({hasText:'列表暂未刷新'}).waitFor();
+    assert.equal(await dialog.isVisible(),true);assert.equal(await form.locator('[name=assignedTo]').inputValue(),'Café');assert.equal(await form.locator('[name=internalNotes]').inputValue(),'合成核查备注');assert.equal(await form.locator('[data-review-save]').isDisabled(),true);
+    assert.equal(f.reads.filter(entry=>entry.path==='/api/admin/registrations/'+pending.reference_code).length,detailsBefore+1,'adopt the first identity-matched readback without a second detail GET');
+    const saved=await f.api('/api/admin/registrations/'+pending.reference_code);assert.equal(saved.registration.id,pending.reference_code);assert.equal(saved.review.assignedTo,'Café');assert.equal(saved.review.internalNotes,'合成核查备注');
+    assert.equal(f.writes.filter(entry=>entry.path.endsWith('/review')).length,2);await assertPending(f,pending.reference_code);await f.context.close();
+    reports.push({review422KeepsInputAndAllowsCorrection:true,reviewSaveNormalizesWhitespaceAndNFC:true,identityMatchedFirstReadbackAdopted:true,postProofListFailureKeepsSavedEditor:true});
+  }
+  {
+    const f=await fixture({mail:false}),pending=await f.runtime.seedPublic(pendingFields('合成核查身份不匹配'));
+    await openReview(f);await f.page.locator('[data-review-rows] tr').first().getByRole('button',{name:'查看与核查'}).click();
+    const dialog=f.page.locator('[data-review-dialog][open]'),form=dialog.locator('[data-review-form]');await dialog.waitFor();
+    await form.locator('[name=internalNotes]').fill('合成身份核对备注');f.wrongNextReviewIdentity();await form.locator('[data-review-save]').click();await form.locator('.ah-form-save-state[data-save-state=unknown]').waitFor();
+    assert.equal(await dialog.isVisible(),true);assert.equal(await form.locator('[name=internalNotes]').inputValue(),'合成身份核对备注');assert.equal(await form.locator('[data-review-save]').isDisabled(),true);
+    assert.equal(f.writes.filter(entry=>entry.path.endsWith('/review')).length,1);await assertPending(f,pending.reference_code);await f.context.close();
+    reports.push({wrongReviewReadbackIdentityNeverShowsSaved:true,uncertainReviewRetainsInputWithoutAutomaticResubmit:true});
+  }
+  {
     const f = await fixture({ approvalAckLost: true }), pending = await f.runtime.seedPublic(pendingFields('合成未知审核回执'));
-    await openReview(f); await f.page.locator('[data-admissions-approve="' + pending.reference_code + '"]').click();
+    await openReview(f);const lostApproval=f.page.waitForResponse(response=>response.url().endsWith('/api/admin/admissions/approve')&&response.status()===503);await f.page.locator('[data-admissions-approve="' + pending.reference_code + '"]').click();await lostApproval;
     await f.page.locator('[data-admissions-pending]:visible').waitFor(); assert.equal(f.runtime.messages.length, 0);
     assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(pending.reference_code)).status, 'confirmed');
     assert.equal(f.writes.filter(item => item.path.endsWith('/admissions/approve')).length, 1);
@@ -233,7 +262,7 @@ try {
     await f.page.locator('[data-contacts-rows] tr').first().getByRole('button', { name: '编辑资料', exact: true }).click();
     await f.page.locator('[data-profile-dialog][open]').waitFor(); await f.page.locator('[data-profile-categories] [name=categories][value=so]').uncheck();
     await f.page.locator('[data-profile-categories] [name=categories][value=student]').check(); await f.page.locator('[data-profile-save]').click();
-    await f.page.locator('[data-profile-dialog]').waitFor({ state: 'hidden' });
+    await f.page.locator('[data-profile-dialog] .ah-form-save-state[data-save-state=saved]').waitFor();assert.equal(await f.page.locator('[data-profile-dialog]').isVisible(),true);await f.page.locator('[data-profile-close]').first().click();
     const current = (await f.runtime.app.contactsStore.read()).contacts.find(item => item.id === person.id);
     assert.deepEqual(current.profile.categories, ['student']); assert.deepEqual(current.sourceProfile.categories, ['so']);
     assert.deepEqual(current.source, person.source);
@@ -264,7 +293,7 @@ try {
     await f.page.locator('[data-admissions-status]').filter({ hasText: /已确认参会名额/u }).waitFor(); assert.equal(f.runtime.messages.length, 1);
     const attempts = f.writes.filter(item => item.path.endsWith('/admissions/approve'));
     assert.equal(attempts.length, 2); assert.deepEqual(attempts[0].body, attempts[1].body, 'the restored decision keeps its original operationId and expected revision');
-    await f.page.locator('[data-operations-local-draft="admission-pending"][data-operations-draft-state=discarded]').waitFor();
+    await f.page.locator('[data-operations-local-draft="admission-pending"][data-operations-draft-state=discarded]').waitFor({state:'attached'});
     f.expireAdmissionRead(); await f.page.locator('[data-admissions-refresh]').click(); await f.page.locator('[data-review-workspace]').waitFor({ state: 'hidden' });
     assert.equal(await f.page.locator('[data-admissions-people] tr').count(), 0); assert.equal(await f.page.locator('[data-admissions-metrics]').textContent(), '');
     assert.equal((await f.page.locator('body').textContent()).includes('合成审核同事申请'), false, 'read expiry also erases retained applicant text');

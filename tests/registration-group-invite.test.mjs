@@ -32,6 +32,28 @@ function fixture() {
 async function expectError(promise, code) {
   await assert.rejects(promise, error => error instanceof GroupInviteError && error.code === code && !error.stack.includes('PRIVATE-') && !error.cause);
 }
+function pngChunk(type, body) {
+  let crc = 0xffffffff;
+  for (const byte of Buffer.concat([Buffer.from(type), body])) { crc ^= byte; for (let i = 0; i < 8; i++) crc = crc & 1 ? 0xedb88320 ^ crc >>> 1 : crc >>> 1; }
+  const result = Buffer.alloc(body.length + 12); result.writeUInt32BE(body.length); result.write(type, 4); body.copy(result, 8); result.writeUInt32BE((crc ^ 0xffffffff) >>> 0, result.length - 4); return result;
+}
+
+test('private group status exposes an exact server-owned seven-day input window without changing stored state', async () => {
+  const f = fixture(), service = f.service(), empty = await service.adminRead(actor);
+  assert.equal(empty.serverTime, new Date(at).toISOString());
+  assert.equal(empty.maxExpiresAt, new Date(at + 7 * 86400000).toISOString());
+  assert.equal(f.remote.calls.filter(call => call.method !== 'GET').length, 0);
+  const saved = await service.replace(f.upload(0, { expiresAt: empty.maxExpiresAt }), actor);
+  assert.equal(saved.expiresAt, empty.maxExpiresAt, 'the exact rolling limit remains accepted');
+  assert.equal(saved.serverTime, empty.serverTime);assert.equal(saved.maxExpiresAt, empty.maxExpiresAt);
+  const writes = f.remote.calls.filter(call => call.method !== 'GET').length;
+  f.state.now += 65_000;
+  const next = await f.service().adminRead(actor);
+  assert.equal(next.serverTime, new Date(f.state.now).toISOString());
+  assert.equal(Date.parse(next.maxExpiresAt) - Date.parse(next.serverTime), 7 * 86400000);
+  assert.equal(next.revision, saved.revision);assert.equal(next.expiresAt, saved.expiresAt);
+  assert.equal(f.remote.calls.filter(call => call.method !== 'GET').length, writes, 'refresh never extends or replaces the QR');
+});
 
 test('private actual image upload survives independent clients and only a committed receipt obtains a short link', async () => {
   const f = fixture(), service = f.service();
@@ -47,6 +69,25 @@ test('private actual image upload survives independent clients and only a commit
   assert.equal(image.contentType, 'image/png'); assert.deepEqual(image.data, Buffer.from(PNG, 'base64'));
   assert.equal(JSON.stringify(invite).includes('PRIVATE-'), false);
   assert.equal([...f.remote.stored.keys()].every(key => key.startsWith(`cms/v1/group-invites/${EVENT}/`)), true);
+});
+
+test('group replacement ACK binds the original selected file while stored image metadata remains stripped', async () => {
+  const f = fixture(), service = f.service(), clean = Buffer.from(PNG, 'base64');
+  const privateText = Buffer.from('synthetic-source\0PRIVATE-SYNTHETIC-QR-LOCATION');
+  const tagged = Buffer.concat([clean.subarray(0, 33), pngChunk('tEXt', privateText), clean.subarray(33)]);
+  const selectedDigest = createHash('sha256').update(tagged).digest('hex'), cleanDigest = createHash('sha256').update(clean).digest('hex');
+  assert.notEqual(selectedDigest, cleanDigest);
+  const saved = await service.replace(f.upload(0, { dataBase64: tagged.toString('base64') }), actor);
+  assert.equal(saved.sourceSha256, selectedDigest, 'the actual write ACK proves the exact original file, not only its normalized pixels');
+  assert.equal(saved.contentType, 'image/png');assert.equal(saved.bytes, clean.length);
+  assert.deepEqual((await service.adminImage(actor)).data, clean);
+  assert.equal(JSON.stringify(saved).includes('PRIVATE-'), false);
+  assert.equal(Object.hasOwn(await f.service().adminRead(actor), 'sourceSha256'), false, 'a later GET cannot stand in for the original file ACK');
+  const storedImage = [...f.remote.stored.entries()].find(([key]) => key.endsWith('/images/' + cleanDigest + '.png'));
+  assert.ok(storedImage);assert.equal(storedImage[1].data.includes(privateText), false);
+  for (const [key, object] of f.remote.stored) if (!key.includes('/images/')) assert.equal(object.data.includes(Buffer.from('sourceSha256')), false, 'source binding is not a new persistent field');
+  const disabled = await service.disable({ expectedRevision: saved.revision, enabled: false }, actor);
+  assert.equal(Object.hasOwn(disabled, 'sourceSha256'), false);
 });
 
 test('replacement and disable invalidate older links across clients even when reusing the same image', async () => {

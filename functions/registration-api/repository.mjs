@@ -132,12 +132,19 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
     return { committed: true, eventId, registrationId: entry.id, referenceCode: entry.id, committedAt: entry.committedAt,
       admissionStatus: admission.status, admissionKind: admission.kind, admissionRevision: admission.revision };
   }
+  function operationReceipt(audit) {
+    const operation = { operationId: audit.operationId, action: audit.action, registrationId: audit.result.registrationId, revision: audit.revision };
+    if (audit.action === 'settings') operation.settings = structuredClone(audit.details);
+    if (['kind','staff_intake'].includes(audit.action)) operation.kind = audit.details.kind;
+    if (['team_save','team_remove'].includes(audit.action)) operation.teamId = audit.result.teamId;
+    return { operation };
+  }
   async function saved(index, entry, outcome, operationId = null) {
     await readRecord(entry);
     const operation = view(index).admissions.audit.find(item => operationId === null
       ? ['intake', 'staff_intake'].includes(item.action) && item.result.registrationId === entry.id
       : item.operationId === operationId);
-    return { outcome, receipt: receipt(index, entry), ...(operation ? { promotedIds: operation.result.promotedIds, releasedIds: operation.result.releasedIds } : {}) };
+    return { outcome, receipt: receipt(index, entry), ...(operation ? { promotedIds: operation.result.promotedIds, releasedIds: operation.result.releasedIds, ...(operationId !== null ? operationReceipt(operation) : {}) } : {}) };
   }
   async function exclusions(index, getExcluded, includeConfirmed = false) {
     if (getExcluded === undefined) return [];
@@ -163,7 +170,7 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
           || !/^[A-Za-z0-9_-]{1,80}$/u.test(actorId ?? '') || parseTimestamp(at) === null) return { outcome: 'invalid' };
         const current = await readIndex(), next = view(current.value);
         const previous = next.admissions.audit.find(entry => entry.operationId === operationId);
-        const operation = audit => ['approve', 'reject'].includes(audit.action) ? { operation: { operationId: audit.operationId, action: audit.action, registrationId: audit.result.registrationId, revision: audit.revision } } : {};
+        const operation = operationReceipt;
         if (previous) return previous.action === action && previous.actorId === actorId && previous.requestHash === requestHash
           ? { outcome: 'replayed', ...snapshot(next), ...previous.result, ...operation(previous) } : { outcome: 'conflict' };
         if (current.value.revision !== expectedRevision) return { outcome: 'conflict' };

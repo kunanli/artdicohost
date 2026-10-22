@@ -1,3 +1,4 @@
+import { isContentVisible } from '../../shared/content-schema.mjs';
 import {canManageEventOperations} from '../../shared/staff-permissions.mjs';
 const CONTACT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const REGISTRATION = /^[A-Za-z0-9_-]{43}$/u;
@@ -139,7 +140,7 @@ export function personWorkspaceView(value, selection) {
     if (communications.timeline.some(item => value.availability[item.source === 'legacy_invitation' ? 'contact' : item.source === 'confirmation' ? 'confirmations' : 'invitations'] !== 'available')) return null;
     if (!plain(publicProfile) || publicProfile.state !== value.availability.publicProfile || !list(publicProfile.profiles)
       || !publicProfile.profiles.every(item => lines(item, ['id', 'name', 'company', 'title']) && id(item.id) && ['pending', 'confirmed'].includes(item.status)
-        && typeof item.publicConsent === 'boolean' && typeof item.hasPortrait === 'boolean' && typeof item.published === 'boolean' && typeof item.publishedMatchesDraft === 'boolean' && strings(item.publicRoles, 10))
+        && typeof item.publicConsent === 'boolean' && (!Object.hasOwn(item, 'visibility') || ['public','private'].includes(item.visibility)) && typeof item.hasPortrait === 'boolean' && typeof item.published === 'boolean' && typeof item.publishedMatchesDraft === 'boolean' && strings(item.publicRoles, 10))
       || !(publicProfile.publishedRevision === null || integer(publicProfile.publishedRevision)) || !date(publicProfile.publishedAt)
       || publicProfile.state !== 'available' && publicProfile.profiles.length) return null;
     const volunteering = personVolunteers(value);
@@ -210,16 +211,18 @@ export function personWorkspaceSteps(view, roles = []) {
   }
   const needsPublic = forms.some(value => ['guest', 'speaker', 'panelist', 'host', 'organizer'].includes(value));
   const publicState = view.availability.publicProfile, profiles = view.publicProfile.profiles;
-  const published = profiles.filter(item => item.published), currentEligible = profiles.filter(item => item.status === 'confirmed' && item.publicConsent);
+  const published = profiles.filter(item => item.published), currentEligible = profiles.filter(item => isContentVisible(item));
+  const hiddenByChoice = profiles.length > 0 && profiles.every(item => !isContentVisible(item));
   const unpublished = currentEligible.some(item => !item.published), liveOldDraft = published.some(item => !item.publishedMatchesDraft);
   steps.push(!contact ? step('public', '核对公开资料', unavailable('contact'), personAvailabilityText(view.availability.contact), 'review')
     : publicState === 'restricted' ? step('public', '核对公开资料', 'restricted', personAvailabilityText(publicState))
           : publicState === 'unavailable' ? step('public', '核对公开资料', 'review', '公开资料或已发布快照暂时无法完整核对，请重新读取后确认。', 'guest')
             : liveOldDraft ? step('public', '核对公开资料', 'review', '资料有历史公开版本，当前人员关联及内容待核对；请核对文字、当前关联及授权，再发布更新或撤下。', 'guest')
+              : hiddenByChoice ? step('public', '核对公开资料', 'complete', '已手动设为未公开，资料保留在后台。', 'guest')
               : !forms.length ? step('public', '核对公开资料', 'pending', '先确认参与身份，再决定是否需要公开人物资料。', 'arrangements')
                 : !needsPublic ? step('public', '核对公开资料', 'complete', '当前内部职责不要求公开人物页；组织展示资料另在活动与内容维护。', 'arrangements')
               : publicState === 'unlinked' || !profiles.length ? step('public', '核对公开资料', 'pending', '尚未通过此人员的固定编号关联公开嘉宾资料；按需要创建并核对公开授权。', 'guest')
-                : unpublished || !currentEligible.length ? step('public', '核对公开资料', 'pending', '已有公开资料草稿，核对确认状态与授权后发布；照片与公开职责可稍后补充。', 'guest')
+                : unpublished || !currentEligible.length ? step('public', '核对公开资料', 'pending', '已有默认公开的资料草稿，发布后显示在前台；照片与公开职责可稍后补充。', 'guest')
                   : step('public', '核对公开资料', 'complete', '已发布内容与当前人物草稿一致；照片与公开职责可稍后补充。', 'guest'));
   return steps;
 }

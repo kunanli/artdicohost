@@ -142,7 +142,7 @@ test('real synthetic image upload, save, publication, restart and withdrawal ret
   assert.equal(journal.snapshot().commits, commits);
   const legacy = clone(content); delete legacy.guests;
   await fails(() => a.save(1, legacy, 'editor'), 'VALIDATION_ERROR', 422);
-  content.guests[0].publicConsent = false;
+  content.guests[0].visibility = 'private';
   await a.save(1, content, 'editor');
   assert.equal((await b.read()).published.content.guests.length, 1);
   const withdrawn = await b.publish(2, 'publisher');

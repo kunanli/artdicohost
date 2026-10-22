@@ -33,9 +33,9 @@ export function createDeliveryMutations({request,revision,operationId=()=>crypto
       if(started!==generation||operation!==pending)throw new Error('会话已变更，请重新读取设置。');
       const result=operation.kind==='settings'&&['updated','replayed'].includes(value.outcome)?deliverySettingsView(value)
         :operation.kind==='dispatch'?deliveryDispatchView(value,operation.id):null;
-      if(!result)throw new Error('结果未通过核对，请保留本页并再次确认同一操作。');
+      if(!result||operation.kind==='settings'&&(value.operationId!==operation.id||value.enabled!==operation.enabled||result.revision<operation.revision+1))throw new Error('结果未通过核对，请保留本页并再次确认同一操作。');
       if(operation.kind==='dispatch'&&(result.results.length!==operation.ids.length||operation.ids.some(id=>!result.results.some(row=>row.registrationId===id))))throw new Error('逐人结果尚未完整，请保留本页并再次确认同一操作。');
-      pending=null;return{kind:operation.kind,value:result};
+      pending=null;return{kind:operation.kind,value:result,...(operation.kind==='settings'?{requestedEnabled:operation.enabled}:{})};
     }catch(error){if(started===generation&&Number.isInteger(error.status)&&error.status>=400&&error.status<500)pending=null;throw error;}
     finally{if(started===generation)busy=false;}
   }
@@ -44,7 +44,7 @@ export function createDeliveryMutations({request,revision,operationId=()=>crypto
     async run(kind,data){
       if(pending||busy)throw new Error('上次结果尚未确认，请先再次确认同一操作。');
       const id=operationId(),expectedRevision=revision();if(!/^[A-Za-z0-9_-]{32,128}$/u.test(id)||!Number.isSafeInteger(expectedRevision)||expectedRevision<0||!['settings','dispatch'].includes(kind))throw new Error('设置尚未读取，请先刷新。');
-      pending={kind,id,ids:kind==='dispatch'?[...data.registrationIds]:[],path:'/api/admin/registration-confirmation/'+(kind==='settings'?'settings':'dispatch'),method:kind==='settings'?'PUT':'POST',body:JSON.stringify({...data,expectedRevision,operationId:id})};return send();
+      pending={kind,id,revision:expectedRevision,enabled:kind==='settings'?data.enabled:undefined,ids:kind==='dispatch'?[...data.registrationIds]:[],path:'/api/admin/registration-confirmation/'+(kind==='settings'?'settings':'dispatch'),method:kind==='settings'?'PUT':'POST',body:JSON.stringify({...data,expectedRevision,operationId:id})};return send();
     },
     retry:send,
     clear(){generation++;pending=null;busy=false;},

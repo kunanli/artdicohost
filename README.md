@@ -14,6 +14,8 @@
 
 ## 文档入口
 
+本轮改版：[统一保存](docs/admin-save-workflow.md)、[默认公开](docs/default-public-visibility.md)、[设置回执](docs/settings-save-feedback.md)、[准确验收／发布记录](docs/admin-save-visibility-release-2026-10-22.md)。本轮正式状态以该记录为准，下面PR42／43为前一已发布基准。
+
 | 主要流程 | 操作说明 | 实际发布证据 |
 | --- | --- | --- |
 | 公开状态、游戏／作品、跟进人色标 | [当前操作](docs/publication-games-operations.md) | [PR #42／#43](docs/games-publication-release-2026-10-21.md) |

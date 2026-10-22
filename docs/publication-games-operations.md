@@ -1,8 +1,10 @@
 # 公开内容与游戏／作品操作
 
+2026-10-22本轮按用户要求改为四类内容默认公开、明确开关及就近发布；最新规则见[默认公开](default-public-visibility.md)，保存方式见[统一保存](admin-save-workflow.md)，实际验收见[本轮记录](admin-save-visibility-release-2026-10-22.md)。下文PR42／43流程保留为旧版操作历史，确认、授权、照片及作品安排不再作为新规则公开门槛；实际发布仍须明确点击。
+
 [PR #42](https://github.com/kunanli/artdicohost/pull/42)／[PR #43](https://github.com/kunanli/artdicohost/pull/43) 已实际发布，main **`d9d0dd2cc52eac755aef8deda5de9c91024b741d`**，2026-10-22 **01:05:35（UTC+08）**完成。[正式运行 39639330823](https://github.com/kunanli/artdicohost/actions/runs/39639330823) attempt 1 的 check／deploy-fc／deploy 全成功。 [准确证据](games-publication-release-2026-10-21.md)、[新session入口](session-recovery.md)。
 
-## 公开流程
+## PR42／43历史公开流程
 
 1. 在嘉宾、组织或游戏与作品独立页修改，按本区块附近的「保存」。取得云端保存回执后才能继续发布。
 2. 查看每条记录的公开状态。绿色「已公开」表示实际发布快照已有该记录；若同时显示「待更新」或「待撤下」，前台仍显示原版本。红色「未公开」表示实际快照没有该记录，旁边列出未确认、待授权、缺封面或未安排展示等原因。无法核对时显示中性状态，不能当作未公开或已公开。

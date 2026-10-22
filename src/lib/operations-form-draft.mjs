@@ -7,6 +7,34 @@ let store;
 export const operationsDraftStore = () => store ??= createBrowserDraftStore({ indexedDB: globalThis.indexedDB });
 import {validDraftFields,captureDraftFields,applyDraftFields,operationsDraftPage,operationsDraftPolicy} from './operations-draft-fields.mjs';
 export {validDraftFields,captureDraftFields,applyDraftFields,operationsDraftPage,operationsDraftPolicy} from './operations-draft-fields.mjs';
+
+/** A cloud-save indicator. Local recovery must never call this with `saved`. */
+export function createOperationsSaveState({form,button,status}) {
+  const output=status??document.createElement('p');
+  output.classList.add('ah-form-save-state');output.setAttribute('role','status');output.setAttribute('aria-live','polite');
+  if(!status)form.querySelector('.ah-admin-dialog-actions')?.before(output);
+  const labels={idle:'未修改',dirty:'未保存',saving:'保存中…',saved:'已保存',unknown:'保存结果待核对',conflict:'版本已更新',error:'保存未完成'};
+  return {set(state='idle',message=''){
+    output.dataset.saveState=state;output.replaceChildren();const title=document.createElement('strong');title.textContent=labels[state]??labels.error;output.append(title);
+    if(message){const text=document.createElement('span');text.textContent=' '+message;output.append(text);}
+    form.setAttribute('aria-busy',String(state==='saving'));
+    if(button)button.textContent=state==='saving'?'保存中…':'保存';
+  },element:output};
+}
+
+/** Keep validation feedback beside its own controls without changing form input. */
+export function operationsFieldErrors(form,fields={}) {
+  for(const note of form.querySelectorAll('[data-operations-field-error]'))note.remove();
+  for(const control of form.elements){if(control.dataset?.operationsInvalid==='true'){control.removeAttribute('aria-invalid');delete control.dataset.operationsInvalid;}}
+  for(const [key,message]of Object.entries(fields)){
+    if(typeof message!=='string')continue;
+    const controls=[...form.elements].filter(control=>control.name===key||control.name===key.replace(/^(?:profile|operations|payload)\./u,''));
+    if(!controls.length)continue;
+    for(const control of controls){control.setAttribute('aria-invalid','true');control.dataset.operationsInvalid='true';}
+    const note=document.createElement('small');note.className='ah-field-error';note.dataset.operationsFieldError=key;note.textContent=message;
+    (controls.at(-1).closest('.ah-admin-field')??controls.at(-1).parentElement).append(note);
+  }
+}
 export async function removeOperationsDraft({actorId,roles,page,entity,isCurrent,expectedRevision}){
   const scope={actorId,eventId:eventConfig.id,page:operationsDraftPage(page,roles),entityId:entity},storage=operationsDraftStore(),snapshot=await storage.read(scope,operationsDraftPolicy());
   if(!isCurrent())throw new Error('会话已改变，本机草稿未被清除。');
@@ -15,7 +43,7 @@ export async function removeOperationsDraft({actorId,roles,page,entity,isCurrent
 }
 /** Small shared view for daily-operation forms. Loading a draft never submits or applies it. */
 export function createOperationsFormDraft({ actorId, roles, page, entity, form, baseRevision, isCurrent, capture, apply, validate = () => true, onPending = () => {}, onChange = () => {}, onDiscard = () => {}, onEdit = () => {}, autoSave = true, manualPending = false }) {
-  const panel = document.createElement('section'); panel.className = 'operations-local-draft'; panel.dataset.operationsLocalDraft = entity;panel.dataset.operationsDraftState='loading';
+  const panel = document.createElement('section'); panel.className = 'operations-local-draft'; panel.dataset.operationsLocalDraft = entity;panel.dataset.operationsDraftState='loading';panel.hidden=true;
   const message = document.createElement('p'); message.setAttribute('role', 'status'); message.setAttribute('aria-live', 'polite');
   const restore = document.createElement('button'), discard = document.createElement('button'), copy = document.createElement('button');
   for (const button of [restore, discard, copy]) { button.type = 'button'; button.className = 'ah-admin-button'; }
@@ -29,6 +57,7 @@ export function createOperationsFormDraft({ actorId, roles, page, entity, form, 
     status = event.status;panel.dataset.operationsDraftState=status;
     const record = event.snapshot?.record ?? binder?.snapshot?.record;
     const pending = record?.kind === 'pending_submission';
+    panel.hidden=!['available','stale','pending','conflict','unavailable'].includes(status)&&!(pending&&status==='saved');
     message.textContent = ({ empty: '填写内容会自动保存在本机；云端需点保存。', available: '发现本机草稿，请恢复或清除后继续。', stale: pending ? '上次提交结果待核对。可恢复原操作；不会自动发送。' : '云端版本已改变。本机内容保留，请查看后手动核对。', pending: manualPending ? '上次提交结果待核对，已锁定重复提交。请先核对云端。' : '原操作已保存在本机；请明确确认同一操作。', saving: '正在保存到本机…', saved: '已保存在本机，尚未保存到云端。', restored: '已恢复本机内容，尚未保存到云端。', discarded: '本机草稿已清除。', conflict: '另一页已修改本机草稿，请重新打开后核对。', unavailable: '本机保存暂不可用。请保留页面并保存到云端。' })[status] || '';
     if(pending&&status==='saved')message.textContent='提交结果待核对，原内容已保存在本机。';
     restore.hidden = !record || !['available','stale','pending'].includes(status) || status === 'stale' && !pending;

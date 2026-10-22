@@ -11,10 +11,10 @@ const formSections = Object.freeze({event:'event',guest:'guests',organization:'o
 export const CONTENT_FORM_FIELDS = Object.freeze({
   event: ['title','date','timezone','venue','status','dateStatus','venueStatus','heroDescription','aboutTitle','aboutText','checkInTime','openingTime','endTime','contactEmail','mapUrl'],
   session: ['id','start','end','zone','title','format','speakerName','speakerStatus','guestId','status','internalNotes'],
-  booth: ['id','code','organization','organizationId','project','zone','slotNumber','contactName','contactMethods','description','website','status','internalNotes'],
-  guest: ['id','name','company','ggjRole','portraitId','contactId','title','bio','website','status','internalNotes','publicConsent','publicRoles'],
-  showcase: ['id','kind','organizationId','title','teamName','school','contactName','email','wechat','memberCount','participationForms','responseStatus','materialLinks','summary','coverId','status','publicConsent','sessionId','boothId','internalNotes'],
-  organization: ['id','name','logoId','website','participation','status','publicConsent','internalNotes'],
+  booth: ['id','code','organization','organizationId','project','zone','slotNumber','contactName','contactMethods','description','website','status','visibility','internalNotes'],
+  guest: ['id','name','company','ggjRole','portraitId','contactId','title','bio','website','status','internalNotes','publicConsent','publicRoles','visibility'],
+  showcase: ['id','kind','organizationId','title','teamName','school','contactName','email','wechat','memberCount','participationForms','responseStatus','materialLinks','summary','coverId','status','publicConsent','sessionId','boothId','visibility','internalNotes'],
+  organization: ['id','name','logoId','website','participation','status','publicConsent','visibility','internalNotes'],
   plannerBooth: ['code','organization','organizationId','project','contactName','contactMethods','description','status'],
 });
 const arrays = new Set(['publicRoles','participationForms']);
@@ -23,7 +23,8 @@ export function contentFormValue(type, input) {
   if (!CONTENT_FORM_FIELDS[type] || !exact(input, CONTENT_FORM_FIELDS[type])) return null;
   const result = {};
   for (const [key, value] of Object.entries(input)) {
-    if (key === 'publicConsent') { if (typeof value !== 'boolean') return null; }
+    if (key === 'visibility') { if (!['public','private'].includes(value)) return null; }
+    else if (key === 'publicConsent') { if (typeof value !== 'boolean') return null; }
     else if (arrays.has(key)) { if (!Array.isArray(value) || value.length > 8 || value.some(item => !text(item, 40)) || new Set(value).size !== value.length) return null; }
     else if (!text(value)) return null;
     result[key] = structuredClone(value);
@@ -62,6 +63,11 @@ export function readContentForm(form, type) {
 }
 export function writeContentForm(form, type, value) {
   const fields = contentFormValue(type, value); if (!fields) throw new Error('本机表单暂存无法核对。');
+  // Legacy form drafts never set an explicit visibility choice. Restore their
+  // default without mutating saved content or the exact original request body.
+  if (CONTENT_FORM_FIELDS[type]?.includes('visibility') && !Object.hasOwn(fields,'visibility')) {
+    const field=form.elements.namedItem('visibility');if(field)field.value='public';
+  }
   for (const [name, data] of Object.entries(fields)) {
     if (arrays.has(name)) { for (const field of form.querySelectorAll('[name="' + name + '"]')) field.checked = data.includes(field.value); continue; }
     const field = form.elements.namedItem(name); if (!field) continue;
@@ -72,6 +78,11 @@ export function writeContentForm(form, type, value) {
       }
       field.value = data;
     }
+  }
+  const visibility=form.elements.namedItem('visibility');
+  for(const button of form.querySelectorAll('[data-content-visibility-switch]')){
+    const visible=visibility?.value!=='private';button.dataset.visibility=visible?'public':'private';button.setAttribute('aria-checked',String(visible));
+    const label=button.querySelector('[data-content-visibility-label]');if(label)label.textContent=visible?'公开':'未公开';
   }
 }
 export function contentLocalDraftValue(value, { kind } = {}) {

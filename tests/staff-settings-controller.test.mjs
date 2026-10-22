@@ -11,7 +11,7 @@ function fixture(request,options={}){
   const get=selector=>{
     if(!nodes.has(selector)){
       const listeners=new Map(),fields=new Map();
-      const node={hidden:false,textContent:'',value:'',disabled:false,listeners,
+      const node={hidden:false,textContent:'',value:'',disabled:false,listeners,dataset:{},
         addEventListener:(type,listener)=>listeners.set(type,listener),querySelectorAll:()=>[],
         reset(){for(const field of fields.values())field.value='';},reportValidity:()=>true,focus(){},
         replaceChildren(){},append(){},removeAttribute(){},cloneNode(){return {...this};},replaceWith(next){nodes.set(selector,next);},
@@ -26,7 +26,7 @@ function fixture(request,options={}){
   return {controller,get,events};
 }
 const account=id=>({id,roles:['superadmin']});
-const group=revision=>({revision,configured:false,expired:true,expiresAt:null});
+const group=revision=>{const at=Date.now();return{revision,configured:false,expired:true,expiresAt:null,serverTime:new Date(at).toISOString(),maxExpiresAt:new Date(at+7*86400000).toISOString()};};
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
 test('group subpage initializes only group state even for a superadmin',async()=>{
@@ -94,4 +94,20 @@ test('an uncertain group write stays blocked after a read without durable write 
     assert.equal(writes,1);assert.equal(f.controller.pending,true);
     assert.match(f.get('[data-settings-error]').textContent,/不能证明先前修改成功/u);
   }finally{globalThis.confirm=originalConfirm;}
+});
+
+
+test('a selected group expiry outside the server rolling window fails inline without sending or clearing the image',async()=>{
+  const calls=[],f=fixture(async(path,options={})=>{calls.push({path,...options});return group(0);},{section:'group'});
+  await f.controller.configure(account('owner'));
+  const form=f.get('[data-group-form]'),file={type:'image/png',size:1,arrayBuffer:async()=>new Uint8Array([1]).buffer};
+  form.elements.namedItem('image').files=[file];form.elements.namedItem('expiresAt').value=new Date(Date.now()+10*86400000).toISOString().slice(0,16);
+  form.listeners.get('submit')({preventDefault(){},currentTarget:form});await tick();
+  assert.equal(calls.some(call=>call.method),false);assert.match(f.get('[data-group-expiry-error]').textContent,/最晚可选/u);
+  assert.equal(form.elements.namedItem('image').files[0],file);assert.equal(f.get('[data-settings-form-state="group"]').dataset.saveState,'error');
+});
+test('a group settings refresh preserves an entered date and does not silently replace it with a later maximum',async()=>{
+  const f=fixture(async()=>group(0),{section:'group'});await f.controller.configure(account('owner'));
+  const field=f.get('[data-group-form]').elements.namedItem('expiresAt'),entered='2026-10-30T23:59';field.value=entered;
+  f.get('[data-group-refresh]').listeners.get('click')();await tick();assert.equal(field.value,entered);
 });

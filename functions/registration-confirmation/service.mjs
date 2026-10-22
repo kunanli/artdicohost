@@ -240,12 +240,12 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const previous = current.value.operations.find(op => op.operationId === operationId);
     if (previous) {
       if (previous.action !== 'settings' || previous.actorId !== actor.id || previous.requestHash !== requestHash) failure('REVISION_CONFLICT', 409);
-      return { outcome: 'replayed', ...await settings({ actor }) };
+      return { outcome: 'replayed', operationId, enabled, ...await settings({ actor }) };
     }
     if (current.value.revision !== expectedRevision) failure('REVISION_CONFLICT', 409);
     try { await target().append(current, 'settings', { operationId, requestHash, enabled }, actor.id); }
     catch (error) { if (conflict(error)) failure('REVISION_CONFLICT', 409); failure(); }
-    return { outcome: 'updated', ...await settings({ actor }) };
+    return { outcome: 'updated', operationId, enabled, ...await settings({ actor }) };
   }
   async function completeBatch(operationId, results, actorId) {
     for (let tries = 0; tries < 4; tries++) {

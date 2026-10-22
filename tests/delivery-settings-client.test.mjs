@@ -18,7 +18,7 @@ test('wallet setup projection preserves bounded safe diagnostics and valid expir
 });
 test('uncertain settings acknowledgement retries the exact original operation and body',async()=>{
   const calls=[];let attempt=0;
-  const controller=createDeliveryMutations({operationId:()=>operationId,revision:()=>0,request:async(path,options)=>{calls.push({path,...options});if(!attempt++)throw Object.assign(new Error('uncertain'),{status:503});return{...state(),outcome:'replayed'};}});
+  const controller=createDeliveryMutations({operationId:()=>operationId,revision:()=>0,request:async(path,options)=>{calls.push({path,...options});if(!attempt++)throw Object.assign(new Error('uncertain'),{status:503});return{...state(),automaticEnabled:true,operationId,enabled:true,outcome:'replayed'};}});
   await assert.rejects(controller.run('settings',{enabled:true}));assert.equal(controller.pending,true);
   await assert.rejects(controller.run('settings',{enabled:false}));
   assert.equal((await controller.retry()).kind,'settings');assert.equal(controller.pending,false);assert.deepEqual(calls[0],calls[1]);assert.equal(JSON.parse(calls[0].body).operationId,operationId);
@@ -33,9 +33,23 @@ test('a late acknowledgement from a cleared session cannot release or replace a 
   const controller=createDeliveryMutations({operationId:()=>String(++index).repeat(43),revision:()=>0,request:()=>new Promise(resolve=>resolvers.push(resolve))});
   const old=controller.run('settings',{enabled:true});controller.clear();const current=controller.run('settings',{enabled:false});
   resolvers[0]({...state(),outcome:'updated'});await assert.rejects(old,/会话已变更/u);assert.equal(controller.pending,true);
-  resolvers[1]({...state(),outcome:'updated'});await current;assert.equal(controller.pending,false);
+  resolvers[1]({...state(),operationId:'2'.repeat(43),enabled:false,outcome:'updated'});await current;assert.equal(controller.pending,false);
 });
 test('definite validation rejection unlocks edits without creating an automatic second request',async()=>{
   let calls=0;const controller=createDeliveryMutations({operationId:()=>operationId,revision:()=>2,request:async()=>{calls++;throw Object.assign(new Error('invalid'),{status:422});}});
   await assert.rejects(controller.run('settings',{enabled:true}));assert.equal(controller.pending,false);assert.equal(calls,1);
+});
+
+
+test('settings save rejects unrelated operation IDs, choices and nonadvancing revisions before claiming saved',async()=>{
+  for(const change of [{operationId:'x'.repeat(43)},{enabled:false},{revision:2}]){
+    const bodies=[];let incorrect=true;
+    const controller=createDeliveryMutations({operationId:()=>operationId,revision:()=>2,request:async(_path,options)=>{bodies.push(options.body);return{...state(),automaticEnabled:true,revision:3,outcome:'updated',operationId,enabled:true,...(incorrect?change:{})};}});
+    await assert.rejects(controller.run('settings',{enabled:true}),/未通过核对/u);assert.equal(controller.pending,true);
+    incorrect=false;const result=await controller.retry();assert.equal(result.requestedEnabled,true);assert.equal(controller.pending,false);assert.equal(bodies[0],bodies[1]);
+  }
+});
+test('a proven original settings operation remains acknowledged when a later editor changed the current setting',async()=>{
+  const controller=createDeliveryMutations({operationId:()=>operationId,revision:()=>2,request:async()=>({...state(),revision:5,automaticEnabled:false,outcome:'replayed',operationId,enabled:true})});
+  const result=await controller.run('settings',{enabled:true});assert.equal(result.requestedEnabled,true);assert.equal(result.value.automaticEnabled,false);assert.equal(controller.pending,false);
 });

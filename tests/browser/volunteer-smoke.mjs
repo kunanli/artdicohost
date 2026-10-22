@@ -11,6 +11,7 @@ import {volunteerFixture,VOLUNTEER_FIXTURE_SECRET} from '../volunteer-api-fixtur
 const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright-core');
 const project=fileURLToPath(new URL('../../',import.meta.url));
 const dist=resolve(process.env.ARTDICO_DIST_DIRECTORY||resolve(project,'dist'));
+const sourceScripts=process.env.ARTDICO_SOURCE_SCRIPTS==='1';
 const evidence=resolve(project,'.local-data/browser-evidence'),SITE='https://api.artdico.host';
 const json=(body,status=200)=>({status,contentType:'application/json',body:JSON.stringify(body)});
 const errors=[],reports=[];
@@ -66,17 +67,22 @@ async function fixture({width=1280,roles=['superadmin'],mode='normal',seed=true,
       const response=await backend.api(apiRequest);
       return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
     }
+    if(sourceScripts&&/^\/(?:src|shared)\//u.test(path)){
+      const file=resolve(project,'.'+path);assert.ok(file.startsWith(project));
+      return route.fulfill({status:200,body:path.endsWith('.css')&&request.resourceType()==='script'?'':await readFile(file),contentType:request.resourceType()==='script'?'text/javascript':path.endsWith('.css')?'text/css':'text/javascript'});
+    }
     const file=resolve(dist,'.'+(path.endsWith('/')?path+'index.html':path));assert.ok(file.startsWith(dist+'/'));
-    return route.fulfill({status:200,body:await readFile(file),contentType:({html:'text/html',js:'text/javascript',css:'text/css',png:'image/png',jpg:'image/jpeg',webp:'image/webp',svg:'image/svg+xml',woff2:'font/woff2'})[extname(file).slice(1)]||'application/octet-stream'});
+    let contents=await readFile(file);if(sourceScripts&&file.endsWith('.html'))contents=Buffer.from(contents.toString().replace(/<script\b[^>]*type="module"[^>]*>[\s\S]*?<\/script>/gu,'').replace('</body>','<link rel="stylesheet" href="/src/styles/admin-save-state.css"><script type="module" src="/src/scripts/volunteers.mjs"></script></body>'));
+    return route.fulfill({status:200,body:contents,contentType:({html:'text/html',js:'text/javascript',css:'text/css',png:'image/png',jpg:'image/jpeg',webp:'image/webp',svg:'image/svg+xml',woff2:'font/woff2'})[extname(file).slice(1)]||'application/octet-stream'});
   });
   return {context,page,backend,writes,reads,dialogs,downloads,seeded,hash,setAuthenticated:value=>{authenticated=value;},setRoles:value=>{roles.splice(0,roles.length,...value);},expireNext:()=>{denyNext=true;},async waitHeld(){let timer;try{await Promise.race([heldStarted,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Synthetic delayed response was not requested: '+mode)),10000);timer.unref();})]);assert.ok(held);}finally{clearTimeout(timer);}},async release(){assert.ok(held);held();await heldDone;await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));}};
 }
 async function open(f){try{await f.page.goto(SITE+'/admin/volunteers/'+f.hash,{waitUntil:'domcontentloaded'});}catch(error){throw new Error('Volunteer page loading: '+JSON.stringify({reads:f.reads,pageErrors:errors,state:await f.page.evaluate(()=>({status:document.querySelector('[data-volunteer-status]')?.textContent,error:document.querySelector('[data-volunteer-error]')?.textContent,source:document.querySelector('[data-volunteer-source-status]')?.textContent}))}),{cause:error});}await f.page.locator('[data-volunteer-authorized]:visible').waitFor();await f.page.locator('[data-volunteer-revision]').filter({hasText:/\d/u}).waitFor();}
 async function noOverflow(page){assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,'no full-page horizontal overflow');}
 async function login(f){const form=f.page.locator('[data-volunteer-login]');await form.locator('[name=username]').fill('synthetic.volunteer');await form.locator('[name=password]').fill('synthetic-password-123');await form.locator('button[type=submit]').click();await f.page.locator('[data-volunteer-authorized]:visible').waitFor();}
-async function begin(f,kind){await f.page.locator(`[data-volunteer-${kind==='person'?'add':'add-'+kind}]`).click();await f.page.locator(selectors(kind).dialog+'[open]').waitFor();const form=f.page.locator(selectors(kind).form);await form.locator('.operations-local-draft:not([data-operations-draft-state=loading])').waitFor();const discard=form.locator('.operations-local-draft button').filter({hasText:'清除本机草稿'});if(await discard.isVisible())await discard.click();return form;}
+async function begin(f,kind){await f.page.locator(`[data-volunteer-${kind==='person'?'add':'add-'+kind}]`).click();await f.page.locator(selectors(kind).dialog+'[open]').waitFor();const form=f.page.locator(selectors(kind).form);await form.locator('.operations-local-draft:not([data-operations-draft-state=loading])').waitFor({state:'attached'});const discard=form.locator('.operations-local-draft button').filter({hasText:'清除本机草稿'});if(await discard.isVisible())await discard.click();return form;}
 async function save(f,kind){const form=f.page.locator(selectors(kind).form);await form.locator('button[type=submit]').click();}
-async function saved(f,kind){await f.page.locator(selectors(kind).dialog).waitFor({state:'hidden'});assert.equal(await f.page.locator('[data-volunteer-pending]').isVisible(),false);}
+async function saved(f,kind){const form=f.page.locator(selectors(kind).form);await form.locator('.ah-form-save-state[data-save-state=saved]').waitFor();assert.equal(await form.locator('button[type=submit]').isDisabled(),true);assert.equal(await f.page.locator('[data-volunteer-pending]').isVisible(),false);await dismiss(f,kind);}
 async function addAssignment(f,shiftId,status='confirmed'){const form=await begin(f,'assignment');await form.locator('[name=volunteerId]').selectOption('synthetic-volunteer-one');await form.locator('[name=shiftId]').selectOption(shiftId);await form.locator('[name=status]').selectOption(status);return form;}
 async function dismiss(f,kind){await f.page.locator(`[data-volunteer-close=${kind}]`).first().click();await f.page.locator(selectors(kind).dialog).waitFor({state:'hidden'});}
 async function metric(page,label,value){assert.equal(await page.locator('[data-volunteer-metrics] > *').filter({hasText:label}).locator('strong').textContent(),value);}
@@ -155,5 +161,5 @@ try{
   for(const mode of ['late-200','late-401']){
     const f=await fixture({mode});await open(f);await f.page.locator('[data-volunteer-refresh]').click();await f.waitHeld();await f.page.locator('[data-volunteer-logout]').click();await f.page.locator('[data-volunteer-login-panel]:visible').waitFor();f.backend.sources.contacts.contacts[0].profile.name='合成新账号人员';await login(f);await f.page.locator('[data-volunteer-roster]').filter({hasText:'合成新账号人员'}).waitFor();await f.release();assert.equal(await f.page.locator('[data-volunteer-authorized]').isVisible(),true);assert.match(await f.page.locator('[data-volunteer-roster]').textContent(),/合成新账号人员/u);assert.doesNotMatch(await f.page.locator('[data-volunteer-roster]').textContent(),/=合成人员一/u);assert.equal(f.writes.length,2);await f.context.close();reports.push({mode,oldResponseCannotPopulateOrClearNewAccount:true});
   }
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({reports,pageErrors:errors,syntheticOnly:true},null,2));
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({reports,pageErrors:errors,syntheticOnly:true,sourceScripts},null,2));
 }finally{await browser.close();}

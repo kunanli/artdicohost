@@ -1,5 +1,5 @@
 import { PARTICIPATION_FORMS, SESSION_ROLES } from '../../shared/contacts-schema.mjs';
-import { GUEST_PUBLIC_ROLES, PORTRAIT_ID_PATTERN } from '../../shared/content-schema.mjs';
+import { GUEST_PUBLIC_ROLES, PORTRAIT_ID_PATTERN, isContentVisible } from '../../shared/content-schema.mjs';
 import { parseTimestamp } from '../registration-api/policy.mjs';
 
 export const CONTACT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
@@ -155,14 +155,14 @@ export function organizationsProjection(contactRaw, source) {
   return { state: memberships.length ? 'available' : 'unlinked', memberships };
 }
 function publicGuestValue(item, saved = false) {
-  if (!item || item.status !== 'confirmed' || item.publicConsent !== true) return null;
+  if (!item || !isContentVisible(item)) return null;
   const portraitId=text(item.portraitId,80);
   if(portraitId&&!PORTRAIT_ID_PATTERN.test(portraitId))return null;
   const portraitUrl=portraitId?'/api/public/portraits/'+portraitId:'';
   if(saved&&item.portraitUrl!==portraitUrl)return null;
   const result = { id: item.id, name: text(item.name, 120), company: text(item.company, 160), ggjRole: text(item.ggjRole, 160),
     portraitId, portraitUrl,
-    status: 'confirmed', publicConsent: true };
+    status: item.status, publicConsent: item.publicConsent, ...(Object.hasOwn(item, 'visibility') ? { visibility: item.visibility } : {}) };
   for (const [key, maximum] of Object.entries({ title: 200, bio: 4000, website: 500 })) if (Object.hasOwn(item, key)) result[key] = text(item[key], maximum);
   if (Object.hasOwn(item, 'publicRoles')) result.publicRoles = strings(item.publicRoles, GUEST_PUBLIC_ROLES.length, 40, GUEST_PUBLIC_ROLES);
   return result;
@@ -178,12 +178,12 @@ export function publicProfileProjection(contactId, source) {
   if (publishedRevision !== null && publishedRevision > source.revision) fail();
   const publishedAt = published === null ? null : timestamp(published.publishedAt, false);
   const profiles = guests.filter(item => item.contactId === contactId).map(item => {
-    if (typeof item.publicConsent !== 'boolean') fail();
+    if (typeof item.publicConsent !== 'boolean' || Object.hasOwn(item, 'visibility') && !['public','private'].includes(item.visibility)) fail();
     const portraitId = text(item.portraitId, 80);
     if (portraitId && !PORTRAIT_ID_PATTERN.test(portraitId)) fail();
     const saved = savedGuests.find(saved => saved.id === item.id), draftPublic = publicGuestValue(item), savedPublic = publicGuestValue(saved, true);
     return { id: item.id, name: text(item.name, 120), company: text(item.company, 300), title: text(item.title, 200),
-      status: oneOf(item.status, ['pending', 'confirmed']), publicConsent: item.publicConsent, hasPortrait: Boolean(portraitId),
+      status: oneOf(item.status, ['pending', 'confirmed']), publicConsent: item.publicConsent, ...(Object.hasOwn(item, 'visibility') ? { visibility: item.visibility } : {}), hasPortrait: Boolean(portraitId),
       publicRoles: strings(item.publicRoles, GUEST_PUBLIC_ROLES.length, 40, GUEST_PUBLIC_ROLES), published: Boolean(saved),
       publishedMatchesDraft: Boolean(draftPublic && savedPublic && JSON.stringify(draftPublic) === JSON.stringify(savedPublic)) };
   });

@@ -83,9 +83,9 @@ export function createContentApi({ store, contactsStore, portraitStore, communic
       if (publicPortrait && request.method === 'GET' && !url.search && PORTRAIT_ID_PATTERN.test(publicPortrait)) {
         if (!portraitStore) throw new ContentError('NOT_FOUND', '头像不存在。', 404);
         const { published } = await store.read();
-        const inGuest = published?.content.guests.some(guest => guest.portraitId === publicPortrait && guest.status === 'confirmed' && guest.publicConsent === true);
-        const inShowcase = published?.content.showcases?.some(showcase => showcase.coverId === publicPortrait && showcase.status === 'confirmed' && showcase.responseStatus === 'attending' && showcase.publicConsent === true);
-        // Organization publication is already consent-filtered by the content store.
+        const inGuest = published?.content.guests.some(guest => guest.portraitId === publicPortrait);
+        const inShowcase = published?.content.showcases?.some(showcase => showcase.coverId === publicPortrait);
+        // Every referenced image belongs to the immutable public projection, never a private draft.
         // Match only the exact server-created public route, never a private draft or arbitrary URL.
         const inOrganization = published?.content.organizations?.some(organization => organization.logoUrl === '/api/public/portraits/' + publicPortrait);
         if (!inGuest && !inShowcase && !inOrganization) throw new ContentError('NOT_FOUND', '图片不存在。', 404);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {admissionAdminState, createAdmissionOperations} from '../src/lib/admission-admin.mjs';
+import {admissionAdminState, createAdmissionOperations, confirmedAdmissionOperation, admissionFormChanged, admissionStaffRecovery} from '../src/lib/admission-admin.mjs';
 
 const ids = ['a','b','c','d'].map(value => value.repeat(43));
 const teamId = 't_' + 'x'.repeat(22);
@@ -19,6 +19,20 @@ function state(patch = {}) {
     auditCount:1,
     ...patch,
   };
+}
+function resultFor(path, supplied, patch = {}) {
+  const body = typeof supplied === 'string' ? JSON.parse(supplied) : supplied, suffix = path.slice('/api/admin/admissions/'.length);
+  const action = ({settings:'settings',teams:'team_save','teams/remove':'team_remove',staff:'staff_intake',withdraw:'withdraw',kind:'kind',promote:'promote',approve:'approve',reject:'reject'})[suffix];
+  const value = state({ revision: body.expectedRevision + 1, outcome: 'updated', ...patch });
+  value.operation = { operationId: body.operationId, action, registrationId: body.registrationId ?? null, revision: body.expectedRevision + 1 };
+  if (body.registrationId) value.registrationId = body.registrationId;
+  if (action === 'settings') { value.settings = { ...value.settings, ...body.settings }; Object.assign(value.summary, body.settings); value.operation.settings = { ...body.settings }; }
+  if (action === 'kind') { value.operation.kind = body.kind; const person = value.people.find(person => person.registrationId === body.registrationId); person.kind = body.kind; const crew=value.people.filter(person=>person.status==='confirmed'&&person.kind==='crew').length;value.summary.crewConfirmedCount=crew;value.summary.attendeeConfirmedCount=value.summary.confirmedCount-crew; }
+  if (['team_save','team_remove'].includes(action)) { value.teamId = body.teamId ?? body.team?.id ?? teamId; value.operation.teamId = value.teamId;
+    if(action==='team_save') { value.teams=[{id:value.teamId,name:body.team.name,memberIds:[...body.team.memberIds]}];for(const person of value.people)person.teamId=body.team.memberIds.includes(person.registrationId)?value.teamId:''; }
+    else { value.teams=[];for(const person of value.people)person.teamId=''; }
+  }
+  return value;
 }
 function rejection(status) { const error = new Error('synthetic rejection'); error.status = status; return error; }
 
@@ -126,7 +140,7 @@ test('lost approval ACK retries only the original request and trusts the current
 test('uncertain network, 503 and invalid success preserve the exact serialized operation for explicit retry', async () => {
   for (const first of [() => {throw new Error('synthetic network');},() => {throw rejection(503);},() => ({...state(),outcome:'updated',summary:{...state().summary,waitlistCount:0}}),() => ({...state(),outcome:'unknown'})]) {
     const calls=[];let count=0;let sequence=0;
-    const operations=createAdmissionOperations({request:async(path,options)=>{calls.push({path,...options});if(++count===1)return first();return {...state(),outcome:'replayed'};},revision:()=>5,operationId:()=>String(++sequence).repeat(43)});
+    const operations=createAdmissionOperations({request:async(path,options)=>{calls.push({path,...options});if(++count===1)return first();return resultFor(path,options.body,{outcome:'replayed'});},revision:()=>5,operationId:()=>String(++sequence).repeat(43)});
     const input={team:{name:'合成两人',memberIds:[ids[0],ids[1]]}};
     await assert.rejects(operations.run('/api/admin/admissions/teams',input));
     input.team.name='不可混入的后续编辑';
@@ -145,7 +159,7 @@ test('uncertain network, 503 and invalid success preserve the exact serialized o
 
 test('a definite conflict clears the rejected operation and the next action reads a fresh revision', async () => {
   const calls=[];let currentRevision=5;let sequence=0;
-  const operations=createAdmissionOperations({request:async(path,options)=>{calls.push({path,...options});if(calls.length===1)throw rejection(409);return {...state({revision:7}),outcome:'updated'};},revision:()=>currentRevision,operationId:()=>String(++sequence).repeat(43)});
+  const operations=createAdmissionOperations({request:async(path,options)=>{calls.push({path,...options});if(calls.length===1)throw rejection(409);return resultFor(path,options.body,{revision:7});},revision:()=>currentRevision,operationId:()=>String(++sequence).repeat(43)});
   await assert.rejects(operations.run('/api/admin/admissions/settings',{settings:{staffReserve:0,waitlistEnabled:true}},'PUT'),{status:409});
   assert.equal(operations.pending,false);
   await assert.rejects(operations.retry());
@@ -166,7 +180,7 @@ test('an in-flight request cannot be duplicated by retry or another mutation', a
   await assert.rejects(operations.retry());
   await assert.rejects(operations.run('/api/admin/admissions/withdraw',{registrationId:ids[0]}));
   assert.equal(calls.length,1);
-  complete({...state(),outcome:'updated'});
+  complete(resultFor(calls[0].path,calls[0].body));
   assert.equal((await saving).outcome,'updated');
   assert.equal(operations.pending,false);
 });
@@ -192,7 +206,7 @@ test('clearing an in-flight operation discards its late success or rejection wit
     await oldRejection;
     assert.equal(operations.pending,true,'late completion cannot clear the new operation');
     await assert.rejects(operations.retry());assert.equal(calls.length,2,'late finally cannot release the new operation lock');
-    deferred[1].resolve({...state(),outcome:'updated'});await next;
+    deferred[1].resolve(resultFor(calls[1].path,calls[1].body));await next;
     assert.equal(operations.pending,false);
   }
 });
@@ -241,4 +255,56 @@ test('pending recovery refuses other API paths, verbs and unexpected operation f
   const saved={path:'/api/admin/admissions/approve',method:'POST',body:JSON.stringify({registrationId:ids[2],expectedRevision:5,operationId:'o'.repeat(43)})};
   for(const item of [{...saved,path:'/api/admin/logout'},{...saved,method:'PUT'},{...saved,body:'not JSON'},{...saved,body:JSON.stringify({...JSON.parse(saved.body),password:'forbidden'})}])assert.throws(()=>operations.restore(item),/无法核对/u);
   assert.equal(operations.pending,false);
+});
+
+
+test('every save and capacity action requires matching operation identity, action and exact committed revision', async () => {
+  const commands = [
+    ['settings', { settings: { staffReserve: 0, waitlistEnabled: true } }, 'PUT'],
+    ['teams', { team: { name: '合成新团队', memberIds: [ids[0], ids[1]] } }, 'POST'],
+    ['teams/remove', { teamId }, 'POST'], ['kind', { registrationId: ids[0], kind: 'crew' }, 'POST'],
+    ['withdraw', { registrationId: ids[0] }, 'POST'], ['promote', {}, 'POST'],
+  ];
+  for (const [suffix, data, method] of commands) {
+    const operation = { path: '/api/admin/admissions/' + suffix, method, body: JSON.stringify({ ...data, expectedRevision: 5, operationId: 'o'.repeat(43) }) };
+    const good = resultFor(operation.path, operation.body);
+    assert.ok(confirmedAdmissionOperation(good, operation), suffix);
+    for (const change of [value => delete value.operation, value => {value.operation.operationId='x'.repeat(43);},value => {value.operation.action='other';},value => {value.operation.revision=5;},value => {value.operation.revision=7;}]) {
+      const bad=structuredClone(good);change(bad);assert.equal(confirmedAdmissionOperation(bad,operation),null,suffix);
+    }
+  }
+});
+
+test('settings and team ACK validate the submitted scope while newer replay snapshots can truthfully differ', () => {
+  const operation={path:'/api/admin/admissions/settings',method:'PUT',body:JSON.stringify({settings:{staffReserve:0,waitlistEnabled:true},expectedRevision:5,operationId:'o'.repeat(43)})};
+  const saved=resultFor(operation.path,operation.body);assert.ok(confirmedAdmissionOperation(saved,operation));
+  const unrelated=structuredClone(saved);unrelated.operation.settings.staffReserve=1;assert.equal(confirmedAdmissionOperation(unrelated,operation),null);
+  const replay=resultFor(operation.path,operation.body,{revision:8,outcome:'replayed'});replay.settings.staffReserve=1;replay.summary.staffReserve=1;assert.ok(confirmedAdmissionOperation(replay,operation));
+  const team={path:'/api/admin/admissions/teams',method:'POST',body:JSON.stringify({team:{id:teamId,name:'合成修改',memberIds:[ids[0],ids[1]]},expectedRevision:5,operationId:'o'.repeat(43)})};
+  const result=resultFor(team.path,team.body);assert.ok(confirmedAdmissionOperation(result,team));
+  result.operation.teamId='t_'+'z'.repeat(22);assert.equal(confirmedAdmissionOperation(result,team),null);
+});
+
+test('retained admissions inputs only conflict when their own saved server fields changed', () => {
+  const base=state(),next=state({revision:6});
+  next.settings.staffReserve=0;next.summary.staffReserve=0;
+  assert.equal(admissionFormChanged(base,next,'settings'),true);
+  assert.equal(admissionFormChanged(base,next,'staff',{name:'合成未保存人员'}),false);
+  assert.equal(admissionFormChanged(base,next,'team',{id:teamId,name:'本机未保存名称',memberIds:[ids[0],ids[1]]}),false,'saving settings does not reset team input');
+  const teamChange=state({revision:6});teamChange.teams[0].name='另一页的新名称';
+  assert.equal(admissionFormChanged(base,teamChange,'settings'),false);
+  assert.equal(admissionFormChanged(base,teamChange,'team',{id:teamId,name:'我的未保存名称',memberIds:[ids[0],ids[1]]}),true);
+  assert.equal(admissionFormChanged(base,teamChange,'team',{id:'',name:'我的新增团队',memberIds:[ids[2]]}),false,'unrelated team edits do not block a new team');
+  const membership=state({revision:6});membership.people[2].teamId=teamId;
+  assert.equal(admissionFormChanged(base,membership,'team',{id:'',memberIds:[ids[2]]}),true);
+  assert.equal(admissionFormChanged(base,membership,'team',{id:'',memberIds:[ids[3]]}),false);
+});
+
+
+test('recovered staff intake locks an empty or matching original form while preserving different unsaved people',()=>{
+  const operation={path:'/api/admin/admissions/staff',method:'POST',body:JSON.stringify({expectedRevision:5,operationId:'o'.repeat(43),input:{fields:{name:'合成已保存人',email:'saved@example.invalid'},permissionReference:'合成许可',kind:'crew'}})};
+  const empty=admissionStaffRecovery({name:'',email:'',wechat:'',kind:'crew',permissionReference:''},operation);assert.equal(empty.state,'saved');assert.equal(empty.fields.name,'合成已保存人');assert.equal(Object.hasOwn(empty.fields,'confirmed'),false);
+  assert.equal(admissionStaffRecovery({...empty.fields,name:'  合成已保存人  '},operation).state,'saved');
+  const different={...empty.fields,name:'合成另一人'};assert.equal(admissionStaffRecovery(different,operation).state,'different');assert.equal(different.name,'合成另一人');
+  assert.equal(admissionStaffRecovery({}, {...operation,path:'/api/admin/admissions/promote'}),null);
 });

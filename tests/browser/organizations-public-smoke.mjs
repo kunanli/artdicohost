@@ -8,7 +8,7 @@ import {createInitialContent} from '../../src/config/content.mjs';
 import {toPublicContent} from '../../shared/content-schema.mjs';
 
 const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright-core');
-const project=fileURLToPath(new URL('../../',import.meta.url)),dist=resolve(project,'dist'),evidence=resolve(project,'.local-data/browser-evidence');
+const project=fileURLToPath(new URL('../../',import.meta.url)),dist=resolve(process.env.ARTDICO_DIST_DIRECTORY||resolve(project,'dist')),evidence=resolve(project,'.local-data/browser-evidence');
 await mkdir(evidence,{recursive:true});
 const SITE='https://artdico.host',API='https://api.artdico.host',errors=[],unexpected=[],reports=[];
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFElEQVR4nGN0KFjAwMDAxMDAgKAAGOQBVgs9CEsAAAAASUVORK5CYII=','base64');
@@ -17,9 +17,9 @@ const organization=(id,name,participation,fields={})=>({id,name,participation,st
 const organizations=[
  organization('synthetic-exhibitor','合成参展组织','exhibitor',{website:'https://example.invalid/exhibitor',logoId,logoUrl:'/api/public/portraits/'+logoId}),
  organization('synthetic-attendee','合成一般参与组织','attendee',{website:'https://example.invalid/attendee'}),
- organization('synthetic-name','合成名称 <script>','undecided',{website:'javascript:window.PRIVATE_EXECUTED=true',logoUrl:'https://example.invalid/private-logo.png'}),
+ organization('synthetic-name','合成名称 <script>','undecided'),
  organization('synthetic-broken-logo','合成图片失效组织','attendee',{logoId:missingId,logoUrl:'/api/public/portraits/'+missingId}),
- organization('synthetic-hidden','PRIVATE-UNCONFIRMED','attendee',{status:'pending'}),
+ organization('synthetic-hidden','PRIVATE-HIDDEN','attendee',{status:'pending',visibility:'private'}),
 ];
 const base=toPublicContent(createInitialContent());
 base.booths=[{id:'synthetic-booth',organization:'合成独立展位',project:'合成试玩作品',code:'C01',zone:'C',status:'confirmed'}];
@@ -39,10 +39,10 @@ async function scenario(initialMode){
    reads.push(url.pathname);
    if(url.pathname==='/api/public/content'){
     if(mode==='unavailable')return route.fulfill(json({error:{code:'UNAVAILABLE'}},503));
-    if(mode==='nopublication')return route.fulfill(json({},404));
+    if(mode==='nopublication')return route.fulfill(json({error:{code:'NOT_PUBLISHED'}},404));
     const content={...base};
     if(!['legacy','nopublication'].includes(mode))content.organizations=mode==='empty'?[]:mode==='malformed'?{}:organizations;
-    const response=json({revision:1,content,publishedAt:'2026-10-21T00:00:00Z'});
+    const response=json({revision:1,content:mode==='malformed'?content:toPublicContent(content),publishedAt:'2026-10-21T00:00:00Z'});
     if(mode==='loading'){release=()=>route.fulfill(response);return;}
     return route.fulfill(response);
    }

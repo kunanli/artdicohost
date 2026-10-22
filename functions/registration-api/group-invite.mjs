@@ -70,10 +70,11 @@ export function createGroupInviteService({ objects, journalFor, eventId, tokenSe
     } catch { throw failure(); }
   }
   function projection(state) {
-    const active = state.value.active;
-    return { revision: state.value.revision, configured: active !== null, expired: active === null || parseTimestamp(active.expiresAt) <= now(),
+    const active = state.value.active, at = now();
+    return { revision: state.value.revision, configured: active !== null, expired: active === null || parseTimestamp(active.expiresAt) <= at,
       expiresAt: active?.expiresAt ?? null, updatedAt: active?.updatedAt ?? null, contentType: active?.contentType ?? null, bytes: active?.bytes ?? null,
-      imageUrl: active ? apiOrigin + '/api/admin/group-invite/image' : null };
+      imageUrl: active ? apiOrigin + '/api/admin/group-invite/image' : null,
+      serverTime: new Date(at).toISOString(), maxExpiresAt: new Date(at + MAX_EXPIRY).toISOString() };
   }
   async function image(active) {
     try {
@@ -112,8 +113,8 @@ export function createGroupInviteService({ objects, journalFor, eventId, tokenSe
       if (!Number.isSafeInteger(revision) || revision < 0 || typeof contentType !== 'string' || !Object.hasOwn(PORTRAIT_TYPES, contentType)
         || typeof dataBase64 !== 'string' || !dataBase64 || dataBase64.length > Math.ceil(MAX_PORTRAIT_BYTES / 3) * 4 || !BASE64.test(dataBase64)
         || expires === null || expires <= at || expires - at > MAX_EXPIRY) throw failure('INVALID_GROUP_INVITE');
-      let data;
-      try { const raw = Buffer.from(dataBase64, 'base64'); if (raw.toString('base64') !== dataBase64) throw failure(); data = normalizePortraitBytes(raw, contentType); }
+      let data, sourceSha256;
+      try { const raw = Buffer.from(dataBase64, 'base64'); if (raw.toString('base64') !== dataBase64) throw failure(); sourceSha256 = digest(raw); data = normalizePortraitBytes(raw, contentType); }
       catch { throw failure('INVALID_GROUP_INVITE'); }
       const state = await read();
       if (state.value.revision !== revision) throw failure('GROUP_INVITE_CONFLICT');
@@ -121,7 +122,7 @@ export function createGroupInviteService({ objects, journalFor, eventId, tokenSe
         expiresAt: new Date(expires).toISOString(), updatedAt: new Date(at).toISOString(), updatedBy: id };
       try { await objects.putImmutable(prefix + '/images/' + active.imageId, data, { contentType }); await image(active); } catch { throw failure(); }
       if (expires <= now()) throw failure('INVALID_GROUP_INVITE');
-      return commit(state, active, id, 'replace', active.updatedAt);
+      return { ...await commit(state, active, id, 'replace', active.updatedAt), sourceSha256 };
     },
     async disable(input, actor) {
       const id = actorId(actor), revision = own(input, 'expectedRevision');

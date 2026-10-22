@@ -1,6 +1,6 @@
 # 后台独立页面与直接保存
 
-当前独立页与直接保存已在PR41实际发布，后续公开状态／游戏与作品／跟进人标签也已在PR42／43完成实际发布。[最新证据](games-publication-release-2026-10-21.md)、[接续入口](session-recovery.md)。以下保留前阶段设计与顺序，不是当前待办。
+现行操作以[统一保存](admin-save-workflow.md)、[默认公开](default-public-visibility.md)及[本轮发布记录](admin-save-visibility-release-2026-10-22.md)为准；保存成功保留编辑表单，已载入草稿固定浮窗移除。本页保留PR41独立页与PR42／43后续设计的历史顺序，不是当前待办或现行保存／公开门槛。[历史证据](games-publication-release-2026-10-21.md)、[接续入口](session-recovery.md)。
 
 ## 当时范围与顺序
 

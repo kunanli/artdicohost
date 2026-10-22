@@ -1,5 +1,7 @@
 # 人员角色与逐场次职责
 
+本轮公开与保存操作以[默认公开](default-public-visibility.md)及[统一保存](admin-save-workflow.md)为准，准确来源和实际部署状态见[本轮验收／发布记录](admin-save-visibility-release-2026-10-22.md)。旧版公开前确认／授权门槛由新规则替代；本页的私有职责、名额及历史保留契约继续适用。
+
 原始意向、实际出席回复、工作人员职责、报名名额及公开授权分别保存。修改角色不重建联系人或报名，不修改 `profile`／`source`／`sourceProfile`，不确认名额、住宿、公开姓名或肖像。日常取消仅改变状态与当前关联，完整 journal 继续保留历史。
 
 全活动 `operations.participationForms` 可多选：`guest,speaker,panelist,host,organizer,booth,student_showcase,attendee`。新增 `organizer` 表示研讨会组织者，`host` 表示主持；不把原始问卷的意向改写成正式职责。
@@ -16,7 +18,7 @@
 
 已有名额关联者，在旧联系人 PUT 或 `POST /api/admin/contacts/:id/assignments` 新增场次、展位、全活动职责或本场职责前，均核对最新 confirmed 名额。`assignments` 可额外传 `sessionRoles`；省略保留。候补／撤回／读取失败不得新增，移除或保留历史职责不需要重新分配名额，仍需原有 Origin、角色、CSRF 及 contacts CAS 修订。未转报名者只作私有筹备安排。
 
-嘉宾预填只准备未保存草稿。`title,bio,website,publicRoles` 为可选建议；内部 host 映射为 moderator。过长简介／无效网址不截断或改原件，返回 `omittedFields` 供编辑者核对。实际公开仍需独立确认、照片授权及发布，不自动授予 publicConsent。
+嘉宾预填只准备未保存草稿。`title,bio,website,publicRoles` 为可选建议；内部 host 映射为 moderator。过长简介／无效网址不截断或改原件，返回 `omittedFields` 供编辑者核对。嘉宾默认公开，明确设为「未公开」才排除新发布内容；确认、出席和照片授权不再作为公开门槛，也不因此授予 publicConsent 或确认名额。预填后须在实际表单「保存」并核对云端回执，再明确「发布到前台」；准备、保存或调整职责都不会自动发布。
 
 ## 全名单双向导出审计
 

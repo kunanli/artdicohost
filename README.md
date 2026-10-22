@@ -2,7 +2,9 @@
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
 
-[PR #42](https://github.com/kunanli/artdicohost/pull/42)／[PR #43](https://github.com/kunanli/artdicohost/pull/43) 已实际发布，main **`d9d0dd2cc52eac755aef8deda5de9c91024b741d`**，2026-10-22 **01:05:35（UTC+08）**完成。[正式运行 39639330823](https://github.com/kunanli/artdicohost/actions/runs/39639330823) attempt 1 的 check／deploy-fc／deploy 全成功。 1304项main检查、真实私有OSS／共同300政策、13个API后台路径、46个公开对象HTTPS及匿名公开内容／CORS核对通过。公开／出席红绿状态、前台返回刷新、统一游戏与作品及组织／展位关系、嘉宾照片选填、跟进人固定彩色标签均已上线。[准确证据](docs/games-publication-release-2026-10-21.md)、[操作](docs/publication-games-operations.md)、[新session接续](docs/session-recovery.md)。
+本轮操作采用嘉宾、组织、游戏与作品、展位默认「公开」，明确设为「未公开」才隐藏；列表开关直接保存，编辑窗开关随本表单保存，之后仍须明确「发布到前台」。可编辑表单统一「保存 → 保存中… → 已保存」，取得精确云端回执后才确认成功；常规本机暂存和已载入云端草稿固定浮窗不再作为保存提示。规则见[默认公开](docs/default-public-visibility.md)、[统一保存](docs/admin-save-workflow.md)、[设置回执](docs/settings-save-feedback.md)，准确来源、检查及实际部署状态以[本轮验收／发布记录](docs/admin-save-visibility-release-2026-10-22.md)和[接续台账](docs/session-recovery.md)为准。
+
+**实际发布：**[PR #44](https://github.com/kunanli/artdicohost/pull/44)，main **`6984f8226cc7fa040a962500d29b63a5af3dc9eb`**，2026-10-22 **08:50:08（UTC+08）**完成。[正式运行39701127548](https://github.com/kunanli/artdicohost/actions/runs/39701127548) attempt 1 的check／deploy-fc／deploy全成功。1335项main测试、559源码、Astro416（0错误／0警告）、23页构建、审计、准确包及离线启动、真实私有OSS／共同300政策、13个API后台入口、46个公开对象HTTPS及匿名公开内容／CORS全部通过。部署没有发布真实草稿；已发布快照仍是修订12，实际数量和浏览器验收范围见[本轮准确证据](docs/admin-save-visibility-release-2026-10-22.md)。前台返回刷新、统一游戏与作品及组织／展位关系、嘉宾照片选填、跟进人固定彩色标签沿用；[PR42／43记录](docs/games-publication-release-2026-10-21.md)保留为历史。
 
 **仍需主办方操作：**本次未代建 `zhouyufei`、`wangying`；现有管理员先在[用户管理](https://api.artdico.host/admin/settings/accounts/)核对，未建立才按准备／保存及回执流程创建，快捷预填不是已建立账号。Wallet待Apple真实签章与iPhone验收；EmailJS用户已确认正常，保留受控设置。
 
@@ -14,10 +16,11 @@
 
 ## 文档入口
 
-本轮改版：[统一保存](docs/admin-save-workflow.md)、[默认公开](docs/default-public-visibility.md)、[设置回执](docs/settings-save-feedback.md)、[准确验收／发布记录](docs/admin-save-visibility-release-2026-10-22.md)。本轮正式状态以该记录为准，下面PR42／43为前一已发布基准。
+本轮正式状态以[准确验收／发布记录](docs/admin-save-visibility-release-2026-10-22.md)为准；PR42／43及更早记录保留为历史，不按其中旧门槛或保存步骤操作。
 
 | 主要流程 | 操作说明 | 实际发布证据 |
 | --- | --- | --- |
+| 默认公开、就近发布与统一保存 | [公开规则](docs/default-public-visibility.md)、[保存操作](docs/admin-save-workflow.md)、[设置回执](docs/settings-save-feedback.md) | [本轮验收／发布记录](docs/admin-save-visibility-release-2026-10-22.md) |
 | 公开状态、游戏／作品、跟进人色标 | [当前操作](docs/publication-games-operations.md) | [PR #42／#43](docs/games-publication-release-2026-10-21.md) |
 | 后台独立页与直接保存 | [页面与保存](docs/admin-independent-pages.md) | [PR #41](docs/admin-pages-release-2026-10-21.md) |
 | 人员、嘉宾／讲者、组织、场次与展位关联，共同300名额 | [人员关系](docs/people-relationships.md) | [PR #36](docs/people-release-2026-10-21.md) |

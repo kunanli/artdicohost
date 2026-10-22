@@ -150,6 +150,13 @@ async function scenario(role){
    assert.equal(await promote.isEnabled(),true);
   }
   const team=root.locator('[data-admissions-team]');await team.locator('..').evaluate(node=>node.open=true);
+  if(role==='superadmin'){
+   const localTeam=team.locator('[data-operations-local-draft="admission-form:team"]');
+   await localTeam.getByRole('button',{name:'查看本机内容',exact:true}).click();
+   assert.equal(JSON.parse(await localTeam.locator('textarea').inputValue()).name,'合成两人团队','page reload retains the unrelated team draft for explicit review');
+   await localTeam.getByRole('button',{name:'清除本机草稿',exact:true}).click();
+   await localTeam.locator(':scope[data-operations-draft-state=discarded]').waitFor({state:'attached'});
+  }
   const beforePeople=state.people.length,beforeConfirmed=envelope(state).summary.confirmedCount;
   await team.locator('[name=name]').fill('合成两人团队');await team.locator('[name=memberIds]').selectOption([ids[0],ids[1]]);await team.locator('button[type=submit]').click();
   await root.locator('[data-admissions-teams]').filter({hasText:'2 位已登记成员'}).waitFor();

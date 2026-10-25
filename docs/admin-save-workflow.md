@@ -1,6 +1,6 @@
 # 后台保存方式
 
-本轮按用户要求统一所有可编辑后台表单；实际发布结果见最终发布记录，不能从本说明推断已上线。
+本轮统一所有可编辑后台表单，已随 PR #44／main `6984f8226cc7fa040a962500d29b63a5af3dc9eb` 发布；[准确 main 验收](admin-save-visibility-release-2026-10-22.md)、[新 session 入口](session-recovery.md)。
 
 ## 一条保存路径
 

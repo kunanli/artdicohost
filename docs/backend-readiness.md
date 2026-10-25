@@ -1,5 +1,9 @@
 # 后台账号与编辑现况
 
+## 现行状态优先（2026-10-25）
+
+本页下方为 2026-10-20 早期实现／缺口台账，不是当前功能清单。PR #44／main `6984f8226cc7fa040a962500d29b63a5af3dc9eb` 已实际启用内容后台、账号管理、私有 OSS 及正式报名，1335 项检查与真实云端验收通过。[当前能力与待办](session-recovery.md)、[准确发布证据](admin-save-visibility-release-2026-10-22.md)。不要按下方旧「Variables 为空／业务关闭／尚无账号管理」重做设置。
+
 2026-10-20 接续：main `3bb438d7425b35cdc723b84a68ce47f0d7ba1ad7` 的 [Actions 39426879176（第 2 次执行）](https://github.com/kunanli/artdicohost/actions/runs/39426879176/attempts/2) 已通过 448 项测试、16 个公开 OSS SHA-256 回读及三次 FC 签名完整源码标记，内容包已发布。独立账号配置因该次运行的身份 Variables 为空，在写入前失败；用户随后回报已补齐 `ARTDICO_ADMIN_USERNAME`、`ARTDICO_ADMIN_EMAIL`，仍待新运行验收。**内容业务保持关闭，私有 OSS 与实际登录尚未验证。** 用户问卷的本机私有入库不等于云端迁移或正式报名保存。此前 `e59c60a`／[39402663486](https://github.com/kunanli/artdicohost/actions/runs/39402663486) 为候选包装配阶段的历史基线。
 
 ## 云端内核接续（2026-10-20）

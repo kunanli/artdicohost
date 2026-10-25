@@ -1,5 +1,11 @@
 # 阿里云部署与上线步骤
 
+## 当前部署与本页历史范围（2026-10-25）
+
+本页下方「推荐环境」及示例变量为最初设计，不能当成当前待建资源。`artdico.host`、`api.artdico.host` 的实际 HTTPS、独立香港 FC／公开及私有 OSS 已随当前版本验收；PR #44／main `6984f8226cc7fa040a962500d29b63a5af3dc9eb` 的正式运行全部成功。日常发布按[OSS 自动部署](automatic-deployment.md)、[FC 自动部署](automatic-fc-deployment.md)、[完整生命周期](cloud-runtime-completion.md)，实际基准及新 session 步骤见[接续入口](session-recovery.md)。
+
+保留既有最小权限／域名／Secrets，不据下面示例新增 JWT 或部署凭证、不为补文档触发发布。恢复使用[完整备份与隔离恢复](maintenance-backup.md)，保留现在的业务日志与兼容字段，不能以旧代码／旧完整快照覆盖新资料。
+
 ## 推荐环境
 域名 `artdico.host`（DNS/ICP备案状况未验证）；`api.artdico.host` 仅建议使用。静态网站部署至**独立**阿里云 OSS 公开站点桶，可按需加 CDN 和 TLS；FC 与私有 OSS 数据桶另建。参考 IGDA 香港节点，不代表本项目一定免除适用的域名、合规或备案义务，应先核对实际服务地区及接入类型。
 

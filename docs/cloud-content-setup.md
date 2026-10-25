@@ -1,5 +1,9 @@
 # 云端内容后台：运行角色与接入准备
 
+## 现行接续入口（2026-10-25）
+
+本页保留早期角色／域名／配置接入过程，下面各节按其日期解读。最新已验证基准为 PR #44／main `6984f8226cc7fa040a962500d29b63a5af3dc9eb`，内容、正式报名和私有 OSS 已经实际验收启用；早期 owner 缺 Variables 已被后续成功版本取代。当前部署采用完整 [cloud lifecycle](cloud-runtime-completion.md) 及[云端隔离验收](cloud-acceptance.md)，不是仅旧闭合配置脚本。[当前状态](session-recovery.md)、[准确证据](admin-save-visibility-release-2026-10-22.md)。本次不重建角色、DNS、证书或 Secrets，不重跑旧阶段。
+
 ## 2026-10-20 实际发布及账号缺项诊断
 
 [main 运行 39426879176](https://github.com/kunanli/artdicohost/actions/runs/39426879176) 已发布完整内容包，三次签名健康标记均为 `3bb438d7425b35cdc723b84a68ce47f0d7ba1ad7`，十六个公开 OSS 对象通过 SHA-256 回读；账号设置在任何写入前因空输入停止。用户补建设置后，该失败 job 的 attempt 2 仍读到两个空身份 Variables，因此新 main 执行重新核对，而非将旧执行输出当成当前仓库设置清单。

@@ -1,5 +1,16 @@
 # ARTDiCO HOST 实施计划
 
+## 2026-10-25 文档接续整理（仅文档，不重新部署）
+
+用户要求整理 Markdown 后开启新 session，并提醒更新微信群入群码。本工作区早期 main／诊断草稿已落后，先实际读取 GitHub 最新 main `6984f8226cc7fa040a962500d29b63a5af3dc9eb`、PR #44 对应运行 39701127548 的三个 job／日志，再从该准确版本建立独立文档分支 `docs/session-handoff-20261025`。不合并旧诊断草稿，不重跑旧发布，不因文档整理关闭或重启已启用服务。
+
+统一 README、session-recovery、验收入口、当前保存／默认公开说明及 PR #44 实际证据；开发台账、早期账号／域名／邀请设置说明明确标记历史并指向现况。保留历史失败、源码提交和验收边界，不把 2026-10-22 的公开快照数量冒充当前私人报名或出席统计。新增群码人工接续：初始图只标日期 2026-10-26、无具体时刻；用户须提供最新图和新有效截止日期，之后以最新资料为准。七天输入上限不延长微信原码；不替换原图、不验证入群、不修改既有提醒。
+
+零代码、依赖、云资源、IAM／DNS 或业务数据变更；不读取 Secret 或私密后台，不重导 39 行名单、代建账号或实寄邮件。文档分支保留已知代码／发布基准，核对相对链接、准确来源及 diff；不为纯文档重新构建／发布应用。
+
+十二份 Markdown 相对链接存在性、纯文档范围及 diff 检查通过；独立审阅另核对三个实际 job 均成功和 UTC+08 完成时间，无阻挡项。未运行新的应用构建／测试或部署，1335 项为所引用实际 main 的已有结果。
+
+
 ## 2026-10-22 当前已完成：公开状态、游戏／作品与跟进人标签
 
 [PR #42](https://github.com/kunanli/artdicohost/pull/42)／[PR #43](https://github.com/kunanli/artdicohost/pull/43) 已实际发布，main **`d9d0dd2cc52eac755aef8deda5de9c91024b741d`**，2026-10-22 **01:05:35（UTC+08）**完成。[正式运行 39639330823](https://github.com/kunanli/artdicohost/actions/runs/39639330823) attempt 1 的 check／deploy-fc／deploy 全成功。 1304项、真实私有OSS十阶段、共同300政策、13API路径／46公开对象HTTPS及新的匿名公开内容／CORS核对通过。已完成真实发布状态／原因、前台返回刷新、统一学生／独立／团队作品与组织／展位关系、嘉宾照片选填、出席红绿及负责人固定彩色标签。[完整证据](games-publication-release-2026-10-21.md)、[操作](publication-games-operations.md)、[新session入口](session-recovery.md)。后台独立页与直接保存PR41已保留，无待合并worker／待发布代码。

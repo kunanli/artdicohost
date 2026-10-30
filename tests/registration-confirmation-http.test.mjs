@@ -10,6 +10,7 @@ function fixture() {
   const state = { authCalls: 0, readCalls: 0, writes: [], actor: { id: 'synthetic-owner', roles: ['superadmin'] }, error: null };
   const auth = { async authenticate() { state.authCalls++; return state.actor ? { user: state.actor, csrfToken: csrf } : null; } };
   const service = {
+    async staffConfirmationLink(value) { state.readCalls++; return {ready:true,registrationId:value.registrationId,actorMatched:value.actor===state.actor}; },
     async confirmation(value) { state.readCalls++; if (state.error) throw state.error; return { referenceCode: 'a'.repeat(43), admission: { status: 'confirmed' }, inputMatched: value.receiptToken === 'c1.synthetic.capability' }; },
     async settings() { state.readCalls++; return { revision: 0, automaticEnabled: true, email: { ready: false, missing: ['EMAILJS_CONFIRMATION_TEMPLATE_ID'] } }; },
     async setSettings(value) { state.writes.push(value); return { outcome: 'updated', revision: 1, automaticEnabled: value.enabled }; },
@@ -20,6 +21,22 @@ function fixture() {
 }
 const req = (path, { method = 'POST', origin = SITE, input = { receiptToken: 'c1.synthetic.capability' }, headers = {} } = {}) => new Request(API + path,
   { method, headers: { ...(origin === null ? {} : { origin }), 'content-type': 'application/json', ...headers }, ...(method === 'GET' || method === 'OPTIONS' ? {} : { body: JSON.stringify(input) }) });
+
+test('single-person staff links require review permission and exact staff origin before any service access',async()=>{
+  const path='/api/admin/registration-confirmation/link/'+'a'.repeat(43), f=fixture();
+  for(const origin of [SITE,'https://foreign.example.invalid'])assert.equal((await f.handle(req(path,{method:'GET',origin}))).status,403);
+  assert.equal(f.state.authCalls,0);assert.equal(f.state.readCalls,0);
+  for(const roles of [['editor'],['outreach'],[]]){f.state.actor={id:'synthetic-reader',roles};assert.equal((await f.handle(req(path,{method:'GET',origin:API}))).status,403);}
+  f.state.actor=null;assert.equal((await f.handle(req(path,{method:'GET',origin:API}))).status,401);
+  assert.equal(f.state.readCalls,0);
+  f.state.actor={id:'synthetic-reviewer',roles:['reviewer']};
+  const response=await f.handle(req(path,{method:'GET',origin:API}));assert.equal(response.status,200);assert.equal((await response.json()).actorMatched,true);
+  assert.match(response.headers.get('cache-control'),/private, no-store/u);assert.equal(response.headers.get('referrer-policy'),'no-referrer');
+  assert.equal(response.headers.get('access-control-allow-origin'),null);assert.equal(f.state.readCalls,1);assert.deepEqual(f.state.writes,[]);
+  assert.equal((await f.handle(req(path,{method:'POST',origin:API}))).status,405);
+  assert.equal((await f.handle(req(path+'?other=person',{method:'GET',origin:API}))).status,404);
+  assert.equal(f.state.readCalls,1);
+});
 
 test('canonical and existing-trigger receipt aliases allow exact public Origin and never read a staff session', async () => {
   const f = fixture();

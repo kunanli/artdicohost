@@ -96,6 +96,7 @@ async function submitApplication(f, form) {
 async function openReview(f) {
   await f.page.goto(API + '/admin/registrations/', { waitUntil: 'domcontentloaded' });
   await f.page.locator('[data-review-workspace]:visible').waitFor();
+  await f.page.locator('.review-tools > summary').click();
   await f.page.locator('[data-admissions-metrics] article').first().waitFor();
 }
 async function seedGroup(f) {
@@ -182,7 +183,7 @@ try {
     await openReview(f); await f.page.locator('[data-review-filters] [name=category]').selectOption('student');
     await f.page.locator('[data-review-filters] button[type=submit]').click();
     await f.page.locator('[data-review-rows] tr').first().getByRole('button', { name: '查看与核查' }).click();
-    await f.page.locator('[data-review-dialog][open]').waitFor(); await f.page.locator('[data-review-form] [name=status]').selectOption('approved');
+    await f.page.locator('[data-review-dialog][open]').waitFor(); await f.page.locator('[data-review-form] .review-detail-group > summary').first().click(); await f.page.locator('[data-review-form] [name=status]').selectOption('approved');
     assert.equal(await f.page.locator('[data-review-approve]').isDisabled(), true, 'unsaved internal notes must be saved before a formal decision');
     await f.page.locator('[data-review-save]').click(); await f.page.locator('[data-review-form] [data-save-state=saved]').waitFor();
     await f.page.locator('[data-review-approve]:enabled').waitFor();
@@ -197,7 +198,7 @@ try {
   {
     const f=await fixture({width:1440,mail:false}),pending=await f.runtime.seedPublic(pendingFields('合成核查保存边界'));
     await openReview(f);await f.page.locator('[data-review-rows] tr').first().getByRole('button',{name:'查看与核查'}).click();
-    const dialog=f.page.locator('[data-review-dialog][open]'),form=dialog.locator('[data-review-form]');await dialog.waitFor();
+    const dialog=f.page.locator('[data-review-dialog][open]'),form=dialog.locator('[data-review-form]');await dialog.waitFor();await form.locator('.review-detail-group > summary').first().click();
     await form.locator('[name=assignedTo]').fill('  Cafe\u0301  ');await form.locator('[name=internalNotes]').fill('  合成核查备注  ');
     f.rejectNextReviewSave();await form.locator('[data-review-save]').click();await form.locator('.ah-form-save-state[data-save-state=error]').waitFor();
     assert.equal(await dialog.isVisible(),true);assert.equal(await form.locator('[name=internalNotes]').inputValue(),'  合成核查备注  ');assert.equal(await form.locator('[data-review-save]').isEnabled(),true);
@@ -214,7 +215,7 @@ try {
   {
     const f=await fixture({mail:false}),pending=await f.runtime.seedPublic(pendingFields('合成核查身份不匹配'));
     await openReview(f);await f.page.locator('[data-review-rows] tr').first().getByRole('button',{name:'查看与核查'}).click();
-    const dialog=f.page.locator('[data-review-dialog][open]'),form=dialog.locator('[data-review-form]');await dialog.waitFor();
+    const dialog=f.page.locator('[data-review-dialog][open]'),form=dialog.locator('[data-review-form]');await dialog.waitFor();await form.locator('.review-detail-group > summary').first().click();
     await form.locator('[name=internalNotes]').fill('合成身份核对备注');f.wrongNextReviewIdentity();await form.locator('[data-review-save]').click();await form.locator('.ah-form-save-state[data-save-state=unknown]').waitFor();
     assert.equal(await dialog.isVisible(),true);assert.equal(await form.locator('[name=internalNotes]').inputValue(),'合成身份核对备注');assert.equal(await form.locator('[data-review-save]').isDisabled(),true);
     assert.equal(f.writes.filter(entry=>entry.path.endsWith('/review')).length,1);await assertPending(f,pending.reference_code);await f.context.close();

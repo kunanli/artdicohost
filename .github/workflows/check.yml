@@ -230,3 +230,6 @@ jobs:
       - name: Verify anonymous registration settings and both browser preflights without submitting an application
         timeout-minutes: 1
         run: node scripts/verify-public-registration.mjs
+      - name: Verify gateway-compatible registration transport using rejected diagnostic requests
+        timeout-minutes: 3
+        run: node scripts/observe-registration-transport.mjs

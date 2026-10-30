@@ -118,7 +118,10 @@ export function createCloudContentServer({ runtime, sourceCommit = null, assets 
       outgoing.end(method === 'HEAD' ? undefined : Buffer.from(await result.arrayBuffer()));
     } catch { fixedError(outgoing, 503, 'SERVICE_UNAVAILABLE', '操作未确认完成，请重新载入后核对。'); }
   });
-  server.maxHeadersCount = 40;
+  // FC adds forwarding/invocation headers. With Chromium and both submission
+  // proofs, valid POSTs exceed 40 fields and Node rejects them before the API.
+  // Keep the independent 8 KiB byte cap and strict HTTP framing unchanged.
+  server.maxHeadersCount = 64;
   server.maxRequestsPerSocket = 20;
   server.setTimeout(15_000, socket => socket.destroy());
   server.on('clientError', (_error, socket) => {

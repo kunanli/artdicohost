@@ -2,14 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {observeRegistrationTransport} from '../scripts/observe-registration-transport.mjs';
 const origin='https://artdico.host';
-test('transport observation uses only fixed anonymous GETs and fake tokens, with no body or registration writes',async()=>{
+test('transport observation uses fixed anonymous rejections; every POST is unsupported text with no registration payload',async()=>{
   const calls=[];
   const result=await observeRegistrationTransport({fetchFn:async(url,options)=>{
-    calls.push({url,options});return new Response(JSON.stringify({error:{code:'METHOD_NOT_ALLOWED'}}),{status:405,headers:{'content-type':'application/json','access-control-allow-origin':origin}});
+    calls.push({url,options});return new Response(JSON.stringify({error:{code:options.method==='GET'?'METHOD_NOT_ALLOWED':'UNSUPPORTED_MEDIA_TYPE'}}),{status:options.method==='GET'?405:415,headers:{'content-type':'application/json','access-control-allow-origin':origin}});
   }});
-  assert.equal(result.verified,true);assert.equal(calls.length,3);
-  assert.deepEqual(calls.map(x=>x.options.headers['X-Registration-Token']?.length??0),[0,512,4096]);
-  for(const {url,options}of calls){assert.equal(url,'https://api.artdico.host/api/admin/registration/submit');assert.equal(options.method,'GET');assert.equal(options.credentials,'omit');assert.equal(options.body,undefined);assert.equal(options.headers.Origin,origin);assert.equal(options.headers.Cookie,undefined);}
+  assert.equal(result.verified,true);assert.equal(calls.length,6);
+  assert.deepEqual(calls.map(x=>x.options.headers['X-Registration-Token']?.length??0),[0,512,4096,512,512,512]);
+  for(const {url,options}of calls){assert.equal(url,'https://api.artdico.host/api/admin/registration/submit');assert.ok(['GET','POST'].includes(options.method));assert.equal(options.credentials,'omit');assert.equal(options.headers.Origin,origin);assert.equal(options.headers.Cookie,undefined);
+    if(options.method==='GET')assert.equal(options.body,undefined);else{assert.equal(options.headers['Content-Type'],'text/plain');assert.doesNotMatch(options.body,/eventId|fields|consent/u);assert.ok(Buffer.byteLength(options.body)<8192);}}
 });
 test('transport observation distinguishes an opaque 400 and suppresses provider bodies and exceptions',async()=>{
   let n=0;

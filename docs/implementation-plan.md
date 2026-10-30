@@ -5,7 +5,7 @@
 从已实际发布的 main `4511e0a2392f37d9840734e97c3e6aafa47fad81` 接续。用户浏览器显示 token 阶段后 submit 返回 HTTP 400 且不是可识别 JSON；既有匿名 GET／OPTIONS 通过不能证明实际提交可用。首先区分网关／Node HTTP 解析、标头与正文校验，不以未证实猜测宣称故障已修复。
 
 1. 保留原 pending_submission 的正文、幂等键与已主动同意记录；只请用户提供响应内容／安全响应标头，不采集其请求正文、Token 或原始导入名单。
-2. 先用合成资料在真实 loopback HTTP 边界复现标头和 UTF-8 请求；必要的线上诊断只用固定端点 GET／OPTIONS，不签发验证 Token、不提交正式报名、不发送邮件。
+2. 先用合成资料在真实 loopback HTTP 边界复现标头和 UTF-8 请求；线上诊断只用固定端点 GET／OPTIONS，以及应在正文／Token／存储处理前被拒绝为 415 的 text/plain POST。诊断正文不含 eventId、fields 或 consent，不签发验证 Token、不提交正式报名、不发送邮件；响应只投影安全状态与白名单码。
 3. 依据实际响应证据修正入口或请求构造，继续严格校验 Origin、方法、正文上限、签名、当前政策和存储回执。不改 DNS、IAM、费用资源、Wallet／EmailJS 配置或任何既有报名资料。
 4. 定向传输／真实 HTTP／原幂等重试回归后，完成构建、源码、依赖及完整检查；PR 检查通过后沿用香港 FC／OSS 发布，核对真实 HTTPS 结果。本人申请仍由原浏览器明确核对，不自动重报。
 

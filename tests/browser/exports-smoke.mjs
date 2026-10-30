@@ -44,6 +44,7 @@ async function scenario(role,{unknownAck=false}={}){
     try{return route.fulfill({status:200,body:await readFile(file),contentType:({html:'text/html',js:'text/javascript',css:'text/css',png:'image/png',woff2:'font/woff2'})[extname(file).slice(1)]||'application/octet-stream'});}catch{return route.fulfill({status:404,body:''});}
   });
   await page.goto('https://api.artdico.host/admin/registrations/',{waitUntil:'networkidle'});await page.locator('[data-review-workspace]:visible').waitFor();
+  await page.locator('.review-export > summary').click();
   const button=page.locator('[data-review-export-xlsx]');
   if(role==='reviewer'){
     assert.equal(await button.isDisabled(),true);assert.equal(await page.locator('[data-review-export-contact]').isDisabled(),true);assert.equal(writes,0);assert.equal(deliveryReads,0);assert.equal(await page.locator('[data-delivery-settings]').count(),0);reports.push({role,scopeControlsDisabled:true,deliverySettingsNotRead:true});

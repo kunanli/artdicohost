@@ -51,6 +51,12 @@ try{
     assert.equal(await page.locator('.review-export').evaluate(el=>el.open),false);
     assert.equal(f.linkCount(),0,'listing never creates or bulk-loads private links');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+    assert.equal(await page.locator('.review-summary-table').evaluate(table=>{
+      const wrap=table.closest('.ah-admin-table-wrap');return wrap.scrollWidth<=wrap.clientWidth+1;
+    }),true,'the daily list does not hide its actions inside a horizontal scroller');
+    for(const button of await page.locator('[data-review-rows] button').all()){
+      const box=await button.boundingBox();assert.ok(box&&box.x>=0&&box.x+box.width<=width,'review action stays inside the viewport');
+    }
     assert.doesNotMatch(await page.locator('[data-review-rows]').innerText(),/新报名|内部建议/u);
     await page.screenshot({path:resolve(evidence,'registration-list-'+width+'.png'),fullPage:true});
     await f.select('合成导入参会者');

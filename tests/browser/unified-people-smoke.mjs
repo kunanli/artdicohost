@@ -9,7 +9,7 @@ const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright
 const project=fileURLToPath(new URL('../../',import.meta.url)),dist=resolve(project,'dist'),evidence=resolve(project,'.local-data/browser-evidence');
 const aliases=new Map(CLOUD_ADMIN_PAGE_ALIASES),errors=[],reports=[];
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
-async function fixture(width,username='owner'){
+async function fixture(width,username='owner',loseManualAck=false){
  const f=await peopleRuntimeFixture({mail:true}),contact=(await f.createContact({name:'合成讲者甲'})).contact,other=(await f.createContact({name:'合成邀约乙'})).contact;
  const snapshot=await f.app.store.read(),content=structuredClone(snapshot.draft.content);
  content.organizations=[{id:'synthetic-exhibitor',name:'合成参展公司',logoId:'',website:'',participation:'exhibitor',status:'confirmed',publicConsent:false,internalNotes:'PRIVATE_COMPANY_NOTE'}];
@@ -22,10 +22,11 @@ async function fixture(width,username='owner'){
  const pending=await f.seedPublic({name:'合成申请丙'});assert.equal(f.messages.length,0);
  const headers=await f.login(username),context=await browser.newContext({viewport:{width,height:980}}),page=await context.newPage();page.setDefaultTimeout(12000);
  const [name,...value]=headers.Cookie.split('=');await context.addCookies([{domain:new URL(SITE).hostname,path:'/api/admin',name,value:value.join('='),httpOnly:true,secure:true,sameSite:'Strict'}]);
- const requests=[];page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
+ const requests=[];let dropped=false;page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
  await context.route('**/*',async route=>{const request=route.request(),url=new URL(request.url());assert.equal(url.origin,SITE,'no unmocked outbound request');
-  if(url.pathname.startsWith('/api/')){requests.push({path:url.pathname,method:request.method()});
+  if(url.pathname.startsWith('/api/')){requests.push({path:url.pathname,method:request.method(),body:request.postData()});
    const response=await f.app.handle(new Request(request.url(),{method:request.method(),headers:await request.allHeaders(),...(request.method()==='GET'?{}:{body:request.postData()})}));
+   if(loseManualAck&&url.pathname.includes('/registration-confirmation/send/')&&!dropped){dropped=true;return route.abort('failed');}
    return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});}
   const path=aliases.get(url.pathname)||url.pathname,file=resolve(dist,'.'+(path.endsWith('/')?path+'index.html':path));assert.ok(file.startsWith(dist+'/'));
   return route.fulfill({status:200,body:await readFile(file),contentType:({html:'text/html',js:'text/javascript',css:'text/css',woff2:'font/woff2',webp:'image/webp',svg:'image/svg+xml'})[extname(file).slice(1)]||'application/octet-stream'});
@@ -58,6 +59,8 @@ try{
   await p.locator('[data-contact-close]').first().click();await p.locator('[data-contacts-refresh]').click();await p.locator('[data-directory-status]').filter({hasText:'符合筛选'}).waitFor();assert.equal(f.messages.length,width===320||width===390?1:0);
   assert.equal(f.requests.some(row=>/publish|approve/u.test(row.path)),false);await f.context.close();reports.push({width,unifiedRows:true,multiRoleViews:true,companyRoster:true,collapsedSource:true,noOverflow:true,explicitMailOnly:true});
  }
+ const recovery=await fixture(390,'owner',true);await ready(recovery);await recovery.page.locator('[data-people-view=speakers]').click();await recovery.page.locator('[data-directory-title]').filter({hasText:'讲者名单'}).waitFor();await recovery.page.locator('[data-directory-rows]').getByRole('button',{name:'查看与管理'}).click();await recovery.page.locator('[data-person-confirmation-status]').filter({hasText:'可以寄送'}).waitFor();await recovery.page.locator('[data-person-confirmation-send]').click();await recovery.page.locator('[data-person-confirmation-status]').filter({hasText:'结果待核对'}).waitFor();assert.equal(recovery.messages.length,1);await recovery.page.locator('[data-person-confirmation-check]').click();await recovery.page.locator('[data-person-confirmation-status]').filter({hasText:'服务商已接受'}).waitFor();const attempts=recovery.requests.filter(row=>row.path.includes('/registration-confirmation/send/'));assert.equal(attempts.length,2);assert.equal(attempts[0].body,attempts[1].body);assert.equal(recovery.messages.length,1);await recovery.context.close();reports.push({lostManualAckReplaysSameOperation:true,oneMailAfterExplicitVerification:true});
+ const conflict=await fixture(390);const roster=await conflict.app.contactsStore.read(),savedContact=roster.contacts.find(item=>item.id===conflict.contact.id);await conflict.app.contactsStore.saveOperations(savedContact.id,roster.revision,{...savedContact.operations,responseStatus:'declined'},conflict.users[0].id);await ready(conflict);await conflict.page.getByText('本人不出席，原名额仍在；请核对撤回。').waitFor();assert.equal(await conflict.page.getByRole('link',{name:'核对原名额'}).getAttribute('href'),'/admin/registrations/#registration='+conflict.registrationId);assert.equal(conflict.messages.length,0);await noOverflow(conflict.page);await conflict.context.close();reports.push({declinedConfirmedConflictVisible:true,noAutomaticWithdrawalOrMail:true});
  const reviewer=await fixture(390,'reviewer');await ready(reviewer);assert.equal(await reviewer.page.locator('[data-directory-rows] tr').count(),2);
  assert.equal(await reviewer.page.locator('[data-contacts-legacy-tools]').isVisible(),false);assert.equal(await reviewer.page.locator('[data-people-view=exhibitors]').isVisible(),false);
  assert.equal(reviewer.requests.some(row=>row.path==='/api/admin/contacts'||row.path==='/api/admin/intent-invitations'||row.path==='/api/admin/people/relationships'),false);

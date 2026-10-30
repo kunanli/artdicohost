@@ -21,7 +21,7 @@
 - `pnpm check`：0 errors、0 warnings，保留原有 1 hint。
 - `pnpm build`：23 页面；生产模式另显式设置 `PUBLIC_API_BASE` 与 `PUBLIC_CONTENT_API_ORIGIN` 检查。
 - `pnpm audit --audit-level=moderate`：无已知漏洞。
-- 新统一名单 Chromium：320 / 390 / 1440，来源去重、角色视图、公司与旧展位、逐笔确认信、read-only reviewer；无横向溢出、页面异常或真实外部请求。
+- 新统一名单 Chromium：320 / 390 / 1440，来源去重、角色视图、公司与旧展位、自动／逐笔确认信、丢失寄信回执后核对同一操作、拒绝出席但原名额仍在的冲突提示、read-only reviewer；无横向溢出、页面异常或真实外部请求。
 - 原人员关系 Chromium：23 组，含已保存关系、来源权限、退出清理、未知联系人 ACK、300 共同名额边界与历史不补寄。
 - 确认页 Chromium：8 组，含表单跳转、当前名额、撤回、未知链接、重新读取撤回、真实合成 signed pass 下载、切换私人链接。
 - 报名审核与私人确认链接 Chromium：320 / 390 / 1440；Excel 三种权限导出案例通过，未读取通知配置或改变原数据。

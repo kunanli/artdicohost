@@ -55,10 +55,15 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
     const row=node('tr'),identity=node('td'),name=node('div',item.name,'people-directory-name');identity.append(name,node('small',item.organization||'机构未填写'),node('small',SOURCE_LABELS[item.source]));
     if(item.roles.length){const tags=node('div',undefined,'people-directory-roles');for(const role of item.roles)tags.append(node('span',ROLE_LABELS[role]));identity.append(tags);}
     const follow=node('td');if(item.responseStatus)follow.append(node('div',({pending:'出席回复待确认',attending:'本人已答应出席',declined:'本人不出席'})[item.responseStatus]));
-    const invitation=INVITATION_LABELS[item.invitationStatus];if(invitation)follow.append(node('small',invitation));
+    const invitation=INVITATION_LABELS[item.invitationStatus];if(invitation&&!(item.admissionStatus==='confirmed'&&item.invitationStatus==='not_started'))follow.append(node('small',invitation));
     if(item.owner)follow.append(node('small','跟进：'+item.owner));if(item.followUpAt)follow.append(node('small','下次：'+item.followUpAt));if(!follow.childNodes.length)follow.append(node('small','本人申请／资料登记'));
     const admission=node('td');admission.append(item.admissionStatus?badge(ADMISSION_LABELS[item.admissionStatus],item.admissionStatus):node('small',item.registrationState==='restricted'?'已关联报名，名额由审核同事核对':'尚未关联报名'));
-    if(EMAIL_LABELS[item.deliveryStatus])admission.append(node('small',EMAIL_LABELS[item.deliveryStatus]));
+    if(item.admissionStatus==='pending_review'&&item.deliveryStatus==='not_sent')admission.append(node('small','审核通过并取得名额后处理确认信'));
+    else if(EMAIL_LABELS[item.deliveryStatus])admission.append(node('small',EMAIL_LABELS[item.deliveryStatus]));
+    if(item.responseStatus==='declined'&&item.admissionStatus==='confirmed'){
+      admission.append(node('small','本人不出席，原名额仍在；请核对撤回。','people-directory-warning'));
+      if(item.registrationId&&state.permissions.registrations)admission.append(link('核对原名额','/admin/registrations/#registration='+encodeURIComponent(item.registrationId)));
+    }
     const actions=node('td');
     if(item.contactId){const button=node('button','查看与管理','people-directory-action');button.type='button';button.addEventListener('click',()=>{if(!blocked&&!busy&&active())onContact(item.contactId);});actions.append(button);
       const menu=node('details',undefined,'people-row-menu');menu.append(node('summary','更多'));const options=node('div');options.append(link('个人总览','/admin/person/#contact='+encodeURIComponent(item.contactId)));

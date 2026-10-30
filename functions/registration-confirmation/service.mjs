@@ -350,17 +350,23 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!readerValid(actor)) failure('FORBIDDEN', 403);
     if (!ID.test(registrationId ?? '')) failure('INVALID_REQUEST', 400);
     const { record, admission } = await loadRegistration(registrationId);
-    const permission = await deliveryPermission(record), current = await target().read();
+    const current = await target().read(), canSend = actorValid(actor);
     const notice = current.value.notices.filter(item => item.registrationId === registrationId).find(item => item.kind === 'promotion')
       ?? current.value.notices.find(item => item.registrationId === registrationId);
-    const provider = await providerState(), status = notice ? stateOf(notice) : 'not_sent';
-    const reason = admission.status !== 'confirmed' ? 'ADMISSION_NOT_CONFIRMED'
-      : !record.fields.email ? 'EMAIL_MISSING' : !permission.eligible ? permission.reason
-        : !current.value.settings.enabled ? 'EMAIL_PAUSED' : !provider.ready ? 'EMAIL_NOT_READY'
-          : status === 'provider_accepted' ? 'ALREADY_ACCEPTED' : status === 'unknown' ? 'DELIVERY_UNKNOWN'
-            : notice?.attempt >= 5 ? 'RETRY_LIMIT' : 'ELIGIBLE';
+    const status = notice ? stateOf(notice) : 'not_sent';
+    let reason = admission.status !== 'confirmed' ? 'ADMISSION_NOT_CONFIRMED'
+      : !record.fields.email ? 'EMAIL_MISSING' : status === 'provider_accepted' ? 'ALREADY_ACCEPTED'
+        : status === 'unknown' ? 'DELIVERY_UNKNOWN' : !canSend ? 'OPERATOR_PERMISSION_REQUIRED'
+          : notice?.attempt >= 5 ? 'RETRY_LIMIT' : null;
+    // Review-only readers can see the selected registration and durable history.
+    // Contact permission checks and encrypted provider configuration are manager scope.
+    if (reason === null) {
+      const permission = await deliveryPermission(record);
+      reason = !permission.eligible ? permission.reason : !current.value.settings.enabled ? 'EMAIL_PAUSED'
+        : !(await providerState()).ready ? 'EMAIL_NOT_READY' : 'ELIGIBLE';
+    }
     return { registrationId, revision: current.value.revision, admissionStatus: admission.status, status, reason,
-      ready: reason === 'ELIGIBLE' && actorValid(actor), canSend: actorValid(actor), retryRejected: status === 'rejected',
+      ready: reason === 'ELIGIBLE' && canSend, canSend, retryRejected: status === 'rejected',
       recipient: admission.status === 'withdrawn' ? '' : record.fields.email ?? '' };
   }
   return Object.freeze({ prefix, forSavedReceipt, authorize, authorizedRegistration, confirmation, staffConfirmationLink, settings, setSettings, dispatch,

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
 import {peopleRuntimeFixture} from './helpers/people-runtime-fixture.mjs';
 import {EDITABLE_CONTACT_FIELDS,EDITABLE_CONTACT_ARRAY_FIELDS} from '../shared/contact-editor.mjs';
+import {createRegistrationConfirmationService} from '../functions/registration-confirmation/service.mjs';
+import {createObjectJournal} from '../functions/cloud-content/object-journal.mjs';
 import {validPersonConfirmation} from '../src/lib/person-confirmation.mjs';
 const operation=()=>randomBytes(24).toString('base64url');
 async function response(value,status=200){assert.equal(value.status,status);return value.json();}
@@ -76,4 +78,19 @@ test('public approval and a newly confirmed staff entry each send after the real
  const first=await response(await f.app.handle(f.request('/api/admin/admissions/staff',{method:'POST',headers,body})));assert.equal(first.receipt.admissionStatus,'confirmed');assert.equal(f.messages.length,2);
  await response(await f.app.handle(f.request('/api/admin/admissions/staff',{method:'POST',headers,body})));assert.equal(f.messages.length,2);
  const state=await delivery(f,first.registrationId,headers);assert.equal(state.reason,'ALREADY_ACCEPTED');
+});
+
+
+test('review-only delivery state never loads contact permissions or provider configuration',async()=>{
+ const f=await peopleRuntimeFixture({mail:true}),contact=(await f.createContact()).contact;
+ const converted=await f.app.intentService.convertContacts({actor:f.users[0],contactIds:[contact.id],expectedContactRevision:1,permissionReference:'合成明确授权'}),id=converted.registrations[0].registrationId;
+ let permissionReads=0,configurationReads=0;
+ const service=createRegistrationConfirmationService({registrationService:f.app.registrationService,journalFor:prefix=>createObjectJournal({objects:f.objects,prefix}),tokenSecret:'synthetic-people-registration-token-secret-123456',clock:()=>Date.parse('2026-10-21T09:00:00Z'),
+  staffDeliveryPermission:async()=>{permissionReads++;throw new Error('Review reader cannot load contacts');},emailProvider:{readiness:async()=>{configurationReads++;throw new Error('Review reader cannot load provider keys');},send:async()=>{throw new Error('No send');}}});
+ const actor=f.users.find(item=>item.username==='reviewer'),state=await service.staffDeliveryState({actor,registrationId:id});
+ assert.equal(state.canSend,false);assert.equal(state.ready,false);assert.equal(state.reason,'OPERATOR_PERMISSION_REQUIRED');assert.equal(validPersonConfirmation(state,id),true);
+ assert.equal(permissionReads,0);assert.equal(configurationReads,0);assert.equal(f.messages.length,0);
+ const headers=await f.login('reviewer'),before=f.objects.calls.length;
+ const actual=await delivery(f,id,headers);assert.equal(actual.reason,'OPERATOR_PERMISSION_REQUIRED');assert.equal(actual.ready,false);
+ assert.equal(f.objects.calls.slice(before).some(call=>call.key.startsWith('cms/v1/contacts/')||call.key.startsWith('cms/v1/delivery-config/')),false);
 });

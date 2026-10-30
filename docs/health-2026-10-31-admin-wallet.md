@@ -9,15 +9,16 @@
 | 人员与报名 | 新增同一入口下五个视图。只通过原联系人 ID 与 immutable provenance 连接报名；同名、同邮箱不自动合并。 |
 | 参展商 | 公司／团队为主，明确联系人关系与展位；只有旧文字的展位保留待关联，不创建假公司。 |
 | 讲者／嘉宾 | 保存的参与职责、逐场职责、人物关联共同投影；一人可有多角色，原问卷兴趣不授予职责。 |
-| 权限与故障 | reviewer-only 不读取联系人源；outreach-only 不读取报名源。失败不当零，分页绑定来源版本，退出／换人不回填旧回应。 |
+| 权限与故障 | 目录的 reviewer-only 不读取联系人源；outreach-only 不读取报名源。单笔通知的 review-only 仅读取本报名与 durable history，不载入联系人许可或邮件 provider 配置。失败不当零，分页绑定来源版本，退出／换人不回填旧回应。 |
 | 确认与通知 | 公开审核通过、明确新出席确认、工作人员直接登记 confirmed 后处理邮件。旧资料读取、导入与批次同步不补寄。历史补寄为有权限的逐笔动作。 |
 | 通知边界 | 当前联络许可与地址再次核对。provider_accepted 只表示服务商接受；unknown 不重寄。原操作重放、版本冲突、邮件暂停与服务失败保持独立名额记录。 |
 | Wallet | 海军蓝／钴蓝／铂金 PNG 实际进入 signed pass；manifest 与 detached CMS 使用合成根由 OpenSSL 独立验签。待审、候补、撤回不发 pass。 |
-| 发布预算 | 暂存构建 40 个后台静态资源、7,459,529 bytes，仍在 8 MiB 限制内；未新增服务器源文件、依赖、环境变量、服务或 IAM。首轮 PR 检查的 exact merge-tree 包已通过 128 文件、40 资源与请求预算校验；最终提交仍按相同检查执行。 |
+| 发布预算 | 暂存构建 40 个后台静态资源、7,459,529 bytes，仍在 8 MiB 限制内；未新增服务器源文件、依赖、环境变量、服务或 IAM。首轮 PR 检查的 exact merge-tree 包已通过 128 文件、40 资源与请求预算校验；`968b098` 候选 ZIP 为 35,954,172 bytes，JSON 请求为 47,938,919 / 48,000,000 bytes；后续新增图稿或前端共享资源时须重新核对请求预算。最终提交仍按相同检查执行。 |
 
 ## 已完成的本地验证
 
 - `node --test --test-concurrency=2 tests/*.test.mjs`：1,359 passed，0 failed（184.5 秒）。
+- 补充通知读取范围回归：81 项定向测试通过，review-only 调用对联系人许可与 provider configuration 的读取次数均为零。
 - `pnpm check`：0 errors、0 warnings，保留原有 1 hint。
 - `pnpm build`：23 页面；生产模式另显式设置 `PUBLIC_API_BASE` 与 `PUBLIC_CONTENT_API_ORIGIN` 检查。
 - `pnpm audit --audit-level=moderate`：无已知漏洞。

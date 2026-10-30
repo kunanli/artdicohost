@@ -1,0 +1,11 @@
+---
+import {PEOPLE_VIEWS} from '../lib/admin-sections.mjs';
+interface Props { current?: string }
+const {current='all'}=Astro.props;
+---
+<nav class="people-view-nav" aria-label="人员与报名视图">
+  {PEOPLE_VIEWS.map(view=><a href={view.href} data-people-view={view.key} aria-current={view.key===current?'page':undefined}>{view.label}<span data-people-count={view.key}></span></a>)}
+</nav>
+<style>
+  .people-view-nav{display:flex;gap:7px;flex-wrap:wrap;border-bottom:1px solid #dfe6f0;margin:0 0 24px;padding-bottom:14px}.people-view-nav a{display:inline-flex;align-items:center;gap:7px;min-height:40px;padding:9px 14px;border-radius:6px;color:#52637e;font-size:13px;text-decoration:none}.people-view-nav a[aria-current=page]{background:#eaf0ff;color:#1448ef;font-weight:700}.people-view-nav a:hover{background:#f0f4fb}.people-view-nav span{font-size:11px;font-variant-numeric:tabular-nums}.people-view-nav span:empty{display:none}@media(max-width:520px){.people-view-nav{gap:3px;margin-bottom:18px}.people-view-nav a{padding:9px 11px;font-size:12px}}
+</style>

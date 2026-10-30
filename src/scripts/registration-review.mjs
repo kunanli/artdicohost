@@ -1,3 +1,4 @@
+import {createPersonConfirmation} from '../lib/person-confirmation.mjs';
 import {createOperationsFormDraft,operationsDraftStore,captureDraftFields,applyDraftFields,createOperationsSaveState,operationsFieldErrors} from '../lib/operations-form-draft.mjs';
 import {canManageEventOperations} from '../../shared/staff-permissions.mjs';
 import {reviewRegistrationSelection,reviewConfirmationLink} from '../lib/registration-review-selection.mjs';
@@ -16,6 +17,7 @@ let sessionGeneration=0;
 let filters={};
 let reviewDraft=null,reviewPending=null;
 let listState=null,confirmationLink=null;
+const personConfirmation=createPersonConfirmation({root:$('[data-person-confirmation]'),request,getUser:()=>user,isBlocked:()=>busy||dirty||Boolean(staffAdmissions.pending)});
 function clearConfirmationLink(){confirmationLink=null;$('[data-review-confirmation-result]').hidden=true;$('[data-review-confirmation-open]').removeAttribute('href');$('[data-review-confirmation-fallback]').value='';$('[data-review-confirmation-fallback]').hidden=true;$('[data-review-confirmation-status]').textContent='';}
 const reviewSaveState=createOperationsSaveState({form:$('[data-review-form]'),button:$('[data-review-save]')});
 reviewSaveState.set('idle','修改后保存本条报名的核查意见。');
@@ -51,7 +53,7 @@ function clear(){
   reviewDraft?.close();reviewDraft=null;reviewPending=null;
   sessionGeneration+=1;
   for(const url of privateExportUrls)URL.revokeObjectURL(url);privateExportUrls.clear();
-  staffAdmissions.clear();clearConfirmationLink();listState=null;
+  personConfirmation.clear();staffAdmissions.clear();clearConfirmationLink();listState=null;
   user=null;csrfToken='';revision=0;nextCursor=null;selected=null;dirty=false;filters={};busy=false;pendingRegistration=null;
   $('[data-review-workspace]').hidden=true;$('[data-review-account]').hidden=true;$('[data-review-login-panel]').hidden=false;
   for(const selector of ['[data-review-rows]','[data-review-metrics]','[data-review-details]','[data-review-summary]'])$(selector).replaceChildren();
@@ -68,8 +70,10 @@ function clear(){
 }
 async function request(path,options={}){
   const generation=sessionGeneration;
-  const response=await fetch(path,{...options,credentials:'same-origin',cache:'no-store',redirect:'error',headers:{Accept:'application/json',...(options.body?{'Content-Type':'application/json'}:{}),...(options.method&&options.method!=='GET'&&csrfToken?{'X-CSRF-Token':csrfToken}:{})}});
+  const {current=()=>true,...fetchOptions}=options;
+  const response=await fetch(path,{...fetchOptions,credentials:'same-origin',cache:'no-store',redirect:'error',headers:{Accept:'application/json',...(options.body?{'Content-Type':'application/json'}:{}),...(options.method&&options.method!=='GET'&&csrfToken?{'X-CSRF-Token':csrfToken}:{})}});
   if(generation!==sessionGeneration)throw new Error('会话已改变，请重新登录。');
+  if(!current()){response.body?.cancel().catch(()=>{});throw new Error('读取对象已改变，已忽略旧回应。');}
   if(response.status===401){clear();throw new Error(path==='/api/admin/login'?'账号或密码未通过验证。':'会话已结束，请重新登录。');}
   if(response.status===403){clear();const error=new Error('此账号没有相应权限，请重新登录核对。');error.status=403;throw error;}
   if(!response.ok){
@@ -84,6 +88,7 @@ async function request(path,options={}){
   }
   const result=await response.json().catch(()=>null);
   if(generation!==sessionGeneration)throw new Error('会话已改变，请重新登录。');
+  if(!current())throw new Error('读取对象已改变，已忽略旧回应。');
   if(!result||typeof result!=='object')throw new Error('服务返回结果无效，请稍后重试。');
   return result;
 }
@@ -175,6 +180,7 @@ function renderAdmissionDecision(){
   const pending=person?.status==='pending_review',confirmed=person?.status==='confirmed';
   $('[data-review-approval-actions]').hidden=!pending;
   $('[data-review-admission-help]').textContent=pending?'核准后按剩余名额确认或进入候补；取得名额后才处理正式通知。':confirmed?'名额已确认，无需再次审核。可取得下方参会凭证。':person?.status==='waitlisted'?'已核准候补，转正前暂不提供正式票券。':person?'当前状态不提供正式票券，原始资料与历史继续保留。':'请刷新名额后再操作。';
+  personConfirmation.select(confirmed?selected.id:null);personConfirmation.lock();
   $('[data-review-ticket]').hidden=!confirmed;
   $('[data-review-confirmation-prepare]').disabled=busy||!allowed()||!confirmed||dirty||staffAdmissions.pending;
   $('[data-review-confirmation-copy]').disabled=busy||!allowed()||!confirmed||!confirmationLink;
@@ -217,7 +223,7 @@ async function admissionAction(callback){
 $('[data-review-approve]').addEventListener('click',()=>{if(selected)admissionAction(()=>staffAdmissions.reviewApplication(selected.id,'approve'));});
 $('[data-review-reject]').addEventListener('click',()=>{if(selected)admissionAction(()=>staffAdmissions.reviewApplication(selected.id,'reject'));});
 $('[data-review-admission-retry]').addEventListener('click',()=>admissionAction(()=>staffAdmissions.retry()));
-async function closeDetail(){if(busy)return;const generation=sessionGeneration;if(dirty&&!confirm('关闭表单并保留本机草稿？'))return;if(dirty&&!reviewDraft?.blocked&&!reviewPending)await reviewDraft?.flush().catch(()=>{});if(generation!==sessionGeneration)return;reviewDraft?.close();reviewDraft=null;reviewPending=null;dirty=false;selected=null;clearConfirmationLink();$('[data-review-dialog]').close();$('[data-review-form]').reset();$('[data-review-details]').replaceChildren();$('[data-review-summary]').replaceChildren();renderAdmissionDecision();}
+async function closeDetail(){if(busy)return;const generation=sessionGeneration;if(dirty&&!confirm('关闭表单并保留本机草稿？'))return;if(dirty&&!reviewDraft?.blocked&&!reviewPending)await reviewDraft?.flush().catch(()=>{});if(generation!==sessionGeneration)return;reviewDraft?.close();reviewDraft=null;reviewPending=null;dirty=false;selected=null;personConfirmation.clear();clearConfirmationLink();$('[data-review-dialog]').close();$('[data-review-form]').reset();$('[data-review-details]').replaceChildren();$('[data-review-summary]').replaceChildren();renderAdmissionDecision();}
 $('[data-review-login]').addEventListener('submit',event=>{
   event.preventDefault();const form=event.currentTarget;if(!form.reportValidity())return;const login=Object.fromEntries(new FormData(form));
   action(async()=>{let result;try{result=await request('/api/admin/login',{method:'POST',body:JSON.stringify(login)});}finally{form.elements.namedItem('password').value='';login.password='';}user=result.user;csrfToken=result.csrfToken;await load();announce('已登录。请按需要核查，避免导出或分享无关个人资料。');});

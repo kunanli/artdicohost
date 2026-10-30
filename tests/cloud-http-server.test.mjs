@@ -341,7 +341,7 @@ test('public capability and protected export/settings bodies are bounded before 
   let calls = 0;
   const { port } = await loopback(t, { runtime: { configured: true, handle: async request => { calls++; return json({ bytes: (await request.arrayBuffer()).byteLength }); } } });
   for (const [path, limit] of [['/api/registration/wallet', 8192], ['/api/admin/registration/wallet', 8192], ['/api/registration/confirmation', 16384],
-    ['/api/admin/registration/confirmation', 16384], ['/api/admin/registration-confirmation/settings', 16384], ['/api/admin/registration-confirmation/dispatch', 16384],
+    ['/api/admin/registration/confirmation', 16384], ['/api/admin/registration-confirmation/settings', 16384], ['/api/admin/registration-confirmation/dispatch', 16384], ['/api/admin/registration-confirmation/send/'+'a'.repeat(43), 16384],
     ['/api/admin/registrations/export.xlsx', 16384], ['/api/admin/contacts/export.xlsx', 16384],
     ['/api/admin/volunteers/operations', 65536], ['/api/admin/volunteers/export.xlsx', 65536]]) {
     const before = calls;

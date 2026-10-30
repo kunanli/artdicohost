@@ -19,7 +19,7 @@ async function contentWithRelations(f,contactId){
   return content;
 }
 
-test('a durable attending reply reserves the original common seat once, survives restart and never sends a staff confirmation email',async()=>{
+test('a durable attending reply reserves the original common seat once, survives restart and sends one authorized confirmation email',async()=>{
   const f=await peopleRuntimeFixture({capacity:1,mail:true}),created=await f.createContact(),headers=await f.login();
   const first=await saveOperations(f,created.contact.id,{responseStatus:'attending'},headers);
   assert.equal(first.replySaved,true);assert.equal(first.contact.operations.responseStatus,'attending');
@@ -31,7 +31,9 @@ test('a durable attending reply reserves the original common seat once, survives
   assert.equal((await restarted.registrationService.repository.list()).registrations.length,1);
   const person=await json(await restarted.handle(f.request('/api/admin/people/contacts/'+created.contact.id,{headers})));
   assert.equal(person.linkage.registrationId,first.admission.registrationId);assert.equal(person.admission.status,'confirmed');
-  assert.equal(f.messages.length,0,'staff reply conversion does not invoke public signup mail');
+  assert.equal(f.messages.length,1,'explicit authorized attendance confirmation sends once');
+  assert.match(f.messages[0].template_params.invitation_text,/Apple Wallet/u);
+  assert.equal(f.messages[0].template_params.to_email,created.contact.profile.email);
   assert.doesNotMatch(JSON.stringify(first),/receiptToken|synthetic-private-key/u);
 });
 

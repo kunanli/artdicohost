@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { CONTACT_ID, REGISTRATION_ID, contactsSource, contactProjection, intentSource, registrationSource, admissionSource,
-  contentSource, arrangementsProjection, publicProfileProjection, organizationsProjection, confirmationsSource, volunteersSource, communicationProjection, personPermissions } from './projection.mjs';
+  contentSource, arrangementsProjection, publicProfileProjection, organizationsProjection, confirmationsSource, volunteersSource, communicationProjection, personPermissions, peopleDirectoryProjection } from './projection.mjs';
 
 const ORIGIN = 'https://api.artdico.host';
 const ROOT = '/api/admin/people/';
@@ -14,22 +15,56 @@ const aborted = request => { if (request.signal.aborted) throw new Error('Person
 /** Read-only aggregate. Each trusted source is requested only after its own role gate.
  * Full original answers, capability links and provider configuration never enter the projection.
  */
-export function createPersonWorkspaceApi({ authenticate, loadContacts, loadIntent, loadRegistration, loadAdmission, loadContent, loadConfirmations, loadVolunteers } = {}) {
+export function createPersonWorkspaceApi({ authenticate, loadContacts, loadIntent, loadRegistration, loadAdmission, loadContent, loadConfirmations, loadVolunteers,
+  loadRegistrationDirectory, loadAdmissions, loadDeliveryDirectory } = {}) {
   if (typeof authenticate !== 'function') throw new TypeError('Person authentication required.');
-  for (const loader of [loadContacts, loadIntent, loadRegistration, loadAdmission, loadContent, loadConfirmations, loadVolunteers])
+  for (const loader of [loadContacts, loadIntent, loadRegistration, loadAdmission, loadContent, loadConfirmations, loadVolunteers, loadRegistrationDirectory, loadAdmissions, loadDeliveryDirectory])
     if (loader !== undefined && typeof loader !== 'function') throw new TypeError('Trusted person source required.');
   return async function handle(request) {
     const url = new URL(request.url), origin = request.headers.get('origin');
-    if (url.origin !== ORIGIN || url.username || url.password || url.search || url.hash) return error('NOT_FOUND', '接口不存在。', 404);
+    const directory = url.pathname === ROOT + 'directory';
+    if (url.origin !== ORIGIN || url.username || url.password || !directory && url.search || url.hash) return error('NOT_FOUND', '接口不存在。', 404);
     const match = url.pathname.match(/^\/api\/admin\/people\/(contacts|registrations)\/([^/]+)$/u);
-    if (!match) return error('NOT_FOUND', '接口不存在。', 404);
+    if (!match && !directory) return error('NOT_FOUND', '接口不存在。', 404);
     if (origin !== null && origin !== ORIGIN) return error('FORBIDDEN', '此来源不能读取人员资料。', 403);
     if (request.method !== 'GET') return json({ error: { code: 'METHOD_NOT_ALLOWED', message: '人员工作页只读取已保存记录。' } }, 405, { allow: 'GET' });
     try {
       aborted(request);
       const session = await authenticate(request), actor = session?.user;
       if (typeof actor?.id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/u.test(actor.id) || !Array.isArray(actor.roles)) return error('AUTH_REQUIRED', '请先登录。', 401);
-      const permissions = personPermissions(actor), kind = match[1] === 'contacts' ? 'contact' : 'registration', id = match[2];
+      const permissions = personPermissions(actor);
+      if (directory) {
+        if (!permissions.contact && !permissions.registration) return error('FORBIDDEN', '此账号没有人员或报名读取权限。', 403);
+        for (const key of url.searchParams.keys()) if (!['view', 'query', 'cursor', 'limit'].includes(key) || url.searchParams.getAll(key).length !== 1) return error('INVALID_REQUEST', '筛选格式无效。', 400);
+        const view = url.searchParams.get('view') ?? 'all', rawQuery = url.searchParams.get('query') ?? '', query = rawQuery.normalize('NFC').trim().toLocaleLowerCase('zh-CN');
+        const inputLimit = url.searchParams.get('limit') ?? '50', cursor = url.searchParams.get('cursor') ?? '';
+        if (!['all', 'exhibitors', 'speakers', 'guests'].includes(view) || rawQuery.length > 160 || /[\u0000-\u001f\u007f]/u.test(rawQuery)
+          || !/^(?:[1-9]|[1-9]\d|100)$/u.test(inputLimit) || cursor.length > 512 || cursor && !/^[A-Za-z0-9_-]+$/u.test(cursor)) return error('INVALID_REQUEST', '筛选格式无效。', 400);
+        if (view !== 'all' && !permissions.contact) return error('FORBIDDEN', '角色名单需要人员邀约读取权限。', 403);
+        const load = async (loader, needed) => { if (!needed) return null; if (!loader) throw new Error('Directory source unavailable.'); const value=await loader(actor); aborted(request); return value; };
+        const [roster, intent, registrationDirectory, admissions, content, deliveries] = await Promise.all([
+          load(loadContacts, permissions.contact), load(loadIntent, permissions.contact), load(loadRegistrationDirectory, permissions.registration),
+          load(loadAdmissions, permissions.registration), load(loadContent, permissions.contact),
+          load(loadDeliveryDirectory, permissions.registration && Boolean(loadDeliveryDirectory)).catch(()=>null),
+        ]);
+        const result = peopleDirectoryProjection({ permissions, roster, intent, registrationDirectory, admissions, content, deliveries });
+        const revisions = { contacts: roster?.revision ?? null, invitations: intent?.revision ?? null, registration: registrationDirectory?.revision ?? null,
+          applications: registrationDirectory?.applicationRevision ?? null, admissions: admissions?.revision ?? null, content: content?.revision ?? null, delivery: deliveries?.revision ?? null };
+        const revision = createHash('sha256').update(JSON.stringify({ revisions, permissions, view, query })).digest('hex');
+        let offset=0;
+        if (cursor) {
+          let parsed; try { parsed=JSON.parse(Buffer.from(cursor,'base64url').toString('utf8')); } catch { return error('INVALID_REQUEST','分页格式无效。',400); }
+          if (!parsed || Object.keys(parsed).sort().join(',')!=='offset,revision' || !Number.isSafeInteger(parsed.offset) || parsed.offset<0 || parsed.offset>6400 || !/^[a-f0-9]{64}$/u.test(parsed.revision ?? '')) return error('INVALID_REQUEST','分页格式无效。',400);
+          if (parsed.revision!==revision) return error('REVISION_CONFLICT','名单已更新，请从第一页重新核对。',409); offset=parsed.offset;
+        }
+        const candidates = view==='exhibitors'?result.companies:result.people.filter(item=>view==='all'||view==='speakers'&&item.roles.includes('speaker')||view==='guests'&&(item.roles.includes('guest')||item.roles.includes('panelist')));
+        const selected = candidates.filter(item=>!query||[item.name,item.organization,item.city??'',item.contactId??'',item.registrationId??''].some(value=>value.toLocaleLowerCase('zh-CN').includes(query)));
+        const limit=Number(inputLimit),next=offset+limit;
+        return json({ schemaVersion:1,view,permissions:{contacts:permissions.contact,registrations:permissions.registration},summary:result.summary,
+          revisions,revision,rows:selected.slice(offset,next),total:selected.length,
+          nextCursor:next<selected.length?Buffer.from(JSON.stringify({offset:next,revision})).toString('base64url'):null });
+      }
+      const kind = match[1] === 'contacts' ? 'contact' : 'registration', id = match[2];
       if (!permissions[kind]) return error('FORBIDDEN', '此账号没有读取这类人员资料的权限。', 403);
       if (!(kind === 'contact' ? CONTACT_ID : REGISTRATION_ID).test(id)) return error('INVALID_PERSON_ID', '人员编号无效。', 400);
       const availability = { contact: permissions.contact ? 'unlinked' : 'restricted', registration: permissions.registration ? 'unlinked' : 'restricted',

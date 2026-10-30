@@ -1,5 +1,7 @@
 // Navigation never saves, publishes or reads staff records.
-import { resolveContentPage, resolveSettingsPage } from '../lib/admin-sections.mjs';
+import { resolveContentPage, resolveSettingsPage, resolvePeopleView } from '../lib/admin-sections.mjs';
+function markPeopleView(){const selected=resolvePeopleView(location.pathname,location.hash);for(const link of document.querySelectorAll('[data-people-view]')){if(link.dataset.peopleView===selected)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');}}
+window.addEventListener('hashchange',markPeopleView);markPeopleView();
 const desktop = window.matchMedia('(min-width: 1100px)');
 for (const navigation of document.querySelectorAll('[data-staff-navigation]')) {
   const menu = navigation.querySelector('[data-staff-navigation-menu]');

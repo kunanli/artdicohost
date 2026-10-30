@@ -83,6 +83,10 @@ export function savedContactReceipt(value, { contactId, expectedRevision, operat
   if (value.contact.operations.responseStatus === 'attending') {
     check(plain(value.admission)); const status = choice(value.admission.status, ['confirmed', 'waitlisted', 'requiresReviewer', 'unavailable']); admission = { status };
     if (['confirmed', 'waitlisted'].includes(status)) { check(typeof value.admission.registrationId === 'string' && REGISTRATION.test(value.admission.registrationId)&&typeof value.admission.referenceCode==='string'&&REGISTRATION.test(value.admission.referenceCode)); admission.registrationId = value.admission.registrationId; admission.revision = integer(value.admission.revision); admission.referenceCode = value.admission.referenceCode; }
+    if (value.admission.confirmationEmail !== undefined) {
+      check(status==='confirmed' && plain(value.admission.confirmationEmail));
+      admission.confirmationEmail={status:choice(value.admission.confirmationEmail.status,['completed','pending','not_configured','not_applicable'])};
+    }
   }
   return { revision: value.revision, contact: value.contact, admission };
 }

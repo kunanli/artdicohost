@@ -192,10 +192,10 @@ function renderArrangements(view) {
 }
 function renderCommunications(view) {
   const output = $('[data-person-communications]');
-  for (const [key, label] of [['invitations', '工作人员邀请'], ['confirmations', '公开报名确认邮件']]) if (view.availability[key] !== 'available') { output.append(node('h3', label)); stateMessage(output, view.availability[key]); }
+  for (const [key, label] of [['invitations', '工作人员邀请'], ['confirmations', '参会确认邮件']]) if (view.availability[key] !== 'available') { output.append(node('h3', label)); stateMessage(output, view.availability[key]); }
   const timeline = node('ol', undefined, 'person-timeline');
   for (const entry of view.communications.timeline) {
-    const row = node('li'), title = entry.source === 'confirmation' ? entry.kind === 'promotion' ? '候补转正确认邮件' : '公开报名确认邮件' : entry.source === 'legacy_invitation' ? '手工邀请函记录' : '报名邀请';
+    const row = node('li'), title = entry.source === 'confirmation' ? entry.kind === 'promotion' ? '候补转正确认邮件' : '参会确认邮件' : entry.source === 'legacy_invitation' ? '手工邀请函记录' : '报名邀请';
     row.append(node('strong', title + ' · ' + (noticeLabels[entry.status] ?? '状态待核对')));
     const time = node('time', dateLabel(entry.at)); if (entry.at) time.dateTime = entry.at; row.append(time);
     if (entry.channel) row.append(node('p', '渠道：' + (channelLabels[entry.channel] ?? '待核对'))); timeline.append(row);

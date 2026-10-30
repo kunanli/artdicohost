@@ -45,19 +45,17 @@ async function scenario(mode){
     }
     if(url.pathname.endsWith('/wallet'))return route.fulfill({status:200,body:pass,contentType:'application/vnd.apple.pkpass',headers:{'access-control-allow-origin':SITE}});
     if(url.pathname.includes('/group-invite/'))return route.fulfill({status:200,body:png,contentType:'image/png',headers:{'access-control-allow-origin':SITE}});
-    if(url.pathname.endsWith('/config'))return route.fulfill(json({enabled:true,eventId:'synthetic-event',opensAt:'2026-01-01T00:00:00Z',closesAt:'2026-12-05T04:00:00Z',capacity:300,privacy:{version:'approved-synthetic-v1',processor:'合成处理者',contactEmail:'privacy@example.invalid',purpose:'合成验收',storageRegion:'合成地区',retention:'合成保留规则',rightsRequest:'联系合成团队更正',sharing:'不分享'}}));
-    if(url.pathname.endsWith('/token'))return route.fulfill(json({eventId:'synthetic-event',submissionToken:'synthetic.payload.signature',expiresAt:new Date(Date.now()+300000).toISOString()}));
+    if(url.pathname.endsWith('/config'))return route.fulfill(json({enabled:true,eventId:'ggj-cn-2026',opensAt:'2026-01-01T00:00:00Z',closesAt:'2026-12-05T04:00:00Z',capacity:300,privacy:{version:'approved-synthetic-v1',processor:'合成处理者',contactEmail:'privacy@example.invalid',purpose:'合成验收',storageRegion:'合成地区',retention:'合成保留规则',rightsRequest:'联系合成团队更正',sharing:'不分享'}}));
+    if(url.pathname.endsWith('/token'))return route.fulfill(json({eventId:'ggj-cn-2026',submissionToken:'synthetic.payload.signature',expiresAt:new Date(Date.now()+300000).toISOString()}));
     if(url.pathname.endsWith('/submit'))return route.fulfill(json({status:'registered',admissionStatus:'confirmed',admissionKind:'attendee',admissionRevision:2,reference_code:id,groupInvite:null,confirmation:{receiptToken:token,confirmationUrl:link,expiresAt:'2027-03-05T00:00:00Z',email:{status:'not_configured'}}},201));
     return route.fulfill(json({error:{code:'NOT_FOUND'}},404));
   });
   if(mode==='redirect'){
     await page.goto(SITE+'/',{waitUntil:'networkidle'});
-    await page.locator('[data-registration-preview]>summary').click();const form=page.locator('[data-registration-form]');
-    await form.locator('[name=categories][value=other]').check();await page.locator('[data-form-step="0"] [data-next-step]').click();
-    for(const[name,value]of Object.entries({name:'合成报名人',city:'合成城市',email:'synthetic@example.invalid'}))await form.locator('[name='+name+']').fill(value);
-    await page.locator('[data-form-step="1"] [data-next-step]').click();await form.locator('[name=participationInterests][value=attend]').check();
-    for(const[name,value]of Object.entries({attendance:'expected',accommodationChoice:'not_needed',cooperationInterest:'none'}))await form.locator('[name='+name+']').selectOption(value);
-    await form.locator('[name=consentAccepted]').check();await form.locator('[data-submit]').click();await page.waitForURL(link);
+    const form=page.locator('[data-registration-form]');
+    await form.locator('[name=name]').fill('合成报名人');await form.locator('[name=email]').fill('synthetic@example.invalid');
+    await form.locator('[name=categories]').selectOption('other');await form.locator('[name=consentAccepted]').check();
+    await form.locator('[data-submit]').click();await page.waitForURL(link);
   }else await page.goto(link,{waitUntil:mode==='hash-switch'?'domcontentloaded':'networkidle'});
   if(mode==='hash-switch'){
     await page.waitForFunction(()=>document.querySelector('[data-confirmation-page]'));

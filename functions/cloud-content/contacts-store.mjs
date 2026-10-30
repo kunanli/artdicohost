@@ -208,7 +208,8 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
     change.contact.updatedAt = at; state.revision++;
     state.audit.push({ action: change.action, actorId, revision: state.revision, at, contactId: change.contact.id, ...(change.detail ?? {}) });
     await commit(cursor, state);
-    return structuredClone({ revision: state.revision, contact: change.contact });
+    return structuredClone({ revision: state.revision, contact: change.contact,
+      ...(change.previousResponseStatus ? { previousResponseStatus: change.previousResponseStatus } : {}) });
   }
   return {
     read: async () => { const { state } = await load(); return structuredClone({ revision: state.revision, contacts: state.contacts }); },
@@ -281,12 +282,13 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
     }),
     saveOperations: (id, expected, input, actorId) => mutate(expected, actorId, async state => {
       const contact = find(state, id);
+      const previousResponseStatus = contact.operations.responseStatus;
       let content; try { content = (await contentStore.read()).draft.content; } catch { throw unavailable(); }
       const update = preserveContactOperationDefaults(input, contact.operations);
       const next = checked(validateContactOperations(update, content), '跟进资料或安排未通过校验。');
       checked(validateContactOrganizationMembershipChanges(next, contact.operations, content.organizations ?? []), '组织成员关系未通过校验。');
       contact.operations = next;
-      return { contact, action: 'save_contact_operations' };
+      return { contact, action: 'save_contact_operations', previousResponseStatus };
     }),
     recordGenerated: (id, expected, input, actorId) => mutate(expected, actorId, (state, at) => {
       const contact = find(state, id); permitInvitation(contact);

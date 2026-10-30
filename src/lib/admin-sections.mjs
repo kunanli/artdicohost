@@ -29,6 +29,17 @@ const settingsDefinitions = [
 const records = (definitions, root) => Object.freeze(definitions.map(([key, label, title, headingId, description]) => Object.freeze({ key, label, title, headingId, description, href: root + key + '/' })));
 export const CONTENT_PAGES = records(contentDefinitions, '/admin/content/');
 export const SETTINGS_PAGES = records(settingsDefinitions, '/admin/settings/');
+export const PEOPLE_VIEWS = Object.freeze([
+  {key:'all',label:'统一名单',href:'/admin/contacts/'},
+  {key:'registrations',label:'报名审核',href:'/admin/registrations/'},
+  {key:'exhibitors',label:'参展商',href:'/admin/contacts/#people=exhibitors'},
+  {key:'speakers',label:'讲者',href:'/admin/contacts/#people=speakers'},
+  {key:'guests',label:'嘉宾',href:'/admin/contacts/#people=guests'},
+].map(view=>Object.freeze(view)));
+export function resolvePeopleView(pathname,hash='') {
+  if(pathname==='/admin/registrations/'||pathname==='/admin/registrations')return 'registrations';
+  return /^#people=(exhibitors|speakers|guests)$/u.exec(hash)?.[1]??'all';
+}
 const contentHashes = new Map(CONTENT_PAGES.map(page => ['#' + page.headingId, page.key]));
 const settingsHashes = new Map([...SETTINGS_PAGES.map(page => ['#' + page.headingId, page.key]), ['#settings-workspace-title', 'overview'], ['#staff-settings-title', 'group'], ['#wallet-settings-title', 'delivery']]);
 const entities = new Map([['invitee', 'guests'], ['guest', 'guests'], ['organization', 'organizations'], ['booth', 'booths'], ['session', 'sessions'], ['showcase', 'showcases']]);

@@ -1,5 +1,7 @@
 ---
 import StaffNavigation from '../../../components/StaffNavigation.astro';
+import PersonConfirmation from '../../../components/PersonConfirmation.astro';
+import PeopleViews from '../../../components/PeopleViews.astro';
 import SiteLayout from '../../../layouts/SiteLayout.astro';
 import StaffAdmissions from '../../../components/StaffAdmissions.astro';
 import {registrationSchema} from '../../../../shared/registration-schema.mjs';
@@ -19,7 +21,8 @@ const accommodation=[['not_requested','未申请'],['requested','已申请'],['p
       <section class="ah-admin-workspace-layout" data-review-workspace hidden aria-labelledby="review-title">
         <StaffNavigation current="registrations" />
         <div class="ah-admin-workspace-content">
-        <div class="ah-admin-page-heading"><div><h1 id="review-title">报名与审核</h1><p>查看申请、确认名额、取得参会凭证。原始资料、住宿与内部备注在详情中分别处理。</p></div><div class="review-heading-actions"><button class="ah-admin-button" type="button" data-review-refresh>刷新已保存记录</button><a id="delivery-settings-heading" href="/admin/settings/delivery/">确认信与 Wallet 设置 ↗</a></div></div>
+        <div class="ah-admin-page-heading"><div><h1 id="review-title">报名审核</h1><p>查看申请、确认名额、取得参会凭证。原始资料、住宿与内部备注在详情中分别处理。</p></div><div class="review-heading-actions"><button class="ah-admin-button" type="button" data-review-refresh>刷新已保存记录</button><a id="delivery-settings-heading" href="/admin/settings/delivery/">确认信与 Wallet 设置 ↗</a></div></div>
+        <PeopleViews current="registrations" />
         <div class="review-metrics" data-review-metrics></div>
         <section class="ah-admin-panel"><div class="ah-admin-section-heading"><div><h2>报名名单</h2></div></div>
 <form class="review-filters" data-review-filters><div class="ah-admin-field"><label for="review-query">姓名 / 机构 / 报名编号</label><input id="review-query" name="query" type="search" maxlength="200" /></div><div class="ah-admin-field"><label for="review-category">身份类别</label><select id="review-category" name="category"><option value="">全部身份</option>{registrationSchema.identityOptions.map(item=><option value={item.value}>{item.label}</option>)}</select></div><div class="review-filter-actions"><button class="ah-admin-button ah-admin-primary" type="submit">应用筛选</button><button class="ah-admin-button" type="reset">清除筛选</button></div><details class="review-more-filters"><summary>更多筛选：城市、内部跟进、住宿与到场意向</summary><div class="review-filter-fields"><div class="ah-admin-field"><label for="review-city">城市</label><input id="review-city" name="city" maxlength="100" /></div><div class="ah-admin-field"><label for="review-status-filter">内部核查意见</label><select id="review-status-filter" name="status"><option value="">全部状态</option>{statuses.map(([value,label])=><option value={value}>{label}</option>)}</select></div><div class="ah-admin-field"><label for="review-accommodation-filter">住宿审核</label><select id="review-accommodation-filter" name="accommodation"><option value="">全部住宿状态</option>{accommodation.map(([value,label])=><option value={value}>{label}</option>)}</select></div><div class="ah-admin-field"><label for="review-attendance">到场意向</label><select id="review-attendance" name="attendance"><option value="">全部意向</option><option value="expected">预计到场</option><option value="uncertain">尚待确定</option><option value="unavailable">暂无法到场</option></select></div></div></details></form>
@@ -42,7 +45,7 @@ const accommodation=[['not_requested','未申请'],['requested','已申请'],['p
       <p class="ah-admin-status" data-review-admission-notice role="status" aria-live="polite"></p>
       <div class="admissions-pending" data-review-admission-pending hidden><p>上一项名额操作结果尚未确认。请使用原操作再次核对，读取最新状态不会代替确认回执。</p><button class="ah-admin-button" type="button" data-review-admission-retry>再次确认同一操作</button></div>
     </section>
-    <section class="review-ticket" data-review-ticket hidden aria-labelledby="review-ticket-title">
+    <PersonConfirmation /><section class="review-ticket" data-review-ticket hidden aria-labelledby="review-ticket-title">
       <h3 id="review-ticket-title">参会凭证与 Apple Wallet</h3><p>已确认名额。取得私人确认页后，可在 iPhone 的 Safari 中加入 Wallet。</p>
       <button type="button" class="ah-admin-button ah-admin-primary" data-review-confirmation-prepare>取得私人确认页</button>
       <p class="ah-admin-status" data-review-confirmation-status role="status" aria-live="polite"></p>

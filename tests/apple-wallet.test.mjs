@@ -40,14 +40,19 @@ test('production identity refuses synthetic roots even when env asks to trust th
 test('real pkpass contains bounded ZIP, exact manifest hashes and a detached CMS signature independently verified by OpenSSL', async () => {
   const wallet = service(), readiness = await wallet.readiness(); assert.equal(readiness.ready, true); assert.equal(readiness.deviceTestRequired, true);
   const result = await wallet.download({ receiptToken: token }); assert.equal(result.outcome, 'issued'); assert.equal(result.contentType, 'application/vnd.apple.pkpass');
-  const files = passFiles(result.data); assert.deepEqual([...files.keys()].sort(), ['icon.png','icon@2x.png','manifest.json','pass.json','signature'].sort());
+  const files = passFiles(result.data); assert.deepEqual([...files.keys()].sort(), ['icon.png','icon@2x.png','background.png','background@2x.png','artwork.png','artwork@2x.png','manifest.json','pass.json','signature'].sort());
   const pass = JSON.parse(files.get('pass.json')), manifest = JSON.parse(files.get('manifest.json'));
   assert.equal(pass.passTypeIdentifier, fixture.fields.passTypeIdentifier); assert.equal(pass.teamIdentifier, fixture.fields.teamId);
   assert.equal(pass.eventTicket.secondaryFields[0].value, record.name); assert.equal(pass.eventTicket.headerFields[0].value, '已确认');
+  assert.deepEqual(pass.preferredStyleSchemes,['posterEventTicket','eventTicket']);
+  assert.equal(pass.semantics.eventName,record.event.title);assert.equal(pass.semantics.venueName,record.event.venue);
+  assert.equal(pass.semantics.seats,undefined,'no invented seat entitlement');
+  assert.equal(files.get('artwork@2x.png').readUInt32BE(16),750);assert.equal(files.get('artwork@2x.png').readUInt32BE(20),1000);
+  assert.ok(result.data.length<1024*1024);
   assert.equal(pass.sharingProhibited, true); assert.equal(pass.webServiceURL, undefined); assert.equal(pass.authenticationToken, undefined);
   assert.doesNotMatch(JSON.stringify(pass), /email|wechat|permissionReference|internalNotes|synthetic\.receipt/u);
   for (const [name, expected] of Object.entries(manifest)) assert.equal(createHash('sha1').update(files.get(name)).digest('hex'), expected);
-  assert.deepEqual(Object.keys(manifest).sort(), ['icon.png', 'icon@2x.png', 'pass.json'].sort());
+  assert.deepEqual(Object.keys(manifest).sort(), ['icon.png','icon@2x.png','background.png','background@2x.png','artwork.png','artwork@2x.png','pass.json'].sort());
   await writeFile(resolve(fixture.directory, 'manifest.json'), files.get('manifest.json')); await writeFile(resolve(fixture.directory, 'signature'), files.get('signature'));
   assert.doesNotThrow(() => fixture.run(['cms', '-verify', '-binary', '-inform', 'DER', '-in', 'signature', '-content', 'manifest.json', '-CAfile', 'root.pem', '-purpose', 'any', '-out', 'verified-manifest.json']));
   await writeFile(resolve(fixture.directory, 'manifest.json'), Buffer.from('tampered'));

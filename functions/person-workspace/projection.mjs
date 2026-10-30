@@ -279,3 +279,89 @@ export function personPermissions(actor) {
   return { contact, registration, invitations: contact, confirmations: registration, arrangements: contact,
     volunteers: roles.includes('superadmin') || roles.includes('outreach') && roles.includes('reviewer') };
 }
+
+/** Minimal staff directory. Never use names or email addresses as identity links. */
+export function peopleDirectoryProjection({ permissions, roster, intent, registrationDirectory, admissions, content, deliveries } = {}) {
+  if (!plain(permissions)) fail();
+  const contacts = permissions.contact ? contactsSource(roster).contacts : [];
+  const outreach = permissions.contact ? intentSource(intent) : null;
+  const program = permissions.contact ? contentSource(content) : null;
+  const organizations = program ? organizationLookupProjection(program) : [];
+  let applications = [], admissionMap = new Map();
+  if (permissions.registration) {
+    if (!plain(registrationDirectory) || !plain(admissions)) fail();
+    revisionValue(registrationDirectory.revision); revisionValue(registrationDirectory.applicationRevision); revisionValue(admissions.revision);
+    applications = records(registrationDirectory.registrations, REGISTRATION_ID, 1000).map(record => {
+      if (!plain(record.fields) || !plain(record.provenance) || typeof record.inactive !== 'boolean') fail();
+      const kind = oneOf(record.provenance.kind, ['public', 'staff_assisted', 'staff_entry']);
+      return { id: record.id, name: text(record.fields.name, 120), organization: text(record.fields.organization, 300), city: text(record.fields.city, 160),
+        kind, sourceContactId: kind === 'staff_assisted' ? identifier(record.provenance.sourceContactId) : null, inactive: record.inactive };
+    });
+    for (const person of list(admissions.people, 1000)) {
+      if (!plain(person) || !REGISTRATION_ID.test(person.registrationId ?? '') || admissionMap.has(person.registrationId)) fail();
+      admissionMap.set(person.registrationId, oneOf(person.status, ['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected']));
+    }
+    if (applications.some(item => !admissionMap.has(item.id))) fail();
+  }
+  const applicationMap = new Map(applications.map(row => [row.id, row])), linked = new Set(), people = [], contactRows = new Map();
+  const deliveryMap = new Map();
+  if (permissions.registration && deliveries) {
+    revisionValue(deliveries.revision);
+    for (const item of list(deliveries.notices, 2000)) {
+      if (!plain(item) || !REGISTRATION_ID.test(item.registrationId ?? '')) fail();
+      const status = oneOf(item.status, ['provider_accepted', 'unknown', 'rejected']);
+      deliveryMap.set(item.registrationId, status);
+    }
+  }
+  const admission = application => application ? application.inactive ? 'withdrawn' : admissionMap.get(application.id) : null;
+  const email = id => !permissions.registration ? 'restricted' : !deliveries ? 'unavailable' : deliveryMap.get(id) ?? 'not_sent';
+  const sessions = new Map((program?.content.sessions ?? []).filter(item => item.status !== 'cancelled').map(item => [item.id, item]));
+  for (const raw of contacts) {
+    const item = contactProjection(raw), conversion = outreach.conversions.find(row => row.sourceContactId === item.id);
+    const application = permissions.registration && conversion ? applicationMap.get(conversion.registrationId) : null;
+    if (permissions.registration && conversion && (!application || application.kind !== 'staff_assisted' || application.sourceContactId !== item.id)) fail();
+    if (application) linked.add(application.id);
+    const roles = new Set(item.operations.participationForms.map(role => role === 'booth' ? 'exhibitor' : role));
+    for (const role of item.operations.sessionRoles) if (sessions.has(role.sessionId)) for (const value of role.roles) roles.add(value);
+    const notices = outreach.invitations.filter(row => row.sourceContactId === item.id).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
+    const invited = notices[0]?.status ?? (raw.invitation?.sentAt ? 'manually_sent' : raw.invitation?.generatedAt ? 'prepared' : 'not_started');
+    const row = { key: 'contact:' + item.id, kind: 'person', source: application ? 'linked' : 'contact',
+      name: item.profile.displayName, organization: item.profile.organization, city: item.profile.city,
+      contactId: item.id, registrationId: application?.id ?? (conversion?.registrationId ?? null), profileId: null, roles: [...roles],
+      responseStatus: item.operations.responseStatus, admissionStatus: admission(application),
+      registrationState: application ? 'available' : conversion ? 'restricted' : 'unlinked',
+      invitationStatus: invited, owner: item.operations.owner, followUpAt: item.operations.followUpAt,
+      deliveryStatus: application ? email(application.id) : 'not_applicable' };
+    contactRows.set(item.id, row); people.push(row);
+  }
+  for (const item of applications) if (!linked.has(item.id)) people.push({ key: 'registration:' + item.id, kind: 'person', source: item.kind,
+    name: item.name, organization: item.organization, city: item.city, contactId: null, registrationId: item.id, profileId: null, roles: [],
+    responseStatus: null, admissionStatus: admission(item), registrationState: 'available', invitationStatus: 'not_applicable',
+    owner: '', followUpAt: '', deliveryStatus: email(item.id) });
+  for (const profile of program ? records(program.content.guests ?? [], CONTACT_ID, 200) : []) {
+    const roles = strings(profile.publicRoles, GUEST_PUBLIC_ROLES.length, 40, GUEST_PUBLIC_ROLES);
+    const contactId = profile.contactId ? identifier(profile.contactId) : null, target = contactId ? contactRows.get(contactId) : null;
+    if (target) {
+      if (target.profileId) fail(); target.profileId = profile.id; target.roles = [...new Set([...target.roles, ...roles])];
+    } else people.push({ key: 'profile:' + profile.id, kind: 'person', source: 'profile', name: text(profile.name, 120), organization: text(profile.company, 300), city: '',
+      contactId: null, registrationId: null, profileId: profile.id, roles, responseStatus: null, admissionStatus: null, registrationState: 'unlinked',
+      invitationStatus: 'not_applicable', owner: '', followUpAt: '', deliveryStatus: 'not_applicable' });
+  }
+  const booth = item => ({ id: identifier(item.id), code: text(item.code, 80), zone: text(item.zone, 10), status: oneOf(item.status, ['pending', 'confirmed', 'cancelled']) });
+  const companies = organizations.filter(item => item.participation === 'exhibitor').map(item => {
+    const members = contacts.filter(contact => organizationMemberships(contact.operations).some(member => member.organizationId === item.id))
+      .map(contact => ({ id: contact.id, name: contactProjection(contact).profile.displayName,
+        role: organizationMemberships(contact.operations).find(member => member.organizationId === item.id).role }));
+    return { key: 'organization:' + item.id, kind: 'organization', organizationId: item.id, name: item.name, organization: item.name, status: item.status,
+      booths: program.content.booths.filter(entry => entry.organizationId === item.id).map(booth), members: members.slice(0,20), memberTotal: members.length };
+  });
+  for (const item of program?.content.booths ?? []) if (!item.organizationId && item.organization && item.status !== 'cancelled') companies.push({
+    key: 'booth:' + identifier(item.id), kind: 'unlinked_booth', organizationId: null, name: text(item.organization, 300), organization: text(item.organization, 300), status: 'unlinked', booths: [booth(item)], members: [], memberTotal:0 });
+  const rows = people.sort((a,b) => Number(b.admissionStatus === 'pending_review') - Number(a.admissionStatus === 'pending_review') || a.name.localeCompare(b.name, 'zh-CN') || a.key.localeCompare(b.key));
+  return { people: rows, companies, summary: { people: people.length,
+    confirmed: permissions.registration ? applications.filter(item => admission(item) === 'confirmed').length : null,
+    pendingReview: permissions.registration ? applications.filter(item => admission(item) === 'pending_review').length : null,
+    exhibitors: permissions.contact ? companies.filter(item => item.kind === 'organization').length : null,
+    speakers: permissions.contact ? people.filter(item => item.roles.includes('speaker')).length : null,
+    guests: permissions.contact ? people.filter(item => item.roles.includes('guest') || item.roles.includes('panelist')).length : null } };
+}

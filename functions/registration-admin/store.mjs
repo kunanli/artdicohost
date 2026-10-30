@@ -244,6 +244,14 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
       return { registrations: selected.slice(offset, nextOffset).map(summary), total: selected.length, overallTotal: current.registrations.length,
         nextCursor, stats: stats(selected), revision: current.state.revision };
     }); },
+    async directory() { return guarded(async () => {
+      const current = await snapshot();
+      return { revision: current.state.revision, applicationRevision: current.applicationRevision,
+        registrations: current.registrations.map(item => ({ id: item.id, fields: {
+          name: item.fields.name, organization: item.fields.organization ?? '', city: item.fields.city ?? '' },
+          provenance: item.provenance.kind === 'staff_assisted' ? { kind: item.provenance.kind, sourceContactId: item.provenance.sourceContactId } : { kind: item.provenance.kind },
+          inactive: item.review.status === 'withdrawn' || item.review.deletionRequested !== null })) };
+    }); },
     async detail(id) { return guarded(async () => {
       if (typeof id !== 'string' || !ID.test(id)) fail('NOT_FOUND');
       const current = await snapshot(), item = current.registrations.find(record => record.id === id);

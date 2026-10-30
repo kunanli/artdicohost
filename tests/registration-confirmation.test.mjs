@@ -233,7 +233,8 @@ test('future confirmation email links to personal downloads while durable identi
   const cap = await c.forSavedReceipt({ receipt: saved.receipt });
   assert.equal(f.state.messages.length, 1);
   const message = f.state.messages[0];
-  assert.ok(message.text.includes('查看最新状态、打印确认页及下载个人邀请函：' + cap.confirmationUrl));
+  assert.ok(message.text.includes('查看私人确认页、加入 Apple Wallet 或打印参会凭证：\n' + cap.confirmationUrl));
+  assert.match(message.text,/Safari/u);
   assert.ok(message.text.includes('地点：' + posterEvent.venue.address), 'email keeps its original event facts');
   assert.equal(message.templateVariables.invitation_text, message.text);
   assert.deepEqual(Object.keys(message.templateVariables).sort(), ['to_name', 'to_email', 'event_title', 'event_date', 'event_time', 'event_venue', 'reference_code', 'invitation_text'].sort());

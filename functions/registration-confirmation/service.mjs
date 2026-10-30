@@ -38,11 +38,12 @@ const noticeEmail = notice => ({ status: stateOf(notice), noticeType: notice.kin
 
 /** Durable receipts, independent email issuance and read-only attendee confirmation. */
 export function createRegistrationConfirmationService({ registrationService, journalFor, tokenSecret, event = eventConfig,
-  emailProvider, walletReadiness = () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }), groupInviteProvider,
+  emailProvider, staffDeliveryPermission, walletReadiness = () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }), groupInviteProvider,
   clock = Date.now, expiresAt, batchTimeoutMs = 20_000, monotonicNow = () => performance.now() } = {}) {
   if (typeof registrationService?.repository?.readIndex !== 'function' || typeof registrationService.repository.readRecord !== 'function'
     || typeof registrationService.getAdmissionStatus !== 'function' || typeof journalFor !== 'function' || typeof clock !== 'function'
     || typeof walletReadiness !== 'function' || groupInviteProvider !== undefined && typeof groupInviteProvider !== 'function'
+    || staffDeliveryPermission !== undefined && typeof staffDeliveryPermission !== 'function'
     || !Number.isSafeInteger(batchTimeoutMs) || batchTimeoutMs < 1 || batchTimeoutMs > 30_000 || typeof monotonicNow !== 'function') throw new TypeError('Trusted confirmation dependencies required.');
   const eventFacts = facts(event), eventId = eventFacts.id;
   const expiry = expiresAt ?? Date.parse(eventFacts.date + 'T23:59:59.000+08:00') + 90 * 24 * 60 * 60 * 1000;
@@ -50,6 +51,15 @@ export function createRegistrationConfirmationService({ registrationService, jou
   const prefix = 'cms/v1/registration-confirmations/' + eventId;
   let repository;
   const target = () => repository ??= createConfirmationRepository({ journal: journalFor(prefix), eventId, clock });
+  async function deliveryPermission(record) {
+    if (record.provenance.kind === 'public') return { eligible: true, reason: 'ELIGIBLE' };
+    if (!staffDeliveryPermission) return { eligible: false, reason: 'STAFF_PERMISSION_REQUIRED' };
+    try {
+      const result = await staffDeliveryPermission(structuredClone(record));
+      if (result?.eligible === true) return { eligible: true, reason: 'ELIGIBLE' };
+      return { eligible: false, reason: ['CONTACT_CONSENT_REQUIRED', 'CONTACT_DECLINED', 'CONTACT_EMAIL_CHANGED', 'CONTACT_NOT_FOUND', 'STAFF_PERMISSION_REQUIRED'].includes(result?.reason) ? result.reason : 'PERMISSION_UNAVAILABLE' };
+    } catch { return { eligible: false, reason: 'PERMISSION_UNAVAILABLE' }; }
+  }
   async function providerState() {
     try {
       const value = await emailProvider?.readiness?.();
@@ -156,7 +166,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!(await providerState()).ready) return { status: 'not_configured' };
     if (monotonicNow() >= deadline) return { status: 'not_attempted' };
     const loaded = await loadRegistration(registrationId), { record, admission } = loaded;
-    if (record.provenance.kind !== 'public') return { status: 'not_public' };
+    if (!(await deliveryPermission(record)).eligible) return { status: 'not_public' };
     if (admission.status === 'withdrawn') return { status: 'withdrawn' };
     if (admission.status !== 'confirmed') return { status: 'not_applicable' };
     if (typeof record.fields.email !== 'string' || !record.fields.email) return { status: 'not_applicable' };
@@ -170,7 +180,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     try { latest = await loadRegistration(registrationId); }
     catch { try { return await recordResult(notice, 'rejected', actorId); } catch { return { status: 'unknown' }; } }
     if (latest.admission.status !== 'confirmed' || latest.admission.status !== admission.status
-      || latest.record.fields.email !== record.fields.email || latest.record.provenance.kind !== 'public') {
+      || latest.record.fields.email !== record.fields.email || !(await deliveryPermission(latest.record)).eligible) {
       try { return await recordResult(notice, 'rejected', actorId); } catch { return { status: 'unknown' }; }
     }
     // An administrator may have paused automatic notices after reservation.
@@ -187,7 +197,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const text = [record.fields.name + '，你好：', '', '你的参会名额已确认。',
       '登记编号：' + registrationId, '日期：' + eventFacts.date, '活动时间：' + eventFacts.time + '（UTC+8）',
       '签到：' + eventFacts.checkIn, '地点：' + eventFacts.venue,
-      '查看最新状态、打印确认页及下载个人邀请函：' + link.confirmationUrl,
+      '查看私人确认页、加入 Apple Wallet 或打印参会凭证：', link.confirmationUrl,
+      'iPhone 用户请在 Safari 打开上述链接，点击「加入 Apple Wallet」。',
       '请保管此私人链接，不要转发；确认页始终以当前名额状态为准。',
       '住宿、讲者、展位与其他职责分别确认。需要更正或取消，请通过原联系渠道联系筹备团队。'].join('\n');
     let result;
@@ -222,7 +233,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
   async function confirmation(input) {
     const { registrationId, loaded } = await authorizedContext(input), value = trustedProjection(registrationId, loaded);
     let email;
-    if (loaded.record.provenance.kind !== 'public' || ['pending_review', 'rejected'].includes(value.admissionStatus)) email = { status: 'not_applicable' };
+    if (['pending_review', 'rejected'].includes(value.admissionStatus)) email = { status: 'not_applicable' };
     else try { email = await readEmail(value.registrationId, value.hasEmail, value.admissionStatus); } catch { email = { status: 'unknown' }; }
     let groupInvite = null;
     if (value.admissionStatus === 'confirmed' && groupInviteProvider) {
@@ -328,6 +339,30 @@ export function createRegistrationConfirmationService({ registrationService, jou
       .map(item => ({ id: item.id, kind: item.kind, status: stateOf(item), admissionStatus: item.admissionStatus, attempt: item.attempt,
         createdAt: item.createdAt, updatedAt: item.updatedAt })) };
   }
+  async function staffDirectory({ actor } = {}) {
+    if (!readerValid(actor)) failure('FORBIDDEN', 403);
+    const current = await target().read();
+    return { revision: current.value.revision, notices: current.value.notices
+      .map(item => ({ registrationId: item.registrationId, status: stateOf(item) })) };
+  }
+  /** Reads current eligibility and durable delivery state; never reserves or sends. */
+  async function staffDeliveryState({ actor, registrationId } = {}) {
+    if (!readerValid(actor)) failure('FORBIDDEN', 403);
+    if (!ID.test(registrationId ?? '')) failure('INVALID_REQUEST', 400);
+    const { record, admission } = await loadRegistration(registrationId);
+    const permission = await deliveryPermission(record), current = await target().read();
+    const notice = current.value.notices.filter(item => item.registrationId === registrationId).find(item => item.kind === 'promotion')
+      ?? current.value.notices.find(item => item.registrationId === registrationId);
+    const provider = await providerState(), status = notice ? stateOf(notice) : 'not_sent';
+    const reason = admission.status !== 'confirmed' ? 'ADMISSION_NOT_CONFIRMED'
+      : !record.fields.email ? 'EMAIL_MISSING' : !permission.eligible ? permission.reason
+        : !current.value.settings.enabled ? 'EMAIL_PAUSED' : !provider.ready ? 'EMAIL_NOT_READY'
+          : status === 'provider_accepted' ? 'ALREADY_ACCEPTED' : status === 'unknown' ? 'DELIVERY_UNKNOWN'
+            : notice?.attempt >= 5 ? 'RETRY_LIMIT' : 'ELIGIBLE';
+    return { registrationId, revision: current.value.revision, admissionStatus: admission.status, status, reason,
+      ready: reason === 'ELIGIBLE' && actorValid(actor), canSend: actorValid(actor), retryRejected: status === 'rejected',
+      recipient: admission.status === 'withdrawn' ? '' : record.fields.email ?? '' };
+  }
   return Object.freeze({ prefix, forSavedReceipt, authorize, authorizedRegistration, confirmation, staffConfirmationLink, settings, setSettings, dispatch,
-    notifyApproved: input => notifyBatch(input, 'registration'), notifyPromoted: input => notifyBatch(input, 'promotion'), staffHistory });
+    notifyApproved: input => notifyBatch(input, 'registration'), notifyPromoted: input => notifyBatch(input, 'promotion'), staffHistory, staffDirectory, staffDeliveryState });
 }

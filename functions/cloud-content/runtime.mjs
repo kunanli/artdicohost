@@ -147,7 +147,14 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       return registrationService.getAdmissionStatus(id);
     } });
   const contentHandle = createCloudContentApi({ enabled: true, store, portraitStore, auth, contactsStore, beforeContactMutation,
-    onContactOperationsCommitted: input => attendanceSynchronizer ? attendanceSynchronizer(input) : { status: 'unavailable', reason: 'NOT_CONFIGURED' } });
+    onContactOperationsCommitted: async input => {
+      const admission = attendanceSynchronizer ? await attendanceSynchronizer(input) : { status: 'unavailable', reason: 'NOT_CONFIGURED' };
+      // Only a newly acknowledged attendance decision triggers automatic mail.
+      // Imports, reads, batch synchronization and edits to an existing reply do not.
+      if (admission.status === 'confirmed' && ['pending', 'declined'].includes(input.saved?.previousResponseStatus))
+        admission.confirmationEmail = await notifyApproved(admission.registrationId);
+      return admission;
+    } });
   const importHandle = createIntentContactImportApi({ importer: createIntentContactImporter({ contactsStore, now }), authenticate: request => auth.authenticate(request) });
   const policy = registrationPolicy(env);
   if (policy) {
@@ -179,6 +186,16 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       loadSigningBundle: ({ bundleId }) => loadEncryptedSigningBundle({ objects, secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId }) });
     confirmationService = createRegistrationConfirmationService({ registrationService, journalFor,
       tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now, batchTimeoutMs: 5000,
+      staffDeliveryPermission: async record => {
+        if (record.provenance.kind === 'staff_entry') return { eligible: Boolean(record.provenance.permissionReference), reason: 'STAFF_PERMISSION_REQUIRED' };
+        if (record.provenance.kind !== 'staff_assisted') return { eligible: false, reason: 'STAFF_PERMISSION_REQUIRED' };
+        const roster = await contactsStore.read(), contact = roster.contacts.find(item => item.id === record.provenance.sourceContactId);
+        if (!contact) return { eligible: false, reason: 'CONTACT_NOT_FOUND' };
+        if (contact.profile.contactConsent === 'declined' || contact.operations.responseStatus === 'declined') return { eligible: false, reason: 'CONTACT_DECLINED' };
+        if (contact.profile.contactConsent !== 'consented') return { eligible: false, reason: 'CONTACT_CONSENT_REQUIRED' };
+        if (contact.profile.email !== record.fields.email) return { eligible: false, reason: 'CONTACT_EMAIL_CHANGED' };
+        return { eligible: true };
+      },
       emailProvider: createConfirmationEmailProvider({ env, fetchFn, timeoutMs: 4000,
         ...(env.ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID ? { loadConfiguration: () => loadEncryptedConfirmationMail({ objects,
           secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId: env.ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID }) } : {}) }),
@@ -206,8 +223,8 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     } : undefined });
   const admissionsHandle = createAdmissionsApi({ enabled: Boolean(registrationService), auth, service: registrationService,
     onCommitted: async ({ action, result }) => {
-      if (action !== 'approve') return notifyPromoted(result.promotedIds);
-      const started = performance.now(), target = result.operation?.registrationId;
+      if (!['approve', 'staff'].includes(action)) return notifyPromoted(result.promotedIds);
+      const started = performance.now(), target = action === 'staff' ? result.registrationId : result.operation?.registrationId;
       const person = result.people?.find(item => item.registrationId === target);
       const approvalEmail = person?.status === 'confirmed' ? await notifyApproved(target) : undefined;
       const remaining = Math.floor(5000 - (performance.now() - started));
@@ -249,6 +266,9 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     loadRegistration: reviewStore ? id => reviewStore.detail(id) : undefined,
     loadAdmission: registrationService ? id => registrationService.getAdmissionStatus(id) : undefined,
     loadContent: loadPeopleContent,
+    loadRegistrationDirectory: reviewStore ? () => reviewStore.directory() : undefined,
+    loadAdmissions: registrationService ? actor => registrationService.getAdmissions({ actor }) : undefined,
+    loadDeliveryDirectory: confirmationService ? actor => confirmationService.staffDirectory({ actor }) : undefined,
     loadVolunteers: input => volunteerService.readPerson(input),
     loadConfirmations: confirmationService ? (id, actor) => confirmationService.staffHistory({ actor, registrationId: id }) : undefined });
   const intentHandle = intentService ? createIntentInvitationApi({ service: intentService, authenticate: request => auth.authenticate(request) }) : null;
@@ -267,7 +287,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     const url = new URL(request.url);
     if (url.origin !== CLOUD_API_ORIGIN || url.username || url.password) return contentHandle(request);
     if (['/api/registration/confirmation', '/api/admin/registration/confirmation', '/api/admin/registration-confirmation/settings', '/api/admin/registration-confirmation/dispatch'].includes(url.pathname)
-      || url.pathname.startsWith('/api/admin/registration-confirmation/link/')) return confirmationHandle(request);
+      || ['/link/', '/delivery/', '/send/'].some(suffix => url.pathname.startsWith('/api/admin/registration-confirmation' + suffix))) return confirmationHandle(request);
     if (isAppleWalletPath(url.pathname)) return walletHandle(request);
     if (url.pathname === '/api/admin/registrations/export.xlsx') return registrationXlsxHandle(request);
     if (url.pathname === '/api/admin/contacts/export.xlsx') return contactsXlsxHandle(request);

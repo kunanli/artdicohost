@@ -1,0 +1,15 @@
+<section class="person-confirmation" data-person-confirmation hidden aria-label="确认信与 Apple Wallet">
+  <h3>确认信与 Apple Wallet</h3>
+  <p class="ah-admin-small">名额确认后，寄送含私人确认页的邮件；收件人可在 iPhone 加入 Wallet。</p>
+  <p data-person-confirmation-recipient></p>
+  <p role="status" aria-live="polite" data-person-confirmation-status>正在核对寄送记录…</p>
+  <div class="person-confirmation-actions">
+    <button type="button" class="ah-admin-button ah-admin-primary" data-person-confirmation-send disabled>寄送确认信</button>
+    <button type="button" class="ah-admin-button" data-person-confirmation-check>核对寄送状态</button>
+  </div>
+</section>
+<style>
+  .person-confirmation{padding:1.25rem;margin:1rem 0;border:1px solid #d8dfee;border-radius:12px;background:#f7f9ff}
+  .person-confirmation h3{margin:0 0 .5rem;font-size:1.05rem}.person-confirmation p{overflow-wrap:anywhere}
+  .person-confirmation-actions{display:flex;gap:.6rem;flex-wrap:wrap}.person-confirmation-actions button{white-space:normal}
+</style>

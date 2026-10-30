@@ -55,6 +55,8 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
       const url = new URL(request.url), origin = request.headers.get('origin');
       if (url.origin !== apiOrigin || url.username || url.password || url.search || url.hash) reject('NOT_FOUND', 404);
       const staffLink = /^\/api\/admin\/registration-confirmation\/link\/([A-Za-z0-9_-]{43})$/u.exec(url.pathname);
+      const deliveryRead = /^\/api\/admin\/registration-confirmation\/delivery\/([A-Za-z0-9_-]{43})$/u.exec(url.pathname);
+      const deliverySend = /^\/api\/admin\/registration-confirmation\/send\/([A-Za-z0-9_-]{43})$/u.exec(url.pathname);
       if (PUBLIC_PATHS.includes(url.pathname)) {
         if (!origins.has(origin)) reject('ORIGIN_REJECTED', 403);
         cors = { 'access-control-allow-origin': origin, vary: 'Origin' };
@@ -67,16 +69,21 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         if (request.signal.aborted) reject();
         return json(await service.confirmation(input));
       }
-      if (![SETTINGS, DISPATCH].includes(url.pathname) && !staffLink) reject('NOT_FOUND', 404);
+      if (![SETTINGS, DISPATCH].includes(url.pathname) && !staffLink && !deliveryRead && !deliverySend) reject('NOT_FOUND', 404);
       cors = { vary: 'Cookie, Origin' };
       if (origin !== null && origin !== apiOrigin) reject('ORIGIN_REJECTED', 403);
       if (url.pathname === SETTINGS && !['GET', 'PUT'].includes(request.method) || url.pathname === DISPATCH && request.method !== 'POST') reject('METHOD_NOT_ALLOWED', 405);
       if (staffLink && request.method !== 'GET') reject('METHOD_NOT_ALLOWED', 405);
+      if (deliveryRead && request.method !== 'GET' || deliverySend && request.method !== 'POST') reject('METHOD_NOT_ALLOWED', 405);
       if (typeof auth?.authenticate !== 'function' || !service) reject('CONFIRMATION_UNAVAILABLE', 503);
       const session = await auth.authenticate(request);
       if (!session?.user) reject('AUTH_REQUIRED', 401);
-      if (staffLink) {
+      if (staffLink || deliveryRead) {
         if (!Array.isArray(session.user.roles) || !session.user.roles.some(role => ['reviewer', 'superadmin'].includes(role))) reject('FORBIDDEN', 403);
+        if (deliveryRead) {
+          if (typeof service.staffDeliveryState !== 'function') reject('CONFIRMATION_UNAVAILABLE', 503);
+          return json(await service.staffDeliveryState({ actor: session.user, registrationId: deliveryRead[1] }));
+        }
         if (typeof service.staffConfirmationLink !== 'function') reject('CONFIRMATION_UNAVAILABLE', 503);
         return json(await service.staffConfirmationLink({ actor: session.user, registrationId: staffLink[1] }));
       }
@@ -88,6 +95,10 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
       if (url.pathname === SETTINGS) {
         keys(input, ['expectedRevision', 'operationId', 'enabled'], ['expectedRevision', 'operationId', 'enabled']);
         return json(await service.setSettings({ ...input, actor: session.user }));
+      }
+      if (deliverySend) {
+        keys(input, ['expectedRevision', 'operationId', 'retryRejected'], ['expectedRevision', 'operationId']);
+        return json(await service.dispatch({ ...input, registrationIds: [deliverySend[1]], actor: session.user }));
       }
       keys(input, ['expectedRevision', 'operationId', 'registrationIds', 'retryRejected'], ['expectedRevision', 'operationId', 'registrationIds']);
       return json(await service.dispatch({ ...input, actor: session.user }));

@@ -26,7 +26,9 @@ export function attendanceAdmissionProjection(value) {
   if (!plain(value)) return unavailable('REGISTRATION_UNAVAILABLE');
   if (['confirmed', 'waitlisted'].includes(value.status) && typeof value.registrationId === 'string' && REGISTRATION.test(value.registrationId)
     && typeof value.referenceCode === 'string' && REGISTRATION.test(value.referenceCode) && revision(value.revision))
-    return { status: value.status, registrationId: value.registrationId, referenceCode: value.referenceCode, revision: value.revision };
+    return { status: value.status, registrationId: value.registrationId, referenceCode: value.referenceCode, revision: value.revision,
+      ...(['completed', 'pending', 'not_configured', 'not_applicable'].includes(value.confirmationEmail?.status)
+        ? { confirmationEmail: { status: value.confirmationEmail.status } } : {}) };
   if (['requiresReviewer', 'unavailable'].includes(value.status) && ATTENDANCE_SYNC_REASONS.includes(value.reason)) return { status: value.status, reason: value.reason };
   return unavailable('REGISTRATION_UNAVAILABLE');
 }

@@ -117,16 +117,20 @@ export function createAdmissionsApi({ enabled = false, auth, service, onCommitte
       const result = await service[route[1]]({ ...input, actor: session.user });
       if (!['updated', 'replayed'].includes(result?.outcome) || !snapshot(result)) fail(resultFailure(result));
       if (decision && !decisionReceipt(result, input, action)) fail();
+      const confirmedStaff = action === 'staff' && result.receipt?.committed === true
+        && registrationId(result.registrationId) && result.receipt.registrationId === result.registrationId
+        && result.receipt.referenceCode === result.registrationId && result.receipt.admissionStatus === 'confirmed'
+        && result.people.some(person => person.registrationId === result.registrationId && person.status === 'confirmed');
       const promotionCount = ids(result.promotedIds) ? result.promotedIds.length : 0;
       let promotionEmail, approvalEmail;
-      if (onCommitted && (action === 'approve' || promotionCount > 0)) {
+      if (onCommitted && (action === 'approve' || confirmedStaff || promotionCount > 0)) {
         if (promotionCount) promotionEmail = { status: 'pending', attemptedCount: 0, pendingCount: promotionCount };
-        if (action === 'approve' && result.people.find(person => person?.registrationId === input.registrationId)?.status === 'confirmed') {
+        if (confirmedStaff || action === 'approve' && result.people.find(person => person?.registrationId === input.registrationId)?.status === 'confirmed') {
           approvalEmail = { status: 'pending', attemptedCount: 0, pendingCount: 1 };
         }
         try {
           const value = await onCommitted({ action, result: structuredClone(result), actor: session.user });
-          if (action === 'approve') {
+          if (action === 'approve' || confirmedStaff) {
             approvalEmail = approvalEmailProjection(value?.approvalEmail) ?? approvalEmail;
             if (promotionCount) promotionEmail = emailProjection(value?.promotionEmail, promotionCount) ?? promotionEmail;
           } else if (promotionCount) promotionEmail = emailProjection(value, promotionCount) ?? promotionEmail;

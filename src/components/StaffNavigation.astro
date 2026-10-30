@@ -4,9 +4,8 @@ interface Props { current: 'content' | 'tasks' | 'contacts' | 'registrations' | 
 const { current } = Astro.props;
 const pages = [
   { key: 'tasks', href: '/admin/tasks/', label: '今日待办' },
-  { key: 'contacts', href: '/admin/contacts/', label: '人员与邀约' },
+  { key: 'contacts', href: '/admin/contacts/', label: '人员与报名' },
   { key: 'volunteers', href: '/admin/volunteers/', label: '志愿者与分工' },
-  { key: 'registrations', href: '/admin/registrations/', label: '报名与审核' },
   { key: 'content', href: '/admin/', label: '活动与内容' },
   { key: 'settings', href: '/admin/settings/', label: '设置与通知' },
 ];
@@ -18,7 +17,7 @@ const section = current === 'content' ? resolveContentPage(Astro.url.pathname) :
     <summary>快捷导航 <span aria-hidden="true">⌄</span></summary>
     <nav aria-label="后台快捷导航">
       <div class="ah-staff-navigation-pages">
-        {pages.map(page => <a href={page.href} data-staff-page={page.key} aria-current={current === page.key ? sections.length ? 'location' : 'page' : current === 'person' && page.key === 'contacts' ? 'location' : undefined}>{page.label}</a>)}
+        {pages.map(page => <a href={page.href} data-staff-page={page.key} aria-current={current === page.key ? sections.length ? 'location' : 'page' : ['person','registrations'].includes(current) && page.key === 'contacts' ? 'location' : undefined}>{page.label}</a>)}
       </div>
       {sections.length > 0 && <div class="ah-staff-navigation-sections" aria-label={current === 'settings' ? '设置页面' : '活动内容页面'}>
         {sections.map(page => <a href={page.href} data-staff-section-link data-staff-section={page.key} data-staff-admin-link={page.key === 'accounts' ? '' : undefined} hidden={page.key === 'accounts'} aria-current={section === page.key ? 'page' : undefined}>{page.label}</a>)}

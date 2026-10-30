@@ -74,7 +74,7 @@ try{
     assert.ok(url.startsWith(SITE+'/registration/confirmation/#r=c1.'));
     const response=await f.runtime.app.handle(new Request(API+'/api/admin/registration/confirmation',{method:'POST',headers:{Origin:SITE,'Content-Type':'application/json'},body:JSON.stringify({receiptToken:new URL(url).hash.slice(3)})}));
     assert.equal(response.status,200);const value=await response.json();
-    assert.equal(value.attendee.name,'合成导入参会者');assert.equal(value.admission.status,'confirmed');assert.equal(value.email.status,'not_applicable');
+    assert.equal(value.attendee.name,'合成导入参会者');assert.equal(value.admission.status,'confirmed');assert.equal(value.email.status,'not_configured');
     assert.equal(f.runtime.messages.length,0);assert.deepEqual((await f.runtime.app.registrationService.repository.readIndex()).value,before.value);
     const scope=page.locator('[data-review-form] .review-detail-group').first();await scope.locator('summary').click();
     await scope.locator('[name=internalNotes]').fill('合成备注保存后保留编辑区');await page.locator('[data-review-save]').click();

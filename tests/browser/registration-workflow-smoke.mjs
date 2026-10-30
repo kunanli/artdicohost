@@ -60,6 +60,8 @@ try{
     assert.doesNotMatch(await page.locator('[data-review-rows]').innerText(),/新报名|内部建议/u);
     await page.screenshot({path:resolve(evidence,'registration-list-'+width+'.png'),fullPage:true});
     await f.select('合成导入参会者');
+    assert.equal(await page.locator('[data-review-dialog]').evaluate(dialog=>dialog.scrollTop),0,'a newly selected person opens at their name and admission status');
+    assert.equal(await page.locator('[data-review-detail-title]').evaluate(heading=>document.activeElement===heading),true);
     assert.match(await page.locator('[data-review-admission-status]').innerText(),/已确认/u);
     assert.equal(await page.locator('[data-review-approval-actions]').isVisible(),false);
     assert.equal(await page.locator('.review-original').evaluate(el=>el.open),false);

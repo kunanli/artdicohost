@@ -165,7 +165,9 @@ function adoptRecord(result,id){
   $('[data-review-detail-error]').hidden=true;
   $('[data-review-admission-notice]').textContent='';
   renderAdmissionDecision();
-  if(!$('[data-review-dialog]').open)$('[data-review-dialog]').showModal();openReviewDraft();
+  const dialog=$('[data-review-dialog]');if(!dialog.open)dialog.showModal();
+  if(changedPerson){const heading=$('[data-review-detail-title]');heading.tabIndex=-1;heading.focus({preventScroll:true});dialog.scrollTop=0;}
+  openReviewDraft();
 }
 function renderAdmissionDecision(){
   const person=selected?staffAdmissions.person(selected.id):null;

@@ -6,11 +6,13 @@ const SITE_ORIGIN = 'https://artdico.host';
 const KEY = /^[A-Za-z0-9_-]{32,128}$/u;
 const TOKEN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u;
 const PRIVACY_KEYS = ['version','processor','contactEmail','purpose','storageRegion','retention','rightsRequest','sharing'];
+const clientFailures = new WeakSet();
 
 function failure(code, message, uncertain = false) {
   const error = new Error(message);
   error.code = code;
   error.uncertain = uncertain;
+  clientFailures.add(error);
   return error;
 }
 function timestamp(value) {
@@ -28,6 +30,9 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
   const pendingValue=()=>({eventId:JSON.parse(pending.json).eventId,idempotencyKey:pending.key,payloadJson:pending.json,attempted:pending.sent,uncertain:pending.uncertain});
   async function persist(method){if(!pendingStore)return;const value=pendingValue();const saved=applicationPendingValue(await pendingStore[method](value),value.eventId);if(saved.idempotencyKey!==pending.key||saved.payloadJson!==pending.json||saved.attempted!==pending.sent||saved.uncertain!==pending.uncertain)throw failure('DRAFT_UNCONFIRMED','本机恢复信息尚未保存，当前未继续提交。',pending.sent);}
   async function request(path, body, headers = {}) {
+    const stage=path.endsWith('/token')?'token':path.endsWith('/submit')?'submit':'config';
+    const label={token:'提交验证',submit:'核对申请回执',config:'读取申请设置'}[stage];
+    const transportFailure=(reason,message)=>Object.assign(failure('UNAVAILABLE',message),{stage,reason});
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20_000);
     try {
@@ -36,24 +41,27 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
         headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: controller.signal,
       });
-      if (!response.headers.get('content-type')?.toLowerCase().startsWith('application/json')) throw failure('UNAVAILABLE','服务暂时无法确认，请稍后重试。');
+      if (!response.headers.get('content-type')?.toLowerCase().startsWith('application/json')) throw transportFailure('RESPONSE_FORMAT',label+'返回了无法识别的响应（HTTP '+response.status+'），请保留本页后重试。');
       const reader = response.body?.getReader();
-      if (!reader) throw failure('UNAVAILABLE','服务暂时无法确认，请稍后重试。');
+      if (!reader) throw transportFailure('RESPONSE_FORMAT',label+'未返回完整资料，请保留本页后重试。');
       const chunks = []; let size = 0;
       for (;;) {
         const {done,value} = await reader.read();
         if (done) break;
         size += value.byteLength;
-        if (size > 64 * 1024) { await reader.cancel(); throw failure('UNAVAILABLE','服务暂时无法确认，请稍后重试。'); }
+        if (size > 64 * 1024) { await reader.cancel(); throw transportFailure('RESPONSE_SIZE',label+'返回资料超出限制，请保留本页并联系主办方。'); }
         chunks.push(value);
       }
       const bytes = new Uint8Array(size); let offset = 0;
       for (const chunk of chunks) { bytes.set(chunk,offset); offset += chunk.byteLength; }
       let value;
       try { value = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)); }
-      catch { throw failure('UNAVAILABLE','服务暂时无法确认，请稍后重试。'); }
+      catch { throw transportFailure('RESPONSE_FORMAT',label+'返回资料未通过检查，请保留本页后重试。'); }
       return { status: response.status, value };
-    } catch { throw failure('UNAVAILABLE','网络或服务暂时无法确认，请保留本页并重试。'); }
+    } catch(error) {
+      if(clientFailures.has(error))throw error;
+      throw transportFailure(controller.signal.aborted?'TIMEOUT':'NETWORK',label+(controller.signal.aborted?'超时':'网络连接未完成')+'，请保留本页并核对原申请。');
+    }
     finally { clearTimeout(timer); }
   }
   async function sendPending(){
@@ -63,6 +71,7 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
       try{
         const eventId=JSON.parse(pending.json).eventId;
         const issued=await request('/api/admin/registration/token',{eventId,idempotencyKey:pending.key});const token=issued.value;
+        if(issued.status!==200)throw Object.assign(failure(issued.status===429?'RATE_LIMITED':'TOKEN_UNAVAILABLE','提交验证暂不可用（HTTP '+issued.status+'），请保留原申请后重试。',pending.sent),{stage:'token',reason:'HTTP_STATUS'});
         if(issued.status!==200||token?.eventId!==eventId||typeof token.submissionToken!=='string'||token.submissionToken.length>4096||!TOKEN.test(token.submissionToken)||!timestamp(token.expiresAt)||Date.parse(token.expiresAt)<=clock())throw failure('TOKEN_UNAVAILABLE','暂时无法核对，请保留原申请后重试。',pending.sent);
         pending.sent=true;await persist('update');
         const result=await request('/api/admin/registration/submit',JSON.parse(pending.json),{'Idempotency-Key':pending.key,'X-Registration-Token':token.submissionToken});

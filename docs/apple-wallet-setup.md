@@ -1,6 +1,6 @@
 # Apple Wallet 设置步骤
 
-当前尚未取得本活动可用的 Apple Developer 身份、Pass Type ID 或签章凭证。后台会显示缺项及未启用；公开确认页不会出现可用票券按钮。以下是后续由主办方／受控运维完成的流程，不表示已经开户、付费、取得证书或通过 iPhone 验收。
+2026-10-30 主办方已在本人 Windows 完成凭证及匹配私钥验证、加密包的私有 OSS 上传／SHA-256 回读一致，并提供正式后台「票券签章设置可用」画面。此为主办方操作证据，开发环境未取得明文凭证或主密钥；真实 iPhone 加入仍待验收。新阶段提供单笔已确认报名的私人确认页入口，见 [操作说明](registration-workflow-simplification.md)。下文保留首次设置与轮替步骤，不重复开户或重置现有设置。
 
 ## 先选对 Apple 服务
 
@@ -39,7 +39,7 @@ openssl x509 -inform DER -in AppleRootCA-G3.cer -out root.pem
 openssl x509 -in root.pem -noout -fingerprint -sha256
 ```
 
-不要仅凭示例文件名选择 Root；使用实际 issuer 链。指纹与 [Apple 官方列表](https://support.apple.com/en-us/126047)核对。服务会拒绝错误链、过期或未生效证书、错误 Team／Pass Type ID、不匹配私钥及非 Pass Signing 用途。
+不要仅凭示例文件名选择 Root；使用实际 issuer 链。本次实际 WWDR G4 的 issuer 是 `Apple Root CA`，使用 Apple PKI 的 **Apple Inc. Root**（`AppleIncRootCertificate.cer`），不是 `Apple Root CA - G3`；上面的 G3 只是格式转换示例。指纹与 [Apple 官方列表](https://support.apple.com/en-us/126047)核对。服务会拒绝错误链、过期或未生效证书、错误 Team／Pass Type ID、不匹配私钥及非 Pass Signing 用途。
 
 ## 制作加密签章资料包
 

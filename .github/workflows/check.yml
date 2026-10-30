@@ -46,6 +46,10 @@ jobs:
         run: node scripts/verify-public-content.mjs --observe
       - name: Check source boundaries
         run: pnpm check:source
+      - name: Observe anonymous registration settings and both browser preflights without submitting an application
+        timeout-minutes: 1
+        continue-on-error: true
+        run: node scripts/verify-public-registration.mjs
       - name: Check types and Astro source
         run: pnpm check
       - name: Run tests
@@ -205,3 +209,6 @@ jobs:
       - name: Verify anonymous public content and frontend CORS without credentials
         timeout-minutes: 1
         run: node scripts/verify-public-content.mjs
+      - name: Verify anonymous registration settings and both browser preflights without submitting an application
+        timeout-minutes: 1
+        run: node scripts/verify-public-registration.mjs

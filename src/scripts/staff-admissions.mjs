@@ -177,6 +177,7 @@ export function createStaffAdmissions({root,request,openRecord,onChange=async()=
   $('[data-admissions-staff]').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;if(!form.reportValidity()||!admin())return;const data=new FormData(form);if(!data.get('email').trim()&&!data.get('wechat').trim()){status('请填写本人邮箱或微信，至少一项。',true);return;}const fields=Object.fromEntries(['name','email','wechat'].map(key=>[key,data.get(key).trim()]).filter(([,value])=>value));mutate('/staff',{input:{fields,permissionReference:data.get('permissionReference').trim(),kind:data.get('kind')}},'POST',result=>{savedStaffId=result.registrationId;});});
   $('[data-admissions-staff-next]').addEventListener('click',()=>{if(!savedStaffId||busy||externalBusy||operations.pending)return;savedStaffId=null;const form=$('[data-admissions-staff]');form.reset();dirtyForms.delete('staff');formConflicts.delete('staff');formBases.set('staff',structuredClone(state));formViews.get('staff')?.set('idle','填写实际下一人的资料后保存。');lock();});
   return Object.freeze({
+    get summary(){return allowed()&&state?{...state.summary}:null;},
     get pending(){return operations.pending||Boolean(pendingDraft?.blocked);},
     person(id){const person=state?.people.find(item=>item.registrationId===id);return allowed()&&person?{registrationId:person.registrationId,status:person.status,kind:person.kind}:null;},
     reviewApplication,

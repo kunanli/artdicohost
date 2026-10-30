@@ -12,6 +12,8 @@ const ID = /^[A-Za-z0-9_-]{43}$/u;
 const STATUS = ['pending_review', 'confirmed', 'waitlisted', 'rejected', 'withdrawn'];
 const actorValid = actor => typeof own(actor, 'id') === 'string' && /^[A-Za-z0-9_-]{1,80}$/u.test(actor.id)
   && canManageEventOperations(actor);
+const readerValid = actor => typeof own(actor, 'id') === 'string' && /^[A-Za-z0-9_-]{1,80}$/u.test(actor.id)
+  && Array.isArray(own(actor, 'roles')) && actor.roles.some(role => ['reviewer', 'superadmin'].includes(role));
 const automaticActor = 'system-confirmation';
 const stateOf = notice => notice?.status === 'reserved' ? 'unknown' : notice?.status;
 const conflict = error => error instanceof CloudContentError && error.code === 'WRITE_CONFLICT' && error.status === 409;
@@ -93,6 +95,18 @@ export function createRegistrationConfirmationService({ registrationService, jou
   async function authorize(input) {
     const { registrationId, loaded } = await authorizedContext(input);
     return trustedProjection(registrationId, loaded);
+  }
+  /** Explicit, single-person staff read. No new registration, notice, or email. */
+  async function staffConfirmationLink({ actor, registrationId } = {}) {
+    if (!readerValid(actor)) failure('FORBIDDEN', 403);
+    if (!ID.test(registrationId ?? '')) failure('INVALID_REQUEST', 400);
+    const loaded = await loadRegistration(registrationId);
+    if (loaded.admission.status !== 'confirmed') return { registrationId, ready: false, reason: 'ADMISSION_NOT_CONFIRMED' };
+    const link = capability(registrationId);
+    // A withdrawal during issuance must not leave a newly displayed valid link.
+    const latest = await loadRegistration(registrationId);
+    if (latest.admission.status !== 'confirmed') return { registrationId, ready: false, reason: 'ADMISSION_NOT_CONFIRMED' };
+    return { registrationId, ready: true, ...link };
   }
   function invitationProjection({ record, admission }) {
     if (record.provenance.kind !== 'public' || admission.status !== 'confirmed') return { ready: false };
@@ -208,7 +222,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
   async function confirmation(input) {
     const { registrationId, loaded } = await authorizedContext(input), value = trustedProjection(registrationId, loaded);
     let email;
-    if (['pending_review', 'rejected'].includes(value.admissionStatus)) email = { status: 'not_applicable' };
+    if (loaded.record.provenance.kind !== 'public' || ['pending_review', 'rejected'].includes(value.admissionStatus)) email = { status: 'not_applicable' };
     else try { email = await readEmail(value.registrationId, value.hasEmail, value.admissionStatus); } catch { email = { status: 'unknown' }; }
     let groupInvite = null;
     if (value.admissionStatus === 'confirmed' && groupInviteProvider) {
@@ -307,15 +321,13 @@ export function createRegistrationConfirmationService({ registrationService, jou
   }
   /** Trusted staff projection reads durable notices only; no capability or provider access. */
   async function staffHistory({ actor, registrationId } = {}) {
-    const roles = own(actor, 'roles');
-    if (typeof own(actor, 'id') !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/u.test(actor.id)
-      || !Array.isArray(roles) || !roles.some(role => ['reviewer', 'superadmin'].includes(role))) failure('FORBIDDEN', 403);
+    if (!readerValid(actor)) failure('FORBIDDEN', 403);
     if (!ID.test(registrationId ?? '')) failure('INVALID_REQUEST', 400);
     const current = await target().read();
     return { revision: current.value.revision, notices: current.value.notices.filter(item => item.registrationId === registrationId)
       .map(item => ({ id: item.id, kind: item.kind, status: stateOf(item), admissionStatus: item.admissionStatus, attempt: item.attempt,
         createdAt: item.createdAt, updatedAt: item.updatedAt })) };
   }
-  return Object.freeze({ prefix, forSavedReceipt, authorize, authorizedRegistration, confirmation, settings, setSettings, dispatch,
+  return Object.freeze({ prefix, forSavedReceipt, authorize, authorizedRegistration, confirmation, staffConfirmationLink, settings, setSettings, dispatch,
     notifyApproved: input => notifyBatch(input, 'registration'), notifyPromoted: input => notifyBatch(input, 'promotion'), staffHistory });
 }

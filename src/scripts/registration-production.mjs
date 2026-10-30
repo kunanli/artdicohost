@@ -78,6 +78,8 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
   function lock(value) {
     form.dataset.submitting = String(value);
     form.dataset.applicationPending=String(frozen);
+    const recovery=form.querySelector('[data-application-recovery]');
+    if(recovery){recovery.hidden=!client.pending;form.querySelector('[data-application-recovery-person]').textContent=client.pending?[pendingFields?.name||form.elements.namedItem('name').value,pendingFields?.email||form.elements.namedItem('email').value].filter(Boolean).join(' · '):'';}
     if(clearDraft)clearDraft.hidden=client.pending||draftBlocked||!draftReady||!draft?.snapshot?.record;
     if(frozen&&!value&&!draftBlocked)draftMessage('上次申请结果待核对','pending');
     submit.disabled = value || !client.pending&&(!config||draftBlocked||!draftReady);

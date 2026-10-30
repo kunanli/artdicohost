@@ -84,6 +84,47 @@ async function legacyRegistration(f, schemaVersion, recordFields = fields) {
     admissionStatus: 'confirmed', admissionKind: 'attendee', admissionRevision: 1 } };
 }
 
+test('staff obtain a selected confirmed public or imported person link without creating registrations or notices', async () => {
+  const f=fixture({capacity:3}),publicEntry=await register(f),c=f.confirmation();
+  const imported=await f.service.submitStaffRegistration({sourceContactId:'synthetic-link-contact',actor,
+    input:{fields:{name:'合成导入参会者',email:'synthetic-link@example.invalid'},permissionReference:'synthetic-permission'}});
+  const before=f.remote.calls.length, reviewer={id:'synthetic-reviewer',roles:['reviewer']};
+  for(const id of [publicEntry.saved.receipt.registrationId,imported.receipt.registrationId]){
+    const link=await c.staffConfirmationLink({actor:reviewer,registrationId:id});
+    assert.equal(link.ready,true);assert.equal(link.registrationId,id);
+    assert.equal(link.confirmationUrl,SITE+'/registration/confirmation/#r='+link.receiptToken);
+    assert.equal((await c.authorize({receiptToken:link.receiptToken})).registrationId,id);
+    assert.equal((await c.confirmation({receiptToken:link.receiptToken})).admission.status,'confirmed');
+    assert.doesNotMatch(JSON.stringify(link),/PRIVATE-|synthetic-link@example|sourceContactId|permissionReference/u);
+  }
+  assert.equal(f.state.confirmationWrites,0);assert.equal(f.state.messages.length,0);
+  assert.equal(f.remote.calls.slice(before).every(call=>call.method==='GET'),true);
+});
+
+test('private link issuance rejects unauthorized readers before storage and never grants unconfirmed or withdrawn people', async()=>{
+  const f=fixture({capacity:1}),first=await register(f),waiting=await register(f),pending=await register(f,fields,false),c=f.confirmation();
+  const before=f.remote.calls.length;
+  for(const actor of [undefined,{id:'synthetic-outreach',roles:['outreach']},{id:'bad actor',roles:['reviewer']}])
+    await assert.rejects(c.staffConfirmationLink({actor,registrationId:first.saved.receipt.registrationId}),error=>error.code==='FORBIDDEN');
+  assert.equal(f.remote.calls.length,before);
+  for(const id of [waiting.saved.receipt.registrationId,pending.saved.receipt.registrationId])
+    assert.deepEqual(await c.staffConfirmationLink({actor,registrationId:id}),{registrationId:id,ready:false,reason:'ADMISSION_NOT_CONFIRMED'});
+  const id=first.saved.receipt.registrationId;f.state.withdrawn.add(id);
+  assert.equal((await c.staffConfirmationLink({actor,registrationId:id})).ready,false);
+  await assert.rejects(c.staffConfirmationLink({actor,registrationId:'z'.repeat(43)}),error=>error.code==='CONFIRMATION_NOT_FOUND');
+  assert.equal(f.state.confirmationWrites,0);assert.equal(f.state.messages.length,0);
+});
+
+test('withdrawal between private link reads suppresses the capability instead of returning stale eligibility',async()=>{
+  const f=fixture(),saved=await register(f);let reads=0;
+  const c=f.confirmation({registrationService:{...f.service,async getAdmissionStatus(id){
+    if(++reads===2)f.state.withdrawn.add(id);return f.service.getAdmissionStatus(id);
+  }}});
+  const result=await c.staffConfirmationLink({actor,registrationId:saved.saved.receipt.registrationId});
+  assert.equal(result.ready,false);assert.equal(Object.hasOwn(result,'receiptToken'),false);
+  assert.equal(f.state.confirmationWrites,0);assert.equal(f.state.messages.length,0);
+});
+
 test('private poster descriptor follows current public admission, including a later crew change, without mail or writes', async () => {
   const f = fixture({ event: posterEvent }), { saved } = await register(f, fields, false), c = f.confirmation();
   const { receiptToken } = await c.forSavedReceipt({ receipt: saved.receipt, notify: false });

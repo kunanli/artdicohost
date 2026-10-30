@@ -30,6 +30,30 @@ test('unconfigured or untrusted pages never call the registration service',async
     assert.equal(requests,0);
   }
 });
+
+test('token-stage transport failures identify the failed step without exposing a response or losing the original request',async()=>{
+  for(const mode of ['network','html','invalid-json','status']){
+    const calls=[];let broken=true;
+    const client=createRegistrationClient({apiOrigin:'https://api.artdico.host',pageOrigin:'https://artdico.host',clock:()=>NOW,randomBytes:()=>new Uint8Array(32).fill(4),fetchFn:async(url,options)=>{
+      calls.push({url,options});if(url.endsWith('/config'))return json(policy);
+      if(url.endsWith('/token')){
+        if(!broken)return json(token);
+        if(mode==='network')throw Object.assign(new Error('PRIVATE_NETWORK_DETAIL'),{code:'UNAVAILABLE'});
+        if(mode==='html')return new Response('PRIVATE_PROVIDER_HTML',{status:403,headers:{'content-type':'text/html'}});
+        if(mode==='invalid-json')return new Response('PRIVATE_INVALID_JSON',{headers:{'content-type':'application/json'}});
+        return json({error:{message:'PRIVATE_SERVICE_DETAIL'}},503);
+      }
+      return json({status:'pending_review',admissionStatus:'pending_review',reference_code:reference},201);
+    }});
+    await client.configure();const fields={name:'合成恢复申请'};
+    await assert.rejects(client.submit(fields),error=>error.stage==='token'&&['NETWORK','RESPONSE_FORMAT','HTTP_STATUS'].includes(error.reason)&&!error.message.includes('PRIVATE'));
+    const original=JSON.parse(calls.find(call=>call.url.endsWith('/token')).options.body);
+    assert.equal(calls.some(call=>call.url.endsWith('/submit')),false);
+    broken=false;await client.submit(fields);
+    assert.equal(JSON.parse(calls.filter(call=>call.url.endsWith('/token')).at(-1).options.body).idempotencyKey,original.idempotencyKey);
+    assert.equal(calls.filter(call=>call.url.endsWith('/submit')).length,1);
+  }
+});
 test('formal submission omits cookies and returns success only for a confirmed receipt',async()=>{
   const f=fixture();await f.client.configure();
   const result=await f.client.submit({name:'合成访客'});

@@ -17,7 +17,7 @@ async function fixture(width,username='owner'){
  content.booths=[{id:'synthetic-booth',code:'C-01',slotNumber:1,organization:'原展位文字',organizationId:'synthetic-exhibitor',project:'合成项目',zone:'C',status:'confirmed',internalNotes:''},
  {id:'synthetic-legacy',code:'C-02',slotNumber:2,organization:'合成旧团队文字',project:'合成旧项目',zone:'C',status:'pending',internalNotes:''}];
  await f.app.store.save(snapshot.draft.revision,content,f.users[0].id);
- await f.app.contactsStore.saveOperations(contact.id,2,{...contact.operations,responseStatus:'attending',organizationMemberships:[{organizationId:'synthetic-exhibitor',role:'lead',title:'合成联络人'}]},f.users[0].id);
+ await f.app.contactsStore.saveOperations(contact.id,2,{...contact.operations,responseStatus:width===320?'pending':'attending',organizationMemberships:[{organizationId:'synthetic-exhibitor',role:'lead',title:'合成联络人'}]},f.users[0].id);
  const converted=await f.app.intentService.convertContacts({actor:f.users[0],contactIds:[contact.id],expectedContactRevision:3,permissionReference:'合成历史本人授权确认'});
  const pending=await f.seedPublic({name:'合成申请丙'});assert.equal(f.messages.length,0);
  const headers=await f.login(username),context=await browser.newContext({viewport:{width,height:980}}),page=await context.newPage();page.setDefaultTimeout(12000);
@@ -50,11 +50,12 @@ try{
   await p.locator('[data-people-view=speakers]').click();await p.locator('[data-directory-title]').filter({hasText:'讲者名单'}).waitFor();await p.locator('[data-directory-rows]').getByRole('button',{name:'查看与管理'}).click();
   await p.locator('[data-contact-dialog][open]').waitFor();await p.locator('[data-person-confirmation-status]').filter({hasText:'可以寄送'}).waitFor().catch(async error=>{console.log(JSON.stringify({status:await p.locator('[data-person-confirmation-status]').textContent(),hidden:await p.locator('[data-person-confirmation]').isHidden(),requests:f.requests.slice(-8),errors}));throw error;});
   assert.equal(await p.locator('[data-contact-profile] details').first().getAttribute('open'),null);await noOverflow(p);
+  if(width===320){await p.locator('[data-contact-form] [name=responseStatus]').selectOption('attending');await p.locator('[data-contact-save]').click();await p.locator('[data-person-confirmation-status]').filter({hasText:'服务商已接受'}).waitFor();assert.equal(f.messages.length,1);assert.doesNotMatch(await p.locator('[data-contacts-status]').textContent(),/没有发送/u);}
   if(width===390){await p.locator('[data-person-confirmation-send]').click();await p.locator('[data-person-confirmation-status]').filter({hasText:'服务商已接受'}).waitFor();assert.equal(f.messages.length,1);
    assert.match(f.messages[0].template_params.invitation_text,/Apple Wallet/u);assert.equal(await p.locator('[data-person-confirmation-send]').isDisabled(),true);
    await p.screenshot({path:evidence+'/unified-person-confirmation-mobile.png',fullPage:true});
   }
-  await p.locator('[data-contact-close]').first().click();await p.locator('[data-contacts-refresh]').click();await p.locator('[data-directory-status]').filter({hasText:'符合筛选'}).waitFor();assert.equal(f.messages.length,width===390?1:0);
+  await p.locator('[data-contact-close]').first().click();await p.locator('[data-contacts-refresh]').click();await p.locator('[data-directory-status]').filter({hasText:'符合筛选'}).waitFor();assert.equal(f.messages.length,width===320||width===390?1:0);
   assert.equal(f.requests.some(row=>/publish|approve/u.test(row.path)),false);await f.context.close();reports.push({width,unifiedRows:true,multiRoleViews:true,companyRoster:true,collapsedSource:true,noOverflow:true,explicitMailOnly:true});
  }
  const reviewer=await fixture(390,'reviewer');await ready(reviewer);assert.equal(await reviewer.page.locator('[data-directory-rows] tr').count(),2);

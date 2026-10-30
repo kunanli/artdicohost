@@ -44,7 +44,8 @@ test('organization deep links contain only bounded stable identifiers',()=>{
 });
 test('saved contact requires exact reply ACK and independent valid admission receipt',()=>{
   const item=contact();item.operations.responseStatus='attending';const operations=structuredClone(item.operations),pending={contactId:item.id,expectedRevision:4,operations};const value={replySaved:true,revision:5,contact:item,admission:{status:'confirmed',registrationId,referenceCode,revision:30,privateKey:'never copy'}};
-  const receipt=savedContactReceipt(value,pending);assert.equal(receipt.admission.status,'confirmed');assert.equal(receipt.admission.privateKey,undefined);
+  value.admission.confirmationEmail={status:'pending',privateKey:'never copy'};
+  const receipt=savedContactReceipt(value,pending);assert.equal(receipt.admission.status,'confirmed');assert.equal(receipt.admission.privateKey,undefined);assert.deepEqual(receipt.admission.confirmationEmail,{status:'pending'});
   for(const mutate of [v=>{delete v.replySaved;},v=>{v.revision=6;},v=>{v.contact.id='foreign';},v=>{v.contact.operations.owner='changed';},v=>{delete v.contact.profile;},v=>{v.admission.registrationId='bad';},v=>{v.admission.referenceCode='bad';},v=>{delete v.admission;},v=>{v.admission.status='sent';}]){const input=structuredClone(value);mutate(input);assert.throws(()=>savedContactReceipt(input,pending));}
   const unavailable=structuredClone(value);unavailable.admission={status:'unavailable',reason:'STORAGE_UNAVAILABLE'};assert.deepEqual(savedContactReceipt(unavailable,pending).admission,{status:'unavailable'});
 });

@@ -13,7 +13,7 @@
 | 确认与通知 | 公开审核通过、明确新出席确认、工作人员直接登记 confirmed 后处理邮件。旧资料读取、导入与批次同步不补寄。历史补寄为有权限的逐笔动作。 |
 | 通知边界 | 当前联络许可与地址再次核对。provider_accepted 只表示服务商接受；unknown 不重寄。原操作重放、版本冲突、邮件暂停与服务失败保持独立名额记录。 |
 | Wallet | 海军蓝／钴蓝／铂金 PNG 实际进入 signed pass；manifest 与 detached CMS 使用合成根由 OpenSSL 独立验签。待审、候补、撤回不发 pass。 |
-| 发布预算 | 暂存构建 40 个后台静态资源、7,459,529 bytes，仍在 8 MiB 限制内；未新增服务器源文件、依赖、环境变量、服务或 IAM。正式 ZIP 和 JSON 上传预算在 exact-commit 包再次校验。 |
+| 发布预算 | 暂存构建 40 个后台静态资源、7,459,529 bytes，仍在 8 MiB 限制内；未新增服务器源文件、依赖、环境变量、服务或 IAM。首轮 PR 检查的 exact merge-tree 包已通过 128 文件、40 资源与请求预算校验；最终提交仍按相同检查执行。 |
 
 ## 已完成的本地验证
 
@@ -31,7 +31,7 @@
 
 ## 发布与交付
 
-发布前须确认 exact-commit PR checks、128 文件 / 40 资源 / 8 MiB 与既有 ZIP、48,000,000-byte JSON 请求上限。合并后记录 main push 的 FC、私有 OSS readback、公开 OSS 与实际 HTTPS 验证结果。未完成前不宣称已经上线。
+发布前须确认 exact-commit PR checks、128 文件 / 40 资源 / 8 MiB 与既有 ZIP、48,000,000-byte JSON 请求上限。合并后记录 main push 的 FC、私有 OSS readback、公开 OSS 与实际 HTTPS 验证结果。准确提交、工作流与实际上线结果统一记录在 [PR #47](https://github.com/kunanli/artdicohost/pull/47)，未完成的检查不视为已经上线。
 
 Apple Wallet 的 signed archive、浏览器下载、图稿预览与生产 readiness 均不是实机证明；需要 iPhone 打开本人确认页，检查新版海报／兼容样式、姓名日期与扫码。卡片暂未提供 APNs 更新，重新下载才能取得新图稿。
 

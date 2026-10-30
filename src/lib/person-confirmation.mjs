@@ -31,5 +31,5 @@ export function createPersonConfirmation({root,request,getUser,isBlocked=()=>fal
     finally{if(current(generation,selected)){busy=false;lock();}}}
   function select(value){if(id===(ID.test(value??'')?value:null)&&actor===getUser()?.id){lock();return;}sequence++;id=ID.test(value??'')?value:null;actor=getUser()?.id;state=null;pending=null;busy=false;root.hidden=!id;$('[data-person-confirmation-recipient]').textContent='';$('[data-person-confirmation-status]').textContent='正在核对寄送记录…';lock();if(id)void load();}
   $('[data-person-confirmation-send]').addEventListener('click',()=>void send());$('[data-person-confirmation-check]').addEventListener('click',()=>void(pending?send(true):load()));
-  return{select,clear:()=>select(null),lock};
+  return{select,refresh:load,clear:()=>select(null),lock};
 }

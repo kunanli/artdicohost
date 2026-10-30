@@ -694,10 +694,12 @@ $('[data-contact-form]').addEventListener('submit',event=>{event.preventDefault(
     const receipt=savedContactReceipt(await request(path,{method:'PUT',body}),{contactId,expectedRevision,operations});
     if(generation!==sessionGeneration)return;
     if(receipt.admission)admissionReceipts.set(contactId,receipt.admission);else admissionReceipts.delete(contactId);
-    if(currentContactId===contactId&&receipt.admission?.registrationId)personConfirmation.select(receipt.admission.registrationId);
+    if(currentContactId===contactId&&receipt.admission?.registrationId){personConfirmation.select(receipt.admission.registrationId);void personConfirmation.refresh();}
     await contactDraft.acknowledge();updateContact(receipt);operationsDirty=false;uncertainSave=null;operationRevision=receipt.revision;openContactDraft();contactSaveState.set('saved','跟进与安排已保存到云端。');
     const nextIntent=features.intentInvitations?await request('/api/admin/intent-invitations').catch(()=>null):null;if(generation!==sessionGeneration)return;intentState=nextIntent;render();
-    announce('回复、职责与组织安排已保存。'+(receipt.admission?ADMISSION_LABELS[receipt.admission.status]+'。':'正式名额仍以报名审核记录为准。')+(operations.responseStatus==='declined'?'原报名及名额不会自动撤回，请到报名审核处理。':'')+'没有发送邀请或邮件。');
+    const email=receipt.admission?.confirmationEmail?.status;
+    announce('回复、职责与组织安排已保存。'+(receipt.admission?ADMISSION_LABELS[receipt.admission.status]+'。':'正式名额仍以报名审核记录为准。')+(operations.responseStatus==='declined'?'原报名及名额不会自动撤回，请到报名审核处理。':'')
+      +(email?({completed:'确认通知已处理，请核对上方寄送记录。',pending:'确认信结果待核对，名额已保存。',not_configured:'邮件服务尚未就绪，名额已保存。',not_applicable:'本次确认信暂不适用，请核对联络许可与邮箱。'})[email]:'本次保存不自动补寄历史确认信。'));
   }catch(error){if(generation!==sessionGeneration)return;if(error.status>=400&&error.status<500)await contactDraft?.rejectPending();else await contactDraft?.markUnknown().catch(()=>{});operationsDirty=true;if(!error.status||error.status>=500){uncertainSave={contactId,expectedRevision,operations};$('[data-contact-save-unknown]').hidden=false;}contactSaveState.set(uncertainSave?'unknown':error.status===409?'conflict':'error',error.message);operationsFieldErrors(form,error.fields);$('[data-contact-error]').textContent=error.message;$('[data-contact-error]').hidden=false;$('[data-contact-error]').focus();throw error;}
 });});
 $('[data-contact-membership-add]').addEventListener('click',()=>{if(busy||!relationships||uncertainSave)return;membershipRow();membershipEdited=true;markContactDirty();contactDraft?.schedule();lock();});

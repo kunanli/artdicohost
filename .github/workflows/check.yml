@@ -50,6 +50,10 @@ jobs:
         timeout-minutes: 1
         continue-on-error: true
         run: node scripts/verify-public-registration.mjs
+      - name: Observe registration HTTP header transport with GET only and dummy tokens
+        timeout-minutes: 1
+        continue-on-error: true
+        run: node scripts/observe-registration-transport.mjs
       - name: Check types and Astro source
         run: pnpm check
       - name: Run tests

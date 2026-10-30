@@ -14,6 +14,24 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  registration-transport:
+    name: Observe rejected registration HTTP transport without business writes
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up the pinned Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24.19.0"
+          package-manager-cache: false
+      - name: Observe method and media-type rejections without a valid registration or token
+        continue-on-error: true
+        run: node scripts/observe-registration-transport.mjs
+
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -212,3 +230,6 @@ jobs:
       - name: Verify anonymous registration settings and both browser preflights without submitting an application
         timeout-minutes: 1
         run: node scripts/verify-public-registration.mjs
+      - name: Verify gateway-compatible registration transport using rejected diagnostic requests
+        timeout-minutes: 3
+        run: node scripts/observe-registration-transport.mjs

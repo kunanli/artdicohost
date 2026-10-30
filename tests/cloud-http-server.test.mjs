@@ -371,3 +371,16 @@ test('runtime and HTTP parser failures stay opaque and leave the actual server r
   assert.equal(head.body.length, 0);
   assert.equal((await send(port, '/healthz')).status, 200);
 });
+
+test('gateway-compatible header count remains bounded independently of the 8 KiB byte cap',async t=>{
+  let calls=0;
+  const {port}=await loopback(t,{runtime:{configured:true,handle:async request=>{calls++;return json({bytes:(await request.arrayBuffer()).byteLength});}}});
+  const headers=count=>({'content-type':'text/plain',...Object.fromEntries(Array.from({length:count},(_,i)=>['x-synthetic-'+i,'v']))});
+  // Host, Connection, Content-Type and the HTTP client's Content-Length add four.
+  const boundary=await send(port,'/api/admin/registration/submit',{method:'POST',headers:headers(60),body:'{}'});
+  assert.equal(boundary.status,200);assert.deepEqual(JSON.parse(boundary.text),{bytes:2});assert.equal(calls,1);
+  const over=await send(port,'/api/admin/registration/submit',{method:'POST',headers:headers(61),body:'{}'});
+  assert.equal(over.status,400);assert.equal(over.body.length,0);assert.equal(calls,1);
+  const malformed=await raw(port,`POST /api/admin/registration/submit HTTP/1.1\r\nHost: ${HOST}\r\nContent-Length: 2\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n`);
+  assert.match(malformed,/^HTTP\/1\.1 400 /u);assert.equal(calls,1,'header count compatibility does not allow ambiguous framing');
+});

@@ -388,7 +388,7 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
   for(const company of companies){const seen=new Map();for(const raw of contacts){const member=organizationMemberships(raw.operations).find(link=>link.organizationId===company.organizationId);if(!member)continue;const id=identityContacts.get(raw.id)??raw.id,current=seen.get(id),person=people.find(row=>row.contactId===id);if(!current)seen.set(id,{id,name:person?.name??contactProjection(raw).profile.displayName,role:member.role});else if(member.role==='lead')current.role='lead';}company.memberTotal=seen.size;company.members=[...seen.values()].slice(0,20);}
   const rows = people.sort((a,b) => Number(b.admissionStatus === 'pending_review') - Number(a.admissionStatus === 'pending_review') || a.name.localeCompare(b.name, 'zh-CN') || a.key.localeCompare(b.key));
   return { people: rows, companies, summary: { people: people.length,
-    unassigned:permissions.contact?rows.filter(row=>row.contactId&&!row.roles.some(role=>['attendee','speaker','guest','panelist','exhibitor','host','organizer','moderator','student_showcase'].includes(role))).length:null,
+    unassigned:permissions.contact?rows.filter(row=>(row.contactId||row.registrationId)&&!row.roles.some(role=>['attendee','speaker','guest','panelist','exhibitor','host','organizer','moderator','student_showcase'].includes(role))).length:null,
     attendees:permissions.contact?rows.filter(row=>row.roles.includes('attendee')).length:null,
     pendingIntegration:permissions.contact&&permissions.registration?rows.filter(row=>row.contactId&&row.responseStatus==='attending'&&!row.registrationId).length:null,
     confirmed: permissions.registration ? applications.filter(item => admission(item) === 'confirmed').length : null,

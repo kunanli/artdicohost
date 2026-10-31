@@ -81,6 +81,7 @@ test('classification splits unassigned intent and general participants without g
  assert.equal((await directory(f,headers,'attendees')).rows.length,0);assert.equal((await directory(f,headers,'guests')).rows.length,1);
  const review=await directory(f,await f.login('reviewer'));assert.deepEqual(review.rows[0].roles,[]);assert.equal(review.summary.attendees,null);assert.equal(review.rows[0].contactId,null);
  assert.equal((await f.app.registrationService.getAdmissionStatus(pub.reference_code)).status,'pending_review');assert.equal((await preview(f,headers,['contact:'+a.id])).roles.length,0);
+ const cleared=write(await preview(f,headers,['registration:'+pub.reference_code]),'roles');cleared.roles=[];await request(f,headers,cleared);assert.equal((await directory(f,headers,'unassigned')).rows.length,2,'clearing a website applicant role returns them to the classification queue');
 });
 test('preview opened by a native staff registration includes its original contact in the canonical identity',async()=>{
  const f=await peopleRuntimeFixture(),a=(await f.createContact()).contact,headers=await f.login(),converted=await convert(f,[a]),id=converted.registrations[0].registrationId;

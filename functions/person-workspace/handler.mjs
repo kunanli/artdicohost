@@ -57,7 +57,7 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
           if (!parsed || Object.keys(parsed).sort().join(',')!=='offset,revision' || !Number.isSafeInteger(parsed.offset) || parsed.offset<0 || parsed.offset>6400 || !/^[a-f0-9]{64}$/u.test(parsed.revision ?? '')) return error('INVALID_REQUEST','分页格式无效。',400);
           if (parsed.revision!==revision) return error('REVISION_CONFLICT','名单已更新，请从第一页重新核对。',409); offset=parsed.offset;
         }
-        const candidates = view==='exhibitors'?result.companies:result.people.filter(item=>view==='all'||view==='unassigned'&&item.contactId&&!item.roles.length||view==='attendees'&&item.roles.includes('attendee')||view==='speakers'&&item.roles.includes('speaker')||view==='guests'&&(item.roles.includes('guest')||item.roles.includes('panelist')));
+        const candidates = view==='exhibitors'?result.companies:result.people.filter(item=>view==='all'||view==='unassigned'&&(item.contactId||item.registrationId)&&!item.roles.length||view==='attendees'&&item.roles.includes('attendee')||view==='speakers'&&item.roles.includes('speaker')||view==='guests'&&(item.roles.includes('guest')||item.roles.includes('panelist')));
         const selected = candidates.filter(item=>!query||[item.name,item.organization,item.city??'',item.contactId??'',item.registrationId??''].some(value=>value.toLocaleLowerCase('zh-CN').includes(query)));
         const limit=Number(inputLimit),next=offset+limit;
         return json({ schemaVersion:1,view,permissions:{contacts:permissions.contact,registrations:permissions.registration},summary:result.summary,

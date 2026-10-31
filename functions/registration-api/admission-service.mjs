@@ -66,11 +66,11 @@ export function createAdmissionOperations({ repository, eventId, current, policy
     getExcluded, getAdmissionStatus,
     async getAdmissions(input) {
       if (!trusted(own(input, 'actor'))) return invalid('forbidden');
-      try { const value=await repository.getAdmissions();const actor=own(input,'actor');if(!actor.roles.some(role=>['outreach','superadmin'].includes(role)))value.personGroups=value.personGroups?.filter(g=>g.primaryRegistrationId).map(g=>({...g,contactIds:[],primaryContactId:null,primaryKey:'registration:'+g.primaryRegistrationId}));if(value.personGroups===undefined)delete value.personGroups;return value; } catch { return invalid('unavailable'); }
+      try { const value=await repository.getAdmissions();const actor=own(input,'actor');if(!actor.roles.some(role=>['outreach','superadmin'].includes(role)))value.personGroups=value.personGroups?.filter(g=>g.primaryRegistrationId).map(g=>({...g,contactIds:[],primaryContactId:null,roles:null,primaryKey:'registration:'+g.primaryRegistrationId}));if(value.personGroups===undefined)delete value.personGroups;return value; } catch { return invalid('unavailable'); }
     },
     async getPersonGroups({actor}={}) {
-      if(typeof actor?.id!=='string'||!Array.isArray(actor.roles)||!actor.roles.some(role=>['outreach','superadmin'].includes(role)))return invalid('forbidden');
-      try{const value=await repository.getAdmissions();return {revision:value.revision,groups:(value.personGroups??[]).filter(group=>actor.roles.some(role=>['reviewer','superadmin'].includes(role))||group.contactIds.length).map(group=>({...group,admissionStatus:group.primaryRegistrationId?value.people.find(p=>p.registrationId===group.primaryRegistrationId)?.status:null}))};}catch{return invalid('unavailable');}
+      if(typeof actor?.id!=='string'||!/^[A-Za-z0-9_-]{1,80}$/u.test(actor.id)||!Array.isArray(actor.roles)||!actor.roles.some(role=>['outreach','superadmin'].includes(role)))return invalid('forbidden');
+      try{const value=await repository.getAdmissions();return {revision:value.revision,groups:(value.personGroups??[]).filter(group=>actor.roles.some(role=>['reviewer','superadmin'].includes(role))||group.contactIds.length).map(group=>({...group,admissionStatus:group.primaryRegistrationId&&actor.roles.some(role=>['reviewer','superadmin'].includes(role))?value.people.find(p=>p.registrationId===group.primaryRegistrationId)?.status:null}))};}catch{return invalid('unavailable');}
     },
     managePerson: input => {
       const action=own(input,'action');if(!['person_merge','person_roles'].includes(action)||typeof own(input,'verifySources')!=='function')return invalid('invalid');

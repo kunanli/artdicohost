@@ -136,3 +136,10 @@ test('a decline on a merged alias also blocks legacy invitation preparation for 
  const denied=await f.app.intentService.previewInvitations({actor:f.users[0],contactIds:[a.id],expectedContactRevision:saved.revision});assert.equal(denied.entries[0].eligible,false);assert.equal(denied.entries[0].reason,'CONTACT_DECLINED');
  await assert.rejects(f.app.intentService.issueInvitation({actor:f.users[0],contactId:a.id,expectedContactRevision:saved.revision,expectedRegistrationId:merged.registrationId,channel:'manual'}),{code:'CONTACT_DECLINED'});assert.equal(f.messages.length,0);
 });
+
+test('canonical metadata preserves outreach and review-only boundaries outside the combined directory',async()=>{
+ const f=await peopleRuntimeFixture(),a=(await f.createContact()).contact,headers=await f.login();await convert(f,[a]);const p=await preview(f,headers,['contact:'+a.id]),input=write(p,'roles');input.roles=['speaker','guest'];await request(f,headers,input);
+ const outreach=await f.app.intentService.read({actor:f.users.find(user=>user.username==='outreach')});assert.equal(outreach.personGroups.length,1);assert.equal(outreach.personGroups[0].admissionStatus,null);
+ const review=await f.app.registrationService.getAdmissions({actor:f.users.find(user=>user.username==='reviewer')});assert.equal(review.personGroups.length,1);assert.equal(review.personGroups[0].roles,null);assert.deepEqual(review.personGroups[0].contactIds,[]);assert.equal(review.personGroups[0].primaryContactId,null);assert.ok(review.personGroups[0].primaryKey.startsWith('registration:'));
+ const owner=await f.app.registrationService.getAdmissions({actor:f.users[0]});assert.deepEqual(owner.personGroups[0].roles,['guest','speaker']);
+});

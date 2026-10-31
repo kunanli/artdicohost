@@ -142,6 +142,13 @@ export function createIntentInvitationService({ registrationService, contactsSto
     catch (error) { if (error instanceof IntentInvitationError) throw error; throw failure(); }
   }
   const conversionFor = (state, id) => state.value.conversions.find(item => item.sourceContactId === id);
+  async function effectiveConversion(state,id,actor) {
+    const original=conversionFor(state,id);
+    if(!original||typeof registrationService.getPersonGroups!=='function')return original;
+    const snapshot=await registrationService.getPersonGroups({actor});if(!Array.isArray(snapshot?.groups))throw failure();
+    const group=snapshot.groups.find(row=>row.contactIds.includes(id));
+    return group?.primaryRegistrationId?{...original,registrationId:group.primaryRegistrationId,referenceCode:group.primaryRegistrationId}:original;
+  }
   function invitationProjection(item) {
     const safe = structuredClone(item);
     // An interrupted reservation never implies delivery and must not be replayed.
@@ -192,8 +199,9 @@ export function createIntentInvitationService({ registrationService, contactsSto
     prepareInvitations: batch.prepare,
     async read({ actor } = {}) {
       actorValue(actor);
-      const state = await readState();
-      return { revision: state.value.revision, conversions: structuredClone(state.value.conversions),
+      const state = await readState(),identity=typeof registrationService.getPersonGroups==='function'?await registrationService.getPersonGroups({actor}):null;
+      if(identity&&!Array.isArray(identity.groups))throw failure();
+      return { ...(identity?.groups.length?{personGroups:identity.groups,admissionRevision:identity.revision}:{}), revision: state.value.revision, conversions: structuredClone(state.value.conversions),
         invitations: state.value.invitations.map(invitationProjection), email: emailProvider?.readiness?.() ?? { ready: false, reason: 'EMAIL_NOT_READY' } };
     },
     async previewConversions({ contactIds, expectedContactRevision, actor } = {}) {
@@ -213,7 +221,7 @@ export function createIntentInvitationService({ registrationService, contactsSto
       const registrations = [], failures = [], warnings = [];
       for (const contact of selected) {
         try {
-          const state = await readState(), existing = conversionFor(state, contact.id);
+          const state = await readState(), existing = await effectiveConversion(state, contact.id, staff);
           if (existing) {
             registrations.push({ contactId: contact.id, registrationId: existing.registrationId, referenceCode: existing.referenceCode, outcome: 'replayed' });
             if (existing.projectionWarnings?.length) warnings.push({ contactId: contact.id, fields: existing.projectionWarnings });
@@ -258,7 +266,7 @@ export function createIntentInvitationService({ registrationService, contactsSto
     async assignContact({ contactId, expectedContactRevision, sessionIds, boothIds, sessionRoles, actor } = {}) {
       const staff = actorValue(actor), roster = await rosterAt(expectedContactRevision), contact = contactValue(roster, contactId, true);
       const state = await readState();
-      const registration = conversionFor(state, contactId);
+      const registration = await effectiveConversion(state, contactId, staff);
       if (!registration) throw failure('REGISTRATION_REQUIRED', 409);
       let planning; try { planning = (await contentStore.read()).draft.content; } catch { throw failure(); }
       const operations = preserveContactOperationDefaults({ ...contact.operations, sessionIds, boothIds, ...(sessionRoles === undefined ? {} : { sessionRoles }) }, contact.operations);

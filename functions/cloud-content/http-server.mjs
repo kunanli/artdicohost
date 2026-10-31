@@ -102,7 +102,7 @@ export function createCloudContentServer({ runtime, sourceCommit = null, assets 
             : ['/api/registration/wallet', '/api/admin/registration/wallet'].includes(url.pathname) ? 8192
               : ['/api/registration/confirmation', '/api/admin/registration/confirmation', '/api/admin/registration-confirmation/settings', '/api/admin/registration-confirmation/dispatch',
                 '/api/admin/registrations/export.xlsx', '/api/admin/contacts/export.xlsx'].includes(url.pathname)
-                || /^\/api\/admin\/registration-confirmation\/send\/[A-Za-z0-9_-]{43}$/u.test(url.pathname) ? 16 * 1024 : MAX_CLOUD_BODY_BYTES;
+                || url.pathname==='/api/admin/people/resolve' || /^\/api\/admin\/registration-confirmation\/send\/[A-Za-z0-9_-]{43}$/u.test(url.pathname) ? 16 * 1024 : MAX_CLOUD_BODY_BYTES;
       if (rawLength !== null && (!/^\d+$/u.test(rawLength) || !Number.isSafeInteger(Number(rawLength)) || Number(rawLength) > bodyLimit)) return fixedError(outgoing, 413, 'BODY_TOO_LARGE', '请求内容过大。');
       const parts = []; let length = 0;
       if (!['GET', 'HEAD'].includes(method)) for await (const chunk of incoming) {

@@ -58,14 +58,23 @@ export function createAdmissionOperations({ repository, eventId, current, policy
       const requestHash = digest(registrationJson({ action, input: value, actorId: actor.id }));
       return await repository.mutateAdmission({ action, input: value, actorId: actor.id, operationId: own(supplied, 'operationId'),
         expectedRevision: own(supplied, 'expectedRevision'), requestHash, at: new Date(current()).toISOString(),
-        getExcluded: getExcluded(value.registrationId ? [value.registrationId] : []) });
+        getExcluded: getExcluded(value.registrationId ? [value.registrationId] : []),
+        ...(['person_merge','person_roles'].includes(action)?{verifySources:own(supplied,'verifySources')}: {}) });
     } catch { return invalid('unavailable'); }
   }
   return Object.freeze({
     getExcluded, getAdmissionStatus,
     async getAdmissions(input) {
       if (!trusted(own(input, 'actor'))) return invalid('forbidden');
-      try { return await repository.getAdmissions(); } catch { return invalid('unavailable'); }
+      try { const value=await repository.getAdmissions();const actor=own(input,'actor');if(!actor.roles.some(role=>['outreach','superadmin'].includes(role)))value.personGroups=value.personGroups?.filter(g=>g.primaryRegistrationId).map(g=>({...g,contactIds:[],primaryContactId:null,primaryKey:'registration:'+g.primaryRegistrationId}));if(value.personGroups===undefined)delete value.personGroups;return value; } catch { return invalid('unavailable'); }
+    },
+    async getPersonGroups({actor}={}) {
+      if(typeof actor?.id!=='string'||!Array.isArray(actor.roles)||!actor.roles.some(role=>['outreach','superadmin'].includes(role)))return invalid('forbidden');
+      try{const value=await repository.getAdmissions();return {revision:value.revision,groups:(value.personGroups??[]).filter(group=>actor.roles.some(role=>['reviewer','superadmin'].includes(role))||group.contactIds.length).map(group=>({...group,admissionStatus:group.primaryRegistrationId?value.people.find(p=>p.registrationId===group.primaryRegistrationId)?.status:null}))};}catch{return invalid('unavailable');}
+    },
+    managePerson: input => {
+      const action=own(input,'action');if(!['person_merge','person_roles'].includes(action)||typeof own(input,'verifySources')!=='function')return invalid('invalid');
+      return mutate(action,input,own(input,'input'),true);
     },
     setAdmissionSettings: input => mutate('settings', input, own(input, 'settings'), true),
     setAdmissionKind: input => mutate('kind', input, { registrationId: own(input, 'registrationId'), kind: own(input, 'kind') }, true),

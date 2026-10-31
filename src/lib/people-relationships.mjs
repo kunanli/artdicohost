@@ -70,19 +70,20 @@ export function matchesPeopleRelationships(contact, catalog, { organization = ''
   return ({ linked: profiles.length > 0, unlinked: profiles.length === 0, published: profiles.some(row => row.published), unpublished: related.publicationKnown && profiles.length > 0 && profiles.every(row => !row.published), changed: profiles.some(row => row.published && !row.publishedMatchesDraft), ready: profiles.some(row => isContentVisible(row)), blocked: profiles.some(row => !isContentVisible(row)), no_consent: profiles.some(row => !row.publicConsent), no_portrait: profiles.some(row => !row.hasPortrait) })[publicState] === true;
 }
 export function parseOrganizationSelection(hash) { if (typeof hash !== 'string' || hash.length > 150) return null; const match = /^#organization=([^&#=]+)$/u.exec(hash); if (!match) return null; try { return id(decodeURIComponent(match[1])); } catch { return null; } }
+export function conversionForContact(intent,id){const group=intent?.personGroups?.find(row=>row.contactIds.includes(id));return group?.primaryRegistrationId?{sourceContactId:id,registrationId:group.primaryRegistrationId,referenceCode:group.primaryRegistrationId,admissionStatus:group.admissionStatus}:intent?.conversions?.find(row=>row.sourceContactId===id)??null;}
 export function admissionForContact(contact, intent, receipts = new Map()) {
-  const linked = intent?.conversions?.find(row => row.sourceContactId === contact.id);
-  if (linked) return { status: ['confirmed', 'waitlisted', 'withdrawn'].includes(linked.admissionStatus) ? linked.admissionStatus : 'unavailable', registrationId: linked.registrationId };
+  const linked = conversionForContact(intent,contact.id);
+  if (linked) return { status: ['confirmed','waitlisted','withdrawn','pending_review','rejected'].includes(linked.admissionStatus) ? linked.admissionStatus : 'unavailable', registrationId: linked.registrationId };
   return receipts.get(contact.id) || { status: intent ? 'unlinked' : 'unavailable' };
 }
-export const ADMISSION_LABELS = Object.freeze({ confirmed: '正式名额已确认', waitlisted: '已登记候补，尚无确认名额', withdrawn: '关联报名已撤回，需审核人员处理', requiresReviewer: '回复已保存，名额待审核同事同步', unavailable: '名额暂时无法核对', unlinked: '尚未关联正式报名' });
+export const ADMISSION_LABELS = Object.freeze({ confirmed: '正式名额已确认', waitlisted: '已登记候补，尚无确认名额', withdrawn: '关联报名已撤回，需审核人员处理', requiresReviewer: '回复已保存，名额待审核同事同步', unavailable: '名额暂时无法核对', unlinked: '尚未关联正式报名',pending_review:'网站申请待审核',rejected:'申请未通过' });
 export function savedContactReceipt(value, { contactId, expectedRevision, operations } = {}) {
   check(plain(value) && value.replySaved === true && integer(value.revision) === expectedRevision + 1 && validateStoredContact(value.contact) && value.contact.id === contactId && plain(value.contact.operations));
   for (const [key, expected] of Object.entries(operations)) check(JSON.stringify(value.contact.operations[key]) === JSON.stringify(expected));
   let admission = null;
   if (value.contact.operations.responseStatus === 'attending') {
-    check(plain(value.admission)); const status = choice(value.admission.status, ['confirmed', 'waitlisted', 'requiresReviewer', 'unavailable']); admission = { status };
-    if (['confirmed', 'waitlisted'].includes(status)) { check(typeof value.admission.registrationId === 'string' && REGISTRATION.test(value.admission.registrationId)&&typeof value.admission.referenceCode==='string'&&REGISTRATION.test(value.admission.referenceCode)); admission.registrationId = value.admission.registrationId; admission.revision = integer(value.admission.revision); admission.referenceCode = value.admission.referenceCode; }
+    check(plain(value.admission)); const status = choice(value.admission.status, ['confirmed','waitlisted','pending_review','requiresReviewer','unavailable']); admission = { status };
+    if (['confirmed','waitlisted','pending_review'].includes(status)) { check(typeof value.admission.registrationId === 'string' && REGISTRATION.test(value.admission.registrationId)&&typeof value.admission.referenceCode==='string'&&REGISTRATION.test(value.admission.referenceCode)); admission.registrationId = value.admission.registrationId; admission.revision = integer(value.admission.revision); admission.referenceCode = value.admission.referenceCode; }
     if (value.admission.confirmationEmail !== undefined) {
       check(status==='confirmed' && plain(value.admission.confirmationEmail));
       admission.confirmationEmail={status:choice(value.admission.confirmationEmail.status,['completed','pending','not_configured','not_applicable'])};

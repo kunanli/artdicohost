@@ -6,9 +6,9 @@ const optional=(value,pattern)=>value===null||typeof value==='string'&&pattern.t
 const roles=['guest','speaker','panelist','host','organizer','exhibitor','student_showcase','attendee','moderator'];
 const admissions=['confirmed','waitlisted','withdrawn','pending_review','rejected'];
 export function validatePeopleDirectory(value,view){
-  if(!value||value.schemaVersion!==1||value.view!==view||!['all','exhibitors','speakers','guests'].includes(view)
+  if(!value||value.schemaVersion!==1||value.view!==view||!['all','exhibitors','speakers','guests','unassigned','attendees'].includes(view)
     ||typeof value.permissions?.contacts!=='boolean'||typeof value.permissions?.registrations!=='boolean'
-    ||!value.summary||!['people','confirmed','pendingReview','exhibitors','speakers','guests'].every(key=>value.summary[key]===null||count(value.summary[key]))
+    ||!value.summary||!['people','confirmed','pendingReview','exhibitors','speakers','guests','unassigned','attendees','pendingIntegration'].every(key=>value.summary[key]===null||count(value.summary[key]))
     ||!count(value.total)||value.rows?.length>value.total||!/^[a-f0-9]{64}$/u.test(value.revision??'')||!Array.isArray(value.rows)||value.rows.length>100
     ||!(value.nextCursor===null||typeof value.nextCursor==='string'&&/^[A-Za-z0-9_-]{1,512}$/u.test(value.nextCursor)))return false;
   const seen=new Set();
@@ -25,6 +25,7 @@ export function validatePeopleDirectory(value,view){
         ||!['provider_accepted','unknown','rejected','restricted','unavailable','not_sent','not_applicable'].includes(row.deliveryStatus)
         ||!Array.isArray(row.roles)||row.roles.length>roles.length||row.roles.some(role=>!roles.includes(role))||new Set(row.roles).size!==row.roles.length)return false;
       const key=row.contactId?'contact:'+row.contactId:row.registrationId?'registration:'+row.registrationId:'profile:'+row.profileId;
+      if(row.personKey!==undefined&&!/^(?:contact:[A-Za-z0-9][A-Za-z0-9_-]{0,79}|registration:[A-Za-z0-9_-]{43})$/u.test(row.personKey)||row.sourceCount!==undefined&&(!Number.isSafeInteger(row.sourceCount)||row.sourceCount<1||row.sourceCount>200))return false;
       if(row.key!==key||!value.permissions.contacts&&(row.contactId||row.profileId||row.roles.length)||!value.permissions.registrations&&row.admissionStatus!==null)return false;
       if(view==='speakers'&&!row.roles.includes('speaker')||view==='guests'&&!row.roles.some(role=>['guest','panelist'].includes(role)))return false;
     }else{
@@ -37,14 +38,14 @@ export function validatePeopleDirectory(value,view){
   }
   return true;
 }
-const ROLE_LABELS={guest:'嘉宾',speaker:'讲者',panelist:'圆桌嘉宾',host:'主持',organizer:'组织者',exhibitor:'参展',student_showcase:'作品展示',attendee:'参会',moderator:'主持'};
+const ROLE_LABELS={guest:'受邀嘉宾',speaker:'讲者',panelist:'圆桌嘉宾',host:'主持',organizer:'组织者',exhibitor:'参展',student_showcase:'作品展示',attendee:'一般参会者',moderator:'主持'};
 const ADMISSION_LABELS={confirmed:'已确认参会名额',pending_review:'申请待审核',waitlisted:'候补',rejected:'审核不通过',withdrawn:'已撤回'};
 const EMAIL_LABELS={provider_accepted:'确认信：服务商已接受',unknown:'确认信：结果待核对',rejected:'确认信：未发出',not_sent:'确认信：尚未寄送',unavailable:'确认信状态待核对',restricted:'',not_applicable:''};
 const SOURCE_LABELS={linked:'邀约与报名已关联',contact:'邀约名单',public:'本人公开申请',staff_assisted:'工作人员代登记',staff_entry:'工作人员登记',profile:'人物资料，尚未关联人员'};
 const INVITATION_LABELS={not_started:'尚未准备邀请',prepared:'邀请已准备',issuing:'寄送结果待核对',provider_accepted:'邀请服务商已接受',unknown:'邀请结果待核对',rejected:'邀请未发出',manually_sent:'已记录人工发出',not_applicable:''};
-const VIEWS={all:['统一名单','同一位已关联人员集中核对；出席回复、正式名额与职责分别标示。'],speakers:['讲者名单','按已保存讲者职责与人物关联列出，不将原问卷兴趣当作讲者确认。'],guests:['嘉宾名单','嘉宾与圆桌嘉宾可兼任讲者；出席与正式名额仍需分别核对。'],exhibitors:['参展商名单','按公司／团队核对联络人与展位；没有明确组织关系的旧展位保留待关联。']};
+const VIEWS={unassigned:['待分流','先核对重复人员，再设置参会身份；身份分流不等于确认名额。'],attendees:['一般参会者','以参会交流为主，与受邀嘉宾区分；同一人也可兼任其他身份。'],all:['统一名单','同一位已关联人员集中核对；出席回复、正式名额与职责分别标示。'],speakers:['讲者名单','按已保存讲者职责与人物关联列出，不将原问卷兴趣当作讲者确认。'],guests:['受邀嘉宾名单','嘉宾与圆桌嘉宾可兼任讲者；出席与正式名额仍需分别核对。'],exhibitors:['参展商名单','按公司／团队核对联络人与展位；没有明确组织关系的旧展位保留待关联。']};
 
-export function createPeopleDirectory({root,request,getUser,onContact,onProfile,onInvitation,canInvite=()=>false,onFallback=()=>{}}){
+export function createPeopleDirectory({root,request,getUser,onContact,onProfile,onInvitation,canInvite=()=>false,onFallback=()=>{},onResolve=()=>{},canResolve=()=>false}){
   const $=selector=>root.querySelector(selector),node=(tag,text,cls)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(cls)el.className=cls;return el;};
   let sequence=0,state=null,busy=false,blocked=false,currentCursor='',trail=[],resetting=false;
   const view=()=>resolvePeopleView(location.pathname,location.hash),active=()=>Boolean(getUser()?.id);
@@ -53,6 +54,7 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
   function lock(value=blocked){blocked=value;for(const control of root.querySelectorAll('button,input'))control.disabled=busy||blocked||!active();}
   function personRow(item){
     const row=node('tr'),identity=node('td'),name=node('div',item.name,'people-directory-name');identity.append(name,node('small',item.organization||'机构未填写'),node('small',SOURCE_LABELS[item.source]));
+    if(item.sourceCount>1)identity.append(node('small','已整合 '+item.sourceCount+' 项来源'));
     if(item.roles.length){const tags=node('div',undefined,'people-directory-roles');for(const role of item.roles)tags.append(node('span',ROLE_LABELS[role]));identity.append(tags);}
     const follow=node('td');if(item.responseStatus)follow.append(node('div',({pending:'出席回复待确认',attending:'本人已答应出席',declined:'本人不出席'})[item.responseStatus]));
     const invitation=INVITATION_LABELS[item.invitationStatus];if(invitation&&!(item.admissionStatus==='confirmed'&&item.invitationStatus==='not_started'))follow.append(node('small',invitation));
@@ -65,13 +67,14 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
       if(item.registrationId&&state.permissions.registrations)admission.append(link('核对原名额','/admin/registrations/#registration='+encodeURIComponent(item.registrationId)));
     }
     const actions=node('td');
-    if(item.contactId){const button=node('button','查看与管理','people-directory-action');button.type='button';button.addEventListener('click',()=>{if(!blocked&&!busy&&active())onContact(item.contactId);});actions.append(button);
+    if(canResolve()&&(item.contactId||item.registrationId)){const manage=node('button','身份／报名','people-directory-action');manage.type='button';manage.addEventListener('click',()=>{if(!blocked&&!busy&&active())onResolve(item.personKey??item.key);});actions.append(manage);}
+    if(item.contactId){const button=node('button','查看与管理','people-directory-action');button.type='button';button.addEventListener('click',()=>{if(!blocked&&!busy&&active())onContact(item.contactId);});if(canResolve())button.className='ah-admin-text-button';actions.append(button);
       const menu=node('details',undefined,'people-row-menu');menu.append(node('summary','更多'));const options=node('div');options.append(link('个人总览','/admin/person/#contact='+encodeURIComponent(item.contactId)));
       for(const[label,callback]of[['编辑基本资料',onProfile],['准备邀请函',canInvite(item.contactId)?onInvitation:null]])if(callback){const b=node('button',label);b.type='button';b.addEventListener('click',()=>{if(!blocked&&!busy&&active())callback(item.contactId);});options.append(b);}
       if(item.registrationId&&state.permissions.registrations)options.append(link('报名与票券','/admin/registrations/#registration='+encodeURIComponent(item.registrationId)));menu.append(options);actions.append(menu);
-    }else if(item.registrationId)actions.append(link('审核与票券','/admin/registrations/#registration='+encodeURIComponent(item.registrationId),'people-directory-action'));
-    else if(getUser()?.roles?.some(role=>['editor','superadmin'].includes(role)))actions.append(link('管理人物资料','/admin/content/guests/#guest='+encodeURIComponent(item.profileId),'people-directory-action'));
-    else actions.append(node('small','人物资料由活动编辑管理'));
+    }else if(item.registrationId&&!canResolve())actions.append(link('审核与票券','/admin/registrations/#registration='+encodeURIComponent(item.registrationId),'people-directory-action'));
+    else if(item.profileId&&getUser()?.roles?.some(role=>['editor','superadmin'].includes(role)))actions.append(link('管理人物资料','/admin/content/guests/#guest='+encodeURIComponent(item.profileId),'people-directory-action'));
+    else if(item.profileId)actions.append(node('small','人物资料由活动编辑管理'));
     row.append(identity,follow,admission,actions);return row;
   }
   function companyRow(item){const row=node('tr'),identity=node('td'),members=node('td',undefined,'people-directory-members'),booths=node('td'),actions=node('td');
@@ -86,8 +89,8 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
   }
   function render(){
     const selected=view(),labels=VIEWS[selected]??VIEWS.all;$('[data-directory-title]').textContent=labels[0];$('[data-directory-description]').textContent=labels[1];
-    const metrics=$('[data-directory-metrics]');metrics.replaceChildren();for(const[label,key]of[['名单记录','people'],['已确认名额','confirmed'],['待审核申请','pendingReview']]){const card=node('article');card.append(node('span',label),node('strong',state.summary[key]===null?'—':String(state.summary[key])));metrics.append(card);}
-    for(const link of document.querySelectorAll('[data-people-view]')){if(['exhibitors','speakers','guests'].includes(link.dataset.peopleView))link.hidden=!state.permissions.contacts;const output=link.querySelector('[data-people-count]');const key=({all:'people',registrations:'pendingReview',exhibitors:'exhibitors',speakers:'speakers',guests:'guests'})[link.dataset.peopleView];if(output)output.textContent=state.summary[key]===null?'':link.dataset.peopleView==='registrations'?state.summary[key]+' 待审':String(state.summary[key]);}
+    const metrics=$('[data-directory-metrics]');metrics.replaceChildren();for(const[label,key]of[['名单记录','people'],['已确认名额','confirmed'],['待审核申请','pendingReview'],['已答应，待整合','pendingIntegration']]){const card=node('article');card.append(node('span',label),node('strong',state.summary[key]===null||state.summary[key]===undefined?'—':String(state.summary[key])));metrics.append(card);}
+    for(const link of document.querySelectorAll('[data-people-view]')){if(['exhibitors','speakers','guests','unassigned','attendees'].includes(link.dataset.peopleView))link.hidden=!state.permissions.contacts;const output=link.querySelector('[data-people-count]');const key=({all:'people',registrations:'pendingReview',exhibitors:'exhibitors',speakers:'speakers',guests:'guests',unassigned:'unassigned',attendees:'attendees'})[link.dataset.peopleView];if(output)output.textContent=state.summary[key]===null||state.summary[key]===undefined?'':link.dataset.peopleView==='registrations'?state.summary[key]+' 待审':String(state.summary[key]);}
     const head=$('[data-directory-head]');head.replaceChildren();const tr=node('tr');for(const label of selected==='exhibitors'?['公司／团队','联络人／成员','展位与状态','操作']:['姓名／机构','邀约与跟进','正式报名与名额','操作'])tr.append(node('th',label));head.append(tr);
     const body=$('[data-directory-rows]');body.replaceChildren(...state.rows.map(item=>item.kind==='person'?personRow(item):companyRow(item)));
     $('[data-directory-empty]').hidden=state.rows.length>0;
@@ -105,6 +108,6 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
   function clear(){sequence++;busy=false;state=null;currentCursor='';trail=[];resetting=true;$('[data-directory-search]').reset();resetting=false;for(const selector of ['[data-directory-rows]','[data-directory-head]','[data-directory-metrics]'])$(selector).replaceChildren();$('[data-directory-error]').textContent='';$('[data-directory-error]').hidden=true;$('[data-directory-status]').textContent='';$('[data-directory-next]').hidden=true;$('[data-directory-prev]').hidden=true;for(const badge of document.querySelectorAll('[data-people-count]'))badge.textContent='';lock();}
   $('[data-directory-search]').addEventListener('submit',event=>{event.preventDefault();void load();});$('[data-directory-search]').addEventListener('reset',()=>{if(!resetting)queueMicrotask(()=>{if(active())void load();});});
   $('[data-directory-next]').addEventListener('click',()=>{if(!busy&&state?.nextCursor)void load(state.nextCursor,[...trail,currentCursor]);});$('[data-directory-prev]').addEventListener('click',()=>{if(!busy&&trail.length)void load(trail.at(-1),trail.slice(0,-1));});
-  window.addEventListener('hashchange',()=>{if(active()&&/^#people=(exhibitors|speakers|guests)$/u.test(location.hash)||active()&&!location.hash)void load();});
+  window.addEventListener('hashchange',()=>{if(active()&&/^#people=(exhibitors|speakers|guests|unassigned|attendees)$/u.test(location.hash)||active()&&!location.hash)void load();});
   return{load,clear,lock};
 }

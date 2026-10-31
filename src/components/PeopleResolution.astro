@@ -1,0 +1,31 @@
+<details class="people-resolution-tools" data-people-resolution hidden>
+  <summary>重复人员核对</summary>
+  <p>相同邮箱或姓名只作为核对线索。请查看原始来源并选择主资料，确认同一人后再整合。</p>
+  <button class="ah-admin-button" type="button" data-resolution-scan>检查疑似重复人员</button>
+  <p class="ah-admin-status" role="status" data-resolution-scan-status></p>
+  <div class="people-resolution-candidates" data-resolution-candidates></div>
+</details>
+<dialog class="ah-admin-dialog people-resolution-dialog" data-resolution-dialog aria-labelledby="resolution-heading">
+  <div class="ah-admin-dialog-heading"><h2 id="resolution-heading" data-resolution-title>参会身份与报名</h2><button class="ah-admin-icon-button" type="button" data-resolution-close aria-label="关闭人员核对">×</button></div>
+  <p class="people-resolution-person" data-resolution-person></p>
+  <p class="ah-admin-alert" role="alert" data-resolution-error hidden></p>
+  <p class="ah-admin-status" role="status" data-resolution-status></p>
+  <form data-resolution-form>
+    <details class="people-resolution-sources" data-resolution-sources><summary data-resolution-source-summary>原始来源</summary><fieldset><legend>主资料与原始来源</legend><div data-resolution-source-list></div></fieldset></details>
+    <fieldset class="people-resolution-role-options"><legend>参会身份（可多选）</legend>
+      <label><input name="roles" type="checkbox" value="attendee" />一般参会者</label>
+      <label><input name="roles" type="checkbox" value="guest" />受邀嘉宾</label>
+      <label><input name="roles" type="checkbox" value="speaker" />讲者</label>
+      <label><input name="roles" type="checkbox" value="exhibitor" />参展人员</label>
+      <p>身份与实际名额分别保存；参展公司、展位、场次和公开资料另行安排。</p>
+      <p data-resolution-role-note></p>
+    </fieldset>
+    <label class="people-resolution-confirm" data-resolution-confirm-row hidden><input type="checkbox" name="confirmSamePerson" />我已核对这些来源是同一人，保留所选主资料；其余重复报名退出，旧票券失效，原始记录与历史保留。</label>
+    <div class="ah-admin-dialog-actions"><button class="ah-admin-button" type="button" data-resolution-reload>重新预览</button><button class="ah-admin-button ah-admin-primary" type="submit" data-resolution-save>保存身份</button></div>
+  </form>
+  <section class="people-resolution-registration" data-resolution-registration>
+    <h3>接入网站报名</h3><p data-resolution-registration-status></p>
+    <button class="ah-admin-button ah-admin-primary" type="button" data-resolution-integrate hidden>确认出席并整合报名</button>
+    <a class="ah-admin-button" data-resolution-registration-link hidden>前往报名审核与票券</a>
+  </section>
+</dialog>

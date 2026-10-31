@@ -1,3 +1,4 @@
+import {personGroupFor} from '../registration-api/admissions.mjs';
 import { PARTICIPATION_FORMS, SESSION_ROLES } from '../../shared/contacts-schema.mjs';
 import { GUEST_PUBLIC_ROLES, PORTRAIT_ID_PATTERN, isContentVisible } from '../../shared/content-schema.mjs';
 import { parseTimestamp } from '../registration-api/policy.mjs';
@@ -74,7 +75,7 @@ export function intentSource(value) {
   for (const item of conversions) {
     if (!plain(item) || typeof item.sourceContactId !== 'string' || !CONTACT_ID.test(item.sourceContactId)
       || typeof item.registrationId !== 'string' || !REGISTRATION_ID.test(item.registrationId)
-      || seen.has(item.sourceContactId) || registrations.has(item.registrationId)) fail();
+      || seen.has(item.sourceContactId) || registrations.has(item.registrationId)&&!value.personGroups?.some(group=>group.primaryRegistrationId===item.registrationId&&group.contactIds.includes(item.sourceContactId)&&group.contactIds.includes(conversions.find(other=>other!==item&&other.registrationId===item.registrationId)?.sourceContactId))) fail();
     seen.add(item.sourceContactId); registrations.add(item.registrationId);
   }
   const invitations = records(value.invitations, CONTACT_ID, 1000);
@@ -87,7 +88,7 @@ export function intentSource(value) {
     const conversion = conversions.find(entry => entry.sourceContactId === item.sourceContactId);
     if (!conversion || conversion.registrationId !== item.registrationId) fail();
   }
-  return { revision: value.revision, conversions, invitations };
+  return { revision: value.revision, conversions, invitations, ...(value.personGroups?{personGroups:value.personGroups}: {}) };
 }
 export function registrationSource(value, expectedId) {
   if (!plain(value) || !plain(value.registration) || value.registration.id !== expectedId || !plain(value.registration.fields)
@@ -319,7 +320,7 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
   for (const raw of contacts) {
     const item = contactProjection(raw), conversion = outreach.conversions.find(row => row.sourceContactId === item.id);
     const application = permissions.registration && conversion ? applicationMap.get(conversion.registrationId) : null;
-    if (permissions.registration && conversion && (!application || application.kind !== 'staff_assisted' || application.sourceContactId !== item.id)) fail();
+    if (permissions.registration && conversion && (!application || (application.kind !== 'staff_assisted' || application.sourceContactId !== item.id)&&personGroupFor(admissions,{contactId:item.id})?.primaryRegistrationId!==application.id)) fail();
     if (application) linked.add(application.id);
     const roles = new Set(item.operations.participationForms.map(role => role === 'booth' ? 'exhibitor' : role));
     for (const role of item.operations.sessionRoles) if (sessions.has(role.sessionId)) for (const value of role.roles) roles.add(value);
@@ -357,8 +358,39 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
   });
   for (const item of program?.content.booths ?? []) if (!item.organizationId && item.organization && item.status !== 'cancelled') companies.push({
     key: 'booth:' + identifier(item.id), kind: 'unlinked_booth', organizationId: null, name: text(item.organization, 300), organization: text(item.organization, 300), status: 'unlinked', booths: [booth(item)], members: [], memberTotal:0 });
+  const groups=admissions?.personGroups??(permissions.contact?intent?.personGroups:[])??[],identityContacts=new Map(),identityRegistrations=new Set();
+  for(const group of list(groups,1000)){
+    if(!plain(group)||!Array.isArray(group.contactIds)||!Array.isArray(group.registrationIds)||group.contactIds.length>100||group.registrationIds.length>100
+      ||group.contactIds.some(id=>!CONTACT_ID.test(id)||identityContacts.has(id))||group.registrationIds.some(id=>!REGISTRATION_ID.test(id)||identityRegistrations.has(id))
+      ||!(group.roles===null||Array.isArray(group.roles)&&group.roles.length<=4&&group.roles.every(role=>['attendee','speaker','guest','exhibitor'].includes(role)))
+      ||(group.primaryRegistrationId!==null&&!group.registrationIds.includes(group.primaryRegistrationId))||(group.primaryContactId!==null&&!group.contactIds.includes(group.primaryContactId)))fail();
+    group.contactIds.forEach(id=>identityContacts.set(id,group.primaryContactId));group.registrationIds.forEach(id=>identityRegistrations.add(id));
+    const members=people.filter(row=>row.contactId&&group.contactIds.includes(row.contactId)||row.registrationId&&group.registrationIds.includes(row.registrationId));
+    if(!members.length)continue;
+    const chosen=group.primaryKey?.startsWith('registration:')?members.find(row=>row.registrationId===group.primaryRegistrationId):members.find(row=>row.contactId===group.primaryContactId);
+    const base=chosen??members[0],source=group.primaryKey?.startsWith('registration:')?applicationMap.get(group.primaryRegistrationId):null;
+    const contactId=permissions.contact?group.primaryContactId:null,registrationId=group.primaryRegistrationId;
+    const originalRoles=[...new Set(members.flatMap(row=>row.roles))],basic=new Set(['attendee','speaker','guest','exhibitor']);
+    const roles=group.roles===null?originalRoles:[...new Set([...originalRoles.filter(role=>!basic.has(role)),...group.roles])];
+    // An explicit classification never erases a saved actual session/public duty.
+    for(const profile of program?.content.guests??[])if(group.contactIds.includes(profile.contactId))for(const role of profile.publicRoles??[])if(!roles.includes(role))roles.push(role);
+    for(const raw of contacts)if(group.contactIds.includes(raw.id))for(const session of raw.operations.sessionRoles??[])if(sessions.has(session.sessionId))for(const role of session.roles)if(!roles.includes(role))roles.push(role);
+    const current=registrationId?applicationMap.get(registrationId):null;
+    const consolidated={...base,key:contactId?'contact:'+contactId:'registration:'+registrationId,contactId,registrationId,
+      name:source?.name??base.name,organization:source?.organization??base.organization,city:source?.city??base.city,
+      roles:permissions.contact?roles:[],profileId:permissions.contact?(base.profileId??members.find(row=>row.profileId)?.profileId??null):null,admissionStatus:permissions.registration?admission(current):null,registrationState:registrationId?(permissions.registration?'available':'restricted'):'unlinked',
+      source:contactId&&registrationId?'linked':base.source,deliveryStatus:registrationId?email(registrationId):'not_applicable',
+      sourceCount:group.contactIds.length+group.registrationIds.length,personKey:group.primaryKey,
+      ...(members.some(row=>row.responseStatus==='declined')?{responseStatus:'declined'}:{})};
+    for(const row of members)people.splice(people.indexOf(row),1);people.push(consolidated);
+  }
+  for(const row of people){if(permissions.contact&&!row.roles.some(role=>['attendee','speaker','guest','panelist','exhibitor','host','organizer','moderator','student_showcase'].includes(role))&&row.registrationId&&!groups.some(g=>g.primaryRegistrationId===row.registrationId&&g.roles!==null))row.roles.push('attendee');}
+  for(const company of companies){const seen=new Map();for(const raw of contacts){const member=organizationMemberships(raw.operations).find(link=>link.organizationId===company.organizationId);if(!member)continue;const id=identityContacts.get(raw.id)??raw.id,current=seen.get(id),person=people.find(row=>row.contactId===id);if(!current)seen.set(id,{id,name:person?.name??contactProjection(raw).profile.displayName,role:member.role});else if(member.role==='lead')current.role='lead';}company.memberTotal=seen.size;company.members=[...seen.values()].slice(0,20);}
   const rows = people.sort((a,b) => Number(b.admissionStatus === 'pending_review') - Number(a.admissionStatus === 'pending_review') || a.name.localeCompare(b.name, 'zh-CN') || a.key.localeCompare(b.key));
   return { people: rows, companies, summary: { people: people.length,
+    unassigned:permissions.contact?rows.filter(row=>(row.contactId||row.registrationId)&&!row.roles.some(role=>['attendee','speaker','guest','panelist','exhibitor','host','organizer','moderator','student_showcase'].includes(role))).length:null,
+    attendees:permissions.contact?rows.filter(row=>row.roles.includes('attendee')).length:null,
+    pendingIntegration:permissions.contact&&permissions.registration?rows.filter(row=>row.contactId&&row.responseStatus==='attending'&&!row.registrationId).length:null,
     confirmed: permissions.registration ? applications.filter(item => admission(item) === 'confirmed').length : null,
     pendingReview: permissions.registration ? applications.filter(item => admission(item) === 'pending_review').length : null,
     exhibitors: permissions.contact ? companies.filter(item => item.kind === 'organization').length : null,

@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { own, plainObject, parseTimestamp } from './policy.mjs';
 import { AdmissionError, admissionDefaults, admissionView, validateAdmissions, admissionSnapshot, admissionFor,
-  transitionAdmission, appendAdmissionAudit, addAdmission, releaseWithdrawn, promoteEligible, operationResult, validAdmissionOperation } from './admissions.mjs';
+  transitionAdmission, appendAdmissionAudit, addAdmission, releaseWithdrawn, promoteEligible, operationResult, validAdmissionOperation, personGroupFor } from './admissions.mjs';
 
 // The application-count guard is distinct from the existing 1 MiB serialized
 // snapshot ceiling. For example, 1,000 pending applications plus roughly 550
@@ -155,16 +155,25 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
     ? { outcome: error.code } : { outcome: 'unavailable' };
   return Object.freeze({
     prefix, readIndex, readRecord,
+    async resolveContact(sourceContactId,suppliedState) {
+      const state=suppliedState??await readIndex(),group=personGroupFor(view(state.value),{contactId:sourceContactId});
+      if(!group?.primaryRegistrationId)return null;
+      const entry=state.value.entries.find(item=>item.id===group.primaryRegistrationId);if(!entry)throw unavailable();
+      return {...await saved(state.value,entry,'replayed'),personLinked:true};
+    },
     async getAdmissions() { return snapshot((await readIndex()).value); },
-    async getAdmissionStatus(id) {
+    async getAdmissionStatus(id,{guardPerson}={}) {
       try {
         const index = (await readIndex()).value, entry = index.entries.find(item => item.id === id);
         if (!entry) throw unavailable();
         await readRecord(entry);
-        return admissionFor(index, id, defaults);
+        const status=admissionFor(index,id,defaults),group=personGroupFor(index,{registrationId:id});
+        if(guardPerson!==undefined&&typeof guardPerson!=='function')throw unavailable();
+        if(group&&guardPerson){const permitted=await guardPerson(structuredClone(group));if(typeof permitted!=='boolean')throw unavailable();if(!permitted)return{...status,personDeliveryBlocked:true};}
+        return status;
       } catch { throw unavailable(); }
     },
-    async mutateAdmission({ action, input, actorId, expectedRevision, operationId, requestHash, at, getExcluded }) {
+    async mutateAdmission({ action, input, actorId, expectedRevision, operationId, requestHash, at, getExcluded, verifySources }) {
       try {
         if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || !validAdmissionOperation(operationId) || !HASH.test(requestHash ?? '')
           || !/^[A-Za-z0-9_-]{1,80}$/u.test(actorId ?? '') || parseTimestamp(at) === null) return { outcome: 'invalid' };
@@ -174,7 +183,8 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
         if (previous) return previous.action === action && previous.actorId === actorId && previous.requestHash === requestHash
           ? { outcome: 'replayed', ...snapshot(next), ...previous.result, ...operation(previous) } : { outcome: 'conflict' };
         if (current.value.revision !== expectedRevision) return { outcome: 'conflict' };
-        const change = transitionAdmission(next, action, input, at, await exclusions(next, getExcluded, action === 'approve'));
+        if(verifySources!==undefined&&(typeof verifySources!=='function'||await verifySources(next)!==true))return {outcome:'conflict'};
+        const change = transitionAdmission(next, action, input, at, ['person_merge','person_roles'].includes(action)?[]:await exclusions(next, getExcluded, action === 'approve'));
         if (['approve', 'reject'].includes(action)) {
           const entry = next.entries.find(entry => entry.id === change.result.registrationId);
           const record = await readRecord(entry);
@@ -230,9 +240,11 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
       } catch { throw unavailable(); }
       finally { stopped = true; clearTimeout(timer); signal?.removeEventListener('abort', stop); }
     },
-    async find(keyHash, payloadHash, { operationId = null } = {}) {
-      if (!HASH.test(keyHash ?? '') || !HASH.test(payloadHash ?? '')) throw unavailable();
-      const state = await readIndex(), entry = state.value.entries.find(item => item.keyHash === keyHash);
+    async find(keyHash, payloadHash, { operationId = null, sourceContactId = null } = {}) {
+      if (!HASH.test(keyHash ?? '') || !HASH.test(payloadHash ?? '')||sourceContactId!==null&&(!EVENT.test(sourceContactId??'')||keyHash!==digest('staff\0'+eventId+'\0'+sourceContactId))) throw unavailable();
+      const state = await readIndex(),group=sourceContactId?personGroupFor(view(state.value),{contactId:sourceContactId}):null;
+      if(group?.primaryRegistrationId){const canonical=state.value.entries.find(item=>item.id===group.primaryRegistrationId);if(!canonical)throw unavailable();return{...await saved(state.value,canonical,'replayed'),personLinked:true};}
+      const entry = state.value.entries.find(item => item.keyHash === keyHash);
       if (!entry) return null;
       if (entry.payloadHash !== payloadHash) return { outcome: 'conflict' };
       return saved(state.value, entry, 'replayed', operationId);
@@ -253,6 +265,8 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
       const journal = await target();
       for (let attempt = 0; attempt < 8; attempt++) {
         const current = await readIndex(), previous = current.value.entries.find(item => item.keyHash === keyHash);
+        const linked=record.provenance.kind==='staff_assisted'?personGroupFor(view(current.value),{contactId:record.provenance.sourceContactId}):null;
+        if(linked?.primaryRegistrationId){const canonical=current.value.entries.find(item=>item.id===linked.primaryRegistrationId);if(!canonical)throw unavailable();return {...await saved(current.value,canonical,'replayed'),personLinked:true};}
         if (previous) {
           if (previous.payloadHash !== payloadHash) return { outcome: 'conflict' };
           return saved(current.value, previous, 'replayed', operationId);
@@ -269,6 +283,7 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
         const promotedIds = reviewRequired ? [] : promoteEligible(next, changedAt);
         const status = addAdmission(next, entry, admissionKind, changedAt, { reviewRequired });
         if (status === null) return { outcome: 'closed' };
+        if(linked){const group=personGroupFor(next,{contactId:record.provenance.sourceContactId});group.registrationIds.push(entry.id);group.primaryRegistrationId=entry.id;}
         try {
           await objects.putImmutable(`${prefix}/records/${recordHash}.json`, bytes, { contentType: 'application/json' });
           await readRecord(entry);

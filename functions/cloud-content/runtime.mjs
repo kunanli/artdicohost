@@ -35,7 +35,7 @@ import { createAppleWalletApi, isAppleWalletPath } from '../apple-wallet/handler
 import { loadEncryptedSigningBundle, walletSigningObjectKey } from '../apple-wallet/bundle.mjs';
 import { createRegistrationXlsxApi, createContactsXlsxApi } from '../registration-admin/xlsx-handler.mjs';
 import { createPersonWorkspaceApi } from '../person-workspace/handler.mjs';
-import { createPersonRelationshipsApi, isPersonRelationshipsPath } from '../person-workspace/relationships.mjs';
+import { createPersonRelationshipsApi, isPersonRelationshipsPath, createPeopleResolutionApi } from '../person-workspace/relationships.mjs';
 import { createAttendanceSynchronizer } from '../people-operations/service.mjs';
 import { createVolunteerRepository } from '../volunteers/repository.mjs';
 import { createVolunteerService } from '../volunteers/service.mjs';
@@ -140,8 +140,9 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const beforeContactMutation = createContactAdmissionGuard({ contactsStore,
     lookupRegistration: async ({ contactId, actor }) => {
       if (!intentService) throw new Error('Registration linkage is unavailable.');
-      const intent = await intentService.read({ actor });
-      return intent.conversions.find(value => value.sourceContactId === contactId)?.registrationId ?? null;
+      const index=(await registrationService.repository.readIndex()).value,group=index.admissions?.personGroups?.find(item=>item.contactIds.includes(contactId));
+      const keyHash=createHash('sha256').update('staff\0'+index.eventId+'\0'+contactId).digest('hex');
+      return group?.primaryRegistrationId??index.entries.find(item=>item.keyHash===keyHash)?.id??null;
     }, getAdmissionStatus: id => {
       if (!registrationService) throw new Error('Admission state is unavailable.');
       return registrationService.getAdmissionStatus(id);
@@ -179,13 +180,24 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       repository: createIntentInvitationRepository({ journal: journalFor('cms/v1/intent-invitations') }),
       emailProvider: createInvitationEmailProvider({ env, fetchFn }), now,
       isRegistrationActive: async ({ registrationId }) => !await isWithdrawn(registrationId),
-      getAdmissionStatus: id => registrationService.getAdmissionStatus(id) });
+      getAdmissionStatus: id => registrationService.getAdmissionStatus(id,{guardPerson:async group=>{
+        const roster=await contactsStore.read(),related=roster.contacts.filter(item=>group.contactIds.includes(item.id));
+        if(related.length!==group.contactIds.length)throw new Error('Person permission unavailable.');
+        return !related.some(item=>item.profile.contactConsent==='declined'||item.operations.responseStatus==='declined');
+      }}) });
     walletService = createAppleWalletService({ env, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now,
       authorize: input => confirmationService.authorize(input),
       authorizedRegistration: id => confirmationService.authorizedRegistration(id),
       loadSigningBundle: ({ bundleId }) => loadEncryptedSigningBundle({ objects, secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId }) });
     confirmationService = createRegistrationConfirmationService({ registrationService, journalFor,
       tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now, batchTimeoutMs: 5000,
+      personDeliveryPermission: async record => {
+        const index=await registrationService.repository.readIndex(),group=index.value.admissions?.personGroups?.find(item=>item.registrationIds.includes(record.id));
+        if(!group)return{eligible:true};if(group.primaryRegistrationId!==record.id)return{eligible:false};
+        const roster=await contactsStore.read(),related=roster.contacts.filter(item=>group.contactIds.includes(item.id));
+        if(related.length!==group.contactIds.length)return{eligible:false};
+        return related.some(item=>item.profile.contactConsent==='declined'||item.operations.responseStatus==='declined')?{eligible:false,reason:'CONTACT_DECLINED'}:{eligible:true};
+      },
       staffDeliveryPermission: async record => {
         if (record.provenance.kind === 'staff_entry') return { eligible: Boolean(record.provenance.permissionReference), reason: 'STAFF_PERMISSION_REQUIRED' };
         if (record.provenance.kind !== 'staff_assisted') return { eligible: false, reason: 'STAFF_PERMISSION_REQUIRED' };
@@ -260,6 +272,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const loadPeopleContent = async () => { const snapshot = await store.read(); return { ...snapshot.draft, published: snapshot.published }; };
   const relationshipsHandle = createPersonRelationshipsApi({ authenticate: request => auth.authenticate(request),
     loadContent: loadPeopleContent, loadContacts: () => contactsStore.read() });
+  const resolutionHandle=createPeopleResolutionApi({authenticate:request=>auth.authenticate(request),registrationService,contactsStore,contentStore:store});
   const personHandle = createPersonWorkspaceApi({ authenticate: request => auth.authenticate(request),
     loadContacts: () => contactsStore.read(),
     loadIntent: intentService ? actor => intentService.read({ actor }) : undefined,
@@ -268,6 +281,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     loadContent: loadPeopleContent,
     loadRegistrationDirectory: reviewStore ? () => reviewStore.directory() : undefined,
     loadAdmissions: registrationService ? actor => registrationService.getAdmissions({ actor }) : undefined,
+    loadPersonGroups: registrationService ? actor => registrationService.getPersonGroups({actor}) : undefined,
     loadDeliveryDirectory: confirmationService ? actor => confirmationService.staffDirectory({ actor }) : undefined,
     loadVolunteers: input => volunteerService.readPerson(input),
     loadConfirmations: confirmationService ? (id, actor) => confirmationService.staffHistory({ actor, registrationId: id }) : undefined });
@@ -298,6 +312,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     if (['/api/registration/config', '/api/registration/token', '/api/registrations'].includes(url.pathname)) return registrationHandle(request);
     if (url.pathname === '/api/admin/users') return userHandle(request);
     if (isVolunteersPath(url.pathname)) return volunteerHandle(request);
+    if(['/api/admin/people/duplicates','/api/admin/people/resolve'].includes(url.pathname))return resolutionHandle(request);
     if (isPersonRelationshipsPath(url.pathname)) return relationshipsHandle(request);
     if (url.pathname === '/api/admin/people' || url.pathname.startsWith('/api/admin/people/')) return personHandle(request);
     if (url.pathname === '/api/admin/tasks') return tasksHandle(request);

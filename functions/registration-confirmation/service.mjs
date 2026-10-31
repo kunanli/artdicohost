@@ -38,12 +38,13 @@ const noticeEmail = notice => ({ status: stateOf(notice), noticeType: notice.kin
 
 /** Durable receipts, independent email issuance and read-only attendee confirmation. */
 export function createRegistrationConfirmationService({ registrationService, journalFor, tokenSecret, event = eventConfig,
-  emailProvider, staffDeliveryPermission, walletReadiness = () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }), groupInviteProvider,
+  emailProvider, staffDeliveryPermission, personDeliveryPermission, walletReadiness = () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }), groupInviteProvider,
   clock = Date.now, expiresAt, batchTimeoutMs = 20_000, monotonicNow = () => performance.now() } = {}) {
   if (typeof registrationService?.repository?.readIndex !== 'function' || typeof registrationService.repository.readRecord !== 'function'
     || typeof registrationService.getAdmissionStatus !== 'function' || typeof journalFor !== 'function' || typeof clock !== 'function'
     || typeof walletReadiness !== 'function' || groupInviteProvider !== undefined && typeof groupInviteProvider !== 'function'
     || staffDeliveryPermission !== undefined && typeof staffDeliveryPermission !== 'function'
+    || personDeliveryPermission !== undefined && typeof personDeliveryPermission !== 'function'
     || !Number.isSafeInteger(batchTimeoutMs) || batchTimeoutMs < 1 || batchTimeoutMs > 30_000 || typeof monotonicNow !== 'function') throw new TypeError('Trusted confirmation dependencies required.');
   const eventFacts = facts(event), eventId = eventFacts.id;
   const expiry = expiresAt ?? Date.parse(eventFacts.date + 'T23:59:59.000+08:00') + 90 * 24 * 60 * 60 * 1000;
@@ -52,6 +53,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
   let repository;
   const target = () => repository ??= createConfirmationRepository({ journal: journalFor(prefix), eventId, clock });
   async function deliveryPermission(record) {
+    if(personDeliveryPermission){try{const permission=await personDeliveryPermission(structuredClone(record));if(permission?.eligible!==true)return{eligible:false,reason:permission?.reason==='CONTACT_DECLINED'?'CONTACT_DECLINED':'PERMISSION_UNAVAILABLE'};}catch{return{eligible:false,reason:'PERMISSION_UNAVAILABLE'};}}
     if (record.provenance.kind === 'public') return { eligible: true, reason: 'ELIGIBLE' };
     if (!staffDeliveryPermission) return { eligible: false, reason: 'STAFF_PERMISSION_REQUIRED' };
     try {

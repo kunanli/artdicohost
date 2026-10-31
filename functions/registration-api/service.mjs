@@ -119,7 +119,7 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         if (typeof permissionReference !== 'string' || !permissionReference.trim() || permissionReference.length > 1000 || /[\u0000-\u001f\u007f]/u.test(permissionReference)) return result('invalid');
         const fields = own(supplied, 'fields'), keyHash = digest('staff\0' + eventId + '\0' + sourceContactId);
         const payloadHash = digest(registrationJson({ fields, permissionReference: permissionReference.trim() }));
-        const replay = await repository.find(keyHash, payloadHash);
+        const replay = await repository.find(keyHash, payloadHash, {sourceContactId});
         if (replay) return await decorate(replay, undefined, false);
         const now = current(), checked = policyAt(now);
         if (!checked.valid) return result('closed');
@@ -137,6 +137,8 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         const sourceContactId = own(input, 'sourceContactId');
         if (!staffSource(sourceContactId) || !staffActor(own(input, 'actor'))) return result('forbidden');
         const keyHash = digest('staff\0' + eventId + '\0' + sourceContactId), state = await repository.readIndex();
+        const canonical=await repository.resolveContact(sourceContactId,state);
+        if(canonical){const value=await decorate(canonical,undefined,false);return value.outcome==='replayed'?{outcome:'found',receipt:value.receipt,personLinked:true}:value;}
         const entry = state.value.entries.find(value => value.keyHash === keyHash);
         if (!entry) return result('not_found');
         const record = await repository.readRecord(entry);

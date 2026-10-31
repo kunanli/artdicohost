@@ -15,7 +15,7 @@ const aborted = request => { if (request.signal.aborted) throw new Error('Person
 /** Read-only aggregate. Each trusted source is requested only after its own role gate.
  * Full original answers, capability links and provider configuration never enter the projection.
  */
-export function createPersonWorkspaceApi({ authenticate, loadContacts, loadIntent, loadRegistration, loadAdmission, loadContent, loadConfirmations, loadVolunteers,
+export function createPersonWorkspaceApi({ authenticate, loadContacts, loadIntent, loadPersonGroups, loadRegistration, loadAdmission, loadContent, loadConfirmations, loadVolunteers,
   loadRegistrationDirectory, loadAdmissions, loadDeliveryDirectory } = {}) {
   if (typeof authenticate !== 'function') throw new TypeError('Person authentication required.');
   for (const loader of [loadContacts, loadIntent, loadRegistration, loadAdmission, loadContent, loadConfirmations, loadVolunteers, loadRegistrationDirectory, loadAdmissions, loadDeliveryDirectory])
@@ -38,9 +38,9 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
         for (const key of url.searchParams.keys()) if (!['view', 'query', 'cursor', 'limit'].includes(key) || url.searchParams.getAll(key).length !== 1) return error('INVALID_REQUEST', '筛选格式无效。', 400);
         const view = url.searchParams.get('view') ?? 'all', rawQuery = url.searchParams.get('query') ?? '', query = rawQuery.normalize('NFC').trim().toLocaleLowerCase('zh-CN');
         const inputLimit = url.searchParams.get('limit') ?? '50', cursor = url.searchParams.get('cursor') ?? '';
-        if (!['all', 'exhibitors', 'speakers', 'guests'].includes(view) || rawQuery.length > 160 || /[\u0000-\u001f\u007f]/u.test(rawQuery)
+        if (!['all', 'exhibitors', 'speakers', 'guests','unassigned','attendees'].includes(view) || rawQuery.length > 160 || /[\u0000-\u001f\u007f]/u.test(rawQuery)
           || !/^(?:[1-9]|[1-9]\d|100)$/u.test(inputLimit) || cursor.length > 512 || cursor && !/^[A-Za-z0-9_-]+$/u.test(cursor)) return error('INVALID_REQUEST', '筛选格式无效。', 400);
-        if (view !== 'all' && !permissions.contact) return error('FORBIDDEN', '角色名单需要人员邀约读取权限。', 403);
+        if (view!=='all' && !permissions.contact) return error('FORBIDDEN', '角色名单需要人员邀约读取权限。', 403);
         const load = async (loader, needed) => { if (!needed) return null; if (!loader) throw new Error('Directory source unavailable.'); const value=await loader(actor); aborted(request); return value; };
         const [roster, intent, registrationDirectory, admissions, content, deliveries] = await Promise.all([
           load(loadContacts, permissions.contact), load(loadIntent, permissions.contact), load(loadRegistrationDirectory, permissions.registration),
@@ -57,7 +57,7 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
           if (!parsed || Object.keys(parsed).sort().join(',')!=='offset,revision' || !Number.isSafeInteger(parsed.offset) || parsed.offset<0 || parsed.offset>6400 || !/^[a-f0-9]{64}$/u.test(parsed.revision ?? '')) return error('INVALID_REQUEST','分页格式无效。',400);
           if (parsed.revision!==revision) return error('REVISION_CONFLICT','名单已更新，请从第一页重新核对。',409); offset=parsed.offset;
         }
-        const candidates = view==='exhibitors'?result.companies:result.people.filter(item=>view==='all'||view==='speakers'&&item.roles.includes('speaker')||view==='guests'&&(item.roles.includes('guest')||item.roles.includes('panelist')));
+        const candidates = view==='exhibitors'?result.companies:result.people.filter(item=>view==='all'||view==='unassigned'&&(item.contactId||item.registrationId)&&!item.roles.length||view==='attendees'&&item.roles.includes('attendee')||view==='speakers'&&item.roles.includes('speaker')||view==='guests'&&(item.roles.includes('guest')||item.roles.includes('panelist')));
         const selected = candidates.filter(item=>!query||[item.name,item.organization,item.city??'',item.contactId??'',item.registrationId??''].some(value=>value.toLocaleLowerCase('zh-CN').includes(query)));
         const limit=Number(inputLimit),next=offset+limit;
         return json({ schemaVersion:1,view,permissions:{contacts:permissions.contact,registrations:permissions.registration},summary:result.summary,
@@ -104,14 +104,21 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
           else linkageState = 'restricted';
         }
       }
+      if(kind==='registration'&&!contactId&&permissions.invitations&&loadPersonGroups){
+        const resolved=await attempt(loadPersonGroups,[actor],value=>{if(!Array.isArray(value?.groups))throw new Error('Identity unavailable.');return value;});
+        if(resolved.state==='available'){const group=resolved.value.groups.find(item=>item.registrationIds.includes(registrationId));if(group?.primaryContactId){contactId=group.primaryContactId;linkageState='linked';}}
+        else{linkageState='unavailable';availability.contact=availability.invitations='unavailable';}
+      }
       if (permissions.invitations && contactId) {
         const loaded = await attempt(loadIntent, [actor], intentSource);
         availability.invitations = loaded.state;
         if (loaded.value) {
           intent = loaded.value; revisions.invitations = intent.revision;
-          const linked = intent.conversions.find(item => item.sourceContactId === contactId);
+          const person=intent.personGroups?.find(group=>kind==='contact'?group.contactIds.includes(contactId):group.registrationIds.includes(registrationId));
+          if(kind==='registration'&&person?.primaryContactId){contactId=person.primaryContactId;linkageState='linked';}
+          const linked = person?.primaryRegistrationId?{registrationId:person.primaryRegistrationId}:intent.conversions.find(item => item.sourceContactId === contactId);
           if (kind === 'contact') { registrationId = linked?.registrationId ?? null; linkageState = linked ? 'linked' : 'unlinked'; }
-          else if (linked && linked.registrationId !== registrationId) {
+          else if (linked && linked.registrationId !== registrationId&&!person?.registrationIds.includes(registrationId)) {
             linkageState = 'unavailable'; contactId = null; intent = null;
             availability.contact = availability.invitations = 'unavailable'; revisions.invitations = null;
           }
@@ -130,7 +137,7 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
       if (kind === 'contact' && registrationId && permissions.registration) {
         const loaded = await attempt(loadRegistration, [registrationId, actor], value => registrationSource(value, registrationId));
         availability.registration = loaded.state;
-        if (loaded.value && loaded.value.sourceContactId === contactId) {
+        if (loaded.value && (loaded.value.sourceContactId === contactId||intent?.personGroups?.some(group=>group.contactIds.includes(contactId)&&group.primaryRegistrationId===registrationId))) {
           registration = loaded.value.registration; revisions.registration = loaded.value.revision;
         } else {
           availability.registration = availability.invitations = 'unavailable'; linkageState = 'unavailable';

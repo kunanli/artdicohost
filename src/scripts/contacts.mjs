@@ -1,3 +1,5 @@
+import {createPeopleResolution} from '../lib/people-resolution.mjs';
+import {canManageEventOperations} from '../../shared/staff-permissions.mjs';
 import {createPersonConfirmation} from '../lib/person-confirmation.mjs';
 import {createOperationsFormDraft,createOperationsSaveState,operationsFieldErrors,operationsDraftStore,captureDraftFields,applyDraftFields} from '../lib/operations-form-draft.mjs';
 import { parseContactImport, WORKBOOK_SOURCE_KEY, sourceLabels } from '../../shared/contact-import.mjs';
@@ -6,7 +8,7 @@ import { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS, savedContactPro
 import { SESSION_ROLES, SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
 import { eventConfig } from '../config/event.mjs';
 import { contactProgress, summarizeContactProgress, invitationProgressLabels, contactDeclined,buildPosterInvitationSettings,INVITATION_POSTER_RENDER_VERSION } from '../../shared/organizer-progress.mjs';
-import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, admissionForContact, ADMISSION_LABELS, PUBLIC_ROLE_LABELS, savedContactReceipt, conversionPreview, conversionReceipt, privateResponseAction, ownerTagPresentation, attendancePresentation, profilePublicationPresentation } from '../lib/people-relationships.mjs';
+import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, admissionForContact, ADMISSION_LABELS, PUBLIC_ROLE_LABELS, savedContactReceipt, conversionForContact, conversionPreview, conversionReceipt, privateResponseAction, ownerTagPresentation, attendancePresentation, profilePublicationPresentation } from '../lib/people-relationships.mjs';
 import {createPeopleDirectory} from '../lib/people-directory.mjs';
 
 const $ = value => document.querySelector(value);
@@ -31,10 +33,12 @@ let relationships = null, relationshipSequence = 0, operationRevision = null, me
 const admissionReceipts = new Map();
 let profileDraft=null,contactDraft=null,profilePending=false;
 let directoryStamp='';
+const resolution=createPeopleResolution({root:$('[data-people-resolution]'),request,getUser:()=>user,onChanged:()=>loadWorkspace(),onIntegrate:integratePerson});
 const personConfirmation=createPersonConfirmation({root:$('[data-person-confirmation]'),request,getUser:()=>user,isBlocked:()=>busy||operationsDirty||Boolean(uncertainSave),onChanged:()=>void directory.load()});
 const directory=createPeopleDirectory({root:$('[data-people-directory]'),request,getUser:()=>user,
   onContact:id=>{const item=contactById(id);if(item)openContact(item);},onProfile:id=>{const item=contactById(id);if(item)openProfile(item);},
   onInvitation:id=>{const item=contactById(id);if(item&&mayInvite(item))openInvitation(item);},canInvite:id=>mayInvite(contactById(id)),
+  canResolve:()=>canManageEventOperations(user),onResolve:key=>void resolution.open(key),
   onFallback:()=>{if(permitted())$('[data-contacts-legacy-tools]').open=true;}});
 const operationNames=()=>['owner','priority','followUpAt','notes','responseStatus','participationForms','sessionIds','boothIds',...content.sessions.map(item=>'sessionRoles:'+item.id)];
 function openContactDraft(){
@@ -146,7 +150,7 @@ function lock() {
   $('[data-contacts-sync-attending]').disabled=busy||!permitted()||!user?.roles.some(role=>['reviewer','superadmin'].includes(role))||!intentState||!contacts.some(item=>item.operations.responseStatus==='attending'&&!intentState.conversions?.some(row=>row.sourceContactId===item.id));
   $('[data-conversion-confirm]').disabled=busy||!permitted()||!conversionDraft||conversionDraft.unknown||!conversionDraft.eligibleIds.length;
   for(const button of document.querySelectorAll('[data-conversion-close]'))button.disabled=busy;
-  $('[data-contacts-refresh]').disabled=busy||!directoryAllowed();directory.lock(busy);personConfirmation.lock();
+  $('[data-contacts-refresh]').disabled=busy||!directoryAllowed();directory.lock(busy);personConfirmation.lock();resolution.lock();
 }
 async function request(path, options = {}) {
   const generation=sessionGeneration;
@@ -195,7 +199,7 @@ function clearImport() {
   $('[data-contacts-file-name]').textContent = '支持原始 Excel 问卷或旧后台 contacts.json 快照';
 }
 function clearPrivateState() {
-  personConfirmation.clear();directory.clear();directoryStamp='';
+  resolution.clear();personConfirmation.clear();directory.clear();directoryStamp='';
   invitationGeneration++;invitationRenderVersion=undefined;
   profileDraft?.close();profileDraft=null;contactDraft?.close();contactDraft=null;profilePending=false;
   sessionGeneration+=1;
@@ -346,7 +350,7 @@ function render() {
     if(!tags.childNodes.length)tags.append(node('small','未记录'));
     row.append(tags);
     const invitation=node('td',invitationState(item));const progress=contactProgress(item,progressOptions());if(progress.manuallySent&&progress.providerAccepted)invitation.append(node('small','服务商也已接受 · 未证明送达'));if(progress.unknown&&progress.state!=='unknown')invitation.append(node('small','另有发送结果待核对 · 勿重复发送'));if(progress.stale)invitation.append(node('small','另有历史版本记录，不计入当前版发出'));if(item.invitation.generatedAt)invitation.append(node('small',invitationVersionLabel(item.invitation.settings)+' · '+(item.invitation.settings?.confirmed?'正式版':'暂定版')));if(progress.historyManuallySent)invitation.append(node('small','历史版本已记录人工发出'));if(progress.historyProviderAccepted)invitation.append(node('small','历史邮件服务商已接受，未证明送达'));const versions=invitationHistory(item);if(versions.length){const history=node('details',undefined,'contacts-version-history');history.dataset.invitationVersionHistory=item.id;history.append(node('summary','版本与发出记录（'+versions.length+'）'));for(const entry of versions)history.append(node('small',invitationVersionLabel(entry.settings)+' · '+entry.status+' · '+entry.settings.date+' '+entry.settings.time+' · '+entry.settings.venue));invitation.append(history);}
-    const linked=intentState?.conversions?.find(value=>value.sourceContactId===item.id);
+    const linked=conversionForContact(intentState,item.id);
     if(linked){const link=node('a','已代登记 · 查看报名');link.href='/admin/registrations/#registration='+encodeURIComponent(linked.registrationId);invitation.append(link);}
     row.append(invitation);
     const follow=node('td'),owner=ownerTagPresentation(item.operations.owner),ownerBadge=node('span',owner.label,'ah-owner-tag');ownerBadge.dataset.ownerTone=owner.tone;ownerBadge.dataset.contactOwner=item.id;follow.append(ownerBadge,node('small',item.operations.followUpAt||'未安排跟进日期'));if(item.operations.priority==='high')follow.append(node('small','优先跟进'));row.append(follow);
@@ -447,7 +451,7 @@ function openContact(item){
   detailPair(dl,'来源',item.source.key==='manual'?'工作人员手动新增':'问卷导入 · 来源序号 '+item.source.rowId);
   const summary=node('dl');for(const [label,value]of[['机构',[p.organization,p.position].filter(Boolean).join(' · ')],['邮箱',p.email],['联络许可',consentLabels[p.contactConsent]||consentLabels.unknown]])detailPair(summary,label,value);
   const source=node('details');source.append(node('summary','查看原问卷与完整来源资料（只读）'),dl);profile.replaceChildren(summary,source);
-  const linked=intentState?.conversions?.find(value=>value.sourceContactId===item.id);
+  const linked=conversionForContact(intentState,item.id);
   personConfirmation.select(linked&&user?.roles.some(role=>['reviewer','superadmin'].includes(role))?linked.registrationId:null);
   if(linked){const link=node('a','查看已关联报名 · '+linked.referenceCode,'ah-admin-button');link.href='/admin/registrations/#registration='+encodeURIComponent(linked.registrationId);profile.append(link);}
   if(item.sourceProfile){const original=node('details');original.append(node('summary','查看原始来源基本资料（只读）'));const source=node('dl');for(const key of EDITABLE_CONTACT_FIELDS)if(item.sourceProfile[key]&&item.sourceProfile[key]!==p[key])detailPair(source,key,item.sourceProfile[key]);if(!source.childNodes.length)source.append(node('dd','基本资料与原始来源一致。'));original.append(source);profile.append(original);}
@@ -497,7 +501,7 @@ function profileDuplicates(){
   const form=$('[data-profile-form]');
   const email=form.elements.namedItem('email').value.trim().toLowerCase();
   const wechat=form.elements.namedItem('wechat').value.trim().toLowerCase();
-  return contacts.filter(item=>item.id!==profileContactId&&((email&&item.profile.email.toLowerCase()===email)||(wechat&&item.profile.wechat.toLowerCase()===wechat))).length;
+  return contacts.filter(item=>!intentState?.personGroups?.some(group=>group.contactIds.includes(item.id)&&group.primaryContactId!==item.id)&&item.id!==profileContactId&&((email&&item.profile.email.toLowerCase()===email)||(wechat&&item.profile.wechat.toLowerCase()===wechat))).length;
 }
 function syncProfileDuplicates(){
   const count=profileDuplicates();$('[data-profile-duplicates]').hidden=!count;
@@ -732,3 +736,17 @@ $('[data-contacts-legacy-tools]').addEventListener('toggle',()=>{if(user&&permit
 if(location.protocol==='file:'){announce('这是离线界面预览。请启动本地服务，使用有邀约管理权限的账号登录。');lock();}else{action(async()=>{const session=await request('/api/admin/session');user=session.user;csrfToken=session.csrfToken;$('[data-contacts-account]').hidden=false;$('[data-contacts-user]').textContent=user.label||user.id;await loadWorkspace();announce('已恢复工作人员会话。');});}
 
 window.addEventListener('pagehide',()=>{invalidateInvitationPreview();clearBatchResult();for(const url of privateExportUrls)URL.revokeObjectURL(url);privateExportUrls.clear();});
+
+async function integratePerson(contactId,expectedRevision){
+ if(!canManageEventOperations(user)||busy||revision!==expectedRevision)throw new Error('名单已变化，请重新预览人员。');
+ const contact=contactById(contactId);if(!contact)throw new Error('原联系人已变化。');
+ if(contact.operations.responseStatus==='attending'){
+  const result=await request('/api/admin/contacts/convert',{method:'POST',body:JSON.stringify({contactIds:[contactId],expectedContactRevision:expectedRevision})});
+  if(result.status!=='completed'||result.registrations?.length!==1||result.failures?.length)throw new Error('整合回执尚未确认，请重新读取报名与来源。');
+  return '已整合到现有网站报名。名额按审核系统核对；历史确认信可在报名与票券页逐笔处理。';
+ }
+ const operations={...contact.operations,responseStatus:'attending'};
+ const result=savedContactReceipt(await request('/api/admin/contacts/'+contactId,{method:'PUT',body:JSON.stringify({expectedRevision,operations})}),{contactId,expectedRevision,operations});
+ if(!result.admission?.registrationId)throw new Error('出席回复已保存，报名整合尚待核对。请重新预览后处理。');
+ return (ADMISSION_LABELS[result.admission.status]??'报名已记录')+'。确认信状态以报名与票券页为准。';
+}

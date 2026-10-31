@@ -119,6 +119,7 @@ export function createIntentInvitationService({ registrationService, contactsSto
     try { admission = await getAdmissionStatus?.(registrationId); } catch { throw failure(); }
     if (!plainData(admission) || !['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected'].includes(admission.status)
       || !revision(admission.revision)) throw failure();
+    if(admission.personDeliveryBlocked===true)throw failure('CONTACT_DECLINED',422);
     if (admission.status !== 'confirmed') throw failure(admission.status === 'waitlisted' ? 'REGISTRATION_WAITLISTED' : 'REGISTRATION_INACTIVE', 409);
     return { status: admission.status, revision: admission.revision };
   }

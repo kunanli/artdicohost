@@ -127,3 +127,12 @@ test('selecting a lower-status primary cannot silently discard an already confir
  const f=await peopleRuntimeFixture(),a=(await f.createContact()).contact,headers=await f.login();await convert(f,[a]);const pub=await f.seedPublic(),p=await preview(f,headers,['contact:'+a.id,'registration:'+pub.reference_code]),input=write(p);input.primaryKey='registration:'+pub.reference_code;
  await request(f,headers,input,409);assert.equal((await f.app.registrationService.getAdmissions({actor:f.users[0]})).summary.confirmedCount,1);assert.equal((await directory(f,headers)).rows.length,2);assert.equal(f.messages.length,0);
 });
+
+test('a decline on a merged alias also blocks legacy invitation preparation for the primary source',async()=>{
+ const f=await peopleRuntimeFixture(),a=(await f.createContact()).contact,b=(await f.createContact()).contact,headers=await f.login();await convert(f,[a,b]);
+ const p=await preview(f,headers,['contact:'+a.id,'contact:'+b.id]),input=write(p);input.primaryKey='contact:'+a.id;const merged=await request(f,headers,input);
+ const ready=await f.app.intentService.previewInvitations({actor:f.users[0],contactIds:[a.id],expectedContactRevision:2});assert.equal(ready.entries[0].eligible,true);
+ const roster=await f.app.contactsStore.read(),other=roster.contacts.find(row=>row.id===b.id);const saved=await f.app.contactsStore.saveOperations(b.id,roster.revision,{...other.operations,responseStatus:'declined'},f.users[0].id);
+ const denied=await f.app.intentService.previewInvitations({actor:f.users[0],contactIds:[a.id],expectedContactRevision:saved.revision});assert.equal(denied.entries[0].eligible,false);assert.equal(denied.entries[0].reason,'CONTACT_DECLINED');
+ await assert.rejects(f.app.intentService.issueInvitation({actor:f.users[0],contactId:a.id,expectedContactRevision:saved.revision,expectedRegistrationId:merged.registrationId,channel:'manual'}),{code:'CONTACT_DECLINED'});assert.equal(f.messages.length,0);
+});

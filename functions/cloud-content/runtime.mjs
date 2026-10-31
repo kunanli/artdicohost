@@ -180,7 +180,11 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       repository: createIntentInvitationRepository({ journal: journalFor('cms/v1/intent-invitations') }),
       emailProvider: createInvitationEmailProvider({ env, fetchFn }), now,
       isRegistrationActive: async ({ registrationId }) => !await isWithdrawn(registrationId),
-      getAdmissionStatus: id => registrationService.getAdmissionStatus(id) });
+      getAdmissionStatus: id => registrationService.getAdmissionStatus(id,{guardPerson:async group=>{
+        const roster=await contactsStore.read(),related=roster.contacts.filter(item=>group.contactIds.includes(item.id));
+        if(related.length!==group.contactIds.length)throw new Error('Person permission unavailable.');
+        return !related.some(item=>item.profile.contactConsent==='declined'||item.operations.responseStatus==='declined');
+      }}) });
     walletService = createAppleWalletService({ env, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now,
       authorize: input => confirmationService.authorize(input),
       authorizedRegistration: id => confirmationService.authorizedRegistration(id),

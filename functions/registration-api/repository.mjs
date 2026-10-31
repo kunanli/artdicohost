@@ -162,12 +162,15 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
       return {...await saved(state.value,entry,'replayed'),personLinked:true};
     },
     async getAdmissions() { return snapshot((await readIndex()).value); },
-    async getAdmissionStatus(id) {
+    async getAdmissionStatus(id,{guardPerson}={}) {
       try {
         const index = (await readIndex()).value, entry = index.entries.find(item => item.id === id);
         if (!entry) throw unavailable();
         await readRecord(entry);
-        return admissionFor(index, id, defaults);
+        const status=admissionFor(index,id,defaults),group=personGroupFor(index,{registrationId:id});
+        if(guardPerson!==undefined&&typeof guardPerson!=='function')throw unavailable();
+        if(group&&guardPerson){const permitted=await guardPerson(structuredClone(group));if(typeof permitted!=='boolean')throw unavailable();if(!permitted)return{...status,personDeliveryBlocked:true};}
+        return status;
       } catch { throw unavailable(); }
     },
     async mutateAdmission({ action, input, actorId, expectedRevision, operationId, requestHash, at, getExcluded, verifySources }) {

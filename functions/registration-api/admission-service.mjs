@@ -40,9 +40,9 @@ export function createAdmissionOperations({ repository, eventId, current, policy
       return excluded;
     };
   }
-  async function getAdmissionStatus(id) {
+  async function getAdmissionStatus(id, options) {
     try {
-      const status = await repository.getAdmissionStatus(id);
+      const status = await repository.getAdmissionStatus(id, options);
       return await withdrawn(id) ? { ...status, status: 'withdrawn' } : status;
     } catch { throw new RegistrationStorageError(); }
   }

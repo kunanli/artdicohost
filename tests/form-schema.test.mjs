@@ -115,6 +115,11 @@ test('existing site leaders and prospective GGJ sites remain independent multise
   assert.deepEqual(eventConfig.siteRegistration.existing.categories, ['so', 'ro']);
   assert.deepEqual(eventConfig.siteRegistration.prospective.categories, ['new_site']);
   assert.ok(faqItems.some((item) => item.question.includes('已经是站点负责人')));
+  const organizerGuide = faqItems.find(item => item.id === 'site-role');
+  assert.match(organizerGuide.answer, /SO \/ RO/u);
+  assert.match(organizerGuide.answer, /新站点筹备.*联系了解支持需求/u);
+  assert.ok(organizerGuide.answer.includes(eventConfig.siteRegistration.notice), 'organizer guidance retains the official-application boundary');
+  assert.match(organizerGuide.answer, /Start a Jam Site/u);
 });
 
 test('speaker proposals and official site guidance stay separate from attendance acceptance', () => {

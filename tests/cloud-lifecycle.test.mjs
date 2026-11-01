@@ -257,7 +257,9 @@ test('acceptance proof does not treat process health or incomplete stage evidenc
 });
 
 test('enabled registration requires credential-free HTTPS alias metadata matching the full approved policy', async () => {
-  const policy = approvedRegistrationPolicy({ contactEmail: ENV.ARTDICO_ADMIN_EMAIL });
+  const policy = approvedRegistrationPolicy();
+  assert.equal(policy.privacy.contactEmail, 'kunan@globalgamejam.org');
+  assert.notEqual(policy.privacy.contactEmail, ENV.ARTDICO_ADMIN_EMAIL);
   const metadata = { ...policy, attendeeReviewRequired: true, opensAt: new Date(policy.opensAt).toISOString(), closesAt: new Date(policy.closesAt).toISOString() };
   const reply = value => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json', 'access-control-allow-origin': 'https://artdico.host' } });
   const f = fixture(); f.options.env = { ...ENV, ARTDICO_REGISTRATION_SETUP_ENABLED: 'true' };
@@ -276,7 +278,8 @@ test('enabled registration requires credential-free HTTPS alias metadata matchin
     await assert.rejects(verifyPublicRegistrationAlias(async () => reply({ ...metadata, admissions: summary }), policy), /PUBLIC_REGISTRATION_NOT_VERIFIED/u);
   }
   for (const change of [{ ...metadata, attendeeReviewRequired: false }, { ...metadata, capacity: 301 }, { ...metadata, closesAt: '2026-12-05T05:00:00.000Z' },
-    { enabled: false, reason: 'unavailable' }, { ...metadata, privacy: { ...metadata.privacy, retention: 'wrong' } }]) {
+    { enabled: false, reason: 'unavailable' }, { ...metadata, privacy: { ...metadata.privacy, retention: 'wrong' } },
+    { ...metadata, privacy: { ...metadata.privacy, contactEmail: ENV.ARTDICO_ADMIN_EMAIL } }]) {
     await assert.rejects(verifyPublicRegistrationAlias(async () => reply(change), policy), /PUBLIC_REGISTRATION_NOT_VERIFIED/u);
   }
   await assert.rejects(verifyPublicRegistrationAlias(async () => new Response('{}', { status: 302 }), policy), /PUBLIC_REGISTRATION_NOT_VERIFIED/u);

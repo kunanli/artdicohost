@@ -1,5 +1,4 @@
 ---
-import { eventConfig } from '../config/event.mjs';
 import Icon from './Icon.astro';
 import { Image } from 'astro:assets';
 import planet from '../assets/home/planet-purple-grain.png';
@@ -29,14 +28,6 @@ import planet from '../assets/home/planet-purple-grain.png';
       </div>
     </article>
   </div>
-  <details class="ah-highlights-detail ah-program-detail">
-    <summary>GGJ 组织者与新站点如何参与？ <span aria-hidden="true">＋</span></summary>
-    <div class="ah-highlight-list">
-      <p><strong>{eventConfig.siteRegistration.existing.title}</strong>：申请时选择 SO / RO，站点交流安排另行联系。</p>
-      <p><strong>{eventConfig.siteRegistration.prospective.title}</strong>：选择新站点筹备，筹备团队会联系了解支持需求。</p>
-      <p>{eventConfig.siteRegistration.notice}</p>
-    </div>
-  </details>
   <div class="ah-home-fact-orbit" aria-label="现场体验">
     <div class="ah-home-fact-bubble ah-home-fact-exchange"><strong>交流</strong><span>创作经验与灵感</span><small>分享 · 圆桌 · 相遇</small></div>
     <div class="ah-home-fact-bubble ah-home-fact-creation"><strong>青年创作</strong><span>让想法来到现场</span><small>学生作品与独立游戏</small></div>

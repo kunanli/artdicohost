@@ -16,7 +16,7 @@ const { CONTENT_FORM_FIELDS } = await import(pathToFileURL(resolve(source, 'src/
 const { CLOUD_ADMIN_PAGE_ALIASES } = await import(pathToFileURL(resolve(source, 'functions/cloud-content/http-server.mjs')));
 const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
 const html = await readFile(resolve(dist, 'index.html')), errors = [], reports = [];
-const housing = '本次活动提供少量外地来宾住宿支持。有需要的朋友，欢迎提前通过 support@artdico.co 联系主办方了解安排；名额有限，住宿安排将另行确认。';
+const housing = '本次活动提供少量外地来宾住宿支持。有需要的朋友，欢迎提前通过 kunan@globalgamejam.org 联系主办方了解安排；名额有限，住宿安排将另行确认。';
 const initialTime = Date.parse('2026-10-21T09:00:00.000Z');
 const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 const mime = file => ({ '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.avif': 'image/avif', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' })[extname(file)] || 'application/octet-stream';
@@ -29,6 +29,7 @@ function publication(revision) {
     { question: '现在可以报名吗？自订说明', answer: '合成自订回答不会被服务状态覆写' },
     { question: '报名成功就有住宿吗？', answer: 'SYNTHETIC_STALE_LODGING_ANSWER' },
     { id: 'data-rights', question: '资料如何处理？', answer: 'SYNTHETIC_STALE_RIGHTS_ANSWER' },
+    { id: 'site-role', question: '合成旧站点问题', answer: 'SYNTHETIC_STALE_SITE_ROLE_ANSWER' },
   ];
   if (revision > 1) content.event.presentation.faqItems.reverse();
   if (revision === 4) delete content.event.presentation;
@@ -152,14 +153,16 @@ try {
     const status = page.locator('[data-faq-id="registration-status"] .ah-faq-answer');
     assert.match(await status.textContent(), mode === 'ready' ? /可以提交参会申请/u : mode === 'closed' ? /停止接收新申请/u : /服务暂时无法/u);
     assert.equal(await page.locator('[data-faq-id="lodging-support"] .ah-faq-answer').textContent(), housing);
-    assert.equal(await page.locator('[data-faq-id="lodging-support"] a').getAttribute('href'), 'mailto:support@artdico.co');
+    assert.equal(await page.locator('[data-faq-id="lodging-support"] a').getAttribute('href'), 'mailto:kunan@globalgamejam.org');
     assert.doesNotMatch(await page.locator('[data-public-faq]').textContent(), /SYNTHETIC_STALE|一晚住宿须单独申请/u);
-    if (mode === 'unavailable') assert.equal(await page.locator('[data-faq-id="data-rights"] a').textContent(), 'synthetic.old@example.invalid');
+    assert.equal(await page.locator('[data-faq-id="data-rights"] a').textContent(), 'kunan@globalgamejam.org');
+    assert.equal(await page.locator('[data-public-contact-email]').getAttribute('href'), 'mailto:kunan@globalgamejam.org');
+    assert.equal(await page.locator('[data-faq-id="site-role"]').count(), 1, 'organizer guidance remains in Q&A with old or refreshed publications');
     const custom = page.locator('[data-faq-id="custom-experience"]'); assert.equal(await custom.evaluate(row => row.open), true);
     await custom.locator('summary').click(); assert.equal(await custom.evaluate(row => row.open), false);
     await custom.locator('summary').click(); assert.equal(await custom.evaluate(row => row.open), true); await custom.locator('summary').focus();
     await f.refresh();
-    if (mode === 'unavailable') assert.equal(await page.locator('[data-faq-id="data-rights"] a').textContent(), 'support@artdico.co', 'explicitly cleared publication email cannot retain an old contact');
+    if (mode === 'unavailable') assert.equal(await page.locator('[data-faq-id="data-rights"] a').textContent(), 'kunan@globalgamejam.org', 'explicitly cleared publication email cannot retain an old contact');
     assert.equal(await custom.evaluate(row => row.open), true);
     assert.equal(await page.evaluate(() => document.activeElement.closest('[data-faq-id]')?.dataset.faqId), 'custom-experience');
     assert.match(await status.textContent(), mode === 'ready' ? /可以提交参会申请/u : mode === 'closed' ? /停止接收新申请/u : /服务暂时无法/u);
@@ -167,9 +170,10 @@ try {
     assert.equal(await primaryLabel.textContent(), mode === 'ready' ? '申请参加' : '查看申请说明', 'a content refresh does not override current application availability');
     assert.equal(await page.locator('[data-faq-id="data-rights"] .ah-faq-answer').textContent(), '合成最新权利核对方式');
     await f.refresh(); assert.equal(await page.locator('[data-faq-id="data-rights"] .ah-faq-answer').textContent(), '合成最新权利核对方式');
-    assert.equal(await page.locator('[data-faq-id="data-rights"] a').textContent(), 'synthetic.rights@example.invalid');
+    assert.equal(await page.locator('[data-faq-id="site-role"]').count(), 1);
+    assert.equal(await page.locator('[data-faq-id="data-rights"] a').textContent(), 'kunan@globalgamejam.org', 'a policy refresh cannot replace the approved public address');
     const lodging = page.locator('[data-faq-id="lodging-support"]'); assert.equal(await lodging.evaluate(row=>row.open),true); await lodging.locator('[data-faq-copy-email]').click();
-    await lodging.getByText('邮箱已复制', { exact: true }).waitFor(); assert.deepEqual(await page.evaluate(() => window.syntheticFaqEmails), ['support@artdico.co']);
+    await lodging.getByText('邮箱已复制', { exact: true }).waitFor(); assert.deepEqual(await page.evaluate(() => window.syntheticFaqEmails), ['kunan@globalgamejam.org']);
     await f.refresh(); await page.locator('[data-faq-id="custom-experience"]').waitFor({ state: 'detached' });
     assert.equal(await page.locator('[data-faq-id="data-rights"] .ah-faq-answer').textContent(), '合成最新权利核对方式');
     assert.equal(await page.locator('[data-faq-id="lodging-support"] .ah-faq-answer').textContent(), housing);

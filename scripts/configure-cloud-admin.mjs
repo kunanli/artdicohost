@@ -143,7 +143,7 @@ function registrationEnvironment(env, previous) {
     || secret === env.ARTDICO_ADMIN_PASSWORD || secret === env.FC_ACCESS_KEY_SECRET) throw stage('REGISTRATION_SECRET_REQUIRES_REVIEW');
   const enabled = env.ARTDICO_REGISTRATION_SETUP_ENABLED === 'true';
   let policy;
-  try { policy = approvedRegistrationPolicy({ contactEmail: env.ARTDICO_ADMIN_EMAIL, enabled }); }
+  try { policy = approvedRegistrationPolicy({ enabled }); }
   catch { throw stage('REGISTRATION_POLICY_INVALID'); }
   return { ARTDICO_REGISTRATION_TOKEN_SECRET: secret, ARTDICO_REGISTRATION_POLICY_JSON: JSON.stringify(policy),
     ARTDICO_REGISTRATION_CAPACITY: String(policy.capacity), ARTDICO_REGISTRATION_ENABLED: String(enabled),

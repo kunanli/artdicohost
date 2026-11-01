@@ -1,3 +1,5 @@
+import { PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
+
 const API = 'https://api.artdico.host';
 const SITE = 'https://artdico.host';
 const PATH = '/registration/confirmation/';
@@ -13,7 +15,7 @@ const exact = (value, keys) => plain(value) && Object.keys(value).sort().join('\
 const posterText = (value, maximum) => typeof value === 'string' && value.isWellFormed() && value === value.normalize('NFC').trim()
   && value.length > 0 && [...value].length <= maximum && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
 export const CONFIRMATION_INVITATION_FILENAME = 'artdico-host-invitation.png';
-export const CONFIRMATION_CONTACT_EMAIL = 'support@artdico.co';
+export const CONFIRMATION_CONTACT_EMAIL = PUBLIC_CONTACT_EMAIL;
 export const CONFIRMATION_GROUP_UNAVAILABLE = '群码待更新，请重新读取或联系主办方';
 
 /** Device hints describe the next user action, never whether a pass was installed. */

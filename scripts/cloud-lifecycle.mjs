@@ -256,7 +256,7 @@ export async function deployCloudLifecycle(options = {}) {
         const unrelated = value => Object.fromEntries(Object.entries(value).filter(([key]) => !owned.includes(key)));
         if (!isDeepStrictEqual(unrelated(beforeSetup.variables), unrelated(variables))) throw failure('UNEXPECTED_ENVIRONMENT_CHANGE');
         const enabled = env.ARTDICO_REGISTRATION_SETUP_ENABLED === 'true';
-        const policy = approvedRegistrationPolicy({ contactEmail: env.ARTDICO_ADMIN_EMAIL, enabled });
+        const policy = approvedRegistrationPolicy({ enabled });
         const secret = variables.ARTDICO_REGISTRATION_TOKEN_SECRET;
         const users = parseAdminUsers(variables.ADMIN_USERS_JSON);
         if (users.length !== 1 || users[0].id !== 'staff-owner' || users[0].username !== env.ARTDICO_ADMIN_USERNAME
@@ -299,7 +299,7 @@ export async function deployCloudLifecycle(options = {}) {
       await mutate(armed, activeVariables, env.GITHUB_SHA, 'activated', { requireNoAcceptance: true });
       if (activeVariables.ARTDICO_REGISTRATION_ENABLED === 'true') {
         await bounded(signal => verifyPublicRegistrationAlias(fetchPublic,
-          approvedRegistrationPolicy({ contactEmail: env.ARTDICO_ADMIN_EMAIL, enabled: true }), signal), 'PUBLIC_REGISTRATION_NOT_VERIFIED');
+          approvedRegistrationPolicy({ enabled: true }), signal), 'PUBLIC_REGISTRATION_NOT_VERIFIED');
         await currentMain();
         report('Public registration alias verified against the approved policy and capacity.');
       }

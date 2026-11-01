@@ -3,7 +3,7 @@ import { registrationFields } from '../lib/registration-fields.mjs';
 import { renderRegistrationSuccess } from './registration-success.mjs';
 import { createBrowserDraftStore } from '../lib/browser-drafts.mjs';
 import { createApplicationDraft, applicationDraftValue, applicationDraftFromFields } from '../lib/application-draft.mjs';
-import { eventConfig } from '../config/event.mjs';
+import { eventConfig, PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
 import '../lib/public-faq.mjs';
 
 function node(tag,text) { const result = document.createElement(tag); result.textContent = text; return result; }
@@ -11,7 +11,7 @@ function node(tag,text) { const result = document.createElement(tag); result.tex
 let currentPublicPrivacy=null;
 function renderPublicPrivacy(){
   const output=document.querySelector('[data-public-privacy]');
-  if(output&&currentPublicPrivacy){output.replaceChildren();const labels={processor:'处理者',contactEmail:'联络邮箱',purpose:'用途',storageRegion:'存储地区',retention:'保留期限',rightsRequest:'查阅、更正、撤回及删除',sharing:'分享范围',version:'告知版本'};for(const[key,label]of Object.entries(labels))output.append(node('p',label+'：'+currentPublicPrivacy[key]));output.append(node('p','主办方使用 EmailJS 发送必要活动通知，向该服务提供发送所需的姓名、邮箱与通知内容（包括活动安排及私人查询入口）。请妥善保存私人链接。'));}
+  if(output&&currentPublicPrivacy){output.replaceChildren();const labels={processor:'处理者',contactEmail:'联络邮箱',purpose:'用途',storageRegion:'存储地区',retention:'保留期限',rightsRequest:'查阅、更正、撤回及删除',sharing:'分享范围',version:'告知版本'};for(const[key,label]of Object.entries(labels))output.append(node('p',label+'：'+(key==='contactEmail'?PUBLIC_CONTACT_EMAIL:currentPublicPrivacy[key])));output.append(node('p','主办方使用 EmailJS 发送必要活动通知，向该服务提供发送所需的姓名、邮箱与通知内容（包括活动安排及私人查询入口）。请妥善保存私人链接。'));}
 }
 document.addEventListener('click',event=>{
   if(!(event.target instanceof Element)||!event.target.closest('a[href="#privacy"]'))return;

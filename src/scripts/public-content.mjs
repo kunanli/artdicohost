@@ -3,6 +3,7 @@ import { GUEST_PUBLIC_ROLE_LABELS, isPublicWebsite } from '../../shared/content-
 import { publicShowcaseCards, SHOWCASE_KIND_LABELS } from '../../shared/showcase-display.mjs';
 import { resolvePublicContentSource } from '../../shared/public-content-source.mjs';
 import { publicOrganizationCards, orderOrganizationCards, organizationReferenceKey, organizationLogoVariant } from '../../shared/organization-display.mjs';
+import { PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
 import { organizationArtwork } from '../config/organization-artwork.mjs';
 import { createDefaultOrganizations } from '../config/exhibiting-partners.mjs';
 import { eventTimeInstant } from '../lib/event-presentation.mjs';
@@ -264,20 +265,20 @@ function appendWorkLinks(parent,works){
 }
 
 function renderPresentation(event) {
+  const contact=document.querySelector('[data-public-contact-email]');
+  if(contact){contact.textContent='联络筹备团队 · '+PUBLIC_CONTACT_EMAIL;contact.href='mailto:'+PUBLIC_CONTACT_EMAIL;contact.hidden=false;}
   const presentation=event.presentation;
   if(!presentation||typeof presentation!=='object'){
-    setPublicFaqs(null,{contactEmail:''});
+    setPublicFaqs(null);
     for(const [node,text]of initialPresentationText)node.textContent=text;
-    for(const node of document.querySelectorAll('[data-public-contact-email],[data-public-map]')){node.hidden=true;node.removeAttribute('href');}
+    for(const node of document.querySelectorAll('[data-public-map]')){node.hidden=true;node.removeAttribute('href');}
     for(const node of document.querySelectorAll('[data-event-countdown],span[data-public-static-hours],[data-public-static-checkin]'))node.hidden=true;
     return;
   }
   for(const [field,selector]of Object.entries(presentationSelectors)){
     if(typeof presentation[field]==='string')for(const element of document.querySelectorAll(selector))element.textContent=presentation[field];
   }
-  setPublicFaqs(presentation.faqItems,{contactEmail:presentation.contactEmail});
-  const contact=document.querySelector('[data-public-contact-email]');
-  if(contact){contact.hidden=true;contact.removeAttribute('href');if(typeof presentation.contactEmail==='string'&&/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(presentation.contactEmail)){contact.textContent='联络筹备团队 · '+presentation.contactEmail;contact.href='mailto:'+encodeURIComponent(presentation.contactEmail);contact.hidden=false;}}
+  setPublicFaqs(presentation.faqItems);
   const map=document.querySelector('[data-public-map]');
   if(map){map.hidden=true;map.removeAttribute('href');try{const url=new URL(presentation.mapUrl);if(url.protocol==='https:'&&!url.username&&!url.password&&!url.hash){map.href=url.href;map.hidden=false;}}catch{}}
   const start=eventTimeInstant(event.date,presentation.openingTime,event.timezone);

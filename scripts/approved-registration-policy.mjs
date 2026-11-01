@@ -1,6 +1,7 @@
-/** User-approved event decisions. Contact identity is supplied by protected repository configuration. */
-export function approvedRegistrationPolicy({ contactEmail, enabled = true } = {}) {
-  if (typeof contactEmail !== 'string' || !/^[^\s@<>]+@artdico\.co$/iu.test(contactEmail)) throw new Error('The approved event privacy contact is not configured.');
+import { PUBLIC_CONTACT_EMAIL } from '../src/config/event.mjs';
+
+/** User-approved event decisions. Public contact is independent of staff identities. */
+export function approvedRegistrationPolicy({ enabled = true } = {}) {
   return {
     enabled: enabled === true,
     eventId: 'ggj-cn-2026',
@@ -10,7 +11,7 @@ export function approvedRegistrationPolicy({ contactEmail, enabled = true } = {}
     privacy: {
       version: 'artdico-registration-2026-10-20-v1',
       processor: 'ARTDiCO HOST 活动筹备团队',
-      contactEmail: contactEmail.trim().toLowerCase(),
+      contactEmail: PUBLIC_CONTACT_EMAIL,
       purpose: '用于本次活动报名、身份与意向核对、联系、邀请、场次及住宿安排；住宿、讲者与展位分别人工确认。',
       storageRegion: '中国香港的独立私有 OSS 存储',
       retention: '保留至 2027 年 3 月 5 日；届期由受控维护流程删除或匿名化，申请处理及依法需要保留的记录分别核对。',

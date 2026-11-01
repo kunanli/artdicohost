@@ -144,6 +144,13 @@ async function main() {
         page.on('pageerror', error => pageErrors.push(error.message)); await page.clock.setFixedTime(new Date('2026-10-21T09:00:00.000Z'));
         stage = 'open-form'; await page.goto(SITE + '/#registration', { waitUntil: 'networkidle' }); await page.evaluate(() => document.fonts.ready);
         const form = page.locator('[data-registration-form]'); await form.locator('[data-submit]:enabled').waitFor(); assert.equal(await form.getAttribute('data-registration-mode'), 'production');
+        assert.equal(await page.locator('#about .ah-program-detail').count(), 0, 'organizer instructions no longer interrupt the visual bubbles');
+        const organizer = page.locator('[data-faq-id="site-role"] .ah-faq-answer');
+        assert.equal(await organizer.count(), 1, 'organizer participation is available in Q&A even with a legacy publication');
+        assert.ok(await organizer.evaluate(node => parseFloat(getComputedStyle(node).fontSize)) >= 16, 'Q&A explanations use the readable body role');
+        const noteMetrics = await page.locator('.ah-home-fact-bubble small').evaluateAll(nodes => nodes.map(node => ({font:parseFloat(getComputedStyle(node).fontSize),width:node.clientWidth,scrollWidth:node.scrollWidth,height:node.clientHeight,scrollHeight:node.scrollHeight})));
+        assert.equal(noteMetrics.length, 4);
+        for (const note of noteMetrics) { assert.ok(note.font >= (width >= 768 ? 16 : 14)); assert.ok(note.scrollWidth <= note.width + 1 && note.scrollHeight <= note.height + 1, 'larger bubble notes stay readable without clipping'); }
         await form.locator('.ah-general-extra > summary').focus(); await page.keyboard.press('Enter'); assert.equal(await form.locator('.ah-general-extra').evaluate(node => node.open), true);
         await form.locator('[data-proposal-toggle]').focus(); await page.keyboard.press('Space'); assert.equal(await form.locator('[data-proposal-toggle]').isChecked(), true); assert.equal(await form.locator('[data-speaker-proposal]').isVisible(), true);
         assert.equal(await form.locator('[data-registration-policy],[data-registration-email-policy],[data-registration-email-notice]').count(), 0, 'the form omits the two detailed notices and duplicate email explanation');
@@ -153,7 +160,7 @@ async function main() {
         assert.equal(await page.locator('#privacy > details > summary').evaluate(node => document.activeElement === node), true, 'reading continues at the opened disclosure');
         assert.equal(await form.locator('[name=consentAccepted]').isChecked(), false, 'reading the notice never consents on the visitor’s behalf');
         const privacyText = await page.locator('[data-public-privacy]').textContent();
-        for (const value of Object.values(config.privacy)) assert.ok(privacyText.includes(value), 'the linked notice preserves the current authoritative policy');
+        for (const [key,value] of Object.entries(config.privacy)) assert.ok(privacyText.includes(key === 'contactEmail' ? 'kunan@globalgamejam.org' : value), 'the linked notice preserves the current policy with the approved public support contact');
         assert.match(privacyText, /EmailJS/u);
         await form.locator('[name=name]').focus(); await page.keyboard.press('Tab'); assert.equal(await form.locator('[name=email]').evaluate(node => document.activeElement === node), true);
         const focus = await form.locator('[name=email]').evaluate(node => { const style = getComputedStyle(node); return { outline: parseFloat(style.outlineWidth), outlineStyle: style.outlineStyle, shadow: style.boxShadow }; });

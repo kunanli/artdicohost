@@ -129,7 +129,7 @@ try {
     const f = await fixture({ group: group === 'image-failure' ? 'valid' : group, imageFailure: group === 'image-failure' });await f.open();
     const message = f.page.locator('[data-confirmation-group-status]');await message.filter({ hasText: '群码待更新，请重新读取或联系主办方' }).waitFor();
     assert.equal(await f.page.locator('[data-confirmation-group]').isVisible(), true);assert.equal(await f.page.locator('[data-confirmation-group] img').count(), 0);
-    await f.page.locator('[data-confirmation-group] [data-confirmation-contact-copy]').click();assert.deepEqual(await f.page.evaluate(() => globalThis.__p3.copied), ['support@artdico.co']);
+    await f.page.locator('[data-confirmation-group] [data-confirmation-contact-copy]').click();assert.deepEqual(await f.page.evaluate(() => globalThis.__p3.copied), ['kunan@globalgamejam.org']);
     f.memory.group = 'valid';f.memory.imageFailure = false;f.memory.groupVersion = 2;
     await f.page.locator('[data-confirmation-group-refresh]').evaluate(button => { button.click(); button.click(); });
     await f.page.locator('[data-confirmation-group] img').evaluate(img => img.decode());assert.equal(f.memory.readCount, 2);

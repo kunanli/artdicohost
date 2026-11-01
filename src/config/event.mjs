@@ -1,4 +1,6 @@
 import { INVITATION_POSTER_FACTS } from '../../shared/organizer-progress.mjs';
+// The organizer's public contact is independent of staff account identities.
+export const PUBLIC_CONTACT_EMAIL = 'kunan@globalgamejam.org';
 
 /** Public event content only; contains no private allocation or attendee data. */
 export const eventConfig = {
@@ -83,9 +85,9 @@ export const highlights = [
 export const faqItems = [
   { id: 'registration-status', question: '现在可以报名吗？', answer: '参会申请须由主办方人工审核。请在本页申请区核对当前开放状态；申请收到不等于确认参会名额。' },
   { id: 'audience', question: '不是 GGJ 组织者也能参加吗？', answer: '可以，欢迎学生、开发者、高校、行业与生态伙伴参加。' },
-  { id: 'site-role', question: '已经是站点负责人，或想建立新站点，怎么登记？', answer: '在申请表选择对应身份。详细经历及站点筹备情况由筹备同事后续联系。' },
+  { id: 'site-role', question: '已经是站点负责人，或想建立新站点，怎么登记？', answer: '已是或曾任 GGJ 站点负责人的朋友，请在本页申请表选择 SO / RO，站点交流安排将另行联系。\n计划筹备新站点的朋友，可选择「新站点筹备」，筹备团队会联系了解支持需求。\n'+eventConfig.siteRegistration.notice+'请准备本地负责人、组织团队与场地，再通过 GGJ 官网 Start a Jam Site 申请，开放时间以官方信息为准。' },
   { id: 'site-official', question: '新站点现场咨询代表已通过申请吗？', answer: '不代表。请准备本地负责人、团队与场地，再通过 GGJ 官网 Start a Jam Site 申请。本次聚会和现场咨询不替代官方申请，开放时间与结果以 GGJ 官方信息为准。' },
-  { id: 'lodging-support', question: '外地来宾有住宿支持吗？', answer: '本次活动提供少量外地来宾住宿支持。有需要的朋友，欢迎提前通过 support@artdico.co 联系主办方了解安排；名额有限，住宿安排将另行确认。' },
+  { id: 'lodging-support', question: '外地来宾有住宿支持吗？', answer: '本次活动提供少量外地来宾住宿支持。有需要的朋友，欢迎提前通过 '+PUBLIC_CONTACT_EMAIL+' 联系主办方了解安排；名额有限，住宿安排将另行确认。' },
   { id: 'data-rights', question: '如何修改或撤回资料？', answer: '如需查阅、更正、撤回或删除资料，请联系主办方核对本人后处理；正式告知与联络方式以本页资料与隐私说明为准。' },
 ];
 

@@ -1,5 +1,6 @@
 ---
 import '../../styles/confirmation.css';
+import { PUBLIC_CONTACT_EMAIL } from '../../config/event.mjs';
 const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
 ---
 <!doctype html>
@@ -23,7 +24,7 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
         <p class="confirmation-error" data-confirmation-error role="alert" hidden></p>
         <div data-confirmation-content hidden>
           <div class="confirmation-person"><strong data-confirmation-name></strong><span data-confirmation-organization></span></div>
-          <p class="confirmation-contact" data-confirmation-outcome-contact hidden>如需核对，请联系 <a href="mailto:support@artdico.co">support@artdico.co</a>。<button type="button" data-confirmation-contact-copy>复制邮箱</button></p>
+          <p class="confirmation-contact" data-confirmation-outcome-contact hidden>如需核对，请联系 <a href={'mailto:'+PUBLIC_CONTACT_EMAIL}>{PUBLIC_CONTACT_EMAIL}</a>。<button type="button" data-confirmation-contact-copy>复制邮箱</button></p>
           <p class="confirmation-facts-warning" data-confirmation-facts-warning role="status" hidden>活动资料待核对，请稍后重新读取。</p>
           <dl class="confirmation-details">
             <dt>日期</dt><dd data-confirmation-date></dd>
@@ -79,7 +80,7 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
           <p class="confirmation-printed">打印仅保留当前结果；活动前请重新打开确认页核对最新状态。</p>
         </div>
         <div class="confirmation-secondary"><button type="button" data-confirmation-refresh>重新读取</button><a href="/">返回活动首页</a></div>
-        <details class="confirmation-support"><summary>遗失链接或需要帮助？</summary><p>请联系 <a href="mailto:support@artdico.co">support@artdico.co</a>。主办方核对本人后，会私下交付查询链接。<button type="button" data-confirmation-contact-copy>复制邮箱</button></p><p data-confirmation-contact-status role="status" aria-live="polite"></p></details>
+        <details class="confirmation-support"><summary>遗失链接或需要帮助？</summary><p>请联系 <a href={'mailto:'+PUBLIC_CONTACT_EMAIL}>{PUBLIC_CONTACT_EMAIL}</a>。主办方核对本人后，会私下交付查询链接。<button type="button" data-confirmation-contact-copy>复制邮箱</button></p><p data-confirmation-contact-status role="status" aria-live="polite"></p></details>
       </section>
     </main>
     <noscript><p class="confirmation-noscript">请启用 JavaScript 以核对报名状态，或通过原联系渠道联络筹备团队。</p></noscript>

@@ -16,7 +16,12 @@ function renderPublicPrivacy(){
 document.addEventListener('click',event=>{
   if(!(event.target instanceof Element)||!event.target.closest('a[href="#privacy"]'))return;
   const disclosure=document.querySelector('#privacy > details');
-  if(disclosure){disclosure.open=true;disclosure.querySelector('summary')?.focus({preventScroll:true});}
+  if(disclosure){
+    event.preventDefault();disclosure.open=true;
+    if(location.hash!=='#privacy')history.pushState(null,'','#privacy');
+    disclosure.scrollIntoView({block:'start',behavior:'instant'});
+    disclosure.querySelector('summary')?.focus({preventScroll:true});
+  }
 });
 document.addEventListener('artdico:registration-ready',event=>{currentPublicPrivacy=event.detail?.privacy??null;renderPublicPrivacy();});
 document.addEventListener('artdico:registration-policy',event=>{currentPublicPrivacy=event.detail?.privacy??null;renderPublicPrivacy();});

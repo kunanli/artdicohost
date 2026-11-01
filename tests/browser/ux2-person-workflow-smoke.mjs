@@ -5,8 +5,10 @@ import {readFile,writeFile,mkdir,stat} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash,randomBytes} from 'node:crypto';
-import {peopleRuntimeFixture,PEOPLE_FIXTURE_API as SITE,PEOPLE_FIXTURE_PASSWORD} from '../helpers/people-runtime-fixture.mjs';
+import {peopleRuntimeFixture,PEOPLE_FIXTURE_API as SITE,PEOPLE_FIXTURE_PASSWORD,PEOPLE_FIXTURE_EVENT} from '../helpers/people-runtime-fixture.mjs';
 import {CLOUD_ADMIN_PAGE_ALIASES} from '../../functions/cloud-content/http-server.mjs';
+import {createConfirmationRepository} from '../../functions/registration-confirmation/repository.mjs';
+import {createObjectJournal} from '../../functions/cloud-content/object-journal.mjs';
 const project=fileURLToPath(new URL('../../',import.meta.url)),dist=resolve(process.env.ARTDICO_DIST_DIRECTORY||resolve(project,'dist'));
 const evidence=resolve(process.env.ARTDICO_EVIDENCE_DIRECTORY||resolve(project,'.local-data/browser-evidence/ux2-person-workflow'));
 const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright-core');
@@ -22,10 +24,10 @@ async function fixture(width,{lostAck=false,unknown=false,contacts=0,automatic=f
  if(!automatic)await enabled(false);
  const registration=await runtime.seedPublic({intake:'general-v2',name:'合成单人确认甲'});await runtime.approvePublic(registration.reference_code,{headers:auth});
  if(!automatic)await enabled(true);
- const roster=[];for(let n=0;n<contacts;n++)roster.push((await runtime.createContact({name:'合成队列 '+String(n).padStart(2,'0')})).contact);
+ const roster=[];let linkedRegistrationId=null;for(let n=0;n<contacts;n++)roster.push((await runtime.createContact({name:'合成队列 '+String(n).padStart(2,'0')})).contact);
  if(roster.length>1){
   const selected=roster[1],current=await runtime.app.contactsStore.read();await runtime.app.contactsStore.saveOperations(selected.id,current.revision,{...selected.operations,responseStatus:'attending'},actor.id);
-  const conversion=await runtime.app.intentService.convertContacts({actor,contactIds:[selected.id],expectedContactRevision:current.revision+1,permissionReference:'合成已确认旧来源授权'});assert.equal(conversion.registrations.length,1);assert.equal(runtime.messages.length,0,'historical integration never sends a formal message');
+  const conversion=await runtime.app.intentService.convertContacts({actor,contactIds:[selected.id],expectedContactRevision:current.revision+1,permissionReference:'合成已确认旧来源授权'});assert.equal(conversion.registrations.length,1);linkedRegistrationId=conversion.registrations[0].registrationId;assert.equal(runtime.messages.length,0,'historical integration never sends a formal message');
  }
  const context=await browser.newContext({viewport:{width,height:940}}),[cookieName,...cookieValue]=auth.Cookie.split('=');
  await context.addCookies([{domain:new URL(SITE).hostname,path:'/api/admin',name:cookieName,value:cookieValue.join('='),secure:true,httpOnly:true,sameSite:'Strict'}]);
@@ -63,7 +65,7 @@ async function fixture(width,{lostAck=false,unknown=false,contacts=0,automatic=f
   }
   const file=await staticFile(path),body=await readFile(file);assets.set(path,{path,bytes:body.length,sha256:hash(body)});return route.fulfill({status:200,contentType:mime(file),body});
  });
- return{runtime,actor,registration,roster,context,page,calls,controls,metrics,width};
+ return{runtime,actor,registration,roster,linkedRegistrationId,context,page,calls,controls,metrics,width};
 }
 const sends=f=>f.calls.filter(row=>row.path.startsWith('/api/admin/registration-confirmation/send/'));
 const localPending=async f=>(await drafts(f.page)).filter(row=>row.scope.page.startsWith('person-confirmation:roles='));
@@ -112,13 +114,23 @@ try{
  {
   const f=await fixture(390,{automatic:true});try{await person(f);await services(f);await f.page.locator('[data-person-confirmation-status]').filter({hasText:'邮件服务已接收'}).waitFor();assert.equal(f.calls.some(row=>row.path.includes('/operation/')),false);assert.equal(await f.page.locator('[data-person-last-check]').isVisible(),false);assert.equal(sends(f).length,0);assert.equal((await localPending(f)).length,0);assert.equal(f.runtime.messages.length,2);reports.push({automaticFormalWithoutOperationUsesDeliveryOnly:true,noFakeOperationOrReadTimeOrSend:true});}finally{await f.context.close();}
  }
+ {
+  const f=await fixture(390,{contacts:4});try{
+   const repo=createConfirmationRepository({eventId:PEOPLE_FIXTURE_EVENT,journal:createObjectJournal({objects:f.runtime.objects,prefix:f.runtime.app.confirmationService.prefix}),clock:()=>Date.parse('2026-10-21T09:00:00Z')});
+   await repo.append(await repo.read(),'dispatch_started',{operationId:op(),requestHash:'a'.repeat(64),registrationIds:[f.linkedRegistrationId],retryRejected:false},f.runtime.users[1].id);
+   const history=await f.runtime.app.confirmationService.staffHistory({actor:f.actor,registrationId:f.linkedRegistrationId});assert.deepEqual(history.notices,[]);assert.equal(history.unresolvedConfirmations,true);
+   await list(f);await search(f);const row=f.page.locator('[data-directory-person="contact:'+f.roster[1].id+'"]');assert.match(await row.locator('.people-directory-state').textContent(),/待核对/u);await row.locator('[data-directory-primary]').click();await f.page.locator('[data-person-record]:visible').waitFor();await f.page.locator('[data-person-refresh]:enabled').waitFor();
+   assert.match(await f.page.locator('[data-person-summary]').textContent(),/寄送待核对/u);assert.doesNotMatch(await f.page.locator('[data-person-summary]').textContent(),/确认信未寄送/u);assert.equal(await f.page.locator('[data-person-primary]').getAttribute('data-action'),'check');assert.equal(await f.page.locator('[data-person-next]').isDisabled(),true);assert.equal((await localPending(f)).length,0);assert.equal(await f.page.locator('[data-person-last-check]').isVisible(),false);
+   await f.page.locator('[data-person-more]>summary').click();await f.page.locator('[data-person-service-open]').click();assert.equal(await f.page.locator('[data-person-confirmation-send]').isVisible(),false);assert.equal(f.calls.some(row=>row.path.includes('/operation/')),false);assert.equal(f.calls.some(row=>row.method!=='GET'),false);assert.equal(f.runtime.messages.length,0);reports.push({startedOnlyOtherActorCloudSummaryUnknown:true,noFabricatedNoticeOrOperation:true,nextAndSendBlocked:true,zeroBusinessWritesOrMail:true});
+  }finally{await f.context.close();}
+ }
  for(const width of[320,390,1440]){
   const f=await fixture(width,{contacts:4});try{
    await list(f);await search(f);await f.page.locator('[data-directory-rows] tr').nth(1).scrollIntoViewIfNeeded();const key=await openRow(f),original=await f.page.evaluate(()=>JSON.parse(sessionStorage.getItem('artdico:people-navigation:v1')));
    assert.equal(original.query,'合成队列');assert.equal(original.work,'all');assert.equal(original.selected,key);assert.ok(original.ids.length<=50);assert.equal(new URL(f.page.url()).hash.includes('合成'),false);assert.equal(JSON.stringify(await drafts(f.page)).includes('合成队列'),false);
    await f.page.locator('[data-person-list-context] [data-person-list-return]').click();await f.page.locator('[data-directory-status]').filter({hasText:'符合筛选'}).waitFor();assert.equal(await f.page.locator('[data-directory-search] [name=query]').inputValue(),'合成队列');assert.equal(await f.page.locator('[data-directory-work]').inputValue(),'all');assert.equal(await f.page.locator('[data-directory-person="'+key+'"] [data-directory-primary]').evaluate(node=>node===document.activeElement),true);assert.ok(Math.abs(await f.page.evaluate(()=>scrollY)-original.scrollY)<3);
-   await f.page.locator('[data-directory-person="'+key+'"] [data-directory-primary]').click();await f.page.locator('[data-person-next]:enabled').waitFor();const form=await quick(f);await form.locator('[name=notes]').fill('合成已核对备注');assert.equal(await f.page.locator('[data-person-next]').isDisabled(),true);await f.page.locator('[data-person-quick-save]').click();await f.page.locator('[data-person-quick-state][data-save-state=saved]').waitFor();assert.equal(f.page.url().split('#')[1],'contact='+key.split(':')[1]);assert.equal(await form.locator('[name=notes]').evaluate(node=>node===document.activeElement),true);
-   await f.page.locator('[data-person-next]:enabled').waitFor();await f.page.locator('[data-person-next]').click();await f.page.waitForURL(url=>url.hash==='#contact='+original.ids[2].split(':')[1]);await f.page.locator('[data-person-record]:visible').waitFor();assert.equal(f.calls.filter(row=>row.method==='PUT').length,1);assert.equal(sends(f).length,0);assert.equal(f.runtime.messages.length,0);await noOverflow(f);await f.page.screenshot({path:resolve(evidence,'person-navigation-'+width+'.png'),fullPage:true});reports.push({width,queryWorkScrollFocusRestored:true,queryOnlyTabSession:true,dirtyBlocksNext:true,saveStaysSamePersonAndFocus:true,explicitNextOneClick:true,noMailFromNavigation:true,noOverflow:true});
+   await f.page.locator('[data-directory-person="'+key+'"] [data-directory-primary]').click();await f.page.locator('[data-person-next]:enabled').waitFor();const form=await quick(f);await form.locator('[name=notes]').fill('合成已核对备注');assert.equal(await f.page.locator('[data-person-next]').isDisabled(),true);await form.locator('[name=owner]').focus();await form.locator('[name=owner]').press('Enter');await f.page.locator('[data-person-quick-state][data-save-state=saved]').waitFor();await form.locator('[name=owner]:enabled').waitFor();assert.equal(f.page.url().split('#')[1],'contact='+key.split(':')[1]);assert.equal(await form.locator('[name=owner]').evaluate(node=>node===document.activeElement),true);
+   await f.page.locator('[data-person-next]:enabled').waitFor();await f.page.locator('[data-person-next]').click();await f.page.waitForURL(url=>url.hash==='#contact='+original.ids[2].split(':')[1]);await f.page.locator('[data-person-record]:visible').waitFor();assert.equal(await f.page.locator('[data-person-navigation-status]').textContent(),'');assert.equal(f.calls.filter(row=>row.method==='PUT').length,1);assert.equal(sends(f).length,0);assert.equal(f.runtime.messages.length,0);await noOverflow(f);await f.page.screenshot({path:resolve(evidence,'person-navigation-'+width+'.png'),fullPage:true});reports.push({width,queryWorkScrollFocusRestored:true,queryOnlyTabSession:true,dirtyBlocksNext:true,saveStaysSamePersonAndFocus:true,explicitNextOneClick:true,finishedNavigationClearsPendingMessage:true,noMailFromNavigation:true,noOverflow:true});
   }finally{await f.context.close();}
  }
  {

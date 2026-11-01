@@ -123,6 +123,7 @@ function clearQuick() {
 }
 function clearRecord(message = '到人员或报名列表，选择「个人工作页」即可查看同一人的已保存记录。') {
   personFresh=false;navigationEnd=false;
+  $('[data-person-navigation-status]').textContent='';
   if(!user||lastConfirmationCheck?.key!==currentKey())lastConfirmationCheck=null;
   $('[data-person-last-check]').replaceChildren();$('[data-person-last-check]').hidden=true;
   clearQuick(); clearCredential(); personConfirmation.clear(); resolution.clear(); selectedView = null; sourceSequence++;

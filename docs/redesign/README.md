@@ -1,6 +1,8 @@
 # ARTDiCO HOST 改版執行總覽
 
-更新日期：2026-11-02（Asia/Taipei）。**現行交付為 [PR #60 單位／職位、原稿對照與 CSS 統一](guest-identity-reference-release.md)，已發布 main `e6e6d3f6`；樣式修改先讀 [首頁 CSS／字級規範](../frontend-typography.md)。** main 排版 4／4、實際素材 13／13、1612 項測試與 61 個公開物件 HTTPS 通過；下方 P1–P6、UX 及 PR #59 保留為前輪歷史。四項真人／真實資料工作仍獨立待驗。
+更新日期：2026-11-02（Asia/Taipei）。**現行交付為 [PR #61 公開說明簡化、字級與對外信箱](public-guidance-release.md)，已發布 main `749d5a5`；樣式修改先讀 [首頁 CSS／字級規範](../frontend-typography.md)。** 移除嘉賓審核提示、議程人物副欄與表單兩塊詳細告知，GGJ指南移Q&A，小字按角色調整；對外信箱統一 `kunan@globalgamejam.org`。main 排版4／實際素材13、1612測試、FC128與公開61物件HTTPS通過。下方PR #60及更早交付保留為歷史，真人／真實資料工作仍獨立記錄。
+
+[PR #60 單位／職位、原稿對照與 CSS 統一](guest-identity-reference-release.md) 已發布於前一版 main `e6e6d3f6`；嘉賓三層資訊與展示比例在本輪保留。
 
 使用者已確認接續 UX 優化；[UX1](ux-clarity-release.md) 已由 PR #56 發布於 main `cc1281f8`，正式核驗 1536 項測試、13 個後台頁面與 51 個公開物件。[UX2 具名寄送與連續處理](ux-workflow-release.md) 由 PR #57 發布於 main `5ec45815`，PR／main CI 與實際 FC／OSS／HTTPS 均通過：1586 項測試、704 個來源檔、準確包離線啟動、私有 OSS、13 個後台頁面及 51 個公開物件。UX1、UX2 軟體已上線；四項真人與真實資料核對仍待人工記錄。
 

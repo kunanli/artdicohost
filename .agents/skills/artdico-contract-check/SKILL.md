@@ -66,9 +66,11 @@ P3 私人頁、群碼與裝置指引的當前證據見 [P3 紀錄](../../../docs
 
 P4 已在同一通知 journal 發布 `application_received` 與 `pre_event_reminder`，證據見 [P4 紀錄](../../../docs/redesign/p4-release.md)。新種類的獨立去重、舊通知、備份／隔離恢復、未知結果與相容回退另驗；保留既有政策版本及舊待提交正文，不能清通知紀錄或靠部署補寄。固定 runner 尚不能單獨證明新增通知完成。
 
-P5 正在新增可選 FAQ ID 與首頁互動，狀態見 [P5 紀錄](../../../docs/redesign/p5-release.md)。核對舊快照／舊客戶端不被補寫或猜配對、Q&A 即時狀態與已發布資料一致、嘉賓出席投影與日程分開，以及公開素材閉包和首頁／FC 後台依賴隔離；以本輪新增案例及準確產物證明，不沿用舊測試數字。
+P5 已發布可選 FAQ ID 與首頁互動，證據見 [P5 紀錄](../../../docs/redesign/p5-release.md)。核對舊快照／舊客戶端不被補寫或猜配對、Q&A 即時狀態與已發布資料一致、嘉賓出席投影與日程分開，以及公開素材閉包和首頁／FC 後台依賴隔離；以本輪新增案例及準確產物證明，不沿用舊測試數字。
 
 目前可用 `tests/p5-faq-contract.test.mjs` 與相關 schema／store／草稿案例核對可選 ID，另以 `tests/invitation-font-assets.test.mjs` 及 `docs/home-asset-manifest.json` 核對字型改名、OFL、碼位與衍生檔 hash。字型測試或初步依賴圖通過仍不代表最終公開／FC 產物已發布。
+
+P6 的 A01–A23 對照與當輪新增證據見 [整合驗收紀錄](../../../docs/redesign/p6-release.md)。A14 五種產物的活動事實與公開 OSS 物件快取標頭另核對；固定 runner 不自動包含新增案例，既有通過不代替本輪準確包及實際發布。
 
 ## 交付結果
 

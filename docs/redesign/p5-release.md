@@ -1,6 +1,6 @@
 # P5 星球首頁 公開內容與 Q&A
 
-2026-11-01，分支 `feat/redesign-p5`，從已發布 main `c74c9dd8f95d5442e5446f005af5cdcfb3736293` 接續，產品提交為 `4e5faa79b3021e6fb050094c8a0adebaf5dc334a`。本地實作、1533 項完整回歸、最後首頁／公開集合瀏覽器、Q&A 最終公開／FC 組合、素材核對、審查及準確來源包已完成；PR CI 與實際發布仍待核對。本頁不表示 P5 已上線。
+2026-11-01，產品提交 `4e5faa79b3021e6fb050094c8a0adebaf5dc334a` 已經 [PR #54](https://github.com/kunanli/artdicohost/pull/54) 發布於 main `239e05f13fe8eb8b8bd3dec79dd7bd9cde167706`。本地實作、1533 項完整回歸、最後瀏覽器、素材、準確來源包、PR CI 與實際 FC／OSS 發布均完成；真實收件、裝置及同事觀察分開記錄。
 
 ## 本階段範圍
 
@@ -32,15 +32,17 @@
 | 字型與素材 | 4 項字型測試通過，含 1 項新增。兩份 WOFF2 family 改名為 `ARTDiCO Home SC`，完整 OFL/name 13、各 1225 個碼位及來源／衍生 hash 核對，見 [素材清單](../home-asset-manifest.json)；保留系統字型備援 |
 | 既有公開回歸 | 舊組織瀏覽器 7 種模式與公開來源回歸通過 |
 | 獨立審查 | FAQ／失回執 33 項與公開互動的重新分類／預覽／混合 hover／鍵盤／觸控核對通過，無剩餘阻塞；實際編譯的 9 個集合情境另行證實相同操作 |
-| 依賴閉包 | 核心公開閉包的 28 筆可達頁面／資產引用涵蓋實際瀏覽器請求與 6 個首頁圖片／字型／分享引用。首頁嘉賓 CSS 已獨立，最後 FC 依賴圖為 39 個資產、7,558,967 bytes，實際 CSS 掃描不含首頁 `ah-cosmos` |
-| 準確來源包 | `4e5faa79` 的 prepare／verify 通過：127 個允許檔案（含 release）、39 個後台資產，共 7,558,967 bytes；ZIP 為 35,707,679 bytes，低於 35,999,982 上限，SHA-256 `735176bcfed7e5ab48dc20dc39d4ee240f792085b39b3b8a91f89f2280d724ce`。OSS prepare 得到 51 個公開檔案（含 release，manifest 50 筆）；尚未視為正式 HTTPS 發布核驗 |
+| 依賴閉包 | 核心公開閉包的 28 筆可達頁面／資產引用涵蓋實際瀏覽器請求與 6 個首頁圖片／字型／分享引用。首頁嘉賓 CSS 已獨立，本地公開建置中的後台依賴圖為 39 個資產、7,558,967 bytes，實際 CSS 掃描不含首頁 `ah-cosmos`；此圖與下列隔離準確包分開計量 |
+| 準確來源包 | `4e5faa79` 的 prepare／verify 通過：127 個允許檔案（含 release）、39 個後台資產，共 7,558,358 bytes；ZIP 為 35,707,679 bytes，低於 35,999,982 上限，SHA-256 `735176bcfed7e5ab48dc20dc39d4ee240f792085b39b3b8a91f89f2280d724ce`。OSS prepare 得到 51 個公開檔案（含 release，manifest 50 筆），正式核驗另見下方 |
 
 各分組不與完整回歸另行加總。瀏覽器均用合成來源與攔截請求，未操作正式名單、寄信或公開業務草稿。
 
-## 剩餘交付
+## 正式發布與獨立人工核對
 
-- [ ] CI 離線啟動、PR／main 發布與 HTTPS 核驗。
+- [x] PR head `226927dc` 的 [CI 41284278037](https://github.com/kunanli/artdicohost/actions/runs/41284278037) 通過，實際檢查 merge `2f9f0cd`。
+- [x] main `239e05f` 的 [正式流程 41284601013](https://github.com/kunanli/artdicohost/actions/runs/41284601013) 全部成功，1533 項測試、690 個來源檔通過。
+- [x] 07:32:09.934 UTC 私有 OSS 的兩個獨立客戶端／一個 FC 程序核對通過；07:32:13.736 UTC 完成 13 個準確後台頁面，07:34:02.923 UTC 完成 51 個公開物件的 HTTPS 核驗。公開業務快照仍為修訂 43。
 
-P5 交付後再進入 P6 最終整合複核。真實 Email 收件、微信入群、iPhone Wallet 與同事觀察維持獨立待核對；不建立新 SLA、週期監看或自動通知。
+P5 交付後接續 [P6 最終整合複核](p6-release.md)。真實 Email 收件、微信入群、iPhone Wallet 與同事觀察維持獨立待核對；不建立新 SLA、週期監看或自動通知。
 
 發布及回退沿用 [既有清單](03-release-and-acceptance.md) 與 [備份及隔離恢復](../maintenance-backup.md)。回退寫入者須保留 FAQ ID 相容、P4 新通知種類及既有未知結果保護；不以舊內容／名單快照覆蓋新資料。

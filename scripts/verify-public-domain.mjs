@@ -5,6 +5,10 @@ import { contentType, verifyPublication } from './deploy-oss.mjs';
 
 export const PUBLIC_SITE_ORIGIN = 'https://artdico.host';
 const failed = () => new Error('Public domain release verification failed.');
+// Match the policy uploaded by deploy-oss; formatting may change in transit,
+// but additional or contradictory directives are not the reviewed policy.
+const expectedCachePolicy = value => typeof value === 'string'
+  && value.split(',').map(part => part.trim().toLowerCase()).sort().join(',') === 'no-cache,public';
 
 /** Read-only, credential-free verification of the exact checked publication through its real HTTPS domain. */
 export async function verifyPublicDomain({ directory, commit = process.env.GITHUB_SHA, fetchFn = fetch, timeoutMs = 20_000, report = () => {} } = {}) {
@@ -23,6 +27,7 @@ export async function verifyPublicDomain({ directory, commit = process.env.GITHU
         response = await Promise.race([Promise.resolve().then(() => fetchFn(url, { method: 'GET', redirect: 'error', cache: 'no-store', credentials: 'omit',
           headers: { accept: '*/*', 'accept-encoding': 'identity', 'cache-control': 'no-cache', pragma: 'no-cache' }, signal: controller.signal })), timeout]);
         if (response?.status !== 200 || response.redirected || response.url && response.url !== url || ![null, 'identity'].includes(response.headers.get('content-encoding'))) throw failed();
+        if (!expectedCachePolicy(response.headers.get('cache-control'))) throw failed();
         const expectedType = contentType(item.path)?.split(';')[0];
         const actualType = (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
         if (!expectedType || actualType !== expectedType || item.path.endsWith('.html') && /^\s*attachment(?:\s*;|$)/iu.test(response.headers.get('content-disposition') ?? '')) throw failed();

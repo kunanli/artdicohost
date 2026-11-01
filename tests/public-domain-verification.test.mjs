@@ -24,7 +24,7 @@ async function fixture(t) {
   const fetchFn = async (url, settings) => {
     calls.push({ url, settings });
     const path = decodeURIComponent(new URL(url).pathname.slice(1)), bytes = await readFile(resolve(output, path));
-    return new Response(bytes, { headers: { 'content-type': contentType(path), 'content-length': String(bytes.length) } });
+    return new Response(bytes, { headers: { 'content-type': contentType(path), 'content-length': String(bytes.length), 'cache-control': 'public,no-cache' } });
   };
   return { output, manifest, fetchFn, calls };
 }
@@ -55,6 +55,30 @@ test('mismatched commit, corrupt local bytes and invalid options fail before net
   assert.equal(f.calls.length, 0);
 });
 
+test('reviewed public cache policy tolerates directive order, case and whitespace', async t => {
+  const f = await fixture(t);
+  for (const value of ['PUBLIC, NO-CACHE', 'no-cache,public', ' public , no-cache ']) {
+    const result = await verifyPublicDomain({ directory: f.output, commit, fetchFn: async (...args) => {
+      const response = await f.fetchFn(...args); response.headers.set('cache-control', value); return response;
+    } });
+    assert.equal(result.files, f.manifest.files.length);
+  }
+});
+
+test('missing, unexpected or contradictory cache policy cannot verify exact matching public bytes', async t => {
+  const f = await fixture(t);
+  for (const value of [null, '', 'public,max-age=3600', 'public,no-cache,immutable', 'private,no-cache',
+    'public,no-cache,private', 'public,no-cache,no-store', 'public,no-cache,max-age=0', 'no-cache']) {
+    const reports = [];
+    await reject(verifyPublicDomain({ directory: f.output, commit, report: line => reports.push(line), fetchFn: async (...args) => {
+      const response = await f.fetchFn(...args);
+      if (value === null) response.headers.delete('cache-control'); else response.headers.set('cache-control', value);
+      return response;
+    } }));
+    assert.deepEqual(reports, [], 'incorrect cache policy is rejected before reporting the first object as verified');
+  }
+});
+
 test('wrong bytes, HTML type, attachment, response encoding, redirects and oversized declarations never verify', async t => {
   const f = await fixture(t);
   for (const change of [
@@ -73,18 +97,20 @@ test('wrong bytes, HTML type, attachment, response encoding, redirects and overs
 });
 
 test('actual streams are bounded even without Content-Length and truncated bytes cannot match a release', async t => {
-  const f = await fixture(t); let cancelled = 0;
-  const stream = () => new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(2048)); }, cancel() { cancelled++; } });
-  await reject(verifyPublicDomain({ directory: f.output, commit, fetchFn: async url => new Response(stream(), { headers: { 'content-type': contentType(new URL(url).pathname) } }) }));
+  const f = await fixture(t); let cancelled = 0, readStarted = false;
+  const stream = () => new ReadableStream({ pull(controller) { readStarted = true; controller.enqueue(new Uint8Array(2048)); }, cancel() { cancelled++; } }, { highWaterMark: 0 });
+  await reject(verifyPublicDomain({ directory: f.output, commit, fetchFn: async url => new Response(stream(), { headers: { 'content-type': contentType(new URL(url).pathname), 'cache-control': 'public,no-cache' } }) }));
+  assert.equal(readStarted, true, 'size failure must exercise a body read rather than an unrelated header rejection');
   assert.equal(cancelled, 1);
-  await reject(verifyPublicDomain({ directory: f.output, commit, fetchFn: async url => new Response(new Uint8Array(), { headers: { 'content-type': contentType(new URL(url).pathname) } }) }));
+  await reject(verifyPublicDomain({ directory: f.output, commit, fetchFn: async url => new Response(new Uint8Array(), { headers: { 'content-type': contentType(new URL(url).pathname), 'cache-control': 'public,no-cache' } }) }));
 });
 
 test('timeouts bound fetch and body readers even when the dependency ignores abort', async t => {
   const f = await fixture(t);
   const keepAlive = setInterval(() => {}, 1000); t.after(() => clearInterval(keepAlive));
   await reject(verifyPublicDomain({ directory: f.output, commit, timeoutMs: 10, fetchFn: async () => new Promise(() => {}) }));
-  let cancelled = 0;
-  await reject(verifyPublicDomain({ directory: f.output, commit, timeoutMs: 10, fetchFn: async url => new Response(new ReadableStream({ cancel() { cancelled++; } }), { headers: { 'content-type': contentType(new URL(url).pathname) } }) }));
+  let cancelled = 0, readStarted = false;
+  await reject(verifyPublicDomain({ directory: f.output, commit, timeoutMs: 10, fetchFn: async url => new Response(new ReadableStream({ pull() { readStarted = true; }, cancel() { cancelled++; } }, { highWaterMark: 0 }), { headers: { 'content-type': contentType(new URL(url).pathname), 'cache-control': 'public,no-cache' } }) }));
+  assert.equal(readStarted, true, 'body deadline must exercise a pending reader');
   assert.equal(cancelled, 1);
 });

@@ -28,7 +28,8 @@ test('nonempty historical public snapshots retain optional-field absence and ver
   assert.equal(Object.hasOwn(data.content.guests[0], 'publicRoles'), false);
   assert.equal(JSON.stringify(data).includes(PRIVATE), false);
   const expected = { verified: true, cors: true, publication: 'published', revision: 9, publishedAt: data.publishedAt,
-    counts: { guests: 1, organizations: 1, showcases: 1, booths: 1, sessions: data.content.sessions.length } };
+    counts: { guests: 1, organizations: 1, showcases: 1, booths: 1, sessions: data.content.sessions.length },
+    guestAttendance: { present: false, confirmed: 0, displayed: 1 } };
   assert.deepEqual(await verifyPublicContent({ fetchFn: async () => json(data) }), expected);
   const legacy = structuredClone(data); delete legacy.content.organizations;
   assert.deepEqual(await verifyPublicContent({ fetchFn: async () => json(legacy) }), { ...expected, counts: { ...expected.counts, organizations: 0 } });
@@ -47,8 +48,29 @@ test('actual anonymous CORS verification requests one fixed URL and returns only
   assert.deepEqual(options.headers, { accept: 'application/json', origin: PUBLIC_CONTENT_ORIGIN, 'accept-encoding': 'identity' });
   assert.equal(options.signal.aborted, true);
   assert.deepEqual(result, { verified: true, cors: true, publication: 'published', revision: 7, publishedAt: data.publishedAt,
-    counts: Object.fromEntries(['guests', 'organizations', 'showcases', 'booths', 'sessions'].map(name => [name, data.content[name]?.length ?? 0])) });
+    counts: Object.fromEntries(['guests', 'organizations', 'showcases', 'booths', 'sessions'].map(name => [name, data.content[name]?.length ?? 0])),
+    guestAttendance: { present: false, confirmed: 0, displayed: 0 } });
   assert.equal(JSON.stringify(result).includes(data.content.event.title), false);
+});
+
+test('public diagnostics distinguish missing, empty and confirmed guest evidence using counts only', async () => {
+  const legacy = historicalSnapshot(), before = JSON.stringify(legacy);
+  const variants = [
+    [legacy, { present: false, confirmed: 0, displayed: 1 }],
+    [{ ...legacy, content: { ...legacy.content, guestAttendance: { schemaVersion: 1, sourceRevision: 3, confirmedGuestIds: [] } } }, { present: true, confirmed: 0, displayed: 0 }],
+    [{ ...legacy, content: { ...legacy.content, guestAttendance: { schemaVersion: 1, sourceRevision: 3, confirmedGuestIds: ['historical-guest'] } } }, { present: true, confirmed: 1, displayed: 1 }],
+  ];
+  for (const [data, expected] of variants) {
+    const report = await verifyPublicContent({ fetchFn: async () => json(data) });
+    assert.deepEqual(report.guestAttendance, expected);
+    assert.equal(report.counts.guests, 1);
+    assert.doesNotMatch(JSON.stringify(report), /SYNTHETIC-NAME|historical-guest|confirmedGuestIds|PRIVATE/u);
+  }
+  for (const evidence of [null, {}, { schemaVersion: 1, sourceRevision: 3, confirmedGuestIds: ['missing'] }]) {
+    const data = { ...legacy, content: { ...legacy.content, guestAttendance: evidence } };
+    await rejects(verifyPublicContent({ fetchFn: async () => json(data) }));
+  }
+  assert.equal(JSON.stringify(legacy), before, 'diagnostics never add evidence to the historical snapshot');
 });
 
 test('404 NOT_PUBLISHED is explicitly no publication, not synchronized data or a readiness failure', async () => {

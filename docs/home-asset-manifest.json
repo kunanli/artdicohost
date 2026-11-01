@@ -41,6 +41,42 @@
       "path": "src/assets/home/planet-purple.webp",
       "bytes": 124288,
       "sha256": "97711b5e3dd76d6324324812ffd37194a74c779b10af3c4328196cf2d4b462b2"
+    },
+    {
+      "path": "src/assets/home/brand-ggj.png",
+      "bytes": 19113,
+      "sha256": "5fec057f899f88e3a2e75dff0fc05b15d04b0d4bcbcb46cfb5612ea0fbf8deac",
+      "source": {
+        "path": "FrontEnd_Resource/组件/文字标题组件-05.png",
+        "bytes": 19113,
+        "sha256": "5fec057f899f88e3a2e75dff0fc05b15d04b0d4bcbcb46cfb5612ea0fbf8deac"
+      },
+      "rights": "User-supplied ARTDiCO event brand artwork, reused only for this event website. No third-party license inferred.",
+      "reference": "FrontEnd_Resource/落地页.png — hero brand title artwork; canonical event title remains HTML."
+    },
+    {
+      "path": "src/assets/home/brand-host.png",
+      "bytes": 12792,
+      "sha256": "b6a6e36e0cf2359c24126b7c8fa0572db1688b108f238c2255cb2d25553339fc",
+      "source": {
+        "path": "FrontEnd_Resource/组件/文字标题组件-06.png",
+        "bytes": 12792,
+        "sha256": "b6a6e36e0cf2359c24126b7c8fa0572db1688b108f238c2255cb2d25553339fc"
+      },
+      "rights": "User-supplied ARTDiCO event brand artwork, reused only for this event website. No third-party license inferred.",
+      "reference": "FrontEnd_Resource/落地页.png — hero brand title artwork; canonical event title remains HTML."
+    },
+    {
+      "path": "src/assets/home/guest-card-frame.png",
+      "bytes": 87227,
+      "sha256": "fe30e8d9ab752c6fcbabd33491fd3de50fdb01af7d5fd1b127c48f391273102a",
+      "source": {
+        "path": "FrontEnd_Resource/组件/嘉宾卡片框.png",
+        "bytes": 87227,
+        "sha256": "fe30e8d9ab752c6fcbabd33491fd3de50fdb01af7d5fd1b127c48f391273102a"
+      },
+      "rights": "User-supplied ARTDiCO event card texture, reused only for this event website. No third-party license inferred.",
+      "reference": "FrontEnd_Resource/落地页.png — blank guest card background only; person content remains dynamic HTML."
     }
   ]
 }

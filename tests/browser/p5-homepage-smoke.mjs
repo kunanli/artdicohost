@@ -56,6 +56,14 @@ async function inspect(f, label) {
   assert.equal(await page.locator('#artdico-host.ah-cosmos').count(), 1);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, label + ': horizontal overflow');
   assert.equal(await page.locator('h1').count(), 1); assert.equal(await page.locator('h1').isVisible(), true);
+  assert.equal(await page.locator('h1').getAttribute('aria-label'),content.event.title,'the canonical event title remains HTML and accessible independently of the reference artwork');
+  const titleArtwork=page.locator('#hero-heading [data-home-title-image]');
+  assert.equal(await titleArtwork.count(),2,'the two title graphics come from the supplied reference components');
+  for(const artwork of await titleArtwork.all()){
+    assert.equal(await artwork.isVisible(),true);
+    assert.equal(await artwork.evaluate(image=>image.complete&&image.naturalWidth>0),true,'the original title artwork loaded');
+    const box=await artwork.boundingBox();assert.ok(box&&box.width>0&&box.x>=-1&&box.x+box.width<=page.viewportSize().width+1,'reference title artwork stays within the viewport');
+  }
   const clipped = await page.locator('h1').evaluate(node => {
     const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT), failures = [];
     while (walker.nextNode()) {
@@ -82,14 +90,23 @@ async function inspect(f, label) {
   assert.deepEqual([bytes.readUInt32BE(16), bytes.readUInt32BE(20)], [1200, 630]);
   const background = await page.locator('#artdico-host').evaluate(node => getComputedStyle(node).backgroundColor);
   assert.equal(background, 'rgb(0, 0, 0)');
-  const primary = page.locator('#top .ah-hero-actions .ah-primary');
+  const primary = page.locator('#top [data-home-primary-apply]');
   assert.equal(await primary.getAttribute('href'), '#registration');
   assert.match(await primary.innerText(), label === 'no-javascript' ? /查看申请说明/u : /申请参加/u);
-  assert.equal(await page.locator('#top .ah-hero-actions .ah-text-action').getAttribute('href'), '#agenda');
+  assert.equal(await page.locator('#top [data-home-agenda-primary]').getAttribute('href'), '#agenda');
+  assert.equal(await page.locator('#top .ah-hero-actions .ah-primary[data-home-agenda-primary]').count(),1,'the reference primary action opens the timetable while the application remains explicit');
   assert.equal(await page.locator('#recruitment .ah-primary').count(), 0, 'recruitment links do not compete with the main application action');
-  const primaryBox = await primary.evaluate(node => { const box = node.getBoundingClientRect(); return { height: box.height, bottom: box.bottom + scrollY }; });
+  const primaryBox = await primary.evaluate(node => { const box = node.getBoundingClientRect(); return { height: box.height, top: box.top + scrollY, bottom: box.bottom + scrollY }; });
   assert.ok(primaryBox.height >= 44);
-  assert.ok(primaryBox.bottom <= page.viewportSize().height, 'the primary application action is available in the first viewport');
+  const actionLayout=await page.evaluate(()=>{
+    const bounds=selector=>{const box=document.querySelector(selector).getBoundingClientRect();return {top:box.top+scrollY,bottom:box.bottom+scrollY};};
+    return {facts:bounds('#top .ah-event-meta'),hero:bounds('#top'),agenda:bounds('[data-home-agenda-primary]')};
+  });
+  assert.ok(primaryBox.top>=actionLayout.facts.bottom-1&&primaryBox.bottom<=actionLayout.hero.bottom+1,'the application action remains after the facts and within the hero');
+  const referenceAgendaTop=1306*page.viewportSize().width/1921;
+  if(page.viewportSize().width>=1024)assert.ok(Math.abs(actionLayout.agenda.top-referenceAgendaTop)<=Math.max(60,100*page.viewportSize().width/1921),'desktop timetable action follows the original PNG y=1306 proportion, allowing confirmed event text and font metrics');
+  await primary.focus();assert.equal(await primary.evaluate(node=>document.activeElement===node),true,'the application remains keyboard reachable');
+  await page.evaluate(()=>scrollTo(0,0));
   const venueSize = await page.locator('[data-public-hero-venue]').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
   const dateSize = await page.locator('[data-public-date-value]').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
   assert.ok(venueSize >= 15 && dateSize >= 15, 'event facts remain readable beside the decorative title');
@@ -99,7 +116,7 @@ async function inspect(f, label) {
     assert.ok(layout.descriptionBottom <= layout.factsTop, 'published introductory copy cannot overlap event facts');
   }
   return { label, width: page.viewportSize().width, shareSha256: digest(bytes), readOnlyRequests: f.requests.length, noOverflow: true, noClippedHeadline: true,
-    applicationActionInFirstViewport: true, eventFactFontPixels: { venue: venueSize, date: dateSize } };
+    applicationActionInHero: true, applicationKeyboardReachable: true, actionPositions:{applicationTop:primaryBox.top,agendaTop:actionLayout.agenda.top,referenceAgendaTop:page.viewportSize().width>=1024?referenceAgendaTop:null},eventFactFontPixels: { venue: venueSize, date: dateSize } };
 }
 
 try {

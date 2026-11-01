@@ -3,6 +3,8 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
   if(!doc||!win)return {capture:()=>null,restore:()=>{},updateWorks:()=>{},reveal:()=>{}};
   const grid=doc.querySelector('[data-public-showcases]'),filter=doc.querySelector('[data-public-works-filter]');
   const dialog=doc.querySelector('[data-work-lightbox]');
+  const peekImage=doc.querySelector('[data-work-peek] img');
+  peekImage?.addEventListener('error',()=>{const peek=doc.querySelector('[data-work-peek]');if(peek)peek.hidden=true;});
   let selectedId=null,previewId=null,previewTrigger=null,touch=null,closeTimer=null;
   const hoverOpened=new WeakSet();
   const visibleFocusTarget=node=>node?.isConnected&&!node.disabled&&!node.closest('[hidden],[inert]')&&node.getClientRects().length;
@@ -36,6 +38,9 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
     const empty=doc.querySelector('[data-public-works-filter-empty]');if(empty)empty.hidden=cards.length===0||visible.length>0;
     const previous=doc.querySelector('[data-public-work-prev]'),next=doc.querySelector('[data-public-work-next]');
     if(previous)previous.disabled=index<=0;if(next)next.disabled=index<0||index>=visible.length-1;
+    const peek=doc.querySelector('[data-work-peek]'),peekImage=peek?.querySelector('img');
+    const following=visible[index+1]?.querySelector('[data-work-preview] img:not([hidden])');
+    if(peek){peek.hidden=!following;if(peekImage){if(following){peekImage.src=following.src;peekImage.alt='';}else peekImage.removeAttribute('src');}}
     if(grid){grid.dataset.carouselReady='true';grid.setAttribute('aria-roledescription','作品轮播');}
     syncPreview();
   }

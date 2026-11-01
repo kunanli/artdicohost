@@ -1,0 +1,394 @@
+// Final built homepage only; synthetic public publications and fully intercepted
+// requests. Geometry below was measured from the user's original PNG, not CSS.
+import assert from 'node:assert/strict';
+import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
+import { resolve, extname } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+
+const project = fileURLToPath(new URL('../../', import.meta.url));
+const source = resolve(process.env.ARTDICO_SOURCE_DIRECTORY || project);
+const dist = resolve(process.env.ARTDICO_DIST_DIRECTORY || resolve(source, 'dist'));
+const evidence = resolve(process.env.ARTDICO_REFERENCE_EVIDENCE_DIRECTORY || resolve(project, '.local-data/browser-evidence/home-reference'));
+const { createInitialContent } = await import(pathToFileURL(resolve(source, 'src/config/content.mjs')));
+const { toPublicContent, validateContent } = await import(pathToFileURL(resolve(source, 'shared/content-schema.mjs')));
+const { publicContentEnvelope } = await import(pathToFileURL(resolve(source, 'src/lib/public-content-refresh.mjs')));
+const SITE = 'https://artdico.host', API = 'https://api.artdico.host', PRIVATE = 'SYNTHETIC_REFERENCE_PRIVATE_NEVER_PUBLIC';
+const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+const testScriptSha256 = sha(await readFile(fileURLToPath(import.meta.url)));
+const referencePath = resolve(source, 'FrontEnd_Resource/落地页.png'), referenceBytes = await readFile(referencePath);
+const REFERENCE = Object.freeze({
+  path: referencePath, sha256: 'ff5b62dfadc80e31a6af0eb3b08d23a28e4dbfdd047c0d65f1953da2b6366485', width: 1921, height: 19362,
+  // Purple-ring pixel bounds in the PNG, inclusive: x282..501,652..871,
+  // 1022..1241,1392..1611; first row y5293..5512, third y6035..6254.
+  guestDiameter: 220, guestColumnStep: 370, guestRowStep: 371, guestColumns: 4,
+  // White glyph bounds x281..553/y5030..5094 and x284..561/y6721..6785.
+  // 65px glyph height corresponds approximately to 72px Noto Sans SC CSS type.
+  headingGlyphHeight: 65, headingCssSizeEstimate: 72, headingLeft: 281,
+  dividerLeft: 140, dividerWidth: 1652, guestDividerToCircle: 137,
+  // Outer circle edge x256..1663/y6990..8397, with heading divider y6854.
+  planetDiameter: 1408, planetLeft: 256, organizationDividerToPlanet: 136,
+  organizationLogoWhiteBounds: [[581, 7146, 930, 7265], [1021, 7147, 1310, 7264], [399, 7388, 634, 7507],
+    [713, 7387, 885, 7504], [1011, 7380, 1120, 7526], [1305, 7364, 1440, 7534], [355, 7602, 630, 7706]],
+  organizationMiddleRowStagger: 24,
+  organizationKeys: ['gamezone', 'igda', 'szdx', 'bu', 'pengyou', 'g4c', 'teesside'],
+  method: 'Original PNG pixel runs and edge samples; desktop ratios use viewport/1921. Glyph-to-CSS size is an explicit font-metric estimate.',
+  limitation: 'Geometry and manually reviewable screenshots; no full-page pixel-diff or pixel-perfect equivalence claim.',
+});
+assert.equal(sha(referenceBytes), REFERENCE.sha256, 'geometry measurements must refer to the unchanged original image');
+assert.equal(referenceBytes.readUInt32BE(16), REFERENCE.width); assert.equal(referenceBytes.readUInt32BE(20), REFERENCE.height);
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFElEQVR4nGN0KFjAwMDAxMDAgKAAGOQBVgs9CEsAAAAASUVORK5CYII=','base64');
+const coverId = sha(png) + '.png', missingId = 'b'.repeat(64) + '.png';
+const media = new Map([[coverId, png]]), logoSources = [];
+for (const name of ['yxqd.png', 'igdasz.png', 'szdx.png', 'BU logo.png', 'pygw.png', 'hk.png', 'Teessi.png']) {
+  const path = resolve(source, 'FrontEnd_Resource/参与组织logo', name), bytes = await readFile(path), id = sha(bytes) + '.png';
+  media.set(id, bytes); logoSources.push({ path, sha256: sha(bytes), id });
+}
+const artworkSources = [];
+for (const name of ['Youliya.png', 'Shaojiaqi.png']) {
+  const path = resolve(source, 'FrontEnd_Resource/游戏作品展示样本', name), bytes = await readFile(path), id = sha(bytes) + '.png';
+  media.set(id, bytes); artworkSources.push({ path, sha256: sha(bytes), id });
+}
+const guestId = index => 'synthetic-reference-guest-' + index;
+const organizationId = index => 'synthetic-reference-organization-' + index;
+const organizationNames = ['游戏奇点', 'IGDA 深圳', '深圳大学艺术学部', 'Bournemouth University', '鹏游港湾', 'G4C HK', 'Teesside University'];
+const organizationInputOrder = [5, 4, 0, 1, 3, 6, 2]; // Existing publication-style order; renderer must explicitly sort known public labels.
+const names = ['合成英文嘉宾 Alex', '合成嘉宾乙', 'Synthetic Enki', '合成嘉宾丁', 'Synthetic Wilson', '合成嘉宾己', 'Synthetic Nelson', 'Synthetic PingYao', '合成嘉宾九'];
+function rawFixture({ brokenImages = false } = {}) {
+  const content = createInitialContent();
+  content.guests = names.map((name, index) => ({ id: guestId(index), name, company: '合成公开创作组织', ggjRole: '',
+    portraitId: brokenImages && index === 0 ? missingId : '', status: 'confirmed', publicConsent: true, internalNotes: PRIVATE,
+    title: '合成创作者', bio: '这是一段合成公开资料简介，用于检查姓名气泡和原生展开交互。', website: 'https://example.invalid/synthetic-public-profile', publicRoles: ['guest'] }));
+  content.organizations = organizationInputOrder.map(index => ({ id: organizationId(index), name: organizationNames[index],
+    logoId: brokenImages && index === 6 ? missingId : logoSources[index].id, website: index === 0 ? 'https://example.invalid/synthetic-organization' : '',
+    participation: index % 2 ? 'attendee' : 'exhibitor', status: index === 5 ? 'pending' : index === 6 ? 'withdrawn' : 'confirmed', publicConsent: true, internalNotes: PRIVATE }));
+  content.booths = [];
+  content.sessions = [
+    { id: 'synthetic-reference-a', zone: 'A', start: '10:00', end: '11:00', title: '合成公开交流场次 A', format: 'talk', guestId: guestId(0), speakerName: '', speakerStatus: 'pending', status: 'scheduled', internalNotes: PRIVATE },
+    { id: 'synthetic-reference-b', zone: 'B', start: '14:00', end: '15:00', title: '合成公开交流场次 B', format: 'talk', guestId: guestId(1), speakerName: '', speakerStatus: 'pending', status: 'scheduled', internalNotes: PRIVATE },
+    { id: 'synthetic-reference-c', zone: 'C', start: '16:00', end: '17:00', title: '合成作品分享 C', format: 'showcase', guestId: '', speakerName: '', speakerStatus: 'pending', status: 'scheduled', internalNotes: PRIVATE },
+  ];
+  content.showcases = ['student', 'indie'].map((kind, index) => ({ id: 'synthetic-reference-work-' + index, kind,
+    title: index ? '合成独立游戏作品' : '合成学生三维创作', teamName: '合成创作团队', summary: '合成公开作品资料；展示形式与实际安排分别核对。',
+    coverId: artworkSources[index].id, status: 'confirmed', responseStatus: 'attending', publicConsent: true, participationForms: [], boothId: '', sessionId: '',
+    organizationId: organizationId(0), school: PRIVATE, email: 'private@example.invalid', wechat: PRIVATE, contactName: PRIVATE,
+    memberCount: 2, materialLinks: '', internalNotes: PRIVATE }));
+  content.event.presentation.faqItems = [{ id: 'synthetic-reference-faq', question: '合成公开问答？', answer: '公开说明保持可读；通知、名额与公开资料分别核对。' }];
+  return content;
+}
+function publication(raw, mode) {
+  const checked = validateContent(raw); assert.equal(checked.valid, true, JSON.stringify(checked.errors));
+  const options = mode === 'empty' ? { guestAttendance: { schemaVersion: 1, sourceRevision: 12, confirmedGuestIds: [] } }
+    : mode === 'proved' ? { guestAttendance: { schemaVersion: 1, sourceRevision: 12, confirmedGuestIds: [guestId(0)] } } : {};
+  const content = toPublicContent(raw, options);
+  if (mode === 'corrupt') content.guestAttendance = { schemaVersion: 1, sourceRevision: 12, confirmedGuestIds: ['not-a-published-profile'] };
+  const envelope = { revision: 1, publishedAt: '2026-11-01T12:00:00.000Z', content };
+  assert.equal(Boolean(publicContentEnvelope(envelope)), mode !== 'corrupt', 'fixture must exercise the real public envelope boundary');
+  assert.doesNotMatch(JSON.stringify(content), /SYNTHETIC_REFERENCE_PRIVATE|private@example/u);
+  if (mode === 'legacy') assert.equal(Object.hasOwn(content, 'guestAttendance'), false, 'legacy proof is genuinely absent, not fabricated');
+  return content;
+}
+const mime = path => ({ html: 'text/html; charset=utf-8', js: 'text/javascript', mjs: 'text/javascript', css: 'text/css', png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp', svg: 'image/svg+xml', woff2: 'font/woff2', ico: 'image/x-icon' })[extname(path).slice(1)] || 'application/octet-stream';
+const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
+const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+const reports = [], pageErrors = [], servedAssets = new Map();
+await mkdir(evidence, { recursive: true });
+async function fixture(width, { mode = 'legacy', brokenImages = false, javascript = true } = {}) {
+  const context = await browser.newContext({ viewport: { width, height: 1000 }, isMobile: width < 600, hasTouch: width < 600, javaScriptEnabled: javascript, reducedMotion: 'reduce' });
+  const page = await context.newPage(), calls = [], raw = rawFixture({ brokenImages }); let currentMode = mode, revision = 1;
+  const html = await readFile(resolve(dist, 'index.html'), 'utf8');
+  const titleImagePaths = new Set([...html.matchAll(/<img\b[^>]*\bdata-home-title-image\b[^>]*>/gu)].map(match => {
+    const src = /\bsrc="([^"]+)"/u.exec(match[0]); assert.ok(src, 'built title art has its actual source URL'); return new URL(src[1], SITE).pathname;
+  }));
+  page.setDefaultTimeout(12000); page.on('pageerror', error => pageErrors.push({ width, mode, message: error.message }));
+  await context.addCookies([{ name: 'synthetic_staff', value: PRIVATE, domain: new URL(API).hostname, path: '/', httpOnly: true, secure: true, sameSite: 'Strict' }]);
+  await context.route('**/*', async route => {
+    const request = route.request(), url = new URL(request.url());
+    assert.ok([SITE, API].includes(url.origin), 'all origins must be intercepted: ' + url.origin);
+    assert.equal(request.method(), 'GET', 'this homepage verification never writes or sends mail');
+    calls.push({ origin: url.origin, path: url.pathname, method: request.method() });
+    if (url.origin === API) {
+      assert.equal(request.headers().cookie, undefined, 'public reads omit available staff cookies'); assert.equal(request.headers().authorization, undefined);
+      if (url.pathname === '/api/public/content') return route.fulfill({ status: currentMode === 'unavailable' ? 503 : 200, contentType: 'application/json',
+        headers: { 'access-control-allow-origin': SITE }, body: currentMode === 'unavailable' ? '{}' : JSON.stringify({ revision, publishedAt: new Date(Date.UTC(2026, 10, 1, 12, 0, revision)).toISOString(), content: publication(raw, currentMode) }) });
+      if (url.pathname.startsWith('/api/public/portraits/')) {
+        const id = url.pathname.split('/').at(-1); assert.ok(media.has(id) || id === missingId); assert.equal(request.headers().referer, undefined);
+        return route.fulfill(media.has(id) ? { status: 200, contentType: 'image/png', headers: { 'access-control-allow-origin': SITE }, body: media.get(id) } : { status: 404, body: '' });
+      }
+      assert.equal(url.pathname, '/api/admin/registration/config', 'no other API, recipient, token or business endpoint is reachable');
+      return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': SITE }, body: JSON.stringify({ enabled: false, reason: 'closed' }) });
+    }
+    assert.equal(url.pathname.startsWith('/api/'), false);
+    if (brokenImages && titleImagePaths.has(url.pathname)) return route.fulfill({ status: 404, body: '' });
+    const path = url.pathname.endsWith('/') ? url.pathname + 'index.html' : url.pathname, file = resolve(dist, '.' + path);
+    assert.ok(file.startsWith(dist + '/'));
+    try { const bytes = await readFile(file); servedAssets.set(path, sha(bytes)); return route.fulfill({ status: 200, contentType: mime(file), body: bytes }); }
+    catch { return route.fulfill({ status: 404, body: '' }); }
+  });
+  async function refresh(nextMode, change) {
+    if (change) change(raw);
+    currentMode = nextMode; revision++; await page.waitForTimeout(1100);
+    const received = page.waitForResponse(response => response.url() === API + '/api/public/content');
+    await page.evaluate(() => window.dispatchEvent(new Event('focus'))); await received; await page.waitForTimeout(250);
+  }
+  return { width, context, page, calls, refresh, titleImagePaths };
+}
+const noOverflow = async f => assert.equal(await f.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'no horizontal overflow at ' + f.width + 'px');
+function near(actual, expected, tolerance, description) { assert.ok(Math.abs(actual - expected) <= tolerance, `${description}: actual=${actual.toFixed(2)}, reference=${expected.toFixed(2)}, tolerance=${tolerance.toFixed(2)}`); }
+function rowsOf(boxes, tolerance = 10) {
+  const rows = [];
+  for (const box of boxes) { let row = rows.find(row => Math.abs(row.top - box.y) <= tolerance); if (!row) rows.push(row = { top: box.y, items: [] }); row.items.push(box); }
+  return rows;
+}
+async function geometry(f) {
+  const measured = await f.page.evaluate(() => {
+    const rect = node => { const b = node.getBoundingClientRect(); return { x: b.x, y: b.y + scrollY, width: b.width, height: b.height }; };
+    const bubbles = [...document.querySelectorAll('[data-guest-toggle]')].map(node => ({ ...rect(node), radius: getComputedStyle(node).borderTopLeftRadius, name: rect(node.querySelector('.ah-guest-name')) }));
+    const heading = id => { const node = document.getElementById(id), shell = node.closest('.ah-section-heading'); return { ...rect(node), font: parseFloat(getComputedStyle(node).fontSize), shell: rect(shell), border: parseFloat(getComputedStyle(shell).borderBottomWidth) }; };
+    const planet = document.querySelector('[data-organizations-planet]');
+    const paintedLogo = image => {
+      if (!image?.naturalWidth || !image?.naturalHeight) return null;
+      const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+      const context = canvas.getContext('2d'); context.drawImage(image, 0, 0); const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let left = canvas.width, top = canvas.height, right = -1, bottom = -1;
+      for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+        const i = (y * canvas.width + x) * 4;
+        if (pixels[i + 3] > 120 && Math.min(pixels[i], pixels[i + 1], pixels[i + 2]) > 210) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y); }
+      }
+      if (right < left || bottom < top) return null;
+      const box = rect(image), fit = Math.min(box.width / canvas.width, box.height / canvas.height);
+      return { x: box.x + (box.width - canvas.width * fit) / 2 + left * fit,
+        y: box.y + (box.height - canvas.height * fit) / 2 + top * fit, width: (right - left + 1) * fit, height: (bottom - top + 1) * fit,
+        intrinsicWhiteBounds: [left, top, right, bottom], element: box, objectFit: getComputedStyle(image).objectFit };
+    };
+    return { bubbles, guestHeading: heading('guests-heading'), organizationHeading: heading('booths-heading'),
+      planet: planet ? { ...rect(planet), radius: getComputedStyle(planet).borderTopLeftRadius, decorative: planet.getAttribute('aria-hidden') === 'true' } : null,
+      placeholders: [...document.querySelectorAll('.ah-guest-placeholder')].map(node => ({ background: getComputedStyle(node).backgroundColor,
+        padding: ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'].map(key => parseFloat(getComputedStyle(node)[key])), circle: rect(node.querySelector('.ah-guest-placeholder-circle')) })),
+      organizations: [...document.querySelectorAll('[data-organization-id]')].map(node => ({ ...rect(node), id: node.dataset.organizationId,
+        reference: node.dataset.organizationReference ?? null, paintedLogo: paintedLogo(node.querySelector('img')) })) };
+  });
+  await writeFile(resolve(evidence, 'geometry-' + f.width + '.json'), JSON.stringify(measured, null, 2) + '\n');
+  assert.equal(measured.bubbles.length, 9, 'nine actual legacy profiles, no decorative placeholder people');
+  assert.deepEqual(measured.organizations.map(item => item.reference), REFERENCE.organizationKeys, 'known public organization labels are explicitly ordered, despite shuffled fixture input');
+  assert.deepEqual(measured.organizations.map(item => item.id), organizationNames.map((_, index) => organizationId(index)), 'visual ordering preserves all independent record IDs');
+  for (const b of measured.bubbles) {
+    near(b.width, b.height, 3, 'guest summary is the circular control');
+    assert.ok(b.radius.includes('%') ? parseFloat(b.radius) >= 48 : parseFloat(b.radius) >= b.width * .48, 'summary circular radius');
+    assert.ok(b.name.x >= b.x - 1 && b.name.x + b.name.width <= b.x + b.width + 1, 'name stays inside the circle');
+    const nameCenter = b.name.y + b.name.height / 2; assert.ok(nameCenter >= b.y + b.height * .25 && nameCenter <= b.y + b.height * .75, 'name occupies the circle center');
+  }
+  if (f.width >= 1000) {
+    const scale = f.width / REFERENCE.width, rows = rowsOf(measured.bubbles);
+    assert.deepEqual(rows.map(row => row.items.length), [4, 4, 1], 'reference has four desktop columns, with only nine actual people');
+    near(measured.bubbles[0].width, REFERENCE.guestDiameter * scale, REFERENCE.guestDiameter * scale * .18, 'source 220px guest diameter scaled by width');
+    near(rows[0].items[1].x - rows[0].items[0].x, REFERENCE.guestColumnStep * scale, REFERENCE.guestColumnStep * scale * .18, 'source 370px column step');
+    near(rows[1].top - rows[0].top, REFERENCE.guestRowStep * scale, REFERENCE.guestRowStep * scale * .22, 'source 371px row step');
+    for (const placeholder of measured.placeholders) {
+      assert.ok(['transparent', 'rgba(0, 0, 0, 0)'].includes(placeholder.background), 'decorative wrappers have no inherited white panel');
+      assert.deepEqual(placeholder.padding, [0, 0, 0, 0], 'reference empty circles have no card wrapper padding');
+      near(placeholder.circle.width, measured.bubbles[0].width, 3, 'decorative circle uses the same source diameter');
+      near(placeholder.circle.height, measured.bubbles[0].height, 3, 'decorative circle stays circular');
+    }
+    for (const h of [measured.guestHeading, measured.organizationHeading]) {
+      near(h.x, REFERENCE.headingLeft * scale, 38 * scale, 'source heading left alignment');
+      near(h.font, REFERENCE.headingCssSizeEstimate * scale, REFERENCE.headingCssSizeEstimate * scale * .2, 'source 65px white glyph height, estimated CSS type size');
+      near(h.shell.x, REFERENCE.dividerLeft * scale, 30 * scale, 'source full-width divider left');
+      near(h.shell.width, REFERENCE.dividerWidth * scale, 70 * scale, 'source full-width divider span');
+      assert.ok(h.border >= .5, 'heading divider remains visible');
+    }
+    near(rows[0].top - measured.guestHeading.shell.y - measured.guestHeading.shell.height, REFERENCE.guestDividerToCircle * scale, 55 * scale, 'source divider-to-circle breathing room');
+    assert.ok(measured.planet?.decorative, 'the large organization planet is decorative, with a real semantic list');
+    near(measured.planet.width, measured.planet.height, 4, 'organization planet is circular');
+    near(measured.planet.width, REFERENCE.planetDiameter * scale, REFERENCE.planetDiameter * scale * .16, 'source 1408px organization planet diameter');
+    near(measured.planet.x + measured.planet.width / 2, f.width / 2, 40 * scale, 'planet centered as in source');
+    near(measured.planet.y - measured.organizationHeading.shell.y - measured.organizationHeading.shell.height, REFERENCE.organizationDividerToPlanet * scale, 60 * scale, 'source divider-to-planet spacing');
+    // Original middle-row logo tops differ by 24px. Allow another 8px between
+    // painted logo edges and the measured DOM frames, then scale by viewport.
+    assert.deepEqual(rowsOf(measured.organizations, (REFERENCE.organizationMiddleRowStagger + 8) * scale).map(row => row.items.length), [2, 4, 1], 'source seven-organization layout is 2/4/1 with its intentional stagger');
+    for (let i = 0; i < measured.organizations.length; i++) {
+      const logo = measured.organizations[i].paintedLogo, bounds = REFERENCE.organizationLogoWhiteBounds[i];
+      assert.ok(logo, 'real loaded logo has measurable painted content, beyond transparent canvas'); assert.equal(logo.objectFit, 'contain');
+      const width = (bounds[2] - bounds[0] + 1) * scale, height = (bounds[3] - bounds[1] + 1) * scale;
+      near(logo.width, width, width * .2, 'source logo ' + (i + 1) + ' painted width');
+      near(logo.height, height, height * .2, 'source logo ' + (i + 1) + ' painted height');
+    }
+  } else assert.deepEqual(rowsOf(measured.bubbles).map(row => row.items.length), [2, 2, 2, 2, 1], 'small screens retain a readable two-column adaptation');
+  return measured;
+}
+async function disclosures(f) {
+  const { page } = f, details = page.locator('#guest-' + guestId(0) + ' details'), toggle = details.locator('[data-guest-toggle]');
+  assert.equal(await toggle.evaluate(node => node.tagName), 'SUMMARY'); assert.equal(await details.evaluate(node => node.tagName), 'DETAILS');
+  await toggle.evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  if (f.width >= 1000) {
+    await toggle.hover(); await page.waitForFunction(id => document.querySelector('#guest-' + id + ' details')?.open, guestId(0));
+    const bubble = await toggle.boundingBox(), body = await details.locator('.ah-guest-detail-body').boundingBox(); assert.ok(bubble && body);
+    const x = Math.max(bubble.x, body.x) + Math.min(bubble.width, body.width) / 2;
+    await page.mouse.move(x, bubble.y + bubble.height - 2);
+    await page.mouse.move(x, (bubble.y + bubble.height + body.y) / 2); await page.waitForTimeout(60);
+    await page.mouse.move(Math.min(body.x + body.width - 10, Math.max(body.x + 10, x)), body.y + 12);
+    await page.waitForTimeout(200); assert.equal(await details.evaluate(node => node.open), true, 'pointer crosses the circle/detail gap without losing its card');
+    await page.mouse.move(0, 0); await page.waitForFunction(id => !document.querySelector('#guest-' + id + ' details')?.open, guestId(0));
+  }
+  await toggle.focus(); await page.keyboard.press('Enter'); assert.equal(await details.evaluate(node => node.open), true, 'native keyboard disclosure opens');
+  assert.equal(await details.locator('.ah-guest-detail-body > .ah-guest-portrait').count(), 1, 'portrait belongs to the expanded introduction');
+  await page.keyboard.press('Escape'); assert.equal(await details.evaluate(node => node.open), false); assert.equal(await toggle.evaluate(node => document.activeElement === node), true);
+  if (f.width < 600) {
+    await toggle.tap(); assert.equal(await details.evaluate(node => node.open), true); await noOverflow(f);
+    await toggle.tap(); assert.equal(await details.evaluate(node => node.open), false, 'touch can open and close the same native detail');
+  }
+}
+async function otherContent(f) {
+  const { page } = f;
+  assert.match(await page.locator('#program-synthetic-reference-a').textContent(), /安排待确认/u, 'an editorial association never fabricates actual attendance');
+  await page.locator('[data-zone="B"]').click(); assert.equal(await page.locator('[data-zone="B"]').getAttribute('aria-selected'), 'true');
+  await page.locator('[data-zone="B"]').focus(); await page.keyboard.press('ArrowRight'); assert.equal(await page.locator('[data-zone="C"]').getAttribute('aria-selected'), 'true');
+  assert.equal(await page.locator('[data-agenda-panel="C"]').isVisible(), true);
+  assert.equal(await page.locator('[data-showcase-id]').count(), 2); assert.equal(await page.locator('[data-showcase-id]:visible').count(), 1);
+  const peek = page.locator('[data-work-peek]'); assert.equal(await peek.getAttribute('aria-hidden'), 'true');
+  assert.equal(await peek.isVisible(), true, 'a next-item glimpse is backed by the actual second published work');
+  assert.equal(await peek.locator('img').getAttribute('src'), await page.locator('#work-synthetic-reference-work-1 .ah-showcase-poster img').getAttribute('src'));
+  await page.locator('[data-public-work-next]').click(); await page.locator('#work-synthetic-reference-work-1:visible').waitFor();
+  assert.equal(await peek.isVisible(), false, 'last item does not invent another cover');
+  await page.locator('[data-public-works-filter]').selectOption('student'); await page.locator('#work-synthetic-reference-work-0:visible').waitFor();
+  assert.equal(await page.locator('[data-public-work-next]').isDisabled(), true); assert.equal(await peek.isVisible(), false, 'single-item filter has no decorative next work');
+  await page.locator('[data-public-works-filter]').selectOption('all');
+  assert.equal(await page.locator('[data-faq-id="synthetic-reference-faq"]').count(), 1);
+  assert.match(await page.locator('[data-faq-id="lodging-support"]').textContent(), /本次活动提供少量外地来宾住宿支持/u);
+  assert.match(await page.locator('[data-faq-id="lodging-support"]').textContent(), /support@artdico\.co/u);
+  assert.doesNotMatch(await page.locator('[data-faq-id="registration-status"]').textContent(), /可以提交参会申请/u, 'closed application state is authoritative');
+  assert.equal(await page.locator('[data-public-organizations] .ah-organization-participation').count(), 0);
+  assert.doesNotMatch(await page.locator('[data-public-organizations]').textContent(), /参展|一般参与|参与待确认|已退出|查看作品/u, 'organization surface shows names and logos without inferred participation/status');
+  const organization = page.locator('#organization-' + organizationId(0) + ' a.ah-organization-card');
+  assert.equal(await organization.getAttribute('href'), 'https://example.invalid/synthetic-organization'); assert.match(await organization.getAttribute('rel'), /noopener/u);
+  await page.locator('[data-zone="A"]').click();
+}
+async function screenshots(f) {
+  if (![390, 1920].includes(f.width)) return [];
+  await f.page.mouse.move(0, 0); await f.page.keyboard.press('Escape');
+  // A full-page screenshot does not load offscreen lazy art. Scroll normally
+  // through the built page before capturing, without changing loading attrs.
+  await f.page.evaluate(async () => {
+    for (let top = 0; top < document.documentElement.scrollHeight; top += innerHeight * .75) {
+      scrollTo({ top, behavior: 'instant' }); await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
+  });
+  await f.page.waitForLoadState('networkidle');
+  for (const image of await f.page.locator('#artdico-host img:visible').all()) {
+    await image.evaluate(node => node.decode());
+  }
+  await f.page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' })); await f.page.waitForTimeout(150);
+  assert.equal(await f.page.locator('[data-public-guests] details[open]').count(), 0, 'reference layout captures do not accidentally hover-open a guest');
+  const files = [];
+  const full = resolve(evidence, 'homepage-' + f.width + '.png'); await f.page.screenshot({ path: full, fullPage: true }); files.push(full);
+  for (const [name, selector] of [['hero', '#top'], ['about', '#about'], ['guests', '#guests'], ['organizations', '#booths'], ['works', '#students'], ['agenda', '#agenda'], ['faq', '#faq'], ['footer', '.ah-footer']]) {
+    const path = resolve(evidence, name + '-' + f.width + '.png'); await f.page.locator(selector).screenshot({ path }); files.push(path);
+  }
+  return files;
+}
+async function loadOrganizationImages(f) {
+  await f.page.mouse.move(0, 0);
+  for (const image of await f.page.locator('[data-public-organizations] img').all()) {
+    await image.scrollIntoViewIfNeeded(); await image.evaluate(node => node.decode());
+  }
+  await f.page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
+}
+async function referenceCrops() {
+  const context = await browser.newContext({ viewport: { width: REFERENCE.width, height: REFERENCE.height }, deviceScaleFactor: 1 });
+  try {
+    await context.route('**/*', route => { assert.equal(route.request().url(), SITE + '/__reference.png'); assert.equal(route.request().method(), 'GET'); return route.fulfill({ status: 200, contentType: 'image/png', body: referenceBytes }); });
+    const page = await context.newPage(); await page.setContent('<body style="margin:0"><img src="' + SITE + '/__reference.png" style="display:block;width:1921px;height:19362px"></body>');
+    await page.locator('img').evaluate(image => image.decode()); const files = [];
+    for (const [name, y, height] of [['reference-hero', 0, 2350], ['reference-guests', 4800, 1700], ['reference-organizations', 6500, 2050]]) {
+      const path = resolve(evidence, name + '.png'); await page.screenshot({ path, clip: { x: 0, y, width: 1921, height } }); files.push(path);
+    }
+    return files;
+  } finally { await context.close(); }
+}
+let failure = null, referenceScreenshots = [];
+try {
+  referenceScreenshots = await referenceCrops();
+  for (const width of [320, 390, 1440, 1920]) {
+    const f = await fixture(width);
+    try {
+      await f.page.goto(SITE + '/', { waitUntil: 'networkidle' }); await f.page.evaluate(() => document.fonts.ready); await f.page.locator('#guest-' + guestId(8)).waitFor();
+      assert.equal(await f.page.locator('[data-guest-id]').count(), 9); assert.equal(await f.page.locator('.ah-guest-attendance:visible').count(), 9, 'legacy profiles return with explicit pending attendance labels');
+      assert.equal(await f.page.locator('[data-organization-id]').count(), 7);
+      const blanks = f.page.locator('.ah-guest-placeholder');
+      assert.equal(await blanks.count(), 3, 'the reference final row may be completed with three purely decorative circles');
+      assert.equal(await blanks.locator('[data-guest-id],[data-guest-toggle],summary,a,button,input,[tabindex]').count(), 0, 'decorative circles never invent a person or keyboard action');
+      assert.equal(await blanks.evaluateAll(nodes => nodes.every(node => node.getAttribute('aria-hidden') === 'true' && node.getAttribute('role') === 'presentation' && !node.textContent.trim())), true);
+      assert.equal(await f.page.locator('.ah-guest-placeholder:visible').count(), width < 600 ? 0 : 3, 'decorative reference fill is hidden on small screens');
+      await loadOrganizationImages(f);
+      const measured = await geometry(f); await disclosures(f); await otherContent(f); await noOverflow(f);
+      const files = await screenshots(f); let unknownOrganizationFallback = false;
+      if (width === 1440) {
+        await f.refresh('legacy', raw => { raw.organizations.push(
+          { id: 'synthetic-reference-unknown', name: '合成未知组织', logoId: '', website: '', participation: 'undecided', status: 'confirmed', publicConsent: true, internalNotes: PRIVATE },
+          { id: 'synthetic-reference-duplicate', name: '游戏奇点', logoId: logoSources[0].id, website: '', participation: 'undecided', status: 'confirmed', publicConsent: true, internalNotes: PRIVATE }); });
+        const unknown = f.page.locator('[data-organization-id="synthetic-reference-unknown"]');
+        assert.equal(await unknown.count(), 1); assert.equal(await unknown.getAttribute('data-organization-reference'), null);
+        assert.notEqual(await unknown.evaluate(node => getComputedStyle(node).position), 'absolute', 'unknown organization remains in normal flow without guessing a reference identity');
+        const duplicate = f.page.locator('[data-organization-id="synthetic-reference-duplicate"]');
+        assert.equal(await duplicate.count(), 1); assert.equal(await duplicate.getAttribute('data-organization-reference'), null);
+        assert.notEqual(await duplicate.evaluate(node => getComputedStyle(node).position), 'absolute', 'a second saved record with the same public label is retained in normal flow');
+        assert.equal(await f.page.locator('[data-organization-reference="gamezone"]').count(), 1, 'only the first actual reference card occupies its orbit');
+        assert.equal(await unknown.locator('h3').isVisible(), true); await noOverflow(f); unknownOrganizationFallback = true;
+      }
+      assert.doesNotMatch(await f.page.locator('body').textContent(), /SYNTHETIC_REFERENCE_PRIVATE|private@example/u);
+      reports.push({ name: 'legacy-public-layout-' + width, width, profiles: 9, organizations: 7, attendance: 'pending, no inferred confirmation', geometry: measured,
+        interaction: 'native keyboard, Escape, pointer gap or touch; actual timetable tabs, works filter and FAQ', unknownOrganizationFallback,
+        duplicateKnownOrganizationRetained: unknownOrganizationFallback, requests: f.calls.length, screenshots: files });
+    } finally { await f.context.close(); }
+  }
+  for (const mode of ['empty', 'corrupt', 'unavailable']) {
+    const f = await fixture(390, { mode });
+    try {
+      await f.page.goto(SITE + '/', { waitUntil: 'networkidle' });
+      assert.equal(await f.page.locator('[data-guest-id]').count(), 0, mode + ' never falls back to nine legacy cards');
+      if (mode !== 'empty') { assert.equal(await f.page.locator('[data-organization-id]').count(), 0); assert.match(await f.page.locator('[data-public-content-status]').textContent(), /无法|暂时/u); }
+      else assert.equal(await f.page.locator('[data-organization-id]').count(), 7);
+      await noOverflow(f); reports.push({ name: 'initial-' + mode, width: 390, guestCount: 0, failClosed: true, requests: f.calls.length });
+    } finally { await f.context.close(); }
+  }
+  const broken = await fixture(390, { brokenImages: true });
+  try {
+    await broken.page.goto(SITE + '/', { waitUntil: 'networkidle' });
+    assert.equal(broken.titleImagePaths.size, 2, 'both reference title graphics are exercised by actual intercepted 404s');
+    assert.equal(await broken.page.locator('[data-home-title-fallback]:visible').count(), 2, 'actual error/startup recovery exposes both readable title fallbacks');
+    assert.match(await broken.page.locator('#hero-heading').innerText(), /GLOBAL GAME JAM/u); assert.match(await broken.page.locator('#hero-heading').innerText(), /ARTDiCO HOST/u);
+    const first = broken.page.locator('#guest-' + guestId(0)); await first.locator('[data-guest-toggle]').tap();
+    await broken.page.waitForFunction(id => document.querySelector('#guest-' + id + ' .ah-guest-portrait img')?.hidden === true, guestId(0));
+    assert.equal(await first.locator('.ah-guest-name').isVisible(), true); assert.equal(await first.locator('.ah-guest-initial').isVisible(), true);
+    const organization = broken.page.locator('#organization-' + organizationId(6)); await organization.scrollIntoViewIfNeeded();
+    await broken.page.waitForFunction(id => document.querySelector('#organization-' + id + ' .ah-organization-image')?.hidden === true, organizationId(6));
+    assert.equal(await organization.locator('h3').isVisible(), true); await noOverflow(broken);
+    reports.push({ name: 'image-failure-name-and-initial', width: 390, failedHeroImagePaths: [...broken.titleImagePaths], readableHeroTitle: true, readableGuestName: true, readableGuestInitial: true, readableOrganizationName: true });
+  } finally { await broken.context.close(); }
+  const changing = await fixture(390);
+  try {
+    await changing.page.goto(SITE + '/', { waitUntil: 'networkidle' }); assert.equal(await changing.page.locator('[data-guest-id]').count(), 9);
+    await changing.refresh('empty'); assert.equal(await changing.page.locator('[data-guest-id]').count(), 0);
+    await changing.refresh('corrupt'); assert.equal(await changing.page.locator('[data-guest-id]').count(), 0, 'bad refresh retains the verified explicit empty proof');
+    await changing.refresh('proved', raw => { raw.event.title = '合成最新发布活动标题'; });
+    assert.equal(await changing.page.locator('[data-guest-id]').count(), 1); assert.equal(await changing.page.locator('.ah-guest-attendance').count(), 0);
+    assert.equal((await changing.page.locator('#hero-heading').textContent()).trim(), '合成最新发布活动标题', 'a changed published fact replaces decorative title art with the real title');
+    await changing.refresh('unavailable'); assert.equal(await changing.page.locator('[data-guest-id]').count(), 1, 'failed refresh retains only the last verified explicit proof');
+    assert.match(await changing.page.locator('[data-public-content-status]').textContent(), /仍显示上次核对/u); await noOverflow(changing);
+    reports.push({ name: 'proof-refresh-transitions', width: 390, counts: [9, 0, 0, 1, 1], verifiedStatePreserved: true, customPublishedTitlePreserved: true });
+  } finally { await changing.context.close(); }
+  assert.deepEqual(pageErrors, []);
+} catch (error) { failure = { message: error.message, stack: error.stack }; }
+finally {
+  await browser.close();
+  const html = await readFile(resolve(dist, 'index.html')), metadata = await stat(resolve(dist, 'index.html'));
+  const result = { ok: !failure, syntheticOnly: true, zeroRealNetwork: true, zeroBusinessWrites: true, zeroRealMail: true,
+    source, testScriptSha256, gitHeadAtRun: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), dist,
+    htmlMtime: metadata.mtime.toISOString(), publicHtmlSha256: sha(html), servedAssets: Object.fromEntries([...servedAssets].sort()),
+    reference: REFERENCE, referenceScreenshots, organizationInputOrder: organizationInputOrder.map(index => organizationNames[index]),
+    logoSources, artworkSources, geometryScope: 'Desktop scaled reference ratios with explicit tolerances; mobile functional adaptation. Screenshots require visual review and are not pixel-diff equivalence.',
+    passedCases: reports.length, reports, pageErrors, ...(failure ? { failure } : {}) };
+  await writeFile(resolve(evidence, 'report.json'), JSON.stringify(result, null, 2) + '\n'); process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+}
+if (failure) throw new Error(failure.message);

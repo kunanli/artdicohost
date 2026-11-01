@@ -1,6 +1,6 @@
 # UX2 具名寄送與連續處理
 
-2026-11-01，分支 `feat/ux-workflow`，計畫提交 `38f4432`，最終產品為 `1af25152f70cac1963ba2ae48a11439fa4b9c756`，從已發布 main `cc1281f8e2c5a5ac8c8133138a5d9540de897bf0` 接續。[UX1](ux-clarity-release.md) 已完成實際發布；UX2 的完整 Node、來源／建置、準確來源包、實際編譯瀏覽器與獨立審查均已有通過證據。PR／main CI 與正式發布仍待核對，不將本地候選產物當作已上線。
+2026-11-01，UX2 已由 [PR #57](https://github.com/kunanli/artdicohost/pull/57) 正式發布於 main `5ec4581531c31ad7c950d8c58234792fb7b1d37d`，PR／main CI、實際 FC／私有 OSS 與公開 HTTPS 核驗均通過；[UX1](ux-clarity-release.md) 與 UX2 軟體交付完成。實作分支為 `feat/ux-workflow`、計畫提交 `38f4432`，最終本地產品 `1af25152f70cac1963ba2ae48a11439fa4b9c756` 的準確包及瀏覽器證據在下方獨立保留，不以其本地 ZIP 代替實際部署 main 的證據。四項真人與真實資料驗收仍待記錄。
 
 ## 操作目標
 
@@ -53,11 +53,29 @@ lookup 的任何 4xx（包括 404／401）、已 restore／先前 unknown、503�
 - [x] 準確 FC／公開產物及既有容量上限。
 - [x] 名單往返、可選下一位、焦點／位置與切人清理的實際編譯瀏覽器。
 - [x] 正式選人／原操作恢復及必要既有回歸的實際編譯瀏覽器。
-- [ ] PR／main CI 與實際 FC／OSS／HTTPS。
+- [x] PR CI 與合併。
+- [x] main CI 與實際 FC／OSS／HTTPS。
 
-測試僅使用合成物件、收件人、provider 與全攔截瀏覽器。沿用既有架構及受控 EmailJS／Apple 設定，不新增 journal、伺服器 runtime 來源檔、依賴、服務或排程；保留 128 檔／40 個後台資產／8 MiB 及 48,000,000-byte 上傳限制。
+本地功能測試僅使用合成物件、收件人、provider 與全攔截瀏覽器；正式核驗另記如下。沿用既有架構及受控 EmailJS／Apple 設定，不新增 journal、伺服器 runtime 來源檔、依賴、服務或排程；保留 128 檔／40 個後台資產／8 MiB 及 48,000,000-byte 上傳限制。
 
 新增實際編譯瀏覽器入口為 `ux2-formal-picker-smoke.mjs` 與 `ux2-person-workflow-smoke.mjs`，執行方式見 [瀏覽器說明](../../tests/browser/README.md)。本輪報告分別保存在忽略的 `.local-data/browser-evidence/ux2-formal-picker`、`ux2-person-workflow`、`ux2-notifications` 等目錄，包含結果、來源及比較摘要。最終包為 `.local-data/ux2-cloud-content-final`，公開檔為 `.local-data/ux2-oss-publish-final`；`.local-data/browser-evidence/ux2-exact-fc-provenance-final/` 的 `package.json`、`combined.json` 與 `unchanged-browser-bindings.json` 保存最終來源及沿用證據。未來維護仍須綁定當次產物，不能因腳本存在而算通過。
+
+## PR 與實際發布
+
+- [PR #57](https://github.com/kunanli/artdicohost/pull/57) head `babd0a38970062bab24acab20559ec3cdaa62449` 的 [CI 41294783416](https://github.com/kunanli/artdicohost/actions/runs/41294783416) completed／success。CI 實際測試的是合成合併 checkout `ee893ca60e8660595298bbacbad0edbb57bd5dee`：1586 項測試、704 個來源檔、Astro 472 檔通過；準確 FC 128 檔／40 資產／13 個別名離線啟動及 51 個公開檔案核對通過。
+- 已部署 main `5ec4581531c31ad7c950d8c58234792fb7b1d37d` 的 [流程 41295125988](https://github.com/kunanli/artdicohost/actions/runs/41295125988) completed／success，四項工作均成功：[check](https://github.com/kunanli/artdicohost/actions/runs/41295125988/job/124814256554)、[transport](https://github.com/kunanli/artdicohost/actions/runs/41295125988/job/124814256792)、[FC](https://github.com/kunanli/artdicohost/actions/runs/41295125988/job/124815215280) 及 [OSS](https://github.com/kunanli/artdicohost/actions/runs/41295125988/job/124815943654)。實際 main 檢查為 1586 項測試全通過、fail／cancelled／skipped／todo 全為 0，704 個來源檔及 Astro 472 檔零錯誤／警告、保留 1 項既有 hint；來源 `5ec45815` 的準確 FC 128 檔／40 資產／13 別名離線啟動與公開 51 檔核對通過。
+- 本次補證據分支為 `docs/ux-final-release-proof`，自上述 main 建立，只保存實際結果；不改產品，不為文件重複觸發 main 程式部署。
+
+| 正式核驗（2026-11-01 UTC） | 實際結果 |
+| --- | --- |
+| 10:02:15.9171031 | Cloud lifecycle 核對準確來源 `5ec45815`，內容與報名均啟用；私有 OSS 驗收通過，兩個獨立客戶端／一個 FC 程序 |
+| 10:02:19.8550837 | 13 個準確後台頁面的 HTTPS 核對通過 |
+| 10:02:20.698741 | 匿名公開內容／CORS 核對通過；既有已發布快照仍為修訂 43、`publishedAt` 為 10 月 22 日。公開項目為嘉賓 9、組織 7、作品 1、展位 16、場次 43；這些是已公開內容數量，不是已確認出席或私有人員總數 |
+| 10:03:49.5000904 | `artdico.host` 的 51 個準確公開物件 HTTPS 核對通過，來源 `5ec45815`，含既有快取防護 |
+
+本輪只發布已授權軟體並核對既有服務，沒有新增服務或代做業務資料整合、核准、實寄通知、群碼更新及內容發布。
+
+本次正式證據摘要保存在忽略的 `.local-data/browser-evidence/ux2-live-publication/proof.json`，記錄已部署 main、四項成功工作與線上核驗；不取代上方獨立的本地候選產物證據。
 
 ## 人工只需記錄這幾項
 

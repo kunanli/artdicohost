@@ -143,9 +143,18 @@ try{
    await page.waitForFunction(()=>document.querySelector('[data-organization-id="synthetic-org"] img')?.naturalWidth>0);
    assert.equal(await page.locator('#organization-'+IDs.organization+' img').evaluate(image=>getComputedStyle(image).objectFit),'contain');
    await page.waitForFunction(()=>document.querySelector('[data-organization-id="synthetic-org-broken"] .ah-organization-image')?.hidden===true);
+   assert.deepEqual(await page.locator('[data-organization-id] .ah-organization-card').allTextContents(),[f.raw.organizations[0].name,f.raw.organizations[1].name],'participating organizations show only the saved name beside an optional logo');
+   assert.equal(await page.locator('[data-organization-id] .ah-organization-participation').count(),0,'editorial participation tags are not displayed on the reference organization planet');
+   const organizationLink=page.locator('#organization-'+IDs.organization+' a.ah-organization-card');
+   assert.equal(await organizationLink.getAttribute('href'),'https://example.invalid/synthetic-organization');
+   assert.equal(await organizationLink.getAttribute('target'),'_blank');
+   assert.match(await organizationLink.getAttribute('rel'),/\bnoopener\b/u);assert.match(await organizationLink.getAttribute('rel'),/\bnoreferrer\b/u);
    await noOverflow(f);
 
    const alpha=page.locator('#guest-'+IDs.guest+' details'),alphaToggle=alpha.locator('[data-guest-toggle]'),beta=page.locator('#guest-'+IDs.secondGuest+' details');
+   assert.equal(await alphaToggle.locator('.ah-guest-name').textContent(),longName,'the reference bubble contains the saved guest name');
+   assert.equal(await alphaToggle.locator('img').count(),0,'portrait photos belong to the expanded details rather than the reference name bubble');
+   assert.equal(await alpha.locator('.ah-guest-detail-body .ah-guest-portrait img').count(),1,'the existing public portrait remains available in expanded details');
    assert.equal(await alphaToggle.locator('.ah-guest-prompt-closed').isVisible(),true);
    assert.equal(await alphaToggle.locator('.ah-guest-prompt-open').isVisible(),false);
    const closedGuestName=await alphaToggle.ariaSnapshot();assert.match(closedGuestName,/查看嘉宾/u);assert.doesNotMatch(closedGuestName,/收起简介/u);
@@ -211,8 +220,11 @@ try{
    await page.keyboard.press('Home');await activeZone(f,'A');await page.keyboard.press('End');await activeZone(f,'C');
    assert.ok(Math.abs(await page.evaluate(()=>scrollY)-beforeKeyboardScroll)<=8,'keyboard tab changes preserve scroll position');
    assert.equal(await page.locator('[data-zone][aria-selected="true"]').count(),1,'the timetable has one selected area');
-   for(const[zone,color]of[['A','#8655ff'],['B','#ff7913'],['C','#54c7ef']]){
+   // C is sampled from FrontEnd_Resource/活动日程_C区.png: dominant #41b6e6,
+   // 136787 pixels; the preliminary #3db5df was not present in that source.
+   for(const[zone,color,paint]of[['A','#8655ff','rgb(134, 85, 255)'],['B','#ff7913','rgb(255, 121, 19)'],['C','#41b6e6','rgb(65, 182, 230)']]){
     assert.equal((await page.locator('[data-zone="'+zone+'"]').evaluate(node=>getComputedStyle(node).getPropertyValue('--ah-zone-color'))).trim().toLowerCase(),color,'each area has its documented theme color');
+    assert.equal(await page.locator('[data-zone="'+zone+'"] .ah-zone-swatch').evaluate(node=>getComputedStyle(node).backgroundColor),paint,'each area actually paints its source theme color');
    }
    await page.evaluate(id=>{location.hash='#program-'+id;},IDs.morning);await activeZone(f,'A');assert.equal(await page.locator('[data-program-period]').inputValue(),'all','deep links reveal sessions hidden by a time filter');
    assert.equal(await page.locator('#program-'+IDs.morning).isVisible(),true);
@@ -241,7 +253,7 @@ try{
    screenshots.push(await screenshot(f,'single-work'));
    assert.doesNotMatch(await page.locator('body').textContent(),/SYNTHETIC_P5_PRIVATE|private\.invalid|private@example/u);
    assert.equal(f.calls.some(call=>/\/(?:submit|send|publish|approve|dispatch|token)(?:\/|$)/u.test(call.path)),false);
-   reports.push({width,proofOnlyGuestCards:true,manualCarousel:'zero/single/many; filters and legacy retained',touch:width<600,preview:'same public image; Escape/focus; refresh retained; removal closed',refresh:'stable IDs, open disclosure, carousel/filter, time/area and focus',agenda:'initial hash, cross-area links, keyboard and no jump',publicContentReads:f.calls.filter(call=>call.path==='/api/public/content').length,allRequests:f.calls.length,screenshots});
+   reports.push({width,proofOnlyGuestCards:true,referenceNameBubblePortraitInDetails:true,organizationNamesAndOptionalLogosOnly:true,manualCarousel:'zero/single/many; filters and legacy retained',touch:width<600,preview:'same public image; Escape/focus; refresh retained; removal closed',refresh:'stable IDs, open disclosure, carousel/filter, time/area and focus',agenda:'initial hash, cross-area links, keyboard and no jump',publicContentReads:f.calls.filter(call=>call.path==='/api/public/content').length,allRequests:f.calls.length,screenshots});
   }finally{await f.context.close();}
  }
  const reclassified=await fixture(390);

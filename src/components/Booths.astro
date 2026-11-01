@@ -7,12 +7,15 @@ import '../styles/exhibiting-partners.css';
 const deferOrganizations = Boolean(publicContentEndpoint(import.meta.env.PUBLIC_CONTENT_API_ORIGIN));
 ---
 <section class="ah-booths ah-section" id="booths" aria-labelledby="booths-heading">
-  <div class="ah-section-heading" id="exhibition"><div><span class="ah-kicker">一起发生</span><h2 id="booths-heading" tabindex="-1">参与组织</h2></div><p>在现场，与这些组织相遇。</p></div>
+  <div class="ah-section-heading" id="exhibition"><h2 id="booths-heading" tabindex="-1">参与组织</h2></div>
+  <div class="ah-organizations-scene">
+  <span class="ah-organizations-planet" data-organizations-planet aria-hidden="true"></span>
   <ul class="ah-exhibiting-partners" data-public-organizations aria-label="参与组织" hidden={deferOrganizations}>
     {exhibitingPartners.map(partner => <li><div class="ah-organization-card"><h3>{partner.name}</h3></div></li>)}
   </ul>
   <p class="ah-organizations-message" data-public-organizations-empty hidden={!deferOrganizations} role="status">正在读取参与组织…</p>
   {deferOrganizations && <noscript><p class="ah-organizations-message">请启用 JavaScript 以读取参与组织的最新信息。</p></noscript>}
+  </div>
   <details class="ah-exhibition-details">
     <summary>现场展位与作品 <span aria-hidden="true">＋</span></summary>
     <div class="ah-exhibition-content">

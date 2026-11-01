@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { toPublicContent } from '../shared/content-schema.mjs';
+import { publicGuestCards } from '../shared/guest-display.mjs';
 import { createInitialContent } from '../src/config/content.mjs';
 
 export const PUBLIC_CONTENT_URL = 'https://api.artdico.host/api/public/content';
@@ -89,7 +90,10 @@ export async function verifyPublicContent(options = {}) {
     let projection; try { projection = toPublicContent(data.content); } catch { throw failure('INVALID_PROJECTION', status); }
     if (!isDeepStrictEqual(projection, data.content)) throw failure('INVALID_PROJECTION', status);
     const counts = Object.fromEntries(['guests', 'organizations', 'showcases', 'booths', 'sessions'].map(name => [name, data.content[name]?.length ?? 0]));
-    return { verified: true, cors: true, publication: 'published', revision: data.revision, publishedAt: data.publishedAt, counts };
+    const guestAttendance = { present: Object.hasOwn(data.content, 'guestAttendance'),
+      confirmed: data.content.guestAttendance?.confirmedGuestIds.length ?? 0,
+      displayed: publicGuestCards(data.content.guests, data.content.guestAttendance).length };
+    return { verified: true, cors: true, publication: 'published', revision: data.revision, publishedAt: data.publishedAt, counts, guestAttendance };
   } catch (error) { throw failures.has(error) ? error : failure('INVALID_RESPONSE', status); }
   finally {
     clearTimeout(timer); controller.abort();

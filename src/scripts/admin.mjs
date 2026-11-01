@@ -1232,6 +1232,7 @@ function previewPublic() {
       card.append(portrait);
     }else card.append(node('span',[...item.name][0]??'嘉','ah-admin-guest-initial'));
     card.append(node('h4',item.name),node('p',[item.title,item.company].filter(Boolean).join(' · ')));
+    if(item.attendance==='pending')card.append(node('p','出席待确认'));
     if(item.publicRoles?.length)card.append(node('p',item.publicRoles.map(role=>GUEST_PUBLIC_ROLE_LABELS[role]).join(' · ')));
     if(item.bio)card.append(node('p',item.bio));
     if(item.website){const link=node('a','个人 / 机构网站');link.href=item.website;link.target='_blank';link.rel='noopener noreferrer';card.append(link);}

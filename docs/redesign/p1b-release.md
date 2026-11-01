@@ -2,6 +2,8 @@
 
 2026-11-01，[PR #50](https://github.com/kunanli/artdicohost/pull/50) 已合併並實際發布，main 為 `535d3ed33629b9ff70c14587c5acdd25370df801`。[正式流程 41272446371](https://github.com/kunanli/artdicohost/actions/runs/41272446371) 的檢查、FC 與 OSS 全部成功；13 個準確後台頁面、45 個公開物件通過 HTTPS 核驗。分支為 `feat/redesign-p1b`，來源基準 main `7d25921`，產品提交 `36daf87ec90a03ccab36d1431208ad14d15321e4`。
 
+下方為 P1b 當時的實作與驗證；缺少根出席證明的舊公開嘉賓顯示規則，現由 [首頁相容修復](home-reference-release.md) 接續調整為資料卡保留並標待確認。歷史測試數與原發布證據不改寫，明確證明、私人資料及凍結快照的保護保留。
+
 ## 已落地的實作範圍
 
 | 範圍 | 行為與相容要求 |

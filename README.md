@@ -1,10 +1,12 @@
 # ARTDiCO HOST · artdico.host
 
+**現行版本：**[PR #60：單位／職位、原稿對照與 CSS 統一](docs/redesign/guest-identity-reference-release.md) 已發布於 main `e6e6d3f6`，排版 4／4、實際素材 13／13、1612 項測試及 61 個公開物件 HTTPS 通過。首頁樣式請先讀 [CSS／字級規範](docs/frontend-typography.md)；下方 PR #59 等為前輪歷史。
+
 本次改版執行入口：[分階段總覽](docs/redesign/README.md)、[操作手冊](docs/redesign/02-staff-and-attendee-runbook.md)、[驗收與發布](docs/redesign/03-release-and-acceptance.md)。P1–P6、[UX1 操作／層級](docs/redesign/ux-clarity-release.md) 及 [UX2 具名寄送與連續處理](docs/redesign/ux-workflow-release.md) 均已完成程式交付及正式發布；UX2 main `5ec45815` 的 1586 項測試、私有 OSS、13 個後台頁面及 51 個公開物件核驗通過。四項真人／真實資料驗收仍待主辦方記錄。下方 10 月發布資訊為歷史基準，現況以接續台帳及當輪紀錄為準。
 
 [首頁原稿對齊與嘉賓相容修復](docs/redesign/home-reference-release.md) 已由 PR #58 正式發布於 main `30e184fd`：原稿構圖、組織 Logo／名稱與舊公開嘉賓「出席待确认」相容顯示已交付。main 的 1593 項測試、私有 OSS、13 個後台頁面及 53 個準確公開物件 HTTPS 均通過；九筆公開嘉賓資料仍在，不代表九人已確認出席。四項真人／真實資料驗收維持獨立待辦。
 
-[氣泡職稱與正式 Logo 邊界修復](docs/redesign/bubbles-logo-release.md) 已由 PR #59 正式發布於 main `bd49a745`：真實公開字幕、無內層捲軸、可停止漂浮及有界 Logo 已交付。PR／main 的實際素材 13／13、1611 項測試、私有 OSS、13 個後台與 60 個準確公開物件 HTTPS 均通過；素材替身、模擬可見性與前版回歸資格均在紀錄中明列。
+前輪 [氣泡職稱與正式 Logo 邊界修復](docs/redesign/bubbles-logo-release.md) 由 PR #59 發布於 main `bd49a745`，1611 項測試及 60 個公開物件等回執保留為歷史；本輪獨立顯示單位與職位的現行規則以上方 PR #60 為準。
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
 

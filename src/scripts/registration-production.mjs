@@ -3,7 +3,7 @@ import { registrationFields } from '../lib/registration-fields.mjs';
 import { renderRegistrationSuccess } from './registration-success.mjs';
 import { createBrowserDraftStore } from '../lib/browser-drafts.mjs';
 import { createApplicationDraft, applicationDraftValue, applicationDraftFromFields } from '../lib/application-draft.mjs';
-import { eventConfig } from '../config/event.mjs';
+import { eventConfig, PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
 import '../lib/public-faq.mjs';
 
 function node(tag,text) { const result = document.createElement(tag); result.textContent = text; return result; }
@@ -11,8 +11,18 @@ function node(tag,text) { const result = document.createElement(tag); result.tex
 let currentPublicPrivacy=null;
 function renderPublicPrivacy(){
   const output=document.querySelector('[data-public-privacy]');
-  if(output&&currentPublicPrivacy){output.replaceChildren();const labels={processor:'处理者',contactEmail:'联络邮箱',purpose:'用途',storageRegion:'存储地区',retention:'保留期限',rightsRequest:'查阅、更正、撤回及删除',sharing:'分享范围',version:'告知版本'};for(const[key,label]of Object.entries(labels))output.append(node('p',label+'：'+currentPublicPrivacy[key]));}
+  if(output&&currentPublicPrivacy){output.replaceChildren();const labels={processor:'处理者',contactEmail:'联络邮箱',purpose:'用途',storageRegion:'存储地区',retention:'保留期限',rightsRequest:'查阅、更正、撤回及删除',sharing:'分享范围',version:'告知版本'};for(const[key,label]of Object.entries(labels))output.append(node('p',label+'：'+(key==='contactEmail'?PUBLIC_CONTACT_EMAIL:currentPublicPrivacy[key])));output.append(node('p','主办方使用 EmailJS 发送必要活动通知，向该服务提供发送所需的姓名、邮箱与通知内容（包括活动安排及私人查询入口）。请妥善保存私人链接。'));}
 }
+document.addEventListener('click',event=>{
+  if(!(event.target instanceof Element)||!event.target.closest('a[href="#privacy"]'))return;
+  const disclosure=document.querySelector('#privacy > details');
+  if(disclosure){
+    event.preventDefault();disclosure.open=true;
+    if(location.hash!=='#privacy')history.pushState(null,'','#privacy');
+    disclosure.scrollIntoView({block:'start',behavior:'instant'});
+    disclosure.querySelector('summary')?.focus({preventScroll:true});
+  }
+});
 document.addEventListener('artdico:registration-ready',event=>{currentPublicPrivacy=event.detail?.privacy??null;renderPublicPrivacy();});
 document.addEventListener('artdico:registration-policy',event=>{currentPublicPrivacy=event.detail?.privacy??null;renderPublicPrivacy();});
 document.addEventListener('artdico:public-content-updated',renderPublicPrivacy);
@@ -133,25 +143,18 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
     if (!value || value.enabled !== true) { unavailable(value?.reason??'unavailable'); return; }
     if(value.eventId!==eventConfig.id){unavailable('unavailable');return;}
     config = value;
-    const details = section.querySelector('[data-registration-policy-details]');
-    const labels = {processor:'处理者',contactEmail:'联系邮箱',purpose:'使用目的',storageRegion:'存储地区',retention:'保留期限',rightsRequest:'查阅、更正、撤回及删除',sharing:'资料分享范围',version:'告知版本'};
-    details.replaceChildren();
-    for (const [key,label] of Object.entries(labels)) details.append(node('dt',label),node('dd',value.privacy[key]));
-    details.append(node('dt','全场人数与截止时间'),node('dd','全场人数上限 '+value.capacity+' 人；申请截止 '+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Taipei',dateStyle:'medium',timeStyle:'short'}).format(new Date(value.closesAt))+'（UTC+8）。申请须人工审核，待审核不占参会名额。'));
-    section.querySelector('[data-registration-policy]').hidden = false;
-    const admissions = value.admissions;
-    if (admissions) details.append(node('dt','当前参会名额'),node('dd','已确认 '+admissions.confirmedCount+' 人；候补 '+admissions.waitlistCount+' 人。提交申请不保留名额；审核通过时再按共同容量确认名额或候补。'));
     section.querySelector('[data-registration-notice]').textContent='提交申请 → 主办方审核 → 确认名额与邀请';
     section.querySelector('[data-registration-open-label]').textContent = '参会申请';
     section.querySelector('[data-registration-mode-label]').textContent = '人工审核';
     section.querySelector('[data-registration-data-hint]').textContent = '带 * 为必填。学校／机构、城市、微信可不填。';
     section.querySelector('[data-registration-disclaimer]').textContent = '本机暂存不等于提交；提交后等待审核。';
     const consentCopy = form.querySelector('[data-registration-consent-copy]');
-    consentCopy.replaceChildren(document.createTextNode('我已阅读以上个人信息处理告知，并同意按告知范围处理本次申请资料。'));
+    const privacyLink=node('a','隐私说明');privacyLink.href='#privacy';
+    consentCopy.replaceChildren(document.createTextNode('我已阅读并同意'),privacyLink,document.createTextNode('。'));
     const consent = form.elements.namedItem('consentAccepted');
     consent.checked = false;
     const consentHint = document.getElementById('field-consentAccepted-hint');
-    if (consentHint) consentHint.textContent = '请主动勾选。工作人员不会代替你完成个人信息处理同意。';
+    if (consentHint) consentHint.textContent = '请阅读后勾选。';
     const emailHint = document.getElementById('field-email-hint');
     if (emailHint) emailHint.textContent = '用于查询申请及接收审核后的通知。';
     submit.textContent = '提交参会申请';

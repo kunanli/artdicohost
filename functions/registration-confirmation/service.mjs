@@ -1,4 +1,4 @@
-import { eventConfig, readEventFactsReadiness, unchangedEventFacts } from '../../src/config/event.mjs';
+import { eventConfig, readEventFactsReadiness, unchangedEventFacts, PUBLIC_CONTACT_EMAIL } from '../../src/config/event.mjs';
 import { performance } from 'node:perf_hooks';
 import { plainObject, own, parseTimestamp } from '../registration-api/policy.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
@@ -250,7 +250,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const text = kind === 'application_received' ? [record.fields.name + '，你好：', '', '你的申请已收到，待主办方人工审核。',
       '目前尚未确认参会名额；这封邮件不是正式邀请。', '登记编号：' + registrationId,
       '保存私人查询链接，核对后续审核结果：', link.confirmationUrl,
-      '请保管此私人链接，无需重复申请。需要协助请联系 support@artdico.co。'].join('\n')
+      '请保管此私人链接，无需重复申请。需要协助请联系 '+PUBLIC_CONTACT_EMAIL+'。'].join('\n')
       : kind === 'pre_event_reminder' ? reminderMessage(link.confirmationUrl, record.fields.name, registrationId).text
       : confirmationMessage(link.confirmationUrl, record.fields.name, registrationId).text;
     let result;
@@ -440,7 +440,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
         '签到：' + eventFacts.checkIn, '地点：' + eventFacts.venue,
         '交通指引请查看活动首页：https://artdico.host/#venue',
         '私人参会页（当前微信群及保存方式）：', url,
-        '请私下保存链接，不要转发；以页面当前名额为准。需要协助请联系 support@artdico.co。'].join('\n') };
+        '请私下保存链接，不要转发；以页面当前名额为准。需要协助请联系 '+PUBLIC_CONTACT_EMAIL+'。'].join('\n') };
   }
   async function staffNoticePreview({ actor, registrationIds, cursor } = {}, kind) {
     if (!actorValid(actor)) failure('FORBIDDEN', 403);

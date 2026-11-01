@@ -15,7 +15,7 @@ import { contentSaveSnapshot } from '../src/lib/admin-save-state.mjs';
 import { publicFaqItems, setPublicFaqs } from '../src/lib/public-faq.mjs';
 import { publicContentEnvelope } from '../src/lib/public-content-refresh.mjs';
 
-const housing = '本次活动提供少量外地来宾住宿支持。有需要的朋友，欢迎提前通过 support@artdico.co 联系主办方了解安排；名额有限，住宿安排将另行确认。';
+const housing = '本次活动提供少量外地来宾住宿支持。有需要的朋友，欢迎提前通过 kunan@globalgamejam.org 联系主办方了解安排；名额有限，住宿安排将另行确认。';
 const clock = () => Date.parse('2026-11-01T07:00:00.000Z');
 function legacyContent() {
   const content = createInitialContent();
@@ -70,14 +70,17 @@ test('explicit save assigns IDs once while raw old drafts and exact pending cont
 test('one public FAQ projection always applies live availability, rights and exact lodging without losing custom entries', () => {
   const input = [{ id: 'registration-status', question: '申请状态更新了吗？', answer: '过期开放声明' },
     { question: '报名成功就有住宿吗？', answer: '过期住宿表单说明' }, { id: 'custom-experience', question: '合成自订问题', answer: '合成自订回答' },
-    { question: '现在可以报名吗？自订说明', answer: '这是自订问题，保留原答覆' }];
+    { question: '现在可以报名吗？自订说明', answer: '这是自订问题，保留原答覆' },
+    { id: 'site-role', question: '合成旧站点问题', answer: '合成过期简短指南' }];
   const copy = structuredClone(input), rows = publicFaqItems(input, { availability: { message: '合成申请已关闭' },
     privacy: { rightsRequest: '合成申请更正及撤回方式', contactEmail: 'synthetic.privacy@example.invalid' } });
   assert.equal(rows.find(item => item.id === 'registration-status').answer, '合成申请已关闭');
   assert.equal(rows.find(item => item.id === 'data-rights').answer, '合成申请更正及撤回方式');
-  assert.equal(rows.find(item => item.id === 'data-rights').contactEmail, 'synthetic.privacy@example.invalid');
+  assert.equal(rows.find(item => item.id === 'data-rights').contactEmail, 'kunan@globalgamejam.org', 'legacy policy and editorial contacts cannot replace the approved public support address');
   assert.equal(rows.find(item => item.id === 'lodging-support').question, '外地来宾有住宿支持吗？');
-  assert.equal(rows.find(item => item.id === 'lodging-support').answer, housing); assert.equal(rows.find(item => item.id === 'lodging-support').contactEmail, 'support@artdico.co');
+  assert.equal(rows.find(item => item.id === 'lodging-support').answer, housing); assert.equal(rows.find(item => item.id === 'lodging-support').contactEmail, 'kunan@globalgamejam.org');
+  assert.equal(rows.find(item => item.id === 'site-role').question, faqItems.find(item => item.id === 'site-role').question);
+  assert.doesNotMatch(rows.find(item => item.id === 'site-role').answer, /合成过期/u, 'old published guides use the current complete instructions without rewriting their saved bytes');
   assert.equal(rows.find(item => item.id === 'custom-experience').answer, '合成自订回答');
   assert.equal(rows.find(item => item.question === '现在可以报名吗？自订说明').answer, '这是自订问题，保留原答覆');
   assert.deepEqual(input, copy); assert.equal(new Set(rows.map(item => item.id)).size, rows.length);
@@ -85,11 +88,11 @@ test('one public FAQ projection always applies live availability, rights and exa
 });
 
 test('empty or twenty custom FAQs keep all custom questions plus bounded required service entries', () => {
-  assert.deepEqual(publicFaqItems([]).map(item => item.id), ['registration-status', 'data-rights', 'lodging-support']);
+  assert.deepEqual(publicFaqItems([]).map(item => item.id), ['registration-status', 'data-rights', 'lodging-support', 'site-role']);
   const custom = Array.from({ length: 20 }, (_, index) => ({ id: 'custom-' + index, question: '合成问题' + index, answer: '合成回答' }));
-  const rows = publicFaqItems(custom); assert.equal(rows.length, 23); assert.equal(rows.filter(item => item.id.startsWith('custom-')).length, 20);
+  const rows = publicFaqItems(custom); assert.equal(rows.length, 24); assert.equal(rows.filter(item => item.id.startsWith('custom-')).length, 20);
   const legacy = [{ question: '合成同题', answer: '合成回答' }, { question: '合成同题', answer: '合成回答' }];
-  assert.equal(new Set(publicFaqItems(legacy).map(item => item.id)).size, 5);
+  assert.equal(new Set(publicFaqItems(legacy).map(item => item.id)).size, 6);
 });
 
 async function fixture(mode, t, initialContent) {

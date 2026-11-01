@@ -1,14 +1,14 @@
 # 嘉賓單位／職位與原稿逐區對照
 
-2026-11-02（Asia/Taipei），分支 `fix/guest-company-and-title`，從已部署 main `bd49a745cd420510db9d6432bfceff6414f10ce2` 與文件回執 `2b2a117` 接續。本輪要求同時顯示嘉賓單位與職位，並逐區核對原模擬圖；以下差異已完成本地修正，正式公開資料驗收及發布仍待本輪 CI。執行日誌的時間另以 UTC 記錄。
+2026-11-02（Asia/Taipei），本輪已由 [PR #60](https://github.com/kunanli/artdicohost/pull/60) 正式發布 main `e6e6d3f61d113b1831c06883c096db8c4a3df456`。單位／職位、原稿逐區對照與首頁 CSS 管理全部交付，PR／main 排版4、實際素材13、1612項測試及FC／OSS／HTTPS核驗通過。實作分支 `fix/guest-company-and-title` 從 main `bd49a745` 與文件回執 `2b2a117` 接續；下方保留前版驗證資格，日誌時間使用 UTC。
 
 單位獨立使用已公開 `company`；職位依 `title → ggjRole → 空`，不再用 company 當職位 fallback。姓名、單位、職位各自呈現並納入 ARIA，不猜內容、不改出席、名額、公開資格或業務資料。
 
-使用者追加字體管理要求：首頁新增集中閱讀／展示字角色，見 [字體規範](../frontend-typography.md)。正文與輸入 16px、標籤與按鈕 16px、輔助 14px、功能標題 20px，並同時修正白底告知框／未知申請恢復面板與草稿狀態的前景配色。新增四寬度字體／對比瀏覽器驗收，結果待新 build 與 CI，不沿用本頁先前的 HTML。
+**首頁 CSS 修改入口：[字體與樣式規範](../frontend-typography.md)。** `home-typography.css` 最後匯入，集中閱讀／展示字角色；正文／輸入／同意16px、標籤／按鈕16px／700、輔助14px、功能標題20px，display token保留hero／section／guest／footer比例。告知／恢復面板採深surface＋light字、draft>span直接設色；獨立四寬字體／對比 hard CI gate 已通過，不沿用先前HTML認列。
 
-字體階段已完成首次本地 4／4（HTML `00a917eb60c75633a58358e9222afdc199a7ab91079614725007f28dfddf7727`），告知／恢復區最低實算對比 11.033:1，原先約 1.76／1.01:1；標籤、輸入、同意與按鈕 16px、提示／草稿 14px，鍵盤與未知原請求保留、零業務 POST。相同版本的原稿關聯回歸 9／9 通過；其後只把嘉賓介紹正文統一到 16px、工具提示／展位說明補至 14px，最後版本另由 CI 驗收。
+字體階段已完成首次本地 4／4（HTML `00a917eb60c75633a58358e9222afdc199a7ab91079614725007f28dfddf7727`），告知／恢復區最低實算對比 11.033:1，原先約 1.76／1.01:1；標籤、輸入、同意與按鈕 16px、提示／草稿 14px，鍵盤與未知原請求保留、零業務 POST。相同版本的原稿關聯回歸 9／9 通過；其後只把嘉賓介紹正文統一到 16px、工具提示／展位說明補至 14px，最後版本已由 CI 另驗。
 
-初版 [PR CI 41326680851](https://github.com/kunanli/artdicohost/actions/runs/41326680851) 實際為 12／13，並未發布：四寬度真實資料已核對單位 36／職稱 32／完整介紹 36，最後角色-only 合成分支卻用過長文字要求手機一行不省略。該分支改用四字「合成角色」專驗 fallback 與完整短字；真正長姓名／單位 160／職稱 200 的合成案例、ARIA 全文、展開全文與無捲軸檢查完整保留，未放寬實際人物的裁切條件。最終 13 案仍待新 CI 摘要，不以整體綠燈認列。
+初版 [PR CI 41326680851](https://github.com/kunanli/artdicohost/actions/runs/41326680851) 實際為 12／13，並未發布：四寬真實資料單位36／職稱32／介紹36先通過，角色-only合成分支卻用過長字要求手機一行不省略。該分支改為四字「合成角色」專驗fallback；長姓名120／單位160／職稱200、ARIA與展開全文及無捲軸檢查仍保留。失敗紀錄不改寫，最後PR／main的13案已另核對全過，不以整體綠燈代替。
 
 | 區域 | 已知差異 | 本輪目標／保留界線 |
 | --- | --- | --- |
@@ -22,22 +22,37 @@
 | 日程 | B／C legend 被 filter 擠左 | 恢復全寬配置，保留真日程、區域切換、色票與鍵盤操作 |
 | 頁尾 | 英文標語起點比原稿 OST 高約 286px，寬約 449px、原稿約 518px | 對齊並放大，手機另驗不與 HOST、聯絡或工作連結重疊 |
 
-上述數字是差異量測與設計目標，須由最後編譯產物再核對；不是已通過的幾何報告，也不宣稱整頁逐像素一致。真實日期與實際內容沿用，20+／10K+、未核實數字及已移除的申請入口不恢復。
+上述數字保留為最初差異量測與設計目標，已完成量測及各版證據範圍見下方；不把目標值當作最後產物的整頁逐像素一致證明。真實日期與實際內容沿用，20+／10K+、未核實數字及已移除的申請入口不恢復。
 
 | 驗證 | 本輪狀態 |
 | --- | --- |
-| company／title／role 分流、空值、ARIA、私人隔離 | 待新定向與完整測試 |
-| 原稿逐區、四寬視覺、長內容、動態停止與無捲軸 | 待最後編譯畫面、量測與人工檢視 |
-| 實際公開 JSON／Logo 與合成邊界、舊功能回歸 | 待本輪來源綁定報告，不沿用前輪 13 案 |
-| 完整 Node、來源／Astro／建置／審計、準確包 | 待新實際數字，不沿用前輪 1611 |
-| PR／main CI 與實際 FC／OSS／HTTPS | 待正式回執 |
+| company／title／role、空值、ARIA、私人隔離 | 1612項與實際13案通過；捕捉company9／empty0，職位title8／role0／company0／empty1，不再複製company當職位 |
+| 字級／對比與原功能 | PR／main各4／4，syntheticOnly true，最低contrast11.033071382528277、errors0／POST0／mail0；keyboard與IDB原pending保護保留 |
+| 實際公開資料與邊界 | PR／main各13／13，actual true、raw7／reference7／guest9／org7／errors0，company36／title32／role0／detail36；portrait／work stub計數9、visibility為模擬訊號，不冒稱OS真分頁或未測的白色設計檔載入失敗案例 |
+| 完整檢查與候選 | 正式main1612通過，來源729、Astro479零錯誤／警告與1既有hint、23頁、audit0；契約109通過，FC128與public61候選／邊界檢查通過，不套用本地c8 ZIP為main SHA |
+| 正式發布 | main四jobs成功；FC／私有OSS、13後台、匿名CORS與61公開HTTPS準確來源回執齊全，見下表 |
 
-未新增主辦方人工流程或業務寫入；四項真人／真實資料驗收仍獨立。前輪證據保留在 [氣泡與 Logo 紀錄](bubbles-logo-release.md)，本輪通過與否另記。
+未新增主辦方人工流程、業務寫入或實寄；四項真人／真實資料驗收仍獨立。前輪證據保留在 [氣泡與 Logo 紀錄](bubbles-logo-release.md)。
 
-## 本地驗證，正式資料待 CI
+## 先前本地驗證與版本資格
 
-本輪 Node 1612／1612、來源 726、Astro 478（0 錯誤／警告、1 既有 hint）、23 頁建置、依賴審計 0 與契約 109 項通過。初版三支合成瀏覽器共 21／21；姓名居中舊斷言不適用新增三層，已改為整組居中 ±1.5px 並保留各欄包含／有序不重疊，原失敗未覆寫。這不是放寬裁切容差。
+早期本地 Node 1612／1612、來源726、Astro478、23頁、audit0與契約109通過，與最後729／479來源分開。初版合成21／21的舊姓名居中斷言改為三層整組居中±1.5px，保留各欄包含／有序不重疊；原失敗保留，未放寬裁切容差。
 
-最後只調整背景與堆疊後，重驗原稿 9／9 與三層文字四寬 4／4，HTML SHA `c09391f7df0253e6d73db004990200a59f30a24933bb0084d85239f2d3f98ae7`。前版 21 案另綁 `c77e1d0ee554372ba8105f58f1c147c2710224bf8020c4efd89d4e88aff34395`，不冒稱同版重跑。以上為合成公開資料，真實快照及原始 Logo 必須再通過 CI 的 13 案，新增單位／職位計數與全部九位展開全文檢查。
+背景／堆疊版的原稿9／9及三層四寬4／4綁HTML `c09391f7df0253e6d73db004990200a59f30a24933bb0084d85239f2d3f98ae7`，更前21案綁 `c77e1d0ee554372ba8105f58f1c147c2710224bf8020c4efd89d4e88aff34395`；字體4／4與reference9／9另綁 `00a917eb60c75633a58358e9222afdc199a7ab91079614725007f28dfddf7727`，對比11.033。其後detail正文16、tooltip／caption14的三條CSS另由最後CI驗證，不把這些本地結果假標為最終HTML同版。
 
 原稿逐區人工檢視確認：Hero 介紹白字回到原稿 y797；作品 1768×885 圖完整顯示；B／C 色塊 x858／1304 對原 x859／1303；頁尾英文寬約 518px 並恢復 OST 相對位置。霧光初版硬切已保留證據，修正後 1920／390 接縫相鄰列最大 RGB 跳變由 118／158 降到 1／2，沒有矩形邊或遮蓋標題。數值證明各自檢查範圍，不宣稱整頁逐像素一致或已人工看過無法下載的 CI 真實圖片。
+
+## PR／main 與正式回執（UTC）
+
+[PR CI 41328516989](https://github.com/kunanli/artdicohost/actions/runs/41328516989) 的排版4於16:54:44.5047103、實際13於16:55:27.2066055獨立核對；source／captureSource為 `cce235ba7f34f4594cf7399c78e8a23af6e4060d`。[main CI 41329241815](https://github.com/kunanli/artdicohost/actions/runs/41329241815) 四jobs completed／success（[check](https://github.com/kunanli/artdicohost/actions/runs/41329241815/job/124915643484)、[FC](https://github.com/kunanli/artdicohost/actions/runs/41329241815/job/124917246827)、[OSS](https://github.com/kunanli/artdicohost/actions/runs/41329241815/job/124918284936)）；main排版4於17:03:45.4986356、實際13於17:04:29.7437512再核對，source／captureSource皆為 `e6e6d3f61d113b1831c06883c096db8c4a3df456`。
+
+兩報最後HTML同為 `c48c7da23b440d4b0106463b55af42e9ed4a5eb6c7a7766e1423c5575c7dbad7`，snapshot同為 `4b5486d90eed56ed762e40227b35866a07ec4cd451e16b32a67374d5a7ed79af`。排版4為hard CI gate，actual13雖保留observational設定，本輪已讀固定摘要／來源並獨立核對全過，不只依整體綠燈。
+
+| 正式核驗時間 | 實際結果 |
+| --- | --- |
+| 17:10:33.9824681 | FC lifecycle準確來源e6e6d3f6，內容／報名啟用；私有OSS通過，2獨立客戶端／1FC，acceptanceRunId `r41329241815-a1-164c534496651c34-e6e6d3f61d113b1831c06883c096db8c4a3df456` |
+| 17:10:38.7833882 | 13個準確後台HTTPS通過 |
+| 17:10:39.9032458 | 匿名HTTPS／CORS通過；仍R43、`publishedAt:2026-10-22T08:41:00.034Z`、公開計數9／7／1／16／43、guestAttendance缺省／confirmed0／displayed9，不代表九人已確認出席 |
+| 17:12:22.9098963 | `artdico.host`來源e6e6d3f6的61個準確公開物件HTTPS通過 |
+
+`docs/guest-identity-typography-release-proof`自已部署main建立，只補文件，不另建PR或重複部署；無新業務寫入、實寄或主辦方人工流程。

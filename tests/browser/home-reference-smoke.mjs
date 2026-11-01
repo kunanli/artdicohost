@@ -275,7 +275,9 @@ async function disclosures(f) {
 }
 async function otherContent(f) {
   const { page } = f;
-  assert.match(await page.locator('#program-synthetic-reference-a').textContent(), /安排待确认/u, 'an editorial association never fabricates actual attendance');
+  assert.equal(await page.locator('#program-synthetic-reference-a strong').textContent(), '合成公开交流场次 A', 'the activity title remains unchanged');
+  assert.equal(await page.locator('#program-synthetic-reference-a .ah-session-meta').count(), 0, 'the speaker/host field is omitted even when a guest is linked');
+  assert.equal(await page.locator('#program-synthetic-reference-c .ah-session-meta').count(), 0, 'an unassigned activity has no pending speaker placeholder');
   const program = await page.locator('[data-program-controls]').evaluate(node => {
     const box = element => { const b = element.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; };
     return { tabs: box(node.querySelector('.ah-zone-tabs')), filter: box(node.querySelector('.ah-program-period')), buttons: [...node.querySelectorAll('[data-zone]')].map(box), swatches: [...node.querySelectorAll('.ah-zone-swatch')].map(box) };
@@ -304,7 +306,7 @@ async function otherContent(f) {
   await page.locator('[data-public-works-filter]').selectOption('all');
   assert.equal(await page.locator('[data-faq-id="synthetic-reference-faq"]').count(), 1);
   assert.match(await page.locator('[data-faq-id="lodging-support"]').textContent(), /本次活动提供少量外地来宾住宿支持/u);
-  assert.match(await page.locator('[data-faq-id="lodging-support"]').textContent(), /support@artdico\.co/u);
+  assert.match(await page.locator('[data-faq-id="lodging-support"]').textContent(), /kunan@globalgamejam\.org/u);
   assert.doesNotMatch(await page.locator('[data-faq-id="registration-status"]').textContent(), /可以提交参会申请/u, 'closed application state is authoritative');
   assert.equal(await page.locator('[data-public-organizations] .ah-organization-participation').count(), 0);
   assert.doesNotMatch(await page.locator('[data-public-organizations]').textContent(), /参展|一般参与|参与待确认|已退出|查看作品/u, 'organization surface shows names and logos without inferred participation/status');

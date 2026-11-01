@@ -1,9 +1,9 @@
-import { faqItems as defaults } from '../config/event.mjs';
+import { faqItems as defaults, PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
 import { legacyFaqId } from '../../shared/content-schema.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
-const REQUIRED = ['registration-status', 'data-rights', 'lodging-support'];
-const CONTACT = 'support@artdico.co';
+const REQUIRED = ['registration-status', 'data-rights', 'lodging-support', 'site-role'];
+const CONTACT = PUBLIC_CONTACT_EMAIL;
 const line = (value, max) => typeof value === 'string' && value.length > 0 && value.length <= max && value.isWellFormed()
   && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value);
 const mailbox = value => typeof value === 'string' && value.length <= 254 && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(value);
@@ -15,7 +15,7 @@ function legacyKey(question, answer) {
 
 /** Public, read-only projection. Optional stable IDs are persisted only by an
  * explicit editor save; an old fixed question is adapted by exact name here. */
-export function publicFaqItems(items = defaults, { availability = null, privacy = null, contactEmail = CONTACT } = {}) {
+export function publicFaqItems(items = defaults, { availability = null, privacy = null } = {}) {
   const rows = [], used = new Set();
   const input = Array.isArray(items) ? items.slice(0, 20) : defaults;
   for (const item of input) {
@@ -34,19 +34,19 @@ export function publicFaqItems(items = defaults, { availability = null, privacy 
   return rows.map(item => {
     if (item.id === 'registration-status') return { ...item, answer: line(availability?.message, 4000) ? availability.message : defaults.find(row => row.id === item.id).answer };
     if (item.id === 'data-rights') return { ...item, answer: line(privacy?.rightsRequest, 4000) ? privacy.rightsRequest : defaults.find(row => row.id === item.id).answer,
-      contactEmail: mailbox(privacy?.contactEmail) ? privacy.contactEmail : mailbox(contactEmail) ? contactEmail : CONTACT };
+      contactEmail: CONTACT };
     if (item.id === 'lodging-support') return { ...defaults.find(row => row.id === item.id), contactEmail: CONTACT };
+    if (item.id === 'site-role') return { ...defaults.find(row => row.id === item.id), contactEmail: null };
     return item;
   });
 }
 
-let currentItems = defaults, currentContact = CONTACT, currentPrivacy = null, currentAvailability = null;
+let currentItems = defaults, currentPrivacy = null, currentAvailability = null;
 /** The only FAQ DOM owner. Public content refresh supplies editorial items;
  * current registration/privacy state remains independent of those snapshots. */
-export function setPublicFaqs(items, options = {}) {
+export function setPublicFaqs(items) {
   if (Array.isArray(items)) currentItems = items;
   else if (items === null) currentItems = defaults;
-  if (Object.hasOwn(options, 'contactEmail')) currentContact = mailbox(options.contactEmail) ? options.contactEmail : CONTACT;
   renderFaqs();
 }
 function node(tag, text, className) {
@@ -57,7 +57,7 @@ function renderFaqs() {
   const output = document.querySelector('[data-public-faq]'); if (!output) return;
   const focused = document.activeElement, hadFocus = output.contains(focused), focusId = focused?.closest?.('[data-faq-id]')?.dataset.faqId;
   const saved = new Map([...output.children].filter(row => row instanceof HTMLDetailsElement).map(row => [row.dataset.faqId, row]));
-  const rows = publicFaqItems(currentItems, { availability: currentAvailability, privacy: currentPrivacy, contactEmail: currentContact });
+  const rows = publicFaqItems(currentItems, { availability: currentAvailability, privacy: currentPrivacy });
   for (const item of rows) {
     const previous = saved.get(item.id), row = previous ?? node('details', undefined, 'ah-faq-message');
     if (!previous) row.open = true;

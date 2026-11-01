@@ -140,7 +140,8 @@ try{
    await page.locator('#guest-'+IDs.guest).waitFor();await selected(f,IDs.student);await activeZone(f,'B');
    assert.equal(await page.locator('[data-guest-id]').count(),2,'only guest cards backed by server attendance proof');
    assert.equal(await page.locator('#guest-'+IDs.unproved).count(),0,'a scheduled profile does not prove attendance');
-   assert.match(await page.locator('#program-'+IDs.morning).textContent(),/合成未确认出席讲者.*安排待确认/u,'unconfirmed schedule associations remain readable');
+   assert.equal(await page.locator('#program-'+IDs.morning+' strong').textContent(),'合成 A 区交流','the activity title remains unchanged');
+   assert.equal(await page.locator('#program-'+IDs.morning+' .ah-session-meta').count(),0,'the public activity row has no speaker/host subtitle');
    assert.match(await page.locator('#program-synthetic-cancelled').textContent(),/已取消/u);
    assert.deepEqual(await page.locator('[data-public-works-filter] option').evaluateAll(options=>options.map(option=>option.value)),['all','student','indie'],'legacy team is readable without a new classification option');
    assert.equal(await page.locator('[data-showcase-id]').count(),3);

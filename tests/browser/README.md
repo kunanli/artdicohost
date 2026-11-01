@@ -6,9 +6,9 @@
 ARTDICO_PLAYWRIGHT_MODULE=playwright-core ARTDICO_CHROMIUM_BINARY=/usr/bin/google-chrome ARTDICO_TYPOGRAPHY_EVIDENCE_DIRECTORY=/absolute/repository/.local-data/browser-evidence/public-typography node tests/browser/public-typography-smoke.mjs
 ```
 
-预期四案覆盖 320／390／1440／1920。使用隔离 runtime 的实际公开配置 GET、空合成公开内容及 native IndexedDB 草稿；全部网络预先拦截，只允许 GET。核对选填、分享提案、政策展开、键盘焦点与同意框；缺必填项只触发前端错误，不提交。未知恢复由合成原请求写入浏览器本机草稿后重新加载，核对原正文保持不变，不按恢复发送按钮。
+预期四案覆盖 320／390／1440／1920。使用隔离 runtime 的实际公开配置 GET、空合成公开内容及 native IndexedDB 草稿；全部网络预先拦截，只允许 GET。核对选填、分享提案、键盘焦点与同意框；表单没有两块详细告知，单一隐私链接可打开默认收合的页尾说明，完整保留当前告知且不会代为勾选。缺必填项只触发前端错误，不提交。未知恢复由合成原请求写入浏览器本机草稿后重新加载，核对原正文保持不变，不按恢复发送按钮。
 
-按语义检查标签、输入、同意文字及按钮至少 16px，辅助说明／状态／错误至少 14px，表单 h3／h4 至少 20px，解释段落行高至少 1.6；同类标签、输入与按钮保持一致，艺术展示字不强制同值。检查实际布局无裁切／横向溢出，政策与恢复区域为深色表面，依据实际计算样式叠合前景／背景算出至少 4.5:1 对比。输出每案申请／恢复两张区块图、HTML／资产／脚本 SHA 及计数；成功标记为 `Public typography browser verified: `。源码存在不代表已执行，完成数量与退出码以本轮报告为准。
+按语义检查标签、输入、同意文字及按钮至少 16px，辅助说明／状态／错误至少 14px，表单 h3／h4 至少 20px，解释段落行高至少 1.6；同类标签、输入与按钮保持一致，艺术展示字不强制同值。检查实际布局无裁切／横向溢出，按需展开的页尾说明与恢复区域为深色表面，依据实际计算样式叠合前景／背景算出至少 4.5:1 对比。输出每案申请／恢复两张区块图、HTML／资产／脚本 SHA 及计数；成功标记为 `Public typography browser verified: `。源码存在不代表已执行，完成数量与退出码以本轮报告为准。
 
 气泡与组织图标的正式图片回归入口为 `bubbles-logo-bounds-smoke.mjs`。使用开发工具 **playwright-core 1.64.1** 与 CI 已安装的 Chrome；不增加生产依赖。批准的 CI 先匿名捕获公开内容及七张原始组织图，再于同一工作目录构建、执行：
 

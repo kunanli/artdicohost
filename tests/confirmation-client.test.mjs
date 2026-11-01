@@ -140,7 +140,7 @@ test('confirmed group image access expires independently from the underlying QR 
   assert.equal(confirmationView({...input,groupInvite:null},now).groupInvite,null);
   assert.equal(confirmationView({...input,groupInvite:{...input.groupInvite,qrExpiresAt:'PRIVATE-NOT-A-NEW-CONTRACT'}},now).groupInvite.expiresAt,input.groupInvite.expiresAt);
   for(const qrImageUrl of ['https://evil.invalid/qr',api+'/api/registration/group-invite/synthetic.token?email=private',api+'/api/registration/group-invite/synthetic.token#private',api+'/api/registration/group-invite/../contacts'])assert.equal(confirmationView({...input,groupInvite:{...input.groupInvite,qrImageUrl}},now).groupInvite,null);
-  assert.equal(CONFIRMATION_GROUP_UNAVAILABLE,'群码待更新，请重新读取或联系主办方');assert.equal(CONFIRMATION_CONTACT_EMAIL,'support@artdico.co');
+  assert.equal(CONFIRMATION_GROUP_UNAVAILABLE,'群码待更新，请重新读取或联系主办方');assert.equal(CONFIRMATION_CONTACT_EMAIL,'kunan@globalgamejam.org');
 });
 
 test('Wallet actions match the current browser rather than treating every iPhone as Safari',()=>{

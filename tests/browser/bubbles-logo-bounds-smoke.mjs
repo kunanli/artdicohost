@@ -200,6 +200,7 @@ async function detail(f, guest, { longText = false } = {}) {
   const before = await f.page.locator('#booths').evaluate(node => node.getBoundingClientRect().top + scrollY);
   await toggle.focus(); await f.page.keyboard.press('Enter'); assert.equal(await card.locator('details').evaluate(node => node.open), true);
   assert.equal((await body.locator('.ah-guest-detail-name').textContent()).trim(), guest.name.trim());
+  assert.equal(await body.locator('.ah-guest-company').filter({ hasText: /^(?:资料待确认|資料待確認)$/u }).count(), 0, 'public introductions omit the internal profile-review label');
   if (guest.company?.trim()) assert.ok((await body.locator('.ah-guest-company').allTextContents()).map(text => text.trim()).includes(guest.company.trim()), 'expanded detail retains the entire published company');
   if (guest.title) assert.equal((await body.locator('.ah-guest-title').textContent()).trim(), guest.title.trim());
   else assert.equal(await body.locator('.ah-guest-title').count(), 0);

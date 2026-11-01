@@ -196,12 +196,15 @@ test('registration policy and independent token secret are configured privately 
   assert.match(variables.ARTDICO_REGISTRATION_TOKEN_SECRET, /^[A-Za-z0-9_-]{64}$/u);
   assert.equal(variables.ARTDICO_REGISTRATION_ENABLED, 'false');
   assert.equal(JSON.parse(variables.ARTDICO_REGISTRATION_POLICY_JSON).enabled, false);
+  assert.equal(JSON.parse(variables.ARTDICO_REGISTRATION_POLICY_JSON).privacy.contactEmail, 'kunan@globalgamejam.org');
+  assert.equal(parseAdminUsers(variables.ADMIN_USERS_JSON)[0].email, ENV.ARTDICO_ADMIN_EMAIL, 'public contact does not replace the staff account identity');
   assert.equal(variables.ARTDICO_REGISTRATION_CAPACITY, '300');
   const enabled = fixture({ before: () => first.current() });
   await configureCloudAdmin({ ...enabled.options, env: { ...ENV, ARTDICO_REGISTRATION_SETUP_ENABLED: 'true' } });
   assert.equal(enabled.current().environmentVariables.ARTDICO_REGISTRATION_TOKEN_SECRET, variables.ARTDICO_REGISTRATION_TOKEN_SECRET);
   assert.equal(enabled.current().environmentVariables.ARTDICO_REGISTRATION_ENABLED, 'true');
   assert.equal(JSON.parse(enabled.current().environmentVariables.ARTDICO_REGISTRATION_POLICY_JSON).enabled, true);
+  assert.equal(JSON.parse(enabled.current().environmentVariables.ARTDICO_REGISTRATION_POLICY_JSON).privacy.contactEmail, 'kunan@globalgamejam.org');
   assert.equal(enabled.current().environmentVariables.ARTDICO_CLOUD_CONTENT_ENABLED, 'false');
   for (const secret of ['', 'short', ENV.ARTDICO_ADMIN_PASSWORD]) {
     const failed = fixture({ before: value => ({ ...value, environmentVariables: { ARTDICO_REGISTRATION_TOKEN_SECRET: secret } }) });

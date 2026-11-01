@@ -62,6 +62,19 @@ jobs:
         timeout-minutes: 1
         continue-on-error: true
         run: node scripts/verify-public-content.mjs --observe
+      - name: Capture validated public organization logos for visual review
+        id: public_visual_fixture
+        timeout-minutes: 2
+        continue-on-error: true
+        run: node scripts/capture-public-visual-fixture.mjs
+      - name: Retain the validated public visual fixture for one day
+        if: ${{ steps.public_visual_fixture.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: public-visual-fixture
+          path: .local-data/public-visual-fixture/
+          if-no-files-found: error
+          retention-days: 1
       - name: Check source boundaries
         run: pnpm check:source
       - name: Observe anonymous registration settings and both browser preflights without submitting an application

@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 const project = fileURLToPath(new URL('../../', import.meta.url));
 const source = resolve(process.env.ARTDICO_SOURCE_DIRECTORY || project), dist = resolve(process.env.ARTDICO_DIST_DIRECTORY || resolve(source, 'dist'));
-const evidence = resolve(project, '.local-data/browser-evidence/p5-faq-application');
+const evidence = resolve(process.env.ARTDICO_FAQ_EVIDENCE_DIRECTORY || resolve(project, '.local-data/browser-evidence/p5-faq-application'));
 const { peopleRuntimeFixture, PEOPLE_FIXTURE_API: API, PEOPLE_FIXTURE_PUBLIC: SITE } = await import(pathToFileURL(resolve(source, 'tests/helpers/people-runtime-fixture.mjs')));
 const { createInitialContent } = await import(pathToFileURL(resolve(source, 'src/config/content.mjs')));
 const { toPublicContent } = await import(pathToFileURL(resolve(source, 'shared/content-schema.mjs')));

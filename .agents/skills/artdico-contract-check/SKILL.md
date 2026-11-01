@@ -64,7 +64,11 @@ P2 的簡約人員入口與唯讀核對已發布，證據及人工核對事項�
 
 P3 私人頁、群碼與裝置指引的當前證據見 [P3 紀錄](../../../docs/redesign/p3-release.md)。沿用原資格、群碼及簽章契約；十分鐘圖片連結與最長七天群碼分開核對。候選包壓縮調整另驗固定 Node SHA／ELF、舊壓縮流、解碼及請求上限，不能用壓縮基準代替最終準確整包與 CI 離線啟動。
 
-P4 正在同一通知 journal 擴充 `application_received` 與 `pre_event_reminder`，目前狀態見 [P4 紀錄](../../../docs/redesign/p4-release.md)。新種類的獨立去重、舊通知、備份／隔離恢復、未知結果與相容回退另驗；保留既有政策版本及舊待提交正文，不能清通知紀錄或靠部署補寄。固定 runner 尚不能單獨證明新增通知完成。
+P4 已在同一通知 journal 發布 `application_received` 與 `pre_event_reminder`，證據見 [P4 紀錄](../../../docs/redesign/p4-release.md)。新種類的獨立去重、舊通知、備份／隔離恢復、未知結果與相容回退另驗；保留既有政策版本及舊待提交正文，不能清通知紀錄或靠部署補寄。固定 runner 尚不能單獨證明新增通知完成。
+
+P5 正在新增可選 FAQ ID 與首頁互動，狀態見 [P5 紀錄](../../../docs/redesign/p5-release.md)。核對舊快照／舊客戶端不被補寫或猜配對、Q&A 即時狀態與已發布資料一致、嘉賓出席投影與日程分開，以及公開素材閉包和首頁／FC 後台依賴隔離；以本輪新增案例及準確產物證明，不沿用舊測試數字。
+
+目前可用 `tests/p5-faq-contract.test.mjs` 與相關 schema／store／草稿案例核對可選 ID，另以 `tests/invitation-font-assets.test.mjs` 及 `docs/home-asset-manifest.json` 核對字型改名、OFL、碼位與衍生檔 hash。字型測試或初步依賴圖通過仍不代表最終公開／FC 產物已發布。
 
 ## 交付結果
 

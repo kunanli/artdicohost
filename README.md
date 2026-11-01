@@ -4,7 +4,7 @@
 
 [首頁原稿對齊與嘉賓相容修復](docs/redesign/home-reference-release.md) 已由 PR #58 正式發布於 main `30e184fd`：原稿構圖、組織 Logo／名稱與舊公開嘉賓「出席待确认」相容顯示已交付。main 的 1593 項測試、私有 OSS、13 個後台頁面及 53 個準確公開物件 HTTPS 均通過；九筆公開嘉賓資料仍在，不代表九人已確認出席。四項真人／真實資料驗收維持獨立待辦。
 
-目前修正 [氣泡職稱與正式 Logo 邊界](docs/redesign/bubbles-logo-release.md)：使用真實公開職稱、放大小字、移除卡片內捲軸並加入可停止的輕微漂浮。上輪原稿素材測試未涵蓋正式上傳 PNG 畫布，這輪須用公開捕捉的實際 JSON／七張 Logo 通過編譯後驗收；PR #59 仍為草稿，尚未宣稱新修復已驗證或上線。
+[氣泡職稱與正式 Logo 邊界修復](docs/redesign/bubbles-logo-release.md) 已由 PR #59 正式發布於 main `bd49a745`：真實公開字幕、無內層捲軸、可停止漂浮及有界 Logo 已交付。PR／main 的實際素材 13／13、1611 項測試、私有 OSS、13 個後台與 60 個準確公開物件 HTTPS 均通過；素材替身、模擬可見性與前版回歸資格均在紀錄中明列。
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
 

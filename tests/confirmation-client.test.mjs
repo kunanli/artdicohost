@@ -143,14 +143,15 @@ test('confirmed group image access expires independently from the underlying QR 
   assert.equal(CONFIRMATION_GROUP_UNAVAILABLE,'群码待更新，请重新读取或联系主办方');assert.equal(CONFIRMATION_CONTACT_EMAIL,'support@artdico.co');
 });
 
-test('Wallet instructions distinguish iPhone WeChat, Safari, desktop and Android without claiming installation',()=>{
+test('Wallet actions match the current browser rather than treating every iPhone as Safari',()=>{
   const ios='Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit Safari/604.1';
-  const safari=confirmationWalletGuidance({userAgent:ios,walletReady:true});assert.equal(safari.showWallet,true);assert.match(safari.message,/系统提示确认添加/u);assert.match(safari.message,/不代表已加入/u);
-  const wechat=confirmationWalletGuidance({userAgent:ios+' MicroMessenger/8.0',walletReady:true});assert.equal(wechat.showWallet,true);assert.match(wechat.message,/私人链接到 Safari/u);
-  const ipad=confirmationWalletGuidance({userAgent:'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Safari/605',maxTouchPoints:5,walletReady:true});assert.equal(ipad.showWallet,true);assert.match(ipad.message,/系统提示/u);
-  for(const invitationReady of [true,false]){const android=confirmationWalletGuidance({userAgent:'Mozilla/5.0 (Linux; Android 15) MicroMessenger/8.0',walletReady:true,invitationReady});assert.equal(android.showWallet,false);assert.match(android.message,/本页链接.*PDF/u);assert.equal(android.message.includes('PNG'),invitationReady);}
-  const desktop=confirmationWalletGuidance({userAgent:'Mozilla/5.0 (X11; Linux x86_64)',walletReady:true});assert.equal(desktop.showWallet,true);assert.match(desktop.message,/iPhone.*Safari/u);
-  assert.deepEqual(confirmationWalletGuidance({userAgent:ios,walletReady:false}),{showWallet:false,message:'Apple Wallet 暂未就绪，请先保存本页链接。'});
+  const safari=confirmationWalletGuidance({userAgent:ios,walletReady:true});assert.equal(safari.showWallet,true);assert.equal(safari.action,'add');assert.equal(safari.label,'加入 Apple Wallet');assert.match(safari.message,/系统提示确认添加/u);assert.match(safari.message,/不代表已加入/u);
+  const wechat=confirmationWalletGuidance({userAgent:ios+' MicroMessenger/8.0',walletReady:true});assert.equal(wechat.action,'guide');assert.equal(wechat.label,'查看 Safari 添加指引');assert.equal(wechat.wechat,true);assert.match(wechat.message,/微信.*Safari/u);
+  for(const browser of ['CriOS/131.0','FxiOS/133.0','EdgiOS/131.0']){const other=confirmationWalletGuidance({userAgent:ios+' '+browser,walletReady:true});assert.equal(other.action,'guide');assert.equal(other.wechat,false);assert.match(other.message,/复制私人链接.*Safari/u);}
+  const ipad=confirmationWalletGuidance({userAgent:'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Safari/605',maxTouchPoints:5,walletReady:true});assert.equal(ipad.action,'add');
+  for(const invitationReady of [true,false]){const android=confirmationWalletGuidance({userAgent:'Mozilla/5.0 (Linux; Android 15) MicroMessenger/8.0',walletReady:true,invitationReady});assert.equal(android.showWallet,false);assert.equal(android.action,'none');assert.match(android.message,/私人链接.*PDF/u);assert.equal(android.message.includes('PNG'),invitationReady);}
+  const desktop=confirmationWalletGuidance({userAgent:'Mozilla/5.0 (X11; Linux x86_64)',walletReady:true});assert.equal(desktop.action,'download');assert.equal(desktop.label,'下载 Wallet 票券');assert.match(desktop.message,/iPhone.*Safari/u);
+  const unavailable=confirmationWalletGuidance({userAgent:ios,walletReady:false});assert.equal(unavailable.showWallet,false);assert.equal(unavailable.action,'none');assert.equal(unavailable.label,'');assert.match(unavailable.message,/暂未就绪/u);
 });
 
 test('unverified event facts preserve current admission and durable notification history while disabling new credentials',()=>{
@@ -186,10 +187,20 @@ test('malformed optional notices affect only that kind and never expose recipien
 test('typed notice messages never treat receipt acceptance as approval or provider acceptance as delivery',()=>{
   const statuses=['not_sent','not_applicable','not_configured','disabled','pending','provider_accepted','rejected','unknown'];
   for(const kind of ['applicationReceived','preEventReminder'])for(const status of statuses){const message=confirmationNotificationMessage(kind,status);assert.ok(message);assert.doesNotMatch(message,/已送达|已送達|已收到邮件|已获邀|名额已确认|微信群|二维码|Wallet|邀请函/u);}
-  assert.match(confirmationNotificationMessage('applicationReceived','provider_accepted'),/交由服务商处理.*不代表获邀/u);
-  assert.match(confirmationNotificationMessage('preEventReminder','provider_accepted'),/交由服务商处理/u);
-  assert.match(confirmationNotificationMessage('applicationReceived','unknown'),/待核对.*申请已保存/u);
-  assert.match(confirmationNotificationMessage('preEventReminder','not_sent'),/暂无发送记录/u);
+  assert.match(confirmationNotificationMessage('applicationReceived','provider_accepted'),/已提交发送.*不代表获邀/u);
+  assert.match(confirmationNotificationMessage('preEventReminder','provider_accepted'),/已提交发送/u);
+  assert.match(confirmationNotificationMessage('applicationReceived','unknown'),/无法确认.*申请已保存/u);
+  assert.match(confirmationNotificationMessage('preEventReminder','not_sent'),/暂无提醒发送记录/u);
   assert.equal(confirmationNotificationMessage('applicationReceived','PRIVATE-SERVER-ERROR'),confirmationNotificationMessage('applicationReceived','unknown'));
   assert.equal(confirmationNotificationMessage('unrecognized-kind','provider_accepted'),'');
+});
+
+test('frontstage email language separates uncertain delivery from a confirmed admission',()=>{
+  for(const status of ['not_configured','not_applicable','disabled','pending','provider_accepted','rejected','unknown']){
+    const message=confirmationEmailMessage('confirmed',status);assert.ok(message);assert.doesNotMatch(message,/服务商|已送达|已收到邮件/u);
+  }
+  assert.match(confirmationEmailMessage('confirmed','provider_accepted'),/已提交发送.*收件箱/u);
+  assert.match(confirmationEmailMessage('confirmed','unknown'),/无法确认.*名额不受影响/u);
+  assert.match(confirmationEmailMessage('confirmed','rejected'),/未能发出.*名额不受影响/u);
+  assert.notEqual(confirmationEmailMessage('confirmed','disabled'),confirmationEmailMessage('confirmed','not_configured'));
 });

@@ -34,6 +34,11 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
   let config = null;
   let pendingFields = null;
   let provenReceipt = false;
+  function renderHomeAction(){
+    const ready=config&&!['closed','unavailable'].includes(form.dataset.registrationMode);
+    const label=provenReceipt?'查看申请结果':client.pending?'核对原申请结果':ready?'申请参加':'查看申请说明';
+    for(const output of document.querySelectorAll('[data-home-primary-apply-label]'))output.textContent=label;
+  }
   function draftMessage(message,state='saved'){if(draftStatus){draftStatus.textContent=message;draftStatus.dataset.state=state;}if(restoreDraft)restoreDraft.hidden=!draftBlocked;if(clearDraft)clearDraft.hidden=!draftReady||client.pending||draftBlocked||!draft?.snapshot?.record;}
   function readDraftFields(){const value={intake:'general-v2',proposal:form.querySelector('[data-proposal-toggle]').checked};for(const [key,name]of[['name','name'],['email','email'],['category','categories'],['organization','organization'],['city','city'],['wechat','wechat'],['topic','speaker.topic'],['summary','speaker.summary']])value[key]=form.elements.namedItem(name).value;return applicationDraftValue(value);}
   function applyDraft(value){const fields=applicationDraftValue(value);for(const [key,name]of[['name','name'],['email','email'],['category','categories'],['organization','organization'],['city','city'],['wechat','wechat'],['topic','speaker.topic'],['summary','speaker.summary']])form.elements.namedItem(name).value=fields[key];const proposal=form.querySelector('[data-proposal-toggle]');proposal.checked=fields.proposal;const branch=form.querySelector('[data-speaker-proposal]');branch.hidden=!fields.proposal;branch.disabled=!fields.proposal;form.elements.namedItem('consentAccepted').checked=false;}
@@ -65,6 +70,7 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
     section.querySelector('[data-registration-data-hint]').textContent='当前不受理提交，请勿填写真实资料。';
     for(const control of trackedControls())control.disabled=true;
     for(const status of document.querySelectorAll('[data-registration-availability]'))status.textContent=closed?'申请已关闭':'申请服务暂不可用';
+    renderHomeAction();
     document.dispatchEvent(new CustomEvent('artdico:registration-unavailable',{detail:{message}}));
   }
   function announce(message) { summary.textContent = message; summary.hidden = false; summary.focus(); }
@@ -82,6 +88,7 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
       else if (control.dataset.registrationLocked) { control.disabled = false; delete control.dataset.registrationLocked; }
     }
     submit.textContent = value ? '正在确认申请结果…' : frozen ? '再次确认申请结果' : '提交参会申请';
+    renderHomeAction();
     if(!value)checkDraftHints();
   }
   async function submitFields(fields) {

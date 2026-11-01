@@ -20,11 +20,16 @@ export const CONFIRMATION_GROUP_UNAVAILABLE = '群码待更新，请重新读取
 export function confirmationWalletGuidance({ userAgent = '', maxTouchPoints = 0, walletReady = false, invitationReady = false } = {}) {
   const ios = /iPhone|iPad|iPod/iu.test(userAgent) || /Macintosh/iu.test(userAgent) && maxTouchPoints > 1;
   const android = /Android/iu.test(userAgent), wechat = /MicroMessenger/iu.test(userAgent);
-  if (android) return { showWallet: false, message: '请保存本页链接；也可在「更多保存方式」' + (invitationReady ? '下载 PNG 或' : '') + '打印为 PDF。' };
-  if (!walletReady) return { showWallet: false, message: 'Apple Wallet 暂未就绪，请先保存本页链接。' };
-  if (ios && wechat) return { showWallet: true, message: '微信内请点右上角「…」在浏览器打开，或复制本页私人链接到 Safari，再加入 Wallet。' };
-  if (ios) return { showWallet: true, message: '在 Safari 打开票券后，按系统提示确认添加；下载文件不代表已加入 Wallet。' };
-  return { showWallet: true, message: '请用 iPhone 的 Safari 打开本页并添加票券；也可先保存本页链接。' };
+  const safari = ios && /Safari/iu.test(userAgent) && !/CriOS|FxiOS|EdgiOS|MicroMessenger/iu.test(userAgent);
+  const unavailable=message=>({showWallet:false,action:'none',label:'',wechat:false,message});
+  if (android) return unavailable('请复制私人链接留存；也可在「更多保存方式」' + (invitationReady ? '下载 PNG 或' : '') + '打印为 PDF。');
+  if (!walletReady) return unavailable('Apple Wallet 暂未就绪，请先复制私人链接留存。');
+  if (ios && !safari) return {showWallet:true,action:'guide',label:'查看 Safari 添加指引',wechat,
+    message:wechat?'微信内请在 Safari 打开本页后添加票券。':'请复制私人链接，在 Safari 中打开后添加票券。'};
+  if (safari) return {showWallet:true,action:'add',label:'加入 Apple Wallet',wechat:false,
+    message:'按系统提示确认添加；下载文件不代表已加入 Wallet。'};
+  return {showWallet:true,action:'download',label:'下载 Wallet 票券',wechat:false,
+    message:'这是票券文件；加入 Wallet 请用 iPhone 的 Safari 打开本页。'};
 }
 
 /** The API supplies the exact poster facts. Older receipts never infer permission from their event text. */
@@ -149,35 +154,35 @@ export function confirmationView(value, now = Date.now()) {
 }
 
 export const confirmationEmailLabels = Object.freeze({
-  not_configured: '报名已保存，确认邮件暂未启用。请保存本页链接或打印留存。',
-  not_applicable: '这份报名没有提供邮箱，请保存本页链接或打印留存。',
-  disabled: '报名已保存，确认邮件暂未启用。请保存本页链接或打印留存。',
-  pending: '报名已保存，确认邮件待处理。请先保存本页，无需重复报名。',
-  provider_accepted: '确认邮件已交由服务商处理，请检查邮箱及垃圾邮件。',
-  rejected: '报名已保存，确认邮件未能发出。请保存本页，无需重新报名。',
-  unknown: '报名已保存，确认邮件的发送结果尚待核对。请保存本页，无需重复报名。',
+  not_configured: '确认邮件暂未启用。请复制私人链接留存。',
+  not_applicable: '这份登记未提供邮箱。请复制私人链接留存。',
+  disabled: '确认邮件已暂停。请复制私人链接留存。',
+  pending: '确认邮件等待处理。参会名额不受影响，无需再次申请。',
+  provider_accepted: '确认邮件已提交发送，请检查收件箱和垃圾邮件。',
+  rejected: '确认邮件未能发出。参会名额不受影响，请保留私人链接。',
+  unknown: '暂时无法确认邮件是否发出。参会名额不受影响，请保留私人链接。',
 });
 
 const notificationMessages = Object.freeze({
   applicationReceived: Object.freeze({
-    not_sent: '暂无发送记录；申请已保存。',
-    not_applicable: '本记录无需申请回执。',
-    not_configured: '暂未启用，请保存查询链接。',
-    disabled: '已暂停，请保存查询链接。',
-    pending: '待处理；申请已保存。',
-    provider_accepted: '已交由服务商处理；回执不代表获邀。',
-    rejected: '未能发出；申请已保存。',
-    unknown: '发送结果待核对；申请已保存。',
+    not_sent: '暂无回执发送记录；申请已保存。',
+    not_applicable: '这份登记无需申请回执。',
+    not_configured: '申请回执暂未启用；申请已保存。',
+    disabled: '申请回执已暂停；申请已保存。',
+    pending: '申请回执等待处理；申请已保存。',
+    provider_accepted: '申请回执已提交发送；收到回执不代表获邀。',
+    rejected: '申请回执未能发出；申请已保存。',
+    unknown: '暂时无法确认回执是否发出；申请已保存。',
   }),
   preEventReminder: Object.freeze({
-    not_sent: '暂无发送记录。',
-    not_applicable: '本记录无需行前提醒。',
-    not_configured: '暂未启用。',
-    disabled: '已暂停。',
-    pending: '待处理。',
-    provider_accepted: '已交由服务商处理，请查看邮箱。',
-    rejected: '未能发出，请以本页信息为准。',
-    unknown: '发送结果待核对，请以本页信息为准。',
+    not_sent: '暂无提醒发送记录。',
+    not_applicable: '这份登记无需行前提醒。',
+    not_configured: '行前提醒暂未启用。',
+    disabled: '行前提醒已暂停。',
+    pending: '行前提醒等待处理。',
+    provider_accepted: '提醒已提交发送，请检查邮箱；活动安排以本页为准。',
+    rejected: '提醒未能发出；请以本页信息为准。',
+    unknown: '暂时无法确认提醒是否发出；请以本页信息为准。',
   }),
 });
 
@@ -197,7 +202,7 @@ export function confirmationEmailMessage(admissionStatus, emailStatus) {
 
 export const confirmationStatusLabels = Object.freeze({
   pending_review: ['待人工审核', '申请已收到，待审核', '尚未确认参会名额。请保存本页查询链接，稍后核对结果。', '打印申请收据'],
-  confirmed: ['名额已确认', '参会名额已确认', '期待与你在现场相见。请先查看活动安排，再保存本页。', '打印参会确认'],
+  confirmed: ['名额已确认', '参会名额已确认', '期待与你在现场相见。请复制私人链接留存。', '打印参会确认'],
   waitlisted: ['尚未确认名额', '候补登记已保存', '尚未确认参会名额。请保存查询链接，等待主办方核对后续安排。', '打印候补状态'],
   rejected: ['审核未通过', '本次申请未通过审核', '目前没有参会名额。如需核对，请联系主办方。', '打印审核结果'],
   withdrawn: ['名额已取消', '这份报名已取消', '当前不再占用参会名额，原确认邮件不代表现有资格。', '打印取消状态'],

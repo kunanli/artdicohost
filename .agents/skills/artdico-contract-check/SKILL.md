@@ -70,7 +70,7 @@ P5 已發布可選 FAQ ID 與首頁互動，證據見 [P5 紀錄](../../../docs/
 
 目前可用 `tests/p5-faq-contract.test.mjs` 與相關 schema／store／草稿案例核對可選 ID，另以 `tests/invitation-font-assets.test.mjs` 及 `docs/home-asset-manifest.json` 核對字型改名、OFL、碼位與衍生檔 hash。字型測試或初步依賴圖通過仍不代表最終公開／FC 產物已發布。
 
-P6 的 A01–A23 對照與當輪新增證據見 [整合驗收紀錄](../../../docs/redesign/p6-release.md)。A14 五種產物的活動事實與公開 OSS 物件快取標頭另核對；固定 runner 不自動包含新增案例，既有通過不代替本輪準確包及實際發布。
+P1–P6 軟體已交付並正式發布，A01–A23 對照與 main `40ea32a6` 的實際結果見 [最終驗收紀錄](../../../docs/redesign/p6-release.md)。A14 五種產物整合、公開 OSS 快取標頭、準確包及正式發布均有獨立證據；固定 runner 不自動包含新增案例。維護時仍記錄當次實際範圍，真實收件、入群、裝置與同事觀察另列，不能由合成結果代替。
 
 ## 交付結果
 

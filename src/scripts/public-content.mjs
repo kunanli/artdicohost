@@ -106,7 +106,7 @@ function renderPublishedContent(content,url) {
         if(url.origin!==location.origin)photo.crossOrigin='anonymous';photo.referrerPolicy='no-referrer';photo.src=new URL(guest.portraitUrl,url.origin).href;portrait.append(photo);
       }
       const name=element('span',guest.name,'ah-guest-name');
-      trigger.append(portrait,name,element('span','查看嘉宾','ah-guest-prompt'));
+      trigger.append(portrait,name,element('span','查看嘉宾','ah-guest-prompt ah-guest-prompt-closed'),element('span','收起简介','ah-guest-prompt ah-guest-prompt-open'));
       const body=element('div',undefined,'ah-guest-detail-body');
       if(guest.status==='pending')body.append(element('p','资料待确认','ah-guest-company'));
       if(guest.publicRoles?.length)body.append(element('p',guest.publicRoles.map(role=>GUEST_PUBLIC_ROLE_LABELS[role]).join(' · '),'ah-guest-duty'));

@@ -194,7 +194,7 @@ export function personWorkspaceSteps(view, roles = []) {
     const unknownSend = view.communications.timeline.some(entry => ['unknown', 'reserved'].includes(entry.status));
     const contacted = view.communications.timeline.some(entry => ['manually_sent', 'sent', 'provider_accepted'].includes(entry.status));
     steps.push(step('reply', '联络与本人回复', response === 'attending' || response === 'declined' || consent === 'declined' ? 'complete' : unknownSend ? 'review' : 'pending',
-      response === 'attending' ? '已保存本人答应出席；参会名额仍单独核对。' : response === 'declined' || consent === 'declined' ? '已记录拒绝联络或出席，请停止邀约。' : unknownSend ? '存在发送结果待核对的记录，请先核对，再继续跟进。' : contacted ? '已有发出或服务商接受记录，仍待本人回复；不代表邮件已送达。' : '先核实联络许可并发出邀请，再保存实际回复；名额已确认也不代表本人答应。', 'arrangements'));
+      response === 'attending' ? '已保存本人答应出席；参会名额仍单独核对。' : response === 'declined' || consent === 'declined' ? '已记录拒绝联络或出席，请停止邀约。' : unknownSend ? '存在发送结果待核对的记录，请先核对，再继续跟进。' : contacted ? '已记录人工发出或邮件服务已接收，仍待本人回复；不代表邮件已送达。' : '先核实联络许可并发出邀请，再保存实际回复；名额已确认也不代表本人答应。', 'arrangements'));
     steps.push(step('roles', '确认参与身份', forms.length ? 'complete' : 'pending', forms.length ? '已保存内部活动职责；讲者、组织者等可在「详情与安排」调整。' : '按本人协商结果选择一般参与、嘉宾、讲者、组织者等职责，可多选。', 'arrangements'));
   } else {
     for (const [key, label] of [['reply', '联络与本人回复'], ['roles', '确认参与身份']]) steps.push(step(key, label, unavailable('contact'), personAvailabilityText(view.availability.contact), 'review'));

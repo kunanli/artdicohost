@@ -11,7 +11,7 @@ description: Verify ARTDiCO HOST attendee and staff journeys with existing synth
 
 1. 讀取倉庫 `AGENTS.md`、`docs/redesign/README.md`、`docs/redesign/03-release-and-acceptance.md`；確認本階段修改與使用者已定決策。
 2. 核對工作區與變更範圍。套件、Node 版本與測試環境沿用 `package.json` 及 `tests/browser/README.md`，不要把目前 runtime 設定、憑證或私密資料複製到測試。
-3. 先分清要證明的是「既有機制未退化」或「本輪新增功能」。P1a 的兩類作品與動態展位見 [P1a 紀錄](../../../docs/redesign/p1a-release.md)，P1b 的出席投影、多人場次及新通知／票券資訊核對見 [P1b 紀錄](../../../docs/redesign/p1b-release.md)，P2 的簡約人員入口、原位保存與唯讀核對見 [P2 紀錄](../../../docs/redesign/p2-release.md)。本 runner 固定案例未完整涵蓋新需求，須另行執行相應 `p1b-*.test.mjs`、`p2-*.test.mjs` 與聚焦瀏覽器案例；P4 通知及已發布 P5 首頁／Q&A 證據見 [P4](../../../docs/redesign/p4-release.md)／[P5 紀錄](../../../docs/redesign/p5-release.md)，當前 P6 見 [整合驗收紀錄](../../../docs/redesign/p6-release.md)，不能以基準通過宣稱完成。
+3. 先分清要證明的是「既有機制未退化」或「本輪新增功能」。P1a 的兩類作品與動態展位見 [P1a 紀錄](../../../docs/redesign/p1a-release.md)，P1b 的出席投影、多人場次及新通知／票券資訊核對見 [P1b 紀錄](../../../docs/redesign/p1b-release.md)，P2 的簡約人員入口、原位保存與唯讀核對見 [P2 紀錄](../../../docs/redesign/p2-release.md)。本 runner 固定案例未完整涵蓋新需求，須另行執行相應 `p1b-*.test.mjs`、`p2-*.test.mjs` 與聚焦瀏覽器案例；P4 通知及 P5 首頁／Q&A 證據見 [P4](../../../docs/redesign/p4-release.md)／[P5 紀錄](../../../docs/redesign/p5-release.md)。P1–P6 已正式交付，完整證據見 [最終驗收紀錄](../../../docs/redesign/p6-release.md)，不能以固定基準通過代替未來新增需求驗收。
 
 ## 第一層 服務與客戶端
 
@@ -62,7 +62,7 @@ P5 另核對一般參會／同份演講提案切換不丟資料，舊 pending �
 
 新增入口為 `p5-homepage-smoke.mjs`、`p5-faq-application-smoke.mjs` 與 `p5-collections-smoke.mjs`，按 `tests/browser/README.md` 分別執行。原生 IndexedDB 的舊 pending 恢復須保留原正文，僅以 GET 核對既有保存結果；公開集合最後互動的成功範圍以當次 P5 證據為準，不因腳本檔案存在而標示通過。
 
-P6 按 A01–A23 映射既有證據，另補 A14 跨首頁、私人頁、正式信、提醒及新 Wallet 五種產物的活動事實整合。已通過且未受變更影響的瀏覽器不作形式性重跑；A15／A16 真微信與 iPhone、A23 真同事操作觀察及實際 Email 收件仍各自記錄。
+P6 已完成 A01–A23 證據映射、A14 五種產物整合及 main `40ea32a6` 的正式部署核驗。已通過且未受變更影響的瀏覽器不作形式性重跑；A15／A16 真微信與 iPhone、A23 真同事操作觀察、實際 Email 收件及真實資料仍各自核對，不因軟體交付標成已做。
 
 這些腳本使用合成內存 OSS／provider，並在頁面載入前攔截所有瀏覽器請求；只讀取本地 `dist`。維護清單時重新檢查請求攔截，不能換成正式站瀏覽。截圖與結果由既有腳本寫入忽略的 `.local-data/browser-evidence/`。
 

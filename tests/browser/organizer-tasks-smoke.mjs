@@ -54,7 +54,7 @@ try{
   await page.goto('https://api.artdico.host/admin/tasks/',{waitUntil:'networkidle'});
   try{await page.locator('[data-tasks-workspace]:visible').waitFor({timeout:10000});}catch{throw new Error(JSON.stringify({stage:'tasks-load',pageErrors:errors,error:await page.locator('[data-tasks-error]').textContent(),requests}));}
   assert.equal(await page.locator('[data-tasks-metrics] article').filter({hasText:'人工已发出'}).locator('strong').textContent(),'1');
-  assert.equal(await page.locator('[data-tasks-metrics] article').filter({hasText:'服务商已接受'}).locator('strong').textContent(),'1');
+  assert.equal(await page.locator('[data-tasks-metrics] article').filter({hasText:'邮件服务已接收'}).locator('strong').textContent(),'1');
   assert.equal(await page.locator('[data-tasks-metrics] article').filter({hasText:'候补 · 名额尚未确认'}).locator('strong').textContent(),'1');
   const waitlistedTask=page.locator('[data-tasks-list] li').filter({hasText:'合成候补对象'});assert.equal(await waitlistedTask.count(),1);assert.equal(await waitlistedTask.getAttribute('data-kind'),'admission_pending');assert.doesNotMatch(await waitlistedTask.textContent(),/已停用/u);
   assert.equal(await page.locator('[data-tasks-list]').getByText('合成拒绝对象').count(),0);
@@ -66,9 +66,11 @@ try{
   actor={id:'synthetic-editor',roles:['editor']};const before=sourceReads;
   await page.reload({waitUntil:'networkidle'});await page.locator('[data-tasks-error]:visible').waitFor();assert.equal(sourceReads,before);assert.equal(await page.locator('[data-tasks-metrics]').textContent(),'');
   actor=staff;await page.goto('https://api.artdico.host/admin/contacts/',{waitUntil:'networkidle'});
+  await page.locator('[data-contacts-legacy-tools]>summary').click();
+  await page.locator('[data-contacts-progress-note]').filter({hasText:'当前版人工发出 1 位'}).waitFor();
   const progressNote=await page.locator('[data-contacts-progress-note]').textContent();
   assert.match(progressNote,/当前版人工发出 1 位/u);
-  assert.match(progressNote,/服务商接受 1 位/u);
+  assert.match(progressNote,/邮件服务已接收 1 位/u);
   assert.equal(await page.locator('[data-contact-selection="synthetic-declined"]').isDisabled(),true);
   const waitingRow=page.locator('[data-contacts-rows] tr').filter({hasText:'合成候补对象'});assert.equal(await waitingRow.getByRole('button',{name:'名额待确认 · 暂不准备正式邀请',exact:true}).isDisabled(),true);assert.equal(await waitingRow.getByRole('button',{name:'名额待确认',exact:true}).isDisabled(),true);
   await page.locator('[data-contacts-progress]').selectOption('waitlisted');assert.equal(await page.locator('[data-contacts-rows] tr').count(),1);
@@ -79,6 +81,6 @@ try{
   assert.match(await page.locator('[data-batch-summary]').textContent(),/实际生成 1 张图片/u);
   assert.match(await page.locator('[data-batch-download]').getAttribute('download'),/\.zip$/u);
   await page.locator('[data-contacts-logout]').click();await page.locator('[data-contacts-login-panel]:visible').waitFor();assert.equal(await page.locator('[data-batch-download]').getAttribute('href'),null);assert.equal(await page.locator('[data-batch-results]').textContent(),'');
-  ledgerUnavailable=true;await page.goto('https://api.artdico.host/admin/contacts/',{waitUntil:'networkidle'});await page.locator('[data-contacts-workspace]:visible').waitFor();assert.equal(await page.locator('[data-contacts-rows] tr').filter({hasText:'合成人工对象'}).getByRole('button',{name:'名额暂无法核对',exact:true}).isDisabled(),true);
+  ledgerUnavailable=true;await page.goto('https://api.artdico.host/admin/contacts/',{waitUntil:'networkidle'});await page.locator('[data-contacts-workspace]:visible').waitFor();await page.locator('[data-contacts-legacy-tools]>summary').click();assert.equal(await page.locator('[data-contacts-rows] tr').filter({hasText:'合成人工对象'}).getByRole('button',{name:'名额暂无法核对',exact:true}).isDisabled(),true);
   assert.deepEqual(errors,[]);console.log(JSON.stringify({mobileTasks:true,ownerAndKindFilters:true,declinedExcluded:true,roleGateBeforeSourceRead:true,manualAndProviderSeparate:true,legacyAndLedgerDeduplicated:true,waitlistDistinctFromWithdrawal:true,waitlistNotOfferedFormalInvites:true,unavailableLedgerBlocksInvitationPreparation:true,privateBatchZipPrepared:true,noSentWrites:true,logoutClearsPrivateDownload:true,pageErrors:errors,requests},null,2));
 }finally{await context.close();await browser.close();}

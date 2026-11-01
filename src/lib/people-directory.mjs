@@ -68,9 +68,9 @@ export function validatePeopleDirectory(value,view){
 import {ownerTagPresentation} from './people-relationships.mjs';
 const ROLE_LABELS={guest:'受邀嘉宾',speaker:'讲者',panelist:'圆桌嘉宾',host:'主持',organizer:'组织者',exhibitor:'参展',student_showcase:'作品展示',attendee:'一般参会者',moderator:'主持'};
 const ADMISSION_LABELS={confirmed:'名额已确认',pending_review:'待审核',waitlisted:'候补',rejected:'审核不通过',withdrawn:'已撤回'};
-const EMAIL_LABELS={provider_accepted:'确认信：服务商已接收',unknown:'确认信：结果待核对',rejected:'确认信：未发出',not_sent:'确认信：尚未寄送',unavailable:'确认信状态待核对',restricted:'',not_applicable:''};
+const EMAIL_LABELS={provider_accepted:'确认信：邮件服务已接收',unknown:'确认信：结果待核对',rejected:'确认信：未发出',not_sent:'确认信：尚未寄送',unavailable:'确认信状态待核对',restricted:'',not_applicable:''};
 const SOURCE_LABELS={linked:'邀约与报名已关联',contact:'邀约名单',public:'本人公开申请',staff_assisted:'工作人员代登记',staff_entry:'工作人员登记',profile:'人物资料，尚未关联人员'};
-const INVITATION_LABELS={not_started:'尚未准备邀请',prepared:'邀请已准备',issuing:'寄送结果待核对',provider_accepted:'邀请服务商已接收',unknown:'邀请结果待核对',rejected:'邀请未发出',manually_sent:'已记录人工发出',not_applicable:''};
+const INVITATION_LABELS={not_started:'尚未准备邀请',prepared:'邀请已准备',issuing:'寄送结果待核对',provider_accepted:'邀请：邮件服务已接收',unknown:'邀请结果待核对',rejected:'邀请未发出',manually_sent:'已记录人工发出',not_applicable:''};
 const VIEWS={unassigned:['待分流','核对身份后继续处理。'],attendees:['一般参会者','参会名额与本人回复分别核对。'],all:['人员','先处理需要跟进的人。'],speakers:['讲者','按已保存的讲者职责显示。'],guests:['受邀嘉宾','出席与名额分别核对。'],exhibitors:['参展商','按公司／团队核对安排。']};
 const RESPONSE_LABELS={pending:'待回复',attending:'已答应出席',declined:'不出席'};
 
@@ -99,7 +99,7 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
     status.append(badge(item.stateLabel||fallbackState(item),next?.key||item.admissionStatus||'pending'));
     if(next?.reason&&(next.kind==='handoff'||next.kind==='refresh'||item.workKinds?.includes('unavailable')))status.append(node('small',next.reason,'people-directory-warning'));
     const href=personHref(item);
-    if(href){const primary=link(next?.label||'查看下一步',href,'people-directory-action');primary.dataset.directoryPrimary='';primary.addEventListener('click',event=>{if(blocked||busy||!active())event.preventDefault();});actions.append(primary);}
+    if(href){const primary=link(next?.kind==='handoff'?'查看转交方式':next?.label||'查看下一步',href,'people-directory-action');primary.dataset.directoryPrimary='';primary.addEventListener('click',event=>{if(blocked||busy||!active())event.preventDefault();});actions.append(primary);}
     else if(item.profileId&&getUser()?.roles?.some(role=>['editor','superadmin'].includes(role)))actions.append(link('核对人物资料','/admin/content/guests/#guest='+encodeURIComponent(item.profileId),'people-directory-action'));
     else actions.append(node('small','交由活动编辑核对'));
     const menu=node('details',undefined,'people-row-menu');menu.append(node('summary','更多'));const options=node('div');

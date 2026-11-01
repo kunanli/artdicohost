@@ -144,7 +144,7 @@ export function summarizeContactProgress(contacts, options = {}) {
 export const invitationProgressLabels = Object.freeze({ excluded: '已拒绝联络或出席 · 不邀请', inactive: '关联报名已停用 · 请核对',
   pending_review: '申请待审核 · 尚无名额，不准备正式邀请', rejected: '申请未通过 · 不准备正式邀请',
   waitlisted: '已登记候补 · 名额尚未确认', admission_unknown: '名额状态待核对 · 暂不准备正式邀请',
-  manually_sent: '当前版已记录人工发出', provider_accepted: '服务商已接受 · 未证明送达', unknown: '发送结果不明 · 勿重复发送',
+  manually_sent: '当前版已记录人工发出', provider_accepted: '邮件服务已接收 · 未证明送达', unknown: '发送结果不明 · 勿重复发送',
   prepared: '当前版已准备 · 未记录发出', stale: '历史版本 · 当前版尚未记录发出', not_prepared: '当前版尚未准备' });
 
 /** No contact methods or original answers leave this projection. */

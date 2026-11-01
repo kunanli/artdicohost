@@ -1,6 +1,6 @@
 # ARTDiCO HOST · artdico.host
 
-本次改版執行入口：[分階段總覽](docs/redesign/README.md)、[開發步驟](docs/redesign/01-implementation-steps.md)、[工作人員與參與者操作](docs/redesign/02-staff-and-attendee-runbook.md)、[驗收與發布](docs/redesign/03-release-and-acceptance.md)。目前為 2026-11-01 文檔與執行準備，產品與正式資料尚未依此計畫變更。
+本次改版執行入口：[分階段總覽](docs/redesign/README.md)、[操作手冊](docs/redesign/02-staff-and-attendee-runbook.md)、[驗收與發布](docs/redesign/03-release-and-acceptance.md)。P1–P6 已完成程式交付與正式發布，見 [最終證據](docs/redesign/p6-release.md)；目前接續 [UX1 操作與層級優化](docs/redesign/ux-clarity-release.md)，本輪實際結果另行記錄。下方 10 月發布資訊為歷史基準，現況以接續台帳及當輪紀錄為準。
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
 

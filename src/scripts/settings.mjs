@@ -85,7 +85,7 @@ staffRoot.addEventListener('staff-settings-state',event=>{groupState=event.detai
 root.addEventListener('settings-actor-cleared',event=>{if(event.detail?.actorId===user?.id){clear();announce('此账号已在另一页面清除本机资料，请重新登录。',true);}});
 deliveryRoot.addEventListener('delivery-settings-state',event=>{
   const {email,wallet}=event.detail;
-  $('[data-settings-mail-summary]').textContent=email.ready?(email.automaticEnabled?'设置可用 · 自动确认已开启':'设置可用 · 自动确认未开启'):'尚未就绪 · 核对受控配置与寄件开关';
+  $('[data-settings-mail-summary]').textContent=email.ready?(email.automaticEnabled?'设置可用 · 报名通知已开启':'设置可用 · 报名通知已暂停'):'尚未就绪 · 核对受控配置与寄件开关';
   $('[data-settings-wallet-summary]').textContent=wallet.ready?(wallet.deviceTestRequired?'签章可用 · 仍需 iPhone 验收':'签章可用'):wallet.reason==='WALLET_NOT_CONFIGURED'?'尚未配置 · 完成开发者注册后继续':wallet.reason==='WALLET_DISABLED'?'已配置 · 票券尚未开启':wallet.reason==='WALLET_CERTIFICATE_EXPIRED'?'证书已到期 · 需要轮替':'暂未就绪 · 请核对签章设置';
 });
 // Advance expiry labels locally; opening or refreshing the page never writes or sends.

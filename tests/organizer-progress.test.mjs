@@ -142,12 +142,13 @@ test('replies remain authoritative and arrangements are needed only for confirme
   source.content.sessions[0].status = 'scheduled';assert.equal(buildOrganizerTasks(source).tasks.some(task => task.kind === 'unassigned'), false);
 });
 
-test('missing booth detail tasks include fixed empty positions without publishing private contact methods', () => {
+test('only real booth records create missing-detail tasks without exposing private contact methods', () => {
   const result = buildOrganizerTasks({ ...options, contacts: [], content: { sessions: [], booths: [{ id: 'synthetic-booth', code: 'C01', slotNumber: 1, status: 'pending', organization: '合成机构', project: '合成项目', contactName: '合成负责人', contactMethods: 'private-synthetic-method' }] } });
-  assert.equal(result.tasks.length, 15);assert.equal(result.tasks[0].kind, 'missing_booth_details');
+  assert.equal(result.tasks.length, 1);assert.equal(result.tasks[0].kind, 'missing_booth_details');
   assert.ok(result.tasks.find(task => task.boothId === 'synthetic-booth').detail.includes('展示内容'));
   assert.equal(JSON.stringify(result).includes('private-synthetic-method'), false);
-  assert.equal(result.tasks.filter(task => task.slotNumber).length, 14);
+  assert.equal(result.tasks.filter(task => task.slotNumber).length, 0);
+  assert.equal(buildOrganizerTasks({...options,contacts:[]}).tasks.length,0,'an empty venue does not create fictitious tasks');
 });
 
 test('unavailable ledger does not create fake unconverted tasks, and inactive registrations suppress invitation tasks', () => {
@@ -209,7 +210,9 @@ test('authorized task API filters responsible people and task kinds, paginates, 
     assert.equal(result.status, 200);assert.equal(result.headers.get('cache-control'), 'no-store');
     const body = await result.json();assert.equal(body.total, 1);assert.equal(body.tasks.length, 1);assert.equal(body.tasks[0].contactId, 'synthetic-person');
     assert.equal(JSON.stringify(body).includes('synthetic@example.invalid'), false);assert.equal(body.byKind.missing_booth_details, 0);
-    const page = await (await handle(get('?kind=missing_booth_details&limit=2'))).json();assert.equal(page.total, 15);assert.equal(page.tasks.length, 2);assert.equal(page.nextCursor, '2');
+    const taskSource=source();taskSource.content.booths=Array.from({length:3},(_,index)=>({id:'synthetic-task-booth-'+index,code:'C-'+(index+1),status:'pending',slotNumber:index+16}));
+    const paged=createOrganizerTasksApi({authenticate:async()=>({user:{id:'synthetic-staff',roles}}),getSources:async()=>taskSource,now:()=>now});
+    const page = await (await paged(get('?kind=missing_booth_details&limit=2'))).json();assert.equal(page.total, 3);assert.equal(page.tasks.length, 2);assert.equal(page.nextCursor, '2');
   }
 });
 

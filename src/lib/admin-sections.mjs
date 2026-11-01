@@ -9,9 +9,9 @@ const contentDefinitions = [
   ['arrangements', '现场配置总览', '现场配置总览', 'arrangements-title', '核对展位、场次与人员安排。'],
   ['guests', '嘉宾与讲者', '嘉宾与讲者', 'guests-title', '维护人物资料、选填照片与公开开关。'],
   ['organizations', '参与组织', '参与组织', 'organizations-title', '维护组织图片、名称、参与形式与公开开关。'],
-  ['showcases', '游戏与作品', '游戏与作品', 'showcases-title', '维护学生作品、独立游戏与团队作品，直接调整公开设置。'],
+  ['showcases', '游戏与作品', '游戏与作品', 'showcases-title', '维护学生作品与独立游戏。'],
   ['sessions', '活动场次', '活动场次', 'sessions-title', '维护各区域场次、时间与讲者关联。'],
-  ['booths', '十五个展位', '十五个展位', 'booths-title', '维护展位与公开设置；负责人资料留在后台。'],
+  ['booths', '展位', '展位', 'booths-title', '维护展位与公开设置；负责人资料留在后台。'],
   ['publish', '预览与发布', '预览与发布', 'preview-title', '核对已保存内容，再明确发布到活动页。'],
 ];
 /** @type {readonly AdminPageDefinition[]} */

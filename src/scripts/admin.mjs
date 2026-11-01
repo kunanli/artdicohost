@@ -1,8 +1,8 @@
 import { validateContent, toPublicContent, GUEST_PUBLIC_ROLES, GUEST_PUBLIC_ROLE_LABELS } from '../../shared/content-schema.mjs';
-import { showcaseSummary } from '../../shared/showcase-display.mjs';
+import { showcaseSummary, SHOWCASE_KIND_LABELS, SHOWCASE_EDITABLE_KINDS } from '../../shared/showcase-display.mjs';
 import { createArrangementsView } from './arrangements-view.mjs';
 import { createInitialPresentation } from '../config/content.mjs';
-import { completeBoothSlots } from '../lib/booth-slots.mjs';
+import { nextBoothSlot, nextBoothCode } from '../lib/booth-slots.mjs';
 import { prepareBoothDraft } from '../lib/arrangement-planner.mjs';
 import { createArrangementPlanner } from './arrangement-planner.mjs';
 import { prepareProfileImage, processedImageSummary } from '../lib/profile-image.mjs';
@@ -89,7 +89,7 @@ function takeInvitee(){
 const portraitIdPattern = /^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
 const contentKey = type => ({ session: 'sessions', booth: 'booths', guest: 'guests', showcase: 'showcases' })[type];
 const typeLabel = type => ({ session: '活动场次', booth: '出席展位', guest: '嘉宾资料', showcase: '游戏与作品' })[type];
-const showcaseKindLabels={student:'学生作品',indie:'独立游戏',team:'团队作品'};
+const showcaseKindLabels=SHOWCASE_KIND_LABELS;
 const roleKey=()=>[...(user?.roles??[])].sort().join(',');
 function captureLocalDraft(){
   const forms={};
@@ -387,7 +387,7 @@ function lockControls() {
     $(selector).hidden = !portraitPending;
     $(selector).disabled = controlsBusy || portraitUploading || organizationBusy || !canEdit();
   }
-  for (const node of document.querySelectorAll('[data-admin-save],[data-admin-add-session],[data-admin-add-booth],[data-admin-fill-booths],[data-admin-add-guest],[data-admin-add-showcase],[data-row-action]')) node.disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canEdit();
+  for (const node of document.querySelectorAll('[data-admin-save],[data-admin-add-session],[data-admin-add-booth],[data-admin-add-guest],[data-admin-add-showcase],[data-row-action]')) node.disabled = controlsBusy || portraitUploading || coverUploading || organizationBusy || !canEdit();
   for(const button of document.querySelectorAll('[data-admin-publish]')){
     button.disabled=!publicationReport()||controlsBusy||portraitUploading||coverUploading||organizationBusy||!canPublish()||savingContent||['unknown','conflict'].includes(saveOutcome);
     button.textContent=dirty||hasUnappliedInputs()?'保存并发布':'发布到前台';
@@ -743,7 +743,9 @@ function openEditor(type, item = null, allowBusy = false) {
   if (type === 'session') { sessionFormDirty = false; fillSessionGuests(); }
   if (type === 'booth') { boothFormDirty = false; fillBoothOrganizations(item?.organizationId ?? ''); }
   const id = type + '-' + [...crypto.getRandomValues(new Uint8Array(16))].map(value => value.toString(16).padStart(2, '0')).join('');
-  const value = item || (type === 'session' ? { id, start: '09:30', end: '10:00', zone: 'A', title: '', format: 'other', speakerName: '', speakerStatus: 'pending', guestId: '', status: 'draft', internalNotes: '' } : type === 'booth' ? { id, code: '', organization: '', project: '', zone: 'C', slotNumber: 0, status: 'pending', internalNotes: '' } : { id, name: '', company: '', ggjRole: '', portraitId: '', contactId: '', status: 'pending', publicConsent: false, internalNotes: '' });
+  let suggestedSlot=0,suggestedCode='';
+  if(type==='booth'&&!item){try{suggestedSlot=nextBoothSlot(draft.content.booths);suggestedCode=nextBoothCode(draft.content.booths,suggestedSlot);}catch(error){announce(error.message,true);return;}}
+  const value = item || (type === 'session' ? { id, start: '09:30', end: '10:00', zone: 'A', title: '', format: 'other', speakerName: '', speakerStatus: 'pending', guestId: '', status: 'draft', internalNotes: '' } : type === 'booth' ? { id, code: suggestedCode, organization: '', project: '', zone: 'C', slotNumber: suggestedSlot, status: 'pending', internalNotes: '' } : { id, name: '', company: '', ggjRole: '', portraitId: '', contactId: '', status: 'pending', publicConsent: false, internalNotes: '' });
   editorStableIds[type]=value.id;
   for (const [key,valueText] of Object.entries(value)) {
     if(type==='guest'&&key==='publicRoles'){for(const option of form.querySelectorAll('[name=publicRoles]'))option.checked=valueText.includes(option.value);continue;}
@@ -1061,7 +1063,12 @@ function openShowcaseEditor(item=null) {
   const form=$('[data-showcase-form]');clearCover();form.reset();fillShowcaseAssignments(item?.organizationId??'');
   const localError=$('[data-showcase-error]');localError.textContent='';localError.hidden=true;
   const id='showcase-'+[...crypto.getRandomValues(new Uint8Array(16))].map(value=>value.toString(16).padStart(2,'0')).join('');
-  const kind=form.elements.namedItem('kind');if(kind){const blank=kind.querySelector('option[value=""]');blank.textContent=item?'学生作品（原记录）':'请选择作品分类';blank.disabled=Boolean(item&&Object.hasOwn(item,'kind'));kind.required=!item;kind.value=item?(item.kind??''):'indie';}
+  const kind=form.elements.namedItem('kind');if(kind){
+    kind.replaceChildren();const blank=node('option',item&&!Object.hasOwn(item,'kind')?'学生作品（原记录）':'请选择作品分类');blank.value='';blank.disabled=Boolean(item&&Object.hasOwn(item,'kind'));kind.append(blank);
+    for(const value of SHOWCASE_EDITABLE_KINDS){const option=node('option',showcaseKindLabels[value]);option.value=value;kind.append(option);}
+    if(item?.kind==='team'){const legacy=node('option','待分类（原记录）');legacy.value='team';legacy.disabled=true;kind.append(legacy);}
+    kind.required=!item;kind.value=item?(item.kind??''):'indie';
+  }
   const value=item??{id,kind:'indie',title:'',teamName:'',school:'',contactName:'',email:'',wechat:'',memberCount:1,participationForms:[],responseStatus:'pending',materialLinks:'',summary:'',coverId:'',status:'pending',publicConsent:false,sessionId:'',boothId:'',internalNotes:''};
   for(const[key,valueText]of Object.entries(value)){
     if(key==='participationForms')continue;
@@ -1419,16 +1426,6 @@ $('[data-admin-preview]').addEventListener('click', () => { try { previewPublic(
 $('[data-admin-preview-close]').addEventListener('click', () => { $('[data-admin-preview-panel]').hidden = true; });
 $('[data-admin-add-session]').addEventListener('click', () => openEditor('session'));
 $('[data-admin-add-booth]').addEventListener('click', () => openEditor('booth'));
-$('[data-admin-fill-booths]').addEventListener('click',()=>{
-  if(!canEdit()||busy||portraitUploading||coverUploading||!draft)return;
-  try{
-    const result=completeBoothSlots(draft.content.booths);
-    if(!result.created){announce('十五个位置已有待确认或已确认展位，未新增重复记录。');return;}
-    const candidate={...draft.content,booths:result.booths};const validation=validateContent(candidate);
-    if(!validation.valid)throw new Error([...new Set(Object.values(validation.errors))].join(' '));
-    void action(async()=>{if(await saveSectionCandidate(validation.value,'booths'))announce('已补齐并保存 '+result.created+' 个展位位置。机构、负责人和展示内容可继续编辑。');});
-  }catch(error){announce(error.message||'展位位置未补齐，请核对资料。',true);}
-});
 $('[data-admin-add-guest]').addEventListener('click', () => openEditor('guest'));
 $('[data-admin-add-showcase]').addEventListener('click', () => openEditor('showcase'));
 $('[data-showcase-form]').addEventListener('submit', event => submitEditor('showcase', event));

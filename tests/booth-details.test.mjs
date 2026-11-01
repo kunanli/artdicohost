@@ -66,15 +66,15 @@ test('optional booth fields reject wrong types, unsafe controls, accessor values
   assert.equal(validateContent(content(booth({ contactMethods: 'mail@example.invalid\n微信 synthetic', description: '第一行\n第二行' }))).valid, true);
 });
 
-test('fifteen independently assigned occupants retain unique physical positions and reject conflicting occupancy', () => {
-  const booths = Array.from({ length: 15 }, (_, index) => booth({ id: 'synthetic-' + index, code: 'C' + (index + 1), slotNumber: index + 1,
+test('more than fifteen occupants retain unique physical positions and reject conflicting occupancy', () => {
+  const booths = Array.from({ length: 32 }, (_, index) => booth({ id: 'synthetic-' + index, code: 'C' + (index + 1), slotNumber: index + 1,
     organization: '合成组织' + (index + 1), contactName: 'PRIVATE-OWNER-' + index, contactMethods: 'PRIVATE-CONTACT-' + index, description: '合成展位内容' + index }));
   const checked = validateContent(content(...booths)); assert.equal(checked.valid, true);
   assert.deepEqual(overview(checked.value).boothRows.map(row => row.booth.organization), booths.map(item => item.organization));
-  assert.equal(toPublicContent(content(...booths)).booths.length, 15);
+  assert.equal(toPublicContent(content(...booths)).booths.length, 32);
   booths[14].slotNumber = 1;
   const conflict = validateContent(content(...booths)); assert.equal(conflict.valid, false);
   assert.ok(conflict.errors['booths.0.slotNumber']); assert.ok(conflict.errors['booths.14.slotNumber']);
-  for (const slotNumber of [-1, 16, 1.5, '15']) assert.ok(validateContent(content(booth({ slotNumber }))).errors['booths.0.slotNumber']);
+  for (const slotNumber of [-1, 201, 1.5, '15']) assert.ok(validateContent(content(booth({ slotNumber }))).errors['booths.0.slotNumber']);
   booths[14].status = 'cancelled'; assert.equal(validateContent(content(...booths)).valid, true);
 });

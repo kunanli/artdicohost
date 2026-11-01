@@ -24,7 +24,7 @@ export const eventConfig = {
     completedNotice: '演示完成。没有发送或保存任何报名资料，尚未受理报名。',
   },
   accommodation: { nights: 1, checkIn: '2026-12-05', checkOut: '2026-12-06', status: 'tentative', notice: '一晚住宿支持须单独申请和审核；不影响普通参会报名，报名成功不代表获得住宿。' },
-  exhibition: { plannedBooths: 15, status: 'tentative', description: '咖啡厅外围计划设置约 15 个展位，涵盖游戏、技术工具、高校或社群项目。展位名额及配置由筹备团队确认，申请不代表获得展位。' },
+  exhibition: { status: 'tentative', description: '现场展示游戏、技术工具及高校或社群项目，具体展位安排陆续公布。' },
   guests: { status: 'recruiting', title: '讲者招募中 · 名单待公布', description: '场次讲座的讲者尚未确定，欢迎提交主题提案。讲者及主题确认后另行公布；只展示已确认资料和授权照片。', people: [] },
   attribution: { status: 'pending', notice: '活动相关署名待有关各方正式确认后展示。' },
   privacy: { status: 'pending', processor: null, contactEmail: null, storageRegion: null, retentionPeriod: null, notice: '本页表单仅供预览，不收集真实报名。本站正式表单启用前，将公布个人信息处理告知及查阅、更正、撤回、删除方式。' },

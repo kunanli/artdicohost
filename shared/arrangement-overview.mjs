@@ -1,7 +1,6 @@
 import { contentSchema } from './content-schema.mjs';
 import { PARTICIPATION_FORMS, SESSION_ROLES } from './contacts-schema.mjs';
 
-const CAPACITY = 15;
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const PRESENTATIONS = new Set(['talk', 'workshop', 'roundtable', 'showcase']);
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -90,7 +89,7 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
   }));
   const booths = list(own(content, 'booths'), 200).map(item => {
     const suppliedSlot = own(item, 'slotNumber'), slotNumber = suppliedSlot === undefined ? 0 : suppliedSlot;
-    if (!Number.isInteger(slotNumber) || slotNumber < 0 || slotNumber > CAPACITY) throw new TypeError('展位位置无效。');
+    if (!Number.isInteger(slotNumber) || slotNumber < 0 || slotNumber > contentSchema.maxBoothPosition) throw new TypeError('展位位置无效。');
     const projection = { id: id(own(item, 'id')), code: text(own(item, 'code'), 16), zone: status(own(item, 'zone'), ['C']),
       organization: text(own(item, 'organization'), 160), project: text(own(item, 'project'), 200),
       status: status(own(item, 'status'), contentSchema.boothStatuses), slotNumber };
@@ -225,14 +224,15 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
     }
   }
   for (const row of [...sessionRows.values(), ...boothRowsById.values()]) { row.people.sort(byId); row.teams.sort(byId); }
-  const positions = Array.from({ length: CAPACITY }, (_, index) => ({ slotNumber: index + 1, label: String(index + 1).padStart(2, '0') + '号位置', booth: null, people: [], teams: [], warnings: [] }));
+  const positions = [], occupied = new Set();
   const unplacedBooths = [], cancelledBooths = [];
   for (const row of boothRowsById.values()) {
     if (row.booth.status === 'cancelled') { cancelledBooths.push(row); continue; }
-    if (!row.slotNumber) { unplacedBooths.push(row); warn(row.warnings, 'BOOTH_POSITION_UNASSIGNED', row.booth.id, '此有效展位尚未指定十五个固定位置之一。'); continue; }
-    if (positions[row.slotNumber - 1].booth) throw new TypeError('有效展位位置重复，不能选择其中一笔作为安排。');
-    positions[row.slotNumber - 1] = row;
+    if (!row.slotNumber) { unplacedBooths.push(row); warn(row.warnings, 'BOOTH_POSITION_UNASSIGNED', row.booth.id, '展位尚未指定位置。'); continue; }
+    if (occupied.has(row.slotNumber)) throw new TypeError('有效展位位置重复，不能选择其中一笔作为安排。');
+    occupied.add(row.slotNumber); positions.push(row);
   }
+  positions.sort((a, b) => a.slotNumber - b.slotNumber);
   const allSessions = [...sessionRows.values()].sort(bySession);
   const counts = Object.fromEntries(contentSchema.sessionFormats.map(format => [format, { total: 0, draft: 0, scheduled: 0, cancelled: 0, withPrimarySpeaker: 0, missingPrimarySpeaker: 0 }]));
   for (const session of sessions) {
@@ -247,10 +247,10 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
   const attendingTeams = [...activeTeams.values()].filter(team => team.responseStatus === 'attending');
   const confirmedTeams = attendingTeams.filter(team => team.status === 'confirmed');
   return {
-    schemaVersion: 1, revisions: { content: contentRevision, contacts: contactsRevision },
+    schemaVersion: 2, revisions: { content: contentRevision, contacts: contactsRevision },
     summary: {
-      booths: { capacity: CAPACITY, activePlaced: positions.filter(row => row.booth).length, confirmedPlaced: positions.filter(row => row.booth?.status === 'confirmed').length,
-        pendingPlaced: positions.filter(row => row.booth?.status === 'pending').length, unassignedPositions: positions.filter(row => !row.booth).length, unplacedRecords: unplacedBooths.length },
+      booths: { totalRecords: booths.length, activePlaced: positions.length, confirmedPlaced: positions.filter(row => row.booth.status === 'confirmed').length,
+        pendingPlaced: positions.filter(row => row.booth.status === 'pending').length, unplacedRecords: unplacedBooths.length },
       sessions: { total: sessions.length, active: sessions.filter(session => session.status !== 'cancelled').length, byFormat: counts,
         missingPrimarySpeaker: allSessions.filter(row => row.warnings.some(warning => warning.code === 'MISSING_PRIMARY_SPEAKER')).length },
       people: { assignedContacts: assignedContacts.length, attendingContacts: assignedContacts.filter(person => person.responseStatus === 'attending').length,

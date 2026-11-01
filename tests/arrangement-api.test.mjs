@@ -55,7 +55,7 @@ for (const mode of ['local', 'cloud']) {
     session.internalNotes = 'HIDDEN_SESSION_NOTE';
     draft.content.guests = [{ id: 'synthetic-guest', contactId: created.contact.id, name: '合成关联嘉宾', company: '合成机构', ggjRole: '', portraitId: '', status: 'pending', publicConsent: false, internalNotes: 'HIDDEN_GUEST_NOTE' }];
     session.guestId = 'synthetic-guest';
-    draft.content.booths = [{ id: 'synthetic-booth', slotNumber: 1, code: 'SYN-01', organization: '合成展位', project: '合成项目', zone: 'C', status: 'pending', internalNotes: 'HIDDEN_BOOTH_NOTE' }];
+    draft.content.booths = [{ id: 'synthetic-booth', slotNumber: 32, code: 'SYN-01', organization: '合成展位', project: '合成项目', zone: 'C', status: 'pending', internalNotes: 'HIDDEN_BOOTH_NOTE' }];
     await store.save(0, draft.content, 'both');
     await contactsStore.saveOperations(created.contact.id, created.revision, { ...created.contact.operations, responseStatus: 'attending', participationForms: ['host'], sessionIds: [session.id], boothIds: ['synthetic-booth'], notes: 'HIDDEN_FOLLOWUP_NOTE' }, 'both');
     assert.equal((await call('/api/admin/arrangements')).status, 401);
@@ -75,7 +75,10 @@ for (const mode of ['local', 'cloud']) {
     assert.doesNotMatch(text, /HIDDEN_|hidden@example|contactConsent|sourceProfile|sourceRowId|materialLinks|"email"|"wechat"|"phone"|internalNotes/u);
     const overview = JSON.parse(text);
     assert.deepEqual(overview.revisions, { content: 1, contacts: 2 });
-    assert.equal(overview.boothRows.length, 15);
+    assert.equal(overview.schemaVersion, 2);
+    assert.equal(overview.boothRows.length, 1);
+    assert.equal(overview.boothRows[0].slotNumber, 32);
+    assert.deepEqual(overview.summary.booths, { totalRecords: 1, activePlaced: 1, confirmedPlaced: 0, pendingPlaced: 1, unplacedRecords: 0 });
     assert.equal((await call('/api/admin/arrangements', { headers, suppliedOrigin: 'https://untrusted.invalid' })).status, 403);
     assert.equal((await call('/api/admin/arrangements?extra=1', { headers })).status, 404);
     assert.equal((await call('/api/public/arrangements')).status, 404);

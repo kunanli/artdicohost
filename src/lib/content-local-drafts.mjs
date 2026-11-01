@@ -1,4 +1,4 @@
-import { validateContent } from '../../shared/content-schema.mjs';
+import { validateContent, contentSchema, SHOWCASE_EDITABLE_KINDS } from '../../shared/content-schema.mjs';
 import { contentSaveSnapshot } from './admin-save-state.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
@@ -34,7 +34,7 @@ export function contentFormValue(type, input) {
 /** New work fields preserve the old own-property shape; a blank legacy kind is display-only. */
 export function showcaseOptionalFields(previous, raw, {isNew=false}={}) {
   if(!plain(raw)||previous!==null&&previous!==undefined&&!plain(previous))throw new TypeError('作品分类或组织关联无法核对。');
-  const result={},kinds=['student','indie','team'];
+  const result={};
   for(const key of ['kind','organizationId']){
     const supplied=Object.getOwnPropertyDescriptor(raw,key),saved=Object.getOwnPropertyDescriptor(previous??{},key);
     if(supplied&&!Object.hasOwn(supplied,'value')||saved&&!Object.hasOwn(saved,'value'))throw new TypeError('作品分类或组织关联须为明确值。');
@@ -42,7 +42,7 @@ export function showcaseOptionalFields(previous, raw, {isNew=false}={}) {
     const value=supplied.value;if(typeof value!=='string')throw new TypeError('作品分类或组织关联须为明确文字。');
     if(key==='kind'){
       if(value===''){if(saved||isNew)throw new TypeError('请选择作品分类。');}
-      else if(kinds.includes(value))result.kind=value;
+      else if(SHOWCASE_EDITABLE_KINDS.includes(value)||value==='team'&&!isNew&&saved?.value==='team')result.kind=value;
       else throw new TypeError('请选择有效的作品分类。');
     }else{
       if(value!==''&&!ID.test(value))throw new TypeError('请选择已保存的参与组织，或明确解除关联。');
@@ -73,8 +73,11 @@ export function writeContentForm(form, type, value) {
     const field = form.elements.namedItem(name); if (!field) continue;
     if (field.type === 'checkbox') field.checked = name === 'publicConsent' ? false : data;
     else {
-      if (field.tagName === 'SELECT' && data && !Array.from(field.options).some(option => option.value === data)) {
-        const missing = document.createElement('option'); missing.value = data; missing.textContent = '原关联需重新核对'; field.append(missing);
+      if (field.tagName === 'SELECT' && data) {
+        const legacyKind=type==='showcase'&&name==='kind'&&data==='team';
+        let option=Array.from(field.options).find(candidate=>candidate.value===data);
+        if(!option){option=document.createElement('option');option.value=data;option.textContent='原关联需重新核对';field.append(option);}
+        if(legacyKind){option.textContent='待分类（原记录）';option.disabled=true;}
       }
       field.value = data;
     }
@@ -96,7 +99,7 @@ export function contentLocalDraftValue(value, { kind } = {}) {
     if (type === 'planner') {
       if (!exact(record, ['selected','booth','assignment','contactsRevision','uncertain']) || !exact(record.selected, ['type','id','slotNumber'])
         || !['booth','session'].includes(record.selected.type) || record.selected.id !== null && !ID.test(record.selected.id ?? '')
-        || !Number.isSafeInteger(record.selected.slotNumber) || record.selected.slotNumber < 0 || record.selected.slotNumber > 15
+        || !Number.isSafeInteger(record.selected.slotNumber) || record.selected.slotNumber < 0 || record.selected.slotNumber > contentSchema.maxBoothPosition
         || record.booth !== null && !contentFormValue('plannerBooth', record.booth)
         || record.contactsRevision !== null && (!Number.isSafeInteger(record.contactsRevision) || record.contactsRevision < 0)
         || typeof record.uncertain !== 'boolean' || record.assignment !== null && (!exact(record.assignment, ['contactId','sessionIds','boothIds'])

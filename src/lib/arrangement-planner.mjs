@@ -1,4 +1,4 @@
-import { validateContent } from '../../shared/content-schema.mjs';
+import { contentSchema, validateContent } from '../../shared/content-schema.mjs';
 import { validateContactOperations, validateStoredContact } from '../../shared/contacts-schema.mjs';
 import { boothOrganizationField } from './content-relationships.mjs';
 
@@ -13,10 +13,11 @@ export function boothReadiness(booth) {
 
 /** Apply only the explicitly edited fields to the latest local draft; never publish or write. */
 export function prepareBoothDraft(content, { boothId = null, slotNumber, original = null, changes, newId } = {}) {
-  if (!content || !Array.isArray(content.booths) || !Number.isSafeInteger(slotNumber) || slotNumber < 1 || slotNumber > 15
+  if (!content || !Array.isArray(content.booths) || !Number.isSafeInteger(slotNumber) || slotNumber < 0 || slotNumber > contentSchema.maxBoothPosition
     || !changes || typeof changes !== 'object') throw new Error('展位编辑资料无效。');
   const next = clone(content);
   const previous = boothId ? next.booths.find(item => item.id === boothId) : null;
+  if (!slotNumber && (!previous || previous.slotNumber !== 0)) throw new Error('请先选择展位位置。');
   if (boothId && !previous || previous && JSON.stringify(previous) !== JSON.stringify(original)
     || !previous && next.booths.some(item => item.slotNumber === slotNumber && item.status !== 'cancelled')) throw new Error('此展位在本页已有其他修改，请重新打开后核对。');
   if (!previous && !ID.test(newId ?? '')) throw new Error('新增展位标识无效。');

@@ -87,7 +87,7 @@ for (const mode of ['local', 'cloud']) {
     draft.booths[0].status = 'cancelled';
     const reused = await first.save(1, draft, 'synthetic');
     assert.equal(reused.content.booths.filter(item => item.status !== 'cancelled' && item.slotNumber === 15).length, 1);
-    for (const slotNumber of [null, -1, 16, 1.5, '4']) {
+    for (const slotNumber of [null, -1, 201, 1.5, '4']) {
       const invalid = structuredClone(reused.content); invalid.booths[1].slotNumber = slotNumber;
       await assert.rejects(second.save(2, invalid, 'synthetic'), failure('VALIDATION_ERROR'));
     }

@@ -4,6 +4,12 @@
 
 这组可选检查使用真实 Chromium 运行构建后的页面，但拦截全部页面请求并提供纯合成 API。它不连接正式 API、不写真实报名、不读取原始名单，也不能代替真实 FC／OSS 端到端验收。
 
+2026-11-01 P1a：两类作品与动态展位的聚焦验收入口为 `p1a-content-smoke.mjs`，须在当前候选版本构建后执行，结果见 [P1a 记录](../../docs/redesign/p1a-release.md)。`staff-smoke.mjs` 含固定十五格及补齐操作，保留作历史脚本，不能直接作为 P1a 当前验收。固定 Skill 清单未包含新脚本时，需另行执行，不能把旧 runner 通过等同新功能通过。
+
+```sh
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/p1a-content-smoke.mjs
+```
+
 2026-10-22本轮采用[统一保存](../../docs/admin-save-workflow.md)及[默认公开](../../docs/default-public-visibility.md)。四类内容只因手动未公开而隐藏；保存后表单保留、主要保存禁用直至重新编辑，已载入草稿浮窗移除。下文旧公开条件／自动关闭的历史描述由本轮说明替代，不能继续当成产品要求。实际源码、建置与发布验收分别绑定，不把source模式脚本冒充准确bundle通过。
 
 本轮新增主流程，先按下方方式生成一次最终构建，验收过程中不重建：
@@ -22,7 +28,6 @@ PUBLIC_API_BASE=https://api.artdico.host PUBLIC_CONTENT_API_ORIGIN=https://api.a
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/registration-smoke.mjs
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/admissions-smoke.mjs
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/admissions-session-race.mjs
-ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/staff-smoke.mjs
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/contacts-smoke.mjs
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/organizer-tasks-smoke.mjs
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/profile-media-smoke.mjs
@@ -46,7 +51,7 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 
 `admissions-smoke.mjs` 使用 superadmin／reviewer 两种合成身份核对实际人数、默认零预留、权限工具、逐人工作人员代登记、真实个人团队关联、取消与 FIFO 补位。首次工作人员回执模拟 503，明确重试必须完全保留原 body／operationId；刷新不得代为修改或丢失未保存设置。工作人员记录保留 staff_entry 来源且不伪造网站隐私同意。
 
-`staff-smoke.mjs` 检查独立住宿审核、工作人员账号保存、群码替换、加密备份下载入口，以及补齐十五个待确认展位、填写机构／展示／负责人／联系方式、保存与发布。公开投影不得包含负责人联络方式。另检查总览侧栏直接编辑、未应用修改阻挡保存，以及应用并保存后仍须另行发布。
+历史 `staff-smoke.mjs` 曾检查住宿审核、账号、群码、备份与补齐十五个展位；其固定格数与补齐断言已不符合 P1a，不列入当前执行命令。保存与发布分开、公开投影不含联络方式、未应用修改阻挡保存等保护继续有效，由相应当前案例验证。
 
 `admissions-session-race.mjs` 在真实 DOM 中延迟合成 GET、写入回执和 onChange，验证登出、换账号及角色后不重填旧私有资料，不解锁新操作，旧读取也不能覆盖较新结果。五种情境均检查页面错误。
 

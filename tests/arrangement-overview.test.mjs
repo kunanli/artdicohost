@@ -11,21 +11,21 @@ const team = (id, overrides = {}) => ({ id, title: '合成作品', teamName: '�
 const overview = (value = content(), contacts = [], contentRevision = 3, contactsRevision = 9) => buildArrangementOverview({ content: value, contacts, contentRevision, contactsRevision });
 const codes = row => row.warnings.map(item => item.code);
 
-test('empty saved records create fifteen unassigned positions without fabricated booths or people', () => {
+test('empty saved records stay empty without fabricated positions, booths or people', () => {
   const result = overview();
-  assert.equal(result.boothRows.length, 15);
-  assert.deepEqual(result.boothRows.map(row => row.slotNumber), Array.from({ length: 15 }, (_, index) => index + 1));
-  assert.ok(result.boothRows.every(row => row.booth === null && !row.people.length && !row.teams.length));
-  assert.equal(result.boothRows[0].label, '01号位置'); assert.equal(result.boothRows[14].label, '15号位置');
-  assert.deepEqual(result.summary.booths, { capacity: 15, activePlaced: 0, confirmedPlaced: 0, pendingPlaced: 0, unassignedPositions: 15, unplacedRecords: 0 });
+  assert.equal(result.schemaVersion, 2);
+  assert.deepEqual(result.boothRows, []);
+  assert.deepEqual(result.summary.booths, { totalRecords: 0, activePlaced: 0, confirmedPlaced: 0, pendingPlaced: 0, unplacedRecords: 0 });
   assert.deepEqual(result.revisions, { content: 3, contacts: 9 });
   assert.equal(result.summary.people.attendingContacts, 0); assert.equal(result.summary.studentTeams.reportedAttendingMembers, 0);
 });
 
-test('fixed capacity counts pending and confirmed placed records and keeps unplaced and cancelled records separate', () => {
-  const result = overview(content({ booths: [booth('confirmed'), booth('pending', { slotNumber: 15, status: 'pending' }), booth('unplaced', { slotNumber: 0 }), booth('cancelled', { slotNumber: 1, status: 'cancelled' })] }));
-  assert.deepEqual(result.summary.booths, { capacity: 15, activePlaced: 2, confirmedPlaced: 1, pendingPlaced: 1, unassignedPositions: 13, unplacedRecords: 1 });
-  assert.equal(result.boothRows[0].booth.id, 'confirmed'); assert.equal(result.boothRows[14].booth.id, 'pending');
+test('actual sparse positions above fifteen are sorted, with unplaced and cancelled history separate', () => {
+  const result = overview(content({ booths: [booth('confirmed', { slotNumber: 32 }), booth('pending', { slotNumber: 16, status: 'pending' }), booth('unplaced', { slotNumber: 0 }), booth('cancelled', { slotNumber: 32, status: 'cancelled' })] }));
+  assert.deepEqual(result.summary.booths, { totalRecords: 4, activePlaced: 2, confirmedPlaced: 1, pendingPlaced: 1, unplacedRecords: 1 });
+  assert.deepEqual(result.boothRows.map(row => row.slotNumber), [16, 32]);
+  assert.equal(result.boothRows[0].booth.id, 'pending'); assert.equal(result.boothRows[1].booth.id, 'confirmed');
+  assert.equal(result.boothRows[1].label, '32号位置');
   assert.equal(result.unplacedBooths[0].booth.id, 'unplaced'); assert.ok(codes(result.unplacedBooths[0]).includes('BOOTH_POSITION_UNASSIGNED'));
   assert.equal(result.cancelledBooths[0].booth.id, 'cancelled');
   const legacy = booth('legacy'); delete legacy.slotNumber;
@@ -122,7 +122,7 @@ test('projection excludes private fields and never mutates or shares input recor
 
 test('ambiguous slots, unsupported states and malformed snapshots fail rather than selecting a record or counting guessed people', () => {
   assert.throws(() => overview(content({ booths: [booth('one'), booth('two')] })), TypeError);
-  for (const slotNumber of [-1, 16, 1.5, '1', null]) assert.throws(() => overview(content({ booths: [booth('invalid', { slotNumber })] })), TypeError);
+  for (const slotNumber of [-1, 201, 1.5, '1', null]) assert.throws(() => overview(content({ booths: [booth('invalid', { slotNumber })] })), TypeError);
   assert.throws(() => overview(content({ sessions: [session('one'), session('one')] })), TypeError);
   assert.throws(() => overview(content({ sessions: Array(1) })), TypeError);
   assert.throws(() => overview(content(), [], -1, 0), TypeError);

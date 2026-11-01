@@ -12,6 +12,7 @@ const dist = resolve(process.env.ARTDICO_DIST_DIRECTORY || resolve(source, 'dist
 const evidence = resolve(project, '.local-data/browser-evidence/games-publication');
 const { peopleRuntimeFixture, PEOPLE_FIXTURE_API: API, PEOPLE_FIXTURE_PUBLIC: SITE } = await import(pathToFileURL(resolve(source, 'tests/helpers/people-runtime-fixture.mjs')));
 const { createOssPortraitStore } = await import(pathToFileURL(resolve(source, 'functions/cloud-content/portrait-store.mjs')));
+const { createObjectJournal } = await import(pathToFileURL(resolve(source, 'functions/cloud-content/object-journal.mjs')));
 const { validateContent, toPublicContent } = await import(pathToFileURL(resolve(source, 'shared/content-schema.mjs')));
 const { CLOUD_ADMIN_PAGE_ALIASES } = await import(pathToFileURL(resolve(source, 'functions/cloud-content/http-server.mjs')));
 const aliases = new Map(CLOUD_ADMIN_PAGE_ALIASES);
@@ -47,6 +48,10 @@ async function seed(runtime, { published = true } = {}) {
   content.showcases = [work(IDS.legacy, '合成原记录作品'), work(IDS.indie, '合成独立游戏', { kind: 'indie', organizationId: IDS.creator }), work(IDS.team, '合成团队作品', { kind: 'team', organizationId: IDS.creator })];
   const checked = validateContent(content); assert.equal(checked.valid, true, JSON.stringify(checked.errors));
   assert.equal(Object.hasOwn(checked.value.showcases[0], 'kind'), false, 'legacy kind must stay absent');
+  // This is a pre-existing synthetic content snapshot. New edits may no longer
+  // create team classifications, while saved historical values remain readable.
+  const journal=createObjectJournal({objects:runtime.objects,prefix:'cms/v1/content'});
+  await journal.commit((await journal.read()).cursor,{storageVersion:1,draft:{revision:0,content:checked.value},published:null,audit:[]});
   await runtime.app.store.save(0, checked.value, actor.id);
   if (published) await runtime.app.store.publish(1, actor.id);
   return { content: clone(checked.value), people, coverId: photo.id };
@@ -204,6 +209,10 @@ async function gamesCases(browser, errors, reports) {
   const f = await fixture(browser, errors);
   try {
     const admissions = await f.runtime.app.registrationService.getAdmissions({ actor: f.runtime.users[0] }), baseline = await anonymous(f);
+    const oldSnapshot=await f.runtime.app.store.read(),forbidden=clone(oldSnapshot.draft.content);
+    forbidden.showcases.push({...forbidden.showcases.find(work=>work.id===IDS.team),id:'synthetic-forbidden-new-team'});
+    await assert.rejects(f.runtime.app.store.save(oldSnapshot.draft.revision,forbidden,f.runtime.users[0].id),error=>error.code==='VALIDATION_ERROR'&&error.status===422);
+    assert.deepEqual(await f.runtime.app.store.read(),oldSnapshot,'rejecting a new legacy classification does not change the saved draft or frozen publication');
     let form = await editWork(f, IDS.legacy);
     assert.equal(await form.locator('[name=kind]').inputValue(), '', 'legacy display default is an explicit empty choice');
     assert.match(await form.locator('[name=kind] option:checked').textContent(), /学生/u);
@@ -212,7 +221,13 @@ async function gamesCases(browser, errors, reports) {
     assert.deepEqual((await anonymous(f)).value, baseline.value);
     reports.push({ group: 'games', legacyStudentDisplayDoesNotWriteKind: true, unrelatedSavePreservesAbsentOrganizationField: true, saveNotPublication: true });
     for (const [id, kind] of [[IDS.indie, 'indie'], [IDS.team, 'team']]) {
-      form = await editWork(f, id); await form.locator('[name=kind]').selectOption(kind); await form.locator('[name=organizationId]').selectOption(IDS.creator); await form.locator('[name=publicConsent]').check(); await saveAndClose(f, 'showcase');
+      form = await editWork(f, id);
+      if(kind==='team'){
+        assert.equal(await form.locator('[name=kind]').inputValue(),'team');
+        assert.equal(await form.locator('[name=kind] option[value=team]').isDisabled(),true);
+        assert.match(await form.locator('[name=kind] option:checked').textContent(),/待分类/u);
+      }else await form.locator('[name=kind]').selectOption(kind);
+      await form.locator('[name=organizationId]').selectOption(IDS.creator); await form.locator('[name=publicConsent]').check(); await saveAndClose(f, 'showcase');
       const status = await publicState(f.admin, 'showcases', id, 'unpublished', /未公开/u); assert.equal(await status.getAttribute('data-publication-change'), 'new');
     }
     head = await f.runtime.app.store.read(); assert.equal(head.draft.content.showcases.filter(work => work.boothId === IDS.booth).length, 3);
@@ -222,11 +237,13 @@ async function gamesCases(browser, errors, reports) {
     assert.deepEqual(await grid.locator('[data-showcase-id]').evaluateAll(nodes => nodes.map(node => node.dataset.showcaseId).sort()), [IDS.legacy, IDS.indie, IDS.team].sort());
     assert.equal(await grid.locator('a.ah-showcase-organization').count(), 0, 'unauthorized creator organization is not revealed by a work');
     assert.equal((await anonymous(f)).value.content.showcases.find(work => work.id === IDS.indie).organizationId ?? '', '', 'public relation requires independently authorized organization in the same snapshot');
-    for (const [kind, count] of [['student', 1], ['indie', 1], ['team', 1], ['all', 3]]) {
+    assert.deepEqual(await f.front.locator('[data-public-works-filter] option').evaluateAll(options=>options.map(option=>option.value)),['all','student','indie']);
+    assert.match(await grid.locator('[data-showcase-id="'+IDS.team+'"]').textContent(),/待分类/u);
+    for (const [kind, count] of [['student', 1], ['indie', 1], ['all', 3]]) {
       await f.front.locator('[data-public-works-filter]').selectOption(kind); assert.equal(await grid.locator('[data-showcase-id]:visible').count(), count);
     }
     assert.equal(await f.front.locator('#booth-' + IDS.booth + ' a[href^="#work-"]').count(), 3, 'one booth points to all distinct works');
-    reports.push({ group: 'games', independentAndTeamKindsPersisted: true, threeWorksShareOneBooth: true, creatorAndOccupantIndependent: true, unauthorizedCreatorRelationOmitted: true, stableIdDedupeAndKindFilters: true });
+    reports.push({ group: 'games', currentKindsAndUnchangedLegacyTeamPersisted: true, legacyTeamNotASelectableCategory: true, threeWorksShareOneBooth: true, creatorAndOccupantIndependent: true, unauthorizedCreatorRelationOmitted: true, stableIdDedupeAndKindFilters: true });
     form = await editOrganization(f); await form.locator('[name=publicConsent]').check(); await saveAndClose(f, 'organization');
     assert.equal((await anonymous(f)).value.content.organizations.some(item => item.id === IDS.creator), false);
     await publish(f); await returnToFront(f);

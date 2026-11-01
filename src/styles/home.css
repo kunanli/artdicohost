@@ -230,7 +230,7 @@ html:has(#artdico-host.ah-cosmos){scroll-padding-top:32px}
  #artdico-host.ah-festival.ah-cosmos .ah-home-hero .ah-event-chinese{font-size:.47em;margin-top:10px;letter-spacing:.08em}
  #artdico-host.ah-festival.ah-cosmos .ah-home-hero .ah-event-title-cross{top:124px;left:9%;font-size:17px}
  #artdico-host.ah-festival.ah-cosmos .ah-home-hero .ah-hero-description{position:relative;bottom:auto;margin:22px 0 30px;font-size:12px;letter-spacing:0}
- #artdico-host.ah-festival.ah-cosmos .ah-home-orbit-note{bottom:12px;right:0;font-size:6px;letter-spacing:.2em}
+ #artdico-host.ah-festival.ah-cosmos .ah-home-orbit-note{display:none;bottom:12px;right:0;font-size:6px;letter-spacing:.2em}
  #artdico-host.ah-festival.ah-cosmos .ah-home-hero .ah-event-meta{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;font-size:16px;line-height:1.55;align-items:start;margin-top:0}
  #artdico-host.ah-festival.ah-cosmos .ah-home-hero .ah-event-meta>span{gap:10px}
  #artdico-host.ah-festival.ah-cosmos .ah-home-hero .ah-event-meta svg{width:19px;height:19px;margin-top:3px;flex:none}

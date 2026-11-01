@@ -13,7 +13,7 @@ const walletFields={APPLE_WALLET_TEAM_ID:'Apple 团队 ID',APPLE_WALLET_PASS_TYP
   APPLE_WALLET_CERT_BASE64:'签章证书',APPLE_WALLET_KEY_BASE64:'签章私钥',APPLE_WALLET_WWDR_CERT_BASE64:'Apple WWDR 证书',APPLE_WALLET_ROOT_CERT_BASE64:'Apple 根证书'};
 export function createDeliverySettings({root,request,draftStore,eventId}){
   const $=selector=>root.querySelector(selector);let user=null,state=null,busy=false,externalBusy=false,generation=0,accountKey='',settingsDirty=false,dispatchDirty=false,readSequence=0,savePhase='loaded';
-  let reminderPreview=null,reminderSequence=0,reminderDirty=false;const selectedReminderIds=new Set(),reminderNames=new Map();
+  let reminderPreview=null,reminderSequence=0,reminderDirty=false;const selectedReminderIds=new Set(),reminderIdentities=new Map();
   const drafts=new Map(),persistedPending=new Set(),allowed=()=>canManageEventOperations(user);
   const mutations=createDeliveryMutations({request:async(path,options)=>{
     const started=generation,kind=path.endsWith('/dispatch')?'dispatch':'settings',draft=drafts.get(kind);
@@ -70,7 +70,7 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
     reminderPreview=null;selectedReminderIds.clear();reminderDirty=false;
     for(const selector of['[data-reminder-rows]','[data-reminder-subject]','[data-reminder-message]'])$(selector).replaceChildren();
     $('[data-reminder-preview]').hidden=true;$('[data-reminder-status]').textContent=message;$('[data-reminder-select-all]').checked=false;
-    if(clearResults){reminderNames.clear();$('[data-reminder-results]').replaceChildren();$('[data-reminder-results]').hidden=true;}
+    if(clearResults){reminderIdentities.clear();$('[data-reminder-results]').replaceChildren();$('[data-reminder-results]').hidden=true;}
     updateReminderSelection();
   }
   function updateReminderSelection(){
@@ -86,7 +86,7 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
     $('[data-reminder-preview]').hidden=false;$('[data-reminder-subject]').textContent=value.message.subject;$('[data-reminder-message]').textContent=value.message.text;
     $('[data-reminder-status]').textContent='当前已确认 '+value.total+' 人 · 本页 '+value.rows.length+' 人';$('[data-reminder-empty]').hidden=value.rows.length!==0;$('[data-reminder-next]').hidden=!value.nextCursor;
     const output=$('[data-reminder-rows]');output.replaceChildren();for(const row of value.rows){
-      reminderNames.set(row.registrationId,row.name);const item=element('li'),label=element('label'),input=element('input'),identity=element('span'),result=element('span',row.retryRejected&&row.eligible?'明确未发出 · 勾选上方重试许可':reminderReasonLabels[row.reason]);
+      reminderIdentities.set(row.registrationId,{name:row.name,organization:row.organization});const item=element('li'),label=element('label'),input=element('input'),identity=element('span'),result=element('span',row.retryRejected&&row.eligible?'明确未发出 · 勾选上方重试许可':reminderReasonLabels[row.reason]);
       input.type='checkbox';input.value=row.registrationId;input.dataset.reminderRegistration='';input.setAttribute('aria-label','选择 '+row.name);identity.append(element('strong',row.name),element('small',row.organization||'未填写组织'));result.className='delivery-reminder-result';label.append(input,identity);item.append(label,result);output.append(item);
       input.addEventListener('change',()=>{if(input.checked)selectedReminderIds.add(row.registrationId);else selectedReminderIds.delete(row.registrationId);reminderDirty=selectedReminderIds.size>0;updateReminderSelection();});
     }updateReminderSelection();
@@ -121,10 +121,20 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
       status('已核对本次所选结果；服务商接受不等于本人收到。');await load(started);
     }
   }
+  async function readReminderIdentities(result,started){
+    const ids=result.results.map(row=>row.registrationId);if(ids.every(id=>reminderIdentities.has(id)))return true;
+    try{
+      const raw=await request('/api/admin/registration-confirmation/reminder-preview',{method:'POST',body:JSON.stringify({registrationIds:ids})});
+      if(started!==generation||!allowed())return false;
+      const value=deliveryReminderPreviewView(raw);if(!value||value.total>ids.length||value.nextCursor!==null||value.rows.some(row=>!ids.includes(row.registrationId)))throw new Error('原收件人信息尚未通过核对，请核对原寄送。');
+      for(const id of ids)reminderIdentities.delete(id);for(const row of value.rows)reminderIdentities.set(row.registrationId,{name:row.name,organization:row.organization});return true;
+    }catch(error){if(started===generation)clearReminderPreview('人员信息暂无法核对 · 请核对原寄送');throw error;}
+  }
   async function acceptReminder(result,started){
     if(started!==generation||!allowed())return;
+    if(!await readReminderIdentities(result,started)||started!==generation||!allowed())return;
     const output=$('[data-reminder-results]'),labels={provider_accepted:'服务商已接受',rejected:'明确未发出',unknown:'结果待核对，不重寄',disabled:'通知已暂停',not_configured:'寄件设置未就绪',not_applicable:'未提供邮箱',not_public:'当前对象不适用',withdrawn:'当前名额已取消',unavailable:'暂时无法核对',not_attempted:'尚未尝试，可重新选择'};
-    output.replaceChildren();output.hidden=false;for(const row of result.results)output.append(element('p',(reminderNames.get(row.registrationId)||'原所选人员 '+(result.results.indexOf(row)+1))+' · '+labels[row.status]));
+    output.replaceChildren();output.hidden=false;for(const row of result.results){const identity=reminderIdentities.get(row.registrationId),item=element('p',(identity?.name||'人员信息待核对')+' · '+labels[row.status]);if(identity?.organization)item.append(element('small',' · '+identity.organization));output.append(item);}
     reminderDirty=false;selectedReminderIds.clear();updateReminderSelection();
     if(reminders.pending){persistedPending.add('reminder');$('[data-reminder-status]').textContent='结果待核对 · 请核对原寄送，不会重寄';status('已记录可核对结果；服务商接受不等于本人收到。');return;}
     await drafts.get('reminder')?.discard();if(started!==generation||!allowed())return;persistedPending.delete('reminder');
@@ -177,7 +187,7 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
     if(ids.length!==selectedReminderIds.size){clearReminderPreview('名单有更新 · 请重新读取核对');return;}
     action(async started=>acceptReminder(await reminders.run({registrationIds:ids,retryRejected}),started));
   });
-  $('[data-reminder-lookup]').addEventListener('click',()=>action(async started=>acceptReminder(await reminders.lookup(),started)));
+  $('[data-reminder-lookup]').addEventListener('click',()=>action(async started=>{const body=reminders.body;try{await acceptReminder(await reminders.lookup(),started);}catch(error){if(started===generation&&allowed()&&body&&!reminders.pending&&drafts.get('reminder')?.pending){reminders.restore(body);persistedPending.add('reminder');}throw error;}}));
   function clear(){
     for(const draft of drafts.values())draft.close();drafts.clear();persistedPending.clear();
     generation++;readSequence++;reminderSequence++;user=null;state=null;busy=false;accountKey='';settingsDirty=false;dispatchDirty=false;mutations.clear();reminders.clear();root.hidden=true;

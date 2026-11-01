@@ -26,13 +26,14 @@ async function fixture(width,{loseAck=false,providerUnknown=false}={}){
  await runtime.seedPublic({name:'合成待审人员',email:'synthetic.pending@example.invalid'});
  const context=await browser.newContext({viewport:{width,height:900}}),[name,...cookie]=auth.Cookie.split('=');
  await context.addCookies([{domain:new URL(SITE).hostname,path:'/api/admin',name,value:cookie.join('='),secure:true,httpOnly:true,sameSite:'Strict'}]);
- const page=await context.newPage(),calls=[],controls={failPreview:false,expirePreview:false,definiteConflict:false};page.setDefaultTimeout(15000);page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>void dialog.accept());
+ const page=await context.newPage(),calls=[],controls={failPreview:false,failSelectedPreview:false,expirePreview:false,definiteConflict:false};page.setDefaultTimeout(15000);page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>void dialog.accept());
  await page.clock.setFixedTime(new Date('2026-10-21T09:00:00.000Z'));
  await context.route('**/*',async route=>{
   const req=route.request(),url=new URL(req.url()),path=url.pathname;assert.equal(url.origin,SITE,'all requests stay inside the intercepted fixture');
   if(path.startsWith('/api/')){
    const entry={path,method:req.method(),body:req.postData()};calls.push(entry);
    if(path==='/api/admin/registration-confirmation/reminder-preview'&&(controls.failPreview||controls.expirePreview)){entry.status=controls.expirePreview?401:503;return route.fulfill(json({error:{code:'SYNTHETIC_UNAVAILABLE'}},entry.status));}
+   if(path==='/api/admin/registration-confirmation/reminder-preview'&&controls.failSelectedPreview&&JSON.parse(req.postData()||'{}').registrationIds){entry.status=503;return route.fulfill(json({error:{code:'SYNTHETIC_IDENTITY_UNAVAILABLE'}},503));}
    if(path==='/api/admin/registration-confirmation/reminder-dispatch'&&controls.definiteConflict){entry.status=409;return route.fulfill(json({error:{code:'SYNTHETIC_REVISION_CONFLICT'}},409));}
    const response=await runtime.app.handle(new Request(req.url(),{method:req.method(),headers:await req.allHeaders(),...(['GET','HEAD'].includes(req.method())?{}:{body:req.postData()})}));entry.status=response.status;
    if(loseAck&&path==='/api/admin/registration-confirmation/reminder-dispatch'&&req.method()==='POST'&&response.ok){loseAck=false;await response.arrayBuffer();return route.fulfill(json({error:{code:'SYNTHETIC_ACK_LOST'}},503));}
@@ -41,7 +42,7 @@ async function fixture(width,{loseAck=false,providerUnknown=false}={}){
   const served=await staticFile(path),body=await readFile(served.file);assets.set(path,{path,servedPath:served.path,sha256:hash(body),bytes:body.length});
   return route.fulfill({status:200,body,contentType:({html:'text/html',js:'text/javascript',mjs:'text/javascript',css:'text/css',woff2:'font/woff2',svg:'image/svg+xml'})[extname(served.file).slice(1)]||'application/octet-stream'});
  });
- return{runtime,context,page,calls,controls,baselineMessages:runtime.messages.length,a,b};
+ return{runtime,auth,context,page,calls,controls,baselineMessages:runtime.messages.length,a,b};
 }
 async function open(f){await f.page.goto(SITE+'/admin/settings/delivery/',{waitUntil:'domcontentloaded'});await f.page.locator('[data-reminder-refresh]:enabled').waitFor();}
 async function preview(f){await f.page.locator('[data-reminder-refresh]').click();await f.page.locator('[data-reminder-status]').filter({hasText:'当前已确认'}).waitFor();await f.page.locator('[data-reminder-select-all]:enabled').waitFor();}
@@ -70,8 +71,27 @@ try{
    const originalBody=dispatches(f)[0].body,originalId=JSON.parse(originalBody).operationId;await page.reload({waitUntil:'domcontentloaded'});await page.locator('[data-reminder-lookup]:enabled').waitFor();assert.equal(await page.locator('[data-reminder-rows] li').count(),0);assert.equal(dispatches(f).length,1);
    await page.locator('[data-reminder-lookup]').click();await page.locator('[data-reminder-pending]').waitFor({state:'hidden'});await page.locator('[data-reminder-status]').filter({hasText:'当前已确认'}).waitFor();
    const lookups=f.calls.filter(call=>call.path==='/api/admin/registration-confirmation/reminder-operation/'+originalId);assert.equal(lookups.length,1);assert.equal(lookups[0].method,'GET');assert.equal(lookups[0].body,null);assert.equal(dispatches(f).length,1);assert.equal(f.runtime.messages.length,f.baselineMessages+1);
+   await page.locator('[data-reminder-results]').filter({hasText:'合成提醒甲 · 服务商已接受'}).waitFor();assert.match(await page.locator('[data-reminder-results]').textContent(),/合成组织文字/u);const identities=f.calls.filter(call=>call.path==='/api/admin/registration-confirmation/reminder-preview'&&JSON.parse(call.body).registrationIds);assert.equal(identities.length,1);assert.deepEqual(JSON.parse(identities[0].body).registrationIds,JSON.parse(originalBody).registrationIds);
    assert.equal(await page.getByLabel('选择 合成提醒甲',{exact:true}).isDisabled(),true);assert.equal(await page.getByLabel('选择 合成提醒乙',{exact:true}).isEnabled(),true);await noOverflow(page);
-   await page.screenshot({path:resolve(evidence,'reminder-reconciled-'+width+'.png'),fullPage:true});reports.push({width,lostAckPersistedBeforeReload:true,originalOperationLookedUpByGet:true,noSecondPostOrNewId:true,acceptedDisabledAfterRecovery:true,otherEligiblePersonStillSelectable:true,originalBodySha256:hash(originalBody),noOverflow:true});
+   await page.screenshot({path:resolve(evidence,'reminder-reconciled-'+width+'.png'),fullPage:true});reports.push({width,lostAckPersistedBeforeReload:true,originalOperationLookedUpByGet:true,namesAndOrganizationsReadForExactOriginalIds:true,noSecondPostOrNewId:true,acceptedDisabledAfterRecovery:true,otherEligiblePersonStillSelectable:true,originalBodySha256:hash(originalBody),noOverflow:true});
+  }finally{await f.context.close();}
+ }
+ {
+  const f=await fixture(390,{loseAck:true}),{page}=f;try{
+   await open(f);await preview(f);await page.getByLabel('选择 合成提醒甲',{exact:true}).check();const lost=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/admin/registration-confirmation/reminder-dispatch'&&response.status()===503);await page.locator('[data-reminder-send]').click();await lost;await page.locator('[data-reminder-lookup]:enabled').waitFor();
+   const originalBody=dispatches(f)[0].body,originalId=JSON.parse(originalBody).operationId;await page.reload({waitUntil:'domcontentloaded'});await page.locator('[data-reminder-lookup]:enabled').waitFor();f.controls.failSelectedPreview=true;await page.locator('[data-reminder-lookup]').click();await page.locator('[data-reminder-status]').filter({hasText:'人员信息暂无法核对'}).waitFor();await page.locator('[data-reminder-lookup]:enabled').waitFor();
+   assert.equal(await page.locator('[data-reminder-results]').textContent(),'');assert.equal(await page.locator('[data-reminder-rows]').textContent(),'');assert.equal(await page.locator('[data-reminder-pending]').isVisible(),true);assert.equal(f.runtime.messages.length,f.baselineMessages+1);assert.equal(dispatches(f).length,1);
+   f.controls.failSelectedPreview=false;await page.reload({waitUntil:'domcontentloaded'});await page.locator('[data-reminder-lookup]:enabled').waitFor();await page.locator('[data-reminder-lookup]').click();await page.locator('[data-reminder-results]').filter({hasText:'合成提醒甲 · 服务商已接受'}).waitFor();await page.locator('[data-reminder-refresh]:enabled').waitFor();
+   const lookups=f.calls.filter(call=>call.path==='/api/admin/registration-confirmation/reminder-operation/'+originalId);assert.equal(lookups.length,2);assert.ok(lookups.every(call=>call.method==='GET'));assert.equal(dispatches(f).length,1);assert.equal(f.runtime.messages.length,f.baselineMessages+1);
+   reports.push({width:390,failedIdentityReadClearsNamesAndKeepsOriginalPending:true,secondReloadRecoversSameOriginalOperation:true,readOnlyIdentityRecoveryNeverDispatches:true});
+  }finally{await f.context.close();}
+ }
+ {
+  const f=await fixture(390,{loseAck:true}),{page}=f;try{
+   await open(f);await preview(f);await page.getByLabel('选择 合成提醒甲',{exact:true}).check();const lost=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/admin/registration-confirmation/reminder-dispatch'&&response.status()===503);await page.locator('[data-reminder-send]').click();await lost;await page.locator('[data-reminder-lookup]:enabled').waitFor();
+   const current=await f.runtime.app.registrationService.getAdmissions({actor:f.runtime.users[0]}),withdraw=await f.runtime.app.handle(f.runtime.request('/api/admin/admissions/withdraw',{method:'POST',headers:f.auth,body:{registrationId:f.a.reference_code,expectedRevision:current.revision,operationId:'w'.repeat(43)}}));assert.equal(withdraw.status,200);
+   await page.reload({waitUntil:'domcontentloaded'});await page.locator('[data-reminder-lookup]:enabled').waitFor();await page.locator('[data-reminder-lookup]').click();await page.locator('[data-reminder-results]').filter({hasText:'人员信息待核对 · 服务商已接受'}).waitFor();await page.locator('[data-reminder-refresh]:enabled').waitFor();assert.doesNotMatch(await page.locator('[data-reminder-results]').textContent(),/合成提醒甲|合成提醒乙/u);assert.equal(dispatches(f).length,1);assert.equal(f.runtime.messages.length,f.baselineMessages+1);
+   reports.push({width:390,withdrawnOriginalRecipientNeverMappedToAnotherName:true,missingCurrentIdentityShownHonestly:true,noReminderResendAfterWithdrawal:true});
   }finally{await f.context.close();}
  }
  {

@@ -54,6 +54,8 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 
 P2 另依 `tests/browser/README.md` 執行 `p2-directory-smoke.mjs` 與 `p2-person-smoke.mjs`，固定清單不自動包含它們。核對先篩選再分頁、未知來源不當零、保存後同一人／焦點／位置、遺失回執只核對原結果，以及私人連結僅明確取回且不快取。合成操作不代替實際同事的短操作觀察。
 
+P3 另執行 `p3-private-page-smoke.mjs`，並使用更新後的固定 `settings-group-runtime-smoke.mjs`；實際證據見 [P3 紀錄](../../../docs/redesign/p3-release.md)。核對群碼缺少／過期／圖片失敗、重新取得、資格變更清理、微信內裝置指引及保存備援。圖片十分鐘期限、群碼七天上限及工作人員二十四小時內到期提示是不同邊界；模擬裝置不代表真實入群或已加入 Wallet。
+
 這些腳本使用合成內存 OSS／provider，並在頁面載入前攔截所有瀏覽器請求；只讀取本地 `dist`。維護清單時重新檢查請求攔截，不能換成正式站瀏覽。截圖與結果由既有腳本寫入忽略的 `.local-data/browser-evidence/`。
 
 腳本只檢查本地產物存在及 API 標記，並記錄 HTML 摘要；它不能證明產物必然來自目前提交。產品修改後先重新建置，發布驗收另外使用準確提交的產物與 manifest。

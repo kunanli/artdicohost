@@ -1,6 +1,6 @@
 import {COLLABORATOR_ROLES,canManageEventOperations,canManageAccounts,canRecoverSystem} from '../../shared/staff-permissions.mjs';
 import {createSettingsFormDraft} from '../lib/settings-form-draft.mjs';
-import {groupInviteExpiryBounds,groupInviteExpiryPreset,validateGroupInviteExpiry} from '../lib/group-invite-expiry.mjs';
+import {groupInviteExpiryBounds,groupInviteExpiryPreset,validateGroupInviteExpiry,groupInviteStatus} from '../lib/group-invite-expiry.mjs';
 const roles={editor:'内容编辑',publisher:'公开发布',outreach:'人员邀约',reviewer:'报名审核',superadmin:'账号与维护'};
 const KEY=/^[A-Za-z0-9_-]{43}$/u;
 function element(tag,text){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;return node;}
@@ -59,7 +59,7 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
   let accountKey='',userDirty=false,groupDirty=false,restoreDirty=false,groupImageGeneration=0;
   let backupUrl=null,keyUrl=null,userEditRevision=null,generation=0;
   let usersSequence=0,groupSequence=0,maintenanceSequence=0,userDirectory=null,lastGeneratedPassword='';
-  let groupClock=null,groupClockObserved=0;
+  let groupClock=null,groupClockObserved=0,groupImageFailed=false;
   const formStates={users:'loaded',group:'loaded',restore:'loaded'};
   const credentials=new Map();
   const drafts=new Map();
@@ -80,6 +80,20 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
     if(initialize&&!field.value&&bounds)field.value=bounds.defaultValue;
     if(hint)hint.textContent=bounds?'最晚可选 '+bounds.maxLabel+'；按服务器当前时间计算。':'请刷新群码状态，读取服务器允许的到期范围。';
     if(validate)fieldError('expiresAt',validateGroupInviteExpiry(field.value,bounds).message);return bounds;
+  }
+  function renderGroupStatus(){
+    const state=groupInviteStatus(groupClock,Math.max(0,performance.now()-groupClockObserved)),output=$('[data-group-status]');
+    output.dataset.groupHealth=groupImageFailed?'image-unavailable':state.kind;
+    const labels={unavailable:'群码状态待核对 · 请刷新状态',missing:'群码待更新 · 请上传原图并核对到期时间',expired:'群码已过期 · 请替换二维码',expiring:'24 小时内到期 · 请准备新群码',ready:'群码可用'};
+    output.textContent=(groupImageFailed?'图片未能载入 · 请刷新状态或替换原图':labels[state.kind])+(state.expiresAt?' · '+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit',hour12:false}).format(new Date(state.expiresAt))+' 到期（UTC+8）':'');
+    if(state.kind==='expired'||state.kind==='unavailable'){const image=$('[data-group-image]');image.hidden=true;image.removeAttribute('src');}
+  }
+  function clearGroupRead(message='群码状态待核对 · 请刷新状态'){
+    const hadState=groupClock!==null||groupRevision!==null||groupConfigured;
+    groupRevision=null;groupConfigured=false;groupClock=null;groupClockObserved=0;groupImageFailed=false;groupImageGeneration++;
+    const image=$('[data-group-image]');image.removeAttribute('src');image.hidden=true;
+    $('[data-group-status]').textContent=message;$('[data-group-status]').dataset.groupHealth='unavailable';updateExpiry();
+    if(hadState)root.dispatchEvent(new CustomEvent('staff-settings-state',{detail:null}));
   }
   function checkImage(file){return !file?'请选择要保存的二维码原图。':!['image/png','image/jpeg','image/webp'].includes(file.type)||!file.size||file.size>512*1024?'请选择不超过 512 KiB 的 PNG、JPEG 或 WebP 原图。':'';}
   function status(message,error=false){$('[data-settings-status]').textContent=error?'':message;$('[data-settings-error]').textContent=error?message:'';$('[data-settings-error]').hidden=!error;if(error)$('[data-settings-error]').focus();}
@@ -179,10 +193,12 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
     }
   }
   async function loadGroup(){
-    const started=generation,sequence=++groupSequence,state=await request('/api/admin/group-invite');current(started);if(sequence!==groupSequence)return;if(!Number.isSafeInteger(state.revision)||state.revision<0||typeof state.configured!=='boolean'||typeof state.expired!=='boolean'||state.configured&&!Number.isFinite(Date.parse(state.expiresAt)))throw new Error('群码状态结果无效。');
+    const started=generation,sequence=++groupSequence;clearGroupRead('正在读取群码状态…');
+    let state;try{state=await request('/api/admin/group-invite');current(started);if(sequence!==groupSequence)return;if(!state||!Number.isSafeInteger(state.revision)||state.revision<0||typeof state.configured!=='boolean'||typeof state.expired!=='boolean'||state.configured&&!Number.isFinite(Date.parse(state.expiresAt)))throw new Error('群码状态结果无效。');}
+    catch(error){if(started===generation&&sequence!==groupSequence)return;if(started===generation)clearGroupRead();throw error;}
     groupRevision=state.revision;groupConfigured=state.configured===true;groupClock=state;groupClockObserved=performance.now();updateExpiry({initialize:true,validate:groupDirty});if(unknown.has('group'))status('已重新读取群码。读取不能证明先前修改成功，请人工核对后解除本机锁定。',true);
-    $('[data-group-status]').textContent=!groupConfigured?'尚未配置入群图片，报名保存成功仍会显示编号。':(state.expired?'当前二维码已过期。':'当前二维码已配置。')+' 到期时间：'+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Taipei',dateStyle:'medium',timeStyle:'short'}).format(new Date(state.expiresAt))+'（UTC+8）';
-    const old=$('[data-group-image]'),image=old.cloneNode(false),stamp=++groupImageGeneration;old.removeAttribute('src');old.replaceWith(image);image.hidden=true;image.removeAttribute('src');if(groupConfigured){image.addEventListener('error',()=>{if(started===generation&&stamp===groupImageGeneration)image.hidden=true;},{once:true});image.src='/api/admin/group-invite/image';image.hidden=false;}
+    renderGroupStatus();
+    const old=$('[data-group-image]'),image=old.cloneNode(false),stamp=++groupImageGeneration,readiness=groupInviteStatus(groupClock);old.removeAttribute('src');old.replaceWith(image);image.hidden=true;image.removeAttribute('src');if(['ready','expiring'].includes(readiness.kind)){image.addEventListener('error',()=>{if(started===generation&&stamp===groupImageGeneration){image.hidden=true;image.removeAttribute('src');groupImageFailed=true;renderGroupStatus();}},{once:true});image.src='/api/admin/group-invite/image';image.hidden=false;}
     root.dispatchEvent(new CustomEvent('staff-settings-state',{detail:{configured:groupConfigured,expired:state.expired,expiresAt:groupConfigured?state.expiresAt:null,serverTime:state.serverTime,maxExpiresAt:state.maxExpiresAt}}));
   }
   async function loadMaintenance(){if(!canRecoverSystem(user))return;const started=generation,sequence=++maintenanceSequence,value=await request('/api/admin/maintenance');current(started);if(sequence!==maintenanceSequence)return;maintenance=value;if(unknown.has('restore'))status('维护能力已读取。不能据此确认先前恢复结果；请按原隔离恢复名称核对审计并解除本机锁定，不要换名重复提交。',true);$('[data-maintenance-status]').textContent=maintenance.enabled===true?'可创建加密备份，并验证恢复到隔离位置。旧会话不会恢复；生产切换仍须另行核对。':'维护工具尚未就绪，请使用核定的人工运维流程。';lock();}
@@ -231,7 +247,7 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
       groupSequence++;form.reset();groupDirty=false;fieldError('image');fieldError('expiresAt');await loadGroup();current(started);saveState('group','saved');status('已保存当前入群图片。旧入口失效，到期时间不会自动延长。');
     });
   });
-  $('[data-group-disable]').addEventListener('click',()=>action(async started=>{if(!confirm('关闭后，新的报名成功收据不再提供群码。报名编号与已保存资料不受影响。确认关闭吗？'))return;const expectedRevision=groupRevision;await write('group','/api/admin/group-invite',{method:'PUT',body:JSON.stringify({expectedRevision,enabled:false})},value=>value.revision===expectedRevision+1&&value.configured===false);current(started);groupSequence++;await loadGroup();current(started);saveState('group',groupDirty?'unsaved':'saved',groupDirty?'未保存 · 新二维码填写仍保留':'已保存 · 入群图片已关闭');status('已关闭入群图片；已保存报名仍然有效。');}));
+  $('[data-group-disable]').addEventListener('click',()=>action(async started=>{if(groupRevision===null)return;if(!confirm('关闭后，私人参会页不再提供群码。参会名额和已保存资料不变。确认关闭吗？'))return;const expectedRevision=groupRevision;await write('group','/api/admin/group-invite',{method:'PUT',body:JSON.stringify({expectedRevision,enabled:false})},value=>value.revision===expectedRevision+1&&value.configured===false);current(started);groupSequence++;await loadGroup();current(started);saveState('group',groupDirty?'unsaved':'saved',groupDirty?'未保存 · 新二维码填写仍保留':'已保存 · 入群图片已关闭');status('已关闭入群图片；已保存报名仍然有效。');}));
   $('[data-maintenance-refresh]').addEventListener('click',()=>action(loadMaintenance,canRecoverSystem));
   $('[data-backup-create]').addEventListener('click',()=>action(async()=>{
     const started=generation;
@@ -261,12 +277,12 @@ export function createStaffSettings({root,request,binaryRequest,draftStore,event
   });
   function clear(){
     for(const draft of drafts.values())draft.close();drafts.clear();
-    generation++;usersSequence++;groupSequence++;maintenanceSequence++;groupImageGeneration++;unknown.clear();user=null;busy=false;accountKey='';userDirty=false;groupDirty=false;restoreDirty=false;usersRevision=null;userDirectory=null;groupRevision=null;groupConfigured=false;groupClock=null;groupClockObserved=0;maintenance=null;root.hidden=true;wipeSecrets();
+    generation++;usersSequence++;groupSequence++;maintenanceSequence++;clearGroupRead('群码状态尚未载入。');unknown.clear();user=null;busy=false;accountKey='';userDirty=false;groupDirty=false;restoreDirty=false;usersRevision=null;userDirectory=null;maintenance=null;root.hidden=true;wipeSecrets();
     for(const form of root.querySelectorAll('form')){form.reset();for(const field of form.querySelectorAll('input[type=hidden]'))field.value='';}
     $('[data-users-list]').replaceChildren();$('[data-group-image]').removeAttribute('src');$('[data-group-image]').hidden=true;$('[data-restore-result]').textContent='';$('[data-group-status]').textContent='群码状态尚未载入。';$('[data-maintenance-status]').textContent='维护能力尚未载入。';for(const kind of ['users','group','restore'])saveState(kind,'loaded');fieldError('image');fieldError('expiresAt');status('');lock();
   }
   return Object.freeze({
-    get pending(){return busy||unknown.size>0;},get dirty(){return userDirty||groupDirty||restoreDirty;},clear,wipeSecrets,lock(value){externalBusy=value;lock();},
+    get pending(){return busy||unknown.size>0;},get dirty(){return userDirty||groupDirty||restoreDirty;},clear,wipeSecrets,refreshGroupLabels(){if(groupClock)renderGroupStatus();},lock(value){externalBusy=value;lock();},
     async configure(account){
       const key=account?.id+'|'+[...(account?.roles??[])].sort().join(',');if(key!==accountKey)clear();user=account;accountKey=key;root.hidden=!canManageEventOperations(user);if(root.hidden){clear();return;}
       const started=generation,results=await Promise.allSettled([...(includes('group')?[loadGroup()]:[]),...(includes('users')&&canManageAccounts(user)?[loadUsers()]:[]),...(includes('restore')&&canRecoverSystem(user)?[loadMaintenance()]:[])]);if(started!==generation)return;

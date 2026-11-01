@@ -5,6 +5,7 @@ import {canManageEventOperations,canManageAccounts} from '../../shared/staff-per
 import {createBrowserDraftStore} from '../lib/browser-drafts.mjs';
 import {eventConfig} from '../config/event.mjs';
 import {SETTINGS_PAGES,resolveSettingsPage,settingsPageHref} from '../lib/admin-sections.mjs';
+import {groupInviteStatus} from '../lib/group-invite-expiry.mjs';
 
 const root=document.querySelector('[data-settings-admin]'),$=selector=>root.querySelector(selector);
 const section=resolveSettingsPage(location.pathname,location.hash);
@@ -18,7 +19,7 @@ for(const panel of root.querySelectorAll('[data-settings-panel]'))panel.hidden=p
 $('[data-settings-refresh]').hidden=!['delivery','group','accounts'].includes(section);
 $('[data-settings-local-note]').hidden=!['delivery','group','accounts'].includes(section);
 const secure=location.protocol==='https:'||['127.0.0.1','localhost'].includes(location.hostname);
-let user=null,busy=false,epoch=0,groupState=null,logoutPending=false;
+let user=null,busy=false,epoch=0,groupState=null,groupObserved=0,logoutPending=false;
 function announce(message,error=false){$('[data-settings-page-status]').textContent=error?'':message;$('[data-settings-page-error]').textContent=error?message:'';$('[data-settings-page-error]').hidden=!error;if(error)$('[data-settings-page-error]').focus();}
 const transport=createSettingsSession({
   onExpired(path){const hadUser=Boolean(user);clear();if(path==='/api/admin/login')announce('账号或密码未通过验证。',true);else if(hadUser)announce('会话已结束，请重新登录。',true);},
@@ -76,11 +77,11 @@ async function action(callback){
   finally{if(started===epoch){busy=false;lock();}}
 }
 function renderGroup(){
-  if(!groupState)return;
-  const expires=Date.parse(groupState.expiresAt),remaining=expires-Date.now();
-  $('[data-settings-group-summary]').textContent=!groupState.configured?'尚未配置 · 上传入群原图':groupState.expired||remaining<=0?'已过期 · 请替换二维码':(remaining<=86400000?'24 小时内到期 · ':'已配置 · ')+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit',hour12:false}).format(new Date(expires))+' 到期（UTC+8）';
+  const state=groupInviteStatus(groupState,Math.max(0,performance.now()-groupObserved));
+  $('[data-settings-group-summary]').textContent=({unavailable:'状态待核对 · 刷新群码状态',missing:'尚未配置 · 上传入群原图',expired:'已过期 · 请替换二维码',expiring:'24 小时内到期 · 请准备新群码',ready:'已配置'})[state.kind]+(state.expiresAt?' · '+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit',hour12:false}).format(new Date(state.expiresAt))+' 到期（UTC+8）':'');
+  staffSettings.refreshGroupLabels?.();
 }
-staffRoot.addEventListener('staff-settings-state',event=>{groupState=event.detail;renderGroup();});
+staffRoot.addEventListener('staff-settings-state',event=>{groupState=event.detail;groupObserved=performance.now();renderGroup();});
 root.addEventListener('settings-actor-cleared',event=>{if(event.detail?.actorId===user?.id){clear();announce('此账号已在另一页面清除本机资料，请重新登录。',true);}});
 deliveryRoot.addEventListener('delivery-settings-state',event=>{
   const {email,wallet}=event.detail;

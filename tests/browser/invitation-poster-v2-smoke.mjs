@@ -83,8 +83,8 @@ async function seedPublic(f,name=PUBLIC_NAME,status='confirmed'){
   if(status==='crew')await f.admission('setAdmissionKind',result.reference_code,{kind:'crew'});
   return result;
 }
-async function openReceipt(f,receipt){await f.page.goto(receipt.confirmation?.confirmationUrl||receipt.confirmationUrl,{waitUntil:'networkidle'});await f.page.locator('[data-confirmation-content]:visible').waitFor();}
-async function generatePrivate(f){await f.page.locator('[data-confirmation-invitation]').click();await f.page.locator('[data-confirmation-invitation-download]:visible').waitFor();await f.page.locator('[data-confirmation-invitation-image]').evaluate(image=>image.decode());}
+async function openReceipt(f,receipt){await f.page.goto(receipt.confirmation?.confirmationUrl||receipt.confirmationUrl,{waitUntil:'networkidle'});await f.page.locator('[data-confirmation-content]:visible').waitFor();await f.page.locator('[data-confirmation-more]').evaluate(details=>{details.open=true;});}
+async function generatePrivate(f){await f.page.locator('[data-confirmation-more]').evaluate(details=>{details.open=true;});await f.page.locator('[data-confirmation-invitation]').click();await f.page.locator('[data-confirmation-invitation-download]:visible').waitFor();await f.page.locator('[data-confirmation-invitation-image]').evaluate(image=>image.decode());}
 async function assertNoPrivatePng(f){assert.equal(await f.page.locator('[data-confirmation-invitation-preview]').isVisible(),false);assert.equal(await f.page.locator('[data-confirmation-invitation-download]').getAttribute('href'),null);}
 async function checkPng(bytes){assert.deepEqual([...bytes.subarray(0,8)],[137,80,78,71,13,10,26,10]);assert.equal(bytes.readUInt32BE(16),1080);assert.equal(bytes.readUInt32BE(20),1920);}
 async function privateBytes(f){const pending=f.page.waitForEvent('download');await f.page.locator('[data-confirmation-invitation-download]').click();const download=await pending;assert.equal(download.suggestedFilename(),'artdico-host-invitation.png');const bytes=await readFile(await download.path());await checkPng(bytes);return bytes;}
@@ -100,7 +100,7 @@ async function seedContact(f,name,{legacy=false}={}){
   return contact;
 }
 function contactRow(f,id){return f.page.locator('[data-contacts-rows] tr').filter({has:f.page.locator('[data-contact-selection="'+id+'"]')});}
-async function openContacts(f,id){await f.page.goto(API+'/admin/contacts/',{waitUntil:'networkidle'});await f.page.locator('[data-contacts-workspace]:visible').waitFor();await contactRow(f,id).waitFor();}
+async function openContacts(f,id){await f.page.goto(API+'/admin/contacts/',{waitUntil:'networkidle'});await f.page.locator('[data-contacts-workspace]:visible').waitFor();await f.page.locator('[data-contacts-legacy-tools] > summary').click();await contactRow(f,id).waitFor();}
 async function previewPoster(f,id){await contactRow(f,id).getByRole('button',{name:'邀请函',exact:true}).click();await f.page.locator('[data-invitation-use-poster]').click();await f.page.locator('[data-invitation-form] [name=confirmed]').check();await f.page.locator('[data-invitation-preview]').click();await f.page.locator('[data-invitation-image]:visible').waitFor();}
 
 try{

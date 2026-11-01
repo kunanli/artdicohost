@@ -2,9 +2,9 @@
 
 ## 2026-11-01 新改版執行入口
 
-本次對話已整理為 [改版執行總覽](redesign/README.md)，包含開發步驟、工作人員與參與者操作、驗收與發布。最新 P1b 已由 [PR #50](https://github.com/kunanli/artdicohost/pull/50) 合併並發布於 main `535d3ed33629b9ff70c14587c5acdd25370df801`；[正式流程 41272446371](https://github.com/kunanli/artdicohost/actions/runs/41272446371) 的檢查、FC 與 OSS 全部成功，13 個後台頁面與 45 個公開物件 HTTPS 核驗通過。P1a 的先前發布保留於 [其紀錄](redesign/p1a-release.md)。
+本次對話已整理為 [改版執行總覽](redesign/README.md)。最新 P2 已由 [PR #51](https://github.com/kunanli/artdicohost/pull/51) 發布於 main `e531a3b8bb0b7ba4cce7c17075f30fc9044f29ca`；[正式流程 41275940947](https://github.com/kunanli/artdicohost/actions/runs/41275940947) 的檢查、FC 與 OSS 全部成功，05:17:53 UTC 完成 13 個準確後台頁面、05:19:14 UTC 完成 45 個公開物件的 HTTPS 核驗，公開業務快照仍為修訂 43。先前階段保留於 [P1a](redesign/p1a-release.md) 及 [P1b](redesign/p1b-release.md) 紀錄。
 
-目前分支 `feat/redesign-p2`，產品提交 `e01db5d920ecb4a6ad90165c619b59facc84bffc`。簡約人員工作頁與唯讀核對的本地實作、1475 項完整測試、公開／FC 建置瀏覽器及來源包校驗已完成；PR CI、實際發布及真實同事觀察尚待完成，見 [P2 紀錄](redesign/p2-release.md)。P2 未新增業務儲存格式，但回退補丁仍須保留未知歷史／來源核對及原本機待提交正文，並相容 P1b 出席投影、多人場次和動態展位；不以舊快照覆蓋業務資料。
+目前分支 `feat/redesign-p3`，產品提交 `6640833106f2f1680f26673c19b12ad6f6f40cf3`。本地實作、1485 項完整回歸、公開建置與實際 FC 設定頁瀏覽器及準確來源包校驗已完成；PR CI 與實際發布待核對，見 [P3 紀錄](redesign/p3-release.md)。私人參會頁屬 OSS，後台設定頁才以 FC 的實際 `code/admin-assets` 驗收。使用者已授權持續按順序完成 P3 至 P6，每階段先檢查與交付再接續。真實同事及實機驗收仍待完成，回退保留 P2 未知歷史／來源核對及原本機待提交正文，不以舊快照覆蓋業務資料。
 
 沿用既有環境與資源。舊意向、姓名／聯絡資訊、名額、通知與公開內容不因文件或程式部署自動整合／發布／補寄。Apple 10/30 簽章設定與人員去重已有後續紀錄，讀取本頁下方早期狀態時，須對照 [Wallet 最新紀錄](apple-wallet-setup.md) 及 [統一人員](unified-people-workspace.md)，不要重做已完成設定。
 

@@ -83,12 +83,12 @@ def enlarged_dictionary(data,prop):
     return data[:12]+bytes(header)+data[12+size:]
 `;
 
-test('actual candidate producer uses x86 BCJ, CRC64 and the original preset-six dictionary', () => {
+test('actual candidate producer uses x86 BCJ, CRC64 and a fixed 32 MiB dictionary within the original decoder budget', () => {
   const result = successful(python(preamble + String.raw`
 size,header,chain=filters(packed)
 assert [entry[0] for entry in chain]==[lzma.FILTER_X86,lzma.FILTER_LZMA2]
 assert chain[0][1]==b''
-assert chain[1][1]==bytes([22]) # LZMA2 dictionary property: 8 MiB
+assert chain[1][1]==bytes([26]) # LZMA2 dictionary property: 32 MiB
 decoder=lzma.LZMADecompressor(format=lzma.FORMAT_XZ,memlimit=96*1024*1024)
 decoded=decoder.decompress(packed)
 assert decoder.eof and decoder.check==lzma.CHECK_CRC64 and not decoder.unused_data
@@ -99,9 +99,10 @@ sys.stdout.buffer.write(decoded)
   assert.ok(produced().length < legacy.length / 2, 'BCJ transforms real relative branch operands rather than only relabeling the stream');
 });
 
-test('the unchanged launcher and candidate inspector recover exact original bytes from BCJ and legacy streams', () => {
+test('the unchanged launcher and candidate inspector recover exact bytes from new BCJ, previous BCJ6 and legacy streams', () => {
   const legacy = successful(python('import lzma,sys\nsys.stdout.buffer.write(lzma.compress(sys.stdin.buffer.read(),format=lzma.FORMAT_XZ,check=lzma.CHECK_CRC64,preset=6))', raw));
-  for (const input of [produced(), legacy]) {
+  const previous = successful(python('import lzma,sys\nsys.stdout.buffer.write(lzma.compress(sys.stdin.buffer.read(),format=lzma.FORMAT_XZ,check=lzma.CHECK_CRC64,filters=[{"id":lzma.FILTER_X86},{"id":lzma.FILTER_LZMA2,"preset":6}]))', raw));
+  for (const input of [produced(), previous, legacy]) {
     const decoded = successful(python(preamble + String.raw`
 output=io.BytesIO()
 assert module.decode_runtime(io.BytesIO(packed),output,digest)==int(sys.argv[3])

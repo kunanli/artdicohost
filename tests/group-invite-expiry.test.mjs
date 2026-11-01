@@ -1,8 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GROUP_INVITE_MAX_AGE_MS, groupInviteExpiryBounds, groupInviteExpiryPreset, validateGroupInviteExpiry } from '../src/lib/group-invite-expiry.mjs';
+import { GROUP_INVITE_MAX_AGE_MS, groupInviteExpiryBounds, groupInviteExpiryPreset, validateGroupInviteExpiry, groupInviteStatus } from '../src/lib/group-invite-expiry.mjs';
 
 const state = { serverTime: '2026-10-22T01:05:35.123Z', maxExpiresAt: '2026-10-29T01:05:35.123Z' };
+
+test('group status warns within 24 hours and expires using server time plus measured elapsed time', () => {
+  const now = Date.parse(state.serverTime), configured = { configured: true, expired: false, serverTime: state.serverTime };
+  const status = (remaining, elapsed = 0) => groupInviteStatus({ ...configured, expiresAt: new Date(now + remaining).toISOString() }, elapsed).kind;
+  assert.equal(status(86_400_001), 'ready');
+  assert.equal(status(86_400_000), 'expiring');
+  assert.equal(status(60_000), 'expiring');
+  assert.equal(status(60_000, 60_000), 'expired');
+  assert.equal(status(-1), 'expired');
+  assert.equal(groupInviteStatus({ ...configured, expired: true, expiresAt: new Date(now + 86_400_000).toISOString() }).kind, 'expired');
+  assert.equal(groupInviteStatus({ configured: false, expired: true }).kind, 'missing');
+});
+
+test('unreadable group metadata cannot show an available QR or invent an expiry', () => {
+  for (const value of [null, {}, { configured: true, expired: false, expiresAt: state.maxExpiresAt },
+    { configured: true, expired: false, serverTime: state.serverTime, expiresAt: '2026-02-30T01:05:35.123Z' },
+    { configured: 'true', expired: false }, { configured: false }]) assert.deepEqual(groupInviteStatus(value), { kind: 'unavailable', expiresAt: null });
+  for (const elapsed of [-1, Infinity, NaN, '1']) assert.equal(groupInviteStatus({ configured: false, expired: true }, elapsed).kind, 'unavailable');
+});
 
 test('group expiry uses server time and explicit UTC+8 minute precision', () => {
   const bounds = groupInviteExpiryBounds(state);

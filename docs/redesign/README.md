@@ -1,6 +1,6 @@
 # ARTDiCO HOST 改版執行總覽
 
-更新日期：2026-11-01（Asia/Taipei）。P1–P6 軟體已交付並實際發布，main `40ea32a6` 的 1535 項測試、兩種 ZIP 離線啟動、私有 OSS、13 個後台頁面及 51 個公開物件核驗均通過，見 [P6 最終紀錄](p6-release.md)。真實收件、入群、Wallet、同事觀察及真實資料核對維持獨立人工清單。
+更新日期：2026-11-02（Asia/Taipei）。**現行交付為 [PR #60 單位／職位、原稿對照與 CSS 統一](guest-identity-reference-release.md)，已發布 main `e6e6d3f6`；樣式修改先讀 [首頁 CSS／字級規範](../frontend-typography.md)。** main 排版 4／4、實際素材 13／13、1612 項測試與 61 個公開物件 HTTPS 通過；下方 P1–P6、UX 及 PR #59 保留為前輪歷史。四項真人／真實資料工作仍獨立待驗。
 
 使用者已確認接續 UX 優化；[UX1](ux-clarity-release.md) 已由 PR #56 發布於 main `cc1281f8`，正式核驗 1536 項測試、13 個後台頁面與 51 個公開物件。[UX2 具名寄送與連續處理](ux-workflow-release.md) 由 PR #57 發布於 main `5ec45815`，PR／main CI 與實際 FC／OSS／HTTPS 均通過：1586 項測試、704 個來源檔、準確包離線啟動、私有 OSS、13 個後台頁面及 51 個公開物件。UX1、UX2 軟體已上線；四項真人與真實資料核對仍待人工記錄。
 

@@ -1,5 +1,13 @@
 # 开发接续：先读本页
 
+## 2026-11-02（Asia/Taipei）單位／職位、原稿與首頁 CSS 已發布
+
+[PR #60](https://github.com/kunanli/artdicohost/pull/60) 已正式發布 main `e6e6d3f61d113b1831c06883c096db8c4a3df456`，完整回執見 [本輪紀錄](redesign/guest-identity-reference-release.md)。單位獨立 company、職位 title→ggjRole→空、原稿逐區差異與集中 CSS 管理全部納入；樣式入口為 [首頁 CSS／字級規範](frontend-typography.md)，PR #59 以下為歷史。
+
+[main CI 41329241815](https://github.com/kunanli/artdicohost/actions/runs/41329241815) 四工作 completed／success：1612 項測試、729 來源、Astro 479（0 錯誤／警告、1 既有 hint）、23 頁、audit0、FC128／public61。main 排版4於 17:03:45.4986356 UTC、實際13於 17:04:29.7437512 UTC 各獨立核對通過；source／captureSource 均 e6e6d3f6，兩報 HTML `c48c7da23b440d4b0106463b55af42e9ed4a5eb6c7a7766e1423c5575c7dbad7`、snapshot `4b5486d90eed56ed762e40227b35866a07ec4cd451e16b32a67374d5a7ed79af`。排版最低對比 11.033071382528277、errors0／POST0／mail0；actual raw7／reference7／guest9／org7／errors0，company36／title32／role0／detail36、stub9；替身與可見性模擬的範圍不改稱真機驗收。
+
+17:10:33.9824681 UTC FC 準確來源 e6e6d3f6、內容／報名啟用、私有 OSS 2客戶端／1FC通過；17:10:38.7833882 UTC 13 後台 HTTPS、17:10:39.9032458 UTC 匿名公開 HTTPS／CORS、17:12:22.9098963 UTC `artdico.host` 的61個準確公開物件通過。公開仍R43／10月22日發布、計數9／7／1／16／43、guestAttendance缺省／confirmed0／displayed9，不代表九人已確認出席。舊12／13 fixture失敗與本地00a917版本資格保留於本輪紀錄；`docs/guest-identity-typography-release-proof`只補文件，不新建PR或重部署，四項真人工作獨立。
+
 ## 2026-11-01 氣泡職稱與正式 Logo 邊界修復
 
 本輪已由 [PR #59](https://github.com/kunanli/artdicohost/pull/59) 正式發布於 main `bd49a745cd420510db9d6432bfceff6414f10ce2`；計畫 `c196690`、實作分支 `fix/bubbles-and-logo-bounds` 從 main `30e184fd` 與文件回執 `15be586` 接續。使用者回報的字幕、內捲軸與正式圖片邊界修復及其驗收範圍見 [本輪紀錄](redesign/bubbles-logo-release.md)，下方前輪 1593／53 證據仍作歷史保留。

@@ -119,7 +119,7 @@ export async function capturePublicVisualFixture({ fetchFn = fetch, outputDirect
     } catch { throw failure('WRITE_FAILED'); }
     const referenceLogoSources = (data.content.organizations ?? []).flatMap(card => {
       const key = organizationReferenceKey(card), image = MEDIA_PATH.exec(card.logoUrl ?? '');
-      return key && image ? [{ key, sha256: image[1] }] : [];
+      return image ? [{ organizationId: card.id, key, sha256: image[1] }] : [];
     });
     // Count public subtitle field availability, without copying any caption.
     // Priority mirrors the presentation contract; no unpublished helper import.

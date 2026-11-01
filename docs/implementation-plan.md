@@ -1,5 +1,15 @@
 # ARTDiCO HOST 实施计划
 
+## 2026-11-01 當前階段 P4：獨立回執與行前提醒
+
+P3 已由 [PR #52](https://github.com/kunanli/artdicohost/pull/52) 發布於 main `51ff34b37981d784963bbaf83a4cd13b0c717de4`，[正式流程 41278011325](https://github.com/kunanli/artdicohost/actions/runs/41278011325) 全成功，1485 項測試、兩種 ZIP 離線啟動、私有 OSS、13 個後台頁面與 45 個公開物件 HTTPS 通過；來源包壓縮已留出餘量。本階段 `feat/redesign-p4` 從此來源接續，完成後即進入 P5，不等逐步指令。
+
+沿用同一通知 journal、現有 EmailJS 中性模板及 invitation_text，新增 application_received 與 pre_event_reminder，與 registration／promotion 正式信身份隔離。只有可信 created、已持久化的新公開待審申請嘗試回執；讀取、重放、匯入、整合或部署不補寄。回執不含群碼、Wallet 或已核准語意，通知失敗不抹除原回執與私人連結。私人頁可選 notifications 欄位分型顯示，原 email 仍只代表正式信，舊回應仍可讀。
+
+行前提醒先列姓名／狀態與固定內容供工作人員選人預覽，再明確執行最多一百人的受控批次；不貼大量編號，不建立排程。依已保存 personGroups 聚合同種類歷史，接受／預留／未知不另寄；真正 provider fetch 前再次核對主身份、當前名額、聯絡許可與信箱、通知開關、活動事實和期限，並攔截逾時後的遲到請求。未知主要核對原操作，未嘗試者才另行選取；來源不可讀不當可寄，預覽使用有界來源快照避免重複讀整份名單。
+
+不更改 approvedRegistrationPolicy 的版本、用途字串或部署環境值：現有 lifecycle 會實際重寫政策，直接升版會使尚未落盤的舊 pending 正文失效。以表單就近說明及通知文件補充必要用途與最小服務商欄位，保留不可變同意與原正文／鍵。備份既有 journal 前綴不變，補新種類隔離恢復／舊資料讀取與相容回退要求。保留 2000 通知、4000 稽核、1 MiB journal、128 檔／40 資產／8 MiB 與 48,000,000-byte 上傳限制；擴充既有模組，不新增服務、依賴、憑據或 runtime 檔案。只用合成 provider／記錄與攔截瀏覽器驗證，不實寄或操作正式名單。
+
 ## 2026-11-01 當前階段 P3：私人參會頁與群碼維護
 
 使用者最新授權「繼續做，一步一步全部做完，不用等我命令」，依序完成 P3 → P4 → P5 → P6；每階段完成檢查、PR、部署與實際核驗後即接續下一階段，不另等逐步指令。P2 已由 [PR #51](https://github.com/kunanli/artdicohost/pull/51) 發布於 main `e531a3b8bb0b7ba4cce7c17075f30fc9044f29ca`，[正式流程 41275940947](https://github.com/kunanli/artdicohost/actions/runs/41275940947) 全部成功，13 個後台頁面及 45 個公開物件 HTTPS 核驗通過；本階段分支 `feat/redesign-p3`。

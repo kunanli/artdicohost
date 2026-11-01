@@ -1,5 +1,5 @@
-// Final built homepage only; synthetic public publications and fully intercepted
-// requests. Geometry below was measured from the user's original PNG, not CSS.
+// Historical reference geometry over synthetic publications, not production
+// upload proof. Actual uploads are covered by bubbles-logo-bounds-smoke.mjs.
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
@@ -167,7 +167,8 @@ async function geometry(f) {
       placeholders: [...document.querySelectorAll('.ah-guest-placeholder')].map(node => ({ background: getComputedStyle(node).backgroundColor,
         padding: ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'].map(key => parseFloat(getComputedStyle(node)[key])), circle: rect(node.querySelector('.ah-guest-placeholder-circle')) })),
       organizations: [...document.querySelectorAll('[data-organization-id]')].map(node => ({ ...rect(node), id: node.dataset.organizationId,
-        reference: node.dataset.organizationReference ?? null, paintedLogo: paintedLogo(node.querySelector('img')) })) };
+        reference: node.dataset.organizationReference ?? null, card: rect(node.querySelector('.ah-organization-card')),
+        frame: rect(node.querySelector('.ah-organization-image')), image: rect(node.querySelector('img')), paintedLogo: paintedLogo(node.querySelector('img')) })) };
   });
   await writeFile(resolve(evidence, 'geometry-' + f.width + '.json'), JSON.stringify(measured, null, 2) + '\n');
   assert.equal(measured.bubbles.length, 9, 'nine actual legacy profiles, no decorative placeholder people');
@@ -207,12 +208,19 @@ async function geometry(f) {
     // Original middle-row logo tops differ by 24px. Allow another 8px between
     // painted logo edges and the measured DOM frames, then scale by viewport.
     assert.deepEqual(rowsOf(measured.organizations, (REFERENCE.organizationMiddleRowStagger + 8) * scale).map(row => row.items.length), [2, 4, 1], 'source seven-organization layout is 2/4/1 with its intentional stagger');
-    for (let i = 0; i < measured.organizations.length; i++) {
-      const logo = measured.organizations[i].paintedLogo, bounds = REFERENCE.organizationLogoWhiteBounds[i];
-      assert.ok(logo, 'real loaded logo has measurable painted content, beyond transparent canvas'); assert.equal(logo.objectFit, 'contain');
-      const width = (bounds[2] - bounds[0] + 1) * scale, height = (bounds[3] - bounds[1] + 1) * scale;
-      near(logo.width, width, width * .2, 'source logo ' + (i + 1) + ' painted width');
-      near(logo.height, height, height * .2, 'source logo ' + (i + 1) + ' painted height');
+    // These reference PNGs are not the captured uploads. Unknown/new artwork
+    // must stay bounded; painted-pixel similarity must not permit huge canvases.
+    for (const row of measured.organizations) {
+      assert.ok(row.paintedLogo); assert.equal(row.paintedLogo.objectFit, 'contain');
+      for (const [inside, outside] of [[row.image, row.frame], [row.frame, row.card], [row.card, row]]) {
+        assert.ok(inside.x >= outside.x - 1.5 && inside.y >= outside.y - 1.5 && inside.x + inside.width <= outside.x + outside.width + 1.5 && inside.y + inside.height <= outside.y + outside.height + 1.5, 'whole logo image/card stays in its independent frame');
+      }
+    }
+    for (let i = 0; i < measured.organizations.length; i++) for (let j = i + 1; j < measured.organizations.length; j++) {
+      for (const key of ['image', 'card']) {
+        const a = measured.organizations[i][key], b = measured.organizations[j][key];
+        assert.ok(Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) <= 1.5 || Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) <= 1.5, 'whole image/card rectangles never overlap');
+      }
     }
   } else assert.deepEqual(rowsOf(measured.bubbles).map(row => row.items.length), [2, 2, 2, 2, 1], 'small screens retain a readable two-column adaptation');
   return measured;
@@ -313,7 +321,9 @@ try {
     const f = await fixture(width);
     try {
       await f.page.goto(SITE + '/', { waitUntil: 'networkidle' }); await f.page.evaluate(() => document.fonts.ready); await f.page.locator('#guest-' + guestId(8)).waitFor();
-      assert.equal(await f.page.locator('[data-guest-id]').count(), 9); assert.equal(await f.page.locator('.ah-guest-attendance:visible').count(), 9, 'legacy profiles return with explicit pending attendance labels');
+      assert.equal(await f.page.locator('[data-guest-id]').count(), 9);
+      assert.equal(await f.page.locator('.ah-guest-attendance').count(), 0, 'bubble captions do not invent attendance text');
+      assert.equal(await f.page.locator('.ah-guest-subtitle').evaluateAll(nodes => nodes.every(node => node.textContent === '合成创作者' && node.dataset.subtitleSource === 'title')), true, 'caption uses the supplied profile title');
       assert.equal(await f.page.locator('[data-organization-id]').count(), 7);
       const blanks = f.page.locator('.ah-guest-placeholder');
       assert.equal(await blanks.count(), 3, 'the reference final row may be completed with three purely decorative circles');
@@ -337,7 +347,7 @@ try {
         assert.equal(await unknown.locator('h3').isVisible(), true); await noOverflow(f); unknownOrganizationFallback = true;
       }
       assert.doesNotMatch(await f.page.locator('body').textContent(), /SYNTHETIC_REFERENCE_PRIVATE|private@example/u);
-      reports.push({ name: 'legacy-public-layout-' + width, width, profiles: 9, organizations: 7, attendance: 'pending, no inferred confirmation', geometry: measured,
+      reports.push({ name: 'legacy-public-layout-' + width, width, profiles: 9, organizations: 7, attendance: 'not inferred; only actual profile title is displayed', geometry: measured,
         interaction: 'native keyboard, Escape, pointer gap or touch; actual timetable tabs, works filter and FAQ', unknownOrganizationFallback,
         duplicateKnownOrganizationRetained: unknownOrganizationFallback, requests: f.calls.length, screenshots: files });
     } finally { await f.context.close(); }

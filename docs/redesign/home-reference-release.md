@@ -1,6 +1,12 @@
 # 首頁原稿對齊與嘉賓相容修復
 
-2026-11-01，分支 `fix/home-reference-restore`，計畫提交 `b76d885`，最終產品 `4de3d8566e13f422fb670356404d81f2d55d960b`，從已部署 main `5ec4581531c31ad7c950d8c58234792fb7b1d37d` 及純文件回執 `695c8f8` 接續。使用者要求修復已錄入嘉賓未顯示、組織只需名稱，並完全依原效果圖製作。本輪本地驗證、編譯回歸與準確套件均已通過；最後 10:51:51 UTC 首頁七案及獨立原稿九案已重驗，PR／main CI 及正式發布仍待核對，不沿用 [UX2](ux-workflow-release.md) 的結果冒稱完成。
+2026-11-01，本輪已由 [PR #58](https://github.com/kunanli/artdicohost/pull/58) 正式發布於 main `30e184fde2f8f3be065c09afa6a9219383f5bc60`，PR／main CI、實際 FC／私有 OSS、13 個後台頁面與 53 個準確公開物件 HTTPS 均通過，最新首頁程式已部署。本輪修復已錄入嘉賓未顯示、組織只需名稱，並依原效果圖對齊構圖；實作分支為 `fix/home-reference-restore`、計畫提交 `b76d885`，最終本地產品 `4de3d8566e13f422fb670356404d81f2d55d960b` 的套件與瀏覽器證據仍獨立保留。四項真人與業務資料驗收未以程式上線代替。
+
+## 發布後補正：正式上傳畫布未被前輪視覺夾具涵蓋
+
+使用者的正式畫面回報證實前輪視覺驗收缺口：組織採用原稿白色／透明 Logo 作幾何與像素寬度測試，沒有使用實際公開上傳 PNG 的不同畫布、白底與留白，因此通過不能證明正式圖片不會放大重疊。圓泡與詳情的內層捲軸、真實職稱可讀性也須另補實際內容驗證。下方 1593 項測試、53 個準確物件及發布回執仍是當時真實結果，不改寫歷史，但不再把原稿素材通過當作正式素材完整覆蓋。
+
+接續 [氣泡職稱與正式 Logo 邊界修復](bubbles-logo-release.md) 使用已驗證公開 JSON 與七張原始上傳標誌，配合不同畫布邊界案例與獨立 QA。新修復結果在新紀錄逐項補齊，不盲稱逐像素一致，也不以只確認部署 bytes 代替實際素材畫面。
 
 ## 視覺與內容依據
 
@@ -32,18 +38,20 @@ C 區依 `FrontEnd_Resource/活动日程_C区.png` 實際像素核對為 `#41b6e
 | 既有首頁回歸 `p5-homepage-smoke.mjs` | 最終 7 案實際退出 0、無頁面錯誤；保留原稿按鈕比例、標題圖／canonical H1、44px／聚焦、無 JS、reduced motion、缺裝飾、長介紹及只讀保護 |
 | 集合回歸 `p5-collections-smoke.mjs` | `6018dbc8` 凍結產物 9 案實際退出 0、無頁面錯誤，按下方單一首屏規則差異沿用。C 區原圖 `#41b6e6` 的 token／實際色塊與 A／B 區精確色票通過；明確證明、私人欄位、失敗讀取、原生 AX、觸控／鍵盤、刷新焦點、輪播／預覽／遲到錨點及無 JS 斷言均保留 |
 | 出席發布 `p1b-attendance-smoke.mjs` | `6018dbc8` 凍結產物 3 案實際退出 0、無頁面錯誤，按下方單一首屏規則差異沿用。每寬 legacy 4 卡逐卡可見待確認、新證明 1 卡、撤回後 0 卡，私人隔離、凍結 bytes、原場次、名額不變與零寄信通過 |
-| 完整 Node | `6018dbc8adf9a69a4c3a077b8e295c9d49947bcc` 為 1593／1593，fail／cancelled／skipped／todo 全為 0，實際退出 0；耗時約 106.77 秒。其後僅一條首屏 CSS 寬度修正，`4de3d856` 的完整 CI／main 結果另補 |
+| 完整 Node | 本地 `6018dbc8adf9a69a4c3a077b8e295c9d49947bcc` 為 1593／1593，fail／cancelled／skipped／todo 全為 0，實際退出 0；耗時約 106.77 秒。PR CI 的合成 checkout `43769eee844dbefdbf624379283870aa8dc999a7` 及正式 main `30e184fd` 也各為 1593 項全通過、其他狀態全為 0，最後單一首屏 CSS 修正已由 main 完整檢查涵蓋 |
 | 來源／Astro／建置／審計 | 來源 709、Astro 473 檔零錯誤／警告、1 項既有 hint，最後 10:51:51 UTC 建置 23 頁；依賴審計無已知漏洞 |
 | 專案契約 Skill | 本輪契約 109 項實際通過 |
 | 準確 FC／公開包 | `4de3d856` prepare／verify 通過：128 檔、40 資產、7,585,849 靜態 bytes；ZIP 35,714,983 bytes，SHA-256 `ab03381d16acb3bb41ba96a1e28cca353600787692650d62830b5432664b88df`。公開 prepare 為 53 檔，未放寬既有上限 |
 | 準確產物來源 | FC 的 33 個非 HTML 資源與 root dist 位元組相同，7 個 canonical HTML 僅有既定公開內容 meta 差異；記錄保存在 `.local-data/browser-evidence/home-reference-exact-provenance/package.json` |
-| PR／main CI、實際 FC／私有 OSS／13 後台／公開 HTTPS | 待本輪實際發布證據 |
+| PR CI／合併 | PR #58 的 CI 41299739239 completed／success，已合併至 main `30e184fd`；實際 checkout 及測試內容見下方紀錄 |
+| main CI、實際 FC／私有 OSS／13 後台／公開 HTTPS | main 流程 41300103311 completed／success，四項工作全成功；準確來源 `30e184fd` 的私有 OSS、13 個後台頁面、公開內容／CORS 與 53 個公開物件核對通過，見下方正式回執 |
 
 - [x] 舊公開資料相容、明確證明／私人隔離與原場次／名額界線。
 - [x] 本輪完整 Node、來源／Astro／建置、審計與契約 Skill，保留最後單一 CSS 修正的版本區別。
 - [x] 原稿九案、最後首頁七案、集合九案及出席三案的編譯證據與視覺複核。
 - [x] 最終準確 FC／公開套件、來源與容量上限。
-- [ ] PR／main CI 與實際 FC／私有 OSS／HTTPS。
+- [x] PR CI 與合併。
+- [x] main CI 與實際 FC／私有 OSS／HTTPS。
 
 瀏覽器使用全攔截、合成公開資料及隔離記憶體服務，不讀 `.env`、正式私有來源或聯絡真實服務商。可用 `ARTDICO_HOME_EVIDENCE_DIRECTORY`、`ARTDICO_COLLECTIONS_EVIDENCE_DIRECTORY`、`ARTDICO_ATTENDANCE_EVIDENCE_DIRECTORY` 各自保存新證據，避免覆蓋歷史報告。最終產品／HTML／資產來源須綁定實際候選，腳本存在不等於已通過。
 
@@ -55,4 +63,22 @@ C 區依 `FrontEnd_Resource/活动日程_C区.png` 實際像素核對為 `#41b6e
 
 初次 10:32:21 UTC 結果及色票預期不符的退出 1 紀錄，仍保存在 `.local-data/browser-evidence/home-reference-baselines-20261101T103345Z/`；當時候選 `#3db5df` 的回歸通過不列為原稿色彩證據，不以舊截圖代替最後 CSS 修正的產物。
 
-真實收件、微信／iPhone、同事操作及真實資料核對仍沿用 [UX2 的四項真人清單](ux-workflow-release.md#人工只需記錄這幾項)，本輪不代做正式名單、名額、通知、群碼或內容發布。既有 API、受控設定、服務與容量上限保留；回退也不得改寫凍結公開內容或以舊證明覆蓋當前回覆。
+## PR 與實際發布
+
+- [PR #58](https://github.com/kunanli/artdicohost/pull/58) head `47927d54` 的 [CI 41299739239](https://github.com/kunanli/artdicohost/actions/runs/41299739239) completed／success。實際合成 checkout `43769eee844dbefdbf624379283870aa8dc999a7` 通過 1593 項測試且其他狀態全為 0、709 個來源檔、Astro 473 檔零錯誤／警告與 1 項既有 hint、準確 FC 128 檔／40 資產／13 別名離線啟動及公開 53 檔核對。
+- 已部署 main `30e184fde2f8f3be065c09afa6a9219383f5bc60` 的 [流程 41300103311](https://github.com/kunanli/artdicohost/actions/runs/41300103311) completed／success，四項工作均成功：[transport](https://github.com/kunanli/artdicohost/actions/runs/41300103311/job/124829083118)、[check](https://github.com/kunanli/artdicohost/actions/runs/41300103311/job/124829083440)、[FC](https://github.com/kunanli/artdicohost/actions/runs/41300103311/job/124830129389) 及 [OSS](https://github.com/kunanli/artdicohost/actions/runs/41300103311/job/124830976804)。實際 main 為 1593 項測試全通過、其他狀態全為 0，709 個來源檔、Astro 473 檔零錯誤／警告與 1 項既有 hint，準確 FC 128 檔／40 資產／13 別名離線啟動及公開 53 檔核對通過。
+- 本次 `docs/home-reference-release-proof` 自上述已部署 main 建立，只補證據、push 文件，不另建 main PR 或為文件重複部署。
+- 2026-11-01 10:58:00.6509476 UTC 的正式公開唯讀診斷：已發布修訂仍為 43、`publishedAt` 為 10 月 22 日，公開嘉賓 9、組織 7、作品 1、展位 16、場次 43；`guestAttendance` 診斷為 `{present:false,confirmed:0,displayed:9}`。這證明九筆嘉賓資料保留、缺少的是新版出席證明根欄位，沒有為修復改寫公開快照。
+
+| 正式核驗（2026-11-01 UTC） | 實際結果 |
+| --- | --- |
+| 11:10:57.1840471 | FC 核對準確來源 `30e184fd`，內容／報名均啟用；私有 OSS 驗收通過，兩個獨立客戶端／一個 FC 程序 |
+| 11:11:01.9842672 | 13 個準確後台頁面的 HTTPS 核對通過 |
+| 11:11:03.0730019 | 公開 HTTPS／CORS 核對通過，仍為修訂 43／10 月 22 日發布、計數 9／7／1／16／43，`guestAttendance:{present:false,confirmed:0,displayed:9}` |
+| 11:12:55.6598272 | `artdico.host` 來源 `30e184fd` 的 53 個準確公開物件 HTTPS 核對通過，包含最後首頁程式與樣式 |
+
+正式回執摘要保存在忽略的 `.local-data/browser-evidence/home-reference-live-publication/proof.json`，記錄已部署 main、四項成功工作及線上核驗，與本地 `4de3d856` 套件／瀏覽器證據分開。
+
+`confirmed:0` 是缺少證明時的計數，不是本人回覆或實際出席人數；`displayed:9` 是相容投影的可顯示計數，不表示自動確認九人到場。發布前診斷證實資料與根因，53 個準確公開物件的 HTTPS 回執另證實新首頁 bytes 已部署；兩種證據分開。其他公開項目數量也不代表私有人員或已確認到場數。
+
+真實收件、微信／iPhone、同事操作及真實資料核對仍沿用 [UX2 的四項真人清單](ux-workflow-release.md#人工只需記錄這幾項)，獨立待人工記錄，不阻擋本輪前端軟體交付完成。本輪不代做正式名單、名額、通知、群碼或內容發布；既有 API、受控設定、服務與容量上限保留，回退也不得改寫凍結公開內容或以舊證明覆蓋當前回覆。

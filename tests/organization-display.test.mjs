@@ -1,10 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {publicOrganizationCards,organizationParticipationLabel,organizationReferenceKey,orderOrganizationCards} from '../shared/organization-display.mjs';
+import {publicOrganizationCards,organizationParticipationLabel,organizationReferenceKey,orderOrganizationCards,organizationLogoVariant} from '../shared/organization-display.mjs';
 import {createDefaultOrganizations,exhibitingPartners} from '../src/config/exhibiting-partners.mjs';
 
 const logoId='a'.repeat(64)+'.png';
 const card=(changes={})=>({id:'synthetic-organization',name:'合成组织',participation:'attendee',website:'https://example.invalid/team',logoUrl:'/api/public/portraits/'+logoId,status:'confirmed',publicConsent:true,...changes});
+
+test('reference logo artwork binds to one reviewed public digest and respects replacement or removal',()=>{
+  const original=card({id:'igda-shenzhen'}),before=JSON.stringify(original),variants={igda:{sourceDigest:'a'.repeat(64),url:'/_astro/organization-igda.synthetic.png'}};
+  assert.equal(organizationLogoVariant(original,variants),variants.igda.url);
+  assert.equal(organizationLogoVariant({...original,logoUrl:'/api/public/portraits/'+'b'.repeat(64)+'.png'},variants),null);
+  assert.equal(organizationLogoVariant({...original,logoUrl:''},variants),null);
+  assert.equal(organizationLogoVariant(card(),variants),null);
+  assert.equal(JSON.stringify(original),before);
+});
+test('the reviewed public campus records keep their visual slots without relying on edited names',()=>{
+  for(const [id,key] of [['organization-030b43f23f33413c8f81ed1fcd1d282d','bu'],['organization-61fee7cdf16f439a85f071b0e553ed4e','teesside'],['organization-668f234fcd2640a1a35dab8f0fc63bf3','szdx']]){
+    const input=card({id,name:'合成修改后的公开名称'}),before=JSON.stringify(input);
+    assert.equal(organizationReferenceKey(input),key);assert.equal(JSON.stringify(input),before);
+  }
+});
+test('reference logo mapping cannot select external or unsafe URLs or invoke supplied getters',()=>{
+  const original=card({id:'igda-shenzhen'});
+  for(const url of ['//other.invalid/image.png','https://other.invalid/image.png','/../private.png','/image\\private.png','/image\n.png'])assert.equal(organizationLogoVariant(original,{igda:{sourceDigest:'a'.repeat(64),url}}),null);
+  const variants={};Object.defineProperty(variants,'igda',{get(){throw Error('must not invoke');}});
+  assert.equal(organizationLogoVariant(original,variants),null);
+});
 
 test('reference ordering sorts a copy of the seven known organizations without changing publication bytes or fields',()=>{
   const input=Object.freeze([

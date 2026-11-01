@@ -99,6 +99,14 @@ async function guestDisclosureAccessibility(page,id){
  }finally{await session.detach();}
 }
 async function noOverflow(f){assert.equal(await f.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,'no horizontal overflow at '+f.width+'px');}
+// A floating target intentionally never satisfies Playwright's stable-element
+// actionability check. Aim a real pointer at its generously sized current center.
+async function guestPointer(locator,click=false){
+ await locator.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
+ const box=await locator.boundingBox();assert.ok(box);
+ if(click)await locator.page().mouse.click(box.x+box.width/2,box.y+box.height/2);
+ else await locator.page().mouse.move(box.x+box.width/2,box.y+box.height/2);
+}
 async function settledScroll(f){
  return f.page.evaluate(()=>new Promise((resolve,reject)=>{
   const started=performance.now();let previousX=scrollX,previousY=scrollY,stableFrames=0;
@@ -157,14 +165,14 @@ try{
    assert.equal(await alpha.locator('.ah-guest-detail-body .ah-guest-portrait img').count(),1,'the existing public portrait remains available in expanded details');
    assert.equal(await alphaToggle.locator('.ah-guest-prompt-closed').isVisible(),true);
    assert.equal(await alphaToggle.locator('.ah-guest-prompt-open').isVisible(),false);
-   const closedGuestName=await alphaToggle.ariaSnapshot();assert.match(closedGuestName,/查看嘉宾/u);assert.doesNotMatch(closedGuestName,/收起简介/u);
+   const closedGuestName=await alphaToggle.ariaSnapshot();assert.match(closedGuestName,/合成跨领域创作者/u);assert.match(closedGuestName,/合成创作者/u);
    assert.equal(await guestDisclosureAccessibility(page,IDs.guest),false);
-   await alphaToggle.scrollIntoViewIfNeeded();
+   await alphaToggle.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
    if(width===1440){
-    await alphaToggle.hover();await page.waitForFunction(id=>document.querySelector('#guest-'+id+' details')?.open,IDs.guest);
+    await guestPointer(alphaToggle);await page.waitForFunction(id=>document.querySelector('#guest-'+id+' details')?.open,IDs.guest);
     await alpha.locator('.ah-guest-detail-body').hover();await page.waitForTimeout(200);assert.equal(await alpha.evaluate(node=>node.open),true,'moving from bubble into its own detail body keeps the card open');
     await page.mouse.move(0,0);await page.waitForTimeout(60);assert.equal(await alpha.evaluate(node=>node.open),true,'desktop close has a grace interval');
-    await alphaToggle.hover();await page.waitForTimeout(200);assert.equal(await alpha.evaluate(node=>node.open),true,'re-entering during the grace interval cancels the pending close');
+    await guestPointer(alphaToggle);await page.waitForTimeout(200);assert.equal(await alpha.evaluate(node=>node.open),true,'re-entering during the grace interval cancels the pending close');
     await page.mouse.move(0,0);
     await page.waitForFunction(id=>!document.querySelector('#guest-'+id+' details')?.open,IDs.guest);
    }
@@ -172,20 +180,20 @@ try{
    assert.equal(await alphaToggle.locator('.ah-guest-prompt-closed').isVisible(),false);
    assert.equal(await alphaToggle.locator('.ah-guest-prompt-open').isVisible(),true);
    assert.match(await alphaToggle.innerText(),/收起简介/u);
-   const openGuestName=await alphaToggle.ariaSnapshot();assert.match(openGuestName,/收起简介/u);assert.doesNotMatch(openGuestName,/查看嘉宾/u);
+   const openGuestName=await alphaToggle.ariaSnapshot();assert.match(openGuestName,/合成跨领域创作者/u);assert.match(openGuestName,/合成创作者/u);
    assert.equal(await guestDisclosureAccessibility(page,IDs.guest),true);
    assert.match(await alpha.textContent(),/讲者.*主持人/u);assert.match(await alpha.textContent(),/合成创意机构.*合成嘉宾介绍/su);
    if(width===1440){
     const focusedLink=alpha.locator('a[href="#program-'+IDs.afternoon+'"]');
-    await focusedLink.focus();await beta.locator('[data-guest-toggle]').hover();await page.waitForTimeout(200);
+    await focusedLink.focus();await guestPointer(beta.locator('[data-guest-toggle]'));await page.waitForTimeout(200);
     assert.equal(await alpha.evaluate(node=>node.open),true,'hovering a different guest does not close the guest being used by keyboard');
     assert.equal(await beta.evaluate(node=>node.open),false,'passive hover cannot replace a guest that contains keyboard focus');
     assert.equal(await focusedLink.evaluate(node=>document.activeElement===node),true,'mixed pointer use does not hide or move the focused guest link');
    }
-   await beta.locator('[data-guest-toggle]').click();assert.equal(await beta.evaluate(node=>node.open),true);assert.equal(await alpha.evaluate(node=>node.open),false,'only one guest disclosure stays open');
+   await guestPointer(beta.locator('[data-guest-toggle]'),true);assert.equal(await beta.evaluate(node=>node.open),true);assert.equal(await alpha.evaluate(node=>node.open),false,'only one guest disclosure stays open');
    if(width===1440)assert.equal(await beta.locator('[data-guest-toggle]').evaluate(node=>document.activeElement===node),true,'an explicit click still switches guest and focus');
-   await beta.locator('[data-guest-toggle]').click();assert.equal(await beta.evaluate(node=>node.open),false,'a mobile click can close its bubble');
-   await alphaToggle.click();await alpha.locator('a[href="#program-'+IDs.afternoon+'"]').click();await activeZone(f,'B');assert.equal(await page.locator('#program-'+IDs.afternoon).isVisible(),true);
+   await guestPointer(beta.locator('[data-guest-toggle]'),true);assert.equal(await beta.evaluate(node=>node.open),false,'a mobile click can close its bubble');
+   await guestPointer(alphaToggle,true);await alpha.locator('a[href="#program-'+IDs.afternoon+'"]').click();await activeZone(f,'B');assert.equal(await page.locator('#program-'+IDs.afternoon).isVisible(),true);
 
    await page.locator('[data-public-work-next]').click();await selected(f,IDs.indie);
    await page.waitForFunction(id=>document.querySelector('#work-'+id+' .ah-showcase-cover-empty')?.hidden===false,IDs.indie);
@@ -206,7 +214,7 @@ try{
    assert.equal(await page.locator('[data-public-works-filter]').inputValue(),'student');await selected(f,IDs.student);
    await lightbox.locator('[data-work-lightbox-close]').click();
 
-   await alphaToggle.click();if(!await alpha.evaluate(node=>node.open))await alphaToggle.click();await alphaToggle.focus();
+   await guestPointer(alphaToggle,true);if(!await alpha.evaluate(node=>node.open))await guestPointer(alphaToggle,true);await alphaToggle.focus();
    await f.refresh(raw=>{raw.guests.reverse();raw.guests.find(guest=>guest.id===IDs.guest).bio='合成刷新后的嘉宾介绍';});
    assert.equal(await page.locator('#guest-'+IDs.guest+' details').evaluate(node=>node.open),true);assert.equal(await page.locator('#guest-'+IDs.guest+' [data-guest-toggle]').evaluate(node=>document.activeElement===node),true,'refresh restores the same guest and keyboard focus after reorder');
    await page.locator('#guest-'+IDs.guest+' a[href="#program-'+IDs.afternoon+'"]').click();await activeZone(f,'B');

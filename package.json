@@ -20,6 +20,7 @@
   "devDependencies": {
     "@astrojs/check": "0.9.10",
     "astro": "7.4.0",
+    "playwright-core": "1.64.1",
     "typescript": "6.0.3"
   },
   "dependencies": {

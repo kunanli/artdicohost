@@ -1,5 +1,13 @@
 # 开发接续：先读本页
 
+## 2026-11-01 新改版執行入口
+
+本次對話已整理為 [改版執行總覽](redesign/README.md)，包含開發步驟、工作人員與參與者操作、驗收與發布。工作區已核對並快轉至遠端 main `d583e4de9ae1676822c6ea6da984211099f73dd3`，其新增為 FrontEnd_Resource 素材；這是來源基準，不是新取得的正式部署證明。
+
+目前只交付文件，下一步為 P1 資料契約與合成相容驗證。舊意向、姓名／聯絡資訊、名額、通知與公開內容不因文件或程式部署自動整合／發布／補寄。Apple 10/30 簽章設定與人員去重已有後續紀錄，讀取本頁下方早期狀態時，須對照 [Wallet 最新紀錄](apple-wallet-setup.md) 及 [統一人員](unified-people-workspace.md)，不要重做已完成設定。
+
+另已建立 [資料契約 Skill](../.agents/skills/artdico-contract-check/SKILL.md) 與 [合成旅程 Skill](../.agents/skills/artdico-journey-check/SKILL.md) 及固定測試入口，基準分別 107／101 項通過；瀏覽器與真機另驗。P2 已補唯讀體檢與可解釋下一步規格，尚未改產品程式。
+
 ## 当前实际版本
 
 [PR #42](https://github.com/kunanli/artdicohost/pull/42)／[PR #43](https://github.com/kunanli/artdicohost/pull/43) 已实际发布，main **`d9d0dd2cc52eac755aef8deda5de9c91024b741d`**，2026-10-22 **01:05:35（UTC+08）**完成。[正式运行 39639330823](https://github.com/kunanli/artdicohost/actions/runs/39639330823) attempt 1 的 check／deploy-fc／deploy 全成功。

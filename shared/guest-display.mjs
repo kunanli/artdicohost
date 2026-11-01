@@ -55,6 +55,16 @@ export function publicGuestCards(input, guestAttendance) {
   return profiles.filter(item => confirmed.has(item.id));
 }
 
+/** Use only values already present in the safe public profile. */
+export function publicGuestSubtitle(guest) {
+  if(!record(guest))return {text:'',kind:'none'};
+  for(const [key,limit,kind] of [['title',200,'title'],['ggjRole',160,'role'],['company',160,'company']]){
+    const value=line(ownValue(guest,key)??'',limit,false);
+    if(value)return {text:value,kind};
+  }
+  return {text:'',kind:'none'};
+}
+
 /** Timetable roles are editorial associations, separate from guest-card eligibility.
  * Only saved public profile values supply names; private contact duties never do. */
 export function publicSessionParticipants(session, guests, guestAttendance) {

@@ -77,6 +77,153 @@
       },
       "rights": "User-supplied ARTDiCO event card texture, reused only for this event website. No third-party license inferred.",
       "reference": "FrontEnd_Resource/落地页.png — blank guest card background only; person content remains dynamic HTML."
+    },
+    {
+      "path": "src/assets/home/organization-gamezone.png",
+      "bytes": 72209,
+      "sha256": "674efbf7bc41bdff02f294e82e2bf9e97d19f122aa5a661e289a653597b78a7a",
+      "source": {
+        "path": "FrontEnd_Resource/参与组织logo/yxqd.png",
+        "bytes": 76023,
+        "sha256": "c27ba30de52ad80c7053cadeb2919bbf6e74368be6bd77427ea8131c687e50c5",
+        "alphaCrop": [
+          70,
+          108,
+          930,
+          404
+        ]
+      },
+      "width": 860,
+      "height": 296,
+      "rights": "User-supplied participating organization artwork, reused for this event website. Brand ownership remains with the respective organization. No third-party license inferred.",
+      "processing": "Only fully transparent outer canvas removed; retained RGBA pixels match the source crop exactly. No recoloring, redrawing or business-data change.",
+      "reference": "FrontEnd_Resource/落地页.png — provided white transparent organization logo variant."
+    },
+    {
+      "path": "src/assets/home/organization-igda.png",
+      "bytes": 33710,
+      "sha256": "66a0086fa82c754e23ba9ccffc4447b663d43d74641d737e531c4bdd41363c2a",
+      "source": {
+        "path": "FrontEnd_Resource/参与组织logo/igdasz.png",
+        "bytes": 36966,
+        "sha256": "96e9289e800ee30aed76defca58a363ab39e74ba6465dcc314f9de81e3a7c944",
+        "alphaCrop": [
+          174,
+          123,
+          827,
+          389
+        ]
+      },
+      "width": 653,
+      "height": 266,
+      "rights": "User-supplied participating organization artwork, reused for this event website. Brand ownership remains with the respective organization. No third-party license inferred.",
+      "processing": "Only fully transparent outer canvas removed; retained RGBA pixels match the source crop exactly. No recoloring, redrawing or business-data change.",
+      "reference": "FrontEnd_Resource/落地页.png — provided white transparent organization logo variant."
+    },
+    {
+      "path": "src/assets/home/organization-szdx.png",
+      "bytes": 108482,
+      "sha256": "322cb7c3a114f31d2467aa2c1ab74d3854d1388d4a4557e7e894ac0d0a182f46",
+      "source": {
+        "path": "FrontEnd_Resource/参与组织logo/szdx.png",
+        "bytes": 108744,
+        "sha256": "5006a87c58de3bf99b7e03406420688711e2a0887b357bc98e64b9c3d0c97a0e",
+        "alphaCrop": [
+          70,
+          36,
+          930,
+          476
+        ]
+      },
+      "width": 860,
+      "height": 440,
+      "rights": "User-supplied participating organization artwork, reused for this event website. Brand ownership remains with the respective organization. No third-party license inferred.",
+      "processing": "Only fully transparent outer canvas removed; retained RGBA pixels match the source crop exactly. No recoloring, redrawing or business-data change.",
+      "reference": "FrontEnd_Resource/落地页.png — provided white transparent organization logo variant."
+    },
+    {
+      "path": "src/assets/home/organization-bu.png",
+      "bytes": 20504,
+      "sha256": "ae9951703078a0881d016d4f86381e06d26c1c18c77f455391d9ad41fa49b141",
+      "source": {
+        "path": "FrontEnd_Resource/参与组织logo/BU logo.png",
+        "bytes": 24830,
+        "sha256": "f035b00831b74dfc348be1d093bc8980f28da2ca12f194e2211549f3c491916a",
+        "alphaCrop": [
+          45,
+          95,
+          1031,
+          765
+        ]
+      },
+      "width": 986,
+      "height": 670,
+      "rights": "User-supplied participating organization artwork, reused for this event website. Brand ownership remains with the respective organization. No third-party license inferred.",
+      "processing": "Only fully transparent outer canvas removed; retained RGBA pixels match the source crop exactly. No recoloring, redrawing or business-data change.",
+      "reference": "FrontEnd_Resource/落地页.png — provided white transparent organization logo variant."
+    },
+    {
+      "path": "src/assets/home/organization-pengyou.png",
+      "bytes": 36083,
+      "sha256": "585a6a3abcd05dd9e2639a4e92ddf55b717d790e1df6654ac61b509665283dbf",
+      "source": {
+        "path": "FrontEnd_Resource/参与组织logo/pygw.png",
+        "bytes": 41364,
+        "sha256": "d611f1c20b362e2f4a9a46c97aba931f3ff0e15437e53beeb8f094a2ecf10265",
+        "alphaCrop": [
+          334,
+          27,
+          664,
+          469
+        ]
+      },
+      "width": 330,
+      "height": 442,
+      "rights": "User-supplied participating organization artwork, reused for this event website. Brand ownership remains with the respective organization. No third-party license inferred.",
+      "processing": "Only fully transparent outer canvas removed; retained RGBA pixels match the source crop exactly. No recoloring, redrawing or business-data change.",
+      "reference": "FrontEnd_Resource/落地页.png — provided white transparent organization logo variant."
+    },
+    {
+      "path": "src/assets/home/organization-g4c.png",
+      "bytes": 35819,
+      "sha256": "1961708e35853f976042c8f54443c8b33014dfb31b52525f684460b2770a2ceb",
+      "source": {
+        "path": "FrontEnd_Resource/参与组织logo/hk.png",
+        "bytes": 40864,
+        "sha256": "62f1ac736d3c5b06d5c694663f5907abc7ba0feac3ba374cf4a5551a7e552fad",
+        "alphaCrop": [
+          331,
+          42,
+          671,
+          470
+        ]
+      },
+      "width": 340,
+      "height": 428,
+      "rights": "User-supplied participating organization artwork, reused for this event website. Brand ownership remains with the respective organization. No third-party license inferred.",
+      "processing": "Only fully transparent outer canvas removed; retained RGBA pixels match the source crop exactly. No recoloring, redrawing or business-data change.",
+      "reference": "FrontEnd_Resource/落地页.png — provided white transparent organization logo variant."
+    },
+    {
+      "path": "src/assets/home/organization-teesside.png",
+      "bytes": 28310,
+      "sha256": "fac90f526860970b0dfcb99226d6526efdc0ea5194a3d9e5cd541994e703473a",
+      "source": {
+        "path": "FrontEnd_Resource/参与组织logo/Teessi.png",
+        "bytes": 31622,
+        "sha256": "cad5273b033bcc4929d1d77b5ffe86d10acfc2072181a33062929d34b3540c82",
+        "alphaCrop": [
+          187,
+          134,
+          815,
+          377
+        ]
+      },
+      "width": 628,
+      "height": 243,
+      "rights": "User-supplied participating organization artwork, reused for this event website. Brand ownership remains with the respective organization. No third-party license inferred.",
+      "processing": "Only fully transparent outer canvas removed; retained RGBA pixels match the source crop exactly. No recoloring, redrawing or business-data change.",
+      "reference": "FrontEnd_Resource/落地页.png — provided white transparent organization logo variant."
     }
   ]
 }

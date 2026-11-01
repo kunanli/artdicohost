@@ -1,5 +1,13 @@
 # 开发接续：先读本页
 
+## 2026-11-01 氣泡職稱與正式 Logo 邊界修復
+
+目前 `fix/bubbles-and-logo-bounds`／計畫 `c196690` 從已部署 main `30e184fd` 與文件回執 `15be586` 接續，[PR #59](https://github.com/kunanli/artdicohost/pull/59) 為草稿。使用者正式畫面證實圓泡／詳情有內層捲軸、職稱太小，部分組織正式上傳畫布與原稿白色素材不同而放大重疊；本輪範圍、驗證門檻與實際結果見 [本輪紀錄](redesign/bubbles-logo-release.md)。下方 1593 項測試與 53 物件發布是前輪真實證據，不能當作新修復已完成。
+
+字幕只採公開 `title → ggjRole → company → 空`，不猜職稱、不改出席證明或名額；圓泡不再顯示待確認小字。姓名與長介紹保留完整展開入口、不使用內層捲軸；漂浮在 hover／focus／展開／離開畫面／背景頁與 reduced motion 時停止。Logo 一律有獨立寬高上限，設計版須綁捕捉的上傳 digest，後續換圖回到新上傳圖的安全框，不改寫業務資料。
+
+公開捕捉 [GHA 41313505821](https://github.com/kunanli/artdicohost/actions/runs/41313505821) 已成功，產物 `13086132412` 含公開 JSON 與七張原始 Logo；本機原生下載受代理限制，未繞過，也未冒稱本機已看過。實際素材 QA 改在核准的 GHA check 建置後直接讀該次 capture，再全攔截瀏覽器；即使兩步對日後事故保留 `continue-on-error`，本輪合併仍須 capture 與 browser 各實際成功且報告通過。固定 `playwright-core@1.64.1` 只作 CI 開發驗收工具；[新視覺 Skill](../.agents/skills/artdico-visual-check/SKILL.md) 已建立，實際產品／驗收／套件／CI／部署結果仍待記錄。
+
 ## 2026-11-01 首頁原稿對齊與嘉賓相容修復
 
 使用者要求修復已錄入嘉賓未顯示、參與組織只顯示 Logo／名稱，並完全依原效果圖製作。本輪已正式發布並完成線上核驗，現況與準確證據見 [本輪紀錄](redesign/home-reference-release.md)。實作分支 `fix/home-reference-restore`／計畫 `b76d885` 從 main `5ec45815` 及文件回執 `695c8f8` 接續；舊公開快照僅缺少根 `guestAttendance` 時恢復安全資料卡並標「出席待确认」，明確空／錯誤證明與私人隔離保持，不回寫凍結快照或代為發布。

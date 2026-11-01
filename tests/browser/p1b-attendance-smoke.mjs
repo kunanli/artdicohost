@@ -83,8 +83,8 @@ async function publicChecks(f,expectedCards,{legacy=false}={}){
   await openPublic(f);
   assert.deepEqual(await f.page.locator('[data-public-guests] > [data-guest-id]').evaluateAll(rows=>rows.map(row=>row.dataset.guestId)),expectedCards);
   assert.equal(await f.page.locator('#guest-'+IDS.private).count(),0,'private profiles never become public legacy cards');
-  assert.equal(await f.page.locator('[data-public-guests] .ah-guest-attendance').count(),legacy?expectedCards.length:0,'only a missing proof restores legacy profiles with attendance pending');
-  if(legacy)for(const id of expectedCards){const pending=f.page.locator('#guest-'+id+' [data-guest-toggle] .ah-guest-attendance');assert.equal(await pending.textContent(),'出席待确认');assert.equal(await pending.isVisible(),true,'legacy attendance uncertainty is visible before opening details');}
+  assert.equal(await f.page.locator('[data-public-guests] .ah-guest-attendance').count(),0,'bubble caption uses public profile values rather than invented attendance text');
+  if(legacy)for(const id of expectedCards){const card=f.page.locator('#guest-'+id+' [data-guest-toggle]');assert.ok(await card.getAttribute('aria-label'));assert.equal(await card.locator('.ah-guest-subtitle').count(),1,'legacy public company/role/title remains readable without fabricating attendance proof');}
   if(expectedCards.includes(IDS.speaker))assert.equal(await f.page.locator('[data-public-guests] > [data-guest-id="'+IDS.speaker+'"] a[href="#program-'+IDS.panel+'"]').count(),1,'a public primary retains its editorial session link independently of profile confirmation or attendance proof');
   const panel=f.page.locator('#program-'+IDS.panel);assert.match(await panel.textContent(),/合成多人圆桌/u);
   assert.match(await f.page.locator('#program-'+IDS.cancelled).textContent(),/本场已取消/u);

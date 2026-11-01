@@ -8,7 +8,10 @@ const idPattern=/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const logoPattern=/^\/api\/public\/portraits\/[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
 const labels=Object.freeze({undecided:'',exhibitor:'参展',attendee:'一般参与'});
 const referenceOrder=['gamezone','igda','szdx','bu','pengyou','g4c','teesside'];
-const referenceIds=Object.freeze({'game-singularity':'gamezone','igda-shenzhen':'igda','pengyou-gangwan':'pengyou','g4c-hk':'g4c'});
+const referenceIds=Object.freeze({'game-singularity':'gamezone','igda-shenzhen':'igda','pengyou-gangwan':'pengyou','g4c-hk':'g4c',
+  'organization-030b43f23f33413c8f81ed1fcd1d282d':'bu',
+  'organization-61fee7cdf16f439a85f071b0e553ed4e':'teesside',
+  'organization-668f234fcd2640a1a35dab8f0fc63bf3':'szdx'});
 const referenceName=value=>typeof value==='string'?value.trim().replace(/\s+/gu,' ').toLowerCase():'';
 const referenceNames=new Map([
   ['gamezone',['GameZone','游戏奇点']],
@@ -35,6 +38,17 @@ export function orderOrganizationCards(cards) {
   return cards.map((card,index)=>({card,index,rank:referenceOrder.indexOf(organizationReferenceKey(card))}))
     .sort((a,b)=>(a.rank<0?referenceOrder.length:a.rank)-(b.rank<0?referenceOrder.length:b.rank)||a.index-b.index)
     .map(item=>item.card);
+}
+
+/** A design variant may replace only the exact published source it was reviewed
+ * against. A new upload or an explicit removal always uses the live source. */
+export function organizationLogoVariant(card,variants) {
+  const key=organizationReferenceKey(card),variant=key&&record(variants)?own(variants,key):null;
+  const source=record(card)?own(card,'logoUrl'):null;
+  const match=typeof source==='string'?logoPattern.exec(source):null;
+  if(!match||!record(variant)||own(variant,'sourceDigest')!==source.split('/').at(-1)?.split('.')[0])return null;
+  const url=own(variant,'url');
+  return typeof url==='string'&&url.startsWith('/')&&!url.startsWith('//')&&!url.includes('\\')&&!url.includes('..')&&!/[\u0000-\u0020\u007f]/u.test(url)?url:null;
 }
 
 export function organizationParticipationLabel(participation) {

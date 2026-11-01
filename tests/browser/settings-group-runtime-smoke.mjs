@@ -5,9 +5,19 @@ import {resolve,extname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {peopleRuntimeFixture,PEOPLE_FIXTURE_API as SITE} from '../helpers/people-runtime-fixture.mjs';
+import {CLOUD_ADMIN_PAGE_ALIASES} from '../../functions/cloud-content/http-server.mjs';
 const{chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright-core');
-const project=fileURLToPath(new URL('../../',import.meta.url)),dist=resolve(process.env.ARTDICO_DIST_DIRECTORY||resolve(project,'dist')),evidence=resolve(project,'.local-data/browser-evidence');
+const project=fileURLToPath(new URL('../../',import.meta.url)),dist=resolve(process.env.ARTDICO_DIST_DIRECTORY||resolve(project,'dist')),evidence=resolve(process.env.ARTDICO_EVIDENCE_DIRECTORY||resolve(project,'.local-data/browser-evidence'));
 const digest=value=>createHash('sha256').update(value).digest('hex'),reports=[],errors=[],assets=new Map();
+const aliases=new Map(CLOUD_ADMIN_PAGE_ALIASES);
+// Public builds contain each page; exact FC packages contain only canonical
+// HTML and serve the exported aliases. Preserve that distinction in evidence.
+async function staticFile(requestedPath){
+ const fileFor=path=>resolve(dist,'.'+(path.endsWith('/')?path+'index.html':path)),direct=fileFor(requestedPath);
+ assert.ok(direct.startsWith(dist+'/'));
+ if(aliases.has(requestedPath)){try{await stat(direct);}catch(error){if(error.code!=='ENOENT')throw error;const path=aliases.get(requestedPath);return{path,file:fileFor(path)};}}
+ return{path:requestedPath,file:direct};
+}
 const PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFElEQVR4nGN0KFjAwMDAxMDAgKAAGOQBVgs9CEsAAAAASUVORK5CYII=','base64');
 const json=(body,status=200)=>({status,contentType:'application/json',body:JSON.stringify(body)});
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
@@ -24,7 +34,7 @@ async function fixture({width=390,loseGroup=false}={}){
    const response=await runtime.app.handle(new Request(req.url(),{method:req.method(),headers:await req.allHeaders(),...(['GET','HEAD'].includes(req.method())?{}:{body:req.postData()})}));calls.push({path,method:req.method(),status:response.status});
    if(loseGroup&&path==='/api/admin/group-invite'&&req.method()==='POST'&&response.ok){loseGroup=false;await response.arrayBuffer();return route.fulfill(json({error:{code:'SYNTHETIC_ACK_LOST'}},503));}
    return route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});}
-  const file=resolve(dist,'.'+(path.endsWith('/')?path+'index.html':path));assert.ok(file.startsWith(dist+'/'));try{const body=await readFile(file);assets.set(path,{path,sha256:digest(body),bytes:body.length});return route.fulfill({status:200,body,contentType:({html:'text/html',js:'text/javascript',css:'text/css',woff2:'font/woff2',svg:'image/svg+xml'})[extname(file).slice(1)]||'application/octet-stream'});}catch{return route.fulfill({status:404,body:''});}
+  try{const served=await staticFile(path),body=await readFile(served.file);assets.set(path,{path,servedPath:served.path,sha256:digest(body),bytes:body.length});return route.fulfill({status:200,body,contentType:({html:'text/html',js:'text/javascript',css:'text/css',woff2:'font/woff2',svg:'image/svg+xml'})[extname(served.file).slice(1)]||'application/octet-stream'});}catch{return route.fulfill({status:404,body:''});}
  });
  const api=async path=>{const response=await runtime.app.handle(runtime.request(path,{headers:auth}));assert.equal(response.status,200);return response.json();};
  return{runtime,auth,context,page,calls,api,failGroupRead(){failGroupRead=true;},failGroupImage(){failGroupImage=true;}};
@@ -63,5 +73,5 @@ try{
  }
  assert.deepEqual(errors,[]);
 }finally{await browser.close();}
-const html=resolve(dist,'admin/settings/group/index.html'),info=await stat(html),result={cases:reports.length,reports,pageErrors:errors,syntheticOnly:true,browserClosed:true,provenance:{dist,groupHtmlMtime:info.mtime.toISOString(),groupHtmlSha256:digest(await readFile(html)),assets:[...assets.values()].sort((left,right)=>left.path.localeCompare(right.path))}};
+const groupHtml=await staticFile('/admin/settings/group/'),info=await stat(groupHtml.file),result={cases:reports.length,reports,pageErrors:errors,syntheticOnly:true,browserClosed:true,provenance:{dist,groupHtmlRequestedPath:'/admin/settings/group/',groupHtmlServedPath:groupHtml.path,groupHtmlMtime:info.mtime.toISOString(),groupHtmlSha256:digest(await readFile(groupHtml.file)),assets:[...assets.values()].sort((left,right)=>left.path.localeCompare(right.path))}};
 await writeFile(resolve(evidence,'settings-group-runtime-results.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));

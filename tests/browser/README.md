@@ -4,6 +4,15 @@
 
 这组可选检查使用真实 Chromium 运行构建后的页面，但拦截全部页面请求并提供纯合成 API。它不连接正式 API、不写真实报名、不读取原始名单，也不能代替真实 FC／OSS 端到端验收。
 
+2026-11-01 P3：`p3-private-page-smoke.mjs` 检查私人页的信息顺序、资格、群码过期／缺少／图片失败与重新取得、保存入口、装置指引及换人清理；`settings-group-runtime-smoke.mjs` 同步检查群码设置及二十四小时内到期提示。来源和实际结果见 [P3 记录](../../docs/redesign/p3-release.md)。使用当前候选构建后执行：
+
+```sh
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/p3-private-page-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/settings-group-runtime-smoke.mjs
+```
+
+前者不在固定旅程 Skill 的四项浏览器清单内，需另行执行；装置／浏览器模拟不代表真实微信入群或 iPhone Wallet 已加入。
+
 2026-11-01 P2：以下两项检查简约人员入口与单人工作页，来源及结果见 [P2 记录](../../docs/redesign/p2-release.md)。清单验证先筛选待处理再分页、短状态与一个下一步、按权限展开只读核对、来源失败及退出清理；个人页验证收合原件、原位保存、焦点／选字与视窗位置、未知保存只读核对、私人链接仅明确取回。使用当前候选构建后执行，不实寄、不修复正式名单：
 
 ```sh

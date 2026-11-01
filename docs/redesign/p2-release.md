@@ -1,6 +1,6 @@
 # P2 簡約人員工作頁與唯讀核對
 
-2026-11-01，分支 `feat/redesign-p2`，從已發布 main `535d3ed33629b9ff70c14587c5acdd25370df801` 接續，產品提交為 `e01db5d920ecb4a6ad90165c619b59facc84bffc`。本地實作、完整測試、公開設定與準確 FC 包內的手機／桌面操作、來源包校驗及獨立審查已完成；PR CI 與實際發布仍待核對。本頁不表示 P2 已上線。
+2026-11-01，[PR #51](https://github.com/kunanli/artdicohost/pull/51) 已合併並實際發布，main 為 `e531a3b8bb0b7ba4cce7c17075f30fc9044f29ca`。[正式流程 41275940947](https://github.com/kunanli/artdicohost/actions/runs/41275940947) 的檢查、FC 與 OSS 全部成功，13 個準確後台頁面與 45 個公開物件通過 HTTPS 核驗。分支為 `feat/redesign-p2`，來源基準 main `535d3ed`，產品提交為 `e01db5d920ecb4a6ad90165c619b59facc84bffc`。
 
 ## 本階段範圍
 
@@ -30,10 +30,11 @@
 
 ZIP SHA-256：`60e76074013b2d3648592438078e954b83f45acaeea4bbb4b266cee226d3e804`。瀏覽器均使用合成資料及攔截請求，不能代替正式 FC／OSS 驗收。
 
-## 剩餘交付
+## 發布與人工核對
 
-- [ ] PR CI 的完整準確包校驗、離線啟動及產物留存。
-- [ ] main 實際 FC／OSS 發布及準確來源 HTTPS 核驗。
+- [x] PR CI 與合併後 main 的準確包校驗、離線啟動、產物留存及正式發布成功。
+- [x] FC 於 05:17:49 UTC 確認相同 main SHA，私有 OSS 的兩個獨立客戶端／一個 FC 程序驗收成功；05:17:53 UTC 完成 13 個準確後台頁面的 HTTPS 核驗。
+- [x] `https://artdico.host` 於 05:19:14 UTC 完成 45 個公開物件的準確版本 HTTPS 核驗，公開業務快照仍為修訂 43。
 - [ ] 一位實際同事的短操作觀察；記錄找人、回覆保存、名額核對與私人連結交付的理解問題。
 
 正式名單仍由工作人員核對，實際同事觀察尚未執行；合成通過不表示人工業務已處理。真實 Email 收件、微信入群及 iPhone Wallet 仍為獨立驗收項目。

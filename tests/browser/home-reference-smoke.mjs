@@ -22,7 +22,7 @@ const REFERENCE = Object.freeze({
   path: referencePath, sha256: 'ff5b62dfadc80e31a6af0eb3b08d23a28e4dbfdd047c0d65f1953da2b6366485', width: 1921, height: 19362,
   // Purple-ring pixel bounds in the PNG, inclusive: x282..501,652..871,
   // 1022..1241,1392..1611; first row y5293..5512, third y6035..6254.
-  guestDiameter: 220, guestColumnStep: 370, guestRowStep: 371, guestColumns: 4,
+  guestDiameter: 220, guestFirstCenter: 392, guestColumnStep: 370, guestRowStep: 371, guestColumns: 4,
   // White glyph bounds x281..553/y5030..5094 and x284..561/y6721..6785.
   // 65px glyph height corresponds approximately to 72px Noto Sans SC CSS type.
   headingGlyphHeight: 65, headingCssSizeEstimate: 72, headingLeft: 281,
@@ -33,8 +33,20 @@ const REFERENCE = Object.freeze({
     [713, 7387, 885, 7504], [1011, 7380, 1120, 7526], [1305, 7364, 1440, 7534], [355, 7602, 630, 7706]],
   organizationMiddleRowStagger: 24,
   organizationKeys: ['gamezone', 'igda', 'szdx', 'bu', 'pengyou', 'g4c', 'teesside'],
+  programSwatchLeft: [276, 859, 1303],
   method: 'Original PNG pixel runs and edge samples; desktop ratios use viewport/1921. Glyph-to-CSS size is an explicit font-metric estimate.',
   limitation: 'Geometry and manually reviewable screenshots; no full-page pixel-diff or pixel-perfect equivalence claim.',
+});
+// The user now requires both company and position beneath each name. These
+// approved control sizes intentionally exceed the source's 220px bubbles;
+// source spacing and all unrelated reference measurements remain separate.
+const GUEST_INFORMATION_LAYOUT = Object.freeze({
+  reason: 'Three separate visible fields: name, company and actual position.',
+  originalSourceDiameter: REFERENCE.guestDiameter,
+  desktopDiameter: 'min(19.270833vw - 8px, clamp(224px, 13.541667vw, 260px)); track capped at 370px',
+  mobileDiameter: 'min(220px, (viewport - 2 * page padding - 20px column gap) / 2); page padding 20px at 320 and 24px at 390',
+  desktopDiameterByViewport: { 1920: 260, 1440: 224 },
+  mobilePaddingByViewport: { 390: 24, 320: 20 },
 });
 assert.equal(sha(referenceBytes), REFERENCE.sha256, 'geometry measurements must refer to the unchanged original image');
 assert.equal(referenceBytes.readUInt32BE(16), REFERENCE.width); assert.equal(referenceBytes.readUInt32BE(20), REFERENCE.height);
@@ -144,7 +156,8 @@ function rowsOf(boxes, tolerance = 10) {
 async function geometry(f) {
   const measured = await f.page.evaluate(() => {
     const rect = node => { const b = node.getBoundingClientRect(); return { x: b.x, y: b.y + scrollY, width: b.width, height: b.height }; };
-    const bubbles = [...document.querySelectorAll('[data-guest-toggle]')].map(node => ({ ...rect(node), radius: getComputedStyle(node).borderTopLeftRadius, name: rect(node.querySelector('.ah-guest-name')) }));
+    const bubbles = [...document.querySelectorAll('[data-guest-toggle]')].map(node => ({ ...rect(node), radius: getComputedStyle(node).borderTopLeftRadius,
+      name: rect(node.querySelector('.ah-guest-name')), fields: [...node.querySelectorAll('.ah-guest-name,.ah-guest-affiliation,.ah-guest-subtitle')].map(rect) }));
     const heading = id => { const node = document.getElementById(id), shell = node.closest('.ah-section-heading'); return { ...rect(node), font: parseFloat(getComputedStyle(node).fontSize), shell: rect(shell), border: parseFloat(getComputedStyle(shell).borderBottomWidth) }; };
     const planet = document.querySelector('[data-organizations-planet]');
     const paintedLogo = image => {
@@ -174,18 +187,31 @@ async function geometry(f) {
   assert.equal(measured.bubbles.length, 9, 'nine actual legacy profiles, no decorative placeholder people');
   assert.deepEqual(measured.organizations.map(item => item.reference), REFERENCE.organizationKeys, 'known public organization labels are explicitly ordered, despite shuffled fixture input');
   assert.deepEqual(measured.organizations.map(item => item.id), organizationNames.map((_, index) => organizationId(index)), 'visual ordering preserves all independent record IDs');
+  const expectedDiameter = f.width >= 1000 ? GUEST_INFORMATION_LAYOUT.desktopDiameterByViewport[f.width]
+    : Math.min(220, (f.width - 2 * GUEST_INFORMATION_LAYOUT.mobilePaddingByViewport[f.width] - 20) / 2);
   for (const b of measured.bubbles) {
     near(b.width, b.height, 3, 'guest summary is the circular control');
+    near(b.width, expectedDiameter, 1.5, 'approved three-field guest circle size at this viewport');
     assert.ok(b.radius.includes('%') ? parseFloat(b.radius) >= 48 : parseFloat(b.radius) >= b.width * .48, 'summary circular radius');
     assert.ok(b.name.x >= b.x - 1 && b.name.x + b.name.width <= b.x + b.width + 1, 'name stays inside the circle');
-    const nameCenter = b.name.y + b.name.height / 2; assert.ok(nameCenter >= b.y + b.height * .25 && nameCenter <= b.y + b.height * .75, 'name occupies the circle center');
+    assert.equal(b.fields.length, 3, 'the saved name, company and position form one visible group');
+    for (const field of b.fields) {
+      assert.ok(field.x >= b.x - 1 && field.y >= b.y - 1 && field.x + field.width <= b.x + b.width + 1 && field.y + field.height <= b.y + b.height + 1, 'all three field boxes remain inside their circle');
+      near(field.x + field.width / 2, b.x + b.width / 2, 1.5, 'each field shares the bubble horizontal center');
+    }
+    for (let index = 1; index < b.fields.length; index++) assert.ok(b.fields[index].y >= b.fields[index - 1].y + b.fields[index - 1].height - 1, 'name, company and position remain ordered without overlap');
+    const groupTop = Math.min(...b.fields.map(field => field.y)), groupBottom = Math.max(...b.fields.map(field => field.y + field.height));
+    near((groupTop + groupBottom) / 2, b.y + b.height / 2, 1.5, 'the complete three-field group occupies the circle center');
   }
   if (f.width >= 1000) {
     const scale = f.width / REFERENCE.width, rows = rowsOf(measured.bubbles);
     assert.deepEqual(rows.map(row => row.items.length), [4, 4, 1], 'reference has four desktop columns, with only nine actual people');
-    near(measured.bubbles[0].width, REFERENCE.guestDiameter * scale, REFERENCE.guestDiameter * scale * .18, 'source 220px guest diameter scaled by width');
-    near(rows[0].items[1].x - rows[0].items[0].x, REFERENCE.guestColumnStep * scale, REFERENCE.guestColumnStep * scale * .18, 'source 370px column step');
-    near(rows[1].top - rows[0].top, REFERENCE.guestRowStep * scale, REFERENCE.guestRowStep * scale * .22, 'source 371px row step');
+    for (let column = 0; column < REFERENCE.guestColumns; column++) {
+      const bubble = rows[0].items[column];
+      near(bubble.x + bubble.width / 2, (REFERENCE.guestFirstCenter + column * REFERENCE.guestColumnStep) * scale, 1.5, 'original circle center retained despite the larger three-field control');
+    }
+    near(rows[0].items[1].x - rows[0].items[0].x, REFERENCE.guestColumnStep * scale, 1.5, 'source 370px column step');
+    near(rows[1].top - rows[0].top, REFERENCE.guestRowStep * scale, 1.5, 'source 371px row step');
     for (const placeholder of measured.placeholders) {
       assert.ok(['transparent', 'rgba(0, 0, 0, 0)'].includes(placeholder.background), 'decorative wrappers have no inherited white panel');
       assert.deepEqual(placeholder.padding, [0, 0, 0, 0], 'reference empty circles have no card wrapper padding');
@@ -250,6 +276,13 @@ async function disclosures(f) {
 async function otherContent(f) {
   const { page } = f;
   assert.match(await page.locator('#program-synthetic-reference-a').textContent(), /安排待确认/u, 'an editorial association never fabricates actual attendance');
+  const program = await page.locator('[data-program-controls]').evaluate(node => {
+    const box = element => { const b = element.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; };
+    return { tabs: box(node.querySelector('.ah-zone-tabs')), filter: box(node.querySelector('.ah-program-period')), buttons: [...node.querySelectorAll('[data-zone]')].map(box), swatches: [...node.querySelectorAll('.ah-zone-swatch')].map(box) };
+  });
+  assert.equal(program.swatches.length, 3); assert.ok(program.filter.y >= program.tabs.y + program.tabs.height - 1, 'the period filter has a separate row below the three venue tabs');
+  if (f.width >= 1000) for (let index = 0; index < 3; index++) near(program.swatches[index].x, REFERENCE.programSwatchLeft[index] * f.width / REFERENCE.width, 3, 'original venue swatch left position');
+  else for (const button of program.buttons) near(button.width, program.buttons[0].width, 1.5, 'all three mobile venue columns retain equal width');
   await page.locator('[data-zone="B"]').click(); assert.equal(await page.locator('[data-zone="B"]').getAttribute('aria-selected'), 'true');
   await page.locator('[data-zone="B"]').focus(); await page.keyboard.press('ArrowRight'); assert.equal(await page.locator('[data-zone="C"]').getAttribute('aria-selected'), 'true');
   assert.equal(await page.locator('[data-agenda-panel="C"]').isVisible(), true);
@@ -257,6 +290,13 @@ async function otherContent(f) {
   const peek = page.locator('[data-work-peek]'); assert.equal(await peek.getAttribute('aria-hidden'), 'true');
   assert.equal(await peek.isVisible(), true, 'a next-item glimpse is backed by the actual second published work');
   assert.equal(await peek.locator('img').getAttribute('src'), await page.locator('#work-synthetic-reference-work-1 .ah-showcase-poster img').getAttribute('src'));
+  const mainImage = page.locator('#work-synthetic-reference-work-0 .ah-work-preview img');
+  await mainImage.scrollIntoViewIfNeeded(); await mainImage.evaluate(node => node.decode());
+  const work = await mainImage.evaluate(node => { const b = node.getBoundingClientRect(); return { width: b.width, height: b.height, fit: getComputedStyle(node).objectFit, naturalWidth: node.naturalWidth, naturalHeight: node.naturalHeight }; });
+  near(work.width / work.height, 2, .015, 'the full original work uses a 2:1 frame rather than a cropped 16:9 frame'); assert.equal(work.fit, 'contain');
+  assert.equal(work.naturalWidth, 1768); assert.equal(work.naturalHeight, 885, 'the original cover bytes are actually decoded');
+  near((await peek.boundingBox()).height, work.height, 1.5, 'next real artwork glimpse keeps the main cover height');
+  await writeFile(resolve(evidence, 'program-work-geometry-' + f.width + '.json'), JSON.stringify({ program, work }, null, 2) + '\n');
   await page.locator('[data-public-work-next]').click(); await page.locator('#work-synthetic-reference-work-1:visible').waitFor();
   assert.equal(await peek.isVisible(), false, 'last item does not invent another cover');
   await page.locator('[data-public-works-filter]').selectOption('student'); await page.locator('#work-synthetic-reference-work-0:visible').waitFor();
@@ -323,7 +363,11 @@ try {
       await f.page.goto(SITE + '/', { waitUntil: 'networkidle' }); await f.page.evaluate(() => document.fonts.ready); await f.page.locator('#guest-' + guestId(8)).waitFor();
       assert.equal(await f.page.locator('[data-guest-id]').count(), 9);
       assert.equal(await f.page.locator('.ah-guest-attendance').count(), 0, 'bubble captions do not invent attendance text');
+      assert.equal(await f.page.locator('.ah-guest-affiliation').count(), 9, 'the saved company is shown independently of title');
+      assert.equal(await f.page.locator('.ah-guest-affiliation').evaluateAll(nodes => nodes.every(node => node.textContent === '合成公开创作组织' && node.dataset.affiliationSource === 'company')), true);
+      assert.equal(await f.page.locator('.ah-guest-subtitle').count(), 9, 'all nine supplied titles remain visible alongside company');
       assert.equal(await f.page.locator('.ah-guest-subtitle').evaluateAll(nodes => nodes.every(node => node.textContent === '合成创作者' && node.dataset.subtitleSource === 'title')), true, 'caption uses the supplied profile title');
+      for (let index = 0; index < 9; index++) assert.equal(await f.page.locator('#guest-' + guestId(index) + ' [data-guest-toggle]').getAttribute('aria-label'), [names[index], '合成公开创作组织', '合成创作者', '嘉宾介绍'].join('，'));
       assert.equal(await f.page.locator('[data-organization-id]').count(), 7);
       const blanks = f.page.locator('.ah-guest-placeholder');
       assert.equal(await blanks.count(), 3, 'the reference final row may be completed with three purely decorative circles');
@@ -396,7 +440,7 @@ finally {
   const result = { ok: !failure, syntheticOnly: true, zeroRealNetwork: true, zeroBusinessWrites: true, zeroRealMail: true,
     source, testScriptSha256, gitHeadAtRun: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), dist,
     htmlMtime: metadata.mtime.toISOString(), publicHtmlSha256: sha(html), servedAssets: Object.fromEntries([...servedAssets].sort()),
-    reference: REFERENCE, referenceScreenshots, organizationInputOrder: organizationInputOrder.map(index => organizationNames[index]),
+    reference: REFERENCE, guestInformationLayout: GUEST_INFORMATION_LAYOUT, referenceScreenshots, organizationInputOrder: organizationInputOrder.map(index => organizationNames[index]),
     logoSources, artworkSources, geometryScope: 'Desktop scaled reference ratios with explicit tolerances; mobile functional adaptation. Screenshots require visual review and are not pixel-diff equivalence.',
     passedCases: reports.length, reports, pageErrors, ...(failure ? { failure } : {}) };
   await writeFile(resolve(evidence, 'report.json'), JSON.stringify(result, null, 2) + '\n'); process.stdout.write(JSON.stringify(result, null, 2) + '\n');

@@ -2,7 +2,7 @@
 import { eventConfig } from '../config/event.mjs';
 import Icon from './Icon.astro';
 import { Image } from 'astro:assets';
-import planet from '../assets/home/planet-purple.webp';
+import planet from '../assets/home/planet-purple-grain.png';
 ---
 <section class="ah-about ah-section" id="about" aria-labelledby="about-heading">
   <div class="ah-section-heading">
@@ -11,7 +11,7 @@ import planet from '../assets/home/planet-purple.webp';
   </div>
   <div class="ah-program-grid">
     <article class="ah-program-card ah-home-program-planet" data-program="ggj" data-home-planet>
-      <Image class="ah-home-program-art" src={planet} alt="" width={640} height={640} loading="lazy" decoding="async" aria-hidden="true" />
+      <Image class="ah-home-program-art" src={planet} alt="" width={725} height={725} format="png" loading="lazy" decoding="async" aria-hidden="true" />
       <div class="ah-home-program-copy">
       <div class="ah-program-number"><span>01</span><Icon name="share" /></div>
       <h3 class="ah-program-title"><span>GGJ</span> <strong>中国组织者交流会</strong></h3>
@@ -20,7 +20,7 @@ import planet from '../assets/home/planet-purple.webp';
       </div>
     </article>
     <article class="ah-program-card ah-home-program-planet" data-program="artdico" data-home-planet>
-      <Image class="ah-home-program-art" src={planet} alt="" width={640} height={640} loading="lazy" decoding="async" aria-hidden="true" />
+      <Image class="ah-home-program-art" src={planet} alt="" width={725} height={725} format="png" loading="lazy" decoding="async" aria-hidden="true" />
       <div class="ah-home-program-copy">
       <div class="ah-program-number"><span>02</span><Icon name="gamepad" /></div>
       <h3 class="ah-program-title"><span>ARTDiCO HOST</span> <strong>学生嘉年华</strong></h3>

@@ -2,11 +2,13 @@
 
 ## 2026-11-01 氣泡職稱與正式 Logo 邊界修復
 
-目前 `fix/bubbles-and-logo-bounds`／計畫 `c196690` 從已部署 main `30e184fd` 與文件回執 `15be586` 接續，[PR #59](https://github.com/kunanli/artdicohost/pull/59) 為草稿。使用者正式畫面證實圓泡／詳情有內層捲軸、職稱太小，部分組織正式上傳畫布與原稿白色素材不同而放大重疊；本輪範圍、驗證門檻與實際結果見 [本輪紀錄](redesign/bubbles-logo-release.md)。下方 1593 項測試與 53 物件發布是前輪真實證據，不能當作新修復已完成。
+本輪已由 [PR #59](https://github.com/kunanli/artdicohost/pull/59) 正式發布於 main `bd49a745cd420510db9d6432bfceff6414f10ce2`；計畫 `c196690`、實作分支 `fix/bubbles-and-logo-bounds` 從 main `30e184fd` 與文件回執 `15be586` 接續。使用者回報的字幕、內捲軸與正式圖片邊界修復及其驗收範圍見 [本輪紀錄](redesign/bubbles-logo-release.md)，下方前輪 1593／53 證據仍作歷史保留。
 
 字幕只採公開 `title → ggjRole → company → 空`，不猜職稱、不改出席證明或名額；圓泡不再顯示待確認小字。姓名與長介紹保留完整展開入口、不使用內層捲軸；漂浮在 hover／focus／展開／離開畫面／背景頁與 reduced motion 時停止。Logo 一律有獨立寬高上限，設計版須綁捕捉的上傳 digest，後續換圖回到新上傳圖的安全框，不改寫業務資料。
 
-公開捕捉 [GHA 41313505821](https://github.com/kunanli/artdicohost/actions/runs/41313505821) 已成功，產物 `13086132412` 含公開 JSON 與七張原始 Logo；本機原生下載受代理限制，未繞過，也未冒稱本機已看過。實際素材 QA 改在核准的 GHA check 建置後直接讀該次 capture，再全攔截瀏覽器；即使兩步對日後事故保留 `continue-on-error`，本輪合併仍須 capture 與 browser 各實際成功且報告通過。固定 `playwright-core@1.64.1` 只作 CI 開發驗收工具；[新視覺 Skill](../.agents/skills/artdico-visual-check/SKILL.md) 已建立，實際產品／驗收／套件／CI／部署結果仍待記錄。
+最終 [PR CI 41318637340](https://github.com/kunanli/artdicohost/actions/runs/41318637340) 與 [main CI 41319263419](https://github.com/kunanli/artdicohost/actions/runs/41319263419) 均完成並獨立核對實際素材 13／13、頁面錯誤 0；main 的 source／captureSource 均為 `bd49a745…`，HTML `25860ed5cf289c0209754128e6ca303a069f4f45286463be6b24d42dfdb60f06`，snapshot `4b5486d90eed56ed762e40227b35866a07ec4cd451e16b32a67374d5a7ed79af`。main 1611 項測試、723 來源、Astro 478（0 錯誤／警告、1 既有 hint）、23 頁建置、audit 0、FC 128 檔及公開 60 檔通過。13 案的 profile／七張 Logo 為實際捕捉，portrait／work media 為 stub（計數 2），visibility 為模擬訊號；前版合成 collections9／reference9／attendance3 綁舊 glyph HTML `0ddf1cfa…`，未假標為最後 HTML 同版。前兩次實際 CI 0／13、1／13 失敗紀錄保留；最終字形探測四寬 4／4、人工 1920／390 檢視另列，不取代實際 13 案。
+
+15:12:00.0631426 UTC FC 準確來源 `bd49a745`、內容／報名啟用，私有 OSS 兩獨立客戶端／一 FC 程序通過；15:12:03.9397484 UTC 完成 13 個準確後台 HTTPS；15:12:04.9563770 UTC 匿名 HTTPS／CORS 仍為修訂 43、`publishedAt:2026-10-22T08:41:00.034Z`、公開計數 9／7／1／16／43、出席證明缺省／confirmed0／displayed9，不代表九人已答應；15:13:47.1345609 UTC 完成 `artdico.host` 來源 `bd49a745` 的 60 個準確公開物件 HTTPS。固定 `playwright-core@1.64.1` 只作開發驗收工具，[視覺 Skill](../.agents/skills/artdico-visual-check/SKILL.md) 固定同素材與來源門檻。`docs/bubbles-logo-release-proof` 只補文件，不新建 PR 或重複部署；四項真人工作仍獨立。
 
 ## 2026-11-01 首頁原稿對齊與嘉賓相容修復
 

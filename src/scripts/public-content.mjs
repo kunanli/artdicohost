@@ -1,4 +1,4 @@
-import { publicGuestCards, publicGuestSubtitle, publicGuestSessions, publicSessionParticipants } from '../../shared/guest-display.mjs';
+import { publicGuestCards, publicGuestAffiliation, publicGuestSubtitle, publicGuestSessions, publicSessionParticipants } from '../../shared/guest-display.mjs';
 import { GUEST_PUBLIC_ROLE_LABELS, SESSION_PARTICIPANT_ROLE_LABELS, isPublicWebsite } from '../../shared/content-schema.mjs';
 import { publicShowcaseCards, SHOWCASE_KIND_LABELS } from '../../shared/showcase-display.mjs';
 import { resolvePublicContentSource } from '../../shared/public-content-source.mjs';
@@ -116,8 +116,10 @@ function renderPublishedContent(content,url) {
       const name=element('span',guest.name,'ah-guest-name');
       trigger.append(name,element('span','查看嘉宾','ah-guest-prompt ah-guest-prompt-closed'),element('span','收起简介','ah-guest-prompt ah-guest-prompt-open'));
       const subtitle=publicGuestSubtitle(guest);
+      const affiliation=publicGuestAffiliation(guest);
+      if(affiliation){const company=element('span',affiliation,'ah-guest-affiliation');company.dataset.affiliationSource='company';trigger.append(company);}
       if(subtitle.text){const caption=element('span',subtitle.text,'ah-guest-subtitle');caption.dataset.subtitleSource=subtitle.kind;trigger.append(caption);}
-      trigger.setAttribute('aria-label',guest.name+(subtitle.text?'，'+subtitle.text:'')+'，嘉宾介绍');
+      trigger.setAttribute('aria-label',[guest.name,affiliation,subtitle.text,'嘉宾介绍'].filter(Boolean).join('，'));
       const body=element('div',undefined,'ah-guest-detail-body');
       body.setAttribute('role','region');body.setAttribute('aria-label',guest.name+'简介');
       body.append(portrait);

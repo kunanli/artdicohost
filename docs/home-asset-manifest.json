@@ -224,6 +224,38 @@
       "rights": "User-supplied participating organization artwork, reused for this event website. Brand ownership remains with the respective organization. No third-party license inferred.",
       "processing": "Only fully transparent outer canvas removed; retained RGBA pixels match the source crop exactly. No recoloring, redrawing or business-data change.",
       "reference": "FrontEnd_Resource/落地页.png — provided white transparent organization logo variant."
+    },
+    {
+      "path": "src/assets/home/planet-purple-grain.png",
+      "bytes": 1115045,
+      "sha256": "66a2313f80d6332c3e049a051332051bcbd034186bc019a61528cc7c547ae998",
+      "source": {
+        "path": "FrontEnd_Resource/组件/紫色星球组件.png",
+        "bytes": 1115045,
+        "sha256": "66a2313f80d6332c3e049a051332051bcbd034186bc019a61528cc7c547ae998"
+      },
+      "rights": "User-supplied ARTDiCO event artwork, reused only for this event website. No third-party license inferred.",
+      "processing": "Lossless copy of the supplied transparent planet; no recoloring or redrawing.",
+      "reference": "FrontEnd_Resource/落地页.png — About planet texture and lower-right nebula."
+    },
+    {
+      "path": "src/assets/home/about-nebula.png",
+      "bytes": 213154,
+      "sha256": "524b543c04f42af15cbcecc490d707aa47db4aa56cc4328a52037b9ae91f098c",
+      "source": {
+        "path": "FrontEnd_Resource/落地页.png",
+        "bytes": 5996853,
+        "sha256": "ff5b62dfadc80e31a6af0eb3b08d23a28e4dbfdd047c0d65f1953da2b6366485",
+        "crop": [
+          1190,
+          4350,
+          1921,
+          5140
+        ]
+      },
+      "rights": "User-supplied ARTDiCO event artwork, reused only for this event website. No third-party license inferred.",
+      "processing": "Continuous decorative background-only crop across About and Guests, ending before the original divider at y5156. Contains no guest, logo, event fact, baked text or divider; source RGB pixels are unchanged.",
+      "reference": "FrontEnd_Resource/落地页.png — About planet texture and lower-right nebula."
     }
   ]
 }

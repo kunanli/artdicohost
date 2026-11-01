@@ -15,6 +15,10 @@ const CODES = new Set(['INVALID_ARGUMENTS', 'OUTPUT_EXISTS', 'OUTPUT_UNAVAILABLE
   'SNAPSHOT_UNAVAILABLE', 'MEDIA_LIMIT', 'MEDIA_RESPONSE', 'MEDIA_CONTENT_TYPE', 'MEDIA_BODY', 'MEDIA_HASH', 'TIMEOUT', 'WRITE_FAILED']);
 const failures = new WeakSet();
 const sha256 = value => createHash('sha256').update(value).digest('hex');
+function hasPublicText(profile, key) {
+  const descriptor = Object.getOwnPropertyDescriptor(profile, key);
+  return descriptor && Object.hasOwn(descriptor, 'value') && typeof descriptor.value === 'string' && Boolean(descriptor.value.trim());
+}
 function failure(code) {
   const error = new Error(MESSAGE);
   Object.defineProperty(error, 'code', { value: CODES.has(code) ? code : 'PUBLIC_CONTENT_UNAVAILABLE', enumerable: true });
@@ -121,18 +125,18 @@ export async function capturePublicVisualFixture({ fetchFn = fetch, outputDirect
       const key = organizationReferenceKey(card), image = MEDIA_PATH.exec(card.logoUrl ?? '');
       return image ? [{ organizationId: card.id, key, sha256: image[1] }] : [];
     });
-    // Count public subtitle field availability, without copying any caption.
-    // Priority mirrors the presentation contract; no unpublished helper import.
+    // Count independent public position and affiliation availability without
+    // copying their text. Company never substitutes for a missing position.
     const guestCaptionCoverage = { title: 0, role: 0, company: 0, empty: 0 };
+    const guestAffiliationCoverage = { company: 0, empty: 0 };
     for (const guest of data.content.guests) {
-      const kind = typeof guest.title === 'string' && guest.title.trim() ? 'title'
-        : typeof guest.ggjRole === 'string' && guest.ggjRole.trim() ? 'role'
-          : typeof guest.company === 'string' && guest.company.trim() ? 'company' : 'empty';
+      const kind = hasPublicText(guest, 'title') ? 'title' : hasPublicText(guest, 'ggjRole') ? 'role' : 'empty';
       guestCaptionCoverage[kind]++;
+      guestAffiliationCoverage[hasPublicText(guest, 'company') ? 'company' : 'empty']++;
     }
     complete = true;
     return { captured: true, revision: verified.revision, snapshotSha256: manifest.snapshot.sha256, snapshotBytes: snapshot.length,
-      organizations: verified.counts.organizations, media: media.length, mediaBytes: totalBytes, referenceLogoSources, guestCaptionCoverage };
+      organizations: verified.counts.organizations, media: media.length, mediaBytes: totalBytes, referenceLogoSources, guestCaptionCoverage, guestAffiliationCoverage };
   } catch (error) { throw failures.has(error) ? error : failure('PUBLIC_CONTENT_UNAVAILABLE'); }
   finally {
     snapshotAbort.abort(); cancel(snapshotClone);

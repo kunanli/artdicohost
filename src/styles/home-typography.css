@@ -1,0 +1,117 @@
+/* Public homepage typography. Import after home.css; shared/admin themes keep
+   their own styles. Functional text uses these roles, never a local pixel size. */
+#artdico-host.ah-festival.ah-cosmos{
+ --ah-font-reading:"ARTDiCO Home SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+ --ah-type-body:16px;--ah-type-label:16px;--ah-type-control:16px;
+ --ah-type-action:16px;--ah-type-meta:14px;--ah-type-panel-title:20px;
+ --ah-type-card-title:clamp(20px,1.25vw,24px);
+ --ah-weight-reading:400;--ah-weight-strong:700;
+ --ah-leading-reading:1.75;--ah-leading-ui:1.5;--ah-leading-display:1.45;
+ --ah-text-primary:#f7f4fc;--ah-text-secondary:#d1c7df;--ah-text-muted:#bfb1ce;
+ --ah-text-link:#d8c1ff;--ah-surface-reading:#1b1425;--ah-border-reading:#7d6b92;
+ /* Artwork has explicit display roles; it does not set form/body sizes. */
+ --ah-display-section:clamp(28px,3.75vw,72px);
+ --ah-display-about-title:clamp(30px,3.6vw,69px);
+ --ah-display-hero-copy:clamp(16px,1.67vw,32px);
+ --ah-display-person:clamp(26px,1.67vw,32px);
+ --ah-display-affiliation:clamp(16px,.9vw,17px);
+ --ah-display-position:clamp(17px,1.04vw,20px);
+ --ah-display-footer:clamp(44px,4.15vw,79.7px);
+ font-family:var(--ah-font-reading);font-size:var(--ah-type-body);
+ font-weight:var(--ah-weight-reading);line-height:var(--ah-leading-reading);
+}
+@media(min-width:821px) and (max-width:1599px){
+ #artdico-host.ah-festival.ah-cosmos{
+  --ah-display-person:clamp(18px,calc(3.125vw - 19px),26px);
+  --ah-display-affiliation:clamp(14px,calc(1.25vw - 1px),16px);
+  --ah-display-position:clamp(14px,calc(1.25vw - 1px),17px);
+ }
+}
+@media(min-width:821px) and (max-width:1199px){
+ #artdico-host.ah-festival.ah-cosmos{--ah-display-person:18px;--ah-display-affiliation:14px;--ah-display-position:14px}
+}
+@media(max-width:820px){
+ #artdico-host.ah-festival.ah-cosmos{
+  --ah-display-hero-copy:16px;--ah-display-person:clamp(18px,3.9vw,22px);
+  --ah-display-affiliation:clamp(14px,2.8vw,16px);--ah-display-position:clamp(14px,2.8vw,16px);
+  --ah-display-footer:clamp(23px,4.7vw,38px);
+ }
+}
+@media(max-width:400px){#artdico-host.ah-festival.ah-cosmos{--ah-display-hero-copy:15px;--ah-display-footer:22px}}
+@media(max-width:360px){#artdico-host.ah-festival.ah-cosmos{--ah-display-footer:20px}}
+
+/* Reading roles across the public page. Branded headings/planet copy are display. */
+#artdico-host.ah-festival.ah-cosmos :is(.ah-register-intro,.ah-venue,.ah-privacy,.ah-showcase-card-body,.ah-showcase-empty,.ah-booth-card) p,
+#artdico-host.ah-festival.ah-cosmos .ah-faq-answer{
+ font-size:var(--ah-type-body);font-weight:var(--ah-weight-reading);line-height:var(--ah-leading-reading);color:var(--ah-text-secondary);
+}
+#artdico-host.ah-festival.ah-cosmos :is(.ah-kicker,.ah-form-hint,.ah-form-disclaimer,.ah-field-hint,.ah-optional,.ah-program-timezone,.ah-program-notice,.ah-program-zone-note,.ah-agenda-caption,.ah-showcase-status,.ah-showcase-organization,.ah-home-font-license),
+#artdico-host.ah-festival.ah-cosmos :is(.ah-work-navigation p,.ah-student-actions small,.ah-home-fact-bubble small){
+ font-size:var(--ah-type-meta);font-weight:var(--ah-weight-reading);line-height:var(--ah-leading-reading);color:var(--ah-text-muted);
+}
+#artdico-host.ah-festival.ah-cosmos :is(.ah-showcase-filters label,.ah-program-period,.ah-venue>details>summary,.ah-privacy summary){
+ font-size:var(--ah-type-label);font-weight:var(--ah-weight-strong);line-height:var(--ah-leading-ui);
+}
+#artdico-host.ah-festival.ah-cosmos :is(.ah-showcase-filters select,.ah-program-period select){
+ font-family:var(--ah-font-reading);font-size:var(--ah-type-control);font-weight:var(--ah-weight-reading);line-height:var(--ah-leading-ui);min-height:44px;
+}
+#artdico-host.ah-festival.ah-cosmos :is(.ah-faq-copy,.ah-venue a,.ah-work-lightbox button,.ah-home-footer-message .ah-text-action,.ah-footer-links a){
+ font-family:var(--ah-font-reading);font-size:var(--ah-type-action);font-weight:var(--ah-weight-strong);line-height:var(--ah-leading-ui);min-height:44px;
+}
+#artdico-host.ah-festival.ah-cosmos :is(.ah-faq-contact,.ah-showcase-related a,.ah-home-footer-contact,.ah-home-footer-bottom,.ah-footer-links){
+ font-size:var(--ah-type-meta);line-height:var(--ah-leading-reading);
+}
+#artdico-host.ah-festival.ah-cosmos .ah-venue p.ah-venue-name{font-size:var(--ah-type-card-title);font-weight:var(--ah-weight-strong);color:var(--ah-text-primary)}
+#artdico-host.ah-festival.ah-cosmos :is(.ah-showcase-empty,.ah-work-lightbox) h3{font-size:var(--ah-type-panel-title);font-weight:var(--ah-weight-strong);line-height:var(--ah-leading-ui)}
+#artdico-host.ah-festival.ah-cosmos .ah-home-footer-bottom small{font-size:var(--ah-type-meta);line-height:var(--ah-leading-reading)}
+#artdico-host.ah-festival.ah-cosmos .ah-guest-detail-body{font-size:var(--ah-type-body);line-height:var(--ah-leading-reading)}
+#artdico-host.ah-festival.ah-cosmos :is(.ah-exhibition-content>.ah-agenda-caption,.ah-home-hero .ah-fine,.ah-work-preview span){font-size:var(--ah-type-meta);line-height:var(--ah-leading-reading)}
+#artdico-host.ah-festival.ah-cosmos .ah-showcase-card-body .ah-showcase-status{font-size:var(--ah-type-meta);line-height:var(--ah-leading-reading)}
+#artdico-host.ah-festival.ah-cosmos .ah-faq-question,
+#artdico-host.ah-festival.ah-cosmos .ah-showcase-caption h3{font-size:var(--ah-type-card-title);font-weight:var(--ah-weight-strong);line-height:var(--ah-leading-ui)}
+#artdico-host.ah-festival.ah-cosmos .ah-showcase-caption :is(.ah-showcase-team,.ah-showcase-category){font-size:var(--ah-type-meta);line-height:var(--ah-leading-ui)}
+#artdico-host.ah-festival.ah-cosmos .ah-program :is(.ah-zone-label,.ah-zone-name){font-size:var(--ah-type-label);line-height:var(--ah-leading-ui)}
+#artdico-host.ah-festival.ah-cosmos .ah-program .ah-panel-heading{font-size:var(--ah-type-panel-title);font-weight:var(--ah-weight-strong);line-height:var(--ah-leading-ui)}
+#artdico-host.ah-festival.ah-cosmos .ah-program .ah-agenda-row{--ah-time-size:var(--ah-type-meta)}
+#artdico-host.ah-festival.ah-cosmos .ah-program .ah-agenda-row>time{font-size:var(--ah-type-meta);line-height:var(--ah-leading-ui)}
+#artdico-host.ah-festival.ah-cosmos .ah-program .ah-agenda-row strong{font-size:var(--ah-type-card-title);font-weight:var(--ah-weight-strong);line-height:var(--ah-leading-ui)}
+#artdico-host.ah-festival.ah-cosmos .ah-program .ah-agenda-row :is(small,.ah-session-category){font-size:var(--ah-type-meta);line-height:var(--ah-leading-reading)}
+
+/* Form roles explicitly cover leaf nodes: inherited body size cannot override
+   the 11–13px values in legacy field, consent and recovery components. */
+#artdico-host.ah-festival.ah-cosmos .ah-registration :is(p,li,dl,dd){
+ font-size:var(--ah-type-body);font-weight:var(--ah-weight-reading);line-height:var(--ah-leading-reading);
+}
+#artdico-host.ah-festival.ah-cosmos .ah-registration :is(.ah-field,.ah-demo-consent,.ah-interest-options label,.ah-general-proposal-toggle){
+ font-size:var(--ah-type-body);font-weight:var(--ah-weight-reading);line-height:var(--ah-leading-reading);
+}
+#artdico-host.ah-festival.ah-cosmos .ah-registration :is(.ah-field>label,.ah-option-field>legend,.ah-general-proposal>legend,.ah-general-extra>summary,.ah-registration-policy>summary){
+ font-size:var(--ah-type-label);font-weight:var(--ah-weight-strong);line-height:var(--ah-leading-ui);color:var(--ah-text-primary);
+}
+#artdico-host.ah-festival.ah-cosmos .ah-registration .ah-field :is(input,select,textarea){
+ font-family:var(--ah-font-reading);font-size:var(--ah-type-control);font-weight:var(--ah-weight-reading);line-height:var(--ah-leading-ui);
+ min-height:48px;color:var(--ah-text-primary);
+}
+#artdico-host.ah-festival.ah-cosmos .ah-registration .ah-field :is(input,textarea)::placeholder{color:var(--ah-text-muted);opacity:1}
+#artdico-host.ah-festival.ah-cosmos .ah-registration :is(.ah-field-hint,.ah-form-hint,.ah-form-disclaimer,.ah-optional,.ah-demo-tag,.ah-general-extra>summary small,.ah-application-draft-bar>span){
+ font-size:var(--ah-type-meta);font-weight:var(--ah-weight-reading);line-height:var(--ah-leading-reading);color:var(--ah-text-muted);
+}
+#artdico-host.ah-festival.ah-cosmos .ah-registration :is(.ah-form-top,.ah-form-top strong,h3,h4){
+ font-size:var(--ah-type-panel-title);font-weight:var(--ah-weight-strong);line-height:var(--ah-leading-ui);color:var(--ah-text-primary);
+}
+#artdico-host.ah-festival.ah-cosmos .ah-registration :is(.ah-primary,.ah-secondary,.ah-text-action,.ah-application-draft-bar button,.ah-form-error-list button){
+ font-family:var(--ah-font-reading);font-size:var(--ah-type-action);font-weight:var(--ah-weight-strong);line-height:var(--ah-leading-ui);min-height:44px;
+}
+#artdico-host.ah-festival.ah-cosmos .ah-registration :is(.ah-form-error,.ah-field-error){font-size:var(--ah-type-meta);line-height:var(--ah-leading-reading)}
+
+/* Surface and ink must be changed together. Both panels had inherited pale
+   text over legacy white backgrounds, including the unknown-result recovery. */
+#artdico-host.ah-festival.ah-cosmos .ah-registration :is(.ah-registration-policy,.ah-application-recovery){
+ color:var(--ah-text-primary);background:var(--ah-surface-reading);border:1px solid var(--ah-border-reading);
+ font-size:var(--ah-type-body);line-height:var(--ah-leading-reading);
+}
+#artdico-host.ah-festival.ah-cosmos .ah-registration :is(.ah-registration-policy,.ah-application-recovery) :is(p,li,dd){color:var(--ah-text-secondary)}
+#artdico-host.ah-festival.ah-cosmos .ah-registration .ah-registration-policy :is(dt,h4,summary){color:var(--ah-text-primary)}
+#artdico-host.ah-festival.ah-cosmos .ah-registration .ah-registration-policy dt{font-size:var(--ah-type-label);font-weight:var(--ah-weight-strong)}
+#artdico-host.ah-festival.ah-cosmos .ah-registration :is(.ah-registration-policy,.ah-application-recovery,.ah-demo-consent) a{color:var(--ah-text-link);text-decoration:underline;text-underline-offset:3px}
+#artdico-host.ah-festival.ah-cosmos .ah-registration :is(.ah-registration-policy,.ah-application-recovery) :focus-visible{outline:2px solid var(--ah-text-link);outline-offset:4px}

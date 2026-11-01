@@ -1,25 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { publicGuestCards, publicGuestSubtitle } from '../shared/guest-display.mjs';
+import { publicGuestCards, publicGuestAffiliation, publicGuestSubtitle } from '../shared/guest-display.mjs';
 import { toPublicContent } from '../shared/content-schema.mjs';
 import { createInitialContent } from '../src/config/content.mjs';
 const attendance = (confirmedGuestIds = ['synthetic-guest']) => ({ schemaVersion: 1, sourceRevision: 1, confirmedGuestIds });
 const confirmedCards = input => publicGuestCards(input, attendance());
 const person = (overrides = {}) => ({ id: 'synthetic-guest', name: '合成嘉宾', company: '合成机构', ggjRole: '', portraitId: 'a'.repeat(64) + '.png', status: 'confirmed', publicConsent: true, ...overrides });
 
-test('bubble subtitle prefers an actual title and falls back only to saved public identity fields',()=>{
+test('bubble affiliation and position remain separate when both public fields are present',()=>{
+  assert.equal(publicGuestAffiliation({company:'  合成机构 ',title:'合成技术总监'}),'合成机构');
   assert.deepEqual(publicGuestSubtitle({title:'  合成技术总监 ',ggjRole:'合成组织者',company:'合成机构'}),{text:'合成技术总监',kind:'title'});
   assert.deepEqual(publicGuestSubtitle({title:'',ggjRole:'合成组织者',company:'合成机构'}),{text:'合成组织者',kind:'role'});
-  assert.deepEqual(publicGuestSubtitle({company:'合成机构'}),{text:'合成机构',kind:'company'});
+  assert.deepEqual(publicGuestSubtitle({company:'合成机构'}),{text:'',kind:'none'});
 });
 test('bubble subtitle never invents a position from a name or private notes',()=>{
   assert.deepEqual(publicGuestSubtitle({name:'合成姓名',internalNotes:'合成私有职位'}),{text:'',kind:'none'});
   assert.deepEqual(publicGuestSubtitle(null),{text:'',kind:'none'});
 });
+test('bubble affiliation only uses a valid public company and never invokes getters',()=>{
+  const value={title:'合成职位',internalNotes:'合成私有单位'};
+  Object.defineProperty(value,'company',{get(){throw Error('must not read getter');}});
+  assert.equal(publicGuestAffiliation(value),'');
+  for(const input of [null,{},value,{company:'a'.repeat(161)},{company:'单位\n私密'}, {company:{toString(){throw Error('must not coerce');}}}])assert.equal(publicGuestAffiliation(input),'');
+  assert.equal(publicGuestAffiliation(Object.assign(Object.create(null),{company:' 合成单位 '})),'合成单位');
+});
 test('bubble subtitle does not invoke accessors or display unsafe field values',()=>{
   const value={company:'安全公开机构',ggjRole:'无效\n身份'};
   Object.defineProperty(value,'title',{get(){throw Error('must not invoke an accessor');}});
-  assert.deepEqual(publicGuestSubtitle(value),{text:'安全公开机构',kind:'company'});
+  assert.deepEqual(publicGuestSubtitle(value),{text:'',kind:'none'});
+  assert.equal(publicGuestAffiliation(value),'安全公开机构');
 });
 
 test('legacy published profiles remain visible as attendance pending without changing the publication or private facts', () => {

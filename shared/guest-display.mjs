@@ -55,10 +55,15 @@ export function publicGuestCards(input, guestAttendance) {
   return profiles.filter(item => confirmed.has(item.id));
 }
 
-/** Use only values already present in the safe public profile. */
+/** Show the affiliation separately so it never substitutes for a position. */
+export function publicGuestAffiliation(guest) {
+  return record(guest) ? line(ownValue(guest,'company')??'',160,false)||'' : '';
+}
+
+/** Use only a position or role already present in the safe public profile. */
 export function publicGuestSubtitle(guest) {
   if(!record(guest))return {text:'',kind:'none'};
-  for(const [key,limit,kind] of [['title',200,'title'],['ggjRole',160,'role'],['company',160,'company']]){
+  for(const [key,limit,kind] of [['title',200,'title'],['ggjRole',160,'role']]){
     const value=line(ownValue(guest,key)??'',limit,false);
     if(value)return {text:value,kind};
   }

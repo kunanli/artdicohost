@@ -1,6 +1,6 @@
 # P3 私人參會頁 入群與裝置指引
 
-2026-11-01，分支 `feat/redesign-p3`，從已發布 main `e531a3b8bb0b7ba4cce7c17075f30fc9044f29ca` 接續，產品提交為 `6640833106f2f1680f26673c19b12ad6f6f40cf3`。本地實作、1485 項完整回歸、公開建置瀏覽器、準確來源包校驗及獨立審查已完成；PR CI 與實際發布仍待核對。本頁不表示 P3 已上線。
+2026-11-01，[PR #52](https://github.com/kunanli/artdicohost/pull/52) 已合併並實際發布，main 為 `51ff34b37981d784963bbaf83a4cd13b0c717de4`。[PR 流程 41277705383](https://github.com/kunanli/artdicohost/actions/runs/41277705383) 與 [正式流程 41278011325](https://github.com/kunanli/artdicohost/actions/runs/41278011325) 全部成功；1485 項測試、兩種 ZIP 離線啟動、13 個準確後台頁面及 45 個公開物件 HTTPS 核驗通過。分支為 `feat/redesign-p3`，來源基準 main `e531a3b`，產品提交 `6640833106f2f1680f26673c19b12ad6f6f40cf3`，交付文件提交 `485c20a`。
 
 ## 本階段範圍
 
@@ -40,10 +40,11 @@ ZIP SHA-256：`08a63045209c4bb47b32bc751304e9afc7124a6dc0b1a8409ebe08166146f1ea`
 
 壓縮相關 22 項及準確候選包相關 5 項定向測試通過；本地既有 launcher 解碼、SHA／ELF 核對並執行官方 Node `v24.19.0` 成功，約 1.687 秒。舊 BCJ6 及 legacy 壓縮流仍相容；此本地結果不代替 CI 的完整 ZIP 離線啟動。歷史 P1／P2 產物大小及 hash 不改寫。
 
-## 剩餘交付
+## 發布與實機核對
 
-- [ ] PR CI 的完整準確包校驗、ZIP 離線啟動及產物留存。
-- [ ] main 實際 FC／OSS 發布與準確來源 HTTPS 核驗。
+- [x] PR CI 與合併後 main 的準確包校驗、兩種 ZIP 離線啟動、產物留存及正式發布成功。
+- [x] FC 於 05:51:21 UTC 確認相同 main SHA，私有 OSS 兩個獨立客戶端／一個 FC 程序驗收成功；05:51:25 UTC 完成 13 個準確後台頁面的 HTTPS 核驗。
+- [x] `https://artdico.host` 於 05:53:03 UTC 完成 45 個公開物件的準確版本 HTTPS 核驗；公開業務快照仍為修訂 43。
 - [ ] 真實微信／iPhone／Android 操作觀察及 iPhone Wallet 加入；與合成瀏覽器結果分開記錄。
 
 既有 Apple 簽章設定保留，不重新建立帳號或輪替憑據。Wallet 仍無 APNs 自動更新或遠端移除；現場資格核驗不等於已記錄到場。真實 Email 收件及活動同事操作觀察仍為獨立項目，本階段不代做正式業務寫入。

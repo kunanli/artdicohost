@@ -60,6 +60,10 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
                 <p>手机可长按图片保存；活动前请以私人页最新状态为准。</p>
               </section>
               <p class="confirmation-email" data-confirmation-email></p>
+              <dl class="confirmation-notifications" data-confirmation-notifications hidden>
+                <dt>申请回执</dt><dd data-confirmation-application-received></dd>
+                <dt>行前提醒</dt><dd data-confirmation-pre-event-reminder></dd>
+              </dl>
             </details>
           </section>
           <p class="confirmation-printed">打印仅保留当前结果；活动前请重新打开确认页核对最新状态。</p>

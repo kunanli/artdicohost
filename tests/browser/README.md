@@ -4,6 +4,15 @@
 
 这组可选检查使用真实 Chromium 运行构建后的页面，但拦截全部页面请求并提供纯合成 API。它不连接正式 API、不写真实报名、不读取原始名单，也不能代替真实 FC／OSS 端到端验收。
 
+当前 P4 的通知后端、私人页分型与提醒后台已完成本地验收，最后公开建置及准确包状态见 [P4 记录](../../docs/redesign/p4-release.md)。新增种类需单独验收，使用当前候选构建执行：
+
+```sh
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/p4-notifications-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/p3-private-page-smoke.mjs
+```
+
+前者核对提醒预览／选人／发送、未知结果及重新打开后的只读核对；后者新增申请回执／正式信／提醒的分型检查。待审可有独立申请回执，不发正式确认信、群码或 Wallet；全程使用合成 provider，不实寄。
+
 2026-11-01 P3：`p3-private-page-smoke.mjs` 检查私人页的信息顺序、资格、群码过期／缺少／图片失败与重新取得、保存入口、装置指引及换人清理；`settings-group-runtime-smoke.mjs` 同步检查群码设置及二十四小时内到期提示。来源和实际结果见 [P3 记录](../../docs/redesign/p3-release.md)。使用当前候选构建后执行：
 
 ```sh
@@ -103,7 +112,7 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 
 输出只包含合成验收项目与路由名称。截图及打印 PDF 写入忽略的 `.local-data/browser-evidence/`，只含合成资料。二十组脚本均拒绝未拦截的页面来源，并检查页面执行错误。它们不在默认 `pnpm test` 中；默认测试仍覆盖纯函数与服务端边界，实际浏览器操作应在有 Chromium 的环境单独执行。
 
-`application-review-smoke.mjs` 是人工审核阶段的公开申请／后台联动验收，使用实际 runtime、鉴权、v3 名额账本、确认通知和内存 OSS，全部 HTTP 请求拦截。覆盖 320／390／1440px 单页简表、学生身份、未问字段省略、同一申请的选填分享主题、重复点击、公开保存未知回执的原正文／幂等键重试、私人待审收据与 A4 打印。待审不占名额、不寄信、不读取已设置群码或提供 Wallet；内部 `approved` 核查意见不能取得名额。分别从详情与逐人表格明确核准／拒绝，验证保存失回执时零通知、GET 核对不代为执行、明确重播同一审核操作只寄一次。另验证已核准候补转正、未审者不自动递补、当前学生身份与原始身份同时保留／可筛选、reviewer 与 superadmin 工具差异、权限先于读取及会话失效清理。
+`application-review-smoke.mjs` 是人工审核阶段的公开申请／后台联动验收，使用实际 runtime、鉴权、v3 名额账本、确认通知和内存 OSS，全部 HTTP 请求拦截。覆盖 320／390／1440px 单页简表、学生身份、未问字段省略、同一申请的选填分享主题、重复点击、公开保存未知回执的原正文／幂等键重试、私人待审收据与 A4 打印。待审不占名额，可有独立申请回执，不发正式确认信、不读取已设置群码或提供 Wallet；内部 `approved` 核查意见不能取得名额。分别从详情与逐人表格明确核准／拒绝，验证核查保存失回执时不发正式确认信、GET 核对不代为执行、明确重播同一审核操作只寄一次。另验证已核准候补转正、未审者不自动递补、当前学生身份与原始身份同时保留／可筛选、reviewer 与 superadmin 工具差异、权限先于读取及会话失效清理。
 
 该脚本与本阶段调整后的 `people-relationships-smoke.mjs` 才采用「新公开申请先待审」语义；后者在真实 300 人场景明确核准新申请后再验证候补，不能直接把提交当成占位。较早 `registration-smoke.mjs`／`confirmation-smoke.mjs` 的三步骤表单部分是旧流程验收，不能作为新版简表的通过证据。邮件只由合成 provider stub 记录，不代表真实 EmailJS 寄送或收件；没有真实报名、群码、Apple 凭证或名单输入。
 

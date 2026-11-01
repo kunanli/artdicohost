@@ -1,5 +1,35 @@
 # 报名确认页与自动确认信
 
+## 2026-11-01 当前通知流程（P4）
+
+沿用已配置的 EmailJS 服务、中性「报名状态通知」模板与八个原参数，不重新配置账号或 Apple 签章。下方初版「没有凭据」「工作人员不自动发信」等状态只作历史参考；当前证据见 [P4 记录](redesign/p4-release.md)。
+
+| 种类 | 触发与身份 |
+| --- | --- |
+| `application_received` | 只对真正新建、已持久化的公开待审申请尝试一次回执；不是正式邀请，没有群码或 Wallet。重放、读取、导入、整合及部署不补发 |
+| `registration`／`promotion` | 核准、转正及新确认受托登记沿用原名额提交及正式信去重；原 `email` 和人员页历史仍只代表正式信 |
+| `pre_event_reminder` | 管理者先看姓名／状态／内容，勾选后明确发送，最多 100 人一批，报到开始前可用。不建排程，邮件不附固定群码 |
+
+「启用报名通知」沿用原持久开关，暂停会阻止尚未开始的三类请求；不撤销名额或擦除历史。服务商接受不是送达。`reserved` 与未知 ACK 对外为待核对；已保存别名中的同种接受／未知／预留阻止新寄，姓名或共享邮箱不自动构成人员关联。
+
+新增管理接口先核验完整活动管理权限；POST 还要求准确 Origin、CSRF 与 16 KiB 正文：
+
+| 接口 | 用途 |
+| --- | --- |
+| `POST /api/admin/registration-confirmation/reminder-preview` | 可选 `{registrationIds,cursor}`；默认分页返回当前主身份姓名、机构、状态、理由、最多 100 人及内容占位预览，不返回邮箱或私人链接 |
+| `POST /api/admin/registration-confirmation/reminder-dispatch` | `{expectedRevision,operationId,registrationIds,retryRejected?}`；固定提醒种类，逐人重新核对名额、许可、地址、开关、活动事实及期限 |
+| `GET /api/admin/registration-confirmation/reminder-operation/<operationId>` | 只读核对原操作，不创建预留或重寄。未知保留原正文与锁，未尝试者才另行选择 |
+
+私人页可选 `notifications.applicationReceived.status`、`notifications.preEventReminder.status`，旧响应继续可读；坏子项只显示该种结果待核对，不抹除名额、正式信或另一类历史。读取不调用 provider、不写日志。
+
+原八个模板参数保持 `to_name`、`to_email`、`event_title`、`event_date`、`event_time`、`event_venue`、`reference_code`、`invitation_text`。实际 EmailJS Subject 保持现有中性文字，不冒称后端 subject 已改外部模板。仅传收件所需姓名、邮箱、活动事实、编号与私人入口，不发送原问卷、住宿或内部备注。表单补充必要用途与服务商说明；原政策版本、环境值、不可变同意不迁移，旧 pending 正文仍可恢复。
+
+同一私有 journal 仍限 2000 身份、4000 稽核、1 MiB 与 100 人批次。储存／容量故障不撤销已保存申请。预览绑定来源及通知修订，来源变化先重读；真正 fetch 前再次核对，仍不宣称跨报名、联系人、通知日志与外部服务原子提交。
+
+回退须认识 P4 新种类与提醒操作，保留未知记录及原身份，不部署只接受旧两种通知的写入者。备份、隔离恢复和受控删除见 [维护流程](maintenance-backup.md)。合成验收与真实收件／SPF／DKIM／DMARC、微信、iPhone 结果分开记录。
+
+## 2026-10-21 初版接口与设计记录
+
 2026-10-21。此模块为公开报名提供可重开的私人确认页，以及报名已持久化后的单次确认通知。原始报名／来源／本人同意保持不可变；页面、通知和 Wallet 都读取当前名额及撤回状态，不用历史成功回执替代当前资格。
 
 ## 运行组合

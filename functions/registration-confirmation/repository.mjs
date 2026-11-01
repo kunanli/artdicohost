@@ -18,12 +18,14 @@ export class ConfirmationStorageError extends Error { constructor() { super('Con
 export const confirmationNoticeId = (eventId, registrationId, kind = 'registration') => 'c_' + createHash('sha256').update(eventId + '\0' + registrationId + '\0' + kind).digest('hex');
 export const confirmationRequestHash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const validConfirmationOperation = value => typeof value === 'string' && OP.test(value);
+export const formalConfirmationKind = kind => ['registration', 'promotion'].includes(kind);
+const additionalKind = kind => ['application_received', 'pre_event_reminder'].includes(kind);
 
 // A confirmed message has one durable identity across intake and promotion.
 // Preserve a distinct promotion only when a waitlist notice already exists.
 export function canonicalConfirmationKind(state, registrationId, admissionStatus) {
   if (admissionStatus !== 'confirmed') return 'registration';
-  const notices = state.notices.filter(item => item.registrationId === registrationId);
+  const notices = state.notices.filter(item => item.registrationId === registrationId && formalConfirmationKind(item.kind));
   return notices.find(item => item.admissionStatus === 'confirmed')?.kind
     ?? (notices.some(item => item.kind === 'registration' && item.admissionStatus === 'waitlisted') ? 'promotion' : 'registration');
 }
@@ -33,13 +35,14 @@ function apply(state, audit) {
   const d = audit.details;
   if (audit.action === 'reserve') {
     if (!exact(d, ['registrationId', 'kind', 'admissionStatus', 'admissionRevision', 'retryRejected']) || !ID.test(d.registrationId ?? '')
-      || !['registration', 'promotion'].includes(d.kind) || !['confirmed', 'waitlisted'].includes(d.admissionStatus)
+      || !formalConfirmationKind(d.kind) && !additionalKind(d.kind)
+      || !(d.kind === 'application_received' ? ['pending_review'] : d.kind === 'pre_event_reminder' ? ['confirmed'] : ['confirmed', 'waitlisted']).includes(d.admissionStatus)
       || !Number.isSafeInteger(d.admissionRevision) || d.admissionRevision < 0 || typeof d.retryRejected !== 'boolean') fail();
-    if (d.kind !== canonicalConfirmationKind(state, d.registrationId, d.admissionStatus)) fail();
+    if (formalConfirmationKind(d.kind) && d.kind !== canonicalConfirmationKind(state, d.registrationId, d.admissionStatus)) fail();
     const id = confirmationNoticeId(state.eventId, d.registrationId, d.kind), existing = state.notices.find(n => n.id === id);
     if (existing && (!d.retryRejected || existing.status !== 'rejected' || existing.attempt >= 5 || existing.admissionStatus !== d.admissionStatus)) fail();
-    if (d.admissionStatus === 'confirmed' && state.notices.some(item => item.registrationId === d.registrationId
-      && item.admissionStatus === 'confirmed' && item.id !== id)) fail();
+    if (formalConfirmationKind(d.kind) && d.admissionStatus === 'confirmed' && state.notices.some(item => item.registrationId === d.registrationId
+      && formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' && item.id !== id)) fail();
     if (!existing && state.notices.length >= 2000) fail();
     const notice = { id, registrationId: d.registrationId, kind: d.kind, status: 'reserved', admissionStatus: d.admissionStatus,
       admissionRevision: d.admissionRevision, createdAt: existing?.createdAt ?? audit.at, updatedAt: audit.at,
@@ -56,17 +59,17 @@ function apply(state, audit) {
     state.settings.enabled = d.enabled;
     state.operations.push({ operationId: d.operationId, requestHash: d.requestHash, actorId: audit.actorId,
       action: 'settings', at: audit.at, status: 'completed', registrationIds: [], retryRejected: false, results: [] });
-  } else if (audit.action === 'dispatch_started') {
+  } else if (['dispatch_started', 'reminder_dispatch_started'].includes(audit.action)) {
     if (!exact(d, ['operationId', 'requestHash', 'registrationIds', 'retryRejected']) || !OP.test(d.operationId ?? '') || !HASH.test(d.requestHash ?? '')
       || !Array.isArray(d.registrationIds) || !d.registrationIds.length || d.registrationIds.length > MAX_CONFIRMATION_BATCH
       || new Set(d.registrationIds).size !== d.registrationIds.length || d.registrationIds.some(id => !ID.test(id))
       || typeof d.retryRejected !== 'boolean' || state.operations.some(op => op.operationId === d.operationId)) fail();
     state.operations.push({ operationId: d.operationId, requestHash: d.requestHash, actorId: audit.actorId,
-      action: 'dispatch', at: audit.at, status: 'started', registrationIds: [...d.registrationIds], retryRejected: d.retryRejected, results: [] });
-  } else if (audit.action === 'dispatch_completed') {
+      action: audit.action === 'dispatch_started' ? 'dispatch' : 'reminder_dispatch', at: audit.at, status: 'started', registrationIds: [...d.registrationIds], retryRejected: d.retryRejected, results: [] });
+  } else if (['dispatch_completed', 'reminder_dispatch_completed'].includes(audit.action)) {
     if (!exact(d, ['operationId', 'results']) || !Array.isArray(d.results)) fail();
     const operation = state.operations.find(op => op.operationId === d.operationId);
-    if (!operation || operation.action !== 'dispatch' || operation.status !== 'started' || operation.actorId !== audit.actorId
+    if (!operation || operation.action !== (audit.action === 'dispatch_completed' ? 'dispatch' : 'reminder_dispatch') || operation.status !== 'started' || operation.actorId !== audit.actorId
       || d.results.length !== operation.registrationIds.length || d.results.some((result, i) => !exact(result, ['registrationId', 'status'])
         || result.registrationId !== operation.registrationIds[i] || !RESULT_STATUSES.includes(result.status))) fail();
     operation.status = 'completed'; operation.results = structuredClone(d.results);

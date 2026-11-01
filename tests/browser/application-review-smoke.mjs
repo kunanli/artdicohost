@@ -73,7 +73,7 @@ async function fixture({ width = 390, capacity = 3, mail = true, username = 'own
     const response = await runtime.app.handle(runtime.request(path, { method, body, headers: useHeaders }));
     const value = await response.json(); assert.equal(response.status, status, JSON.stringify(value)); return value;
   }
-  return { runtime, context, page, headers, calls, writes, reads, api, expireNextApproval: () => { rejectNextApproval = true; }, expireAdmissionRead: () => { rejectAdmissionRead = true; },rejectNextReviewSave:()=>{rejectReviewSave=true;},failNextReviewList:()=>{failReviewList=true;},wrongNextReviewIdentity:()=>{wrongReviewIdentity=true;} };
+  return { runtime, context, page, headers, calls, writes, reads, api, mail, expireNextApproval: () => { rejectNextApproval = true; }, expireAdmissionRead: () => { rejectAdmissionRead = true; },rejectNextReviewSave:()=>{rejectReviewSave=true;},failNextReviewList:()=>{failReviewList=true;},wrongNextReviewIdentity:()=>{wrongReviewIdentity=true;} };
 }
 async function noOverflow(page) { assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true); }
 async function openPublic(f) {
@@ -106,7 +106,8 @@ async function assertPending(f, id) {
   const state = await f.runtime.app.registrationService.getAdmissions({ actor: f.runtime.users[0] });
   assert.equal(state.people.find(person => person.registrationId === id).status, 'pending_review');
   assert.equal(state.summary.confirmedCount, 0); assert.equal(state.summary.pendingReviewCount, 1);
-  assert.equal(f.runtime.messages.length, 0);
+  assert.equal(f.runtime.messages.length, f.mail ? 1 : 0);
+  if(f.mail){assert.match(f.runtime.messages[0].template_params.invitation_text,/申请已收到|申请已经收到/u);assert.doesNotMatch(f.runtime.messages[0].template_params.invitation_text,/Apple Wallet|名额已确认|已获邀|群码/u);}
 }
 async function rawDecision(f, id, action = 'approve') {
   const current = await f.runtime.app.registrationService.getAdmissions({ actor: f.runtime.users[0] });
@@ -148,11 +149,11 @@ try {
     await f.page.evaluate(() => dispatchEvent(new Event('afterprint'))); assert.equal(f.page.url(), privateUrl);
     await f.page.emulateMedia({ media: 'screen' }); await noOverflow(f.page);
     await f.page.screenshot({ path: resolve(evidence, 'application-pending-mobile.png'), fullPage: true });
-    await rawDecision(f, record.id); assert.equal(f.runtime.messages.length, 1);
+    await rawDecision(f, record.id); assert.equal(f.runtime.messages.length, 2);assert.match(f.runtime.messages[1].template_params.invitation_text,/Apple Wallet/u);
     await f.page.locator('[data-confirmation-refresh]').click(); await f.page.locator('[data-confirmation-page][data-admission=confirmed]').waitFor();
     await f.page.locator('[data-confirmation-group] img').waitFor(); assert.ok(f.reads.some(item => item.path.includes('/group-invite/')));
-    await f.page.locator('[data-confirmation-refresh]').click(); assert.equal(f.runtime.messages.length, 1, 'read refresh never sends a second invitation');
-    await f.context.close(); reports.push({ sparseStudentSaved: true, doubleClickOneApplication: true, pendingNoSeatMailGroupOrWallet: true, privatePrint: true, explicitApprovalOneMailAndGroup: true });
+    await f.page.locator('[data-confirmation-refresh]').click(); assert.equal(f.runtime.messages.length, 2, 'read refresh never sends another receipt or formal invitation');
+    await f.context.close(); reports.push({ sparseStudentSaved: true, doubleClickOneApplication: true, independentApplicationReceipt: true, pendingNoSeatFormalMailGroupOrWallet: true, privatePrint: true, explicitApprovalOneMailAndGroup: true });
   }
   {
     const f = await fixture(), form = await openPublic(f); await fillApplication(form, { category: 'so', name: '合成组织者主题申请' });
@@ -171,7 +172,7 @@ try {
     const f = await fixture({ submitAckLost: true }), form = await openPublic(f); await fillApplication(form);
     await form.locator('[data-submit]').click(); await form.locator('[data-submit]').filter({ hasText: /再次确认/u }).waitFor();
     assert.equal(await form.locator('[name=name]').isDisabled(), true); assert.equal(await form.locator('[name=name]').inputValue(), '合成学生申请人');
-    assert.equal(f.writes.filter(item => item.path.endsWith('/registration/submit')).length, 1); assert.equal(f.runtime.messages.length, 0);
+    assert.equal(f.writes.filter(item => item.path.endsWith('/registration/submit')).length, 1); assert.equal(f.runtime.messages.length, 1);
     await form.locator('[data-submit]').click(); await f.page.waitForURL(url => url.pathname === '/registration/confirmation/');
     const attempts = f.writes.filter(item => item.path.endsWith('/registration/submit')); assert.equal(attempts.length, 2);
     assert.deepEqual(attempts[0].body, attempts[1].body); assert.equal(attempts[0].headers['idempotency-key'], attempts[1].headers['idempotency-key']);
@@ -190,7 +191,7 @@ try {
     await assertPending(f, pending.reference_code);
     await f.page.locator('[data-review-approve]').click();
     await f.page.locator('[data-review-admission-status]').filter({ hasText: /已确认参会名额/u }).waitFor();
-    assert.equal(f.runtime.messages.length, 1); assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(pending.reference_code)).status, 'confirmed');
+    assert.equal(f.runtime.messages.length, 2); assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(pending.reference_code)).status, 'confirmed');
     await f.page.locator('[data-review-detail-close]').first().click();
     await f.page.screenshot({ path: resolve(evidence, 'application-review-desktop.png'), fullPage: true });
     await noOverflow(f.page); await f.context.close(); reports.push({ studentReviewFilter: true, internalApprovedAnnotationNoSeat: true, explicitReviewActionConfirmsAndSends: true });
@@ -224,21 +225,21 @@ try {
   {
     const f = await fixture({ approvalAckLost: true }), pending = await f.runtime.seedPublic(pendingFields('合成未知审核回执'));
     await openReview(f);const lostApproval=f.page.waitForResponse(response=>response.url().endsWith('/api/admin/admissions/approve')&&response.status()===503);await f.page.locator('[data-admissions-approve="' + pending.reference_code + '"]').click();await lostApproval;
-    await f.page.locator('[data-admissions-pending]:visible').waitFor(); assert.equal(f.runtime.messages.length, 0);
+    await f.page.locator('[data-admissions-pending]:visible').waitFor(); assert.equal(f.runtime.messages.length, 1);
     assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(pending.reference_code)).status, 'confirmed');
     assert.equal(f.writes.filter(item => item.path.endsWith('/admissions/approve')).length, 1);
     await f.page.locator('[data-admissions-refresh]').click(); await f.page.locator('[data-admissions-status]').filter({ hasText: /原操作结果仍待确认/u }).waitFor();
-    assert.equal(f.runtime.messages.length, 0); assert.equal(f.writes.filter(item => item.path.endsWith('/admissions/approve')).length, 1);
+    assert.equal(f.runtime.messages.length, 1); assert.equal(f.writes.filter(item => item.path.endsWith('/admissions/approve')).length, 1);
     await f.page.locator('[data-admissions-retry]').click(); await f.page.locator('[data-admissions-pending]').waitFor({ state: 'hidden' });
     const attempts = f.writes.filter(item => item.path.endsWith('/admissions/approve')); assert.equal(attempts.length, 2); assert.deepEqual(attempts[0].body, attempts[1].body);
-    assert.equal(f.runtime.messages.length, 1); assert.equal((await f.runtime.app.registrationService.repository.list()).registrations.length, 1);
+    assert.equal(f.runtime.messages.length, 2); assert.equal((await f.runtime.app.registrationService.repository.list()).registrations.length, 1);
     await f.context.close(); reports.push({ durableApprovalLostAck: true, readRefreshNoMail: true, explicitOriginalDecisionRetryOneMail: true });
   }
   {
     const f = await fixture(), pending = await f.runtime.seedPublic(pendingFields('合成不通过申请'));
     await openReview(f); await f.page.locator('[data-admissions-reject="' + pending.reference_code + '"]').click();
     await f.page.locator('[data-admissions-status]').filter({ hasText: /审核不通过/u }).waitFor();
-    assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(pending.reference_code)).status, 'rejected'); assert.equal(f.runtime.messages.length, 0);
+    assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(pending.reference_code)).status, 'rejected'); assert.equal(f.runtime.messages.length, 1);
     await f.page.goto(pending.confirmation.confirmationUrl); await f.page.locator('[data-confirmation-content]:visible').waitFor();
     assert.match(await f.page.locator('[data-confirmation-heading]').textContent(), /未通过|不通过/u);
     assert.equal(await f.page.locator('[data-confirmation-wallet]').isVisible(), false); assert.equal(await f.page.locator('[data-confirmation-group]').isVisible(), false);
@@ -248,13 +249,13 @@ try {
   {
     const f = await fixture({ capacity: 1 }), first = await f.runtime.seedPublic(pendingFields('合成先核准申请')), second = await f.runtime.seedPublic(pendingFields('合成核准候补'));
     await rawDecision(f, first.reference_code); await rawDecision(f, second.reference_code);
-    assert.equal(f.runtime.messages.length, 1); assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(second.reference_code)).status, 'waitlisted');
+    assert.equal(f.runtime.messages.length, 3); assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(second.reference_code)).status, 'waitlisted');
     const unreviewed = await f.runtime.seedPublic(pendingFields('合成尚未审核申请'));
     await openReview(f); await f.page.locator('[data-admissions-people]').getByRole('button', { name: '取消并释放名额' }).first().click();
     await f.page.locator('[data-admissions-people] tr').filter({ hasText: second.reference_code }).filter({ hasText: /已确认参会名额/u }).waitFor();
     assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(second.reference_code)).status, 'confirmed');
     assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(unreviewed.reference_code)).status, 'pending_review');
-    assert.equal(f.runtime.messages.length, 2); assert.equal((await f.runtime.app.registrationService.getAdmissions({ actor: f.runtime.users[0] })).summary.confirmedCount, 1);
+    assert.equal(f.runtime.messages.length, 5); assert.equal((await f.runtime.app.registrationService.getAdmissions({ actor: f.runtime.users[0] })).summary.confirmedCount, 1);
     await f.context.close(); reports.push({ approvedWaitlistNoEarlyFormalMail: true, releasePromotesApprovedOnly: true, pendingNeverAutoPromoted: true });
   }
   {
@@ -286,7 +287,7 @@ try {
     assert.equal((await f.page.locator('body').textContent()).includes('合成审核同事申请'), false, 'expired decisions erase applicant text even inside the closed modal');
     assert.equal(await f.page.locator('[data-review-user]').textContent(), '');
     assert.equal(await f.page.locator('[data-review-login-submit]').isEnabled(), true, 'an expired in-flight decision must not leave the login controls busy');
-    assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(pending.reference_code)).status, 'pending_review'); assert.equal(f.runtime.messages.length, 0);
+    assert.equal((await f.runtime.app.registrationService.getAdmissionStatus(pending.reference_code)).status, 'pending_review'); assert.equal(f.runtime.messages.length, 1);
     await f.page.locator('[data-review-login] [name=username]').fill('reviewer');
     await f.page.locator('[data-review-login] [name=password]').fill(PEOPLE_FIXTURE_PASSWORD); await f.page.locator('[data-review-login-submit]').click();
     await f.page.locator('[data-review-workspace]:visible').waitFor();
@@ -294,7 +295,7 @@ try {
     assert.equal(await f.page.locator('[data-admissions-approve="' + pending.reference_code + '"]').isDisabled(), true, 'the durable original decision blocks a fresh approval');
     await f.page.locator('[data-operations-local-draft="admission-pending"]').getByRole('button', { name: '恢复待核对操作', exact: true }).click();
     await f.page.locator('[data-admissions-retry]').click();
-    await f.page.locator('[data-admissions-status]').filter({ hasText: /已确认参会名额/u }).waitFor(); assert.equal(f.runtime.messages.length, 1);
+    await f.page.locator('[data-admissions-status]').filter({ hasText: /已确认参会名额/u }).waitFor(); assert.equal(f.runtime.messages.length, 2);
     const attempts = f.writes.filter(item => item.path.endsWith('/admissions/approve'));
     assert.equal(attempts.length, 2); assert.deepEqual(attempts[0].body, attempts[1].body, 'the restored decision keeps its original operationId and expected revision');
     await f.page.locator('[data-operations-local-draft="admission-pending"][data-operations-draft-state=discarded]').waitFor({state:'attached'});

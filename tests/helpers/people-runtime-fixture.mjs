@@ -13,7 +13,7 @@ export const PEOPLE_FIXTURE_PRIVATE='SYNTHETIC_ORIGINAL_PEOPLE_ANSWER_NEVER_PROJ
 const passwordHash=await hashPassword(PEOPLE_FIXTURE_PASSWORD);
 
 /** Actual auth, content, contact, conversion and shared admission services over memory OSS. */
-export async function peopleRuntimeFixture({capacity=3,mail=false,mailResult='accepted'}={}){
+export async function peopleRuntimeFixture({capacity=3,mail=false,mailResult='accepted',clock=()=>Date.parse('2026-10-21T09:00:00.000Z')}={}){
   assert.ok(Number.isSafeInteger(capacity)&&capacity>=1&&capacity<=1000);
   const objects=memoryObjects(),messages=[];
   const users=[
@@ -29,10 +29,11 @@ export async function peopleRuntimeFixture({capacity=3,mail=false,mailResult='ac
     ARTDICO_REGISTRATION_TOKEN_SECRET:'synthetic-people-registration-token-secret-123456',ARTDICO_CONFIRMATION_EMAIL_ENABLED:mail?'true':'false',
     EMAILJS_SERVICE_ID:'synthetic-service',EMAILJS_CONFIRMATION_TEMPLATE_ID:'synthetic-confirmation-template',EMAILJS_PUBLIC_KEY:'synthetic-public-key',
     EMAILJS_PRIVATE_KEY:'synthetic-private-key-never-project',EMAIL_FROM_ADDRESS:'synthetic@artdico.co',EMAIL_FROM_NAME:'合成筹备团队'};
-  const make=({objects:runtimeObjects=objects}={})=>createCloudApplication({objects:runtimeObjects,env,now:()=>Date.parse('2026-10-21T09:00:00.000Z'),fetchFn:async(url,options)=>{
-    assert.equal(url,'https://api.emailjs.com/api/v1.0/email/send','all fixture mail must remain synthetic');messages.push(JSON.parse(options.body));
-    if(mailResult==='unknown')throw new Error('Synthetic lost provider ACK');
-    return new Response('OK',{status:200,headers:{'content-type':'text/plain'}});
+  const make=({objects:runtimeObjects=objects}={})=>createCloudApplication({objects:runtimeObjects,env,now:clock,fetchFn:async(url,options)=>{
+    assert.equal(url,'https://api.emailjs.com/api/v1.0/email/send','all fixture mail must remain synthetic');const message=JSON.parse(options.body);messages.push(message);
+    const outcome=typeof mailResult==='function'?await mailResult(message):mailResult;
+    if(outcome==='unknown')throw new Error('Synthetic lost provider ACK');
+    return new Response(outcome==='rejected'?'Synthetic refusal':'OK',{status:outcome==='rejected'?400:200,headers:{'content-type':'text/plain'}});
   }});
   const app=make();let serial=0;
   function request(path,{method='GET',headers={},body,origin}={}){

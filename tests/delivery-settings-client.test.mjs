@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createDeliveryMutations,deliverySettingsView} from '../src/lib/delivery-settings.mjs';
+import {createDeliveryMutations,deliverySettingsView,deliveryReminderPreviewView,deliveryReminderRequestView,createReminderMutations} from '../src/lib/delivery-settings.mjs';
 const operationId='o'.repeat(43),id='r'.repeat(43);
 const state=()=>({revision:2,automaticEnabled:false,email:{ready:false,missing:['EMAILJS_CONFIRMATION_TEMPLATE_ID'],privateKey:'PRIVATE'},wallet:{ready:false,privateKey:'PRIVATE'},counts:{total:0,providerAccepted:0,rejected:0,unknown:0}});
 test('settings projection excludes credentials and rejects unverified counts or availability',()=>{
@@ -52,4 +52,64 @@ test('settings save rejects unrelated operation IDs, choices and nonadvancing re
 test('a proven original settings operation remains acknowledged when a later editor changed the current setting',async()=>{
   const controller=createDeliveryMutations({operationId:()=>operationId,revision:()=>2,request:async()=>({...state(),revision:5,automaticEnabled:false,outcome:'replayed',operationId,enabled:true})});
   const result=await controller.run('settings',{enabled:true});assert.equal(result.requestedEnabled,true);assert.equal(result.value.automaticEnabled,false);assert.equal(controller.pending,false);
+});
+
+const noticeCounts=()=>({total:2,providerAccepted:1,rejected:0,unknown:1});
+const reminderPreview=()=>({revision:7,kind:'pre_event_reminder',total:1,nextCursor:null,rows:[{registrationId:id,name:'合成提醒收件人',organization:'合成组织',status:'not_sent',eligible:true,reason:'ELIGIBLE',retryRejected:false,email:'PRIVATE'}],message:{subject:'合成行前提醒',text:'活动信息\n[私人参会页链接]',privateUrlPlaceholder:'[私人参会页链接]',privateToken:'PRIVATE'}});
+const reminderResult=(change={})=>({revision:8,operationId,kind:'pre_event_reminder',outcome:'updated',status:'completed',results:[{registrationId:id,status:'provider_accepted'}],...change});
+
+test('notification counters keep receipt, formal confirmation and reminder identities separate without credentials',()=>{
+  const value={...state(),notificationCounts:{applicationReceived:noticeCounts(),preEventReminder:{...noticeCounts(),total:3},privateKey:'PRIVATE'}},safe=deliverySettingsView(value);
+  assert.equal(safe.counts.total,0);assert.equal(safe.notificationCounts.applicationReceived.total,2);assert.equal(safe.notificationCounts.preEventReminder.total,3);assert.doesNotMatch(JSON.stringify(safe),/PRIVATE/u);
+  assert.equal(deliverySettingsView({...value,notificationCounts:{applicationReceived:noticeCounts()}}),null);
+  assert.equal(deliverySettingsView({...value,notificationCounts:{...value.notificationCounts,applicationReceived:{...noticeCounts(),unknown:-1}}}),null);
+});
+
+test('reminder preview rejects ambiguous recipients and strips private source fields',()=>{
+  const value=reminderPreview(),safe=deliveryReminderPreviewView(value);assert.ok(safe);assert.doesNotMatch(JSON.stringify(safe),/PRIVATE|email|privateToken/u);
+  for(const change of[{status:'provider_accepted',eligible:true},{status:'unknown',eligible:true},{status:'rejected',eligible:true,retryRejected:false},{reason:'PRIVATE_ERROR'}, {registrationId:'short'}])assert.equal(deliveryReminderPreviewView({...value,rows:[{...value.rows[0],...change}]}),null);
+  assert.equal(deliveryReminderPreviewView({...value,rows:[value.rows[0],value.rows[0]],total:2}),null);
+  assert.equal(deliveryReminderPreviewView({...value,message:{...value.message,text:'missing private page placeholder'}}),null);
+  assert.equal(deliveryReminderPreviewView({...value,total:0}),null);
+  assert.equal(deliveryReminderPreviewView({...value,rows:[{...value.rows[0],status:'rejected',retryRejected:true}]}).rows[0].eligible,true);
+});
+
+test('a lost reminder POST acknowledgement is reconciled only by GET of the original operation',async()=>{
+  const calls=[];let generated=0,revision=7;
+  const controller=createReminderMutations({revision:()=>revision,operationId:()=>{generated++;return operationId;},request:async(path,options)=>{calls.push({path,...options});if(options.method==='POST')throw Object.assign(new Error('lost ACK'),{status:503});return reminderResult({outcome:'replayed'});}});
+  await assert.rejects(controller.run({registrationIds:[id],retryRejected:false}));const original=controller.body;revision=99;
+  await assert.rejects(controller.run({registrationIds:['x'.repeat(43)]}));assert.equal(generated,1);assert.equal(controller.pending,true);
+  const result=await controller.lookup();assert.equal(result.results[0].status,'provider_accepted');assert.equal(controller.pending,false);
+  assert.equal(calls.length,2);assert.equal(calls[0].method,'POST');assert.equal(calls[1].method,'GET');assert.equal(calls[1].path,'/api/admin/registration-confirmation/reminder-operation/'+operationId);assert.equal(calls[1].body,undefined);
+  assert.equal(JSON.parse(original).expectedRevision,7);assert.equal(JSON.parse(original).operationId,operationId);
+});
+
+test('restoring a pending reminder preserves its raw request and never allocates a new operation',async()=>{
+  const body=JSON.stringify({registrationIds:[id],retryRejected:false,expectedRevision:7,operationId}),calls=[];
+  const controller=createReminderMutations({revision:()=>100,operationId:()=>{throw new Error('must not allocate');},request:async(path,options)=>{calls.push({path,...options});return reminderResult({outcome:'replayed'});}});
+  controller.restore(body);assert.equal(controller.body,body);await controller.lookup();assert.deepEqual(calls,[{path:'/api/admin/registration-confirmation/reminder-operation/'+operationId,method:'GET'}]);
+  for(const value of['',JSON.stringify({registrationIds:[id]}),JSON.stringify({registrationIds:[id,id],retryRejected:false,expectedRevision:7,operationId}),body+' '.repeat(10001)])assert.equal(deliveryReminderRequestView(value),null);
+});
+
+test('unknown reminder results and missing original operations keep the original request locked',async()=>{
+  let missing=false;const controller=createReminderMutations({revision:()=>7,operationId:()=>operationId,request:async()=>{if(missing)throw Object.assign(new Error('not found'),{status:404});return reminderResult({status:'partial',results:[{registrationId:id,status:'unknown'}]});}});
+  const result=await controller.run({registrationIds:[id]});assert.equal(result.status,'partial');assert.equal(controller.pending,true);const body=controller.body;
+  missing=true;await assert.rejects(controller.lookup());assert.equal(controller.pending,true);assert.equal(controller.body,body);
+});
+
+test('partial reminder results unlock only after every selected recipient has a verified outcome',async()=>{
+  let complete=false;const controller=createReminderMutations({revision:()=>7,operationId:()=>operationId,request:async()=>reminderResult({status:'partial',results:complete?[{registrationId:id,status:'not_attempted'}]:[]})});
+  await assert.rejects(controller.run({registrationIds:[id]}),/尚未完整/u);assert.equal(controller.pending,true);complete=true;
+  const result=await controller.lookup();assert.equal(result.results[0].status,'not_attempted');assert.equal(controller.pending,false);
+});
+
+test('a cleared reminder session ignores a late operation lookup instead of replacing a newer pending request',async()=>{
+  let release;const controller=createReminderMutations({revision:()=>7,operationId:()=>operationId,request:()=>new Promise(resolve=>{release=resolve;})});
+  const body=JSON.stringify({registrationIds:[id],retryRejected:false,expectedRevision:7,operationId});controller.restore(body);const old=controller.lookup();controller.clear();
+  const next=body.replace(operationId,'n'.repeat(43));controller.restore(next);release(reminderResult({outcome:'replayed'}));await assert.rejects(old,/会话已改变/u);assert.equal(controller.body,next);assert.equal(controller.pending,true);
+});
+
+test('a definite reminder validation conflict unlocks only after one rejected POST and never retries automatically',async()=>{
+  const calls=[],controller=createReminderMutations({revision:()=>7,operationId:()=>operationId,request:async(path,options)=>{calls.push({path,...options});throw Object.assign(new Error('revision conflict'),{status:409});}});
+  await assert.rejects(controller.run({registrationIds:[id]}));assert.equal(controller.pending,false);assert.equal(calls.length,1);assert.equal(calls[0].method,'POST');
 });

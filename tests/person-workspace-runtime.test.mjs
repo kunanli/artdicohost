@@ -99,15 +99,16 @@ test('runtime person projections preserve outreach versus reviewer access and re
   assert.equal(f.objects.calls.slice(editorBefore).some(call=>/^cms\/v1\/(?:contacts|intent-invitations|registration-confirmations)(?:\/|$)/u.test(call.key)),false);
 });
 
-test('a pending public application sends no mail until reviewer approval, then exposes saved history without replay or invented contact match',async()=>{
+test('a public receipt precedes approval while formal person history stays separate and reads never replay either mail',async()=>{
   const f=fixture({mail:true}),receipt=await publicRegistration(f);
   assert.equal(receipt.status,'pending_review');assert.equal(receipt.admissionStatus,'pending_review');
-  assert.equal(receipt.confirmation.email.status,'not_applicable');assert.equal(f.messages.length,0);
+  assert.equal(receipt.confirmation.email.status,'not_applicable');assert.equal(f.messages.length,1);
+  assert.match(f.messages[0].template_params.invitation_text,/申请已收到|申请已经收到/u);assert.doesNotMatch(f.messages[0].template_params.invitation_text,/Apple Wallet|名额已确认/u);
   const reviewer=await login(f.app,'synthetic.reviewer'),pendingStart=f.objects.calls.length;
   const pendingResponse=await f.app.handle(request('/api/admin/people/registrations/'+receipt.reference_code,{headers:reviewer}));
   assert.equal(pendingResponse.status,200);const pending=await pendingResponse.json();
   assert.equal(pending.admission.status,'pending_review');assert.equal(pending.contact,null);
-  assert.equal(pending.communications.confirmations.length,0);assert.equal(f.messages.length,0);
+  assert.equal(pending.communications.confirmations.length,0);assert.equal(f.messages.length,1);
   const admissionsResponse=await f.app.handle(request('/api/admin/admissions',{headers:reviewer}));
   assert.equal(admissionsResponse.status,200);const admissions=await admissionsResponse.json();
   assert.equal(admissions.summary.pendingReviewCount,1);assert.equal(admissions.summary.confirmedCount,0);
@@ -119,7 +120,8 @@ test('a pending public application sends no mail until reviewer approval, then e
   assert.deepEqual(approved.operation,{operationId,action:'approve',registrationId:receipt.reference_code,revision:admissions.revision+1});
   assert.equal(approved.people.find(person=>person.registrationId===receipt.reference_code).status,'confirmed');
   assert.equal(approved.summary.pendingReviewCount,0);assert.equal(approved.summary.confirmedCount,1);
-  assert.equal(f.messages.length,1,'the actual reviewer-approved durable admission triggers the runtime EmailJS adapter once');
+  assert.equal(f.messages.length,2,'the durable approval adds one formal notice without suppressing or replaying its application receipt');
+  assert.match(f.messages[1].template_params.invitation_text,/Apple Wallet/u);
   const headers=await login(f.app),before=f.objects.calls.length;
   for(let read=0;read<2;read++){
     const app=read===0?f.app:f.make();
@@ -130,6 +132,6 @@ test('a pending public application sends no mail until reviewer approval, then e
     assert.equal(value.communications.confirmations[0].status,'provider_accepted');
     assert.doesNotMatch(JSON.stringify(value),/PRIVATE_PUBLIC_ORIGINAL_ANSWER|synthetic-private-key|receiptToken|invitation_text|accessToken/u);
   }
-  assert.equal(f.messages.length,1,'reading or reopening a person never calls EmailJS again');
+  assert.equal(f.messages.length,2,'reading or reopening a person never calls EmailJS again');
   assert.equal(f.objects.calls.slice(before).some(call=>call.operation!=='get'),false);
 });

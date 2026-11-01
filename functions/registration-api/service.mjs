@@ -52,8 +52,8 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
     if (typeof onSaved === 'function') {
       try {
         // A verified public receipt may obtain its private status capability.
-        // Intake and replay never authorize automatic mail; an explicit admission
-        // decision supplies that separate authority after a proven CAS receipt.
+        // A new application can receive a separate receipt. Replay does not
+        // authorize backfill, and formal invitations still require admission.
         confirmation = await onSaved({ receipt: structuredClone(saved.receipt), origin, provenance: { kind: 'public' }, outcome: saved.outcome, notify: false,
           promotedIds: Array.isArray(saved.promotedIds) ? [...saved.promotedIds] : [] });
       } catch { /* Keep the proven receipt even when optional delivery is unavailable. */ }

@@ -1,4 +1,4 @@
-// P3 client journeys: every request is intercepted, all identities and capabilities are synthetic.
+// P3/P4 client journeys: every request is intercepted, all identities and capabilities are synthetic.
 import assert from 'node:assert/strict';
 import { readFile, mkdir, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -25,7 +25,7 @@ const reports = [], errors = [];
 const json = (body, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(body), headers: { 'access-control-allow-origin': SITE } });
 const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 
-async function fixture({ width = 390, userAgent = ios, status = 'confirmed', group = 'valid', imageFailure = false, factsReady = true, holdFirst = false, expireSoon = false } = {}) {
+async function fixture({ width = 390, userAgent = ios, status = 'confirmed', group = 'valid', imageFailure = false, factsReady = true, holdFirst = false, expireSoon = false, notifications = undefined, otherNotifications = undefined } = {}) {
   const context = await browser.newContext({ viewport: { width, height: 844 }, userAgent });
   await context.addCookies([{ name: 'synthetic_staff', value: 'PRIVATE-COOKIE-MUST-NOT-LEAK', domain: 'api.artdico.host', path: '/', secure: true, httpOnly: true, sameSite: 'Strict' }]);
   await context.addInitScript(() => {
@@ -37,7 +37,7 @@ async function fixture({ width = 390, userAgent = ios, status = 'confirmed', gro
   });
   const page = await context.newPage(), calls = [];
   page.on('pageerror', error => errors.push(error.message));
-  const memory = { status, group, imageFailure, factsReady, readStatus: 200, walletStatus: 200, readCount: 0, groupVersion: 1, held: null, mail: false, writes: 0 };
+  const memory = { status, group, imageFailure, factsReady, notifications, otherNotifications, readStatus: 200, walletStatus: 200, readCount: 0, groupVersion: 1, held: null, mail: false, writes: 0 };
   const receipt = received => ({
     event, referenceCode: (received === otherToken ? 's' : 'r').repeat(43), submittedAt: '2026-10-21T00:00:00Z',
     attendee: { name: received === otherToken ? '合成报名人乙' : '合成报名人甲', organization: '合成机构', email: 'PRIVATE-SOURCE-MUST-NOT-RENDER' },
@@ -45,6 +45,7 @@ async function fixture({ width = 390, userAgent = ios, status = 'confirmed', gro
     eventFacts: { ready: memory.factsReady, reason: memory.factsReady ? 'EVENT_FACTS_VERIFIED' : 'EVENT_FACTS_MISMATCH', revision: 43 },
     invitation: { ready: true, settings: { recipientName: received === otherToken ? '合成报名人乙' : '合成报名人甲', date: event.date, time: event.time, venue: event.venue, confirmed: true, renderVersion: 'ggj2026-poster-v2' } },
     groupInvite: memory.group === 'missing' ? null : { platform: 'wechat', qrImageUrl: API + '/api/registration/group-invite/synthetic-p3.' + memory.groupVersion, expiresAt: new Date(Date.now() + (memory.group === 'expired' ? -1_000 : expireSoon ? 1_500 : 600_000)).toISOString() },
+    ...(memory.notifications !== undefined ? { notifications: structuredClone(received === otherToken && memory.otherNotifications !== undefined ? memory.otherNotifications : memory.notifications) } : {}),
   });
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
@@ -93,7 +94,8 @@ async function fixture({ width = 390, userAgent = ios, status = 'confirmed', gro
 
 async function cleared(page) {
   assert.equal(await page.locator('[data-confirmation-content]').isVisible(), false);
-  for (const field of ['name', 'organization', 'event', 'date', 'time', 'venue', 'reference', 'email']) assert.equal(await page.locator('[data-confirmation-' + field + ']').textContent(), '');
+  for (const field of ['name', 'organization', 'event', 'date', 'time', 'venue', 'reference', 'email', 'application-received', 'pre-event-reminder']) assert.equal(await page.locator('[data-confirmation-' + field + ']').textContent(), '');
+  assert.equal(await page.locator('[data-confirmation-notifications]').evaluate(output => output.hidden), true);
   assert.equal(await page.locator('[data-confirmation-private-link]').inputValue(), '');
   assert.equal(await page.locator('[data-confirmation-wallet]').isVisible(), false);assert.equal(await page.locator('[data-confirmation-group] img').count(), 0);
   assert.equal(await page.locator('[data-confirmation-invitation-image]').getAttribute('src'), null);assert.equal(await page.locator('[data-confirmation-invitation-download]').getAttribute('href'), null);
@@ -104,6 +106,7 @@ try {
     const f = await fixture({ width });await f.open();
     const order = await f.page.evaluate(() => ['[data-confirmation-heading]', '.confirmation-details', '[data-confirmation-group]', '.confirmation-save'].map(selector => document.querySelector(selector).getBoundingClientRect().top));assert.deepEqual(order, [...order].sort((a, b) => a - b));
     assert.equal(await f.page.locator('[data-confirmation-more]').getAttribute('open'), null);
+    assert.equal(await f.page.locator('[data-confirmation-notifications]').evaluate(output => output.hidden), true);assert.equal(await f.page.locator('[data-confirmation-application-received]').textContent(), '');assert.equal(await f.page.locator('[data-confirmation-pre-event-reminder]').textContent(), '');
     assert.equal(await f.page.locator('[data-confirmation-print]').isVisible(), false);
     await f.page.locator('[data-confirmation-group] img').evaluate(img => img.decode());
     assert.match(await f.page.locator('.confirmation-group-validity').textContent(), /10 分钟.*7 天/u);
@@ -135,7 +138,7 @@ try {
     const f = await fixture({ expireSoon: true });await f.open();await f.page.locator('[data-confirmation-group-status]').filter({ hasText: '群码待更新' }).waitFor();assert.equal(await f.page.locator('[data-confirmation-group]').isVisible(), true);assert.equal(f.memory.readCount, 1);await f.close();reports.push({ shortImageExpiryRemovesImageWithoutAutomaticRead: true });
   }
   for (const device of ['wechat-ios', 'safari-ios', 'android']) {
-    const f = await fixture({ userAgent: device === 'android' ? android : ios + (device === 'wechat-ios' ? ' MicroMessenger/8.0' : '') });await f.open();
+    const f = await fixture({ userAgent: device === 'android' ? android : ios + (device === 'wechat-ios' ? ' MicroMessenger/8.0' : ''), notifications: { applicationReceived: { status: 'provider_accepted' }, preEventReminder: { status: 'unknown' } } });await f.open();assert.match(await f.page.locator('[data-confirmation-application-received]').textContent(), /回执不代表获邀/u);
     const hint = await f.page.locator('[data-confirmation-device]').textContent();
     if (device === 'wechat-ios') assert.match(hint, /右上角.*私人链接到 Safari/u);
     if (device === 'safari-ios') assert.match(hint, /系统提示确认添加.*不代表已加入/u);
@@ -152,14 +155,38 @@ try {
     const f = await fixture({ factsReady: false });await f.open();assert.match(await f.page.locator('h1').textContent(), /名额已确认/u);assert.equal(await f.page.locator('[data-confirmation-facts-warning]').isVisible(), true);assert.match(await f.page.locator('[data-confirmation-email]').textContent(), /服务商处理/u);assert.equal(await f.page.locator('[data-confirmation-wallet]').isVisible(), false);assert.equal(await f.page.locator('[data-confirmation-group]').isVisible(), true);await f.close();reports.push({ factsMismatchPreservesAdmissionAndEmailHistory: true });
   }
   for (const readStatus of [401, 503]) {
-    const f = await fixture();await f.open();await f.page.evaluate(() => { globalThis.__p3.failClipboard = true; });await f.page.locator('[data-confirmation-copy]').click();await f.page.locator('[data-confirmation-copy-fallback]:visible').waitFor();assert.equal(await f.page.locator('[data-confirmation-private-link]').inputValue(), link);f.memory.readStatus = readStatus;await f.page.locator('[data-confirmation-refresh]').click();await f.page.locator('[data-confirmation-error]:visible').waitFor();await cleared(f.page);await f.close();reports.push({ readStatus, failedReadClearsPreviousPrivateDataAndVisibleCapabilityInput: true });
+    const f = await fixture({ notifications: { applicationReceived: { status: 'provider_accepted' }, preEventReminder: { status: 'provider_accepted' } } });await f.open();await f.page.locator('[data-confirmation-more] summary').click();await f.page.locator('[data-confirmation-notifications]:visible').waitFor();await f.page.evaluate(() => { globalThis.__p3.failClipboard = true; });await f.page.locator('[data-confirmation-copy]').click();await f.page.locator('[data-confirmation-copy-fallback]:visible').waitFor();assert.equal(await f.page.locator('[data-confirmation-private-link]').inputValue(), link);f.memory.readStatus = readStatus;await f.page.locator('[data-confirmation-refresh]').click();await f.page.locator('[data-confirmation-error]:visible').waitFor();await cleared(f.page);await f.close();reports.push({ readStatus, failedReadClearsPreviousPrivateDataAndVisibleCapabilityInput: true, typedNoticeHistoryCleared: true });
   }
   {
-    const f = await fixture({ holdFirst: true });await f.open();await f.page.waitForFunction(() => document.querySelector('[data-confirmation-page]'));
+    const f = await fixture({ holdFirst: true, notifications: { applicationReceived: { status: 'provider_accepted' }, preEventReminder: { status: 'pending' } }, otherNotifications: { applicationReceived: { status: 'rejected' }, preEventReminder: { status: 'unknown' } } });await f.open();await f.page.waitForFunction(() => document.querySelector('[data-confirmation-page]'));
     for (let index = 0; index < 100 && !f.memory.held; index++) await f.page.waitForTimeout(20);assert.ok(f.memory.held);
     await f.page.evaluate(value => { location.hash = '#r=' + value; }, otherToken);await f.page.locator('[data-confirmation-name]').filter({ hasText: '合成报名人乙' }).waitFor();await f.memory.held();
     await f.page.waitForTimeout(30);assert.equal(await f.page.locator('[data-confirmation-name]').textContent(), '合成报名人乙');assert.doesNotMatch(await f.page.locator('body').textContent(), /合成报名人甲/u);
+    assert.match(await f.page.locator('[data-confirmation-application-received]').textContent(), /未能发出/u);assert.match(await f.page.locator('[data-confirmation-pre-event-reminder]').textContent(), /待核对/u);
     await f.page.evaluate(() => { location.hash = '#r=invalid'; });await f.page.locator('[data-confirmation-error]:visible').waitFor();await cleared(f.page);await f.close();reports.push({ changedPrivateLinkIgnoresLatePersonAndClearsInvalidCapability: true });
+  }
+  const noticeStates = ['not_sent', 'not_applicable', 'not_configured', 'disabled', 'pending', 'provider_accepted', 'rejected', 'unknown'];
+  const noticePatterns = { not_sent: /暂无发送记录/u, not_applicable: /无需/u, not_configured: /暂未启用/u, disabled: /已暂停/u, pending: /待处理/u, provider_accepted: /交由服务商处理/u, rejected: /未能发出/u, unknown: /待核对/u };
+  for (const [index, status] of noticeStates.entries()) {
+    const width = [320, 390, 1440][index % 3], f = await fixture({ width, notifications: { applicationReceived: { status }, preEventReminder: { status } } });await f.open();
+    assert.equal(await f.page.locator('[data-confirmation-notifications]').isVisible(), false);await f.page.locator('[data-confirmation-more] summary').click();await f.page.locator('[data-confirmation-notifications]:visible').waitFor();
+    for (const key of ['application-received', 'pre-event-reminder']) { const message = await f.page.locator('[data-confirmation-' + key + ']').textContent();assert.match(message, noticePatterns[status]);assert.doesNotMatch(message, /已送达|添加成功|已获邀|名额已确认/u); }
+    assert.match(await f.page.locator('h1').textContent(), /名额已确认/u);assert.match(await f.page.locator('[data-confirmation-email]').textContent(), /确认邮件已交由服务商/u);
+    if ([0, 5, 7].includes(index)) await f.page.screenshot({ path: resolve(evidence, 'typed-notices-' + width + '.png'), fullPage: true });
+    await f.close();reports.push({ noticeStatus: status, width, distinctTypedHistory: true, collapsedByDefault: true, formalEmailAndAdmissionPreserved: true });
+  }
+  {
+    const f = await fixture({ status: 'pending_review', notifications: { applicationReceived: { status: 'provider_accepted' }, preEventReminder: { status: 'not_sent' } } });await f.open();await f.page.locator('[data-confirmation-more] summary').click();
+    assert.match(await f.page.locator('h1').textContent(), /申请已收到，待审核/u);assert.match(await f.page.locator('[data-confirmation-application-received]').textContent(), /回执不代表获邀/u);assert.doesNotMatch(await f.page.locator('[data-confirmation-email]').textContent(), /确认邮件已交由服务商/u);
+    for (const key of ['group', 'wallet', 'invitation']) assert.equal(await f.page.locator('[data-confirmation-' + key + ']').isVisible(), false);assert.equal(f.calls.some(call => call.path.includes('/group-invite/')), false);
+    await f.close();reports.push({ pendingReceiptAcceptedIsNotAdmissionOrFormalConfirmation: true, noCredentialAccessFromTypedHistory: true });
+  }
+  for (const malformedKind of ['applicationReceived', 'preEventReminder']) {
+    const notices = { applicationReceived: { status: 'provider_accepted' }, preEventReminder: { status: 'provider_accepted' } };notices[malformedKind] = { status: 'delivered', recipient: 'PRIVATE-UNTRUSTED-RECIPIENT', body: '<a href="https://private.invalid/notice">PRIVATE-UNTRUSTED-BODY</a>' };
+    const f = await fixture({ notifications: notices });await f.open();await f.page.locator('[data-confirmation-more] summary').click();
+    const badKey = malformedKind === 'applicationReceived' ? 'application-received' : 'pre-event-reminder', goodKey = malformedKind === 'applicationReceived' ? 'pre-event-reminder' : 'application-received';
+    assert.match(await f.page.locator('[data-confirmation-' + badKey + ']').textContent(), /待核对/u);assert.match(await f.page.locator('[data-confirmation-' + goodKey + ']').textContent(), /交由服务商/u);assert.match(await f.page.locator('[data-confirmation-email]').textContent(), /确认邮件已交由服务商/u);assert.match(await f.page.locator('h1').textContent(), /名额已确认/u);assert.doesNotMatch(await f.page.locator('body').textContent(), /PRIVATE-UNTRUSTED|private\.invalid/u);assert.equal(await f.page.locator('[href="https://private.invalid/notice"]').count(), 0);
+    await f.close();reports.push({ malformedKind, onlyThatKindUnknown: true, untrustedNoticeFieldsNotRendered: true });
   }
   assert.deepEqual(errors, []);console.log(JSON.stringify({ build, reports, syntheticOnly: true, allRequestsIntercepted: true, realMail: false, businessWrites: 0, actualWalletInstallation: false, pageErrors: errors }, null, 2));
 } finally { await browser.close(); }

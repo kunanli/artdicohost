@@ -20,7 +20,7 @@ const admissionLabels = { confirmed: '已确认参会名额', waitlisted: '已�
 const reviewLabels = { new: '新报名', in_review: '核查中', awaiting_maria: '待 Maria 审阅', approved: '审核已确认', discussion: '待讨论', not_this_time: '本次不邀请', withdrawn: '已撤回' };
 const accommodationLabels = { not_requested: '未申请', requested: '已申请', pending: '待核对', approved: '已批准', declined: '未批准' };
 const channelLabels = { manual: '人工邀请', email: '邮件', wechat: '微信', other: '其他' };
-const noticeLabels = { prepared: '已准备，未记录发出', manually_sent: '已记录人工发出', provider_accepted: '服务商已接受，未证明送达', unknown: '结果待核对，不重复发送', reserved: '结果待核对，不重复发送', rejected: '明确未发出', generated: '已生成，未记录发出', sent: '已记录人工发出', disabled: '通知已停用', not_configured: '寄件尚未配置' };
+const noticeLabels = { prepared: '已准备，未记录发出', manually_sent: '已记录人工发出', provider_accepted: '邮件服务已接收，未证明送达', unknown: '结果待核对，不重复发送', reserved: '结果待核对，不重复发送', rejected: '明确未发出', generated: '已生成，未记录发出', sent: '已记录人工发出', disabled: '通知已停用', not_configured: '寄件尚未配置' };
 let user = null, csrfToken = '', generation = 0, sequence = 0, authSequence = 0, authBusy = false, reading = false, personController = null, authController = null;
 const quickNames = ['responseStatus', 'owner', 'followUpAt', 'notes'];
 const operationNames = ['owner', 'priority', 'followUpAt', 'notes', 'responseStatus', 'participationForms', 'sessionIds', 'boothIds', 'sessionRoles'];
@@ -321,7 +321,7 @@ function renderSummary(view) {
     : view.availability.admission === 'restricted' ? '名额由审核人核对' : view.availability.admission === 'unavailable' ? '名额待核对' : '尚未整合名额';
   output.append(badge(admission, syncIssue ? undefined : view.admission?.status));
   const notice = view.communications.timeline.find(item => item.source === 'confirmation');
-  if (notice) output.append(badge(({provider_accepted:'确认信已接受',unknown:'寄送待核对',reserved:'寄送待核对',rejected:'确认信未发出'})[notice.status] ?? '通知待核对'));
+  if (notice) output.append(badge(({provider_accepted:'邮件服务已接收',unknown:'寄送待核对',reserved:'寄送待核对',rejected:'确认信未发出'})[notice.status] ?? '通知待核对'));
   else if (view.availability.confirmations === 'unavailable') output.append(badge('通知待核对'));
   else if (view.admission?.status === 'confirmed' && view.availability.confirmations === 'available') output.append(badge('确认信未寄送'));
   if (view.publicProfile.profiles.some(item => item.published && !item.publishedMatchesDraft)) output.append(badge('前台待更新'));
@@ -336,6 +336,7 @@ function renderNext() {
   else if (relatedRefresh && !quickDirty && !quickPending) action = {key:'check', label:'核对相关记录', reason:'回复已保存。', kind:'refresh'};
   if (quickDraft?.blocked && !quickPending) action = {key:'draft', label:'核对本机填写', reason:'', kind:'refresh'};
   if (action.key === 'details' && credentialRegistration()) action = {...action, label:'查看凭证'};
+  if (action.kind === 'handoff') action = {...action, label:'复制转交链接'};
   const button = $('[data-person-primary]'); button.textContent = action.label; button.dataset.action = action.key; button.dataset.kind = action.kind;
   if (action.href) button.dataset.href = action.href; else delete button.dataset.href;
   const editing = $('[data-person-quick-panel]').open && quickDirty && !quickPending;
@@ -625,8 +626,8 @@ $('[data-person-primary]').addEventListener('click', async () => {
     await loadPerson(); return;
   }
   if (button.dataset.kind === 'handoff') {
-    try { await navigator.clipboard.writeText(location.origin + location.pathname + location.hash); $('[data-person-primary-reason]').textContent = '人员入口已复制，请交有权限同事核对。'; }
-    catch { $('[data-person-primary-reason]').textContent = '请将当前人员入口交有权限同事核对。'; }
+    try { await navigator.clipboard.writeText(location.origin + location.pathname + location.hash); $('[data-person-primary-reason]').textContent = '转交链接已复制，请发给有权限同事核对。'; }
+    catch { $('[data-person-primary-reason]').textContent = '复制未完成，请复制当前页面链接，发给有权限同事核对。'; }
     return;
   }
   if (action === 'details' && credentialRegistration()) { openServices(); await prepareCredential(); return; }

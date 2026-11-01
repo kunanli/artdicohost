@@ -16,7 +16,7 @@ import '../../../styles/organizer-tasks.css';
         <div class="ah-admin-workspace-content">
         <div class="ah-admin-page-heading"><div><h1>今日待办</h1></div><div class="tasks-account"><span data-tasks-user></span><button class="ah-admin-button" type="button" data-tasks-refresh>刷新进度</button><button class="ah-admin-text-button" type="button" data-tasks-logout>退出登录</button></div></div>
         <div class="tasks-metrics" data-tasks-metrics aria-label="全部名单的进度概况"></div>
-        <details class="ah-admin-small"><summary>统计说明</summary><p>按人去重，排除拒绝联系或出席者。人工发出、服务商接受与本人回复分开记录；服务商接受不代表送达。</p></details>
+        <details class="ah-admin-small"><summary>统计说明</summary><p>按人去重，排除拒绝联系或出席者。人工发出、邮件服务接收与本人回复分开记录；邮件服务已接收不代表送达。</p></details>
         <p class="tasks-caution" data-tasks-availability hidden></p>
         <section class="ah-admin-panel tasks-panel" aria-labelledby="tasks-list-title"><div class="ah-admin-section-heading"><div><h2 id="tasks-list-title">接下来要做的事</h2><p>选择负责人或事项，继续跟进。</p></div></div>
           <form class="tasks-filters" data-tasks-filters><div class="ah-admin-field"><label for="tasks-owner">负责同事 / 展位负责人</label><select id="tasks-owner" name="owner" data-tasks-owner><option value="">全部负责人</option><option value="__unassigned">尚未分配负责人</option></select></div><div class="ah-admin-field"><label for="tasks-kind">待办类型</label><select id="tasks-kind" name="kind" data-tasks-kind><option value="">全部待办</option></select></div><button class="ah-admin-button ah-admin-primary" type="submit">应用筛选</button><button class="ah-admin-button" type="reset">清除筛选</button></form>

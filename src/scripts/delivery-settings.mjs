@@ -64,8 +64,8 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
     const counts=$('[data-delivery-counts]');counts.replaceChildren();appendCounts(counts,state.counts);
     const other=$('[data-delivery-notification-counts]');other.replaceChildren();for(const[key,label]of[['applicationReceived','申请回执'],['preEventReminder','行前提醒']])if(state.notificationCounts?.[key]){const list=element('dl');list.className='delivery-counts';appendCounts(list,state.notificationCounts[key]);other.append(element('h3',label),list);}lock();
   }
-  function appendCounts(output,counts){for(const[key,label]of[['total','已记录通知'],['providerAccepted','服务商已接受'],['rejected','明确未发出'],['unknown','结果不明']]){const item=element('div');item.append(element('dt',label),element('dd',String(counts[key])));output.append(item);}}
-  const reminderReasonLabels={ELIGIBLE:'可发送',EMAIL_MISSING:'缺少邮箱',ALREADY_ACCEPTED:'服务商已接受',DELIVERY_UNKNOWN:'结果待核对，不重寄',EMAIL_PAUSED:'通知已暂停',EMAIL_NOT_READY:'寄件设置未就绪',RETRY_LIMIT:'已达尝试上限',ADMISSION_NOT_CONFIRMED:'当前名额未确认',CONTACT_DECLINED:'已回复不参加',CONTACT_CONSENT_REQUIRED:'联系许可待核对',CONTACT_EMAIL_CHANGED:'邮箱有更新，请核对',CONTACT_NOT_FOUND:'未找到联系来源',STAFF_PERMISSION_REQUIRED:'联系许可待核对',PERMISSION_UNAVAILABLE:'联系许可待核对',EVENT_FACTS_MISMATCH:'活动信息待核对',EVENT_FACTS_UNAVAILABLE:'活动信息暂无法核对',REMINDER_WINDOW_CLOSED:'已过提醒时间'};
+  function appendCounts(output,counts){for(const[key,label]of[['total','已记录通知'],['providerAccepted','邮件服务已接收'],['rejected','明确未发出'],['unknown','结果不明']]){const item=element('div');item.append(element('dt',label),element('dd',String(counts[key])));output.append(item);}}
+  const reminderReasonLabels={ELIGIBLE:'可发送',EMAIL_MISSING:'缺少邮箱',ALREADY_ACCEPTED:'邮件服务已接收',DELIVERY_UNKNOWN:'结果待核对，不重寄',EMAIL_PAUSED:'通知已暂停',EMAIL_NOT_READY:'寄件设置未就绪',RETRY_LIMIT:'已达尝试上限',ADMISSION_NOT_CONFIRMED:'当前名额未确认',CONTACT_DECLINED:'已回复不参加',CONTACT_CONSENT_REQUIRED:'联系许可待核对',CONTACT_EMAIL_CHANGED:'邮箱有更新，请核对',CONTACT_NOT_FOUND:'未找到联系来源',STAFF_PERMISSION_REQUIRED:'联系许可待核对',PERMISSION_UNAVAILABLE:'联系许可待核对',EVENT_FACTS_MISMATCH:'活动信息待核对',EVENT_FACTS_UNAVAILABLE:'活动信息暂无法核对',REMINDER_WINDOW_CLOSED:'已过提醒时间'};
   function clearReminderPreview(message='先读取当前提醒名单。',{clearResults=true}={}){
     reminderPreview=null;selectedReminderIds.clear();reminderDirty=false;
     for(const selector of['[data-reminder-rows]','[data-reminder-subject]','[data-reminder-message]'])$(selector).replaceChildren();
@@ -116,9 +116,9 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
     await drafts.get(result.kind)?.discard();if(started!==generation||!allowed())return;persistedPending.delete(result.kind);
     if(result.kind==='settings'){readSequence++;settingsDirty=false;state=result.value;saveState('saved',result.requestedEnabled===state.automaticEnabled?'已保存':'已保存 · 当前设置已由其他操作更新');clearReminderPreview('通知设置已更新 · 请重新读取提醒名单');render();status('报名通知设置已保存，不会补寄历史名单。');}
     else{
-      dispatchDirty=false;const labels={provider_accepted:'服务商已接受',rejected:'明确未发出',unknown:'结果不明，不重发',disabled:'自动邮件未开启',not_configured:'设置未完成',not_applicable:'未提供邮箱',not_public:'工作人员代登记，不在公开报名补发范围',withdrawn:'报名已取消',unavailable:'暂时无法核对',not_attempted:'尚未处理'};
+      dispatchDirty=false;const labels={provider_accepted:'邮件服务已接收',rejected:'明确未发出',unknown:'结果不明，不重发',disabled:'报名通知已暂停',not_configured:'设置未完成',not_applicable:'未提供邮箱',not_public:'工作人员代登记，不在公开报名补发范围',withdrawn:'报名已取消',unavailable:'暂时无法核对',not_attempted:'尚未处理'};
       const output=$('[data-delivery-results]');output.replaceChildren();for(const row of result.value.results)output.append(element('p',row.registrationId+' · '+labels[row.status]));
-      status('已核对本次所选结果；服务商接受不等于本人收到。');await load(started);
+      status('已核对本次所选结果；邮件服务已接收不等于本人收到。');await load(started);
     }
   }
   async function readReminderIdentities(result,started){
@@ -133,12 +133,12 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
   async function acceptReminder(result,started){
     if(started!==generation||!allowed())return;
     if(!await readReminderIdentities(result,started)||started!==generation||!allowed())return;
-    const output=$('[data-reminder-results]'),labels={provider_accepted:'服务商已接受',rejected:'明确未发出',unknown:'结果待核对，不重寄',disabled:'通知已暂停',not_configured:'寄件设置未就绪',not_applicable:'未提供邮箱',not_public:'当前对象不适用',withdrawn:'当前名额已取消',unavailable:'暂时无法核对',not_attempted:'尚未尝试，可重新选择'};
+    const output=$('[data-reminder-results]'),labels={provider_accepted:'邮件服务已接收',rejected:'明确未发出',unknown:'结果待核对，不重寄',disabled:'通知已暂停',not_configured:'寄件设置未就绪',not_applicable:'未提供邮箱',not_public:'当前对象不适用',withdrawn:'当前名额已取消',unavailable:'暂时无法核对',not_attempted:'尚未尝试，可重新选择'};
     output.replaceChildren();output.hidden=false;for(const row of result.results){const identity=reminderIdentities.get(row.registrationId),item=element('p',(identity?.name||'人员信息待核对')+' · '+labels[row.status]);if(identity?.organization)item.append(element('small',' · '+identity.organization));output.append(item);}
     reminderDirty=false;selectedReminderIds.clear();updateReminderSelection();
-    if(reminders.pending){persistedPending.add('reminder');$('[data-reminder-status]').textContent='结果待核对 · 请核对原寄送，不会重寄';status('已记录可核对结果；服务商接受不等于本人收到。');return;}
+    if(reminders.pending){persistedPending.add('reminder');$('[data-reminder-status]').textContent='结果待核对 · 请核对原寄送，不会重寄';status('已记录可核对结果；邮件服务已接收不等于本人收到。');return;}
     await drafts.get('reminder')?.discard();if(started!==generation||!allowed())return;persistedPending.delete('reminder');
-    await load(started);if(started!==generation||!allowed())return;await loadReminderPreview(started,undefined,true);status('已核对逐人结果；服务商接受不等于本人收到。');
+    await load(started);if(started!==generation||!allowed())return;await loadReminderPreview(started,undefined,true);status('已核对逐人结果；邮件服务已接收不等于本人收到。');
   }
   async function configureDrafts(started){
     if(!draftStore||!state||!user?.id)return;
@@ -165,7 +165,7 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
   $('[data-delivery-retry]').addEventListener('click',()=>action(async started=>accept(await mutations.retry(),started)));
   const markSettings=()=>{settingsDirty=true;saveState('unsaved');lock();};$('[data-delivery-automatic]').addEventListener('input',markSettings);$('[data-delivery-automatic]').addEventListener('change',markSettings);
   $('[data-delivery-automatic]').addEventListener('submit',event=>{event.preventDefault();if(mutations.pending)return;const enabled=event.currentTarget.elements.namedItem('enabled').checked;
-    if(enabled&&!state?.email.ready){saveState('error');status('请先完成寄件设置，待状态可用后再开启自动确认信。',true);return;}action(async started=>{saveState('saving');await accept(await mutations.run('settings',{enabled}),started);});
+    if(enabled&&!state?.email.ready){saveState('error');status('请先完成寄件设置，待状态可用后再开启报名通知。',true);return;}action(async started=>{saveState('saving');await accept(await mutations.run('settings',{enabled}),started);});
   });
   $('[data-delivery-dispatch]').addEventListener('input',()=>{dispatchDirty=true;});
   $('[data-delivery-dispatch]').addEventListener('change',()=>{dispatchDirty=true;});

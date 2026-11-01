@@ -17,7 +17,7 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
     <header class="confirmation-header"><a href="/">ARTDiCO HOST</a><a href="/#agenda">活动日程</a></header>
     <main id="confirmation-main" tabindex="-1">
       <section class="confirmation-card">
-        <p class="confirmation-state" data-confirmation-state>私人参会页</p>
+        <p class="confirmation-state" data-confirmation-state aria-hidden="true">私人参会页</p>
         <h1 data-confirmation-heading tabindex="-1">正在读取报名状态…</h1>
         <p class="confirmation-intro" data-confirmation-intro>请稍候，我们正在核对这份报名的最新状态。</p>
         <p class="confirmation-error" data-confirmation-error role="alert" hidden></p>
@@ -26,27 +26,22 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
           <p class="confirmation-contact" data-confirmation-outcome-contact hidden>如需核对，请联系 <a href="mailto:support@artdico.co">support@artdico.co</a>。<button type="button" data-confirmation-contact-copy>复制邮箱</button></p>
           <p class="confirmation-facts-warning" data-confirmation-facts-warning role="status" hidden>活动资料待核对，请稍后重新读取。</p>
           <dl class="confirmation-details">
-            <dt>活动</dt><dd data-confirmation-event></dd>
             <dt>日期</dt><dd data-confirmation-date></dd>
             <dt>时间</dt><dd data-confirmation-time></dd>
             <dt>地点</dt><dd data-confirmation-venue></dd>
-            <dt>登记编号</dt><dd class="confirmation-reference" data-confirmation-reference></dd>
           </dl>
-          <p class="confirmation-note">讲者、展位与住宿安排分别确认。</p>
-          <section class="confirmation-group" data-confirmation-group hidden aria-labelledby="confirmation-group-heading">
-            <h2 id="confirmation-group-heading">加入活动微信群</h2>
-            <div data-confirmation-group-image></div>
-            <p data-confirmation-group-status role="status"></p>
-            <p class="confirmation-group-validity">图片链接最长 10 分钟；微信群码最长 7 天，可能提前更换。</p>
-            <div class="confirmation-small-actions"><button type="button" data-confirmation-group-refresh>重新读取群码</button><button type="button" data-confirmation-contact-copy>复制联系邮箱</button></div>
-          </section>
           <section class="confirmation-save" aria-labelledby="confirmation-save-heading">
             <h2 id="confirmation-save-heading" data-confirmation-save-heading>保存参会信息</h2>
             <div class="confirmation-actions">
-              <button type="button" data-confirmation-copy>保存私人查询链接</button>
+              <button type="button" data-confirmation-copy>复制私人链接</button>
               <button type="button" data-confirmation-wallet hidden>加入 Apple Wallet</button>
             </div>
             <p class="confirmation-device" data-confirmation-device hidden></p>
+            <section class="confirmation-safari-guide" data-confirmation-safari-guide hidden aria-labelledby="confirmation-safari-heading">
+              <h3 id="confirmation-safari-heading" tabindex="-1">在 Safari 中添加票券</h3>
+              <ol><li data-confirmation-wechat-step hidden>点微信右上角「…」，查看是否有「在浏览器打开」选项。</li><li>复制私人链接，粘贴到 Safari 地址栏打开。</li><li>在 Safari 中点「加入 Apple Wallet」，再按系统提示确认。</li></ol>
+              <div class="confirmation-small-actions"><button type="button" data-confirmation-safari-copy>复制私人链接</button><button type="button" data-confirmation-safari-close>收起指引</button></div>
+            </section>
             <p class="confirmation-action-status" data-confirmation-action-status role="status" aria-live="polite"></p>
             <div class="confirmation-copy-fallback" data-confirmation-copy-fallback hidden><label for="confirmation-private-link">复制并私下保存此链接</label><input id="confirmation-private-link" data-confirmation-private-link readonly autocomplete="off" /></div>
             <p class="confirmation-private">此链接可查看你的最新状态，请私下保存，不要转发。</p>
@@ -59,13 +54,28 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
                 <a data-confirmation-invitation-download download="artdico-host-invitation.png">下载 PNG 邀请函</a>
                 <p>手机可长按图片保存；活动前请以私人页最新状态为准。</p>
               </section>
-              <p class="confirmation-email" data-confirmation-email></p>
-              <dl class="confirmation-notifications" data-confirmation-notifications hidden>
-                <dt>申请回执</dt><dd data-confirmation-application-received></dd>
-                <dt>行前提醒</dt><dd data-confirmation-pre-event-reminder></dd>
-              </dl>
             </details>
           </section>
+          <section class="confirmation-group" data-confirmation-group hidden aria-labelledby="confirmation-group-heading">
+            <h2 id="confirmation-group-heading">加入活动微信群</h2>
+            <div data-confirmation-group-image></div>
+            <p data-confirmation-group-status role="status"></p>
+            <div class="confirmation-small-actions"><button type="button" data-confirmation-group-refresh>重新读取群码</button><button type="button" data-confirmation-contact-copy>复制联系邮箱</button></div>
+            <details class="confirmation-group-help" data-confirmation-group-help><summary>群码有效期说明</summary><p class="confirmation-group-validity">图片链接最长 10 分钟；微信群码最长 7 天，可能提前更换。图片失效后可重新读取，不代表微信群码已过期。</p></details>
+          </section>
+          <details class="confirmation-registration" data-confirmation-registration>
+            <summary>登记信息</summary>
+            <dl class="confirmation-details"><dt>活动</dt><dd data-confirmation-event></dd><dt>登记编号</dt><dd class="confirmation-reference" data-confirmation-reference></dd></dl>
+            <p class="confirmation-note">讲者、展位与住宿安排分别确认。</p>
+          </details>
+          <details class="confirmation-notice-records" data-confirmation-notice-records>
+            <summary>通知记录</summary>
+            <p class="confirmation-email" data-confirmation-email></p>
+            <dl class="confirmation-notifications" data-confirmation-notifications hidden>
+              <dt>申请回执</dt><dd data-confirmation-application-received></dd>
+              <dt>行前提醒</dt><dd data-confirmation-pre-event-reminder></dd>
+            </dl>
+          </details>
           <p class="confirmation-printed">打印仅保留当前结果；活动前请重新打开确认页核对最新状态。</p>
         </div>
         <div class="confirmation-secondary"><button type="button" data-confirmation-refresh>重新读取</button><a href="/">返回活动首页</a></div>

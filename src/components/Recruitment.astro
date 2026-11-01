@@ -5,8 +5,8 @@ import Icon from './Icon.astro';
 <section class="ah-recruitment ah-section" id="recruitment" aria-labelledby="recruitment-heading">
   <div class="ah-section-heading"><h2 id="recruitment-heading">把经验带来，让创作相遇。</h2><p>带来一个主题，或来现场交流。</p></div>
   <div class="ah-recruitment-grid">
-    <article id="speaker-recruitment"><span class="ah-feature-number">讲者招募</span><Icon name="share" /><h3>{recruitment.speakers.title}</h3><p>游戏创作、站点运营、技术或教育实践，欢迎带来你的主题。</p><a class="ah-primary" href="#registration" data-recruit="speaker">{recruitment.speakers.ctaLabel}<span aria-hidden="true">↗</span></a></article>
-    <article id="attendee-registration"><span class="ah-feature-number">参会交流</span><Icon name="arrow" /><h3>在现场，交换新的想法。</h3><p>欢迎学生、开发者、组织者与行业伙伴提交参会申请。主办方审核后另行确认名额。</p><a class="ah-primary" href="#registration">申请参会<span aria-hidden="true">↗</span></a></article>
+    <article id="speaker-recruitment"><span class="ah-feature-number">讲者招募</span><Icon name="share" /><h3>{recruitment.speakers.title}</h3><p>游戏创作、站点运营、技术或教育实践，欢迎带来你的主题。</p><a class="ah-secondary" href="#registration" data-recruit="speaker">{recruitment.speakers.ctaLabel}<span aria-hidden="true">↗</span></a></article>
+    <article id="attendee-registration"><span class="ah-feature-number">参会交流</span><Icon name="arrow" /><h3>在现场，交换新的想法。</h3><p>欢迎学生、开发者、组织者与行业伙伴提交参会申请。主办方审核后另行确认名额。</p><a class="ah-text-action" href="#registration">前往参会申请<span aria-hidden="true">↗</span></a></article>
   </div>
   <details class="ah-highlights-detail"><summary>提案与 GGJ 站点说明 <span aria-hidden="true">＋</span></summary><p class="ah-recruitment-note">{recruitment.speakers.notice}</p><p class="ah-recruitment-note">{recruitment.sites.notice} <a href={recruitment.sites.guideUrl} target="_blank" rel="noopener noreferrer">查看 GGJ 官方站点指引</a></p></details>
 </section>

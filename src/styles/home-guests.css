@@ -12,6 +12,9 @@
 #artdico-host.ah-festival.ah-cosmos .ah-guest-portrait img[hidden]{display:none}
 #artdico-host.ah-festival.ah-cosmos .ah-guest-name{max-width:100%;font-size:clamp(16px,1.8vw,23px);font-weight:700;line-height:1.5;overflow-wrap:anywhere}
 #artdico-host.ah-festival.ah-cosmos .ah-guest-prompt{font-size:11px;color:var(--ah-muted)}
+#artdico-host.ah-festival.ah-cosmos .ah-guest-prompt-open{display:none}
+#artdico-host.ah-festival.ah-cosmos .ah-guest-details[open] .ah-guest-prompt-closed{display:none}
+#artdico-host.ah-festival.ah-cosmos .ah-guest-details[open] .ah-guest-prompt-open{display:inline}
 #artdico-host.ah-festival.ah-cosmos .ah-guest-detail-body{position:absolute;top:100%;left:0;width:340px;max-width:calc(100vw - 40px);padding:24px;text-align:left;background:#20132e;border:1px solid #a37cf580;border-radius:20px;box-shadow:0 14px 50px #0009;font-size:13px;line-height:1.9;animation:ah-guest-open .25s ease-out}
 #artdico-host.ah-festival.ah-cosmos .ah-guest-card:nth-child(4n) .ah-guest-detail-body{left:auto;right:0}
 #artdico-host.ah-festival.ah-cosmos .ah-guest-detail-body p{margin:0 0 10px;overflow-wrap:anywhere}

@@ -7,9 +7,13 @@ if (root) {
   $('.confirmation-skip').addEventListener('click',event=>{event.preventDefault();$('#confirmation-main').focus();});
   let token = confirmationToken(location.hash);
   const client = createConfirmationClient({apiOrigin:root.dataset.confirmationApi,pageOrigin:location.origin});
-  let state = null, busy = false, generation = 0, walletUrl = null, printUrl = null, invitationUrl = null, controller = null;
+  let state = null, busy = false, generation = 0, walletUrl = null, printUrl = null, printRegistrationOpen = null, invitationUrl = null, controller = null;
   let groupTimer = null, groupCooldownTimer = null, groupNextReadAt = 0;
   const canvases=new Set();
+  const contactButtons=[...root.querySelectorAll('[data-confirmation-contact-copy]')];
+  const contactLabels=new Map(contactButtons.map(button=>[button,button.textContent]));
+  const walletGuidance=()=>confirmationWalletGuidance({userAgent:navigator.userAgent,maxTouchPoints:navigator.maxTouchPoints,walletReady:state?.wallet.ready===true,invitationReady:state?.invitation.ready===true});
+  function hideSafariGuide(){ $('[data-confirmation-safari-guide]').hidden=true;$('[data-confirmation-wechat-step]').hidden=true; }
   function releaseWallet() { if (walletUrl) URL.revokeObjectURL(walletUrl); walletUrl = null; }
   function clearInvitation(){
     if(invitationUrl)URL.revokeObjectURL(invitationUrl);invitationUrl=null;
@@ -19,12 +23,22 @@ if (root) {
   }
   function clearGroupImage() { clearTimeout(groupTimer);groupTimer=null;const output=$('[data-confirmation-group-image]');for(const img of output.querySelectorAll('img'))img.removeAttribute('src');output.replaceChildren(); }
   function clearGroup() { clearGroupImage();$('[data-confirmation-group-status]').textContent='';$('[data-confirmation-group]').hidden=true; }
-  function clearPrivateView(){for(const key of ['name','organization','event','date','time','venue','reference','email','application-received','pre-event-reminder'])$('[data-confirmation-'+key+']').textContent='';$('[data-confirmation-notifications]').hidden=true;$('[data-confirmation-private-link]').value='';$('[data-confirmation-copy-fallback]').hidden=true;$('[data-confirmation-wallet]').hidden=true;$('[data-confirmation-invitation]').hidden=true;$('[data-confirmation-device]').textContent='';$('[data-confirmation-device]').hidden=true;$('[data-confirmation-facts-warning]').hidden=true;$('[data-confirmation-outcome-contact]').hidden=true;$('[data-confirmation-more]').open=false;$('[data-confirmation-action-status]').textContent='';}
-  function invalidate(){generation++;controller?.abort();controller=null;releaseWallet();clearInvitation();clearGroup();clearPrivateView();$('[data-confirmation-content]').hidden=true;state=null;busy=false;delete root.dataset.admission;}
+  function clearPrivateView(){
+    for(const key of ['name','organization','event','date','time','venue','reference','email','application-received','pre-event-reminder'])$('[data-confirmation-'+key+']').textContent='';
+    $('[data-confirmation-notifications]').hidden=true;$('[data-confirmation-private-link]').value='';$('[data-confirmation-copy-fallback]').hidden=true;
+    $('[data-confirmation-wallet]').hidden=true;delete $('[data-confirmation-wallet]').dataset.walletAction;
+    $('[data-confirmation-invitation]').hidden=true;$('[data-confirmation-device]').textContent='';$('[data-confirmation-device]').hidden=true;
+    $('[data-confirmation-facts-warning]').hidden=true;$('[data-confirmation-outcome-contact]').hidden=true;
+    for(const selector of ['[data-confirmation-more]','[data-confirmation-registration]','[data-confirmation-notice-records]','[data-confirmation-group-help]'])$(selector).open=false;
+    $('[data-confirmation-action-status]').textContent='';$('[data-confirmation-contact-status]').textContent='';
+    for(const button of contactButtons)button.textContent=contactLabels.get(button);
+    hideSafariGuide();
+  }
+  function invalidate(){generation++;controller?.abort();controller=null;printRegistrationOpen=null;releaseWallet();clearInvitation();clearGroup();clearPrivateView();$('[data-confirmation-content]').hidden=true;state=null;busy=false;delete root.dataset.admission;}
   function controls() {
     // Refresh explicitly cancels an older read, render or file preparation.
     $('[data-confirmation-refresh]').disabled=!token||!client.available;
-    for(const button of root.querySelectorAll('[data-confirmation-print],[data-confirmation-copy],[data-confirmation-wallet]'))button.disabled=busy||!state;
+    for(const button of root.querySelectorAll('[data-confirmation-print],[data-confirmation-copy],[data-confirmation-safari-copy],[data-confirmation-wallet]'))button.disabled=busy||!state;
     const groupRefresh=$('[data-confirmation-group-refresh]'),cooling=Date.now()<groupNextReadAt;
     groupRefresh.disabled=busy||!state||cooling;groupRefresh.textContent=cooling?'稍后重读':'重新读取群码';
     const eligible=Boolean(confirmationInvitationFacts(state));$('[data-confirmation-invitation]').hidden=!eligible;$('[data-confirmation-invitation]').disabled=busy||!eligible;
@@ -48,13 +62,14 @@ if (root) {
     for(const[key,text]of Object.entries({name:value.attendee.name,organization:value.attendee.organization,event:value.event.title,date:value.event.date,time:value.event.time+'（UTC+8）'+(value.admission.status==='confirmed'?'，'+value.event.checkIn+' 开始签到':''),venue:value.event.venue,reference:value.referenceCode,email:confirmationEmailMessage(value.admission.status,value.email.status)}))$('[data-confirmation-'+key+']').textContent=text;
     $('[data-confirmation-notifications]').hidden=!value.notifications;
     for(const[kind,key]of [['applicationReceived','application-received'],['preEventReminder','pre-event-reminder']])$('[data-confirmation-'+key+']').textContent=value.notifications?confirmationNotificationMessage(kind,value.notifications[kind].status):'';
-    $('[data-confirmation-print]').textContent=labels[3];$('[data-confirmation-copy]').textContent='保存私人查询链接';document.title=labels[1]+' · ARTDiCO HOST';
+    $('[data-confirmation-print]').textContent=labels[3];$('[data-confirmation-copy]').textContent='复制私人链接';document.title=labels[1]+' · ARTDiCO HOST';
     $('.confirmation-person').hidden=value.admission.status==='withdrawn';
     $('[data-confirmation-save-heading]').textContent=value.admission.status==='confirmed'?'保存参会信息':'保存查询入口';
     $('[data-confirmation-outcome-contact]').hidden=!['rejected','withdrawn'].includes(value.admission.status);
     $('[data-confirmation-facts-warning]').hidden=value.eventFacts?.ready!==false;
-    const guidance=confirmationWalletGuidance({userAgent:navigator.userAgent,maxTouchPoints:navigator.maxTouchPoints,walletReady:value.wallet.ready,invitationReady:value.invitation.ready});
+    const guidance=walletGuidance();hideSafariGuide();
     $('[data-confirmation-wallet]').hidden=value.admission.status!=='confirmed'||!guidance.showWallet;
+    $('[data-confirmation-wallet]').textContent=guidance.label;$('[data-confirmation-wallet]').dataset.walletAction=guidance.action;
     $('[data-confirmation-device]').textContent=value.admission.status==='confirmed'?guidance.message:'';$('[data-confirmation-device]').hidden=value.admission.status!=='confirmed';
     renderGroup(value);
     $('[data-confirmation-content]').hidden=false;$('[data-confirmation-error]').hidden=true;controls();
@@ -77,21 +92,34 @@ if (root) {
     if(busy||!state||Date.now()<groupNextReadAt)return;
     groupNextReadAt=Date.now()+5_000;clearTimeout(groupCooldownTimer);groupCooldownTimer=setTimeout(controls,5_000);void load();
   });
-  for(const button of root.querySelectorAll('[data-confirmation-contact-copy]'))button.addEventListener('click',async()=>{
-    try{await navigator.clipboard.writeText(CONFIRMATION_CONTACT_EMAIL);button.textContent='已复制邮箱';$('[data-confirmation-contact-status]').textContent='联系邮箱已复制。';}
-    catch{button.textContent=CONFIRMATION_CONTACT_EMAIL;$('[data-confirmation-contact-status]').textContent='请手动复制 '+CONFIRMATION_CONTACT_EMAIL;}
+  for(const button of contactButtons)button.addEventListener('click',async()=>{
+    const current=generation,view=state;
+    try{await navigator.clipboard.writeText(CONFIRMATION_CONTACT_EMAIL);if(current!==generation||state!==view)return;button.textContent='已复制邮箱';$('[data-confirmation-contact-status]').textContent='联系邮箱已复制。';}
+    catch{if(current!==generation||state!==view)return;button.textContent=CONFIRMATION_CONTACT_EMAIL;$('[data-confirmation-contact-status]').textContent='请手动复制 '+CONFIRMATION_CONTACT_EMAIL;}
   });
-  $('[data-confirmation-copy]').addEventListener('click',async()=>{
-    if(!state||busy)return;const url=confirmationLink(token),current=generation;
-    try {await navigator.clipboard.writeText(url);if(current===generation)$('[data-confirmation-action-status]').textContent='确认链接已复制，请私下保存。';}
-    catch{if(current!==generation)return;const input=$('[data-confirmation-private-link]');input.value=url;$('[data-confirmation-copy-fallback]').hidden=false;input.focus();input.select();}
+  async function copyPrivateLink(){
+    if(!state||busy)return;const url=confirmationLink(token),current=generation,view=state;
+    try {await navigator.clipboard.writeText(url);if(current===generation&&state===view)$('[data-confirmation-action-status]').textContent='私人链接已复制，请私下保存。';}
+    catch{if(current!==generation||state!==view)return;const input=$('[data-confirmation-private-link]');input.value=url;$('[data-confirmation-copy-fallback]').hidden=false;$('[data-confirmation-action-status]').textContent='请手动复制下方私人链接。';input.focus();input.select();}
+  }
+  for(const button of root.querySelectorAll('[data-confirmation-copy],[data-confirmation-safari-copy]'))button.addEventListener('click',copyPrivateLink);
+  $('[data-confirmation-safari-close]').addEventListener('click',()=>{hideSafariGuide();$('[data-confirmation-wallet]').focus();});
+  $('[data-confirmation-safari-guide]').addEventListener('keydown',event=>{
+    if(event.key==='Escape'){event.preventDefault();hideSafariGuide();$('[data-confirmation-wallet]').focus();}
   });
-  function beforePrint(){if(location.hash){printUrl=location.href;history.replaceState(null,'',location.pathname+location.search);}}
-  function afterPrint(){if(printUrl){history.replaceState(null,'',printUrl);printUrl=null;}}
+  function beforePrint(){if(printRegistrationOpen===null){printRegistrationOpen=$('[data-confirmation-registration]').open;$('[data-confirmation-registration]').open=true;}if(location.hash){printUrl=location.href;history.replaceState(null,'',location.pathname+location.search);}}
+  function afterPrint(){if(printRegistrationOpen!==null){$('[data-confirmation-registration]').open=printRegistrationOpen;printRegistrationOpen=null;}if(printUrl){history.replaceState(null,'',printUrl);printUrl=null;}}
   window.addEventListener('beforeprint',beforePrint);window.addEventListener('afterprint',afterPrint);
   $('[data-confirmation-print]').addEventListener('click',()=>{if(!state||busy)return;beforePrint();try{window.print();}finally{afterPrint();}});
   $('[data-confirmation-wallet]').addEventListener('click',async()=>{
-    if(!state?.wallet.ready||busy)return;const current=generation;busy=true;controller=new AbortController();const signal=controller.signal;controls();releaseWallet();
+    if(!state?.wallet.ready||busy)return;
+    const guidance=walletGuidance();
+    if(guidance.action==='guide'){
+      releaseWallet();$('[data-confirmation-wechat-step]').hidden=!guidance.wechat;$('[data-confirmation-safari-guide]').hidden=false;
+      $('#confirmation-safari-heading').focus();return;
+    }
+    if(!['add','download'].includes(guidance.action))return;
+    const current=generation;busy=true;controller=new AbortController();const signal=controller.signal;controls();releaseWallet();
     try{const blob=await client.wallet(token,{signal});if(current!==generation)return;walletUrl=URL.createObjectURL(blob);const link=document.createElement('a');link.href=walletUrl;link.download='artdico-host.pkpass';document.body.append(link);link.click();link.remove();$('[data-confirmation-action-status]').textContent='票券文件已准备。请在支持 Apple Wallet 的设备上打开。';}
     catch(error){if(current===generation&&!error.cancelled)showReadError(error);}
     finally{if(current===generation){busy=false;controller=null;controls();}}

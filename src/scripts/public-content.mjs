@@ -2,7 +2,7 @@ import { publicGuestCards, publicGuestSessions, publicSessionParticipants } from
 import { GUEST_PUBLIC_ROLE_LABELS, SESSION_PARTICIPANT_ROLE_LABELS, isPublicWebsite } from '../../shared/content-schema.mjs';
 import { publicShowcaseCards, SHOWCASE_KIND_LABELS } from '../../shared/showcase-display.mjs';
 import { resolvePublicContentSource } from '../../shared/public-content-source.mjs';
-import { publicOrganizationCards, organizationParticipationLabel } from '../../shared/organization-display.mjs';
+import { publicOrganizationCards, orderOrganizationCards, organizationReferenceKey } from '../../shared/organization-display.mjs';
 import { createDefaultOrganizations } from '../config/exhibiting-partners.mjs';
 import { eventTimeInstant } from '../lib/event-presentation.mjs';
 import { createPublicContentRefresh } from '../lib/public-content-refresh.mjs';
@@ -13,6 +13,12 @@ let displayedContent=null,workCards=[];
 const collections=createHomeCollections();
 const presentationSelectors={heroDescription:'[data-public-hero-description]',aboutTitle:'[data-public-about-title]',aboutText:'[data-public-about-text]'};
 const initialPresentationText=new Map(Object.values(presentationSelectors).flatMap(selector=>[...document.querySelectorAll(selector)].map(node=>[node,node.textContent])));
+for(const image of document.querySelectorAll('[data-home-title-image]')){
+  const fallback=image.parentElement?.querySelector('[data-home-title-fallback]');
+  const revealFallback=()=>{image.hidden=true;if(fallback)fallback.hidden=false;};
+  image.addEventListener('error',revealFallback,{once:true});
+  if(image.complete&&image.naturalWidth===0)revealFallback();
+}
 
 // Published event content is independent from registration readiness and staff cookies.
 const endpoint = document.querySelector('meta[name="artdico-content-api"]')?.getAttribute('content');
@@ -42,7 +48,7 @@ function element(tag, text, className) {
 function renderPublishedContent(content,url) {
   const collectionState=displayedContent?collections.capture():null;
   workCards=Object.hasOwn(content,'showcases')?publicShowcaseCards(content.showcases):[];
-  renderOrganizations(Object.hasOwn(content,'organizations')?publicOrganizationCards(content.organizations):defaultOrganizationCards(),url,{initial:!Object.hasOwn(content,'organizations'),works:workCards});
+  renderOrganizations(Object.hasOwn(content,'organizations')?publicOrganizationCards(content.organizations):defaultOrganizationCards(),url,{initial:!Object.hasOwn(content,'organizations')});
   const agenda = document.querySelector('[data-agenda]');
   // A published timetable replaces the static overview, so it never shows stale time blocks.
   const summary = agenda?.querySelector('[data-agenda-summary]');
@@ -106,13 +112,18 @@ function renderPublishedContent(content,url) {
         if(url.origin!==location.origin)photo.crossOrigin='anonymous';photo.referrerPolicy='no-referrer';photo.src=new URL(guest.portraitUrl,url.origin).href;portrait.append(photo);
       }
       const name=element('span',guest.name,'ah-guest-name');
-      trigger.append(portrait,name,element('span','查看嘉宾','ah-guest-prompt ah-guest-prompt-closed'),element('span','收起简介','ah-guest-prompt ah-guest-prompt-open'));
+      trigger.append(name,element('span','查看嘉宾','ah-guest-prompt ah-guest-prompt-closed'),element('span','收起简介','ah-guest-prompt ah-guest-prompt-open'));
+      if(guest.attendance==='pending')trigger.append(element('span','出席待确认','ah-guest-attendance'));
       const body=element('div',undefined,'ah-guest-detail-body');
+      body.tabIndex=0;body.setAttribute('role','region');body.setAttribute('aria-label',guest.name+'简介');
+      body.append(portrait);
+      body.append(element('h3',guest.name,'ah-guest-detail-name'));
       if(guest.status==='pending')body.append(element('p','资料待确认','ah-guest-company'));
-      if(guest.publicRoles?.length)body.append(element('p',guest.publicRoles.map(role=>GUEST_PUBLIC_ROLE_LABELS[role]).join(' · '),'ah-guest-duty'));
-      const organization=[guest.title,guest.company].filter(Boolean).join(' · ');if(organization)body.append(element('p',organization,'ah-guest-company'));
+      body.append(element('p',guest.publicRoles?.length?guest.publicRoles.map(role=>GUEST_PUBLIC_ROLE_LABELS[role]).join(' · '):'嘉宾','ah-guest-duty'));
+      if(guest.company)body.append(element('p',guest.company,'ah-guest-company'));
+      if(guest.title)body.append(element('p',guest.title,'ah-guest-title'));
       if(guest.ggjRole)body.append(element('p',guest.ggjRole,'ah-guest-role'));
-      body.append(element('p',guest.bio||'嘉宾介绍陆续补充。','ah-guest-bio'));
+      if(guest.bio)body.append(element('p',guest.bio,'ah-guest-bio'));
       const sessions=publicGuestSessions(content.sessions,guest.id);
       if(sessions.length){
         const list=element('ul');
@@ -122,6 +133,11 @@ function renderPublishedContent(content,url) {
       if(guest.website){const link=element('a','个人 / 机构网站');link.href=guest.website;link.target='_blank';link.rel='noopener noreferrer';body.append(link);}
       details.append(trigger,body);card.append(details);
       guestGrid.append(card);
+    }
+    const placeholders=cards.length?(4-cards.length%4)%4:0;
+    for(let index=0;index<placeholders;index++){
+      const decoration=element('li',undefined,'ah-guest-placeholder');decoration.setAttribute('aria-hidden','true');decoration.setAttribute('role','presentation');
+      decoration.append(element('span',undefined,'ah-guest-placeholder-circle'));guestGrid.append(decoration);
     }
     guestGrid.hidden = cards.length === 0;
     const emptyGuests = document.querySelector('[data-public-guests-empty]');
@@ -205,11 +221,13 @@ function organizationsUnavailable() {
   if(message){message.textContent='暂时无法读取参与组织，请稍后重试。';message.hidden=false;}
 }
 
-function renderOrganizations(cards,url,{initial=false,works=[]}={}) {
+function renderOrganizations(cards,url,{initial=false}={}) {
   const list=document.querySelector('[data-public-organizations]');if(!list)return;
   list.replaceChildren();
-  for(const organization of cards){
+  const referenceKeys=new Set();
+  for(const organization of orderOrganizationCards(cards)){
     const item=element('li');item.dataset.organizationId=organization.id;item.id='organization-'+organization.id;
+    const referenceKey=organizationReferenceKey(organization);if(referenceKey&&!referenceKeys.has(referenceKey)){item.dataset.organizationReference=referenceKey;referenceKeys.add(referenceKey);}
     const card=element(organization.website?'a':'div',undefined,'ah-organization-card');
     if(organization.website){card.href=organization.website;card.target='_blank';card.rel='noopener noreferrer';card.referrerPolicy='no-referrer';card.setAttribute('aria-label',organization.name+' · 打开组织页面（新窗口）');}
     if(organization.logoUrl){
@@ -220,12 +238,8 @@ function renderOrganizations(cards,url,{initial=false,works=[]}={}) {
       frame.append(logo);card.append(frame);
     }
     const name=element('h3',organization.name);
-    if(organization.website){const mark=element('span','↗','ah-organization-external');mark.setAttribute('aria-hidden','true');name.append(mark);}
     card.append(name);
-    const label=organizationParticipationLabel(organization.participation);
-    if(label)card.append(element('span',label,'ah-organization-participation'));
-    if(organization.status)card.append(element('span',organization.status==='withdrawn'?'已退出':'参与待确认','ah-organization-participation'));
-    item.append(card);appendWorkLinks(item,works.filter(work=>work.organizationId===organization.id));list.append(item);
+    item.append(card);list.append(item);
   }
   list.hidden=cards.length===0;
   const message=document.querySelector('[data-public-organizations-empty]');
@@ -282,6 +296,7 @@ function renderShowcases(content, sourceUrl) {
   for (const work of cards) {
     const card = element('li', undefined, 'ah-showcase-card');
     card.id='work-'+work.id;card.dataset.showcaseId=work.id;card.dataset.workKind=work.kind;
+    const poster=element('div',undefined,'ah-showcase-poster');
     const fallback=element('div','作品封面待补','ah-showcase-cover-empty');
     fallback.hidden=Boolean(work.coverUrl);
     if(work.coverUrl){
@@ -295,12 +310,13 @@ function renderShowcases(content, sourceUrl) {
       // Constructed from a content-addressed image ID, never a private materials link.
       photo.src = new URL(work.coverUrl, sourceUrl.origin).href;
       photo.addEventListener('error', () => { photo.hidden = true; fallback.hidden=false;preview.hidden=true;preview.disabled=true;collections.updateWorks(); });
-      preview.append(photo,element('span','查看大图 ↗'));card.append(preview);
+      preview.append(photo,element('span','查看大图 ↗'));poster.append(preview);
     }
-    card.append(fallback);
+    poster.append(fallback);
+    const caption=element('div',undefined,'ah-showcase-caption');
+    caption.append(element('span',SHOWCASE_KIND_LABELS[work.kind],'ah-showcase-category'),element('h3',work.title),element('p',work.teamName,'ah-showcase-team'));
+    poster.append(caption);card.append(poster);
     const detail = element('div', undefined, 'ah-showcase-card-body');
-    detail.append(element('span',SHOWCASE_KIND_LABELS[work.kind],'ah-showcase-category'));
-    detail.append(element('h3', work.title), element('p', work.teamName, 'ah-showcase-team'));
     const progress=[];
     if(work.status==='pending')progress.push('资料待确认');
     if(work.responseStatus)progress.push(work.responseStatus==='declined'?'已回复不参加':'参加待确认');

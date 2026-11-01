@@ -7,6 +7,35 @@ const own=(value,key)=>Object.getOwnPropertyDescriptor(value,key)?.value;
 const idPattern=/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const logoPattern=/^\/api\/public\/portraits\/[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
 const labels=Object.freeze({undecided:'',exhibitor:'参展',attendee:'一般参与'});
+const referenceOrder=['gamezone','igda','szdx','bu','pengyou','g4c','teesside'];
+const referenceIds=Object.freeze({'game-singularity':'gamezone','igda-shenzhen':'igda','pengyou-gangwan':'pengyou','g4c-hk':'g4c'});
+const referenceName=value=>typeof value==='string'?value.trim().replace(/\s+/gu,' ').toLowerCase():'';
+const referenceNames=new Map([
+  ['gamezone',['GameZone','游戏奇点']],
+  ['igda',['IGDA 深圳','IGDA Shenzhen']],
+  ['szdx',['深圳大学艺术学部']],
+  ['bu',['BU','Bournemouth University','BournemouthUniversity','伯恩茅斯大学']],
+  ['pengyou',['鹏游港湾']],
+  ['g4c',['G4C HK']],
+  ['teesside',['Teesside University','TeessideUniversity','提赛德大学','英国提赛德大学']],
+].flatMap(([key,names])=>names.map(name=>[referenceName(name),key])));
+
+/** A visual reference key only; exact known IDs take precedence over name aliases. */
+export function organizationReferenceKey(card) {
+  if(!record(card))return null;
+  const id=own(card,'id');
+  if(typeof id==='string'&&Object.hasOwn(referenceIds,id))return referenceIds[id];
+  return referenceNames.get(referenceName(own(card,'name')))??null;
+}
+
+/** Sort a copy for the artwork. Equal brands and unknown entries retain input
+ * order, and every original card remains distinct and untouched. */
+export function orderOrganizationCards(cards) {
+  if(!Array.isArray(cards))return[];
+  return cards.map((card,index)=>({card,index,rank:referenceOrder.indexOf(organizationReferenceKey(card))}))
+    .sort((a,b)=>(a.rank<0?referenceOrder.length:a.rank)-(b.rank<0?referenceOrder.length:b.rank)||a.index-b.index)
+    .map(item=>item.card);
+}
 
 export function organizationParticipationLabel(participation) {
   return typeof participation==='string'&&Object.hasOwn(labels,participation)?labels[participation]:'';

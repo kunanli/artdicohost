@@ -44,10 +44,11 @@ function safeGuestProfiles(input) {
   });
 }
 
-/** A saved profile is not evidence that its owner agreed to attend. Historical
- * publications without a server-created proof remain readable but have no cards. */
+/** An already-published legacy profile remains visible without inventing an
+ * attendance reply. Explicit proofs, including an empty list, retain their gate. */
 export function publicGuestCards(input, guestAttendance) {
   const profiles = safeGuestProfiles(input);
+  if (guestAttendance === undefined) return profiles.map(item => ({ ...item, attendance: 'pending' }));
   let confirmed;
   try { confirmed = new Set(normalizeGuestAttendance(guestAttendance, profiles.map(item => item.id)).confirmedGuestIds); }
   catch { return []; }

@@ -306,7 +306,7 @@ async function otherContent(f) {
   await page.locator('[data-public-works-filter]').selectOption('all');
   assert.equal(await page.locator('[data-faq-id="synthetic-reference-faq"]').count(), 1);
   assert.match(await page.locator('[data-faq-id="lodging-support"]').textContent(), /本次活动提供少量外地来宾住宿支持/u);
-  assert.match(await page.locator('[data-faq-id="lodging-support"]').textContent(), /support@artdico\.co/u);
+  assert.match(await page.locator('[data-faq-id="lodging-support"]').textContent(), /kunan@globalgamejam\.org/u);
   assert.doesNotMatch(await page.locator('[data-faq-id="registration-status"]').textContent(), /可以提交参会申请/u, 'closed application state is authoritative');
   assert.equal(await page.locator('[data-public-organizations] .ah-organization-participation').count(), 0);
   assert.doesNotMatch(await page.locator('[data-public-organizations]').textContent(), /参展|一般参与|参与待确认|已退出|查看作品/u, 'organization surface shows names and logos without inferred participation/status');

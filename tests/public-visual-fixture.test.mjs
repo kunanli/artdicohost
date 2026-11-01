@@ -81,6 +81,29 @@ test('unpublished, private, malformed or foreign-logo snapshots never start a me
   }
 });
 
+test('safe capture summary exposes only exact reference keys, validated logo hashes and exclusive public subtitle counts', async t => {
+  const images = Array.from({ length: 8 }, (_, index) => Buffer.concat([png, Buffer.from('synthetic-variant-' + index)]));
+  const f = await fixture(t, images);
+  const identities = [['g4c-hk', PUBLIC_NAME], ['pengyou-gangwan', PUBLIC_NAME], ['game-singularity', PUBLIC_NAME], ['igda-shenzhen', PUBLIC_NAME],
+    ['synthetic-bu', 'Bournemouth University'], ['synthetic-teesside', '英国提赛德大学'], ['synthetic-szdx', '深圳大学艺术学部'], ['synthetic-unknown', PUBLIC_NAME]];
+  f.data.content.organizations.forEach((card, index) => { [card.id, card.name] = identities[index]; });
+  const original = f.data.content.guests[0];
+  f.data.content.guests = [
+    { ...original, id: 'synthetic-title', title: PUBLIC_NAME, ggjRole: PUBLIC_NAME },
+    { ...original, id: 'synthetic-role', title: ' ', ggjRole: PUBLIC_NAME },
+    { ...original, id: 'synthetic-company', title: '', ggjRole: '', company: PUBLIC_NAME },
+    { ...original, id: 'synthetic-empty', status: 'pending', title: '', ggjRole: '', company: '' },
+  ];
+  f.data.content = toPublicContent(f.data.content);
+  const before = JSON.stringify(f.data), report = await f.capture({ fetchFn: async (...args) => args[0] === PUBLIC_CONTENT_URL
+    ? new Response(JSON.stringify(f.data), { headers: publicHeaders }) : f.fetchFn(...args) });
+  assert.deepEqual(report.referenceLogoSources, ['g4c', 'pengyou', 'gamezone', 'igda', 'bu', 'teesside', 'szdx'].map((key, index) => ({ key, sha256: sha(images[index]) })));
+  assert.deepEqual(report.guestCaptionCoverage, { title: 1, role: 1, company: 1, empty: 1 });
+  assert.equal(report.media, 8, 'unknown public logos are captured safely without guessing their reference identity');
+  assert.doesNotMatch(JSON.stringify(report), /SYNTHETIC_PUBLIC_NAME|synthetic-title|Bournemouth|深圳大学|提赛德|ggjRole|content|base64/u);
+  assert.equal(JSON.stringify(f.data), before);
+});
+
 test('more than thirty distinct published logos fails before any media fetch', async t => {
   const f = await fixture(t), data = publication(Array.from({ length: 31 }, (_, i) => Buffer.from('synthetic-logo-' + i)));
   await rejected(f.capture({ fetchFn: async (url, options) => { f.calls.push({ url, options }); assert.equal(url, PUBLIC_CONTENT_URL); return new Response(JSON.stringify(data), { headers: publicHeaders }); } }), 'MEDIA_LIMIT');

@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifyPublicContent, PUBLIC_CONTENT_URL, PUBLIC_CONTENT_ORIGIN } from './verify-public-content.mjs';
+import { organizationReferenceKey } from '../shared/organization-display.mjs';
 
 export const PUBLIC_VISUAL_FIXTURE_DIRECTORY = fileURLToPath(new URL('../.local-data/public-visual-fixture', import.meta.url));
 const MAX_SNAPSHOT_BYTES = 1024 * 1024, MAX_MEDIA_BYTES = 2 * 1024 * 1024, MAX_TOTAL_MEDIA_BYTES = 8 * 1024 * 1024;
@@ -116,9 +117,22 @@ export async function capturePublicVisualFixture({ fetchFn = fetch, outputDirect
       for (const image of media) await writeFile(resolve(outputDirectory, image.file), image.data, { mode: 0o600 });
       await writeFile(resolve(outputDirectory, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 });
     } catch { throw failure('WRITE_FAILED'); }
+    const referenceLogoSources = (data.content.organizations ?? []).flatMap(card => {
+      const key = organizationReferenceKey(card), image = MEDIA_PATH.exec(card.logoUrl ?? '');
+      return key && image ? [{ key, sha256: image[1] }] : [];
+    });
+    // Count public subtitle field availability, without copying any caption.
+    // Priority mirrors the presentation contract; no unpublished helper import.
+    const guestCaptionCoverage = { title: 0, role: 0, company: 0, empty: 0 };
+    for (const guest of data.content.guests) {
+      const kind = typeof guest.title === 'string' && guest.title.trim() ? 'title'
+        : typeof guest.ggjRole === 'string' && guest.ggjRole.trim() ? 'role'
+          : typeof guest.company === 'string' && guest.company.trim() ? 'company' : 'empty';
+      guestCaptionCoverage[kind]++;
+    }
     complete = true;
     return { captured: true, revision: verified.revision, snapshotSha256: manifest.snapshot.sha256, snapshotBytes: snapshot.length,
-      organizations: verified.counts.organizations, media: media.length, mediaBytes: totalBytes };
+      organizations: verified.counts.organizations, media: media.length, mediaBytes: totalBytes, referenceLogoSources, guestCaptionCoverage };
   } catch (error) { throw failures.has(error) ? error : failure('PUBLIC_CONTENT_UNAVAILABLE'); }
   finally {
     snapshotAbort.abort(); cancel(snapshotClone);

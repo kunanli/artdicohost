@@ -1,70 +1,47 @@
 ---
 import { eventConfig } from '../config/event.mjs';
 import Icon from './Icon.astro';
-import '../styles/hero-program.css';
-const [, month, day] = eventConfig.date.value.split('-');
+import { Image } from 'astro:assets';
+import planet from '../assets/home/planet-purple.webp';
 const startsAt = `${eventConfig.date.value}T${eventConfig.time.opening}:00+08:00`;
 const endsAt = `${eventConfig.date.value}T${eventConfig.time.end}:00+08:00`;
 ---
-<section class="ah-hero ah-hero-unified" id="top" aria-labelledby="hero-heading">
-  <div class="ah-hero-copy">
-    <p class="ah-eyebrow"><span class="ah-dot" aria-hidden="true"></span>{eventConfig.year} · 深圳前海</p>
+<section class="ah-hero ah-home-hero" id="top" aria-labelledby="hero-heading">
+  <p class="ah-eyebrow"><span class="ah-dot" aria-hidden="true"></span>{eventConfig.year} · 深圳前海<span class="ah-home-eyebrow-tail" aria-hidden="true">CREATORS COME TOGETHER</span></p>
+  <div class="ah-home-hero-stage">
+    <div class="ah-home-hero-planet" aria-hidden="true" data-home-planet>
+      <Image src={planet} alt="" width={960} height={960} loading="eager" fetchpriority="high" decoding="async" />
+    </div>
     <h1 id="hero-heading" data-public-event-title data-initial-event-title={eventConfig.title} aria-label={eventConfig.title}>
-      <span class="ah-event-title-line"><span class="ah-event-brand">GlobalGameJam</span><span class="ah-event-chinese">中国交流聚会</span></span>
+      <span class="ah-event-title-line"><span class="ah-event-brand">GLOBAL GAME JAM</span><span class="ah-event-chinese">中国交流聚会</span></span>
       <span class="ah-event-title-cross" aria-hidden="true">×</span>
       <span class="ah-event-title-line"><span class="ah-event-brand">ARTDiCO HOST</span><span class="ah-event-chinese">学生嘉年华</span></span>
     </h1>
-    <p class="ah-hero-description" data-public-hero-description>组织者交流<span aria-hidden="true"> / </span>学生作品<span aria-hidden="true"> / </span>游戏体验</p>
-    <div class="ah-event-meta">
-      <span><Icon name="calendar" /><time data-public-date-value datetime={eventConfig.date.value}>{Number(month)} 月 {Number(day)} 日</time><em data-public-date-tentative hidden={eventConfig.date.status !== 'tentative'}>暂定</em><span data-public-static-hours><span class="ah-meta-divider" aria-hidden="true">·</span>{eventConfig.time.label}</span></span>
-      <span><Icon name="pin" /><span data-public-hero-venue>{eventConfig.venue.name}</span></span>
-    </div>
-    <div class="ah-hero-actions">
-      <a class="ah-primary" href="#agenda">查看活动日程 <span aria-hidden="true">↗</span></a>
-      <a class="ah-text-action" href="#registration">了解参与方式 <span aria-hidden="true">→</span></a>
-    </div>
-    <p class="ah-fine"><span data-public-static-checkin>09:30 开始签到<span aria-hidden="true"> · </span></span><span data-registration-availability>报名已开放</span></p>
-    <div class="ah-event-countdown" data-event-countdown data-countdown-source-date={eventConfig.date.value} data-countdown-source-timezone={eventConfig.time.timezone} data-starts-at={startsAt} data-ends-at={endsAt} data-public-static-hours>
-      <p class="ah-countdown-label" data-countdown-label hidden>距离活动开场</p>
-      <div class="ah-countdown-timer" data-countdown-timer role="timer" aria-live="off" aria-label="距离活动开场" hidden>
-        <span><strong data-countdown-value="days">—</strong><small>天</small></span>
-        <span><strong data-countdown-value="hours">—</strong><small>时</small></span>
-        <span><strong data-countdown-value="minutes">—</strong><small>分</small></span>
-        <span><strong data-countdown-value="seconds">—</strong><small>秒</small></span>
-      </div>
-      <p class="ah-countdown-target" data-countdown-fallback><time datetime={startsAt}>{eventConfig.date.label} {eventConfig.time.opening}</time><span>北京时间 · UTC+8 开场</span></p>
-      <p class="ah-countdown-status" data-countdown-status role="status" aria-live="polite" aria-atomic="true"></p>
-    </div>
+    <p class="ah-hero-description" data-public-hero-description>组织者交流 · 学生作品 · 游戏体验</p>
+    <span class="ah-home-orbit-note" aria-hidden="true">IDEAS FIND THEIR ORBIT.</span>
   </div>
-  <div class="ah-festival-art ah-hero-background-art" aria-hidden="true">
-    <svg class="ah-connection-sculpture" viewBox="0 0 640 640" fill="none">
-      <defs>
-        <linearGradient id="festival-silver" x1="134" y1="132" x2="440" y2="444" gradientUnits="userSpaceOnUse">
-          <stop stop-color="#F2F1ED" /><stop offset=".28" stop-color="#C6C9CE" /><stop offset=".68" stop-color="#7D838D" /><stop offset="1" stop-color="#41464F" />
-        </linearGradient>
-        <linearGradient id="festival-graphite" x1="242" y1="254" x2="546" y2="565" gradientUnits="userSpaceOnUse">
-          <stop stop-color="#272B31" /><stop offset=".38" stop-color="#4F5661" /><stop offset=".7" stop-color="#9198A3" /><stop offset="1" stop-color="#D9DCE0" />
-        </linearGradient>
-        <linearGradient id="festival-edge" x1="174" y1="178" x2="374" y2="420" gradientUnits="userSpaceOnUse">
-          <stop stop-color="#FFFFFF" /><stop offset="1" stop-color="#A7AEB9" />
-        </linearGradient>
-        <filter id="festival-shadow" x="-60%" y="-60%" width="220%" height="240%"><feGaussianBlur stdDeviation="15" /></filter>
-        <filter id="festival-depth" x="-30%" y="-30%" width="170%" height="180%"><feDropShadow dx="8" dy="19" stdDeviation="13" flood-color="#050608" flood-opacity=".55" /></filter>
-      </defs>
-      <ellipse cx="349" cy="551" rx="180" ry="25" fill="#08090B" opacity=".6" filter="url(#festival-shadow)" />
-      <g filter="url(#festival-depth)">
-        <path d="M378 174C274 100 137 149 123 270C109 391 240 469 345 413" stroke="url(#festival-silver)" stroke-width="88" stroke-linecap="butt" />
-        <path d="M266 468C370 542 507 493 521 372C535 251 404 173 299 229" stroke="url(#festival-graphite)" stroke-width="88" stroke-linecap="butt" />
-        <path d="M123 270C109 391 240 469 345 413" stroke="url(#festival-silver)" stroke-width="88" />
-        <path d="M86 276C78 349 136 416 202 435" stroke="url(#festival-edge)" stroke-width="2" opacity=".65" />
-      </g>
-      <g stroke="#B5BBC5" stroke-width="1" opacity=".45"><path d="M62 102V122M52 112H72" /><path d="M560 476V496M550 486H570" /></g>
-      <circle cx="538" cy="138" r="3" fill="#ED9860" /><circle cx="105" cy="472" r="3" fill="#769CFF" />
-    </svg>
-
+  <div class="ah-event-meta">
+    <span class="ah-home-venue"><Icon name="pin" /><span data-public-hero-venue>{eventConfig.venue.name}</span></span>
+    <span class="ah-home-date"><Icon name="calendar" /><span><time data-public-date-value datetime={eventConfig.date.value}>{eventConfig.date.value.replaceAll('-', '/')}</time><em data-public-date-tentative hidden={eventConfig.date.status !== 'tentative'}>暂定</em><span data-public-static-hours data-home-hours>{eventConfig.time.label}</span></span></span>
   </div>
+  <div class="ah-hero-actions">
+    <a class="ah-primary" href="#agenda">查看活动日程 <span aria-hidden="true">↗</span></a>
+    <a class="ah-text-action" href="#registration">申请参加 <span aria-hidden="true">↗</span></a>
+  </div>
+  <p class="ah-fine"><span data-public-static-checkin>09:30 开始签到 · </span><span data-registration-availability>申请开放情况请查看下方说明</span></p>
+  <div class="ah-event-countdown" data-event-countdown data-countdown-source-date={eventConfig.date.value} data-countdown-source-timezone={eventConfig.time.timezone} data-starts-at={startsAt} data-ends-at={endsAt} data-public-static-hours>
+    <p class="ah-countdown-label" data-countdown-label hidden>距离活动开场</p>
+    <div class="ah-countdown-timer" data-countdown-timer role="timer" aria-live="off" aria-label="距离活动开场" hidden>
+      <span><strong data-countdown-value="days">—</strong><small>天</small></span>
+      <span><strong data-countdown-value="hours">—</strong><small>时</small></span>
+      <span><strong data-countdown-value="minutes">—</strong><small>分</small></span>
+      <span><strong data-countdown-value="seconds">—</strong><small>秒</small></span>
+    </div>
+    <p class="ah-countdown-target" data-countdown-fallback><time datetime={startsAt}>{eventConfig.date.label} {eventConfig.time.opening}</time><span>北京时间 · UTC+8 开场</span></p>
+    <p class="ah-countdown-status" data-countdown-status role="status" aria-live="polite" aria-atomic="true"></p>
+  </div>
+  <a class="ah-home-explore" href="#about"><span>继续探索</span><span aria-hidden="true">↓</span></a>
 </section>
-
 <script>
   import '../scripts/countdown.mjs';
 </script>

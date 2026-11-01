@@ -8,6 +8,30 @@ export const SESSION_PARTICIPANT_ROLES = Object.freeze(['speaker','moderator','p
 export const SESSION_PARTICIPANT_ROLE_LABELS = Object.freeze({speaker:'讲者',moderator:'主持人',panelist:'圆桌嘉宾',organizer:'组织者'});
 export const ORGANIZATION_PARTICIPATION_LABELS = Object.freeze({undecided:'参与形式待确定',exhibitor:'参展',attendee:'一般参与'});
 
+/** Exact compatibility names from the original fixed FAQ only. New/custom
+ * questions never acquire a service meaning by prefix or position. */
+export function legacyFaqId(question) {
+  const ids = { '现在可以报名吗？': 'registration-status', '不是 GGJ 组织者也能参加吗？': 'audience',
+    '已经是站点负责人，或想建立新站点，怎么登记？': 'site-role', '新站点现场咨询代表已通过申请吗？': 'site-official',
+    '报名成功就有住宿吗？': 'lodging-support', '外地来宾有住宿支持吗？': 'lodging-support', '如何修改或撤回资料？': 'data-rights' };
+  return typeof question === 'string' && Object.hasOwn(ids, question) ? ids[question] : null;
+}
+
+/** Preserve IDs omitted by an older editor only for an unambiguous unchanged
+ * question. Renames stay legacy; reads and frozen snapshots never call this. */
+export function preserveFaqItemIds(items, previous) {
+  if (!Array.isArray(items) || !Array.isArray(previous)) return items;
+  const key = item => typeof item?.question === 'string' ? item.question.normalize('NFC').trim() : null;
+  const used = new Set(items.filter(item => typeof item?.id === 'string').map(item => item.id));
+  return items.map(item => {
+    if (!plainRecord(item) || Object.hasOwn(item, 'id')) return item;
+    const question = key(item), old = previous.filter(row => key(row) === question);
+    if (question === null || old.length !== 1 || items.filter(row => key(row) === question).length !== 1
+      || typeof old[0].id !== 'string' || used.has(old[0].id)) return item;
+    used.add(old[0].id); return { ...item, id: old[0].id };
+  });
+}
+
 export const contentSchema = Object.freeze({
   schemaVersion: CONTENT_SCHEMA_VERSION,
   maxSessions: MAX_CONTENT_ITEMS,
@@ -42,7 +66,7 @@ export const contentSchema = Object.freeze({
 /** @typedef {{id:string,name:string,company:string,ggjRole:string,portraitId:string,status:string,publicConsent:boolean,internalNotes:string,contactId:string,visibility?:string,title?:string,bio?:string,website?:string,publicRoles?:string[]}} Guest */
 /** @typedef {{id:string,name:string,logoId:string,website:string,participation:string,status:string,publicConsent:boolean,internalNotes:string,visibility?:string}} Organization */
 /** @typedef {{id:string,title:string,teamName:string,school:string,contactName:string,email:string,wechat:string,memberCount:number,participationForms:string[],responseStatus:string,materialLinks:string,summary:string,coverId:string,status:string,publicConsent:boolean,sessionId:string,boothId:string,internalNotes:string,kind?:string,organizationId?:string,visibility?:string}} Showcase */
-/** @typedef {{heroDescription:string,aboutTitle:string,aboutText:string,faqItems:{question:string,answer:string}[],contactEmail:string,mapUrl:string,openingTime:string,endTime:string,checkInTime:string}} EventPresentation */
+/** @typedef {{heroDescription:string,aboutTitle:string,aboutText:string,faqItems:{id?:string,question:string,answer:string}[],contactEmail:string,mapUrl:string,openingTime:string,endTime:string,checkInTime:string}} EventPresentation */
 /** @typedef {{schemaVersion:number,eventId:string,event:{title:string,date:string,timezone:string,venue:string,status:string,dateStatus:string,venueStatus:string,presentation?:EventPresentation},sessions:Session[],booths:Booth[],guests:Guest[],showcases:Showcase[],organizations?:Organization[]}} Content */
 
 /** Only server-created content-addressed portraits are accepted; no external URLs. */
@@ -332,7 +356,7 @@ export function validateContent(input) {
       heroDescription: text(raw.heroDescription), aboutTitle: text(raw.aboutTitle), aboutText: text(raw.aboutText),
       contactEmail: text(raw.contactEmail).toLowerCase(), mapUrl: text(raw.mapUrl),
       openingTime: text(raw.openingTime), endTime: text(raw.endTime), checkInTime: text(raw.checkInTime),
-      faqItems: Array.isArray(raw.faqItems) ? raw.faqItems.slice(0, 21).map(item => ({ question: text(object(item).question), answer: text(object(item).answer) })) : [],
+      faqItems: Array.isArray(raw.faqItems) ? raw.faqItems.slice(0, 21).map(item => ({ ...(Object.hasOwn(object(item), 'id') ? { id: text(object(item).id) } : {}), question: text(object(item).question), answer: text(object(item).answer) })) : [],
     };
     for (const [name, maximum] of Object.entries({ heroDescription: 300, aboutTitle: 120, aboutText: 4000, contactEmail: 254, mapUrl: 2000, openingTime: 5, endTime: 5, checkInTime: 5 })) {
       stringField('event.presentation.' + name, presentation[name], maximum, false);
@@ -349,8 +373,14 @@ export function validateContent(input) {
     if (presentation.openingTime && presentation.endTime && presentation.endTime <= presentation.openingTime) errors['event.presentation.endTime'] = '结束时间须晚于开场时间。';
     if (presentation.checkInTime && presentation.openingTime && presentation.checkInTime > presentation.openingTime) errors['event.presentation.checkInTime'] = '签到时间不可晚于开场时间。';
     if (raw.faqItems !== undefined && !Array.isArray(raw.faqItems) || presentation.faqItems.length > 20) errors['event.presentation.faqItems'] = '常见问题最多 20 项。';
+    const faqIds = new Set();
     for (const [index, item] of presentation.faqItems.entries()) {
       const input = object(raw.faqItems[index]);
+      if (Object.hasOwn(input, 'id')) {
+        stableId(`event.presentation.faqItems.${index}.id`, item.id ?? '');
+        if (typeof input.id !== 'string' || faqIds.has(item.id)) errors[`event.presentation.faqItems.${index}.id`] = '问题 ID 须有效且不重复。';
+        faqIds.add(item.id);
+      }
       for (const [name, maximum] of [['question', 200], ['answer', 1500]]) {
         stringField(`event.presentation.faqItems.${index}.${name}`, item[name], maximum);
         if (typeof input[name] !== 'string' || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(input[name])) errors[`event.presentation.faqItems.${index}.${name}`] = '请填写有效文字。';

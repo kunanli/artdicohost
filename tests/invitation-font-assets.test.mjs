@@ -178,3 +178,38 @@ test('every binary embeds the original copyright and OFL while primary family na
     assert.match(names.filter(item => item.id === 14).map(item => item.text).join('\n'), /scripts\.sil\.org\/OFL/u);
   }
 });
+
+test('homepage font binaries preserve renamed families, complete public OFL, activity glyphs and bounded weights independently of invitation fonts', async () => {
+  const home = JSON.parse(await readFile(new URL('../docs/home-asset-manifest.json', import.meta.url), 'utf8'));
+  const license = await readFile(new URL('../src/assets/fonts/home-font-OFL.txt', import.meta.url), 'utf8');
+  assert.equal(home.schemaVersion, 1);
+  assert.equal(home.family, 'ARTDiCO Home SC');
+  assert.equal(home.license, 'SIL Open Font License 1.1');
+  assert.deepEqual(home.fonts.map(item => item.weight), [400, 700]);
+  assert.match(license, /Reserved Font Name 'Source'/u);
+  const fullLicense = license.slice(license.indexOf('SIL OPEN FONT LICENSE Version 1.1')).trim();
+  assert.match(fullLicense, /PERMISSION & CONDITIONS[\s\S]*TERMINATION[\s\S]*DISCLAIMER/u);
+  let total = 0;
+  for (const record of home.fonts) {
+    assert.match(record.path, /^src\/assets\/fonts\/home-(?:regular|bold)\.woff2$/u);
+    const bytes = await readFile(new URL('../' + record.path, import.meta.url));
+    assert.equal(bytes.length, record.bytes);
+    assert.equal(sha256(bytes), record.sha256);
+    assert.ok(bytes.length <= 300_000); total += bytes.length;
+    const tables = fontTables(bytes), names = fontNames(tables.get('name'));
+    assert.equal(tables.get('OS/2').readUInt16BE(4), record.weight);
+    for (const name of names.filter(item => [1, 16].includes(item.id))) assert.equal(name.text, home.family);
+    for (const name of names.filter(item => [3, 4, 6].includes(item.id))) {
+      assert.match(name.text, /ARTDiCO\s*Home\s*SC/u);
+      assert.doesNotMatch(name.text, /Noto|Source/u);
+    }
+    assert.match(names.filter(item => item.id === 0).map(item => item.text).join('\n'), /2014-2021 Adobe.*Reserved Font Name 'Source'/u);
+    const notices = names.filter(item => item.id === 13);
+    assert.ok(notices.length > 0);
+    for (const notice of notices) assert.ok(notice.text.includes(fullLicense));
+    const points = new Set(actualCodePoints(tables));
+    assert.equal(points.size, record.codePoints);
+    for (const char of '2026/12/05 10:00–18:00年月日深圳前海5号楼3F') assert.ok(points.has(char.codePointAt(0)), 'activity character: ' + char);
+  }
+  assert.ok(total < 600_000, 'homepage never loads the complete 10 MB source TTFs');
+});

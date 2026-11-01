@@ -12,10 +12,21 @@ import Registration from '../components/Registration.astro';
 import VenueFaq from '../components/VenueFaq.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import { eventConfig } from '../config/event.mjs';
-import '../styles/section-blocks.css';
+import shareImage from '../assets/home/event-share.png';
+import '../styles/home.css';
+const shareUrl = new URL(shareImage.src, 'https://artdico.host').href;
 ---
-<SiteLayout title={eventConfig.seo.title} description={eventConfig.seo.description}>
-  <div id="artdico-host" class="ah-product ah-creative ah-festival ah-section-blocks">
+<SiteLayout title={eventConfig.seo.title} description={eventConfig.seo.description} themeColor="#000000">
+  <Fragment slot="head">
+    <meta property="og:image" content={shareUrl} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华，2026 年 12 月 5 日，深圳前海。" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content={shareUrl} />
+    <link rel="image_src" href={shareImage.src} />
+  </Fragment>
+  <div id="artdico-host" class="ah-product ah-festival ah-cosmos">
     <SiteHeader />
     <main id="main-content">
       <Hero />
@@ -26,4 +37,5 @@ import '../styles/section-blocks.css';
 </SiteLayout>
 <script>
   import '../scripts/public-content.mjs';
+  import '../scripts/home-motion.mjs';
 </script>

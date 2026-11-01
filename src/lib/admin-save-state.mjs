@@ -1,4 +1,4 @@
-import { validateContent, toPublicContent, isContentVisible, matchesPublishedContent, normalizeGuestAttendance } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, isContentVisible, matchesPublishedContent, normalizeGuestAttendance, preserveFaqItemIds } from '../../shared/content-schema.mjs';
 
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
 const revision = value => Number.isSafeInteger(value) && value >= 0;
@@ -8,6 +8,17 @@ function canonicalContent(value) {
 export function sameContent(left, right) {
   const a = canonicalContent(left), b = canonicalContent(right);
   return Boolean(a && b && JSON.stringify(a) === JSON.stringify(b));
+}
+/** A legacy editor can omit FAQ IDs which the store preserves. Only that
+ * metadata addition is accepted; every question, answer, order and other field
+ * must still equal the submitted snapshot. The original pending body is untouched. */
+export function matchesSavedContent(saved, submitted) {
+  if (sameContent(saved, submitted)) return true;
+  const actual = canonicalContent(saved), expected = canonicalContent(submitted);
+  const faqs = expected?.event.presentation?.faqItems, stored = actual?.event.presentation?.faqItems;
+  if (!actual || !expected || !Array.isArray(faqs) || !Array.isArray(stored)) return false;
+  expected.event.presentation.faqItems = preserveFaqItemIds(faqs, stored);
+  return sameContent(actual, expected);
 }
 export function contentSaveSnapshot(expectedRevision, content) {
   const checked = canonicalContent(content);
@@ -38,13 +49,13 @@ function cloudDraft(value) {
 /** A 2xx response alone is not a save acknowledgement. Compare the exact normalized submitted fields. */
 export function confirmedContentSave(value, submitted) {
   const draft = cloudDraft(value);
-  return draft && submitted && draft.revision === submitted.expectedRevision + 1 && sameContent(draft.content, submitted.content) ? draft : null;
+  return draft && submitted && draft.revision === submitted.expectedRevision + 1 && matchesSavedContent(draft.content, submitted.content) ? draft : null;
 }
 /** Read-only reconciliation never adopts a different server draft or treats an old revision as proof. */
 export function inspectContentSave(value, submitted) {
   const draft = cloudDraft(value);
   if (!draft || !submitted || draft.revision < submitted.expectedRevision) return { state: 'unconfirmed', draft: null };
-  if (draft.revision > submitted.expectedRevision && sameContent(draft.content, submitted.content)) return { state: 'confirmed', draft };
+  if (draft.revision > submitted.expectedRevision && matchesSavedContent(draft.content, submitted.content)) return { state: 'confirmed', draft };
   return { state: draft.revision > submitted.expectedRevision ? 'conflict' : 'retryable', draft: null };
 }
 export function contentSaveUiState({ loaded, canEdit, dirty, unapplied = [], busy, saving, outcome, revision: currentRevision, confirmedRevision, problem = '', retryReady = false, oneStep = false }) {

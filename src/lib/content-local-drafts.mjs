@@ -1,4 +1,4 @@
-import { validateContent, contentSchema, SHOWCASE_EDITABLE_KINDS } from '../../shared/content-schema.mjs';
+import { validateContent, contentSchema, SHOWCASE_EDITABLE_KINDS, legacyFaqId } from '../../shared/content-schema.mjs';
 import { contentSaveSnapshot } from './admin-save-state.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
@@ -18,6 +18,17 @@ export const CONTENT_FORM_FIELDS = Object.freeze({
   plannerBooth: ['code','organization','organizationId','project','contactName','contactMethods','description','status'],
 });
 const arrays = new Set(['publicRoles','participationForms']);
+/** Called only by an explicit FAQ save/add action. Rendering and recovery keep
+ * old own-property shapes; generated IDs are part of the exact pending body. */
+export function faqItemsForSave(items, createId = () => 'faq-' + crypto.randomUUID().replaceAll('-', '')) {
+  const used = new Set(items.filter(item => Object.hasOwn(item, 'id')).map(item => item.id));
+  return items.map(item => {
+    if (Object.hasOwn(item, 'id')) return { ...item };
+    const legacy = legacyFaqId(item.question), id = legacy && !used.has(legacy) ? legacy : createId();
+    if (!ID.test(id) || used.has(id)) throw new TypeError('问题编号暂时无法准备，请保留填写后重试。');
+    used.add(id); return { ...item, id };
+  });
+}
 /** Blank or omitted raw input keeps the historical own-property shape. JSON is
  * kept as text in local form recovery, including unfinished participant rows. */
 export function sessionParticipantFields(previous, raw) {
@@ -116,7 +127,8 @@ export function contentLocalDraftValue(value, { kind } = {}) {
           || !ID.test(record.assignment.contactId ?? '') || !ids(record.assignment.sessionIds) || !ids(record.assignment.boothIds))) return false;
     } else if (type === 'event') {
       if (!exact(record, ['fields','faqItems']) || !contentFormValue(type, record.fields) || !Array.isArray(record.faqItems) || record.faqItems.length > 20
-        || record.faqItems.some(item => !exact(item, ['question','answer']) || !text(item.question, 500) || !text(item.answer, 4000))) return false;
+        || record.faqItems.some(item => !exact(item, ['id','question','answer']) || Object.hasOwn(item, 'id') && !ID.test(item.id ?? '') || !text(item.question, 500) || !text(item.answer, 4000))
+        || new Set(record.faqItems.filter(item => Object.hasOwn(item, 'id')).map(item => item.id)).size !== record.faqItems.filter(item => Object.hasOwn(item, 'id')).length) return false;
     } else if (!exact(record, ['editingId','fields','imageNeedsReselect']) || record.editingId !== null && !ID.test(record.editingId ?? '')
       || !contentFormValue(type, record.fields) || !ID.test(record.fields.id ?? '') || record.editingId !== null && record.editingId !== record.fields.id
       || typeof record.imageNeedsReselect !== 'boolean' || record.imageNeedsReselect && !['guest','showcase','organization'].includes(type)) return false;

@@ -8,7 +8,12 @@ const links = [
   { href: '#recruitment', label: '参与指引' },
 ];
 ---
-<header class="ah-header ah-compact-header">
+<header class="ah-header ah-home-header">
+  <a class="ah-home-wordmark" href="#top" aria-label="ARTDiCO HOST 活动首页">ARTDiCO HOST<span aria-hidden="true">·</span></a>
+  <nav class="ah-home-desktop-nav" aria-label="页面导航">
+    {links.map(link => <a href={link.href}>{link.label}</a>)}
+    <a href="#registration" class="ah-home-nav-apply">申请参加 <span aria-hidden="true">↗</span></a>
+  </nav>
   <details class="ah-site-menu" data-site-menu data-mobile-nav>
     <summary aria-controls="site-navigation">菜单 <span class="ah-menu-icon" aria-hidden="true"><span></span><span></span></span></summary>
     <nav id="site-navigation" aria-label="页面导航">

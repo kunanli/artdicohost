@@ -7,7 +7,7 @@ import '../styles/exhibiting-partners.css';
 const deferOrganizations = Boolean(publicContentEndpoint(import.meta.env.PUBLIC_CONTENT_API_ORIGIN));
 ---
 <section class="ah-booths ah-section" id="booths" aria-labelledby="booths-heading">
-  <div class="ah-section-heading" id="exhibition"><div><h2 id="booths-heading">参与组织</h2></div><p>在现场，与这些组织相遇。</p></div>
+  <div class="ah-section-heading" id="exhibition"><div><span class="ah-kicker">一起发生</span><h2 id="booths-heading" tabindex="-1">参与组织</h2></div><p>在现场，与这些组织相遇。</p></div>
   <ul class="ah-exhibiting-partners" data-public-organizations aria-label="参与组织" hidden={deferOrganizations}>
     {exhibitingPartners.map(partner => <li><div class="ah-organization-card"><h3>{partner.name}</h3></div></li>)}
   </ul>
@@ -16,23 +16,9 @@ const deferOrganizations = Boolean(publicContentEndpoint(import.meta.env.PUBLIC_
   <details class="ah-exhibition-details">
     <summary>现场展位与作品 <span aria-hidden="true">＋</span></summary>
     <div class="ah-exhibition-content">
-      <div class="ah-booths-empty" data-public-booths-empty><Icon name="gamepad" /><p>作品与具体展位安排陆续公布。</p><a class="ah-text-action" href="#registration">我有作品想展示 <span aria-hidden="true">↗</span></a></div>
+      <div class="ah-booths-empty" data-public-booths-empty><Icon name="gamepad" /><p>作品与具体展位安排陆续公布。</p></div>
       <div class="ah-public-booths" data-public-booths></div>
       <p class="ah-agenda-caption">{eventConfig.exhibition.description}</p>
     </div>
   </details>
 </section>
-<style>
-  .ah-booths-empty{padding:29px;background:#f5f7fb;border:1px solid #e4e8ef;border-radius:14px;color:#667187;text-align:center;font-size:13px}
-  .ah-booths-empty :global(svg){width:29px;height:29px;color:#1448ef;margin:0 auto 8px}
-  .ah-booths-empty p{line-height:1.9;margin:5px 0}
-  .ah-public-booths{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
-  .ah-public-booths :global(article),.ah-public-booths :global(.ah-booth-card){padding:23px;border:1px solid #e0e7f2;border-radius:10px;background:#fff}
-  .ah-public-booths :global(h3){font-size:17px;line-height:1.5;margin:9px 0;color:#15243b}
-  .ah-public-booths :global(p){font-size:13px;line-height:1.8;color:#667187;margin:5px 0}
-  .ah-public-booths :global(small){font-size:11px;color:#1448ef}
-  .ah-public-booths :global(.ah-booth-project){font-weight:600;color:#314560;margin-bottom:9px}
-  .ah-public-booths :global(.ah-booth-description){white-space:pre-wrap;overflow-wrap:anywhere;border-top:1px solid #e0e7f2;padding-top:12px;margin-top:14px}
-  .ah-public-booths :global(.ah-booth-website){display:inline-block;font-size:12px;color:#1448ef;text-underline-offset:3px;margin-top:12px}
-  @media(max-width:700px){.ah-public-booths{grid-template-columns:1fr}.ah-booths-empty{padding:24px 20px}}
-</style>

@@ -1,44 +1,39 @@
 ---
-import { agenda } from '../config/event.mjs';
 import { Image } from 'astro:assets';
 import studentShowcaseConcept from '../assets/student-showcase-concept.png';
 import '../styles/students-showcase.css';
 
-const sharing = agenda.find(item => item.id === 'student-showcase');
-const feedback = agenda.find(item => item.id === 'student-feedback');
 ---
 <section class="ah-students ah-students-showcase ah-section" id="students" aria-labelledby="students-heading">
   <div class="ah-section-heading">
-    <div><span class="ah-kicker">作品现场</span><h2 id="students-heading">游戏与作品</h2></div>
+    <div><span class="ah-kicker">创作在此相遇</span><h2 id="students-heading" tabindex="-1">游戏与作品</h2></div>
     <p>学生作品与独立游戏，在现场分享创作与交流。</p>
   </div>
   <figure class="ah-showcase-media" data-public-showcases-concept>
     <Image src={studentShowcaseConcept} alt="学生嘉年华创作概念视觉" width={1600} height={900} fit="cover" format="webp" quality={85} loading="lazy" decoding="async" />
     <figcaption>
-      <h3>下一个被玩到的想法，会是你的吗？</h3>
+      <h3>让想法，在现场相遇。</h3>
       <p>创作概念视觉 · 游戏与作品陆续公布</p>
     </figcaption>
   </figure>
   <div class="ah-showcase-filters" data-public-works-controls hidden>
     <label for="public-works-filter">作品分类<select id="public-works-filter" data-public-works-filter><option value="all">全部作品</option><option value="student">学生作品</option><option value="indie">独立游戏</option></select></label>
-    <p data-public-works-count role="status" aria-live="polite"></p>
+    <div class="ah-work-navigation" aria-label="浏览作品"><button type="button" data-public-work-prev aria-label="上一件作品" disabled>←</button><p data-public-works-count role="status" aria-live="polite"></p><button type="button" data-public-work-next aria-label="下一件作品" disabled>→</button></div>
   </div>
   <p class="ah-showcase-filter-empty" data-public-works-filter-empty role="status" hidden>这个分类的作品尚未公布。</p>
   <ul class="ah-showcase-grid" data-public-showcases aria-label="已公布的游戏与作品" hidden></ul>
   <div class="ah-showcase-empty" data-public-showcases-empty hidden>
     <span class="ah-kicker">作品现场</span>
-    <h3>下一个被玩到的想法，会是你的吗？</h3>
+    <h3>创作，陆续登场。</h3>
     <p>游戏与作品陆续公布。</p>
   </div>
-  <div class="ah-showcase-timeline" aria-label="作品参与方式与现场时段">
-    <article><span class="ah-showcase-time">现场体验</span><h3>展位试玩</h3><p>C 区 · 外围展位区</p></article>
-    <article data-public-static-hours><time>{sharing?.time}</time><h3>作品分享</h3><p>A 区 · 阶梯展示厅</p></article>
-    <article data-public-static-hours><time>{feedback?.time}</time><h3>试玩与反馈</h3><p>C 区 · 外围展位区</p></article>
-  </div>
   <div class="ah-student-actions">
-    <a class="ah-primary" href="#registration" data-recruit="student">学生参会申请 <span aria-hidden="true">↗</span></a>
-    <a href="#registration" class="ah-text-action">其他创作者参会申请 <span aria-hidden="true">↗</span></a>
     <a href="#agenda" class="ah-text-action">查看全天日程 <span aria-hidden="true">↗</span></a>
     <small>作品展示、分享时段与正式参会名额分别确认。</small>
   </div>
+  <dialog class="ah-work-lightbox" data-work-lightbox aria-labelledby="work-lightbox-title">
+    <div class="ah-work-lightbox-bar"><h3 id="work-lightbox-title" data-work-lightbox-title>作品图</h3><button type="button" data-work-lightbox-close aria-label="关闭作品大图">关闭 ×</button></div>
+    <img alt="" referrerpolicy="no-referrer" crossorigin="anonymous" />
+  </dialog>
+  <noscript><p>游戏与作品陆续公布；启用 JavaScript 可读取最新作品与分类。</p></noscript>
 </section>

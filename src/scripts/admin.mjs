@@ -1,4 +1,4 @@
-import { validateContent, toPublicContent, GUEST_PUBLIC_ROLES, GUEST_PUBLIC_ROLE_LABELS, SESSION_PARTICIPANT_ROLES, SESSION_PARTICIPANT_ROLE_LABELS } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, GUEST_PUBLIC_ROLES, GUEST_PUBLIC_ROLE_LABELS, SESSION_PARTICIPANT_ROLES, SESSION_PARTICIPANT_ROLE_LABELS, preserveFaqItemIds } from '../../shared/content-schema.mjs';
 import { showcaseSummary, SHOWCASE_KIND_LABELS, SHOWCASE_EDITABLE_KINDS } from '../../shared/showcase-display.mjs';
 import { publicGuestCards, publicSessionParticipants } from '../../shared/guest-display.mjs';
 import { createArrangementsView } from './arrangements-view.mjs';
@@ -11,10 +11,10 @@ import { editStaffImage } from '../lib/staff-image-editor.mjs';
 import { createOrganizationsEditor } from './organizations.mjs';
 import { createGuestContactPicker } from './guest-contact-picker.mjs';
 import { organizationChoices, boothOrganizationField } from '../lib/content-relationships.mjs';
-import { contentSaveSnapshot, contentSectionSnapshot, confirmedContentSave, inspectContentSave, sameContent, contentSaveUiState,contentPublicationReadiness,PUBLICATION_REASON_LABELS,PUBLICATION_CHANGE_LABELS,PUBLICATION_SUGGESTION_LABELS } from '../lib/admin-save-state.mjs';
+import { contentSaveSnapshot, contentSectionSnapshot, confirmedContentSave, inspectContentSave, sameContent, matchesSavedContent, contentSaveUiState,contentPublicationReadiness,PUBLICATION_REASON_LABELS,PUBLICATION_CHANGE_LABELS,PUBLICATION_SUGGESTION_LABELS } from '../lib/admin-save-state.mjs';
 import { createBrowserDraftStore } from '../lib/browser-drafts.mjs';
 import { createStaffFormDraft } from '../lib/staff-form-draft.mjs';
-import { CONTENT_DRAFT_POLICY,readContentForm,writeContentForm,contentDraftCopy,contentDraftLocation,showcaseOptionalFields,sessionParticipantFields } from '../lib/content-local-drafts.mjs';
+import { CONTENT_DRAFT_POLICY,readContentForm,writeContentForm,contentDraftCopy,contentDraftLocation,showcaseOptionalFields,sessionParticipantFields,faqItemsForSave } from '../lib/content-local-drafts.mjs';
 import { CONTENT_PAGES,resolveContentPage,contentPageHref } from '../lib/admin-sections.mjs';
 
 const $ = selector => document.querySelector(selector);
@@ -95,7 +95,7 @@ const showcaseKindLabels=SHOWCASE_KIND_LABELS;
 const roleKey=()=>[...(user?.roles??[])].sort().join(',');
 function captureLocalDraft(){
   const forms={};
-  if(eventFormDirty)forms.event={fields:readContentForm($('[data-event-form]'),'event'),faqItems:[...$('[data-event-faq]').children].map(row=>({question:row.querySelector('[name=faqQuestion]').value,answer:row.querySelector('[name=faqAnswer]').value}))};
+  if(eventFormDirty)forms.event={fields:readContentForm($('[data-event-form]'),'event'),faqItems:readFaqFields()};
   for(const type of ['session','booth','guest','showcase'])if($('[data-'+type+'-dialog]').open)forms[type]={editingId:({session:editingSession,booth:editingBooth,guest:editingGuest,showcase:editingShowcase})[type],fields:readContentForm($('[data-'+type+'-form]'),type),imageNeedsReselect:type==='guest'?Boolean(portraitUploading||portraitPending):type==='showcase'?coverUploading:false};
   const organization=organizations?.localDraft(),plan=planner?.localDraft();if(organization)forms.organization=organization;if(plan)forms.planner=plan;
   const checked=validateContent(draft.content);if(!checked.valid)throw new Error('本页内容无法暂存，请先复制填写内容。');
@@ -176,7 +176,7 @@ async function finishLocalSubmission(){
   try{
     const archive=localPendingArchive;
     const remainingForms=archive?Object.fromEntries(Object.entries(archive.forms).filter(([type,record])=>!formAlreadySaved(type,record,loadedContent))):null;
-    const hasArchiveEdits=archive&&(!sameContent(archive.content,draft.content)||Object.keys(remainingForms).length);
+    const hasArchiveEdits=archive&&(!matchesSavedContent(draft.content,archive.content)||Object.keys(remainingForms).length);
     const hasCurrentEdits=dirty||hasUnappliedInputs()||planner?.hasLocalChanges();
     if(hasArchiveEdits||hasCurrentEdits){
       let remaining=captureLocalDraft();
@@ -201,7 +201,7 @@ async function copyLocalContent(type){
   const stamp=requestSessionGeneration;
   let text;
   if(type&&['event','guest','session','booth','showcase','organization'].includes(type)){
-    const form=type==='organization'?$('[data-organization-form]'):$('[data-'+type+'-form]');text=JSON.stringify({type,fields:readContentForm(form,type),...(type==='event'?{faqItems:[...$('[data-event-faq]').children].map(row=>({question:row.querySelector('[name=faqQuestion]').value,answer:row.querySelector('[name=faqAnswer]').value}))}:{})},null,2);
+    const form=type==='organization'?$('[data-organization-form]'):$('[data-'+type+'-form]');text=JSON.stringify({type,fields:readContentForm(form,type),...(type==='event'?{faqItems:readFaqFields()}:{})},null,2);
   }else{const value=localRecovery?.record?.value??localPendingArchive??captureLocalDraft();if(value.roleKey!==roleKey())throw new Error('权限已变化，不能复制这份暂存。');text=contentDraftCopy(value);}
   try{await navigator.clipboard.writeText(text);if(stamp===requestSessionGeneration)announce('填写内容已复制。未保存云端，也未发布。');}
   catch{if(stamp!==requestSessionGeneration)return;const field=$('[data-admin-copy-fallback]');(document.querySelector('dialog[open]')??$('[data-admin-local-recovery]').parentElement).append(field);field.hidden=false;field.value=text;field.focus();field.select();announce('请复制已选中的填写内容。');}
@@ -842,7 +842,7 @@ function eventCandidate(base=draft.content,record=null,quiet=false){
   if(!fields)return null;
   for(const name of ['title','date','timezone','venue','status','dateStatus','venueStatus'])candidate.event[name]=fields[name];
   candidate.event.presentation={};for(const name of ['heroDescription','aboutTitle','aboutText','checkInTime','openingTime','endTime','contactEmail','mapUrl'])candidate.event.presentation[name]=fields[name];
-  candidate.event.presentation.faqItems=record?.faqItems??[...$('[data-event-faq]').children].map(row=>({question:row.querySelector('[name=faqQuestion]').value,answer:row.querySelector('[name=faqAnswer]').value}));
+  candidate.event.presentation.faqItems=record ? preserveFaqItemIds(record.faqItems,base.event.presentation?.faqItems) : readFaqFields();
   return invalidContent(validateContent(candidate),'event',quiet);
 }
 function entityCandidate(type,base=draft.content,record=null,quiet=false){
@@ -877,7 +877,11 @@ function formAlreadySaved(type,record,content){
 }
 function finalizeAcknowledgedForms(content){
   const forms=captureLocalDraft().forms;
-  if(forms.event&&formAlreadySaved('event',forms.event,content)){eventFormDirty=false;editorSaveState('event','saved','活动资料已保存。');}
+  if(forms.event&&formAlreadySaved('event',forms.event,content)){
+    const faqs=preserveFaqItemIds(readFaqFields(),content.event.presentation?.faqItems);
+    [...$('[data-event-faq]').children].forEach((row,index)=>{if(faqs[index]?.id)row.dataset.faqId=faqs[index].id;});
+    eventFormDirty=false;editorSaveState('event','saved','活动资料已保存。');
+  }
   for(const type of ['session','booth','guest','showcase'])if(forms[type]&&formAlreadySaved(type,forms[type],content)){
     const id=forms[type].fields.id;editorStableIds[type]=id;
     if(type==='session'){editingSession=id;sessionFormDirty=false;}
@@ -1276,12 +1280,14 @@ $('[data-admin-login]').addEventListener('submit', event => {
     if(!await prepareInvitedGuest())announce('已登录。修改草稿后，需要发布才会显示到前台。');
   });
 });
+function readFaqFields(){return [...$('[data-event-faq]').children].map(row=>({...((row.dataset.faqId)?{id:row.dataset.faqId}:{}),question:row.querySelector('[name=faqQuestion]').value,answer:row.querySelector('[name=faqAnswer]').value}));}
 function renderFaqFields(items) {
   const output = $('[data-event-faq]'); output.replaceChildren();
   for (const item of items) addFaqFields(item);
 }
 function addFaqFields(item = {question:'',answer:''}) {
   const row = node('fieldset',undefined,'ah-admin-faq-row');
+  if(Object.hasOwn(item,'id'))row.dataset.faqId=item.id;
   row.append(node('legend','常见问题'));
   const questionLabel = node('label','问题');
   const question = node('input'); question.name = 'faqQuestion'; question.maxLength = 200; question.required = true; question.value = item.question; questionLabel.append(question);
@@ -1293,7 +1299,7 @@ function addFaqFields(item = {question:'',answer:''}) {
 $('[data-event-add-faq]').addEventListener('click',() => {
   if (!canEdit() || busy) return;
   if ($('[data-event-faq]').children.length >= 20) { announce('常见问题最多 20 条。',true);return; }
-  addFaqFields();eventFormDirty = true;lockControls();scheduleLocalDraft();
+  addFaqFields({id:'faq-'+crypto.randomUUID().replaceAll('-',''),question:'',answer:''});eventFormDirty = true;lockControls();scheduleLocalDraft();
 });
 $('[data-event-form]').addEventListener('input', () => { eventFormDirty = true;lockControls(); });
 $('[data-event-form]').addEventListener('change', () => { eventFormDirty = true;lockControls(); });
@@ -1305,11 +1311,11 @@ async function timedContentRequest(options = {}) {
   finally { clearTimeout(timer); }
 }
 function acceptSavedContent(saved,submitted){
-  const unchanged=sameContent(draft.content,submitted.content),localContent=draft.content;
+  const unchanged=sameContent(draft.content,submitted.content)||sameContent(draft.content,saved.content),localContent=draft.content;
   loadedContent=structuredClone(saved.content);draft={revision:saved.revision,content:unchanged?saved.content:localContent};
   savedGuestContacts=new Map((saved.content.guests??[]).map(guest=>[guest.id,guest.contactId||'']));
   confirmedSaveRevision=saved.revision;saveOutcome='saved';saveProblem='';pendingSave=null;retryContentReady=false;pendingHistorical=false;pendingUncertain=false;arrangementsRevision=null;
-  dirty=!unchanged;finalizeAcknowledgedForms(saved.content);pendingForms=null;
+  dirty=!sameContent(draft.content,loadedContent);finalizeAcknowledgedForms(saved.content);pendingForms=null;
   const remaining=captureLocalDraft().forms;legacyWorkspaceReview=Object.keys(remaining).some(type=>({event:'event',guest:'guests',session:'sessions',booth:'booths',showcase:'showcases',organization:'organizations',planner:'arrangements'})[type]!==activePage);
   renderPageView();lockControls();return unchanged&&!hasUnappliedInputs()&&!planner?.hasLocalChanges();
 }
@@ -1355,6 +1361,8 @@ async function saveContentDraft(){
   for(const type of ['guest','session','booth','showcase'])if($('[data-'+type+'-dialog]').open)return saveEditor(type);
   if(organizations?.localDraft())return organizations.save({allowBusy:true});
   if(activePage==='event'){
+    const preparedFaqs=faqItemsForSave(preserveFaqItemIds(readFaqFields(),loadedContent?.event.presentation?.faqItems));
+    [...$('[data-event-faq]').children].forEach((row,index)=>{row.dataset.faqId=preparedFaqs[index].id;});
     const candidate=eventCandidate();if(!candidate)return false;
     editorSaveState('event','saving','正在保存活动资料…');
     const saved=await saveSectionCandidate(candidate,'event'),box=$('[data-event-error]');box.textContent=saved?'':saveProblem||'尚未确认保存，填写内容仍保留。';box.hidden=saved;if(!saved){editorSaveState('event',pendingSave?'unknown':'error',box.textContent);box.focus();}return saved;

@@ -1,7 +1,7 @@
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { validateContent, toPublicContent, validateBoothOrganizationChanges, validateShowcaseOrganizationChanges, validateShowcaseKindChanges, matchesPublishedContent } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, validateBoothOrganizationChanges, validateShowcaseOrganizationChanges, validateShowcaseKindChanges, matchesPublishedContent, preserveFaqItemIds } from '../../shared/content-schema.mjs';
 import { createInitialContent } from '../../src/config/content.mjs';
 
 const queues = new Map();
@@ -46,6 +46,14 @@ function preserveArrangementFields(input, current) {
     return result;
   };
   const result = copy(input, 'content');
+  if (result.event && typeof result.event === 'object' && !Array.isArray(result.event)
+    && result.event.presentation && typeof result.event.presentation === 'object' && !Array.isArray(result.event.presentation)) {
+    result.event = copy(result.event, 'event');
+    result.event.presentation = copy(result.event.presentation, 'event.presentation');
+    const previous = current.event.presentation?.faqItems;
+    if (!Object.hasOwn(result.event.presentation, 'faqItems') && Array.isArray(previous)) result.event.presentation.faqItems = structuredClone(previous);
+    else if (Array.isArray(result.event.presentation.faqItems)) result.event.presentation.faqItems = preserveFaqItemIds(result.event.presentation.faqItems, previous);
+  }
   if (!Object.hasOwn(result, 'organizations') && Object.hasOwn(current, 'organizations')) result.organizations = structuredClone(current.organizations);
   if (Array.isArray(result.organizations)) result.organizations = result.organizations.map(item => {
     const row = copy(item, 'organizations');

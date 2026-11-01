@@ -1,5 +1,6 @@
 import { isContentVisible } from '../../shared/content-schema.mjs';
 import {canManageEventOperations} from '../../shared/staff-permissions.mjs';
+import { personWorkRecommendation } from '../../shared/organizer-progress.mjs';
 const CONTACT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const REGISTRATION = /^[A-Za-z0-9_-]{43}$/u;
 const STATES = new Set(['available', 'unlinked', 'restricted', 'unavailable']);
@@ -129,6 +130,7 @@ export function personWorkspaceView(value, selection) {
       || !arrangements.booths.every(item => lines(item, ['id', 'code', 'organization', 'project', 'status', 'position']) && id(item.id) && typeof item.missing === 'boolean')) return null;
     if (value.availability.arrangements !== 'available' && (arrangements.sessions.length || arrangements.booths.length)) return null;
     if (!plain(communications) || communications.historyLimit !== 200 || !['invitationTotal', 'confirmationTotal', 'timelineTotal'].every(key => integer(communications[key])) || typeof communications.historyTruncated !== 'boolean'
+      || ['unresolvedInvitations', 'unresolvedConfirmations'].some(key => Object.hasOwn(communications, key) && typeof communications[key] !== 'boolean')
       || !list(communications.invitations) || !list(communications.confirmations) || !list(communications.timeline)
       || !communications.invitations.every(item => lines(item, ['id', 'channel', 'status']) && (item.sentChannel === null || text(item.sentChannel, 100)) && date(item.createdAt) && date(item.updatedAt))
       || !communications.confirmations.every(item => lines(item, ['id', 'kind', 'status', 'admissionStatus']) && integer(item.attempt) && date(item.createdAt) && date(item.updatedAt))
@@ -225,4 +227,72 @@ export function personWorkspaceSteps(view, roles = []) {
                 : unpublished || !currentEligible.length ? step('public', '核对公开资料', 'pending', '已有默认公开的资料草稿，发布后显示在前台；照片与公开职责可稍后补充。', 'guest')
                   : step('public', '核对公开资料', 'complete', '已发布内容与当前人物草稿一致；照片与公开职责可稍后补充。', 'guest'));
   return steps;
+}
+
+/** A selected original-source response never becomes another person's cached view. */
+export function personSourceView(value, contactId) {
+  try {
+    const keys = (input, expected) => plain(input) && Reflect.ownKeys(input).length === expected.length && expected.every(key => {
+      const descriptor = Object.getOwnPropertyDescriptor(input, key);
+      return descriptor?.enumerable && Object.hasOwn(descriptor, 'value');
+    });
+    if (!CONTACT.test(contactId ?? '') || !keys(value, ['schemaVersion', 'contactId', 'revision', 'sourceKind', 'snapshot', 'fields'])
+      || value.schemaVersion !== 1 || value.contactId !== contactId || !integer(value.revision)
+      || !['manual', 'imported'].includes(value.sourceKind) || !['preserved', 'legacy'].includes(value.snapshot)
+      || !Array.isArray(value.fields) || value.fields.length > 40) return null;
+    if (Reflect.ownKeys(value.fields).length !== value.fields.length + 1) return null;
+    const fields = [];
+    for (let index = 0; index < value.fields.length; index++) {
+      const descriptor = Object.getOwnPropertyDescriptor(value.fields, String(index));
+      if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) return null;
+      const item = descriptor.value;
+      if (!keys(item, ['label', 'value']) || !text(item.label, 80) || !item.label.trim() || /[\r\n\t]/u.test(item.label) || !text(item.value, 10000)) return null;
+      fields.push({label: item.label, value: item.value});
+    }
+    const result = {schemaVersion: 1, contactId, revision: value.revision, sourceKind: value.sourceKind, snapshot: value.snapshot, fields};
+    if (new TextEncoder().encode(JSON.stringify(result)).length > 100 * 1024) return null;
+    return result;
+  } catch { return null; }
+}
+
+/** The primary suggestion uses the same saved-fact policy as the directory.
+ * Local unknown writes take precedence; this function never resumes them itself.
+ * @param {any} view
+ * @param {string[]} roles
+ * @param {boolean|string} localPending
+ */
+export function personNextAction(view, roles = [], localPending = false) {
+  if (!Array.isArray(roles)) roles = [];
+  const current = view && personWorkspaceView(view, view.selected);
+  const pending = localPending === true || ['unknown', 'conflict', 'pending'].includes(localPending);
+  if (!current) return personWorkRecommendation({sourceUnavailable: true, pendingResult: pending}).nextAction;
+  const contact = current.contact, registration = current.registration, availability = current.availability;
+  const contactId = current.linkage.contactId, registrationId = current.linkage.registrationId;
+  const notices = current.communications;
+  const hiddenHistoryUnknown = notices.historyTruncated && (!Object.hasOwn(notices, 'unresolvedInvitations') || !Object.hasOwn(notices, 'unresolvedConfirmations'));
+  const invitationUnknown = notices.unresolvedInvitations === true || hiddenHistoryUnknown || notices.invitations.some(item => ['unknown', 'reserved', 'issuing'].includes(item.status))
+    || notices.timeline.some(item => item.source !== 'confirmation' && ['unknown', 'reserved', 'issuing'].includes(item.status));
+  const confirmationUnknown = notices.unresolvedConfirmations === true || hiddenHistoryUnknown || notices.confirmations.some(item => ['unknown', 'reserved'].includes(item.status));
+  const latest = rows => [...rows].sort((a, b) => String(b.updatedAt ?? b.createdAt ?? '').localeCompare(String(a.updatedAt ?? a.createdAt ?? '')))[0];
+  const invitation = invitationUnknown ? 'unknown' : latest(notices.invitations)?.status
+    ?? (notices.timeline.some(item => item.source === 'legacy_invitation' && item.status === 'manually_sent') ? 'manually_sent' : 'not_started');
+  const delivery = confirmationUnknown ? 'unknown' : availability.confirmations === 'unavailable' && registrationId ? 'unavailable'
+    : availability.confirmations === 'restricted' ? 'restricted' : latest(notices.confirmations)?.status
+      ?? (registrationId ? 'not_sent' : 'not_applicable');
+  const forms = contact?.operations.participationForms ?? [], profiles = current.publicProfile.profiles;
+  const profile = profiles.find(item => item.published && !item.publishedMatchesDraft) ?? profiles[0];
+  const publicNeedsUpdate = profiles.some(item => item.published ? !item.publishedMatchesDraft : isContentVisible(item))
+    || forms.some(role => ['guest', 'speaker', 'panelist', 'host', 'organizer'].includes(role)) && !profiles.length && availability.publicProfile !== 'restricted';
+  const arrangementStep = personWorkspaceSteps(current, roles).find(item => item.key === 'arrangements');
+  const sourceUnavailable = current.linkage.state === 'unavailable'
+    || ['contact', 'registration', 'admission'].some(key => availability[key] === 'unavailable')
+    || Boolean(contact && ['arrangements', 'publicProfile', 'invitations'].some(key => availability[key] === 'unavailable'));
+  return personWorkRecommendation({contactId, registrationId, profileId: profile?.id ?? null,
+    responseStatus: contact?.operations.responseStatus ?? null, admissionStatus: current.admission?.status ?? null,
+    registrationState: current.linkage.state === 'linked' ? 'available' : current.linkage.state, invitationStatus: invitation, deliveryStatus: delivery,
+    contactConsent: contact?.profile.contactConsent ?? null, pendingResult: pending, sourceUnavailable,
+    publicNeedsUpdate, missingArrangement: Boolean(forms.length && arrangementStep && ['review', 'pending'].includes(arrangementStep.state)),
+    canReview: current.permissions.registration && (roles.includes('superadmin') || roles.includes('reviewer')),
+    canIntegrate: canManageEventOperations({roles}), canEdit: roles.includes('superadmin') || roles.includes('editor'),
+    canContact: current.permissions.contact && (roles.includes('superadmin') || roles.includes('outreach'))}).nextAction;
 }

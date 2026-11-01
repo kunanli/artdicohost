@@ -252,6 +252,19 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
           provenance: item.provenance.kind === 'staff_assisted' ? { kind: item.provenance.kind, sourceContactId: item.provenance.sourceContactId } : { kind: item.provenance.kind },
           inactive: item.review.status === 'withdrawn' || item.review.deletionRequested !== null })) };
     }); },
+    // Internal only. The health API authorizes its full cross-source scope before
+    // invoking this reader; these comparison fields never enter the directory.
+    async healthDirectory() { return guarded(async () => {
+      const current = await snapshot();
+      return { revision: current.state.revision, applicationRevision: current.applicationRevision,
+        registrations: current.registrations.map(item => ({ id: item.id,
+          fields: { name: item.fields.name, organization: item.fields.organization ?? '', city: item.fields.city ?? '',
+            email: item.fields.email ?? '', wechat: item.fields.wechat ?? '',
+            ...(Object.hasOwn(item.fields, 'accommodationChoice') ? { accommodationChoice: item.fields.accommodationChoice } : {}) },
+          provenance: item.provenance.kind === 'staff_assisted' ? { kind: item.provenance.kind, sourceContactId: item.provenance.sourceContactId } : { kind: item.provenance.kind },
+          inactive: item.review.status === 'withdrawn' || item.review.deletionRequested !== null,
+          review: { status: item.review.status, accommodationStatus: item.review.accommodationStatus } })) };
+    }); },
     async detail(id) { return guarded(async () => {
       if (typeof id !== 'string' || !ID.test(id)) fail('NOT_FOUND');
       const current = await snapshot(), item = current.registrations.find(record => record.id === id);

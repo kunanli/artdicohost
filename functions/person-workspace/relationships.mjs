@@ -1,5 +1,5 @@
 import { guestPrefillFromContact } from '../../shared/contact-editor.mjs';
-import { CONTACT_ID, contactsSource, contentSource, publicProfileProjection, organizationLookupProjection, organizationMemberships, revisionValue, timestamp } from './projection.mjs';
+import { CONTACT_ID, contactsSource, contentSource, publicProfileProjection, organizationLookupProjection, organizationMemberships, revisionValue, timestamp, peopleDuplicateCandidates } from './projection.mjs';
 import { createHash } from 'node:crypto';
 import { equalToken } from '../content-api/auth.mjs';
 import { readIntentBody } from '../intent-invitations/handler.mjs';
@@ -179,17 +179,8 @@ export function createPeopleResolutionApi({authenticate,registrationService,cont
    if(request.method!=='GET'&&!equalToken(request.headers.get('x-csrf-token'),session.csrfToken))stop('CSRF_REJECTED',403);
    if(!registrationService?.managePerson)stop('NOT_CONFIGURED',503);
    if(url.pathname===candidatesPath){
-    const data=await sources(),tokens=new Map(),pairs=new Map();let truncated=false;
-    for(const row of data.rows){const owner=data.canonical(row),items=[];
-     if(row.email)items.push(['email:'+norm(row.email),'相同邮箱']);if(row.wechat)items.push(['wechat:'+norm(row.wechat),'相同微信']);
-     const phone=String(row.phone??'').replace(/[^0-9+]/gu,'');if(phone.replace(/\D/gu,'').length>=7)items.push(['phone:'+phone,'相同电话']);
-     if(norm(row.name)&&norm(row.organization))items.push(['name:'+norm(row.name)+'\0'+norm(row.organization),'姓名与机构相同']);
-     for(const[token,reason]of items){for(const other of tokens.get(token)??[]){if(other.owner===owner)continue;const pair=[owner,other.owner].sort().join('\0');if(!pairs.has(pair)&&pairs.size>=200){truncated=true;continue;}
-       const value=pairs.get(pair)??{keys:[other.row.key,row.key],rows:[other.row,row].map(r=>({key:r.key,name:r.name,organization:r.organization,source:r.source})),reasons:[]};if(!value.reasons.includes(reason))value.reasons.push(reason);pairs.set(pair,value);}
-      const entries=tokens.get(token)??[];if(!entries.some(item=>item.owner===owner))entries.push({owner,row});tokens.set(token,entries);
-     }
-    }
-    return reply({revision:data.index.revision,contactRevision:data.roster.revision,candidates:[...pairs.values()],truncated});
+    const data=await sources();
+    return reply({revision:data.index.revision,contactRevision:data.roster.revision,...peopleDuplicateCandidates(data.rows,data.canonical)});
    }
    let input;try{input=await readIntentBody(request,16*1024);}catch{stop();}
    if(!plain(input)||Object.keys(input).some(key=>!['action','keys','primaryKey','roles','expectedRevision','expectedContactRevision','operationId','confirmSamePerson'].includes(key))||!['preview','merge','roles'].includes(input.action))stop();

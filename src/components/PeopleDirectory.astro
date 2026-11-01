@@ -1,11 +1,15 @@
 <section class="people-directory" data-people-directory aria-labelledby="people-directory-title">
-  <div class="people-directory-metrics" data-directory-metrics></div>
   <div class="people-directory-panel">
-    <header><div><h2 id="people-directory-title" data-directory-title>统一名单</h2><p data-directory-description>集中核对人员、邀约、报名与现场职责。</p></div></header>
-    <form class="people-directory-search" data-directory-search><div><label for="directory-query">搜索姓名、机构或编号</label><input id="directory-query" name="query" type="search" maxlength="160" autocomplete="off" /></div><button class="ah-admin-button ah-admin-primary" type="submit">搜索</button><button class="ah-admin-button" type="reset">清除</button></form>
+    <header><div><h2 id="people-directory-title" data-directory-title>人员</h2><p data-directory-description>先处理需要跟进的人。</p></div></header>
+    <form class="people-directory-search" data-directory-search>
+      <div class="people-directory-work"><label for="directory-work">工作状态</label><select id="directory-work" name="work" data-directory-work><option value="pending">待处理</option><option value="all">全部</option><option value="reply">待回复</option><option value="integration">待整合</option><option value="review">待审核</option><option value="notification">待通知</option><option value="publication">前台待更新</option><option value="arrangement">待安排</option><option value="duplicate">疑似重复</option><option value="unavailable">待核对</option></select></div>
+      <div class="people-directory-query"><label for="directory-query">搜索</label><input id="directory-query" name="query" type="search" placeholder="姓名、机构或编号" maxlength="160" autocomplete="off" /></div><button class="ah-admin-button ah-admin-primary" type="submit">搜索</button><button class="ah-admin-button" type="reset">清除</button>
+    </form>
     <p class="people-directory-error" data-directory-error role="alert" hidden></p>
     <div class="people-directory-result"><p data-directory-status role="status" aria-live="polite">正在核对最新名单…</p><div><button type="button" class="ah-admin-button" data-directory-prev hidden>上一页</button><button type="button" class="ah-admin-button" data-directory-next hidden>下一页</button></div></div>
-    <div class="people-directory-table-wrap"><table class="people-directory-table"><caption class="ah-sr-only">按明确人员关系核对邀约、报名与职责</caption><thead data-directory-head></thead><tbody data-directory-rows></tbody></table></div>
+    <div class="people-directory-table-wrap"><table class="people-directory-table"><caption class="ah-sr-only">人员、当前状态与下一步</caption><thead data-directory-head></thead><tbody data-directory-rows></tbody></table></div>
     <p class="people-directory-empty" data-directory-empty hidden>目前没有符合条件的记录。</p>
   </div>
+  <details class="people-directory-overview"><summary>概况</summary><div class="people-directory-metrics" data-directory-metrics></div></details>
+  <details class="people-directory-health" data-directory-health hidden><summary>资料核对</summary><div class="people-directory-health-body"><div class="people-directory-health-toolbar"><p data-directory-health-status role="status" aria-live="polite">打开后核对已保存资料。</p><button type="button" class="ah-admin-button" data-directory-health-refresh>重新核对</button></div><p class="people-directory-error" data-directory-health-error role="alert" hidden></p><ul data-directory-health-items></ul><p class="people-directory-health-empty" data-directory-health-empty hidden>目前没有待核对项目。</p></div></details>
 </section>

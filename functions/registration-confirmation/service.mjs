@@ -350,11 +350,13 @@ export function createRegistrationConfirmationService({ registrationService, jou
     return { results };
   }
   /** Trusted staff projection reads durable notices only; no capability or provider access. */
-  async function staffHistory({ actor, registrationId } = {}) {
+  async function staffHistory({ actor, registrationId, relatedRegistrationIds = [] } = {}) {
     if (!readerValid(actor)) failure('FORBIDDEN', 403);
     if (!ID.test(registrationId ?? '')) failure('INVALID_REQUEST', 400);
+    if (!Array.isArray(relatedRegistrationIds) || relatedRegistrationIds.length > 100 || relatedRegistrationIds.some(id => !ID.test(id))) failure('INVALID_REQUEST', 400);
+    const registrationIds = new Set([registrationId, ...relatedRegistrationIds]);
     const current = await target().read();
-    return { revision: current.value.revision, notices: current.value.notices.filter(item => item.registrationId === registrationId)
+    return { revision: current.value.revision, notices: current.value.notices.filter(item => registrationIds.has(item.registrationId))
       .map(item => ({ id: item.id, kind: item.kind, status: stateOf(item), admissionStatus: item.admissionStatus, attempt: item.attempt,
         createdAt: item.createdAt, updatedAt: item.updatedAt })) };
   }

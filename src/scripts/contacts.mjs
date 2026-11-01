@@ -38,8 +38,7 @@ const personConfirmation=createPersonConfirmation({root:$('[data-person-confirma
 const directory=createPeopleDirectory({root:$('[data-people-directory]'),request,getUser:()=>user,
   onContact:id=>{const item=contactById(id);if(item)openContact(item);},onProfile:id=>{const item=contactById(id);if(item)openProfile(item);},
   onInvitation:id=>{const item=contactById(id);if(item&&mayInvite(item))openInvitation(item);},canInvite:id=>mayInvite(contactById(id)),
-  canResolve:()=>canManageEventOperations(user),onResolve:key=>void resolution.open(key),
-  onFallback:()=>{if(permitted())$('[data-contacts-legacy-tools]').open=true;}});
+  canResolve:()=>canManageEventOperations(user),onResolve:key=>void resolution.open(key)});
 const operationNames=()=>['owner','priority','followUpAt','notes','responseStatus','participationForms','sessionIds','boothIds',...content.sessions.map(item=>'sessionRoles:'+item.id)];
 function openContactDraft(){
   contactDraft?.close();const id=currentContactId,generation=sessionGeneration,form=$('[data-contact-form]');

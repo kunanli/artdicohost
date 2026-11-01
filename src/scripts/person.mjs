@@ -1,6 +1,10 @@
-import { parsePersonSelection, personWorkspacePath, personWorkspaceView, personWorkspaceActions, personWorkspaceSteps, personAvailabilityText } from '../lib/person-workspace.mjs';
-import { ownerTagPresentation, attendancePresentation, profilePublicationPresentation } from '../lib/people-relationships.mjs';
-import { SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
+import { parsePersonSelection, personWorkspacePath, personWorkspaceView, personWorkspaceActions, personWorkspaceSteps, personAvailabilityText, personNextAction, personSourceView } from '../lib/person-workspace.mjs';
+import { ownerTagPresentation, attendancePresentation, profilePublicationPresentation, savedContactReceipt, conversionPreview, conversionReceipt } from '../lib/people-relationships.mjs';
+import { createPeopleResolution } from '../lib/people-resolution.mjs';
+import { createOperationsFormDraft, createOperationsSaveState, captureDraftFields, applyDraftFields, operationsDraftStore } from '../lib/operations-form-draft.mjs';
+import { createPersonConfirmation } from '../lib/person-confirmation.mjs';
+import { reviewConfirmationLink } from '../lib/registration-review-selection.mjs';
+import { SESSION_ROLE_LABELS, validateContactOperations } from '../../shared/contacts-schema.mjs';
 import { sourceLabels } from '../../shared/contact-import.mjs';
 import { identityOptions, participationOptions } from '../../shared/registration-schema.mjs';
 
@@ -18,6 +22,16 @@ const accommodationLabels = { not_requested: '未申请', requested: '已申请'
 const channelLabels = { manual: '人工邀请', email: '邮件', wechat: '微信', other: '其他' };
 const noticeLabels = { prepared: '已准备，未记录发出', manually_sent: '已记录人工发出', provider_accepted: '服务商已接受，未证明送达', unknown: '结果待核对，不重复发送', reserved: '结果待核对，不重复发送', rejected: '明确未发出', generated: '已生成，未记录发出', sent: '已记录人工发出', disabled: '通知已停用', not_configured: '寄件尚未配置' };
 let user = null, csrfToken = '', generation = 0, sequence = 0, authSequence = 0, authBusy = false, reading = false, personController = null, authController = null;
+const quickNames = ['responseStatus', 'owner', 'followUpAt', 'notes'];
+const operationNames = ['owner', 'priority', 'followUpAt', 'notes', 'responseStatus', 'participationForms', 'sessionIds', 'boothIds', 'sessionRoles'];
+let selectedView = null, quickDraft = null, quickRevision = null, quickBase = null, quickDirty = false, quickBusy = false,
+  quickPending = null, quickRetryReady = false, syncIssue = '', relatedRefresh = false, quickFocus = null, mutationController = null, credential = null, credentialBusy = false, sourceSequence = 0, transportBusy = 0;
+const quickForm = $('[data-person-quick-form]');
+const quickSaveState = createOperationsSaveState({form: quickForm, button: $('[data-person-quick-save]'), status: $('[data-person-quick-state]')});
+const personConfirmation = createPersonConfirmation({root: $('[data-person-confirmation]'), request, getUser: () => user,
+  isBlocked: () => reading || quickBusy || transportBusy > 0 || quickDirty || Boolean(quickPending), onChanged: () => { if (!quickDirty && !quickPending) void loadPerson({preserve:true}); }});
+const resolution = createPeopleResolution({root: $('[data-people-resolution]'), request, getUser: () => user,
+  onChanged: () => loadPerson({preserve:true}), onIntegrate: integratePerson});
 
 function node(tag, value, className) { const element = document.createElement(tag); if (value !== undefined) element.textContent = value; if (className) element.className = className; return element; }
 function announce(message = '', error = false) {
@@ -29,10 +43,40 @@ function announce(message = '', error = false) {
 const allowed = () => user?.roles.some(role => ['outreach', 'reviewer', 'superadmin'].includes(role));
 function lock() {
   $('[data-person-login-submit]').disabled = authBusy || location.protocol === 'file:';
-  $('[data-person-refresh]').disabled = authBusy || reading || !allowed();
+  $('[data-person-refresh]').disabled = authBusy || reading || quickBusy || transportBusy > 0 || credentialBusy || !allowed();
   $('[data-person-logout]').disabled = authBusy || !user;
+  const blocked = authBusy || reading || quickBusy || transportBusy > 0 || !user;
+  for (const field of quickForm.querySelectorAll('input,select,textarea')) field.disabled = blocked || Boolean(quickPending) || Boolean(quickDraft?.blocked);
+  $('[data-person-quick-save]').disabled = blocked || !quickDirty || Boolean(quickPending) || !quickDraft || quickDraft.blocked;
+  $('[data-person-quick-check]').disabled = blocked;
+  $('[data-person-quick-retry]').disabled = blocked || !quickRetryReady;
+  $('[data-person-primary]').disabled = blocked || !selectedView;
+  $('[data-person-credential-prepare]').disabled = blocked || credentialBusy || !credentialRegistration();
+  $('[data-person-credential-copy]').disabled = blocked || credentialBusy || !credential;
+  personConfirmation.lock();
+  resolution.lock();
+  if (transportBusy) for (const control of document.querySelectorAll('[data-resolution-dialog] button,[data-resolution-dialog] input')) control.disabled = true;
+}
+function clearCredential() {
+  credential = null; credentialBusy = false;
+  $('[data-person-credential-open]').removeAttribute('href');
+  $('[data-person-credential-result]').hidden = true;
+  $('[data-person-credential-fallback]').value = ''; $('[data-person-credential-fallback]').hidden = true;
+  $('[data-person-credential-status]').textContent = '';
+}
+function clearQuick() {
+  quickDraft?.close(); quickDraft = null; mutationController?.abort(); mutationController = null;
+  quickRevision = null; quickBase = null; quickDirty = false; quickBusy = false; quickPending = null; quickRetryReady = false; syncIssue = ''; relatedRefresh = false; quickFocus = null;
+  quickForm.reset(); for (const name of quickNames) quickForm.elements.namedItem(name).value = name === 'responseStatus' ? 'pending' : '';
+  $('[data-person-quick-panel]').open = false; $('[data-person-quick-panel]').hidden = true;
+  $('[data-person-quick-check]').hidden = true; $('[data-person-quick-retry]').hidden = true;
+  $('[data-person-quick-outcome]').textContent = ''; $('[data-person-quick-outcome]').hidden = true; quickSaveState.set('idle');
 }
 function clearRecord(message = '到人员或报名列表，选择「个人工作页」即可查看同一人的已保存记录。') {
+  clearQuick(); clearCredential(); personConfirmation.clear(); resolution.clear(); selectedView = null; sourceSequence++;
+  $('[data-person-summary]').replaceChildren(); $('[data-person-primary-reason]').textContent = '';
+  $('[data-person-source]').replaceChildren(); $('[data-person-source-state]').textContent = '';
+  $('[data-person-source-panel]').open = false; $('[data-person-more]').open = false; $('[data-person-service-panel]').hidden = true;
   for (const selector of profileFields) $(selector).replaceChildren();
   $('[data-person-name]').textContent = '选择一位人员';
   $('[data-person-identity]').textContent = '';
@@ -45,7 +89,7 @@ function clearRecord(message = '到人员或报名列表，选择「个人工作
 function clearPrivateState() {
   generation++; sequence++;
   personController?.abort(); authController?.abort(); personController = null; authController = null;
-  user = null; csrfToken = ''; reading = false; authBusy = false;
+  user = null; csrfToken = ''; reading = false; authBusy = false; transportBusy = 0;
   clearRecord(); $('[data-person-user]').textContent = '';
   $('[data-person-login]').reset();
   $('[data-person-login-panel]').hidden = false;
@@ -76,31 +120,36 @@ async function readJson(response, controller) {
     return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   } finally { reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
-async function request(path, { method = 'GET', body, controller = new AbortController(), epoch = generation } = {}) {
+async function request(path, { method = 'GET', body, controller = new AbortController(), epoch = generation, signal, current = () => true } = {}) {
+  if (epoch !== generation || !current()) throw new Error('当前对象已改变。');
   let timedOut = false;
+  const mutation = method !== 'GET' && !['/api/admin/login','/api/admin/logout'].includes(path);
+  if (mutation) { transportBusy++; lock(); }
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 12_000);
   try {
-    const response = await fetch(path, { method, credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: controller.signal,
-      headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}), ...(method !== 'GET' && csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
-    if (epoch !== generation || controller.signal.aborted) throw new Error('会话或读取对象已改变。');
+    if (!current()) throw new Error('当前对象已改变。');
+    const activeSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
+    const response = await fetch(path, { method, credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: activeSignal,
+      headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}), ...(method !== 'GET' && csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) }, ...(body ? { body: typeof body === 'string' ? body : JSON.stringify(body) } : {}) });
+    if (epoch !== generation || activeSignal.aborted || !current()) throw new Error('会话或读取对象已改变。');
     if (response.status === 401) { clearPrivateState(); const error = new Error(path === '/api/admin/login' ? '账号或密码未通过验证。' : '会话已结束，请重新登录。'); error.status = 401; announce(error.message, true); throw error; }
     if (!response.ok) {
       response.body?.cancel().catch(() => {});
-      const message = { 403: '此账号没有读取这位人员记录的权限。', 404: '没有找到这条已保存记录，请返回名单核对。', 429: '请求较多，请稍后重新读取。', 503: '人员来源暂时无法核对，请稍后重新读取。' }[response.status] ?? '记录暂时无法读取，请稍后重试。';
+      const message = { 400: '请核对填写内容。', 403: '此账号没有处理这位人员记录的权限。', 404: '没有找到这条已保存记录，请返回名单核对。', 409: '资料已变化，请先核对当前记录。', 422: '填写内容未通过核对，请检查后再保存。', 429: '请求较多，请稍后重新读取。', 503: '人员来源暂时无法核对，请稍后重新读取。' }[response.status] ?? '记录暂时无法读取，请稍后重试。';
       const error = new Error(message); error.status = response.status; throw error;
     }
-    const value = await readJson(response, controller);
-    if (epoch !== generation || controller.signal.aborted) throw new Error('会话或读取对象已改变。');
+    const value = await readJson(response, {signal: activeSignal});
+    if (epoch !== generation || activeSignal.aborted || !current()) throw new Error('会话或读取对象已改变。');
     return value;
   } catch (error) {
     if (timedOut) { const timeout = new Error('读取超过等待时间，请重新读取。'); timeout.timedOut = true; throw timeout; }
     throw error;
-  } finally { clearTimeout(timer); }
+  } finally { clearTimeout(timer); if (mutation && epoch === generation) { transportBusy = Math.max(0, transportBusy - 1); lock(); } }
 }
 function showSession(value) {
   const safe = sessionValue(value); generation++;
   personController?.abort(); personController = null;
-  user = safe.user; csrfToken = safe.csrfToken;
+  user = safe.user; csrfToken = safe.csrfToken; transportBusy = 0;
   $('[data-person-user]').textContent = user.label;
   $('[data-person-login-panel]').hidden = true;
   $('[data-person-workspace]').hidden = false;
@@ -241,8 +290,249 @@ function renderVolunteers(view) {
   }
   output.append(list);
 }
-function render(view) {
-  clearRecord();
+function currentKey() { const item = parsePersonSelection(location.hash); return item ? item.kind + ':' + item.id : ''; }
+function viewKey(view = selectedView) { return view ? view.selected.kind + ':' + view.selected.id : ''; }
+function credentialRegistration() {
+  return selectedView?.permissions.registration && selectedView.availability.registration === 'available'
+    && selectedView.admission?.status === 'confirmed' ? selectedView.registration?.id ?? null : null;
+}
+function legacyDeliveryUnknown() {
+  return Boolean(selectedView?.communications.unresolvedInvitations
+    || selectedView?.communications.historyTruncated && (!Object.hasOwn(selectedView.communications, 'unresolvedInvitations') || !Object.hasOwn(selectedView.communications, 'unresolvedConfirmations'))
+    || selectedView?.communications.invitations.some(item => ['unknown','reserved','issuing'].includes(item.status))
+    || selectedView?.communications.timeline.some(item => item.source !== 'confirmation' && ['unknown','reserved','issuing'].includes(item.status)));
+}
+function deliveryUnknown() {
+  return legacyDeliveryUnknown() || Boolean(selectedView?.communications.unresolvedConfirmations
+    || selectedView?.communications.timeline.some(item => ['unknown','reserved','issuing'].includes(item.status)));
+}
+function openNotificationHistory() {
+  $('[data-person-more]').open = true; $('[data-person-communications]').closest('details').open = true;
+  $('[data-person-primary-reason]').textContent = '原通知结果待核对，请勿重寄。';
+  $('[data-person-communications]').closest('details').scrollIntoView({block:'nearest',behavior:'instant'});
+}
+function operationCopy(input) { return Object.fromEntries(operationNames.map(name => [name, structuredClone(input[name])])); }
+function renderSummary(view) {
+  const output = $('[data-person-summary]'); output.replaceChildren();
+  const reply = view.contact?.operations.responseStatus;
+  if (reply) { const status = attendancePresentation(reply); output.append(statusBadge(status.label, status.tone)); }
+  else output.append(badge(view.availability.contact === 'restricted' ? '回复按权限核对' : '本人申请'));
+  const admission = syncIssue ? '名额待核对' : view.admission ? ({confirmed:'名额已确认',waitlisted:'候补',pending_review:'申请待审',rejected:'申请未通过',withdrawn:'已撤回'})[view.admission.status]
+    : view.availability.admission === 'restricted' ? '名额由审核人核对' : view.availability.admission === 'unavailable' ? '名额待核对' : '尚未整合名额';
+  output.append(badge(admission, syncIssue ? undefined : view.admission?.status));
+  const notice = view.communications.timeline.find(item => item.source === 'confirmation');
+  if (notice) output.append(badge(({provider_accepted:'确认信已接受',unknown:'寄送待核对',reserved:'寄送待核对',rejected:'确认信未发出'})[notice.status] ?? '通知待核对'));
+  else if (view.availability.confirmations === 'unavailable') output.append(badge('通知待核对'));
+  else if (view.admission?.status === 'confirmed' && view.availability.confirmations === 'available') output.append(badge('确认信未寄送'));
+  if (view.publicProfile.profiles.some(item => item.published && !item.publishedMatchesDraft)) output.append(badge('前台待更新'));
+  if (view.contact?.operations.owner) { const owner = ownerTagPresentation(view.contact.operations.owner), tag = node('span', owner.label, 'ah-owner-tag'); tag.dataset.ownerTone = owner.tone; output.append(tag); }
+}
+function renderNext() {
+  if (!selectedView) return;
+  let action;
+  try { action = personNextAction(selectedView, user.roles, Boolean(quickPending)); } catch { action = {key:'check',label:'重新核对',reason:'记录暂时无法核对。',kind:'refresh'}; }
+  if (quickDirty && !quickPending) action = {key:'reply', label:'继续填写', reason:'', kind:'refresh'};
+  if (syncIssue && !quickDirty && !quickPending) action = {key:'check', label:'核对名额', reason:syncIssue, kind:'refresh'};
+  else if (relatedRefresh && !quickDirty && !quickPending) action = {key:'check', label:'核对相关记录', reason:'回复已保存。', kind:'refresh'};
+  if (quickDraft?.blocked && !quickPending) action = {key:'draft', label:'核对本机填写', reason:'', kind:'refresh'};
+  if (action.key === 'details' && credentialRegistration()) action = {...action, label:'查看凭证'};
+  const button = $('[data-person-primary]'); button.textContent = action.label; button.dataset.action = action.key; button.dataset.kind = action.kind;
+  if (action.href) button.dataset.href = action.href; else delete button.dataset.href;
+  const editing = $('[data-person-quick-panel]').open && quickDirty && !quickPending;
+  button.classList.toggle('ah-admin-primary', $('[data-person-service-panel]').hidden && !editing);
+  $('[data-person-quick-save]').classList.toggle('ah-admin-primary', editing);
+  $('[data-person-primary-reason]').textContent = action.reason || '';
+}
+function setupQuick(view) {
+  const permitted = view.availability.contact === 'available' && view.permissions.contact && user.roles.some(role => ['outreach','superadmin'].includes(role));
+  $('[data-person-quick-panel]').hidden = !permitted;
+  if (!permitted) return;
+  const id = view.contact.id, actor = user.id, epoch = generation;
+  quickRevision = view.revisions.contacts; quickBase = operationCopy(view.contact.operations);
+  for (const name of quickNames) quickForm.elements.namedItem(name).value = quickBase[name];
+  const current = () => user?.id === actor && generation === epoch && selectedView?.contact?.id === id;
+  quickDraft = createOperationsFormDraft({actorId: actor, roles: user.roles, page: 'person', entity: 'contact:' + id, form: quickForm,
+    baseRevision: () => quickRevision, isCurrent: current, capture: () => captureDraftFields(quickForm, quickNames),
+    apply: fields => { applyDraftFields(quickForm, fields, quickNames); markQuickDirty(); }, manualPending: true,
+    onEdit: markQuickDirty,
+    onPending: original => {
+      const input = JSON.parse(original.body);
+      if (original.path !== '/api/admin/contacts/' + encodeURIComponent(id) || original.method !== 'PUT'
+        || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0 || !validateContactOperations(input.operations).valid
+        || Object.keys(input).some(key => !['expectedRevision','operations'].includes(key))) throw new Error('原保存内容无法核对。');
+      quickPending = {path: original.path, method: original.method, body: original.body, input}; quickDirty = true; quickRetryReady = false;
+      if (original.fields) applyDraftFields(quickForm, original.fields, quickNames);
+      quickSaveState.set('unknown'); $('[data-person-quick-check]').hidden = false; $('[data-person-quick-panel]').open = true; renderNext(); lock();
+    },
+    onChange: event => { if (event.error?.code === 'STALE_ACTOR') { clearPrivateState(); return; } if (event.status === 'discarded') { quickPending = null; quickRetryReady = false; $('[data-person-quick-check]').hidden = true; $('[data-person-quick-retry]').hidden = true; } renderNext(); lock(); },
+  });
+  void quickDraft.load();
+}
+function markQuickDirty() {
+  if (!selectedView?.contact || quickPending || quickBusy) return;
+  quickDirty = true; clearCredential(); personConfirmation.clear(); $('[data-person-service-panel]').hidden = true; quickSaveState.set('dirty'); renderNext(); lock();
+}
+function showSyncOutcome(receipt) {
+  const output = $('[data-person-quick-outcome]'), admission = receipt.admission;
+  syncIssue = '';
+  let message = '';
+  if (admission?.status === 'requiresReviewer') syncIssue = '回复已保存，名额交由审核人核对。';
+  else if (admission?.status === 'unavailable') syncIssue = '回复已保存，名额结果待核对。';
+  else if (admission) {
+    message = ({confirmed:'名额已确认。',waitlisted:'已登记候补。',pending_review:'申请仍待审核。'})[admission.status] ?? '';
+    if (selectedView.registration?.id === admission.registrationId && selectedView.admission) {
+      selectedView.admission = {...selectedView.admission, status: admission.status, revision: admission.revision};
+      selectedView.revisions.admission = admission.revision;
+    } else syncIssue = '回复已保存，请核对当前名额。';
+    const mail = admission.confirmationEmail?.status;
+    if (mail) message += ({completed:'通知已处理。',pending:'通知待核对。',not_configured:'通知尚未配置。',not_applicable:'通知条件待核对。'})[mail] ?? '';
+  }
+  output.textContent = syncIssue || message; output.hidden = !output.textContent;
+}
+async function acknowledgeQuick(receipt, draft, epoch, key) {
+  if (epoch !== generation || currentKey() !== key || !selectedView?.contact) return;
+  relatedRefresh = quickBase?.responseStatus !== receipt.contact.operations.responseStatus;
+  quickRevision = receipt.revision; quickBase = operationCopy(receipt.contact.operations);
+  selectedView.contact.operations = structuredClone(quickBase); selectedView.revisions.contacts = receipt.revision;
+  quickPending = null; quickRetryReady = false; quickDirty = false;
+  // The cloud receipt is authoritative even if local cleanup or another source fails.
+  quickSaveState.set('saved'); $('[data-person-quick-check]').hidden = true; $('[data-person-quick-retry]').hidden = true;
+  showSyncOutcome(receipt); clearCredential(); personConfirmation.clear(); renderSummary(selectedView); renderNext();
+  try { await draft.acknowledge(); } catch { if (epoch === generation && currentKey() === key) quickSaveState.set('saved', '本机恢复记录待整理。'); }
+}
+async function saveQuick(replay = false) {
+  if (quickBusy || !selectedView?.contact || !quickDraft || !quickForm.reportValidity() || (!replay && (!quickDirty || quickPending || quickDraft.blocked))) return null;
+  const id = selectedView.contact.id, key = viewKey(), epoch = generation, draft = quickDraft;
+  const still = () => epoch === generation && currentKey() === key && selectedView?.contact?.id === id;
+  let pending = quickPending, requested = false, proven = null;
+  if (!replay) {
+    const active = document.activeElement;
+    const bounds = active && quickForm.contains(active) ? active.getBoundingClientRect() : null;
+    quickFocus = bounds ? {element: active, start: active.selectionStart, end: active.selectionEnd, top: bounds.top, left: bounds.left} : null;
+  }
+  quickBusy = true; quickRetryReady = false; quickSaveState.set('saving'); lock();
+  try {
+    if (!replay) {
+      const fields = captureDraftFields(quickForm, quickNames), operations = {...structuredClone(quickBase)};
+      for (const name of quickNames) operations[name] = fields[name].normalize('NFC').trim();
+      const input = {expectedRevision: quickRevision, operations};
+      if (!validateContactOperations(operations).valid) throw new Error('请核对回复与跟进资料。');
+      pending = {path: '/api/admin/contacts/' + encodeURIComponent(id), method: 'PUT', body: JSON.stringify(input), input};
+      await draft.markPending(pending);
+      if (!still()) return null;
+      quickPending = pending;
+    }
+    if (!pending || !still()) return null;
+    mutationController = new AbortController(); requested = true;
+    const value = await request(pending.path, {method: pending.method, body: pending.body, controller: mutationController, epoch, current: still});
+    if (!still()) return null;
+    proven = savedContactReceipt(value, {contactId: id, expectedRevision: pending.input.expectedRevision, operations: pending.input.operations});
+    await acknowledgeQuick(proven, draft, epoch, key); return proven;
+  } catch (error) {
+    if (!still()) return null;
+    if (proven) { quickSaveState.set('saved', '其他记录待重新核对。'); return proven; }
+    if (!requested) { quickPending = null; quickSaveState.set('error', '本机原保存未准备好，尚未发送。'); }
+    else if (!replay && [400,403,404,422].includes(error.status)) {
+      try { await draft.rejectPending(); quickPending = null; quickSaveState.set('error', error.message); }
+      catch { quickSaveState.set('unknown'); await draft.markUnknown().catch(() => {}); }
+    } else { quickSaveState.set(error.status === 409 ? 'conflict' : 'unknown'); await draft.markUnknown().catch(() => {}); }
+    quickDirty = true; $('[data-person-quick-check]').hidden = !quickPending;
+    if (quickPending) $('[data-person-quick-outcome]').textContent = '先核对原保存结果。';
+    else $('[data-person-quick-outcome]').textContent = error.message || '保存未完成。';
+    $('[data-person-quick-outcome]').hidden = false; renderNext(); return null;
+  } finally { if (still()) { quickBusy = false; mutationController = null; lock(); if (!quickPending) restoreQuickFocus(); } }
+}
+function restoreQuickFocus() {
+  const focus = quickFocus;
+  if (!focus || !quickForm.contains(focus.element) || focus.element.disabled || reading) return;
+  const active = document.activeElement;
+  if (active && active !== document.body && active !== focus.element && !['person-quick-save','person-quick-check','person-quick-retry'].some(key => active.hasAttribute('data-' + key))) return;
+  focus.element.focus({preventScroll:true});
+  if (Number.isInteger(focus.start) && Number.isInteger(focus.end)) { try { focus.element.setSelectionRange(focus.start, focus.end); } catch { /* Non-text controls have no caret. */ } }
+  const epoch = generation, key = currentKey();
+  const align = () => {
+    if (epoch !== generation || currentKey() !== key || !focus.element.isConnected || document.activeElement !== focus.element) return;
+    const bounds = focus.element.getBoundingClientRect();
+    window.scrollBy({left:bounds.left - focus.left, top:bounds.top - focus.top, behavior:'instant'});
+  };
+  align(); requestAnimationFrame(align); quickFocus = null;
+}
+async function checkQuick() {
+  if (!quickPending || quickBusy || !selectedView) return;
+  const pending = quickPending, key = viewKey(), epoch = generation, draft = quickDraft;
+  quickBusy = true; quickRetryReady = false; lock();
+  try {
+    const value = await request(personWorkspacePath(selectedView.selected), {epoch, current: () => epoch === generation && currentKey() === key});
+    if (epoch !== generation || currentKey() !== key || quickPending !== pending) return;
+    const view = personWorkspaceView(value, selectedView.selected);
+    if (!view?.contact || view.contact.id !== selectedView.contact.id || !Number.isSafeInteger(view.revisions.contacts)) throw new Error('原保存结果暂时无法核对。');
+    const matches = Object.entries(pending.input.operations).every(([name, expected]) => JSON.stringify(view.contact.operations[name]) === JSON.stringify(expected));
+    if (view.revisions.contacts > pending.input.expectedRevision && matches) {
+      quickRevision = view.revisions.contacts; quickBase = operationCopy(view.contact.operations); selectedView = view;
+      quickPending = null; quickDirty = false; quickRetryReady = false; syncIssue = ''; relatedRefresh = false;
+      quickSaveState.set('saved', '已核对云端记录。'); $('[data-person-quick-check]').hidden = true; $('[data-person-quick-retry]').hidden = true;
+      renderSummary(view); renderNext();
+      try { await draft.acknowledge(); } catch { quickSaveState.set('saved', '本机恢复记录待整理。'); }
+    } else {
+      quickRetryReady = view.revisions.contacts === pending.input.expectedRevision;
+      quickSaveState.set(quickRetryReady ? 'unknown' : 'conflict', quickRetryReady ? '云端尚无本次修改，可明确重试原保存。' : '云端已有其他修改，请保留填写并核对。');
+      $('[data-person-quick-retry]').hidden = !quickRetryReady;
+    }
+  } catch { if (epoch === generation && currentKey() === key) quickSaveState.set('unknown', '暂时无法核对，原保存仍保留。'); }
+  finally { if (epoch === generation && currentKey() === key) { quickBusy = false; renderNext(); lock(); if (!quickPending) restoreQuickFocus(); } }
+}
+async function prepareCredential() {
+  const id = credentialRegistration(), epoch = generation, key = viewKey();
+  if (!id || credentialBusy || quickBusy || quickDirty || quickPending) return;
+  clearCredential(); credentialBusy = true; lock();
+  try {
+    const value = await request('/api/admin/registration-confirmation/link/' + encodeURIComponent(id), {epoch, current: () => epoch === generation && currentKey() === key});
+    if (epoch !== generation || currentKey() !== key) return;
+    const valid = reviewConfirmationLink(value, id); if (!valid) throw new Error('私人参会页暂时无法核对。');
+    credential = valid; $('[data-person-credential-open]').href = valid.confirmationUrl;
+    $('[data-person-credential-result]').hidden = false; $('[data-person-credential-status]').textContent = '请仅私下交付本人。';
+  } catch (error) { if (epoch === generation && currentKey() === key) { clearCredential(); $('[data-person-credential-status]').textContent = error.message || '私人参会页暂时无法核对。'; } }
+  finally { if (epoch === generation && currentKey() === key) { credentialBusy = false; lock(); } }
+}
+function openServices() {
+  $('[data-person-service-panel]').hidden = false;
+  const id = credentialRegistration(); $('[data-person-credential]').hidden = !id;
+  personConfirmation.select(deliveryUnknown() ? null : id); renderNext(); lock();
+  if (deliveryUnknown()) $('[data-person-primary-reason]').textContent = '原通知结果待核对，暂不准备新邮件。';
+}
+async function integratePerson(id, expectedRevision) {
+  if (quickDirty || quickPending || quickBusy || selectedView?.contact?.id !== id || quickRevision !== expectedRevision) throw new Error('请先核对并保存当前人员资料。');
+  if (selectedView.contact.operations.responseStatus !== 'attending') {
+    quickForm.elements.namedItem('responseStatus').value = 'attending'; quickDirty = true;
+    const receipt = await saveQuick();
+    if (!receipt?.admission?.registrationId) throw new Error('回复已保存，请核对名额结果。');
+    return '出席回复已保存，请核对名额与通知。';
+  }
+  const ids = [id], preview = conversionPreview(await request('/api/admin/contacts/convert/preview', {method:'POST',body:{contactIds:ids,expectedContactRevision:expectedRevision}}), ids, expectedRevision);
+  if (preview.eligibleIds.length !== 1) throw new Error('当前来源已有报名或仍需核对。');
+  const result = conversionReceipt(await request('/api/admin/contacts/convert', {method:'POST',body:{contactIds:ids,expectedContactRevision:expectedRevision}}), preview);
+  if (result.status !== 'completed' || result.registrations.length !== 1 || result.failureCount) throw new Error('整合结果待核对，请保留当前来源。');
+  return '已沿用原来源整合，请核对名额。';
+}
+async function loadSource() {
+  const view = selectedView, epoch = generation, key = viewKey(), started = ++sourceSequence;
+  const output = $('[data-person-source]'), status = $('[data-person-source-state]'); output.replaceChildren();
+  if (!view || !$('[data-person-source-panel]').open) return;
+  if (!view.contact) { status.textContent = view.availability.contact === 'restricted' ? '原问卷由跟进同事核对。' : '未关联旧问卷；报名原始资料见「报名与核查」。'; return; }
+  status.textContent = '正在核对原问卷…';
+  try {
+    const value = personSourceView(await request('/api/admin/people/contacts/' + encodeURIComponent(view.contact.id) + '/source', {epoch,
+      current: () => epoch === generation && currentKey() === key && started === sourceSequence}), view.contact.id);
+    if (epoch !== generation || currentKey() !== key || started !== sourceSequence || !$('[data-person-source-panel]').open) return;
+    if (!value) throw new Error();
+    for (const field of value.fields) fact(output, field.label, field.value);
+    status.textContent = value.snapshot === 'legacy' ? '旧记录尚无独立原件，请核对。' : '保留的原问卷资料。';
+  } catch { if (epoch === generation && currentKey() === key && started === sourceSequence) { output.replaceChildren(); status.textContent = '原问卷暂时无法核对，请稍后重新打开。'; } }
+}
+function render(view, {preserveQuick = false} = {}) {
+  if (!preserveQuick) clearRecord(); else for (const selector of profileFields) $(selector).replaceChildren();
+  selectedView = view;
+  relatedRefresh = false;
   $('[data-person-name]').textContent = view.person.displayName || view.person.name || '未填写姓名';
   $('[data-person-identity]').textContent = [view.person.organization, view.person.position, view.person.city].filter(Boolean).join(' · ');
   $('[data-person-linkage]').textContent = ({ linked: '依据已保存的关联核对人员与报名，不按同名自动合并。', unlinked: '目前只有这一份记录，尚未关联另一份人员／报名资料。', restricted: '其他关联资料按账号权限显示，未读取受限记录。', unavailable: '关联来源暂时无法完整核对，下方分别显示可用范围。' })[view.linkage.state];
@@ -258,11 +548,16 @@ function render(view) {
   const revisions = Object.entries(view.revisions).filter(([, revision]) => revision !== null).map(([key, revision]) => ({ contacts: '人员', content: '活动', invitations: '邀请', registration: '核查', admission: '名额', confirmations: '确认通知', volunteers: '志愿分工' })[key] + '版本 ' + revision);
   $('[data-person-meta]').textContent = '本页仅呈现已保存记录，各来源独立更新。' + (revisions.length ? ' ' + revisions.join(' · ') : '');
   $('[data-person-empty]').hidden = true; $('[data-person-record]').hidden = false;
+  renderSummary(view);
+  if (!preserveQuick) setupQuick(view);
+  else if (!quickDirty && !quickPending && !quickBusy && view.contact) { quickRevision = view.revisions.contacts; quickBase = operationCopy(view.contact.operations); }
+  renderNext(); lock();
 }
-async function loadPerson({ focus = false } = {}) {
+async function loadPerson({ focus = false, preserve = false } = {}) {
   const started = ++sequence, epoch = generation, selection = parsePersonSelection(location.hash);
   personController?.abort(); const controller = new AbortController(); personController = controller;
-  clearRecord(); announce();
+  const preserveQuick = preserve && selectedView && viewKey() === currentKey() && !quickDirty && !quickPending;
+  if (!preserveQuick) clearRecord(); announce();
   if (!user) { lock(); return; }
   if (!allowed()) { clearRecord('此账号需要人员邀约或报名审核权限，才能读取个人工作页。'); announce('此账号没有读取个人工作页的权限。', true); reading = false; lock(); return; }
   if (!selection) { clearRecord(location.hash ? '人员链接无效，请从人员或报名列表重新打开。' : undefined); reading = false; lock(); return; }
@@ -271,7 +566,7 @@ async function loadPerson({ focus = false } = {}) {
     const value = await request(personWorkspacePath(selection), { controller, epoch });
     if (started !== sequence || epoch !== generation || controller.signal.aborted) return;
     const view = personWorkspaceView(value, selection); if (!view) throw new Error('人员记录结果未通过核对，请重新读取。');
-    render(view); announce('已读取当前可核对的记录。');
+    render(view, {preserveQuick}); announce('已读取。');
     if (focus) $('[data-person-name]').focus({ preventScroll: true });
   } catch (error) {
     if (started !== sequence || epoch !== generation || (controller.signal.aborted && !error.timedOut)) return;
@@ -289,15 +584,60 @@ $('[data-person-login]').addEventListener('submit', async event => {
   finally { login.password = ''; if (operation === authSequence) form.elements.namedItem('password').value = ''; if (authController === controller) authController = null; if (operation === authSequence) authBusy = false; lock(); }
 });
 $('[data-person-logout]').addEventListener('click', async () => {
-  if (authBusy || !user) return; personController?.abort(); sequence++; reading = false; clearRecord();
+  if (authBusy || !user) return;
+  if ((quickDirty || quickPending || quickBusy) && !confirm('退出并清除本机填写？原保存结果仍需核对。')) return;
+  const actorId = user.id; quickDraft?.close(); quickDraft = null;
+  let localCleared = false; try { await operationsDraftStore().clearActor(actorId); localCleared = true; } catch { /* The private page is still cleared below. */ }
+  personController?.abort(); sequence++; reading = false; clearRecord();
   const operation = ++authSequence;
   authBusy = true; const epoch = generation, controller = new AbortController(); authController = controller; lock();
-  try { await request('/api/admin/logout', { method: 'POST', controller, epoch }); if (epoch !== generation) return; clearPrivateState(); announce('已退出，当前页的人员资料已清空。'); }
+  try { await request('/api/admin/logout', { method: 'POST', controller, epoch }); if (epoch !== generation) return; clearPrivateState(); announce(localCleared ? '已退出，页面资料与本机填写已清空。' : '已退出，页面资料已清空；本机恢复记录待核对。'); }
   catch (error) { if (epoch === generation && operation === authSequence) { clearRecord(); announce(error.message || '退出结果尚未核对，请重试。', true); } }
   finally { if (authController === controller) authController = null; if (operation === authSequence) authBusy = false; lock(); }
 });
-$('[data-person-refresh]').addEventListener('click', () => { if (!authBusy && !reading) loadPerson(); });
-window.addEventListener('hashchange', () => { if (user && !authBusy) loadPerson({ focus: true }); else { sequence++; personController?.abort(); clearRecord(); } });
+$('[data-person-refresh]').addEventListener('click', () => { if (authBusy || reading || quickBusy) return; if (quickPending) void checkQuick(); else if (quickDirty) announce('请先保存或核对当前填写。'); else void loadPerson(); });
+quickForm.addEventListener('submit', event => { event.preventDefault(); void saveQuick(); });
+$('[data-person-quick-panel]').addEventListener('toggle', renderNext);
+$('[data-person-quick-check]').addEventListener('click', () => void checkQuick());
+$('[data-person-quick-retry]').addEventListener('click', () => { if (quickRetryReady) void saveQuick(true); });
+$('[data-person-credential-prepare]').addEventListener('click', () => void prepareCredential());
+$('[data-person-service-open]').addEventListener('click', () => { if (!reading && !quickBusy && !quickDirty && !quickPending) openServices(); });
+$('[data-person-credential-copy]').addEventListener('click', async () => {
+  if (!credential || quickBusy || credentialBusy) return;
+  const link = credential.confirmationUrl, key = viewKey(), epoch = generation;
+  try { await navigator.clipboard.writeText(link); if (epoch === generation && currentKey() === key && credential?.confirmationUrl === link) $('[data-person-credential-status]').textContent = '已复制，请仅私下交付本人。'; }
+  catch { if (epoch !== generation || currentKey() !== key || credential?.confirmationUrl !== link) return; const field = $('[data-person-credential-fallback]'); field.value = link; field.hidden = false; field.focus(); field.select(); $('[data-person-credential-status]').textContent = '请复制所选链接。'; }
+});
+$('[data-person-source-panel]').addEventListener('toggle', () => {
+  if ($('[data-person-source-panel]').open) void loadSource();
+  else { sourceSequence++; $('[data-person-source]').replaceChildren(); $('[data-person-source-state]').textContent = ''; }
+});
+$('[data-person-primary]').addEventListener('click', async () => {
+  if (!selectedView || authBusy || reading || quickBusy) return;
+  const button = $('[data-person-primary]'), action = button.dataset.action;
+  if (quickPending) return void checkQuick();
+  if (action === 'reply' || action === 'draft') { const panel = $('[data-person-quick-panel]'); if (!panel.hidden) { panel.open = true; quickForm.elements.namedItem('responseStatus').focus({preventScroll:true}); panel.scrollIntoView({block:'nearest',behavior:'instant'}); } return; }
+  if (action === 'source') { $('[data-person-more]').open = true; $('[data-person-source-panel]').open = true; $('[data-person-source-panel]').scrollIntoView({block:'nearest',behavior:'instant'}); return; }
+  if (action === 'notification') { openServices(); $('[data-person-service-panel]').scrollIntoView({block:'nearest',behavior:'instant'}); return; }
+  if (action === 'integration' || action === 'duplicate') { if (quickDirty) return; const key = selectedView.contact ? 'contact:' + selectedView.contact.id : selectedView.registration ? 'registration:' + selectedView.registration.id : null; if (key) await resolution.open(key); return; }
+  if (action === 'check') {
+    if (!syncIssue && deliveryUnknown()) { openNotificationHistory(); return; }
+    await loadPerson(); return;
+  }
+  if (button.dataset.kind === 'handoff') {
+    try { await navigator.clipboard.writeText(location.origin + location.pathname + location.hash); $('[data-person-primary-reason]').textContent = '人员入口已复制，请交有权限同事核对。'; }
+    catch { $('[data-person-primary-reason]').textContent = '请将当前人员入口交有权限同事核对。'; }
+    return;
+  }
+  if (action === 'details' && credentialRegistration()) { openServices(); await prepareCredential(); return; }
+  if (action === 'details' || action === 'arrangement') { $('[data-person-more]').open = true; if (action === 'arrangement') $('[data-person-arrangements]').closest('details').open = true; return; }
+  const href = button.dataset.href;
+  if (href) { const url = new URL(href, location.origin); if (url.origin === location.origin && url.pathname.startsWith('/admin/') && url.href !== location.href) location.assign(url.href); }
+});
+window.addEventListener('hashchange', async () => {
+  if (quickDraft && quickDirty && !quickPending && !quickBusy) await quickDraft.flush().catch(() => {});
+  if (user && !authBusy) void loadPerson({focus:true}); else { sequence++; personController?.abort(); clearRecord(); }
+});
 clearPrivateState();
 if (location.protocol === 'file:') announce('请通过工作人员后台打开此页；离线预览不含私有人员记录。');
 else {

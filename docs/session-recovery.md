@@ -2,13 +2,13 @@
 
 ## 2026-11-01 新改版執行入口
 
-本次對話已整理為 [改版執行總覽](redesign/README.md)，包含開發步驟、工作人員與參與者操作、驗收與發布。P1a 已由 [PR #49](https://github.com/kunanli/artdicohost/pull/49) 合併並發布於 main `7d259218dd522f6af865326c6211e3a300b3777b`；[正式流程 41266704060](https://github.com/kunanli/artdicohost/actions/runs/41266704060) 的檢查、FC 與 OSS 全部成功，13 個後台頁面與 46 個公開物件 HTTPS 核驗通過。
+本次對話已整理為 [改版執行總覽](redesign/README.md)，包含開發步驟、工作人員與參與者操作、驗收與發布。最新 P1b 已由 [PR #50](https://github.com/kunanli/artdicohost/pull/50) 合併並發布於 main `535d3ed33629b9ff70c14587c5acdd25370df801`；[正式流程 41272446371](https://github.com/kunanli/artdicohost/actions/runs/41272446371) 的檢查、FC 與 OSS 全部成功，13 個後台頁面與 45 個公開物件 HTTPS 核驗通過。P1a 的先前發布保留於 [其紀錄](redesign/p1a-release.md)。
 
-目前從上述 main 接續分支 `feat/redesign-p1b`。出席證明、多人場次及活動事實核對已進入實作，最終測試、瀏覽器、準確來源包、審查及發布仍待完成，見 [P1b 紀錄](redesign/p1b-release.md)。內容／儲存格式仍為版本 1，安排總覽仍為版本 2；新增參與者或出席證明寫入後，回退須保留至少 P1b 的相容能力，不能回到僅接受舊展位位置或刪除新投影的寫入者。
+目前分支 `feat/redesign-p2`，產品提交 `e01db5d920ecb4a6ad90165c619b59facc84bffc`。簡約人員工作頁與唯讀核對的本地實作、1475 項完整測試、公開／FC 建置瀏覽器及來源包校驗已完成；PR CI、實際發布及真實同事觀察尚待完成，見 [P2 紀錄](redesign/p2-release.md)。P2 未新增業務儲存格式，但回退補丁仍須保留未知歷史／來源核對及原本機待提交正文，並相容 P1b 出席投影、多人場次和動態展位；不以舊快照覆蓋業務資料。
 
 沿用既有環境與資源。舊意向、姓名／聯絡資訊、名額、通知與公開內容不因文件或程式部署自動整合／發布／補寄。Apple 10/30 簽章設定與人員去重已有後續紀錄，讀取本頁下方早期狀態時，須對照 [Wallet 最新紀錄](apple-wallet-setup.md) 及 [統一人員](unified-people-workspace.md)，不要重做已完成設定。
 
-另已建立 [資料契約 Skill](../.agents/skills/artdico-contract-check/SKILL.md) 與 [合成旅程 Skill](../.agents/skills/artdico-journey-check/SKILL.md) 及固定測試入口；準備時基準不沿用作新功能驗收，P1a 最終結果見 [已發布紀錄](redesign/p1a-release.md)。P2 已補唯讀體檢與可解釋下一步規格，尚未實作。下方 10 月的「当前实际版本」及早期 Wallet 未配置描述均為歷史紀錄，以本節及後續發布證據為準。
+另已建立 [資料契約 Skill](../.agents/skills/artdico-contract-check/SKILL.md) 與 [合成旅程 Skill](../.agents/skills/artdico-journey-check/SKILL.md) 及固定測試入口；準備時基準不沿用作新功能驗收。P2 以「找人 → 一個下一步 → 同一人保存」為介面目標，原問卷／來源／歷史收合，唯讀核對中的未知來源不當作零，也不自動修復或寄信。下方 10 月的早期發布及 Wallet 未配置描述均為歷史紀錄，以本節及後續發布證據為準。
 
 ## 歷史發布基準（2026-10-22）
 

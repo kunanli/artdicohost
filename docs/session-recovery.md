@@ -4,9 +4,11 @@
 
 本次對話已整理為 [改版執行總覽](redesign/README.md)，包含開發步驟、工作人員與參與者操作、驗收與發布。工作區已核對並快轉至遠端 main `d583e4de9ae1676822c6ea6da984211099f73dd3`，其新增為 FrontEnd_Resource 素材；這是來源基準，不是新取得的正式部署證明。
 
-目前只交付文件，下一步為 P1 資料契約與合成相容驗證。舊意向、姓名／聯絡資訊、名額、通知與公開內容不因文件或程式部署自動整合／發布／補寄。Apple 10/30 簽章設定與人員去重已有後續紀錄，讀取本頁下方早期狀態時，須對照 [Wallet 最新紀錄](apple-wallet-setup.md) 及 [統一人員](unified-people-workspace.md)，不要重做已完成設定。
+目前分支 `feat/redesign-p1a` 已完成兩類作品與可新增展位的本地實作，最終檢查與正式發布證據待填入 [P1a 紀錄](redesign/p1a-release.md)；P1b 以後尚待實作。內容／儲存格式仍為版本 1，安排總覽 API 與前端同步改為版本 2，發布後需重新載入舊分頁；若已寫入超過 15 的位置，回退仍須保留 P1a 相容讀寫能力。
 
-另已建立 [資料契約 Skill](../.agents/skills/artdico-contract-check/SKILL.md) 與 [合成旅程 Skill](../.agents/skills/artdico-journey-check/SKILL.md) 及固定測試入口，基準分別 107／101 項通過；瀏覽器與真機另驗。P2 已補唯讀體檢與可解釋下一步規格，尚未改產品程式。
+沿用既有環境與資源。舊意向、姓名／聯絡資訊、名額、通知與公開內容不因文件或程式部署自動整合／發布／補寄。Apple 10/30 簽章設定與人員去重已有後續紀錄，讀取本頁下方早期狀態時，須對照 [Wallet 最新紀錄](apple-wallet-setup.md) 及 [統一人員](unified-people-workspace.md)，不要重做已完成設定。
+
+另已建立 [資料契約 Skill](../.agents/skills/artdico-contract-check/SKILL.md) 與 [合成旅程 Skill](../.agents/skills/artdico-journey-check/SKILL.md) 及固定測試入口，準備時基準分別 107／101 項通過；不沿用作 P1a 最終結果。P2 已補唯讀體檢與可解釋下一步規格，尚未實作。
 
 ## 当前实际版本
 

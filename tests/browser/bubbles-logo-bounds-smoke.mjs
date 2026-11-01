@@ -150,31 +150,46 @@ async function loadLogos(f) {
   for (const image of await f.page.locator('[data-organization-id] img').all()) { await image.scrollIntoViewIfNeeded(); await image.evaluate(node => node.decode()); }
   await f.page.evaluate(() => document.fonts.ready);
 }
-async function guestText(f) {
+async function guestText(f, { profiles = guests, allowLongNameAndTitle = false } = {}) {
   stage = 'actual-public-caption';
   assert.equal(await f.page.locator('[data-guest-id]').count(), guests.length);
   const result = [];
-  for (const guest of guests) {
+  for (const guest of profiles) {
     const card = f.page.locator('#guest-' + guest.id), toggle = card.locator('[data-guest-toggle]');
-    const expected = guest.title?.trim() || guest.ggjRole?.trim() || guest.company?.trim() || '';
-    const kind = guest.title?.trim() ? 'title' : guest.ggjRole?.trim() ? 'role' : guest.company?.trim() ? 'company' : 'none';
+    const affiliation = guest.company?.trim() || '';
+    const expected = guest.title?.trim() || guest.ggjRole?.trim() || '';
+    const kind = guest.title?.trim() ? 'title' : guest.ggjRole?.trim() ? 'role' : 'none';
     assert.equal((await toggle.locator('.ah-guest-name').textContent()).trim(), guest.name.trim());
+    if (affiliation) { assert.equal((await toggle.locator('.ah-guest-affiliation').textContent()).trim(), affiliation); assert.equal(await toggle.locator('.ah-guest-affiliation').getAttribute('data-affiliation-source'), 'company'); }
+    else assert.equal(await toggle.locator('.ah-guest-affiliation').count(), 0);
     if (expected) { assert.equal((await toggle.locator('.ah-guest-subtitle').textContent()).trim(), expected); assert.equal(await toggle.locator('.ah-guest-subtitle').getAttribute('data-subtitle-source'), kind); }
     else assert.equal(await toggle.locator('.ah-guest-subtitle').count(), 0);
-    assert.equal(await toggle.getAttribute('aria-label'), guest.name + (expected ? '，' + expected : '') + '，嘉宾介绍');
-    assert.equal(await toggle.locator('.ah-guest-attendance').count(), 0, 'caption comes from actual title/role/company, not invented attendance text');
+    assert.equal(await toggle.getAttribute('aria-label'), [guest.name, affiliation, expected, '嘉宾介绍'].filter(Boolean).join('，'));
+    assert.equal(await toggle.locator('.ah-guest-attendance').count(), 0, 'affiliation and title come from separate actual public fields, not invented attendance text');
     const measured = await toggle.evaluate(node => {
       const box = element => { const b = element.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; };
-      return { circle: box(node), text: [...node.querySelectorAll('.ah-guest-name,.ah-guest-subtitle')].map(element => ({ className: element.className, box: box(element),
+      return { circle: box(node), text: [...node.querySelectorAll('.ah-guest-name,.ah-guest-affiliation,.ah-guest-subtitle')].map(element => {
+        const range = document.createRange(); range.selectNodeContents(element); const first = range.getClientRects()[0];
+        return { className: element.className, box: box(element), firstLine: first ? { x: first.x, y: first.y, width: first.width, height: first.height } : null,
         overflowX: getComputedStyle(element).overflowX, overflowY: getComputedStyle(element).overflowY, clientWidth: element.clientWidth, clientHeight: element.clientHeight,
-        scrollWidth: element.scrollWidth, scrollHeight: element.scrollHeight, font: parseFloat(getComputedStyle(element).fontSize) })) };
+        scrollWidth: element.scrollWidth, scrollHeight: element.scrollHeight, font: parseFloat(getComputedStyle(element).fontSize), lineHeight: parseFloat(getComputedStyle(element).lineHeight),
+        display: getComputedStyle(element).display, visibility: getComputedStyle(element).visibility, opacity: Number(getComputedStyle(element).opacity) };
+      }) };
     });
     lastNumericMetrics = { guestIndex: ids.indexOf(guest.id), ...measured };
-    for (const text of measured.text) { contained(text.box, measured.circle, 'actual name/subtitle stays in its bubble'); assert.ok(!['auto', 'scroll'].includes(text.overflowX) && !['auto', 'scroll'].includes(text.overflowY)); assert.ok(text.scrollWidth <= text.clientWidth + 1); }
-    if ([maria.id, pingYao.id].includes(guest.id)) for (const text of measured.text) assert.ok(text.scrollHeight <= text.clientHeight + 1, 'reported actual Maria/PingYao text must fit, not be clipped or scroll');
+    for (const text of measured.text) {
+      contained(text.box, measured.circle, 'actual name, affiliation and title stay in their bubble'); assert.ok(!['auto', 'scroll'].includes(text.overflowX) && !['auto', 'scroll'].includes(text.overflowY)); assert.ok(text.scrollWidth <= text.clientWidth + 1);
+      assert.ok(text.clientWidth > 0 && text.clientHeight > 0 && text.display !== 'none' && text.visibility === 'visible' && text.opacity > 0, 'each nonempty public field is visibly rendered');
+      if (text.className === 'ah-guest-affiliation') {
+        assert.ok(Number.isFinite(text.lineHeight) && text.clientHeight >= text.lineHeight - 1 && text.firstLine, 'a clamped company still shows at least one complete line');
+        contained(text.firstLine, text.box, 'the first company line glyph box is fully visible even when later lines are clamped');
+      }
+    }
+    nonoverlap(measured.text.map(text => text.box), 'name, company and title rectangles cannot overlap');
+    if (!allowLongNameAndTitle && [maria.id, pingYao.id].includes(guest.id)) for (const text of measured.text.filter(item => item.className !== 'ah-guest-affiliation')) assert.ok(text.scrollHeight <= text.clientHeight + 1, 'reported actual Maria/PingYao name and title must fit, not be clipped or scroll');
     assert.ok(measured.text[0].font >= (f.width >= 1800 ? 30 : f.width >= 1000 ? 24 : 18), 'names are enlarged at usable responsive sizes');
-    if (expected) assert.ok(measured.text[1].font >= (f.width >= 1800 ? 19 : f.width >= 1000 ? 16 : 14));
-    result.push({ id: guest.id, subtitleSource: kind, metrics: measured });
+    if (expected) assert.ok(measured.text.find(text => text.className === 'ah-guest-subtitle').font >= (f.width >= 1800 ? 19 : f.width >= 1000 ? 16 : 14));
+    result.push({ id: guest.id, affiliationSource: affiliation ? 'company' : 'none', subtitleSource: kind, metrics: measured });
   }
   return result;
 }
@@ -185,7 +200,11 @@ async function detail(f, guest, { longText = false } = {}) {
   const before = await f.page.locator('#booths').evaluate(node => node.getBoundingClientRect().top + scrollY);
   await toggle.focus(); await f.page.keyboard.press('Enter'); assert.equal(await card.locator('details').evaluate(node => node.open), true);
   assert.equal((await body.locator('.ah-guest-detail-name').textContent()).trim(), guest.name.trim());
+  if (guest.company?.trim()) assert.ok((await body.locator('.ah-guest-company').allTextContents()).map(text => text.trim()).includes(guest.company.trim()), 'expanded detail retains the entire published company');
   if (guest.title) assert.equal((await body.locator('.ah-guest-title').textContent()).trim(), guest.title.trim());
+  else assert.equal(await body.locator('.ah-guest-title').count(), 0);
+  if (guest.ggjRole) assert.equal((await body.locator('.ah-guest-role').textContent()).trim(), guest.ggjRole.trim());
+  else assert.equal(await body.locator('.ah-guest-role').count(), 0);
   if (guest.bio) assert.equal((await body.locator('.ah-guest-bio').textContent()).trim(), guest.bio.trim());
   const bounds = await body.evaluate(node => ({ overflowX: getComputedStyle(node).overflowX, overflowY: getComputedStyle(node).overflowY, maxHeight: getComputedStyle(node).maxHeight,
     scrollHeight: node.scrollHeight, clientHeight: node.clientHeight, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, height: node.getBoundingClientRect().height, scrollTop: node.scrollTop }));
@@ -278,7 +297,7 @@ try {
       defaultReferenceLogosRendered = 7;
       before.forEach((row, index) => { assert.ok(Math.abs(row.slot.width - after[index].slot.width) <= 1 && Math.abs(row.slot.height - after[index].slot.height) <= 1, 'image intrinsic size cannot resize its independent slot'); });
       const text = await guestText(f), details = [];
-      for (const guest of [maria, pingYao]) details.push(await detail(f, guest));
+      for (const guest of guests) details.push(await detail(f, guest));
       const animation = width === 1920 ? await motion(f) : null; await noOverflow(f);
       reports.push({ name: 'actual-public-' + width, width, exactCapturedSnapshot: true, exactRawImageHashesVerified: true, bounds: after, text, details, animation, screenshots: await shots(f, 'actual') });
     } finally { f.releaseLogos(); await f.context.close(); }
@@ -298,28 +317,46 @@ try {
   currentWidth = 320; currentMode = 'long-detail'; stage = 'navigate';
   try {
     await f.page.goto(SITE + '/', { waitUntil: 'networkidle' });
-    const long = { ...maria, name: 'SYNTHETICLONGNAME'.repeat(7).slice(0, 120), title: '合成完整公开职称'.repeat(24).slice(0, 200), bio: '合成长简介保留全文，不生成内部滚动区域。\n'.repeat(150).slice(0, 3900) };
+    const long = { ...maria, name: 'SYNTHETICLONGNAME'.repeat(10).slice(0, 120), company: '合成完整公开单位'.repeat(24).slice(0, 160), title: '合成完整公开职称'.repeat(30).slice(0, 200), bio: '合成长简介保留全文，不生成内部滚动区域。\n'.repeat(150).slice(0, 3900) };
     await f.refresh(content => { const index = content.guests.findIndex(item => item.id === maria.id); content.guests[index] = long; });
+    const text = await guestText(f, { profiles: [long], allowLongNameAndTitle: true });
     const result = await detail(f, long, { longText: true }); await noOverflow(f);
+    const roleOnly = { ...maria, company: '合成独立单位', title: '', ggjRole: '合成真实公开角色' };
+    await f.refresh(content => { const index = content.guests.findIndex(item => item.id === maria.id); content.guests[index] = roleOnly; });
+    await guestText(f, { profiles: [roleOnly] }); await detail(f, roleOnly);
+    const companyOnly = { ...maria, company: '合成只有单位', title: '', ggjRole: '' };
+    await f.refresh(content => { const index = content.guests.findIndex(item => item.id === maria.id); content.guests[index] = companyOnly; });
+    await guestText(f, { profiles: [companyOnly] }); await detail(f, companyOnly);
+    const empty = { ...maria, status: 'pending', company: '', title: '', ggjRole: '' };
+    await f.refresh(content => { const index = content.guests.findIndex(item => item.id === maria.id); content.guests[index] = empty; });
+    await guestText(f, { profiles: [empty] }); await detail(f, empty); await noOverflow(f);
     assert.equal((await animationState(f.page, maria.id)).animations.length, 0, 'initial real reduced-motion preference creates no float');
-    reports.push({ name: 'long-detail-and-initial-reduced-motion', width: 320, explicitlySyntheticTextVariant: true, fullTextRendered: true, result });
+    reports.push({ name: 'long-detail-and-initial-reduced-motion', width: 320, explicitlySyntheticTextVariant: true, fullTextRendered: true, separateCompanyAndTitle: true, roleFallbackAndEmptyFields: true, text, result });
   } finally { await f.context.close(); }
   assert.equal(rawImageRequests.size, actualMedia.size, 'every actual uploaded organization image was rendered in the raw compatibility scenarios'); assert.deepEqual(pageErrors, []);
   assert.equal(reports.length, 13, 'all actual, raw-upload, adversarial and long-text scenarios must complete');
 } catch (error) { failure = { message: error.message, stack: error.stack }; }
 finally {
   await browser.close(); activeBrowser = null; const html = await readFile(resolve(dist, 'index.html')), info = await stat(resolve(dist, 'index.html'));
+  const actualReports = reports.filter(item => item.exactCapturedSnapshot === true);
+  const actualFieldCoverage = {
+    companyFieldsChecked: actualReports.reduce((total, item) => total + item.text.filter(text => text.affiliationSource === 'company').length, 0),
+    titleFieldsChecked: actualReports.reduce((total, item) => total + item.text.filter(text => text.subtitleSource === 'title').length, 0),
+    roleFieldsChecked: actualReports.reduce((total, item) => total + item.text.filter(text => text.subtitleSource === 'role').length, 0),
+    fullGuestDetailsChecked: actualReports.reduce((total, item) => total + item.details.length, 0),
+  };
   const report = { ok: !failure, passedCases: reports.length, expectedCases: 13, syntheticBusinessWrites: 0, realNetworkRequests: 0, mailRequests: 0,
     source, dist, testScriptSha256, gitHeadAtRun: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), htmlMtime: info.mtime.toISOString(), publicHtmlSha256: sha(html),
     capture: { directory: capture, capturedAt: manifest.capturedAt, anonymous: true, source: manifest.source, sourceCommit: manifest.sourceCommit, snapshotSha256: manifest.snapshot.sha256,
       revision: snapshot.revision, guestCount: guests.length, organizationCount: snapshot.content.organizations.length, mediaHashes: manifest.media.map(item => item.sha256) },
-    servedAssets: Object.fromEntries([...servedAssets].sort()), actualRawImagesRendered: rawImageRequests.size, defaultReferenceLogosRendered,
+    servedAssets: Object.fromEntries([...servedAssets].sort()), actualRawImagesRendered: rawImageRequests.size, defaultReferenceLogosRendered, actualFieldCoverage,
     uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequests.size, actualMediaScope: 'Captured public profile fields and seven organization uploads only; guest photos/work media outside the capture receive intercepted 404s.',
     syntheticImageVariants: synthetic.map(({ kind, width, height, id }) => ({ kind, width, height, id })), reports, pageErrors, ...(failure ? { failure } : {}) };
   await writeFile(resolve(evidence, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   const summary = { ok: report.ok, cases: report.passedCases, expectedCases: 13, actualFixture: true, publicHtmlSha256: report.publicHtmlSha256, snapshotSha256: report.capture.snapshotSha256,
     sourceCommit: report.gitHeadAtRun, captureSourceCommit: manifest.sourceCommit, actualRawLogosTested: report.actualRawImagesRendered, defaultReferenceLogosRendered,
     guestCount: guests.length, organizationCount: snapshot.content.organizations.length, pageErrorCount: pageErrors.length,
+    actualFieldCoverage,
     uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequests.size,
     ...(failure ? { failure: { code: 'PUBLIC_VISUAL_ASSERTION_FAILED', stage, width: currentWidth, mode: currentMode,
       location: /bubbles-logo-bounds-smoke\.mjs:\d+:\d+/u.exec(failure.stack)?.[0] ?? null }, numericMetrics: lastNumericMetrics } : {}) };

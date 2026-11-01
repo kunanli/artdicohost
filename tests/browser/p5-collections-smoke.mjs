@@ -161,11 +161,16 @@ try{
 
    const alpha=page.locator('#guest-'+IDs.guest+' details'),alphaToggle=alpha.locator('[data-guest-toggle]'),beta=page.locator('#guest-'+IDs.secondGuest+' details');
    assert.equal(await alphaToggle.locator('.ah-guest-name').textContent(),longName,'the reference bubble contains the saved guest name');
+   assert.equal(await alphaToggle.locator('.ah-guest-affiliation').textContent(),'合成创意机构','the company and title are visible together, rather than choosing just one');
+   assert.equal(await alphaToggle.locator('.ah-guest-affiliation').getAttribute('data-affiliation-source'),'company');
+   assert.equal(await alphaToggle.locator('.ah-guest-subtitle').textContent(),'合成创作者');
+   assert.equal(await alphaToggle.locator('.ah-guest-subtitle').getAttribute('data-subtitle-source'),'title');
+   assert.equal(await alphaToggle.getAttribute('aria-label'),[longName,'合成创意机构','合成创作者','嘉宾介绍'].join('，'));
    assert.equal(await alphaToggle.locator('img').count(),0,'portrait photos belong to the expanded details rather than the reference name bubble');
    assert.equal(await alpha.locator('.ah-guest-detail-body .ah-guest-portrait img').count(),1,'the existing public portrait remains available in expanded details');
    assert.equal(await alphaToggle.locator('.ah-guest-prompt-closed').isVisible(),true);
    assert.equal(await alphaToggle.locator('.ah-guest-prompt-open').isVisible(),false);
-   const closedGuestName=await alphaToggle.ariaSnapshot();assert.match(closedGuestName,/合成跨领域创作者/u);assert.match(closedGuestName,/合成创作者/u);
+   const closedGuestName=await alphaToggle.ariaSnapshot();assert.match(closedGuestName,/合成跨领域创作者/u);assert.match(closedGuestName,/合成创意机构/u);assert.match(closedGuestName,/合成创作者/u);
    assert.equal(await guestDisclosureAccessibility(page,IDs.guest),false);
    await alphaToggle.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
    if(width===1440){
@@ -180,7 +185,7 @@ try{
    assert.equal(await alphaToggle.locator('.ah-guest-prompt-closed').isVisible(),false);
    assert.equal(await alphaToggle.locator('.ah-guest-prompt-open').isVisible(),true);
    assert.match(await alphaToggle.innerText(),/收起简介/u);
-   const openGuestName=await alphaToggle.ariaSnapshot();assert.match(openGuestName,/合成跨领域创作者/u);assert.match(openGuestName,/合成创作者/u);
+   const openGuestName=await alphaToggle.ariaSnapshot();assert.match(openGuestName,/合成跨领域创作者/u);assert.match(openGuestName,/合成创意机构/u);assert.match(openGuestName,/合成创作者/u);
    assert.equal(await guestDisclosureAccessibility(page,IDs.guest),true);
    assert.match(await alpha.textContent(),/讲者.*主持人/u);assert.match(await alpha.textContent(),/合成创意机构.*合成嘉宾介绍/su);
    if(width===1440){

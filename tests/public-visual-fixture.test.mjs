@@ -65,6 +65,9 @@ test('one validated anonymous public response supplies exact snapshot bytes and 
   assert.deepEqual(manifest.media, [{ file: 'media/' + sha(png) + '.png', path: '/api/public/portraits/' + sha(png) + '.png', sha256: sha(png), bytes: png.length, contentType: 'image/png' }]);
   assert.equal(manifest.source, PUBLIC_CONTENT_URL); assert.equal(manifest.sourceCommit, COMMIT); assert.equal(manifest.capturedAt, new Date(AT).toISOString()); assert.equal(manifest.anonymous, true);
   assert.equal(manifest.counts.organizations, 2); assert.equal(report.media, 1); assert.equal(report.mediaBytes, png.length);
+  assert.deepEqual(report.guestCaptionCoverage, { title: 0, role: 0, company: 0, empty: 1 }, 'company alone does not become a position');
+  assert.deepEqual(report.guestAffiliationCoverage, { company: 1, empty: 0 });
+  assert.equal(Object.hasOwn(manifest, 'guestAffiliationCoverage'), false, 'diagnostic counts do not change the captured fixture format');
   assert.equal(JSON.stringify(f.data), before); assert.doesNotMatch(JSON.stringify({ manifest, report }), /SYNTHETIC_PUBLIC_NAME|SYNTHETIC_PRIVATE|contactId|receiptToken|internalNotes/u);
 });
 
@@ -82,7 +85,7 @@ test('unpublished, private, malformed or foreign-logo snapshots never start a me
   }
 });
 
-test('safe capture summary exposes only validated public organization IDs, reference keys, logo hashes and public subtitle counts', async t => {
+test('safe capture summary exposes only validated public organization IDs, reference keys, logo hashes and independent position and affiliation counts', async t => {
   const images = Array.from({ length: 8 }, (_, index) => Buffer.concat([png, Buffer.from('synthetic-variant-' + index)]));
   const f = await fixture(t, images);
   const identities = [['g4c-hk', PUBLIC_NAME], ['pengyou-gangwan', PUBLIC_NAME], ['game-singularity', PUBLIC_NAME], ['igda-shenzhen', PUBLIC_NAME],
@@ -101,7 +104,8 @@ test('safe capture summary exposes only validated public organization IDs, refer
   assert.deepEqual(report.referenceLogoSources, ['g4c', 'pengyou', 'gamezone', 'igda', 'bu', 'teesside', 'szdx', null].map((key, index) => ({ organizationId: identities[index][0], key, sha256: sha(images[index]) })));
   assert.deepEqual(report.referenceLogoSources.map(row => row.organizationId), f.data.content.organizations.map(row => row.id), 'public source order is preserved even when the visual reference key is unknown');
   assert.ok(report.referenceLogoSources.every(row => Object.keys(row).sort().join(',') === 'key,organizationId,sha256'));
-  assert.deepEqual(report.guestCaptionCoverage, { title: 1, role: 1, company: 1, empty: 1 });
+  assert.deepEqual(report.guestCaptionCoverage, { title: 1, role: 1, company: 0, empty: 2 });
+  assert.deepEqual(report.guestAffiliationCoverage, { company: 3, empty: 1 }, 'title and role records also count their independent company field');
   assert.equal(report.media, 8, 'unknown public logos are captured safely without guessing their reference identity');
   assert.doesNotMatch(JSON.stringify(report), /SYNTHETIC_PUBLIC_NAME|synthetic-title|Bournemouth|深圳大学|提赛德|ggjRole|content|base64/u);
   assert.equal(JSON.stringify(f.data), before);

@@ -9,7 +9,7 @@ import {createHash} from 'node:crypto';
 const project=fileURLToPath(new URL('../../',import.meta.url));
 const source=resolve(process.env.ARTDICO_SOURCE_DIRECTORY||project);
 const dist=resolve(process.env.ARTDICO_DIST_DIRECTORY||resolve(source,'dist'));
-const evidence=resolve(project,'.local-data/browser-evidence/p5-collections');
+const evidence=resolve(process.env.ARTDICO_COLLECTIONS_EVIDENCE_DIRECTORY||resolve(project,'.local-data/browser-evidence/p5-collections'));
 const {createInitialContent}=await import(pathToFileURL(resolve(source,'src/config/content.mjs')));
 const {toPublicContent,validateContent}=await import(pathToFileURL(resolve(source,'shared/content-schema.mjs')));
 const {publicContentEnvelope}=await import(pathToFileURL(resolve(source,'src/lib/public-content-refresh.mjs')));
@@ -88,6 +88,16 @@ async function fixture(width,{javascript=true,reducedMotion='no-preference',defe
  }
  return {context,page,width,calls,refresh,releaseInitialContent,get raw(){return raw;}};
 }
+async function guestDisclosureAccessibility(page,id){
+ const session=await page.context().newCDPSession(page);
+ try{
+  const {root}=await session.send('DOM.getDocument');
+  const {nodeId}=await session.send('DOM.querySelector',{nodeId:root.nodeId,selector:'#guest-'+id+' [data-guest-toggle]'});
+  const {nodes}=await session.send('Accessibility.getPartialAXTree',{nodeId,fetchRelatives:false});
+  assert.equal(nodes.length,1);assert.equal(nodes[0].role?.value,'DisclosureTriangle','the native summary retains its disclosure role');
+  return nodes[0].properties.find(property=>property.name==='expanded')?.value.value;
+ }finally{await session.detach();}
+}
 async function noOverflow(f){assert.equal(await f.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,'no horizontal overflow at '+f.width+'px');}
 async function settledScroll(f){
  return f.page.evaluate(()=>new Promise((resolve,reject)=>{
@@ -136,6 +146,10 @@ try{
    await noOverflow(f);
 
    const alpha=page.locator('#guest-'+IDs.guest+' details'),alphaToggle=alpha.locator('[data-guest-toggle]'),beta=page.locator('#guest-'+IDs.secondGuest+' details');
+   assert.equal(await alphaToggle.locator('.ah-guest-prompt-closed').isVisible(),true);
+   assert.equal(await alphaToggle.locator('.ah-guest-prompt-open').isVisible(),false);
+   const closedGuestName=await alphaToggle.ariaSnapshot();assert.match(closedGuestName,/查看嘉宾/u);assert.doesNotMatch(closedGuestName,/收起简介/u);
+   assert.equal(await guestDisclosureAccessibility(page,IDs.guest),false);
    await alphaToggle.scrollIntoViewIfNeeded();
    if(width===1440){
     await alphaToggle.hover();await page.waitForFunction(id=>document.querySelector('#guest-'+id+' details')?.open,IDs.guest);
@@ -146,6 +160,11 @@ try{
     await page.waitForFunction(id=>!document.querySelector('#guest-'+id+' details')?.open,IDs.guest);
    }
    await alphaToggle.focus();await page.keyboard.press('Enter');assert.equal(await alpha.evaluate(node=>node.open),true,'keyboard opens the same guest bubble');
+   assert.equal(await alphaToggle.locator('.ah-guest-prompt-closed').isVisible(),false);
+   assert.equal(await alphaToggle.locator('.ah-guest-prompt-open').isVisible(),true);
+   assert.match(await alphaToggle.innerText(),/收起简介/u);
+   const openGuestName=await alphaToggle.ariaSnapshot();assert.match(openGuestName,/收起简介/u);assert.doesNotMatch(openGuestName,/查看嘉宾/u);
+   assert.equal(await guestDisclosureAccessibility(page,IDs.guest),true);
    assert.match(await alpha.textContent(),/讲者.*主持人/u);assert.match(await alpha.textContent(),/合成创意机构.*合成嘉宾介绍/su);
    if(width===1440){
     const focusedLink=alpha.locator('a[href="#program-'+IDs.afternoon+'"]');

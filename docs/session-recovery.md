@@ -1,5 +1,9 @@
 # 开发接续：先读本页
 
+## 2026-11-01 新任務：UX 操作與工作節奏
+
+使用者已確認執行 UX 設計建議，延續逐階段完成與自動交付授權。基準為已部署 main `40ea32a64a963970d610074033eb422c446fc0e2`，`feat/ux-clarity` 帶入純文件證據 `24e5a9e`。先完成 [UX1 操作名稱／層級](redesign/ux-clarity-release.md)，實際發布通過後接續 UX2 正式信姓名選人、原寄送核對、名單往返與下一位；完整計畫見 [實施計畫](implementation-plan.md)。本輪尚在實作，不沿用下方 P1–P6 歷史測試數作為新結果；正式業務資料與真實裝置／同事觀察仍分開處理。
+
 ## 2026-11-01 新改版執行入口
 
 P1–P6 軟體已交付並實際發布，入口見 [改版總覽](redesign/README.md)。[PR #55](https://github.com/kunanli/artdicohost/pull/55) 已合併至 main `40ea32a64a963970d610074033eb422c446fc0e2`；[正式流程 41286440342](https://github.com/kunanli/artdicohost/actions/runs/41286440342) completed／success，1535 項測試、693 個來源檔及兩種 ZIP 離線啟動通過。07:59:34.103 UTC 私有 OSS 兩獨立客戶端／一個 FC 程序核對通過，內容與報名均啟用；07:59:38.484 UTC 完成 13 個準確後台頁面，08:01:18.061 UTC 完成 51 個公開物件及新 Cache-Control 的 HTTPS 核驗。07:59:39.599 UTC 核對公開業務快照仍為修訂 43；完整證據見 [P6 紀錄](redesign/p6-release.md)。

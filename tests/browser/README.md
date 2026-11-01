@@ -1,5 +1,17 @@
 # 浏览器回归验收
 
+本轮 [UX1](../../docs/redesign/ux-clarity-release.md) 使用最终公开构建和准确 FC 组合核对按钮名称、手机层级及设备行为：
+
+```sh
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium ARTDICO_EVIDENCE_DIRECTORY=/absolute/path/to/evidence node tests/browser/ux1-private-page-smoke.mjs
+```
+
+聚焦脚本 8 案；更新后的 `p3-private-page-smoke.mjs` 29 案保留原失败／换人／迟到回应／群码／通知安全情境，微信 iOS 改验证指引与复制不请求 Wallet。`p6-event-facts-smoke.mjs` 另核对同一事实来源的实际签章和客户端 Blob；模拟不表示真实添加。三者可用 `ARTDICO_EVIDENCE_DIRECTORY` 分别保留证据。
+
+首页／集合分别用 `p5-homepage-smoke.mjs`、`p5-collections-smoke.mjs`；支持 `ARTDICO_HOME_EVIDENCE_DIRECTORY`、`ARTDICO_COLLECTIONS_EVIDENCE_DIRECTORY`。FAQ 的 `ARTDICO_FAQ_EVIDENCE_DIRECTORY` 及实际 FC 组合按下方既有说明。
+
+`staff-operations-smoke.mjs` 是历史全部工具同页版型，不能作为当前独立设置页验收；原安全断言保留。本轮在旧版型假设处的尝试失败已记录，不算通过。现行替代为 `p2-person-smoke.mjs`、`p4-notifications-smoke.mjs` 与 `settings-group-runtime-smoke.mjs`。`unified-people-smoke.mjs` 与 `organizer-tasks-smoke.mjs` 已同步 P4 回执基准、现行收合入口及简短文案，原安全／写入断言保留。
+
 `registration-workflow-smoke.mjs` 在 320／390／1440px 使用真实隔离 runtime 核对精简列表、默认收合工具、已确认导入人员的私人确认页、打开页面不新增报名或发信、原始问卷保留、保存后编辑区保持，以及换人／401 后的私密链接和摘要清理。全程拦截网络，仅合成资料，不替代真实 iPhone Wallet 验收。
 
 这组可选检查使用真实 Chromium 运行构建后的页面，但拦截全部页面请求并提供纯合成 API。它不连接正式 API、不写真实报名、不读取原始名单，也不能代替真实 FC／OSS 端到端验收。

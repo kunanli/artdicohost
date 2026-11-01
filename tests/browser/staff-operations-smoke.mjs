@@ -1,3 +1,6 @@
+// Historical all-in-one settings/person layout; retained for its original assertions.
+// Current separate-page acceptance uses p4-notifications-smoke.mjs,
+// settings-group-runtime-smoke.mjs and p2-person-smoke.mjs instead.
 // Real Chromium against intercepted synthetic staff APIs. No production traffic.
 import assert from 'node:assert/strict';
 import {readFile,mkdir} from 'node:fs/promises';

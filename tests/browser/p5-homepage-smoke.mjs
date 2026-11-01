@@ -11,7 +11,7 @@ import { peopleRuntimeFixture } from '../helpers/people-runtime-fixture.mjs';
 const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
 const project = fileURLToPath(new URL('../../', import.meta.url));
 const dist = resolve(process.env.ARTDICO_DIST_DIRECTORY || resolve(project, 'dist'));
-const evidence = resolve(project, '.local-data/browser-evidence/p5-homepage');
+const evidence = resolve(process.env.ARTDICO_HOME_EVIDENCE_DIRECTORY || resolve(project, '.local-data/browser-evidence/p5-homepage'));
 const SITE = 'https://artdico.host', API = 'https://api.artdico.host';
 const errors = [], reports = [], assets = new Map(), digest = value => createHash('sha256').update(value).digest('hex');
 const content = toPublicContent(createInitialContent()); content.showcases = []; content.organizations = [];
@@ -21,8 +21,10 @@ const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHRO
   args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 await mkdir(evidence, { recursive: true });
 
-async function fixture({ width, javaScriptEnabled = true, reducedMotion = 'no-preference', missingDecorations = false }) {
+async function fixture({ width, javaScriptEnabled = true, reducedMotion = 'no-preference', missingDecorations = false, longDescription = false }) {
   const runtime = await peopleRuntimeFixture({ capacity: 300 }), requests = [];
+  const published = structuredClone(content);
+  if (longDescription) published.event.presentation.heroDescription = '合成介绍：与不同城市的游戏创作者交流经验，认识新的创作伙伴。'.repeat(5);
   const context = await browser.newContext({ viewport: { width, height: 900 }, javaScriptEnabled, reducedMotion });
   await context.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
@@ -32,7 +34,7 @@ async function fixture({ width, javaScriptEnabled = true, reducedMotion = 'no-pr
     if (url.origin === API) {
       assert.equal(req.headers().cookie, undefined);
       if (url.pathname === '/api/public/content') return route.fulfill({ status: 200, contentType: 'application/json',
-        headers: { 'access-control-allow-origin': SITE }, body: JSON.stringify({ revision: 1, publishedAt: '2026-11-01T00:00:00Z', content }) });
+        headers: { 'access-control-allow-origin': SITE }, body: JSON.stringify({ revision: 1, publishedAt: '2026-11-01T00:00:00Z', content: published }) });
       const response = await runtime.app.handle(new Request(req.url(), { method: req.method(), headers: await req.allHeaders() }));
       return route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: Buffer.from(await response.arrayBuffer()) });
     }
@@ -80,7 +82,24 @@ async function inspect(f, label) {
   assert.deepEqual([bytes.readUInt32BE(16), bytes.readUInt32BE(20)], [1200, 630]);
   const background = await page.locator('#artdico-host').evaluate(node => getComputedStyle(node).backgroundColor);
   assert.equal(background, 'rgb(0, 0, 0)');
-  return { label, width: page.viewportSize().width, shareSha256: digest(bytes), readOnlyRequests: f.requests.length, noOverflow: true, noClippedHeadline: true };
+  const primary = page.locator('#top .ah-hero-actions .ah-primary');
+  assert.equal(await primary.getAttribute('href'), '#registration');
+  assert.match(await primary.innerText(), label === 'no-javascript' ? /查看申请说明/u : /申请参加/u);
+  assert.equal(await page.locator('#top .ah-hero-actions .ah-text-action').getAttribute('href'), '#agenda');
+  assert.equal(await page.locator('#recruitment .ah-primary').count(), 0, 'recruitment links do not compete with the main application action');
+  const primaryBox = await primary.evaluate(node => { const box = node.getBoundingClientRect(); return { height: box.height, bottom: box.bottom + scrollY }; });
+  assert.ok(primaryBox.height >= 44);
+  assert.ok(primaryBox.bottom <= page.viewportSize().height, 'the primary application action is available in the first viewport');
+  const venueSize = await page.locator('[data-public-hero-venue]').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+  const dateSize = await page.locator('[data-public-date-value]').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+  assert.ok(venueSize >= 15 && dateSize >= 15, 'event facts remain readable beside the decorative title');
+  if (page.viewportSize().width <= 600) {
+    const layout = await page.evaluate(() => ({ descriptionBottom: document.querySelector('.ah-hero-description').getBoundingClientRect().bottom,
+      factsTop: document.querySelector('#top .ah-event-meta').getBoundingClientRect().top }));
+    assert.ok(layout.descriptionBottom <= layout.factsTop, 'published introductory copy cannot overlap event facts');
+  }
+  return { label, width: page.viewportSize().width, shareSha256: digest(bytes), readOnlyRequests: f.requests.length, noOverflow: true, noClippedHeadline: true,
+    applicationActionInFirstViewport: true, eventFactFontPixels: { venue: venueSize, date: dateSize } };
 }
 
 try {
@@ -95,8 +114,8 @@ try {
     await f.page.screenshot({ path: resolve(evidence, 'hero-' + width + '.png'), fullPage: false, animations: 'disabled' });
     reports.push(await inspect(f, 'standard-' + width)); await f.context.close();
   }
-  for (const options of [{ width: 390, javaScriptEnabled: false }, { width: 390, reducedMotion: 'reduce' }, { width: 390, missingDecorations: true }]) {
-    const f = await fixture(options), label = options.javaScriptEnabled === false ? 'no-javascript' : options.reducedMotion === 'reduce' ? 'reduced-motion' : 'missing-decorations';
+  for (const options of [{ width: 390, javaScriptEnabled: false }, { width: 390, reducedMotion: 'reduce' }, { width: 390, missingDecorations: true }, { width: 390, longDescription: true }]) {
+    const f = await fixture(options), label = options.javaScriptEnabled === false ? 'no-javascript' : options.reducedMotion === 'reduce' ? 'reduced-motion' : options.longDescription ? 'long-description' : 'missing-decorations';
     reports.push(await inspect(f, label));
     if (options.javaScriptEnabled === false) {
       assert.equal(f.requests.filter(row => row.origin === API).length, 0);

@@ -147,6 +147,8 @@ try {
   await mkdir(evidence, { recursive: true });
   for (const width of [320, 390, 1440]) for (const mode of ['ready', 'closed', 'unavailable']) {
     const f = await fixture(width, mode), { page } = f;
+    const primaryLabel = page.locator('[data-home-primary-apply-label]');
+    assert.equal(await primaryLabel.textContent(), mode === 'ready' ? '申请参加' : '查看申请说明');
     const status = page.locator('[data-faq-id="registration-status"] .ah-faq-answer');
     assert.match(await status.textContent(), mode === 'ready' ? /可以提交参会申请/u : mode === 'closed' ? /停止接收新申请/u : /服务暂时无法/u);
     assert.equal(await page.locator('[data-faq-id="lodging-support"] .ah-faq-answer').textContent(), housing);
@@ -162,6 +164,7 @@ try {
     assert.equal(await page.evaluate(() => document.activeElement.closest('[data-faq-id]')?.dataset.faqId), 'custom-experience');
     assert.match(await status.textContent(), mode === 'ready' ? /可以提交参会申请/u : mode === 'closed' ? /停止接收新申请/u : /服务暂时无法/u);
     await page.evaluate(() => document.dispatchEvent(new CustomEvent('artdico:registration-policy', { detail: { privacy: { processor: '合成处理者', contactEmail: 'synthetic.rights@example.invalid', purpose: '合成测试', storageRegion: '合成地区', retention: '合成期限', rightsRequest: '合成最新权利核对方式', sharing: '合成范围', version: 'synthetic-faq-v2' } } })));
+    assert.equal(await primaryLabel.textContent(), mode === 'ready' ? '申请参加' : '查看申请说明', 'a content refresh does not override current application availability');
     assert.equal(await page.locator('[data-faq-id="data-rights"] .ah-faq-answer').textContent(), '合成最新权利核对方式');
     await f.refresh(); assert.equal(await page.locator('[data-faq-id="data-rights"] .ah-faq-answer').textContent(), '合成最新权利核对方式');
     assert.equal(await page.locator('[data-faq-id="data-rights"] a').textContent(), 'synthetic.rights@example.invalid');
@@ -192,6 +195,7 @@ try {
     const f = await fixture(390, 'ready', true), { page } = f; await form(page).locator('[data-submit]:enabled').waitFor(); await fill(page, '合成未知申请');
     await form(page).locator('[name=consentAccepted]').check(); await form(page).locator('[data-submit]').click();
     await form(page).locator('[data-submit]').filter({ hasText: /再次确认申请结果/u }).waitFor();
+    assert.equal(await page.locator('[data-home-primary-apply-label]').textContent(), '核对原申请结果');
     const before = (await records(page))[0]; assert.equal(before.kind, 'pending_submission');
     await page.locator('a[data-recruit="speaker"]').click(); const after = (await records(page))[0];
     assert.equal(after.value.payloadJson, before.value.payloadJson); assert.equal(after.value.idempotencyKey, before.value.idempotencyKey);

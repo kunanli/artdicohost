@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserDraftStore, BROWSER_DRAFT_TTL_MS } from '../src/lib/browser-drafts.mjs';
 import { createStaffFormDraft } from '../src/lib/staff-form-draft.mjs';
+import {createConfirmationMutations,deliveryConfirmationDraftPolicy} from '../src/lib/delivery-settings.mjs';
 
 // Synthetic IndexedDB transaction model: connections share a serializable
 // read/write cursor, writes stage privately, and abort never commits a prefix.
@@ -418,5 +419,30 @@ test('late completion cannot clear a newer cross-tab draft, logout epoch, or cha
     if(action==='logout')assert.equal((await f.store.read(scope(),policy)).record,null);
     else if(action==='competing_edit')assert.equal((await f.store.read(scope(),policy)).record.value.name,'另一页较新填写');
     b.form.close();
+  }
+});
+
+test('formal recovery metadata enables only the fresh known rejection and atomically preserves unknown request bytes',async()=>{
+  for(const status of [409,503]){
+    const f=fixture(),roleKey='settings:roles=superadmin',key={actorId:'synthetic-actor',eventId:'synthetic-event',page:roleKey,entityId:'delivery-formal'};
+    let binding,calls=0;
+    const controller=createConfirmationMutations({revision:()=>4,operationId:()=> 'o'.repeat(43),request:async(_path,options)=>{
+      await binding.markPending({body:options.body,roleKey,uncertain:false});calls++;throw Object.assign(new Error('synthetic response'),{status});
+    }});
+    const actualPolicy=deliveryConfirmationDraftPolicy({roleKey,canReject:value=>controller.knownRejected&&value.body===controller.body&&value.roleKey===roleKey});
+    binding=createStaffFormDraft({store:f.store,scope:key,policy:actualPolicy,baseRevision:()=>4,isCurrent:()=>true,capture:()=>assert.fail('only exact pending bytes are captured'),apply:()=>assert.fail('not an editable selection')});
+    try{
+      await binding.load();await assert.rejects(controller.run({registrationIds:['r'.repeat(43)]}));const body=controller.body;
+      assert.equal(calls,1);const saved=await f.make().read(key,actualPolicy);assert.equal(saved.record.value.body,body);assert.equal(saved.record.value.uncertain,false);
+      if(status===409){
+        assert.equal(controller.knownRejected,true);await binding.rejectPending();await binding.discard();controller.acknowledgeRejection();assert.equal((await f.make().read(key,actualPolicy)).record,null);assert.equal(controller.pending,false);
+      }else{
+        await binding.markPending({body,roleKey,uncertain:true});assert.equal((await f.make().read(key,actualPolicy)).record.value.body,body);
+        await assert.rejects(binding.rejectPending(),{code:'PENDING_IMMUTABLE'});assert.equal(controller.pending,true);
+        const current=await f.store.read(key,actualPolicy);
+        await assert.rejects(f.store.write(key,{expectedRevision:current.revision,actorEpoch:current.actorEpoch,kind:'pending_submission',baseRevision:4,value:{body,roleKey,uncertain:false}},actualPolicy),{code:'PENDING_IMMUTABLE'});
+        assert.equal((await f.make().read(key,actualPolicy)).record.value.uncertain,true);
+      }
+    }finally{binding.close();}
   }
 });

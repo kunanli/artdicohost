@@ -1,6 +1,17 @@
 # 浏览器回归验收
 
-本轮 [UX1](../../docs/redesign/ux-clarity-release.md) 使用最终公开构建和准确 FC 组合核对按钮名称、手机层级及设备行为：
+[UX2 具名寄送与连续处理](../../docs/redesign/ux-workflow-release.md) 新增以下两个入口。先用当前准确配置建立本地 `dist`，再分别执行；本轮最终通过数量以阶段记录为准：
+
+```sh
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium ARTDICO_EVIDENCE_DIRECTORY=/absolute/path/to/formal-evidence node tests/browser/ux2-formal-picker-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium ARTDICO_EVIDENCE_DIRECTORY=/absolute/path/to/person-evidence node tests/browser/ux2-person-workflow-smoke.mjs
+```
+
+二者均在页面载入前拦截所有请求，使用实际隔离应用／内存 OSS 与 mock provider。正式 picker 核对姓名选人、原正文持久回执先于 POST、失 ACK 后 GET 原操作、旧 pending 及首次已知拒绝；person／directory 核对单人恢复、同 actor 重新授权、明确登出清除、搜索／位置返回及显式下一位。lookup 失败或先前 unknown 不会变成未寄；合法的新首次 pre-start 4xx 与它分开测试。原请求只留内存／受作用范围的测试 IDB，报告只保留合成截图、布尔值、计数与摘要；不联系正式 API 或真实收件人。
+
+可用 `ARTDICO_DIST_DIRECTORY=/absolute/path/to/dist` 选另一准确静态目录；默认仍是仓库 `dist`。证据目录默认分别为 `.local-data/browser-evidence/ux2-formal-picker`、`.local-data/browser-evidence/ux2-person-workflow`，对公开构建与准确 FC 包分别指定目录，保留各次证据。这两个新入口不在固定旅程 Skill 的四个脚本清单内，真实收件／微信／iPhone／同事观察另验。
+
+已发布 [UX1](../../docs/redesign/ux-clarity-release.md) 使用最终公开构建和准确 FC 组合核对按钮名称、手机层级及设备行为：
 
 ```sh
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium ARTDICO_EVIDENCE_DIRECTORY=/absolute/path/to/evidence node tests/browser/ux1-private-page-smoke.mjs

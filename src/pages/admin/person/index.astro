@@ -22,11 +22,13 @@ import '../../../styles/people-relationships.css';
         <StaffNavigation current="person" />
         <div class="ah-admin-workspace-content">
           <div class="ah-admin-page-heading"><div><p class="person-kicker">个人工作页</p><h1 data-person-name tabindex="-1">选择一位人员</h1><p data-person-identity></p></div><div class="person-account"><span data-person-user></span><button class="ah-admin-button" type="button" data-person-refresh>重新读取记录</button><button class="ah-admin-text-button" type="button" data-person-logout>退出登录</button></div></div>
+          <nav class="person-navigation" data-person-list-context hidden aria-label="名单中的人员"><button type="button" class="ah-admin-button" data-person-list-return>返回名单</button><button type="button" class="ah-admin-button" data-person-next disabled>下一位</button><p data-person-navigation-status role="status" aria-live="polite"></p></nav>
           <section class="ah-admin-panel person-empty" data-person-empty><h2>从名单打开一位人员</h2><p data-person-empty-message>到人员或报名列表，选择「个人工作页」即可查看同一人的已保存记录。</p><div class="person-actions"><a class="ah-admin-button" href="/admin/contacts/">人员与报名</a><a class="ah-admin-button" href="/admin/registrations/">报名审核</a></div></section>
           <article data-person-record hidden>
             <section class="ah-admin-panel person-overview" aria-label="当前状态与下一步">
               <div class="person-status-strip" data-person-summary></div>
               <div class="person-primary-line"><button type="button" class="ah-admin-button ah-admin-primary" data-person-primary>核对记录</button><p class="person-note" data-person-primary-reason></p></div>
+              <p class="person-note" data-person-last-check hidden></p>
             </section>
             <details class="ah-admin-panel person-quick" data-person-quick-panel hidden>
               <summary data-person-quick-edit>回复与跟进</summary>
@@ -64,7 +66,7 @@ import '../../../styles/people-relationships.css';
           </article>
         </div>
       </section>
-    </main><footer class="ah-admin-footer"><span>ARTDiCO HOST</span><a href="/admin/contacts/">返回人员名单</a></footer>
+    </main><footer class="ah-admin-footer"><span>ARTDiCO HOST</span><a href="/admin/contacts/" data-person-list-return>返回人员名单</a></footer>
   </div>
   <script>import '../../../scripts/person.mjs';</script>
 </SiteLayout>

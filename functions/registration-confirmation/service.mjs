@@ -114,6 +114,13 @@ export function createRegistrationConfirmationService({ registrationService, jou
       ?? notices.find(item => item.status === 'provider_accepted')
       ?? [...notices].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   }
+  function formalDeliveryStatus(state, registrationIds, notice) {
+    const status = notice ? stateOf(notice) : 'not_sent';
+    // A process may stop after recording the batch and before reserving a notice.
+    // Reads cannot prove that an unfinished batch did not reach the provider.
+    return !['unknown', 'provider_accepted'].includes(status) && state.operations.some(operation => operation.action === 'dispatch'
+      && operation.status !== 'completed' && operation.registrationIds.some(id => registrationIds.includes(id))) ? 'unknown' : status;
+  }
   const reminderOpen = () => clock() < Date.parse(eventFacts.date + 'T' + eventFacts.checkIn + ':00+08:00');
   const applicable = (loaded, kind) => kind === 'application_received'
     ? loaded.record.provenance.kind === 'public' && loaded.record.consent?.accepted === true && loaded.admission.status === 'pending_review'
@@ -245,13 +252,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       '保存私人查询链接，核对后续审核结果：', link.confirmationUrl,
       '请保管此私人链接，无需重复申请。需要协助请联系 support@artdico.co。'].join('\n')
       : kind === 'pre_event_reminder' ? reminderMessage(link.confirmationUrl, record.fields.name, registrationId).text
-      : [record.fields.name + '，你好：', '', '你的参会名额已确认。',
-      '登记编号：' + registrationId, '日期：' + eventFacts.date, '活动时间：' + eventFacts.time + '（UTC+8）',
-      '签到：' + eventFacts.checkIn, '地点：' + eventFacts.venue,
-      '查看私人确认页、加入 Apple Wallet 或打印参会凭证：', link.confirmationUrl,
-      'iPhone 用户请在 Safari 打开上述链接，点击「加入 Apple Wallet」。',
-      '请保管此私人链接，不要转发；确认页始终以当前名额状态为准。',
-      '住宿、讲者、展位与其他职责分别确认。需要更正或取消，请通过原联系渠道联系筹备团队。'].join('\n');
+      : confirmationMessage(link.confirmationUrl, record.fields.name, registrationId).text;
     let result;
     try {
       result = await emailProvider.send({ recipient: record.fields.email, subject, text, canStart,
@@ -415,6 +416,23 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!operation || operation.action !== 'reminder_dispatch' || operation.actorId !== actor.id) failure('CONFIRMATION_NOT_FOUND', 404);
     return operationView(operation, current.value.revision);
   }
+  async function confirmationOperation({ actor, operationId } = {}) {
+    if (!actorValid(actor)) failure('FORBIDDEN', 403);
+    if (!validConfirmationOperation(operationId)) failure('INVALID_REQUEST', 400);
+    const current = await target().read(), operation = current.value.operations.find(item => item.operationId === operationId);
+    if (!operation || operation.action !== 'dispatch' || operation.actorId !== actor.id) failure('CONFIRMATION_NOT_FOUND', 404);
+    return { ...operationView(operation, current.value.revision), kind: 'registration', checkedAt: new Date(clock()).toISOString() };
+  }
+  function confirmationMessage(url = '[私人参会页链接]', name = '[称呼]', reference = '[登记编号]') {
+    return { subject: eventFacts.title + '｜参会名额已确认', privateUrlPlaceholder: '[私人参会页链接]',
+      text: [name + '，你好：', '', '你的参会名额已确认。',
+        '登记编号：' + reference, '日期：' + eventFacts.date, '活动时间：' + eventFacts.time + '（UTC+8）',
+        '签到：' + eventFacts.checkIn, '地点：' + eventFacts.venue,
+        '查看私人确认页、加入 Apple Wallet 或打印参会凭证：', url,
+        'iPhone 用户请在 Safari 打开上述链接，点击「加入 Apple Wallet」。',
+        '请保管此私人链接，不要转发；确认页始终以当前名额状态为准。',
+        '住宿、讲者、展位与其他职责分别确认。需要更正或取消，请通过原联系渠道联系筹备团队。'].join('\n') };
+  }
   function reminderMessage(url = '[私人参会页链接]', name = '[称呼]', reference = '[登记编号]') {
     return { subject: eventFacts.title + '｜行前提醒', privateUrlPlaceholder: '[私人参会页链接]',
       text: [name + '，你好：', '', '期待在活动现场与你见面。请在出发前打开私人参会页，核对最新名额及活动安排。',
@@ -424,7 +442,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
         '私人参会页（当前微信群及保存方式）：', url,
         '请私下保存链接，不要转发；以页面当前名额为准。需要协助请联系 support@artdico.co。'].join('\n') };
   }
-  async function staffReminderPreview({ actor, registrationIds, cursor } = {}) {
+  async function staffNoticePreview({ actor, registrationIds, cursor } = {}, kind) {
     if (!actorValid(actor)) failure('FORBIDDEN', 403);
     if (registrationIds !== undefined && (!Array.isArray(registrationIds) || !registrationIds.length || registrationIds.length > MAX_CONFIRMATION_BATCH
       || registrationIds.some(id => !ID.test(id)) || new Set(registrationIds).size !== registrationIds.length)
@@ -432,7 +450,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     let position = null;
     if (cursor) {
       try { position = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')); } catch { failure('INVALID_REQUEST', 400); }
-      if (!plainObject(position) || Object.keys(position).sort().join(',') !== 'noticeRevision,offset,source'
+      if (!plainObject(position) || Object.keys(position).sort().join(',') !== (kind === 'registration' ? 'kind,noticeRevision,offset,source' : 'noticeRevision,offset,source')
+        || kind === 'registration' && position.kind !== kind
         || !/^[a-f0-9]{64}$/u.test(position.source ?? '') || !Number.isSafeInteger(position.noticeRevision) || position.noticeRevision < 0
         || !Number.isSafeInteger(position.offset) || position.offset < 0 || position.offset > 1000) failure('INVALID_REQUEST', 400);
     }
@@ -441,8 +460,10 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!/^[a-f0-9]{64}$/u.test(source?.revision ?? '') || !Number.isSafeInteger(source.total) || source.total < 0 || source.total > 1000
       || !Array.isArray(source.rows) || source.rows.length > MAX_CONFIRMATION_BATCH
       || new Set(source.rows.map(row => row.registrationId)).size !== source.rows.length) failure();
+    const sourceRevision = kind === 'registration' ? confirmationRequestHash({ kind, baseSourceRevision: source.revision,
+      scope: registrationIds === undefined ? 'all' : [...registrationIds].sort() }) : source.revision;
     const current = await target().read();
-    if (position && (position.source !== source.revision || position.noticeRevision !== current.value.revision)) failure('REVISION_CONFLICT', 409);
+    if (position && (position.source !== sourceRevision || position.noticeRevision !== current.value.revision)) failure('REVISION_CONFLICT', 409);
     const [provider, checkedFacts] = await Promise.all([providerState(), currentEventFacts()]);
     let index;
     if (source.rows.some(row => row.relatedRegistrationIds === undefined)) index = (await registrationService.repository.readIndex()).value;
@@ -454,20 +475,21 @@ export function createRegistrationConfirmationService({ registrationService, jou
       const ids = row.relatedRegistrationIds ?? group?.registrationIds ?? [row.registrationId];
       if (!Array.isArray(ids) || !ids.length || ids.length > 100 || ids.some(id => !ID.test(id))
         || !ids.includes(row.registrationId) || new Set(ids).size !== ids.length) failure();
-      const notices = relatedNotices(current.value, { registrationIds: ids }, 'pre_event_reminder'), notice = strongestNotice(notices);
-      const status = notice ? stateOf(notice) : 'not_sent';
+      const notices = relatedNotices(current.value, { registrationIds: ids }, kind), notice = strongestNotice(notices);
+      const status = kind === 'registration' ? formalDeliveryStatus(current.value, ids, notice) : notice ? stateOf(notice) : 'not_sent';
       const reason = status === 'unknown' ? 'DELIVERY_UNKNOWN' : status === 'provider_accepted' ? 'ALREADY_ACCEPTED'
         : notices.reduce((total, item) => total + item.attempt, 0) >= 5 ? 'RETRY_LIMIT'
           : !row.eligible ? row.reason : !current.value.settings.enabled ? 'EMAIL_PAUSED' : !provider.ready ? 'EMAIL_NOT_READY'
-            : !checkedFacts.ready ? checkedFacts.reason : !reminderOpen() ? 'REMINDER_WINDOW_CLOSED' : 'ELIGIBLE';
+            : !checkedFacts.ready ? checkedFacts.reason : kind === 'pre_event_reminder' && !reminderOpen() ? 'REMINDER_WINDOW_CLOSED' : 'ELIGIBLE';
       return { registrationId: row.registrationId, name: row.name, organization: row.organization, status,
         eligible: reason === 'ELIGIBLE', reason, retryRejected: status === 'rejected' };
     });
     const next = (position?.offset ?? 0) + source.rows.length;
     if (next > source.total || next < source.total && !source.rows.length) failure();
-    return { revision: current.value.revision, kind: 'pre_event_reminder', rows, total: source.total,
-      nextCursor: next < source.total ? Buffer.from(JSON.stringify({ source: source.revision, noticeRevision: current.value.revision, offset: next })).toString('base64url') : null,
-      message: reminderMessage() };
+    return { revision: current.value.revision, kind, ...(kind === 'registration' ? { sourceRevision } : {}), rows, total: source.total,
+      nextCursor: next < source.total ? Buffer.from(JSON.stringify({ ...(kind === 'registration' ? { kind } : {}), source: sourceRevision,
+        noticeRevision: current.value.revision, offset: next })).toString('base64url') : null,
+      message: kind === 'registration' ? confirmationMessage() : reminderMessage() };
   }
   async function notifyBatch({ registrationIds, timeoutMs = batchTimeoutMs } = {}, kind) {
     if (!Array.isArray(registrationIds) || registrationIds.length > MAX_CONFIRMATION_BATCH || registrationIds.some(id => !ID.test(id))
@@ -487,22 +509,42 @@ export function createRegistrationConfirmationService({ registrationService, jou
     }
     return { results };
   }
-  /** Trusted staff projection reads durable notices only; no capability or provider access. */
+  /** Durable notice facts and conservative batch uncertainty; no invented notice. */
   async function staffHistory({ actor, registrationId, relatedRegistrationIds = [] } = {}) {
     if (!readerValid(actor)) failure('FORBIDDEN', 403);
     if (!ID.test(registrationId ?? '')) failure('INVALID_REQUEST', 400);
     if (!Array.isArray(relatedRegistrationIds) || relatedRegistrationIds.length > 100 || relatedRegistrationIds.some(id => !ID.test(id))) failure('INVALID_REQUEST', 400);
     const registrationIds = new Set([registrationId, ...relatedRegistrationIds]);
-    const current = await target().read();
-    return { revision: current.value.revision, notices: current.value.notices.filter(item => registrationIds.has(item.registrationId) && formalConfirmationKind(item.kind))
+    const current = await target().read(), notices = current.value.notices.filter(item => registrationIds.has(item.registrationId) && formalConfirmationKind(item.kind));
+    const unresolved = !notices.some(item => stateOf(item) === 'unknown')
+      && formalDeliveryStatus(current.value, [...registrationIds], strongestNotice(notices.filter(item => item.admissionStatus === 'confirmed'))) === 'unknown';
+    return { revision: current.value.revision, ...(unresolved ? { unresolvedConfirmations: true } : {}),
+      notices: notices
       .map(item => ({ id: item.id, kind: item.kind, status: stateOf(item), admissionStatus: item.admissionStatus, attempt: item.attempt,
         createdAt: item.createdAt, updatedAt: item.updatedAt })) };
   }
   async function staffDirectory({ actor } = {}) {
     if (!readerValid(actor)) failure('FORBIDDEN', 403);
     const current = await target().read();
-    return { revision: current.value.revision, notices: current.value.notices.filter(item => formalConfirmationKind(item.kind))
-      .map(item => ({ registrationId: item.registrationId, status: stateOf(item) })) };
+    const notices = current.value.notices.filter(item => formalConfirmationKind(item.kind))
+      .map(item => ({ registrationId: item.registrationId, status: stateOf(item) }));
+    const started = current.value.operations.filter(operation => operation.action === 'dispatch' && operation.status !== 'completed');
+    if (!started.length) return { revision: current.value.revision, notices };
+    // This is a bounded status summary, not notice history. Resolve explicit saved
+    // aliases once so an unfinished secondary batch also blocks its current person.
+    const index = (await registrationService.repository.readIndex()).value;
+    const known = new Set(index.entries.map(entry => entry.id)), summaries = new Map(), checked = new Set();
+    for (const notice of notices) if (summaries.get(notice.registrationId) !== 'unknown') summaries.set(notice.registrationId, notice.status);
+    for (const id of new Set(started.flatMap(operation => operation.registrationIds))) {
+      if (!known.has(id)) continue;
+      const group = index.admissions?.personGroups?.find(item => item.registrationIds.includes(id));
+      const ids = group?.registrationIds ?? [id], canonical = group?.primaryRegistrationId ?? id;
+      if (checked.has(canonical)) continue;
+      checked.add(canonical);
+      if (formalDeliveryStatus(current.value, ids, strongestNotice(relatedNotices(current.value, { registrationIds: ids }, 'registration'))) === 'unknown') summaries.set(canonical, 'unknown');
+    }
+    if (summaries.size > 2000) failure();
+    return { revision: current.value.revision, notices: [...summaries].map(([registrationId, status]) => ({ registrationId, status })) };
   }
   /** Reads current eligibility and durable delivery state; never reserves or sends. */
   async function staffDeliveryState({ actor, registrationId } = {}) {
@@ -512,7 +554,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const current = await target().read(), canSend = actorValid(actor);
     const aliases = await aliasesFor(loaded), related = relatedNotices(current.value, aliases, 'registration');
     const notice = strongestNotice(related);
-    const status = notice ? stateOf(notice) : 'not_sent';
+    const status = formalDeliveryStatus(current.value, aliases.registrationIds, notice);
     let reason = admission.status !== 'confirmed' ? 'ADMISSION_NOT_CONFIRMED'
       : !record.fields.email ? 'EMAIL_MISSING' : status === 'provider_accepted' ? 'ALREADY_ACCEPTED'
         : status === 'unknown' ? 'DELIVERY_UNKNOWN' : !canSend ? 'OPERATOR_PERMISSION_REQUIRED'
@@ -533,6 +575,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       recipient: admission.status === 'withdrawn' ? '' : record.fields.email ?? '' };
   }
   return Object.freeze({ prefix, forSavedReceipt, notifyApplicationReceived, authorize, authorizedRegistration, confirmation, staffConfirmationLink, settings, setSettings, dispatch,
-    staffReminderPreview, dispatchReminder: input => dispatch(input, 'pre_event_reminder'), reminderOperation,
+    staffConfirmationPreview: input => staffNoticePreview(input, 'registration'), confirmationOperation,
+    staffReminderPreview: input => staffNoticePreview(input, 'pre_event_reminder'), dispatchReminder: input => dispatch(input, 'pre_event_reminder'), reminderOperation,
     notifyApproved: input => notifyBatch(input, 'registration'), notifyPromoted: input => notifyBatch(input, 'promotion'), staffHistory, staffDirectory, staffDeliveryState });
 }

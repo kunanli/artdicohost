@@ -371,8 +371,8 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     const url = new URL(request.url);
     if (url.origin !== CLOUD_API_ORIGIN || url.username || url.password) return contentHandle(request);
     if (['/api/registration/confirmation', '/api/admin/registration/confirmation', '/api/admin/registration-confirmation/settings', '/api/admin/registration-confirmation/dispatch',
-      '/api/admin/registration-confirmation/reminder-preview', '/api/admin/registration-confirmation/reminder-dispatch'].includes(url.pathname)
-      || ['/link/', '/delivery/', '/send/', '/reminder-operation/'].some(suffix => url.pathname.startsWith('/api/admin/registration-confirmation' + suffix))) return confirmationHandle(request);
+      '/api/admin/registration-confirmation/preview', '/api/admin/registration-confirmation/reminder-preview', '/api/admin/registration-confirmation/reminder-dispatch'].includes(url.pathname)
+      || ['/link/', '/delivery/', '/send/', '/operation/', '/reminder-operation/'].some(suffix => url.pathname.startsWith('/api/admin/registration-confirmation' + suffix))) return confirmationHandle(request);
     if (isAppleWalletPath(url.pathname)) return walletHandle(request);
     if (url.pathname === '/api/admin/registrations/export.xlsx') return registrationXlsxHandle(request);
     if (url.pathname === '/api/admin/contacts/export.xlsx') return contactsXlsxHandle(request);

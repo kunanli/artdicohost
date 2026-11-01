@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createDeliveryMutations,deliverySettingsView,deliveryReminderPreviewView,deliveryReminderRequestView,createReminderMutations} from '../src/lib/delivery-settings.mjs';
+import {createDeliveryMutations,deliverySettingsView,deliveryReminderPreviewView,deliveryReminderRequestView,createReminderMutations,
+  deliveryConfirmationPreviewView,deliveryConfirmationOperationView,deliveryLegacyDispatchView,createConfirmationMutations} from '../src/lib/delivery-settings.mjs';
 const operationId='o'.repeat(43),id='r'.repeat(43);
 const state=()=>({revision:2,automaticEnabled:false,email:{ready:false,missing:['EMAILJS_CONFIRMATION_TEMPLATE_ID'],privateKey:'PRIVATE'},wallet:{ready:false,privateKey:'PRIVATE'},counts:{total:0,providerAccepted:0,rejected:0,unknown:0}});
 test('settings projection excludes credentials and rejects unverified counts or availability',()=>{
@@ -57,6 +58,8 @@ test('a proven original settings operation remains acknowledged when a later edi
 const noticeCounts=()=>({total:2,providerAccepted:1,rejected:0,unknown:1});
 const reminderPreview=()=>({revision:7,kind:'pre_event_reminder',total:1,nextCursor:null,rows:[{registrationId:id,name:'合成提醒收件人',organization:'合成组织',status:'not_sent',eligible:true,reason:'ELIGIBLE',retryRejected:false,email:'PRIVATE'}],message:{subject:'合成行前提醒',text:'活动信息\n[私人参会页链接]',privateUrlPlaceholder:'[私人参会页链接]',privateToken:'PRIVATE'}});
 const reminderResult=(change={})=>({revision:8,operationId,kind:'pre_event_reminder',outcome:'updated',status:'completed',results:[{registrationId:id,status:'provider_accepted'}],...change});
+const formalPreview=()=>({...reminderPreview(),kind:'registration',sourceRevision:'a'.repeat(64)});
+const formalResult=(change={})=>({revision:8,operationId,outcome:'replayed',status:'completed',results:[{registrationId:id,status:'provider_accepted'}],kind:'registration',checkedAt:'2026-11-01T09:00:00.000Z',...change});
 
 test('notification counters keep receipt, formal confirmation and reminder identities separate without credentials',()=>{
   const value={...state(),notificationCounts:{applicationReceived:noticeCounts(),preEventReminder:{...noticeCounts(),total:3},privateKey:'PRIVATE'}},safe=deliverySettingsView(value);
@@ -112,4 +115,78 @@ test('a cleared reminder session ignores a late operation lookup instead of repl
 test('a definite reminder validation conflict unlocks only after one rejected POST and never retries automatically',async()=>{
   const calls=[],controller=createReminderMutations({revision:()=>7,operationId:()=>operationId,request:async(path,options)=>{calls.push({path,...options});throw Object.assign(new Error('revision conflict'),{status:409});}});
   await assert.rejects(controller.run({registrationIds:[id]}));assert.equal(controller.pending,false);assert.equal(calls.length,1);assert.equal(calls[0].method,'POST');
+});
+
+test('formal preview requires its own source proof and cannot consume a reminder or expose private source fields',()=>{
+  const value=formalPreview(),safe=deliveryConfirmationPreviewView(value);assert.ok(safe);assert.equal(safe.kind,'registration');assert.equal(safe.sourceRevision,value.sourceRevision);
+  assert.doesNotMatch(JSON.stringify(safe),/PRIVATE|email|privateToken/u);
+  for(const change of [{kind:'pre_event_reminder'},{sourceRevision:''},{sourceRevision:'A'.repeat(64)},{total:1001},{rows:[{...value.rows[0],reason:'REMINDER_WINDOW_CLOSED'}]}])assert.equal(deliveryConfirmationPreviewView({...value,...change}),null);
+  assert.equal(deliveryReminderPreviewView(value),null);
+});
+
+test('one formal dispatch keeps the original four fields and reconciles a lost acknowledgement only by original GET',async()=>{
+  const calls=[];let allocated=0,revision=7;
+  const controller=createConfirmationMutations({revision:()=>revision,operationId:()=>{allocated++;return operationId;},request:async(path,options)=>{calls.push({path,...options});if(options.method==='POST')throw Object.assign(new Error('lost ACK'),{status:503});return formalResult();}});
+  await assert.rejects(controller.run({registrationIds:[id]}));const original=controller.body;
+  assert.deepEqual(Object.keys(JSON.parse(original)).sort(),['expectedRevision','operationId','registrationIds','retryRejected']);assert.equal(JSON.parse(original).expectedRevision,7);
+  revision=99;await assert.rejects(controller.run({registrationIds:['n'.repeat(43)]}));assert.equal(allocated,1);
+  const result=await controller.lookup();assert.equal(result.checkedAt,'2026-11-01T09:00:00.000Z');assert.equal(controller.pending,false);
+  assert.deepEqual(calls.map(call=>[call.path,call.method]),[['/api/admin/registration-confirmation/dispatch','POST'],['/api/admin/registration-confirmation/operation/'+operationId,'GET']]);assert.equal(calls[1].body,undefined);
+});
+
+test('formal restore preserves whitespace and key order without another POST or a newly allocated operation',async()=>{
+  const body='{ "operationId":"'+operationId+'", "retryRejected":false, "registrationIds":["'+id+'"], "expectedRevision":7 }',calls=[];
+  const controller=createConfirmationMutations({revision:()=>100,operationId:()=>assert.fail('restoring must not allocate'),request:async(path,options)=>{calls.push({path,...options});return formalResult();}});
+  controller.restore(body);assert.equal(controller.body,body);await controller.lookup();assert.deepEqual(calls,[{path:'/api/admin/registration-confirmation/operation/'+operationId,method:'GET'}]);
+});
+
+test('legacy parsed formal pending is GET-only and never gains reconstructed request bytes',async()=>{
+  const value={action:'dispatch',registrationIds:[id],retryRejected:false,expectedRevision:2,operationId},before=structuredClone(value),calls=[];
+  const controller=createConfirmationMutations({revision:()=>99,operationId:()=>assert.fail('legacy must not allocate'),request:async(path,options)=>{calls.push({path,...options});return formalResult();}});
+  assert.ok(deliveryLegacyDispatchView(value));controller.restoreLegacy(value);assert.equal(controller.body,null);await assert.rejects(controller.run({registrationIds:[id]}));await controller.lookup();
+  assert.deepEqual(value,before);assert.deepEqual(calls,[{path:'/api/admin/registration-confirmation/operation/'+operationId,method:'GET'}]);assert.equal(controller.pending,false);
+  for(const patch of [{action:'settings'},{registrationIds:[id,id]},{operationId:''},{body:'{}'}])assert.equal(deliveryLegacyDispatchView({...value,...patch}),null);
+});
+
+test('formal unknown, unavailable and missing readbacks preserve the original lock and exact request',async()=>{
+  for(const mode of ['unknown','unavailable',404,503]){
+    const body=JSON.stringify({registrationIds:[id],retryRejected:false,expectedRevision:7,operationId}),calls=[];
+    const controller=createConfirmationMutations({revision:()=>7,request:async(path,options)=>{calls.push({path,...options});if(typeof mode==='number')throw Object.assign(new Error('unavailable'),{status:mode});return formalResult({status:mode==='unknown'?'unknown':'partial',results:[{registrationId:id,status:mode}]});}});
+    controller.restore(body);if(typeof mode==='number')await assert.rejects(controller.lookup());else await controller.lookup();
+    assert.equal(controller.pending,true);assert.equal(controller.body,body);await assert.rejects(controller.run({registrationIds:[id]}));assert.equal(calls.length,1);assert.equal(calls[0].method,'GET');
+  }
+});
+
+test('formal lookup requires correct kind, operation identity, server time and every original row in order',async()=>{
+  const second='s'.repeat(43),body=JSON.stringify({registrationIds:[id,second],retryRejected:false,expectedRevision:7,operationId});
+  for(const change of [{kind:'pre_event_reminder'},{operationId:'x'.repeat(43)},{checkedAt:null},{checkedAt:'2026-02-30T00:00:00.000Z'},{results:[{registrationId:id,status:'provider_accepted'}]},
+    {results:[{registrationId:second,status:'provider_accepted'},{registrationId:id,status:'provider_accepted'}]}]){
+    const controller=createConfirmationMutations({revision:()=>7,request:async()=>formalResult({...change})});controller.restore(body);await assert.rejects(controller.lookup());assert.equal(controller.body,body);assert.equal(controller.pending,true);
+  }
+  assert.equal(deliveryConfirmationOperationView(formalResult({checkedAt:undefined}),operationId),null);
+});
+
+test('formal rejects a reminder POST result and a late cleared lookup cannot unlock a newer original request',async()=>{
+  const controller=createConfirmationMutations({revision:()=>7,operationId:()=>operationId,request:async()=>reminderResult()});
+  await assert.rejects(controller.run({registrationIds:[id]}));assert.equal(controller.pending,true);
+  let release;const other=createConfirmationMutations({revision:()=>7,request:()=>new Promise(resolve=>{release=resolve;})});
+  const body=JSON.stringify({registrationIds:[id],retryRejected:false,expectedRevision:7,operationId});other.restore(body);const old=other.lookup();other.clear();
+  const next=body.replace(operationId,'n'.repeat(43));other.restore(next);release(formalResult());await assert.rejects(old,/会话已改变/u);assert.equal(other.body,next);assert.equal(other.pending,true);
+});
+
+test('only a fresh first authoritative rejection can release a formal attempt without replaying its POST',async()=>{
+  for(const status of [400,403,404,409]){
+    const calls=[],controller=createConfirmationMutations({revision:()=>7,operationId:()=>operationId,request:async(path,options)=>{calls.push({path,...options});throw Object.assign(new Error('pre-start rejection'),{status});}});
+    await assert.rejects(controller.run({registrationIds:[id]}));assert.equal(controller.knownRejected,true);assert.equal(controller.pending,true);
+    controller.acknowledgeRejection();assert.equal(controller.pending,false);assert.equal(calls.length,1);assert.equal(calls[0].method,'POST');
+  }
+  for(const status of [401,422,503]){
+    const controller=createConfirmationMutations({revision:()=>7,operationId:()=>operationId,request:async()=>{throw Object.assign(new Error('uncertain'),{status});}});
+    await assert.rejects(controller.run({registrationIds:[id]}));assert.equal(controller.knownRejected,false);assert.throws(()=>controller.acknowledgeRejection());assert.equal(controller.pending,true);
+  }
+  const body=JSON.stringify({registrationIds:[id],retryRejected:false,expectedRevision:7,operationId});
+  for(const status of [404,409]){
+    const controller=createConfirmationMutations({revision:()=>7,request:async()=>{throw Object.assign(new Error('restored lookup'),{status});}});controller.restore(body);
+    await assert.rejects(controller.lookup());assert.equal(controller.knownRejected,false);assert.throws(()=>controller.acknowledgeRejection());assert.equal(controller.body,body);
+  }
 });

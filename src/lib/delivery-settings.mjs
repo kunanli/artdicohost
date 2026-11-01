@@ -36,6 +36,86 @@ export function deliveryReminderPreviewView(value){
   return{revision:value.revision,kind:value.kind,total:value.total,nextCursor:value.nextCursor,message:{subject:value.message.subject,text:value.message.text,privateUrlPlaceholder:value.message.privateUrlPlaceholder},rows:value.rows.map(row=>({registrationId:row.registrationId,name:row.name,organization:row.organization,status:row.status,eligible:row.eligible,reason:row.reason,retryRejected:row.retryRejected}))};
 }
 
+/** The formal family has its own read-only source proof and never borrows a reminder preview. */
+export function deliveryConfirmationPreviewView(value){
+  if(!plain(value)||value.kind!=='registration'||!/^[a-f0-9]{64}$/u.test(value.sourceRevision??'')||value.total>1000)return null;
+  const checked=deliveryReminderPreviewView({...value,kind:'pre_event_reminder'});
+  if(!checked||checked.rows.some(row=>row.reason==='REMINDER_WINDOW_CLOSED'))return null;
+  return{...checked,kind:'registration',sourceRevision:value.sourceRevision};
+}
+
+export function deliveryConfirmationOperationView(value,operationId){
+  if(value?.kind!=='registration'||!validExpiry(value.checkedAt))return null;
+  const checked=deliveryDispatchView(value,operationId);
+  return checked?{...checked,operationId,kind:'registration',checkedAt:value.checkedAt}:null;
+}
+
+export const deliveryConfirmationRequestView=deliveryReminderRequestView;
+
+export function deliveryConfirmationDraftPolicy({roleKey,canReject=()=>false}){
+  if(typeof roleKey!=='string'||!roleKey||typeof canReject!=='function')throw new TypeError('Invalid confirmation recovery scope');
+  return{fields:['body','roleKey','uncertain'],pendingFields:['body','roleKey'],jsonFields:['body'],
+    validate:value=>Object.keys(value).sort().join(',')==='body,roleKey,uncertain'&&typeof value.uncertain==='boolean'&&value.roleKey===roleKey&&Boolean(deliveryConfirmationRequestView(value.body)),
+    rejectPending:value=>canReject(value)?value:null};
+}
+
+/** Old local bulk drafts contain parsed fields, not the original request bytes.
+ * They are useful only to GET the existing operation, never to reconstruct a POST. */
+export function deliveryLegacyDispatchView(value){
+  if(!plain(value)||Object.keys(value).sort().join(',')!=='action,expectedRevision,operationId,registrationIds,retryRejected'
+    ||value.action!=='dispatch'||!Number.isSafeInteger(value.expectedRevision)||value.expectedRevision<0
+    ||!/^[A-Za-z0-9_-]{32,128}$/u.test(value.operationId??'')||typeof value.retryRejected!=='boolean'
+    ||!Array.isArray(value.registrationIds)||!value.registrationIds.length||value.registrationIds.length>100
+    ||new Set(value.registrationIds).size!==value.registrationIds.length||value.registrationIds.some(id=>!/^[A-Za-z0-9_-]{43}$/u.test(id)))return null;
+  return{id:value.operationId,ids:[...value.registrationIds],revision:value.expectedRevision};
+}
+
+/** A formal POST is issued once; all recovery, including old parsed drafts, is GET-only. */
+export function createConfirmationMutations({request,revision,operationId=()=>crypto.randomUUID().replaceAll('-','')}){
+  let pending=null,busy=false,generation=0;
+  async function perform(readOnly){
+    if(!pending||busy)throw new Error('请先核对原确认信。');
+    const started=generation,operation=pending;busy=true;
+    if(readOnly){operation.fresh=false;operation.knownRejected=false;}
+    try{
+      const value=await request('/api/admin/registration-confirmation/'+(readOnly?'operation/'+operation.id:'dispatch'),readOnly?{method:'GET'}:{method:'POST',body:operation.body});
+      if(started!==generation||operation!==pending)throw new Error('会话已改变，请重新核对原确认信。');
+      const result=readOnly?deliveryConfirmationOperationView(value,operation.id)
+        :Object.hasOwn(value??{},'kind')?null:deliveryDispatchView(value,operation.id);
+      if(!result||result.results.length!==operation.ids.length||operation.ids.some((id,index)=>result.results[index]?.registrationId!==id))throw new Error('确认信结果尚未完整，请核对原寄送。');
+      if(result.status!=='unknown'&&!result.results.some(row=>['unknown','unavailable'].includes(row.status)))pending=null;
+      return result;
+    }catch(error){
+      if(started===generation&&pending===operation){
+        operation.knownRejected=!readOnly&&operation.fresh===true&&[400,403,404,409].includes(error.status);
+        operation.fresh=false;
+      }
+      throw error;
+    }finally{if(started===generation)busy=false;}
+  }
+  return Object.freeze({
+    get pending(){return pending!==null;},get body(){return pending?.body??null;},get id(){return pending?.id??null;},get knownRejected(){return pending?.knownRejected===true;},
+    async run({registrationIds,retryRejected=false}){
+      if(pending||busy)throw new Error('请先核对原确认信，不会另建寄送。');
+      const body=JSON.stringify({registrationIds,retryRejected,expectedRevision:revision(),operationId:operationId()}),value=deliveryConfirmationRequestView(body);
+      if(!value)throw new Error('请重新读取确认信名单，再选择收件人。');
+      pending={...value,fresh:true,knownRejected:false};return perform(false);
+    },
+    restore(body){
+      if(pending||busy){if(pending?.body===body)return;throw new Error('原确认信仍待核对。');}
+      const value=deliveryConfirmationRequestView(body);if(!value)throw new Error('本机确认信记录无法核对，请保留原记录。');pending={...value,fresh:false,knownRejected:false};
+    },
+    restoreLegacy(value){
+      const checked=deliveryLegacyDispatchView(value);if(!checked)throw new Error('旧确认信记录无法核对，请保留原记录。');
+      if(pending||busy){if(pending?.id===checked.id&&pending.body===null)return;throw new Error('原确认信仍待核对。');}
+      pending={...checked,body:null,fresh:false,knownRejected:false};
+    },
+    lookup:()=>perform(true),
+    acknowledgeRejection(){if(busy||!pending?.knownRejected)throw new Error('原确认信尚未证明未提交。');pending=null;},
+    clear(){generation++;pending=null;busy=false;},
+  });
+}
+
 export function deliveryReminderOperationView(value,operationId){
   if(value?.kind!=='pre_event_reminder')return null;
   const result=deliveryDispatchView(value,operationId);return result?{...result,operationId,kind:'pre_event_reminder'}:null;

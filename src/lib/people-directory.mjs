@@ -1,5 +1,6 @@
 import {resolvePeopleView} from './admin-sections.mjs';
 import { PEOPLE_WORK_FILTERS, PEOPLE_HEALTH_KINDS } from '../../shared/organizer-progress.mjs';
+import {eventConfig} from '../config/event.mjs';
 const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u,REG=/^[A-Za-z0-9_-]{43}$/u;
 const string=(value,max=300)=>typeof value==='string'&&value.length<=max&&!/[\u0000-\u001f\u007f]/u.test(value);
 const count=value=>Number.isSafeInteger(value)&&value>=0&&value<=6400;
@@ -74,9 +75,36 @@ const INVITATION_LABELS={not_started:'尚未准备邀请',prepared:'邀请已准
 const VIEWS={unassigned:['待分流','核对身份后继续处理。'],attendees:['一般参会者','参会名额与本人回复分别核对。'],all:['人员','先处理需要跟进的人。'],speakers:['讲者','按已保存的讲者职责显示。'],guests:['受邀嘉宾','出席与名额分别核对。'],exhibitors:['参展商','按公司／团队核对安排。']};
 const RESPONSE_LABELS={pending:'待回复',attending:'已答应出席',declined:'不出席'};
 
+const NAV_KEY='artdico:people-navigation:v1',NAV_TTL=30*60*1000;
+const NAV_FIELDS=['schemaVersion','actorId','roles','eventId','view','query','work','cursor','trail','revision','ids','selected','focus','scrollY','capturedAt'];
+export const peopleSelectionKey=item=>item?.contactId?'contact:'+item.contactId:item?.registrationId?'registration:'+item.registrationId:null;
+const selectionKey=value=>typeof value==='string'&&/^(?:contact:[A-Za-z0-9][A-Za-z0-9_-]{0,79}|registration:[A-Za-z0-9_-]{43})$/u.test(value);
+export function peopleSelectionHref(key){if(!selectionKey(key))return null;const cut=key.indexOf(':');return '/admin/person/#'+key.slice(0,cut)+'='+encodeURIComponent(key.slice(cut+1));}
+export function peopleReturnHref(view){return view==='registrations'?'/admin/registrations/':view==='all'?'/admin/contacts/':['exhibitors','speakers','guests','unassigned','attendees'].includes(view)?'/admin/contacts/#people='+view:null;}
+export function peopleNextSelection(original,current,fresh){
+  const index=fresh.indexOf(current);if(index>=0)return fresh[index+1]??null;
+  const anchor=original.indexOf(current);if(anchor<0)return null;
+  return original.slice(anchor+1).find(key=>fresh.includes(key))??null;
+}
+export function validPeopleNavigation(value,user,{eventId=eventConfig.id,view,selection,now=Date.now()}={}){
+  if(!value||Object.keys(value).length!==NAV_FIELDS.length||Object.keys(value).some(key=>!NAV_FIELDS.includes(key))||value.schemaVersion!==1||!user?.id||value.actorId!==user.id||value.eventId!==eventId||!Array.isArray(value.roles)||JSON.stringify(value.roles)!==JSON.stringify([...(user.roles??[])].sort())||!peopleReturnHref(value.view)||view&&value.view!==view)return false;
+  if(!string(value.query,160)||/https?:\/\/|#r=|\b(?:c1|v1)\.[A-Za-z0-9_.-]{20,}/iu.test(value.query)||!PEOPLE_WORK_FILTERS.includes(value.work)||!string(value.cursor,512)||value.cursor&&!/^[A-Za-z0-9_-]+$/u.test(value.cursor)||!Array.isArray(value.trail)||value.trail.length>20||value.trail.some(cursor=>!string(cursor,512)||cursor&&!/^[A-Za-z0-9_-]+$/u.test(cursor))||!/^[a-f0-9]{64}$/u.test(value.revision))return false;
+  return Boolean(Array.isArray(value.ids)&&value.ids.length>0&&value.ids.length<=50&&new Set(value.ids).size===value.ids.length&&value.ids.every(selectionKey)&&value.ids.includes(value.selected)&&selectionKey(value.focus)&&value.focus===value.selected&&(!selection||selection===value.selected)&&Number.isSafeInteger(value.scrollY)&&value.scrollY>=0&&value.scrollY<=2000000&&Number.isSafeInteger(value.capturedAt)&&value.capturedAt<=now+5000&&now-value.capturedAt<=NAV_TTL&&JSON.stringify(value).length<=16384);
+}
+/** Sensitive queries live only in this tab's session storage, never an href or
+ * the durable mutation store. Stored IDs are hints; rows are always reread. */
+export function createPeopleNavigation({storage,eventId=eventConfig.id,clock=Date.now}={}){
+  const target=()=>{try{return storage??globalThis.sessionStorage;}catch{return null;}};
+  function clear(){try{target()?.removeItem(NAV_KEY);}catch{}}
+  function read(user,options={}){try{const raw=target()?.getItem(NAV_KEY);if(!raw)return null;if(raw.length>16384)throw Error();const value=JSON.parse(raw);if(!validPeopleNavigation(value,user,{...options,eventId,now:clock()}))throw Error();return value;}catch{clear();return null;}}
+  function save(user,input){const value={schemaVersion:1,actorId:user?.id,roles:[...(user?.roles??[])].sort(),eventId,...input,capturedAt:clock()};if(!validPeopleNavigation(value,user,{eventId,now:clock()}))return false;try{const store=target();if(!store)return false;store.setItem(NAV_KEY,JSON.stringify(value));return true;}catch{return false;}}
+  return{read,save,clear};
+}
+
 export function createPeopleDirectory({root,request,getUser,onContact,onProfile,onInvitation,canInvite=()=>false,onFallback=()=>{},onResolve=()=>{},canResolve=()=>false}){
   const $=selector=>root.querySelector(selector),node=(tag,text,cls)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(cls)el.className=cls;return el;};
-  let sequence=0,healthSequence=0,state=null,busy=false,healthBusy=false,blocked=false,currentCursor='',trail=[],resetting=false;
+  let sequence=0,healthSequence=0,state=null,busy=false,healthBusy=false,blocked=false,currentCursor='',trail=[],resetting=false,restoreAttempted=false;
+  const navigation=createPeopleNavigation();
   const view=()=>resolvePeopleView(location.pathname,location.hash),active=()=>Boolean(getUser()?.id);
   const actorKey=()=>{const user=getUser();return user?.id+'|'+[...(user?.roles??[])].sort().join(',');};
   const work=()=>view()==='exhibitors'?'all':$('[name=work]')?.value||'pending';
@@ -84,7 +112,12 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
   function link(text,href,cls){const a=node('a',text,cls);a.href=href;return a;}
   function badge(text,status){const p=node('div',text,'people-directory-state');p.dataset.state=status;return p;}
   function lock(value=blocked){blocked=value;for(const control of root.querySelectorAll('button,input,select'))control.disabled=busy||blocked||!active()||healthBusy&&control.hasAttribute('data-directory-health-refresh');for(const action of root.querySelectorAll('[data-directory-primary]'))action.setAttribute('aria-disabled',String(busy||blocked||!active()));$('[data-directory-health]').hidden=!healthAllowed();}
-  function personHref(item){return item.contactId?'/admin/person/#contact='+encodeURIComponent(item.contactId):item.registrationId?'/admin/person/#registration='+encodeURIComponent(item.registrationId):null;}
+  function remember(key){
+    if(!state||!key)return;const ids=state.rows.filter(item=>item.kind==='person').map(peopleSelectionKey).filter(Boolean).slice(0,50);
+    if(!ids.includes(key)){ids.length=0;ids.push(key);}
+    navigation.save(getUser(),{view:view(),query:$('[name=query]').value,work:work(),cursor:currentCursor,trail:[...trail].slice(-20),revision:state.revision,ids,selected:key,focus:key,scrollY:Math.max(0,Math.round(window.scrollY))});
+  }
+  function personHref(item){return peopleSelectionHref(peopleSelectionKey(item));}
   function fallbackState(item){
     if(['unknown','issuing'].includes(item.invitationStatus)||['unknown','unavailable'].includes(item.deliveryStatus))return '结果待核对';
     if(item.responseStatus==='declined'&&item.admissionStatus==='confirmed')return '名额待核对';
@@ -99,7 +132,7 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
     status.append(badge(item.stateLabel||fallbackState(item),next?.key||item.admissionStatus||'pending'));
     if(next?.reason&&(next.kind==='handoff'||next.kind==='refresh'||item.workKinds?.includes('unavailable')))status.append(node('small',next.reason,'people-directory-warning'));
     const href=personHref(item);
-    if(href){const primary=link(next?.kind==='handoff'?'查看转交方式':next?.label||'查看下一步',href,'people-directory-action');primary.dataset.directoryPrimary='';primary.addEventListener('click',event=>{if(blocked||busy||!active())event.preventDefault();});actions.append(primary);}
+    if(href){const primary=link(next?.kind==='handoff'?'查看转交方式':next?.label||'查看下一步',href,'people-directory-action');primary.dataset.directoryPrimary='';primary.addEventListener('click',event=>{if(blocked||busy||!active())event.preventDefault();else remember(peopleSelectionKey(item));});actions.append(primary);}
     else if(item.profileId&&getUser()?.roles?.some(role=>['editor','superadmin'].includes(role)))actions.append(link('核对人物资料','/admin/content/guests/#guest='+encodeURIComponent(item.profileId),'people-directory-action'));
     else actions.append(node('small','交由活动编辑核对'));
     const menu=node('details',undefined,'people-row-menu');menu.append(node('summary','更多'));const options=node('div');
@@ -123,7 +156,7 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
   }
   function companyRow(item){const row=node('tr'),identity=node('td'),members=node('td',undefined,'people-directory-members'),booths=node('td'),actions=node('td');
     identity.append(node('div',item.name,'people-directory-name'),node('small',item.kind==='unlinked_booth'?'组织关系待关联':'参展组织／团队'));
-    for(const member of item.members)members.append(link(member.name+(member.role==='lead'?' · 联络人':''),'/admin/person/#contact='+encodeURIComponent(member.id)));
+    for(const member of item.members){const anchor=link(member.name+(member.role==='lead'?' · 联络人':''),'/admin/person/#contact='+encodeURIComponent(member.id));anchor.addEventListener('click',()=>remember('contact:'+member.id));members.append(anchor);}
     if(!item.members.length)members.append(node('small','联络人待关联'));if(item.memberTotal>item.members.length)members.append(node('small','另有 '+(item.memberTotal-item.members.length)+' 位成员'));
     booths.append(badge(({confirmed:'参展已确认',pending:'参展待确认',withdrawn:'已退出',unlinked:'关系待关联'})[item.status],item.status));
     for(const booth of item.booths)booths.append(node('small',booth.code+' · '+booth.zone+'区'+(booth.status==='cancelled'?'（已取消）':'')));if(!item.booths.length)booths.append(node('small','展位待安排'));
@@ -148,10 +181,23 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
     $('[data-directory-status]').textContent='本页 '+state.rows.length+' 条 · 符合筛选 '+state.total+' 条';$('[data-directory-next]').hidden=!state.nextCursor;$('[data-directory-prev]').hidden=!trail.length;lock();
   }
   async function load(cursor='',history=[]){
+    let restoring=null;
+    if(!restoreAttempted&&active()){
+      restoreAttempted=true;restoring=navigation.read(getUser(),{view:view()});
+      if(restoring){$('[name=query]').value=restoring.query;$('[name=work]').value=restoring.work;cursor=restoring.cursor;history=[...restoring.trail];}
+    }
     if(!active())return clear();const generation=++sequence,actor=actorKey(),selected=view()==='registrations'?'all':view(),query=$('[name=query]').value,selectedWork=work();
     const current=()=>generation===sequence&&actorKey()===actor&&active();busy=true;$('[data-directory-error]').hidden=true;root.setAttribute('aria-busy','true');lock();
-    try{const params=new URLSearchParams({view:selected,work:selectedWork,limit:'50',...(query?{query}:{}),...(cursor?{cursor}:{})});const value=await request('/api/admin/people/directory?'+params,{current});if(!current())return;
-      if(!validatePeopleDirectory(value,selected)||value.work!==undefined&&value.work!==selectedWork)throw new Error('Invalid directory response.');state=value;currentCursor=cursor;trail=history;render();
+    try{let stale=false;const read=position=>request('/api/admin/people/directory?'+new URLSearchParams({view:selected,work:selectedWork,limit:'50',...(query?{query}:{}),...(position?{cursor:position}:{})}),{current});let value;
+      try{value=await read(cursor);}catch(error){if(error.status!==409||!cursor)throw error;if(!current())return;cursor='';history=[];stale=true;value=await read('');}
+      if(!current())return;if(!validatePeopleDirectory(value,selected)||value.work!==undefined&&value.work!==selectedWork)throw new Error('Invalid directory response.');state=value;currentCursor=cursor;trail=history;render();
+      if(restoring){
+        stale=stale||restoring.revision!==value.revision;
+        const target=!stale?[...root.querySelectorAll('[data-directory-person]')].find(row=>row.dataset.directoryPerson===restoring.focus)?.querySelector('[data-directory-primary]'):null;
+        const heading=$('[data-directory-title]');heading.tabIndex=-1;(target??heading).focus({preventScroll:true});
+        if(!stale&&target){window.scrollTo({top:restoring.scrollY,behavior:'instant'});requestAnimationFrame(()=>{if(current())window.scrollTo({top:restoring.scrollY,behavior:'instant'});});}
+      }
+      if(stale)$('[data-directory-status]').textContent='名单已更新，已保留搜索与筛选。';
     }catch(error){if(!current())return;clearRows();$('[data-directory-error]').textContent=error.status===409?'名单已更新，请重新搜索。':'名单暂时无法核对，请重试。';$('[data-directory-error]').hidden=false;$('[data-directory-status]').textContent='此次读取未完成，不能据此判断为零。';onFallback();}
     finally{if(current()){busy=false;root.removeAttribute('aria-busy');lock();}}
   }
@@ -168,7 +214,7 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
     }catch(error){if(!current())return;$('[data-directory-health-error]').textContent=error.status===403?'权限已变化，请重新登录。':'资料暂时无法核对，请重试。';$('[data-directory-health-error]').hidden=false;$('[data-directory-health-status]').textContent='此次核对未完成。';}
     finally{if(current()){healthBusy=false;lock();}}
   }
-  function clear(){sequence++;busy=false;currentCursor='';trail=[];resetting=true;$('[data-directory-search]').reset();resetting=false;clearRows();clearHealth();$('[data-directory-error]').textContent='';$('[data-directory-error]').hidden=true;$('[data-directory-status]').textContent='';lock();}
+  function clear(){sequence++;busy=false;currentCursor='';trail=[];restoreAttempted=false;navigation.clear();resetting=true;$('[data-directory-search]').reset();resetting=false;clearRows();clearHealth();$('[data-directory-error]').textContent='';$('[data-directory-error]').hidden=true;$('[data-directory-status]').textContent='';lock();}
   $('[data-directory-search]').addEventListener('submit',event=>{event.preventDefault();void load();});$('[data-directory-search]').addEventListener('reset',()=>{if(!resetting)queueMicrotask(()=>{if(active())void load();});});
   $('[data-directory-work]').addEventListener('change',()=>{if(active())void load();});
   $('[data-directory-next]').addEventListener('click',()=>{if(!busy&&state?.nextCursor)void load(state.nextCursor,[...trail,currentCursor]);});$('[data-directory-prev]').addEventListener('click',()=>{if(!busy&&trail.length)void load(trail.at(-1),trail.slice(0,-1));});

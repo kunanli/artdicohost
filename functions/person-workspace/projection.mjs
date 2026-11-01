@@ -218,11 +218,13 @@ export function arrangementsProjection(contact, source) {
 }
 export function confirmationsSource(value) {
   if (!plain(value)) fail();
+  if (Object.hasOwn(value, 'unresolvedConfirmations') && typeof value.unresolvedConfirmations !== 'boolean') fail();
   const notices = records(value.notices, CONTACT_ID, 2000).map(item => ({ id: item.id,
     kind: oneOf(item.kind, ['registration', 'promotion']), status: oneOf(item.status, ['reserved', 'provider_accepted', 'rejected', 'unknown']) === 'reserved' ? 'unknown' : item.status,
     admissionStatus: oneOf(item.admissionStatus, ['confirmed', 'waitlisted']), attempt: revisionValue(item.attempt),
     createdAt: timestamp(item.createdAt, false), updatedAt: timestamp(item.updatedAt, false) }));
-  return { revision: revisionValue(value.revision), notices };
+  return { revision: revisionValue(value.revision), notices,
+    ...(Object.hasOwn(value, 'unresolvedConfirmations') ? { unresolvedConfirmations: value.unresolvedConfirmations } : {}) };
 }
 
 /** Selected-person-only volunteer projection. Private notes, source profiles,
@@ -281,7 +283,8 @@ export function communicationProjection({ contactRaw, contactId, registrationId,
     at: timestamp(contactRaw.invitation.sentAt), status: 'manually_sent', channel: oneOf(contactRaw.invitation.channel, ['wechat', 'email', 'other']), kind: null });
   timeline.sort(descending);
   return { historyLimit: HISTORY_LIMIT, invitationTotal: invitations.length, confirmationTotal: notices.length, timelineTotal: timeline.length,
-    unresolvedInvitations: invitations.some(item => item.status === 'unknown'), unresolvedConfirmations: notices.some(item => ['unknown', 'reserved'].includes(item.status)),
+    unresolvedInvitations: invitations.some(item => item.status === 'unknown'),
+    unresolvedConfirmations: confirmations?.unresolvedConfirmations === true || notices.some(item => ['unknown', 'reserved'].includes(item.status)),
     historyTruncated: invitations.length > HISTORY_LIMIT || notices.length > HISTORY_LIMIT || timeline.length > HISTORY_LIMIT,
     invitations: invitations.slice(0, HISTORY_LIMIT), confirmations: notices.slice(0, HISTORY_LIMIT), timeline: timeline.slice(0, HISTORY_LIMIT) };
 }

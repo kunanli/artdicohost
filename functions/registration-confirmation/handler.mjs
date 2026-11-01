@@ -9,6 +9,7 @@ const MAX_BODY = 16 * 1024;
 const PUBLIC_PATHS = ['/api/registration/confirmation', '/api/admin/registration/confirmation'];
 const SETTINGS = '/api/admin/registration-confirmation/settings';
 const DISPATCH = '/api/admin/registration-confirmation/dispatch';
+const CONFIRMATION_PREVIEW = '/api/admin/registration-confirmation/preview';
 const REMINDER_PREVIEW = '/api/admin/registration-confirmation/reminder-preview';
 const REMINDER_DISPATCH = '/api/admin/registration-confirmation/reminder-dispatch';
 const reject = (code = 'INVALID_REQUEST', status = 400) => { throw new ConfirmationError(code, status); };
@@ -60,6 +61,7 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
       const deliveryRead = /^\/api\/admin\/registration-confirmation\/delivery\/([A-Za-z0-9_-]{43})$/u.exec(url.pathname);
       const deliverySend = /^\/api\/admin\/registration-confirmation\/send\/([A-Za-z0-9_-]{43})$/u.exec(url.pathname);
       const reminderOperation = /^\/api\/admin\/registration-confirmation\/reminder-operation\/([A-Za-z0-9_-]{32,128})$/u.exec(url.pathname);
+      const confirmationOperation = /^\/api\/admin\/registration-confirmation\/operation\/([A-Za-z0-9_-]{32,128})$/u.exec(url.pathname);
       if (PUBLIC_PATHS.includes(url.pathname)) {
         if (!origins.has(origin)) reject('ORIGIN_REJECTED', 403);
         cors = { 'access-control-allow-origin': origin, vary: 'Origin' };
@@ -72,14 +74,14 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         if (request.signal.aborted) reject();
         return json(await service.confirmation(input));
       }
-      if (![SETTINGS, DISPATCH, REMINDER_PREVIEW, REMINDER_DISPATCH].includes(url.pathname) && !staffLink && !deliveryRead && !deliverySend && !reminderOperation) reject('NOT_FOUND', 404);
+      if (![SETTINGS, DISPATCH, CONFIRMATION_PREVIEW, REMINDER_PREVIEW, REMINDER_DISPATCH].includes(url.pathname) && !staffLink && !deliveryRead && !deliverySend && !reminderOperation && !confirmationOperation) reject('NOT_FOUND', 404);
       cors = { vary: 'Cookie, Origin' };
       if (origin !== null && origin !== apiOrigin) reject('ORIGIN_REJECTED', 403);
       if (url.pathname === SETTINGS && !['GET', 'PUT'].includes(request.method) || url.pathname === DISPATCH && request.method !== 'POST') reject('METHOD_NOT_ALLOWED', 405);
       if (staffLink && request.method !== 'GET') reject('METHOD_NOT_ALLOWED', 405);
       if (deliveryRead && request.method !== 'GET' || deliverySend && request.method !== 'POST') reject('METHOD_NOT_ALLOWED', 405);
-      if ([REMINDER_PREVIEW, REMINDER_DISPATCH].includes(url.pathname) && request.method !== 'POST'
-        || reminderOperation && request.method !== 'GET') reject('METHOD_NOT_ALLOWED', 405);
+      if ([CONFIRMATION_PREVIEW, REMINDER_PREVIEW, REMINDER_DISPATCH].includes(url.pathname) && request.method !== 'POST'
+        || (reminderOperation || confirmationOperation) && request.method !== 'GET') reject('METHOD_NOT_ALLOWED', 405);
       if (typeof auth?.authenticate !== 'function' || !service) reject('CONFIRMATION_UNAVAILABLE', 503);
       const session = await auth.authenticate(request);
       if (!session?.user) reject('AUTH_REQUIRED', 401);
@@ -93,18 +95,20 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         return json(await service.staffConfirmationLink({ actor: session.user, registrationId: staffLink[1] }));
       }
       if (!canManageEventOperations(session.user)) reject('FORBIDDEN', 403);
-      if (reminderOperation) {
-        if (typeof service.reminderOperation !== 'function') reject('CONFIRMATION_UNAVAILABLE', 503);
-        return json(await service.reminderOperation({ actor: session.user, operationId: reminderOperation[1] }));
+      if (reminderOperation || confirmationOperation) {
+        const method = confirmationOperation ? 'confirmationOperation' : 'reminderOperation';
+        if (typeof service[method] !== 'function') reject('CONFIRMATION_UNAVAILABLE', 503);
+        return json(await service[method]({ actor: session.user, operationId: (confirmationOperation || reminderOperation)[1] }));
       }
       if (request.method === 'GET') return json(await service.settings({ actor: session.user }));
       if (origin !== apiOrigin || !equalToken(request.headers.get('x-csrf-token'), session.csrfToken)) reject('CSRF_REJECTED', 403);
       const input = await body(request);
       if (request.signal.aborted) reject();
-      if (url.pathname === REMINDER_PREVIEW) {
+      if ([CONFIRMATION_PREVIEW, REMINDER_PREVIEW].includes(url.pathname)) {
         keys(input, ['registrationIds', 'cursor'], []);
-        if (typeof service.staffReminderPreview !== 'function') reject('CONFIRMATION_UNAVAILABLE', 503);
-        return json(await service.staffReminderPreview({ ...input, actor: session.user }));
+        const method = url.pathname === CONFIRMATION_PREVIEW ? 'staffConfirmationPreview' : 'staffReminderPreview';
+        if (typeof service[method] !== 'function') reject('CONFIRMATION_UNAVAILABLE', 503);
+        return json(await service[method]({ ...input, actor: session.user }));
       }
       if (url.pathname === REMINDER_DISPATCH) {
         keys(input, ['expectedRevision', 'operationId', 'registrationIds', 'retryRejected'], ['expectedRevision', 'operationId', 'registrationIds']);

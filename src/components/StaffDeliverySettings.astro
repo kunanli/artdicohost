@@ -6,6 +6,24 @@
   <div data-delivery-state hidden>
     <div class="delivery-summary"><article><h3>确认邮件</h3><p data-delivery-mail-ready></p></article><article><h3 id="wallet-settings-title">Apple Wallet</h3><p data-delivery-wallet-ready></p><p class="delivery-muted" data-delivery-wallet-expiry hidden></p></article></div>
     <form data-delivery-automatic><h3>报名通知</h3><label><input type="checkbox" name="enabled" /> 启用报名通知</label><p class="delivery-muted">新申请寄回执，核准后寄确认；行前提醒由下方手动发出。关闭后全部暂停，不补寄历史记录。</p><div class="ah-form-save-actions"><p class="ah-form-save-state" data-delivery-save-state data-save-state="loaded" role="status" aria-live="polite">尚未修改</p><button type="submit" class="ah-admin-button ah-admin-primary" data-delivery-save-button>保存</button></div></form>
+    <section class="delivery-formal delivery-reminders" aria-labelledby="formal-heading">
+      <div class="ah-admin-section-heading"><h3 id="formal-heading">正式确认信</h3><button type="button" class="ah-admin-button" data-formal-refresh>读取确认信名单</button></div>
+      <p class="delivery-muted" data-formal-status role="status" aria-live="polite">选择需要寄送确认信的人员；已接收或结果待核对者不会重复寄送。</p>
+      <form data-delivery-dispatch>
+        <div data-formal-preview hidden>
+          <details class="delivery-guide"><summary>预览确认信内容</summary><strong data-formal-subject></strong><pre class="delivery-message" data-formal-message></pre></details>
+          <label><input type="checkbox" data-formal-retry-rejected /> 已核对原因，允许重试明确未发出的确认信</label>
+          <div class="delivery-reminder-selection"><label><input type="checkbox" data-formal-select-all /> 选择本页可发送人员</label><p data-formal-selection></p></div>
+          <ul class="delivery-reminder-rows" data-formal-rows tabindex="0" aria-label="确认信收件人名单"></ul>
+          <p class="delivery-muted" data-formal-empty hidden>暂无已确认名额的人员。</p>
+          <div class="contacts-action-row"><button type="button" class="ah-admin-button" data-formal-next hidden>下一页</button><button type="submit" class="ah-admin-button ah-admin-primary" data-formal-send disabled>发送确认信（0 人）</button></div>
+        </div>
+      </form>
+      <div class="delivery-pending" data-formal-pending hidden><p>原确认信结果待核对，不会重寄。</p><button type="button" class="ah-admin-button" data-formal-lookup>核对原寄送</button></div>
+      <div data-delivery-legacy-pending hidden></div>
+      <div class="delivery-pending" data-formal-legacy-recovery hidden><p>有旧确认信操作待核对，不会重建或重寄。</p><button type="button" class="ah-admin-button" data-formal-legacy-lookup>核对旧操作</button></div>
+      <div class="delivery-reminder-results" data-formal-results hidden></div>
+    </section>
     <section class="delivery-reminders" aria-labelledby="reminder-heading">
       <div class="ah-admin-section-heading"><h3 id="reminder-heading">行前提醒</h3><button type="button" class="ah-admin-button" data-reminder-refresh>读取提醒名单</button></div>
       <p class="delivery-muted" data-reminder-status role="status" aria-live="polite">先核对当前已确认名额，再选择收件人。</p>
@@ -24,6 +42,5 @@
     </section>
     <details class="delivery-guide"><summary>通知记录</summary><h3>正式确认</h3><dl class="delivery-counts" data-delivery-counts></dl><div data-delivery-notification-counts></div></details>
     <details class="delivery-guide" data-delivery-setup-guide><summary>设置指南</summary><h3>确认邮件</h3><ul data-delivery-mail-missing></ul><ol><li>在 EmailJS 连接寄件账号，建立报名确认模板。</li><li>按指引加入服务、模板与寄件配置。</li><li>状态可用后再开启报名通知，并核对测试邮箱。</li></ol><a href="https://github.com/kunanli/artdicohost/blob/main/docs/registration-confirmation.md" target="_blank" rel="noopener noreferrer">查看确认信设置指引</a><h3>Apple Wallet</h3><ul data-delivery-wallet-missing hidden></ul><p class="delivery-muted" data-delivery-wallet-device hidden>设置后仍需用真实 iPhone 验证加入 Wallet。</p><ol><li>完成 Apple Developer 注册，建立活动的 Pass Type ID。</li><li>准备签章证书、私钥、Apple WWDR 与根证书。</li><li>按受控指引验证并上传加密设置包；私钥不填入网页。</li><li>用真实 iPhone 验证后再开放票券。</li></ol><a href="https://github.com/kunanli/artdicohost/blob/main/docs/apple-wallet-setup.md" target="_blank" rel="noopener noreferrer">查看 Wallet 设置与轮替指引</a></details>
-    <details class="delivery-guide"><summary>补发所选公开报名的确认邮件</summary><p>选择登记编号后明确执行。邮件服务已接收、明确未发出及结果不明分别记录；结果不明的邮件不会再次发送。</p><form data-delivery-dispatch><div class="ah-admin-field"><label for="delivery-registration-ids">登记编号（最多 100 人，按行或逗号分隔）</label><textarea id="delivery-registration-ids" name="registrationIds" rows="4" maxlength="5000" required autocomplete="off" spellcheck="false"></textarea></div><label><input type="checkbox" name="retryRejected" /> 已核对原因，允许再尝试曾明确未发出的邮件</label><button type="submit" class="ah-admin-button">发送所选确认邮件</button></form><div data-delivery-results></div></details>
   </div>
 </section>

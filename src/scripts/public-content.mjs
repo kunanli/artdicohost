@@ -1,5 +1,5 @@
-import { publicGuestCards, publicGuestAffiliation, publicGuestSubtitle, publicGuestSessions, publicSessionParticipants } from '../../shared/guest-display.mjs';
-import { GUEST_PUBLIC_ROLE_LABELS, SESSION_PARTICIPANT_ROLE_LABELS, isPublicWebsite } from '../../shared/content-schema.mjs';
+import { publicGuestCards, publicGuestAffiliation, publicGuestSubtitle, publicGuestSessions } from '../../shared/guest-display.mjs';
+import { GUEST_PUBLIC_ROLE_LABELS, isPublicWebsite } from '../../shared/content-schema.mjs';
 import { publicShowcaseCards, SHOWCASE_KIND_LABELS } from '../../shared/showcase-display.mjs';
 import { resolvePublicContentSource } from '../../shared/public-content-source.mjs';
 import { publicOrganizationCards, orderOrganizationCards, organizationReferenceKey, organizationLogoVariant } from '../../shared/organization-display.mjs';
@@ -85,11 +85,6 @@ function renderPublishedContent(content,url) {
       if (item.status === 'cancelled') {
         row.dataset.sessionStatus = 'cancelled';
         detail.append(element('small', '本场已取消', 'ah-session-meta'));
-      } else {
-        const people = publicSessionParticipants(item, content.guests, content.guestAttendance);
-        if (!people.length) detail.append(element('small', '讲者 / 主持人待确认', 'ah-session-meta'));
-        for (const person of people) detail.append(element('small', person.roles.map(role => SESSION_PARTICIPANT_ROLE_LABELS[role]).join(' / ')
-          + '：' + person.name + (person.attendance === 'attending' ? '' : ' · 安排待确认'), 'ah-session-meta'));
       }
       row.append(detail);
       list.append(row);
@@ -124,7 +119,6 @@ function renderPublishedContent(content,url) {
       body.setAttribute('role','region');body.setAttribute('aria-label',guest.name+'简介');
       body.append(portrait);
       body.append(element('h3',guest.name,'ah-guest-detail-name'));
-      if(guest.status==='pending')body.append(element('p','资料待确认','ah-guest-company'));
       body.append(element('p',guest.publicRoles?.length?guest.publicRoles.map(role=>GUEST_PUBLIC_ROLE_LABELS[role]).join(' · '):'嘉宾','ah-guest-duty'));
       if(guest.company)body.append(element('p',guest.company,'ah-guest-company'));
       if(guest.title)body.append(element('p',guest.title,'ah-guest-title'));

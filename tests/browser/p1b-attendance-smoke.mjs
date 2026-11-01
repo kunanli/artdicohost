@@ -87,6 +87,7 @@ async function publicChecks(f,expectedCards,{legacy=false}={}){
   if(legacy)for(const id of expectedCards){const card=f.page.locator('#guest-'+id+' [data-guest-toggle]');assert.equal(await card.getAttribute('aria-label'),['合成嘉宾 '+id,'合成机构','嘉宾介绍'].join('，'));assert.equal(await card.locator('.ah-guest-affiliation').textContent(),'合成机构','legacy company remains readable without inventing a position');assert.equal(await card.locator('.ah-guest-affiliation').getAttribute('data-affiliation-source'),'company');assert.equal(await card.locator('.ah-guest-subtitle').count(),0,'missing legacy title and role stay empty instead of duplicating company');}
   if(expectedCards.includes(IDS.speaker))assert.equal(await f.page.locator('[data-public-guests] > [data-guest-id="'+IDS.speaker+'"] a[href="#program-'+IDS.panel+'"]').count(),1,'a public primary retains its editorial session link independently of profile confirmation or attendance proof');
   const panel=f.page.locator('#program-'+IDS.panel);assert.match(await panel.textContent(),/合成多人圆桌/u);
+  assert.equal(await panel.locator('.ah-session-meta').count(),0,'public timetable omits the speaker/host field regardless of attendance');
   assert.match(await f.page.locator('#program-'+IDS.cancelled).textContent(),/本场已取消/u);
   assert.doesNotMatch(await f.page.locator('[data-agenda]').textContent(),/合成私密人物|SYNTHETIC_P1B_PRIVATE/u);
   return panel;
@@ -154,8 +155,7 @@ try{
       assert.equal(first.content.sessions.find(row=>row.id===IDS.panel).participants.some(row=>row.guestId===IDS.private),false,'private participant identity is not public');
       assert.doesNotMatch(JSON.stringify(first),/contactId|email|wechat|internalNotes|SYNTHETIC_P1B_PRIVATE/u);
       let panel=await publicChecks(f,[IDS.speaker]);
-      assert.match(await panel.textContent(),/主持人 \/ 圆桌嘉宾：合成嘉宾 p1b-host · 安排待确认/u);
-      assert.match(await panel.textContent(),/组织者：合成嘉宾 p1b-declined · 安排待确认/u);
+      assert.equal(await panel.locator('strong').textContent(),'合成多人圆桌','editorial participants remain saved without adding a public subtitle');
       await f.page.locator('[data-zone="B"]').first().click();
       const publicShot=await shot(f,'published-people');
 
@@ -169,7 +169,7 @@ try{
       assert.ok(withdrawn.revision>first.revision,'explicit attendance publication advances content revision');
       assert.deepEqual(withdrawn.content.guestAttendance.confirmedGuestIds,[]);
       assert.equal(withdrawn.content.sessions.length,2,'guest filtering never removes the timetable');
-      panel=await publicChecks(f,[]);assert.match(await panel.textContent(),/讲者：合成嘉宾 p1b-speaker · 安排待确认/u);
+      panel=await publicChecks(f,[]);assert.equal(await panel.locator('strong').textContent(),'合成多人圆桌');
       assert.deepEqual(await f.runtime.app.registrationService.getAdmissions({actor:f.runtime.users[0]}),f.admissions);
       assert.equal(f.runtime.messages.length,0);
       assert.equal(f.calls.filter(row=>row.status>=400).length,0,'actual synthetic API responses all succeed');

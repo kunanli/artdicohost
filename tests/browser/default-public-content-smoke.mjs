@@ -9,6 +9,7 @@ import {toPublicContent,validateContent} from '../../shared/content-schema.mjs';
 
 const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright-core');
 const root=resolve(fileURLToPath(new URL('../../',import.meta.url))),SITE='https://public.synthetic.invalid';
+const artworkModules=new Set(['gamezone','igda','szdx','bu','pengyou','g4c','teesside'].map(key=>'/src/assets/home/organization-'+key+'.png'));
 const value=createInitialContent();value.sessions=[];
 const guest=(id,extra={})=>({id,name:'合成待确认嘉宾',company:'',ggjRole:'',portraitId:'',status:'pending',publicConsent:false,contactId:'PRIVATE_CONTACT_'+id,internalNotes:'PRIVATE_GUEST',...extra});
 const org=(id,extra={})=>({id,name:'合成待确认组织',logoId:'',website:'',participation:'undecided',status:'pending',publicConsent:false,internalNotes:'PRIVATE_ORG',...extra});
@@ -35,6 +36,12 @@ page.setDefaultTimeout(5000);page.on('pageerror',error=>errors.push(error.messag
 await context.route('**/*',async route=>{
   const request=route.request(),url=new URL(request.url());assert.equal(url.origin,SITE);
   requests.push(url.pathname);
+  // Emulate Vite's URL-module import for these fixed local assets only. This
+  // source harness does not fetch images; built actual13 verifies their bytes.
+  if(artworkModules.has(url.pathname)&&url.search==='?url'){
+    assert.equal(request.method(),'GET');
+    return route.fulfill({contentType:'text/javascript',body:'export default '+JSON.stringify(url.pathname)+';'});
+  }
   if(url.pathname==='/')return route.fulfill({contentType:'text/html; charset=utf-8',body:html});
   if(url.pathname==='/api/public/content'){
     assert.equal(request.method(),'GET');assert.equal(request.headers().cookie,undefined);assert.equal(request.headers().authorization,undefined);
@@ -47,10 +54,10 @@ await context.route('**/*',async route=>{
 try{
   await page.goto(SITE);await page.locator('#work-default-work').waitFor();
   for(const selector of ['[data-guest-id]','[data-organization-id]','[data-booth-id]','[data-showcase-id]'])assert.equal(await page.locator(selector).count(),2);
-  assert.match(await page.locator('#guest-default-guest').textContent(),/资料待确认/u);
+  assert.doesNotMatch(await page.locator('#guest-default-guest').textContent(),/资料待确认|資料待確認/u);
   assert.equal(await page.locator('#guest-fallback-guest .ah-guest-name').textContent(),'嘉宾姓名待补');
-  assert.match(await page.locator('#organization-default-org').textContent(),/参与待确认/u);
-  assert.match(await page.locator('#organization-withdrawn-org').textContent(),/已退出/u);
+  assert.equal(await page.locator('#organization-default-org').textContent(),'合成待确认组织');
+  assert.equal(await page.locator('#organization-withdrawn-org').textContent(),'合成已退出组织');
   assert.match(await page.locator('#booth-default-booth').textContent(),/展位待安排.*展示内容待补.*展位安排待确认/u);
   assert.match(await page.locator('#booth-cancelled-booth').textContent(),/本展位已取消/u);
   assert.match(await page.locator('#work-default-work').textContent(),/资料待确认.*参加待确认.*展示安排陆续公布/u);

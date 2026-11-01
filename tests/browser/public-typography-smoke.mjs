@@ -36,6 +36,8 @@ async function main() {
     stage = phase + '-typography';
     const measurements = await page.locator('[data-registration-form]').evaluate((form, minimum) => {
       const visible = node => !!node.getClientRects().length && getComputedStyle(node).visibility === 'visible' && !node.closest('[hidden]');
+      const roots = [form, document.querySelector('#privacy')].filter(Boolean);
+      const query = selector => roots.flatMap(root => [...root.querySelectorAll(selector)]);
       const box = node => { const rect = node.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }; };
       const groups = {
         label: '[data-field] > label:not(.ah-demo-consent),.ah-general-proposal-toggle',
@@ -48,15 +50,15 @@ async function main() {
         status: '[data-application-draft-status],[data-form-result]',
         error: '.ah-form-error,.ah-form-error-list button',
         heading: 'h3,h4',
-        policy: '.ah-registration-policy dt,.ah-registration-policy dd,.ah-registration-policy p,.ah-application-recovery p',
+        policy: '[data-public-privacy] p,.ah-application-recovery p',
       };
-      const roles = Object.fromEntries(Object.entries(groups).map(([role, selector]) => [role, [...form.querySelectorAll(selector)].filter(visible).filter(node => node.matches('input,select,textarea') || node.textContent.trim()).map(node => {
+      const roles = Object.fromEntries(Object.entries(groups).map(([role, selector]) => [role, query(selector).filter(visible).filter(node => node.matches('input,select,textarea') || node.textContent.trim()).map(node => {
         const style = getComputedStyle(node);
         return { tag: node.tagName.toLowerCase(), font: parseFloat(style.fontSize), lineRatio: parseFloat(style.lineHeight) / parseFloat(style.fontSize), box: box(node),
           clientWidth: node.clientWidth, clientHeight: node.clientHeight, scrollWidth: node.scrollWidth, scrollHeight: node.scrollHeight,
           overflowX: style.overflowX, overflowY: style.overflowY, min: minimum[role] };
       })]));
-      const paragraphs = [...form.querySelectorAll('p,dd')].filter(visible).filter(node => node.textContent.trim()).map(node => {
+      const paragraphs = query('p,dd').filter(visible).filter(node => node.textContent.trim()).map(node => {
         const style = getComputedStyle(node); return { font: parseFloat(style.fontSize), ratio: parseFloat(style.lineHeight) / parseFloat(style.fontSize) };
       });
       const rgb = value => {
@@ -76,7 +78,7 @@ async function main() {
         const foreground = over(rgb(getComputedStyle(node).color), background), fg = luminance(foreground), bg = luminance(background);
         return { ratio: (Math.max(fg, bg) + .05) / (Math.min(fg, bg) + .05), foreground: foreground.slice(0, 3), background: background.slice(0, 3), backgroundLuminance: bg, unresolvedImage };
       };
-      const panels = [...form.querySelectorAll('.ah-registration-policy,.ah-application-recovery')].filter(visible).map(panel => ({
+      const panels = query('[data-public-privacy],.ah-application-recovery').filter(visible).map(panel => ({
         kind: panel.matches('.ah-application-recovery') ? 'recovery' : 'policy', ...contrast(panel),
         text: [...panel.querySelectorAll('summary,dt,dd,p,h3,h4,a')].filter(visible).filter(node => node.textContent.trim()).map(node => ({ tag: node.tagName.toLowerCase(), ...contrast(node) })),
       }));
@@ -97,7 +99,7 @@ async function main() {
     }
     assert.ok(measurements.paragraphs.length > 0);
     for (const paragraph of measurements.paragraphs) assert.ok(Number.isFinite(paragraph.ratio) && paragraph.ratio >= minimum.paragraphLineRatio - .001, 'explanatory paragraphs have readable line spacing');
-    assert.ok(measurements.panels.length >= (phase === 'recovery' ? 1 : 2), 'real expanded policy/recovery surfaces are measured');
+    assert.ok(measurements.panels.some(panel => panel.kind === (phase === 'recovery' ? 'recovery' : 'policy')), 'the on-demand footer privacy or recovery surface is measured');
     for (const panel of measurements.panels) {
       assert.equal(panel.unresolvedImage, false, 'contrast is computed over resolved solid surfaces, not guessed through imagery');
       assert.ok(panel.backgroundLuminance <= .1, 'policy and recovery use the requested dark surface');
@@ -144,7 +146,15 @@ async function main() {
         const form = page.locator('[data-registration-form]'); await form.locator('[data-submit]:enabled').waitFor(); assert.equal(await form.getAttribute('data-registration-mode'), 'production');
         await form.locator('.ah-general-extra > summary').focus(); await page.keyboard.press('Enter'); assert.equal(await form.locator('.ah-general-extra').evaluate(node => node.open), true);
         await form.locator('[data-proposal-toggle]').focus(); await page.keyboard.press('Space'); assert.equal(await form.locator('[data-proposal-toggle]').isChecked(), true); assert.equal(await form.locator('[data-speaker-proposal]').isVisible(), true);
-        for (const selector of ['[data-registration-policy]', '[data-registration-email-policy]']) { await form.locator(selector + ' > summary').focus(); await page.keyboard.press('Enter'); assert.equal(await form.locator(selector).evaluate(node => node.open), true); }
+        assert.equal(await form.locator('[data-registration-policy],[data-registration-email-policy],[data-registration-email-notice]').count(), 0, 'the form omits the two detailed notices and duplicate email explanation');
+        assert.equal(await page.locator('#privacy > details').evaluate(node => node.open), false, 'privacy details start collapsed');
+        await form.locator('a[href="#privacy"]').focus(); await page.keyboard.press('Enter');
+        assert.equal(await page.locator('#privacy > details').evaluate(node => node.open), true, 'the consent link opens the existing footer privacy disclosure');
+        assert.equal(await page.locator('#privacy > details > summary').evaluate(node => document.activeElement === node), true, 'reading continues at the opened disclosure');
+        assert.equal(await form.locator('[name=consentAccepted]').isChecked(), false, 'reading the notice never consents on the visitor’s behalf');
+        const privacyText = await page.locator('[data-public-privacy]').textContent();
+        for (const value of Object.values(config.privacy)) assert.ok(privacyText.includes(value), 'the linked notice preserves the current authoritative policy');
+        assert.match(privacyText, /EmailJS/u);
         await form.locator('[name=name]').focus(); await page.keyboard.press('Tab'); assert.equal(await form.locator('[name=email]').evaluate(node => document.activeElement === node), true);
         const focus = await form.locator('[name=email]').evaluate(node => { const style = getComputedStyle(node); return { outline: parseFloat(style.outlineWidth), outlineStyle: style.outlineStyle, shadow: style.boxShadow }; });
         assert.ok(focus.outline >= 2 && focus.outlineStyle !== 'none' || focus.shadow !== 'none', 'keyboard focus has a visible indicator');

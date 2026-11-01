@@ -275,7 +275,9 @@ async function disclosures(f) {
 }
 async function otherContent(f) {
   const { page } = f;
-  assert.match(await page.locator('#program-synthetic-reference-a').textContent(), /安排待确认/u, 'an editorial association never fabricates actual attendance');
+  assert.equal(await page.locator('#program-synthetic-reference-a strong').textContent(), '合成公开交流场次 A', 'the activity title remains unchanged');
+  assert.equal(await page.locator('#program-synthetic-reference-a .ah-session-meta').count(), 0, 'the speaker/host field is omitted even when a guest is linked');
+  assert.equal(await page.locator('#program-synthetic-reference-c .ah-session-meta').count(), 0, 'an unassigned activity has no pending speaker placeholder');
   const program = await page.locator('[data-program-controls]').evaluate(node => {
     const box = element => { const b = element.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; };
     return { tabs: box(node.querySelector('.ah-zone-tabs')), filter: box(node.querySelector('.ah-program-period')), buttons: [...node.querySelectorAll('[data-zone]')].map(box), swatches: [...node.querySelectorAll('.ah-zone-swatch')].map(box) };

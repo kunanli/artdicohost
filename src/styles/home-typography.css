@@ -115,3 +115,5 @@
 #artdico-host.ah-festival.ah-cosmos .ah-registration .ah-registration-policy dt{font-size:var(--ah-type-label);font-weight:var(--ah-weight-strong)}
 #artdico-host.ah-festival.ah-cosmos .ah-registration :is(.ah-registration-policy,.ah-application-recovery,.ah-demo-consent) a{color:var(--ah-text-link);text-decoration:underline;text-underline-offset:3px}
 #artdico-host.ah-festival.ah-cosmos .ah-registration :is(.ah-registration-policy,.ah-application-recovery) :focus-visible{outline:2px solid var(--ah-text-link);outline-offset:4px}
+#artdico-host.ah-festival.ah-cosmos .ah-privacy [data-public-privacy]{background:var(--ah-surface-reading);color:var(--ah-text-primary);padding:16px;margin-top:12px;overflow-wrap:anywhere}
+#artdico-host.ah-festival.ah-cosmos .ah-privacy [data-public-privacy] p{color:var(--ah-text-secondary)}

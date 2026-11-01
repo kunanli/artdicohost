@@ -2,7 +2,7 @@
 
 本次改版執行入口：[分階段總覽](docs/redesign/README.md)、[操作手冊](docs/redesign/02-staff-and-attendee-runbook.md)、[驗收與發布](docs/redesign/03-release-and-acceptance.md)。P1–P6、[UX1 操作／層級](docs/redesign/ux-clarity-release.md) 及 [UX2 具名寄送與連續處理](docs/redesign/ux-workflow-release.md) 均已完成程式交付及正式發布；UX2 main `5ec45815` 的 1586 項測試、私有 OSS、13 個後台頁面及 51 個公開物件核驗通過。四項真人／真實資料驗收仍待主辦方記錄。下方 10 月發布資訊為歷史基準，現況以接續台帳及當輪紀錄為準。
 
-目前進行 [首頁原稿對齊與嘉賓相容修復](docs/redesign/home-reference-release.md)：依原效果圖恢復構圖，參與組織只顯示 Logo／名稱；缺少新版出席證明的舊公開嘉賓顯示「出席待确认」，不再整批隱藏。明確空證明、私人資料與發布權限維持原規則；本地驗證、最終編譯回歸與準確套件均通過，PR／main CI 與正式發布仍待核對。
+[首頁原稿對齊與嘉賓相容修復](docs/redesign/home-reference-release.md) 已由 PR #58 正式發布於 main `30e184fd`：原稿構圖、組織 Logo／名稱與舊公開嘉賓「出席待确认」相容顯示已交付。main 的 1593 項測試、私有 OSS、13 個後台頁面及 53 個準確公開物件 HTTPS 均通過；九筆公開嘉賓資料仍在，不代表九人已確認出席。四項真人／真實資料驗收維持獨立待辦。
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
 

@@ -9,7 +9,7 @@ import {createHash} from 'node:crypto';
 const project=fileURLToPath(new URL('../../',import.meta.url));
 const source=resolve(process.env.ARTDICO_SOURCE_DIRECTORY||project);
 const dist=resolve(process.env.ARTDICO_DIST_DIRECTORY||resolve(source,'dist'));
-const evidence=resolve(project,'.local-data/browser-evidence/p1b-attendance');
+const evidence=resolve(process.env.ARTDICO_ATTENDANCE_EVIDENCE_DIRECTORY||resolve(project,'.local-data/browser-evidence/p1b-attendance'));
 const {peopleRuntimeFixture,PEOPLE_FIXTURE_API:API,PEOPLE_FIXTURE_PUBLIC:SITE}=await import(pathToFileURL(resolve(source,'tests/helpers/people-runtime-fixture.mjs')));
 const {createObjectJournal}=await import(pathToFileURL(resolve(source,'functions/cloud-content/object-journal.mjs')));
 const {validateContent}=await import(pathToFileURL(resolve(source,'shared/content-schema.mjs')));
@@ -79,10 +79,13 @@ async function publish(f){
   assert.equal(f.dialogs.length,before+1,'exactly one impact confirmation per explicit publication');
   return body.published;
 }
-async function publicChecks(f,expectedCards){
+async function publicChecks(f,expectedCards,{legacy=false}={}){
   await openPublic(f);
   assert.deepEqual(await f.page.locator('[data-public-guests] > [data-guest-id]').evaluateAll(rows=>rows.map(row=>row.dataset.guestId)),expectedCards);
-  if(expectedCards.includes(IDS.speaker))assert.equal(await f.page.locator('[data-public-guests] > [data-guest-id="'+IDS.speaker+'"] a[href="#program-'+IDS.panel+'"]').count(),1,'a proved attending primary retains its scheduled session link independently of pending profile status');
+  assert.equal(await f.page.locator('#guest-'+IDS.private).count(),0,'private profiles never become public legacy cards');
+  assert.equal(await f.page.locator('[data-public-guests] .ah-guest-attendance').count(),legacy?expectedCards.length:0,'only a missing proof restores legacy profiles with attendance pending');
+  if(legacy)for(const id of expectedCards){const pending=f.page.locator('#guest-'+id+' [data-guest-toggle] .ah-guest-attendance');assert.equal(await pending.textContent(),'出席待确认');assert.equal(await pending.isVisible(),true,'legacy attendance uncertainty is visible before opening details');}
+  if(expectedCards.includes(IDS.speaker))assert.equal(await f.page.locator('[data-public-guests] > [data-guest-id="'+IDS.speaker+'"] a[href="#program-'+IDS.panel+'"]').count(),1,'a public primary retains its editorial session link independently of profile confirmation or attendance proof');
   const panel=f.page.locator('#program-'+IDS.panel);assert.match(await panel.textContent(),/合成多人圆桌/u);
   assert.match(await f.page.locator('#program-'+IDS.cancelled).textContent(),/本场已取消/u);
   assert.doesNotMatch(await f.page.locator('[data-agenda]').textContent(),/合成私密人物|SYNTHETIC_P1B_PRIVATE/u);
@@ -105,7 +108,8 @@ try{
   for(const width of [320,390,1440]){
     const f=await fixture(browser,width);
     try{
-      await publicChecks(f,[]);
+      const legacyCards=[IDS.speaker,IDS.host,IDS.declined,IDS.unlinked];
+      await publicChecks(f,legacyCards,{legacy:true});
       assert.deepEqual((await f.runtime.app.store.read()).published,f.legacy,'legacy public reads retain exact frozen bytes');
       await openAdmin(f,'sessions');
       await f.page.locator('[data-admin-sessions] tr').filter({hasText:'合成多人圆桌'}).locator('[data-row-action=edit]').click();
@@ -170,7 +174,7 @@ try{
       assert.equal(f.runtime.messages.length,0);
       assert.equal(f.calls.filter(row=>row.status>=400).length,0,'actual synthetic API responses all succeed');
       assert.equal(f.dialogs.length,2);assert.ok(f.dialogs.every(message=>/^将更新前台全部已保存内容/u.test(message)));
-      reports.push({width,legacyCards:0,confirmedCards:[IDS.speaker],afterWithdrawalCards:0,additionalParticipants:3,publicAdditionalParticipants:2,legacyAndNewEditorClear:true,ordinarySaveConfirmations:0,publishConfirmations:f.dialogs.length,firstRevision:first.revision,withdrawnRevision:withdrawn.revision,requests:f.calls.length,screenshots:[editorShot,publicShot]});
+      reports.push({width,legacyCards,legacyAttendance:'pending only; no invented proof',confirmedCards:[IDS.speaker],afterWithdrawalCards:0,additionalParticipants:3,publicAdditionalParticipants:2,legacyAndNewEditorClear:true,ordinarySaveConfirmations:0,publishConfirmations:f.dialogs.length,firstRevision:first.revision,withdrawnRevision:withdrawn.revision,requests:f.calls.length,screenshots:[editorShot,publicShot]});
     }catch(error){
       await writeFile(resolve(evidence,'failure.json'),JSON.stringify({width,url:f.page.url(),dialogs:f.dialogs,calls:f.calls,pageErrors:errors,text:await f.page.locator('body').innerText()},null,2)+'\n');
       await f.page.screenshot({path:resolve(evidence,'failure-'+width+'.png'),fullPage:true});throw error;

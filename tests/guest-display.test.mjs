@@ -7,6 +7,39 @@ const attendance = (confirmedGuestIds = ['synthetic-guest']) => ({ schemaVersion
 const confirmedCards = input => publicGuestCards(input, attendance());
 const person = (overrides = {}) => ({ id: 'synthetic-guest', name: '合成嘉宾', company: '合成机构', ggjRole: '', portraitId: 'a'.repeat(64) + '.png', status: 'confirmed', publicConsent: true, ...overrides });
 
+test('legacy published profiles remain visible as attendance pending without changing the publication or private facts', () => {
+  const content = createInitialContent();
+  content.guests = Array.from({ length: 9 }, (_, index) => person({ id: 'published-' + index,
+    status: index === 0 ? 'pending' : 'confirmed', publicConsent: false,
+    internalNotes: 'PRIVATE-NOTE', contactId: 'private-contact-' + index }));
+  const published = toPublicContent(content), before = JSON.stringify(published), cards = publicGuestCards(published.guests);
+  assert.equal(Object.hasOwn(published, 'guestAttendance'), false);
+  assert.equal(cards.length, 9);
+  assert.ok(cards.every(item => item.attendance === 'pending'));
+  assert.equal(cards[0].status, 'pending');
+  assert.equal(Object.hasOwn(cards[1], 'status'), false);
+  assert.doesNotMatch(JSON.stringify(cards), /PRIVATE-|contactId|publicConsent|sourceRevision|private-contact/u);
+  assert.equal(JSON.stringify(published), before);
+  assert.deepEqual(toPublicContent(published), published);
+  cards[0].name = '仅修改显示副本';
+  assert.equal(JSON.stringify(published), before);
+});
+
+test('legacy display still validates privacy, photos and fields while explicit empty or corrupt proofs never fall back', () => {
+  const hidden = person({ id: 'private-guest', visibility: 'private' });
+  assert.deepEqual(publicGuestCards([hidden]), []);
+  for (const patch of [{ visibility: undefined }, { status: 'approved' }, { portraitId: '../photo.png' }, { name: '' }]) {
+    assert.deepEqual(publicGuestCards([person(patch)]), []);
+  }
+  const accessor = person();
+  Object.defineProperty(accessor, 'name', { get() { assert.fail('legacy display must not execute getters'); } });
+  assert.deepEqual(publicGuestCards([accessor]), []);
+  for (const proof of [null, {}, attendance([]), { ...attendance(), confirmedGuestIds: ['missing'] }]) {
+    assert.deepEqual(publicGuestCards([person()], proof), []);
+  }
+  assert.equal(Object.hasOwn(confirmedCards([person()])[0], 'attendance'), false, 'proved card output keeps its existing shape');
+});
+
 test('proved attendance keeps profile confirmation and legacy consent independent while whitelisting fields', () => {
   const value = person({ ggjRole: '合成站点职务', internalNotes: 'PRIVATE-NOTE', email: 'private@example.invalid', portraitUrl: 'https://untrusted.example/track.png' });
   assert.deepEqual(confirmedCards([value]), [{ id: value.id, name: value.name, company: value.company, ggjRole: value.ggjRole,

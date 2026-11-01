@@ -10,16 +10,17 @@ const proof = (confirmedGuestIds = ['person-a'], patch = {}) => ({ schemaVersion
 const session = (patch = {}) => ({ id: 'synthetic-session', title: '合成圆桌', start: '10:00', end: '11:00', zone: 'A', status: 'scheduled',
   guestId: 'person-a', speakerName: 'PRIVATE-COPIED-NAME', speakerStatus: 'confirmed', internalNotes: 'PRIVATE-SESSION', ...patch });
 
-test('profile confirmation, legacy consent and a frozen old publication cannot substitute for actual attendance proof', () => {
+test('an explicit attendance proof remains authoritative over profile confirmation and legacy consent', () => {
   const guests = [person('person-a', { publicConsent: true })];
-  for (const evidence of [undefined, null, {}, proof([]), proof([], { sourceRevision: null }), proof(['missing']), proof(['person-a'], { sourceRevision: -1 }),
+  for (const evidence of [null, {}, proof([]), proof([], { sourceRevision: null }), proof(['missing']), proof(['person-a'], { sourceRevision: -1 }),
     { ...proof(), email: 'private@example.invalid' }, proof(['person-a','person-a'])]) {
     assert.deepEqual(publicGuestCards(guests, evidence), []);
   }
   const content = createInitialContent(); content.guests = guests;
   const frozen = toPublicContent(content), before = JSON.stringify(frozen);
-  assert.deepEqual(publicGuestCards(frozen.guests, frozen.guestAttendance), []);
-  assert.equal(JSON.stringify(frozen), before, 'hiding unproved cards does not migrate a frozen snapshot');
+  const cards = publicGuestCards(frozen.guests, frozen.guestAttendance);
+  assert.deepEqual(cards.map(item => ({ id: item.id, attendance: item.attendance })), [{ id: 'person-a', attendance: 'pending' }]);
+  assert.equal(JSON.stringify(frozen), before, 'displaying a legacy profile does not migrate a frozen snapshot');
   assert.deepEqual(toPublicContent(frozen), frozen, 'the entire legacy public payload remains readable');
 });
 
@@ -59,7 +60,9 @@ test('missing or invalid proof keeps editorial session associations visible as p
   for (const evidence of [undefined, proof([], { sourceRevision: null }), proof(['missing']), { ...proof(), contactId: 'PRIVATE' }]) {
     const people = publicSessionParticipants(current, guests, evidence);
     assert.equal(people.length, 2); assert.ok(people.every(item => item.attendance === 'pending'));
-    assert.deepEqual(publicGuestCards(guests, evidence), []);
+    const cards = publicGuestCards(guests, evidence);
+    if (evidence === undefined) assert.deepEqual(cards.map(item => item.attendance), ['pending', 'pending']);
+    else assert.deepEqual(cards, []);
   }
 });
 

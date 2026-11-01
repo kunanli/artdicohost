@@ -1,5 +1,17 @@
 # 浏览器回归验收
 
+首页原稿还原的新增聚焦入口为 `home-reference-smoke.mjs`。必须等本轮最终 `dist` 完成后再执行；它不负责构建，也不会读取正式公开 API 或私人名单：
+
+```sh
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium ARTDICO_DIST_DIRECTORY=/absolute/path/to/final/dist ARTDICO_REFERENCE_EVIDENCE_DIRECTORY=/absolute/path/to/reference-evidence node tests/browser/home-reference-smoke.mjs
+```
+
+这支脚本在载入前拦截全部网络，使用九份无 `guestAttendance` 的合成旧版公开人物、七份合成组织及本地参考图标。组织仅借用参考图已经公开的名称和 logo，固定合成 ID，以打乱的输入次序验证已知品牌排序；不读取正式名单，也不从名称推定出席。它验证 320／390／1440／1920 四种宽度、原生展开／键盘／Escape／悬停间隔／触控、缺图保留姓名与首字、组织只显示名称和图片，以及真实作品筛选、日程标签和 Q&A。额外区分首次明确空出席证明、坏证明、读取失败，及刷新时保留最后核对版本；缺旧证明仅表示出席待确认，不能当成已确认出席。1440 场景还验证未知及重复品牌记录仍保留在普通布局。共九个场景，实际完成数与退出结果以本轮报告为准，脚本存在不代表已通过。
+
+桌面几何来自原始 `FrontEnd_Resource/落地页.png`（1921×19362）：嘉宾圈直径 220、列中心间距 370、行距约 371；组织星球直径约 1408；标题白色字形高约 65、水平起点约 281，分隔线起点约 140。脚本记录原图 SHA、测量方法及明确容差，按视窗宽度缩放后核对四列九位人物、七组织 2／4／1、标题／分隔线和圆形比例。组织中排原本有 24px 的错落，列辨识会保留它；各参考 logo 还会以公开图片的实际白色绘制范围核对尺寸，避免把透明画布当成可见图标。装饰空圈另验透明包装与相同直径。手机单独检查两列适配，不把它称为原图等比像素匹配。
+
+证据包含最终 HTML SHA、建置时间、实际加载资产 SHA、1920／390 全页及各区截图、原图裁段和各场景结果。截图仍需并排人工查看；文件存在或几何断言通过都不能宣称整页逐像素一致。所有请求均停留在拦截器，不寄信、不提交申请、不更改出席或发布内容，也不增加生产依赖。
+
 [UX2 具名寄送与连续处理](../../docs/redesign/ux-workflow-release.md) 新增以下两个入口。先用当前准确配置建立本地 `dist`，再分别执行；本轮最终通过数量以阶段记录为准：
 
 ```sh

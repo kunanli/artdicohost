@@ -2,7 +2,7 @@
 
 本計畫依 P0 → P6 執行；一次完成一階段的修改、必要檢查與交付證據，再進入下一階段。核心為「一人一個工作入口、多份原始來源保留、一個有效名額、一個私人參會頁」。狀態總表與本輪決策見 [改版入口](README.md)，實際工作人員操作見 [操作流程](02-staff-and-attendee-runbook.md)。
 
-P1a 已完成本地實作，最終檢查及發布證據見 [P1a 紀錄](p1a-release.md)；P1b 以後尚待執行。既有能力以近期程式與 [統一人員流程](../unified-people-workspace.md)、[10 月 31 日體檢](../health-2026-10-31-admin-wallet.md) 為準；早期文件中的「純演示」「尚無 Apple 憑證」不是當前結論。
+P1a 已完成並實際發布，見 [P1a 紀錄](p1a-release.md)；目前接續 P1b，實作與待驗證範圍見 [P1b 紀錄](p1b-release.md)。既有能力以近期程式與 [統一人員流程](../unified-people-workspace.md)、[10 月 31 日體檢](../health-2026-10-31-admin-wallet.md) 為準；早期文件中的「純演示」「尚無 Apple 憑證」不是當前結論。
 
 ## P0 核對基準與準備執行
 
@@ -22,7 +22,7 @@ P1a 已完成本地實作，最終檢查及發布證據見 [P1a 紀錄](p1a-rele
 
 ### P1a 兩類作品與可新增展位
 
-本地實作已完成下列範圍。內容／儲存格式仍為版本 1，非持久化安排總覽改為版本 2；前後端須以同一候選版本交付，操作人員須重新載入舊分頁。寫入超過舊位置範圍的資料後，只能使用至少相容 P1a 的版本回退，詳見 [交付與回退步驟](p1a-release.md)。
+下列範圍已發布於 main `7d25921`。內容／儲存格式仍為版本 1，非持久化安排總覽改為版本 2；操作人員須重新載入舊分頁。寫入超過舊位置範圍的資料後，只能使用至少相容 P1a 的版本回退，詳見 [交付與回退步驟](p1a-release.md)。
 
 1. 新建／重新分類只提供「学生作品」「独立游戏」。學生製作的獨立遊戲預設優先歸學生作品，其他舊資料由編輯者逐筆核對。
 2. 保留舊 `kind:'team'` 及未填 `kind` 的讀取能力；不在 GET、部署或登入時批次改寫。舊團隊資料不得全部自動改為獨立遊戲。若前台需暫時呈現未歸類舊作品，可保留於「全部作品」並標示待分類，兩個分類選項維持不變。
@@ -33,6 +33,8 @@ P1a 已完成本地實作，最終檢查及發布證據見 [P1a 紀錄](p1a-rele
 **主要檔案：**`shared/content-schema.mjs`、`shared/showcase-display.mjs`、`shared/arrangement-overview.mjs`、`src/lib/content-local-drafts.mjs`、`src/lib/booth-slots.mjs`、`src/lib/arrangement-planner.mjs`、`src/scripts/arrangements-view.mjs`、`src/components/ContentWorkspace.astro`、兩個內容 store。
 
 ### P1b 出席證明 公開人物與活動事實
+
+本階段實作進行中；下列條件仍須以 [P1b 交付紀錄](p1b-release.md) 的最終測試、準確來源包及實際發布證據核對，不能以程式檔案已修改表示驗收完成。
 
 1. 公開嘉賓區只列實際答應出席者。本人出席回覆、資料確認、正式名額與公開設定分開保存；`guest.status:'confirmed'` 不當作出席證明，缺少關聯或讀取失敗也不當作已出席。
 2. 在 API 授權後核對已保存的人員關聯與最小出席證明，明確記錄來源修訂。瀏覽器不得讀取私密 contacts 來自行篩選；公開回應不包含 contactId、Email、微信、聯絡許可內容或內部備註。

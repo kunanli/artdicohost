@@ -2,15 +2,15 @@
 
 ## 2026-11-01 新改版執行入口
 
-本次對話已整理為 [改版執行總覽](redesign/README.md)，包含開發步驟、工作人員與參與者操作、驗收與發布。工作區已核對並快轉至遠端 main `d583e4de9ae1676822c6ea6da984211099f73dd3`，其新增為 FrontEnd_Resource 素材；這是來源基準，不是新取得的正式部署證明。
+本次對話已整理為 [改版執行總覽](redesign/README.md)，包含開發步驟、工作人員與參與者操作、驗收與發布。P1a 已由 [PR #49](https://github.com/kunanli/artdicohost/pull/49) 合併並發布於 main `7d259218dd522f6af865326c6211e3a300b3777b`；[正式流程 41266704060](https://github.com/kunanli/artdicohost/actions/runs/41266704060) 的檢查、FC 與 OSS 全部成功，13 個後台頁面與 46 個公開物件 HTTPS 核驗通過。
 
-目前分支 `feat/redesign-p1a` 已完成兩類作品與可新增展位的本地實作，最終檢查與正式發布證據待填入 [P1a 紀錄](redesign/p1a-release.md)；P1b 以後尚待實作。內容／儲存格式仍為版本 1，安排總覽 API 與前端同步改為版本 2，發布後需重新載入舊分頁；若已寫入超過 15 的位置，回退仍須保留 P1a 相容讀寫能力。
+目前從上述 main 接續分支 `feat/redesign-p1b`。出席證明、多人場次及活動事實核對已進入實作，最終測試、瀏覽器、準確來源包、審查及發布仍待完成，見 [P1b 紀錄](redesign/p1b-release.md)。內容／儲存格式仍為版本 1，安排總覽仍為版本 2；新增參與者或出席證明寫入後，回退須保留至少 P1b 的相容能力，不能回到僅接受舊展位位置或刪除新投影的寫入者。
 
 沿用既有環境與資源。舊意向、姓名／聯絡資訊、名額、通知與公開內容不因文件或程式部署自動整合／發布／補寄。Apple 10/30 簽章設定與人員去重已有後續紀錄，讀取本頁下方早期狀態時，須對照 [Wallet 最新紀錄](apple-wallet-setup.md) 及 [統一人員](unified-people-workspace.md)，不要重做已完成設定。
 
-另已建立 [資料契約 Skill](../.agents/skills/artdico-contract-check/SKILL.md) 與 [合成旅程 Skill](../.agents/skills/artdico-journey-check/SKILL.md) 及固定測試入口，準備時基準分別 107／101 項通過；不沿用作 P1a 最終結果。P2 已補唯讀體檢與可解釋下一步規格，尚未實作。
+另已建立 [資料契約 Skill](../.agents/skills/artdico-contract-check/SKILL.md) 與 [合成旅程 Skill](../.agents/skills/artdico-journey-check/SKILL.md) 及固定測試入口；準備時基準不沿用作新功能驗收，P1a 最終結果見 [已發布紀錄](redesign/p1a-release.md)。P2 已補唯讀體檢與可解釋下一步規格，尚未實作。下方 10 月的「当前实际版本」及早期 Wallet 未配置描述均為歷史紀錄，以本節及後續發布證據為準。
 
-## 当前实际版本
+## 歷史發布基準（2026-10-22）
 
 [PR #42](https://github.com/kunanli/artdicohost/pull/42)／[PR #43](https://github.com/kunanli/artdicohost/pull/43) 已实际发布，main **`d9d0dd2cc52eac755aef8deda5de9c91024b741d`**，2026-10-22 **01:05:35（UTC+08）**完成。[正式运行 39639330823](https://github.com/kunanli/artdicohost/actions/runs/39639330823) attempt 1 的 check／deploy-fc／deploy 全成功。
 
@@ -18,7 +18,7 @@
 
 正式验证：1304 项测试、545源码、Astro406（0错误／0警告）、23页构建及依赖审计通过；实际私有OSS十阶段／两独立客户端／一个FC、共同300政策、13个API后台路径与46个公开对象HTTPS通过。内容和报名启用。新增匿名公开内容／CORS验证的实际结果为：**实际已发布版本12，发布时间2026-10-21T15:24:23.594Z；公开快照为嘉宾0、组织2、作品0、展位13、场次43**；这些数量只计已发布快照，不是私人人员、报名、出席或草稿总数，也不证明所有私有草稿已发布。开发没有替真实对象确认、授权、发布草稿或发信。
 
-## 新 session 从这里开始
+## 歷史接續步驟（以頁首最新階段為準）
 
 1. 阅读本页、[操作说明](publication-games-operations.md)、[发布证据](games-publication-release-2026-10-21.md)，再看 `AGENTS.md` 和任务涉及的契约。当前工作区 `/workspace/artdicohost`。
 2. 核对 `git status`、当前分支、远端main及上述Actions。本次最终文档保存在已推送的 **`docs/games-final-release-proof-2026-10-21`**，以实际main `d9d0dd2` 为祖先；只补文档，不为记录证据再次触发正式部署。新任务可以从此证据分支建立独立分支，继续保留最新文档。后续若main已前进，先核对新的发布证据，不盲用本页SHA。

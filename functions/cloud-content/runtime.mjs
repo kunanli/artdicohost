@@ -284,11 +284,18 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     loadAdmission: registrationService ? id => registrationService.getAdmissionStatus(id) : undefined,
     loadContent: loadPeopleContent,
     loadRegistrationDirectory: reviewStore ? () => reviewStore.directory() : undefined,
+    loadHealthRegistrations: reviewStore ? () => reviewStore.healthDirectory() : undefined,
     loadAdmissions: registrationService ? actor => registrationService.getAdmissions({ actor }) : undefined,
     loadPersonGroups: registrationService ? actor => registrationService.getPersonGroups({actor}) : undefined,
     loadDeliveryDirectory: confirmationService ? actor => confirmationService.staffDirectory({ actor }) : undefined,
     loadVolunteers: input => volunteerService.readPerson(input),
-    loadConfirmations: confirmationService ? (id, actor) => confirmationService.staffHistory({ actor, registrationId: id }) : undefined });
+    loadConfirmations: confirmationService ? async (id, actor) => {
+      if (!actor?.roles?.some(role => ['reviewer', 'superadmin'].includes(role))) throw new Error('Confirmation history is restricted.');
+      const admissions = await registrationService.getAdmissions({actor});
+      if (!Number.isSafeInteger(admissions?.revision) || !Array.isArray(admissions.people)) throw new Error('Confirmation identity is unavailable.');
+      const group = admissions.personGroups?.find(item => item.registrationIds.includes(id));
+      return confirmationService.staffHistory({actor, registrationId: id, relatedRegistrationIds: group?.registrationIds ?? []});
+    } : undefined });
   const intentHandle = intentService ? createIntentInvitationApi({ service: intentService, authenticate: request => auth.authenticate(request) }) : null;
   const configurationKeys = [];
   for (const [name, keyFor] of [['APPLE_WALLET_BUNDLE_ID', walletSigningObjectKey], ['ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID', confirmationMailObjectKey]]) {

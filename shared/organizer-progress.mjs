@@ -190,3 +190,99 @@ export function buildOrganizerTasks({ contacts = [], contactRevision = 0, conten
     available: { registrationProgress: intent !== null, invitationLedger: intent !== null }, metrics,
     owners: [...new Set([...tasks.map(task => task.owner), ...list(contacts).map(contact => text(contact.operations?.owner))].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN')), tasks };
 }
+
+// This policy consumes saved, authorized facts only. It never performs a write,
+// resolves an identity, reserves a place or treats an accepted email as delivery.
+export const PEOPLE_WORK_FILTERS = Object.freeze(['pending', 'all', 'reply', 'integration', 'duplicate', 'notification', 'unavailable', 'review', 'publication', 'arrangement']);
+export const PEOPLE_HEALTH_KINDS = Object.freeze(['unlinked_source', 'duplicate', 'attending_unintegrated', 'email_mismatch', 'publication', 'lodging', 'legacy_work', 'event_facts']);
+
+/** One short recommendation shared by the directory and selected-person page.
+ * Hrefs are constructed from stable identifiers, never provided source URLs.
+ * @param {Record<string, unknown>} facts
+ */
+export function personWorkRecommendation(facts = {}) {
+  const contactRule = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u, registrationRule = /^[A-Za-z0-9_-]{43}$/u;
+  let invalid = !facts || typeof facts !== 'object' || Array.isArray(facts)
+    || ![Object.prototype, null].includes(Object.getPrototypeOf(facts));
+  if (!invalid) invalid = Reflect.ownKeys(facts).some(key => {
+    const descriptor = Object.getOwnPropertyDescriptor(facts, key);
+    return typeof key !== 'string' || !descriptor || !Object.hasOwn(descriptor, 'value');
+  });
+  const identifier = (key, rule) => {
+    const value = own(facts, key);
+    if (value === null || value === undefined) return null;
+    if (typeof value !== 'string' || !rule.test(value)) { invalid = true; return null; }
+    return value;
+  };
+  const choice = (key, allowed, fallback = null) => {
+    const value = own(facts, key);
+    if (value === null || value === undefined) return fallback;
+    if (!allowed.includes(value)) { invalid = true; return fallback; }
+    return value;
+  };
+  const contactId = identifier('contactId', contactRule), registrationId = identifier('registrationId', registrationRule), profileId = identifier('profileId', contactRule);
+  if (!contactId && !registrationId && !profileId) invalid = true;
+  const response = choice('responseStatus', ['pending', 'attending', 'declined']);
+  const admission = choice('admissionStatus', ['confirmed', 'waitlisted', 'pending_review', 'rejected', 'withdrawn']);
+  const registrationState = choice('registrationState', ['available', 'restricted', 'unlinked', 'unavailable']);
+  const invitation = choice('invitationStatus', ['prepared', 'issuing', 'reserved', 'provider_accepted', 'unknown', 'rejected', 'manually_sent', 'not_started', 'not_applicable']);
+  const delivery = choice('deliveryStatus', ['provider_accepted', 'reserved', 'unknown', 'rejected', 'restricted', 'unavailable', 'not_sent', 'not_applicable']);
+  const consent = choice('contactConsent', ['consented', 'declined', 'unknown']);
+  const canReview = own(facts, 'canReview') === true, canIntegrate = own(facts, 'canIntegrate') === true;
+  const canEdit = own(facts, 'canEdit') === true, canContact = own(facts, 'canContact') === true;
+  const terminal = ['rejected', 'withdrawn'].includes(admission);
+  const pendingResult = own(facts, 'pendingResult') === true;
+  const unknownSend = ['unknown', 'reserved', 'issuing'].includes(invitation) || ['unknown', 'reserved'].includes(delivery);
+  const unavailable = invalid || own(facts, 'sourceUnavailable') === true || registrationState === 'unavailable' || delivery === 'unavailable';
+  const duplicate = own(facts, 'duplicateCandidate') === true;
+  const integration = Boolean(contactId && response === 'attending' && !registrationId && !admission
+    && ['unlinked', null].includes(registrationState) && consent !== 'declined');
+  const needsReview = admission === 'pending_review' || Boolean(registrationId && registrationState === 'restricted' && !admission);
+  const reply = Boolean(contactId && !terminal && response === 'pending' && consent !== 'declined');
+  const declinedPlace = response === 'declined' && admission === 'confirmed';
+  const notification = admission === 'confirmed' && ['not_sent', 'rejected'].includes(delivery)
+    && response !== 'declined' && consent !== 'declined';
+  const publication = own(facts, 'publicNeedsUpdate') === true;
+  const arrangement = own(facts, 'missingArrangement') === true && !terminal && response !== 'declined';
+  const consentCheck = Boolean(contactId && consent === 'unknown' && !terminal);
+  const workKinds = [];
+  for (const [kind, needed] of [['notification', unknownSend || notification], ['unavailable', unavailable || pendingResult], ['duplicate', duplicate],
+    ['integration', integration], ['review', needsReview || declinedPlace], ['reply', reply || consentCheck], ['publication', publication], ['arrangement', arrangement]]) {
+    if (needed) workKinds.push(kind);
+  }
+  if (workKinds.length) workKinds.unshift('pending');
+  const personHref = contactId ? '/admin/person/#contact=' + encodeURIComponent(contactId)
+    : registrationId ? '/admin/person/#registration=' + encodeURIComponent(registrationId)
+      : profileId ? '/admin/content/guests/#guest=' + encodeURIComponent(profileId) : '/admin/contacts/';
+  const reviewHref = registrationId ? '/admin/registrations/#registration=' + encodeURIComponent(registrationId) : personHref;
+  const profileHref = profileId ? '/admin/content/guests/#guest=' + encodeURIComponent(profileId) : '/admin/content/guests/';
+  const result = (stateLabel, key, label, reason = '', href = personHref, kind = 'navigate') => ({stateLabel, workKinds,
+    nextAction: {key, label, reason, href, kind}});
+  if (pendingResult || unknownSend) return result('结果待核对', 'check', '核对结果', pendingResult ? '保存结果待核对。' : '发送结果待核对，请勿重寄。', personHref, 'refresh');
+  if (unavailable) {
+    workKinds.splice(0, workKinds.length, 'pending', 'unavailable');
+    return result('资料待核对', 'check', '重新核对', '资料暂时无法核对。', personHref, 'refresh');
+  }
+  if (duplicate) return canIntegrate ? result('身份待核对', 'duplicate', '核对身份', '可能有重复来源，请人工核对。')
+    : result('身份待核对', 'handoff', '交由负责人', '需要活动负责人核对身份。', personHref, 'handoff');
+  if (declinedPlace) return canReview ? result('名额待核对', 'review', '核对原名额', '已回复不出席，请核对原名额。', reviewHref)
+    : result('名额待核对', 'handoff', '交由审核人', '已回复不出席，原名额待核对。', personHref, 'handoff');
+  if (needsReview) return canReview ? result('待审核', 'review', '审核原报名', '', reviewHref)
+    : result('待审核', 'handoff', '交由审核人', '原报名需要审核权限。', personHref, 'handoff');
+  if (consentCheck) return canContact ? result('许可待核对', 'source', '核对联络许可', '联络许可尚未核实。', personHref)
+    : result('许可待核对', 'handoff', '交由跟进人', '联络许可尚未核实。', personHref, 'handoff');
+  if (integration) return canIntegrate ? result('待整合', 'integration', '核对报名', '已答应出席，先核对已有来源。')
+    : result('待整合', 'handoff', '交由审核人', '已答应出席，报名待核对。', personHref, 'handoff');
+  if (reply) return canContact ? result('待回复', 'reply', '记录回复')
+    : result('待回复', 'handoff', '交由跟进人', '出席回复由跟进同事核对。', personHref, 'handoff');
+  if (notification) return canReview ? result('待通知', 'notification', '核对通知', '寄送前核对原记录。')
+    : result('待通知', 'handoff', '交由审核人', '确认信由审核同事核对。', personHref, 'handoff');
+  if (publication) return canEdit ? result('前台待更新', 'publication', '核对前台', '', profileHref)
+    : result('前台待更新', 'handoff', '交由活动编辑', '出席或公开资料待更新。', personHref, 'handoff');
+  if (arrangement) return canContact ? result('待安排', 'arrangement', '核对安排')
+    : result('待安排', 'handoff', '交由跟进人', '参与安排由跟进同事核对。', personHref, 'handoff');
+  const label = admission === 'withdrawn' ? '已撤回' : admission === 'rejected' ? '审核未通过' : consent === 'declined' ? '已拒绝联络'
+    : response === 'declined' ? '不出席' : admission === 'waitlisted' ? '候补' : response === 'attending' ? '已答应出席'
+      : admission === 'confirmed' ? '名额已确认' : profileId && !contactId ? '资料待关联' : '已核对';
+  return result(label, 'details', '查看详情');
+}

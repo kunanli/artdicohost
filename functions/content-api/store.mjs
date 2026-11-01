@@ -63,6 +63,7 @@ function preserveArrangementFields(input, current) {
       if (row[field] === undefined) {
         row[field] = existing?.[field] ?? fallback;
       }
+      if (collection === 'sessions' && !Object.hasOwn(row, 'participants') && existing && Object.hasOwn(existing, 'participants')) row.participants = structuredClone(existing.participants);
       if (collection === 'booths' && existing) for (const name of ['contactName', 'contactMethods', 'description', 'website', 'organizationId']) {
         if (!Object.hasOwn(row, name) && Object.hasOwn(existing, name)) row[name] = existing[name];
       }
@@ -195,15 +196,29 @@ export function createFileContentStore({ directory, portraitStore, initialConten
       await commit(state);
       return structuredClone(state.draft);
     }),
-    publish: (expectedRevision, actorId) => serial(async () => {
+    publish: (expectedRevision, actorId, options = {}) => serial(async () => {
+      if (options === null || typeof options !== 'object' || Array.isArray(options) || ![Object.prototype, null].includes(Object.getPrototypeOf(options))
+        || Reflect.ownKeys(options).some(key => key !== 'preparePublication')
+        || Object.hasOwn(options, 'preparePublication') && typeof Object.getOwnPropertyDescriptor(options, 'preparePublication')?.value !== 'function') throw new TypeError('Content publication guard unavailable.');
       const state = await load();
       checkRevision(expectedRevision, state.draft.revision);
+      const prepare = Object.getOwnPropertyDescriptor(options, 'preparePublication')?.value;
+      const prepared = prepare ? await prepare({ content: structuredClone(state.draft.content) }) : null;
+      if (prepare && (!prepared || typeof prepared !== 'object' || Array.isArray(prepared)
+        || Reflect.ownKeys(prepared).length !== 2 || !Object.hasOwn(prepared, 'guestAttendance')
+        || typeof Object.getOwnPropertyDescriptor(prepared, 'verify')?.value !== 'function')) throw new TypeError('Content publication evidence unavailable.');
+      const attendance = Object.getOwnPropertyDescriptor(prepared ?? {}, 'guestAttendance')?.value;
+      const frozenAttendance = state.published?.content.guestAttendance;
+      const sameAttendance = prepared && state.published?.revision === state.draft.revision && frozenAttendance
+        && JSON.stringify(attendance?.confirmedGuestIds) === JSON.stringify(frozenAttendance.confirmedGuestIds);
+      const content = toPublicContent(state.draft.content, prepared ? { guestAttendance: sameAttendance ? frozenAttendance : attendance } : {});
       await verifyPortraits(state.draft.content);
+      await prepared?.verify();
       if (state.published?.revision === state.draft.revision) {
-        if (JSON.stringify(state.published.content) !== JSON.stringify(toPublicContent(state.draft.content))) throw new ContentError('PUBLICATION_SAVE_REQUIRED', '公开规则已更新，请先保存当前草稿，再发布到前台。', 409);
+        if (JSON.stringify(state.published.content) !== JSON.stringify(content)) throw new ContentError('PUBLICATION_SAVE_REQUIRED', '公开规则已更新，请先保存当前草稿，再发布到前台。', 409);
         return structuredClone(state.published);
       }
-      state.published = { revision: state.draft.revision, publishedAt: new Date(now()).toISOString(), content: toPublicContent(state.draft.content) };
+      state.published = { revision: state.draft.revision, publishedAt: new Date(now()).toISOString(), content };
       state.audit.push({ action: 'publish', actorId, revision: state.draft.revision, at: state.published.publishedAt });
       await commit(state);
       return structuredClone(state.published);

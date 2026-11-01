@@ -109,6 +109,15 @@ test('isolated acceptance uses only synthetic settings even when both real-mail 
   assert.ok(fixture.calls.every(call => call.key.startsWith(prefix)));
   assert.ok([...fixture.stored.keys()].every(key => key.startsWith(prefix)));
   for (const category of ['content', 'contacts', 'portraits', 'sessions', 'limits', 'probes', 'registrations', 'registration-reviews', 'intent-invitations', 'group-invites', 'maintenance', 'restores', 'volunteers']) assert.ok([...fixture.stored.keys()].some(key => key.startsWith(prefix + category + '/')), category);
+  const contentSnapshots = [...fixture.stored].filter(([key]) => key.startsWith(prefix + 'content/blobs/'))
+    .map(([,value]) => JSON.parse(value.data));
+  assert.ok(contentSnapshots.some(value => value.draft.revision === 1 && value.draft.content.event.title === '合成云端验收活动'));
+  assert.ok(contentSnapshots.some(value => value.draft.revision === 2 && ['合成左编辑','合成右编辑'].includes(value.draft.content.event.title)),
+    'the title CAS probe still retains its immutable competing-edit result');
+  const restoredFacts = contentSnapshots.find(value => value.published?.revision === 3);
+  assert.equal(restoredFacts.draft.content.event.title, createInitialContent().event.title);
+  assert.equal(restoredFacts.published.content.event.title, createInitialContent().event.title,
+    'later credential checks use explicitly restored canonical facts, rather than bypassing the production guard');
   const volunteerPath = 'volunteers/' + createInitialContent().eventId;
   const liveVolunteerLog = fixture.stored.get(prefix + volunteerPath + '/commits.jsonl');
   const volunteerCommits = liveVolunteerLog.data.toString('utf8').trimEnd().split('\n').map(line => JSON.parse(line));

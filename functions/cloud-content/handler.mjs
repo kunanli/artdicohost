@@ -5,7 +5,7 @@ import { CloudContentError } from './errors.mjs';
 import { createPreviewCommunications } from '../content-api/communications.mjs';
 import { toContactPlanningContent } from '../../shared/contact-editor.mjs';
 import { buildArrangementOverview } from '../../shared/arrangement-overview.mjs';
-import { contactOperationsResponse, createGuestContactLinkGuard } from '../people-operations/service.mjs';
+import { contactOperationsResponse, createGuestContactLinkGuard, createGuestAttendancePublicationGuard } from '../people-operations/service.mjs';
 
 export const CLOUD_API_ORIGIN = 'https://api.artdico.host';
 export const PUBLIC_SITE_ORIGIN = 'https://artdico.host';
@@ -183,7 +183,13 @@ export function createCloudContentApi({ enabled = false, store, portraitStore, a
       }
       if (url.pathname === '/api/admin/content' && request.method === 'GET') {
         requireRole(session, ['editor', 'publisher']);
-        return json(await store.read());
+        const snapshot = await store.read();
+        let attendancePreview;
+        try {
+          const prepared = await createGuestAttendancePublicationGuard({ contactsStore, errorFactory: (...args) => new CloudContentError(...args) })({ content: snapshot.draft.content });
+          attendancePreview = { status: 'ready', contentRevision: snapshot.draft.revision, guestAttendance: prepared.guestAttendance };
+        } catch { attendancePreview = { status: 'unavailable', contentRevision: snapshot.draft.revision }; }
+        return json({ ...snapshot, attendancePreview });
       }
       if (url.pathname === '/api/admin/content' && request.method === 'PUT') {
         requireRole(session, ['editor']);
@@ -195,7 +201,10 @@ export function createCloudContentApi({ enabled = false, store, portraitStore, a
       if (url.pathname === '/api/admin/content/publish' && request.method === 'POST') {
         requireRole(session, ['publisher']);
         const input = await inputBody(request);
-        return json({ published: await store.publish(input.expectedRevision, session.user.id) });
+        return json({ published: await store.publish(input.expectedRevision, session.user.id, {
+          preparePublication: createGuestAttendancePublicationGuard({ contactsStore, errorFactory: (...args) => new CloudContentError(...args),
+            ...(Object.hasOwn(input, 'expectedContactsRevision') ? { expectedContactsRevision: input.expectedContactsRevision } : {}) }),
+        }) });
       }
       if (url.pathname === '/api/admin/portraits' && request.method === 'POST') {
         requireRole(session, ['editor']);

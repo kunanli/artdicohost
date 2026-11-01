@@ -33,6 +33,9 @@ if (root) {
     $('[data-confirmation-print]').textContent=labels[3];$('[data-confirmation-copy]').textContent='保存私人查询链接';document.title=labels[1]+' · ARTDiCO HOST';
     $('.confirmation-person').hidden=value.admission.status==='withdrawn';
     $('[data-confirmation-wallet]').hidden=!value.wallet.ready;
+    const factsNotice='活动资料待核对，请保留原查询链接，稍后重新读取。',actionStatus=$('[data-confirmation-action-status]');
+    if(value.eventFacts?.ready===false&&!actionStatus.textContent)actionStatus.textContent=factsNotice;
+    else if(value.eventFacts?.ready!==false&&actionStatus.textContent===factsNotice)actionStatus.textContent='';
     clearGroup();
     if(value.groupInvite){const img=document.createElement('img');img.alt='活动微信群入群二维码';img.referrerPolicy='no-referrer';img.crossOrigin='anonymous';img.decoding='async';img.addEventListener('error',()=>{if($('[data-confirmation-group-image]').firstElementChild===img)clearGroup();},{once:true});$('[data-confirmation-group-image]').append(img);$('[data-confirmation-group]').hidden=false;img.src=value.groupInvite.qrImageUrl;}
     $('[data-confirmation-content]').hidden=false;$('[data-confirmation-error]').hidden=true;controls();

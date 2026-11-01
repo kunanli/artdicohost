@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { validateStoredContact, validateContactOperations, preserveContactOperationDefaults } from '../../shared/contacts-schema.mjs';
 import { guestPrefillFromContact } from '../../shared/contact-editor.mjs';
 import { eventConfig } from '../../src/config/event.mjs';
+import { isContentVisible } from '../../shared/content-schema.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u, ACTOR = /^[A-Za-z0-9_-]{1,80}$/u, REGISTRATION = /^[A-Za-z0-9_-]{43}$/u;
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
@@ -10,6 +11,48 @@ const permissionReference = '用户授权：工作人员保存已核实确认参
 export const ATTENDANCE_SYNC_REASONS = Object.freeze(['NOT_CONFIGURED', 'REVIEWER_REQUIRED', 'INVALID_RECEIPT', 'SOURCE_CHANGED', 'CONTACT_DECLINED',
   'REGISTRATION_UNAVAILABLE', 'REGISTRATION_INVALID', 'REGISTRATION_CONFLICT', 'REGISTRATION_CLOSED', 'REGISTRATION_INACTIVE', 'LINKAGE_UNAVAILABLE', 'REVISION_CONFLICT', 'STORAGE_UNAVAILABLE', 'FORBIDDEN']);
 const unavailable = reason => ({ status: 'unavailable', reason });
+
+/** Server-only publication evidence. The API authenticates before invoking this
+ * reader; callers receive only public guest IDs and a source revision. Replies,
+ * identities and permissions never leave this closure. It does not reserve seats. */
+export function createGuestAttendancePublicationGuard(options = {}) {
+  const { contactsStore, errorFactory } = options;
+  if (typeof errorFactory !== 'function') throw new TypeError('Attendance publication error factory required.');
+  const unavailable = () => errorFactory('ATTENDANCE_UNAVAILABLE', '嘉宾出席暂时无法核对，请稍后再发布。', 503);
+  const changed = () => errorFactory('ATTENDANCE_SOURCE_CHANGED', '出席回复已更新，请重新核对后再发布。', 409);
+  const expected = Object.getOwnPropertyDescriptor(options, 'expectedContactsRevision');
+  if (expected && (!Object.hasOwn(expected, 'value') || expected.value !== null && !revision(expected.value)))
+    throw errorFactory('INVALID_REVISION', '请重新读取出席资料后再发布。', 400);
+  return async ({ content } = {}) => {
+    if (!plain(content) || !Array.isArray(content.guests) || content.guests.length > 200) throw unavailable();
+    const visible = content.guests.filter(isContentVisible);
+    if (visible.some(guest => !plain(guest) || typeof guest.id !== 'string' || !ID.test(guest.id)
+      || typeof guest.contactId !== 'string' || guest.contactId && !ID.test(guest.contactId))) throw unavailable();
+    const linked = visible.filter(guest => guest.contactId);
+    if (!linked.length) {
+      if (expected && expected.value !== null) throw changed();
+      return { guestAttendance: { schemaVersion: 1, sourceRevision: null, confirmedGuestIds: [] }, verify: async () => {} };
+    }
+    const read = async () => {
+      let roster;
+      try { roster = await contactsStore?.read(); } catch { throw unavailable(); }
+      if (!plain(roster) || !revision(roster.revision) || !Array.isArray(roster.contacts) || roster.contacts.length > 5000) throw unavailable();
+      const confirmedGuestIds = [];
+      for (const guest of linked) {
+        const contacts = roster.contacts.filter(contact => contact?.id === guest.contactId);
+        if (contacts.length > 1 || contacts.length && !validateStoredContact(contacts[0])) throw unavailable();
+        if (contacts[0]?.operations.responseStatus === 'attending') confirmedGuestIds.push(guest.id);
+      }
+      return { schemaVersion: 1, sourceRevision: roster.revision, confirmedGuestIds: confirmedGuestIds.sort() };
+    };
+    const guestAttendance = await read();
+    if (expected && expected.value !== guestAttendance.sourceRevision) throw changed();
+    return { guestAttendance, verify: async () => {
+      const latest = await read();
+      if (!isDeepStrictEqual(latest, guestAttendance)) throw changed();
+    } };
+  };
+}
 function fullActor(actor) { return plain(actor) && typeof actor.id === 'string' && ACTOR.test(actor.id) && Array.isArray(actor.roles)
   && (actor.roles.includes('superadmin') || actor.roles.includes('outreach') && actor.roles.includes('reviewer')); }
 

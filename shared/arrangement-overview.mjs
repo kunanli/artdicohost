@@ -55,6 +55,15 @@ function sessionDuties(value, sessionIds) {
     return { sessionId, roles };
   });
 }
+function publicSessionDuties(value) {
+  const seen = new Set();
+  return list(value, contentSchema.maxSessionParticipants).map(entry => {
+    const guestId = id(own(entry, 'guestId')), roles = forms(own(entry, 'roles'), contentSchema.sessionParticipantRoles);
+    if (!roles.length || seen.has(guestId)) throw new TypeError('公开场次参与者无效。');
+    seen.add(guestId);
+    return { guestId, roles };
+  });
+}
 function indexed(items) {
   const result = new Map();
   for (const item of items) { if (result.has(item.id)) throw new TypeError('安排记录标识重复。'); result.set(item.id, item); }
@@ -86,6 +95,7 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
     format: status(own(item, 'format'), contentSchema.sessionFormats, 'other'),
     status: status(own(item, 'status'), contentSchema.sessionStatuses), guestId: id(own(item, 'guestId'), true),
     speakerName: text(own(item, 'speakerName'), 120), speakerStatus: status(own(item, 'speakerStatus'), contentSchema.speakerStatuses, 'pending'),
+    ...(Object.hasOwn(item, 'participants') ? { participants: publicSessionDuties(own(item, 'participants')) } : {}),
   }));
   const booths = list(own(content, 'booths'), 200).map(item => {
     const suppliedSlot = own(item, 'slotNumber'), slotNumber = suppliedSlot === undefined ? 0 : suppliedSlot;
@@ -153,8 +163,11 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
       : booth.slotNumber ? String(booth.slotNumber).padStart(2, '0') + '号位置' : '尚未指定位置',
     booth: { ...booth }, people: [], teams: [], warnings: [] }]));
   const activePeople = new Map(), activeTeams = new Map();
-  function addPerson(row, person, active, rolesInSession = []) {
-    if (!row.people.some(item => item.id === person.id)) row.people.push(rolesInSession.length ? {...person,rolesInSession:[...rolesInSession]} : person);
+  function addPerson(row, person, active, rolesInSession = [], publicRolesInSession = []) {
+    let existing = row.people.find(item => item.id === person.id);
+    if (!existing) { existing = { ...person }; row.people.push(existing); }
+    if (rolesInSession.length) existing.rolesInSession = [...new Set([...(existing.rolesInSession ?? []), ...rolesInSession])];
+    if (publicRolesInSession.length) existing.publicRolesInSession = [...new Set([...(existing.publicRolesInSession ?? []), ...publicRolesInSession])];
     if (active) activePeople.set(person.id, person);
     if (person.responseStatus === 'declined') warn(row.warnings, 'PERSON_DECLINED', person.id, (person.name || person.id) + '：已回复不出席，仍有安排需要核对。');
     if (person.responseStatus === 'pending') warn(row.warnings, 'PERSON_REPLY_PENDING', person.id, (person.name || person.id) + '：尚待实际出席回复，不代表已确认参加。');
@@ -194,6 +207,11 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
       warn(row.warnings, 'LEGACY_SPEAKER_UNLINKED', session.id, '主要讲者仍是文字记录，未计入可去重人员数。');
     }
     if (row.primarySpeaker?.status === 'pending') warn(row.warnings, 'PRIMARY_SPEAKER_PENDING', session.id, '主要讲者资料尚待确认；人员实际回复另列。');
+    for (const participant of session.participants ?? []) {
+      const guest = guestById.get(participant.guestId);
+      if (!guest) { warn(row.warnings, 'MISSING_GUEST_REFERENCE', session.id, '参与者资料已不存在，请重新核对。'); continue; }
+      addPerson(row, guestPerson(guest), session.status !== 'cancelled', [], participant.roles);
+    }
   }
   for (const team of teams) for (const [kind, reference, form, records, rows] of [
     ['SESSION', team.sessionId, 'share', sessionById, sessionRows], ['BOOTH', team.boothId, 'booth', boothById, boothRowsById],

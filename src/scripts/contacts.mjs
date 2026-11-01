@@ -572,7 +572,7 @@ $('[data-contacts-batch-invite]').addEventListener('click',()=>action(async()=>{
   try{intentState=await request('/api/admin/intent-invitations');render();}catch{announce('邀请结果已保留在本页，最新进度读取未完成。请下载后刷新核对，勿重复发送。',true);return;}
   announce('批量准备结束，逐人结果已列出。没有发送邀请或确认任何人出席。');
 }));
-function batchReason(code){return ({CONTACT_DECLINED:'已拒绝联络或出席',CONTACT_NOT_CONSENTED:'联络授权尚未核实',REGISTRATION_REQUIRED:'尚未代登记',REGISTRATION_INACTIVE:'报名已停用或名额待核对',ADMISSION_REQUIRED:'名额尚未确认',INVITATION_DISPATCH_RECORDED:'已有发出或服务商接受记录，不重复准备',INVITATION_STATUS_UNKNOWN:'发送结果不明，先核对勿重试',INVITATION_CHANGED:'邀请版本已变化，请核对',REVISION_CONFLICT:'名单版本已更新',STORAGE_UNAVAILABLE:'保存结果待核对'})[code]||'请核对对象资料及有效报名';}
+function batchReason(code){return ({EVENT_FACTS_MISMATCH:'活动资料待核对',EVENT_FACTS_UNAVAILABLE:'活动资料暂时无法核对',CONTACT_DECLINED:'已拒绝联络或出席',CONTACT_NOT_CONSENTED:'联络授权尚未核实',REGISTRATION_REQUIRED:'尚未代登记',REGISTRATION_INACTIVE:'报名已停用或名额待核对',ADMISSION_REQUIRED:'名额尚未确认',INVITATION_DISPATCH_RECORDED:'已有发出或服务商接受记录，不重复准备',INVITATION_STATUS_UNKNOWN:'发送结果不明，先核对勿重试',INVITATION_CHANGED:'邀请版本已变化，请核对',REVISION_CONFLICT:'名单版本已更新',STORAGE_UNAVAILABLE:'保存结果待核对'})[code]||'请核对对象资料及有效报名';}
 function conversionReason(code){return({CONTACT_DECLINED:'本人已拒绝联络或出席',CONTACT_NOT_CONSENTED:'联络许可待核对',ALREADY_CONVERTED:'已有明确报名关联',CONTACT_NOT_FOUND:'人员记录已变化',SOURCE_CHANGED:'来源已变化',REGISTRATION_INACTIVE:'关联报名已停用',REGISTRATION_CLOSED:'正式报名已关闭'})[code]||'来源、许可或报名条件需核对';}
 async function previewContactConversions(ids,{backfill=false,total=ids.length}={}){
   if(!intentState||!permitted()||!user.roles.some(role=>['reviewer','superadmin'].includes(role)))throw new Error('需要邀约与审核权限，并先读取正式报名状态。');

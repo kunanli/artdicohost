@@ -1,5 +1,5 @@
-import { publicGuestCards, publicGuestSessions } from '../../shared/guest-display.mjs';
-import { GUEST_PUBLIC_ROLE_LABELS, isPublicWebsite } from '../../shared/content-schema.mjs';
+import { publicGuestCards, publicGuestSessions, publicSessionParticipants } from '../../shared/guest-display.mjs';
+import { GUEST_PUBLIC_ROLE_LABELS, SESSION_PARTICIPANT_ROLE_LABELS, isPublicWebsite } from '../../shared/content-schema.mjs';
 import { publicShowcaseCards, SHOWCASE_KIND_LABELS } from '../../shared/showcase-display.mjs';
 import { resolvePublicContentSource } from '../../shared/public-content-source.mjs';
 import { publicOrganizationCards, organizationParticipationLabel } from '../../shared/organization-display.mjs';
@@ -73,7 +73,12 @@ function renderPublishedContent(content,url) {
       if (item.status === 'cancelled') {
         row.dataset.sessionStatus = 'cancelled';
         detail.append(element('small', '本场已取消', 'ah-session-meta'));
-      } else detail.append(element('small', item.speakerStatus === 'confirmed' ? '讲者：' + item.speakerName : '讲者 / 主持人待确认', 'ah-session-meta'));
+      } else {
+        const people = publicSessionParticipants(item, content.guests, content.guestAttendance);
+        if (!people.length) detail.append(element('small', '讲者 / 主持人待确认', 'ah-session-meta'));
+        for (const person of people) detail.append(element('small', person.roles.map(role => SESSION_PARTICIPANT_ROLE_LABELS[role]).join(' / ')
+          + '：' + person.name + (person.attendance === 'attending' ? '' : ' · 安排待确认'), 'ah-session-meta'));
+      }
       row.append(detail);
       list.append(row);
     }
@@ -81,7 +86,7 @@ function renderPublishedContent(content,url) {
   agenda?.dispatchEvent(new Event('artdico:content-updated'));
   const guestGrid = document.querySelector('[data-public-guests]');
   if (guestGrid) {
-    const cards = publicGuestCards(content.guests);
+    const cards = publicGuestCards(content.guests, content.guestAttendance);
     guestGrid.replaceChildren();
     for (const guest of cards) {
       const card = element('li', undefined, 'ah-guest-card');

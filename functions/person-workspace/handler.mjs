@@ -169,7 +169,7 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
         if (loaded.value) {
           try { content = loaded.value; arrangements = arrangementsProjection(contact, content); revisions.content = content.revision; }
           catch { availability.arrangements = 'unavailable'; content = null; }
-          try { publicProfile = publicProfileProjection(contactId, loaded.value); }
+          try { publicProfile = publicProfileProjection(contactId, loaded.value, { responseStatus: contact.operations.responseStatus }); }
           catch { publicProfile.state = 'unavailable'; }
           availability.publicProfile = publicProfile.state;
           try { organizations = organizationsProjection(contactRaw, loaded.value); }

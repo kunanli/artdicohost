@@ -217,7 +217,7 @@ export function personWorkspaceSteps(view, roles = []) {
   steps.push(!contact ? step('public', '核对公开资料', unavailable('contact'), personAvailabilityText(view.availability.contact), 'review')
     : publicState === 'restricted' ? step('public', '核对公开资料', 'restricted', personAvailabilityText(publicState))
           : publicState === 'unavailable' ? step('public', '核对公开资料', 'review', '公开资料或已发布快照暂时无法完整核对，请重新读取后确认。', 'guest')
-            : liveOldDraft ? step('public', '核对公开资料', 'review', '资料有历史公开版本，当前人员关联及内容待核对；请核对文字、当前关联及授权，再发布更新或撤下。', 'guest')
+            : liveOldDraft ? step('public', '核对公开资料', 'review', '出席或公开资料已变化，请核对后更新前台。', 'guest')
               : hiddenByChoice ? step('public', '核对公开资料', 'complete', '已手动设为未公开，资料保留在后台。', 'guest')
               : !forms.length ? step('public', '核对公开资料', 'pending', '先确认参与身份，再决定是否需要公开人物资料。', 'arrangements')
                 : !needsPublic ? step('public', '核对公开资料', 'complete', '当前内部职责不要求公开人物页；组织展示资料另在活动与内容维护。', 'arrangements')

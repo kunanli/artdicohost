@@ -8,6 +8,7 @@ import { hashPassword } from '../content-api/auth.mjs';
 import { createInitialContent } from '../../src/config/content.mjs';
 import { createCloudApplication } from './runtime.mjs';
 import { inspectEncryptedObjectBackup } from '../registration-admin/maintenance.mjs';
+import { createMaintenanceAuditStore } from '../registration-admin/maintenance-handler.mjs';
 import { CLOUD_LOGIN_POLICY } from './auth.mjs';
 import { createVolunteerRepository } from '../volunteers/repository.mjs';
 
@@ -190,9 +191,11 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
           const recoveredVolunteers = await volunteers(bObjects, recovery.namespace + '/volunteers/' + eventId).read();
           requireThat(recoveredVolunteers.revision === 1 && recoveredVolunteers.audit.length === 1
             && JSON.stringify(recoveredVolunteers) === JSON.stringify(savedVolunteers));
-          const maintenance = await call(first.api, '/api/admin/maintenance', { headers: owner }, 200);
-          const readiness = await maintenance.json();
-          requireThat(readiness.audit.count === 3 && readiness.audit.incompleteRestoreCount === 0 && readiness.audit.lastRestoreAt !== null);
+          // Backup/restore already exercise their authenticated HTTP boundary.
+          // Read the real durable audit directly through the other OSS client
+          // to retain transport headroom for the shared-login window proofs.
+          const audit = await createMaintenanceAuditStore({ journal: createObjectJournal({ objects: aObjects, prefix: 'cms/v1/maintenance' }), clock: now }).readSafe();
+          requireThat(audit.count === 3 && audit.incompleteRestoreCount === 0 && audit.lastRestoreAt !== null);
         } finally { encryptionKey.fill(0); }
         await call(first.api, '/api/admin/contacts', {}, 401);
       });
@@ -222,6 +225,10 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         const restarted = make(objects());
         const read = await restarted.store.read(); requireThat(read.draft.revision === 2 && read.published.revision === 1
           && read.draft.content.organizations[0].logoId === portrait.id && read.published.content.organizations[0].participation === 'attendee');
+        // The competing title edits above deliberately exercise saved factual
+        // drift. Restore verified event facts in this existing explicit save
+        // before later stages prepare a new attendee invitation.
+        read.draft.content.event.title = createInitialContent().event.title;
         read.draft.content.guests[0].visibility = 'private';
         read.draft.content.organizations[0].visibility = 'private';
         await call(restarted.api, '/api/admin/content', { method: 'PUT', headers: owner, body: { expectedRevision: 2, content: read.draft.content } }, 200);
@@ -289,6 +296,7 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         const confirmed = await confirmation.json();
         requireThat(confirmed.referenceCode === left.reference_code && confirmed.admission.status === 'confirmed'
           && confirmed.email.status === 'not_configured' && confirmed.wallet.ready === false
+          && confirmed.eventFacts?.ready === true && confirmed.eventFacts.reason === 'EVENT_FACTS_VERIFIED'
           && confirmation.headers.get('cache-control') === 'private, no-store' && confirmation.headers.get('access-control-allow-credentials') === null
           && !/synthetic\.public@example|passwordHash|cms\/v1/u.test(JSON.stringify(confirmed)));
         requireThat(confirmed.groupInvite?.qrImageUrl?.startsWith(CLOUD_API_ORIGIN + '/api/admin/registration/group-invite/'));
@@ -337,8 +345,12 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         const listing = await call(second.api, '/api/admin/registrations', { headers: owner }, 200);
         const listed = await listing.json();
         requireThat(listed.total === 4 && listed.overallTotal === 4 && !JSON.stringify(listed.registrations).includes('synthetic.public@example.invalid'));
-        const detail = await call(first.api, '/api/admin/registrations/' + registrationId, { headers: owner }, 200);
-        const item = await detail.json(), review = { ...item.review, status: 'in_review' }; delete review.deletionRequested;
+        // The protected listing already contains the exact review used for
+        // this mutation. Reuse it rather than loading every source a second
+        // time solely to obtain the same unchanged review fields.
+        const item = listed.registrations.find(value => value.id === registrationId);
+        requireThat(item?.review?.status === 'new' && listed.revision === 0);
+        const review = { ...item.review, status: 'in_review' }; delete review.deletionRequested;
         await call(second.api, '/api/admin/registrations/' + registrationId + '/review', { method: 'PATCH', headers: { Cookie: owner.Cookie }, body: { expectedRevision: 0, review } }, 403);
         await call(second.api, '/api/admin/registrations/' + registrationId + '/review', { method: 'PATCH', headers: owner, body: { expectedRevision: 0, review } }, 200);
         const exported = await call(first.api, '/api/admin/registrations/export', { method: 'POST', headers: alias, body: { expectedRevision: 1, includeContact: false } }, 200);

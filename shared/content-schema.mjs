@@ -4,6 +4,8 @@ export const MAX_CONTENT_ITEMS = 200;
 export const SHOWCASE_EDITABLE_KINDS = Object.freeze(['student', 'indie']);
 export const GUEST_PUBLIC_ROLES = Object.freeze(['speaker', 'guest', 'organizer', 'moderator']);
 export const GUEST_PUBLIC_ROLE_LABELS = Object.freeze({speaker:'讲者',guest:'嘉宾',organizer:'研讨会组织者',moderator:'主持人'});
+export const SESSION_PARTICIPANT_ROLES = Object.freeze(['speaker','moderator','panelist','organizer']);
+export const SESSION_PARTICIPANT_ROLE_LABELS = Object.freeze({speaker:'讲者',moderator:'主持人',panelist:'圆桌嘉宾',organizer:'组织者'});
 export const ORGANIZATION_PARTICIPATION_LABELS = Object.freeze({undecided:'参与形式待确定',exhibitor:'参展',attendee:'一般参与'});
 
 export const contentSchema = Object.freeze({
@@ -18,6 +20,8 @@ export const contentSchema = Object.freeze({
   sessionStatuses: ['draft', 'scheduled', 'cancelled'],
   sessionFormats: ['talk', 'workshop', 'roundtable', 'showcase', 'social', 'break', 'other'],
   speakerStatuses: ['pending', 'confirmed'],
+  maxSessionParticipants: 20,
+  sessionParticipantRoles: SESSION_PARTICIPANT_ROLES,
   boothStatuses: ['pending', 'confirmed', 'cancelled'],
   eventStatuses: ['tentative', 'confirmed', 'cancelled'],
   factStatuses: ['tentative', 'confirmed'],
@@ -32,7 +36,8 @@ export const contentSchema = Object.freeze({
   visibilities: ['public', 'private'],
 });
 
-/** @typedef {{id:string,start:string,end:string,zone:string,title:string,guestId:string,speakerName:string,speakerStatus:string,status:string,internalNotes:string,format:string}} Session */
+/** @typedef {{guestId:string,roles:string[]}} SessionParticipant */
+/** @typedef {{id:string,start:string,end:string,zone:string,title:string,guestId:string,speakerName:string,speakerStatus:string,status:string,internalNotes:string,format:string,participants?:SessionParticipant[]}} Session */
 /** @typedef {{id:string,code:string,organization:string,project:string,zone:string,status:string,internalNotes:string,slotNumber:number,organizationId?:string,visibility?:string,contactName?:string,contactMethods?:string,description?:string,website?:string}} Booth */
 /** @typedef {{id:string,name:string,company:string,ggjRole:string,portraitId:string,status:string,publicConsent:boolean,internalNotes:string,contactId:string,visibility?:string,title?:string,bio?:string,website?:string,publicRoles?:string[]}} Guest */
 /** @typedef {{id:string,name:string,logoId:string,website:string,participation:string,status:string,publicConsent:boolean,internalNotes:string,visibility?:string}} Organization */
@@ -51,6 +56,52 @@ function object(input) {
 
 /** @param {unknown} input */
 function text(input) { return typeof input === 'string' ? input.normalize('NFC').trim() : ''; }
+
+/** @param {object} value @param {PropertyKey} key */
+const ownData = (value, key) => Object.getOwnPropertyDescriptor(value, key)?.value;
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
+const plainRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+  && [Object.prototype, null].includes(Object.getPrototypeOf(value));
+/** @param {unknown} value @param {string[]} keys @returns {value is Record<string, unknown>} */
+function exactDataRecord(value, keys) {
+  return plainRecord(value) && Reflect.ownKeys(value).length === keys.length
+    && keys.every(key => { const field = Object.getOwnPropertyDescriptor(value, key); return field?.enumerable && Object.hasOwn(field, 'value'); });
+}
+/** @param {unknown} value @param {number} limit */
+function dataArray(value, limit) {
+  if (!Array.isArray(value) || value.length > limit || Reflect.ownKeys(value).length !== value.length + 1) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    const field = Object.getOwnPropertyDescriptor(value, String(index));
+    if (!field?.enumerable || !Object.hasOwn(field, 'value')) return false;
+  }
+  return true;
+}
+/** @param {unknown} value @param {number} limit @returns {unknown[]} */
+function arrayValues(value, limit) {
+  if (!Array.isArray(value)) return [];
+  const result = [];
+  for (let index = 0; index < Math.min(value.length, limit); index += 1) result.push(ownData(value, String(index)));
+  return result;
+}
+
+/** Published-only attendance evidence; it never reads or identifies a private contact.
+ * @param {unknown} input
+ * @param {Iterable<string>} guestIds IDs of the visible public guest profiles.
+ * @returns {{schemaVersion:1,sourceRevision:number|null,confirmedGuestIds:string[]}}
+ */
+export function normalizeGuestAttendance(input, guestIds) {
+  const fail = () => { throw new TypeError('嘉宾出席核对资料无效。'); };
+  if (!exactDataRecord(input, ['schemaVersion','sourceRevision','confirmedGuestIds'])) return fail();
+  const revision = ownData(input, 'sourceRevision'), ids = ownData(input, 'confirmedGuestIds');
+  if (ownData(input, 'schemaVersion') !== 1 || revision !== null && (!Number.isSafeInteger(revision) || revision < 0)
+    || !dataArray(ids, MAX_CONTENT_ITEMS) || revision === null && ids.length) return fail();
+  const known = new Set(guestIds), confirmedGuestIds = [], seen = new Set();
+  for (const id of arrayValues(ids, MAX_CONTENT_ITEMS)) {
+    if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(id) || !known.has(id) || seen.has(id)) return fail();
+    seen.add(id); confirmedGuestIds.push(id);
+  }
+  return { schemaVersion: 1, sourceRevision: revision, confirmedGuestIds: confirmedGuestIds.sort() };
+}
 
 /** Public is the editorial default; private requires an explicit saved choice. */
 export function isContentVisible(input) {
@@ -72,11 +123,18 @@ export function isPublicWebsite(value) {
 /** @param {unknown} input @returns {Session} */
 function session(input) {
   const item = object(input);
-  return {
+  /** @type {Session} */
+  const result = {
     id: text(item.id), start: text(item.start), end: text(item.end), zone: text(item.zone), title: text(item.title),
     format: item.format === undefined ? 'other' : text(item.format),
     guestId: text(item.guestId), speakerName: text(item.speakerName), speakerStatus: text(item.speakerStatus), status: text(item.status), internalNotes: text(item.internalNotes),
   };
+  const participants = Object.getOwnPropertyDescriptor(item, 'participants');
+  if (participants) result.participants = arrayValues(participants.value, contentSchema.maxSessionParticipants + 1).map(entry => {
+    const row = object(entry);
+    return { guestId: text(ownData(row, 'guestId')), roles: arrayValues(ownData(row, 'roles'), SESSION_PARTICIPANT_ROLES.length + 1).map(text) };
+  });
+  return result;
 }
 
 /** @param {unknown} input @returns {Guest} */
@@ -401,6 +459,27 @@ export function validateContent(input) {
     enumField(`${key}.format`, item.format, contentSchema.sessionFormats);
     if (raw.guestId !== undefined && typeof raw.guestId !== 'string') errors[`${key}.guestId`] = '请选择本活动已有的嘉宾，或留空使用原讲者资料。';
     if (item.guestId && !guestIds.has(item.guestId)) errors[`${key}.guestId`] = '请选择本活动已有的嘉宾，或留空使用原讲者资料。';
+    const participants = Object.getOwnPropertyDescriptor(raw, 'participants');
+    if (participants) {
+      if (!participants.enumerable || !Object.hasOwn(participants, 'value') || !dataArray(participants.value, contentSchema.maxSessionParticipants)) {
+        errors[`${key}.participants`] = '请提供有效的场次参与者。';
+      }
+      const rawPeople = arrayValues(participants.value, contentSchema.maxSessionParticipants + 1), seen = new Set();
+      for (const [personIndex, person] of (item.participants ?? []).entries()) {
+        const field = `${key}.participants.${personIndex}`, supplied = rawPeople[personIndex];
+        if (!exactDataRecord(supplied, ['guestId','roles']) || typeof ownData(object(supplied), 'guestId') !== 'string') {
+          errors[field] = '请仅选择已有嘉宾与本场职责。';
+        }
+        if (!guestIds.has(person.guestId) || seen.has(person.guestId) || person.guestId === item.guestId) {
+          errors[`${field}.guestId`] = '请选择已有且不重复的其他参与者。';
+        }
+        seen.add(person.guestId);
+        const roles = ownData(object(supplied), 'roles');
+        if (!dataArray(roles, SESSION_PARTICIPANT_ROLES.length) || !roles.length
+          || arrayValues(roles, SESSION_PARTICIPANT_ROLES.length).some(role => !SESSION_PARTICIPANT_ROLES.includes(role))
+          || new Set(person.roles).size !== person.roles.length) errors[`${field}.roles`] = '请选择本场的一项或多项职责。';
+      }
+    }
     stringField(`${key}.internalNotes`, item.internalNotes, 4000, false);
     enumField(`${key}.zone`, item.zone, contentSchema.zones);
     enumField(`${key}.status`, item.status, contentSchema.sessionStatuses);
@@ -511,13 +590,19 @@ export function validateContent(input) {
  * Produces the only permitted public projection. Callers must render text safely.
  * Does not persist, publish, authorize a speaker, or approve a booth by itself.
  * @param {unknown} input
+ * @param {{legacyVisibility?:boolean,guestAttendance?:unknown}} [options]
  */
-export function toPublicContent(input, { legacyVisibility = false } = {}) {
+export function toPublicContent(input, options = {}) {
+  const { legacyVisibility = false } = options;
   const result = validateContent(input);
   if (!result.valid) throw new TypeError('内容校验未通过，不能生成公开内容。');
   const { value } = result;
   const publicGuests = value.guests.filter(item => legacyVisibility ? item.status === 'confirmed' && item.publicConsent : isContentVisible(item));
   const guestsById = new Map(publicGuests.map(item => [item.id, item]));
+  const attendanceField = Object.getOwnPropertyDescriptor(options, 'guestAttendance')
+    ?? Object.getOwnPropertyDescriptor(object(input), 'guestAttendance');
+  if (attendanceField && (!attendanceField.enumerable || !Object.hasOwn(attendanceField, 'value'))) throw new TypeError('嘉宾出席核对资料无效。');
+  const guestAttendance = attendanceField ? normalizeGuestAttendance(attendanceField.value, guestsById.keys()) : undefined;
   const publicOrganizations = (value.organizations ?? []).filter(item => legacyVisibility ? item.status === 'confirmed' && item.publicConsent : isContentVisible(item));
   const publicOrganizationIds = new Set(publicOrganizations.map(item => item.id));
   const publicBooths = value.booths.filter(item => legacyVisibility ? item.status === 'confirmed' : isContentVisible(item));
@@ -534,6 +619,8 @@ export function toPublicContent(input, { legacyVisibility = false } = {}) {
         speakerName: item.guestId ? linked?.name ?? '' : item.speakerStatus === 'confirmed' ? item.speakerName : '',
         speakerStatus: item.guestId ? linked?.status === 'confirmed' ? 'confirmed' : 'pending' : item.speakerStatus, status: item.status,
         ...(item.format !== 'other' ? { format: item.format } : {}),
+        ...(Object.hasOwn(item, 'participants') ? { participants: (item.participants ?? []).filter(person => guestsById.has(person.guestId))
+          .map(person => ({ guestId: person.guestId, roles: [...person.roles] })) } : {}),
       };
     }),
     booths: publicBooths.map((item) => ({
@@ -568,6 +655,7 @@ export function toPublicContent(input, { legacyVisibility = false } = {}) {
       logoId: item.logoId, status: item.status, publicConsent: item.publicConsent, ...optionalVisibility(item),
       logoUrl: item.logoId ? '/api/public/portraits/' + item.logoId : '',
     })) } : {}),
+    ...(guestAttendance ? { guestAttendance } : {}),
   };
 }
 
@@ -576,7 +664,11 @@ export function toPublicContent(input, { legacyVisibility = false } = {}) {
  * Once visibility is explicitly edited, only the current projection can match. */
 export function matchesPublishedContent(content, publishedContent) {
   const actual = JSON.stringify(toPublicContent(publishedContent));
-  if (JSON.stringify(toPublicContent(content)) === actual) return true;
-  if (['guests', 'organizations', 'showcases', 'booths'].some(key => (content[key] ?? []).some(item => Object.hasOwn(item, 'visibility')))) return false;
-  return JSON.stringify(toPublicContent(content, { legacyVisibility: true })) === actual;
+  const attendanceField = Object.getOwnPropertyDescriptor(object(publishedContent), 'guestAttendance');
+  const options = attendanceField ? { guestAttendance: attendanceField.value } : {};
+  try {
+    if (JSON.stringify(toPublicContent(content, options)) === actual) return true;
+    if (['guests', 'organizations', 'showcases', 'booths'].some(key => (content[key] ?? []).some(item => Object.hasOwn(item, 'visibility')))) return false;
+    return JSON.stringify(toPublicContent(content, { legacyVisibility: true, ...options })) === actual;
+  } catch { return false; }
 }

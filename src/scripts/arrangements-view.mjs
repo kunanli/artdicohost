@@ -1,5 +1,5 @@
 import { SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
-import { contentSchema } from '../../shared/content-schema.mjs';
+import { contentSchema, SESSION_PARTICIPANT_ROLES, SESSION_PARTICIPANT_ROLE_LABELS } from '../../shared/content-schema.mjs';
 import { sessionTimeline } from '../lib/arrangement-planner.mjs';
 
 const formats = { talk: '演讲', workshop: '工作坊', roundtable: '圆桌', showcase: '作品分享', social: '交流活动', break: '休息 / 签到', other: '待分类 / 其他' };
@@ -135,6 +135,8 @@ export function createArrangementsView({ root, load, edit, plan = edit }) {
       const participation = list(person.participationForms).map(value => forms[value]).filter(Boolean).join(' / ');
       if (participation) item.append(node('small', '全活动职责：' + participation));
       if (list(person.rolesInSession).length) item.append(node('small','本场职责：'+person.rolesInSession.map(role=>SESSION_ROLE_LABELS[role]||role).join(' / '),'ah-arrangements-person-role'));
+      const publicRoles = list(person.publicRolesInSession).filter(role => SESSION_PARTICIPANT_ROLES.includes(role));
+      if (publicRoles.length) item.append(node('small', '公开场次：' + publicRoles.map(role => SESSION_PARTICIPANT_ROLE_LABELS[role]).join(' / '), 'ah-arrangements-person-role'));
       if (person.guestId) item.append(editButton('guest', person.guestId, '嘉宾资料'));
       if(stableId.test(person.contactId??'')){const link=node('a','人员详情与关联报名','ah-arrangements-edit');link.href='/admin/contacts/#contact='+encodeURIComponent(person.contactId);item.append(link);}
       output.append(item);

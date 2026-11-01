@@ -1,5 +1,5 @@
 /** Display projection of an already-published guest list; it does not grant publication permission. */
-import { GUEST_PUBLIC_ROLES, isPublicWebsite } from './content-schema.mjs';
+import { GUEST_PUBLIC_ROLES, SESSION_PARTICIPANT_ROLES, isPublicWebsite, normalizeGuestAttendance } from './content-schema.mjs';
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && [Object.prototype, null].includes(Object.getPrototypeOf(value));
 const ownValue = (value, key) => Object.getOwnPropertyDescriptor(value, key)?.value;
@@ -12,7 +12,7 @@ const portrait = /^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
  * @param {unknown} input
  * @returns {{id:string,name:string,company:string,ggjRole:string,portraitId:string,portraitUrl:string}[]}
  */
-export function publicGuestCards(input) {
+function safeGuestProfiles(input) {
   if (!Array.isArray(input) || input.length > 200) return [];
   const seen = new Set();
   return input.flatMap(value => {
@@ -44,13 +44,57 @@ export function publicGuestCards(input) {
   });
 }
 
+/** A saved profile is not evidence that its owner agreed to attend. Historical
+ * publications without a server-created proof remain readable but have no cards. */
+export function publicGuestCards(input, guestAttendance) {
+  const profiles = safeGuestProfiles(input);
+  let confirmed;
+  try { confirmed = new Set(normalizeGuestAttendance(guestAttendance, profiles.map(item => item.id)).confirmedGuestIds); }
+  catch { return []; }
+  return profiles.filter(item => confirmed.has(item.id));
+}
+
+/** Timetable roles are editorial associations, separate from guest-card eligibility.
+ * Only saved public profile values supply names; private contact duties never do. */
+export function publicSessionParticipants(session, guests, guestAttendance) {
+  if (!record(session) || ownValue(session, 'status') !== 'scheduled') return [];
+  const profiles = safeGuestProfiles(guests), byId = new Map(profiles.map(item => [item.id, item]));
+  let confirmed = new Set();
+  try { confirmed = new Set(normalizeGuestAttendance(guestAttendance, profiles.map(item => item.id)).confirmedGuestIds); }
+  catch { /* No proof means the editorial arrangement is still unconfirmed. */ }
+  const result = [], seen = new Set();
+  const add = (guestId, roles) => {
+    const profile = byId.get(guestId);
+    if (!profile || seen.has(guestId) || !Array.isArray(roles) || !roles.length
+      || roles.length > SESSION_PARTICIPANT_ROLES.length || new Set(roles).size !== roles.length
+      || roles.some(role => !SESSION_PARTICIPANT_ROLES.includes(role))) return;
+    seen.add(guestId);
+    result.push({guestId, name: profile.name, roles: [...roles], attendance: confirmed.has(guestId) ? 'attending' : 'pending'});
+  };
+  const primary = ownValue(session, 'guestId');
+  if (primary) add(primary, ['speaker']);
+  else if (ownValue(session, 'speakerStatus') === 'confirmed') {
+    const name = line(ownValue(session, 'speakerName'), 120);
+    if (name) result.push({guestId: '', name, roles: ['speaker'], attendance: 'pending'});
+  }
+  const participants = ownValue(session, 'participants');
+  if (Array.isArray(participants) && participants.length <= 20) for (const participant of participants) {
+    if (record(participant)) add(ownValue(participant, 'guestId'), ownValue(participant, 'roles'));
+  }
+  return result;
+}
+
 /** Only actual scheduled, published associations are shown under a person's card. */
 export function publicGuestSessions(sessions, guestId) {
   if (!Array.isArray(sessions) || sessions.length > 200 || typeof guestId !== 'string') return [];
   const seen = new Set();
   return sessions.flatMap(item => {
-    if (!record(item) || ownValue(item,'status') !== 'scheduled' || ownValue(item,'guestId') !== guestId
-      || ownValue(item,'speakerStatus') !== 'confirmed') return [];
+    if (!record(item) || ownValue(item,'status') !== 'scheduled') return [];
+    const participants = ownValue(item, 'participants');
+    const additional = Array.isArray(participants) && participants.length <= 20 && participants.some(entry => record(entry)
+      && ownValue(entry, 'guestId') === guestId && Array.isArray(ownValue(entry, 'roles')) && ownValue(entry, 'roles').length
+      && ownValue(entry, 'roles').every(role => SESSION_PARTICIPANT_ROLES.includes(role)));
+    if (ownValue(item,'guestId') !== guestId && !additional) return [];
     const id = ownValue(item,'id'), title = line(ownValue(item,'title'),200), start = ownValue(item,'start'), end = ownValue(item,'end'), zone = ownValue(item,'zone');
     if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(id) || seen.has(id) || !title
       || !/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(start) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(end) || end <= start || !['A','B','C'].includes(zone)) return [];

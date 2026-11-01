@@ -288,7 +288,7 @@ test('A-to-B guest relink retains historical publication without implying the ne
   assert.equal(body.publicProfile.profiles[0].publishedMatchesDraft, false); assert.equal(body.publicProfile.profiles[0].publicConsent, false);
   const view = personWorkspaceView(body, body.selected); assert.ok(view);
   const step = personWorkspaceSteps(view, ['superadmin', 'outreach', 'editor']).find(item => item.key === 'public');
-  assert.equal(step.state, 'review'); assert.match(step.detail, /资料有历史公开版本，当前人员关联及内容待核对/u);
+  assert.equal(step.state, 'review'); assert.match(step.detail, /出席或公开资料已变化.*更新前台/u);
   assert.doesNotMatch(step.detail, /仍在已发布页面显示/u);
   assert.deepEqual(f.data.content.published, originalPublication, 'read projection never rewrites the old public snapshot to B');
   assert.equal(f.data.content.published.content.guests[0].name, '合成甲');

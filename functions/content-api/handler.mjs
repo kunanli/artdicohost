@@ -5,7 +5,7 @@ import { createPreviewCommunications } from './communications.mjs';
 import { PORTRAIT_ID_PATTERN } from '../../shared/content-schema.mjs';
 import { toContactPlanningContent } from '../../shared/contact-editor.mjs';
 import { buildArrangementOverview } from '../../shared/arrangement-overview.mjs';
-import { contactOperationsResponse, createGuestContactLinkGuard } from '../people-operations/service.mjs';
+import { contactOperationsResponse, createGuestContactLinkGuard, createGuestAttendancePublicationGuard } from '../people-operations/service.mjs';
 
 export const MAX_BODY_BYTES = 1024 * 1024;
 export const SESSION_COOKIE = 'artdico_local_session';
@@ -203,7 +203,13 @@ export function createContentApi({ store, contactsStore, portraitStore, communic
       }
       if (url.pathname === '/api/admin/content' && request.method === 'GET') {
         if (!session.user.roles.some(role => role === 'editor' || role === 'publisher')) throw new ContentError('FORBIDDEN', '当前账号没有此操作权限。', 403);
-        return json(await store.read());
+        const snapshot = await store.read();
+        let attendancePreview;
+        try {
+          const prepared = await createGuestAttendancePublicationGuard({ contactsStore, errorFactory: (...args) => new ContentError(...args) })({ content: snapshot.draft.content });
+          attendancePreview = { status: 'ready', contentRevision: snapshot.draft.revision, guestAttendance: prepared.guestAttendance };
+        } catch { attendancePreview = { status: 'unavailable', contentRevision: snapshot.draft.revision }; }
+        return json({ ...snapshot, attendancePreview });
       }
       if (url.pathname === '/api/admin/content' && request.method === 'PUT') {
         permit(session, 'editor');
@@ -215,7 +221,10 @@ export function createContentApi({ store, contactsStore, portraitStore, communic
       if (url.pathname === '/api/admin/content/publish' && request.method === 'POST') {
         permit(session, 'publisher');
         const input = await body(request);
-        return json({ published: await store.publish(input.expectedRevision, session.user.id) });
+        return json({ published: await store.publish(input.expectedRevision, session.user.id, {
+          preparePublication: createGuestAttendancePublicationGuard({ contactsStore, errorFactory: (...args) => new ContentError(...args),
+            ...(Object.hasOwn(input, 'expectedContactsRevision') ? { expectedContactsRevision: input.expectedContactsRevision } : {}) }),
+        }) });
       }
       throw new ContentError('NOT_FOUND', '接口或方法不存在。', 404);
     } catch (error) {

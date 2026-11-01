@@ -12,7 +12,7 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 
 可用 `ARTDICO_EVIDENCE_DIRECTORY=/absolute/path/to/evidence` 指定证据目录，默认 `.local-data/browser-evidence/p6-event-facts`。私人能力链接与 PKPASS 仅留在内存，清理成功才写报告；合成签章与浏览器 Blob 不代表真 iPhone 加入 Wallet。
 
-P5 的最终首页、公开集合及 Q&A 公开／准确 FC 组合已通过并实际发布，证据见 [P5 记录](../../docs/redesign/p5-release.md)。当前 [P6 记录](../../docs/redesign/p6-release.md) 映射 A01–A23 并核对新增整合；不重复运行未受影响的已通过浏览器，也不以它们代替真微信／iPhone／同事观察。维护 P5 时三个入口使用当前候选构建执行：
+P1–P6 软件已正式交付，最终部署及 A01–A23 证据见 [P6 记录](../../docs/redesign/p6-release.md)，P5 版型与准确产物见 [P5 记录](../../docs/redesign/p5-release.md)。不重复运行未受影响的已通过浏览器，也不以它们代替真微信／iPhone／同事观察。维护 P5 时三个入口使用当前候选构建执行：
 
 ```sh
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/p5-homepage-smoke.mjs

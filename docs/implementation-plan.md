@@ -1,8 +1,10 @@
 # ARTDiCO HOST 实施计划
 
-## 2026-11-01 當前階段 P6：整合驗收與操作交接
+## 2026-11-01 P1–P6 軟體已交付：最終證據與操作交接
 
-P5 已由 [PR #54](https://github.com/kunanli/artdicohost/pull/54) 發布於 main `239e05f13fe8eb8b8bd3dec79dd7bd9cde167706`，[正式流程 41284601013](https://github.com/kunanli/artdicohost/actions/runs/41284601013) 全成功。1533 項測試、兩種 ZIP 受限離線啟動、私有 OSS、13 個後台頁面及 51 個公開物件 HTTPS 均核對通過，公開內容 revision 43 未改。從此建立 `feat/redesign-p6`，按原授權完成本階段檢查、PR、合併及實際部署。
+P6 已由 [PR #55](https://github.com/kunanli/artdicohost/pull/55) 發布於 main `40ea32a64a963970d610074033eb422c446fc0e2`，[正式流程 41286440342](https://github.com/kunanli/artdicohost/actions/runs/41286440342) completed／success。1535 項測試、693 個來源檔、兩種 ZIP 受限離線啟動、私有 OSS 兩獨立客戶端／一個 FC 程序、13 個準確後台頁面及 51 個公開物件 HTTPS（含新快取標頭）全部通過，公開業務修訂維持 43。完整結果見 [P6 紀錄](redesign/p6-release.md)。
+
+本輪已授權軟體工作完成。`docs/redesign-final-release-proof` 從上述已部署 main 保存最後回執，只更新文件，不再觸發相同部署。以下各階段段落保留實作時規劃，現況以本節與發布證據為準。
 
 1. 正式公開域名驗證增加回應 Cache-Control 核對，與既有上傳 `public,no-cache` 一致；保留串流、逾時、MIME、長度及雜湊驗證，不修改雲端設定。
 2. 新增 A14 單一合成流程：同一發布來源貫穿實際編譯首頁、私人頁、正式信、行前提醒與可丟棄合成簽章票券；驗證日期、地點、開場及簽到資訊。測試全攔截、內存儲存／郵件替身，不讀正式資料；合成根憑證不進正式 runtime。

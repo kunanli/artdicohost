@@ -1,5 +1,13 @@
 # ARTDiCO HOST 实施计划
 
+## 2026-11-01 UX 軟體交付完成與真人接續
+
+UX2 已由 [PR #57](https://github.com/kunanli/artdicohost/pull/57) 合併並實際發布，main `5ec4581531c31ad7c950d8c58234792fb7b1d37d` 的 [正式流程 41295125988](https://github.com/kunanli/artdicohost/actions/runs/41295125988) completed／success。1586 項測試、704 個來源檔、Astro 472 檔零錯誤／警告（1 項既有 hint）、兩種 ZIP 的受限離線啟動、128 檔／40 資產與公開 51 檔核對均通過。10:02:15 UTC 的實際私有 OSS 驗證使用兩獨立客戶端／一 FC 程序；10:02:19 的 13 個後台 HTTPS 頁面及 10:03:49 的 51 個公開 HTTPS 物件均取得準確來源回執，公開業務修訂仍為 43。
+
+UX1 已由 PR #56 發布，UX2 的具名正式信、原操作只讀恢復、名單往返與明確下一位也已交付。最終人員頁清理提示後重驗準確 FC 12 案及既有 5／4／6 案；其他選人、提醒、首頁及私人頁證據按相同產物位元組核對保留。完整來源、測試及發布證據見 [UX2 紀錄](redesign/ux-workflow-release.md)。`docs/ux-final-release-proof` 只保存最後文件回執，不再重複觸發相同軟體部署。
+
+UX3 的短真人任務清單已交付；實際同事試操作、通知實收、微信／iPhone Wallet 與真實資料核對仍由有權限操作人執行，不以合成測試冒稱完成。本輪沒有代為整合真實名單、核准名額、實寄、更新群碼或發布業務草稿，既有受控設定保留。下方各節保留規劃及歷史過程，現況以本節和正式發布紀錄為準。
+
 ## 2026-11-01 UX2：具名寄送與連續處理
 
 UX1 已由 [PR #56](https://github.com/kunanli/artdicohost/pull/56) 發布於 main `cc1281f8e2c5a5ac8c8133138a5d9540de897bf0`，[正式流程 41290308942](https://github.com/kunanli/artdicohost/actions/runs/41290308942) completed／success；1536 項測試、兩種 ZIP 受限啟動、08:54:23 UTC 私有 OSS（兩獨立客戶端／一 FC 程序）、08:54:27 的 13 個後台頁面及 08:56:16 的 51 個公開物件核驗通過，公開業務修訂仍為 43。從此建立 `feat/ux-workflow`，不再等逐步命令。

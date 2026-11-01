@@ -4,7 +4,11 @@
 
 使用者已確認執行 UX 設計建議，延續逐階段完成與自動交付授權。[UX1 操作名稱／層級](redesign/ux-clarity-release.md) 已由 [PR #56](https://github.com/kunanli/artdicohost/pull/56) 發布於 main `cc1281f8e2c5a5ac8c8133138a5d9540de897bf0`；[正式流程 41290308942](https://github.com/kunanli/artdicohost/actions/runs/41290308942) completed／success，1536 項測試、695 個來源檔及兩種 ZIP 受限啟動通過。08:54:23.491 UTC 完成私有 OSS 兩客戶端／一 FC 核驗，08:54:27.653 UTC 核對 13 個後台頁面，08:56:16.456 UTC 核對 51 個公開物件與快取標頭，公開業務修訂仍為 43。
 
-目前 `feat/ux-workflow`／計畫 `38f4432` 正在交付 [UX2 具名寄送與連續處理](redesign/ux-workflow-release.md)：正式信姓名選人、原寄送 GET 核對、新 pending 先持久保存原正文、名單往返與明確下一位。保留 401 後同作用範圍恢復與明確登出 `clearActor` 全清的區別；搜尋只用可清除 session snapshot，不放人員網址或 IDB。完整邊界見 [實施計畫](implementation-plan.md)。最終產品 `1af25152` 的完整 1586 項測試、704 個來源檔、23 頁建置、準確產物及編譯後瀏覽器證據已記錄，PR／main／正式部署仍待核對；正式業務資料與真實裝置／同事觀察分開處理，不沿用 UX1 的數字冒稱完成。
+目前 [UX2 具名寄送與連續處理](redesign/ux-workflow-release.md) 已由 [PR #57](https://github.com/kunanli/artdicohost/pull/57) 正式發布於 main `5ec4581531c31ad7c950d8c58234792fb7b1d37d`。PR head `babd0a38970062bab24acab20559ec3cdaa62449` 的 [CI 41294783416](https://github.com/kunanli/artdicohost/actions/runs/41294783416) completed／success，實際合成 checkout 為 `ee893ca60e8660595298bbacbad0edbb57bd5dee`；main [流程 41295125988](https://github.com/kunanli/artdicohost/actions/runs/41295125988) 也 completed／success，check／transport／FC／OSS 四項工作均成功。實際 main 的 1586 項測試全通過且無 fail／cancelled／skipped／todo，704 個來源檔、Astro 472 檔零錯誤／警告、保留 1 項既有 hint；準確 FC 128 檔／40 資產／13 別名離線啟動及公開 51 檔核對通過。
+
+10:02:15.9171031 UTC 核對準確 FC 來源 `5ec45815`，內容與報名啟用，私有 OSS 兩獨立客戶端／一 FC 程序通過；10:02:19.8550837 UTC 完成 13 個準確後台頁面 HTTPS。10:02:20.698741 UTC 匿名公開內容／CORS 核對仍為已發布修訂 43（10 月 22 日發布），公開嘉賓 9、組織 7、作品 1、展位 16、場次 43，這些不是確認出席人數。10:03:49.5000904 UTC 完成來源 `5ec45815` 的 51 個公開物件 HTTPS 與既有快取防護核驗。UX1、UX2 軟體已交付並上線。
+
+本輪實作計畫 `38f4432`、最終本地產品 `1af25152` 的準確包及編譯後瀏覽器證據保留，與已部署 main `5ec45815` 的正式證據分開。正式信姓名選人、原寄送 GET 核對、原正文先持久保存、名單往返與明確下一位的邊界見 [實施計畫](implementation-plan.md)。401 後同作用範圍恢復，明確登出 `clearActor` 全清；搜尋只用可清除 session snapshot，不放人員網址或 IDB。本次證據分支 `docs/ux-final-release-proof` 自已部署 main 建立，只補實際結果，不改產品或為文件重複部署。本輪沒有新增服務或代做正式業務操作；真實資料與真實收件／裝置／同事觀察仍維持四項待人工記錄。
 
 ## 2026-11-01 新改版執行入口
 

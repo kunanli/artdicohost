@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {canManageEventOperations,canManageAccounts} from '../shared/staff-permissions.mjs';
 import {SETTINGS_PAGES,resolveSettingsPage,settingsPageHref} from '../src/lib/admin-sections.mjs';
+import {groupInviteStatus} from '../src/lib/group-invite-expiry.mjs';
 
 const source=(await readFile(new URL('../src/scripts/settings.mjs',import.meta.url),'utf8')).replace(/^import[^\n]*\n/gmu,'');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -22,7 +23,7 @@ function fixture({path='/admin/settings/',hash='',roles=['superadmin']}={}){
   const dependencies={
     createStaffSettings:options=>controller('staff',options),createDeliverySettings:options=>controller('delivery',options),
     createSettingsSession:events=>{sessionEvents=events;return{clear(){},setSession:value=>value.user,async request(requestPath){calls.push(requestPath);if(requestPath==='/api/admin/session')return{user,csrfToken:'synthetic'};throw new Error('Unexpected request');}};},
-    canManageEventOperations,canManageAccounts,createBrowserDraftStore:()=>({}),eventConfig:{id:'synthetic-event'},SETTINGS_PAGES,resolveSettingsPage,settingsPageHref,
+    canManageEventOperations,canManageAccounts,createBrowserDraftStore:()=>({}),eventConfig:{id:'synthetic-event'},SETTINGS_PAGES,resolveSettingsPage,settingsPageHref,groupInviteStatus,
     document:{querySelector:()=>root,getElementById:id=>node('#'+id),title:''},location:{protocol:'https:',hostname:'api.example.invalid',pathname:path,hash},history:{replaceState(_a,_b,url){replaced.push(url);}},
     window:{addEventListener(type,callback){listeners.set(type,callback);}},setInterval(){},requestAnimationFrame:callback=>callback(),confirm:()=>false,
   };
@@ -57,6 +58,14 @@ test('auth expiry clears every mounted controller and private account label',asy
   const f=fixture({path:'/admin/settings/accounts/'});await tick();f.expire();
   assert.equal(f.node('[data-settings-workspace]').hidden,true);assert.equal(f.node('[data-settings-authorized]').hidden,true);assert.equal(f.node('[data-settings-user]').textContent,'');
   assert.ok(f.controllers.staff.clears>=2);assert.ok(f.controllers.delivery.clears>=2);assert.equal(f.accountsLink.hidden,true);
+});
+
+test('an unreadable group source clears the previously available summary without another request',async()=>{
+  const f=fixture({path:'/admin/settings/group/'});await tick();const update=f.node('[data-staff-settings]').listeners.get('staff-settings-state'),now=Date.now();
+  update({detail:{configured:true,expired:false,serverTime:new Date(now).toISOString(),expiresAt:new Date(now+2*86400000).toISOString()}});
+  assert.match(f.node('[data-settings-group-summary]').textContent,/已配置/u);
+  update({detail:null});assert.match(f.node('[data-settings-group-summary]').textContent,/状态待核对/u);assert.doesNotMatch(f.node('[data-settings-group-summary]').textContent,/已配置|到期/u);
+  assert.deepEqual(f.calls,['/api/admin/session']);
 });
 
 test('the original beforeunload protects dirty or unknown settings without automatic writes',async()=>{

@@ -6,6 +6,20 @@ const instant = value => typeof value === 'string' && ISO.test(value) && Number.
   && new Date(value).toISOString() === value ? Date.parse(value) : null;
 const localMinute = value => new Date(value + OFFSET).toISOString().slice(0, 16);
 
+/** Read-only display state uses the server clock, never the device wall clock. */
+export function groupInviteStatus(state, elapsedMs = 0) {
+  const unavailable = { kind: 'unavailable', expiresAt: null };
+  if (!state || typeof state.configured !== 'boolean' || typeof state.expired !== 'boolean'
+    || !Number.isFinite(elapsedMs) || elapsedMs < 0) return unavailable;
+  if (!state.configured) return { kind: 'missing', expiresAt: null };
+  const expiry = instant(state.expiresAt), server = instant(state.serverTime);
+  if (expiry === null) return unavailable;
+  if (state.expired) return { kind: 'expired', expiresAt: state.expiresAt };
+  if (server === null) return unavailable;
+  const remaining = expiry - server - elapsedMs;
+  return { kind: remaining <= 0 ? 'expired' : remaining <= DAY ? 'expiring' : 'ready', expiresAt: state.expiresAt };
+}
+
 /** Server-owned rolling window, advanced only by measured monotonic elapsed time.
  * The browser wall clock and its timezone do not decide the accepted range. */
 export function groupInviteExpiryBounds(state, elapsedMs = 0) {

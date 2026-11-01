@@ -12,6 +12,19 @@ const exact = (value, keys) => plain(value) && Object.keys(value).sort().join('\
 const posterText = (value, maximum) => typeof value === 'string' && value.isWellFormed() && value === value.normalize('NFC').trim()
   && value.length > 0 && [...value].length <= maximum && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
 export const CONFIRMATION_INVITATION_FILENAME = 'artdico-host-invitation.png';
+export const CONFIRMATION_CONTACT_EMAIL = 'support@artdico.co';
+export const CONFIRMATION_GROUP_UNAVAILABLE = '群码待更新，请重新读取或联系主办方';
+
+/** Device hints describe the next user action, never whether a pass was installed. */
+export function confirmationWalletGuidance({ userAgent = '', maxTouchPoints = 0, walletReady = false, invitationReady = false } = {}) {
+  const ios = /iPhone|iPad|iPod/iu.test(userAgent) || /Macintosh/iu.test(userAgent) && maxTouchPoints > 1;
+  const android = /Android/iu.test(userAgent), wechat = /MicroMessenger/iu.test(userAgent);
+  if (android) return { showWallet: false, message: '请保存本页链接；也可在「更多保存方式」' + (invitationReady ? '下载 PNG 或' : '') + '打印为 PDF。' };
+  if (!walletReady) return { showWallet: false, message: 'Apple Wallet 暂未就绪，请先保存本页链接。' };
+  if (ios && wechat) return { showWallet: true, message: '微信内请点右上角「…」在浏览器打开，或复制本页私人链接到 Safari，再加入 Wallet。' };
+  if (ios) return { showWallet: true, message: '在 Safari 打开票券后，按系统提示确认添加；下载文件不代表已加入 Wallet。' };
+  return { showWallet: true, message: '请用 iPhone 的 Safari 打开本页并添加票券；也可先保存本页链接。' };
+}
 
 /** The API supplies the exact poster facts. Older receipts never infer permission from their event text. */
 export function confirmationInvitation(value, admissionStatus, attendeeName) {
@@ -134,18 +147,18 @@ export const confirmationEmailLabels = Object.freeze({
 /** Review status controls the purpose of this page; it never promises an invitation before a confirmed seat. */
 export function confirmationEmailMessage(admissionStatus, emailStatus) {
   if (admissionStatus === 'pending_review') return '申请已收到，待主办方人工审核。当前没有参会名额，也不会发送正式邀请；请保存此查询链接。';
-  if (admissionStatus === 'rejected') return '本次申请未通过审核，没有确认参会名额或正式邀请。如需核对，请通过原联系渠道联络筹备团队。';
+  if (admissionStatus === 'rejected') return '本次申请未通过审核，没有确认参会名额或正式邀请。如需核对，请联系主办方。';
   if (admissionStatus === 'waitlisted') return '当前为候补，尚未确认参会名额，不提供正式邀请。请通过本页核对后续状态，无需重复申请。';
   if (admissionStatus === 'withdrawn') return '这份报名已取消，原确认邮件不代表当前仍有参会名额。';
   return admissionStatus === 'confirmed' ? confirmationEmailLabels[emailStatus] ?? '' : '';
 }
 
 export const confirmationStatusLabels = Object.freeze({
-  pending_review: ['待人工审核', '申请已收到，待审核', '主办方将人工核对这份申请。目前尚未确认参会名额，请保存申请编号与本页查询链接。', '打印申请收据'],
-  confirmed: ['名额已确认', '参会名额已确认', '期待在现场与你相见。请保存登记编号，方便签到和后续核对。', '打印参会确认'],
-  waitlisted: ['尚未确认名额', '候补登记已保存', '当前尚未确认参会名额。请等待筹备团队核对后续名额，无需重复申请。', '打印候补状态'],
-  rejected: ['审核未通过', '本次申请未通过审核', '这份申请已完成审核，目前没有参会名额。如需核对，请通过原联系渠道联络筹备团队。', '打印审核结果'],
-  withdrawn: ['名额已取消', '这份报名已取消', '这份报名当前不再占用参会名额。如需调整，请通过原联系渠道向筹备团队核对。', '打印取消状态'],
+  pending_review: ['待人工审核', '申请已收到，待审核', '尚未确认参会名额。请保存本页查询链接，稍后核对结果。', '打印申请收据'],
+  confirmed: ['名额已确认', '参会名额已确认', '期待与你在现场相见。请先查看活动安排，再保存本页。', '打印参会确认'],
+  waitlisted: ['尚未确认名额', '候补登记已保存', '尚未确认参会名额。请保存查询链接，等待主办方核对后续安排。', '打印候补状态'],
+  rejected: ['审核未通过', '本次申请未通过审核', '目前没有参会名额。如需核对，请联系主办方。', '打印审核结果'],
+  withdrawn: ['名额已取消', '这份报名已取消', '当前不再占用参会名额，原确认邮件不代表现有资格。', '打印取消状态'],
 });
 
 export function createConfirmationClient({ apiOrigin, pageOrigin, fetchFn = globalThis.fetch, timeoutMs = 20_000 } = {}) {

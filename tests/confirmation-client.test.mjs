@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { confirmationLink, confirmationToken, savedConfirmation, confirmationView, createConfirmationClient, confirmationEmailMessage, confirmationStatusLabels } from '../src/lib/confirmation-client.mjs';
+import { confirmationLink, confirmationToken, savedConfirmation, confirmationView, createConfirmationClient, confirmationEmailMessage, confirmationStatusLabels, confirmationWalletGuidance, CONFIRMATION_GROUP_UNAVAILABLE, CONFIRMATION_CONTACT_EMAIL } from '../src/lib/confirmation-client.mjs';
 
 const token='v1.'+'x'.repeat(100)+'.'+'y'.repeat(43),api='https://api.artdico.host',site='https://artdico.host',now=Date.parse('2026-10-21T00:00:00Z');
 const value=()=>({referenceCode:'r'.repeat(43),submittedAt:'2026-10-21T00:00:00Z',event:{id:'synthetic-event',title:'合成活动',date:'2026-12-05',time:'10:00–18:00',venue:'合成场地',timezone:'Asia/Shanghai',checkIn:'09:30'},admission:{status:'confirmed',kind:'attendee',revision:1},attendee:{name:'合成报名人',organization:'合成机构',email:'PRIVATE-SHOULD-NOT-RENDER'},email:{status:'not_configured',recipient:'PRIVATE-SHOULD-NOT-RENDER'},wallet:{ready:false},provenance:{permissionReference:'PRIVATE-SHOULD-NOT-RENDER'}});
@@ -130,4 +130,33 @@ test('an external aborted confirmation read never fetches, and a late response i
   await assert.rejects(client.read(token,{signal:before.signal}),error=>error.cancelled===true);assert.equal(calls,0);
   const during=new AbortController();let finish;const waiting=new Promise(resolve=>{finish=resolve;});const held=createConfirmationClient({apiOrigin:api,pageOrigin:site,fetchFn:async()=>{calls++;await waiting;return json(value());}});
   const request=held.read(token,{signal:during.signal});during.abort();finish();await assert.rejects(request,error=>error.cancelled===true);assert.equal(calls,1);
+});
+
+test('confirmed group image access expires independently from the underlying QR and never grants other admission states access',()=>{
+  const input=value();input.groupInvite={platform:'wechat',qrImageUrl:api+'/api/registration/group-invite/synthetic.token',expiresAt:new Date(now+600_000).toISOString()};
+  assert.ok(confirmationView(input,now).groupInvite);
+  assert.ok(confirmationView(input,now+599_999).groupInvite);
+  assert.equal(confirmationView(input,now+600_000).groupInvite,null);
+  assert.equal(confirmationView({...input,groupInvite:null},now).groupInvite,null);
+  assert.equal(confirmationView({...input,groupInvite:{...input.groupInvite,qrExpiresAt:'PRIVATE-NOT-A-NEW-CONTRACT'}},now).groupInvite.expiresAt,input.groupInvite.expiresAt);
+  for(const qrImageUrl of ['https://evil.invalid/qr',api+'/api/registration/group-invite/synthetic.token?email=private',api+'/api/registration/group-invite/synthetic.token#private',api+'/api/registration/group-invite/../contacts'])assert.equal(confirmationView({...input,groupInvite:{...input.groupInvite,qrImageUrl}},now).groupInvite,null);
+  assert.equal(CONFIRMATION_GROUP_UNAVAILABLE,'群码待更新，请重新读取或联系主办方');assert.equal(CONFIRMATION_CONTACT_EMAIL,'support@artdico.co');
+});
+
+test('Wallet instructions distinguish iPhone WeChat, Safari, desktop and Android without claiming installation',()=>{
+  const ios='Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit Safari/604.1';
+  const safari=confirmationWalletGuidance({userAgent:ios,walletReady:true});assert.equal(safari.showWallet,true);assert.match(safari.message,/系统提示确认添加/u);assert.match(safari.message,/不代表已加入/u);
+  const wechat=confirmationWalletGuidance({userAgent:ios+' MicroMessenger/8.0',walletReady:true});assert.equal(wechat.showWallet,true);assert.match(wechat.message,/私人链接到 Safari/u);
+  const ipad=confirmationWalletGuidance({userAgent:'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) Safari/605',maxTouchPoints:5,walletReady:true});assert.equal(ipad.showWallet,true);assert.match(ipad.message,/系统提示/u);
+  for(const invitationReady of [true,false]){const android=confirmationWalletGuidance({userAgent:'Mozilla/5.0 (Linux; Android 15) MicroMessenger/8.0',walletReady:true,invitationReady});assert.equal(android.showWallet,false);assert.match(android.message,/本页链接.*PDF/u);assert.equal(android.message.includes('PNG'),invitationReady);}
+  const desktop=confirmationWalletGuidance({userAgent:'Mozilla/5.0 (X11; Linux x86_64)',walletReady:true});assert.equal(desktop.showWallet,true);assert.match(desktop.message,/iPhone.*Safari/u);
+  assert.deepEqual(confirmationWalletGuidance({userAgent:ios,walletReady:false}),{showWallet:false,message:'Apple Wallet 暂未就绪，请先保存本页链接。'});
+});
+
+test('unverified event facts preserve current admission and durable notification history while disabling new credentials',()=>{
+  const input=value();input.wallet.ready=true;input.invitation=poster();input.email.status='provider_accepted';
+  input.groupInvite={platform:'wechat',qrImageUrl:api+'/api/registration/group-invite/synthetic.token',expiresAt:new Date(now+600_000).toISOString()};
+  for(const eventFacts of [{ready:false,reason:'EVENT_FACTS_MISMATCH',revision:43},{ready:false,reason:'EVENT_FACTS_UNAVAILABLE',revision:null},{ready:true,reason:'EVENT_FACTS_MISMATCH',revision:43}]){
+    const view=confirmationView({...input,eventFacts},now);assert.equal(view.admission.status,'confirmed');assert.equal(view.attendee.name,input.attendee.name);assert.equal(view.email.status,'provider_accepted');assert.equal(view.event.venue,input.event.venue);assert.ok(view.groupInvite);assert.equal(view.wallet.ready,false);assert.equal(view.invitation.ready,false);assert.equal(view.eventFacts.ready,false);
+  }
 });

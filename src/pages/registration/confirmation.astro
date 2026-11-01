@@ -10,19 +10,21 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
     <meta name="robots" content="noindex,nofollow,noarchive" />
     <meta name="referrer" content="no-referrer" />
     <meta name="theme-color" content="#ffffff" />
-    <title>报名确认 · ARTDiCO HOST</title>
+    <title>私人参会页 · ARTDiCO HOST</title>
   </head>
   <body class="confirmation-page" data-confirmation-page data-confirmation-api={apiOrigin}>
     <a class="confirmation-skip" href="#confirmation-main">跳到报名状态</a>
     <header class="confirmation-header"><a href="/">ARTDiCO HOST</a><a href="/#agenda">活动日程</a></header>
     <main id="confirmation-main" tabindex="-1">
       <section class="confirmation-card">
-        <p class="confirmation-state" data-confirmation-state>报名确认</p>
+        <p class="confirmation-state" data-confirmation-state>私人参会页</p>
         <h1 data-confirmation-heading tabindex="-1">正在读取报名状态…</h1>
         <p class="confirmation-intro" data-confirmation-intro>请稍候，我们正在核对这份报名的最新状态。</p>
         <p class="confirmation-error" data-confirmation-error role="alert" hidden></p>
         <div data-confirmation-content hidden>
           <div class="confirmation-person"><strong data-confirmation-name></strong><span data-confirmation-organization></span></div>
+          <p class="confirmation-contact" data-confirmation-outcome-contact hidden>如需核对，请联系 <a href="mailto:support@artdico.co">support@artdico.co</a>。<button type="button" data-confirmation-contact-copy>复制邮箱</button></p>
+          <p class="confirmation-facts-warning" data-confirmation-facts-warning role="status" hidden>活动资料待核对，请稍后重新读取。</p>
           <dl class="confirmation-details">
             <dt>活动</dt><dd data-confirmation-event></dd>
             <dt>日期</dt><dd data-confirmation-date></dd>
@@ -31,30 +33,39 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
             <dt>登记编号</dt><dd class="confirmation-reference" data-confirmation-reference></dd>
           </dl>
           <p class="confirmation-note">讲者、展位与住宿安排分别确认。</p>
-          <p class="confirmation-email" data-confirmation-email></p>
-          <div class="confirmation-actions">
-            <button type="button" data-confirmation-print>打印 / 存为 PDF</button>
-            <button type="button" data-confirmation-copy>保存确认链接</button>
-            <button type="button" data-confirmation-wallet hidden>加入 Apple Wallet</button>
-            <button type="button" data-confirmation-invitation hidden>生成个人邀请函 PNG</button>
-          </div>
-          <p class="confirmation-action-status" data-confirmation-action-status role="status" aria-live="polite"></p>
-          <div class="confirmation-copy-fallback" data-confirmation-copy-fallback hidden><label for="confirmation-private-link">复制并私下保存此链接</label><input id="confirmation-private-link" data-confirmation-private-link readonly autocomplete="off" /></div>
-          <p class="confirmation-private">此链接可查看你的报名状态，请私下保存。</p>
-          <section class="confirmation-invitation" data-confirmation-invitation-preview hidden aria-labelledby="confirmation-invitation-heading">
-            <h2 id="confirmation-invitation-heading">个人邀请函</h2>
-            <img data-confirmation-invitation-image alt="个人活动邀请函" width="1080" height="1920" decoding="async" referrerpolicy="no-referrer" />
-            <a data-confirmation-invitation-download download="artdico-host-invitation.png">下载 PNG 邀请函</a>
-            <p>手机可长按图片保存；活动前请以确认页最新状态为准。</p>
-          </section>
           <section class="confirmation-group" data-confirmation-group hidden aria-labelledby="confirmation-group-heading">
             <h2 id="confirmation-group-heading">加入活动微信群</h2>
             <div data-confirmation-group-image></div>
-            <p>用微信扫码，或长按图片识别。群码另有有效期。</p>
+            <p data-confirmation-group-status role="status"></p>
+            <p class="confirmation-group-validity">图片链接最长 10 分钟；微信群码最长 7 天，可能提前更换。</p>
+            <div class="confirmation-small-actions"><button type="button" data-confirmation-group-refresh>重新读取群码</button><button type="button" data-confirmation-contact-copy>复制联系邮箱</button></div>
+          </section>
+          <section class="confirmation-save" aria-labelledby="confirmation-save-heading">
+            <h2 id="confirmation-save-heading" data-confirmation-save-heading>保存参会信息</h2>
+            <div class="confirmation-actions">
+              <button type="button" data-confirmation-copy>保存私人查询链接</button>
+              <button type="button" data-confirmation-wallet hidden>加入 Apple Wallet</button>
+            </div>
+            <p class="confirmation-device" data-confirmation-device hidden></p>
+            <p class="confirmation-action-status" data-confirmation-action-status role="status" aria-live="polite"></p>
+            <div class="confirmation-copy-fallback" data-confirmation-copy-fallback hidden><label for="confirmation-private-link">复制并私下保存此链接</label><input id="confirmation-private-link" data-confirmation-private-link readonly autocomplete="off" /></div>
+            <p class="confirmation-private">此链接可查看你的最新状态，请私下保存，不要转发。</p>
+            <details class="confirmation-more" data-confirmation-more>
+              <summary>更多保存方式</summary>
+              <div class="confirmation-small-actions"><button type="button" data-confirmation-print>打印 / 存为 PDF</button><button type="button" data-confirmation-invitation hidden>生成个人邀请函 PNG</button></div>
+              <section class="confirmation-invitation" data-confirmation-invitation-preview hidden aria-labelledby="confirmation-invitation-heading">
+                <h3 id="confirmation-invitation-heading">个人邀请函</h3>
+                <img data-confirmation-invitation-image alt="个人活动邀请函" width="1080" height="1920" decoding="async" referrerpolicy="no-referrer" />
+                <a data-confirmation-invitation-download download="artdico-host-invitation.png">下载 PNG 邀请函</a>
+                <p>手机可长按图片保存；活动前请以私人页最新状态为准。</p>
+              </section>
+              <p class="confirmation-email" data-confirmation-email></p>
+            </details>
           </section>
           <p class="confirmation-printed">打印仅保留当前结果；活动前请重新打开确认页核对最新状态。</p>
         </div>
         <div class="confirmation-secondary"><button type="button" data-confirmation-refresh>重新读取</button><a href="/">返回活动首页</a></div>
+        <details class="confirmation-support"><summary>遗失链接或需要帮助？</summary><p>请联系 <a href="mailto:support@artdico.co">support@artdico.co</a>。主办方核对本人后，会私下交付查询链接。<button type="button" data-confirmation-contact-copy>复制邮箱</button></p><p data-confirmation-contact-status role="status" aria-live="polite"></p></details>
       </section>
     </main>
     <noscript><p class="confirmation-noscript">请启用 JavaScript 以核对报名状态，或通过原联系渠道联络筹备团队。</p></noscript>

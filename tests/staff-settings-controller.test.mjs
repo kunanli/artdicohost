@@ -14,7 +14,7 @@ function fixture(request,options={}){
       const node={hidden:false,textContent:'',value:'',disabled:false,listeners,dataset:{},
         addEventListener:(type,listener)=>listeners.set(type,listener),querySelectorAll:()=>[],
         reset(){for(const field of fields.values())field.value='';},reportValidity:()=>true,focus(){},
-        replaceChildren(){},append(){},removeAttribute(){},cloneNode(){return {...this};},replaceWith(next){nodes.set(selector,next);},
+        replaceChildren(){},append(){},removeAttribute(name){delete this[name];},cloneNode(){return {...this};},replaceWith(next){nodes.set(selector,next);},
         elements:{namedItem(name){if(!fields.has(name))fields.set(name,{value:'',files:[],required:false});return fields.get(name);}},
       };
       nodes.set(selector,node);
@@ -110,4 +110,48 @@ test('a group settings refresh preserves an entered date and does not silently r
   const f=fixture(async()=>group(0),{section:'group'});await f.controller.configure(account('owner'));
   const field=f.get('[data-group-form]').elements.namedItem('expiresAt'),entered='2026-10-30T23:59';field.value=entered;
   f.get('[data-group-refresh]').listeners.get('click')();await tick();assert.equal(field.value,entered);
+});
+
+test('an unreadable group refresh clears the old usable image and write revision while preserving the operator input',async()=>{
+  let reads=0,writes=0;const active={...group(2),configured:true,expired:false,expiresAt:new Date(Date.now()+2*86400000).toISOString()};
+  const f=fixture(async(_path,options={})=>{if(options.method){writes++;throw new Error('unexpected write');}if(reads++)throw new Error('synthetic unavailable');return active;},{section:'group'});
+  await f.controller.configure(account('owner'));
+  assert.equal(f.get('[data-group-status]').dataset.groupHealth,'ready');assert.equal(f.get('[data-group-image]').hidden,false);
+  const form=f.get('[data-group-form]'),file={type:'image/png',size:1,arrayBuffer:async()=>new Uint8Array([1]).buffer};
+  form.elements.namedItem('image').files=[file];form.elements.namedItem('expiresAt').value='2026-11-03T15:30';
+  f.get('[data-group-refresh]').listeners.get('click')();await tick();
+  assert.equal(f.get('[data-group-image]').hidden,true);assert.equal(f.get('[data-group-image]').src,undefined);
+  assert.equal(f.get('[data-group-status]').dataset.groupHealth,'unavailable');assert.match(f.get('[data-group-status]').textContent,/待核对/u);
+  assert.equal(f.get('[data-group-disable]').disabled,true);assert.equal(f.get('[data-settings-save-button="group"]').disabled,true);
+  assert.equal(form.elements.namedItem('image').files[0],file);assert.equal(form.elements.namedItem('expiresAt').value,'2026-11-03T15:30');
+  assert.equal(f.events.at(-1).detail,null);form.listeners.get('submit')({preventDefault(){},currentTarget:form});await tick();assert.equal(writes,0);
+});
+
+test('a late failed group read cannot clear a newer successful state or replace it with an error',async()=>{
+  const reads=[],f=fixture(async()=>new Promise((resolve,reject)=>reads.push({resolve,reject})),{section:'group'});
+  const first=f.controller.configure(account('owner')),second=f.controller.configure(account('owner'));
+  const active={...group(2),configured:true,expired:false,expiresAt:new Date(Date.now()+2*86400000).toISOString()};
+  reads[1].resolve(active);await second;reads[0].reject(new Error('old synthetic read failed'));await first;
+  assert.equal(f.get('[data-group-status]').dataset.groupHealth,'ready');assert.equal(f.get('[data-group-image]').hidden,false);
+  assert.equal(f.get('[data-settings-error]').textContent,'');assert.equal(f.events.length,1);
+});
+
+test('staff QR preview failures remain actionable across local label refreshes',async()=>{
+  const active={...group(1),configured:true,expired:false,expiresAt:new Date(Date.now()+60*60*1000).toISOString()},f=fixture(async()=>active,{section:'group'});
+  await f.controller.configure(account('owner'));
+  assert.equal(f.get('[data-group-status]').dataset.groupHealth,'expiring');assert.match(f.get('[data-group-status]').textContent,/24 小时内到期/u);
+  f.get('[data-group-image]').listeners.get('error')();f.controller.refreshGroupLabels();
+  assert.equal(f.get('[data-group-image]').hidden,true);assert.equal(f.get('[data-group-image]').src,undefined);
+  assert.equal(f.get('[data-group-status]').dataset.groupHealth,'image-unavailable');assert.match(f.get('[data-group-status]').textContent,/刷新状态或替换原图/u);
+});
+
+test('a failed group refresh never unlocks an unknown write or retries it',async()=>{
+  let reads=0,writes=0;const previousConfirm=globalThis.confirm;globalThis.confirm=()=>true;
+  try{
+    const f=fixture(async(_path,options={})=>{if(options.method){writes++;const error=new Error('unknown write');error.status=503;throw error;}if(reads++)throw new Error('unavailable read');return{...group(1),configured:true,expired:false,expiresAt:new Date(Date.now()+86400000).toISOString()};},{section:'group'});
+    await f.controller.configure(account('owner'));f.get('[data-group-disable]').listeners.get('click')();await tick();
+    assert.equal(f.controller.pending,true);f.get('[data-group-refresh]').listeners.get('click')();await tick();
+    assert.equal(writes,1);assert.equal(f.controller.pending,true);assert.equal(f.get('[data-settings-form-state="group"]').dataset.saveState,'unknown');
+    assert.equal(f.get('[data-settings-save-button="group"]').disabled,true);assert.equal(f.get('[data-group-image]').hidden,true);
+  }finally{globalThis.confirm=previousConfirm;}
 });

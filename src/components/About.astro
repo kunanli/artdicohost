@@ -1,6 +1,8 @@
 ---
 import { eventConfig } from '../config/event.mjs';
 import Icon from './Icon.astro';
+import { Image } from 'astro:assets';
+import planet from '../assets/home/planet-purple.webp';
 ---
 <section class="ah-about ah-section" id="about" aria-labelledby="about-heading">
   <div class="ah-section-heading">
@@ -8,17 +10,23 @@ import Icon from './Icon.astro';
     <p data-public-about-text>组织者与青年创作者，在同一个现场相遇。</p>
   </div>
   <div class="ah-program-grid">
-    <article class="ah-program-card" data-program="ggj">
+    <article class="ah-program-card ah-home-program-planet" data-program="ggj" data-home-planet>
+      <Image class="ah-home-program-art" src={planet} alt="" width={640} height={640} loading="lazy" decoding="async" aria-hidden="true" />
+      <div class="ah-home-program-copy">
       <div class="ah-program-number"><span>01</span><Icon name="share" /></div>
       <h3 class="ah-program-title"><span>GGJ</span> <strong>中国交流聚会</strong></h3>
       <p>交换站点经验，认识下一次一起创作的人。</p>
       <ul class="ah-program-tags" aria-label="GGJ 活动内容"><li>主题分享</li><li>组织者圆桌</li><li>新站点咨询</li></ul>
+      </div>
     </article>
-    <article class="ah-program-card" data-program="artdico">
+    <article class="ah-program-card ah-home-program-planet" data-program="artdico" data-home-planet>
+      <Image class="ah-home-program-art" src={planet} alt="" width={640} height={640} loading="lazy" decoding="async" aria-hidden="true" />
+      <div class="ah-home-program-copy">
       <div class="ah-program-number"><span>02</span><Icon name="gamepad" /></div>
       <h3 class="ah-program-title"><span>ARTDiCO HOST</span> <strong>学生嘉年华</strong></h3>
       <p>把想法变成作品，把作品带到大家面前。</p>
       <ul class="ah-program-tags" aria-label="学生嘉年华活动内容"><li>作品分享</li><li>游戏试玩</li><li>现场反馈</li></ul>
+      </div>
     </article>
   </div>
   <details class="ah-highlights-detail ah-program-detail">

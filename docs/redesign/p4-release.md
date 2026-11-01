@@ -1,6 +1,6 @@
 # P4 獨立申請回執與行前提醒
 
-2026-11-01，分支 `feat/redesign-p4`，從已發布 main `51ff34b37981d784963bbaf83a4cd13b0c717de4` 接續，最終產品提交為 `2ef5d73e11fb5d613a645f153c4a085a2446eb8c`。本地實作、1521 項完整回歸、公開建置瀏覽器、準確來源包校驗及獨立審查已完成；PR CI 與實際發布仍待核對。本頁不表示 P4 已上線。
+2026-11-01，[PR #53](https://github.com/kunanli/artdicohost/pull/53) 已合併並實際發布，main 為 `c74c9dd8f95d5442e5446f005af5cdcfb3736293`。[PR 流程 41280179674](https://github.com/kunanli/artdicohost/actions/runs/41280179674) 與 [正式流程 41280499937](https://github.com/kunanli/artdicohost/actions/runs/41280499937) 全部成功；1521 項測試、兩種 ZIP 離線啟動、13 個準確後台頁面及 45 個公開物件 HTTPS 核驗通過。來源基準 main `51ff34b`，產品提交 `2ef5d73e11fb5d613a645f153c4a085a2446eb8c`，PR head 為 `d6858c72516ce064ac370dcb45bef5d0c891f23d`。
 
 ## 本階段範圍
 
@@ -50,9 +50,10 @@
 
 最終 ZIP SHA-256：`8daef7126abba8ae965e91f093eb12732650cd8449ea5140aa2c665d360e9850`。
 
-## 剩餘交付
+## 發布與外部核對
 
-- [ ] PR CI 的完整準確包校驗、ZIP 離線啟動及產物留存。
-- [ ] main 實際發布及準確來源 HTTPS 核驗。
+- [x] PR CI 及合併後 main 的準確包校驗、兩種 ZIP 離線啟動、產物留存與正式發布成功。
+- [x] FC 於 06:29:12 UTC 確認相同 main SHA，私有 OSS 兩個獨立客戶端／一個 FC 程序驗收成功；06:29:16 UTC 完成 13 個準確後台頁面的 HTTPS 核驗。
+- [x] `https://artdico.host` 於 06:30:41 UTC 完成 45 個公開物件的準確版本 HTTPS 核驗；公開業務快照仍為修訂 43。
 
 所有開發驗證使用合成收件者與 provider。真實 Email 收件、配額、同事操作觀察、微信入群及 iPhone Wallet 另記；本階段沒有代寄正式信或提醒。

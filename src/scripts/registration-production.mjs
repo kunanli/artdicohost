@@ -4,23 +4,17 @@ import { renderRegistrationSuccess } from './registration-success.mjs';
 import { createBrowserDraftStore } from '../lib/browser-drafts.mjs';
 import { createApplicationDraft, applicationDraftValue, applicationDraftFromFields } from '../lib/application-draft.mjs';
 import { eventConfig } from '../config/event.mjs';
+import '../lib/public-faq.mjs';
 
 function node(tag,text) { const result = document.createElement(tag); result.textContent = text; return result; }
 
 let currentPublicPrivacy=null;
-let currentAvailability=null;
 function renderPublicPrivacy(){
   const output=document.querySelector('[data-public-privacy]');
   if(output&&currentPublicPrivacy){output.replaceChildren();const labels={processor:'处理者',contactEmail:'联络邮箱',purpose:'用途',storageRegion:'存储地区',retention:'保留期限',rightsRequest:'查阅、更正、撤回及删除',sharing:'分享范围',version:'告知版本'};for(const[key,label]of Object.entries(labels))output.append(node('p',label+'：'+currentPublicPrivacy[key]));}
-  for(const faq of document.querySelectorAll('[data-public-faq] details')){
-    const question=faq.querySelector('summary')?.textContent??'',answer=faq.querySelector('p');if(!answer)continue;
-    if(question.startsWith('现在可以报名吗？')&&currentAvailability)answer.textContent=currentAvailability.message;
-    if(question.startsWith('如何修改或撤回资料？')&&currentPublicPrivacy)answer.textContent=currentPublicPrivacy.rightsRequest;
-  }
 }
-document.addEventListener('artdico:registration-ready',event=>{currentPublicPrivacy=event.detail?.privacy??null;currentAvailability={message:'可以提交参会申请。申请收到后需由主办方人工审核；待审核不占参会名额。审核通过并确认名额后再发送正式邀请。'};renderPublicPrivacy();});
+document.addEventListener('artdico:registration-ready',event=>{currentPublicPrivacy=event.detail?.privacy??null;renderPublicPrivacy();});
 document.addEventListener('artdico:registration-policy',event=>{currentPublicPrivacy=event.detail?.privacy??null;renderPublicPrivacy();});
-document.addEventListener('artdico:registration-unavailable',event=>{currentAvailability=event.detail;renderPublicPrivacy();});
 document.addEventListener('artdico:public-content-updated',renderPublicPrivacy);
 
 for (const section of document.querySelectorAll('[data-registration-api-origin]')) {
@@ -71,7 +65,6 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
     section.querySelector('[data-registration-data-hint]').textContent='当前不受理提交，请勿填写真实资料。';
     for(const control of trackedControls())control.disabled=true;
     for(const status of document.querySelectorAll('[data-registration-availability]'))status.textContent=closed?'申请已关闭':'申请服务暂不可用';
-    for(const faq of document.querySelectorAll('[data-public-faq] details'))if(faq.querySelector('summary')?.textContent.startsWith('现在可以报名吗？')){const answer=faq.querySelector('p');if(answer)answer.textContent=message;}
     document.dispatchEvent(new CustomEvent('artdico:registration-unavailable',{detail:{message}}));
   }
   function announce(message) { summary.textContent = message; summary.hidden = false; summary.focus(); }

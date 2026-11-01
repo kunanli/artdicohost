@@ -1,5 +1,17 @@
 # ARTDiCO HOST 实施计划
 
+## 2026-11-01 當前階段 P5：星球首頁與公開內容互動
+
+P4 已由 [PR #53](https://github.com/kunanli/artdicohost/pull/53) 發布於 main `c74c9dd8f95d5442e5446f005af5cdcfb3736293`，[正式流程 41280499937](https://github.com/kunanli/artdicohost/actions/runs/41280499937) 全成功，1521 項測試、兩種 ZIP 離線啟動、私有 OSS、13 個後台頁面及 45 個公開物件 HTTPS 已核對，公開內容 revision 43 未改。本階段從此建立 `feat/redesign-p5`，完成交付後即接 P6。
+
+以 FrontEnd_Resource 構圖與互動說明落地黑底、巨大紫球、紫橙雙星球、嘉賓氣泡、組織軌道／手機網格、作品手動輪播、A 紫 B 橙 C 藍日程、聊天 Q&A 及巨型 HOST 收尾。正文保留 HTML、穩定錨點、鍵盤與 reduced motion；新素材使用 ASCII 檔名、首頁專用 CSS／字型／動效，隔離後台依賴。Noto 子集改名並保留完整 OFL 於公開頁，MiSans 無本體不引用；分享圖有絕對 metadata URL 與可追蹤本地引用，noindex 決策維持。
+
+只提供一般參會及同一申請的演講提案，移除展位／送作品申請入口，不丟已填內容或原 pending 正文。嘉賓仍只依伺服器出席證明展示，場次關聯獨立，組織只標參與組織，學生／獨立遊戲與舊 team 讀取相容；不公開材料連結、不將美術／3D 全稱可試玩。卡片、輪播與分區在發布刷新後保留穩定 ID、焦點與展開位置，刪除目前項目時合理關閉／回退。
+
+FAQ 增加可選穩定 ID，schema／storage 仍版本 1，舊凍結快照不改寫。單一渲染入口整合已發布問答與即時報名／隱私資料，固定住宿使用既定支持文案、mailto 及複製信箱；不再按中文字首找 DOM。新版編輯器及本機恢復保留 ID；舊客戶端對唯一且完全相同題目保留原 ID，模糊改名保留 legacy，不猜配對或阻擋普通保存。20+／10K+／600㎡ 及固定展位數不展示。
+
+沿用現有 API、FC／OSS、EmailJS、Apple 與來源權限，零新服務、依賴、憑據、排程或 runtime 檔案。新增前端 helper 不進伺服器白名單閉包；仍核對 128 檔／40 後台資產／8 MiB、48,000,000-byte 上傳與公開素材完整引用。只用合成資料與完全攔截瀏覽器；不代做真實嘉賓／素材對應、公開草稿或實寄。驗證三尺寸、長姓名、缺圖、零／一／多作品、觸控／鍵盤、刷新及申請／FAQ 故障狀態，完整檢查、準確包、PR 與正式 HTTPS 交付。
+
 ## 2026-11-01 當前階段 P4：獨立回執與行前提醒
 
 P3 已由 [PR #52](https://github.com/kunanli/artdicohost/pull/52) 發布於 main `51ff34b37981d784963bbaf83a4cd13b0c717de4`，[正式流程 41278011325](https://github.com/kunanli/artdicohost/actions/runs/41278011325) 全成功，1485 項測試、兩種 ZIP 離線啟動、私有 OSS、13 個後台頁面與 45 個公開物件 HTTPS 通過；來源包壓縮已留出餘量。本階段 `feat/redesign-p4` 從此來源接續，完成後即進入 P5，不等逐步指令。

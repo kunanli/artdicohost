@@ -11,7 +11,7 @@ description: Verify ARTDiCO HOST attendee and staff journeys with existing synth
 
 1. 讀取倉庫 `AGENTS.md`、`docs/redesign/README.md`、`docs/redesign/03-release-and-acceptance.md`；確認本階段修改與使用者已定決策。
 2. 核對工作區與變更範圍。套件、Node 版本與測試環境沿用 `package.json` 及 `tests/browser/README.md`，不要把目前 runtime 設定、憑證或私密資料複製到測試。
-3. 先分清要證明的是「既有機制未退化」或「本輪新增功能」。P1a 的兩類作品與動態展位見 [P1a 紀錄](../../../docs/redesign/p1a-release.md)，P1b 的出席投影、多人場次及新通知／票券資訊核對見 [P1b 紀錄](../../../docs/redesign/p1b-release.md)，P2 的簡約人員入口、原位保存與唯讀核對見 [P2 紀錄](../../../docs/redesign/p2-release.md)。本 runner 固定案例未完整涵蓋新需求，須另行執行相應 `p1b-*.test.mjs`、`p2-*.test.mjs` 與聚焦瀏覽器案例；P4 新申請回執／提醒正按 [P4 紀錄](../../../docs/redesign/p4-release.md) 實作，不能以基準通過宣稱完成。
+3. 先分清要證明的是「既有機制未退化」或「本輪新增功能」。P1a 的兩類作品與動態展位見 [P1a 紀錄](../../../docs/redesign/p1a-release.md)，P1b 的出席投影、多人場次及新通知／票券資訊核對見 [P1b 紀錄](../../../docs/redesign/p1b-release.md)，P2 的簡約人員入口、原位保存與唯讀核對見 [P2 紀錄](../../../docs/redesign/p2-release.md)。本 runner 固定案例未完整涵蓋新需求，須另行執行相應 `p1b-*.test.mjs`、`p2-*.test.mjs` 與聚焦瀏覽器案例；P4 通知證據見 [P4 紀錄](../../../docs/redesign/p4-release.md)，當前 P5 首頁／Q&A 實作見 [P5 紀錄](../../../docs/redesign/p5-release.md)，不能以基準通過宣稱完成。
 
 ## 第一層 服務與客戶端
 
@@ -57,6 +57,10 @@ P2 另依 `tests/browser/README.md` 執行 `p2-directory-smoke.mjs` 與 `p2-pers
 P3 另執行 `p3-private-page-smoke.mjs`，並使用更新後的固定 `settings-group-runtime-smoke.mjs`；實際證據見 [P3 紀錄](../../../docs/redesign/p3-release.md)。核對群碼缺少／過期／圖片失敗、重新取得、資格變更清理、微信內裝置指引及保存備援。圖片十分鐘期限、群碼七天上限及工作人員二十四小時內到期提示是不同邊界；模擬裝置不代表真實入群或已加入 Wallet。
 
 P4 另核對新申請已持久化後的獨立回執、提醒預覽與明確選人、各種類的去重／未知原操作及私人頁分型；實際新增案例與結果以 P4 紀錄為準。舊查詢、重放、匯入與部署不補寄，服務商接受不等於送達；不使用真實收件人驗證。
+
+P5 另核對一般參會／同份演講提案切換不丟資料，舊 pending 原正文及申請回執仍有效；Q&A 的報名、隱私與聯絡資訊可用，公開刷新保留合理焦點／導覽位置。最終瀏覽器與素材產物證據見 P5 紀錄，不能由首頁視覺測試推定正式寄信、入群或裝置驗收完成。
+
+新增入口為 `p5-homepage-smoke.mjs`、`p5-faq-application-smoke.mjs` 與 `p5-collections-smoke.mjs`，按 `tests/browser/README.md` 分別執行。原生 IndexedDB 的舊 pending 恢復須保留原正文，僅以 GET 核對既有保存結果；公開集合最後互動的成功範圍以當次 P5 證據為準，不因腳本檔案存在而標示通過。
 
 這些腳本使用合成內存 OSS／provider，並在頁面載入前攔截所有瀏覽器請求；只讀取本地 `dist`。維護清單時重新檢查請求攔截，不能換成正式站瀏覽。截圖與結果由既有腳本寫入忽略的 `.local-data/browser-evidence/`。
 

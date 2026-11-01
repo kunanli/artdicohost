@@ -14,13 +14,14 @@ value.organizations=[{id:'synthetic-org',name:'合成创作者组织',logoId:'',
 value.booths=[{id:'synthetic-booth',code:'C01',organization:'合成参展组织',project:'合成游戏展位',zone:'C',status:'confirmed',slotNumber:1,internalNotes:'PRIVATE_BOOTH'}];
 value.guests=[{id:'synthetic-guest',name:'合成无照片嘉宾',company:'合成机构',ggjRole:'',portraitId:'',status:'confirmed',publicConsent:true,contactId:'PRIVATE_CONTACT',internalNotes:'PRIVATE_GUEST'}];
 value.showcases=['student','indie','team'].map((kind,index)=>({id:'synthetic-'+kind,title:'合成'+kind+'作品',teamName:'合成团队',summary:'合成作品介绍',coverId,status:'confirmed',responseStatus:'attending',publicConsent:true,participationForms:['booth'],boothId:'synthetic-booth',sessionId:'',organizationId:'synthetic-org',...(index?{kind}:{}),school:'PRIVATE_SCHOOL',email:'private@example.invalid',wechat:'PRIVATE_WECHAT',contactName:'PRIVATE_NAME',memberCount:2,materialLinks:'https://private.invalid/material',internalNotes:'PRIVATE_WORK'}));
-const initial=toPublicContent(value),updated=structuredClone(initial);updated.guests=[];updated.showcases=updated.showcases.filter(work=>work.kind==='indie');updated.showcases[0].title='合成更新独立游戏';
+const initial=toPublicContent(value,{guestAttendance:{schemaVersion:1,sourceRevision:1,confirmedGuestIds:['synthetic-guest']}});
+const updated=toPublicContent({...value,guests:[],showcases:value.showcases.filter(work=>work.kind==='indie').map(work=>({...work,title:'合成更新独立游戏'}))},{guestAttendance:{schemaVersion:1,sourceRevision:2,confirmedGuestIds:[]}});
 const empty=toPublicContent({...value,guests:[],showcases:[],booths:[],organizations:[]});
 const html=`<!doctype html><meta charset="utf-8"><meta name="artdico-content-api" content="/api/public/content">
 <p data-public-content-status>初始日程</p><section data-agenda><div data-agenda-summary></div><details data-full-program><div data-agenda-panel="A"><div class="ah-agenda-list"></div></div></details></section>
 <ul data-public-guests></ul><p data-public-guests-empty hidden>嘉宾陆续公布</p>
 <section id="booths"><ul data-public-organizations></ul><p data-public-organizations-empty></p><details id="booth-details"><summary>展位与作品</summary><div data-public-booths></div><p data-public-booths-empty></p></details></section>
-<section id="students"><figure data-public-showcases-concept>初始作品概念</figure><div data-public-works-controls hidden><select data-public-works-filter><option value="all">全部</option><option value="student">学生作品</option><option value="indie">独立游戏</option><option value="team">团队作品</option></select><span data-public-works-count role="status"></span></div><ul data-public-showcases></ul><p data-public-showcases-empty hidden>游戏与作品陆续公布</p><p data-public-works-filter-empty hidden role="status">此分类暂无作品</p></section>
+<section id="students"><figure data-public-showcases-concept>初始作品概念</figure><div data-public-works-controls hidden><select data-public-works-filter><option value="all">全部</option><option value="student">学生作品</option><option value="indie">独立游戏</option></select><span data-public-works-count role="status"></span></div><ul data-public-showcases></ul><p data-public-showcases-empty hidden>游戏与作品陆续公布</p><p data-public-works-filter-empty hidden role="status">此分类暂无作品</p></section>
 <script type="module" src="/src/scripts/public-content.mjs"></script>`;
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const context=await browser.newContext(),page=await context.newPage(),errors=[],reads=[];let mode='initial';
@@ -42,15 +43,15 @@ await context.route('**/*',async route=>{
 });
 async function refresh(next){const count=reads.length;mode=next;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForFunction(()=>document.querySelector('[data-public-content-status]')?.textContent!=='');for(let index=0;index<150&&reads.length===count;index++)await page.waitForTimeout(10);assert.equal(reads.length,count+1);}
 try{
-  await page.goto(SITE);await page.locator('[data-showcase-id=synthetic-team]').waitFor();
+  await page.goto(SITE);await page.locator('[data-showcase-id=synthetic-student]').waitFor();
   assert.equal(await page.locator('[data-showcase-id]').count(),3);assert.equal(await page.locator('[data-guest-id=synthetic-guest] img').count(),0);
   assert.equal(await page.locator('[data-guest-id=synthetic-guest] .ah-guest-initial').textContent(),'合');
-  assert.equal(await page.locator('[data-public-works-controls]').isVisible(),true);assert.equal(await page.locator('[data-public-works-count]').textContent(),'3 件作品');
+  assert.equal(await page.locator('[data-public-works-controls]').isVisible(),true);assert.equal(await page.locator('[data-public-works-count]').textContent(),'1 / 3 件作品');
   assert.equal(await page.locator('#work-synthetic-student .ah-showcase-category').textContent(),'学生作品');
   assert.equal(await page.locator('#work-synthetic-indie .ah-showcase-organization').getAttribute('href'),'#organization-synthetic-org');
   assert.equal(await page.locator('#organization-synthetic-org .ah-showcase-related a').count(),3);
   assert.equal(await page.locator('#booth-synthetic-booth .ah-showcase-related a').count(),3);
-  await page.locator('[data-public-works-filter]').selectOption('indie');assert.equal(await page.locator('[data-showcase-id]:visible').count(),1);assert.equal(await page.locator('[data-public-works-count]').textContent(),'1 / 3 件作品');
+  await page.locator('[data-public-works-filter]').selectOption('indie');assert.equal(await page.locator('[data-showcase-id]:visible').count(),1);assert.equal(await page.locator('[data-public-works-count]').textContent(),'1 / 1 件作品');
   await page.locator('#work-synthetic-indie .ah-showcase-arrangement a').click();assert.equal(await page.locator('#booth-details').evaluate(node=>node.open),true);
   await page.locator('#booth-synthetic-booth .ah-showcase-related a[href="#work-synthetic-student"]').click();assert.equal(await page.locator('[data-public-works-filter]').inputValue(),'all');assert.equal(await page.locator('#work-synthetic-student').isVisible(),true);
   assert.doesNotMatch(await page.locator('body').textContent(),/PRIVATE_|private\.invalid|private@example/u);

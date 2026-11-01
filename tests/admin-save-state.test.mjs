@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialContent } from '../src/config/content.mjs';
 import { validateContent } from '../shared/content-schema.mjs';
-import { contentSaveSnapshot, contentSectionSnapshot, confirmedContentSave, inspectContentSave, sameContent, contentSaveUiState } from '../src/lib/admin-save-state.mjs';
+import { contentSaveSnapshot, contentSectionSnapshot, confirmedContentSave, inspectContentSave, sameContent, matchesSavedContent, contentSaveUiState } from '../src/lib/admin-save-state.mjs';
 
 function fixture() {
   const content = createInitialContent();
@@ -50,6 +50,44 @@ test('readback confirms current matching cloud content, never a changed or stale
   const different = structuredClone(submitted.content); different.booths[0].project = '其他工作人员更新';
   assert.deepEqual(inspectContentSave({ draft: { revision: 4, content: different } }, submitted), { state: 'conflict', draft: null });
   assert.deepEqual(inspectContentSave({}, submitted), { state: 'unconfirmed', draft: null });
+});
+
+test('legacy pending FAQ ID omission accepts only added metadata on an exact ACK or later readback without modifying the body', () => {
+  const content = fixture(); content.event.presentation.faqItems = [{ question: '合成问题甲', answer: '合成答案甲' }, { question: '合成问题乙', answer: '合成答案乙' }];
+  const submitted = contentSaveSnapshot(3, content), original = JSON.stringify(submitted), saved = structuredClone(submitted.content);
+  saved.event.presentation.faqItems.forEach((item, index) => { item.id = 'faq-synthetic-' + index; });
+  assert.equal(sameContent(saved, submitted.content), false, 'ordinary editor comparisons remain strict');
+  assert.equal(matchesSavedContent(saved, submitted.content), true);
+  assert.equal(confirmedContentSave({ draft: { revision: 4, content: saved } }, submitted).content.event.presentation.faqItems[0].id, 'faq-synthetic-0');
+  for (const revision of [4, 6]) assert.equal(inspectContentSave({ draft: { revision, content: saved } }, submitted).state, 'confirmed');
+  assert.equal(confirmedContentSave({ draft: { revision: 5, content: saved } }, submitted), null);
+  assert.equal(inspectContentSave({ draft: { revision: 3, content: saved } }, submitted).state, 'retryable');
+  assert.equal(JSON.stringify(submitted), original, 'reconciliation derives a comparison without adding IDs to the original pending request');
+});
+
+test('FAQ ID compatibility cannot hide question, answer, order, explicit ID, duplicate or unrelated changes', () => {
+  const content = fixture(); content.event.presentation.faqItems = [{ question: '合成问题甲', answer: '合成答案甲' }, { question: '合成问题乙', answer: '合成答案乙' }];
+  const submitted = contentSaveSnapshot(3, content), saved = structuredClone(submitted.content);
+  saved.event.presentation.faqItems.forEach((item, index) => { item.id = 'faq-synthetic-' + index; });
+  for (const change of [
+    value => { value.event.presentation.faqItems[0].question = '合成改名'; },
+    value => { value.event.presentation.faqItems[0].answer = '合成另一答案'; },
+    value => { value.event.presentation.faqItems.reverse(); },
+    value => { value.booths[0].contactName = '另一联系人'; },
+    value => { value.event.title = '另一活动标题'; },
+  ]) {
+    const different = structuredClone(saved); change(different);
+    assert.equal(confirmedContentSave({ draft: { revision: 4, content: different } }, submitted), null);
+    assert.equal(inspectContentSave({ draft: { revision: 4, content: different } }, submitted).state, 'conflict');
+  }
+  const explicit = structuredClone(submitted); explicit.content.event.presentation.faqItems[0].id = 'explicit-original';
+  assert.equal(confirmedContentSave({ draft: { revision: 4, content: saved } }, explicit), null);
+  const invalid = structuredClone(saved); invalid.event.presentation.faqItems[0].id = invalid.event.presentation.faqItems[1].id;
+  assert.equal(confirmedContentSave({ draft: { revision: 4, content: invalid } }, submitted), null);
+  assert.equal(inspectContentSave({ draft: { revision: 4, content: invalid } }, submitted).state, 'unconfirmed');
+  const duplicate = structuredClone(submitted); duplicate.content.event.presentation.faqItems[1].question = duplicate.content.event.presentation.faqItems[0].question;
+  const ambiguous = structuredClone(duplicate.content); ambiguous.event.presentation.faqItems.forEach((item, index) => { item.id = 'unique-' + index; });
+  assert.equal(confirmedContentSave({ draft: { revision: 4, content: ambiguous } }, duplicate), null);
 });
 
 test('content comparison retains full known fields and distinguishes later local edits', () => {

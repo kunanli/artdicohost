@@ -5,6 +5,10 @@ for (const root of document.querySelectorAll('[data-agenda]')) {
   const period = root.querySelector('[data-program-period]');
   const validPeriods = new Set(['all', 'morning', 'afternoon']);
   let zone = tabs[0]?.dataset.zone ?? 'A';
+  let initialHashApplied=false;
+  let published=false,visitorSelection=false;
+  let rendered=false;
+  const main=root.querySelector('.ah-agenda-main');
   const rowPeriod = row => row.dataset.agendaStart < '12:00' ? 'morning' : 'afternoon';
 
   // Published content replaces the list with direct article children. Recreate
@@ -31,6 +35,8 @@ for (const root of document.querySelectorAll('[data-agenda]')) {
     }
   }
   function render() {
+    // Keep a shorter tab from collapsing the page beneath the reader.
+    if(main&&rendered)main.style.minHeight=Math.max(parseFloat(main.style.minHeight)||0,main.getBoundingClientRect().height)+'px';
     const selectedPeriod = validPeriods.has(period?.value) ? period.value : 'all';
     for (const tab of tabs) {
       const selected = tab.dataset.zone === zone;
@@ -49,11 +55,13 @@ for (const root of document.querySelectorAll('[data-agenda]')) {
       const empty = panel.querySelector('[data-program-empty]');
       if (empty) empty.hidden = rows.some(row => !row.hidden);
     }
+    rendered=true;
   }
   function choose(tab, focus = false) {
+    visitorSelection=true;
     zone = tab.dataset.zone;
     render();
-    if (focus) tab.focus();
+    if (focus) tab.focus({preventScroll:true});
   }
   tabs.forEach((tab, index) => {
     tab.addEventListener('click', () => choose(tab));
@@ -68,9 +76,37 @@ for (const root of document.querySelectorAll('[data-agenda]')) {
       }
     });
   });
-  period?.addEventListener('change', render);
-  root.addEventListener('artdico:content-updated', () => { panels.forEach(groupRows); render(); });
+  period?.addEventListener('change',()=>{visitorSelection=true;render();});
+  let resizeFrame=null;
+  window.addEventListener('resize',()=>{
+    if(resizeFrame!==null)return;
+    resizeFrame=requestAnimationFrame(()=>{resizeFrame=null;if(main)main.style.minHeight='';rendered=false;render();});
+  });
+  function activateHash(hash,{initial=false}={}){
+    let id;try{id=decodeURIComponent(hash.replace(/^#/,''));}catch{return false;}
+    const target=document.getElementById(id),panel=target?.closest('[data-agenda-panel]');
+    if(!panel||!root.contains(panel))return false;
+    zone=panel.dataset.agendaPanel;
+    if(target.matches('.ah-agenda-row')&&period)period.value='all';
+    render();
+    if(initial&&!initialHashApplied){initialHashApplied=true;requestAnimationFrame(()=>target.scrollIntoView({block:'start',behavior:'instant'}));}
+    return true;
+  }
+  document.addEventListener('click',event=>{
+    const link=event.target.closest?.('a[href*="#"]');if(!link)return;
+    if(link.origin===location.origin&&link.pathname===location.pathname)activateHash(link.hash);
+  });
+  window.addEventListener('hashchange',()=>{initialHashApplied=true;activateHash(location.hash);});
+  root.addEventListener('artdico:content-updated', () => {
+    panels.forEach(groupRows);if(main)main.style.minHeight='';rendered=false;render();
+    // A static slot may already have the URL's ID. Reposition it once after the
+    // first publication replaces that overview, unless the visitor chose a tab.
+    if(!published&&!visitorSelection)initialHashApplied=false;
+    if(!initialHashApplied)activateHash(location.hash,{initial:true});
+    published=true;
+  });
   panels.forEach(groupRows);
   render();
+  activateHash(location.hash,{initial:true});
   if (controls) controls.hidden = false;
 }

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "family": "ARTDiCO Home SC",
+  "license": "SIL Open Font License 1.1",
+  "fonts": [
+    {
+      "path": "src/assets/fonts/home-regular.woff2",
+      "weight": 400,
+      "codePoints": 1225,
+      "source": {
+        "bytes": 10559284,
+        "sha256": "d45f67f0a7c0ca3f256950777ce6a61cc7ce5f9696d02900cbbaac25f8aa7d16"
+      },
+      "bytes": 184176,
+      "sha256": "c22224dd166f45c8169b4e4b0e18156e9b5325af598af5ac9c33cdd6cb53a1d9"
+    },
+    {
+      "path": "src/assets/fonts/home-bold.woff2",
+      "weight": 700,
+      "codePoints": 1225,
+      "source": {
+        "bytes": 10549020,
+        "sha256": "9a38ae0ab28cd5a256f9ea8e00dedc688aac17f7915fcb000572990afa956b96"
+      },
+      "bytes": 188188,
+      "sha256": "f03f058c6c51765571fe541b38ea6d652d6d85bb64e8ffa29d2da49550d5c62c"
+    }
+  ],
+  "images": [
+    {
+      "path": "src/assets/home/event-share.png",
+      "bytes": 338184,
+      "sha256": "2a32d38e5c350b98c39d1ce34ea873a9f230a2a13382ca65ee1d21c18152f2e5"
+    },
+    {
+      "path": "src/assets/home/host-wordmark.webp",
+      "bytes": 22050,
+      "sha256": "ec748a74e5dbd33f21a5ae5dc954ea19a307c86b11e98245c02b1a1f9228645a"
+    },
+    {
+      "path": "src/assets/home/planet-purple.webp",
+      "bytes": 124288,
+      "sha256": "97711b5e3dd76d6324324812ffd37194a74c779b10af3c4328196cf2d4b462b2"
+    }
+  ]
+}

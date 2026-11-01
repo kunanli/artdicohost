@@ -81,12 +81,12 @@ export const highlights = [
 ];
 
 export const faqItems = [
-  { question: '现在可以报名吗？', answer: '可以，活动报名已开放。本页表单仅供预览，不发送或保存资料。' },
-  { question: '不是 GGJ 组织者也能参加吗？', answer: '可以，欢迎学生、开发者、高校、行业与生态伙伴参加。' },
-  { question: '已经是站点负责人，或想建立新站点，怎么登记？', answer: '在申请表选择对应身份。详细经历及站点筹备情况由筹备同事后续联系。' },
-  { question: '新站点现场咨询代表已通过申请吗？', answer: '不代表。请准备本地负责人、团队与场地，再通过 GGJ 官网 Start a Jam Site 申请。本次聚会和现场咨询不替代官方申请，开放时间与结果以 GGJ 官方信息为准。' },
-  { question: '报名成功就有住宿吗？', answer: '一晚住宿须单独申请、审核；报名成功不代表获得住宿。' },
-  { question: '如何修改或撤回资料？', answer: '本页预览表单不保存资料。本站正式表单启用前，将公布相关联系方式与申请流程。' },
+  { id: 'registration-status', question: '现在可以报名吗？', answer: '参会申请须由主办方人工审核。请在本页申请区核对当前开放状态；申请收到不等于确认参会名额。' },
+  { id: 'audience', question: '不是 GGJ 组织者也能参加吗？', answer: '可以，欢迎学生、开发者、高校、行业与生态伙伴参加。' },
+  { id: 'site-role', question: '已经是站点负责人，或想建立新站点，怎么登记？', answer: '在申请表选择对应身份。详细经历及站点筹备情况由筹备同事后续联系。' },
+  { id: 'site-official', question: '新站点现场咨询代表已通过申请吗？', answer: '不代表。请准备本地负责人、团队与场地，再通过 GGJ 官网 Start a Jam Site 申请。本次聚会和现场咨询不替代官方申请，开放时间与结果以 GGJ 官方信息为准。' },
+  { id: 'lodging-support', question: '外地来宾有住宿支持吗？', answer: '本次活动提供少量外地来宾住宿支持。有需要的朋友，欢迎提前通过 support@artdico.co 联系主办方了解安排；名额有限，住宿安排将另行确认。' },
+  { id: 'data-rights', question: '如何修改或撤回资料？', answer: '如需查阅、更正、撤回或删除资料，请联系主办方核对本人后处理；正式告知与联络方式以本页资料与隐私说明为准。' },
 ];
 
 const factLine = (value, maximum = 1000) => typeof value === 'string' && value.length > 0 && value.length <= maximum

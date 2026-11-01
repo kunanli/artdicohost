@@ -6,7 +6,7 @@ const label = (id: string, zone: string) => id.startsWith('student-') ? '学生�
 ---
 <section class="ah-agenda ah-program ah-section" id="agenda" aria-labelledby="agenda-heading" data-agenda>
   <div class="ah-section-heading">
-    <div><h2 id="agenda-heading">这一天，怎么过。</h2></div>
+    <div><span class="ah-kicker">跟着好奇心走</span><h2 id="agenda-heading" tabindex="-1">活动日程</h2></div>
     <p>找到你感兴趣的时间与现场。</p>
   </div>
   <div class="ah-program-shell">
@@ -26,11 +26,11 @@ const label = (id: string, zone: string) => id.startsWith('student-') ? '学生�
         const rows = agenda.filter(item => item[zone.id as 'A' | 'B' | 'C'] !== '—');
         return <section class="ah-agenda-panel" id={`agenda-${zone.id}`} data-agenda-panel={zone.id} aria-labelledby={`program-heading-${zone.id}`} tabindex="0">
           <h3 class="ah-panel-heading" id={`program-heading-${zone.id}`}>{zone.id} 区 · {zone.name}</h3>
-          {zone.id === 'C' && <p class="ah-agenda-caption ah-program-zone-note">展位按活动时段开放；16:30–17:00 学生作品体验与反馈。</p>}
+          {zone.id === 'C' && <p class="ah-agenda-caption ah-program-zone-note">展位与作品以已公布安排为准。</p>}
           <div class="ah-agenda-list">
             {rows.map((item, index) => <>
               {(index === 0 || period(item.start) !== period(rows[index - 1].start)) && <h4 class="ah-program-divider" data-program-divider={period(item.start)}>{period(item.start) === 'morning' ? '上午' : '午后'}<span aria-hidden="true">{period(item.start) === 'morning' ? 'MORNING' : 'AFTERNOON'}</span></h4>}
-              <article class:list={['ah-agenda-row', {'ah-featured': item.id.startsWith('student-')}]} data-agenda-start={item.start}>
+              <article id={`program-session-${item.id}-${zone.id.toLowerCase()}`} tabindex="-1" class:list={['ah-agenda-row', {'ah-featured': item.id.startsWith('student-')}]} data-agenda-start={item.start}>
                 <time datetime={`${eventConfig.date.value}T${item.start}:00+08:00`}>{item.time}</time>
                 <div class="ah-session-detail"><span class="ah-session-category">{label(item.id, zone.id)}</span><strong>{item[zone.id as 'A' | 'B' | 'C']}</strong>{item.start === '14:30' && zone.id === 'B' && <small class="ah-session-meta">正式站点资格以 GGJ 流程为准</small>}</div>
               </article>

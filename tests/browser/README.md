@@ -4,7 +4,19 @@
 
 这组可选检查使用真实 Chromium 运行构建后的页面，但拦截全部页面请求并提供纯合成 API。它不连接正式 API、不写真实报名、不读取原始名单，也不能代替真实 FC／OSS 端到端验收。
 
-当前 P4 的通知后端、私人页分型与提醒后台已完成本地验收，最后公开建置及准确包状态见 [P4 记录](../../docs/redesign/p4-release.md)。新增种类需单独验收，使用当前候选构建执行：
+当前 P5 的最终首页、公开集合及 Q&A 公开／准确 FC 组合已通过，准确产物及发布状态见 [P5 记录](../../docs/redesign/p5-release.md)。三个新增入口使用当前候选构建执行：
+
+```sh
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/p5-homepage-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/p5-faq-application-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/p5-collections-smoke.mjs
+```
+
+依次检查主页三尺寸／无 JS／reduced motion／缺装饰图与 OFL、FAQ／申请／旧 IndexedDB pending 恢复，以及嘉宾／组织／作品轮播／跨区日程／刷新焦点。新增脚本不在固定旅程 runner 中，最终成功范围以阶段记录为准；素材还需公开产物引用与 FC 依赖隔离校验。
+
+FAQ 脚本可用 `ARTDICO_FAQ_EVIDENCE_DIRECTORY=/absolute/path/to/evidence` 指定证据目录；默认写入 `.local-data/browser-evidence/p5-faq-application`。比较公开构建与准确 FC 组合时分别指定目录，保留各次结果。
+
+已发布 P4 的通知后端、私人页分型与提醒后台验收见 [P4 记录](../../docs/redesign/p4-release.md)。维护时使用当前候选构建执行：
 
 ```sh
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/p4-notifications-smoke.mjs

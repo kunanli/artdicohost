@@ -2,9 +2,9 @@
 
 ## 2026-11-01 新改版執行入口
 
-本次對話已整理為 [改版執行總覽](redesign/README.md)。最新 P3 已由 [PR #52](https://github.com/kunanli/artdicohost/pull/52) 發布於 main `51ff34b37981d784963bbaf83a4cd13b0c717de4`；[正式流程 41278011325](https://github.com/kunanli/artdicohost/actions/runs/41278011325) 的檢查、兩種 ZIP 離線啟動、FC 與 OSS 全部成功，05:51:25 UTC 完成 13 個準確後台頁面、05:53:03 UTC 完成 45 個公開物件的 HTTPS 核驗，公開業務快照仍為修訂 43。先前階段保留於各自發布紀錄。
+本次對話已整理為 [改版執行總覽](redesign/README.md)。最新 P4 已由 [PR #53](https://github.com/kunanli/artdicohost/pull/53) 發布於 main `c74c9dd8f95d5442e5446f005af5cdcfb3736293`；[正式流程 41280499937](https://github.com/kunanli/artdicohost/actions/runs/41280499937) 的檢查、兩種 ZIP 離線啟動、FC 與 OSS 全部成功，06:29:16 UTC 完成 13 個準確後台頁面、06:30:41 UTC 完成 45 個公開物件的 HTTPS 核驗，公開業務快照仍為修訂 43。先前階段保留於各自發布紀錄。
 
-目前分支 `feat/redesign-p4`，最終產品提交 `2ef5d73e11fb5d613a645f153c4a085a2446eb8c`。本地實作 1521 項回歸、最後公開瀏覽器、備份相容及準確來源包校驗已完成；實際 FC 包內 10 個瀏覽器情境也已通過；PR CI 與發布待完成，見 [P4 紀錄](redesign/p4-release.md)。新 `application_received`／`pre_event_reminder` 與正式信獨立去重，同一 journal／前綴不變，回退必須認得新種類。政策版本、用途及環境值不改寫，舊待提交正文與鍵保留。使用者授權按順序完成 P4 至 P6，真實收件及實機結果另記。
+目前分支 `feat/redesign-p5`，產品提交 `4e5faa79b3021e6fb050094c8a0adebaf5dc334a`，最後建置 07:05:51 UTC。1533 項回歸、首頁 6 情境、公開集合 9 情境、Q&A 公開／準確 FC 組合 12 情境、素材／FC CSS 隔離與來源包核對已完成：127 檔／39 資產，ZIP 35,707,679 bytes；公開 prepare 51 檔。PR CI 與實際發布仍待核對，見 [P5 紀錄](redesign/p5-release.md)。P4 通知、政策及原 pending 保留，回退須相容新通知與 FAQ ID。使用者授權完成 P5 後直接接續 P6，真實外部結果另記。
 
 沿用既有環境與資源。舊意向、姓名／聯絡資訊、名額、通知與公開內容不因文件或程式部署自動整合／發布／補寄。Apple 10/30 簽章設定與人員去重已有後續紀錄，讀取本頁下方早期狀態時，須對照 [Wallet 最新紀錄](apple-wallet-setup.md) 及 [統一人員](unified-people-workspace.md)，不要重做已完成設定。
 

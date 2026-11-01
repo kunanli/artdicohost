@@ -321,7 +321,7 @@ try {
     await f.refresh(content => { const index = content.guests.findIndex(item => item.id === maria.id); content.guests[index] = long; });
     const text = await guestText(f, { profiles: [long], allowLongNameAndTitle: true });
     const result = await detail(f, long, { longText: true }); await noOverflow(f);
-    const roleOnly = { ...maria, company: '合成独立单位', title: '', ggjRole: '合成真实公开角色' };
+    const roleOnly = { ...maria, company: '合成独立单位', title: '', ggjRole: '合成角色' };
     await f.refresh(content => { const index = content.guests.findIndex(item => item.id === maria.id); content.guests[index] = roleOnly; });
     await guestText(f, { profiles: [roleOnly] }); await detail(f, roleOnly);
     const companyOnly = { ...maria, company: '合成只有单位', title: '', ggjRole: '' };

@@ -1,6 +1,35 @@
 # 报名确认页与自动确认信
 
-## 2026-11-01 当前通知流程（P4）
+## 2026-11-01 具名寄送与原操作核对（UX2）
+
+UX2 的产品契约、完整回归、准确产物及编译后浏览器已核对，PR／main 与正式发布仍以 [本轮记录](redesign/ux-workflow-release.md) 为准。沿用同一通知服务、journal、正式信身份和原发送引擎；不迁移旧记录、不补寄历史。下方 P4 为既有分型通知基准，10 月初版接口仅供历史参考。
+
+### 新增只读管理接口
+
+两项入口先验证工作人员会话与完整活动管理权限（superadmin，或同时具备 outreach／reviewer）。带 Origin 时必须为准确后台来源；POST 必须带该 Origin、CSRF、UTF-8 JSON 与不超过 16 KiB 的正文。它们不发送邮件，也不写通知或业务 journal。
+
+| 接口 | 请求与返回 |
+| --- | --- |
+| `POST /api/admin/registration-confirmation/preview` | 可选 `{registrationIds,cursor}`，明确 ID 为 1–100 个唯一登记 ID。返回 `{revision,kind:'registration',sourceRevision,rows,total,nextCursor,message}`；`revision` 是通知修订，`sourceRevision` 是绑定正式种类、来源与选取范围的 64 字符摘要。每页最多 100 人，不返回邮箱或私人链接 |
+| `GET /api/admin/registration-confirmation/operation/<operationId>` | 仅原 actor 的 `dispatch` 操作可读；其他人的操作、设置或提醒操作不能冒充正式寄送。返回 `{outcome:'replayed',revision,operationId,status,results,kind:'registration',checkedAt}`。`checkedAt` 是本次服务器核对时间，不是送达时间；查询不读取 provider／readiness |
+
+预览的 `rows[]` 为 `{registrationId,name,organization,status,eligible,reason,retryRejected}`，状态保留 `not_sent`、`provider_accepted`、`rejected`、`unknown`。资格由当前主身份、名额、许可、地址、开关和活动事实核对；正式 `registration`／`promotion` 历史一起判断，申请回执或提醒不占用正式信身份。正式预览不套用提醒的签到前时间窗口。`message` 只有活动事实及 `[私人参会页链接]` 等占位内容，不生成实际 capability。
+
+正式分页游标绑定种类、来源／选取范围及通知修订；变化时返回 409，先重读预览再由使用者选择。原提醒游标格式保持相容。新具名 UI 仍调用原 `POST /dispatch` 的 `{expectedRevision,operationId,registrationIds,retryRejected?}`，单人仍调用原 `POST /send/<registrationId>` 的 `{expectedRevision,operationId,retryRejected?}`；字段、requestHash 与持久身份不改。一旦保存原正文，不再重排字段或 ID 顺序。
+
+### 原操作恢复与明确拒绝
+
+新单人／具名批次先取得原 JSON bytes 的本机持久回执，再作唯一首次 POST。重新整理或恢复后的核对只 GET 原 operationId；旧 parsed pending 保留原件，只衍生已保存的原操作信息，不重建原 JSON 后再 POST。完成结果须通过原 operationId、种类、完整 ID／状态的校验，不能把部分或无关回执当成功；started 尚无 notice 时仍对整份原 ID 保守显示 unknown。
+
+仅有一项「已证明未开始」例外：全新操作的原正文只送过这一次、从未恢复或进入 unknown，且后端在开始业务写入前明确返回 400／403／404／409，客户端可清除此笔本机 pending 并重读当前来源。使用者须重新选人后才建立新操作；它不是改写／重 POST 原正文、删除 journal 或通用手动解锁。预览后发生正常修订竞态的 409 不需要用登出来解除。
+
+查原操作时的任何 4xx（包括 404／401）、已恢复或先前 unknown 的请求、503／逾时及无法证明的回应均保留原记录与锁。401 先清除私密画面，重新授权后只在同 actor／roles／event／person 范围恢复；明确登出仍沿用 `clearActor` 全清政策，不承诺恢复主动清除的本机正文。
+
+legacy 邀约 unknown 继续核对原邀请历史；自动正式信可能只有 notice 而没有 operationId，此时只读既有 delivery／history，不能用 notice ID 猜原操作。核对一类通知不会解除另一类未知结果。界面用「邮件服务已接收」表示 provider 接受，始终不宣称送达或本人已答应出席。
+
+`staffHistory` 对 started 但尚无 notice 的窗口可返回 `unresolvedConfirmations:true`，只补保守摘要，不伪造 notice、时间轴或历史数量；原未知 notice 仍由真实历史表达。单人 communications 投影合并该摘要，目录则仅在有未完成正式批次时额外只读一次报名 index，按保存的别名生成有界状态摘要。个人页的上次核对时间来自已验证原操作 GET 的服务器 `checkedAt`，绑定当前人员，不能把本机时间当送达证明或带到下一人。
+
+## 2026-11-01 分型通知流程（P4 既有基准）
 
 沿用已配置的 EmailJS 服务、中性「报名状态通知」模板与八个原参数，不重新配置账号或 Apple 签章。下方初版「没有凭据」「工作人员不自动发信」等状态只作历史参考；当前证据见 [P4 记录](redesign/p4-release.md)。
 

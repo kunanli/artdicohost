@@ -1,12 +1,12 @@
 # ARTDiCO HOST · artdico.host
 
-本次改版執行入口：[分階段總覽](docs/redesign/README.md)、[操作手冊](docs/redesign/02-staff-and-attendee-runbook.md)、[驗收與發布](docs/redesign/03-release-and-acceptance.md)。P1–P6 已完成程式交付與正式發布，見 [最終證據](docs/redesign/p6-release.md)；目前接續 [UX1 操作與層級優化](docs/redesign/ux-clarity-release.md)，本輪實際結果另行記錄。下方 10 月發布資訊為歷史基準，現況以接續台帳及當輪紀錄為準。
+本次改版執行入口：[分階段總覽](docs/redesign/README.md)、[操作手冊](docs/redesign/02-staff-and-attendee-runbook.md)、[驗收與發布](docs/redesign/03-release-and-acceptance.md)。P1–P6 與 [UX1 操作／層級](docs/redesign/ux-clarity-release.md) 均已完成程式交付及正式發布；目前接續 [UX2 具名寄送與連續處理](docs/redesign/ux-workflow-release.md)，本輪實際結果另行記錄。下方 10 月發布資訊為歷史基準，現況以接續台帳及當輪紀錄為準。
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
 
 [PR #42](https://github.com/kunanli/artdicohost/pull/42)／[PR #43](https://github.com/kunanli/artdicohost/pull/43) 已实际发布，main **`d9d0dd2cc52eac755aef8deda5de9c91024b741d`**，2026-10-22 **01:05:35（UTC+08）**完成。[正式运行 39639330823](https://github.com/kunanli/artdicohost/actions/runs/39639330823) attempt 1 的 check／deploy-fc／deploy 全成功。 1304项main检查、真实私有OSS／共同300政策、13个API后台路径、46个公开对象HTTPS及匿名公开内容／CORS核对通过。公开／出席红绿状态、前台返回刷新、统一游戏与作品及组织／展位关系、嘉宾照片选填、跟进人固定彩色标签均已上线。[准确证据](docs/games-publication-release-2026-10-21.md)、[操作](docs/publication-games-operations.md)、[新session接续](docs/session-recovery.md)。
 
-**仍需主办方操作：**本次未代建 `zhouyufei`、`wangying`；现有管理员先在[用户管理](https://api.artdico.host/admin/settings/accounts/)核对，未建立才按准备／保存及回执流程创建，快捷预填不是已建立账号。Wallet待Apple真实签章与iPhone验收；EmailJS用户已确认正常，保留受控设置。
+**仍需主办方操作：**本次未代建 `zhouyufei`、`wangying`；现有管理员先在[用户管理](https://api.artdico.host/admin/settings/accounts/)核对，未建立才按准备／保存及回执流程创建，快捷预填不是已建立账号。Wallet沿用已配置的受控签章，iPhone真机添加另验；EmailJS用户已确认正常，保留受控设置。
 
 ## 目标
 一页式简体中文活动落地页；展示日程和参与方式；正式报名收集 GGJ SO/RO、新站点、行业嘉宾、机构及生态合作伙伴资料，并支持独立确认讲者、赞助、展位与住宿安排。已确认 2026-12-05、09:30 签到、10:00–18:00 正式活动，场地为深圳前海5号楼；待邀嘉宾、协办署名与其他安排仍按各自确认状态展示。

@@ -2,7 +2,9 @@
 
 ## 2026-11-01 新任務：UX 操作與工作節奏
 
-使用者已確認執行 UX 設計建議，延續逐階段完成與自動交付授權。基準為已部署 main `40ea32a64a963970d610074033eb422c446fc0e2`，`feat/ux-clarity` 帶入純文件證據 `24e5a9e`。先完成 [UX1 操作名稱／層級](redesign/ux-clarity-release.md)，實際發布通過後接續 UX2 正式信姓名選人、原寄送核對、名單往返與下一位；完整計畫見 [實施計畫](implementation-plan.md)。本輪尚在實作，不沿用下方 P1–P6 歷史測試數作為新結果；正式業務資料與真實裝置／同事觀察仍分開處理。
+使用者已確認執行 UX 設計建議，延續逐階段完成與自動交付授權。[UX1 操作名稱／層級](redesign/ux-clarity-release.md) 已由 [PR #56](https://github.com/kunanli/artdicohost/pull/56) 發布於 main `cc1281f8e2c5a5ac8c8133138a5d9540de897bf0`；[正式流程 41290308942](https://github.com/kunanli/artdicohost/actions/runs/41290308942) completed／success，1536 項測試、695 個來源檔及兩種 ZIP 受限啟動通過。08:54:23.491 UTC 完成私有 OSS 兩客戶端／一 FC 核驗，08:54:27.653 UTC 核對 13 個後台頁面，08:56:16.456 UTC 核對 51 個公開物件與快取標頭，公開業務修訂仍為 43。
+
+目前 `feat/ux-workflow`／計畫 `38f4432` 正在交付 [UX2 具名寄送與連續處理](redesign/ux-workflow-release.md)：正式信姓名選人、原寄送 GET 核對、新 pending 先持久保存原正文、名單往返與明確下一位。保留 401 後同作用範圍恢復與明確登出 `clearActor` 全清的區別；搜尋只用可清除 session snapshot，不放人員網址或 IDB。完整邊界見 [實施計畫](implementation-plan.md)。最終產品 `1af25152` 的完整 1586 項測試、704 個來源檔、23 頁建置、準確產物及編譯後瀏覽器證據已記錄，PR／main／正式部署仍待核對；正式業務資料與真實裝置／同事觀察分開處理，不沿用 UX1 的數字冒稱完成。
 
 ## 2026-11-01 新改版執行入口
 

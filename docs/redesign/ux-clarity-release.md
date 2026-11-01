@@ -1,6 +1,6 @@
 # UX1 操作名稱與資訊層級
 
-2026-11-01，分支 `feat/ux-clarity`，從已部署 main `40ea32a64a963970d610074033eb422c446fc0e2` 接續，帶入純文件最終證據 `24e5a9e`。產品提交為 `4d3288ccf509e0b0a6589c9f6aa8de5ffcb947f8`（主要修改 `a7c4735`，最後僅修正手機裝飾字與長介紹碰字）。使用者已確認執行 UX 建議；本輪檢查及發布仍依下表逐項核對。既有 P1–P6 的交付見 [最終紀錄](p6-release.md)，不沿用舊測試數作為本輪證明。
+2026-11-01，UX1 已經 [PR #56](https://github.com/kunanli/artdicohost/pull/56) 發布於 main `cc1281f8e2c5a5ac8c8133138a5d9540de897bf0`。產品提交為 `4d3288ccf509e0b0a6589c9f6aa8de5ffcb947f8`（主要修改 `a7c4735`，最後僅修正手機裝飾字與長介紹碰字）；本輪檢查、PR／main CI 與實際 FC／OSS 核驗均完成。既有 P1–P6 的交付見 [最終紀錄](p6-release.md)，與下方本輪證據分開記錄。
 
 ## 本階段
 
@@ -37,9 +37,15 @@
 - [x] 來源／Astro／完整 Node／建置／審計與專案 Skill。
 - [x] 320／390／1440px 的實際編譯首頁、私人頁及必要後台瀏覽器；無 JS／reduced motion／錯誤／換人清理。
 - [x] 準確 FC 來源包及 51 個公開檔案（含 release，manifest 50 筆），保留既有數量及 bytes 上限。
-- [ ] 獨立審查、PR／main CI、實際 FC／OSS／HTTPS 核驗。
+- [x] 獨立審查、PR／main CI、實際 FC／OSS／HTTPS 核驗。
 
-本階段發布核對完成後，直接接續 UX2：正式確認信姓名選人、原寄送結果核對、名單往返及下一位。先完成本階段，不將下一階段功能混入。
+## 實際發布
+
+- PR head `60e57b4` 的 [CI 41289900604](https://github.com/kunanli/artdicohost/actions/runs/41289900604) 通過。
+- main `cc1281f8` 的 [正式流程 41290308942](https://github.com/kunanli/artdicohost/actions/runs/41290308942) completed／success；1536 項測試、695 個來源檔及兩種 ZIP 受限離線啟動通過。
+- 08:54:23.491 UTC 私有 OSS 驗證通過（兩個獨立客戶端／一個 FC 程序）；08:54:27.653 UTC 核對 13 個準確後台頁面，08:56:16.456 UTC 核對 51 個公開物件 HTTPS、內容及快取標頭。公開業務快照仍為修訂 43，沒有代做名單或內容發布。
+
+本階段交付後接續 [UX2 具名寄送與連續處理](ux-workflow-release.md)；不將該階段新增功能算作 UX1 已驗收。
 
 ## 人工驗收
 

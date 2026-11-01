@@ -4,6 +4,7 @@ const PATH = '/registration/confirmation/';
 const TOKEN = /^[A-Za-z0-9_.-]{32,4096}$/u;
 const ID = /^[A-Za-z0-9_-]{43}$/u;
 const EMAIL_STATES = ['not_configured','not_applicable','disabled','pending','provider_accepted','rejected','unknown'];
+const NOTIFICATION_STATES = ['not_sent',...EMAIL_STATES];
 const text = (value, max, empty = false) => typeof value === 'string' && value.length <= max
   && (empty || value.trim().length > 0) && value.isWellFormed() && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value);
 const instant = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T.+(?:Z|[+-]\d{2}:\d{2})$/u.test(value) && Number.isFinite(Date.parse(value));
@@ -110,6 +111,18 @@ function eventFactsState(value) {
   return { ready: value.ready, reason: value.reason, revision: value.revision };
 }
 
+function notificationState(value) {
+  return { status: exact(value, ['status']) && NOTIFICATION_STATES.includes(value.status) ? value.status : 'unknown' };
+}
+
+/** Each optional notice is independent. Invalid history cannot erase another kind or the seat. */
+function notificationHistory(value) {
+  return {
+    applicationReceived: notificationState(plain(value) ? value.applicationReceived : null),
+    preEventReminder: notificationState(plain(value) ? value.preEventReminder : null),
+  };
+}
+
 /** Project a capability response; private source/contacts and unknown fields never reach the page. */
 export function confirmationView(value, now = Date.now()) {
   if (!plain(value) || !ID.test(value.referenceCode ?? '') || !instant(value.submittedAt) || !plain(value.event) || !plain(value.admission)
@@ -129,6 +142,7 @@ export function confirmationView(value, now = Date.now()) {
     attendee: withdrawn ? { name: '', organization: '' } : { name: value.attendee.name, organization: value.attendee.organization ?? '' },
     email: { status: ['pending_review','rejected'].includes(value.admission.status) ? 'not_applicable' : value.email.status }, wallet: { ready: confirmed && value.wallet.ready && facts?.ready !== false },
     ...(facts ? { eventFacts: facts } : {}),
+    ...(Object.hasOwn(value, 'notifications') ? { notifications: notificationHistory(value.notifications) } : {}),
     groupInvite: confirmed ? groupInvite(value.groupInvite,now) : null,
     invitation: facts?.ready === false ? { ready: false } : confirmationInvitation(value.invitation,value.admission.status,value.attendee?.name),
   };
@@ -143,6 +157,34 @@ export const confirmationEmailLabels = Object.freeze({
   rejected: '报名已保存，确认邮件未能发出。请保存本页，无需重新报名。',
   unknown: '报名已保存，确认邮件的发送结果尚待核对。请保存本页，无需重复报名。',
 });
+
+const notificationMessages = Object.freeze({
+  applicationReceived: Object.freeze({
+    not_sent: '暂无发送记录；申请已保存。',
+    not_applicable: '本记录无需申请回执。',
+    not_configured: '暂未启用，请保存查询链接。',
+    disabled: '已暂停，请保存查询链接。',
+    pending: '待处理；申请已保存。',
+    provider_accepted: '已交由服务商处理；回执不代表获邀。',
+    rejected: '未能发出；申请已保存。',
+    unknown: '发送结果待核对；申请已保存。',
+  }),
+  preEventReminder: Object.freeze({
+    not_sent: '暂无发送记录。',
+    not_applicable: '本记录无需行前提醒。',
+    not_configured: '暂未启用。',
+    disabled: '已暂停。',
+    pending: '待处理。',
+    provider_accepted: '已交由服务商处理，请查看邮箱。',
+    rejected: '未能发出，请以本页信息为准。',
+    unknown: '发送结果待核对，请以本页信息为准。',
+  }),
+});
+
+export function confirmationNotificationMessage(kind, status) {
+  const messages = Object.hasOwn(notificationMessages, kind) ? notificationMessages[kind] : null;
+  return messages ? messages[NOTIFICATION_STATES.includes(status) ? status : 'unknown'] : '';
+}
 
 /** Review status controls the purpose of this page; it never promises an invitation before a confirmed seat. */
 export function confirmationEmailMessage(admissionStatus, emailStatus) {

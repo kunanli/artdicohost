@@ -7,6 +7,7 @@ import { createOssPortraitStore } from './portrait-store.mjs';
 import { createOssContactsStore } from './contacts-store.mjs';
 import { createCloudContentApi, CLOUD_API_ORIGIN, PUBLIC_SITE_ORIGIN } from './handler.mjs';
 import { createRegistrationService } from '../registration-api/service.mjs';
+import { admissionSnapshot } from '../registration-api/admissions.mjs';
 import { createRegistrationApi } from '../registration-api/handler.mjs';
 import { validateRegistrationPolicy, parseTimestamp } from '../registration-api/policy.mjs';
 import { createRegistrationReviewStore } from '../registration-admin/store.mjs';
@@ -41,6 +42,7 @@ import { createAttendanceSynchronizer } from '../people-operations/service.mjs';
 import { createVolunteerRepository } from '../volunteers/repository.mjs';
 import { createVolunteerService } from '../volunteers/service.mjs';
 import { createVolunteersApi, isVolunteersPath } from '../volunteers/handler.mjs';
+import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 
 const credentialFields = ['ALIBABA_CLOUD_ACCESS_KEY_ID', 'ALIBABA_CLOUD_ACCESS_KEY_SECRET', 'ALIBABA_CLOUD_SECURITY_TOKEN'];
 const PUBLIC_ALIASES = new Map([
@@ -163,6 +165,25 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const importHandle = createIntentContactImportApi({ importer: createIntentContactImporter({ contactsStore, now }), authenticate: request => auth.authenticate(request) });
   const policy = registrationPolicy(env);
   if (policy) {
+    const personMailPermission = (record, index, roster) => {
+      const group = index.admissions?.personGroups?.find(item => item.registrationIds.includes(record.id));
+      if (!group) return { eligible: true };
+      if (group.primaryRegistrationId !== record.id) return { eligible: false };
+      const related = roster.contacts.filter(item => group.contactIds.includes(item.id));
+      if (related.length !== group.contactIds.length) return { eligible: false };
+      return related.some(item => item.profile.contactConsent === 'declined' || item.operations.responseStatus === 'declined')
+        ? { eligible: false, reason: 'CONTACT_DECLINED' } : { eligible: true };
+    };
+    const staffMailPermission = (record, roster) => {
+      if (record.provenance.kind === 'staff_entry') return { eligible: Boolean(record.provenance.permissionReference), reason: 'STAFF_PERMISSION_REQUIRED' };
+      if (record.provenance.kind !== 'staff_assisted') return { eligible: false, reason: 'STAFF_PERMISSION_REQUIRED' };
+      const contact = roster.contacts.find(item => item.id === record.provenance.sourceContactId);
+      if (!contact) return { eligible: false, reason: 'CONTACT_NOT_FOUND' };
+      if (contact.profile.contactConsent === 'declined' || contact.operations.responseStatus === 'declined') return { eligible: false, reason: 'CONTACT_DECLINED' };
+      if (contact.profile.contactConsent !== 'consented') return { eligible: false, reason: 'CONTACT_CONSENT_REQUIRED' };
+      if (contact.profile.email !== record.fields.email) return { eligible: false, reason: 'CONTACT_EMAIL_CHANGED' };
+      return { eligible: true };
+    };
     const isWithdrawn = id => reviewStore.isWithdrawn(id);
     groupService = createGroupInviteService({ objects, journalFor, eventId: policy.eventId, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET,
       apiOrigin: CLOUD_API_ORIGIN, clock: now, isWithdrawn: async id => {
@@ -176,7 +197,16 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, allowedOrigins: [PUBLIC_SITE_ORIGIN], clock: now,
       isWithdrawn, getWithdrawnIds: () => reviewStore.inactiveRegistrationIds(),
       waitlistEnabled: env.ARTDICO_REGISTRATION_WAITLIST_ENABLED === 'true', staffReserve: 0,
-      onSaved: ({ receipt }) => confirmationService.forSavedReceipt({ receipt, notify: false }),
+      onSaved: async ({ receipt, outcome }) => {
+        const confirmation = await confirmationService.forSavedReceipt({ receipt, notify: false });
+        // A new, proven application may receive a receipt. Replays retain the
+        // original capability without authorizing a historical backfill.
+        if (outcome === 'created' && receipt.admissionStatus === 'pending_review') {
+          try { await confirmationService.notifyApplicationReceived({ receipt, outcome }); }
+          catch { /* Optional mail cannot undo a durable application or its link. */ }
+        }
+        return confirmation;
+      },
       groupInviteProvider: input => groupService.forReceipt(input) });
     reviewStore = createRegistrationReviewStore({ journal: journalFor(`cms/v1/registration-reviews/${policy.eventId}`),
       loadRegistrations: () => registrationService.repository.list(), eventId: policy.eventId, clock: now });
@@ -195,22 +225,51 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       loadSigningBundle: ({ bundleId }) => loadEncryptedSigningBundle({ objects, secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId }) });
     confirmationService = createRegistrationConfirmationService({ registrationService, journalFor, eventFactsReadiness,
       tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now, batchTimeoutMs: 5000,
+      deliveryAliases: async record => {
+        const { value } = await registrationService.repository.readIndex();
+        const group = value.admissions?.personGroups?.find(item => item.registrationIds.includes(record.id));
+        if (group && !/^[A-Za-z0-9_-]{43}$/u.test(group.primaryRegistrationId ?? '')) throw new Error('Primary notice identity is unavailable.');
+        return { registrationIds: group ? [...group.registrationIds] : [record.id], primaryRegistrationId: group ? group.primaryRegistrationId : record.id };
+      },
+      noticePreviewSource: async ({ actor, registrationIds, offset = 0, limit = 100 } = {}) => {
+        if (!canManageEventOperations(actor) || typeof actor?.id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/u.test(actor.id)) throw new Error('Notice preview permission is unavailable.');
+        if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000 || limit !== 100
+          || registrationIds !== undefined && (!Array.isArray(registrationIds) || registrationIds.length > 100
+            || new Set(registrationIds).size !== registrationIds.length || registrationIds.some(id => !/^[A-Za-z0-9_-]{43}$/u.test(id)))) throw new Error('Notice preview scope is unavailable.');
+        const [index, inactiveIds, roster] = await Promise.all([
+          registrationService.repository.readIndex(), reviewStore.inactiveRegistrationIds(), contactsStore.read(),
+        ]);
+        const admissions = admissionSnapshot(index.value, { capacity: policy.capacity, staffReserve: 0, waitlistEnabled: env.ARTDICO_REGISTRATION_WAITLIST_ENABLED === 'true' });
+        const inactive = new Set(inactiveIds), selected = registrationIds === undefined ? null : new Set(registrationIds);
+        const secondary = new Set((admissions.personGroups ?? []).flatMap(group => group.registrationIds.filter(id => id !== group.primaryRegistrationId)));
+        const ids = admissions.people.filter(person => person.status === 'confirmed' && !inactive.has(person.registrationId)
+          && !secondary.has(person.registrationId) && (!selected || selected.has(person.registrationId))).map(person => person.registrationId).sort();
+        const page = ids.slice(offset, offset + limit), entries = new Map(index.value.entries.map(entry => [entry.id, entry]));
+        const rows = new Array(page.length); let position = 0;
+        await Promise.all(Array.from({ length: Math.min(8, page.length) }, async () => {
+          while (position < page.length) {
+            const current = position++, registrationId = page[current], entry = entries.get(registrationId);
+            if (!entry) throw new Error('Notice preview source is unavailable.');
+            const record = await registrationService.repository.readRecord(entry);
+            const person = personMailPermission(record, index.value, roster);
+            const permission = person.eligible !== true ? person : record.provenance.kind === 'public' ? { eligible: true } : staffMailPermission(record, roster);
+            const hasEmail = typeof record.fields.email === 'string' && record.fields.email.trim().length > 0;
+            const group = admissions.personGroups?.find(item => item.registrationIds.includes(registrationId));
+            rows[current] = { registrationId, name: record.fields.name, organization: record.fields.organization ?? '',
+              relatedRegistrationIds: group ? [...group.registrationIds] : [registrationId],
+              eligible: permission.eligible === true && hasEmail,
+              reason: permission.eligible !== true ? permission.reason ?? 'PERMISSION_UNAVAILABLE' : hasEmail ? 'ELIGIBLE' : 'EMAIL_MISSING' };
+          }
+        }));
+        return { revision: createHash('sha256').update(JSON.stringify([index.value.revision, roster.revision, [...inactive].sort()])).digest('hex'), total: ids.length, rows };
+      },
       personDeliveryPermission: async record => {
-        const index=await registrationService.repository.readIndex(),group=index.value.admissions?.personGroups?.find(item=>item.registrationIds.includes(record.id));
-        if(!group)return{eligible:true};if(group.primaryRegistrationId!==record.id)return{eligible:false};
-        const roster=await contactsStore.read(),related=roster.contacts.filter(item=>group.contactIds.includes(item.id));
-        if(related.length!==group.contactIds.length)return{eligible:false};
-        return related.some(item=>item.profile.contactConsent==='declined'||item.operations.responseStatus==='declined')?{eligible:false,reason:'CONTACT_DECLINED'}:{eligible:true};
+        const index = await registrationService.repository.readIndex();
+        if (!index.value.admissions?.personGroups?.some(item => item.registrationIds.includes(record.id))) return { eligible: true };
+        return personMailPermission(record, index.value, await contactsStore.read());
       },
       staffDeliveryPermission: async record => {
-        if (record.provenance.kind === 'staff_entry') return { eligible: Boolean(record.provenance.permissionReference), reason: 'STAFF_PERMISSION_REQUIRED' };
-        if (record.provenance.kind !== 'staff_assisted') return { eligible: false, reason: 'STAFF_PERMISSION_REQUIRED' };
-        const roster = await contactsStore.read(), contact = roster.contacts.find(item => item.id === record.provenance.sourceContactId);
-        if (!contact) return { eligible: false, reason: 'CONTACT_NOT_FOUND' };
-        if (contact.profile.contactConsent === 'declined' || contact.operations.responseStatus === 'declined') return { eligible: false, reason: 'CONTACT_DECLINED' };
-        if (contact.profile.contactConsent !== 'consented') return { eligible: false, reason: 'CONTACT_CONSENT_REQUIRED' };
-        if (contact.profile.email !== record.fields.email) return { eligible: false, reason: 'CONTACT_EMAIL_CHANGED' };
-        return { eligible: true };
+        return staffMailPermission(record, record.provenance.kind === 'staff_assisted' ? await contactsStore.read() : { contacts: [] });
       },
       emailProvider: createConfirmationEmailProvider({ env, fetchFn, timeoutMs: 4000,
         ...(env.ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID ? { loadConfiguration: () => loadEncryptedConfirmationMail({ objects,
@@ -311,8 +370,9 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const handle = async request => {
     const url = new URL(request.url);
     if (url.origin !== CLOUD_API_ORIGIN || url.username || url.password) return contentHandle(request);
-    if (['/api/registration/confirmation', '/api/admin/registration/confirmation', '/api/admin/registration-confirmation/settings', '/api/admin/registration-confirmation/dispatch'].includes(url.pathname)
-      || ['/link/', '/delivery/', '/send/'].some(suffix => url.pathname.startsWith('/api/admin/registration-confirmation' + suffix))) return confirmationHandle(request);
+    if (['/api/registration/confirmation', '/api/admin/registration/confirmation', '/api/admin/registration-confirmation/settings', '/api/admin/registration-confirmation/dispatch',
+      '/api/admin/registration-confirmation/reminder-preview', '/api/admin/registration-confirmation/reminder-dispatch'].includes(url.pathname)
+      || ['/link/', '/delivery/', '/send/', '/reminder-operation/'].some(suffix => url.pathname.startsWith('/api/admin/registration-confirmation' + suffix))) return confirmationHandle(request);
     if (isAppleWalletPath(url.pathname)) return walletHandle(request);
     if (url.pathname === '/api/admin/registrations/export.xlsx') return registrationXlsxHandle(request);
     if (url.pathname === '/api/admin/contacts/export.xlsx') return contactsXlsxHandle(request);

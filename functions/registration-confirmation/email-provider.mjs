@@ -30,8 +30,9 @@ export function createConfirmationEmailProvider({ env = {}, fetchFn = globalThis
     async send(input) {
       let blocked = false;
       try {
-        const guardedFetch = (...args) => {
-          if (typeof input?.canStart === 'function' && input.canStart() !== true) {
+        const guardedFetch = async (...args) => {
+          const signal = args[1]?.signal;
+          if (signal?.aborted || typeof input?.canStart === 'function' && await input.canStart({ signal }) !== true || signal?.aborted) {
             blocked = true; throw new Error('Confirmation delivery window expired.');
           }
           return fetchFn(...args);

@@ -275,7 +275,9 @@ test('pending receipt and repeated private reads reserve no formal notice, send 
     assert.deepEqual(current.wallet, { ready: false, reason: 'ADMISSION_NOT_CONFIRMED' }); assert.equal(current.groupInvite, null);
   }
   assert.equal(f.state.confirmationWrites, 0); assert.equal(f.state.messages.length, 0);
-  assert.equal(f.remote.calls.slice(before).some(call => call.key.includes('/registration-confirmations/')), false);
+  const noticeReads = f.remote.calls.slice(before).filter(call => call.key.includes('/registration-confirmations/'));
+  assert.ok(noticeReads.length > 0, 'P4 private pages now read independent application receipt history');
+  assert.ok(noticeReads.every(call => call.method === 'GET'), 'history reads never reserve or send a notification');
   assert.equal((await f.service.getAdmissions({ actor })).summary.confirmedCount, 0);
   const candidate = { ...saved.receipt, admissionStatus: 'confirmed' };
   assert.equal((await c.forSavedReceipt({ receipt: candidate })).email.status, 'not_applicable', 'even a stale confirmed receipt cannot authorize an unreviewed send');

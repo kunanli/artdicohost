@@ -1,5 +1,5 @@
 import { renderInvitation, invitationPngBlob } from '../lib/invitation-renderer.mjs';
-import { confirmationToken, confirmationLink, confirmationEmailMessage, confirmationStatusLabels, createConfirmationClient, confirmationInvitationFacts, prepareConfirmationInvitation, confirmationWalletGuidance, CONFIRMATION_INVITATION_FILENAME, CONFIRMATION_CONTACT_EMAIL, CONFIRMATION_GROUP_UNAVAILABLE } from '../lib/confirmation-client.mjs';
+import { confirmationToken, confirmationLink, confirmationEmailMessage, confirmationNotificationMessage, confirmationStatusLabels, createConfirmationClient, confirmationInvitationFacts, prepareConfirmationInvitation, confirmationWalletGuidance, CONFIRMATION_INVITATION_FILENAME, CONFIRMATION_CONTACT_EMAIL, CONFIRMATION_GROUP_UNAVAILABLE } from '../lib/confirmation-client.mjs';
 
 const root = document.querySelector('[data-confirmation-page]');
 if (root) {
@@ -19,7 +19,7 @@ if (root) {
   }
   function clearGroupImage() { clearTimeout(groupTimer);groupTimer=null;const output=$('[data-confirmation-group-image]');for(const img of output.querySelectorAll('img'))img.removeAttribute('src');output.replaceChildren(); }
   function clearGroup() { clearGroupImage();$('[data-confirmation-group-status]').textContent='';$('[data-confirmation-group]').hidden=true; }
-  function clearPrivateView(){for(const key of ['name','organization','event','date','time','venue','reference','email'])$('[data-confirmation-'+key+']').textContent='';$('[data-confirmation-private-link]').value='';$('[data-confirmation-copy-fallback]').hidden=true;$('[data-confirmation-wallet]').hidden=true;$('[data-confirmation-invitation]').hidden=true;$('[data-confirmation-device]').textContent='';$('[data-confirmation-device]').hidden=true;$('[data-confirmation-facts-warning]').hidden=true;$('[data-confirmation-outcome-contact]').hidden=true;$('[data-confirmation-more]').open=false;$('[data-confirmation-action-status]').textContent='';}
+  function clearPrivateView(){for(const key of ['name','organization','event','date','time','venue','reference','email','application-received','pre-event-reminder'])$('[data-confirmation-'+key+']').textContent='';$('[data-confirmation-notifications]').hidden=true;$('[data-confirmation-private-link]').value='';$('[data-confirmation-copy-fallback]').hidden=true;$('[data-confirmation-wallet]').hidden=true;$('[data-confirmation-invitation]').hidden=true;$('[data-confirmation-device]').textContent='';$('[data-confirmation-device]').hidden=true;$('[data-confirmation-facts-warning]').hidden=true;$('[data-confirmation-outcome-contact]').hidden=true;$('[data-confirmation-more]').open=false;$('[data-confirmation-action-status]').textContent='';}
   function invalidate(){generation++;controller?.abort();controller=null;releaseWallet();clearInvitation();clearGroup();clearPrivateView();$('[data-confirmation-content]').hidden=true;state=null;busy=false;delete root.dataset.admission;}
   function controls() {
     // Refresh explicitly cancels an older read, render or file preparation.
@@ -46,6 +46,8 @@ if (root) {
     const labels=confirmationStatusLabels[value.admission.status];
     $('[data-confirmation-state]').textContent=labels[0];$('[data-confirmation-heading]').textContent=labels[1];$('[data-confirmation-intro]').textContent=labels[2];
     for(const[key,text]of Object.entries({name:value.attendee.name,organization:value.attendee.organization,event:value.event.title,date:value.event.date,time:value.event.time+'（UTC+8）'+(value.admission.status==='confirmed'?'，'+value.event.checkIn+' 开始签到':''),venue:value.event.venue,reference:value.referenceCode,email:confirmationEmailMessage(value.admission.status,value.email.status)}))$('[data-confirmation-'+key+']').textContent=text;
+    $('[data-confirmation-notifications]').hidden=!value.notifications;
+    for(const[kind,key]of [['applicationReceived','application-received'],['preEventReminder','pre-event-reminder']])$('[data-confirmation-'+key+']').textContent=value.notifications?confirmationNotificationMessage(kind,value.notifications[kind].status):'';
     $('[data-confirmation-print]').textContent=labels[3];$('[data-confirmation-copy]').textContent='保存私人查询链接';document.title=labels[1]+' · ARTDiCO HOST';
     $('.confirmation-person').hidden=value.admission.status==='withdrawn';
     $('[data-confirmation-save-heading]').textContent=value.admission.status==='confirmed'?'保存参会信息':'保存查询入口';

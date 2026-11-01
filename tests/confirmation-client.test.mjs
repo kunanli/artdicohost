@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { confirmationLink, confirmationToken, savedConfirmation, confirmationView, createConfirmationClient, confirmationEmailMessage, confirmationStatusLabels, confirmationWalletGuidance, CONFIRMATION_GROUP_UNAVAILABLE, CONFIRMATION_CONTACT_EMAIL } from '../src/lib/confirmation-client.mjs';
+import { confirmationLink, confirmationToken, savedConfirmation, confirmationView, createConfirmationClient, confirmationEmailMessage, confirmationNotificationMessage, confirmationStatusLabels, confirmationWalletGuidance, CONFIRMATION_GROUP_UNAVAILABLE, CONFIRMATION_CONTACT_EMAIL } from '../src/lib/confirmation-client.mjs';
 
 const token='v1.'+'x'.repeat(100)+'.'+'y'.repeat(43),api='https://api.artdico.host',site='https://artdico.host',now=Date.parse('2026-10-21T00:00:00Z');
 const value=()=>({referenceCode:'r'.repeat(43),submittedAt:'2026-10-21T00:00:00Z',event:{id:'synthetic-event',title:'合成活动',date:'2026-12-05',time:'10:00–18:00',venue:'合成场地',timezone:'Asia/Shanghai',checkIn:'09:30'},admission:{status:'confirmed',kind:'attendee',revision:1},attendee:{name:'合成报名人',organization:'合成机构',email:'PRIVATE-SHOULD-NOT-RENDER'},email:{status:'not_configured',recipient:'PRIVATE-SHOULD-NOT-RENDER'},wallet:{ready:false},provenance:{permissionReference:'PRIVATE-SHOULD-NOT-RENDER'}});
@@ -159,4 +159,37 @@ test('unverified event facts preserve current admission and durable notification
   for(const eventFacts of [{ready:false,reason:'EVENT_FACTS_MISMATCH',revision:43},{ready:false,reason:'EVENT_FACTS_UNAVAILABLE',revision:null},{ready:true,reason:'EVENT_FACTS_MISMATCH',revision:43}]){
     const view=confirmationView({...input,eventFacts},now);assert.equal(view.admission.status,'confirmed');assert.equal(view.attendee.name,input.attendee.name);assert.equal(view.email.status,'provider_accepted');assert.equal(view.event.venue,input.event.venue);assert.ok(view.groupInvite);assert.equal(view.wallet.ready,false);assert.equal(view.invitation.ready,false);assert.equal(view.eventFacts.ready,false);
   }
+});
+
+test('optional typed notice history reads old responses and remains independent from current admission and formal email',()=>{
+  assert.equal(Object.hasOwn(confirmationView(value(),now),'notifications'),false);
+  const statuses=['not_sent','not_applicable','not_configured','disabled','pending','provider_accepted','rejected','unknown'];
+  for(const status of statuses){
+    const input=value();input.email.status='provider_accepted';input.notifications={applicationReceived:{status},preEventReminder:{status:'unknown'}};
+    const view=confirmationView(input,now);assert.deepEqual(view.notifications,input.notifications);assert.equal(view.email.status,'provider_accepted');assert.equal(view.admission.status,'confirmed');
+  }
+  for(const admissionStatus of ['pending_review','waitlisted','rejected','withdrawn']){
+    const input=value();input.admission.status=admissionStatus;input.wallet.ready=true;input.invitation=poster();input.notifications={applicationReceived:{status:'provider_accepted'},preEventReminder:{status:'provider_accepted'}};
+    const view=confirmationView(input,now);assert.equal(view.admission.status,admissionStatus);assert.equal(view.wallet.ready,false);assert.equal(view.invitation.ready,false);assert.equal(view.groupInvite,null);assert.equal(view.notifications.applicationReceived.status,'provider_accepted');
+  }
+});
+
+test('malformed optional notices affect only that kind and never expose recipient, body or URL fields',()=>{
+  for(const bad of [null,[],{}, {status:'delivered'},{status:'reserved'}, {status:42},{status:'provider_accepted',recipient:'PRIVATE-NOTICE-RECIPIENT',body:'PRIVATE-NOTICE-BODY',url:'https://private.invalid/notice'}]){
+    const input=value();input.email.status='provider_accepted';input.notifications={applicationReceived:bad,preEventReminder:{status:'rejected'},extra:'PRIVATE-OPTIONAL-EXTRA'};
+    const view=confirmationView(input,now);assert.deepEqual(view.notifications,{applicationReceived:{status:'unknown'},preEventReminder:{status:'rejected'}});assert.equal(view.admission.status,'confirmed');assert.equal(view.attendee.name,input.attendee.name);assert.equal(view.email.status,'provider_accepted');assert.doesNotMatch(JSON.stringify(view),/PRIVATE-|private\.invalid/u);
+    const other=confirmationView({...input,notifications:{applicationReceived:{status:'provider_accepted'},preEventReminder:bad}},now);assert.deepEqual(other.notifications,{applicationReceived:{status:'provider_accepted'},preEventReminder:{status:'unknown'}});
+  }
+  for(const notifications of [null,[],42,'PRIVATE-INVALID-OBJECT'])assert.deepEqual(confirmationView({...value(),notifications},now).notifications,{applicationReceived:{status:'unknown'},preEventReminder:{status:'unknown'}});
+});
+
+test('typed notice messages never treat receipt acceptance as approval or provider acceptance as delivery',()=>{
+  const statuses=['not_sent','not_applicable','not_configured','disabled','pending','provider_accepted','rejected','unknown'];
+  for(const kind of ['applicationReceived','preEventReminder'])for(const status of statuses){const message=confirmationNotificationMessage(kind,status);assert.ok(message);assert.doesNotMatch(message,/已送达|已送達|已收到邮件|已获邀|名额已确认|微信群|二维码|Wallet|邀请函/u);}
+  assert.match(confirmationNotificationMessage('applicationReceived','provider_accepted'),/交由服务商处理.*不代表获邀/u);
+  assert.match(confirmationNotificationMessage('preEventReminder','provider_accepted'),/交由服务商处理/u);
+  assert.match(confirmationNotificationMessage('applicationReceived','unknown'),/待核对.*申请已保存/u);
+  assert.match(confirmationNotificationMessage('preEventReminder','not_sent'),/暂无发送记录/u);
+  assert.equal(confirmationNotificationMessage('applicationReceived','PRIVATE-SERVER-ERROR'),confirmationNotificationMessage('applicationReceived','unknown'));
+  assert.equal(confirmationNotificationMessage('unrecognized-kind','provider_accepted'),'');
 });

@@ -68,15 +68,17 @@ test('delivery routes enforce authentication, origin, complete roles and CSRF be
  }
  const state=await delivery(f,id,owner);assert.equal(state.reason,'ADMISSION_NOT_CONFIRMED');const before=f.objects.calls.length;
  assert.equal((await f.app.handle(f.request(path,{method:'POST',headers:{Cookie:owner.Cookie},body:{expectedRevision:state.revision,operationId:operation()}}))).status,403);
- assert.ok(f.objects.calls.slice(before).every(call=>!call.key.startsWith('cms/v1/registration-confirmations/')));assert.equal(f.messages.length,0);
+ assert.ok(f.objects.calls.slice(before).every(call=>!call.key.startsWith('cms/v1/registration-confirmations/')));assert.equal(f.messages.length,1,'denied staff actions never add mail after the public receipt');
+ assert.match(f.messages[0].template_params.invitation_text,/申请已收到|申请已经收到/u);assert.doesNotMatch(f.messages[0].template_params.invitation_text,/Apple Wallet|名额已确认/u);
 });
 
-test('public approval and a newly confirmed staff entry each send after the real common-seat commit, with no initial application mail',async()=>{
- const f=await peopleRuntimeFixture({mail:true}),headers=await f.login(),pending=await f.seedPublic();assert.equal(f.messages.length,0);
- await f.approvePublic(pending.reference_code,{headers});assert.equal(f.messages.length,1);
+test('public receipts stay independent of the one formal notice after approval and a newly confirmed staff entry',async()=>{
+ const f=await peopleRuntimeFixture({mail:true}),headers=await f.login(),pending=await f.seedPublic();assert.equal(f.messages.length,1);
+ assert.match(f.messages[0].template_params.invitation_text,/申请已收到|申请已经收到/u);assert.doesNotMatch(f.messages[0].template_params.invitation_text,/Apple Wallet|名额已确认/u);
+ await f.approvePublic(pending.reference_code,{headers});assert.equal(f.messages.length,2);assert.match(f.messages[1].template_params.invitation_text,/Apple Wallet/u);
  const body={expectedRevision:(await f.app.registrationService.getAdmissions({actor:f.users[0]})).revision,operationId:operation(),input:{kind:'attendee',permissionReference:'合成人员明确授权代登记并发送参会确认',fields:{name:'合成工作人员代登记',email:'synthetic.staff@example.invalid',organization:'合成单位',city:'合成城市',position:'',categories:['industry'],participationInterests:['attend'],background:'',attendance:'expected',accommodationChoice:'not_needed',cooperationInterest:'none'}}};
- const first=await response(await f.app.handle(f.request('/api/admin/admissions/staff',{method:'POST',headers,body})));assert.equal(first.receipt.admissionStatus,'confirmed');assert.equal(f.messages.length,2);
- await response(await f.app.handle(f.request('/api/admin/admissions/staff',{method:'POST',headers,body})));assert.equal(f.messages.length,2);
+ const first=await response(await f.app.handle(f.request('/api/admin/admissions/staff',{method:'POST',headers,body})));assert.equal(first.receipt.admissionStatus,'confirmed');assert.equal(f.messages.length,3);
+ await response(await f.app.handle(f.request('/api/admin/admissions/staff',{method:'POST',headers,body})));assert.equal(f.messages.length,3);
  const state=await delivery(f,first.registrationId,headers);assert.equal(state.reason,'ALREADY_ACCEPTED');
 });
 

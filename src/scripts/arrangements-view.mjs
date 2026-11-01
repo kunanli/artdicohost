@@ -1,4 +1,5 @@
 import { SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
+import { contentSchema } from '../../shared/content-schema.mjs';
 import { sessionTimeline } from '../lib/arrangement-planner.mjs';
 
 const formats = { talk: '演讲', workshop: '工作坊', roundtable: '圆桌', showcase: '作品分享', social: '交流活动', break: '休息 / 签到', other: '待分类 / 其他' };
@@ -13,6 +14,33 @@ function node(tag, text, className) {
 }
 function list(value) { return Array.isArray(value) ? value : []; }
 function count(value) { return Number.isSafeInteger(value) && value >= 0 ? value : 0; }
+
+
+export function isArrangementSnapshot(value) {
+  const booths = value?.summary?.booths;
+  const max = contentSchema.maxBooths;
+  const bounded = number => Number.isSafeInteger(number) && number >= 0 && number <= max;
+  const validRow = (row, kind) => row && Number.isSafeInteger(row.slotNumber) && row.slotNumber >= (kind === 'placed' ? 1 : 0)
+    && row.slotNumber <= contentSchema.maxBoothPosition && stableId.test(row.booth?.id ?? '') && row.booth.slotNumber === row.slotNumber
+    && (kind === 'cancelled' ? row.booth.status === 'cancelled' : ['pending','confirmed'].includes(row.booth.status))
+    && (kind !== 'unplaced' || row.slotNumber === 0)
+    && ['people','teams','warnings'].every(key => Array.isArray(row[key]));
+  if (!booths || !['totalRecords','activePlaced','confirmedPlaced','pendingPlaced','unplacedRecords'].every(key => bounded(booths[key]))
+    || !['boothRows','unplacedBooths','cancelledBooths'].every(key => Array.isArray(value[key]) && value[key].length <= max)) return false;
+  const rows = [...value.boothRows, ...value.unplacedBooths, ...value.cancelledBooths];
+  if (rows.length !== booths.totalRecords || new Set(rows.map(row => row?.booth?.id)).size !== rows.length
+    || booths.activePlaced !== value.boothRows.length || booths.unplacedRecords !== value.unplacedBooths.length
+    || booths.confirmedPlaced !== value.boothRows.filter(row => row?.booth?.status === 'confirmed').length
+    || booths.pendingPlaced !== value.boothRows.filter(row => row?.booth?.status === 'pending').length
+    || !value.boothRows.every((row, index) => validRow(row, 'placed') && (!index || row.slotNumber > value.boothRows[index - 1].slotNumber))
+    || !value.unplacedBooths.every(row => validRow(row, 'unplaced')) || !value.cancelledBooths.every(row => validRow(row, 'cancelled'))) return false;
+  return value?.schemaVersion === 2 && Number.isSafeInteger(value.revisions?.content) && value.revisions.content >= 0
+    && Number.isSafeInteger(value.revisions?.contacts) && value.revisions.contacts >= 0
+    && value.summary.people && value.sessions
+    && ['talk','workshop'].every(key => ['scheduled','withPrimarySpeaker','missingPrimarySpeaker'].every(field => Number.isSafeInteger(value.summary.sessions?.byFormat?.[key]?.[field]) && value.summary.sessions.byFormat[key][field] >= 0))
+    && ['A', 'B', 'other', 'workshops'].every(key => Array.isArray(value.sessions[key]))
+    && Array.isArray(value.warnings);
+}
 
 /** A private, saved-only projection. Never derives arrangements from local draft edits. */
 export function createArrangementsView({ root, load, edit, plan = edit }) {
@@ -132,13 +160,8 @@ export function createArrangementsView({ root, load, edit, plan = edit }) {
     const heading = node('div', undefined, 'ah-arrangements-slot-heading');
     heading.append(node('span', row.label || (row.slotNumber ? String(row.slotNumber).padStart(2, '0') + ' 号位置' : '未指定位置')));
     const booth = row.booth;
-    const badge = node('span', booth ? ({ confirmed: '已确认', pending: '待确认', cancelled: '已取消' })[booth.status] || '待核对' : '空位', 'ah-arrangements-slot-state');
-    badge.dataset.status = booth?.status || 'empty'; heading.append(badge); card.append(heading);
-    if (!booth) {
-      card.dataset.empty = 'true';
-      card.append(node('p', '待安排参展单位', 'ah-arrangements-vacant'), planButton('booth', null, row.slotNumber, '安排此位置'));
-      return card;
-    }
+    const badge = node('span', ({ confirmed: '已确认', pending: '待确认', cancelled: '已取消' })[booth.status] || '待核对', 'ah-arrangements-slot-state');
+    badge.dataset.status = booth.status; heading.append(badge); card.append(heading);
     card.append(node('h4', booth.organization || '机构 / 团队待确认'), node('p', booth.project || '项目待确认'), node('small', booth.code + ' · ' + booth.zone + ' 区', 'ah-arrangements-booth-code'));
     if(booth.description)card.append(node('p',booth.description,'ah-arrangements-description'));
     if(booth.contactName||booth.contactMethods){const contact=node('p',undefined,'ah-arrangements-booth-contact');contact.append(node('strong',booth.contactName||'负责人待填写'));if(booth.contactMethods)contact.append(node('span',booth.contactMethods));card.append(contact);}
@@ -183,11 +206,10 @@ export function createArrangementsView({ root, load, edit, plan = edit }) {
   function render() {
     const summary = snapshot.summary;
     const metrics = [
-      ['已安排位置', summary.booths.activePlaced, '/ 15'],
-      ['已确认展位', summary.booths.confirmedPlaced, '个位置'],
-      ['待确认展位', summary.booths.pendingPlaced, '个位置'],
-      ['空位待安排', summary.booths.unassignedPositions, '个位置'],
-      ['尚未指定位置', summary.booths.unplacedRecords, '条展位记录'],
+      ['已安排', summary.booths.activePlaced, '个展位'],
+      ['已确认', summary.booths.confirmedPlaced, '个展位'],
+      ['待确认', summary.booths.pendingPlaced, '个展位'],
+      ['待定位', summary.booths.unplacedRecords, '个展位'],
     ];
     const summaryOutput = $('[data-arrangements-summary]'); summaryOutput.replaceChildren();
     for (const [label, value, unit] of metrics) {
@@ -196,6 +218,7 @@ export function createArrangementsView({ root, load, edit, plan = edit }) {
     $('[data-arrangements-meta]').textContent = '已保存内容 #' + snapshot.revisions.content + ' · 名单 #' + snapshot.revisions.contacts + ' · 读取于 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) + '；两类记录分别保存。';
     const slots = $('[data-arrangements-slots]'); slots.replaceChildren();
     for (const row of snapshot.boothRows) slots.append(boothCard(row));
+    if (!snapshot.boothRows.length) slots.append(node('p', '暂无已安排展位。', 'ah-arrangements-empty'));
     for (const [key, rows, title] of [
       ['unplaced', snapshot.unplacedBooths, '尚未指定位置的有效展位'],
       ['cancelled', snapshot.cancelledBooths, '已取消展位 · 不占位置'],
@@ -221,15 +244,7 @@ export function createArrangementsView({ root, load, edit, plan = edit }) {
     $('[data-arrangements-body]').hidden = false;
     renderTimeline(); renderSessions();
   }
-  function validSnapshot(value) {
-    return value?.schemaVersion === 1 && Number.isSafeInteger(value.revisions?.content) && value.revisions.content >= 0
-      && Number.isSafeInteger(value.revisions?.contacts) && value.revisions.contacts >= 0
-      && value.summary?.booths?.capacity === 15 && value.summary.people && value.sessions
-      && ['talk','workshop'].every(key => ['scheduled','withPrimarySpeaker','missingPrimarySpeaker'].every(field => Number.isSafeInteger(value.summary.sessions?.byFormat?.[key]?.[field]) && value.summary.sessions.byFormat[key][field] >= 0))
-      && ['A', 'B', 'other', 'workshops'].every(key => Array.isArray(value.sessions[key]))
-      && Array.isArray(value.boothRows) && value.boothRows.length === 15
-      && value.boothRows.every((row, index) => row?.slotNumber === index + 1);
-  }
+
   async function refresh() {
     if (!allowed || loading) return;
     const current = ++generation; loading = true;
@@ -240,7 +255,7 @@ export function createArrangementsView({ root, load, edit, plan = edit }) {
     try {
       const value = await load();
       if (current !== generation || !allowed) return;
-      if (!validSnapshot(value)) throw new Error('安排资料格式无效，请重新读取。');
+      if (!isArrangementSnapshot(value)) throw new Error('安排资料格式无效，请重新读取。');
       snapshot = value; render();
       $('[data-arrangements-status]').textContent = '已读取保存的安排；下方统计不代表报名受理或现场签到。';
     } catch {

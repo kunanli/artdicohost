@@ -169,11 +169,11 @@ test('legacy sessions and booths normalize unclassified / unpositioned without c
   assert.equal(validateContent({ ...content, booths: [booth({ code: 'S15' })] }).value.booths[0].slotNumber, 0);
 });
 
-test('fifteen explicit booth positions are bounded and unique among active records; cancelled positions may be reused', () => {
+test('dynamic booth positions retain technical bounds and unique active occupancy; cancelled positions may be reused', () => {
   const content = emptyContent();
-  content.booths = Array.from({ length: 15 }, (_, index) => booth({ id: 'synthetic-' + index, code: 'X-' + index, slotNumber: index + 1 }));
+  content.booths = Array.from({ length: 32 }, (_, index) => booth({ id: 'synthetic-' + index, code: 'X-' + index, slotNumber: index + 1 }));
   assert.equal(validateContent(content).valid, true);
-  for (const value of [-1, 16, 1.5, '1', null, true, NaN, Infinity]) {
+  for (const value of [-1, 201, 1.5, '1', null, true, NaN, Infinity]) {
     const invalid = { ...content, booths: [booth({ slotNumber: value })] };
     assert.ok(validateContent(invalid).errors['booths.0.slotNumber'], String(value));
   }
@@ -189,7 +189,7 @@ test('fifteen explicit booth positions are bounded and unique among active recor
   assert.equal(validateContent(content).valid, true);
   assert.equal(toPublicContent(content).booths.length, 1);
   assert.equal(toPublicContent(content).booths[0].slotNumber, 15);
-  content.booths[0].slotNumber = 16;
+  content.booths[0].slotNumber = 201;
   assert.ok(validateContent(content).errors['booths.0.slotNumber'], 'cancelled records still require a valid position');
   content.booths = [booth(), booth({ id: 'second-unpositioned', code: 'SECOND' })];
   assert.equal(validateContent(content).valid, true, 'many unassigned records may remain at zero');

@@ -183,12 +183,6 @@ export function buildOrganizerTasks({ contacts = [], contactRevision = 0, conten
       boothId: booth.id, name: text(booth.code) || '展位', organization: text(booth.organization), owner: text(booth.contactName), dueAt: '',
       detail: '待补齐：' + missing.join('、'), href: '/admin/#booth=' + encodeURIComponent(booth.id) });
   }
-  for (let slot = 1; slot <= 15; slot++) {
-    if (list(content?.booths).some(booth => booth.status !== 'cancelled' && booth.slotNumber === slot)) continue;
-    tasks.push({ id: 'missing_booth_details:slot-' + slot, kind: 'missing_booth_details', label: organizerTaskLabels.missing_booth_details,
-      slotNumber: slot, name: String(slot).padStart(2, '0') + ' 号展位位置', organization: '', owner: '', dueAt: '',
-      detail: '位置尚未关联有效展位记录；确认参展机构后，在总览安排此位置。', href: '/admin/#booths-title' });
-  }
   tasks.sort((a, b) => Number(b.kind === 'invitation_unknown') - Number(a.kind === 'invitation_unknown')
     || (a.dueAt || '9999').localeCompare(b.dueAt || '9999') || a.name.localeCompare(b.name, 'zh-CN') || a.kind.localeCompare(b.kind));
   const { progress: _privateProgress, ...metrics } = summary;

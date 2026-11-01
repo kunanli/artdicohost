@@ -1,6 +1,6 @@
 import {personGroupFor} from '../registration-api/admissions.mjs';
 import { PARTICIPATION_FORMS, SESSION_ROLES } from '../../shared/contacts-schema.mjs';
-import { GUEST_PUBLIC_ROLES, PORTRAIT_ID_PATTERN, isContentVisible } from '../../shared/content-schema.mjs';
+import { GUEST_PUBLIC_ROLES, PORTRAIT_ID_PATTERN, isContentVisible, contentSchema } from '../../shared/content-schema.mjs';
 import { parseTimestamp } from '../registration-api/policy.mjs';
 
 export const CONTACT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
@@ -202,7 +202,7 @@ export function arrangementsProjection(contact, source) {
   });
   const booths = contact.operations.boothIds.map(id => {
     const item = source.content.booths.find(entry => entry.id === id);
-    if (item?.slotNumber !== undefined && (!Number.isSafeInteger(item.slotNumber) || item.slotNumber < 0 || item.slotNumber > 15)) fail();
+    if (item?.slotNumber !== undefined && (!Number.isSafeInteger(item.slotNumber) || item.slotNumber < 0 || item.slotNumber > contentSchema.maxBoothPosition)) fail();
     return { id, code: text(item?.code, 20), organization: text(item?.organization, 200), project: text(item?.project, 200),
       position: item?.slotNumber ? String(item.slotNumber) : '', status: item ? oneOf(item.status, ['pending', 'confirmed', 'cancelled']) : 'missing', missing: !item };
   });

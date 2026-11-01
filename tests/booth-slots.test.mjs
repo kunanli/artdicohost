@@ -1,19 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {completeBoothSlots} from '../src/lib/booth-slots.mjs';
-const ids={idForSlot:slot=>'synthetic-slot-'+slot};
-test('fifteen empty positions are pending with no invented occupants or contact data',()=>{
-  const result=completeBoothSlots([],ids);
-  assert.equal(result.created,15);assert.deepEqual(result.booths.map(item=>item.slotNumber),Array.from({length:15},(_,index)=>index+1));
-  for(const booth of result.booths){assert.equal(booth.status,'pending');for(const key of ['organization','project','contactName','contactMethods','description'])assert.equal(booth[key],'');}
-  const second=completeBoothSlots(result.booths,ids);assert.equal(second.created,0);assert.deepEqual(second.booths,result.booths);
+import { contentSchema } from '../shared/content-schema.mjs';
+import { nextBoothSlot, nextBoothCode } from '../src/lib/booth-slots.mjs';
+
+const booth=(id,slotNumber,extra={})=>({id,code:'C-'+String(slotNumber).padStart(2,'0'),slotNumber,status:'pending',...extra});
+
+test('one new booth gets a vacant position without creating a grid or changing saved records',()=>{
+  assert.equal(nextBoothSlot([]),1);assert.equal(nextBoothCode([],1),'C-01');
+  const records=Array.from({length:32},(_,i)=>booth('saved-'+i,i+1));
+  const before=structuredClone(records);
+  assert.equal(nextBoothSlot(records),33);assert.equal(nextBoothCode(records,33),'C-33');
+  assert.deepEqual(records,before);
 });
-test('existing occupancy and private details stay unchanged, cancelled history does not block a new position',()=>{
-  const records=[{id:'existing',code:'C-01',slotNumber:3,status:'confirmed',organization:'合成机构',contactMethods:'synthetic@example.invalid'},
-    {id:'cancelled',code:'C-02',slotNumber:2,status:'cancelled',organization:'合成取消记录'}];
-  const before=structuredClone(records),result=completeBoothSlots(records,ids);
-  assert.deepEqual(records,before);assert.deepEqual(result.booths.slice(0,2),before);assert.equal(result.created,14);
-  assert.equal(result.booths.find(item=>item.id==='synthetic-slot-1').code,'C-01-2');
-  assert.equal(result.booths.filter(item=>item.slotNumber===2&&item.status!=='cancelled').length,1);
-  assert.equal(new Set(result.booths.map(item=>item.id)).size,result.booths.length);
+
+test('sparse and cancelled positions can be reused while historical codes remain unique',()=>{
+  const records=[booth('third',3,{status:'confirmed',contactMethods:'synthetic@example.invalid'}),booth('cancelled',1,{status:'cancelled'}),booth('unplaced',0,{code:'C-01-2'})];
+  const before=structuredClone(records);
+  assert.equal(nextBoothSlot(records),1);assert.equal(nextBoothCode(records,1),'C-01-3');
+  assert.deepEqual(records,before);
+});
+
+test('capacity, malformed values and ambiguous active positions fail without guessing',()=>{
+  const full=Array.from({length:contentSchema.maxBooths},(_,i)=>booth('saved-'+i,i+1));
+  assert.throws(()=>nextBoothSlot(full),/上限/u);
+  for(const slotNumber of [-1,contentSchema.maxBoothPosition+1,1.5,'1',null])assert.throws(()=>nextBoothSlot([booth('invalid',slotNumber)]),TypeError);
+  for(const slotNumber of [0,-1,contentSchema.maxBoothPosition+1,1.5,'1'])assert.throws(()=>nextBoothCode([],slotNumber),TypeError);
+  assert.throws(()=>nextBoothSlot([booth('one',1),booth('two',1,{code:'C-02'})]),/重复/u);
+  assert.throws(()=>nextBoothSlot([booth('one',1),booth('two',2,{code:'c-01'})]),TypeError);
+  assert.throws(()=>nextBoothSlot(Array(1)),TypeError);
+  let accessed=false;const records=[];Object.defineProperty(records,0,{get(){accessed=true;throw new Error('must not read');}});
+  assert.throws(()=>nextBoothSlot(records),TypeError);assert.equal(accessed,false);
 });

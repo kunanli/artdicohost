@@ -25,7 +25,7 @@ test('stale local edits, occupied slots and duplicate booth codes cannot silentl
   assert.throws(()=>prepareBoothDraft(first,{boothId:original.id,slotNumber:1,original,changes}));
   assert.throws(()=>prepareBoothDraft(first,{slotNumber:1,changes,newId:'synthetic-other'}));
   assert.throws(()=>prepareBoothDraft(first,{slotNumber:2,changes,newId:'synthetic-other'}));
-  assert.throws(()=>prepareBoothDraft(first,{slotNumber:16,changes,newId:'synthetic-other'}));
+  assert.throws(()=>prepareBoothDraft(first,{slotNumber:201,changes,newId:'synthetic-other'}));
   assert.throws(()=>prepareBoothDraft(first,{slotNumber:2,changes,newId:'../../unsafe'}));
 });
 
@@ -33,6 +33,15 @@ test('booth readiness shows missing practical details while allowing a valid pen
   const result=prepareBoothDraft(content(),{slotNumber:1,newId:'synthetic-empty',changes:{...changes,organization:'',project:'',contactName:'',contactMethods:'',description:''}});
   assert.equal(boothReadiness(result.content.booths[0]).length,5);
   assert.throws(()=>prepareBoothDraft(content(),{slotNumber:1,newId:'synthetic-confirmed',changes:{...changes,organization:'',status:'confirmed'}}));
+});
+
+test('direct edits support positions beyond fifteen and preserve an existing unplaced record', () => {
+  let saved=prepareBoothDraft(content(),{slotNumber:32,changes:{...changes,code:'C-32'},newId:'synthetic-high'}).content;
+  assert.equal(saved.booths[0].slotNumber,32);
+  saved.booths[0].slotNumber=0;const original=structuredClone(saved.booths[0]);
+  const edited=prepareBoothDraft(saved,{boothId:original.id,slotNumber:0,original,changes:{...changes,code:'C-32',project:'合成新内容'}});
+  assert.equal(edited.content.booths[0].slotNumber,0);assert.equal(edited.content.booths[0].project,'合成新内容');
+  assert.throws(()=>prepareBoothDraft(content(),{slotNumber:0,changes,newId:'synthetic-new'}));
 });
 
 test('person assignment preserves actual reply and follow-up fields and rejects declines, cancelled references and time overlap', () => {

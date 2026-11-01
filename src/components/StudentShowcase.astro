@@ -10,7 +10,7 @@ const feedback = agenda.find(item => item.id === 'student-feedback');
 <section class="ah-students ah-students-showcase ah-section" id="students" aria-labelledby="students-heading">
   <div class="ah-section-heading">
     <div><span class="ah-kicker">作品现场</span><h2 id="students-heading">游戏与作品</h2></div>
-    <p>学生作品、独立游戏与团队创作，让大家玩到你的作品，也听见你的想法。</p>
+    <p>学生作品与独立游戏，在现场分享创作与交流。</p>
   </div>
   <figure class="ah-showcase-media" data-public-showcases-concept>
     <Image src={studentShowcaseConcept} alt="学生嘉年华创作概念视觉" width={1600} height={900} fit="cover" format="webp" quality={85} loading="lazy" decoding="async" />
@@ -20,7 +20,7 @@ const feedback = agenda.find(item => item.id === 'student-feedback');
     </figcaption>
   </figure>
   <div class="ah-showcase-filters" data-public-works-controls hidden>
-    <label for="public-works-filter">作品分类<select id="public-works-filter" data-public-works-filter><option value="all">全部作品</option><option value="student">学生作品</option><option value="indie">独立游戏</option><option value="team">团队作品</option></select></label>
+    <label for="public-works-filter">作品分类<select id="public-works-filter" data-public-works-filter><option value="all">全部作品</option><option value="student">学生作品</option><option value="indie">独立游戏</option></select></label>
     <p data-public-works-count role="status" aria-live="polite"></p>
   </div>
   <p class="ah-showcase-filter-empty" data-public-works-filter-empty role="status" hidden>这个分类的作品尚未公布。</p>

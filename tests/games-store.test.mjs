@@ -64,9 +64,9 @@ for (const mode of ['file', 'cloud']) {
     const old = again.content.showcases.find(item => item.id === 'synthetic-work'), added = again.content.showcases.find(item => item.id === 'synthetic-other-work');
     assert.equal(old.kind, 'indie'); assert.equal(old.organizationId, 'synthetic-organization');
     assert.equal(Object.hasOwn(added, 'kind'), false); assert.equal(Object.hasOwn(added, 'organizationId'), false);
-    old.organizationId = ''; old.kind = 'team';
+    old.organizationId = ''; old.kind = 'student';
     const cleared = await first.save(2, again.content, 'synthetic');
-    assert.equal(cleared.content.showcases[0].organizationId, ''); assert.equal(cleared.content.showcases[0].kind, 'team');
+    assert.equal(cleared.content.showcases[0].organizationId, ''); assert.equal(cleared.content.showcases[0].kind, 'student');
     const publicState = await second.publish(3, 'synthetic');
     assert.equal(publicState.content.showcases.length, 2); // Multiple works legitimately share the one booth.
     assert.equal(Object.hasOwn(publicState.content.showcases[0], 'organizationId'), false);
@@ -122,7 +122,7 @@ for (const mode of ['file', 'cloud']) {
   test(`${mode} competing work edits have one revision winner and preserve the full winning optional metadata`, async t => {
     const { first, second } = await fixture(mode, t), left = (await first.read()).draft.content, right = structuredClone(left);
     Object.assign(left.showcases[0], { kind: 'indie', organizationId: 'synthetic-organization' });
-    Object.assign(right.showcases[0], { kind: 'team', organizationId: '' });
+    Object.assign(right.showcases[0], { kind: 'student', organizationId: '' });
     const outcomes = await Promise.allSettled([first.save(0, left, 'synthetic-left'), second.save(0, right, 'synthetic-right')]);
     assert.equal(outcomes.filter(item => item.status === 'fulfilled').length, 1);
     assert.equal(outcomes.find(item => item.status === 'rejected').reason.code, 'REVISION_CONFLICT');

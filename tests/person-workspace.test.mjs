@@ -209,7 +209,7 @@ test('unknown delivery remains unknown and bounded histories retain their total 
 });
 
 test('malformed optional history or arrangements fail only their source and never receive a revision', async () => {
-  const f = fixture(); f.data.confirmations.notices[0].createdAt = '2026-02-31T00:00:00Z'; f.data.content.content.booths[0].slotNumber = 16;
+  const f = fixture(); f.data.confirmations.notices[0].createdAt = '2026-02-31T00:00:00Z'; f.data.content.content.booths[0].slotNumber = 201;
   const { response, body } = await f.read(); assert.equal(response.status, 200);
   assert.equal(body.availability.confirmations, 'unavailable'); assert.equal(body.revisions.confirmations, null);
   assert.equal(body.availability.arrangements, 'unavailable'); assert.equal(body.revisions.content, null);
@@ -330,4 +330,11 @@ test('actual optional-photo public projection remains synchronized in the privat
     f.data.content.revision++;guest.internalNotes='PRIVATE-NEW-NOTE';assert.equal((await f.read()).body.publicProfile.profiles[0].publishedMatchesDraft,true);
     f.data.content.published.content.guests[0].portraitUrl='/api/public/portraits/';assert.equal((await f.read()).body.publicProfile.profiles[0].publishedMatchesDraft,false,'even an empty photo cannot manufacture an image endpoint');
   }
+});
+
+test('person workspace reads an assigned position beyond fifteen without changing personnel or admission', async () => {
+  const f = fixture(); f.data.content.content.booths[0].slotNumber = 32;
+  const {response,body} = await f.read(); assert.equal(response.status,200);
+  assert.equal(body.availability.arrangements,'available');assert.equal(body.arrangements.booths[0].position,'32');
+  assert.equal(body.contact.id,CONTACT);assert.equal(body.admission.status,'confirmed');
 });

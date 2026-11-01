@@ -1,14 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {publicShowcaseCards,SHOWCASE_KIND_LABELS} from '../shared/showcase-display.mjs';
+import {publicShowcaseCards,SHOWCASE_KIND_LABELS,SHOWCASE_EDITABLE_KINDS} from '../shared/showcase-display.mjs';
 const work=(id='synthetic-work',extra={})=>({id,title:'合成游戏',teamName:'合成创作者',summary:'合成介绍',coverId:'a'.repeat(64)+'.png',status:'confirmed',responseStatus:'attending',publicConsent:true,participationForms:['booth'],boothId:'synthetic-shared-booth',sessionId:'',...extra});
 
 test('legacy kind is a display-only student default; explicit kinds and links never mutate public source',()=>{
   const legacy=work(),copy=JSON.stringify(legacy);assert.equal(publicShowcaseCards([legacy])[0].kind,'student');assert.equal(JSON.stringify(legacy),copy);assert.equal(Object.hasOwn(legacy,'kind'),false);
   for(const kind of ['student','indie','team'])assert.equal(publicShowcaseCards([work(kind,{kind,organizationId:'synthetic-org'})])[0].kind,kind);
   assert.deepEqual(Object.keys(SHOWCASE_KIND_LABELS),['student','indie','team']);
+  assert.deepEqual(SHOWCASE_EDITABLE_KINDS,['student','indie']);assert.equal(Object.isFrozen(SHOWCASE_EDITABLE_KINDS),true);
+  assert.equal(SHOWCASE_KIND_LABELS.team,'待分类');
   assert.equal(publicShowcaseCards([work('linked',{organizationId:'synthetic-org'})])[0].organizationId,'synthetic-org');
   assert.equal(Object.hasOwn(publicShowcaseCards([work('unlinked',{organizationId:''})])[0],'organizationId'),false);
+});
+
+test('uncategorized legacy team cards remain in all works without being guessed into either current category',()=>{
+  const values=[work('student',{kind:'student'}),work('indie',{kind:'indie'}),work('legacy-team',{kind:'team'})],before=JSON.stringify(values);
+  const cards=publicShowcaseCards(values);
+  assert.deepEqual(cards.map(item=>item.id),['student','indie','legacy-team']);
+  for(const kind of SHOWCASE_EDITABLE_KINDS)assert.deepEqual(cards.filter(item=>item.kind===kind).map(item=>item.id),[kind]);
+  assert.equal(cards.find(item=>item.id==='legacy-team').kind,'team');
+  assert.equal(JSON.stringify(values),before);
 });
 
 test('malformed own metadata cannot become legacy defaults or execute getters',()=>{

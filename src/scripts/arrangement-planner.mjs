@@ -125,7 +125,7 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
     selected = { type, id: item?.id ?? null, slotNumber: item?.slotNumber || slotNumber, revision: context.revision };
     original = item ? structuredClone(item) : null;
     root.hidden = false; boothForm.hidden = type !== 'booth'; $('[data-planner-people]').hidden = false;
-    $('[data-planner-title]').textContent = type === 'booth' ? '直接调整第 ' + selected.slotNumber + ' 个展位' : '分配人员：' + item.title;
+    $('[data-planner-title]').textContent = type === 'booth' ? selected.slotNumber ? '调整展位 · ' + selected.slotNumber + '号位置' : '调整展位 · 未指定位置' : '分配人员：' + item.title;
     $('[data-planner-note]').textContent = type === 'booth' ? '保存展位资料到云端；负责人及联络方式不公开。公开页面需另行发布。' : '使用当前已保存场次分配人员；不改变报名名额、实际回复或公开授权。';
     if (type === 'booth') {
       let code = item?.code || 'C-' + String(selected.slotNumber).padStart(2,'0');

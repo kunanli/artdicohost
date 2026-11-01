@@ -1,11 +1,13 @@
 import { isPublicShowcase, showcaseAllocations } from './content-schema.mjs';
+export { SHOWCASE_EDITABLE_KINDS } from './content-schema.mjs';
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   && [Object.prototype, null].includes(Object.getPrototypeOf(value));
 const ownValue = (value, key) => Object.getOwnPropertyDescriptor(value, key)?.value;
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const coverPattern = /^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
-export const SHOWCASE_KIND_LABELS=Object.freeze({student:'学生作品',indie:'独立游戏',team:'团队作品'});
+// The legacy team value remains readable without becoming a third edit choice.
+export const SHOWCASE_KIND_LABELS=Object.freeze({student:'学生作品',indie:'独立游戏',team:'待分类'});
 const line = (value, limit, required = true) => typeof value === 'string'
   && [...value.trim()].length <= limit && (!required || value.trim().length > 0)
   && !/[\u0000-\u001f\u007f]/u.test(value) ? value.trim() : null;

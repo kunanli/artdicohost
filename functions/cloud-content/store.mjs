@@ -1,4 +1,4 @@
-import { validateContent, toPublicContent, PORTRAIT_ID_PATTERN, validateBoothOrganizationChanges, validateShowcaseOrganizationChanges, matchesPublishedContent } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, PORTRAIT_ID_PATTERN, validateBoothOrganizationChanges, validateShowcaseOrganizationChanges, validateShowcaseKindChanges, matchesPublishedContent } from '../../shared/content-schema.mjs';
 import { createInitialContent } from '../../src/config/content.mjs';
 import { CloudContentError } from './errors.mjs';
 import { isDeepStrictEqual } from 'node:util';
@@ -212,6 +212,8 @@ export function createOssContentStore({ journal, portraitStore, initialContent =
       const relationships = validateBoothOrganizationChanges(content, state.draft.content);
       const workRelationships = validateShowcaseOrganizationChanges(content, state.draft.content);
       if (!relationships.valid || !workRelationships.valid) throw new CloudContentError('VALIDATION_ERROR', '组织关联未通过校验。', 422, { ...relationships.errors, ...workRelationships.errors });
+      const workKinds = validateShowcaseKindChanges(content, state.draft.content);
+      if (!workKinds.valid) throw new CloudContentError('VALIDATION_ERROR', '作品分类未通过校验。', 422, workKinds.errors);
       await Object.getOwnPropertyDescriptor(options, 'beforeCommit')?.value({ current: structuredClone(state.draft.content), next: structuredClone(content), published: structuredClone(state.published) });
       await verifyPortraits(content);
       if (!Number.isSafeInteger(state.draft.revision + 1)) throw capacity();

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInitialContent } from '../src/config/content.mjs';
-import { validateContent } from '../shared/content-schema.mjs';
+import { validateContent, contentSchema } from '../shared/content-schema.mjs';
 import { contentSaveSnapshot } from '../src/lib/admin-save-state.mjs';
 import { contentFormValue,readContentForm,writeContentForm,contentLocalDraftValue,contentDraftCopy,CONTENT_DRAFT_SECTIONS,CONTENT_DRAFT_POLICY,contentDraftLocation } from '../src/lib/content-local-drafts.mjs';
 
@@ -55,6 +55,21 @@ test('event FAQ and planner choices retain raw form input and explicit IDs witho
   assert.equal(Object.hasOwn(copied,'roleKey'),false);assert.equal(Object.hasOwn(copied,'pendingSave'),false);
   const bad=structuredClone(value);bad.forms.planner.assignment.contactName='SYNTHETIC_PRIVATE_ROSTER';
   assert.equal(contentLocalDraftValue(bad,{kind:'editing'}),false);
+});
+
+test('planner recovery retains sparse positions beyond fifteen while rejecting out-of-bound positions',()=>{
+  const value=bundle();
+  value.forms.planner={selected:{type:'booth',id:'synthetic-booth',slotNumber:32},booth:{code:'C-32'},assignment:null,contactsRevision:null,uncertain:false};
+  const original=JSON.stringify(value);
+  assert.equal(contentLocalDraftValue(value,{kind:'editing'}),true);
+  assert.equal(JSON.parse(contentDraftCopy(value)).unappliedForms.planner.selected.slotNumber,32);
+  assert.equal(JSON.stringify(value),original);
+  value.forms.planner.selected.slotNumber=contentSchema.maxBoothPosition;
+  assert.equal(contentLocalDraftValue(value,{kind:'editing'}),true);
+  for(const slotNumber of [-1,contentSchema.maxBoothPosition+1,1.5,'32']){
+    value.forms.planner.selected.slotNumber=slotNumber;
+    assert.equal(contentLocalDraftValue(value,{kind:'editing'}),false);
+  }
 });
 
 test('new section metadata is bounded while legacy workspace drafts stay unchanged and require explicit review', () => {

@@ -1,7 +1,7 @@
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { validateContent, toPublicContent, validateBoothOrganizationChanges, validateShowcaseOrganizationChanges, matchesPublishedContent } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, validateBoothOrganizationChanges, validateShowcaseOrganizationChanges, validateShowcaseKindChanges, matchesPublishedContent } from '../../shared/content-schema.mjs';
 import { createInitialContent } from '../../src/config/content.mjs';
 
 const queues = new Map();
@@ -186,6 +186,8 @@ export function createFileContentStore({ directory, portraitStore, initialConten
       const relationships = validateBoothOrganizationChanges(content, state.draft.content);
       const workRelationships = validateShowcaseOrganizationChanges(content, state.draft.content);
       if (!relationships.valid || !workRelationships.valid) throw new ContentError('VALIDATION_ERROR', '组织关联未通过校验。', 422, { ...relationships.errors, ...workRelationships.errors });
+      const workKinds = validateShowcaseKindChanges(content, state.draft.content);
+      if (!workKinds.valid) throw new ContentError('VALIDATION_ERROR', '作品分类未通过校验。', 422, workKinds.errors);
       await Object.getOwnPropertyDescriptor(options, 'beforeCommit')?.value({ current: structuredClone(state.draft.content), next: structuredClone(content), published: structuredClone(state.published) });
       await verifyPortraits(content);
       state.draft = { revision: state.draft.revision + 1, content };

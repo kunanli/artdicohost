@@ -1,6 +1,7 @@
 /** Local content-management contract. It grants no administrative or cloud access. */
 export const CONTENT_SCHEMA_VERSION = 1;
 export const MAX_CONTENT_ITEMS = 200;
+export const SHOWCASE_EDITABLE_KINDS = Object.freeze(['student', 'indie']);
 export const GUEST_PUBLIC_ROLES = Object.freeze(['speaker', 'guest', 'organizer', 'moderator']);
 export const GUEST_PUBLIC_ROLE_LABELS = Object.freeze({speaker:'讲者',guest:'嘉宾',organizer:'研讨会组织者',moderator:'主持人'});
 export const ORGANIZATION_PARTICIPATION_LABELS = Object.freeze({undecided:'参与形式待确定',exhibitor:'参展',attendee:'一般参与'});
@@ -9,6 +10,7 @@ export const contentSchema = Object.freeze({
   schemaVersion: CONTENT_SCHEMA_VERSION,
   maxSessions: MAX_CONTENT_ITEMS,
   maxBooths: MAX_CONTENT_ITEMS,
+  maxBoothPosition: MAX_CONTENT_ITEMS,
   maxGuests: MAX_CONTENT_ITEMS,
   maxShowcases: MAX_CONTENT_ITEMS,
   maxOrganizations: MAX_CONTENT_ITEMS,
@@ -22,6 +24,7 @@ export const contentSchema = Object.freeze({
   guestStatuses: ['pending', 'confirmed'],
   showcaseStatuses: ['pending', 'confirmed'],
   showcaseKinds: ['student', 'indie', 'team'],
+  editableShowcaseKinds: SHOWCASE_EDITABLE_KINDS,
   responseStatuses: ['pending', 'attending', 'declined'],
   showcaseParticipationForms: ['booth', 'share'],
   organizationParticipationForms: ['undecided', 'exhibitor', 'attendee'],
@@ -137,6 +140,18 @@ export function validateShowcaseOrganizationChanges(next, current) {
   const previousById = new Map((current?.showcases ?? []).map(item => [item.id, item]));
   for (const [index, item] of (next?.showcases ?? []).entries()) {
     if (item.organizationId && item.organizationId !== previousById.get(item.id)?.organizationId && !known.has(item.organizationId)) errors[`showcases.${index}.organizationId`] = '请选择已保存的组织，或明确解除这项关联。';
+  }
+  return { valid: Object.keys(errors).length === 0, errors };
+}
+
+/** Keep legacy categories readable without allowing new records or reclassification
+ * to the retired team choice. Missing kinds retain the original student shape. */
+export function validateShowcaseKindChanges(next, current) {
+  const errors = {}, previous = new Map((current?.showcases ?? []).map(item => [item.id, item]));
+  for (const [index, item] of (next?.showcases ?? []).entries()) {
+    if (item.kind === 'team' && previous.get(item.id)?.kind !== 'team') {
+      errors[`showcases.${index}.kind`] = '请选择学生作品或独立游戏。';
+    }
   }
   return { valid: Object.keys(errors).length === 0, errors };
 }
@@ -406,7 +421,7 @@ export function validateContent(input) {
     if (!/^[A-Z0-9][A-Z0-9-]{0,15}$/u.test(item.code)) errors[`${key}.code`] = '展位编号须为 1–16 位字母、数字或短横线。';
     if (codes.has(item.code)) errors[`${key}.code`] = '展位编号重复（不区分大小写）。';
     codes.add(item.code);
-    if (!Number.isInteger(item.slotNumber) || item.slotNumber < 0 || item.slotNumber > 15) errors[`${key}.slotNumber`] = '展位位置须为 0–15 的整数；0 表示尚未指定位置。';
+    if (!Number.isInteger(item.slotNumber) || item.slotNumber < 0 || item.slotNumber > contentSchema.maxBoothPosition) errors[`${key}.slotNumber`] = '请填写有效的位置编号，或填 0 暂不指定位置。';
     else if (item.slotNumber > 0 && ['pending', 'confirmed'].includes(item.status)) {
       const previous = positions.get(item.slotNumber);
       if (previous !== undefined) {

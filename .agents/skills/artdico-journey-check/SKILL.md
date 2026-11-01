@@ -11,7 +11,7 @@ description: Verify ARTDiCO HOST attendee and staff journeys with existing synth
 
 1. 讀取倉庫 `AGENTS.md`、`docs/redesign/README.md`、`docs/redesign/03-release-and-acceptance.md`；確認本階段修改與使用者已定決策。
 2. 核對工作區與變更範圍。套件、Node 版本與測試環境沿用 `package.json` 及 `tests/browser/README.md`，不要把目前 runtime 設定、憑證或私密資料複製到測試。
-3. 先分清要證明的是「既有機制未退化」或「本輪新增功能」。P1a 的兩類作品與動態展位見 [P1a 紀錄](../../../docs/redesign/p1a-release.md)，P1b 的出席投影、多人場次及新通知／票券資訊核對見 [P1b 紀錄](../../../docs/redesign/p1b-release.md)。本 runner 固定案例未完整涵蓋新需求，須另行執行相應 `p1b-*.test.mjs` 與聚焦瀏覽器案例；新申請回執／提醒仍待後續階段，不能以基準通過宣稱完成。
+3. 先分清要證明的是「既有機制未退化」或「本輪新增功能」。P1a 的兩類作品與動態展位見 [P1a 紀錄](../../../docs/redesign/p1a-release.md)，P1b 的出席投影、多人場次及新通知／票券資訊核對見 [P1b 紀錄](../../../docs/redesign/p1b-release.md)，P2 的簡約人員入口、原位保存與唯讀核對見 [P2 紀錄](../../../docs/redesign/p2-release.md)。本 runner 固定案例未完整涵蓋新需求，須另行執行相應 `p1b-*.test.mjs`、`p2-*.test.mjs` 與聚焦瀏覽器案例；新申請回執／提醒仍待後續階段，不能以基準通過宣稱完成。
 
 ## 第一層 服務與客戶端
 
@@ -51,6 +51,8 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 - `tests/browser/people-resolution-smoke.mjs`：人工重複核對、主名額、待審保留及一次確認通知。
 - `tests/browser/registration-workflow-smoke.mjs`：已確認舊來源的私人入口、零額外報名／寄信與換人清理。
 - `tests/browser/settings-group-runtime-smoke.mjs`：群碼真實保存回執、到期限制及未知結果保護。
+
+P2 另依 `tests/browser/README.md` 執行 `p2-directory-smoke.mjs` 與 `p2-person-smoke.mjs`，固定清單不自動包含它們。核對先篩選再分頁、未知來源不當零、保存後同一人／焦點／位置、遺失回執只核對原結果，以及私人連結僅明確取回且不快取。合成操作不代替實際同事的短操作觀察。
 
 這些腳本使用合成內存 OSS／provider，並在頁面載入前攔截所有瀏覽器請求；只讀取本地 `dist`。維護清單時重新檢查請求攔截，不能換成正式站瀏覽。截圖與結果由既有腳本寫入忽略的 `.local-data/browser-evidence/`。
 

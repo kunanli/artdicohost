@@ -259,14 +259,17 @@ try {
   }
   {
     const f = await fixture(), person = (await f.runtime.createContact({ name: '合成学生身份调整', categories: ['so'] })).contact;
-    await f.page.goto(API + '/admin/contacts/', { waitUntil: 'domcontentloaded' }); await f.page.locator('[data-contacts-rows] tr').first().waitFor();
-    await f.page.locator('[data-contacts-rows] tr').first().getByRole('button', { name: '编辑资料', exact: true }).click();
+    await f.page.goto(API + '/admin/contacts/', { waitUntil: 'domcontentloaded' });
+    const personRow = f.page.locator('[data-directory-person="contact:' + person.id + '"]'); await personRow.waitFor();
+    await personRow.locator('.people-row-menu > summary').click();
+    await personRow.getByRole('button', { name: '编辑基本资料', exact: true }).click();
     await f.page.locator('[data-profile-dialog][open]').waitFor(); await f.page.locator('[data-profile-categories] [name=categories][value=so]').uncheck();
     await f.page.locator('[data-profile-categories] [name=categories][value=student]').check(); await f.page.locator('[data-profile-save]').click();
     await f.page.locator('[data-profile-dialog] .ah-form-save-state[data-save-state=saved]').waitFor();assert.equal(await f.page.locator('[data-profile-dialog]').isVisible(),true);await f.page.locator('[data-profile-close]').first().click();
     const current = (await f.runtime.app.contactsStore.read()).contacts.find(item => item.id === person.id);
     assert.deepEqual(current.profile.categories, ['student']); assert.deepEqual(current.sourceProfile.categories, ['so']);
     assert.deepEqual(current.source, person.source);
+    await f.page.locator('[data-contacts-legacy-tools] > summary').click();
     await f.page.locator('[data-contacts-category]').selectOption('category:student'); assert.equal(await f.page.locator('[data-contacts-rows] tr').count(), 1);
     await f.page.locator('[data-contacts-category]').selectOption('source-category:so'); assert.equal(await f.page.locator('[data-contacts-rows] tr').count(), 1);
     assert.equal((await f.runtime.app.registrationService.repository.list()).registrations.length, 0); assert.equal(f.runtime.messages.length, 0);

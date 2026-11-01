@@ -4,6 +4,15 @@
 
 这组可选检查使用真实 Chromium 运行构建后的页面，但拦截全部页面请求并提供纯合成 API。它不连接正式 API、不写真实报名、不读取原始名单，也不能代替真实 FC／OSS 端到端验收。
 
+2026-11-01 P2：以下两项检查简约人员入口与单人工作页，来源及结果见 [P2 记录](../../docs/redesign/p2-release.md)。清单验证先筛选待处理再分页、短状态与一个下一步、按权限展开只读核对、来源失败及退出清理；个人页验证收合原件、原位保存、焦点／选字与视窗位置、未知保存只读核对、私人链接仅明确取回。使用当前候选构建后执行，不实寄、不修复正式名单：
+
+```sh
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/p2-directory-smoke.mjs
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/p2-person-smoke.mjs
+```
+
+固定旅程 Skill 的四个浏览器案例不自动包含上述新增脚本；两项需单独执行。实际同事观察、真实 Email 收件、微信入群与 iPhone Wallet 加入另行记录。
+
 2026-11-01 P1b：`p1b-attendance-smoke.mjs` 检查冻结旧发布、实际出席证据、多位场次参与者、编辑器切换、预览与前台一致、普通保存与明确发布。来源及结果见 [P1b 记录](../../docs/redesign/p1b-release.md)。使用当前候选构建后执行：
 
 ```sh

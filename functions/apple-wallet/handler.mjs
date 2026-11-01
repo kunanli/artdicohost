@@ -54,6 +54,7 @@ export function createAppleWalletApi({ service, apiOrigin = API, publicOrigins =
         return new Response(result.data, { status: 200, headers: { ...headers, ...cors, 'content-type': result.contentType,
           'content-disposition': 'attachment; filename="' + result.filename + '"', 'content-length': String(result.data.length) } });
       }
+      if (result?.outcome === 'event_unverified') return json(errorBody('EVENT_FACTS_UNAVAILABLE', '活动资料待核对，请保留原查询链接，稍后重新读取。'), 503);
       if (result?.outcome === 'not_ready') return json(errorBody('WALLET_NOT_READY', 'Apple Wallet 尚未完成设置，请保存或打印报名确认页。'), 503);
       if (['invalid', 'inactive'].includes(result?.outcome)) return json(errorBody('WALLET_UNAVAILABLE', '当前登记不能签发参会票券。'), 404);
       return json(errorBody('WALLET_UNAVAILABLE', '票券暂时无法核对，请稍后重试。'), 503);

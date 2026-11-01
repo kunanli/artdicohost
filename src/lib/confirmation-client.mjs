@@ -85,6 +85,18 @@ function groupInvite(value, now) {
   } catch { return null; }
 }
 
+/** A malformed optional facts state disables new credentials, not this
+ * person's admission or durable notification history. Legacy replies omit it. */
+function eventFactsState(value) {
+  if (!exact(value, ['ready', 'reason', 'revision']) || typeof value.ready !== 'boolean'
+    || !['EVENT_FACTS_VERIFIED', 'EVENT_FACTS_MISMATCH', 'EVENT_FACTS_UNAVAILABLE'].includes(value.reason)
+    || value.ready !== (value.reason === 'EVENT_FACTS_VERIFIED')
+    || value.revision !== null && (!Number.isSafeInteger(value.revision) || value.revision < 0)) {
+    return { ready: false, reason: 'EVENT_FACTS_UNAVAILABLE', revision: null };
+  }
+  return { ready: value.ready, reason: value.reason, revision: value.revision };
+}
+
 /** Project a capability response; private source/contacts and unknown fields never reach the page. */
 export function confirmationView(value, now = Date.now()) {
   if (!plain(value) || !ID.test(value.referenceCode ?? '') || !instant(value.submittedAt) || !plain(value.event) || !plain(value.admission)
@@ -97,13 +109,15 @@ export function confirmationView(value, now = Date.now()) {
   const withdrawn = value.admission.status === 'withdrawn';
   if (!withdrawn && (!text(value.attendee?.name, 400) || [...value.attendee.name].length>200 || !text(value.attendee?.organization ?? '', 500, true))) return null;
   const confirmed = value.admission.status === 'confirmed';
+  const facts = Object.hasOwn(value, 'eventFacts') ? eventFactsState(value.eventFacts) : null;
   return {
     event: Object.fromEntries(eventKeys.map(key => [key,value.event[key]])), referenceCode: value.referenceCode, submittedAt: value.submittedAt,
     admission: { status: value.admission.status, kind: value.admission.kind, revision: value.admission.revision },
     attendee: withdrawn ? { name: '', organization: '' } : { name: value.attendee.name, organization: value.attendee.organization ?? '' },
-    email: { status: ['pending_review','rejected'].includes(value.admission.status) ? 'not_applicable' : value.email.status }, wallet: { ready: confirmed && value.wallet.ready },
+    email: { status: ['pending_review','rejected'].includes(value.admission.status) ? 'not_applicable' : value.email.status }, wallet: { ready: confirmed && value.wallet.ready && facts?.ready !== false },
+    ...(facts ? { eventFacts: facts } : {}),
     groupInvite: confirmed ? groupInvite(value.groupInvite,now) : null,
-    invitation: confirmationInvitation(value.invitation,value.admission.status,value.attendee?.name),
+    invitation: facts?.ready === false ? { ready: false } : confirmationInvitation(value.invitation,value.admission.status,value.attendee?.name),
   };
 }
 

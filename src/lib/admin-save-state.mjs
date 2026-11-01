@@ -1,4 +1,4 @@
-import { validateContent, toPublicContent, isContentVisible, matchesPublishedContent } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, isContentVisible, matchesPublishedContent, normalizeGuestAttendance } from '../../shared/content-schema.mjs';
 
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
 const revision = value => Number.isSafeInteger(value) && value >= 0;
@@ -100,7 +100,13 @@ export function contentPublicationReadiness(input) {
     if(!plain(input)||!Object.hasOwn(input,'published')||!plain(input.draft)||!revision(input.draft.revision))return null;
     const content=canonicalContent(input.draft.content);
     if(!content||!['guests','showcases','sessions','booths'].every(key=>Array.isArray(input.draft.content[key])))return null;
-    const next=toPublicContent(content),publication=input.published;
+    const publication=input.published;
+    let attendance=null;
+    if(Object.hasOwn(input,'attendancePreview')){
+      const preview=input.attendancePreview;
+      if(!plain(preview)||preview.status!=='ready'||preview.contentRevision!==input.draft.revision)return null;
+      attendance=normalizeGuestAttendance(preview.guestAttendance,content.guests.filter(isContentVisible).map(item=>item.id));
+    }
     let saved=null,publishedRevision=null,publishedAt=null;
     if(publication!==null) {
       if(!plain(publication)||!revision(publication.revision)||publication.revision>input.draft.revision
@@ -112,15 +118,22 @@ export function contentPublicationReadiness(input) {
       saved=toPublicContent(publication.content);
       if(saved.eventId!==content.eventId||!samePublic(saved,publication.content))return null;
       publishedRevision=publication.revision;publishedAt=publication.publishedAt;
-      if(publishedRevision===input.draft.revision&&!samePublic(next,saved)&&!matchesPublishedContent(content,saved))return null;
     }
+    // A change to unrelated private notes does not require another publication.
+    // A current source check may reuse the unchanged frozen attendance proof.
+    if(attendance&&saved?.guestAttendance&&samePublic(attendance.confirmedGuestIds,saved.guestAttendance.confirmedGuestIds))attendance=saved.guestAttendance;
+    const next=toPublicContent(content,attendance?{guestAttendance:attendance}:{});
+    if(saved&&publishedRevision===input.draft.revision&&!samePublic(next,saved)&&!matchesPublishedContent(content,saved))return null;
     const items={},summary={new:0,updated:0,removed:0,unchanged:0,blocked:0},orderChanged={};
     for(const kind of publicationCollections) {
       const draftRows=content[kind]??[],nextRows=next[kind]??[],savedRows=saved?.[kind]??[];
       const draftById=new Map(draftRows.map(row=>[row.id,row])),nextById=new Map(nextRows.map(row=>[row.id,row])),savedById=new Map(savedRows.map(row=>[row.id,row]));
       items[kind]=[...new Set([...draftById.keys(),...savedById.keys()])].map(id=>{
         const draft=draftById.get(id),current=nextById.get(id),previous=savedById.get(id),published=Boolean(previous),ready=Boolean(current);
-        const change=published?ready?samePublic(current,previous)?'unchanged':'updated':'removed':ready?'new':'blocked';
+        const attendanceConfirmed=kind==='guests'&&Boolean(next.guestAttendance?.confirmedGuestIds.includes(id));
+        const publishedAttendanceConfirmed=kind==='guests'&&Boolean(saved?.guestAttendance?.confirmedGuestIds.includes(id));
+        const attendanceChanged=kind==='guests'&&attendanceConfirmed!==publishedAttendanceConfirmed;
+        const change=published?ready?samePublic(current,previous)&&!attendanceChanged?'unchanged':'updated':'removed':ready?'new':'blocked';
         const suggestions=[];
         if(kind==='guests'&&draft) {
           if(!draft.portraitId)suggestions.push('portrait_optional');
@@ -128,12 +141,14 @@ export function contentPublicationReadiness(input) {
         }
         summary[change]++;
         return {kind,id,label:draft?.name||draft?.title||draft?.code||previous?.name||previous?.title||previous?.code||id,
-          inDraft:Boolean(draft),visible:Boolean(draft&&isContentVisible(draft)),visibility:draft?(isContentVisible(draft)?'public':'private'):null,published,ready,change,reasons:publicationReasons(kind,draft,content,ready),suggestions};
+          inDraft:Boolean(draft),visible:Boolean(draft&&isContentVisible(draft)),visibility:draft?(isContentVisible(draft)?'public':'private'):null,published,ready,change,reasons:publicationReasons(kind,draft,content,ready),suggestions,
+          ...(kind==='guests'?{attendanceConfirmed,publishedAttendanceConfirmed,attendanceChanged}:{})};
       });
       orderChanged[kind]=!samePublic(nextRows.map(row=>row.id),savedRows.map(row=>row.id));
     }
     return {draftRevision:input.draft.revision,publishedRevision,publishedAt,
       organizationSource:saved&&Object.hasOwn(saved,'organizations')?'published':'initial',
-      hasPublicChanges:!saved||!samePublic(next,saved),eventChanged:!saved||!samePublic(next.event,saved.event),items,summary,orderChanged};
+      hasPublicChanges:!saved||!samePublic(next,saved),eventChanged:!saved||!samePublic(next.event,saved.event),items,summary,orderChanged,
+      ...(attendance?{guestAttendance:next.guestAttendance,attendanceChanged:!saved?.guestAttendance||!samePublic(next.guestAttendance.confirmedGuestIds,saved.guestAttendance.confirmedGuestIds)}:{})};
   } catch { return null; }
 }

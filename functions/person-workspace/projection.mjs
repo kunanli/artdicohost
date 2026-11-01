@@ -1,6 +1,6 @@
 import {personGroupFor} from '../registration-api/admissions.mjs';
 import { PARTICIPATION_FORMS, SESSION_ROLES } from '../../shared/contacts-schema.mjs';
-import { GUEST_PUBLIC_ROLES, PORTRAIT_ID_PATTERN, isContentVisible, contentSchema } from '../../shared/content-schema.mjs';
+import { GUEST_PUBLIC_ROLES, PORTRAIT_ID_PATTERN, isContentVisible, contentSchema, normalizeGuestAttendance } from '../../shared/content-schema.mjs';
 import { parseTimestamp } from '../registration-api/policy.mjs';
 
 export const CONTACT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
@@ -170,11 +170,13 @@ function publicGuestValue(item, saved = false) {
 }
 /** Public snapshots deliberately omit contactId. Only a current explicit draft link
  * can attribute a saved guest ID; orphan publication requires staff verification. */
-export function publicProfileProjection(contactId, source) {
+export function publicProfileProjection(contactId, source, { responseStatus } = {}) {
   if (!source.hasPublished) fail();
   const guests = records(source.content.guests ?? [], CONTACT_ID, 200), published = source.published;
   if (published !== null && (!plain(published) || !plain(published.content))) fail();
   const savedGuests = published === null ? [] : records(published.content.guests, CONTACT_ID, 200);
+  const attendance = published !== null && Object.hasOwn(published.content, 'guestAttendance')
+    ? normalizeGuestAttendance(published.content.guestAttendance, savedGuests.map(item => item.id)) : null;
   const publishedRevision = published === null ? null : revisionValue(published.revision);
   if (publishedRevision !== null && publishedRevision > source.revision) fail();
   const publishedAt = published === null ? null : timestamp(published.publishedAt, false);
@@ -186,7 +188,9 @@ export function publicProfileProjection(contactId, source) {
     return { id: item.id, name: text(item.name, 120), company: text(item.company, 300), title: text(item.title, 200),
       status: oneOf(item.status, ['pending', 'confirmed']), publicConsent: item.publicConsent, ...(Object.hasOwn(item, 'visibility') ? { visibility: item.visibility } : {}), hasPortrait: Boolean(portraitId),
       publicRoles: strings(item.publicRoles, GUEST_PUBLIC_ROLES.length, 40, GUEST_PUBLIC_ROLES), published: Boolean(saved),
-      publishedMatchesDraft: Boolean(draftPublic && savedPublic && JSON.stringify(draftPublic) === JSON.stringify(savedPublic)) };
+      publishedMatchesDraft: Boolean(draftPublic && savedPublic && JSON.stringify(draftPublic) === JSON.stringify(savedPublic)
+        && (!['pending', 'attending', 'declined'].includes(responseStatus)
+          || (responseStatus === 'attending') === Boolean(attendance?.confirmedGuestIds.includes(item.id)))) };
   });
   const orphanedPublication = !profiles.length && savedGuests.some(saved => !guests.some(item => item.id === saved.id));
   return { state: orphanedPublication ? 'unavailable' : profiles.length ? 'available' : 'unlinked', profiles, publishedRevision, publishedAt };
@@ -194,7 +198,8 @@ export function publicProfileProjection(contactId, source) {
 export function arrangementsProjection(contact, source) {
   const linkedGuestIds = records(source.content.guests ?? [], CONTACT_ID, 200).filter(item => item.contactId === contact.id).map(item => item.id);
   const sessionIds = [...new Set([...contact.operations.sessionIds,
-    ...source.content.sessions.filter(item => linkedGuestIds.includes(item.guestId)).map(item => item.id)])];
+    ...source.content.sessions.filter(item => linkedGuestIds.includes(item.guestId)
+      || item.participants?.some(participant => linkedGuestIds.includes(participant.guestId))).map(item => item.id)])];
   const sessions = sessionIds.map(id => {
     const item = source.content.sessions.find(entry => entry.id === id), roles = contact.operations.sessionRoles.find(entry => entry.sessionId === id)?.roles ?? [];
     return { id, title: text(item?.title, 200), start: text(item?.start, 5), end: text(item?.end, 5), zone: text(item?.zone, 1),

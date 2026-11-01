@@ -4,6 +4,12 @@
 
 这组可选检查使用真实 Chromium 运行构建后的页面，但拦截全部页面请求并提供纯合成 API。它不连接正式 API、不写真实报名、不读取原始名单，也不能代替真实 FC／OSS 端到端验收。
 
+2026-11-01 P1b：`p1b-attendance-smoke.mjs` 检查冻结旧发布、实际出席证据、多位场次参与者、编辑器切换、预览与前台一致、普通保存与明确发布。来源及结果见 [P1b 记录](../../docs/redesign/p1b-release.md)。使用当前候选构建后执行：
+
+```sh
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/p1b-attendance-smoke.mjs
+```
+
 2026-11-01 P1a：两类作品与动态展位的聚焦验收入口为 `p1a-content-smoke.mjs`，须在当前候选版本构建后执行，结果见 [P1a 记录](../../docs/redesign/p1a-release.md)。`staff-smoke.mjs` 含固定十五格及补齐操作，保留作历史脚本，不能直接作为 P1a 当前验收。固定 Skill 清单未包含新脚本时，需另行执行，不能把旧 runner 通过等同新功能通过。
 
 ```sh

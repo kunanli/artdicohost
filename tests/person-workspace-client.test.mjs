@@ -121,7 +121,7 @@ test('public completion follows actual confirmed consented publication with opti
   value.publicProfile.profiles[0].hasPortrait = false;value.publicProfile.profiles[0].publicRoles=[];assert.equal(steps(value).get('public').state, 'complete');
   value.publicProfile.profiles[0].hasPortrait = true; value.publicProfile.profiles[0].published = false; assert.equal(steps(value).get('public').state, 'pending');
   value.publicProfile.profiles[0].published = true; value.publicProfile.profiles[0].publicConsent = false; value.publicProfile.profiles[0].publishedMatchesDraft = false;
-  value.contact.operations.participationForms = ['attendee']; assert.equal(steps(value).get('public').state, 'review'); assert.match(steps(value).get('public').detail, /资料有历史公开版本，当前人员关联及内容待核对/u);
+  value.contact.operations.participationForms = ['attendee']; assert.equal(steps(value).get('public').state, 'review'); assert.match(steps(value).get('public').detail, /出席或公开资料已变化.*更新前台/u);
   value.publicProfile = { state: 'unavailable', profiles: [], publishedRevision: null, publishedAt: null }; value.availability.publicProfile = 'unavailable'; assert.equal(steps(value).get('public').state, 'review');
 });
 

@@ -1,4 +1,4 @@
-import { eventConfig } from '../../src/config/event.mjs';
+import { eventConfig, readEventFactsReadiness, unchangedEventFacts } from '../../src/config/event.mjs';
 import { performance } from 'node:perf_hooks';
 import { plainObject, own, parseTimestamp } from '../registration-api/policy.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
@@ -38,13 +38,14 @@ const noticeEmail = notice => ({ status: stateOf(notice), noticeType: notice.kin
 
 /** Durable receipts, independent email issuance and read-only attendee confirmation. */
 export function createRegistrationConfirmationService({ registrationService, journalFor, tokenSecret, event = eventConfig,
-  emailProvider, staffDeliveryPermission, personDeliveryPermission, walletReadiness = () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }), groupInviteProvider,
+  emailProvider, staffDeliveryPermission, personDeliveryPermission, eventFactsReadiness, walletReadiness = () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }), groupInviteProvider,
   clock = Date.now, expiresAt, batchTimeoutMs = 20_000, monotonicNow = () => performance.now() } = {}) {
   if (typeof registrationService?.repository?.readIndex !== 'function' || typeof registrationService.repository.readRecord !== 'function'
     || typeof registrationService.getAdmissionStatus !== 'function' || typeof journalFor !== 'function' || typeof clock !== 'function'
     || typeof walletReadiness !== 'function' || groupInviteProvider !== undefined && typeof groupInviteProvider !== 'function'
     || staffDeliveryPermission !== undefined && typeof staffDeliveryPermission !== 'function'
     || personDeliveryPermission !== undefined && typeof personDeliveryPermission !== 'function'
+    || eventFactsReadiness !== undefined && typeof eventFactsReadiness !== 'function'
     || !Number.isSafeInteger(batchTimeoutMs) || batchTimeoutMs < 1 || batchTimeoutMs > 30_000 || typeof monotonicNow !== 'function') throw new TypeError('Trusted confirmation dependencies required.');
   const eventFacts = facts(event), eventId = eventFacts.id;
   const expiry = expiresAt ?? Date.parse(eventFacts.date + 'T23:59:59.000+08:00') + 90 * 24 * 60 * 60 * 1000;
@@ -52,6 +53,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
   const prefix = 'cms/v1/registration-confirmations/' + eventId;
   let repository;
   const target = () => repository ??= createConfirmationRepository({ journal: journalFor(prefix), eventId, clock });
+  const currentEventFacts = () => readEventFactsReadiness(eventFactsReadiness);
   async function deliveryPermission(record) {
     if(personDeliveryPermission){try{const permission=await personDeliveryPermission(structuredClone(record));if(permission?.eligible!==true)return{eligible:false,reason:permission?.reason==='CONTACT_DECLINED'?'CONTACT_DECLINED':'PERMISSION_UNAVAILABLE'};}catch{return{eligible:false,reason:'PERMISSION_UNAVAILABLE'};}}
     if (record.provenance.kind === 'public') return { eligible: true, reason: 'ELIGIBLE' };
@@ -147,9 +149,11 @@ export function createRegistrationConfirmationService({ registrationService, jou
       if (!current.value.settings.enabled) return { status: 'disabled' };
       if (previous && (!retryRejected || previous.status !== 'rejected' || previous.attempt >= 5)) return { notice: previous, owned: false };
       if (monotonicNow() >= deadline) return { status: 'not_attempted' };
+      const checkedFacts = await currentEventFacts();
+      if (!checkedFacts.ready || monotonicNow() >= deadline) return { status: 'not_attempted' };
       try {
         const saved = await target().append(current, 'reserve', { registrationId, kind, admissionStatus: admission.status, admissionRevision: admission.revision, retryRejected }, actorId);
-        return { notice: saved.value.notices.find(item => item.id === confirmationNoticeId(eventId, registrationId, kind)), owned: true };
+        return { notice: saved.value.notices.find(item => item.id === confirmationNoticeId(eventId, registrationId, kind)), owned: true, checkedFacts };
       } catch (error) { if (!conflict(error)) throw error; }
     }
     failure();
@@ -175,7 +179,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const reserved = await reserve(registrationId, admission, actorId, retryRejected, deadline);
     if (reserved.status) return reserved;
     if (!reserved.owned) return noticeEmail(reserved.notice);
-    const notice = reserved.notice;
+    const notice = reserved.notice, checkedFacts = reserved.checkedFacts;
     // The reservation is already durable. Recheck withdrawal/current admission
     // immediately before the only external request; any failure remains unknown.
     let latest;
@@ -192,6 +196,9 @@ export function createRegistrationConfirmationService({ registrationService, jou
       try { return await recordResult(notice, 'rejected', actorId); } catch { return { status: 'unknown' }; }
     }
     if (monotonicNow() >= deadline) {
+      try { await recordResult(notice, 'rejected', actorId); return { status: 'not_attempted' }; } catch { return { status: 'unknown' }; }
+    }
+    if (!unchangedEventFacts(checkedFacts, await currentEventFacts()) || monotonicNow() >= deadline) {
       try { await recordResult(notice, 'rejected', actorId); return { status: 'not_attempted' }; } catch { return { status: 'unknown' }; }
     }
     const link = capability(registrationId);
@@ -234,6 +241,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
   }
   async function confirmation(input) {
     const { registrationId, loaded } = await authorizedContext(input), value = trustedProjection(registrationId, loaded);
+    let currentFacts = await currentEventFacts();
     let email;
     if (['pending_review', 'rejected'].includes(value.admissionStatus)) email = { status: 'not_applicable' };
     else try { email = await readEmail(value.registrationId, value.hasEmail, value.admissionStatus); } catch { email = { status: 'unknown' }; }
@@ -247,17 +255,26 @@ export function createRegistrationConfirmationService({ registrationService, jou
           && url.href.length <= 4096 && expires !== null && expires > clock()) groupInvite = { platform: 'wechat', qrImageUrl: url.href, expiresAt: new Date(expires).toISOString() };
       } catch { /* Optional current QR only. */ }
     }
+    const wallet = value.admissionStatus === 'confirmed'
+      ? currentFacts.ready ? await walletState() : { ready: false, reason: currentFacts.reason }
+      : { ready: false, reason: 'ADMISSION_NOT_CONFIRMED' };
+    if (['EVENT_FACTS_MISMATCH', 'EVENT_FACTS_UNAVAILABLE'].includes(wallet.reason)) {
+      currentFacts = { ready: false, reason: wallet.reason, revision: null, key: null };
+    }
     return { event: value.event, referenceCode: value.referenceCode, submittedAt: value.submittedAt,
       attendee: { name: value.name, organization: value.organization },
       admission: { status: value.admissionStatus, kind: value.admissionKind, revision: value.admissionRevision },
-      invitation: invitationProjection(loaded),
-      email, wallet: value.admissionStatus === 'confirmed' ? await walletState() : { ready: false, reason: 'ADMISSION_NOT_CONFIRMED' }, groupInvite };
+      invitation: currentFacts.ready ? invitationProjection(loaded) : { ready: false },
+      ...(eventFactsReadiness === undefined ? {} : { eventFacts: { ready: currentFacts.ready, reason: currentFacts.reason, revision: currentFacts.revision } }),
+      email, wallet, groupInvite };
   }
   async function settings({ actor } = {}) {
     if (!actorValid(actor)) failure('FORBIDDEN', 403);
     const current = await target().read(), counts = { total: current.value.notices.length, providerAccepted: 0, rejected: 0, unknown: 0 };
     for (const notice of current.value.notices) counts[notice.status === 'provider_accepted' ? 'providerAccepted' : notice.status === 'rejected' ? 'rejected' : 'unknown']++;
+    const facts = await currentEventFacts();
     return { revision: current.value.revision, automaticEnabled: current.value.settings.enabled, email: await providerState(), counts,
+      ...(eventFactsReadiness === undefined ? {} : { eventFacts: { ready: facts.ready, reason: facts.reason, revision: facts.revision } }),
       dispatch: { maxBatch: MAX_CONFIRMATION_BATCH, retryRejected: true, unknownNeverResent: true }, wallet: await walletState(true) };
   }
   async function setSettings({ actor, expectedRevision, operationId, enabled } = {}) {
@@ -366,6 +383,10 @@ export function createRegistrationConfirmationService({ registrationService, jou
       const permission = await deliveryPermission(record);
       reason = !permission.eligible ? permission.reason : !current.value.settings.enabled ? 'EMAIL_PAUSED'
         : !(await providerState()).ready ? 'EMAIL_NOT_READY' : 'ELIGIBLE';
+      if (reason === 'ELIGIBLE') {
+        const facts = await currentEventFacts();
+        if (!facts.ready) reason = facts.reason;
+      }
     }
     return { registrationId, revision: current.value.revision, admissionStatus: admission.status, status, reason,
       ready: reason === 'ELIGIBLE' && canSend, canSend, retryRejected: status === 'rejected',

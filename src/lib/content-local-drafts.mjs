@@ -10,7 +10,7 @@ export const CONTENT_DRAFT_SECTIONS = Object.freeze(['overview','event','arrange
 const formSections = Object.freeze({event:'event',guest:'guests',organization:'organizations',showcase:'showcases',session:'sessions',booth:'booths',planner:'arrangements'});
 export const CONTENT_FORM_FIELDS = Object.freeze({
   event: ['title','date','timezone','venue','status','dateStatus','venueStatus','heroDescription','aboutTitle','aboutText','checkInTime','openingTime','endTime','contactEmail','mapUrl'],
-  session: ['id','start','end','zone','title','format','speakerName','speakerStatus','guestId','status','internalNotes'],
+  session: ['id','start','end','zone','title','format','speakerName','speakerStatus','guestId','participants','status','internalNotes'],
   booth: ['id','code','organization','organizationId','project','zone','slotNumber','contactName','contactMethods','description','website','status','visibility','internalNotes'],
   guest: ['id','name','company','ggjRole','portraitId','contactId','title','bio','website','status','internalNotes','publicConsent','publicRoles','visibility'],
   showcase: ['id','kind','organizationId','title','teamName','school','contactName','email','wechat','memberCount','participationForms','responseStatus','materialLinks','summary','coverId','status','publicConsent','sessionId','boothId','visibility','internalNotes'],
@@ -18,6 +18,16 @@ export const CONTENT_FORM_FIELDS = Object.freeze({
   plannerBooth: ['code','organization','organizationId','project','contactName','contactMethods','description','status'],
 });
 const arrays = new Set(['publicRoles','participationForms']);
+/** Blank or omitted raw input keeps the historical own-property shape. JSON is
+ * kept as text in local form recovery, including unfinished participant rows. */
+export function sessionParticipantFields(previous, raw) {
+  const field=Object.getOwnPropertyDescriptor(raw??{},'participants');
+  if(!field||field.value==='')return previous&&Object.hasOwn(previous,'participants')?{participants:structuredClone(previous.participants)}:{};
+  if(!Object.hasOwn(field,'value')||typeof field.value!=='string')throw new TypeError('请核对场次参与者。');
+  let rows;try{rows=JSON.parse(field.value);}catch{throw new TypeError('请核对场次参与者。');}
+  if(!Array.isArray(rows)||rows.length>20)throw new TypeError('请核对场次参与者。');
+  return {participants:rows};
+}
 /** Deliberately keeps incomplete text. Only an explicit save validates business fields. */
 export function contentFormValue(type, input) {
   if (!CONTENT_FORM_FIELDS[type] || !exact(input, CONTENT_FORM_FIELDS[type])) return null;

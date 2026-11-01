@@ -1,3 +1,5 @@
+import { INVITATION_POSTER_FACTS } from '../../shared/organizer-progress.mjs';
+
 /** Public event content only; contains no private allocation or attendee data. */
 export const eventConfig = {
   id: 'ggj-cn-2026',
@@ -86,3 +88,65 @@ export const faqItems = [
   { question: '报名成功就有住宿吗？', answer: '一晚住宿须单独申请、审核；报名成功不代表获得住宿。' },
   { question: '如何修改或撤回资料？', answer: '本页预览表单不保存资料。本站正式表单启用前，将公布相关联系方式与申请流程。' },
 ];
+
+const factLine = (value, maximum = 1000) => typeof value === 'string' && value.length > 0 && value.length <= maximum
+  && value.isWellFormed() && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
+const factObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const factTitle = value => typeof value === 'string'
+  ? value.replace(/^(\d{4}) GGJ 中国交流聚会 × ARTDiCO HOST 学生嘉年华$/u, '$1 GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华') : value;
+const factFailure = (reason, revision = null) => ({ ready: false, reason, revision, key: null });
+
+/** Only public event facts cross this boundary. An explicit null publication
+ * means the initial static site; an unreadable source must never become null.
+ * Short venue names and the existing poster label refer to the same known venue.
+ * Unrelated publication revisions deliberately do not change the semantic key. */
+export function assessPublishedEventFacts(published, event = eventConfig) {
+  let revision = null;
+  try {
+    const schedule = event?.time?.label || event?.time?.opening + '–' + event?.time?.end;
+    const parts = typeof schedule === 'string' ? schedule.split(/\s*[-–]\s*/u) : [];
+    const validTime = value => /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(value ?? '');
+    const expected = { id: event?.id, title: factTitle(event?.title), date: event?.date?.value,
+      timezone: event?.time?.timezone, venue: event?.venue?.address || event?.venue?.name,
+      opening: parts[0], end: parts[1], checkIn: event?.time?.start };
+    if (event?.status !== 'confirmed' || event?.date?.status !== 'confirmed' || event?.venue?.confirmed !== true
+      || Object.values(expected).some(value => !factLine(value)) || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(expected.id)
+      || !/^\d{4}-\d\d-\d\d$/u.test(expected.date) || new Date(expected.date + 'T00:00:00Z').toISOString().slice(0, 10) !== expected.date
+      || parts.length !== 2 || ![expected.opening, expected.end, expected.checkIn].every(validTime)
+      || expected.end <= expected.opening || expected.checkIn > expected.opening
+      || event.time.opening !== undefined && event.time.opening !== expected.opening
+      || event.time.end !== undefined && event.time.end !== expected.end) return factFailure('EVENT_FACTS_UNAVAILABLE');
+    new Intl.DateTimeFormat('en', { timeZone: expected.timezone });
+    const key = JSON.stringify(expected);
+    if (published === null) return { ready: true, reason: 'EVENT_FACTS_VERIFIED', revision: null, key };
+    if (!factObject(published) || !Number.isSafeInteger(published.revision) || published.revision < 0
+      || !factObject(published.content) || !factObject(published.content.event)) return factFailure('EVENT_FACTS_UNAVAILABLE');
+    revision = published.revision;
+    const content = published.content, actual = content.event;
+    const venues = [event.venue.name, event.venue.address].filter(value => factLine(value));
+    if (event.venue.address === INVITATION_POSTER_FACTS.canonicalAddress) venues.push(INVITATION_POSTER_FACTS.venue);
+    let matches = content.eventId === expected.id && factTitle(actual.title) === expected.title
+      && actual.date === expected.date && actual.timezone === expected.timezone && venues.includes(actual.venue)
+      && actual.status === 'confirmed' && actual.dateStatus === 'confirmed' && actual.venueStatus === 'confirmed';
+    if (Object.hasOwn(actual, 'presentation')) {
+      const display = actual.presentation;
+      matches = matches && factObject(display) && display.openingTime === expected.opening
+        && display.endTime === expected.end && display.checkInTime === expected.checkIn;
+    }
+    return matches ? { ready: true, reason: 'EVENT_FACTS_VERIFIED', revision, key } : factFailure('EVENT_FACTS_MISMATCH', revision);
+  } catch { return factFailure('EVENT_FACTS_UNAVAILABLE', revision); }
+}
+
+/** Optional only for independently constructed legacy services. Production
+ * composition always supplies its explicit, read-only publication dependency. */
+export async function readEventFactsReadiness(readiness) {
+  if (readiness === undefined) return { ready: true, reason: 'EVENT_FACTS_VERIFIED', revision: null, key: null };
+  try {
+    const value = await readiness(), revision = Number.isSafeInteger(value?.revision) && value.revision >= 0 ? value.revision : null;
+    if (value?.ready !== true) return factFailure(value?.reason === 'EVENT_FACTS_MISMATCH' ? value.reason : 'EVENT_FACTS_UNAVAILABLE', revision);
+    if (value.key !== undefined && value.key !== null && !factLine(value.key, 12000)) return factFailure('EVENT_FACTS_UNAVAILABLE', revision);
+    return { ready: true, reason: 'EVENT_FACTS_VERIFIED', revision, key: value.key ?? null };
+  } catch { return factFailure('EVENT_FACTS_UNAVAILABLE'); }
+}
+
+export const unchangedEventFacts = (before, after) => before?.ready === true && after?.ready === true && before.key === after.key;

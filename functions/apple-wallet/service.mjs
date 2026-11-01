@@ -1,5 +1,6 @@
 import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { APPLE_ROOT_FINGERPRINTS, buildAppleWalletPass, validateSigningIdentity, WalletSigningError } from './pkpass.mjs';
+import { readEventFactsReadiness, unchangedEventFacts } from '../../src/config/event.mjs';
 
 export const WALLET_CONFIG_FIELDS = Object.freeze(['APPLE_WALLET_TEAM_ID', 'APPLE_WALLET_PASS_TYPE_ID', 'APPLE_WALLET_ORGANIZATION_NAME',
   'APPLE_WALLET_CERT_BASE64', 'APPLE_WALLET_KEY_BASE64', 'APPLE_WALLET_WWDR_CERT_BASE64', 'APPLE_WALLET_ROOT_CERT_BASE64']);
@@ -22,10 +23,11 @@ function validRecord(value) {
 
 /** No credentials or personal data are returned by readiness. All callback dependencies are server supplied. */
 export function createAppleWalletService({ env = {}, loadSigningBundle, authorize, authorizedRegistration, tokenSecret, clock = () => Date.now(),
-  trustedRootFingerprints = APPLE_ROOT_FINGERPRINTS } = {}) {
+  trustedRootFingerprints = APPLE_ROOT_FINGERPRINTS, eventFactsReadiness } = {}) {
   if (typeof authorize !== 'function' || typeof authorizedRegistration !== 'function' || typeof clock !== 'function'
     || typeof tokenSecret !== 'string' || Buffer.byteLength(tokenSecret) < 32 || Buffer.byteLength(tokenSecret) > 4096
-    || loadSigningBundle !== undefined && typeof loadSigningBundle !== 'function') throw new TypeError('Trusted Wallet receipt and signing dependencies required.');
+    || loadSigningBundle !== undefined && typeof loadSigningBundle !== 'function'
+    || eventFactsReadiness !== undefined && typeof eventFactsReadiness !== 'function') throw new TypeError('Trusted Wallet receipt and signing dependencies required.');
   const enabled = own(env, 'APPLE_WALLET_ENABLED') === 'true', bundleId = own(env, 'APPLE_WALLET_BUNDLE_ID');
   const direct = Object.fromEntries([...WALLET_CONFIG_FIELDS, 'APPLE_WALLET_KEY_PASSPHRASE'].map(name => [name, own(env, name)]));
   const tokenKey = Buffer.from(hkdfSync('sha256', Buffer.from(tokenSecret), Buffer.alloc(0), Buffer.from('artdico/apple-wallet-verification-v1'), 32));
@@ -49,6 +51,8 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
   }
   async function readiness() {
     try {
+      const facts = await readEventFactsReadiness(eventFactsReadiness);
+      if (!facts.ready) return { ready: false, reason: facts.reason, missing: [], deviceTestRequired: true };
       const state = await signing();
       if (state.missing.length) return { ready: false, reason: 'WALLET_NOT_CONFIGURED', missing: [...state.missing], deviceTestRequired: true };
       return { ready: enabled, reason: enabled ? 'CONFIGURED_SIGNER_DEVICE_TEST_REQUIRED' : 'WALLET_DISABLED', missing: [],
@@ -90,6 +94,8 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
         const attendee = await authorize({ receiptToken });
         if (!validRecord(attendee)) return fixed('invalid');
         if (attendee.admissionStatus !== 'confirmed') return fixed('inactive');
+        const checkedFacts = await readEventFactsReadiness(eventFactsReadiness);
+        if (!checkedFacts.ready) return fixed('event_unverified');
         if (!enabled) return fixed('not_ready');
         const config = await signing(); if (config.missing.length) return fixed('not_ready');
         const now = current(), token = verificationToken(attendee, now), verificationUrl = API + '/api/admin/registration/wallet/verify/' + token;
@@ -97,6 +103,7 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
         const latest = await authorizedRegistration(attendee.registrationId);
         if (!validRecord(latest) || latest.registrationId !== attendee.registrationId || latest.event.id !== attendee.event.id
           || latest.admissionStatus !== 'confirmed') return fixed('inactive');
+        if (!unchangedEventFacts(checkedFacts, await readEventFactsReadiness(eventFactsReadiness))) return fixed('event_unverified');
         if (Date.parse(config.identity.expiresAt) <= current()) return fixed('not_ready');
         return { outcome: 'issued', data, contentType: 'application/vnd.apple.pkpass', filename: 'artdico-' + attendee.registrationId.slice(-12) + '.pkpass' };
       } catch (error) { return fixed(error instanceof WalletSigningError ? 'not_ready' : 'unavailable'); }

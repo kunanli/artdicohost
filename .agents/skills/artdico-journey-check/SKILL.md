@@ -11,7 +11,7 @@ description: Verify ARTDiCO HOST attendee and staff journeys with existing synth
 
 1. 讀取倉庫 `AGENTS.md`、`docs/redesign/README.md`、`docs/redesign/03-release-and-acceptance.md`；確認本階段修改與使用者已定決策。
 2. 核對工作區與變更範圍。套件、Node 版本與測試環境沿用 `package.json` 及 `tests/browser/README.md`，不要把目前 runtime 設定、憑證或私密資料複製到測試。
-3. 先分清要證明的是「既有機制未退化」或「本輪新增功能」。P1a 的兩類作品與動態展位已本地實作，交付結果見 [P1a 紀錄](../../../docs/redesign/p1a-release.md)；本 runner 固定案例不完整涵蓋這兩項，須另行執行相應測試及 `tests/browser/p1a-content-smoke.mjs`。新出席投影、新回執／提醒仍待後續階段，不能以基準通過宣稱完成。
+3. 先分清要證明的是「既有機制未退化」或「本輪新增功能」。P1a 的兩類作品與動態展位見 [P1a 紀錄](../../../docs/redesign/p1a-release.md)，P1b 的出席投影、多人場次及新通知／票券資訊核對見 [P1b 紀錄](../../../docs/redesign/p1b-release.md)。本 runner 固定案例未完整涵蓋新需求，須另行執行相應 `p1b-*.test.mjs` 與聚焦瀏覽器案例；新申請回執／提醒仍待後續階段，不能以基準通過宣稱完成。
 
 ## 第一層 服務與客戶端
 

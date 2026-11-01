@@ -11,6 +11,8 @@ export class IntentInvitationError extends Error {
       REGISTRATION_INACTIVE: '报名已撤回或申请删除，不能继续邀请或安排。',
       INVITATION_CHANGED: '邀请内容已变化，请核对原版本，不自动重复发出。',
       EMAIL_NOT_READY: '发信服务尚未配置或本次操作未明确确认发送。',
+      EVENT_FACTS_MISMATCH: '活动资料待核对，请先核对活动基本资料。',
+      EVENT_FACTS_UNAVAILABLE: '活动资料暂时无法核对，请稍后重新读取。',
       INVALID_ASSIGNMENT: '场次或展位已取消、删除或时间冲突，请重新选择。',
       CAPACITY_EXCEEDED: '邀请记录达到容量上限，请联系维护人员处理。',
       STORAGE_UNAVAILABLE: '操作未确认完成，请重新载入后核对，不要重复发送。',

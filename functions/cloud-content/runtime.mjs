@@ -12,6 +12,7 @@ import { validateRegistrationPolicy, parseTimestamp } from '../registration-api/
 import { createRegistrationReviewStore } from '../registration-admin/store.mjs';
 import { createRegistrationAdminApi } from '../registration-admin/handler.mjs';
 import { createInitialContent } from '../../src/config/content.mjs';
+import { assessPublishedEventFacts } from '../../src/config/event.mjs';
 import { createCloudUserStore } from './user-store.mjs';
 import { createCloudUserApi } from './user-handler.mjs';
 import { createIntentInvitationRepository } from '../intent-invitations/repository.mjs';
@@ -110,6 +111,9 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const portraitStore = createOssPortraitStore({ objects });
   const journalFor = prefix => createObjectJournal({ objects, prefix });
   const store = createOssContentStore({ journal: journalFor('cms/v1/content'), portraitStore, now });
+  // A missing publication explicitly uses the static site. A failed read remains
+  // a failure, never an excuse to send or sign using unrelated event facts.
+  const eventFactsReadiness = async () => assessPublishedEventFacts((await store.read()).published);
   const contactsStore = createOssContactsStore({ journal: journalFor('cms/v1/contacts'), contentStore: store, now });
   const userStore = createCloudUserStore({ journal: journalFor('cms/v1/users'), bootstrapUsers: env.ADMIN_USERS_JSON, now });
   const auth = createCloudAuth({ users: env.ADMIN_USERS_JSON, usersProvider: () => userStore.users(), journalFor, now });
@@ -176,7 +180,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       groupInviteProvider: input => groupService.forReceipt(input) });
     reviewStore = createRegistrationReviewStore({ journal: journalFor(`cms/v1/registration-reviews/${policy.eventId}`),
       loadRegistrations: () => registrationService.repository.list(), eventId: policy.eventId, clock: now });
-    intentService = createIntentInvitationService({ registrationService, contactsStore, contentStore: store,
+    intentService = createIntentInvitationService({ registrationService, contactsStore, contentStore: store, eventFactsReadiness,
       repository: createIntentInvitationRepository({ journal: journalFor('cms/v1/intent-invitations') }),
       emailProvider: createInvitationEmailProvider({ env, fetchFn }), now,
       isRegistrationActive: async ({ registrationId }) => !await isWithdrawn(registrationId),
@@ -185,11 +189,11 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
         if(related.length!==group.contactIds.length)throw new Error('Person permission unavailable.');
         return !related.some(item=>item.profile.contactConsent==='declined'||item.operations.responseStatus==='declined');
       }}) });
-    walletService = createAppleWalletService({ env, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now,
+    walletService = createAppleWalletService({ env, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now, eventFactsReadiness,
       authorize: input => confirmationService.authorize(input),
       authorizedRegistration: id => confirmationService.authorizedRegistration(id),
       loadSigningBundle: ({ bundleId }) => loadEncryptedSigningBundle({ objects, secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId }) });
-    confirmationService = createRegistrationConfirmationService({ registrationService, journalFor,
+    confirmationService = createRegistrationConfirmationService({ registrationService, journalFor, eventFactsReadiness,
       tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now, batchTimeoutMs: 5000,
       personDeliveryPermission: async record => {
         const index=await registrationService.repository.readIndex(),group=index.value.admissions?.personGroups?.find(item=>item.registrationIds.includes(record.id));

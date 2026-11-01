@@ -4,7 +4,15 @@
 
 这组可选检查使用真实 Chromium 运行构建后的页面，但拦截全部页面请求并提供纯合成 API。它不连接正式 API、不写真实报名、不读取原始名单，也不能代替真实 FC／OSS 端到端验收。
 
-当前 P5 的最终首页、公开集合及 Q&A 公开／准确 FC 组合已通过，准确产物及发布状态见 [P5 记录](../../docs/redesign/p5-release.md)。三个新增入口使用当前候选构建执行：
+P6 的 [跨入口活动事实整合](../../docs/redesign/p6-release.md) 已核对同一合成申请的首页、私人页、正式信、提醒和签章 Wallet。320／390／1440px 与 390px 事实冲突共 4 个情境通过；读取／票券不增加业务写入或寄信。维护时执行：
+
+```sh
+ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/p6-event-facts-smoke.mjs
+```
+
+可用 `ARTDICO_EVIDENCE_DIRECTORY=/absolute/path/to/evidence` 指定证据目录，默认 `.local-data/browser-evidence/p6-event-facts`。私人能力链接与 PKPASS 仅留在内存，清理成功才写报告；合成签章与浏览器 Blob 不代表真 iPhone 加入 Wallet。
+
+P5 的最终首页、公开集合及 Q&A 公开／准确 FC 组合已通过并实际发布，证据见 [P5 记录](../../docs/redesign/p5-release.md)。当前 [P6 记录](../../docs/redesign/p6-release.md) 映射 A01–A23 并核对新增整合；不重复运行未受影响的已通过浏览器，也不以它们代替真微信／iPhone／同事观察。维护 P5 时三个入口使用当前候选构建执行：
 
 ```sh
 ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CHROMIUM_BINARY=/absolute/path/to/chromium node tests/browser/p5-homepage-smoke.mjs

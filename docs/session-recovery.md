@@ -2,9 +2,9 @@
 
 ## 2026-11-01 新改版執行入口
 
-本次對話已整理為 [改版執行總覽](redesign/README.md)。最新 P4 已由 [PR #53](https://github.com/kunanli/artdicohost/pull/53) 發布於 main `c74c9dd8f95d5442e5446f005af5cdcfb3736293`；[正式流程 41280499937](https://github.com/kunanli/artdicohost/actions/runs/41280499937) 的檢查、兩種 ZIP 離線啟動、FC 與 OSS 全部成功，06:29:16 UTC 完成 13 個準確後台頁面、06:30:41 UTC 完成 45 個公開物件的 HTTPS 核驗，公開業務快照仍為修訂 43。先前階段保留於各自發布紀錄。
+本次對話已整理為 [改版執行總覽](redesign/README.md)。最新 P5 已由 [PR #54](https://github.com/kunanli/artdicohost/pull/54) 發布於 main `239e05f13fe8eb8b8bd3dec79dd7bd9cde167706`；[正式流程 41284601013](https://github.com/kunanli/artdicohost/actions/runs/41284601013) 全部成功，1533 項測試、690 個來源檔通過。07:32:09.934 UTC 完成私有 OSS 兩獨立客戶端／一個 FC 程序，07:32:13.736 UTC 完成 13 個準確後台頁面，07:34:02.923 UTC 完成 51 個公開物件的 HTTPS 核驗，公開業務快照仍為修訂 43。準確來源包及前階段證據見 [P5 紀錄](redesign/p5-release.md)。
 
-目前分支 `feat/redesign-p5`，產品提交 `4e5faa79b3021e6fb050094c8a0adebaf5dc334a`，最後建置 07:05:51 UTC。1533 項回歸、首頁 6 情境、公開集合 9 情境、Q&A 公開／準確 FC 組合 12 情境、素材／FC CSS 隔離與來源包核對已完成：127 檔／39 資產，ZIP 35,707,679 bytes；公開 prepare 51 檔。PR CI 與實際發布仍待核對，見 [P5 紀錄](redesign/p5-release.md)。P4 通知、政策及原 pending 保留，回退須相容新通知與 FAQ ID。使用者授權完成 P5 後直接接續 P6，真實外部結果另記。
+目前分支 `feat/redesign-p6`，產品提交 `4a07f1457bf9d99c0fc882edb03e726eeea99667`，按使用者授權接續最後整合交付。1535 項完整回歸、A14 五種產物的 4 個整合情境、公開 OSS 快取定向及準確來源包核對已完成：127 檔／39 資產、7,558,358 bytes，ZIP 35,707,679 bytes；公開 prepare 51 檔。PR CI 與本輪發布待核對，見 [P6 紀錄](redesign/p6-release.md)。既有通知、政策及原 pending 保留，回退須相容三類通知、未知保護與 FAQ ID。A23 真同事觀察及真實收件、微信／iPhone 結果另記，不為驗收重建既有服務設定。
 
 沿用既有環境與資源。舊意向、姓名／聯絡資訊、名額、通知與公開內容不因文件或程式部署自動整合／發布／補寄。Apple 10/30 簽章設定與人員去重已有後續紀錄，讀取本頁下方早期狀態時，須對照 [Wallet 最新紀錄](apple-wallet-setup.md) 及 [統一人員](unified-people-workspace.md)，不要重做已完成設定。
 

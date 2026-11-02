@@ -2,9 +2,26 @@
 
 2026-11-02。使用者追加手機所有組織留在圈內，並要求先完成既有工作，再做Hero海報字體。本階段合併已分別驗證的前台與後台修正，使用同一準確版本完成驗收及發布；不省略任一部分的來源、瀏覽器或雲端檢查。
 
-## 目前狀態
+## 正式交付完成
 
-[PR65](https://github.com/kunanli/artdicohost/pull/65) 已合併為main `532d99ad813e585b2033b016226fb0fbb6615ca7`，但[首次main流程41396638122](https://github.com/kunanli/artdicohost/actions/runs/41396638122) 在捲動六案的滑鼠觀測失敗，FC／OSS部署皆略過；不能稱532版本已上線。最後已驗發布基準仍為`50bc3cd`。PR的6／4／實際13成功與main失敗分開保留，詳見[前台紀錄](space-wallet-organizations-release.md)。
+已由 [PR66](https://github.com/kunanli/artdicohost/pull/66) 發布main **`c516692245b23e59387b71d73ff1c0911f32fce5`**。[PR流程41401348141](https://github.com/kunanli/artdicohost/actions/runs/41401348141) 與 [main流程41402494805](https://github.com/kunanli/artdicohost/actions/runs/41402494805) 均completed／success；main的check、transport、FC與OSS四工作皆成功。以下候選與首次失敗保留歷史，現況以本節為準。
+
+| 證據 | 準確結果 |
+| --- | --- |
+| PR／main首頁 | 同HTML `006d2635785c69c50f1323e33fbe3aef4dee3f029d20ed0c5fb8258922812d50`；PR合成來源b70edc0128b319fd3e98ef235f91b0f3052919be，main來源c516692245b23e59387b71d73ff1c0911f32fce5 |
+| 三份獨立瀏覽器 | 兩邊皆捲動6／6、排版4／4、實際素材13／13，page errors／業務POST／寄信0；main時間06:54:38、06:54:50、06:55:33 UTC，最低閱讀對比11.03 |
+| 實際公開輸入 | R44／SHA `71037be9782b05af1da404fd6ab667b538fbb5e4f4356fdbec943787d241c8d7`，8張原圖529471bytes、7款綁定白色原稿；raw9／原證明顯示3、四寬實際名片12、單位12／職稱8／完整介紹12，未捕獲人物／作品media3請求用明示404替身 |
+| 私人與工作頁 | 新ac8私人頁29／29；Person bc0b與完整資產逐bytes沿用P2 8／UX2 12；沒有把合成證據稱真收件、真iPhone或真人操作 |
+| 原稿／手機 | reference9／組織7退出0；320／390真viewport合成8圖人工查看，整個圓及八卡可見；已驗11筆分頁、hash、鍵盤、刷新，實際上傳8圖的圓周與邊界另由CI13案核對 |
+| 一般與準確包 | Node1634全過，source745，Astro482／0error／0warning／1既有hint，23頁、audit0；準確128檔／40資產及兩種ZIP受限離線啟動保持既有上限 |
+
+07:01:36.9612502 UTC正式報名alias核對批准政策／容量；07:01:36.9620487 UTC `Cloud lifecycle verified`確認來源c516、內容／報名啟用，私有OSS acceptance通過，兩獨立client／一FC程序，run ID `r41402494805-a1-361b219aa80b37e1-c516692245b23e59387b71d73ff1c0911f32fce5`。07:01:41.8044579核對13個準確後台HTTPS頁；07:01:42.9506183匿名公開HTTPS／CORS仍R44、公開計數9／8／1／16／43、原證明confirmed3／displayed3。
+
+**07:03:49.3808629 UTC核對 `https://artdico.host` 的61個準確公開物件，來源c516相符，軟體正式交付完成。** 正式資料更正、匯入、寄信、名額／出席操作與內容草稿發布均未代做。c516是新profile journal的最低相容reader／UI；之後若已有修正資料，不能回退到更舊reader。Hero海報字體接續另開階段，不把此版先稱有新字體。
+
+## 歷史候選與首次未發布
+
+[PR65](https://github.com/kunanli/artdicohost/pull/65) 已合併為main `532d99ad813e585b2033b016226fb0fbb6615ca7`，但[首次main流程41396638122](https://github.com/kunanli/artdicohost/actions/runs/41396638122) 在捲動六案的滑鼠觀測失敗，FC／OSS部署皆略過；不能稱532版本已上線。該次失敗時最後已驗發布基準為`50bc3cd`。PR的6／4／實際13成功與main失敗分開保留，詳見[前台紀錄](space-wallet-organizations-release.md)。
 
 失敗的550.8ms觀測把進入文字遮罩而消失的原微粒，錯配到159px外另一點。觀測器改以真canvas座標、原生mask安全距、唯一radius與逐實paint近距軌跡確認同一點；缺失不換點。原額外位移`>1.5px`且`<20px`門檻保持，未改產品力道、速度或seed。observer-only建置仍為b239首頁，獨立6／6及四個身份追蹤資料回歸通過；合併後另取新建置資格。
 

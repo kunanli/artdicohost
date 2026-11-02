@@ -94,7 +94,15 @@ const order=(page,kind,id,direction,scope)=>page.locator('[data-content-order-ki
 const orderSet=(page,scope)=>page.locator('[data-content-order-kind]'+(scope?'[data-content-order-scope="'+scope+'"]':''));
 async function waitState(f,state){await f.page.locator('[data-admin-savebar][data-save-state="'+state+'"]').waitFor({state:'attached'});await f.page.locator('[data-admin-logout]:enabled').waitFor();}
 async function open(f,key){await f.page.goto(API+routeFor(key),{waitUntil:'networkidle'});await f.page.locator('[data-admin-workspace]:visible').waitFor();await f.page.locator('[data-content-panel="'+key+'"]:visible').waitFor();await waitState(f,'loaded');}
-async function preview(f){await f.page.locator('[data-admin-preview]').click();await f.page.locator('[data-admin-preview-panel]:visible').waitFor();}
+async function preview(f){
+  const [proof]=await Promise.all([
+    f.page.waitForResponse(response=>response.url()===API+'/api/admin/content'&&response.request().method()==='GET'),
+    f.page.locator('[data-admin-preview]').click(),
+  ]);
+  assert.equal(proof.status(),200,'preview refresh receives a successful current-content proof');
+  await f.page.locator('[data-admin-preview]:enabled').waitFor();await f.page.locator('[data-admin-logout]:enabled').waitFor();
+  await f.page.locator('[data-admin-preview-panel]:visible').waitFor();
+}
 async function edges(f,kind,scope,sequence){assert.equal(await order(f.page,kind,sequence[0],'up',scope).isDisabled(),true,'first visible record cannot move up');assert.equal(await order(f.page,kind,sequence.at(-1),'down',scope).isDisabled(),true,'last visible record cannot move down');}
 async function move(f,kind,id,direction,scope){
   const before=saves(f).length,confirmations=f.dialogs.filter(row=>row.type==='confirm').length,button=order(f.page,kind,id,direction,scope);

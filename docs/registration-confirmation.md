@@ -123,7 +123,7 @@ const handle = createRegistrationConfirmationApi({service, auth});
 
 - 已持久化的 public 报名，配置完整时自动准备「参会名额已确认」或「候补登记已保存」，只对原记录的邮箱发送。无邮箱记不适用；未配置、自动通知停用、待处理、服务商接受、明确拒绝及结果未知分别显示。
 - 当前能力读取永不发信。公开重放读取同一通知，不重占名额；后台显式补发仅处理尚未尝试或已明确拒绝的 public 报名。同意／来源不被重写，工作人员受托登记需要原有邀请流程。
-- 每封通知先在同一 CAS journal 预留，再执行唯一一次 provider 请求。外部请求前再次核对当前资格及持久自动通知开关；暂停后不继续发出新请求。预留 ACK 不明时不会请求 provider；provider 或结果 ACK 不明时不会盲重发。持久 `reserved` 对外视为 unknown。明确未发送或 4xx 拒绝可由管理员勾选 retryRejected 后再次尝试，最多五次；unknown 永远不能以普通重试再次发送。
+- 每封通知先在同一 CAS journal 预留，再执行唯一一次 provider 请求。外部请求前再次核对当前资格及持久自动通知开关；暂停后不继续发出新请求。预留 ACK 不明时不会请求 provider；provider 或结果 ACK 不明时不会盲重发。持久 `reserved` 对外视为 unknown。自动／普通明确拒绝重试保持五次；使用者明确要求后，单人页可对已知拒绝继续手动重寄，以新 operationId、当前通知／收件版本及 `recoverRejected:true` 同一CAS记录并预留下一attempt。再次拒绝后可再次明确手动操作，同操作重播或并发不多发；accepted／unknown／reserved及未完成批次不开放此入口。见[手动重寄及安全诊断](redesign/confirmation-mail-recovery-release.md)。
 - 后台批次先写入 operationId／正文 hash，再逐人执行。相同 operationId 改正文拒绝。未知批次启动回执重放会覆盖所有选定 ID 并逐一返回 unknown，不启动新的发送。批次期限从进入操作开始计算，包含配置、OSS 读取及预留；预留前与外部请求前都检查同一期限，异步配置加载后传输层仍会再次检查。遇到未知结果、存储问题或期限，后续条目标明 not_attempted；预留后已超时的已知未发送记录保留为 rejected，公开保存结果显示 pending。不能当作已处理或全部送达。工厂默认二十秒，生产运行时采用五秒并使用四秒 provider 超时。
 - `notifyPromoted({registrationIds,timeoutMs?})` 是可信运行时可选钩子，timeoutMs 可缩小至同一公开请求的剩余通知预算。确认页读取不调用它；未配置时不会自动回填旧名单。已存在候补通知时，转正使用独立 promotion 身份，保留一次候补加一次确认。若转正在原通知钩子运行前发生，intake／promotion 在同一 CAS 内选择唯一 confirmed 身份；并发、逆序和未知 ACK 均不能产生第二封相同确认信。显式 rejected 重试只重用该身份。
 - 结果不明时先核对服务商及已有通知审计，不更换 operationId 盲发。后台刷新不会把旧 unknown 改成未发送。必要的人工核对与后续安全派发须由已有管理员按实际证据处理，不能伪造 provider 接受或送达。

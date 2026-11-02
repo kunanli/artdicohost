@@ -9,6 +9,9 @@ import { assertFcCodeRequestFits, MAX_FC_ZIP_BYTES } from './fc-upload-limits.mj
 
 export const CANDIDATE_KIND = 'fc-cloud-content-candidate';
 export const CANDIDATE_ARCHIVE = 'artdicohost-cloud-content-candidate.zip';
+// One explicitly allowlisted shared diagnostic module extends the prior 128-file
+// package by one. Byte, inflation, source-path and FC request limits stay fixed.
+export const MAX_CANDIDATE_FILES = 129;
 export const CANDIDATE_NODE = Object.freeze({ version: 'v24.19.0', platform: 'linux', arch: 'x64', sha256: 'bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12' });
 const MiB = 1024 * 1024;
 const BUILD_SCOPES = ['src', 'shared', 'public', 'astro.config.mjs', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json'];
@@ -206,7 +209,7 @@ export async function prepareCloudContentCandidate({ repositoryDirectory, nodeBi
   for (const [url, bytes] of assets) { const path = candidateAssetPath(url); await writeKnown(resolve(code, path), bytes); files.push(record(path, bytes)); }
   const release = { schemaVersion: 1, kind: CANDIDATE_KIND, sourceCommit, node: CANDIDATE_NODE, files: [...files], assets: assets.map(([url, bytes]) => assetRecord(url, bytes)) };
   const releaseBytes = Buffer.from(JSON.stringify(release, null, 2) + '\n');
-  if (releaseBytes.length > 64 * 1024 || files.length >= 128) fail('Candidate manifest capacity exceeded');
+  if (releaseBytes.length > 64 * 1024 || files.length >= MAX_CANDIDATE_FILES) fail('Candidate manifest capacity exceeded');
   await writeKnown(resolve(code, 'release.json'), releaseBytes); files.push(record('release.json', releaseBytes));
   const publication = resolve(output, 'publication'); await mkdir(publication, { mode: 0o700 });
   const archive = resolve(publication, CANDIDATE_ARCHIVE);
@@ -240,7 +243,7 @@ function candidateTextPath(path) {
 }
 
 export function candidateFileRecords(value) {
-  if (!Array.isArray(value) || value.length < CANDIDATE_SOURCES.length + 5 || value.length > 128) fail('Invalid candidate file list');
+  if (!Array.isArray(value) || value.length < CANDIDATE_SOURCES.length + 5 || value.length > MAX_CANDIDATE_FILES) fail('Invalid candidate file list');
   const expected = new Map(CANDIDATE_SOURCES.map(([, path, mode]) => [path, mode]));
   expected.set('runtime/node/bin/node.xz', '0644'); expected.set('release.json', '0644');
   const seen = new Set();
@@ -251,7 +254,7 @@ export function candidateFileRecords(value) {
 /** Strict ZIP inspection; no artifact member is extracted to the filesystem. */
 export function candidateZipEntries(bytes, records) {
   if (!Buffer.isBuffer(bytes) || bytes.length < 22 || bytes.length > MAX_FC_ZIP_BYTES) fail('Invalid candidate ZIP');
-  if (!Array.isArray(records) || !records.length || records.length > 128) fail('Invalid candidate file list');
+  if (!Array.isArray(records) || !records.length || records.length > MAX_CANDIDATE_FILES) fail('Invalid candidate file list');
   // Validate all declared output before native inflation; legacy stored text
   // shares the same aggregate budget and binary members never inflate.
   const seen = new Set(); let textBytes = 0;

@@ -171,7 +171,7 @@ jobs:
           path: .local-data/browser-evidence/admin-display-order/
           if-no-files-found: warn
           retention-days: 1
-      - name: Check confirmation mail diagnostics and one-time repair recovery
+      - name: Check confirmation mail diagnostics and explicit manual resends
         id: confirmation_mail_recovery_browser
         timeout-minutes: 4
         env:

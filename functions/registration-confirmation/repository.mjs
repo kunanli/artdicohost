@@ -20,7 +20,6 @@ export const confirmationNoticeId = (eventId, registrationId, kind = 'registrati
 export const confirmationRequestHash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const validConfirmationOperation = value => typeof value === 'string' && OP.test(value);
 export const formalConfirmationKind = kind => ['registration', 'promotion'].includes(kind);
-export const confirmationRecoveryUsed = (state, registrationIds) => state.audit.some(item => item.action === 'recovery_reserved' && item.details.relatedRegistrationIds.some(id => registrationIds.includes(id)));
 const scopeKeys = ['accessRevision', 'recipientDigest'];
 const validScope = value => exact(value, scopeKeys) && Number.isSafeInteger(value.accessRevision) && value.accessRevision >= 0 && HASH.test(value.recipientDigest ?? '');
 const additionalKind = kind => ['application_received', 'pre_event_reminder'].includes(kind);
@@ -48,7 +47,7 @@ function apply(state, audit) {
         || d.relatedRegistrationIds.some(id => !ID.test(id)) || new Set(d.relatedRegistrationIds).size !== d.relatedRegistrationIds.length
         || !d.relatedRegistrationIds.includes(d.registrationId) || d.relatedRegistrationIds.join(',') !== [...d.relatedRegistrationIds].sort().join(',')
         || !formalConfirmationKind(d.kind) || d.admissionStatus !== 'confirmed' || d.retryRejected !== true || !state.settings.enabled
-        || state.operations.some(op => op.operationId === d.operationId) || confirmationRecoveryUsed(state, d.relatedRegistrationIds)) fail();
+        || state.operations.some(op => op.operationId === d.operationId)) fail();
       const family = state.notices.filter(item => d.relatedRegistrationIds.includes(item.registrationId) && formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed');
       if (family.some(item => ['reserved', 'unknown', 'provider_accepted'].includes(item.status))
         || family.reduce((total, item) => total + item.attempt, 0) < 5
@@ -118,7 +117,7 @@ function validate(value, eventId, cursor) {
   for (const [i, item] of value.audit.entries()) {
     if (!exact(item, ['revision', 'action', 'actorId', 'at', 'details']) || item.revision !== i + 1 || !ACTOR.test(item.actorId ?? '')
       || !at(item.at) || Date.parse(item.at) < previous) fail();
-    // Recovery consumption and reservation ownership must also hold during journal replay.
+    // Reservation ownership must also hold during journal replay.
     apply(expected, item); expected.audit.push(structuredClone(item)); previous = Date.parse(item.at);
   }
   expected.revision = value.revision;

@@ -145,20 +145,37 @@ test('pending policy accepts recovery only with true retry permission and a boun
   for(const patch of[{recoverRejected:false},{recoverRejected:1},{retryRejected:false},{expectedAccessRevision:undefined},{expectedAccessRevision:null},{expectedAccessRevision:-1},{recipient:'PRIVATE'},{other:true}])assert.equal(valid({...body,...patch}),false);
   const {recoverRejected,expectedAccessRevision,...legacy}=body;assert.equal(valid(legacy),true);
 });
-test('repair retry explicitly confirms EmailJS repair for one person, and cancellation performs no write or POST',async()=>{
-  const f=fixture();f.deliveryState=recoveryState;const c=f.create();await c.select(A);
-  const send=f.controls.get('[data-person-confirmation-send]'),status=f.controls.get('[data-person-confirmation-status]');assert.equal(send.disabled,false);assert.equal(send.textContent,'修复后重试一次');
-  const link=status.children.find(node=>typeof node==='object'&&node.dataset.personConfirmationSettings==='');assert.equal(link.href,'/admin/settings/delivery/');
-  const confirmations=[],previous=globalThis.confirm;try{globalThis.confirm=message=>{confirmations.push(message);return false;};f.click('send');await pause();}finally{globalThis.confirm=previous;}
-  assert.equal(confirmations.length,1);assert.match(confirmations[0],/EmailJS.*已修复/u);assert.match(confirmations[0],/这位.*一次/u);assert.equal(f.writes.length,0);assert.equal(f.calls.some(call=>call.method==='POST'),false);assert.equal(c.pending,false);c.clear();
+test('known rejected sends use ordinary manual confirmation for this person and cancellation performs no write or POST',async()=>{
+  for(const deliveryState of[recoveryState,{status:'rejected',reason:'ELIGIBLE',ready:true,canSend:true,retryRejected:true}]){
+    const f=fixture();f.deliveryState=deliveryState;const c=f.create();await c.select(A);
+    const send=f.controls.get('[data-person-confirmation-send]'),status=f.controls.get('[data-person-confirmation-status]');assert.equal(send.disabled,false);assert.equal(send.textContent,'重寄确认信');
+    assert.match(status.textContent,/上次明确未发出，可手动重寄/u);
+    if(deliveryState.canRecover){const link=status.children.find(node=>typeof node==='object'&&node.dataset.personConfirmationSettings==='');assert.equal(link.href,'/admin/settings/delivery/');}
+    const confirmations=[],previous=globalThis.confirm;try{globalThis.confirm=message=>{confirmations.push(message);return false;};f.click('send');await pause();}finally{globalThis.confirm=previous;}
+    assert.deepEqual(confirmations,['重寄这位参加人的确认信？邮件会包含私人确认页与 Apple Wallet 入口。']);assert.doesNotMatch(confirmations[0],/已修复|一次/u);assert.equal(f.writes.length,0);assert.equal(f.calls.some(call=>call.method==='POST'),false);assert.equal(c.pending,false);c.clear();
+  }
 });
-test('repair retry is stored before one POST and accepted results disable the old recovery action',async()=>{
+test('manual resend is stored before one POST and accepted results disable further sends',async()=>{
   const f=fixture();f.accessRevision=3;f.deliveryState=recoveryState;f.afterSendState={status:'provider_accepted',reason:'ALREADY_ACCEPTED',ready:false,retryRejected:false};f.delayWrite=true;
   const c=f.create();await c.select(A);f.click('send');await until(()=>f.gates.length===1);assert.equal(f.calls.some(call=>call.method==='POST'),false);
   const original=f.writes[0].payloadJson;assert.deepEqual(JSON.parse(original),{expectedRevision:2,operationId:JSON.parse(original).operationId,retryRejected:true,expectedAccessRevision:3,recoverRejected:true});
   f.gates[0].resolve();await until(()=>f.calls.some(call=>call.method==='POST')&&!c.pending&&!c.blocked);
   assert.equal(f.calls.filter(call=>call.method==='POST').length,1);assert.equal(f.calls.find(call=>call.method==='POST').body,original);assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,true);
   f.click('send');await pause();assert.equal(f.calls.filter(call=>call.method==='POST').length,1);c.clear();
+});
+test('each known manual rejection permits another fresh operation while its original pending request never repeats',async()=>{
+  const f=fixture();f.accessRevision=3;f.deliveryState=recoveryState;f.delayWrite=true;const c=f.create();await c.select(A);
+  for(const [index,outcome]of['rejected','rejected','provider_accepted'].entries()){
+    f.lookupStatus=outcome;f.afterSendState=outcome==='rejected'?{...recoveryState,revision:3+index}:{status:'provider_accepted',reason:'ALREADY_ACCEPTED',ready:false,canSend:true,retryRejected:false,revision:3+index};
+    assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,false);assert.equal(f.controls.get('[data-person-confirmation-send]').textContent,'重寄确认信');
+    f.click('send');await until(()=>f.gates.length===index+1);f.click('send');await pause();assert.equal(f.writes.length,index+1);assert.equal(f.calls.filter(call=>call.method==='POST').length,index,'no POST before this exact local write is acknowledged');
+    const raw=f.writes[index].payloadJson,body=JSON.parse(raw);assert.equal(body.expectedRevision,2+index);assert.equal(body.expectedAccessRevision,3);assert.equal(body.retryRejected,true);assert.equal(body.recoverRejected,true);
+    f.gates[index].resolve();await until(()=>f.calls.filter(call=>call.method==='POST').length===index+1&&!c.pending&&!c.blocked);
+    assert.equal(f.calls.filter(call=>call.method==='POST')[index].body,raw);assert.equal([...f.records.values()].every(value=>value.record===null),true);
+    if(outcome==='rejected')assert.match(f.controls.get('[data-person-confirmation-status]').textContent,/上次明确未发出，可手动重寄/u);
+  }
+  const posts=f.calls.filter(call=>call.method==='POST');assert.equal(new Set(posts.map(call=>JSON.parse(call.body).operationId)).size,3);assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,true);
+  f.click('send');await pause();assert.equal(f.calls.filter(call=>call.method==='POST').length,3);c.clear();
 });
 test('raw recovery pending survives reload unchanged and only looks up the original operation',async()=>{
   const f=fixture(),scope=personConfirmationScope(f.user,A,'synthetic-event');
@@ -176,13 +193,14 @@ test('only fixed safe diagnostics render and old retry-limit records do not inve
   assert.match(f.controls.get('[data-person-confirmation-status]').textContent,/EmailJS拒绝请求（HTTP 403）/u);
   f.deliveryState={...recoveryState,diagnostic:{code:'DELIVERY_GUARD_UNAVAILABLE',transportStarted:false}};await c.refresh();assert.match(f.controls.get('[data-person-confirmation-status]').textContent,/发送前核对未通过/u);
   f.deliveryState={status:'rejected',reason:'RETRY_LIMIT',ready:false,retryRejected:true};await c.refresh();assert.doesNotMatch(f.controls.get('[data-person-confirmation-status]').textContent,/HTTP|发送前核对|EmailJS拒绝/u);assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,true);
-  f.deliveryState={status:'rejected',reason:'RECOVERY_USED',ready:false,retryRejected:true};await c.refresh();assert.match(f.controls.get('[data-person-confirmation-status]').textContent,/单次重试已使用/u);assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,true);
+  assert.match(f.controls.get('[data-person-confirmation-status]').textContent,/请先核对邮件设置再重寄/u);
+  f.deliveryState={status:'rejected',reason:'RECOVERY_USED',ready:false,retryRejected:true};await c.refresh();assert.match(f.controls.get('[data-person-confirmation-status]').textContent,/重新核对当前寄送资格/u);assert.doesNotMatch(f.controls.get('[data-person-confirmation-status]').textContent,/一次|已使用|上限/u);assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,true);
   c.clear();assert.equal(f.controls.get('[data-person-confirmation-status]').textContent,'');assert.equal(f.controls.get('[data-person-confirmation-recipient]').textContent,'');
 });
-test('repair recovery obeys current recipient revisions and person or actor switches before local ACK',async()=>{
+test('manual resend obeys current recipient revisions and person or actor switches before local ACK',async()=>{
   for(const change of['person','actor','access']){
     const f=fixture();f.accessRevision=2;f.deliveryState=recoveryState;f.delayWrite=true;const c=f.create();await c.select(A);f.click('send');await until(()=>f.gates.length===1);
-    if(change==='person'){f.deliveryState=null;await c.select(B);}else if(change==='actor'){f.user={id:'other-owner',roles:['reviewer','outreach']};f.deliveryState=null;await c.select(A);}else{f.accessRevision=3;f.deliveryState={status:'rejected',reason:'RECOVERY_USED',ready:false,retryRejected:true};}
+    if(change==='person'){f.deliveryState=null;await c.select(B);}else if(change==='actor'){f.user={id:'other-owner',roles:['reviewer','outreach']};f.deliveryState=null;await c.select(A);}else{f.accessRevision=3;f.deliveryState={status:'rejected',reason:'EMAIL_NOT_READY',ready:false,retryRejected:true};}
     f.gates[0].resolve();await pause();await pause();
     if(change==='access'){await until(()=>!c.pending&&!c.blocked);assert.equal(f.calls.filter(call=>call.method==='POST').length,1);assert.equal(JSON.parse(f.calls.find(call=>call.method==='POST').body).expectedAccessRevision,2);assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,true);}
     else assert.equal(f.calls.some(call=>call.method==='POST'),false);

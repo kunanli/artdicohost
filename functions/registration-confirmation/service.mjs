@@ -3,7 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { plainObject, own, parseTimestamp } from '../registration-api/policy.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { createConfirmationTokens } from './tokens.mjs';
-import { createConfirmationRepository, confirmationRecoveryUsed, canonicalConfirmationKind, formalConfirmationKind, confirmationNoticeId, confirmationRequestHash, validConfirmationOperation, MAX_CONFIRMATION_BATCH } from './repository.mjs';
+import { createConfirmationRepository, canonicalConfirmationKind, formalConfirmationKind, confirmationNoticeId, confirmationRequestHash, validConfirmationOperation, MAX_CONFIRMATION_BATCH } from './repository.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 import { buildPosterInvitationSettings } from '../../shared/organizer-progress.mjs';
 import { CONFIRMATION_EMAIL_CONFIGURATION_FIELDS, CONFIRMATION_EMAIL_REASONS, confirmationDiagnostic } from '../../shared/confirmation-delivery.mjs';
@@ -412,8 +412,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       && aliases.primaryRegistrationId === notice.registrationId && notice.admissionStatus === 'confirmed'
       && family.reduce((total, item) => total + item.attempt, 0) >= 5
       && !family.some(item => ['reserved', 'unknown', 'provider_accepted'].includes(item.status))
-      && !state.operations.some(op => op.action === 'dispatch' && op.status !== 'completed' && op.registrationIds.some(id => aliases.registrationIds.includes(id)))
-      && !confirmationRecoveryUsed(state, aliases.registrationIds);
+      && !state.operations.some(op => op.action === 'dispatch' && op.status !== 'completed' && op.registrationIds.some(id => aliases.registrationIds.includes(id)));
   }
   async function dispatchRecovery({ actor, operationId, registrationId, expectedAccessRevisions, requestHash, current, deadline }) {
     const loaded = await loadRegistration(registrationId), scope = scopeOf(loaded), aliases = await aliasesFor(loaded);
@@ -657,7 +656,6 @@ export function createRegistrationConfirmationService({ registrationService, jou
     let canRecover = false;
     const selectedNotice = related.find(item => item.registrationId === registrationId
       && item.kind === canonicalConfirmationKind(current.value, registrationId, admission.status));
-    if (reason === 'RETRY_LIMIT' && confirmationRecoveryUsed(current.value, aliases.registrationIds)) reason = 'RECOVERY_USED';
     // Recovery is a separate explicit manager command; ordinary readiness stays false at the cap.
     if (reason === null || reason === 'RETRY_LIMIT' && recoveryEligible(current.value, aliases, scope, selectedNotice)) {
       const permission = await deliveryPermission(record), provider = permission.eligible && current.value.settings.enabled ? await providerState() : null;

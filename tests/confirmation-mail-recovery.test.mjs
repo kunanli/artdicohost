@@ -49,7 +49,7 @@ function fixture() {
 }
 const rejected = error => error.code === 'REVISION_CONFLICT';
 
-test('five ordinary rejections keep their cap and one explicit recovery reserves attempt six atomically', async () => {
+test('five ordinary rejections keep their cap and an explicit manual resend reserves attempt six atomically', async () => {
   const f = fixture(); await f.seed();
   const capped = await f.summary(); assert.equal(capped.reason, 'RETRY_LIMIT'); assert.equal(capped.ready, false); assert.equal(capped.canRecover, true);
   assert.deepEqual(capped.diagnostic, { code: 'PROVIDER_REJECTED', transportStarted: true, httpStatus: 400 });
@@ -66,16 +66,26 @@ test('five ordinary rejections keep their cap and one explicit recovery reserves
   assert.doesNotMatch(JSON.stringify([result, replay, checked, await f.summary(), await f.service.staffHistory({ actor, registrationId: ID }), await f.service.staffDirectory({ actor })]), /configurationIdentity|recipientDigest|requestHash|synthetic-v1|PRIVATE-SECRET/u);
 });
 
-test('failed recovery consumes the family grant permanently across settings saves, config changes and restart', async () => {
-  const f = fixture(); await f.seed(); const input = await f.command(); await f.service.dispatch(input);
-  assert.equal((await f.summary()).reason, 'RECOVERY_USED'); assert.equal((await f.summary()).canRecover, undefined);
-  const before = f.state.value.audit.filter(item => item.action === 'reserve').length;
-  for (const enabled of [false, true]) await f.service.setSettings({ actor, expectedRevision: f.state.version, operationId: op(), enabled });
-  f.state.identity = 'b'.repeat(64); await assert.rejects(f.make().dispatch(await f.command()), rejected);
+test('each known rejected manual resend allows a fresh explicit operation while ordinary sends remain capped', async () => {
+  const f = fixture(); await f.seed(); const sixth = await f.command(); await f.service.dispatch(sixth);
+  assert.equal((await f.summary()).reason, 'RETRY_LIMIT'); assert.equal((await f.summary()).canRecover, true); assert.equal((await f.summary()).ready, false);
+  const ordinaryReservations = f.state.value.audit.filter(item => item.action === 'reserve').length;
   await f.service.dispatch(await f.command(false));
+  await f.service.notifyApproved({ registrationIds: [ID] });
+  await f.make().dispatch(sixth);
   assert.equal(f.state.messages.length, 6); assert.equal(f.state.value.notices[0].attempt, 6);
-  assert.equal(f.state.value.audit.filter(item => item.action === 'reserve').length, before);
-  assert.equal(f.state.value.audit.filter(item => item.action === 'recovery_reserved').length, 1);
+  for (const enabled of [false, true]) await f.service.setSettings({ actor, expectedRevision: f.state.version, operationId: op(), enabled });
+  f.state.identity = 'b'.repeat(64);
+  await assert.rejects(f.make().dispatch({ ...sixth, operationId: op() }), rejected);
+  assert.equal(f.state.messages.length, 6);
+  const seventh = await f.command(); f.state.result = { status: 'provider_accepted' };
+  const result = await f.make().dispatch(seventh); assert.equal(result.results[0].status, 'provider_accepted');
+  assert.equal(f.state.messages.length, 7); assert.equal(f.state.value.notices[0].attempt, 7);
+  assert.equal(f.state.messages.at(-1).expectedConfigurationIdentity, f.state.identity);
+  await f.service.dispatch(seventh); await f.service.dispatch(sixth); assert.equal(f.state.messages.length, 7);
+  assert.equal(f.state.value.audit.filter(item => item.action === 'reserve').length, ordinaryReservations);
+  assert.equal(f.state.value.audit.filter(item => item.action === 'recovery_reserved').length, 2);
+  assert.equal((await f.summary()).reason, 'ALREADY_ACCEPTED'); assert.equal((await f.summary()).canRecover, undefined);
 });
 
 test('parallel recovery commands and same-operation replay never send twice', async () => {
@@ -146,17 +156,22 @@ async function addNotice(f, { registrationId = ALIAS, kind = 'registration', adm
   if (status !== 'reserved') await f.repository.append(current, 'result', { noticeId: notice.id, status }, actor.id);
 }
 
-test('related aliases, promotion kinds and historical scopes share one recovery grant', async () => {
+test('related aliases and promotion notices permit repeated explicit sends after known rejection and retain the strongest accepted block', async () => {
   const f = fixture(); await f.seed(4); await addNotice(f); f.state.aliases = [ID, ALIAS];
   assert.equal((await f.summary()).canRecover, true); await f.service.dispatch(await f.command());
   const audit = f.state.value.audit.find(item => item.action === 'recovery_reserved'); assert.deepEqual(audit.details.relatedRegistrationIds, [ID, ALIAS]);
-  f.state.primary = ALIAS; assert.equal((await f.summary()).reason, 'RECOVERY_USED');
-  await assert.rejects(f.service.dispatch(await f.command()), rejected); assert.equal(f.state.messages.length, 5);
+  f.state.primary = ALIAS; assert.equal((await f.summary()).reason, 'RETRY_LIMIT'); assert.equal((await f.summary()).canRecover, true);
+  f.state.result = { status: 'provider_accepted' }; await f.service.dispatch(await f.command());
+  assert.equal(f.state.messages.length, 6); assert.equal(f.state.value.notices.find(item => item.registrationId === ALIAS).attempt, 2);
+  f.state.primary = ID; assert.equal((await f.summary()).reason, 'ALREADY_ACCEPTED'); assert.equal((await f.summary()).canRecover, undefined);
   const promotion = fixture(); await addNotice(promotion, { registrationId: ID, admissionStatus: 'waitlisted', status: 'provider_accepted' }); await promotion.seed();
   assert.equal(promotion.state.value.notices.find(item => item.admissionStatus === 'confirmed').kind, 'promotion');
   await promotion.service.dispatch(await promotion.command());
   assert.equal(promotion.state.value.notices.find(item => item.kind === 'promotion').attempt, 6);
-  assert.equal((await promotion.summary()).reason, 'RECOVERY_USED');
+  assert.equal((await promotion.summary()).reason, 'RETRY_LIMIT'); assert.equal((await promotion.summary()).canRecover, true);
+  promotion.state.result = { status: 'provider_accepted' }; await promotion.service.dispatch(await promotion.command());
+  assert.equal(promotion.state.value.notices.find(item => item.kind === 'promotion').attempt, 7);
+  assert.equal((await promotion.summary()).reason, 'ALREADY_ACCEPTED');
 });
 
 test('any related accepted, unknown, reserved or unfinished batch blocks recovery, including an older recipient scope', async () => {
@@ -212,7 +227,7 @@ test('single-person HTTP requires exact recovery body, manager, origin and CSRF 
   const replay = await handle(request('send/' + ID, body)); assert.equal((await replay.json()).outcome, 'replayed'); assert.equal(f.state.messages.length, 6);
 });
 
-test('a stale ordinary result cannot acknowledge the recovery reservation and replay validates a forged second grant', async () => {
+test('stale ordinary or earlier manual acknowledgements cannot overwrite a newer reservation and replay rejects a forged duplicate operation', async () => {
   const f = fixture(); await f.seed(); const input = await f.command(); let staleRejected = false;
   f.state.onCommit = async audit => {
     if (audit.action !== 'recovery_reserved') return;
@@ -222,11 +237,17 @@ test('a stale ordinary result cannot acknowledge the recovery reservation and re
     }
   };
   await f.service.dispatch(input); assert.equal(staleRejected, true); assert.equal(f.state.value.notices[0].status, 'rejected');
+  f.state.onCommit = async audit => {
+    if (audit.action !== 'recovery_reserved') return;
+    const current = await f.repository.read(), notice = current.value.notices[0];
+    await assert.rejects(f.repository.append(current, 'result', { noticeId: notice.id, status: 'provider_accepted', attempt: 6 }, actor.id));
+  };
+  await f.service.dispatch(await f.command()); assert.equal(f.state.value.notices[0].attempt, 7);
   f.state.onCommit = null;
-  const prior = f.state.value.audit.find(item => item.action === 'recovery_reserved'), details = { ...clone(prior.details), operationId: op(), requestHash: 'd'.repeat(64) };
+  const prior = f.state.value.audit.find(item => item.action === 'recovery_reserved'), details = clone(prior.details);
   const forged = clone(f.state.value); forged.revision++;
   forged.audit.push({ ...clone(prior), revision: forged.revision, details });
-  Object.assign(forged.notices[0], { status: 'reserved', attempt: 7 }); delete forged.notices[0].diagnostic;
+  Object.assign(forged.notices[0], { status: 'reserved', attempt: 8 }); delete forged.notices[0].diagnostic;
   forged.operations.push({ operationId: details.operationId, requestHash: details.requestHash, actorId: actor.id,
     recipientScopes: { [ID]: { accessRevision: details.accessRevision, recipientDigest: details.recipientDigest } },
     action: 'dispatch', at: prior.at, status: 'started', registrationIds: [ID], retryRejected: true, results: [] });

@@ -54,7 +54,7 @@ if(stage&&planet&&typeof matchMedia==='function'){
     blockers=[...titleRects,...readable.map(node=>node.getBoundingClientRect())].filter(rect=>rect.width>0&&rect.height>0)
       .map(rect=>({x:rect.left-box.left-10,y:rect.top-box.top-10,width:rect.width+20,height:rect.height+20}));
     const key=JSON.stringify([width,height,circle,blockers,compact.matches]);
-    if(key!==geometryKey){geometryKey=key;populate();}
+    if(key!==geometryKey){geometryKey=key;clearCanvas();populate();}
   }
   function mask(){
     if(!context)return;
@@ -115,6 +115,6 @@ if(stage&&planet&&typeof matchMedia==='function'){
   window.addEventListener('pagehide',()=>{enabled=false;synchronize();});window.addEventListener('pageshow',()=>{enabled=true;synchronize();});
   window.addEventListener('resize',refresh,{passive:true});
   if(hasObserver){const observer=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.target===stage){const next=entry.isIntersecting&&entry.intersectionRatio>=.025;if(next!==visible){visible=next;synchronize();}}},{threshold:[0,.025]});observer.observe(stage);}
-  if(typeof ResizeObserver==='function'){const observer=new ResizeObserver(refresh);observer.observe(stage);observer.observe(planet);const heading=stage.querySelector('h1');if(heading)observer.observe(heading);}
+  if(typeof ResizeObserver==='function'){const observer=new ResizeObserver(refresh);observer.observe(stage);observer.observe(planet);const heading=stage.querySelector('h1');if(heading){observer.observe(heading);for(const title of heading.children)observer.observe(title);}}
   synchronize();
 }

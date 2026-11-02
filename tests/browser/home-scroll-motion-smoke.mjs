@@ -44,16 +44,20 @@ async function main() {
       Object.defineProperty(window, '__homeMotionQaPendingFrames', { value: () => pending.size });
       // Observe real canvas paint arguments without changing drawing, clocks,
       // particles or their velocity. The hero uses arc only for dot cores.
-      const frames = [], nativeClear = CanvasRenderingContext2D.prototype.clearRect, nativeArc = CanvasRenderingContext2D.prototype.arc;
+      const frames = [], nativeClear = CanvasRenderingContext2D.prototype.clearRect, nativeArc = CanvasRenderingContext2D.prototype.arc, nativeFillRect = CanvasRenderingContext2D.prototype.fillRect;
       CanvasRenderingContext2D.prototype.clearRect = function (...args) {
-        if (this.canvas.matches('[data-hero-particles]')) { frames.push({ at: performance.now(), points: [] }); if (frames.length > 48) frames.shift(); }
+        if (this.canvas.matches('[data-hero-particles]')) { frames.push({ at: performance.now(), points: [], maskRects: [] }); if (frames.length > 48) frames.shift(); }
         return nativeClear.apply(this, args);
       };
       CanvasRenderingContext2D.prototype.arc = function (...args) {
         if (this.canvas.matches('[data-hero-particles]') && frames.length) frames.at(-1).points.push({ x: args[0], y: args[1], r: args[2] });
         return nativeArc.apply(this, args);
       };
-      Object.defineProperty(window, '__homeMotionQaParticleFrames', { value: () => frames.map(frame => ({ at: frame.at, points: frame.points.map(point => ({ ...point })) })) });
+      CanvasRenderingContext2D.prototype.fillRect = function (...args) {
+        if (this.canvas.matches('[data-hero-particles]') && this.globalCompositeOperation === 'destination-out' && frames.length) frames.at(-1).maskRects.push({ x: args[0], y: args[1], width: args[2], height: args[3] });
+        return nativeFillRect.apply(this, args);
+      };
+      Object.defineProperty(window, '__homeMotionQaParticleFrames', { value: () => frames.map(frame => ({ at: frame.at, points: frame.points.map(point => ({ ...point })), maskRects: frame.maskRects.map(rect => ({ ...rect })) })) });
     });
     if (withoutObserver) await context.addInitScript(() => Object.defineProperty(window, 'IntersectionObserver', { configurable: true, value: undefined }));
     await context.route('**/*', async route => {
@@ -211,6 +215,43 @@ async function main() {
     assert.ok(result.extraTowardPointer > 1.5 && result.extraDistance < 20, 'the real painted dot responds locally and gently beyond its measured natural drift');
     return result;
   }
+  async function lateTitleFallback(page) {
+    const before = await page.evaluate(() => {
+      const stage = document.querySelector('.ah-home-hero-stage'), heading = stage.querySelector('h1');
+      const box = node => { const rect = node.getBoundingClientRect(); return { width: rect.width, height: rect.height }; };
+      const images = [...heading.querySelectorAll('[data-home-title-image]')];
+      return { at: performance.now(), stage: box(stage), heading: box(heading), children: images.map(image => ({ ...box(image.parentElement), decoded: image.complete && image.naturalWidth > 0, visible: !image.hidden })) };
+    });
+    assert.ok(before.children.length > 0 && before.children.every(child => child.decoded && child.visible), 'late-error coverage begins with the actual decoded brand artwork');
+    // Explicit synthetic failure drives the real existing image error handler.
+    // No style, replacement text, canvas or observer is changed by this test.
+    await page.locator('#hero-heading [data-home-title-image]').evaluateAll(images => images.forEach(image => image.dispatchEvent(new Event('error'))));
+    await page.waitForFunction(before => {
+      const stage = document.querySelector('.ah-home-hero-stage').getBoundingClientRect(), images = [...document.querySelectorAll('#hero-heading [data-home-title-image]')];
+      const frame = window.__homeMotionQaParticleFrames().findLast(frame => frame.at > before.at && frame.maskRects.length);
+      return frame && images.every((image, index) => {
+        const rect = image.parentElement.getBoundingClientRect(), fallback = image.parentElement.querySelector('[data-home-title-fallback]');
+        return image.hidden && !fallback.hidden && rect.height > before.children[index].height + 1 && frame.maskRects.some(mask => mask.x <= rect.left - stage.left - 1 && mask.y <= rect.top - stage.top - 1 && mask.x + mask.width >= rect.right - stage.left + 1 && mask.y + mask.height >= rect.bottom - stage.top + 1);
+      });
+    }, before);
+    const after = await page.evaluate(() => {
+      const stage = document.querySelector('.ah-home-hero-stage').getBoundingClientRect(), heading = document.querySelector('#hero-heading').getBoundingClientRect();
+      const frame = window.__homeMotionQaParticleFrames().filter(frame => frame.maskRects.length).at(-1);
+      return { stage: { width: stage.width, height: stage.height }, heading: { width: heading.width, height: heading.height }, children: [...document.querySelectorAll('#hero-heading [data-home-title-image]')].map(image => {
+        const rect = image.parentElement.getBoundingClientRect(), local = { x: rect.left - stage.left, y: rect.top - stage.top, width: rect.width, height: rect.height };
+        const mask = frame.maskRects.find(mask => mask.x <= local.x - 1 && mask.y <= local.y - 1 && mask.x + mask.width >= local.x + local.width + 1 && mask.y + mask.height >= local.y + local.height + 1);
+        return { ...local, mask };
+      }), paintedAt: frame.at };
+    });
+    numericMetrics = { lateTitleFallback: { before, after } };
+    assert.ok(Math.abs(after.stage.height - before.stage.height) < 1 && Math.abs(after.heading.height - before.heading.height) < 1, 'late title children change while the outer hero and heading boxes stay fixed');
+    await page.mouse.move(width - 25, 220); await page.waitForTimeout(350);
+    const pixels = await particlePixels(page);
+    assert.equal(pixels.readableAlphaPixels, 0, 'late taller text fallback retains zero particle alpha throughout its complete new boxes');
+    assert.equal(pixels.sphereAlphaPixels, 0, 'late title fallback keeps the sphere particle-free');
+    await page.screenshot({ path: resolve(evidence, 'hero-late-title-fallback-' + width + '.png') });
+    return { explicitlySyntheticLateImageError: true, before, after, readableAlphaPixels: pixels.readableAlphaPixels, sphereAlphaPixels: pixels.sphereAlphaPixels, actualDestinationOutPaintObserved: true };
+  }
   async function fadeSequence(page, title, body, label, { screenshots = false, focusCancellation = false } = {}) {
     const selectors = { title, body };
     await page.evaluate(({ title, body }) => {
@@ -341,6 +382,8 @@ async function main() {
           assert.ok(Math.abs(secondPose.x) <= 8 && Math.abs(secondPose.y) <= 8, 'hero pointer interaction stays gentle'); pointerInteraction = true;
         }
         await page.screenshot({ path: resolve(evidence, 'hero-active-' + width + '.png') });
+        let lateBrandFallback = null;
+        if (width === 1920) { stage = 'late-title-fallback-mask'; lateBrandFallback = await lateTitleFallback(page); }
         const start = await progress(page); assert.equal(start.hidden, 'true', 'reading progress is a decorative, non-announcing layer');
         stage = 'organization-presentation';
         const organizationFade = await fadeSequence(page, '#booths .ah-section-heading', '#organization-scroll-motion-org', 'organization-fade', { focusCancellation: true });
@@ -403,7 +446,7 @@ async function main() {
         await page.evaluate(() => { delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); });
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.motionState === 'active');
         await page.emulateMedia({ reducedMotion: 'reduce' }); await page.screenshot({ path: resolve(evidence, 'pinned-header-' + width + '.png') });
-        reports.push({ width, initialAndLiveReducedMotion: true, visibleHeroAmbientFrameLoop: true, visibleParticlePixels: [firstParticles, secondParticles], finePointerInteraction: pointerInteraction, backgroundPointer, nativeWheel: true, boundedDecorativeShift: artShift, realEntryAndFocusCancellation: true, guestFade, organizationFade, touchPan, rowFade, pointerTransparentEdgeCanvas: true, heroAndPageEdgeEffectsDoNotOverlap: true, idleWithoutPendingFramesWhenHeroOffscreen: true, frameProbeExplicitlySyntheticInstrumentation: true, pinnedHeader: true, anchorsBelowHeader: alignment, mobileMenu: width < 1000, publicRefreshPositionPreserved: true, delayedGuestHash: true, hiddenSignalExplicitlySynthetic: true });
+        reports.push({ width, initialAndLiveReducedMotion: true, visibleHeroAmbientFrameLoop: true, visibleParticlePixels: [firstParticles, secondParticles], finePointerInteraction: pointerInteraction, backgroundPointer, lateBrandFallback, nativeWheel: true, boundedDecorativeShift: artShift, realEntryAndFocusCancellation: true, guestFade, organizationFade, touchPan, rowFade, pointerTransparentEdgeCanvas: true, heroAndPageEdgeEffectsDoNotOverlap: true, idleWithoutPendingFramesWhenHeroOffscreen: true, frameProbeExplicitlySyntheticInstrumentation: true, pinnedHeader: true, anchorsBelowHeader: alignment, mobileMenu: width < 1000, publicRefreshPositionPreserved: true, delayedGuestHash: true, hiddenSignalExplicitlySynthetic: true });
       } finally { activePage = null; await f.context.close(); }
     }
     for (const mode of ['no-javascript', 'no-intersection-observer']) {

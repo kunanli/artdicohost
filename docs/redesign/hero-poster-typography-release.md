@@ -2,6 +2,25 @@
 
 2026-11-02。依使用者新參考圖，Hero 採粗窄英文、實心與描邊交替及靜態字內色塊，保持紫／藍紫色系。前置的手機圈內組織、白色 Logo、全頁星空、Wallet 徽章與後台資料更正已先由 PR66／main `c5166922` 發布，本階段不代做任何正式資料操作。
 
+## 已正式發布
+
+[PR67](https://github.com/kunanli/artdicohost/pull/67) 已合併並發布 main **`30b4ca6d0891699093f63b9ec790621906f64391`**。[PR流程41414451982](https://github.com/kunanli/artdicohost/actions/runs/41414451982) 與 [main流程41415375940](https://github.com/kunanli/artdicohost/actions/runs/41415375940) 均 completed／success；main check、transport、FC及OSS四工作皆成功。下方3010與本地c4候選資料保留執行資格，正式結果以本節為準。
+
+| 證據 | 準確結果 |
+| --- | --- |
+| 來源與首頁 | PR head57890742f624d21690259afdce8217d7dd6a9e7e，PR合成來源c3aa8052e6bb224f2bd111ddda6b832198a5c8e3；main30b4；同HTML `c4f4de59d658e3c34d87dad9b296310724991189b71b1b84db53f1524acb7c30` |
+| PR／main瀏覽器 | 兩邊皆捲動6／6、排版4／4、實際素材13／13，source／captureSource與各自精確提交相符；page errors0，合成業務POST／寄信0，最低閱讀對比11.03 |
+| main時間 | 捲動08:48:42.6622345、排版08:48:52.5323263、實際13於08:49:28.9133494 UTC通過 |
+| 真實公開輸入 | R44，snapshot SHA `71037be9782b05af1da404fd6ab667b538fbb5e4f4356fdbec943787d241c8d7`；8原圖／7綁定原稿，raw9／有原出席證明visible3，實際名片12／單位12／職稱8／完整介紹12；其餘3個人物／作品media請求明示404替身 |
+| 一般與準確包 | PR／main各1635／1635 Node，source748、Astro482（零錯誤／警告、1既有hint）、23頁、audit0；128檔／40後台資產及原資源上限維持 |
+| 本地定向 | 同最終c4 HTML的reference9、首頁7、collections9、捲動6、排版4及兩支源DOM瀏覽器通過；四寬字型／空區／八圈與焦點人工查看範圍如後述 |
+
+**08:55:04.0508832 UTC** 正式報名alias核對既有批准政策與容量；**08:55:04.0515769** `Cloud lifecycle verified` 確認來源30b4、內容及報名啟用、私有OSS acceptance通過、兩獨立client／一FC程序，run ID `r41415375940-a1-56efe4a037859b9d-30b4ca6d0891699093f63b9ec790621906f64391`。**08:55:08.7579593** 核對13個準確後台HTTPS頁；**08:55:09.8981642** 匿名公開HTTPS／CORS仍R44、計數9嘉賓／8組織／1作品／16筆保留展位投影／43場次，原出席證明confirmed3／displayed3。
+
+**08:56:49.5000974 UTC** 已核對 `https://artdico.host` 的 **60個準確公開物件**，來源30b4相符，正式軟體交付完成。新增字型取代兩張不再使用的標題圖，最終數量以此準確清單為準，不沿用前版61。
+
+目前正式資料仍有1筆公開作品；本輪按「沒有公開作品就隱藏」實作，未猜測或撤下該筆記錄。沒有更正真人資料、發布業務草稿、匯入名單、寄信或改名額。iPhone／微信群／收件與活動行匯出轉接不由本次視覺部署冒稱完成。此證據分支只補文件，不為文件重複部署。
+
 ## 呈現與相容
 
 Hero 兩個原錨點及原球體保持，兩張標題 PNG 改為真正 HTML：GLOBAL 描邊、GAME JAM 實心紫色切片；ARTDiCO 實心、HOST 描邊。中文獨立使用原閱讀字體 700。頁尾只有兩行英文標語呼應，原大型 HOST 圖保留；正文、導覽、表單、嘉賓與手機組織布局不改。

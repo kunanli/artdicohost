@@ -12,7 +12,7 @@ test('optional public profile fields leave historical normalized and published s
  const content=fixture(),normalized=validateContent(content).value,published=toPublicContent(content);
  for(const key of Object.keys(profile)){assert.equal(Object.hasOwn(normalized.guests[0],key),false);assert.equal(Object.hasOwn(published.guests[0],key),false);}
  assert.deepEqual(toPublicContent(published),published);
- assert.deepEqual(confirmedCards(published.guests)[0],{id:'synthetic-person',name:'合成嘉宾',company:'合成机构',ggjRole:'',portraitId:'a'.repeat(64)+'.jpg',portraitUrl:'/api/public/portraits/'+'a'.repeat(64)+'.jpg'});
+ assert.deepEqual(confirmedCards(published.guests)[0],{id:'synthetic-person',name:'合成嘉宾',company:'合成机构',ggjRole:'',portraitId:'a'.repeat(64)+'.jpg',portraitUrl:'/api/public/portraits/'+'a'.repeat(64)+'.jpg',attendance:'attending'});
 });
 test('profile fields follow public visibility while preserving confirmation and consent facts',()=>{
  const content=fixture();Object.assign(content.guests[0],profile);

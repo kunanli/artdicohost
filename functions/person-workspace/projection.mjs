@@ -587,7 +587,7 @@ export function peopleHealthProjection(sources, {kind = 'all', limit = 100} = {}
   if (counts.publication !== null) for (const contact of contacts) {
     try {
       const view = publicProfileProjection(contact.id, contentSource(data.content), {responseStatus: contact.operations.responseStatus});
-      for (const profile of view.profiles) if (profile.published && !profile.publishedMatchesDraft || !profile.published && isContentVisible(profile) && contact.operations.responseStatus === 'attending') add('publication', profile.id, profile.name || contact.profile.name, 'PUBLIC_PROFILE_CHANGED', '出席或公开资料需更新前台。', '/admin/content/guests/#guest=' + encodeURIComponent(profile.id), 'contact:' + contact.id);
+      for (const profile of view.profiles) if (profile.published && !profile.publishedMatchesDraft || !profile.published && isContentVisible(profile)) add('publication', profile.id, profile.name || contact.profile.name, 'PUBLIC_PROFILE_CHANGED', '出席或公开资料需更新前台。', '/admin/content/guests/#guest=' + encodeURIComponent(profile.id), 'contact:' + contact.id);
     } catch { counts.publication = null; }
   }
   if (counts.lodging !== null) {

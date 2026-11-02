@@ -57,11 +57,22 @@ for (const item of manifest.media) {
 const rawGuests=snapshot.content.guests;
 const attendancePresent=Object.hasOwn(snapshot.content,'guestAttendance');
 const guests=publicGuestCards(rawGuests,attendancePresent?snapshot.content.guestAttendance:undefined),ids=guests.map(item=>item.id);
-assert.ok(guests.length>0,'actual guest interaction scenarios need at least one genuinely displayed profile');
+const safePublicIds=publicGuestCards(rawGuests).map(item=>item.id);
+assert.deepEqual(ids,safePublicIds,'a valid attendance proof annotates every safe public profile instead of filtering the displayed collection');
+assert.deepEqual(ids,rawGuests.filter(item=>!Object.hasOwn(item,'visibility')||item.visibility==='public').map(item=>item.id),'every valid public profile in this exact captured publication is displayed');
+const confirmedGuestIds=new Set(attendancePresent?snapshot.content.guestAttendance.confirmedGuestIds:[]);
+for(const guest of guests)assert.equal(guest.attendance,confirmedGuestIds.has(guest.id)?'attending':'pending','attendance stays bound to the original proof for each displayed profile');
+assert.ok(guests.length>0,'actual guest interaction scenarios need at least one safe public profile');
+if(snapshot.revision===44){
+  assert.equal(rawGuestCount,9,'R44 preserves all nine original published profiles');
+  assert.equal(guests.length,9,'R44 checks all nine safe profiles in the actual DOM');
+  assert.equal(confirmedGuestIds.size,3,'R44 retains exactly its three real attendance proofs');
+}
 const visibleGuestCount=guests.length,motionGuest=guests[0],syntheticBase=rawGuests.find(item=>item.id===motionGuest.id);
 const spellingBoundaryProfiles=rawGuests.filter(item=>/maria|ping\s*yao/iu.test(item.name));
 const actualSpellingBoundaryIds=spellingBoundaryProfiles.filter(item=>ids.includes(item.id)).map(item=>item.id);
-const attendanceProof={present:attendancePresent,confirmedIds:attendancePresent?snapshot.content.guestAttendance.confirmedGuestIds.length:null};
+const attendanceProof={present:attendancePresent,sourceRevision:attendancePresent?snapshot.content.guestAttendance.sourceRevision:null,
+ confirmedIds:attendancePresent?confirmedGuestIds.size:null,displayedAttending:guests.filter(item=>item.attendance==='attending').length,displayedPending:guests.filter(item=>item.attendance==='pending').length};
 
 const mime = file => ({ html: 'text/html; charset=utf-8', js: 'text/javascript', mjs: 'text/javascript', css: 'text/css', png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp', svg: 'image/svg+xml', woff2: 'font/woff2', ico: 'image/x-icon' })[extname(file).slice(1)] || 'application/octet-stream';
 const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
@@ -69,6 +80,7 @@ const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHRO
 activeBrowser = browser;
 await mkdir(evidence, { recursive: true });
 const reports = [], pageErrors = [], servedAssets = new Map(), rawImageRequests = new Set(), uncapturedMediaRequests = new Set();
+let uncapturedMediaRequestCount=0;
 let defaultReferenceLogosRendered = 0;
 let stage = 'fixture', currentWidth = null, currentMode = null, lastNumericMetrics = null;
 async function syntheticImages() {
@@ -117,6 +129,7 @@ async function fixture(width, { mode = 'actual', reducedMotion = 'no-preference'
           const image = media.get(url.pathname); return route.fulfill({ status: 200, contentType: image.contentType, headers: { 'access-control-allow-origin': SITE }, body: image.bytes });
         }
         uncapturedMediaRequests.add(url.pathname);
+        uncapturedMediaRequestCount++;
         return route.fulfill({ status: 404, body: '' }); // Guest photos/work media outside the logo capture are deliberately stubbed.
       }
       assert.equal(url.pathname, '/api/admin/registration/config'); return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': SITE }, body: '{"enabled":false,"reason":"closed"}' });
@@ -198,7 +211,9 @@ async function loadLogos(f) {
 async function guestText(f, { profiles = guests, allowLongNameAndTitle = false, requireUnclippedNameAndTitle = false } = {}) {
   stage = 'actual-public-caption';
   assert.equal(await f.page.locator('[data-guest-id]').count(), guests.length);
-  assert.deepEqual(await f.page.locator('[data-guest-id]').evaluateAll(nodes=>nodes.map(node=>node.dataset.guestId)),ids,'only the profiles admitted by the original published attendance proof are rendered');
+  assert.deepEqual(await f.page.locator('[data-guest-id]').evaluateAll(nodes=>nodes.map(node=>node.dataset.guestId)),ids,'every safe public profile renders in captured order independently of attendance');
+  assert.deepEqual(await f.page.locator('[data-guest-id]').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.guestId,attendance:node.dataset.guestAttendance}))),guests.map(item=>({id:item.id,attendance:item.attendance})),'the DOM attendance annotation matches the unchanged real proof for every profile');
+  assert.equal((await f.page.locator('#guests-heading').textContent()).trim(),'嘉宾阵容','the public collection title does not claim attendance confirmation');
   const result = [];
   for (const guest of profiles) {
     const card = f.page.locator('#guest-' + guest.id), toggle = card.locator('[data-guest-toggle]');
@@ -235,7 +250,7 @@ async function guestText(f, { profiles = guests, allowLongNameAndTitle = false, 
     if (!allowLongNameAndTitle && (requireUnclippedNameAndTitle||actualSpellingBoundaryIds.includes(guest.id))) for (const text of measured.text.filter(item => item.className !== 'ah-guest-affiliation')) assert.ok(text.scrollHeight <= text.clientHeight + 1, 'selected actual or explicitly synthetic reference spelling must fit without an inner scroll');
     assert.ok(measured.text[0].font >= (f.width >= 1800 ? 30 : f.width >= 1000 ? 24 : 18), 'names are enlarged at usable responsive sizes');
     if (expected) assert.ok(measured.text.find(text => text.className === 'ah-guest-subtitle').font >= (f.width >= 1800 ? 19 : f.width >= 1000 ? 16 : 14));
-    result.push({ id: guest.id, affiliationSource: affiliation ? 'company' : 'none', subtitleSource: kind, metrics: measured });
+    result.push({ id: guest.id, attendance:guest.attendance, affiliationSource: affiliation ? 'company' : 'none', subtitleSource: kind, metrics: measured });
   }
   return result;
 }
@@ -358,7 +373,12 @@ try {
       const text = await guestText(f), details = [];
       for (const guest of guests) details.push(await detail(f, guest));
       const animation = width === 1920 ? await motion(f) : null; await noOverflow(f);
-      reports.push({ name: 'actual-public-' + width, width, exactCapturedSnapshot: true, exactRawImageHashesVerified: true, bounds: after, text, details, animation, screenshots: await shots(f, 'actual') });
+      const renderedGuestIds=await f.page.locator('[data-guest-id]').evaluateAll(nodes=>nodes.map(node=>node.dataset.guestId));
+      const renderedAttendance=await f.page.locator('[data-guest-id]').evaluateAll(nodes=>({attending:nodes.filter(node=>node.dataset.guestAttendance==='attending').length,pending:nodes.filter(node=>node.dataset.guestAttendance==='pending').length}));
+      assert.deepEqual(renderedGuestIds,safePublicIds,'each actual viewport retains the complete safe captured guest ID collection');
+      assert.deepEqual(renderedAttendance,{attending:attendanceProof.displayedAttending,pending:attendanceProof.displayedPending},'actual DOM attendance counts come only from the original captured proof');
+      reports.push({ name: 'actual-public-' + width, width, exactCapturedSnapshot: true, exactRawImageHashesVerified: true, renderedGuestIds,
+        guestAttendance:{source:'unchanged captured proof',...renderedAttendance},bounds: after, text, details, animation, screenshots: await shots(f, 'actual') });
     } finally { f.releaseLogos(); await f.context.close(); }
   }
   for (const mode of ['raw-generic', 'adversarial']) for (const width of [1920, 1440, 390, 320]) {
@@ -376,9 +396,9 @@ try {
   currentWidth = 320; currentMode = 'long-detail'; stage = 'navigate';
   try {
     await f.page.goto(SITE + '/', { waitUntil: 'networkidle' });
-    // Public spellings excluded by the real attendance gate are exercised only
-    // as explicit synthetic text on an already-displayed fixture ID. The actual
-    // default snapshot and its proof remain unchanged and are never relabelled.
+    // All safe captured profiles already received actual four-width checks.
+    // These additional spellings are explicit synthetic text substitutions on
+    // one displayed ID; the actual proof and the other profiles stay unchanged.
     for(const sample of spellingBoundaryProfiles){
       const boundary={...syntheticBase,name:sample.name,company:syntheticBase.status==='confirmed'&&!sample.company?.trim()?syntheticBase.company:sample.company,title:sample.title??'',ggjRole:sample.ggjRole??''};
       await f.refresh(content=>{const index=content.guests.findIndex(item=>item.id===motionGuest.id);content.guests[index]=boundary;});
@@ -407,9 +427,12 @@ finally {
   await browser.close(); activeBrowser = null; const html = await readFile(resolve(dist, 'index.html')), info = await stat(resolve(dist, 'index.html'));
   const actualReports = reports.filter(item => item.exactCapturedSnapshot === true);
   const actualFieldCoverage = {
+    publicProfileCardsChecked:actualReports.reduce((total,item)=>total+item.text.length,0),
     companyFieldsChecked: actualReports.reduce((total, item) => total + item.text.filter(text => text.affiliationSource === 'company').length, 0),
     titleFieldsChecked: actualReports.reduce((total, item) => total + item.text.filter(text => text.subtitleSource === 'title').length, 0),
     roleFieldsChecked: actualReports.reduce((total, item) => total + item.text.filter(text => text.subtitleSource === 'role').length, 0),
+    emptyCompanyFieldsChecked:actualReports.reduce((total,item)=>total+item.text.filter(text=>text.affiliationSource==='none').length,0),
+    emptySubtitleFieldsChecked:actualReports.reduce((total,item)=>total+item.text.filter(text=>text.subtitleSource==='none').length,0),
     fullGuestDetailsChecked: actualReports.reduce((total, item) => total + item.details.length, 0),
   };
   const report = { ok: !failure, passedCases: reports.length, expectedCases: 13, syntheticBusinessWrites: 0, realNetworkRequests: 0, mailRequests: 0,
@@ -417,14 +440,14 @@ finally {
     capture: { directory: capture, capturedAt: manifest.capturedAt, anonymous: true, source: manifest.source, sourceCommit: manifest.sourceCommit, snapshotSha256: manifest.snapshot.sha256,
       revision:snapshot.revision,guestCount:rawGuestCount,rawGuestCount,visibleGuestCount,attendanceProof,organizationCount: snapshot.content.organizations.length, mediaHashes: manifest.media.map(item => item.sha256) },
     servedAssets: Object.fromEntries([...servedAssets].sort()), actualRawImagesRendered: rawImageRequests.size, defaultReferenceLogosRendered, actualFieldCoverage,
-    uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequests.size, actualMediaScope: 'Captured raw profiles are counted separately; only profiles displayed by the original attendance proof receive actual DOM checks. Every organization upload is captured; guest photos/work media outside that scope receive intercepted 404s.',
+    uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequestCount,uncapturedPublicMediaUniquePathsStubbed:uncapturedMediaRequests.size, actualMediaScope: 'Every safe public guest profile receives four-width DOM text and detail checks; attendance is read only from the unchanged captured proof. Every organization upload is captured. Guest photos and work media outside that capture receive intercepted 404s; their original image bytes are not visually verified.',
     syntheticImageVariants: synthetic.map(({ kind, width, height, id }) => ({ kind, width, height, id })), reports, pageErrors, ...(failure ? { failure } : {}) };
   await writeFile(resolve(evidence, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   const summary = { ok: report.ok, cases: report.passedCases, expectedCases: 13, actualFixture: true, publicHtmlSha256: report.publicHtmlSha256, snapshotSha256: report.capture.snapshotSha256,
     sourceCommit: report.gitHeadAtRun, captureSourceCommit: manifest.sourceCommit, actualRawLogosTested: report.actualRawImagesRendered, defaultReferenceLogosRendered,
     guestCount:rawGuestCount,rawGuestCount,visibleGuestCount,actualGuestCardsChecked:actualReports.reduce((total,item)=>total+item.text.length,0),actualReferenceSpellingsChecked:actualSpellingBoundaryIds.length,attendanceProof,organizationCount: snapshot.content.organizations.length, pageErrorCount: pageErrors.length,
     actualFieldCoverage,
-    uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequests.size,
+    uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequestCount,uncapturedPublicMediaUniquePathsStubbed:uncapturedMediaRequests.size,
     ...(failure ? { failure: { code: 'PUBLIC_VISUAL_ASSERTION_FAILED', stage, width: currentWidth, mode: currentMode,
       location: /bubbles-logo-bounds-smoke\.mjs:\d+:\d+/u.exec(failure.stack)?.[0] ?? null }, numericMetrics: lastNumericMetrics } : {}) };
   process.stdout.write((report.ok ? 'Actual public visual browser verified: ' : 'Actual public visual browser failed: ') + JSON.stringify(summary) + '\n');

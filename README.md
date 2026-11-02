@@ -1,14 +1,16 @@
 # ARTDiCO HOST · artdico.host
 
-接續製作使用者新參考圖的Hero海報字體，維持既有紫色系，以粗窄實心／描邊呼應，功能字體保持。活動行唯一一般報名路徑已整理，匯出轉接仍待匿名表頭，正式入口／審核政策尚未切換，見[操作路徑](docs/redesign/external-registration-wallet.md)。
+**最新已發布：**[PR #67：Hero 海報字體與公開區域呈現](docs/redesign/hero-poster-typography-release.md) 已合併至 main `30b4ca6d0891699093f63b9ec790621906f64391`。Hero 真文字、實心／描邊、組織 Logo 單一呈現與空作品整區隱藏已納入；[PR 檢查 41414451982](https://github.com/kunanli/artdicohost/actions/runs/41414451982) 通過，精確同版捲動6／排版4／實際素材13及1635項測試已核對。[main 流程 41415375940](https://github.com/kunanli/artdicohost/actions/runs/41415375940) 四工作均成功；main同版6／4／實際13、私有OSS、13後台及08:56:49 UTC的60公開物件HTTPS回讀已核對，正式交付完成。
 
-**現行已發布：**[PR66：手機圈內組織、全頁星空與報名更正](docs/redesign/mobile-organizations-profile-release.md)，main `c5166922`。手機八個Logo留在圓內、後台原位更正、官方Wallet徽章已交付；main 6／4／實際13、1634測試、13後台及61公開物件HTTPS均核對完成。首頁樣式沿 [CSS／字級規範](docs/frontend-typography.md)。
+**前次已驗證發布（歷史基準）：**[PR66：手機圈內組織、全頁星空與報名更正](docs/redesign/mobile-organizations-profile-release.md)，main `c5166922`。手機八個Logo留在圓內、後台原位更正、官方Wallet徽章已交付；當次 main 6／4／實際13、1634測試、13後台及61公開物件HTTPS回執保留。首頁樣式沿 [CSS／字級規範](docs/frontend-typography.md)。
+
+活動行唯一一般報名路徑已整理，匯出轉接仍待匿名表頭，正式入口／審核政策尚未切換，見[操作路徑](docs/redesign/external-registration-wallet.md)。以下較早階段的發布與文檔保留作歷史，最新狀態以頁首及[接續台帳](docs/session-recovery.md)為準。
 
 本次改版執行入口：[分階段總覽](docs/redesign/README.md)、[操作手冊](docs/redesign/02-staff-and-attendee-runbook.md)、[驗收與發布](docs/redesign/03-release-and-acceptance.md)。P1–P6、[UX1 操作／層級](docs/redesign/ux-clarity-release.md) 及 [UX2 具名寄送與連續處理](docs/redesign/ux-workflow-release.md) 均已完成程式交付及正式發布；UX2 main `5ec45815` 的 1586 項測試、私有 OSS、13 個後台頁面及 51 個公開物件核驗通過。四項真人／真實資料驗收仍待主辦方記錄。下方 10 月發布資訊為歷史基準，現況以接續台帳及當輪紀錄為準。
 
 [首頁原稿對齊與嘉賓相容修復](docs/redesign/home-reference-release.md) 已由 PR #58 正式發布於 main `30e184fd`：原稿構圖、組織 Logo／名稱與舊公開嘉賓「出席待确认」相容顯示已交付。main 的 1593 項測試、私有 OSS、13 個後台頁面及 53 個準確公開物件 HTTPS 均通過；九筆公開嘉賓資料仍在，不代表九人已確認出席。四項真人／真實資料驗收維持獨立待辦。
 
-前輪 [氣泡職稱與正式 Logo 邊界修復](docs/redesign/bubbles-logo-release.md) 由 PR #59 發布於 main `bd49a745`，1611 項測試及 60 個公開物件等回執保留為歷史；本輪獨立顯示單位與職位的現行規則以上方 PR #60 為準。
+前輪 [氣泡職稱與正式 Logo 邊界修復](docs/redesign/bubbles-logo-release.md) 由 PR #59 發布於 main `bd49a745`，1611 項測試及 60 個公開物件等回執保留為歷史；獨立顯示單位與職位由 [PR #60](docs/redesign/guest-identity-reference-release.md) 交付，後續呈現以頁首最新紀錄為準。
 
 项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
 
@@ -24,7 +26,7 @@
 
 ## 文档入口
 
-本轮改版：[统一保存](docs/admin-save-workflow.md)、[默认公开](docs/default-public-visibility.md)、[设置回执](docs/settings-save-feedback.md)、[准确验收／发布记录](docs/admin-save-visibility-release-2026-10-22.md)。本轮正式状态以该记录为准，下面PR42／43为前一已发布基准。
+历史操作文档：[统一保存](docs/admin-save-workflow.md)、[默认公开](docs/default-public-visibility.md)、[设置回执](docs/settings-save-feedback.md)、[当次验收／发布记录](docs/admin-save-visibility-release-2026-10-22.md)。以下PR42／43等仅供追溯，最新发布状态以页首及接续台账为准。
 
 | 主要流程 | 操作说明 | 实际发布证据 |
 | --- | --- | --- |

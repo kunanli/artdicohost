@@ -13,6 +13,7 @@ const evidence=resolve(process.env.ARTDICO_COLLECTIONS_EVIDENCE_DIRECTORY||resol
 const {createInitialContent}=await import(pathToFileURL(resolve(source,'src/config/content.mjs')));
 const {toPublicContent,validateContent}=await import(pathToFileURL(resolve(source,'shared/content-schema.mjs')));
 const {publicContentEnvelope}=await import(pathToFileURL(resolve(source,'src/lib/public-content-refresh.mjs')));
+const {publicGuestCards}=await import(pathToFileURL(resolve(source,'shared/guest-display.mjs')));
 const SITE='https://artdico.host',API='https://api.artdico.host';
 const PRIVATE='SYNTHETIC_P5_PRIVATE_NEVER_PUBLIC';
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFElEQVR4nGN0KFjAwMDAxMDAgKAAGOQBVgs9CEsAAAAASUVORK5CYII=','base64');
@@ -37,6 +38,9 @@ function projected(raw){
  const value=toPublicContent(raw,{guestAttendance:{schemaVersion:1,sourceRevision:12,confirmedGuestIds:[IDs.guest,IDs.secondGuest].filter(id=>publicIds.has(id))}});
  assert.doesNotMatch(JSON.stringify(value),/SYNTHETIC_P5_PRIVATE|private\.invalid|private@example/u,'private source fields never enter the intercepted public response');
  assert.ok(publicContentEnvelope({revision:1,publishedAt:'2026-11-01T09:00:00.000Z',content:value}),'fixture must pass the actual public envelope validator');
+ const cards=publicGuestCards(value.guests,value.guestAttendance),confirmed=new Set(value.guestAttendance.confirmedGuestIds);
+ assert.deepEqual(cards.map(item=>item.id),value.guests.map(item=>item.id),'every safe public profile remains displayed independently of attendance proof');
+ for(const card of cards)assert.equal(card.attendance,confirmed.has(card.id)?'attending':'pending','each displayed profile retains only its actual fixture attendance proof');
  return value;
 }
 projected(rawFixture());
@@ -170,8 +174,12 @@ try{
    await page.goto(SITE+'/#program-'+IDs.afternoon,{waitUntil:'networkidle'});
    await page.locator('#guest-'+IDs.guest).waitFor();await selected(f,IDs.student);await activeZone(f,'B');
    assert.equal(await page.locator('#students').isVisible(),true,'a publication with real works reveals the section');
-   assert.equal(await page.locator('[data-guest-id]').count(),2,'only guest cards backed by server attendance proof');
-   assert.equal(await page.locator('#guest-'+IDs.unproved).count(),0,'a scheduled profile does not prove attendance');
+   const guestState=await page.locator('[data-guest-id]').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.guestId,attendance:node.dataset.guestAttendance})));
+   assert.deepEqual(guestState,[{id:IDs.guest,attendance:'attending'},{id:IDs.secondGuest,attendance:'attending'},{id:IDs.unproved,attendance:'pending'}],'all three public profiles display with only the two original attendance proofs');
+   const guestAttendance={attending:guestState.filter(item=>item.attendance==='attending').length,pending:guestState.filter(item=>item.attendance==='pending').length};
+   assert.equal(await page.locator('#guest-'+IDs.unproved).count(),1,'an unproved public profile stays visible without inventing attendance');
+   assert.equal(await page.locator('#guest-synthetic-private-guest').count(),0,'an explicit private profile never appears');
+   assert.equal((await page.locator('#guests-heading').textContent()).trim(),'嘉宾阵容');
    assert.equal(await page.locator('#program-'+IDs.morning+' strong').textContent(),'合成 A 区交流','the activity title remains unchanged');
    assert.equal(await page.locator('#program-'+IDs.morning+' .ah-session-meta').count(),0,'the public activity row has no speaker/host subtitle');
    assert.match(await page.locator('#program-synthetic-cancelled').textContent(),/已取消/u);
@@ -336,7 +344,7 @@ try{
    assert.equal(await page.evaluate(()=>Boolean(document.activeElement?.closest('[hidden],[inert],dialog:not([open])'))),false,'focus is never stranded in the now-hidden works section or closed dialog');
    assert.doesNotMatch(await page.locator('body').textContent(),/SYNTHETIC_P5_PRIVATE|private\.invalid|private@example/u);
    assert.equal(f.calls.some(call=>/\/(?:submit|send|publish|approve|dispatch|token)(?:\/|$)/u.test(call.path)),false);
-   reports.push({width,proofOnlyGuestCards:true,referenceNameBubblePortraitInDetails:true,organizationNamesAndOptionalLogosOnly:true,manualCarousel:'zero/single/many; filters and legacy retained',emptyWorksSectionHidden:true,publicationRestoresSection:true,emptyCategoryKeepsSection:true,lastWorkRemovalClosesPreviewAndFocusesAgenda:true,compactFallback:{failedCoverGeometry,missingCoverGeometry,singleCoverGeometry},singleNavigationHidden:true,filterRestoresNavigation:true,realDeclineRetained:true,touch:width<600,preview:'same public image; Escape/focus; refresh retained; removal closed',refresh:'stable IDs, open disclosure, carousel/filter, time/area and focus',agenda:'initial hash, cross-area links, keyboard and no jump',publicContentReads:f.calls.filter(call=>call.path==='/api/public/content').length,allRequests:f.calls.length,screenshots});
+   reports.push({width,publicGuestCardsIndependentOfAttendance:true,guestAttendance,explicitPrivateGuestExcluded:true,referenceNameBubblePortraitInDetails:true,organizationNamesAndOptionalLogosOnly:true,manualCarousel:'zero/single/many; filters and legacy retained',emptyWorksSectionHidden:true,publicationRestoresSection:true,emptyCategoryKeepsSection:true,lastWorkRemovalClosesPreviewAndFocusesAgenda:true,compactFallback:{failedCoverGeometry,missingCoverGeometry,singleCoverGeometry},singleNavigationHidden:true,filterRestoresNavigation:true,realDeclineRetained:true,touch:width<600,preview:'same public image; Escape/focus; refresh retained; removal closed',refresh:'stable IDs, open disclosure, carousel/filter, time/area and focus',agenda:'initial hash, cross-area links, keyboard and no jump',publicContentReads:f.calls.filter(call=>call.path==='/api/public/content').length,allRequests:f.calls.length,screenshots});
   }finally{await f.context.close();}
  }
  const reclassified=await fixture(390);
@@ -384,6 +392,7 @@ try{
  const noJs=await fixture(320,{javascript:false});
  try{await noJs.page.goto(SITE+'/',{waitUntil:'networkidle'});for(const id of['guests-heading','booths-heading','agenda-heading'])assert.equal(await noJs.page.locator('#'+id).isVisible(),true,'core section readable without JavaScript: '+id);await hiddenWorks(noJs);assert.equal(await noJs.page.locator('[data-agenda-panel]:visible').count(),3,'the static timetable retains every area without JavaScript');assert.equal(await noJs.page.locator('[data-zone]:visible').count(),0,'inactive JS controls are not presented');assert.equal(await noJs.page.locator('[data-guest-id]').count(),0,'no scripted or invented attendance cards appear');await noOverflow(noJs);reports.push({width:320,javascript:false,emptyWorksSectionHidden:true,otherCoreSectionsAndFullTimetableReadable:true,requests:noJs.calls.length});}finally{await noJs.context.close();}
  assert.deepEqual(pageErrors,[]);
+ assert.equal(reports.length,9,'all collection, delayed hash, reduced-motion and no-JavaScript scenarios must complete');
  const html=await readFile(resolve(dist,'index.html'));
  const result={ok:true,syntheticOnly:true,noBusinessWrites:true,source,dist,publicHtmlSha256:createHash('sha256').update(html).digest('hex'),reports,pageErrors};
  await writeFile(resolve(evidence,'report.json'),JSON.stringify(result,null,2)+'\n');process.stdout.write(JSON.stringify(result,null,2)+'\n');

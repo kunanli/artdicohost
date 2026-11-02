@@ -87,6 +87,26 @@ test('partial source failure and mixed source revisions are unavailable rather t
   assert.equal(changed.availability.registrations, 'unavailable'); assert.equal(changed.availability.admissions, 'unavailable'); assert.equal(changed.counts.duplicate, null);
 });
 
+test('unpublished public profiles need publication regardless of attendance and private profiles remain excluded', async () => {
+  const f = await peopleRuntimeFixture(), saved = await f.createContact(), data = await sources(f);
+  const contact = data.contacts.value.contacts.find(row => row.id === saved.contact.id);
+  data.content.value.content.guests = [{id: 'synthetic-public-guest', name: '合成公开嘉宾', company: '', ggjRole: '',
+    portraitId: '', status: 'pending', publicConsent: false, contactId: contact.id, internalNotes: PEOPLE_FIXTURE_PRIVATE}];
+  const guest = data.content.value.content.guests[0], beforeWrites = writes(f);
+  for (const responseStatus of ['pending', 'declined', 'attending']) {
+    contact.operations.responseStatus = responseStatus;
+    for (const visibility of [undefined, 'public', 'private']) {
+      if (visibility === undefined) delete guest.visibility; else guest.visibility = visibility;
+      const before = structuredClone(data), health = peopleHealthProjection(data, {kind: 'publication'});
+      assert.equal(health.counts.publication, visibility === 'private' ? 0 : 1);
+      assert.deepEqual(health.issues.map(row => row.reasonCode), visibility === 'private' ? [] : ['PUBLIC_PROFILE_CHANGED']);
+      assert.deepEqual(data, before, 'checking publication does not change a reply, profile or publication');
+      assert.doesNotMatch(JSON.stringify(health), /SYNTHETIC_ORIGINAL|internalNotes|confirmedGuestIds/u);
+    }
+  }
+  assert.equal(writes(f), beforeWrites); assert.equal(f.messages.length, 0);
+});
+
 test('historical lodging and immutable source email survive a newer sparse application and another primary alias', async () => {
   const f = await peopleRuntimeFixture(), original = await f.createContact({name: '原来源', email: 'original@example.invalid'}), alias = await f.createContact({name: '别名来源', email: 'immutable@example.invalid'});
   const submitted = await f.seedPublic({intake: 'general-v2', name: '合成报名', email: 'immutable@example.invalid'}), data = await sources(f);

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createInitialContent} from '../src/config/content.mjs';
 import {validateContent,toPublicContent} from '../shared/content-schema.mjs';
+import {publicGuestCards} from '../shared/guest-display.mjs';
 import {contentPublicationReadiness,contentSaveSnapshot} from '../src/lib/admin-save-state.mjs';
 import {sessionParticipantFields,contentFormValue,contentLocalDraftValue,readContentForm,writeContentForm} from '../src/lib/content-local-drafts.mjs';
 
@@ -13,6 +14,25 @@ function fixture(){
 const attendance=(ids,sourceRevision=4)=>({schemaVersion:1,sourceRevision,confirmedGuestIds:ids});
 const published=(content,proof,revision=3)=>({revision,publishedAt:'2026-11-01T00:00:00.000Z',content:toPublicContent(content,proof?{guestAttendance:proof}:{})});
 const preview=(proof,contentRevision=3)=>({status:'ready',contentRevision,guestAttendance:proof});
+
+test('nine public cards match admin publication state while only three retain verified attendance',()=>{
+  const content=fixture(),template=content.guests[0];
+  content.guests=Array.from({length:10},(_,index)=>({...template,id:'synthetic-'+index,name:'合成嘉宾 '+index,
+    company:'',status:'pending',publicConsent:false,contactId:'synthetic-contact-'+index,...(index===9?{visibility:'private'}:{})}));
+  const proof=attendance(content.guests.slice(0,3).map(item=>item.id)),old=published(content,proof),before=JSON.stringify({content,old,proof});
+  const report=contentPublicationReadiness({draft:{revision:3,content},published:old,attendancePreview:preview(proof)});
+  const cards=publicGuestCards(old.content.guests,old.content.guestAttendance),ids=cards.map(item=>item.id);
+  assert.ok(report);assert.equal(report.hasPublicChanges,false);
+  assert.equal(cards.length,9);
+  assert.deepEqual(report.items.guests.filter(item=>item.ready).map(item=>item.id),ids);
+  assert.deepEqual(report.items.guests.filter(item=>item.published).map(item=>item.id),ids);
+  assert.deepEqual(cards.filter(item=>item.attendance==='attending').map(item=>item.id),proof.confirmedGuestIds);
+  assert.equal(cards.filter(item=>item.attendance==='pending').length,6);
+  assert.ok(cards.every(item=>item.status==='pending'&&item.portraitUrl===''));
+  assert.ok(old.content.guests.every(item=>item.status==='pending'&&item.publicConsent===false));
+  assert.equal(report.items.guests.find(item=>item.id==='synthetic-9').visible,false);
+  assert.equal(JSON.stringify({content,old,proof}),before,'display and readiness do not rewrite profiles, attendance or frozen bytes');
+});
 
 test('current attendance changes are publication changes without changing saved profiles or draft bytes',()=>{
   const content=fixture(),before=JSON.stringify(content),old=published(content,attendance(['synthetic-one']));

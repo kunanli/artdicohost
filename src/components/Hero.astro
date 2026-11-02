@@ -2,8 +2,6 @@
 import { eventConfig } from '../config/event.mjs';
 import { Image } from 'astro:assets';
 import planet from '../assets/home/planet-purple.webp';
-import ggjTitle from '../assets/home/brand-ggj.png';
-import hostTitle from '../assets/home/brand-host.png';
 const startsAt = `${eventConfig.date.value}T${eventConfig.time.opening}:00+08:00`;
 const endsAt = `${eventConfig.date.value}T${eventConfig.time.end}:00+08:00`;
 ---
@@ -12,14 +10,14 @@ const endsAt = `${eventConfig.date.value}T${eventConfig.time.end}:00+08:00`;
     <div class="ah-home-hero-planet" aria-hidden="true" data-home-planet>
       <Image src={planet} alt="" width={1074} height={1074} loading="eager" fetchpriority="high" decoding="async" />
     </div>
-    <h1 id="hero-heading" data-public-event-title data-initial-event-title={eventConfig.title} aria-label={eventConfig.title}>
+    <h1 id="hero-heading" data-public-event-title data-initial-event-title={eventConfig.title} data-title-presentation="poster" aria-label={eventConfig.title}>
       <span class="ah-home-title-art ah-home-title-ggj" aria-hidden="true">
-        <Image src={ggjTitle} alt="GLOBAL GAME JAM 中国组织者交流会" width={1227} height={229} format="png" loading="eager" decoding="async" data-home-title-image />
-        <span class="ah-home-title-fallback" data-home-title-fallback hidden><span>GLOBAL GAME JAM</span><span>中国组织者交流会</span></span>
+        <span class="ah-home-title-type" data-home-title-type="ggj" lang="en"><span class="ah-poster-outline" data-poster-word>GLOBAL</span><span class="ah-poster-solid ah-poster-slice" data-poster-word>GAME JAM</span></span>
+        <span class="ah-home-title-subtitle" data-home-title-subtitle lang="zh-CN">中国组织者交流会</span>
       </span>
       <span class="ah-home-title-art ah-home-title-host" aria-hidden="true">
-        <Image src={hostTitle} alt="ARTDiCO HOST 嘉年华" width={981} height={225} format="png" loading="eager" decoding="async" data-home-title-image />
-        <span class="ah-home-title-fallback" data-home-title-fallback hidden><span>ARTDiCO HOST</span><span>嘉年华</span></span>
+        <span class="ah-home-title-type" data-home-title-type="host" lang="en"><span class="ah-poster-solid" data-poster-word>ARTDiCO</span><span class="ah-poster-outline" data-poster-word>HOST</span></span>
+        <span class="ah-home-title-subtitle" data-home-title-subtitle lang="zh-CN">嘉年华</span>
       </span>
     </h1>
     <p class="ah-hero-description" data-public-hero-description>组织者交流　/　学生作品　/　游戏体验</p>

@@ -122,6 +122,16 @@ async function settledScroll(f){
  }));
 }
 const visibleWork=f=>f.page.locator('[data-showcase-id]:visible');
+async function hiddenWorks(f){
+ const section=f.page.locator('#students');
+ assert.notEqual(await section.getAttribute('hidden'),null,'zero published works hides the whole section');
+ assert.equal(await section.isVisible(),false,'the empty section reserves no visible heading, controls or spacer');
+ assert.equal(await f.page.locator('#students-heading').isVisible(),false);
+ assert.equal(await f.page.locator('[data-public-showcases-concept],[data-public-showcases-empty]').count(),0,'empty works have no concept or publication-waiting placeholder');
+ assert.equal(await f.page.locator('[data-public-works-controls]').isVisible(),false);
+ assert.equal(await f.page.locator('[data-public-works-filter-empty]').isVisible(),false);
+ assert.equal(await f.page.locator('[data-showcase-id]').count(),0);
+}
 async function selected(f,id){await f.page.locator('#work-'+id+':visible').waitFor();assert.equal(await visibleWork(f).count(),1,'a manual carousel displays one selected item');}
 async function compactWork(f,id,state){
  const card=f.page.locator('#work-'+id);
@@ -159,6 +169,7 @@ try{
   try{
    await page.goto(SITE+'/#program-'+IDs.afternoon,{waitUntil:'networkidle'});
    await page.locator('#guest-'+IDs.guest).waitFor();await selected(f,IDs.student);await activeZone(f,'B');
+   assert.equal(await page.locator('#students').isVisible(),true,'a publication with real works reveals the section');
    assert.equal(await page.locator('[data-guest-id]').count(),2,'only guest cards backed by server attendance proof');
    assert.equal(await page.locator('#guest-'+IDs.unproved).count(),0,'a scheduled profile does not prove attendance');
    assert.equal(await page.locator('#program-'+IDs.morning+' strong').textContent(),'合成 A 区交流','the activity title remains unchanged');
@@ -285,6 +296,7 @@ try{
    await page.locator('[data-public-works-filter]').selectOption('student');await page.locator('#work-'+IDs.student+' [data-work-preview]').click();
    await f.refresh(raw=>{raw.showcases=raw.showcases.filter(work=>work.id!==IDs.student);});
    assert.equal(await lightbox.isVisible(),false,'withdrawing the previewed work closes the dialog');assert.equal(await page.locator('#students-heading').evaluate(node=>document.activeElement===node),true,'withdrawn work does not strand focus in a removed dialog');
+   assert.equal(await page.locator('#students').isVisible(),true,'an empty selected category keeps the nonempty works section visible');
    assert.equal(await page.locator('[data-public-works-filter-empty]').isVisible(),true);
    assert.equal(await page.locator('[data-work-navigation]').isVisible(),false,'an empty filtered subset hides navigation');
    assert.equal(await page.locator('.ah-work-stage').getAttribute('data-work-presentation'),'empty');
@@ -292,10 +304,11 @@ try{
    await f.refresh(raw=>{raw.organizations=raw.organizations.filter(organization=>organization.id!==IDs.organization);raw.showcases.forEach(work=>{delete work.organizationId;});});
    assert.equal(await page.locator('#booths-heading').evaluate(node=>document.activeElement===node),true,'withdrawn organization returns focus to its section heading');
    await f.refresh(raw=>{raw.showcases=[];raw.guests=[];raw.organizations=[];raw.booths=[];raw.sessions=[];});
-   assert.equal(await page.locator('[data-showcase-id],[data-guest-id],[data-organization-id],[data-booth-id]').count(),0);assert.equal(await page.locator('[data-public-showcases-empty]').isVisible(),true);assert.equal(await page.locator('[data-public-works-filter-empty]').isVisible(),false);
+   assert.equal(await page.locator('[data-showcase-id],[data-guest-id],[data-organization-id],[data-booth-id]').count(),0);await hiddenWorks(f);
    await noOverflow(f);
    await f.refresh(raw=>{raw.showcases=[work('synthetic-only','indie',{participationForms:[],boothId:'',organizationId:''})];});
    await page.locator('[data-public-works-filter]').selectOption('all');await selected(f,'synthetic-only');assert.equal(await page.locator('[data-public-work-prev]').isDisabled(),true);assert.equal(await page.locator('[data-public-work-next]').isDisabled(),true);
+   assert.equal(await page.locator('#students').isVisible(),true,'a later publication reveals the previously empty section');
    const singleCoverGeometry=await compactWork(f,'synthetic-only','missing');
    assert.equal(await page.locator('[data-work-navigation]').isVisible(),false,'one published work hides previous, next and 1/1');
    assert.equal(await page.locator('[data-public-works-filter]').isVisible(),true,'one published work still permits category selection');
@@ -303,15 +316,27 @@ try{
    assert.doesNotMatch(await page.locator('#students').textContent(),/资料待确认|参加待确认|展示安排陆续公布|封面、展示形式与安排/u);
    await page.locator('[data-public-works-filter]').selectOption('student');
    assert.equal(await visibleWork(f).count(),0);assert.equal(await page.locator('[data-public-works-filter-empty]').isVisible(),true);
+   assert.equal(await page.locator('#students').isVisible(),true,'a category with no matches does not hide other published works or its filter');
    assert.equal(await page.locator('[data-work-navigation]').isVisible(),false);
    await page.locator('[data-public-works-filter]').selectOption('all');await selected(f,'synthetic-only');
    assert.equal(await page.locator('[data-work-navigation]').isVisible(),false,'restoring a one-item publication does not fabricate a carousel');
    screenshots.push(await screenshot(f,'single-work'));
    await f.refresh(raw=>{raw.showcases[0].responseStatus='declined';});
    assert.match(await page.locator('#work-synthetic-only').textContent(),/已回复不参加/u,'a real declined response remains visible');
+   await f.refresh(raw=>{raw.showcases[0].coverId=coverId;});
+   await selected(f,'synthetic-only');
+   await page.locator('#work-synthetic-only [data-work-preview]').click();await lightbox.waitFor({state:'visible'});
+   await f.refresh(raw=>{raw.showcases=[];});
+   await hiddenWorks(f);
+   assert.equal(await lightbox.evaluate(node=>node.open),false,'removing the last previewed work closes its dialog before hiding the section');
+   assert.equal(await lightbox.locator('img').getAttribute('src'),null,'a withdrawn final preview retains no stale image');
+   const nextHeading=page.locator('#agenda-heading');
+   assert.equal(await nextHeading.isVisible(),true);
+   assert.equal(await nextHeading.evaluate(node=>document.activeElement===node),true,'removing the final work restores focus to the next visible section heading');
+   assert.equal(await page.evaluate(()=>Boolean(document.activeElement?.closest('[hidden],[inert],dialog:not([open])'))),false,'focus is never stranded in the now-hidden works section or closed dialog');
    assert.doesNotMatch(await page.locator('body').textContent(),/SYNTHETIC_P5_PRIVATE|private\.invalid|private@example/u);
    assert.equal(f.calls.some(call=>/\/(?:submit|send|publish|approve|dispatch|token)(?:\/|$)/u.test(call.path)),false);
-   reports.push({width,proofOnlyGuestCards:true,referenceNameBubblePortraitInDetails:true,organizationNamesAndOptionalLogosOnly:true,manualCarousel:'zero/single/many; filters and legacy retained',compactFallback:{failedCoverGeometry,missingCoverGeometry,singleCoverGeometry},singleNavigationHidden:true,filterRestoresNavigation:true,realDeclineRetained:true,touch:width<600,preview:'same public image; Escape/focus; refresh retained; removal closed',refresh:'stable IDs, open disclosure, carousel/filter, time/area and focus',agenda:'initial hash, cross-area links, keyboard and no jump',publicContentReads:f.calls.filter(call=>call.path==='/api/public/content').length,allRequests:f.calls.length,screenshots});
+   reports.push({width,proofOnlyGuestCards:true,referenceNameBubblePortraitInDetails:true,organizationNamesAndOptionalLogosOnly:true,manualCarousel:'zero/single/many; filters and legacy retained',emptyWorksSectionHidden:true,publicationRestoresSection:true,emptyCategoryKeepsSection:true,lastWorkRemovalClosesPreviewAndFocusesAgenda:true,compactFallback:{failedCoverGeometry,missingCoverGeometry,singleCoverGeometry},singleNavigationHidden:true,filterRestoresNavigation:true,realDeclineRetained:true,touch:width<600,preview:'same public image; Escape/focus; refresh retained; removal closed',refresh:'stable IDs, open disclosure, carousel/filter, time/area and focus',agenda:'initial hash, cross-area links, keyboard and no jump',publicContentReads:f.calls.filter(call=>call.path==='/api/public/content').length,allRequests:f.calls.length,screenshots});
   }finally{await f.context.close();}
  }
  const reclassified=await fixture(390);
@@ -342,6 +367,7 @@ try{
    const anchor=kind+'-'+id;
    await f.page.goto(SITE+'/#'+anchor,{waitUntil:'domcontentloaded'});
    assert.equal(await f.page.locator('#'+anchor).count(),0,'late public target is absent before its initial publication arrives');
+   await hiddenWorks(f);
    f.releaseInitialContent();
    await f.page.locator('#'+anchor).waitFor({state:'visible'});
    if(kind==='work')await selected(f,id);
@@ -356,7 +382,7 @@ try{
  const reduced=await fixture(390,{reducedMotion:'reduce'});
  try{await reduced.page.goto(SITE+'/',{waitUntil:'networkidle'});await selected(reduced,IDs.student);assert.equal(await reduced.page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches),true);await reduced.page.locator('[data-public-work-next]').click();await selected(reduced,IDs.indie);await noOverflow(reduced);reports.push({width:390,reducedMotion:true,coreContentAndManualNavigation:true});}finally{await reduced.context.close();}
  const noJs=await fixture(320,{javascript:false});
- try{await noJs.page.goto(SITE+'/',{waitUntil:'networkidle'});for(const id of['guests-heading','booths-heading','students-heading','agenda-heading'])assert.equal(await noJs.page.locator('#'+id).isVisible(),true,'core section readable without JavaScript: '+id);assert.equal(await noJs.page.locator('[data-agenda-panel]:visible').count(),3,'the static timetable retains every area without JavaScript');assert.equal(await noJs.page.locator('[data-zone]:visible').count(),0,'inactive JS controls are not presented');assert.equal(await noJs.page.locator('[data-guest-id]').count(),0,'no scripted or invented attendance cards appear');await noOverflow(noJs);reports.push({width:320,javascript:false,coreSectionsAndFullTimetableReadable:true,requests:noJs.calls.length});}finally{await noJs.context.close();}
+ try{await noJs.page.goto(SITE+'/',{waitUntil:'networkidle'});for(const id of['guests-heading','booths-heading','agenda-heading'])assert.equal(await noJs.page.locator('#'+id).isVisible(),true,'core section readable without JavaScript: '+id);await hiddenWorks(noJs);assert.equal(await noJs.page.locator('[data-agenda-panel]:visible').count(),3,'the static timetable retains every area without JavaScript');assert.equal(await noJs.page.locator('[data-zone]:visible').count(),0,'inactive JS controls are not presented');assert.equal(await noJs.page.locator('[data-guest-id]').count(),0,'no scripted or invented attendance cards appear');await noOverflow(noJs);reports.push({width:320,javascript:false,emptyWorksSectionHidden:true,otherCoreSectionsAndFullTimetableReadable:true,requests:noJs.calls.length});}finally{await noJs.context.close();}
  assert.deepEqual(pageErrors,[]);
  const html=await readFile(resolve(dist,'index.html'));
  const result={ok:true,syntheticOnly:true,noBusinessWrites:true,source,dist,publicHtmlSha256:createHash('sha256').update(html).digest('hex'),reports,pageErrors};

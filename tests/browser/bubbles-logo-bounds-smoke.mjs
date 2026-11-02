@@ -152,7 +152,9 @@ async function organizationBounds(f, { loaded = true } = {}) {
     const batch=await f.page.locator('[data-organization-id]').evaluateAll(nodes => nodes.filter(node=>!node.hidden).map(node => {
     const box = element => { const b = element.getBoundingClientRect(); return { x: b.x, y: b.y + scrollY, width: b.width, height: b.height }; };
     const card = node.querySelector('.ah-organization-card'), frame = node.querySelector('.ah-organization-image'), image = frame?.querySelector('img');
-    const presentation=frame?.dataset.logoPresentation??null;
+    const presentation=frame?.dataset.logoPresentation??null,name=node.querySelector('h3'),nameStyle=getComputedStyle(name),nameRect=name.getBoundingClientRect();
+    const nameVisible=nameRect.width>1&&nameRect.height>1&&nameStyle.display!=='none'&&nameStyle.visibility==='visible'&&Number(nameStyle.opacity)>0&&nameStyle.clipPath!=='inset(50%)';
+    const accessibleNameMatches=card.getAttribute('aria-label')===name.textContent+(card.tagName==='A'?' · 打开组织页面（新窗口）':'');
     let whiteMask=null;
     if(presentation==='white'&&image?.complete&&image.naturalWidth){
       const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;const context=canvas.getContext('2d');context.drawImage(image,0,0);const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;let ink=0,nonwhite=0,transparent=0;
@@ -161,7 +163,7 @@ async function organizationBounds(f, { loaded = true } = {}) {
     }
     return { id: node.dataset.organizationId, reference: node.dataset.organizationReference ?? null, artwork: node.dataset.logoArtwork ?? null,
       slot: box(node), card: box(card), frame: frame ? box(frame) : null, image: image ? box(image) : null,
-      src: image?.getAttribute('src'), source: image?.dataset.logoSource??image?.getAttribute('src'), presentation, frameHidden:frame?.hidden??false, name:box(node.querySelector('h3')),whiteMask, complete: image?.complete, naturalWidth: image?.naturalWidth, naturalHeight: image?.naturalHeight, fit: image ? getComputedStyle(image).objectFit : null,
+      src: image?.getAttribute('src'), source: image?.dataset.logoSource??image?.getAttribute('src'), presentation, frameHidden:frame?.hidden??false, name:box(name),nameVisible,nameDisplay:nameStyle.display,nameFont:parseFloat(nameStyle.fontSize),accessibleNameMatches,whiteMask, complete: image?.complete, naturalWidth: image?.naturalWidth, naturalHeight: image?.naturalHeight, fit: image ? getComputedStyle(image).objectFit : null,
       imageVisibility: image ? getComputedStyle(image).visibility : null, imageDisplay: image ? getComputedStyle(image).display : null, imageOpacity: image ? Number(getComputedStyle(image).opacity) : null };
   }));
     rows.push(...batch.map(row=>({...row,page:Math.floor(offset/batchSize)})));
@@ -170,12 +172,13 @@ async function organizationBounds(f, { loaded = true } = {}) {
   assert.equal(rows.length,organizationCount,'every organization from this exact captured snapshot must render');
   for (const row of rows) {
     assert.ok(row.slot.width > 0 && row.slot.height >= 40 && row.frame && row.image, 'each actual logo has its own independent nonzero slot and frame');
+    assert.equal(row.accessibleNameMatches,true,'every organization retains its full accessible name');
     contained(row.card,row.slot,'organization card stays inside its own slot');
     if(!row.frameHidden){contained(row.frame,row.card,'image frame stays inside its card');contained(row.image,row.frame,'the whole image element stays inside its frame, including opaque canvas');}
-    else{assert.ok(row.name.width>1&&row.name.height>1,'an inseparable image uses its readable white organization name');contained(row.name,row.card,'name fallback stays in its own fixed card');}
+    else{assert.equal(row.nameVisible,true,'an inseparable image uses its readable white organization name');assert.ok(row.nameFont>=16);contained(row.name,row.card,'name fallback stays in its own fixed card');}
     assert.ok(row.slot.x >= -1 && row.slot.x + row.slot.width <= f.width + 1, 'logo slot remains in viewport');
     if (loaded) { assert.ok(row.complete && row.naturalWidth > 0 && row.naturalHeight > 0); assert.equal(row.fit, 'contain');
-      if(!row.frameHidden){assert.equal(row.imageVisibility,'visible');assert.notEqual(row.imageDisplay,'none');assert.ok(row.imageOpacity>0,'a hidden image cannot masquerade as fixed bounds');}
+      if(!row.frameHidden){assert.equal(row.nameVisible,false,'a successful logo does not repeat a visible name caption');assert.equal(row.nameDisplay,'none','a successful logo fully removes the duplicate visual caption');if(f.width<=820)assert.ok(Math.abs(row.frame.height-row.card.height)<=1,'mobile uploaded logos use their complete card frame');assert.equal(row.imageVisibility,'visible');assert.notEqual(row.imageDisplay,'none');assert.ok(row.imageOpacity>0,'a hidden image cannot masquerade as fixed bounds');}
       if(row.presentation==='white'){assert.ok(row.whiteMask&&row.whiteMask.ink>0&&row.whiteMask.transparent>0);assert.equal(row.whiteMask.nonwhite,0,'generated visible ink is entirely white');assert.ok(row.whiteMask.width<=800&&row.whiteMask.height<=800,'runtime masks stay bounded');}
     }
   }
@@ -334,12 +337,17 @@ try {
       const before = await organizationBounds(f, { loaded: false }); await loadLogos(f); const after = await organizationBounds(f);
       assert.equal(after.filter(row => /^\/_astro\/organization-[^/]+\.(?:png|webp)$/u.test(new URL(row.src, SITE).pathname)).length, 7, 'all seven current captured logo identities use the approved white variants');
       assert.equal(after.filter(row=>row.artwork==='reference').length,7,'the seven reviewed variants remain unchanged');
+      for(const row of after){
+        const original=snapshot.content.organizations.find(item=>item.id===row.id);assert.ok(original,'every actual organization maps to the same captured ID');
+        const fullNameMatches=await f.page.locator('[data-organization-id="'+row.id+'"]').evaluate((node,name)=>{const card=node.querySelector('.ah-organization-card');return node.querySelector('h3').textContent===name&&card.getAttribute('aria-label')===name+(card.tagName==='A'?' · 打开组织页面（新窗口）':'');},original.name);
+        assert.equal(fullNameMatches,true,'hidden captions and accessible names retain the complete name from this exact capture');
+      }
       for(const row of after.filter(row=>row.artwork!=='reference')){
         const original=snapshot.content.organizations.find(item=>item.id===row.id);
         assert.ok(original&&new URL(row.source,SITE).pathname===original.logoUrl,'every additional organization derives only from its exact captured upload');
         assert.ok(['published-white','published-name'].includes(row.artwork),'additional uploads use white masks or readable white names');
-        const name=f.page.locator('[data-organization-id="'+row.id+'"] h3');
-        const nameBox=await name.boundingBox();assert.ok(nameBox&&nameBox.width>1&&nameBox.height>1,'additional organization names remain visibly readable');
+        assert.equal(row.accessibleNameMatches,true,'additional organizations retain their actual complete accessible name');
+        assert.equal(row.nameVisible,row.frameHidden,'additional organizations show a name only when the logo cannot be displayed');
       }
       for (const [key, label] of [['bu', /bournemouth|伯恩|\bbu\b/iu], ['szdx', /深圳|shenzhen/iu], ['teesside', /teesside|提赛德/iu]]) {
         const row = after.find(item => item.reference === key), original = snapshot.content.organizations.find(item => item.id === row?.id);

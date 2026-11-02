@@ -31,7 +31,7 @@ const html=`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="
 <link rel="stylesheet" href="/src/styles/guests.css"><link rel="stylesheet" href="/src/styles/students-showcase.css"><body id="artdico-host" class="ah-festival">
 <p data-public-content-status>初始日程</p><section class="ah-guests"><ul class="ah-guest-grid" data-public-guests></ul><p data-public-guests-empty hidden>嘉宾陆续公布</p></section>
 <ul data-public-organizations></ul><p data-public-organizations-empty></p>
-<section class="ah-students-showcase"><figure data-public-showcases-concept>初始概念</figure><div data-public-works-controls hidden><select data-public-works-filter><option value="all">全部</option><option value="indie">独立游戏</option></select><span data-public-works-count></span></div><ul class="ah-showcase-grid" data-public-showcases></ul><p data-public-showcases-empty hidden>游戏与作品陆续公布</p><p data-public-works-filter-empty hidden>此分类暂无作品</p></section>
+<section id="students" class="ah-students-showcase" hidden><div data-public-works-controls hidden><select data-public-works-filter><option value="all">全部</option><option value="indie">独立游戏</option></select><span data-public-works-count></span></div><ul class="ah-showcase-grid" data-public-showcases></ul><p data-public-works-filter-empty hidden>此分类暂无作品</p></section>
 <script type="module" src="/src/scripts/public-content.mjs"></script>`;
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const context=await browser.newContext(),page=await context.newPage(),errors=[],requests=[];let phase='initial';
@@ -76,7 +76,7 @@ try{
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     assert.equal(await page.locator('#work-default-work h3').isVisible(),true);
   }
-  phase='hidden';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.locator('[data-public-showcases-empty]:visible').waitFor();
+  phase='hidden';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForFunction(()=>document.querySelector('#students')?.hidden===true);assert.equal(await page.locator('#students').isVisible(),false);assert.equal(await page.locator('[data-public-showcases-empty]').isVisible(),false);
   assert.equal(await page.locator('[data-guest-id],[data-organization-id],[data-booth-id],[data-showcase-id]').count(),0);
   assert.equal(requests.some(path=>path.includes('/portraits/')||path.startsWith('/api/admin/')),false);
   assert.deepEqual(errors,[]);

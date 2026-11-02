@@ -213,3 +213,58 @@ test('homepage font binaries preserve renamed families, complete public OFL, act
   }
   assert.ok(total < 600_000, 'homepage never loads the complete 10 MB source TTFs');
 });
+
+test('homepage display font preserves the pinned upstream Barlow binary, names, Latin coverage and bundled OFL without widening the homepage font budget', async () => {
+  const home = JSON.parse(await readFile(new URL('../docs/home-asset-manifest.json', import.meta.url), 'utf8'));
+  assert.equal(home.displayFonts.length, 1);
+  const record = home.displayFonts[0];
+  assert.equal(record.path, 'src/assets/fonts/BarlowCondensed-ExtraBold.woff2');
+  assert.equal(record.family, 'Barlow Condensed');
+  assert.equal(record.weight, 800); assert.equal(record.style, 'normal');
+  assert.equal(record.license, 'SIL Open Font License 1.1');
+  assert.equal(record.licensePath, 'src/assets/fonts/barlow-OFL.txt');
+  assert.equal(record.source.repository, 'https://github.com/jpt/barlow');
+  assert.equal(record.source.commit, 'dc2940e2e04ef4ec96c07e23e0f02aefbddd343b');
+  assert.equal(record.source.path, 'fonts/woff2/BarlowCondensed-ExtraBold.woff2');
+  const sourceBase = record.source.repository.replace('https://github.com/', 'https://raw.githubusercontent.com/') + '/' + record.source.commit + '/';
+  assert.equal(record.source.url, sourceBase + record.source.path);
+  assert.equal(record.source.licenseUrl, sourceBase + 'OFL.txt');
+
+  const bytes = await readFile(new URL('../' + record.path, import.meta.url));
+  assert.equal(bytes.length, 61_692); assert.equal(bytes.length, record.bytes);
+  assert.equal(sha256(bytes), '312b96f47eaba789835020d95a2d1f6b6205f38a44781b6e86d5a8256356b5ac');
+  assert.equal(sha256(bytes), record.sha256);
+  const blobSha = createHash('sha1').update(Buffer.concat([Buffer.from('blob ' + bytes.length + '\0'), bytes])).digest('hex');
+  assert.equal(blobSha, '1f20fa0e6284b3f20156b66990d7470030ffb2c2');
+  assert.equal(blobSha, record.source.blobSha, 'self-hosted bytes remain the exact upstream Git blob');
+  const tables = fontTables(bytes), names = fontNames(tables.get('name'));
+  assert.equal(tables.get('OS/2').readUInt16BE(4), 800);
+  const familyNames = names.filter(item => [1, 16].includes(item.id));
+  assert.ok(familyNames.length > 0);
+  for (const name of familyNames) assert.ok(['Barlow Condensed', 'Barlow Condensed ExtraBold'].includes(name.text));
+  assert.ok(names.some(item => item.id === 16 && item.text === record.family));
+  assert.ok(names.some(item => item.id === 6 && item.text === 'BarlowCondensed-ExtraBold'));
+  assert.doesNotMatch(names.map(item => item.text).join('\n'), /ARTDiCO/u, 'the unmodified upstream font is not presented as a renamed derivative');
+  assert.match(names.filter(item => item.id === 0).map(item => item.text).join('\n'), /Copyright 2017 The Barlow Project Authors/u);
+  assert.match(names.filter(item => item.id === 13).map(item => item.text).join('\n'), /SIL Open Font License, Version 1\.1/u);
+  const points = new Set(actualCodePoints(tables));
+  assert.equal(points.size, 526); assert.equal(points.size, record.codePoints);
+  for (const char of 'GLOBAL GAME JAM ARTDiCO HOST Come Together. Create Forever. 2026/12/05') {
+    assert.ok(points.has(char.codePointAt(0)), 'display character: ' + char);
+  }
+
+  const licenseBytes = await readFile(new URL('../' + record.licensePath, import.meta.url));
+  assert.equal(licenseBytes.length, 4_377); assert.equal(licenseBytes.length, record.licenseBytes);
+  assert.equal(sha256(licenseBytes), '186d750eb496a4c17a76385f82be6aea2ac1cf2de074a811d63786cf374ea73f');
+  assert.equal(sha256(licenseBytes), record.licenseSha256);
+  const license = licenseBytes.toString('utf8');
+  assert.match(license, /^Copyright 2017 The Barlow Project Authors \(https:\/\/github\.com\/jpt\/barlow\)/u);
+  assert.match(license, /SIL OPEN FONT LICENSE Version 1\.1[\s\S]*PERMISSION & CONDITIONS[\s\S]*TERMINATION[\s\S]*DISCLAIMER/u);
+  const copyrightNotice = license.slice(0, license.indexOf('SIL OPEN FONT LICENSE Version 1.1'));
+  assert.doesNotMatch(copyrightNotice, /Reserved Font Name/u, 'the upstream copyright notice declares no reserved font name');
+
+  let homepageBytes = bytes.length;
+  for (const reading of home.fonts) homepageBytes += (await readFile(new URL('../' + reading.path, import.meta.url))).length;
+  assert.equal(homepageBytes, 434_056);
+  assert.ok(homepageBytes < 600_000, 'reading and display fonts together retain the existing homepage font budget');
+});

@@ -55,12 +55,9 @@ document.addEventListener('artdico:organization-reveal',event=>updateOrganizatio
 
 const presentationSelectors={heroDescription:'[data-public-hero-description]',aboutTitle:'[data-public-about-title]',aboutText:'[data-public-about-text]'};
 const initialPresentationText=new Map(Object.values(presentationSelectors).flatMap(selector=>[...document.querySelectorAll(selector)].map(node=>[node,node.textContent])));
-for(const image of document.querySelectorAll('[data-home-title-image]')){
-  const fallback=image.parentElement?.querySelector('[data-home-title-fallback]');
-  const revealFallback=()=>{image.hidden=true;if(fallback)fallback.hidden=false;};
-  image.addEventListener('error',revealFallback,{once:true});
-  if(image.complete&&image.naturalWidth===0)revealFallback();
-}
+// Keep the initial real-text lockup available when a later publication returns
+// to the branded event. A changed title always renders its published text.
+const initialPosterTitles=new Map([...document.querySelectorAll('h1[data-public-event-title]')].map(node=>[node,[...node.children].filter(child=>child.matches('.ah-home-title-art')).map(child=>child.cloneNode(true))]));
 
 // Published event content is independent from registration readiness and staff cookies.
 const endpoint = document.querySelector('meta[name="artdico-content-api"]')?.getAttribute('content');
@@ -186,8 +183,8 @@ function renderPublishedContent(content,url) {
     if (emptyGuests) emptyGuests.hidden = cards.length > 0;
     guestGrid.dispatchEvent(new CustomEvent('artdico:guests-rendered',{bubbles:true}));
   }
-  // Older published revisions do not contain a showcase list. Keep the labelled
-  // concept image for those revisions; an explicit empty list has no public work.
+  // The whole section is shown only for valid published work, including work
+  // without a cover. Missing/empty lists do not create a waiting placeholder.
   renderShowcases(content,url);
   const dateText = content.event.date + (content.event.dateStatus === 'confirmed' ? '' : ' · 日期暂定');
   for (const node of document.querySelectorAll('[data-public-agenda-date]')) node.textContent = dateText;
@@ -202,14 +199,13 @@ function renderPublishedContent(content,url) {
     node.setAttribute('aria-label', eventTitle);
     if (eventTitle === (node.dataset.renderedEventTitle || node.dataset.initialEventTitle)) continue;
     node.dataset.renderedEventTitle = eventTitle;
-    if (knownTitle) {
-      const first = element('span', undefined, 'ah-event-title-line');
-      first.append(element('span', 'Global Game Jam', 'ah-event-brand'), element('span', '中国交流聚会', 'ah-event-chinese'));
-      const second = element('span', undefined, 'ah-event-title-line');
-      second.append(element('span', 'ARTDiCO HOST', 'ah-event-brand'), element('span', '学生嘉年华', 'ah-event-chinese'));
-      node.replaceChildren(first, element('span', '×', 'ah-event-title-cross'), second);
+    const poster=initialPosterTitles.get(node);
+    if (knownTitle&&poster?.length) {
+      node.replaceChildren(...poster.map(child=>child.cloneNode(true)));
+      node.dataset.titlePresentation='poster';
       continue;
     }
+    node.dataset.titlePresentation='text';
     const titles = eventTitle.split(' × ');
     if (titles.length === 2) {
       node.replaceChildren(
@@ -383,8 +379,14 @@ function renderPresentation(event) {
 function renderShowcases(content, sourceUrl) {
   const grid = document.querySelector('[data-public-showcases]');
   if (!grid) return;
-  const hasWorks=Object.hasOwn(content,'showcases');
   const cards=workCards,organizations=new Map(publicOrganizationCards(content.organizations).map(item=>[item.id,item]));
+  const section=grid.closest('#students')??grid.closest('section'),hasWorks=cards.length>0;
+  const redirectFocus=!hasWorks&&section?.contains(document.activeElement);
+  if(!hasWorks){
+    const dialog=section?.querySelector('[data-work-lightbox]');
+    if(dialog?.open)dialog.close();
+    dialog?.querySelector('img')?.removeAttribute('src');
+  }
   const controls=document.querySelector('[data-public-works-controls]');if(controls)controls.hidden=!hasWorks;
   grid.replaceChildren();
   for (const work of cards) {
@@ -426,10 +428,8 @@ function renderShowcases(content, sourceUrl) {
     if(detail.childElementCount)card.append(detail);
     grid.append(card);
   }
-  grid.hidden = cards.length === 0;
-  const concept = document.querySelector('[data-public-showcases-concept]');
-  if (concept) concept.hidden = hasWorks;
-  const empty = document.querySelector('[data-public-showcases-empty]');
-  if (empty) empty.hidden = !hasWorks||cards.length > 0;
+  grid.hidden=!hasWorks;
+  if(section)section.hidden=!hasWorks;
   collections.updateWorks();
+  if(redirectFocus)collections.focusWorks();
 }

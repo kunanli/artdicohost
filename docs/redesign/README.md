@@ -1,5 +1,7 @@
 # ARTDiCO HOST 改版執行總覽
 
+更新日期：2026-11-02（Asia/Taipei）。**現行交付為 [PR66手機圈內組織與報名更正](mobile-organizations-profile-release.md)，已發布main c5166922；Hero海報字體為下一階段，尚未套用。** 樣式修改先讀 [首頁CSS／字級規範](../frontend-typography.md)。下方PR64等保留前版歷史。
+
 更新日期：2026-11-02（Asia/Taipei）。**現行交付為 [PR #64 自由背景微粒與作品缺圖版型](background-showcase-release.md)，已發布 main `50bc3cd`；樣式修改先讀 [首頁 CSS／字級規範](../frontend-typography.md)。** Hero微粒在球外背景自由漂移，滑鼠輕微帶動、球／標題全alpha排除；沒有環形或尾流，保留簡報式淡入／sticky。作品缺圖轉自然文字高度、有圖保持原稿2:1／字幕／真peek，單件收起無效導航。main6／4／13、1612測試、FC128與公開61物件HTTPS核對完成；正式公開一件作品確無封面參照。下方交付保留為歷史。
 
 接續 [活動行與Wallet操作方案](external-registration-wallet.md)：使用者確認帳號「認證版」有批次匯出，免費報名即確認；採活動行唯一一般報名、本站同步後提供指南／私人頁，不再重填及二審。薄轉接器待匿名匯出表頭，尚未切換正式入口或審核政策。官方CN／EN SVG已取得，中文徽章29案合成驗收通過，發布回執待完成；沒有代購、接受協議、匯入真名單或寄信。

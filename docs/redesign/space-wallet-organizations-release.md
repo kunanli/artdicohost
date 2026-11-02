@@ -1,6 +1,6 @@
 # 全頁星空、白色組織標誌與 Wallet 徽章
 
-2026-11-02。本輪從已部署的 main `50bc3cd546f89ac622e8b12d1c80eeb34256fff6` 與文件提交 `23558a2` 接續；正式 PR／main／HTTPS 回執尚待本頁後補，不以本地候選宣稱上線。
+2026-11-02。本輪從已部署的 main `50bc3cd546f89ac622e8b12d1c80eeb34256fff6` 與文件提交 `23558a2` 接續；本功能已隨 [PR66整合版](mobile-organizations-profile-release.md) 正式發布main c516；該頁保存準確main／FC／OSS／HTTPS回執。以下候選資格及首次失敗按歷史保留。
 
 ## 使用者要求與結果範圍
 

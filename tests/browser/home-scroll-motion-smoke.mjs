@@ -23,7 +23,10 @@ async function main() {
   assert.equal(html.includes(Buffer.from('scroll-motion-guest')), false, 'the synthetic guest hash is absent from the original static document');
   const raw = createInitialContent();
   raw.guests = [{ id: 'scroll-motion-guest', name: '合成滚动嘉宾', company: '合成创作单位', title: '合成创作者', ggjRole: '', portraitId: '', status: 'pending', publicConsent: false, contactId: 'SYNTHETIC_PRIVATE_CONTACT', internalNotes: 'SYNTHETIC_PRIVATE_NOTE' }];
-  raw.organizations = [{ id: 'scroll-motion-org', name: '合成参与组织', logoId: '', website: '', participation: 'undecided', status: 'pending', publicConsent: false, internalNotes: 'SYNTHETIC_PRIVATE_ORG' }]; raw.showcases = []; raw.booths = [];
+  raw.organizations = [{ id: 'scroll-motion-org', name: '合成参与组织', logoId: '', website: '', participation: 'undecided', status: 'pending', publicConsent: false, internalNotes: 'SYNTHETIC_PRIVATE_ORG' }]; raw.booths = [];
+  // A real published work keeps the works gutter available for its existing
+  // compositing assertion. Empty collections are separately hidden by design.
+  raw.showcases = [{ id: 'scroll-motion-work', kind: 'student', title: '合成滚动作品', teamName: '合成创作团队', summary: '合成公开作品说明', coverId: '', status: 'confirmed', responseStatus: 'attending', publicConsent: false, participationForms: [], boothId: '', sessionId: '', organizationId: '', school: '', email: '', wechat: '', contactName: '', memberCount: 1, materialLinks: '', internalNotes: 'SYNTHETIC_PRIVATE_WORK' }];
   raw.sessions = raw.sessions.slice(0, 1).map(item => ({ ...item, title: '合成滚动定位活动' }));
   assert.equal(validateContent(raw).valid, true, 'the synthetic publication must pass the real schema');
   const publication = toPublicContent(raw), reports = [], pageErrors = [], servedAssets = new Map(), requests = [];
@@ -34,7 +37,7 @@ async function main() {
 
   async function fixture({ viewportWidth, javaScriptEnabled = true, withoutObserver = false }) {
     const context = await browser.newContext({ viewport: { width: viewportWidth, height: 900 }, isMobile: viewportWidth < 600, hasTouch: viewportWidth < 600, reducedMotion: withoutObserver ? 'no-preference' : 'reduce', javaScriptEnabled });
-    let revision = 1, publicReads = 0;
+    let revision = 1, publicReads = 0, displayFontPath = null; const displayFontReads = [];
     if (javaScriptEnabled) await context.addInitScript(() => {
       // Instrument the real browser callbacks, without replacing animation time
       // or making a continuous render loop appear idle.
@@ -42,6 +45,11 @@ async function main() {
       window.requestAnimationFrame = callback => { const id = nativeFrame(time => { pending.delete(id); callback(time); }); pending.add(id); return id; };
       window.cancelAnimationFrame = id => { pending.delete(id); nativeCancel(id); };
       Object.defineProperty(window, '__homeMotionQaPendingFrames', { value: () => pending.size });
+      const fontEvents = [];
+      for (const type of ['loadingdone', 'loadingerror']) document.fonts?.addEventListener(type, event => {
+        fontEvents.push({ type, at: performance.now(), faces: [...event.fontfaces].map(face => ({ family: face.family, status: face.status })) }); if (fontEvents.length > 48) fontEvents.shift();
+      });
+      Object.defineProperty(window, '__homeMotionQaFontEvents', { value: () => fontEvents.map(event => ({ ...event, faces: event.faces.map(face => ({ ...face })) })) });
       // Observe real canvas paint arguments without changing drawing, clocks,
       // particles or their velocity. The hero uses arc only for dot cores.
       const frames = [], nativeClear = CanvasRenderingContext2D.prototype.clearRect, nativeArc = CanvasRenderingContext2D.prototype.arc, nativeFillRect = CanvasRenderingContext2D.prototype.fillRect, nativeEllipse = CanvasRenderingContext2D.prototype.ellipse;
@@ -81,6 +89,11 @@ async function main() {
         return route.fulfill({ status: 200, contentType: 'application/json', headers, body: JSON.stringify({ enabled: false, reason: 'closed' }) });
       }
       if (url.pathname === '/__scroll-blank/') return route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Synthetic fresh-document navigation</title>' });
+      if (viewportWidth === 1920 && /\/BarlowCondensed-ExtraBold\.[^/]+\.woff2$/u.test(url.pathname)) {
+        displayFontPath = url.pathname; const mode = url.searchParams.get('qa-font') || 'initial-failure'; displayFontReads.push({ mode, path: url.pathname });
+        if (mode !== 'late-loaded') return route.fulfill({ status: 404, contentType: 'font/woff2', body: '' });
+        await new Promise(done => setTimeout(done, 250));
+      }
       const path = url.pathname.endsWith('/') ? url.pathname + 'index.html' : url.pathname, file = resolve(dist, '.' + path);
       assert.ok(file.startsWith(dist + '/'));
       try { const bytes = await readFile(file); servedAssets.set(path, sha(bytes)); return route.fulfill({ status: 200, contentType: mime(file), body: bytes }); }
@@ -90,7 +103,7 @@ async function main() {
     page.on('pageerror', error => pageErrors.push(error.message));
     await page.goto(SITE + '/', { waitUntil: 'networkidle' }); await page.evaluate(() => document.fonts.ready);
     const scrollState = () => page.evaluate(() => ({ scrollY, agendaTop: document.getElementById('agenda').getBoundingClientRect().top, headerBottom: document.querySelector('.ah-home-header').getBoundingClientRect().bottom, activeTag: document.activeElement?.tagName, activeId: document.activeElement?.id, hash: location.hash }));
-    return { context, page, publicReads: () => publicReads, refresh: async () => { revision++; const beforeWait = await scrollState(); await page.waitForTimeout(1100); const beforeDispatch = await scrollState(); const received = page.waitForResponse(response => response.url() === API + '/api/public/content'); await page.evaluate(() => window.dispatchEvent(new Event('focus'))); await received; const afterResponse = await scrollState(); await page.waitForTimeout(100); return { beforeWait, beforeDispatch, afterResponse, afterRender: await scrollState() }; } };
+    return { context, page, publicReads: () => publicReads, displayFontPath: () => displayFontPath, displayFontReads: () => [...displayFontReads], refresh: async () => { revision++; const beforeWait = await scrollState(); await page.waitForTimeout(1100); const beforeDispatch = await scrollState(); const received = page.waitForResponse(response => response.url() === API + '/api/public/content'); await page.evaluate(() => window.dispatchEvent(new Event('focus'))); await received; const afterResponse = await scrollState(); await page.waitForTimeout(100); return { beforeWait, beforeDispatch, afterResponse, afterRender: await scrollState() }; } };
   }
   async function settled(page) { await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))); }
   async function captureFailureSignals(page) {
@@ -167,6 +180,10 @@ async function main() {
         if (node.nodeType !== Node.TEXT_NODE) return [];
         const range = document.createRange(); range.selectNodeContents(node); return [...range.getClientRects()];
       });
+      for (const node of title.querySelectorAll('[data-poster-word],[data-home-title-subtitle]')) {
+        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT); let text;
+        while ((text = walker.nextNode())) if (text.textContent.trim()) { const range = document.createRange(); range.selectNodeContents(text); titleRects.push(...range.getClientRects()); }
+      }
       const readable = [...titleRects, ...[...document.querySelectorAll('#artdico-host h2,#artdico-host h3,#artdico-host p,#artdico-host label,#artdico-host a,#artdico-host button,#artdico-host input,#artdico-host select,#artdico-host textarea,#artdico-host summary')].map(node => node.getBoundingClientRect())].filter(rect => rect.width > 2 && rect.height > 2 && rect.bottom > b.top && rect.top < b.bottom && rect.right > b.left && rect.left < b.right);
       const headerBottom = document.querySelector('.ah-home-header').getBoundingClientRect().bottom, bright = new Uint8Array(canvas.width * canvas.height);
       let brightPixels = 0, centralBrightPixels = 0, signature = 0, sphereAlphaPixels = 0, readableAlphaPixels = 0;
@@ -249,42 +266,73 @@ async function main() {
     assert.ok(result.extraTowardPointer > 1.5 && result.extraDistance < 20, 'the real painted dot responds locally and gently beyond its measured natural drift');
     return result;
   }
-  async function lateTitleFallback(page) {
-    const before = await page.evaluate(() => {
-      const stage = document.querySelector('.ah-home-hero-stage'), heading = stage.querySelector('h1');
-      const box = node => { const rect = node.getBoundingClientRect(); return { width: rect.width, height: rect.height }; };
-      const images = [...heading.querySelectorAll('[data-home-title-image]')];
-      return { at: performance.now(), stage: box(stage), heading: box(heading), children: images.map(image => ({ ...box(image.parentElement), decoded: image.complete && image.naturalWidth > 0, visible: !image.hidden })) };
+  async function posterGeometry(page) {
+    return page.evaluate(() => {
+      const heading = document.getElementById('hero-heading'), box = node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
+      const ranges = node => { const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT), result = []; let text; while ((text = walker.nextNode())) if (text.textContent.trim()) { const range = document.createRange(); range.selectNodeContents(text); for (const r of range.getClientRects()) result.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }); } return result; };
+      const inspect = node => { const style = getComputedStyle(node); return { text: node.textContent.trim().replace(/\s+/gu, ' '), classes: [...node.classList], family: style.fontFamily, weight: Number(style.fontWeight), fontSize: parseFloat(style.fontSize), fill: style.webkitTextFillColor, stroke: parseFloat(style.webkitTextStrokeWidth), clip: style.webkitBackgroundClip, background: style.backgroundImage, box: box(node), ranges: ranges(node), overflowX: style.overflowX, overflowY: style.overflowY, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }; };
+      return { at: performance.now(), viewport: innerWidth, headerBottom: document.querySelector('.ah-home-header').getBoundingClientRect().bottom, heading: { label: heading.getAttribute('aria-label'), hidden: Boolean(heading.closest('[aria-hidden=true]')), count: document.querySelectorAll('h1').length, imageCount: heading.querySelectorAll('img,[data-home-title-image],[data-home-title-fallback]').length }, rows: [...heading.querySelectorAll('[data-home-title-type]')].map(inspect), words: [...heading.querySelectorAll('[data-poster-word]')].map(inspect), subtitles: [...heading.querySelectorAll('[data-home-title-subtitle]')].map(inspect), footer: [...document.querySelectorAll('[data-footer-display-line]')].map(inspect), strokeSupported: CSS.supports('-webkit-text-stroke', '1px #fff'), clipSupported: CSS.supports('background-clip', 'text') || CSS.supports('-webkit-background-clip', 'text'), faces: [...document.fonts].filter(face => face.family.includes('Barlow Condensed')).map(face => ({ family: face.family, status: face.status, weight: face.weight, style: face.style, stretch: face.stretch, display: face.display, sizeAdjust: face.sizeAdjust })) };
     });
-    assert.ok(before.children.length > 0 && before.children.every(child => child.decoded && child.visible), 'late-error coverage begins with the actual decoded brand artwork');
-    // Explicit synthetic failure drives the real existing image error handler.
-    // No style, replacement text, canvas or observer is changed by this test.
-    await page.locator('#hero-heading [data-home-title-image]').evaluateAll(images => images.forEach(image => image.dispatchEvent(new Event('error'))));
-    await page.waitForFunction(before => {
-      const canvasBox = document.querySelector('[data-hero-particles]').getBoundingClientRect(), images = [...document.querySelectorAll('#hero-heading [data-home-title-image]')];
-      const frame = window.__homeMotionQaParticleFrames().findLast(frame => frame.at > before.at && frame.maskRects.length);
-      return frame && images.every((image, index) => {
-        const rect = image.parentElement.getBoundingClientRect(), fallback = image.parentElement.querySelector('[data-home-title-fallback]');
-        return image.hidden && !fallback.hidden && rect.height > before.children[index].height + 1 && frame.maskRects.some(mask => mask.x <= rect.left - canvasBox.left - 1 && mask.y <= rect.top - canvasBox.top - 1 && mask.x + mask.width >= rect.right - canvasBox.left + 1 && mask.y + mask.height >= rect.bottom - canvasBox.top + 1);
+  }
+  async function posterTitle(page, { fontFailure = false } = {}) {
+    const value = await posterGeometry(page); numericMetrics = { posterTitle: value };
+    assert.equal(value.heading.count, 1); assert.equal(value.heading.hidden, false); assert.equal(value.heading.imageCount, 0, 'the semantic Hero is live HTML type without obsolete PNG/error fallback');
+    assert.match(value.heading.label, /Global\s*Game\s*Jam|GlobalGameJam/iu); assert.match(value.heading.label, /ARTDiCO HOST/u);
+    assert.deepEqual(value.rows.map(row => row.text.replace(/\s+/gu, '')), ['GLOBALGAMEJAM', 'ARTDiCOHOST']); assert.deepEqual(value.words.map(word => word.text), ['GLOBAL', 'GAME JAM', 'ARTDiCO', 'HOST']); assert.deepEqual(value.subtitles.map(row => row.text), ['中国组织者交流会', '嘉年华']);
+    for (const word of value.words) {
+      assert.match(word.family, /Barlow Condensed/u); assert.ok(word.weight >= 800 && word.fontSize >= 24 && word.box.width > 0 && word.box.height > 0 && word.ranges.length);
+      assert.equal(['auto', 'scroll'].includes(word.overflowX) || ['auto', 'scroll'].includes(word.overflowY), false, 'poster words do not become internal scroll areas');
+      for (const rect of word.ranges) assert.ok(rect.width > 0 && rect.height > 0 && rect.left >= -1 && rect.right <= value.viewport + 1 && rect.top >= value.headerBottom - 1, 'every native word Range stays readable inside the first-view canvas');
+      if (value.strokeSupported) {
+        assert.ok(word.stroke >= 1, 'poster keylines and outlines are real computed strokes');
+        if (word.classes.includes('ah-poster-outline')) assert.match(word.fill, /rgba\([^)]*,\s*0\)$/u);
+        if (word.classes.includes('ah-poster-solid') && !word.classes.includes('ah-poster-slice')) assert.doesNotMatch(word.fill, /rgba\([^)]*,\s*0\)$/u);
+        if (word.classes.includes('ah-poster-slice') && value.clipSupported) { assert.match(word.background, /gradient/u); assert.equal(word.clip, 'text'); }
+      }
+    }
+    for (const row of value.subtitles) assert.ok(row.fontSize >= 20 && row.ranges.every(rect => rect.left >= -1 && rect.right <= value.viewport + 1), 'Chinese subtitles remain live readable text');
+    assert.ok(value.faces.length > 0); assert.equal(value.faces.some(face => face.status === (fontFailure ? 'error' : 'loaded')), true, 'the expected real font load state is observed');
+    assert.equal(value.footer.length, 2); for (const line of value.footer) assert.ok(line.family.includes('Barlow Condensed') && line.weight >= 800);
+    if (value.strokeSupported) assert.ok(value.footer[1].stroke >= 1, 'the footer outline uses the same actual poster role');
+    return value;
+  }
+  async function typedMaskAfter(page, since) {
+    await page.waitForFunction(since => {
+      const canvas = document.querySelector('[data-hero-particles]').getBoundingClientRect(), frame = window.__homeMotionQaParticleFrames().find(frame => frame.at > since && frame.maskRects.length);
+      if (!frame) return false;
+      return [...document.querySelectorAll('#hero-heading [data-poster-word],#hero-heading [data-home-title-subtitle]')].every(node => {
+        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT); let text;
+        while ((text = walker.nextNode())) if (text.textContent.trim()) { const range = document.createRange(); range.selectNodeContents(text); for (const rect of range.getClientRects()) if (!frame.maskRects.some(mask => mask.x <= rect.left - canvas.left - 1 && mask.y <= rect.top - canvas.top - 1 && mask.x + mask.width >= rect.right - canvas.left + 1 && mask.y + mask.height >= rect.bottom - canvas.top + 1)) return false; }
+        return true;
       });
-    }, before);
-    const after = await page.evaluate(() => {
-      const stage = document.querySelector('.ah-home-hero-stage').getBoundingClientRect(), heading = document.querySelector('#hero-heading').getBoundingClientRect(), canvasBox = document.querySelector('[data-hero-particles]').getBoundingClientRect();
-      const frame = window.__homeMotionQaParticleFrames().filter(frame => frame.maskRects.length).at(-1);
-      return { stage: { width: stage.width, height: stage.height }, heading: { width: heading.width, height: heading.height }, children: [...document.querySelectorAll('#hero-heading [data-home-title-image]')].map(image => {
-        const rect = image.parentElement.getBoundingClientRect(), local = { x: rect.left - canvasBox.left, y: rect.top - canvasBox.top, width: rect.width, height: rect.height };
-        const mask = frame.maskRects.find(mask => mask.x <= local.x - 1 && mask.y <= local.y - 1 && mask.x + mask.width >= local.x + local.width + 1 && mask.y + mask.height >= local.y + local.height + 1);
-        return { ...local, mask };
-      }), paintedAt: frame.at };
-    });
-    numericMetrics = { lateTitleFallback: { before, after } };
-    assert.ok(Math.abs(after.stage.height - before.stage.height) < 1 && Math.abs(after.heading.height - before.heading.height) < 1, 'late title children change while the outer hero and heading boxes stay fixed');
-    await page.mouse.move(width - 25, 220); await page.waitForTimeout(350);
-    const pixels = await particlePixels(page);
-    assert.equal(pixels.readableAlphaPixels, 0, 'late taller text fallback retains zero particle alpha throughout its complete new boxes');
-    assert.equal(pixels.sphereAlphaPixels, 0, 'late title fallback keeps the sphere particle-free');
-    await page.screenshot({ path: resolve(evidence, 'hero-late-title-fallback-' + width + '.png') });
-    return { explicitlySyntheticLateImageError: true, before, after, readableAlphaPixels: pixels.readableAlphaPixels, sphereAlphaPixels: pixels.sphereAlphaPixels, actualDestinationOutPaintObserved: true };
+    }, since);
+    return page.evaluate(since => { const frame = window.__homeMotionQaParticleFrames().find(frame => frame.at > since && frame.maskRects.length); return { eventAt: since, firstMaskPaintAt: frame.at, rectangles: frame.maskRects.length }; }, since);
+  }
+  async function lateTitleFonts(page, f) {
+    const path = f.displayFontPath(); assert.ok(path, 'the actual compiled display-font request was intercepted');
+    const before = await posterTitle(page, { fontFailure: true }), original = before.faces.find(face => face.status === 'error');
+    await page.screenshot({ path: resolve(evidence, 'hero-font-fallback-' + width + '.png') });
+    const load = async mode => page.evaluate(async ({ path, mode, original }) => {
+      const startedAt = performance.now(), descriptors = { weight: original.weight, style: original.style, stretch: original.stretch, display: original.display };
+      if (original.sizeAdjust) descriptors.sizeAdjust = original.sizeAdjust;
+      const face = new FontFace(original.family, 'url("' + path + '?qa-font=' + mode + '")', descriptors); document.fonts.add(face); let rejected = false;
+      try { await face.load(); } catch { rejected = true; } await document.fonts.ready;
+      return { startedAt, completedAt: performance.now(), status: face.status, rejected, family: face.family, sizeAdjust: face.sizeAdjust };
+    }, { path, mode, original });
+    const failed = await load('late-error'); assert.equal(failed.status, 'error'); assert.equal(failed.rejected, true);
+    await page.waitForFunction(start => window.__homeMotionQaFontEvents().some(event => event.at >= start && event.type === 'loadingerror'), failed.startedAt);
+    const errorEvent = await page.evaluate(start => window.__homeMotionQaFontEvents().find(event => event.at >= start && event.type === 'loadingerror'), failed.startedAt), errorMask = await typedMaskAfter(page, errorEvent.at);
+    const failurePixels = await particlePixels(page); assert.equal(failurePixels.readableAlphaPixels + failurePixels.sphereAlphaPixels, 0, 'real late font failure leaves fallback text and sphere clear of star alpha');
+    await page.screenshot({ path: resolve(evidence, 'hero-late-font-error-' + width + '.png') });
+    const loaded = await load('late-loaded'); assert.equal(loaded.status, 'loaded'); assert.equal(loaded.rejected, false); assert.equal(loaded.sizeAdjust, original.sizeAdjust, 'late native retry uses the actual shipped face metrics');
+    await page.waitForFunction(start => window.__homeMotionQaFontEvents().some(event => event.at >= start && event.type === 'loadingdone'), loaded.startedAt);
+    const doneEvent = await page.evaluate(start => window.__homeMotionQaFontEvents().find(event => event.at >= start && event.type === 'loadingdone'), loaded.startedAt), loadedMask = await typedMaskAfter(page, doneEvent.at), after = await posterTitle(page);
+    const changed = after.words.some((word, index) => word.ranges.length !== before.words[index].ranges.length || word.ranges.some((rect, part) => Math.abs(rect.width - (before.words[index].ranges[part]?.width ?? 0)) > 1 || Math.abs(rect.height - (before.words[index].ranges[part]?.height ?? 0)) > 1));
+    numericMetrics = { lateTitleFonts: { failed, loaded, before, after, errorMask, loadedMask, changed } };
+    assert.equal(changed, true, 'the native shipped font actually replaces fallback glyph metrics');
+    const pixels = await particlePixels(page); assert.ok(pixels.brightPixels >= 15 && pixels.visibleComponents >= 6 && pixels.occupiedRegions >= 3, 'the loaded title retains the original visible star-field threshold'); assert.equal(pixels.readableAlphaPixels, 0, 'actual new glyph Ranges remain free of star alpha after late font reflow'); assert.equal(pixels.sphereAlphaPixels, 0);
+    await page.screenshot({ path: resolve(evidence, 'hero-active-' + width + '.png') }); await page.screenshot({ path: resolve(evidence, 'hero-late-font-loaded-' + width + '.png') });
+    return { realFontRequests: f.displayFontReads(), failed, loaded, errorEvent, doneEvent, errorMask, loadedMask, nativeGlyphMetricsChanged: changed, before, after, readableAlphaPixels: pixels.readableAlphaPixels, sphereAlphaPixels: pixels.sphereAlphaPixels };
   }
   async function backgroundPlanet(page) {
     return page.locator('[data-background-planet]').evaluate(node => {
@@ -453,7 +501,7 @@ async function main() {
       try {
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.scrollMotion === 'ready');
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.motionState === 'reduced');
-        await essentialContent(page); await noDecorativeMotion(page); await header(page);
+        await essentialContent(page); const typedHero = await posterTitle(page, { fontFailure: width === 1920 }); await noDecorativeMotion(page); await header(page);
         stage = 'enable-motion'; await page.emulateMedia({ reducedMotion: 'no-preference' });
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.motionState === 'active'); await settled(page);
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.atmosphereState === 'active');
@@ -494,8 +542,8 @@ async function main() {
           assert.ok(Math.abs(secondPose.x) <= 8 && Math.abs(secondPose.y) <= 8, 'hero pointer interaction stays gentle'); pointerInteraction = true;
         }
         await page.screenshot({ path: resolve(evidence, 'hero-active-' + width + '.png') });
-        let lateBrandFallback = null;
-        if (width === 1920) { stage = 'late-title-fallback-mask'; lateBrandFallback = await lateTitleFallback(page); }
+        let lateTitleFontLifecycle = null;
+        if (width === 1920) { stage = 'late-title-font-mask'; lateTitleFontLifecycle = await lateTitleFonts(page, f); }
         const start = await progress(page); assert.equal(start.hidden, 'true', 'reading progress is a decorative, non-announcing layer');
         stage = 'organization-presentation';
         const organizationFade = await fadeSequence(page, '#booths .ah-section-heading', '#organization-scroll-motion-org', 'organization-fade', { focusCancellation: true });
@@ -569,13 +617,13 @@ async function main() {
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.motionState === 'active');
         await page.emulateMedia({ reducedMotion: 'reduce' }); await page.screenshot({ path: resolve(evidence, 'pinned-header-' + width + '.png') });
         stage='one-pixel-viewport';const narrowViewport=width===1440?await onePixelViewport(page,width):null;
-        reports.push({ width, initialAndLiveReducedMotion: true, visibleHeroAmbientFrameLoop: true, visibleParticlePixels: [firstParticles, secondParticles], finePointerInteraction: pointerInteraction, backgroundPointer, lateBrandFallback, nativeWheel: true, boundedDecorativeShift: artShift, originalSphere, distantSphere, sphereAfterWheel, ambientBudget, compositing, continuousFullPageBackgroundWithOneBoundedLoop: true, realEntryAndFocusCancellation: true, guestFade, organizationFade, touchPan, rowFade, narrowViewport, pointerTransparentBackground: true, frameProbeExplicitlySyntheticInstrumentation: true, pinnedHeader: true, anchorsBelowHeader: alignment, mobileMenu: width < 1000, publicRefreshPositionPreserved: true, delayedGuestHash: true, hiddenSignalExplicitlySynthetic: true });
+        reports.push({ width, typedHero, initialAndLiveReducedMotion: true, visibleHeroAmbientFrameLoop: true, visibleParticlePixels: [firstParticles, secondParticles], finePointerInteraction: pointerInteraction, backgroundPointer, lateTitleFontLifecycle, nativeWheel: true, boundedDecorativeShift: artShift, originalSphere, distantSphere, sphereAfterWheel, ambientBudget, compositing, continuousFullPageBackgroundWithOneBoundedLoop: true, realEntryAndFocusCancellation: true, guestFade, organizationFade, touchPan, rowFade, narrowViewport, pointerTransparentBackground: true, frameProbeExplicitlySyntheticInstrumentation: true, pinnedHeader: true, anchorsBelowHeader: alignment, mobileMenu: width < 1000, publicRefreshPositionPreserved: true, delayedGuestHash: true, hiddenSignalExplicitlySynthetic: true });
       } catch (error) { await captureFailureSignals(page); throw error; } finally { activePage = null; await f.context.close(); }
     }
     for (const mode of ['no-javascript', 'no-intersection-observer']) {
       stage = mode; width = 390; const f = await fixture({ viewportWidth: width, javaScriptEnabled: mode !== 'no-javascript', withoutObserver: mode === 'no-intersection-observer' });
       try {
-        await essentialContent(f.page);
+        await essentialContent(f.page); await posterTitle(f.page);
         if (mode === 'no-intersection-observer') {
           assert.equal(await f.page.locator('.ah-home-hero-planet').getAttribute('data-hero-motion'), 'idle');
           assert.equal(await f.page.locator('[data-reading-atmosphere]').evaluate(node => node.hidden), true);

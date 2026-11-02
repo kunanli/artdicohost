@@ -26,6 +26,30 @@
       "sha256": "f03f058c6c51765571fe541b38ea6d652d6d85bb64e8ffa29d2da49550d5c62c"
     }
   ],
+  "displayFonts": [
+    {
+      "path": "src/assets/fonts/BarlowCondensed-ExtraBold.woff2",
+      "family": "Barlow Condensed",
+      "weight": 800,
+      "style": "normal",
+      "codePoints": 526,
+      "license": "SIL Open Font License 1.1",
+      "licensePath": "src/assets/fonts/barlow-OFL.txt",
+      "licenseBytes": 4377,
+      "licenseSha256": "186d750eb496a4c17a76385f82be6aea2ac1cf2de074a811d63786cf374ea73f",
+      "source": {
+        "repository": "https://github.com/jpt/barlow",
+        "commit": "dc2940e2e04ef4ec96c07e23e0f02aefbddd343b",
+        "path": "fonts/woff2/BarlowCondensed-ExtraBold.woff2",
+        "url": "https://raw.githubusercontent.com/jpt/barlow/dc2940e2e04ef4ec96c07e23e0f02aefbddd343b/fonts/woff2/BarlowCondensed-ExtraBold.woff2",
+        "blobSha": "1f20fa0e6284b3f20156b66990d7470030ffb2c2",
+        "licenseUrl": "https://raw.githubusercontent.com/jpt/barlow/dc2940e2e04ef4ec96c07e23e0f02aefbddd343b/OFL.txt"
+      },
+      "bytes": 61692,
+      "sha256": "312b96f47eaba789835020d95a2d1f6b6205f38a44781b6e86d5a8256356b5ac",
+      "modification": "None. The upstream WOFF2 and complete OFL are distributed unchanged; no subsetting, conversion or font renaming."
+    }
+  ],
   "images": [
     {
       "path": "src/assets/home/event-share.png",

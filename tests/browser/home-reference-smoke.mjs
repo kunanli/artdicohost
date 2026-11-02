@@ -127,10 +127,7 @@ await mkdir(evidence, { recursive: true });
 async function fixture(width, { mode = 'legacy', brokenImages = false, javascript = true } = {}) {
   const context = await browser.newContext({ viewport: { width, height: 1000 }, isMobile: width < 600, hasTouch: width < 600, javaScriptEnabled: javascript, reducedMotion: 'reduce' });
   const page = await context.newPage(), calls = [], raw = rawFixture({ brokenImages }); let currentMode = mode, revision = 1;
-  const html = await readFile(resolve(dist, 'index.html'), 'utf8');
-  const titleImagePaths = new Set([...html.matchAll(/<img\b[^>]*\bdata-home-title-image\b[^>]*>/gu)].map(match => {
-    const src = /\bsrc="([^"]+)"/u.exec(match[0]); assert.ok(src, 'built title art has its actual source URL'); return new URL(src[1], SITE).pathname;
-  }));
+  const fontFailures=new Set();let failPosterFont=brokenImages;
   page.setDefaultTimeout(12000); page.on('pageerror', error => pageErrors.push({ width, mode, message: error.message }));
   await context.addCookies([{ name: 'synthetic_staff', value: PRIVATE, domain: new URL(API).hostname, path: '/', httpOnly: true, secure: true, sameSite: 'Strict' }]);
   await context.route('**/*', async route => {
@@ -150,7 +147,7 @@ async function fixture(width, { mode = 'legacy', brokenImages = false, javascrip
       return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': SITE }, body: JSON.stringify({ enabled: false, reason: 'closed' }) });
     }
     assert.equal(url.pathname.startsWith('/api/'), false);
-    if (brokenImages && titleImagePaths.has(url.pathname)) return route.fulfill({ status: 404, body: '' });
+    if(failPosterFont&&/BarlowCondensed-ExtraBold.*\.woff2$/u.test(url.pathname)){fontFailures.add(url.pathname);return route.fulfill({status:404,body:''});}
     const path = url.pathname.endsWith('/') ? url.pathname + 'index.html' : url.pathname, file = resolve(dist, '.' + path);
     assert.ok(file.startsWith(dist + '/'));
     try { const bytes = await readFile(file); servedAssets.set(path, sha(bytes)); return route.fulfill({ status: 200, contentType: mime(file), body: bytes }); }
@@ -162,7 +159,7 @@ async function fixture(width, { mode = 'legacy', brokenImages = false, javascrip
     const received = page.waitForResponse(response => response.url() === API + '/api/public/content');
     await page.evaluate(() => window.dispatchEvent(new Event('focus'))); await received; await page.waitForTimeout(250);
   }
-  return { width, context, page, calls, refresh, titleImagePaths };
+  return { width, context, page, calls, refresh, fontFailures,failPosterFont(){failPosterFont=true;} };
 }
 const noOverflow = async f => assert.equal(await f.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'no horizontal overflow at ' + f.width + 'px');
 function near(actual, expected, tolerance, description) { assert.ok(Math.abs(actual - expected) <= tolerance, `${description}: actual=${actual.toFixed(2)}, reference=${expected.toFixed(2)}, tolerance=${tolerance.toFixed(2)}`); }
@@ -173,6 +170,60 @@ async function mobileOrganizationCircle(f,expected){
   for(const row of value.rows){assert.ok(row.card.width>=44&&row.card.height>=44,'every mobile organization keeps a complete 44px action frame');for(const box of[row.slot,row.card,row.frame,row.image].filter(Boolean))for(const x of[box.x,box.x+box.width])for(const y of[box.y,box.y+box.height])assert.ok(Math.hypot(x-cx,y-cy)<=r-4+.75,'every complete logo/card corner stays inside the real circle with safety padding');}
   for(let a=0;a<value.rows.length;a++)for(let b=a+1;b<value.rows.length;b++){const x=value.rows[a].card,y=value.rows[b].card;assert.ok(Math.min(x.x+x.width,y.x+y.width)-Math.max(x.x,y.x)<=1||Math.min(x.y+x.height,y.y+y.height)-Math.max(x.y,y.y)<=1,'circle organization cards never overlap');}
   return value;
+}
+async function organizationCaption(card,{name,visible=false}={}){
+  const measured=await card.evaluate(node=>{const name=node.querySelector('h3'),action=node.querySelector('.ah-organization-card'),style=getComputedStyle(name),r=name.getBoundingClientRect();return{width:r.width,height:r.height,font:parseFloat(style.fontSize),display:style.display,visibility:style.visibility,opacity:Number(style.opacity),clip:style.clipPath,aria:action.getAttribute('aria-label'),external:action.tagName==='A'};});
+  assert.equal(measured.aria,name+(measured.external?' · 打开组织页面（新窗口）':''),'the full organization name remains accessible independently of the logo');
+  const readable=measured.width>1&&measured.height>1&&measured.display!=='none'&&measured.visibility==='visible'&&measured.opacity>0&&measured.clip!=='inset(50%)';
+  assert.equal(readable,visible,visible?'missing or failed logos retain their readable name':'successful logos do not repeat a visible name caption');
+  if(visible)assert.ok(measured.font>=16,'organization name fallback remains readable');else assert.equal(measured.display,'none','a successful logo fully removes its duplicate visual caption');return measured;
+}
+async function titleReadability(page){
+  assert.equal(await page.locator('#hero-heading').isVisible(),true,'the actual title remains visible');
+  const measured=await page.locator('#hero-heading').evaluate(node=>{
+    const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT),failures=[];let textFragments=0;
+    while(walker.nextNode()){
+      const text=walker.currentNode,parent=text.parentElement;if(!text.textContent.trim()||!parent)continue;
+      const range=document.createRange();range.selectNodeContents(text);const boxes=[...range.getClientRects()].filter(box=>box.width>0&&box.height>0);
+      if(!boxes.length)failures.push('unrendered-text');textFragments+=boxes.length;
+      for(let ancestor=parent;ancestor&&ancestor!==node.parentElement;ancestor=ancestor.parentElement){const style=getComputedStyle(ancestor);if(ancestor.hidden||style.display==='none'||style.visibility!=='visible'||Number(style.opacity)===0)failures.push('hidden-text');}
+      for(const box of boxes){
+        if(box.left < -1||box.right > innerWidth+1)failures.push('viewport');
+        for(let clip=parent;clip&&clip!==node.parentElement;clip=clip.parentElement){const style=getComputedStyle(clip),rect=clip.getBoundingClientRect();if(['hidden','clip','scroll','auto'].includes(style.overflowX)&&(box.left<rect.left-1||box.right>rect.right+1))failures.push('horizontal-clip');if(['hidden','clip','scroll','auto'].includes(style.overflowY)&&(box.top<rect.top-1||box.bottom>rect.bottom+1))failures.push('vertical-clip');}
+      }
+    }
+    return {textFragments,failures};
+  });
+  assert.ok(measured.textFragments>0,'the title has rendered letterforms');assert.deepEqual(measured.failures,[],'title letters and subtitles are visible and unclipped');return measured;
+}
+async function heroType(page,{failedFont=false}={}){
+  await page.evaluate(()=>document.fonts.ready);
+  assert.equal(await page.locator('#hero-heading [data-home-title-image],#hero-heading [data-home-title-fallback]').count(),0,'the poster is live text, without image/error fallback layers');
+  assert.equal(await page.locator('#hero-heading').getAttribute('aria-label'),await page.locator('#hero-heading').getAttribute('data-initial-event-title'),'the semantic title remains independent of the English poster letters');
+  assert.deepEqual(await page.locator('#hero-heading [data-home-title-subtitle][lang="zh-CN"]').allTextContents(),['中国组织者交流会','嘉年华'],'the Chinese subtitles also remain real text');
+  const rows=await page.locator('#hero-heading>.ah-home-title-art').evaluateAll(nodes=>nodes.map(node=>{
+    const type=node.querySelector('[data-home-title-type][lang=en]'),style=getComputedStyle(type),range=document.createRange();range.selectNodeContents(type);
+    const box=element=>{const b=element.getBoundingClientRect();return{x:b.x,y:b.y,width:b.width,height:b.height,right:b.right,bottom:b.bottom};};
+    const textBoxes=[...range.getClientRects()].filter(b=>b.width&&b.height).map(b=>({x:b.x,y:b.y,width:b.width,height:b.height,right:b.right,bottom:b.bottom}));
+    const primary=style.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/gu,'');
+    const words=[...type.children].map(word=>{const r=document.createRange();r.selectNodeContents(word);const style=getComputedStyle(word);return{text:word.textContent.trim(),fill:style.webkitTextFillColor,stroke:parseFloat(style.webkitTextStrokeWidth),background:style.backgroundImage,boxes:[...r.getClientRects()].filter(b=>b.width&&b.height).map(b=>({x:b.x,y:b.y,width:b.width,height:b.height,right:b.right,bottom:b.bottom}))};});
+    return {text:type.textContent.trim(),words,box:box(type),wrapper:box(node),font:style.fontFamily,weight:style.fontWeight,fontSize:parseFloat(style.fontSize),primary,faces:[...document.fonts].filter(face=>face.family.replace(/^['"]|['"]$/gu,'')===primary&&face.weight==='800').map(face=>({weight:face.weight,status:face.status})),textBoxes};
+  }));
+  assert.equal(rows.length,2,'both fixed poster wrappers remain direct children of the semantic h1');
+  assert.deepEqual(rows.map(row=>row.text.replace(/\s/gu,'')),['GLOBALGAMEJAM','ARTDiCOHOST']);
+  assert.deepEqual(rows.map(row=>row.words.map(word=>word.text)),[['GLOBAL','GAME JAM'],['ARTDiCO','HOST']],'the poster preserves whole word groups');
+  assert.ok(rows[0].words[0].stroke>0&&rows[1].words[1].stroke>0,'the outlined word groups have actual strokes');
+  assert.match(rows[0].words[1].background,/linear-gradient/u,'the filled GAME JAM group has the requested color split');
+  for(const row of rows){
+    for(const word of row.words){assert.equal(word.boxes.length,1,'a poster word is not split between lines');for(const box of word.boxes)assert.ok(box.x>=row.wrapper.x-1&&box.right<=row.wrapper.right+1,'whole words fit their original poster wrapper');}
+    assert.equal(row.weight,'800','the poster uses the actual heavy display weight');
+    assert.equal(row.primary,'Barlow Condensed','the declared face is the self-hosted condensed display family');
+    assert.ok(row.faces.length>0,'the poster face is registered by the built page');
+    assert.ok(row.faces.some(face=>face.status===(failedFont?'error':'loaded')),'the real font request exercises loaded or failed fallback state');
+    assert.ok(row.box.width>0&&row.box.height>0&&row.textBoxes.length>0,'live letters have rendered dimensions');
+    for(const box of row.textBoxes)assert.ok(box.x>=-1&&box.right<=page.viewportSize().width+1,'every live brand word remains inside the viewport');
+  }
+  await titleReadability(page);return rows;
 }
 function rowsOf(boxes, tolerance = 10) {
   const rows = [];
@@ -314,6 +365,7 @@ async function otherContent(f) {
   await page.locator('[data-zone="B"]').click(); assert.equal(await page.locator('[data-zone="B"]').getAttribute('aria-selected'), 'true');
   await page.locator('[data-zone="B"]').focus(); await page.keyboard.press('ArrowRight'); assert.equal(await page.locator('[data-zone="C"]').getAttribute('aria-selected'), 'true');
   assert.equal(await page.locator('[data-agenda-panel="C"]').isVisible(), true);
+  assert.equal(await page.locator('#students').isVisible(),true,'published works reveal their whole section');
   assert.equal(await page.locator('[data-showcase-id]').count(), 2); assert.equal(await page.locator('[data-showcase-id]:visible').count(), 1);
   const peek = page.locator('[data-work-peek]'); assert.equal(await peek.getAttribute('aria-hidden'), 'true');
   assert.equal(await page.locator('[data-work-navigation]').isVisible(), true, 'two actual works expose manual navigation');
@@ -416,6 +468,7 @@ try {
       assert.equal(await blanks.evaluateAll(nodes => nodes.every(node => node.getAttribute('aria-hidden') === 'true' && node.getAttribute('role') === 'presentation' && !node.textContent.trim())), true);
       assert.equal(await f.page.locator('.ah-guest-placeholder:visible').count(), width < 600 ? 0 : 3, 'decorative reference fill is hidden on small screens');
       await loadOrganizationImages(f);
+      const posterTypography=await heroType(f.page);
       const measured = await geometry(f); await disclosures(f); await otherContent(f); await noOverflow(f);
       const files = await screenshots(f); let unknownOrganizationFallback = false;
       await f.refresh('legacy', raw => { raw.organizations.push(
@@ -437,7 +490,8 @@ try {
         return {slot:box(node),name:box(node.querySelector('h3')),frame:box(node.querySelector('.ah-organization-image')),image:box(image),planet:box(document.querySelector('[data-organizations-planet]')),imageFilter:getComputedStyle(image).filter,
           frameBackground:getComputedStyle(node.querySelector('.ah-organization-image')).backgroundColor,mask:{ink,nonwhite,transparent,corner:pixel(0,0),counter:pixel(120,48),width:canvas.width,height:canvas.height}};
       });
-      assert.ok(extraGeometry.name.width>1&&extraGeometry.name.height>1,'an uploaded unknown logo always retains its visible name');
+      await organizationCaption(unknown,{name:'合成第八个组织'});
+      if(width<1000){near(extraGeometry.frame.height,(await unknown.locator('.ah-organization-card').boundingBox()).height,1,'a successful mobile upload uses its full fixed logo frame');}
       assert.equal(extraGeometry.imageFilter,'none','white logos use an alpha mask rather than a CSS filter on an opaque rectangle');
       assert.equal(extraGeometry.mask.nonwhite,0,'every visible generated logo pixel is white');assert.ok(extraGeometry.mask.ink>0&&extraGeometry.mask.transparent>0);
       assert.equal(extraGeometry.mask.corner[3],0,'opaque source backgrounds do not turn into a white rectangle');assert.equal(extraGeometry.mask.counter[3],0,'enclosed letter counters remain transparent');
@@ -459,17 +513,25 @@ try {
       assert.equal(mixedMask.outer[3],0);assert.equal(mixedMask.innerPanel[3],0,'a transparent outer margin does not preserve an opaque white inner panel');assert.equal(mixedMask.counter[3],0,'the panel-colored enclosed counter is also removed');assert.deepEqual(mixedMask.ink,[255,255,255,255]);
       await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogoByWidth.get(width).id;});
       await unknown.scrollIntoViewIfNeeded();await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
+      await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId='';});
+      assert.equal(await unknown.locator('.ah-organization-image').count(),0,'an organization without a source logo uses its real name');
+      await organizationCaption(unknown,{name:'合成第八个组织',visible:true});if(width<1000)await mobileOrganizationCircle(f,8);
+      await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogoByWidth.get(width).id;});
+      await unknown.scrollIntoViewIfNeeded();await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
+      await organizationCaption(unknown,{name:'合成第八个组织'});
       if(width===1440){
         await f.refresh('legacy',raw=>{raw.organizations.push({id:'synthetic-reference-duplicate',name:'游戏奇点',logoId:logoSources[0].id,website:'',participation:'undecided',status:'confirmed',publicConsent:true,internalNotes:PRIVATE});});
         const duplicate=f.page.locator('[data-organization-id="synthetic-reference-duplicate"]');
         assert.equal(await duplicate.count(),1);assert.equal(await duplicate.getAttribute('data-organization-reference'),null);
         assert.notEqual(await duplicate.evaluate(node=>getComputedStyle(node).position),'absolute','a second saved record with the same public label stays in normal flow');
         assert.equal(await f.page.locator('[data-organization-reference="gamezone"]').count(),1,'only one real card occupies each reference slot');
-        assert.ok((await duplicate.locator('h3').boundingBox()).height>1,'the distinct duplicate retains its own visible name');
+        await duplicate.scrollIntoViewIfNeeded();await duplicate.locator('img').evaluate(node=>node.decode());
+        await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-duplicate .ah-organization-image')?.dataset.logoPresentation==='white');
+        await organizationCaption(duplicate,{name:'游戏奇点'});
         await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogos.get('opaque-complex').id;});
         await unknown.scrollIntoViewIfNeeded();
         await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.hidden===true);
-        assert.ok((await unknown.locator('h3').boundingBox()).height>1,'an inseparable complex background keeps the actual readable organization name');
+        await organizationCaption(unknown,{name:'合成第八个组织',visible:true});
         assert.equal(await unknown.getAttribute('data-logo-artwork'),'published-name');
         await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogoByWidth.get(width).id;});
         await unknown.scrollIntoViewIfNeeded();
@@ -494,9 +556,13 @@ try {
         organizationPaging={total:11,first:8,second:3,stableIdsAndHash:true,refreshAndKeyboardFocus:true};
       }
       assert.doesNotMatch(await f.page.locator('body').textContent(), /SYNTHETIC_REFERENCE_PRIVATE|private@example/u);
-      reports.push({ name: 'legacy-public-layout-' + width, width, profiles: 9, organizations: 7, attendance: 'not inferred; only actual profile title is displayed', geometry: measured,
+      f.failPosterFont();await f.page.reload({waitUntil:'networkidle'});await f.page.evaluate(()=>scrollTo(0,0));
+      assert.ok(f.fontFailures.size>0,'each reference width exercises a genuine poster-font 404');
+      const fontFailureTypography=await heroType(f.page,{failedFont:true});await noOverflow(f);
+      await f.page.screenshot({path:resolve(evidence,'font-fallback-'+width+'.png'),fullPage:false,animations:'disabled'});
+      reports.push({ name: 'legacy-public-layout-' + width, width, profiles: 9, organizations: 7, attendance: 'not inferred; only actual profile title is displayed', geometry: measured,posterTypography,fontFailureTypography,failedFontPaths:[...f.fontFailures],
         interaction: 'native keyboard, Escape, pointer gap or touch; actual timetable tabs, works filter and FAQ', unknownOrganizationFallback,
-        duplicateKnownOrganizationRetained: width===1440, eighthOrganizationGeometry:extraGeometry,mixedTransparentPanelMask:mixedMask,organizationPaging, requests: f.calls.length, screenshots: files });
+        duplicateKnownOrganizationRetained: width===1440, eighthOrganizationGeometry:extraGeometry,missingLogoNameAndRestoredLogoOnly:true,mixedTransparentPanelMask:mixedMask,organizationPaging, requests: f.calls.length, screenshots: files });
     } finally { await f.context.close(); }
   }
   for (const mode of ['empty', 'corrupt', 'unavailable']) {
@@ -512,15 +578,15 @@ try {
   const broken = await fixture(390, { brokenImages: true });
   try {
     await broken.page.goto(SITE + '/', { waitUntil: 'networkidle' });
-    assert.equal(broken.titleImagePaths.size, 2, 'both reference title graphics are exercised by actual intercepted 404s');
-    assert.equal(await broken.page.locator('[data-home-title-fallback]:visible').count(), 2, 'actual error/startup recovery exposes both readable title fallbacks');
-    assert.match(await broken.page.locator('#hero-heading').innerText(), /GLOBAL GAME JAM/u); assert.match(await broken.page.locator('#hero-heading').innerText(), /ARTDiCO HOST/u);
+    assert.ok(broken.fontFailures.size>0,'the font fallback case blocks actual font requests with 404 responses');
+    const fallbackTypography=await heroType(broken.page,{failedFont:true});
+    assert.match(await broken.page.locator('#hero-heading').innerText(), /GLOBAL\s*GAME\s*JAM/u); assert.match(await broken.page.locator('#hero-heading').innerText(), /ARTDiCO\s*HOST/u);
     const first = broken.page.locator('#guest-' + guestId(0)); await first.locator('[data-guest-toggle]').tap();
     await broken.page.waitForFunction(id => document.querySelector('#guest-' + id + ' .ah-guest-portrait img')?.hidden === true, guestId(0));
     assert.equal(await first.locator('.ah-guest-name').isVisible(), true); assert.equal(await first.locator('.ah-guest-initial').isVisible(), true);
     const organization = broken.page.locator('#organization-' + organizationId(6)); await organization.scrollIntoViewIfNeeded();
     await broken.page.waitForFunction(id => document.querySelector('#organization-' + id + ' .ah-organization-image')?.hidden === true, organizationId(6));
-    assert.equal(await organization.locator('h3').isVisible(), true);
+    await organizationCaption(organization,{name:organizationNames[6],visible:true});
     const failedWork = broken.page.locator('#work-synthetic-reference-work-0');
     await failedWork.scrollIntoViewIfNeeded();
     await broken.page.waitForFunction(() => document.querySelector('#work-synthetic-reference-work-0')?.dataset.coverState === 'unavailable');
@@ -543,19 +609,34 @@ try {
     await broken.page.locator('#work-synthetic-reference-work-1:visible').waitFor();
     assert.equal(await broken.page.locator('.ah-work-stage').getAttribute('data-work-presentation'), 'image', 'manual navigation still reaches the next real cover');
     await noOverflow(broken);
-    reports.push({ name: 'image-failure-name-and-initial', width: 390, failedHeroImagePaths: [...broken.titleImagePaths], readableHeroTitle: true, readableGuestName: true, readableGuestInitial: true, readableOrganizationName: true, failedWorkUsesCompactText: true, failedWorkGeometry: failedGeometry, nextRealCoverReachable: true });
+    reports.push({ name: 'image-failure-name-and-initial', width: 390, failedFontPaths:[...broken.fontFailures],fallbackTypography,readableHeroTitle:true, readableGuestName: true, readableGuestInitial: true, readableOrganizationName: true, failedWorkUsesCompactText: true, failedWorkGeometry: failedGeometry, nextRealCoverReachable: true });
   } finally { await broken.context.close(); }
   const changing = await fixture(390);
   try {
     await changing.page.goto(SITE + '/', { waitUntil: 'networkidle' }); assert.equal(await changing.page.locator('[data-guest-id]').count(), 9);
-    await changing.refresh('empty'); assert.equal(await changing.page.locator('[data-guest-id]').count(), 0);
+    const initialTitle=await changing.page.locator('#hero-heading').getAttribute('data-initial-event-title');
+    assert.equal(await changing.page.locator('#students').isVisible(),true);
+    await changing.refresh('empty',raw=>{raw.showcases=[];}); assert.equal(await changing.page.locator('[data-guest-id]').count(), 0);
+    assert.equal(await changing.page.locator('#students').isVisible(),false,'an explicit empty work list hides the complete section, including heading, placeholder and actions');
+    assert.equal(await changing.page.locator('#students a:visible,#students button:visible,#students select:visible').count(),0,'an empty work section leaves no visible controls');
     await changing.refresh('corrupt'); assert.equal(await changing.page.locator('[data-guest-id]').count(), 0, 'bad refresh retains the verified explicit empty proof');
-    await changing.refresh('proved', raw => { raw.event.title = '合成最新发布活动标题'; });
+    assert.equal(await changing.page.locator('#students').isVisible(),false,'a corrupt refresh retains the verified empty work section');
+    await changing.refresh('proved', raw => { raw.event.title = '合成最新发布活动标题';raw.showcases=rawFixture().showcases; });
+    assert.equal(await changing.page.locator('#students').isVisible(),true,'a later verified publication with works restores the whole section');
+    assert.equal(await changing.page.locator('[data-showcase-id]').count(),2);
     assert.equal(await changing.page.locator('[data-guest-id]').count(), 1); assert.equal(await changing.page.locator('.ah-guest-attendance').count(), 0);
-    assert.equal((await changing.page.locator('#hero-heading').textContent()).trim(), '合成最新发布活动标题', 'a changed published fact replaces decorative title art with the real title');
+    assert.equal((await changing.page.locator('#hero-heading').textContent()).trim(), '合成最新发布活动标题', 'a changed published fact replaces the fixed poster wordmark with the real title');
+    assert.equal(await changing.page.locator('#hero-heading').getAttribute('aria-label'),'合成最新发布活动标题');await titleReadability(changing.page);
+    const longPublishedTitle='合成真实发布的长活动名称'.repeat(12);
+    await changing.refresh('proved',raw=>{raw.event.title=longPublishedTitle;});
+    assert.equal((await changing.page.locator('#hero-heading').textContent()).trim(),longPublishedTitle,'long published titles remain actual text rather than falling back to a decorative brand');
+    assert.equal(await changing.page.locator('#hero-heading [data-home-title-type]').count(),0,'custom event facts replace the fixed brand wordmark');assert.equal(await changing.page.locator('#hero-heading').getAttribute('aria-label'),longPublishedTitle);await titleReadability(changing.page);await noOverflow(changing);
     await changing.refresh('unavailable'); assert.equal(await changing.page.locator('[data-guest-id]').count(), 1, 'failed refresh retains only the last verified explicit proof');
+    assert.equal((await changing.page.locator('#hero-heading').textContent()).trim(),longPublishedTitle,'a failed refresh preserves the last verified long event title');
     assert.match(await changing.page.locator('[data-public-content-status]').textContent(), /仍显示上次核对/u); await noOverflow(changing);
-    reports.push({ name: 'proof-refresh-transitions', width: 390, counts: [9, 0, 0, 1, 1], verifiedStatePreserved: true, customPublishedTitlePreserved: true });
+    await changing.refresh('proved',raw=>{raw.event.title=initialTitle;});await heroType(changing.page);
+    assert.equal(await changing.page.locator('[data-guest-id]').count(),1,'restoring the event title does not change the explicit guest proof');
+    reports.push({ name: 'proof-refresh-transitions', width: 390, counts:[9,0,0,1,1,1,1],emptyWorkSectionHiddenAndRestored:true,posterRestoredAfterCustomTitle:true,longPublishedTitlePreserved:true,verifiedStatePreserved: true, customPublishedTitlePreserved: true });
   } finally { await changing.context.close(); }
   assert.deepEqual(pageErrors, []);
 } catch (error) { failure = { message: error.message, stack: error.stack }; }

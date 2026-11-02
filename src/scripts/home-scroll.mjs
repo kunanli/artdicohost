@@ -32,7 +32,7 @@ if(root&&typeof requestAnimationFrame==='function'&&typeof matchMedia==='functio
       readables=[...root.querySelectorAll(selector)];textRanges=[];
       const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node;
       while((node=walker.nextNode())){
-        const parent=node.parentElement;if(!parent||parent.closest('script,style,noscript')||parent.closest(selector))continue;
+        const parent=node.parentElement;if(!parent||parent.closest('script,style,noscript')||parent.closest(selector)&&!parent.closest('[data-home-title-type],[data-home-title-subtitle],[data-footer-display-line]'))continue;
         const range=document.createRange();range.selectNodeContents(node);textRanges.push({range,parent});
       }
       nodesDirty=false;
@@ -177,7 +177,10 @@ if(root&&typeof requestAnimationFrame==='function'&&typeof matchMedia==='functio
   root.addEventListener('pointermove',event=>{if(event.pointerType==='mouse'){pointerX=event.clientX;pointerY=event.clientY;pointerActive=true;}},{passive:true});
   root.addEventListener('pointerleave',()=>{pointerActive=false;},{passive:true});
   if(typeof MutationObserver==='function'){const changes=new MutationObserver(()=>invalidate(true));changes.observe(root,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['hidden','open']});}
-  document.fonts?.ready.then(()=>invalidate(true));
+  const fontGeometryChanged=()=>invalidate(true);
+  document.fonts?.ready.then(fontGeometryChanged);
+  document.fonts?.addEventListener('loadingdone',fontGeometryChanged);
+  document.fonts?.addEventListener('loadingerror',fontGeometryChanged);
   document.addEventListener('visibilitychange',synchronize);
   reduced.addEventListener('change',synchronize);compact.addEventListener('change',()=>{measureHeader();synchronize();});
   window.addEventListener('pagehide',()=>{enabled=false;synchronize();});

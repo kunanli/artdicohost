@@ -113,10 +113,11 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
       updateWorks(target.dataset.showcaseId);
     }
     for(let parent=target.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
+    if(target.matches('[data-organization-id]'))target.dispatchEvent(new CustomEvent('artdico:organization-reveal',{bubbles:true,detail:{id:target.id}}));
     if(target.matches('[data-guest-id]'))openGuest(target.querySelector('details'));
     return true;
   }
-  win.addEventListener('hashchange',()=>reveal(win.location.hash.slice(1)));
+  win.addEventListener('hashchange',()=>{const id=win.location.hash.slice(1);if(reveal(id)&&doc.getElementById(id)?.matches('[data-organization-id]'))win.requestAnimationFrame(()=>doc.getElementById(id)?.scrollIntoView({block:'start',behavior:'instant'}));});
   function capture(){
     clearTimeout(closeTimer);
     const active=doc.activeElement,card=active?.closest?.('[data-guest-id],[data-showcase-id],[data-organization-id],[id^="program-"]');

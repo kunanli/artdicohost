@@ -2,6 +2,14 @@
 
 2026-11-02。這是接續實作與操作方案，**不表示活動行已接通、網站審核設定已更改或官方徽章已換上**。使用者確認活動行為「免費、報名即確認」，並希望一般參會省去審核；採以下方向接續，既有名額、確認信、私人頁、群碼及簽章功能重用。
 
+## 會員核對後的優先建議
+
+使用者補充只有基礎會員。截至2026-11-02，[活動行官方方案](https://www.huodongxing.com/price)將批次名單匯入／匯出列在認證版，資料API列在專業版；[官方帳號說明](https://media.huodongxing.com/2026/03/04/%E8%B4%A6%E5%8F%B7%E7%AE%A1%E7%90%86/)亦把批次名單能力列為認證後功能。「基礎會員」並非這張表的準確方案名稱，需以本人後台實際權益為準，不預設能匯出，也不代購升級。手機／Email是否遮罩未找到可靠官方規則，不作保證。
+
+優先建議：**本站作唯一正式報名（一般參會報名即確認／額滿候補），活動行作活動介紹及宣傳來源**，不依賴平台付費API或匯出。這仍是待接續的產品建議，尚未修改目前網站的人工審核設定或活動行頁面。已在活動行報名的人保留其確認依據，由主辦核對接入，不要求重填；演講／住宿維持獨立安排。
+
+若本人「主辦方中心 → 我的活動 → 名單管理 → 匯出名單」確實可用，才採下面的檔案轉接方案；若要求升級，先不依賴它或寫抓取腳本。活動行為主要報名、本站為參會服務的模式保留為有合法資料取得能力後的選項。Wallet簽章／徽章與活動行會員等級無關。
+
 ## Apple Wallet 圖標怎麼用
 
 圖標放在「已確認名額」的本人私人參會頁，點擊沿用現有簽章 `.pkpass` 下載；不用重新申請 Apple 憑證或開發 App。參與者由確認信開啟私人頁，在 iPhone Safari 點「加入 Apple Wallet」，再按系統提示添加。微信內先按頁上指引複製私人連結到 Safari；Android 保留下載／保存方式。候補、既有待審或撤回不提供有效 Wallet 下載。活動行已出票的參與者同步至統一名額後，無需接受第二次參會審核。
@@ -13,11 +21,11 @@
 
 目前保留可用的文字入口，不上線缺失圖片。實作位置：`src/pages/registration/confirmation.astro`、`src/scripts/confirmation.mjs`、`src/styles/confirmation.css`；簽章與後端無需因換圖調整。憑證現況以 [最新 Wallet 紀錄](../apple-wallet-setup.md) 為準，不重做較早的開戶步驟。
 
-## 活動行怎麼併入現有流程
+## 可匯出名單時的活動行轉接方案
 
 使用者指定：[活動行報名頁](https://9525102647817.huodongxing.com/event/8884819113200)，並明確回覆「免費，報名即確認」。公開頁在本次讀取環境被 CONNECT 403 阻擋，搜尋索引也無結果，因此具體票種、名額上限、取消及同意文字仍未讀到；沒有登入、抓取私有 API 或繞過限制。
 
-建議第一版：
+以下僅在已核對帳號具有匯出權益、並選擇保留活動行為主報名時使用：
 
 **活動行報名即確認 → 同步名單、核對重複 → 寄送參會指南 → 本人私人頁 → 微信群／Wallet。**
 
@@ -47,3 +55,19 @@
 5. 最後調整網站報名入口與活動行完成頁說明；即時 API／webhook 待確認官方能力後再接同一轉接器，不先承諾自動同步。
 
 開發依據：`shared/contact-import.mjs`、`functions/intent-invitations/importer.mjs`、`functions/cloud-content/contacts-store.mjs`、[人員整合](../unified-people-workspace.md)、[工作人員操作](02-staff-and-attendee-runbook.md)。本輪只讀核對，不匯正式資料、不寄信、不更改名額。
+
+<details>
+<summary>開發接續：本站免審所需修改（未實作）</summary>
+
+目前免審不是現成設定開關：公開提交的repository、service、handler均強制人工審核；部署與隔離驗收也檢查相同規則。必須在單獨功能階段完成以下項目，不能以本輪視覺CI冒稱已通過。
+
+- 新增服務端受控審核模式：缺省維持true，明確false才免審，不接受client指定。核定policy、validator、runtime、metadata及部署核對同步修改。
+- 重用既有 `addAdmission(...,{reviewRequired:false})` 與同一CAS／共同容量／staffReserve／候補排序，不新增名額系統或v4結構。舊pending／rejected不遷移，新人有席即confirmed、滿額才候補或停收。
+- 既有原鍵重播先讀原記錄的順序保持；舊待審失ACK仍是原待審，免審成功失ACK仍是原人／原席，不因模式切換換key或重建同意正文。
+- 只有新持久化且confirmed才授權一次正式信；GET／重播不補寄，寄信失敗不撤銷名額。新提交促成舊候補轉正時沿用既有bounded promotion通知；候補若需Email，另定語義，不能借用正文為「待人工審核」的申請回執。
+- 表單、FAQ及狀態按真metadata顯示；已存待審私人頁仍說明真狀態。演講／住宿不因普通入場成功自動獲准。
+- 擴既有服務／原子名額／通知／草稿恢復及三寬瀏覽器案例，特別驗最後一席並發、滿額、舊模式重播、未知回執及無重寄；再做準確PR／main／私有OSS與HTTPS。
+
+主要檔案：`functions/registration-api/{policy,service,handler,repository}.mjs`、`functions/cloud-content/runtime.mjs`、`scripts/approved-registration-policy.mjs`、`scripts/cloud-lifecycle.mjs`、`functions/cloud-content/acceptance.mjs`、`src/scripts/registration-production.mjs`、`src/lib/public-faq.mjs`。沿用128後端檔／40資產及原包限制，不提高上限或新增服務。
+
+</details>

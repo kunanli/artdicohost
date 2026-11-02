@@ -2,6 +2,8 @@
 
 ## 2026-11-02 自由背景微粒與作品區原稿修正
 
+已由 [PR #64](https://github.com/kunanli/artdicohost/pull/64) 正式發布 main `50bc3cd`。PR／main各6／4／13、739來源、Astro482、1612測試、23頁、audit0、FC128及公開61HTTPS核對完成；實際公開作品total1／withCoverId0。完整原稿／微粒／latefallback／缺圖與正式回執見 [本輪紀錄](redesign/background-showcase-release.md)。會員核對後的報名與Wallet接續見 [操作方案](redesign/external-registration-wallet.md)，尚未切換正式審核政策或接通活動行。
+
 從已部署 main `80895d8` 與文件回執 `0764c98` 接續。使用者實際否定球內／球緣成圈亮點，要求滑鼠帶動或背景自由飛行；改為稀疏、自然漂移的藍紫背景微粒，輕微回應滑鼠，明確避開球面、標題及操作範圍，不畫環形排列或彗星尾巴。保留球體原圖、簡報式淡入、sticky、原生捲動與減少動態／離屏停態，沿用有界canvas及既有依賴。
 
 追加作品區與模擬圖差異：逐區量測 `FrontEnd_Resource/落地页.png` 與原交互說明，區分缺少真實封面與版型偏差。修正圖片／文字／輪播預覽／留白，缺圖使用緊湊誠實呈現，不拿其他作品示例充當真實封面；移除前台作品的內部資料／參加待確認提示，不改後台事實、分類、公開投影、名額或業務資料。獨立代理分工Hero、作品區原稿及瀏覽器；最終凍結產物後驗六案／排版四案／原稿九案，準確PR及main另外核對實際公開素材十三案與FC／OSS／HTTPS回執。

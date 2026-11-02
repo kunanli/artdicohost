@@ -222,7 +222,7 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
           }
         }
       }
-      const profile = contact?.profile ?? registration?.fields;
+      const profile = registration?.profileCorrection ? registration.fields : contact?.profile ?? registration?.fields;
       const person = Object.fromEntries(['name', 'displayName', 'organization', 'position', 'city'].map(key => [key, profile?.[key] ?? (key === 'displayName' ? profile?.name ?? '' : '')]));
       let communications;
       try { communications = communicationProjection({ contactRaw, contactId, registrationId, intent, confirmations }); }

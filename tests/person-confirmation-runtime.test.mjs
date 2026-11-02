@@ -5,6 +5,7 @@ import {peopleRuntimeFixture} from './helpers/people-runtime-fixture.mjs';
 import {EDITABLE_CONTACT_FIELDS,EDITABLE_CONTACT_ARRAY_FIELDS} from '../shared/contact-editor.mjs';
 import {createRegistrationConfirmationService} from '../functions/registration-confirmation/service.mjs';
 import {createObjectJournal} from '../functions/cloud-content/object-journal.mjs';
+import {personNextAction,personWorkspaceView} from '../src/lib/person-workspace.mjs';
 import {validPersonConfirmation} from '../src/lib/person-confirmation.mjs';
 const operation=()=>randomBytes(24).toString('base64url');
 async function response(value,status=200){assert.equal(value.status,status);return value.json();}
@@ -12,7 +13,7 @@ async function reply(f,contactId,changes,headers){const roster=await f.app.conta
  return response(await f.app.handle(f.request('/api/admin/contacts/'+contactId,{method:'PUT',headers,body:{expectedRevision:roster.revision,operations:{...contact.operations,...changes}}})));}
 async function delivery(f,id,headers){const value=await response(await f.app.handle(f.request('/api/admin/registration-confirmation/delivery/'+id,{headers})));
  assert.equal(validPersonConfirmation(value,id),true);return value;}
-async function send(f,id,headers,state,operationId=operation()){const body={expectedRevision:state.revision,operationId,retryRejected:state.retryRejected};
+async function send(f,id,headers,state,operationId=operation()){const body={expectedRevision:state.revision,operationId,retryRejected:state.retryRejected,...(state.accessRevision===undefined?{}:{expectedAccessRevision:state.accessRevision})};
  const value=await response(await f.app.handle(f.request('/api/admin/registration-confirmation/send/'+id,{headers,method:'POST',body})));return {value,body};}
 
 test('explicit confirmed contact decision sends one private Wallet confirmation, while reads and later edits do not resend',async()=>{
@@ -95,4 +96,62 @@ test('review-only delivery state never loads contact permissions or provider con
  const headers=await f.login('reviewer'),before=f.objects.calls.length;
  const actual=await delivery(f,id,headers);assert.equal(actual.reason,'OPERATOR_PERMISSION_REQUIRED');assert.equal(actual.ready,false);
  assert.equal(f.objects.calls.slice(before).some(call=>call.key.startsWith('cms/v1/contacts/')||call.key.startsWith('cms/v1/delivery-config/')),false);
+});
+
+async function correctRegistration(f,id,changes,headers){
+ const detail=await f.app.reviewStore.detail(id),fields={...Object.fromEntries(['name','email','organization','position','city','wechat','phone'].map(key=>[key,detail.registration.fields[key]??''])),...changes};
+ const body={expectedRevision:detail.revision,operationId:operation(),fields};
+ const saved=await response(await f.app.handle(f.request('/api/admin/registrations/'+id+'/profile',{method:'PATCH',headers,body})));
+ return {saved,body};
+}
+test('corrected registration profile feeds current person/private/export and one explicit new-recipient notice while originals and old journal stay immutable',async()=>{
+ const f=await peopleRuntimeFixture({mail:true}),headers=await f.login(),pending=await f.seedPublic(),id=pending.reference_code;
+ await f.approvePublic(id,{headers});const originalIndex=(await f.app.registrationService.repository.readIndex()).value,entry=originalIndex.entries.find(row=>row.id===id),original=await f.app.registrationService.repository.readRecord(entry),oldToken=pending.confirmation.receiptToken;
+ assert.equal(f.messages.length,2);const oldFormal=f.messages[1].template_params;
+ const {saved}=await correctRegistration(f,id,{name:'更正后的合成姓名',email:'corrected.runtime@example.invalid',organization:'更正单位',position:'更正职务',phone:'123'},headers);
+ assert.equal(saved.accessRevision,1);assert.equal(f.messages.length,2);assert.deepEqual(await f.app.registrationService.repository.readRecord(entry),original);
+ const after=(await f.app.registrationService.repository.readIndex()).value;assert.deepEqual(after,originalIndex,'correction never changes seats, original hashes or source provenance');
+ await assert.rejects(f.app.confirmationService.confirmation({receiptToken:oldToken}),e=>e.code==='CONFIRMATION_NOT_FOUND');
+ const link=await f.app.confirmationService.staffConfirmationLink({actor:f.users[0],registrationId:id});assert.equal(link.ready,true);
+ const privatePage=await f.app.confirmationService.confirmation({receiptToken:link.receiptToken});assert.equal(privatePage.attendee.name,saved.fields.name);assert.equal(privatePage.attendee.organization,'更正单位');assert.equal(privatePage.email.status,'pending');
+ const person=await response(await f.app.handle(f.request('/api/admin/people/registrations/'+id,{headers})));assert.equal(person.person.name,saved.fields.name);assert.equal(person.registration.fields.phone,'123');assert.equal(person.registration.profileTargetId,id);assert.equal(person.communications.confirmations[0].currentRecipient,false);assert.equal(personNextAction(person,f.users[0].roles).key,'notification');
+ const malformed=structuredClone(person);malformed.communications.confirmations[0].currentRecipient='false';assert.equal(personWorkspaceView(malformed,malformed.selected),null);
+ const omitted=structuredClone(person);for(const row of [...omitted.communications.confirmations,...omitted.communications.timeline])delete row.currentRecipient;assert.equal(personNextAction(omitted,f.users[0].roles).key,'notification','missing optional history scope cannot count as current delivery after an email correction');
+ const directory=await response(await f.app.handle(f.request('/api/admin/people/directory',{headers})));assert.equal(directory.rows.find(row=>row.registrationId===id).name,saved.fields.name);
+ const current=await delivery(f,id,headers);assert.equal(current.status,'not_sent');assert.equal(current.ready,true);assert.equal(current.recipient,saved.fields.email);
+ assert.equal((await f.app.confirmationService.staffHistory({actor:f.users[0],registrationId:id})).notices[0].status,'provider_accepted');
+ assert.equal(oldFormal.to_email,original.fields.email);assert.notEqual(oldFormal.to_email,current.recipient);
+ const sent=await send(f,id,headers,current);assert.equal(sent.value.results[0].status,'provider_accepted');assert.equal(f.messages.length,3);assert.equal(f.messages[2].template_params.to_email,current.recipient);const updatedPerson=await response(await f.app.handle(f.request('/api/admin/people/registrations/'+id,{headers})));assert.equal(updatedPerson.communications.confirmations.filter(row=>row.currentRecipient).length,1);assert.equal(updatedPerson.communications.confirmations.filter(row=>!row.currentRecipient).length,1);
+ await response(await f.app.handle(f.request('/api/admin/registration-confirmation/send/'+id,{method:'POST',headers,body:sent.body})));assert.equal(f.messages.length,3);
+ const second=await correctRegistration(f,id,{name:'只更正姓名'},headers);assert.equal(second.saved.accessRevision,1);assert.equal((await delivery(f,id,headers)).reason,'ALREADY_ACCEPTED');assert.equal(f.messages.length,3);
+ const receipt={committed:true,eventId:original.eventId,registrationId:id,referenceCode:id,committedAt:entry.committedAt,admissionStatus:'confirmed',admissionKind:'attendee',admissionRevision:after.revision};
+ const replay=await f.app.confirmationService.forSavedReceipt({receipt,notify:false});assert.equal(replay.receiptToken,oldToken,'old public receipts never upgrade to the corrected capability');
+ await assert.rejects(f.app.confirmationService.authorize({receiptToken:replay.receiptToken}),e=>e.code==='CONFIRMATION_NOT_FOUND');
+});
+
+test('old-recipient unknown delivery remains historical and blocks new sends without falsely marking corrected address sent',async()=>{
+ const f=await peopleRuntimeFixture({mail:true,mailResult:message=>message.template_params.invitation_text.includes('Apple Wallet')?'unknown':'accepted'}),headers=await f.login(),pending=await f.seedPublic(),id=pending.reference_code;
+ await f.approvePublic(id,{headers});assert.equal(f.messages.length,2);
+ await correctRegistration(f,id,{email:'unknown.corrected@example.invalid'},headers);
+ const state=await delivery(f,id,headers);assert.equal(state.status,'not_sent');assert.equal(state.reason,'HISTORICAL_DELIVERY_UNKNOWN');assert.equal(state.ready,false);
+ await send(f,id,headers,state);assert.equal(f.messages.length,2);assert.equal((await delivery(f,id,headers)).status,'not_sent');
+});
+
+test('an email correction while provider ACK is pending cannot turn the old attempt into new-recipient sent history',async()=>{
+ let release,started;const began=new Promise(resolve=>{started=resolve;});
+ const f=await peopleRuntimeFixture({mail:true,mailResult:async message=>{if(message.template_params.invitation_text.includes('Apple Wallet')){started();return new Promise(resolve=>{release=resolve;});}return 'accepted';}}),headers=await f.login(),pending=await f.seedPublic(),id=pending.reference_code;
+ const approving=f.approvePublic(id,{headers});await began;
+ await correctRegistration(f,id,{email:'late.ack@example.invalid'},headers);assert.equal((await delivery(f,id,headers)).reason,'HISTORICAL_DELIVERY_UNKNOWN');
+ release('accepted');await approving;
+ const state=await delivery(f,id,headers);assert.equal(state.recipient,'late.ack@example.invalid');assert.equal(state.status,'not_sent');assert.equal(state.reason,'ELIGIBLE');assert.equal(f.messages.length,2);
+ const oldMail=f.messages[1].template_params.invitation_text,oldToken=oldMail.match(/#r=(c1\.[A-Za-z0-9_.-]+)/u)[1];await assert.rejects(f.app.confirmationService.authorize({receiptToken:oldToken}),e=>e.code==='CONFIRMATION_NOT_FOUND');
+});
+
+
+test('a displayed recipient revision cannot authorize a later edited address before an explicit fresh send',async()=>{
+ const f=await peopleRuntimeFixture({mail:true}),headers=await f.login(),pending=await f.seedPublic(),id=pending.reference_code;await f.approvePublic(id,{headers});
+ await correctRegistration(f,id,{email:'first.checked@example.invalid'},headers);const state=await delivery(f,id,headers);
+ await correctRegistration(f,id,{email:'second.unseen@example.invalid'},headers);const count=f.messages.length;
+ const refused=await f.app.handle(f.request('/api/admin/registration-confirmation/send/'+id,{method:'POST',headers,body:{expectedRevision:state.revision,expectedAccessRevision:state.accessRevision,operationId:operation(),retryRejected:false}}));assert.equal(refused.status,409);assert.equal(f.messages.length,count);
+ const fresh=await delivery(f,id,headers);assert.equal(fresh.recipient,'second.unseen@example.invalid');await send(f,id,headers,fresh);assert.equal(f.messages.length,count+1);assert.equal(f.messages.at(-1).template_params.to_email,fresh.recipient);
 });

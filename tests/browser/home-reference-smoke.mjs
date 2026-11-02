@@ -166,6 +166,14 @@ async function fixture(width, { mode = 'legacy', brokenImages = false, javascrip
 }
 const noOverflow = async f => assert.equal(await f.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'no horizontal overflow at ' + f.width + 'px');
 function near(actual, expected, tolerance, description) { assert.ok(Math.abs(actual - expected) <= tolerance, `${description}: actual=${actual.toFixed(2)}, reference=${expected.toFixed(2)}, tolerance=${tolerance.toFixed(2)}`); }
+async function mobileOrganizationCircle(f,expected){
+  const value=await f.page.evaluate(()=>{const rect=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height};};return{circle:rect(document.querySelector('[data-organizations-planet]')),rows:[...document.querySelectorAll('[data-organization-id]')].filter(row=>!row.hidden).map(row=>({id:row.id,slot:rect(row),card:rect(row.querySelector('.ah-organization-card')),frame:row.querySelector('.ah-organization-image')&&!row.querySelector('.ah-organization-image').hidden?rect(row.querySelector('.ah-organization-image')):null,image:row.querySelector('.ah-organization-image:not([hidden]) img')?rect(row.querySelector('img')):null}))};});
+  near(value.circle.width,value.circle.height,1,'mobile planet remains a true circle');assert.equal(value.rows.length,expected);
+  const cx=value.circle.x+value.circle.width/2,cy=value.circle.y+value.circle.height/2,r=value.circle.width/2;
+  for(const row of value.rows){assert.ok(row.card.width>=44&&row.card.height>=44,'every mobile organization keeps a complete 44px action frame');for(const box of[row.slot,row.card,row.frame,row.image].filter(Boolean))for(const x of[box.x,box.x+box.width])for(const y of[box.y,box.y+box.height])assert.ok(Math.hypot(x-cx,y-cy)<=r-4+.75,'every complete logo/card corner stays inside the real circle with safety padding');}
+  for(let a=0;a<value.rows.length;a++)for(let b=a+1;b<value.rows.length;b++){const x=value.rows[a].card,y=value.rows[b].card;assert.ok(Math.min(x.x+x.width,y.x+y.width)-Math.max(x.x,y.x)<=1||Math.min(x.y+x.height,y.y+y.height)-Math.max(x.y,y.y)<=1,'circle organization cards never overlap');}
+  return value;
+}
 function rowsOf(boxes, tolerance = 10) {
   const rows = [];
   for (const box of boxes) { let row = rows.find(row => Math.abs(row.top - box.y) <= tolerance); if (!row) rows.push(row = { top: box.y, items: [] }); row.items.push(box); }
@@ -266,7 +274,7 @@ async function geometry(f) {
         assert.ok(Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) <= 1.5 || Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) <= 1.5, 'whole image/card rectangles never overlap');
       }
     }
-  } else assert.deepEqual(rowsOf(measured.bubbles).map(row => row.items.length), [2, 2, 2, 2, 1], 'small screens retain a readable two-column adaptation');
+  } else {assert.deepEqual(rowsOf(measured.bubbles).map(row => row.items.length), [2, 2, 2, 2, 1], 'small screens retain a readable two-column adaptation');await mobileOrganizationCircle(f,7);}
   return measured;
 }
 async function disclosures(f) {
@@ -369,7 +377,7 @@ async function screenshots(f) {
 async function loadOrganizationImages(f) {
   await f.page.mouse.move(0, 0);
   for (const image of await f.page.locator('[data-public-organizations] img').all()) {
-    await image.scrollIntoViewIfNeeded();
+    await image.evaluate(node=>node.closest('[data-organization-id]')?.scrollIntoView({block:'center',behavior:'instant'}));
     await image.evaluate(node=>new Promise(resolve=>{const done=()=>{if(node.closest('.ah-organization-image')?.hidden||node.complete&&node.naturalWidth>0&&node.closest('.ah-organization-image')?.dataset.logoPresentation!=='pending')resolve();else setTimeout(done,10);};done();}));
     if(await image.isVisible())await image.evaluate(node=>node.decode());
   }
@@ -415,7 +423,7 @@ try {
       const unknown=f.page.locator('[data-organization-id="synthetic-reference-unknown"]');
       assert.equal(await f.page.locator('[data-organization-id]').count(),8,'an eighth public organization is retained beside the original seven');
       assert.equal(await unknown.getAttribute('data-organization-reference'),null);
-      assert.notEqual(await unknown.evaluate(node=>getComputedStyle(node).position),'absolute','an unknown identity keeps a normal-flow slot');
+      if(width>=1000)assert.notEqual(await unknown.evaluate(node=>getComputedStyle(node).position),'absolute','desktop unknown identities retain normal flow');
       await unknown.scrollIntoViewIfNeeded();
       await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
       await unknown.locator('img').evaluate(image=>image.decode());
@@ -441,6 +449,7 @@ try {
       }
       const allSlots=await f.page.locator('[data-organization-id]').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom};}));
       for(let a=0;a<allSlots.length;a++)for(let b=a+1;b<allSlots.length;b++)assert.ok(Math.min(allSlots[a].right,allSlots[b].right)-Math.max(allSlots[a].x,allSlots[b].x)<=1.5||Math.min(allSlots[a].bottom,allSlots[b].bottom)-Math.max(allSlots[a].y,allSlots[b].y)<=1.5,'the additional card never overlaps any original organization');
+      if(width<1000)await mobileOrganizationCircle(f,8);
       await noOverflow(f);unknownOrganizationFallback=true;
       const extraScreenshot=resolve(evidence,'eight-organizations-'+width+'.png');await f.page.locator('#booths').screenshot({path:extraScreenshot});files.push(extraScreenshot);
       await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogos.get('mixed-transparent-panel').id;});
@@ -467,10 +476,27 @@ try {
         await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
         assert.equal(await unknown.locator('img').getAttribute('data-logo-source'),API+'/api/public/portraits/'+syntheticLogoByWidth.get(width).id,'a new revision replaces the fallback instead of retaining stale output');
       }
+      let organizationPaging=null;
+      if(width<1000){
+        assert.equal(await f.page.locator('[data-organizations-pagination]').isVisible(),false,'all eight fit one circle without a redundant page control');
+        await f.refresh('legacy',raw=>{for(let n=0;n<3;n++)raw.organizations.push({id:'synthetic-page-extra-'+n,name:'合成后页组织'+n,logoId:syntheticLogoByWidth.get(width).id,website:'https://example.invalid/page-'+n,participation:'undecided',status:'confirmed',publicConsent:true,internalNotes:PRIVATE});});
+        assert.equal(await f.page.locator('[data-organization-id]').count(),11,'paging retains every original node and stable ID');
+        assert.equal(await f.page.locator('[data-organizations-pagination]').isVisible(),true);await mobileOrganizationCircle(f,8);
+        await f.page.locator('[data-organizations-next]').focus();await f.page.keyboard.press('Enter');await mobileOrganizationCircle(f,3);
+        assert.equal(await f.page.locator('[data-organizations-previous]').evaluate(node=>document.activeElement===node),true,'the last page keeps keyboard focus on a usable control');
+        const secondPageIds=await f.page.locator('[data-organization-id]:visible').evaluateAll(nodes=>nodes.map(node=>node.id));
+        await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-page-extra-0').name='合成刷新后页组织';});
+        assert.deepEqual(await f.page.locator('[data-organization-id]:visible').evaluateAll(nodes=>nodes.map(node=>node.id)),secondPageIds,'read-only refresh keeps the current stable page');
+        await f.page.locator('[data-organizations-previous]').click();await mobileOrganizationCircle(f,8);
+        await f.page.evaluate(()=>{location.hash='#organization-synthetic-page-extra-2';});await f.page.locator('#organization-synthetic-page-extra-2:visible').waitFor();await mobileOrganizationCircle(f,3);
+        const link=f.page.locator('#organization-synthetic-page-extra-2 a');await link.focus();await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-page-extra-2').name='合成仍在后页组织';});
+        assert.equal(await f.page.locator('#organization-synthetic-page-extra-2 a').evaluate(node=>document.activeElement===node),true,'refresh restores focus to the same visible organization');
+        organizationPaging={total:11,first:8,second:3,stableIdsAndHash:true,refreshAndKeyboardFocus:true};
+      }
       assert.doesNotMatch(await f.page.locator('body').textContent(), /SYNTHETIC_REFERENCE_PRIVATE|private@example/u);
       reports.push({ name: 'legacy-public-layout-' + width, width, profiles: 9, organizations: 7, attendance: 'not inferred; only actual profile title is displayed', geometry: measured,
         interaction: 'native keyboard, Escape, pointer gap or touch; actual timetable tabs, works filter and FAQ', unknownOrganizationFallback,
-        duplicateKnownOrganizationRetained: width===1440, eighthOrganizationGeometry:extraGeometry,mixedTransparentPanelMask:mixedMask, requests: f.calls.length, screenshots: files });
+        duplicateKnownOrganizationRetained: width===1440, eighthOrganizationGeometry:extraGeometry,mixedTransparentPanelMask:mixedMask,organizationPaging, requests: f.calls.length, screenshots: files });
     } finally { await f.context.close(); }
   }
   for (const mode of ['empty', 'corrupt', 'unavailable']) {

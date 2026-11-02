@@ -119,6 +119,8 @@ export function personWorkspaceView(value, selection) {
         || !strings(registration.fields.categories) || !strings(registration.fields.participationInterests)
         || !lines(registration.review, ['status', 'accommodationStatus', 'assignedTo', 'nextStep', 'invitationStatus']) || typeof registration.review.deletionRequested !== 'boolean'
         || value.linkage.registrationId !== registration.id) return null;
+      if (registration.profileTargetId !== undefined && !REGISTRATION.test(registration.profileTargetId ?? '')) return null;
+      if (registration.profileCorrection !== undefined && (!plain(registration.profileCorrection) || Object.keys(registration.profileCorrection).sort().join(',') !== 'accessRevision,revision' || !integer(registration.profileCorrection.accessRevision) || !integer(registration.profileCorrection.revision) || registration.profileCorrection.revision > value.revisions.registration)) return null;
     } else if (registration !== null) return null;
     if (selection.kind === 'contact' ? contact?.id !== selection.id : registration?.id !== selection.id) return null;
     for (const key of ['contact', 'registration', 'arrangements', 'invitations', 'confirmations']) if (value.availability[key] === 'available' && !value.permissions[key]) return null;
@@ -132,9 +134,9 @@ export function personWorkspaceView(value, selection) {
     if (!plain(communications) || communications.historyLimit !== 200 || !['invitationTotal', 'confirmationTotal', 'timelineTotal'].every(key => integer(communications[key])) || typeof communications.historyTruncated !== 'boolean'
       || ['unresolvedInvitations', 'unresolvedConfirmations'].some(key => Object.hasOwn(communications, key) && typeof communications[key] !== 'boolean')
       || !list(communications.invitations) || !list(communications.confirmations) || !list(communications.timeline)
-      || !communications.invitations.every(item => lines(item, ['id', 'channel', 'status']) && (item.sentChannel === null || text(item.sentChannel, 100)) && date(item.createdAt) && date(item.updatedAt))
-      || !communications.confirmations.every(item => lines(item, ['id', 'kind', 'status', 'admissionStatus']) && integer(item.attempt) && date(item.createdAt) && date(item.updatedAt))
-      || !communications.timeline.every(item => lines(item, ['source', 'id', 'status', 'channel']) && ['invitation', 'confirmation', 'legacy_invitation'].includes(item.source) && (item.kind === null || text(item.kind, 100)) && date(item.at))) return null;
+      || !communications.invitations.every(item => lines(item, ['id', 'channel', 'status']) && (item.sentChannel === null || text(item.sentChannel, 100)) && date(item.createdAt) && date(item.updatedAt) && (!Object.hasOwn(item,'currentRecipient') || typeof item.currentRecipient==='boolean'))
+      || !communications.confirmations.every(item => lines(item, ['id', 'kind', 'status', 'admissionStatus']) && integer(item.attempt) && date(item.createdAt) && date(item.updatedAt) && (!Object.hasOwn(item,'currentRecipient') || typeof item.currentRecipient==='boolean'))
+      || !communications.timeline.every(item => lines(item, ['source', 'id', 'status', 'channel']) && ['invitation', 'confirmation', 'legacy_invitation'].includes(item.source) && (item.kind === null || text(item.kind, 100)) && date(item.at) && (!Object.hasOwn(item,'currentRecipient') || typeof item.currentRecipient==='boolean'))) return null;
     if ((value.availability.invitations !== 'available' && communications.invitations.length) || (value.availability.confirmations !== 'available' && communications.confirmations.length)) return null;
     if (communications.invitationTotal < communications.invitations.length || communications.confirmationTotal < communications.confirmations.length || communications.timelineTotal < communications.timeline.length) return null;
     // Historical manual invitation entries belong to the contact journal, which
@@ -152,7 +154,7 @@ export function personWorkspaceView(value, selection) {
     return { schemaVersion: 1, selected: { ...value.selected }, person: { ...value.person }, linkage: { ...value.linkage }, permissions: { ...value.permissions, volunteers: volunteering.permission },
       availability: { ...value.availability, volunteers: volunteering.state, organizations: organizations.state }, revisions: { ...value.revisions, volunteers: volunteering.revision },
       contact: contact ? { ...contact, sourceCategories: [...(contact.sourceCategories ?? contact.profile.categories)] } : null,
-      registration, admission, arrangements, communications, publicProfile, organizations, volunteers: volunteering.value };
+      registration, admission, arrangements, communications: registration?.profileCorrection?.accessRevision > 0 ? { ...communications, confirmations: communications.confirmations.map(item=>({...item,currentRecipient:item.currentRecipient===true})), timeline:communications.timeline.map(item=>item.source==='confirmation'?{...item,currentRecipient:item.currentRecipient===true}:item) } : communications, publicProfile, organizations, volunteers: volunteering.value };
   } catch { return null; }
 }
 
@@ -192,7 +194,7 @@ export function personWorkspaceSteps(view, roles = []) {
   if (contact) {
     const response = operations.responseStatus;
     const unknownSend = view.communications.timeline.some(entry => ['unknown', 'reserved'].includes(entry.status));
-    const contacted = view.communications.timeline.some(entry => ['manually_sent', 'sent', 'provider_accepted'].includes(entry.status));
+    const contacted = view.communications.timeline.some(entry => (entry.source !== 'confirmation' || entry.currentRecipient !== false) && ['manually_sent', 'sent', 'provider_accepted'].includes(entry.status));
     steps.push(step('reply', '联络与本人回复', response === 'attending' || response === 'declined' || consent === 'declined' ? 'complete' : unknownSend ? 'review' : 'pending',
       response === 'attending' ? '已保存本人答应出席；参会名额仍单独核对。' : response === 'declined' || consent === 'declined' ? '已记录拒绝联络或出席，请停止邀约。' : unknownSend ? '存在发送结果待核对的记录，请先核对，再继续跟进。' : contacted ? '已记录人工发出或邮件服务已接收，仍待本人回复；不代表邮件已送达。' : '先核实联络许可并发出邀请，再保存实际回复；名额已确认也不代表本人答应。', 'arrangements'));
     steps.push(step('roles', '确认参与身份', forms.length ? 'complete' : 'pending', forms.length ? '已保存内部活动职责；讲者、组织者等可在「详情与安排」调整。' : '按本人协商结果选择一般参与、嘉宾、讲者、组织者等职责，可多选。', 'arrangements'));
@@ -277,7 +279,7 @@ export function personNextAction(view, roles = [], localPending = false) {
   const invitation = invitationUnknown ? 'unknown' : latest(notices.invitations)?.status
     ?? (notices.timeline.some(item => item.source === 'legacy_invitation' && item.status === 'manually_sent') ? 'manually_sent' : 'not_started');
   const delivery = confirmationUnknown ? 'unknown' : availability.confirmations === 'unavailable' && registrationId ? 'unavailable'
-    : availability.confirmations === 'restricted' ? 'restricted' : latest(notices.confirmations)?.status
+    : availability.confirmations === 'restricted' ? 'restricted' : latest(notices.confirmations.filter(item => item.currentRecipient !== false))?.status
       ?? (registrationId ? 'not_sent' : 'not_applicable');
   const forms = contact?.operations.participationForms ?? [], profiles = current.publicProfile.profiles;
   const profile = profiles.find(item => item.published && !item.publishedMatchesDraft) ?? profiles[0];

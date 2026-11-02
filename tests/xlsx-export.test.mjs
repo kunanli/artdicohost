@@ -124,3 +124,12 @@ test('separate contacts Excel includes unconverted and declined people, preserve
   const after=await store.read();assert.equal(after.revision,5);assert.deepEqual(after.contacts,before.contacts);const event=(await journal.read()).value.audit.at(-1);assert.equal(event.action,'export_contacts');assert.equal(event.workbookSha256,digest(bytes));
   assert.equal((await api(request('/api/admin/contacts/export.xlsx',{role:'outreach',body:{expectedRevision:4}}))).status,409);
 });
+
+
+test('correction export uses current profile while the original-answer sheet keeps the immutable submission',async()=>{
+ const f=fixture(),original=clone(f.source[0]),fields={...Object.fromEntries(['name','email','organization','position','city','wechat','phone'].map(key=>[key,original.fields[key]??''])),name:'更正后姓名',email:'corrected.export@example.invalid'};
+ await f.store.saveProfile(A,0,'synthetic-profile-export-operation1',fields,'synthetic-staff');
+ const response=await f.api(request(undefined,{body:{expectedRevision:1,includeContact:true,includeAnswers:true}}));assert.equal(response.status,200);
+ const bytes=await response.arrayBuffer(),current=await table(bytes,'报名与参会'),answers=await table(bytes,'已保存原始回答');
+ assert.equal(cell(current,'姓名'),fields.name);assert.equal(cell(current,'邮箱'),fields.email);assert.equal(cell(answers,'name'),original.fields.name);assert.equal(cell(answers,'email'),original.fields.email);assert.deepEqual(f.source[0],original);
+});

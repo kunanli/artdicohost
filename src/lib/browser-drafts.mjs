@@ -22,7 +22,13 @@ const fail = code => { throw new BrowserDraftError(code); };
 function safeCopy(input) {
   let nodes = 0;
   const seen = new Set();
-  function visit(value, depth) {
+  function revisionMapKeys(parent, value) {
+    const ids = parent.registrationIds;
+    if (!Array.isArray(ids) || !ids.length || ids.length > 100 || new Set(ids).size !== ids.length || ids.some(id => typeof id !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(id))
+      || !exact(value, ids) || ids.some(id => !revision(value[id]))) fail('INVALID');
+    return new Set(ids);
+  }
+  function visit(value, depth, revisionKeys = null) {
     if (++nodes > 100_000 || depth > 24) fail('INVALID');
     if (value === null || typeof value === 'boolean') return value;
     if (typeof value === 'number') { if (!Number.isFinite(value)) fail('INVALID'); return value; }
@@ -39,8 +45,8 @@ function safeCopy(input) {
     for (const key of keys) {
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (typeof key !== 'string' || !descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')
-        || ['__proto__', 'constructor', 'prototype'].includes(key) || forbidden(key)) fail('INVALID');
-      result[key] = visit(descriptor.value, depth + 1);
+        || ['__proto__', 'constructor', 'prototype'].includes(key) || forbidden(key) && !revisionKeys?.has(key)) fail('INVALID');
+      result[key] = visit(descriptor.value, depth + 1, key === 'expectedAccessRevisions' ? revisionMapKeys(value, descriptor.value) : null);
     }
     seen.delete(value);
     return result;

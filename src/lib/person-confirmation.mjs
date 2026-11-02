@@ -1,8 +1,9 @@
 import {eventConfig} from '../config/event.mjs';
 const ID=/^[A-Za-z0-9_-]{43}$/u;
-const REASONS={OPERATOR_PERMISSION_REQUIRED:'此账号可核对通知记录。',ELIGIBLE:'可以寄送确认信。',ADMISSION_NOT_CONFIRMED:'名额尚未确认，暂不寄送正式凭证。',EMAIL_MISSING:'未记录邮箱，请先核对联络资料。',CONTACT_CONSENT_REQUIRED:'联络授权尚未核实，暂不寄送。',CONTACT_DECLINED:'对方已拒绝联络或出席，暂不寄送。',CONTACT_EMAIL_CHANGED:'联络邮箱与原报名不同，请先核对原记录。',CONTACT_NOT_FOUND:'原联系人无法核对，请先处理关联。',STAFF_PERMISSION_REQUIRED:'缺少工作人员代登记依据，暂不寄送。',PERMISSION_UNAVAILABLE:'联络授权暂时无法核对。',EMAIL_PAUSED:'确认邮件已暂停，请在设置中核对。',EMAIL_NOT_READY:'邮件服务暂不可用，请在设置中核对。',EVENT_FACTS_MISMATCH:'活动资料待核对。',EVENT_FACTS_UNAVAILABLE:'活动资料暂时无法核对。',ALREADY_ACCEPTED:'邮件服务已接收；请向收件人核实收件。',DELIVERY_UNKNOWN:'上次寄送结果不明，请核实服务商或收件箱后处理，系统不会自动重寄。',RETRY_LIMIT:'已到达明确失败的重试次数上限。'};
+const REASONS={OPERATOR_PERMISSION_REQUIRED:'此账号可核对通知记录。',ELIGIBLE:'可以寄送确认信。',ADMISSION_NOT_CONFIRMED:'名额尚未确认，暂不寄送正式凭证。',EMAIL_MISSING:'未记录邮箱，请先核对联络资料。',CONTACT_CONSENT_REQUIRED:'联络授权尚未核实，暂不寄送。',CONTACT_DECLINED:'对方已拒绝联络或出席，暂不寄送。',CONTACT_EMAIL_CHANGED:'联络邮箱与原报名不同，请先核对原记录。',CONTACT_NOT_FOUND:'原联系人无法核对，请先处理关联。',STAFF_PERMISSION_REQUIRED:'缺少工作人员代登记依据，暂不寄送。',PERMISSION_UNAVAILABLE:'联络授权暂时无法核对。',EMAIL_PAUSED:'确认邮件已暂停，请在设置中核对。',EMAIL_NOT_READY:'邮件服务暂不可用，请在设置中核对。',EVENT_FACTS_MISMATCH:'活动资料待核对。',EVENT_FACTS_UNAVAILABLE:'活动资料暂时无法核对。',ALREADY_ACCEPTED:'邮件服务已接收；请向收件人核实收件。',HISTORICAL_DELIVERY_UNKNOWN:'原邮箱寄送结果未明，请先核对历史记录。',DELIVERY_UNKNOWN:'上次寄送结果不明，请核实服务商或收件箱后处理，系统不会自动重寄。',RETRY_LIMIT:'已到达明确失败的重试次数上限。'};
 const STATUSES=['not_sent','provider_accepted','rejected','unknown'];
 export function validPersonConfirmation(value,id){return Boolean(value&&value.registrationId===id&&ID.test(id)&&Number.isSafeInteger(value.revision)&&value.revision>=0
+  &&(!Object.hasOwn(value,'accessRevision')||Number.isSafeInteger(value.accessRevision)&&value.accessRevision>=0)
   &&['pending_review','confirmed','waitlisted','rejected','withdrawn'].includes(value.admissionStatus)&&STATUSES.includes(value.status)&&Object.hasOwn(REASONS,value.reason)
   &&typeof value.ready==='boolean'&&typeof value.canSend==='boolean'&&typeof value.retryRejected==='boolean'&&value.retryRejected===(value.status==='rejected')
   &&(!value.ready||value.canSend&&value.reason==='ELIGIBLE'&&value.admissionStatus==='confirmed'&&['not_sent','rejected'].includes(value.status))
@@ -19,7 +20,8 @@ export function personConfirmationPolicy(id){
   return{fields:['path','method','payloadJson'],pendingFields:['path','method','payloadJson'],jsonFields:['payloadJson'],validate(value,{kind}){
     if(kind!=='pending_submission'||value.path!=='/api/admin/registration-confirmation/send/'+id||value.method!=='POST'||typeof value.payloadJson!=='string'||value.payloadJson.length>1024)return false;
     let body;try{body=JSON.parse(value.payloadJson);}catch{return false;}
-    return Boolean(body&&Object.keys(body).length===3&&Object.keys(body).every(key=>['expectedRevision','operationId','retryRejected'].includes(key))&&Number.isSafeInteger(body.expectedRevision)&&body.expectedRevision>=0&&OP.test(body.operationId)&&typeof body.retryRejected==='boolean');
+    return Boolean(body&&['expectedRevision,operationId,retryRejected','expectedAccessRevision,expectedRevision,operationId,retryRejected'].includes(Object.keys(body).sort().join(','))&&Number.isSafeInteger(body.expectedRevision)&&body.expectedRevision>=0&&OP.test(body.operationId)&&typeof body.retryRejected==='boolean'
+      &&(!Object.hasOwn(body,'expectedAccessRevision')||Number.isSafeInteger(body.expectedAccessRevision)&&body.expectedAccessRevision>=0));
   }};
 }
 export function validPersonConfirmationOperation(value,{registrationId,operationId,lookup=false}={}){
@@ -92,7 +94,7 @@ export function createPersonConfirmation({root,request,getUser,draftStore,eventI
   async function send(){
     if(!id||busy||isBlocked()||isSendBlocked()||!getUser()||!state?.ready||pending||!storageReady)return;
     if(!confirm('寄送这位参加人的确认信？邮件会包含私人确认页与 Apple Wallet 入口。'))return;
-    const selected=id,generation=++sequence,original={expectedRevision:state.revision,operationId:crypto.randomUUID().replaceAll('-',''),retryRejected:state.retryRejected};
+    const selected=id,generation=++sequence,original={expectedRevision:state.revision,operationId:crypto.randomUUID().replaceAll('-',''),retryRejected:state.retryRejected,expectedAccessRevision:state.accessRevision??0};
     const value={path:'/api/admin/registration-confirmation/send/'+selected,method:'POST',payloadJson:JSON.stringify(original)};
     busy=true;let sent=false,received=false;lock();
     try{

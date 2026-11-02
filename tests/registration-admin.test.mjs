@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import { COLLABORATOR_ROLES } from '../shared/staff-permissions.mjs';
 import { createRegistrationReviewStore, defaultRegistrationReview } from '../functions/registration-admin/store.mjs';
 import { createRegistrationAdminApi } from '../functions/registration-admin/handler.mjs';
@@ -242,4 +243,53 @@ test('ordinary public profiles and manual staff entries retain absence and expli
     await rejects(fixture([{ ...manual, provenance }]).store().list(), 'STORAGE_UNAVAILABLE');
   }
   await rejects(fixture([{ ...manual, consent: { accepted: true, version: 'invented', acceptedAt: AT } }]).store().list(), 'STORAGE_UNAVAILABLE');
+});
+
+const correctedProfile = (record, changes = {}) => ({ ...Object.fromEntries(['name','email','organization','position','city','wechat','phone'].map(key => [key, record.fields[key] ?? ''])), ...changes });
+test('profile corrections use one CAS operation, preserve original source, and replay the immutable saved snapshot', async () => {
+  const f = fixture(), store = f.store(), original = f.records(), fields = correctedProfile(original[0], { name:'更正姓名', email:'corrected@example.invalid', phone:'123456' }), operationId = 'profile-correction-operation-00001';
+  const saved = await store.saveProfile(A, 0, operationId, fields, 'synthetic-staff');
+  assert.equal(saved.outcome, 'updated'); assert.equal(saved.accessRevision, 1); assert.equal(saved.revision, 1);
+  assert.deepEqual(f.records(), original); assert.deepEqual((await store.detail(A)).registration.fields, {...original[0].fields,...fields});
+  assert.equal((await store.directory()).registrations.find(row=>row.id===A).fields.name, fields.name);
+  assert.match((await store.exportCsv(1, {}, 'synthetic-staff', {includeContact:true})).csv, /corrected@example.invalid/u);
+  await store.saveProfile(A, 2, 'profile-correction-operation-00002', {...fields,name:'再次更正'}, 'synthetic-staff');
+  const replay = await store.saveProfile(A, 0, operationId, fields, 'synthetic-staff');
+  assert.equal(replay.outcome,'replayed');assert.equal(replay.revision,1);assert.equal(replay.fields.name,fields.name);
+  await rejects(store.saveProfile(A, 0, operationId, {...fields,name:'篡改原操作'},'synthetic-staff'),'REVISION_CONFLICT');
+  await rejects(store.profileOperation(A,operationId,'different-staff'),'NOT_FOUND');
+  assert.equal((await store.projectRegistration(original[0])).accessRevision,1);
+  assert.equal((await store.detail(A)).registration.fields.name,'再次更正');
+});
+
+test('lost correction ACK is recovered by original operation without a second write or source mutation', async () => {
+  const f=fixture(),base=f.journal();let writes=0;
+  const store=createRegistrationReviewStore({journal:{read:base.read,async commit(...args){writes++;await base.commit(...args);throw Error('synthetic lost ACK');}},loadRegistrations:async()=>({registrations:f.records(),revision:2}),eventId:EVENT,clock:()=>Date.parse(AT)});
+  const fields=correctedProfile(f.records()[0],{email:'recovered@example.invalid'}),op='profile-correction-lost-ack-00001';
+  await rejects(store.saveProfile(A,0,op,fields,'synthetic-staff'),'STORAGE_UNAVAILABLE');
+  const receipt=await f.store().profileOperation(A,op,'synthetic-staff');assert.equal(receipt.revision,1);assert.deepEqual(receipt.fields,fields);
+  const replay=await store.saveProfile(A,0,op,fields,'synthetic-staff');assert.equal(replay.outcome,'replayed');assert.equal(writes,1);
+  assert.equal(f.records()[0].fields.email,'synthetic@example.invalid');
+});
+
+test('correction HTTP requires authorization and CSRF, rejects a changed primary, and reports a merge after commit honestly', async()=>{
+  const f=fixture(),store=f.store(),fields=correctedProfile(f.records()[0],{name:'合成更正'}),op='profile-correction-http-operation1';
+  let target=A,calls=0;const api=createRegistrationAdminApi({enabled:true,auth,store,profileTarget:async()=>{calls++;return target;}}),path='/api/admin/registrations/'+A+'/profile';
+  for(const options of [{role:'outreach'},{csrf:'wrong'},{origin:'https://other.invalid'}])assert.equal((await api(request(path,{method:'PATCH',body:{expectedRevision:0,operationId:op,fields},...options}))).status,403);
+  assert.equal(calls,0);target=B;assert.equal((await api(request(path,{method:'PATCH',body:{expectedRevision:0,operationId:op,fields}}))).status,409);assert.equal((await store.detail(A)).revision,0);
+  target=A;const racing=createRegistrationAdminApi({enabled:true,auth,store,profileTarget:async()=>{if((await store.detail(A)).revision>0)return B;return A;}});
+  const response=await racing(request(path,{method:'PATCH',body:{expectedRevision:0,operationId:op,fields}}));assert.equal(response.status,200);const saved=await response.json();assert.deepEqual(saved.identityCheck,{state:'changed',profileTargetId:B});assert.equal(saved.registrationId,A);
+  const lookup=await racing(request('/api/admin/registrations/'+A+'/profile-operations/'+op));assert.equal(lookup.status,200);assert.equal((await lookup.json()).fields.name,'合成更正');
+  await rejects(store.saveProfile(A,1,'profile-correction-bad-field-0001',{...fields,status:'confirmed'},'synthetic-staff'),'INVALID_REQUEST');
+  await rejects(store.saveProfile(A,1,'profile-correction-bad-email-0001',{...fields,email:'not-email'},'synthetic-staff'),'INVALID_REQUEST');
+});
+
+
+test('correction replay rejects a forged zero-revision email change against the immutable original and independent writers keep CAS',async()=>{
+ const f=fixture(),fields=correctedProfile(f.records()[0],{email:'corrected.cas@example.invalid'}),actor='synthetic-staff';
+ const outcomes=await Promise.allSettled([f.store().saveProfile(A,0,'profile-correction-concurrent-0001',fields,actor),f.store().saveProfile(A,0,'profile-correction-concurrent-0002',{...fields,name:'另一同事'},actor)]);
+ assert.equal(outcomes.filter(row=>row.status==='fulfilled').length,1);assert.equal(outcomes.find(row=>row.status==='rejected').reason.code,'REVISION_CONFLICT');
+ const stored=await f.journal().read(),forged=clone(stored);forged.value.audit[0].metadata.previousEmailHash=createHash('sha256').update(fields.email).digest('hex');forged.value.audit[0].metadata.accessRevision=0;forged.value.profileCorrections[A].accessRevision=0;
+ const bad=createRegistrationReviewStore({journal:{read:async()=>clone(forged),commit:async()=>assert.fail('corrupt journal must never write')},loadRegistrations:async()=>({registrations:f.records(),revision:2}),eventId:EVENT,clock:()=>Date.parse(AT)});
+ await rejects(bad.detail(A),'STORAGE_UNAVAILABLE');await rejects(bad.projectRegistration(f.records()[0]),'STORAGE_UNAVAILABLE');await rejects(bad.profileAccessRevision(A),'STORAGE_UNAVAILABLE');await rejects(bad.profileOperation(A,forged.value.audit[0].metadata.operationId,actor),'STORAGE_UNAVAILABLE');
 });

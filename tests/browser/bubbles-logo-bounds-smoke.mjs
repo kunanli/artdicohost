@@ -145,7 +145,11 @@ function nonoverlap(rects, message) {
 }
 async function organizationBounds(f, { loaded = true } = {}) {
   stage = loaded ? 'organization-loaded-bounds' : 'organization-before-load-bounds';
-  const rows = await f.page.locator('[data-organization-id]').evaluateAll(nodes => nodes.map(node => {
+  const orderedIds=await f.page.locator('[data-organization-id]').evaluateAll(nodes=>nodes.map(node=>node.id)),rows=[];
+  const batchSize=f.width<=820?8:orderedIds.length;
+  for(let offset=0;offset<orderedIds.length;offset+=batchSize){
+    await f.page.evaluate(id=>document.getElementById(id)?.dispatchEvent(new CustomEvent('artdico:organization-reveal',{bubbles:true,detail:{id}})),orderedIds[offset]);
+    const batch=await f.page.locator('[data-organization-id]').evaluateAll(nodes => nodes.filter(node=>!node.hidden).map(node => {
     const box = element => { const b = element.getBoundingClientRect(); return { x: b.x, y: b.y + scrollY, width: b.width, height: b.height }; };
     const card = node.querySelector('.ah-organization-card'), frame = node.querySelector('.ah-organization-image'), image = frame?.querySelector('img');
     const presentation=frame?.dataset.logoPresentation??null;
@@ -160,6 +164,8 @@ async function organizationBounds(f, { loaded = true } = {}) {
       src: image?.getAttribute('src'), source: image?.dataset.logoSource??image?.getAttribute('src'), presentation, frameHidden:frame?.hidden??false, name:box(node.querySelector('h3')),whiteMask, complete: image?.complete, naturalWidth: image?.naturalWidth, naturalHeight: image?.naturalHeight, fit: image ? getComputedStyle(image).objectFit : null,
       imageVisibility: image ? getComputedStyle(image).visibility : null, imageDisplay: image ? getComputedStyle(image).display : null, imageOpacity: image ? Number(getComputedStyle(image).opacity) : null };
   }));
+    rows.push(...batch.map(row=>({...row,page:Math.floor(offset/batchSize)})));
+  }
   lastNumericMetrics = rows.map(({ slot, card, frame, image, naturalWidth, naturalHeight, fit }) => ({ slot, card, frame, image, naturalWidth, naturalHeight, fit }));
   assert.equal(rows.length,organizationCount,'every organization from this exact captured snapshot must render');
   for (const row of rows) {
@@ -173,12 +179,17 @@ async function organizationBounds(f, { loaded = true } = {}) {
       if(row.presentation==='white'){assert.ok(row.whiteMask&&row.whiteMask.ink>0&&row.whiteMask.transparent>0);assert.equal(row.whiteMask.nonwhite,0,'generated visible ink is entirely white');assert.ok(row.whiteMask.width<=800&&row.whiteMask.height<=800,'runtime masks stay bounded');}
     }
   }
-  nonoverlap(rows.map(row => row.slot), 'independent organization slots cannot overlap'); nonoverlap(rows.map(row => row.card), 'whole card rectangles cannot overlap'); nonoverlap(rows.map(row => row.image), 'whole uploaded image rectangles cannot overlap');
+  for(const page of new Set(rows.map(row=>row.page))){const group=rows.filter(row=>row.page===page);nonoverlap(group.map(row=>row.slot),'independent organization slots cannot overlap');nonoverlap(group.map(row=>row.card),'whole card rectangles cannot overlap');nonoverlap(group.filter(row=>!row.frameHidden).map(row=>row.image),'whole uploaded image rectangles cannot overlap');}
+  if(f.width<=820){
+    const circle=await f.page.locator('[data-organizations-planet]').evaluate(node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y+scrollY,width:r.width,height:r.height};});
+    assert.ok(Math.abs(circle.width-circle.height)<=1,'actual mobile logo container is a true circle');
+    for(const row of rows){assert.ok(row.card.width>=44&&row.card.height>=44,'actual mobile logos retain 44px action frames');for(const box of[row.slot,row.card,...(row.frameHidden?[]:[row.frame,row.image])])for(const x of[box.x,box.x+box.width])for(const y of[box.y,box.y+box.height])assert.ok(Math.hypot(x-circle.x-circle.width/2,y-circle.y-circle.height/2)<=circle.width/2-4+.75,'every actual complete logo/card corner stays inside its current circle');}
+  }
   return rows;
 }
 async function loadLogos(f) {
   f.releaseLogos();
-  for(const image of await f.page.locator('[data-organization-id] img').all()){await image.scrollIntoViewIfNeeded();await image.evaluate(node=>new Promise(resolve=>{const done=()=>{if(node.closest('.ah-organization-image')?.hidden||node.complete&&node.naturalWidth>0&&node.closest('.ah-organization-image')?.dataset.logoPresentation!=='pending')resolve();else setTimeout(done,10);};done();}));if(await image.isVisible())await image.evaluate(node=>node.decode());}
+  for(const image of await f.page.locator('[data-organization-id] img').all()){await image.evaluate(node=>{const row=node.closest('[data-organization-id]');row?.dispatchEvent(new CustomEvent('artdico:organization-reveal',{bubbles:true,detail:{id:row.id}}));row?.scrollIntoView({block:'center',behavior:'instant'});});await image.evaluate(node=>new Promise(resolve=>{const done=()=>{if(node.closest('.ah-organization-image')?.hidden||node.complete&&node.naturalWidth>0&&node.closest('.ah-organization-image')?.dataset.logoPresentation!=='pending')resolve();else setTimeout(done,10);};done();}));if(await image.isVisible())await image.evaluate(node=>node.decode());}
   await f.page.evaluate(() => document.fonts.ready);
 }
 async function guestText(f, { profiles = guests, allowLongNameAndTitle = false, requireUnclippedNameAndTitle = false } = {}) {

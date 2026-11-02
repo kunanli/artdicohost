@@ -17,6 +17,13 @@ const originValid = value => { try { return typeof value === 'string' && new URL
 function keys(value, allowed, required) {
   if (!plainObject(value) || Object.keys(value).some(key => !allowed.includes(key)) || required.some(key => !Object.hasOwn(value, key))) reject();
 }
+function recipientRevisions(input) {
+  if (!Object.hasOwn(input, 'expectedAccessRevisions')) return;
+  const ids = input.registrationIds, revisions = input.expectedAccessRevisions;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 100 || new Set(ids).size !== ids.length || ids.some(id => typeof id !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(id))
+    || !plainObject(revisions) || Object.keys(revisions).length !== ids.length
+    || ids.some(id => !Object.hasOwn(revisions, id) || !Number.isSafeInteger(revisions[id]) || revisions[id] < 0)) reject();
+}
 async function body(request) {
   if (!/^application\/json(?:\s*;\s*charset\s*=\s*(?:utf-8|"utf-8"))?\s*$/iu.test(request.headers.get('content-type') ?? '')
     || ![null, 'identity'].includes(request.headers.get('content-encoding'))) reject('UNSUPPORTED_MEDIA_TYPE', 415);
@@ -111,7 +118,8 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         return json(await service[method]({ ...input, actor: session.user }));
       }
       if (url.pathname === REMINDER_DISPATCH) {
-        keys(input, ['expectedRevision', 'operationId', 'registrationIds', 'retryRejected'], ['expectedRevision', 'operationId', 'registrationIds']);
+        keys(input, ['expectedRevision', 'operationId', 'registrationIds', 'retryRejected', 'expectedAccessRevisions'], ['expectedRevision', 'operationId', 'registrationIds']);
+        recipientRevisions(input);
         if (typeof service.dispatchReminder !== 'function') reject('CONFIRMATION_UNAVAILABLE', 503);
         return json(await service.dispatchReminder({ ...input, actor: session.user }));
       }
@@ -120,10 +128,14 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         return json(await service.setSettings({ ...input, actor: session.user }));
       }
       if (deliverySend) {
-        keys(input, ['expectedRevision', 'operationId', 'retryRejected'], ['expectedRevision', 'operationId']);
-        return json(await service.dispatch({ ...input, registrationIds: [deliverySend[1]], actor: session.user }));
+        keys(input, ['expectedRevision', 'operationId', 'retryRejected', 'expectedAccessRevision'], ['expectedRevision', 'operationId']);
+        if (Object.hasOwn(input, 'expectedAccessRevision') && (!Number.isSafeInteger(input.expectedAccessRevision) || input.expectedAccessRevision < 0)) reject('INVALID_REQUEST', 400);
+        const { expectedAccessRevision, ...command } = input;
+        return json(await service.dispatch({ ...command, registrationIds: [deliverySend[1]],
+          ...(expectedAccessRevision === undefined ? {} : { expectedAccessRevisions: { [deliverySend[1]]: expectedAccessRevision } }), actor: session.user }));
       }
-      keys(input, ['expectedRevision', 'operationId', 'registrationIds', 'retryRejected'], ['expectedRevision', 'operationId', 'registrationIds']);
+      keys(input, ['expectedRevision', 'operationId', 'registrationIds', 'retryRejected', 'expectedAccessRevisions'], ['expectedRevision', 'operationId', 'registrationIds']);
+      recipientRevisions(input);
       return json(await service.dispatch({ ...input, actor: session.user }));
     } catch (error) {
       if (error instanceof CloudContentError && ['AUTH_REQUIRED', 'FORBIDDEN'].includes(error.code)) return json({ error: {

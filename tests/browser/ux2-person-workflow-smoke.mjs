@@ -18,7 +18,7 @@ const json=(status,code)=>({status,contentType:'application/json',body:JSON.stri
 const mime=file=>({html:'text/html',js:'text/javascript',css:'text/css',woff2:'font/woff2',png:'image/png',svg:'image/svg+xml',ico:'image/x-icon'})[extname(file).slice(1)]||'application/octet-stream';
 async function drafts(page){return page.evaluate(()=>new Promise((resolve,reject)=>{const r=indexedDB.open('artdico-browser-drafts-v1');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;if(!db.objectStoreNames.contains('drafts')){db.close();resolve([]);return;}const tx=db.transaction('drafts','readonly'),read=tx.objectStore('drafts').getAll();read.onsuccess=()=>resolve(read.result);read.onerror=()=>reject(read.error);tx.oncomplete=()=>db.close();};}));}
 async function staticFile(path){const fileFor=value=>resolve(dist,'.'+(value.endsWith('/')?value+'index.html':value));let file=fileFor(path);assert.ok(file.startsWith(dist+'/'));if(aliases.has(path)){try{await stat(file);}catch(error){if(error.code!=='ENOENT')throw error;file=fileFor(aliases.get(path));}}return file;}
-async function fixture(width,{lostAck=false,unknown=false,contacts=0,automatic=false}={}){
+async function fixture(width,{lostAck=false,unknown=false,contacts=0,automatic=false,profileCorrection=false}={}){
  const runtime=await peopleRuntimeFixture({capacity:100,mail:true,mailResult:unknown?'unknown':'accepted'}),actor=runtime.users[0],auth=await runtime.login();
  const enabled=async value=>runtime.app.confirmationService.setSettings({actor,expectedRevision:(await runtime.app.confirmationService.settings({actor})).revision,operationId:op(),enabled:value});
  if(!automatic)await enabled(false);
@@ -47,14 +47,22 @@ async function fixture(width,{lostAck=false,unknown=false,contacts=0,automatic=f
   if(path.startsWith('/api/')){
    const entry={path,method:req.method(),raw:req.postData(),query:url.search};calls.push(entry);
    const send=path.startsWith('/api/admin/registration-confirmation/send/');
-   assert.ok(req.method()==='GET'||req.method()==='POST'&&(send||['/api/admin/login','/api/admin/logout'].includes(path))||req.method()==='PUT'&&/^\/api\/admin\/contacts\//u.test(path),'only explicit session, single mail and reply actions can write');
+   const profileWrite=profileCorrection&&req.method()==='PATCH'&&path==='/api/admin/registrations/'+registration.reference_code+'/profile';
+   assert.ok(req.method()==='GET'||req.method()==='POST'&&(send||['/api/admin/login','/api/admin/logout'].includes(path))||req.method()==='PUT'&&/^\/api\/admin\/contacts\//u.test(path)||profileWrite,'only explicit session, single mail, reply and scoped correction actions can write');
+   if(profileWrite){
+    const record=(await drafts(page)).find(value=>value.kind==='pending_submission'&&value.value?.payloadJson===entry.raw);
+    assert.ok(record,'the exact profile correction is durable before its scoped PATCH');assert.equal(record.scope.actorId,actor.id);assert.equal(record.scope.entityId,'registration-profile:'+registration.reference_code);
+    assert.equal(record.value.path,path);assert.equal(record.value.method,'PATCH');assert.deepEqual(Object.keys(JSON.parse(entry.raw)).sort(),['expectedRevision','fields','operationId']);
+    assert.deepEqual(Object.keys(JSON.parse(entry.raw).fields).sort(),['city','email','name','organization','phone','position','wechat']);
+    const headers=await req.allHeaders();assert.ok(headers.cookie&&headers['x-csrf-token'],'the correction keeps the actual authenticated session and CSRF flow');
+   }
    if(path.startsWith('/api/admin/registration-confirmation/operation/')&&controls.lookupStatus){entry.status=controls.lookupStatus;return route.fulfill(json(controls.lookupStatus,'SYNTHETIC_LOOKUP_UNAVAILABLE'));}
    if(path.startsWith('/api/admin/registration-confirmation/delivery/')&&controls.deliveryStatus){entry.status=controls.deliveryStatus;return route.fulfill(json(controls.deliveryStatus,'SYNTHETIC_DELIVERY_UNAVAILABLE'));}
    if(path.startsWith('/api/admin/people/')&&!path.includes('/directory')&&controls.personStatus){const status=controls.personStatus;controls.personStatus=0;entry.status=status;return route.fulfill(json(status,'SYNTHETIC_PERSON_UNAVAILABLE'));}
    if(send){
     const records=await drafts(page),record=records.find(value=>value.kind==='pending_submission'&&value.value?.payloadJson===entry.raw);
     assert.ok(record,'original raw body is committed before the first POST');assert.equal(record.scope.actorId,actor.id);assert.equal(record.scope.entityId,'registration:'+registration.reference_code);assert.equal(record.scope.page,'person-confirmation:roles='+[...actor.roles].sort().join(','));
-    assert.deepEqual(Object.keys(record.value).sort(),['method','path','payloadJson']);assert.deepEqual(Object.keys(JSON.parse(entry.raw)).sort(),['expectedRevision','operationId','retryRejected']);
+    assert.deepEqual(Object.keys(record.value).sort(),['method','path','payloadJson']);assert.deepEqual(Object.keys(JSON.parse(entry.raw)).sort(),['expectedAccessRevision','expectedRevision','operationId','retryRejected']);
     assert.doesNotMatch(JSON.stringify(record),/example\.invalid|合成单人|receiptToken|confirmationUrl/u);metrics.durable=true;
     metrics.ackBeforePost=await page.evaluate(raw=>window.__ux2.acked.includes(raw),entry.raw);assert.equal(metrics.ackBeforePost,true,'IDB complete ACK precedes network request');
    }
@@ -112,7 +120,24 @@ try{
   }finally{await f.context.close();}
  }
  {
-  const f=await fixture(390,{automatic:true});try{await person(f);await services(f);await f.page.locator('[data-person-confirmation-status]').filter({hasText:'邮件服务已接收'}).waitFor();assert.equal(f.calls.some(row=>row.path.includes('/operation/')),false);assert.equal(await f.page.locator('[data-person-last-check]').isVisible(),false);assert.equal(sends(f).length,0);assert.equal((await localPending(f)).length,0);assert.equal(f.runtime.messages.length,2);reports.push({automaticFormalWithoutOperationUsesDeliveryOnly:true,noFakeOperationOrReadTimeOrSend:true});}finally{await f.context.close();}
+  const f=await fixture(390,{automatic:true,profileCorrection:true});try{
+   await person(f);await services(f);await f.page.locator('[data-person-confirmation-status]').filter({hasText:'邮件服务已接收'}).waitFor();
+   assert.equal(f.calls.some(row=>row.path.includes('/operation/')),false);assert.equal(await f.page.locator('[data-person-last-check]').isVisible(),false);assert.equal(sends(f).length,0);assert.equal((await localPending(f)).length,0);assert.equal(f.runtime.messages.length,2);
+   const profilePanel=f.page.locator('[data-person-profile-panel]');if(!await profilePanel.evaluate(node=>node.open))await profilePanel.locator(':scope>summary').click();
+   await f.page.locator('[data-person-profile-edit]').click();const form=f.page.locator('[data-person-profile-form]'),newEmail='synthetic.ux2.corrected@example.invalid';
+   await form.locator('[name=email]').fill(newEmail);await f.page.locator('[data-person-profile-save]').click();await f.page.locator('[data-person-profile-state][data-save-state=saved]').waitFor();await form.locator('[name=email]:enabled').waitFor();
+   await f.page.locator('[data-person-profile-cancel]').click();await form.waitFor({state:'hidden'});
+   assert.match(await f.page.locator('[data-person-summary]').textContent(),/确认信未寄送/u,'old accepted mail must not mark the corrected recipient as notified');
+   assert.doesNotMatch(await f.page.locator('[data-person-summary]').textContent(),/邮件服务已接收/u);
+   assert.equal(await f.page.locator('[data-person-primary]').textContent(),'核对通知','the next action follows the current recipient rather than old accepted history');
+   await readySend(f);assert.equal(await f.page.locator('[data-person-confirmation-recipient]').textContent(),'收件人：'+newEmail);
+   const oldMail=f.page.locator('[data-person-communications] li[data-person-current-recipient="false"]').filter({hasText:'参会确认邮件'});assert.ok(await oldMail.count()>0);
+   assert.match(await oldMail.first().textContent(),/原邮箱.*参会确认邮件.*邮件服务已接收/u,'the prior delivery stays clearly labeled in history');
+   const history=f.page.locator('[data-person-communications]').locator('xpath=ancestor::details[1]');if(!await history.evaluate(node=>node.open))await history.locator(':scope>summary').click();
+   assert.equal(f.runtime.messages.length,2,'editing the recipient and reading its new context do not send another email');assert.equal(sends(f).length,0);assert.equal(f.calls.filter(row=>row.method==='PATCH').length,1);
+   await noOverflow(f);await f.page.screenshot({path:resolve(evidence,'corrected-email-old-history-390.png'),fullPage:true});
+   reports.push({automaticFormalWithoutOperationUsesDeliveryOnly:true,noFakeOperationOrReadTimeOrSend:true,correctedRecipientNotSent:true,currentRecipientGetsNotificationNextAction:true,oldRecipientAcceptedHistoryLabeled:true,profileCorrectionAndReadSendNoAdditionalMail:true});
+  }finally{await f.context.close();}
  }
  {
   const f=await fixture(390,{contacts:4});try{

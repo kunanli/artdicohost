@@ -47,6 +47,27 @@ test('formal preview whitelists bounded fixed-purpose body and leaves old dispat
   assert.equal(f.calls.length, 0);
 });
 
+test('single-person send translates the displayed recipient revision without changing legacy request replay shape',async()=>{
+  const f=fixture(),base={expectedRevision:5,operationId:op,retryRejected:false};
+  assert.equal((await f.handler(request('send/'+id,{body:base}))).status,200);
+  assert.deepEqual(f.calls.pop(),{name:'dispatch',input:{...base,registrationIds:[id],actor:manager}});
+  assert.equal((await f.handler(request('send/'+id,{body:{...base,expectedAccessRevision:2}}))).status,200);
+  assert.deepEqual(f.calls.pop(),{name:'dispatch',input:{...base,registrationIds:[id],expectedAccessRevisions:{[id]:2},actor:manager}});
+  for(const value of[-1,null,'1',0.5])assert.equal((await f.handler(request('send/'+id,{body:{...base,expectedAccessRevision:value}}))).status,400);
+  assert.equal((await f.handler(request('send/'+id,{body:{...base,expectedAccessRevisions:{[id]:2}}}))).status,400);assert.equal(f.calls.length,0);
+});
+
+test('formal and reminder dispatch admit only an exact bounded recipient revision map',async()=>{
+  const f=fixture();f.service.dispatchReminder=async input=>{f.calls.push({name:'dispatchReminder',input});return{synthetic:true};};
+  const original={expectedRevision:5,operationId:op,registrationIds:[id],retryRejected:false},expectedAccessRevisions={[id]:2};
+  for(const[path,name]of[['dispatch','dispatch'],['reminder-dispatch','dispatchReminder']]){
+    assert.equal((await f.handler(request(path,{body:{...original,expectedAccessRevisions}}))).status,200);
+    assert.deepEqual(f.calls.pop(),{name,input:{...original,expectedAccessRevisions,actor:manager}});
+    for(const map of[null,[],{},{[id]:-1},{[id]:null},{[id]:'1'},{[id]:0.5},{[id]:1,extra:0},{['n'.repeat(43)]:1}])assert.equal((await f.handler(request(path,{body:{...original,expectedAccessRevisions:map}}))).status,400);
+    assert.equal(f.calls.length,0);
+  }
+});
+
 test('original formal operation lookup is authenticated read-only GET with private no-store headers', async () => {
   for (const user of [null, { id: 'synthetic-reviewer', roles: ['reviewer'] }]) {
     const f = fixture(user); assert.equal((await f.handler(request('operation/' + op, { method: 'GET' }))).status, user ? 403 : 401); assert.equal(f.calls.length, 0);

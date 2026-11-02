@@ -40,20 +40,23 @@ async function fixture(browser,width){
   const context=await browser.newContext({viewport:{width,height:940}}),calls=[],dialogs=[];
   const auth=await runtime.login(),[name,...value]=auth.Cookie.split('=');
   await context.addCookies([{domain:new URL(API).hostname,path:'/api/admin',name,value:value.join('='),httpOnly:true,secure:true,sameSite:'Strict'}]);
-  let page,saveFault=null,syncUnknown=false,readFault=null,linkBudget=0,loginBudget=0,legacyUnknown=null;
+  let page,saveFault=null,profileFault=null,syncUnknown=false,readFault=null,linkBudget=0,loginBudget=0,legacyUnknown=null;
   await context.route('**/*',async route=>{
     const request=route.request(),url=new URL(request.url());assert.ok([API,SITE].includes(url.origin),'every origin stays inside intercepted fixtures');
     if(url.pathname.startsWith('/api/')){
       assert.equal(url.origin,API);
       const raw=request.postData(),entry={path:url.pathname,method:request.method(),raw};calls.push(entry);
-      if(!['GET','HEAD','OPTIONS'].includes(request.method()))assert.ok(request.method()==='PUT'&&[first.id,second.id].some(id=>url.pathname==='/api/admin/contacts/'+id)||request.method()==='POST'&&['/api/admin/logout','/api/admin/login'].includes(url.pathname),'only explicit reply saves and session actions may write');
+      const profileWrite=request.method()==='PATCH'&&/^\/api\/admin\/registrations\/[A-Za-z0-9_-]{43}\/profile$/u.test(url.pathname);
+      if(!['GET','HEAD','OPTIONS'].includes(request.method()))assert.ok(profileWrite||request.method()==='PUT'&&[first.id,second.id].some(id=>url.pathname==='/api/admin/contacts/'+id)||request.method()==='POST'&&['/api/admin/logout','/api/admin/login'].includes(url.pathname),'only explicit profile/reply saves and session actions may write');
       if(url.pathname==='/api/admin/login'){assert.ok(loginBudget>0,'login follows an explicit test action');loginBudget--;}
       if(url.pathname.includes('/registration-confirmation/link/')){assert.ok(linkBudget>0,'credential is fetched only for an explicit selected-person action');linkBudget--;}
-      if(request.method()==='PUT'){
+      if(request.method()==='PUT'||profileWrite){
         const local=await drafts(page),pending=local.find(row=>row.kind==='pending_submission'&&row.value?.payloadJson===raw);
         assert.ok(pending,'the exact original body is durable locally before the first network write');
-        assert.equal(pending.scope.actorId,runtime.users[0].id);assert.ok(pending.scope.entityId.includes(url.pathname.split('/').at(-1)));
+        assert.equal(pending.scope.actorId,runtime.users[0].id);assert.ok(pending.scope.entityId.includes(profileWrite?url.pathname.split('/').at(-2):url.pathname.split('/').at(-1)));
       }
+      if(profileWrite&&profileFault==='before'){profileFault=null;entry.status=503;return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{code:'SYNTHETIC_BEFORE_SAVE_ACK',message:'合成保存前断线'}})});}
+      if(profileWrite&&profileFault==='conflict'){profileFault=null;entry.status=409;return route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({error:{code:'SYNTHETIC_PRESTART_PROFILE_CONFLICT',message:'合成版本冲突'}})});}
       if(readFault&&request.method()==='GET'&&url.pathname.startsWith('/api/admin/people/contacts/')){
         const status=readFault;readFault=null;entry.status=status;
         return route.fulfill({status,contentType:'application/json',body:JSON.stringify({error:{code:status===401?'AUTH_REQUIRED':'PERSON_UNAVAILABLE',message:status===401?'请先登录。':'人员资料暂时无法核对，请稍后重新读取。'}})});
@@ -61,6 +64,7 @@ async function fixture(browser,width){
       const response=await runtime.app.handle(new Request(request.url(),{method:request.method(),headers:await request.allHeaders(),...(['GET','HEAD'].includes(request.method())?{}:{body:raw})}));
       const headers=Object.fromEntries(response.headers);delete headers['content-length'];entry.actualStatus=response.status;
       let body=Buffer.from(await response.arrayBuffer());
+      if(profileWrite&&profileFault==='after'){assert.equal(response.status,200,'lost profile acknowledgement follows a durable save');profileFault=null;entry.status=503;return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{code:'SYNTHETIC_PROFILE_LOST_ACK',message:'合成资料回执遗失'}})});}
       if(saveFault&&request.method()==='PUT'){
         assert.equal(response.status,200,'lost acknowledgement follows a real durable save');saveFault=null;entry.status=503;
         return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{code:'SYNTHETIC_LOST_ACK',message:'合成回执遗失'}})});
@@ -83,8 +87,8 @@ async function fixture(browser,width){
     try{return route.fulfill({status:200,contentType:mime(file),body:await readFile(file)});}catch{return route.fulfill({status:404,body:''});}
   });
   page=await context.newPage();page.setDefaultTimeout(15000);await page.clock.setSystemTime(new Date('2026-10-21T09:00:00.000Z'));
-  page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>{dialogs.push(dialog.message());void dialog.dismiss();});
-  return {runtime,context,page,calls,dialogs,width,first,second,registrationId,original,admissions,loseSaveAck:()=>{saveFault='lost';},loseSyncResult:()=>{syncUnknown=true;},failRead:status=>{readFault=status;},allowLink:()=>{linkBudget++;},allowLogin:()=>{loginBudget++;},showLegacyUnknown:mode=>{legacyUnknown=mode;}};
+  page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>{if(dialog.type()==='beforeunload'){void dialog.accept();return;}dialogs.push(dialog.message());void dialog.dismiss();});
+  return {runtime,context,page,calls,dialogs,width,first,second,registrationId,original,admissions,loseSaveAck:()=>{saveFault='lost';},loseProfileAck:mode=>{profileFault=mode;},conflictProfile:()=>{profileFault='conflict';},loseSyncResult:()=>{syncUnknown=true;},failRead:status=>{readFault=status;},allowLink:()=>{linkBudget++;},allowLogin:()=>{loginBudget++;},showLegacyUnknown:mode=>{legacyUnknown=mode;}};
 }
 async function open(f,id=f.first.id){await f.page.goto(API+'/admin/person/#contact='+encodeURIComponent(id),{waitUntil:'networkidle'});await f.page.locator('[data-person-record]:visible').waitFor();}
 async function quick(f){
@@ -226,6 +230,80 @@ try{
       reports.push({width,requests:f.calls.length,writes:f.calls.filter(call=>call.method==='PUT').length,persistedBeforeWrite:true,originalLostAckBodySha256:createHash('sha256').update(original).digest('hex'),reconciliationWithoutReplay:true,relationsPreserved:true,newAttendeeIntegratedOnce:true,savedReplySurvivesUnknownAdmission:true,samePersonFocusAndVisiblePosition:true,visibleInputShiftPx:afterGeometry.owner.top-before.owner.top,scrollDeltaPx:afterGeometry.scrollY-before.scrollY,selectedOriginalReadOnly:true,privateCredentialOnlyOnClick:true,sourceFailureUnavailable:true,authSwitchLogoutClears:true,screenshots:[initialShot]});
     }catch(error){await f.page.screenshot({path:resolve(evidence,'failure-'+width+'.png'),fullPage:true});await writeFile(resolve(evidence,'failure.json'),JSON.stringify({width,error:error.message,calls:f.calls.map(({path,method,status,actualStatus})=>({path,method,status,actualStatus})),dialogs:f.dialogs},null,2));throw error;
     }finally{await f.context.close();}
+  }
+  for(const width of [320,390,1440]){
+    const f=await fixture(browser,width);
+    try{
+      const submitted=await f.runtime.seedPublic({intake:'general-v2',name:'合成错填姓名',email:'synthetic.profile.old@example.invalid',organization:'合成原机构'});
+      const id=submitted.reference_code;await f.runtime.approvePublic(id);
+      const index=(await f.runtime.app.registrationService.repository.readIndex()).value,entry=index.entries.find(row=>row.id===id);
+      const original=await f.runtime.app.registrationService.repository.readRecord(entry);
+      const contacts=await f.runtime.app.contactsStore.read(),admissions=await f.runtime.app.registrationService.getAdmissions({actor:f.runtime.users[0]});
+      await f.page.goto(API+'/admin/person/#registration='+encodeURIComponent(id),{waitUntil:'networkidle'});await f.page.locator('[data-person-record]:visible').waitFor();
+      await f.page.locator('[data-person-more] > summary').click();await f.page.locator('[data-person-profile-panel] > summary').click();
+      assert.doesNotMatch(await f.page.locator('[data-person-profile]').textContent(),/尚未关联这部分记录/u,'registration-only profile is usable without creating a contact');
+      await f.page.locator('[data-person-profile-edit]').click();
+      const form=f.page.locator('[data-person-profile-form]'),name=form.locator('[name=name]');
+      const baseName=await name.inputValue(),beforeNoChange=f.calls.filter(call=>call.method==='PATCH').length;
+      await name.fill(baseName+' ');assert.equal(await f.page.locator('[data-person-profile-save]').isDisabled(),true,'normalized whitespace alone does not produce a profile change');
+      await name.fill('合成暂时输入');await f.page.locator('[data-person-profile-save]:enabled').waitFor();
+      await name.fill(baseName);assert.equal(await f.page.locator('[data-person-profile-save]').isDisabled(),true,'restoring the original profile disables save');
+      await name.press('Enter');assert.equal(f.calls.filter(call=>call.method==='PATCH').length,beforeNoChange,'unchanged normalized fields never send an empty correction');
+
+      await name.fill('合成版本冲突草稿');f.conflictProfile();await f.page.locator('[data-person-profile-save]').click();
+      await f.page.locator('[data-person-profile-state][data-save-state=conflict]').waitFor();
+      assert.equal(await name.inputValue(),'合成版本冲突草稿');assert.match(await f.page.locator('[data-person-profile-state]').textContent(),/取消编辑.*重新读取/u);
+      assert.equal(await f.page.locator('[data-person-profile-check]').isVisible(),false);assert.equal(await f.page.locator('[data-person-profile-retry]').isVisible(),false);
+      assert.equal((await drafts(f.page)).filter(row=>row.kind==='pending_submission'&&row.scope?.entityId==='registration-profile:'+id).length,0,'a known first 409 is not retained as an unknown operation');
+      assert.equal(f.calls.filter(call=>call.method==='PATCH').at(-1).actualStatus,undefined,'the explicit first 409 is a pre-start browser fault, not a committed operation');
+      await f.page.locator('[data-person-profile-cancel]').click();await form.waitFor({state:'hidden'});
+      await f.page.locator('[data-person-refresh]').click();await f.page.locator('[data-person-record]:visible').waitFor();
+      for(const selector of ['[data-person-more]','[data-person-profile-panel]'])if(!await f.page.locator(selector).evaluate(node=>node.open))await f.page.locator(selector+' > summary').click();
+      await f.page.locator('[data-person-profile-edit]').click();assert.equal(await name.inputValue(),baseName,'cancel then explicit reread restores the current saved profile');
+      await name.fill('合成更正姓名');await form.locator('[name=email]').fill('synthetic.profile.corrected@example.invalid');
+      await f.page.locator('[data-person-profile-email-note]:visible').waitFor();
+      await name.focus();await name.evaluate(node=>node.setSelectionRange(1,3));
+      await f.page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      const before=await name.evaluate(node=>({href:location.href,top:node.getBoundingClientRect().top}));
+      await name.press('Enter');await f.page.locator('[data-person-profile-state][data-save-state=saved]').waitFor();await form.locator('[name=name]:enabled').waitFor();
+      await f.page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      assert.equal(await f.page.evaluate(()=>location.href),before.href);assert.equal(await name.evaluate(node=>document.activeElement===node),true);
+      assert.deepEqual(await name.evaluate(node=>[node.selectionStart,node.selectionEnd]),[1,3]);
+      assert.ok(Math.abs(await name.evaluate(node=>node.getBoundingClientRect().top)-before.top)<=4,'profile save preserves the visible input position');
+      assert.equal(await f.page.locator('[data-person-name]').textContent(),'合成更正姓名');
+      assert.equal(await form.locator('[name=email]').inputValue(),'synthetic.profile.corrected@example.invalid');
+      assert.deepEqual(await f.runtime.app.registrationService.repository.readRecord(entry),original,'original registration remains byte-for-byte logically unchanged');
+      assert.deepEqual(await f.runtime.app.contactsStore.read(),contacts,'registration-only correction never fabricates or edits a contact');
+      assert.deepEqual(await f.runtime.app.registrationService.getAdmissions({actor:f.runtime.users[0]}),admissions,'ordinary correction never changes admission');
+      assert.equal(f.runtime.messages.length,0);assert.deepEqual(f.dialogs,[]);
+
+      await form.locator('[name=phone]').fill('synthetic-profile-phone');f.loseProfileAck('after');await f.page.locator('[data-person-profile-save]').click();
+      await f.page.locator('[data-person-profile-state][data-save-state=unknown]').waitFor();
+      const firstPending=f.calls.filter(call=>call.method==='PATCH').at(-1),writes=f.calls.filter(call=>call.method==='PATCH').length;
+      assert.equal(await f.page.locator('[data-person-profile-retry]').isVisible(),false,'unknown save cannot be retried before checking');
+      await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-person-record]:visible').waitFor();
+      await f.page.locator('[data-person-primary]').click();await form.waitFor({state:'visible'});
+      await form.getByRole('button',{name:'恢复待核对操作',exact:true}).click();
+      await f.page.locator('[data-person-profile-check]:visible').waitFor();await f.page.locator('[data-person-profile-check]').click();
+      await f.page.locator('[data-person-profile-state][data-save-state=saved]').waitFor();
+      assert.equal(f.calls.filter(call=>call.method==='PATCH').length,writes,'recovering and checking an unknown receipt does not repeat the save');
+      assert.ok(f.calls.some(call=>call.method==='GET'&&call.path.endsWith('/profile-operations/'+JSON.parse(firstPending.raw).operationId)));
+      assert.equal(await form.locator('[name=phone]').inputValue(),'synthetic-profile-phone');
+
+      await form.locator('[name=organization]').fill('合成新机构');f.loseProfileAck('before');await f.page.locator('[data-person-profile-save]').click();
+      await f.page.locator('[data-person-profile-state][data-save-state=unknown]').waitFor();
+      const missing=f.calls.filter(call=>call.method==='PATCH').at(-1).raw;
+      await f.page.locator('[data-person-profile-check]').click();await f.page.locator('[data-person-profile-retry]:visible').waitFor();
+      await f.page.locator('[data-person-profile-retry]').click();await f.page.locator('[data-person-profile-state][data-save-state=saved]').waitFor();
+      assert.equal(f.calls.filter(call=>call.method==='PATCH').at(-1).raw,missing,'a missing operation replays only its original immutable body');
+      assert.deepEqual(await f.runtime.app.registrationService.repository.readRecord(entry),original);
+      assert.deepEqual(await f.runtime.app.contactsStore.read(),contacts);assert.deepEqual(await f.runtime.app.registrationService.getAdmissions({actor:f.runtime.users[0]}),admissions);
+      assert.equal(f.runtime.messages.length,0);assert.deepEqual(f.dialogs,[]);await shot(f,'registration-profile-corrected');
+      await f.page.evaluate(id=>{location.hash='contact='+encodeURIComponent(id);},f.second.id);await f.page.waitForFunction(()=>document.querySelector('[data-person-name]')?.textContent==='合成旧意向乙');
+      assert.equal(await form.isVisible(),false);assert.equal(await form.locator('[name=email]').inputValue(),'');assert.equal(await f.page.locator('[data-person-credential-open]').getAttribute('href'),null);
+      reports.push({width,registrationProfileCorrection:true,registrationOnlyNoFakeContact:true,originalAndAdmissionPreserved:true,normalizedOriginalDisablesSaveWithoutRequest:true,knownInitial409PreservesDraftWithoutUnknownLock:true,explicitCancelRereadAfter409:true,samePersonFocusAndPosition:true,persistedBeforeWrite:true,lostAckRecoveredByRead:true,missingOperationExplicitOriginalReplay:true,zeroAutomaticMail:true,switchClearsProfile:true});
+    }catch(error){await f.page.screenshot({path:resolve(evidence,'profile-failure-'+width+'.png'),fullPage:true});await writeFile(resolve(evidence,'profile-failure.json'),JSON.stringify({width,error:error.message,calls:f.calls.map(({path,method,status,actualStatus})=>({path,method,status,actualStatus})),dialogs:f.dialogs},null,2));throw error;}
+    finally{await f.context.close();}
   }
   // Service tests prove full-history/alias derivation. These controlled DTO
   // overrides check the new UI flag and the fail-closed historical DTO fallback.

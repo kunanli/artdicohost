@@ -44,9 +44,9 @@ async function main() {
       Object.defineProperty(window, '__homeMotionQaPendingFrames', { value: () => pending.size });
       // Observe real canvas paint arguments without changing drawing, clocks,
       // particles or their velocity. The hero uses arc only for dot cores.
-      const frames = [], nativeClear = CanvasRenderingContext2D.prototype.clearRect, nativeArc = CanvasRenderingContext2D.prototype.arc, nativeFillRect = CanvasRenderingContext2D.prototype.fillRect;
+      const frames = [], nativeClear = CanvasRenderingContext2D.prototype.clearRect, nativeArc = CanvasRenderingContext2D.prototype.arc, nativeFillRect = CanvasRenderingContext2D.prototype.fillRect, nativeEllipse = CanvasRenderingContext2D.prototype.ellipse;
       CanvasRenderingContext2D.prototype.clearRect = function (...args) {
-        if (this.canvas.matches('[data-hero-particles]')) { frames.push({ at: performance.now(), points: [], maskRects: [] }); if (frames.length > 120) frames.shift(); }
+        if (this.canvas.matches('[data-hero-particles]')) { frames.push({ at: performance.now(), points: [], maskRects: [], maskEllipses: [] }); if (frames.length > 120) frames.shift(); }
         return nativeClear.apply(this, args);
       };
       CanvasRenderingContext2D.prototype.arc = function (...args) {
@@ -57,7 +57,11 @@ async function main() {
         if (this.canvas.matches('[data-hero-particles]') && this.globalCompositeOperation === 'destination-out' && frames.length) frames.at(-1).maskRects.push({ x: args[0], y: args[1], width: args[2], height: args[3] });
         return nativeFillRect.apply(this, args);
       };
-      Object.defineProperty(window, '__homeMotionQaParticleFrames', { value: () => frames.map(frame => ({ at: frame.at, points: frame.points.map(point => ({ ...point })), maskRects: frame.maskRects.map(rect => ({ ...rect })) })) });
+      CanvasRenderingContext2D.prototype.ellipse = function (...args) {
+        if (this.canvas.matches('[data-hero-particles]') && this.globalCompositeOperation === 'destination-out' && frames.length) frames.at(-1).maskEllipses.push({ x: args[0], y: args[1], rx: args[2], ry: args[3], rotation: args[4] });
+        return nativeEllipse.apply(this, args);
+      };
+      Object.defineProperty(window, '__homeMotionQaParticleFrames', { value: () => frames.map(frame => ({ at: frame.at, points: frame.points.map(point => ({ ...point })), maskRects: frame.maskRects.map(rect => ({ ...rect })), maskEllipses: frame.maskEllipses.map(ellipse => ({ ...ellipse })) })) });
     });
     if (withoutObserver) await context.addInitScript(() => Object.defineProperty(window, 'IntersectionObserver', { configurable: true, value: undefined }));
     await context.route('**/*', async route => {
@@ -194,21 +198,31 @@ async function main() {
     });
   }
   async function backgroundPointerForce(page) {
+    // Park the real pointer away from the sampled core's force radius before
+    // estimating its natural drift. Do not change the renderer or its clock.
+    await page.mouse.move(10, 10);
     await page.waitForTimeout(220);
     const sample = await page.evaluate(() => {
-      const frames = window.__homeMotionQaParticleFrames().filter(frame => frame.points.length), last = frames.at(-1), previous = frames.findLast(frame => last.at - frame.at >= 180);
+      const frames = window.__homeMotionQaParticleFrames().filter(frame => frame.maskRects.length || frame.maskEllipses.length), last = frames.at(-1), previous = frames.findLast(frame => last.at - frame.at >= 180);
       if (!last || !previous) return null;
-      const stage = document.querySelector('.ah-home-hero-stage').getBoundingClientRect(), ball = document.querySelector('.ah-home-hero-planet').getBoundingClientRect();
-      const insideBall = (x, y) => ((stage.left + x - ball.left - ball.width / 2) / (ball.width / 2 + 35)) ** 2 + ((stage.top + y - ball.top - ball.height / 2) / (ball.height / 2 + 35)) ** 2 < 1;
+      const box = document.querySelector('[data-hero-particles]').getBoundingClientRect(), baseline = frames.filter(frame => frame.at >= previous.at), epsilon = 1e-7;
+      const clear = (x, y, padding = 24) => x >= 20 && x <= box.width - 20 && y >= 20 && y <= box.height - 20
+        && !last.maskRects.some(rect => x >= rect.x - padding && x <= rect.x + rect.width + padding && y >= rect.y - padding && y <= rect.y + rect.height + padding)
+        && !last.maskEllipses.some(ellipse => { const dx = x - ellipse.x, dy = y - ellipse.y, cos = Math.cos(ellipse.rotation), sin = Math.sin(ellipse.rotation); return ((dx * cos + dy * sin) / (ellipse.rx + 40)) ** 2 + ((dy * cos - dx * sin) / (ellipse.ry + 40)) ** 2 <= 1; });
       for (const point of last.points) {
-        if (point.x < 60 || point.x > stage.width - 60 || stage.top + point.y < 120 || stage.top + point.y > innerHeight - 70 || point.y < 60 || point.y > stage.height - 60 || insideBall(point.x, point.y)) continue;
-        const ranked = previous.points.map(other => ({ other, distance: Math.hypot(point.x - other.x, point.y - other.y) })).sort((a, b) => a.distance - b.distance);
-        if (!ranked.length || ranked[0].distance > 5 || ranked[1]?.distance < 25) continue;
+        if (point.x < 60 || point.x > box.width - 60 || point.y < 60 || point.y > box.height - 60 || Math.hypot(box.left + point.x - 10, box.top + point.y - 10) <= 240 || !clear(point.x, point.y)) continue;
+        // Native core radius is immutable in this fixed viewport. Require it
+        // to be unique in every observed frame instead of assuming array order
+        // remains stable when production legitimately skips masked particles.
+        const track = baseline.map(frame => ({ at: frame.at, points: frame.points, matches: frame.points.filter(other => Math.abs(other.r - point.r) < epsilon) }));
+        if (track.some(frame => frame.matches.length !== 1)) continue;
+        if (track.some(frame => frame.points.some(other => other !== frame.matches[0] && Math.hypot(other.x - frame.matches[0].x, other.y - frame.matches[0].y) < 25))) continue;
+        if (track.slice(1).some((frame, index) => Math.hypot(frame.matches[0].x - track[index].matches[0].x, frame.matches[0].y - track[index].matches[0].y) > (frame.at - track[index].at) / 1000 * 20 + .25)) continue;
+        const start = track[0].matches[0], seconds = (last.at - previous.at) / 1000, vx = (point.x - start.x) / seconds, vy = (point.y - start.y) / seconds;
         for (const [dx, dy] of [[45, 0], [-45, 0], [0, 45], [0, -45]]) {
           const x = point.x + dx, y = point.y + dy;
-          if (x < 20 || x > stage.width - 20 || y < 20 || y > stage.height - 20 || stage.top + y > innerHeight - 30 || insideBall(x, y)) continue;
-          const seconds = (last.at - previous.at) / 1000;
-          return { point, at: last.at, vx: (point.x - ranked[0].other.x) / seconds, vy: (point.y - ranked[0].other.y) / seconds, pointer: { x: stage.left + x, y: stage.top + y }, direction: { x: dx / 45, y: dy / 45 } };
+          if (!clear(x, y, 4) || ![0, .5, 1].every(fraction => clear(point.x + fraction * (vx * .8 + dx / 45 * 8), point.y + fraction * (vy * .8 + dy / 45 * 8), 20))) continue;
+          return { point, at: last.at, vx, vy, baselinePaints: track.length, clearancePx: 24, sphereClearancePx: 40, pointer: { x: box.left + x, y: box.top + y }, direction: { x: dx / 45, y: dy / 45 } };
         }
       }
       return null;
@@ -216,13 +230,22 @@ async function main() {
     assert.ok(sample, 'a real freely drawn background dot is available for a local pointer-force observation');
     await page.mouse.move(sample.pointer.x, sample.pointer.y); await page.waitForTimeout(550);
     const result = await page.evaluate(sample => {
-      const last = window.__homeMotionQaParticleFrames().filter(frame => frame.points.length).at(-1), seconds = (last.at - sample.at) / 1000;
+      const frames = window.__homeMotionQaParticleFrames().filter(frame => frame.at >= sample.at && (frame.maskRects.length || frame.maskEllipses.length)), epsilon = 1e-7;
+      let previous = { at: sample.at, point: sample.point };
+      for (const frame of frames) {
+        const matches = frame.points.filter(point => Math.abs(point.r - sample.point.r) < epsilon);
+        if (matches.length !== 1) return { validTrack: false, reason: matches.length ? 'AMBIGUOUS_NATIVE_CORE' : 'MISSING_NATIVE_CORE', at: frame.at, coreRadius: sample.point.r, matches: matches.length };
+        const point = matches[0], step = Math.hypot(point.x - previous.point.x, point.y - previous.point.y), maximumStep = (frame.at - previous.at) / 1000 * 20 + .25;
+        if (step > maximumStep) return { validTrack: false, reason: 'DISCONTINUOUS_NATIVE_CORE', at: frame.at, coreRadius: sample.point.r, step, maximumStep };
+        previous = { at: frame.at, point };
+      }
+      const last = frames.at(-1), point = previous.point, seconds = (last.at - sample.at) / 1000;
       const predicted = { x: sample.point.x + sample.vx * seconds, y: sample.point.y + sample.vy * seconds };
-      const point = [...last.points].sort((a, b) => Math.hypot(a.x - predicted.x, a.y - predicted.y) - Math.hypot(b.x - predicted.x, b.y - predicted.y))[0];
       const delta = { x: point.x - predicted.x, y: point.y - predicted.y };
-      return { elapsedMs: last.at - sample.at, extraTowardPointer: delta.x * sample.direction.x + delta.y * sample.direction.y, extraDistance: Math.hypot(delta.x, delta.y), naturalSpeed: Math.hypot(sample.vx, sample.vy), nativePaintArcObserved: true };
+      return { validTrack: true, elapsedMs: last.at - sample.at, extraTowardPointer: delta.x * sample.direction.x + delta.y * sample.direction.y, extraDistance: Math.hypot(delta.x, delta.y), naturalSpeed: Math.hypot(sample.vx, sample.vy), coreRadius: sample.point.r, baselinePaints: sample.baselinePaints, trackedPaints: frames.length, clearancePx: sample.clearancePx, sphereClearancePx: sample.sphereClearancePx, nativePaintArcObserved: true };
     }, sample);
     numericMetrics = { backgroundPointerForce: result };
+    assert.equal(result.validTrack, true, 'the same unique native core remains visible and continuous in every real painted frame');
     assert.ok(result.extraTowardPointer > 1.5 && result.extraDistance < 20, 'the real painted dot responds locally and gently beyond its measured natural drift');
     return result;
   }

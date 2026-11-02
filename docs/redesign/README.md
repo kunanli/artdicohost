@@ -1,6 +1,6 @@
 # ARTDiCO HOST 改版執行總覽
 
-接續實作：[後台調整前台展示順序](admin-display-order-release.md)。嘉賓／組織／作品依後台保存及明確發布的順序展示，原槽位／手機圈內布局保持；本輪驗收與發布完成後追加。寄信故障排在排序交付後處理。
+已交付：[後台調整前台展示順序](admin-display-order-release.md)。[PR71](https://github.com/kunanli/artdicohost/pull/71)已發布main `c102d50b92691fc3ccf867ec7de988ea5be523d2`；1664項測試及同來源／HTML的6／4／10／8／正式素材13案通過，台北2026-11-02 23:39:51完成60公開HTTPS物件核對。嘉賓／組織／作品依保存並明確發布的順序展示。下一階段處理使用者回報的寄信故障，不清除通知歷史或以重試上限推定服務商錯誤。
 
 最新報名決策：[本站報名自動取得入場名額](onsite-auto-registration-release.md)。使用者已明確選本站填表、自動確認或滿額候補；取代下方早先活動行唯一入口規劃。新空白分享提案不勾，分享審選及既有待審／未知結果仍獨立保留。[PR70](https://github.com/kunanli/artdicohost/pull/70)已發布main `124180a0dc862d4e93cf79c5a3cf1c9278c83991`；[main流程41458276411](https://github.com/kunanli/artdicohost/actions/runs/41458276411)四工作及1661測試／同HTML6／4／10／實際13通過，14:13 UTC正式mode false／13後台、14:14:45 UTC 60公開物件HTTPS核對完成。
 

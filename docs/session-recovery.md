@@ -1,5 +1,11 @@
 # 开发接续：先读本页
 
+## 2026-11-02（Asia/Taipei）置頂導覽、捲動光流與Hero互動已發布
+
+[PR #62](https://github.com/kunanli/artdicohost/pull/62) 已發布 main `941d6f661b3740da85a475c8d9ed561b8bce6114`，完整回執見 [本輪紀錄](redesign/scroll-motion-release.md)。Header保持76／72px原佔位、viewport sticky及實測錨點留白；低密度頁緣顆粒隨捲動、Hero可見時球緣10／18點慢流與游標輕回應，標題／表單不持續位移。原文／字級／嘉賓三層與業務資料保留；reduced-motion／隱藏／離屏及無JS／無IO皆有驗證。
+
+[main CI 41374978628](https://github.com/kunanli/artdicohost/actions/runs/41374978628) 四工作成功：736來源、Astro482、1612測試、23頁、audit0、FC128／公開61。捲動6／排版4／實際13分別01:58:35／01:58:48／01:59:48 UTC通過；三報source均941d6f6、HTML `a47dc49b069c99910b032ed97f5d98a2eef74988d07ac1fd3343e71047a96871`，snapshot仍R43／`4b5486d90eed56ed762e40227b35866a07ec4cd451e16b32a67374d5a7ed79af`。02:05:33 FC準確來源／批准政策／私有OSS、02:05:37後台13頁、02:05:38匿名CORS、02:07:23公開61物件HTTPS核對完成。先前測試focus／smooth／無JS等待修正均保留資格，不放寬門檻；最終feather產物與CI各6／6。文件回執分支不重部署，真人四項仍獨立；以下PR #61及更早為歷史。
+
 ## 2026-11-02（Asia/Taipei）公開說明、字級與對外信箱已發布
 
 [PR #61](https://github.com/kunanli/artdicohost/pull/61) 已發布 main `749d5a532d8e5fba9b702247b3e0b6fbc4a05288`，完整回執見 [本輪紀錄](redesign/public-guidance-release.md)。嘉賓不顯示資料待確認、議程不顯示人物副欄；表單兩塊詳細告知改單一隱私連結，完整說明按需展開並保鍵盤焦點。GGJ指南移既有Q&A `site-role`，正文16px；氣泡小字桌面16／手機14。對外地址為 `kunan@globalgamejam.org`，使用event配置常數，與staff-owner身份分開。

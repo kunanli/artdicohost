@@ -23,3 +23,5 @@
 報名表只顯示同意文字及單一隱私連結；完整說明在預設收合的既有頁尾按需展開。連結須同時定位並保留鍵盤焦點，不代勾同意。對外信箱統一取 `src/config/event.mjs` 的 `PUBLIC_CONTACT_EMAIL`，不由管理員身份或舊公開內容覆蓋。
 
 驗證入口為 `tests/browser/public-typography-smoke.mjs`：320／390／1440／1920，檢查最終 computed 字級／行高、對比、展開、鍵盤與原有未知申請恢復。使用隔離合成資料、零業務 POST；實際執行結果另記本輪發布紀錄，不以文件存在認列通過。
+
+捲動效果另由 `home-scroll.mjs`／`hero-interaction.mjs`與各自CSS管理，不在動效檔新增字級。Header保留原高度並以實測高度作錨點留白；段落進場opacity至少.8、focus立即穩定，表單與品牌標題不持續位移。置頂／粒子／無JS降級的6案與本檔排版4案各自驗收，不能相互替代。

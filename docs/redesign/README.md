@@ -1,6 +1,8 @@
 # ARTDiCO HOST 改版執行總覽
 
-更新日期：2026-11-02（Asia/Taipei）。**現行交付為 [PR #61 公開說明簡化、字級與對外信箱](public-guidance-release.md)，已發布 main `749d5a5`；樣式修改先讀 [首頁 CSS／字級規範](../frontend-typography.md)。** 移除嘉賓審核提示、議程人物副欄與表單兩塊詳細告知，GGJ指南移Q&A，小字按角色調整；對外信箱統一 `kunan@globalgamejam.org`。main 排版4／實際素材13、1612測試、FC128與公開61物件HTTPS通過。下方PR #60及更早交付保留為歷史，真人／真實資料工作仍獨立記錄。
+更新日期：2026-11-02（Asia/Taipei）。**現行交付為 [PR #62 置頂導覽、捲動光流與Hero互動](scroll-motion-release.md)，已發布 main `941d6f6`；樣式修改先讀 [首頁 CSS／字級規範](../frontend-typography.md)。** Header常駐、閱讀進度／段落標記、藍紫頁緣微粒與Hero輕互動已交付，包含減少動態／離屏停態及無JS／無IO降級。main捲動6／排版4／實際13、1612測試、FC128與公開61物件HTTPS通過。下方交付保留為歷史，真人／真實資料工作仍獨立記錄。
+
+[PR #61 公開說明簡化、字級與對外信箱](public-guidance-release.md) 已發布於前版 main `749d5a5`：移除嘉賓審核提示、議程人物副欄與表單兩塊詳細告知，GGJ指南移Q&A；對外信箱 `kunan@globalgamejam.org`、三層嘉賓資訊與原稿展示比例在本輪保留。
 
 [PR #60 單位／職位、原稿對照與 CSS 統一](guest-identity-reference-release.md) 已發布於前一版 main `e6e6d3f6`；嘉賓三層資訊與展示比例在本輪保留。
 

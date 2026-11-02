@@ -23,7 +23,7 @@ async function main() {
   assert.equal(html.includes(Buffer.from('scroll-motion-guest')), false, 'the synthetic guest hash is absent from the original static document');
   const raw = createInitialContent();
   raw.guests = [{ id: 'scroll-motion-guest', name: '合成滚动嘉宾', company: '合成创作单位', title: '合成创作者', ggjRole: '', portraitId: '', status: 'pending', publicConsent: false, contactId: 'SYNTHETIC_PRIVATE_CONTACT', internalNotes: 'SYNTHETIC_PRIVATE_NOTE' }];
-  raw.organizations = []; raw.showcases = []; raw.booths = [];
+  raw.organizations = [{ id: 'scroll-motion-org', name: '合成参与组织', logoId: '', website: '', participation: 'undecided', status: 'pending', publicConsent: false, internalNotes: 'SYNTHETIC_PRIVATE_ORG' }]; raw.showcases = []; raw.booths = [];
   raw.sessions = raw.sessions.slice(0, 1).map(item => ({ ...item, title: '合成滚动定位活动' }));
   assert.equal(validateContent(raw).valid, true, 'the synthetic publication must pass the real schema');
   const publication = toPublicContent(raw), reports = [], pageErrors = [], servedAssets = new Map(), requests = [];
@@ -126,6 +126,106 @@ async function main() {
     assert.doesNotMatch(await page.locator('body').textContent(), /SYNTHETIC_PRIVATE_/u);
     await noOverflow(page);
   }
+  async function particlePixels(page) {
+    return page.locator('[data-hero-particles]').evaluate(canvas => {
+      const context = canvas.getContext('2d'), pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let layerOpacity = 1; for (let node = canvas; node; node = node.parentElement) layerOpacity *= Number(getComputedStyle(node).opacity);
+      let brightPixels = 0, signature = 0;
+      for (let i = 0; i < pixels.length; i += 4) {
+        const alpha = pixels[i + 3], blue = pixels[i + 2];
+        if (alpha >= 128 && blue >= 150 && blue >= pixels[i + 1] + 8 && blue * alpha / 255 * layerOpacity >= 95) brightPixels++;
+        if (alpha) signature = (signature + Math.imul(i / 4 + 1, alpha)) >>> 0;
+      }
+      const b = canvas.getBoundingClientRect();
+      return { brightPixels, signature, layerOpacity, bitmapWidth: canvas.width, bitmapHeight: canvas.height, cssWidth: b.width, cssHeight: b.height };
+    });
+  }
+  async function fadeSequence(page, title, body, label, { screenshots = false, focusCancellation = false } = {}) {
+    const selectors = { title, body };
+    await page.evaluate(({ title, body }) => {
+      const a = document.querySelector(title).getBoundingClientRect(), nav = document.querySelector('.ah-home-header').getBoundingClientRect();
+      // Align the title below the pinned header. Centering a short section can
+      // also expose its previous neighbour and consume that neighbour's fade.
+      scrollTo({ top: Math.max(0, a.top + scrollY - nav.bottom - 24), behavior: 'instant' });
+    }, selectors);
+    const sample = async phase => {
+      const value = await page.evaluate(({ title, body }) => {
+        const inspect = selector => { const node = document.querySelector(selector), entry = node.getAnimations().find(animation => animation.id === 'ah-scroll-reveal'), box = node.getBoundingClientRect(); return { opacity: Number(getComputedStyle(node).opacity), phase: node.dataset.scrollPhase, mode: node.dataset.scrollMode, reveal: node.dataset.scrollReveal, top: box.top, bottom: box.bottom,
+          animation: entry ? { currentTime: Number(entry.currentTime), delay: entry.effect.getTiming().delay, duration: entry.effect.getTiming().duration, transforms: entry.effect.getKeyframes().some(frame => Object.hasOwn(frame, 'transform')) } : null }; };
+        return { at: performance.now(), title: inspect(title), body: inspect(body) };
+      }, selectors);
+      if (screenshots && ['early', 'middle', 'final'].includes(phase)) await page.screenshot({ path: resolve(evidence, label + '-' + phase + '-' + width + '.png') });
+      return value;
+    };
+    numericMetrics = { fade: label, before: await sample('before') };
+    let earlyHandle;
+    try {
+      earlyHandle = await page.waitForFunction(({ title, body }) => {
+        const a = document.querySelector(title), b = document.querySelector(body);
+        return a.getAnimations().some(animation => animation.id === 'ah-scroll-reveal') && b.getAnimations().some(animation => animation.id === 'ah-scroll-reveal')
+          && Number(getComputedStyle(a).opacity) < .5 && Number(getComputedStyle(b).opacity) < .5;
+      }, selectors);
+    } catch (error) { numericMetrics = { ...numericMetrics, after: await sample('failure') }; throw error; }
+    await earlyHandle.dispose();
+    const early = await sample('early'); numericMetrics = { fade: label, early };
+    assert.ok(early.title.opacity < .5 && early.body.opacity < .5, 'scroll entry visibly fades both the real title and real content from low opacity');
+    assert.equal(early.title.phase, 'title'); assert.equal(early.body.phase, 'body'); assert.equal(early.body.mode, 'fade');
+    assert.equal(early.body.animation?.transforms, false, 'actual content cards fade without replacing their existing float or geometry');
+    await page.waitForFunction(({ title, body }) => {
+      const a = Number(getComputedStyle(document.querySelector(title)).opacity), b = Number(getComputedStyle(document.querySelector(body)).opacity);
+      return a > .5 && b > .05 && b < .9 && a > b + .05;
+    }, selectors);
+    const middle = await sample('middle'); numericMetrics = { fade: label, early, middle };
+    assert.ok(middle.title.opacity > early.title.opacity + .1 && middle.body.opacity > early.body.opacity + .01 && middle.title.opacity > middle.body.opacity + .05, 'the title leads the actual card through a visibly staggered fade');
+    let focusFinished = false;
+    if (focusCancellation) {
+      const heading = page.locator(title + ' h2'); await heading.evaluate(node => node.focus({ preventScroll: true }));
+      await page.waitForFunction(title => !document.querySelector(title).getAnimations().some(animation => animation.id === 'ah-scroll-reveal'), title);
+      assert.equal(await page.locator(title).evaluate(node => Number(getComputedStyle(node).opacity)), 1, 'keyboard focus immediately restores full readable title opacity');
+      focusFinished = true;
+    }
+    await page.waitForFunction(({ title, body }) => [title, body].every(selector => Number(getComputedStyle(document.querySelector(selector)).opacity) >= .99 && !document.querySelector(selector).getAnimations().some(animation => animation.id === 'ah-scroll-reveal')), selectors);
+    const final = await sample('final');
+    assert.equal(final.title.opacity, 1); assert.equal(final.body.opacity, 1);
+    return { early, middle, final, focusCancellation: focusFinished, screenshots };
+  }
+  async function touchPanKeepsFutureContent(page, context) {
+    const future = await page.locator('#about .ah-home-fact-bubble[data-scroll-reveal="pending"]').all();
+    let target = null;
+    for (const node of future) if (await node.evaluate(item => item.getBoundingClientRect().top > innerHeight + 150)) { target = node; break; }
+    assert.ok(target, 'the mobile scroll starts while an About body card is still below the viewport');
+    const before = await target.evaluate(node => ({ state: node.dataset.scrollReveal, top: node.getBoundingClientRect().top }));
+    const beforeY = await page.evaluate(() => scrollY), session = await context.newCDPSession(page);
+    try {
+      const x = width - 8, y = 300;
+      assert.equal(await page.evaluate(({ x, y }) => !document.elementFromPoint(x, y)?.closest('a,button,summary,input,select,textarea,[tabindex]'), { x, y }), true, 'the touch pan starts on a non-interactive About surface');
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
+      assert.equal(await target.getAttribute('data-scroll-reveal'), 'pending', 'touching a background does not settle all future cards in its section');
+      // A measured pan, rather than an instantaneous high-velocity fling whose
+      // legitimate inertia could carry the future card into the viewport.
+      for (let step = 1; step <= 4; step++) {
+        await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y - step * 20, id: 1 }] }); await page.waitForTimeout(50);
+      }
+      await page.waitForTimeout(80);
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForFunction(before => scrollY > before + 15, beforeY);
+      assert.equal(await target.getAttribute('data-scroll-reveal'), 'pending', 'native touch scrolling leaves the unentered future card eligible for its fade');
+      return { before, after: await target.evaluate(node => ({ state: node.dataset.scrollReveal, top: node.getBoundingClientRect().top })), nativeScrollDelta: await page.evaluate(() => scrollY) - beforeY, simulatedTouchInput: true };
+    } finally { await session.detach(); }
+  }
+  async function agendaRowFade(page) {
+    const selector = '#program-' + raw.sessions[0].id, row = page.locator(selector);
+    assert.equal(await row.getAttribute('data-scroll-reveal'), 'pending', 'the real agenda row is still unentered before testing its fade');
+    assert.notEqual(await page.evaluate(() => location.hash), selector, 'an already settled row hash cannot stand in for a fresh row animation');
+    await row.evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+    await page.waitForFunction(selector => { const node = document.querySelector(selector); return node.getAnimations().some(animation => animation.id === 'ah-scroll-reveal') && Number(getComputedStyle(node).opacity) < .5; }, selector);
+    const early = await row.evaluate(node => { const motion = node.getAnimations().find(animation => animation.id === 'ah-scroll-reveal'); return { opacity: Number(getComputedStyle(node).opacity), phase: node.dataset.scrollPhase, mode: node.dataset.scrollMode, delay: motion.effect.getTiming().delay, transforms: motion.effect.getKeyframes().some(frame => Object.hasOwn(frame, 'transform')) }; });
+    assert.ok(early.opacity < .5); assert.equal(early.phase, 'body'); assert.equal(early.mode, 'fade'); assert.equal(early.transforms, false); assert.equal(early.delay, 160, 'single-column agenda rows use the short body delay');
+    await page.waitForFunction(selector => { const opacity = Number(getComputedStyle(document.querySelector(selector)).opacity); return opacity > .05 && opacity < .9; }, selector);
+    const middle = await row.evaluate(node => Number(getComputedStyle(node).opacity));
+    await page.waitForFunction(selector => Number(getComputedStyle(document.querySelector(selector)).opacity) === 1 && !document.querySelector(selector).getAnimations().some(animation => animation.id === 'ah-scroll-reveal'), selector);
+    return { early, middle, final: await row.evaluate(node => Number(getComputedStyle(node).opacity)), testedBeforeHashSettlement: true };
+  }
 
   try {
     for (width of [320, 390, 1440, 1920]) {
@@ -144,6 +244,9 @@ async function main() {
         assert.equal(heroCanvas.hidden, false); assert.equal(heroCanvas.ariaHidden, 'true'); assert.equal(heroCanvas.pointerEvents, 'none');
         await page.waitForTimeout(1000);
         assert.ok(await page.evaluate(() => window.__homeMotionQaPendingFrames()) > 0, 'visible hero has a real ambient particle frame loop');
+        const firstParticles = await particlePixels(page); await page.waitForTimeout(180); const secondParticles = await particlePixels(page);
+        for (const pixels of [firstParticles, secondParticles]) assert.ok(pixels.brightPixels >= 100 && pixels.layerOpacity >= .5 && pixels.cssWidth >= 64 && pixels.cssHeight >= 64, 'the default hero renders an actually visible area of bright blue-purple particles');
+        assert.notEqual(firstParticles.signature, secondParticles.signature, 'visible hero particles change their rendered pixels over real time');
         let pointerInteraction = false;
         if (width >= 1000) {
           const stageBox = await page.locator('.ah-home-hero-stage').boundingBox(); assert.ok(stageBox);
@@ -157,29 +260,28 @@ async function main() {
         }
         await page.screenshot({ path: resolve(evidence, 'hero-active-' + width + '.png') });
         const start = await progress(page); assert.equal(start.hidden, 'true', 'reading progress is a decorative, non-announcing layer');
+        stage = 'organization-presentation';
+        const organizationFade = await fadeSequence(page, '#booths .ah-section-heading', '#organization-scroll-motion-org', 'organization-fade', { focusCancellation: true });
         await page.locator('#about').evaluate(node => node.scrollIntoView({ block: 'start', behavior: 'instant' }));
         await page.waitForFunction(() => document.querySelector('.ah-home-hero-planet')?.dataset.heroMotion === 'idle'); await settled(page);
+        stage = 'touch-pan-regression'; const touchPan = width < 1000 ? await touchPanKeepsFutureContent(page, f.context) : null;
         const firstArt = await art(page);
         stage = 'actual-scroll'; const beforeWheel = await page.evaluate(() => scrollY); await page.mouse.move(width - 4, 450); await page.mouse.wheel(0, 80);
         await page.waitForFunction(before => scrollY > before + 20, beforeWheel); await settled(page);
         const secondArt = await art(page), artShift = Math.abs(secondArt.documentTop - firstArt.documentTop);
         assert.ok(artShift > .1 && artShift <= 80, 'actual scrolling moves decorative art gently relative to its document position');
+        stage = 'guest-presentation';
+        const guestFade = await fadeSequence(page, '#guests .ah-section-heading', '#guest-scroll-motion-guest', 'guest-fade', { screenshots: width === 1920 });
         const afterWheel = await page.evaluate(() => scrollY); await page.mouse.wheel(0, 650);
         await page.waitForFunction(before => scrollY > before + 100, afterWheel); await settled(page); await header(page);
         const later = await progress(page); assert.ok(later.width > start.width + .1 && later.width <= later.max + 1, 'reading progress follows native page scrolling');
         assert.equal(await page.locator('.ah-home-header').getAttribute('data-scrolled'), 'true');
-        stage = 'entry-and-focus';
-        await page.locator('#guests .ah-section-heading').evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
-        await page.waitForFunction(() => document.querySelector('#guests .ah-section-heading')?.getAnimations().some(animation => animation.id === 'ah-scroll-reveal'));
-        const entry = await page.locator('#guests .ah-section-heading').evaluate(node => ({ opacity: Number(getComputedStyle(node).opacity), motions: node.getAnimations().filter(animation => animation.id === 'ah-scroll-reveal').length }));
-        assert.ok(entry.motions > 0 && entry.opacity > 0 && entry.opacity <= 1, 'real entry animation keeps the content visible');
-        await page.locator('#guests-heading').focus();
-        await page.waitForFunction(() => !document.querySelector('#guests .ah-section-heading').getAnimations().some(animation => animation.id === 'ah-scroll-reveal'));
         const guestButton = page.locator('#guest-scroll-motion-guest [data-guest-toggle]');
         // The existing guest float is intentionally moving before focus. Use
         // native scrolling, then its supported focus pause for the hit test.
         await guestButton.evaluate(node => { node.scrollIntoView({ block: 'center', behavior: 'instant' }); node.focus({ preventScroll: true }); }); await settled(page);
         assert.equal(await guestButton.evaluate(node => { const b = node.getBoundingClientRect(); return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest('[data-guest-toggle]') === node; }), true, 'the decorative canvas never covers the real central interaction target');
+        stage = 'agenda-row-presentation'; const rowFade = await agendaRowFade(page);
         stage = 'header-anchor-and-menu'; let alignment;
         if (width < 1000) {
           const menu = page.locator('[data-site-menu]'); await menu.locator('summary').click();
@@ -196,6 +298,10 @@ async function main() {
         stage = 'refresh-position'; const beforeRefresh = await page.evaluate(() => scrollY); const refreshTrace = await f.refresh(); await settled(page);
         const afterRefresh = await page.evaluate(() => scrollY); numericMetrics = { beforeRefresh, afterRefresh, refreshTrace };
         assert.ok(Math.abs(afterRefresh - beforeRefresh) <= 2, 'public refresh and motion scanning preserve the reader’s position'); await header(page);
+        for (const selector of ['#guest-scroll-motion-guest', '#organization-scroll-motion-org']) {
+          assert.equal(await page.locator(selector).getAttribute('data-scroll-reveal'), 'seen', 'refresh does not rewind a card whose presentation already finished');
+          assert.equal(await page.locator(selector).evaluate(node => Number(getComputedStyle(node).opacity)), 1);
+        }
         stage = 'idle-frame-budget';
         await page.waitForFunction(() => window.__homeMotionQaPendingFrames() === 0, null, { timeout: 4000 });
         stage = 'live-reduced'; await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -214,7 +320,7 @@ async function main() {
         await page.evaluate(() => { delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); });
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.motionState === 'active');
         await page.emulateMedia({ reducedMotion: 'reduce' }); await page.screenshot({ path: resolve(evidence, 'pinned-header-' + width + '.png') });
-        reports.push({ width, initialAndLiveReducedMotion: true, visibleHeroAmbientFrameLoop: true, finePointerInteraction: pointerInteraction, nativeWheel: true, boundedDecorativeShift: artShift, realEntryAndFocusCancellation: true, pointerTransparentEdgeCanvas: true, idleWithoutPendingFramesWhenHeroOffscreen: true, frameProbeExplicitlySyntheticInstrumentation: true, pinnedHeader: true, anchorsBelowHeader: alignment, mobileMenu: width < 1000, publicRefreshPositionPreserved: true, delayedGuestHash: true, hiddenSignalExplicitlySynthetic: true });
+        reports.push({ width, initialAndLiveReducedMotion: true, visibleHeroAmbientFrameLoop: true, visibleParticlePixels: [firstParticles, secondParticles], finePointerInteraction: pointerInteraction, nativeWheel: true, boundedDecorativeShift: artShift, realEntryAndFocusCancellation: true, guestFade, organizationFade, touchPan, rowFade, pointerTransparentEdgeCanvas: true, idleWithoutPendingFramesWhenHeroOffscreen: true, frameProbeExplicitlySyntheticInstrumentation: true, pinnedHeader: true, anchorsBelowHeader: alignment, mobileMenu: width < 1000, publicRefreshPositionPreserved: true, delayedGuestHash: true, hiddenSignalExplicitlySynthetic: true });
       } finally { activePage = null; await f.context.close(); }
     }
     for (const mode of ['no-javascript', 'no-intersection-observer']) {

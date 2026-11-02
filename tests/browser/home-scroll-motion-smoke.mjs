@@ -42,6 +42,18 @@ async function main() {
       window.requestAnimationFrame = callback => { const id = nativeFrame(time => { pending.delete(id); callback(time); }); pending.add(id); return id; };
       window.cancelAnimationFrame = id => { pending.delete(id); nativeCancel(id); };
       Object.defineProperty(window, '__homeMotionQaPendingFrames', { value: () => pending.size });
+      // Observe real canvas paint arguments without changing drawing, clocks,
+      // particles or their velocity. The hero uses arc only for dot cores.
+      const frames = [], nativeClear = CanvasRenderingContext2D.prototype.clearRect, nativeArc = CanvasRenderingContext2D.prototype.arc;
+      CanvasRenderingContext2D.prototype.clearRect = function (...args) {
+        if (this.canvas.matches('[data-hero-particles]')) { frames.push({ at: performance.now(), points: [] }); if (frames.length > 48) frames.shift(); }
+        return nativeClear.apply(this, args);
+      };
+      CanvasRenderingContext2D.prototype.arc = function (...args) {
+        if (this.canvas.matches('[data-hero-particles]') && frames.length) frames.at(-1).points.push({ x: args[0], y: args[1], r: args[2] });
+        return nativeArc.apply(this, args);
+      };
+      Object.defineProperty(window, '__homeMotionQaParticleFrames', { value: () => frames.map(frame => ({ at: frame.at, points: frame.points.map(point => ({ ...point })) })) });
     });
     if (withoutObserver) await context.addInitScript(() => Object.defineProperty(window, 'IntersectionObserver', { configurable: true, value: undefined }));
     await context.route('**/*', async route => {
@@ -113,7 +125,7 @@ async function main() {
     assert.equal(value.reveals, 0, 'reduced or hidden pages have no entry animation');
     for (const item of value.artwork) assert.ok(item.transform === 'none' && ['none', '0px', '0px 0px'].includes(item.translate), 'decorative artwork returns to its static position');
     assert.equal(await page.locator('[data-scroll-atmosphere]').evaluate(node => node.hidden), true, 'particle canvas is fully disabled when motion is reduced or the page is hidden');
-    assert.equal(await page.locator('[data-hero-particles]').evaluate(node => node.hidden), true, 'the hero rim particles also stop in reduced or hidden states');
+    assert.equal(await page.locator('[data-hero-particles]').evaluate(node => node.hidden), true, 'the hero background particles also stop in reduced or hidden states');
     const pose = await page.locator('[data-hero-art]').evaluate(node => { const transform = getComputedStyle(node).transform; const matrix = new DOMMatrixReadOnly(transform === 'none' ? undefined : transform); return { identity: matrix.isIdentity, x: matrix.m41, y: matrix.m42 }; });
     assert.ok(pose.identity || Math.abs(pose.x) < .01 && Math.abs(pose.y) < .01, 'hero pointer pose returns to neutral when motion stops');
     return value;
@@ -130,15 +142,74 @@ async function main() {
     return page.locator('[data-hero-particles]').evaluate(canvas => {
       const context = canvas.getContext('2d'), pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
       let layerOpacity = 1; for (let node = canvas; node; node = node.parentElement) layerOpacity *= Number(getComputedStyle(node).opacity);
-      let brightPixels = 0, signature = 0;
+      const b = canvas.getBoundingClientRect(), stage = canvas.closest('.ah-home-hero-stage'), ball = stage.querySelector('.ah-home-hero-planet').getBoundingClientRect();
+      const title = stage.querySelector('h1'), titleRects = [...title.childNodes].flatMap(node => {
+        if (node instanceof Element) return [node.getBoundingClientRect()];
+        if (node.nodeType !== Node.TEXT_NODE) return [];
+        const range = document.createRange(); range.selectNodeContents(node); return [...range.getClientRects()];
+      });
+      const readable = [...titleRects, ...[...stage.querySelectorAll('.ah-hero-description,a,button,input,select,textarea,summary')].map(node => node.getBoundingClientRect())].filter(rect => rect.width > 2 && rect.height > 2);
+      const headerBottom = document.querySelector('.ah-home-header').getBoundingClientRect().bottom, bright = new Uint8Array(canvas.width * canvas.height);
+      let brightPixels = 0, signature = 0, sphereAlphaPixels = 0, readableAlphaPixels = 0;
       for (let i = 0; i < pixels.length; i += 4) {
-        const alpha = pixels[i + 3], blue = pixels[i + 2];
-        if (alpha >= 128 && blue >= 150 && blue >= pixels[i + 1] + 8 && blue * alpha / 255 * layerOpacity >= 95) brightPixels++;
+        const alpha = pixels[i + 3], index = i / 4, x = b.left + (index % canvas.width + .5) / canvas.width * b.width, y = b.top + (Math.floor(index / canvas.width) + .5) / canvas.height * b.height;
+        if (alpha >= 96 && Math.max(pixels[i], pixels[i + 1], pixels[i + 2]) >= 150 && x >= 0 && x < innerWidth && y >= headerBottom && y < innerHeight) { brightPixels++; bright[index] = 1; }
+        // Check every nontransparent pixel, not just the brighter perceptibility
+        // sample. The inset avoids interpreting antialias at a silhouette edge.
+        if (alpha) {
+          if (((x - ball.left - ball.width / 2) / (ball.width / 2 - 1)) ** 2 + ((y - ball.top - ball.height / 2) / (ball.height / 2 - 1)) ** 2 < 1) sphereAlphaPixels++;
+          if (readable.some(rect => x > rect.left + 1 && x < rect.right - 1 && y > rect.top + 1 && y < rect.bottom - 1)) readableAlphaPixels++;
+        }
         if (alpha) signature = (signature + Math.imul(i / 4 + 1, alpha)) >>> 0;
       }
-      const b = canvas.getBoundingClientRect();
-      return { brightPixels, signature, layerOpacity, bitmapWidth: canvas.width, bitmapHeight: canvas.height, cssWidth: b.width, cssHeight: b.height };
+      const components = [];
+      for (let start = 0; start < bright.length; start++) if (bright[start]) {
+        const queue = [start]; bright[start] = 0; let sumX = 0, sumY = 0, count = 0;
+        for (let next = 0; next < queue.length; next++) {
+          const index = queue[next], x = index % canvas.width, y = Math.floor(index / canvas.width); sumX += x; sumY += y; count++;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            const px = x + dx, py = y + dy, adjacent = py * canvas.width + px;
+            if (px >= 0 && px < canvas.width && py >= 0 && py < canvas.height && bright[adjacent]) { bright[adjacent] = 0; queue.push(adjacent); }
+          }
+        }
+        components.push({ x: (sumX / count + .5) / canvas.width * b.width, y: (sumY / count + .5) / canvas.height * b.height, pixels: count });
+      }
+      const occupiedRegions = new Set(components.map(point => Math.min(2, Math.floor(point.x / b.width * 3)) + ',' + Math.min(2, Math.floor(point.y / b.height * 3)))).size;
+      return { brightPixels, visibleComponents: components.length, occupiedRegions, sphereAlphaPixels, readableAlphaPixels, signature, layerOpacity, bitmapWidth: canvas.width, bitmapHeight: canvas.height, cssWidth: b.width, cssHeight: b.height, mode: canvas.dataset.heroParticleMode, directStageChild: canvas.parentElement === stage };
     });
+  }
+  async function backgroundPointerForce(page) {
+    await page.waitForTimeout(220);
+    const sample = await page.evaluate(() => {
+      const frames = window.__homeMotionQaParticleFrames().filter(frame => frame.points.length), last = frames.at(-1), previous = frames.findLast(frame => last.at - frame.at >= 180);
+      if (!last || !previous) return null;
+      const stage = document.querySelector('.ah-home-hero-stage').getBoundingClientRect(), ball = document.querySelector('.ah-home-hero-planet').getBoundingClientRect();
+      const insideBall = (x, y) => ((stage.left + x - ball.left - ball.width / 2) / (ball.width / 2 + 35)) ** 2 + ((stage.top + y - ball.top - ball.height / 2) / (ball.height / 2 + 35)) ** 2 < 1;
+      for (const point of last.points) {
+        if (point.x < 60 || point.x > stage.width - 60 || stage.top + point.y < 120 || stage.top + point.y > innerHeight - 70 || point.y < 60 || point.y > stage.height - 60 || insideBall(point.x, point.y)) continue;
+        const ranked = previous.points.map(other => ({ other, distance: Math.hypot(point.x - other.x, point.y - other.y) })).sort((a, b) => a.distance - b.distance);
+        if (!ranked.length || ranked[0].distance > 5 || ranked[1]?.distance < 25) continue;
+        for (const [dx, dy] of [[45, 0], [-45, 0], [0, 45], [0, -45]]) {
+          const x = point.x + dx, y = point.y + dy;
+          if (x < 20 || x > stage.width - 20 || y < 20 || y > stage.height - 20 || stage.top + y > innerHeight - 30 || insideBall(x, y)) continue;
+          const seconds = (last.at - previous.at) / 1000;
+          return { point, at: last.at, vx: (point.x - ranked[0].other.x) / seconds, vy: (point.y - ranked[0].other.y) / seconds, pointer: { x: stage.left + x, y: stage.top + y }, direction: { x: dx / 45, y: dy / 45 } };
+        }
+      }
+      return null;
+    });
+    assert.ok(sample, 'a real freely drawn background dot is available for a local pointer-force observation');
+    await page.mouse.move(sample.pointer.x, sample.pointer.y); await page.waitForTimeout(550);
+    const result = await page.evaluate(sample => {
+      const last = window.__homeMotionQaParticleFrames().filter(frame => frame.points.length).at(-1), seconds = (last.at - sample.at) / 1000;
+      const predicted = { x: sample.point.x + sample.vx * seconds, y: sample.point.y + sample.vy * seconds };
+      const point = [...last.points].sort((a, b) => Math.hypot(a.x - predicted.x, a.y - predicted.y) - Math.hypot(b.x - predicted.x, b.y - predicted.y))[0];
+      const delta = { x: point.x - predicted.x, y: point.y - predicted.y };
+      return { elapsedMs: last.at - sample.at, extraTowardPointer: delta.x * sample.direction.x + delta.y * sample.direction.y, extraDistance: Math.hypot(delta.x, delta.y), naturalSpeed: Math.hypot(sample.vx, sample.vy), nativePaintArcObserved: true };
+    }, sample);
+    numericMetrics = { backgroundPointerForce: result };
+    assert.ok(result.extraTowardPointer > 1.5 && result.extraDistance < 20, 'the real painted dot responds locally and gently beyond its measured natural drift');
+    return result;
   }
   async function fadeSequence(page, title, body, label, { screenshots = false, focusCancellation = false } = {}) {
     const selectors = { title, body };
@@ -237,7 +308,7 @@ async function main() {
         stage = 'enable-motion'; await page.emulateMedia({ reducedMotion: 'no-preference' });
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.motionState === 'active'); await settled(page);
         const atmosphere = await page.locator('[data-scroll-atmosphere]').evaluate(node => ({ hidden: node.hidden, ariaHidden: node.getAttribute('aria-hidden'), pointerEvents: getComputedStyle(node).pointerEvents }));
-        assert.equal(atmosphere.hidden, false); assert.equal(atmosphere.ariaHidden, 'true'); assert.equal(atmosphere.pointerEvents, 'none', 'edge particles cannot intercept reading or form controls');
+        assert.equal(atmosphere.hidden, true, 'the page-edge effect stays disabled while the hero sphere is visible'); assert.equal(atmosphere.ariaHidden, 'true'); assert.equal(atmosphere.pointerEvents, 'none', 'edge particles cannot intercept reading or form controls');
         stage = 'visible-hero-ambient';
         await page.waitForFunction(() => document.querySelector('.ah-home-hero-planet')?.dataset.heroMotion === 'active');
         const heroCanvas = await page.locator('[data-hero-particles]').evaluate(node => ({ hidden: node.hidden, ariaHidden: node.getAttribute('aria-hidden'), pointerEvents: getComputedStyle(node).pointerEvents }));
@@ -245,10 +316,21 @@ async function main() {
         await page.waitForTimeout(1000);
         assert.ok(await page.evaluate(() => window.__homeMotionQaPendingFrames()) > 0, 'visible hero has a real ambient particle frame loop');
         const firstParticles = await particlePixels(page); await page.waitForTimeout(180); const secondParticles = await particlePixels(page);
-        for (const pixels of [firstParticles, secondParticles]) assert.ok(pixels.brightPixels >= 100 && pixels.layerOpacity >= .5 && pixels.cssWidth >= 64 && pixels.cssHeight >= 64, 'the default hero renders an actually visible area of bright blue-purple particles');
+        numericMetrics = { firstParticles, secondParticles };
+        // Sparse background dust has a different intended perceptibility from
+        // the superseded bright ring. Count visible, separated painted dots;
+        // do not force small free particles to become oversized ring pixels.
+        for (const pixels of [firstParticles, secondParticles]) {
+          assert.ok(pixels.brightPixels >= 15 && pixels.visibleComponents >= 6 && pixels.layerOpacity >= .5 && pixels.cssWidth >= 64 && pixels.cssHeight >= 64, 'sparse blue-purple background dots are actually visible inside the viewport');
+          assert.ok(pixels.occupiedRegions >= 3, 'the free dots occupy multiple background regions');
+          assert.equal(pixels.sphereAlphaPixels, 0, 'the entire sphere silhouette contains no background-particle alpha');
+          assert.equal(pixels.readableAlphaPixels, 0, 'hero titles, description and controls contain no background-particle alpha');
+          assert.equal(pixels.mode, 'background'); assert.equal(pixels.directStageChild, true);
+        }
         assert.notEqual(firstParticles.signature, secondParticles.signature, 'visible hero particles change their rendered pixels over real time');
-        let pointerInteraction = false;
+        let pointerInteraction = false, backgroundPointer = null;
         if (width >= 1000) {
+          stage = 'background-pointer-force'; backgroundPointer = await backgroundPointerForce(page);
           const stageBox = await page.locator('.ah-home-hero-stage').boundingBox(); assert.ok(stageBox);
           const pointerY = stageBox.y + Math.min(stageBox.height * .4, 550);
           await page.mouse.move(stageBox.x + stageBox.width * .25, pointerY); await page.waitForTimeout(280);
@@ -264,6 +346,7 @@ async function main() {
         const organizationFade = await fadeSequence(page, '#booths .ah-section-heading', '#organization-scroll-motion-org', 'organization-fade', { focusCancellation: true });
         await page.locator('#about').evaluate(node => node.scrollIntoView({ block: 'start', behavior: 'instant' }));
         await page.waitForFunction(() => document.querySelector('.ah-home-hero-planet')?.dataset.heroMotion === 'idle'); await settled(page);
+        assert.equal(await page.locator('[data-scroll-atmosphere]').evaluate(node => node.hidden), false, 'page-edge motion resumes after leaving the hero');
         stage = 'touch-pan-regression'; const touchPan = width < 1000 ? await touchPanKeepsFutureContent(page, f.context) : null;
         const firstArt = await art(page);
         stage = 'actual-scroll'; const beforeWheel = await page.evaluate(() => scrollY); await page.mouse.move(width - 4, 450); await page.mouse.wheel(0, 80);
@@ -320,7 +403,7 @@ async function main() {
         await page.evaluate(() => { delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); });
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.motionState === 'active');
         await page.emulateMedia({ reducedMotion: 'reduce' }); await page.screenshot({ path: resolve(evidence, 'pinned-header-' + width + '.png') });
-        reports.push({ width, initialAndLiveReducedMotion: true, visibleHeroAmbientFrameLoop: true, visibleParticlePixels: [firstParticles, secondParticles], finePointerInteraction: pointerInteraction, nativeWheel: true, boundedDecorativeShift: artShift, realEntryAndFocusCancellation: true, guestFade, organizationFade, touchPan, rowFade, pointerTransparentEdgeCanvas: true, idleWithoutPendingFramesWhenHeroOffscreen: true, frameProbeExplicitlySyntheticInstrumentation: true, pinnedHeader: true, anchorsBelowHeader: alignment, mobileMenu: width < 1000, publicRefreshPositionPreserved: true, delayedGuestHash: true, hiddenSignalExplicitlySynthetic: true });
+        reports.push({ width, initialAndLiveReducedMotion: true, visibleHeroAmbientFrameLoop: true, visibleParticlePixels: [firstParticles, secondParticles], finePointerInteraction: pointerInteraction, backgroundPointer, nativeWheel: true, boundedDecorativeShift: artShift, realEntryAndFocusCancellation: true, guestFade, organizationFade, touchPan, rowFade, pointerTransparentEdgeCanvas: true, heroAndPageEdgeEffectsDoNotOverlap: true, idleWithoutPendingFramesWhenHeroOffscreen: true, frameProbeExplicitlySyntheticInstrumentation: true, pinnedHeader: true, anchorsBelowHeader: alignment, mobileMenu: width < 1000, publicRefreshPositionPreserved: true, delayedGuestHash: true, hiddenSignalExplicitlySynthetic: true });
       } finally { activePage = null; await f.context.close(); }
     }
     for (const mode of ['no-javascript', 'no-intersection-observer']) {

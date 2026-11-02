@@ -134,9 +134,14 @@ export async function capturePublicVisualFixture({ fetchFn = fetch, outputDirect
       guestCaptionCoverage[kind]++;
       guestAffiliationCoverage[hasPublicText(guest, 'company') ? 'company' : 'empty']++;
     }
+    // A published cover reference is distinct from fetching/decoding that image.
+    // This diagnostic does not expand the organization-only media capture.
+    const showcases = data.content.showcases;
+    const withCoverId = showcases.filter(work => hasPublicText(work, 'coverId')).length;
+    const showcaseCoverCoverage = { total: showcases.length, withCoverId, withoutCoverId: showcases.length - withCoverId };
     complete = true;
     return { captured: true, revision: verified.revision, snapshotSha256: manifest.snapshot.sha256, snapshotBytes: snapshot.length,
-      organizations: verified.counts.organizations, media: media.length, mediaBytes: totalBytes, referenceLogoSources, guestCaptionCoverage, guestAffiliationCoverage };
+      organizations: verified.counts.organizations, media: media.length, mediaBytes: totalBytes, referenceLogoSources, guestCaptionCoverage, guestAffiliationCoverage, showcaseCoverCoverage };
   } catch (error) { throw failures.has(error) ? error : failure('PUBLIC_CONTENT_UNAVAILABLE'); }
   finally {
     snapshotAbort.abort(); cancel(snapshotClone);

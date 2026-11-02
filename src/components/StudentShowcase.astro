@@ -9,7 +9,7 @@ import '../styles/students-showcase.css';
   <div class="ah-showcase-empty" data-public-showcases-concept><p>游戏与作品陆续公布。</p></div>
   <div class="ah-showcase-filters" data-public-works-controls hidden>
     <label for="public-works-filter">作品分类<select id="public-works-filter" data-public-works-filter><option value="all">全部作品</option><option value="student">学生作品</option><option value="indie">独立游戏</option></select></label>
-    <div class="ah-work-navigation" aria-label="浏览作品"><button type="button" data-public-work-prev aria-label="上一件作品" disabled>←</button><p data-public-works-count role="status" aria-live="polite"></p><button type="button" data-public-work-next aria-label="下一件作品" disabled>→</button></div>
+    <div class="ah-work-navigation" data-work-navigation aria-label="浏览作品" hidden><button type="button" data-public-work-prev aria-label="上一件作品" disabled>←</button><p data-public-works-count role="status" aria-live="polite"></p><button type="button" data-public-work-next aria-label="下一件作品" disabled>→</button></div>
   </div>
   <p class="ah-showcase-filter-empty" data-public-works-filter-empty role="status" hidden>这个分类的作品尚未公布。</p>
   <div class="ah-work-stage">
@@ -23,7 +23,6 @@ import '../styles/students-showcase.css';
   </div>
   <div class="ah-student-actions">
     <a href="#agenda" class="ah-text-action">查看全天日程 <span aria-hidden="true">↗</span></a>
-    <small>作品展示、分享时段与正式参会名额分别确认。</small>
   </div>
   <dialog class="ah-work-lightbox" data-work-lightbox aria-labelledby="work-lightbox-title">
     <div class="ah-work-lightbox-bar"><h3 id="work-lightbox-title" data-work-lightbox-title>作品图</h3><button type="button" data-work-lightbox-close aria-label="关闭作品大图">关闭 ×</button></div>

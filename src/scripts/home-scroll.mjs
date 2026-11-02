@@ -2,6 +2,7 @@
 const root=document.querySelector('#artdico-host.ah-cosmos');
 if(root&&typeof requestAnimationFrame==='function'&&typeof matchMedia==='function'){
   const header=root.querySelector('[data-home-header]');
+  const heroPlanet=root.querySelector('.ah-home-hero-planet');
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   const compact=matchMedia('(max-width: 820px)');
   const progress=document.createElement('span');progress.dataset.scrollProgress='';progress.setAttribute('aria-hidden','true');header?.append(progress);
@@ -24,6 +25,7 @@ if(root&&typeof requestAnimationFrame==='function'&&typeof matchMedia==='functio
   let observer=null,frame=0,enabled=true,height=76,current='',settleUntil=0,phase=0,lastTime=0,canvasWidth=0,canvasHeight=0,ratio=1;
   const clamp=(value,min=0,max=1)=>Math.max(min,Math.min(max,value));
   const state=()=>!enabled||document.hidden?'hidden':reduced.matches?'reduced':'active';
+  function heroVisible(){const box=heroPlanet?.getBoundingClientRect();return Boolean(box&&box.width>0&&box.height>0&&box.bottom>height&&box.top<innerHeight&&box.right>0&&box.left<innerWidth);}
   function cancelEntries(){for(const motion of motions.values())motion.cancel();motions.clear();}
   function markSeen(element){seen.add(element);if(element.id)revealedIds.add(element.id);element.dataset.scrollReveal='seen';}
   function settle(target){
@@ -106,7 +108,7 @@ if(root&&typeof requestAnimationFrame==='function'&&typeof matchMedia==='functio
     header?.style.setProperty('--ah-scroll-progress',String(completion));
     if(header)header.dataset.scrolled=String(y>24);
     if(current!==locationId){current=locationId;root.dataset.currentSection=current.slice(1);for(const link of nav){if(link.hash===current)link.setAttribute('aria-current','location');else link.removeAttribute('aria-current');}}
-    canvas.hidden=state()!=='active'||!context;
+    canvas.hidden=state()!=='active'||!context||heroVisible();
     if(state()==='active'){
       for(const{element,box,scene}of rectangles){
         if(box.bottom<0||box.top>innerHeight||typeof IntersectionObserver!=='function'){element.style.removeProperty('transform');continue;}
@@ -115,7 +117,7 @@ if(root&&typeof requestAnimationFrame==='function'&&typeof matchMedia==='functio
         const offset=scene.id==='top'?p:p-.5;
         element.style.transform='translate3d(0,'+(offset*travel*2).toFixed(2)+'px,0) rotate('+(offset*(compact.matches?5:10)).toFixed(2)+'deg)';
       }
-      paintAtmosphere(y,completion,time);
+      if(!canvas.hidden)paintAtmosphere(y,completion,time);
       if(time<settleUntil)requestFrame();
     }
     lastTime=time;
@@ -123,7 +125,7 @@ if(root&&typeof requestAnimationFrame==='function'&&typeof matchMedia==='functio
   function synchronize(){
     cancelEntries();root.dataset.motionState=state();
     for(const{element}of art)element.style.removeProperty('transform');
-    canvas.hidden=state()!=='active'||!context;
+    canvas.hidden=state()!=='active'||!context||heroVisible();
     if(canvas.hidden)context?.clearRect(0,0,canvas.width,canvas.height);
     if(frame)cancelAnimationFrame(frame);frame=0;settleUntil=0;lastTime=performance.now();
     observe();settleHash();requestFrame();

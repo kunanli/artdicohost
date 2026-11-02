@@ -28,7 +28,7 @@ function rawFixture(){
  content.organizations=[{id:IDs.organization,name:'合成参与组织与跨地域青年创作交流网络'.repeat(3),logoId:coverId,website:'https://example.invalid/synthetic-organization',participation:'exhibitor',status:'confirmed',publicConsent:false,internalNotes:PRIVATE},{id:'synthetic-org-broken',name:'合成缺图组织',logoId:missingId,website:'',participation:'attendee',status:'confirmed',publicConsent:false,internalNotes:PRIVATE}];
  content.booths=[{id:IDs.booth,code:'C-32',zone:'C',slotNumber:32,organization:'合成已安排展位组织',project:'合成艺术与三维作品展示',status:'confirmed',contactName:PRIVATE,contactMethods:'private@example.invalid',internalNotes:PRIVATE,description:'合成展位说明',website:''}];
  content.sessions=[session(IDs.morning,'A','10:00','11:00',{guestId:IDs.unproved}),session(IDs.afternoon,'B','14:00','15:00',{guestId:IDs.guest,participants:[{guestId:IDs.secondGuest,roles:['moderator']}]}),session(IDs.share,'C','16:00','17:00',{format:'showcase',title:'合成作品分享与交流'}),session('synthetic-cancelled','C','17:00','17:30',{title:'合成已取消场次',status:'cancelled'})];
- content.showcases=[work(IDs.student,'student',{coverId,participationForms:['booth','share'],sessionId:IDs.share}),work(IDs.indie,'indie',{coverId:missingId}),work(IDs.legacy,'team')];
+ content.showcases=[work(IDs.student,'student',{coverId,participationForms:['booth','share'],sessionId:IDs.share}),work(IDs.indie,'indie',{coverId:missingId,status:'pending',responseStatus:'pending'}),work(IDs.legacy,'team')];
  return content;
 }
 function projected(raw){
@@ -123,6 +123,27 @@ async function settledScroll(f){
 }
 const visibleWork=f=>f.page.locator('[data-showcase-id]:visible');
 async function selected(f,id){await f.page.locator('#work-'+id+':visible').waitFor();assert.equal(await visibleWork(f).count(),1,'a manual carousel displays one selected item');}
+async function compactWork(f,id,state){
+ const card=f.page.locator('#work-'+id);
+ await card.scrollIntoViewIfNeeded();
+ await f.page.waitForFunction(({id,state})=>document.getElementById('work-'+id)?.dataset.coverState===state,{id,state});
+ assert.equal(await f.page.locator('.ah-work-stage').getAttribute('data-work-presentation'),'text','selected missing or failed media has a text layout');
+ assert.equal(await f.page.locator('[data-work-peek]').isVisible(),false,'a text work does not reserve a next-image strip');
+ assert.equal(await card.locator('.ah-showcase-cover-empty').innerText(),'作品图片尚未公布');
+ const geometry=await card.evaluate(node=>{
+  const rect=element=>{const box=element.getBoundingClientRect();return {x:box.x,y:box.y,width:box.width,height:box.height};};
+  const poster=node.querySelector('.ah-showcase-poster'),caption=node.querySelector('.ah-showcase-caption'),fallback=node.querySelector('.ah-showcase-cover-empty');
+  return {poster:rect(poster),caption:rect(caption),fallback:rect(fallback),captionPosition:getComputedStyle(caption).position,captionBackground:getComputedStyle(caption).backgroundColor};
+ });
+ assert.equal(geometry.captionPosition,'static','text-only artwork captions participate in normal flow');
+ assert.ok(['transparent','rgba(0, 0, 0, 0)'].includes(geometry.captionBackground),'text-only captions have no image-overlay panel');
+ assert.ok(geometry.poster.height<=geometry.caption.height+geometry.fallback.height+24,'the text poster contains no aspect-ratio spacer or large empty canvas');
+ assert.ok(geometry.caption.y+geometry.caption.height<=geometry.fallback.y+1||geometry.fallback.y+geometry.fallback.height<=geometry.caption.y+1,'caption and fallback occupy separate non-overlapping rows');
+ for(const box of[geometry.caption,geometry.fallback])assert.ok(box.x>=geometry.poster.x-1&&box.x+box.width<=geometry.poster.x+geometry.poster.width+1,'all fallback content stays within the text poster');
+ if(state==='missing')assert.equal(await card.locator('[data-work-preview]').count(),0,'absent media does not create a preview action');
+ else{assert.equal(await card.locator('[data-work-preview]').isVisible(),false);assert.equal(await card.locator('[data-work-preview]').isDisabled(),true,'failed media cannot open the image viewer');}
+ return geometry;
+}
 async function activeZone(f,zone){assert.equal(await f.page.locator('[data-zone="'+zone+'"]').getAttribute('aria-selected'),'true');assert.equal(await f.page.locator('[data-agenda-panel="'+zone+'"]').isVisible(),true);}
 async function screenshot(f,name){await noOverflow(f);const path=resolve(evidence,name+'-'+f.width+'.png');await f.page.screenshot({path,fullPage:true});return path;}
 async function swipe(f,direction){
@@ -145,6 +166,8 @@ try{
    assert.match(await page.locator('#program-synthetic-cancelled').textContent(),/已取消/u);
    assert.deepEqual(await page.locator('[data-public-works-filter] option').evaluateAll(options=>options.map(option=>option.value)),['all','student','indie'],'legacy team is readable without a new classification option');
    assert.equal(await page.locator('[data-showcase-id]').count(),3);
+   assert.equal(await page.locator('[data-work-navigation]').isVisible(),true,'multiple actual works expose manual browsing');
+   assert.doesNotMatch(await page.locator('#students').textContent(),/资料待确认|参加待确认|展示安排陆续公布|封面、展示形式与安排/u,'public work cards omit editorial pending and missing-arrangement notes');
    assert.match(await page.locator('[data-public-works-count]').textContent(),/1\s*\/\s*3/u);
    assert.doesNotMatch(await page.locator('#students').textContent(),/我有作品想展示|展位申请|下一个被玩到|展位试玩/u,'art and 3D works are not all labelled playable');
    assert.equal(await page.locator('#booths-heading').textContent(),'参与组织');
@@ -202,12 +225,17 @@ try{
    await guestPointer(alphaToggle,true);await alpha.locator('a[href="#program-'+IDs.afternoon+'"]').click();await activeZone(f,'B');assert.equal(await page.locator('#program-'+IDs.afternoon).isVisible(),true);
 
    await page.locator('[data-public-work-next]').click();await selected(f,IDs.indie);
-   await page.waitForFunction(id=>document.querySelector('#work-'+id+' .ah-showcase-cover-empty')?.hidden===false,IDs.indie);
+   const failedCoverGeometry=await compactWork(f,IDs.indie,'unavailable');
    await page.locator('[data-public-work-next]').click();await selected(f,IDs.legacy);assert.equal(await page.locator('#work-'+IDs.legacy+' .ah-showcase-category').textContent(),'待分类');
+   const missingCoverGeometry=await compactWork(f,IDs.legacy,'missing');
    await page.locator('[data-public-work-prev]').focus();await page.keyboard.press('Enter');await selected(f,IDs.indie);
    await page.locator('[data-public-works-filter]').selectOption('student');await selected(f,IDs.student);
    assert.equal(await page.locator('[data-public-work-next]').isDisabled(),true);assert.equal(await page.locator('[data-public-work-prev]').isDisabled(),true,'a single-item subset has no fictitious next item');
+   assert.equal(await page.locator('[data-work-navigation]').isVisible(),false,'single-item filtering hides the redundant counter and arrows');
+   assert.equal(await page.locator('[data-public-works-filter]').isVisible(),true,'category filtering remains available');
    await page.locator('[data-public-works-filter]').selectOption('all');await selected(f,IDs.student);
+   assert.equal(await page.locator('[data-work-navigation]').isVisible(),true,'restoring all categories restores manual navigation');
+   assert.equal(await page.locator('.ah-work-stage').getAttribute('data-work-presentation'),'image','returning to a valid cover restores image presentation');
    if(width<600){await swipe(f,-1);await selected(f,IDs.indie);await swipe(f,1);await selected(f,IDs.student);}
    await page.locator('[data-public-works-filter]').selectOption('student');
    const preview=page.locator('#work-'+IDs.student+' [data-work-preview]'),lightbox=page.locator('[data-work-lightbox]');
@@ -256,6 +284,8 @@ try{
    await f.refresh(raw=>{raw.showcases=raw.showcases.filter(work=>work.id!==IDs.student);});
    assert.equal(await lightbox.isVisible(),false,'withdrawing the previewed work closes the dialog');assert.equal(await page.locator('#students-heading').evaluate(node=>document.activeElement===node),true,'withdrawn work does not strand focus in a removed dialog');
    assert.equal(await page.locator('[data-public-works-filter-empty]').isVisible(),true);
+   assert.equal(await page.locator('[data-work-navigation]').isVisible(),false,'an empty filtered subset hides navigation');
+   assert.equal(await page.locator('.ah-work-stage').getAttribute('data-work-presentation'),'empty');
    await page.locator('#organization-'+IDs.organization+' a.ah-organization-card').focus();
    await f.refresh(raw=>{raw.organizations=raw.organizations.filter(organization=>organization.id!==IDs.organization);raw.showcases.forEach(work=>{delete work.organizationId;});});
    assert.equal(await page.locator('#booths-heading').evaluate(node=>document.activeElement===node),true,'withdrawn organization returns focus to its section heading');
@@ -264,10 +294,22 @@ try{
    await noOverflow(f);
    await f.refresh(raw=>{raw.showcases=[work('synthetic-only','indie',{participationForms:[],boothId:'',organizationId:''})];});
    await page.locator('[data-public-works-filter]').selectOption('all');await selected(f,'synthetic-only');assert.equal(await page.locator('[data-public-work-prev]').isDisabled(),true);assert.equal(await page.locator('[data-public-work-next]').isDisabled(),true);
+   const singleCoverGeometry=await compactWork(f,'synthetic-only','missing');
+   assert.equal(await page.locator('[data-work-navigation]').isVisible(),false,'one published work hides previous, next and 1/1');
+   assert.equal(await page.locator('[data-public-works-filter]').isVisible(),true,'one published work still permits category selection');
+   assert.equal(await page.locator('#work-synthetic-only .ah-showcase-arrangement').count(),0,'an unallocated work has no arrangement placeholder');
+   assert.doesNotMatch(await page.locator('#students').textContent(),/资料待确认|参加待确认|展示安排陆续公布|封面、展示形式与安排/u);
+   await page.locator('[data-public-works-filter]').selectOption('student');
+   assert.equal(await visibleWork(f).count(),0);assert.equal(await page.locator('[data-public-works-filter-empty]').isVisible(),true);
+   assert.equal(await page.locator('[data-work-navigation]').isVisible(),false);
+   await page.locator('[data-public-works-filter]').selectOption('all');await selected(f,'synthetic-only');
+   assert.equal(await page.locator('[data-work-navigation]').isVisible(),false,'restoring a one-item publication does not fabricate a carousel');
    screenshots.push(await screenshot(f,'single-work'));
+   await f.refresh(raw=>{raw.showcases[0].responseStatus='declined';});
+   assert.match(await page.locator('#work-synthetic-only').textContent(),/已回复不参加/u,'a real declined response remains visible');
    assert.doesNotMatch(await page.locator('body').textContent(),/SYNTHETIC_P5_PRIVATE|private\.invalid|private@example/u);
    assert.equal(f.calls.some(call=>/\/(?:submit|send|publish|approve|dispatch|token)(?:\/|$)/u.test(call.path)),false);
-   reports.push({width,proofOnlyGuestCards:true,referenceNameBubblePortraitInDetails:true,organizationNamesAndOptionalLogosOnly:true,manualCarousel:'zero/single/many; filters and legacy retained',touch:width<600,preview:'same public image; Escape/focus; refresh retained; removal closed',refresh:'stable IDs, open disclosure, carousel/filter, time/area and focus',agenda:'initial hash, cross-area links, keyboard and no jump',publicContentReads:f.calls.filter(call=>call.path==='/api/public/content').length,allRequests:f.calls.length,screenshots});
+   reports.push({width,proofOnlyGuestCards:true,referenceNameBubblePortraitInDetails:true,organizationNamesAndOptionalLogosOnly:true,manualCarousel:'zero/single/many; filters and legacy retained',compactFallback:{failedCoverGeometry,missingCoverGeometry,singleCoverGeometry},singleNavigationHidden:true,filterRestoresNavigation:true,realDeclineRetained:true,touch:width<600,preview:'same public image; Escape/focus; refresh retained; removal closed',refresh:'stable IDs, open disclosure, carousel/filter, time/area and focus',agenda:'initial hash, cross-area links, keyboard and no jump',publicContentReads:f.calls.filter(call=>call.path==='/api/public/content').length,allRequests:f.calls.length,screenshots});
   }finally{await f.context.close();}
  }
  const reclassified=await fixture(390);

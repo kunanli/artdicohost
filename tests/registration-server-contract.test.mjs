@@ -64,6 +64,19 @@ test('policy preflight has no enabled, privacy or clock defaults and strips unre
   assert.deepEqual(Object.keys(result), ['valid', 'errors', 'value']);
 });
 
+test('attendance review is an optional own boolean policy and cannot be supplied through registration answers', () => {
+  assert.equal(Object.hasOwn(validateRegistrationPolicy(policy(), { now }).value, 'attendeeReviewRequired'), false);
+  for (const mode of [true, false]) {
+    const checked = validateRegistrationPolicy(policy({ attendeeReviewRequired: mode }), { now });
+    assert.equal(checked.valid, true); assert.equal(checked.value.attendeeReviewRequired, mode);
+  }
+  for (const mode of [null, undefined, 'false', 0, [], {}]) rejected(validateRegistrationPolicy(policy({ attendeeReviewRequired: mode }), { now }), 'attendeeReviewRequired');
+  let reads = 0; const accessor = policy(); Object.defineProperty(accessor, 'attendeeReviewRequired', { enumerable: true, get() { reads++; return false; } });
+  rejected(validateRegistrationPolicy(accessor, { now }), 'attendeeReviewRequired'); assert.equal(reads, 0);
+  const checked = validate(submission({ fields: fields({ attendeeReviewRequired: false, approved: true }) }));
+  assert.equal(checked.valid, true); assert.equal(Object.hasOwn(checked.value.fields, 'attendeeReviewRequired'), false); assert.equal(Object.hasOwn(checked.value.fields, 'approved'), false);
+});
+
 test('preflight rejects malformed clocks, impossible dates, implicit timezone and reversed windows', () => {
   for (const invalid of ['2026-02-30T12:00:00+08:00', '2026-13-01T12:00:00Z', '2026-10-19T24:00:00Z', '2026-10-19T12:60:00Z', '2026-10-19T12:00:60Z', '2026-10-19T12:00:00', '2026-10-19', '2026-10-19T12:00:00+15:00', '2026-10-19T12:00:00+14:01', '2026-10-19T12:00:00+08:99', '0000-01-01T00:00:00+14:00', '9999-12-31T23:59:59-14:00']) {
     rejected(validateRegistrationPolicy(policy({ opensAt: invalid }), { now }), 'opensAt');

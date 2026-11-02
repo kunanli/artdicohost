@@ -171,8 +171,11 @@ export function createRegistrationApi({ allowedOrigins, submissionService, allow
             checked.privacy[key] = text;
           }
           if (!validateRegistrationPolicy({ ...checked, enabled: true }, { now: checked.opensAt }).valid) return failure('UNAVAILABLE');
-          // Review is server policy, never a caller-controlled option.
-          checked.attendeeReviewRequired = true;
+          // Review is server policy, never a caller-controlled option. Old
+          // metadata without this field retains the manual-review default.
+          const reviewRequired = own(value, 'attendeeReviewRequired');
+          if (reviewRequired !== undefined && typeof reviewRequired !== 'boolean') return failure('UNAVAILABLE');
+          checked.attendeeReviewRequired = reviewRequired !== false;
           if (own(value, 'admissions') !== undefined) {
             checked.admissions = publicAdmissions(own(value, 'admissions'), checked.capacity);
             if (!checked.admissions) return failure('UNAVAILABLE');

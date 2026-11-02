@@ -83,7 +83,7 @@ export const highlights = [
 ];
 
 export const faqItems = [
-  { id: 'registration-status', question: '现在可以报名吗？', answer: '参会申请须由主办方人工审核。请在本页申请区核对当前开放状态；申请收到不等于确认参会名额。' },
+  { id: 'registration-status', question: '现在可以报名吗？', answer: '请在本页报名区核对当前开放状态。报名结果以完成页显示的名额状态为准；分享提案另行审选。' },
   { id: 'audience', question: '不是 GGJ 组织者也能参加吗？', answer: '可以，欢迎学生、开发者、高校、行业与生态伙伴参加。' },
   { id: 'site-role', question: '已经是站点负责人，或想建立新站点，怎么登记？', answer: '已是或曾任 GGJ 站点负责人的朋友，请在本页申请表选择 SO / RO，站点交流安排将另行联系。\n计划筹备新站点的朋友，可选择「新站点筹备」，筹备团队会联系了解支持需求。\n'+eventConfig.siteRegistration.notice+'请准备本地负责人、组织团队与场地，再通过 GGJ 官网 Start a Jam Site 申请，开放时间以官方信息为准。' },
   { id: 'site-official', question: '新站点现场咨询代表已通过申请吗？', answer: '不代表。请准备本地负责人、团队与场地，再通过 GGJ 官网 Start a Jam Site 申请。本次聚会和现场咨询不替代官方申请，开放时间与结果以 GGJ 官方信息为准。' },
@@ -152,3 +152,26 @@ export async function readEventFactsReadiness(readiness) {
 }
 
 export const unchangedEventFacts = (before, after) => before?.ready === true && after?.ready === true && before.key === after.key;
+
+/** Display only: an explicit server flag selects automatic admission copy.
+ * Missing or malformed metadata retains the legacy review journey. This does
+ * not determine any person's receipt, admission, ticket or delivery result. */
+export function registrationUiCopy(metadata) {
+  const automatic = metadata?.attendeeReviewRequired === false;
+  const waitlist = metadata?.admissions?.waitlistEnabled === true;
+  return {
+    automatic,
+    title: automatic ? '报名参加。' : '申请参加。',
+    homeLabel: automatic ? '报名参加' : '申请参加',
+    openLabel: automatic ? '活动报名' : '参会申请',
+    modeLabel: automatic ? '报名开放' : '人工审核',
+    notice: automatic ? '填写资料 → 确认名额 → 领取入场券' : '提交申请 → 主办方审核 → 确认名额与邀请',
+    disclaimer: automatic ? waitlist ? '名额用完将登记候补；分享提案另行审选。' : '报名结果以完成页为准；分享提案另行审选。' : '本机暂存不等于提交；提交后等待审核。',
+    submitLabel: automatic ? '提交报名' : '提交参会申请',
+    availability: automatic ? waitlist ? '报名开放 · 满额候补' : '报名开放' : '参会申请开放，须人工审核',
+    emailHint: automatic ? '用于接收报名结果及参会通知。' : '用于查询申请及接收审核后的通知。',
+    faq: automatic
+      ? '可以直接在本站报名。系统会按剩余名额确认报名结果；'+(waitlist?'名额用完将登记候补。':'')+'名额确认后可领取入场券。分享提案另行审选，不影响一般参会报名。'
+      : '可以提交参会申请。申请收到后需由主办方人工审核；待审核不占参会名额。审核通过并确认名额后再发送正式邀请。',
+  };
+}

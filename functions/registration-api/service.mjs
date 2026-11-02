@@ -29,7 +29,8 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
   try { configured = JSON.parse(registrationJson(policy).toString()); } catch { throw new TypeError('Registration policy is unavailable.'); }
   if (Object.hasOwn(configured, 'capacity') && configured.capacity !== capacity) throw new TypeError('Registration capacity configuration does not match.');
   const eventId = own(configured, 'eventId'), origins = new Set(allowedOrigins);
-  const repository = createRegistrationRepository({ objects, journalFor, eventId, capacity, waitlistEnabled, staffReserve });
+  const attendeeReviewRequired = own(configured, 'attendeeReviewRequired') !== false;
+  const repository = createRegistrationRepository({ objects, journalFor, eventId, capacity, waitlistEnabled, staffReserve, attendeeReviewRequired });
   const tokens = createRegistrationTokens({ secret: tokenSecret, eventId });
   const budgets = createRegistrationRateLimit({ journalFor, eventId, tokenLimit, submissionLimit });
   const current = () => { const value = clockTime(clock()); if (value === null || value < 0) throw new Error(); return value; };
@@ -37,7 +38,7 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
   const admissions = createAdmissionOperations({ repository, eventId, current, policyAt, isWithdrawn, getWithdrawnIds });
   // Validate public notice facts independently of the current intake window, without opening writes.
   const noticeCheck = validateRegistrationPolicy({ ...configured, enabled: true }, { now: configured.opensAt });
-  const publicNotice = noticeCheck.valid ? { ...noticeCheck.value, capacity, attendeeReviewRequired: true } : null;
+  const publicNotice = noticeCheck.valid ? { ...noticeCheck.value, capacity, attendeeReviewRequired } : null;
   async function decorate(saved, origin, includeInvite = true) {
     if (!['created', 'replayed'].includes(saved.outcome)) return saved;
     const admission = await admissions.getAdmissionStatus(saved.receipt.registrationId);
@@ -52,9 +53,10 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
     if (typeof onSaved === 'function') {
       try {
         // A verified public receipt may obtain its private status capability.
-        // A new application can receive a separate receipt. Replay does not
-        // authorize backfill, and formal invitations still require admission.
-        confirmation = await onSaved({ receipt: structuredClone(saved.receipt), origin, provenance: { kind: 'public' }, outcome: saved.outcome, notify: false,
+        // Only a new, currently confirmed public intake authorizes formal mail.
+        // Replays retain private access without backfilling historical notices.
+        confirmation = await onSaved({ receipt: structuredClone(saved.receipt), origin, provenance: { kind: 'public' }, outcome: saved.outcome,
+          notify: saved.outcome === 'created' && admission.status === 'confirmed',
           promotedIds: Array.isArray(saved.promotedIds) ? [...saved.promotedIds] : [] });
       } catch { /* Keep the proven receipt even when optional delivery is unavailable. */ }
     }
@@ -70,7 +72,8 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         const snapshot = await repository.getAdmissions(), summary = snapshot.summary;
         if (!checked.valid) return { ...publicNotice, admissions: summary, enabled: false, reason: Object.keys(checked.errors).some(key => !['enabled', 'window'].includes(key)) ? 'unavailable' : 'closed' };
         if (summary.totalRegistered >= MAX_REGISTRATIONS) return { ...publicNotice, admissions: summary, enabled: false, reason: 'closed' };
-        return { ...checked.value, capacity, attendeeReviewRequired: true, admissions: summary };
+        if (!attendeeReviewRequired && !summary.waitlistEnabled && summary.remainingPublic === 0) return { ...publicNotice, admissions: summary, enabled: false, reason: 'closed' };
+        return { ...checked.value, capacity, attendeeReviewRequired, admissions: summary };
       } catch { return { ...publicNotice, enabled: false, reason: 'unavailable' }; }
     },
     async issueToken(input) {
@@ -81,7 +84,8 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         const state = await repository.readIndex();
         const previous = state.value.entries.some(entry => entry.keyHash === digest('public\0' + eventId + '\0' + idempotencyKey));
         const summary = (await repository.getAdmissions()).summary;
-        if (!previous && (!checked.valid || summary.totalRegistered >= MAX_REGISTRATIONS)) return result('closed');
+        if (!previous && (!checked.valid || summary.totalRegistered >= MAX_REGISTRATIONS
+          || !attendeeReviewRequired && !summary.waitlistEnabled && summary.remainingPublic === 0)) return result('closed');
         const budget = await budgets.consume('tokens', now);
         if (!budget.allowed) return { outcome: 'rate_limited', retryAfter: budget.retryAfter };
         return { outcome: 'issued', ...tokens.issue({ origin, idempotencyKey, now }) };

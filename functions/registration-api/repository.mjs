@@ -96,9 +96,9 @@ function checkedRecord(value, entry, eventId) {
 }
 
 /** One index append is the atomic acceptance/capacity point; records are immutable private blobs. */
-export function createRegistrationRepository({ objects, journalFor, eventId, capacity, staffReserve = 0, waitlistEnabled = false } = {}) {
+export function createRegistrationRepository({ objects, journalFor, eventId, capacity, staffReserve = 0, waitlistEnabled = false, attendeeReviewRequired = true } = {}) {
   if (!objects || typeof objects.get !== 'function' || typeof objects.putImmutable !== 'function' || typeof journalFor !== 'function'
-    || typeof eventId !== 'string' || !EVENT.test(eventId)) throw unavailable();
+    || typeof eventId !== 'string' || !EVENT.test(eventId) || typeof attendeeReviewRequired !== 'boolean') throw unavailable();
   const prefix = `cms/v1/registrations/${eventId}`;
   const defaults = admissionDefaults({ capacity: capacity ?? MAX_REGISTRATIONS, staffReserve, waitlistEnabled });
   const pinned = capacity === undefined ? undefined : { capacity };
@@ -276,10 +276,11 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
         if (expectedRevision !== undefined && expectedRevision !== current.value.revision) return { outcome: 'conflict' };
         if (current.value.entries.length >= MAX_REGISTRATIONS) return { outcome: 'closed' };
         const changedAt = new Date(Math.max(parseTimestamp(submittedAt), parseTimestamp(next.admissions.audit.at(-1)?.at) ?? -Infinity)).toISOString();
-        // Public intake only records an application. It cannot allocate or
-        // release seats, or advance a previously approved waitlist.
-        const reviewRequired = record.provenance.kind === 'public';
-        const releasedIds = reviewRequired ? [] : releaseWithdrawn(next, await exclusions(next, getExcluded), changedAt);
+        // The service-owned intake policy affects only this new record.
+        // Saved keys are resolved above; switching policy never approves old applications.
+        const reviewRequired = record.provenance.kind === 'public' && attendeeReviewRequired;
+        const automaticPublic = record.provenance.kind === 'public' && !attendeeReviewRequired;
+        const releasedIds = reviewRequired ? [] : releaseWithdrawn(next, await exclusions(next, getExcluded, automaticPublic), changedAt);
         const promotedIds = reviewRequired ? [] : promoteEligible(next, changedAt);
         const status = addAdmission(next, entry, admissionKind, changedAt, { reviewRequired });
         if (status === null) return { outcome: 'closed' };

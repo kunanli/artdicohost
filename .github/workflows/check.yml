@@ -129,6 +129,27 @@ jobs:
           path: .local-data/browser-evidence/public-typography/
           if-no-files-found: warn
           retention-days: 1
+      - name: Check onsite automatic tickets and optional sharing
+        id: automatic_registration_browser
+        timeout-minutes: 4
+        env:
+          ARTDICO_PLAYWRIGHT_MODULE: playwright-core
+          ARTDICO_DIST_DIRECTORY: dist
+          ARTDICO_EVIDENCE_DIRECTORY: .local-data/browser-evidence/registration-auto-ui
+        run: |
+          if ! artdico_browser_path="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium)"; then
+            printf '%s\n' '{"ok":false,"failure":"CHROMIUM_UNAVAILABLE"}'
+            exit 1
+          fi
+          ARTDICO_CHROMIUM_BINARY="$artdico_browser_path" node tests/browser/registration-auto-ui-smoke.mjs
+      - name: Retain automatic registration browser evidence for one day
+        if: ${{ !cancelled() && (steps.automatic_registration_browser.outcome == 'success' || steps.automatic_registration_browser.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: registration-auto-ui-evidence
+          path: .local-data/browser-evidence/registration-auto-ui/
+          if-no-files-found: warn
+          retention-days: 1
       # Observational for future incident fixes. This repair's release acceptance
       # requires a successful actual capture and this real-asset browser report.
       - name: Check guest bubbles and actual uploaded logo bounds

@@ -33,25 +33,24 @@
  font-family:var(--ah-font-reading);font-size:var(--ah-type-body);
  font-weight:var(--ah-weight-reading);line-height:var(--ah-leading-reading);
 }
-/* The Hero is a compact music-poster lockup. Reading and footer roles stay
+/* Each Hero brand is one complete line. Reading and footer roles stay
    independent of this deliberate display composition. */
 #artdico-host.ah-festival.ah-cosmos .ah-home-hero{
- --ah-display-hero-latin:clamp(90px,11.7vw,210px);
- --ah-display-hero-host:calc(var(--ah-display-hero-latin) * .7175);
+ --ah-display-hero-latin:clamp(64px,9vw,172px);
+ --ah-display-hero-host:var(--ah-display-hero-latin);
  --ah-display-hero-cjk:clamp(18px,1.45vw,28px);
- --ah-display-hero-overline:clamp(14px,1.45vw,28px);
- --ah-display-hero-gap:6px;--ah-leading-poster:1.02;--ah-tracking-poster:-.018em;
- --ah-display-hero-width:1.06;--ah-poster-solid-outline:.55px;
+ --ah-display-hero-gap:10px;--ah-leading-poster:1.1;--ah-tracking-poster:-.018em;
+ --ah-display-hero-width:1;--ah-poster-solid-outline:.55px;
  --ah-poster-keyline:var(--ah-poster-solid);--ah-poster-solid:#9664ff;
  --ah-poster-ink:#b999ff;--ah-poster-accent:#ddd0ff;
  --ah-poster-outline:clamp(1px,.17vw,2.7px);
 }
 @media(max-width:820px){
  #artdico-host.ah-festival.ah-cosmos .ah-home-hero{
-  --ah-display-hero-latin:calc((100vw - 40px) / 5.45);
-  --ah-display-hero-host:calc(var(--ah-display-hero-latin) * .7175);
+  --ah-display-hero-latin:calc((100vw - 40px) / 8.8);
+  --ah-display-hero-host:var(--ah-display-hero-latin);
   --ah-display-hero-cjk:clamp(16px,2.6vw,20px);
-  --ah-display-hero-overline:14px;--ah-display-hero-gap:4px;
+  --ah-display-hero-gap:8px;
  }
 }
 @media(min-width:821px) and (max-width:1599px){

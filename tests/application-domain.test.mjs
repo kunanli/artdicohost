@@ -43,6 +43,118 @@ async function apply(service) {
   assert.equal(saved.outcome, 'created'); assert.equal(saved.receipt.admissionStatus, 'pending_review');
   return { id: saved.receipt.registrationId, saved, input };
 }
+async function publicSubmission(service, inputFields = fields) {
+  const idempotencyKey = key(), issued = await service.issueToken({ eventId: EVENT, origin: ORIGIN, idempotencyKey });
+  assert.equal(issued.outcome, 'issued');
+  const input = { origin: ORIGIN, idempotencyKey, submissionToken: issued.submissionToken,
+    payload: { eventId: EVENT, fields: inputFields, consent: { accepted: true, version: policy.privacy.version } } };
+  return { input, saved: await service.submit(input) };
+}
+const automaticPolicy = () => ({ ...policy, attendeeReviewRequired: false });
+
+test('explicit automatic public policy confirms attendance while an optional speaking proposal remains only submitted data', async () => {
+  const f = fixture({ policy: automaticPolicy() }), service = f.service();
+  const proposed = { intake: 'general-v2', name: '合成自动报名人', email: 'synthetic@example.invalid', categories: ['industry'],
+    participationInterests: ['attend', 'talk'], speaker: { topic: '合成分享主题', summary: '合成分享说明，尚无讲者安排。' } };
+  const { saved } = await publicSubmission(service, proposed);
+  assert.equal(saved.outcome, 'created'); assert.equal(saved.receipt.admissionStatus, 'confirmed');
+  assert.equal((await service.metadata()).attendeeReviewRequired, false);
+  const listed = await service.repository.list();
+  assert.deepEqual(listed.registrations[0].fields, proposed);
+  assert.equal(listed.registrations[0].provenance.kind, 'public');
+  assert.equal(f.state.callbacks.length, 1); assert.equal(f.state.callbacks[0].notify, true); assert.equal(f.state.invites, 1);
+  const snapshot = await service.getAdmissions({ actor });
+  assert.equal(snapshot.summary.confirmedCount, 1); assert.equal(snapshot.summary.pendingReviewCount, 0); assert.equal(snapshot.people[0].kind, 'attendee');
+  assert.equal((await command(service, saved.receipt.registrationId)).result.outcome, 'conflict', 'already confirmed attendance is not approved twice');
+});
+
+test('independent automatic public intakes contest the last seat in one CAS and retain one ordered waitlist', async () => {
+  const f = fixture({ policy: automaticPolicy() }), first = f.service(), second = f.service();
+  const results = await Promise.all([publicSubmission(first), publicSubmission(second)]);
+  assert.deepEqual(results.map(item => item.saved.outcome), ['created', 'created']);
+  assert.deepEqual(results.map(item => item.saved.receipt.admissionStatus).sort(), ['confirmed', 'waitlisted']);
+  const snapshot = await f.service().getAdmissions({ actor });
+  assert.equal(snapshot.summary.confirmedCount, 1); assert.equal(snapshot.summary.waitlistCount, 1); assert.equal(snapshot.summary.pendingReviewCount, 0);
+  assert.deepEqual(snapshot.people.map(item => item.queueNumber).sort(), [1, 2]);
+  assert.equal(f.state.callbacks.filter(item => item.notify).length, 1); assert.equal(f.state.invites, 1);
+});
+
+test('automatic attendance respects crew reserve and staff intake never borrows public notification authority', async () => {
+  const f = fixture({ policy: automaticPolicy(), capacity: 2, staffReserve: 1 }), service = f.service();
+  assert.equal((await publicSubmission(service)).saved.receipt.admissionStatus, 'confirmed');
+  assert.equal((await publicSubmission(service)).saved.receipt.admissionStatus, 'waitlisted');
+  const before = await service.getAdmissions({ actor });
+  const staff = await service.addStaffMember({ actor: admin, expectedRevision: before.revision, operationId: key(),
+    input: { kind: 'crew', fields: { name: '合成工作人员', wechat: 'synthetic-crew' }, permissionReference: '合成工作人员明确登记授权' } });
+  assert.equal(staff.outcome, 'updated'); assert.equal(staff.receipt.admissionStatus, 'confirmed');
+  assert.equal(staff.summary.confirmedCount, 2); assert.equal(staff.summary.crewConfirmedCount, 1); assert.equal(staff.summary.remainingPublic, 0);
+  assert.equal(f.state.callbacks.length, 2, 'staff admission does not call the new-public commit hook');
+});
+
+test('switching to automatic intake preserves previously saved pending and rejected records under exact replay', async () => {
+  const f = fixture(), manual = f.service(), pending = await apply(manual), rejected = await apply(manual);
+  await command(manual, rejected.id, 'rejectApplication');
+  const recordsBefore = await manual.repository.list(), automatic = f.service({ policy: automaticPolicy() });
+  const fresh = await publicSubmission(automatic); assert.equal(fresh.saved.receipt.admissionStatus, 'confirmed');
+  assert.equal((await automatic.submit(pending.input)).receipt.admissionStatus, 'pending_review');
+  assert.equal((await automatic.submit(rejected.input)).receipt.admissionStatus, 'rejected');
+  const after = await automatic.repository.list();
+  assert.deepEqual(after.registrations.slice(0, 2), recordsBefore.registrations);
+  const snapshot = await automatic.getAdmissions({ actor });
+  assert.equal(snapshot.summary.pendingReviewCount, 1); assert.equal(snapshot.summary.rejectedCount, 1); assert.equal(snapshot.summary.confirmedCount, 1);
+  assert.equal(f.state.callbacks.filter(item => item.notify).length, 1);
+});
+
+test('lost automatic intake ACK replays the same confirmed seat after expiry and policy closure without mail authority', async () => {
+  const f = fixture({ policy: automaticPolicy() }), service = f.service(); f.state.loseAck = true;
+  const { input, saved } = await publicSubmission(service); assert.deepEqual(saved, { outcome: 'unavailable' });
+  assert.equal(f.state.callbacks.length, 0); assert.equal((await service.repository.list()).registrations.length, 1);
+  f.state.now = Date.parse(policy.closesAt) + 1;
+  const closedManual = f.service({ policy: { ...policy, enabled: false } });
+  const replay = await closedManual.submit(input);
+  assert.equal(replay.outcome, 'replayed'); assert.equal(replay.receipt.admissionStatus, 'confirmed');
+  assert.equal(f.state.callbacks.length, 1); assert.equal(f.state.callbacks[0].notify, false);
+  assert.equal((await closedManual.repository.list()).registrations.length, 1);
+  const current = await closedManual.getAdmissions({ actor });
+  assert.equal(current.summary.confirmedCount, 1); assert.equal(current.summary.pendingReviewCount, 0);
+});
+
+test('new automatic intake releases trusted withdrawals and promotes an older approved waitlist before itself', async () => {
+  const f = fixture(), legacy = await seedV2(f), manual = f.service(), pending = await apply(manual);
+  f.state.withdrawn.add(legacy.ids[0]);
+  const automatic = f.service({ policy: automaticPolicy() }), fresh = await publicSubmission(automatic);
+  assert.equal(fresh.saved.receipt.admissionStatus, 'waitlisted');
+  assert.deepEqual(fresh.saved.promotedIds, [legacy.ids[1]]); assert.deepEqual(fresh.saved.releasedIds, [legacy.ids[0]]);
+  const snapshot = await automatic.getAdmissions({ actor });
+  assert.equal(snapshot.people.find(item => item.registrationId === legacy.ids[1]).status, 'confirmed');
+  assert.equal(snapshot.people.find(item => item.registrationId === pending.id).status, 'pending_review');
+  assert.equal(snapshot.summary.confirmedCount, 1); assert.equal(snapshot.summary.waitlistCount, 1);
+  assert.equal(snapshot.summary.pendingReviewCount, 1); assert.equal(f.state.callbacks.at(-1).notify, false);
+  for (const [path, bytes] of legacy.originalRecords) assert.deepEqual(f.objects.files.get(path).data, bytes);
+  const replay = await automatic.submit(fresh.input);
+  assert.deepEqual(replay.promotedIds, [legacy.ids[1]]); assert.equal(f.state.callbacks.at(-1).outcome, 'replayed'); assert.equal(f.state.callbacks.at(-1).notify, false);
+});
+
+test('full automatic intake without waitlisting closes new writes but retains saved-key recovery', async () => {
+  const f = fixture({ policy: automaticPolicy(), waitlistEnabled: false }), service = f.service();
+  const otherKey = key(), otherToken = await service.issueToken({ eventId: EVENT, origin: ORIGIN, idempotencyKey: otherKey });
+  const first = await publicSubmission(service); assert.equal(first.saved.receipt.admissionStatus, 'confirmed');
+  const full = await service.submit({ origin: ORIGIN, idempotencyKey: otherKey, submissionToken: otherToken.submissionToken,
+    payload: { eventId: EVENT, fields, consent: { accepted: true, version: policy.privacy.version } } });
+  assert.deepEqual(full, { outcome: 'closed' }); assert.equal((await service.repository.list()).registrations.length, 1);
+  const metadata = await service.metadata(); assert.equal(metadata.enabled, false); assert.equal(metadata.reason, 'closed'); assert.equal(metadata.attendeeReviewRequired, false);
+  assert.deepEqual(await service.issueToken({ eventId: EVENT, origin: ORIGIN, idempotencyKey: key() }), { outcome: 'closed' });
+  assert.equal((await service.issueToken({ eventId: EVENT, origin: ORIGIN, idempotencyKey: first.input.idempotencyKey })).outcome, 'issued');
+  assert.equal((await service.submit(first.input)).receipt.registrationId, first.saved.receipt.registrationId);
+  assert.equal(f.state.callbacks.filter(item => item.notify).length, 1);
+});
+
+test('malformed review policy cannot open automatic intake', async () => {
+  const f = fixture({ policy: { ...policy, attendeeReviewRequired: 'false' } }), service = f.service();
+  assert.deepEqual(await service.metadata(), { enabled: false, reason: 'unavailable', attendeeReviewRequired: true });
+  assert.deepEqual(await service.issueToken({ eventId: EVENT, origin: ORIGIN, idempotencyKey: key() }), { outcome: 'closed' });
+  assert.equal((await service.repository.list()).registrations.length, 0);
+});
 async function command(service, registrationId, method = 'approveApplication', operationId = key()) {
   const snapshot = await service.getAdmissions({ actor });
   const input = { actor, registrationId, expectedRevision: snapshot.revision, operationId };

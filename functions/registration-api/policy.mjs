@@ -56,6 +56,9 @@ export function validateRegistrationPolicy(config, { now } = {}) {
   const opening = parseTimestamp(own(config, 'opensAt'));
   const closing = parseTimestamp(own(config, 'closesAt'));
   const current = clockTime(now);
+  const hasReviewPolicy = Object.hasOwn(config, 'attendeeReviewRequired');
+  const attendeeReviewRequired = own(config, 'attendeeReviewRequired');
+  if (hasReviewPolicy && typeof attendeeReviewRequired !== 'boolean') errors.attendeeReviewRequired = '请配置有效的参会审核方式。';
   if (own(config, 'enabled') !== true) errors.enabled = '正式报名开关尚未启用。';
   if (typeof eventId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(eventId)) errors.eventId = '请配置有效的活动 ID。';
   if (opening === null) errors.opensAt = '请配置含时区偏移的有效开放时间。';
@@ -73,5 +76,6 @@ export function validateRegistrationPolicy(config, { now } = {}) {
   if (privacy.version && (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(privacy.version) || /demo|frontend|mock/iu.test(privacy.version))) errors['privacy.version'] = '请配置正式告知版本，不能使用演示版本。';
   if (privacy.contactEmail && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(privacy.contactEmail)) errors['privacy.contactEmail'] = '请配置有效的隐私联系邮箱。';
   if (Object.keys(errors).length) return { valid: false, errors };
-  return { valid: true, errors, value: { enabled: true, eventId, opensAt: new Date(opening).toISOString(), closesAt: new Date(closing).toISOString(), privacy } };
+  return { valid: true, errors, value: { enabled: true, eventId, opensAt: new Date(opening).toISOString(), closesAt: new Date(closing).toISOString(), privacy,
+    ...(hasReviewPolicy ? { attendeeReviewRequired } : {}) } };
 }

@@ -1,4 +1,4 @@
-import { faqItems as defaults, PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
+import { faqItems as defaults, PUBLIC_CONTACT_EMAIL, registrationUiCopy } from '../config/event.mjs';
 import { legacyFaqId } from '../../shared/content-schema.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
@@ -87,7 +87,7 @@ function renderFaqs() {
 if (typeof document !== 'undefined') {
   document.addEventListener('artdico:registration-ready', event => {
     currentPrivacy = event.detail?.privacy ?? currentPrivacy;
-    currentAvailability = { message: '可以提交参会申请。申请收到后需由主办方人工审核；待审核不占参会名额。审核通过并确认名额后再发送正式邀请。' }; renderFaqs();
+    currentAvailability = { message: registrationUiCopy(event.detail).faq }; renderFaqs();
   });
   document.addEventListener('artdico:registration-policy', event => { currentPrivacy = event.detail?.privacy ?? currentPrivacy; renderFaqs(); });
   document.addEventListener('artdico:registration-unavailable', event => {

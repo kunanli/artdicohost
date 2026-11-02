@@ -42,20 +42,19 @@ html:has(#artdico-host.ah-cosmos){scroll-padding-top:32px}
 #artdico-host.ah-festival.ah-cosmos .ah-site-menu>nav{position:absolute;right:0;top:calc(100% + 12px);width:280px;max-width:calc(100vw - 40px);max-height:min(72dvh,460px);overflow:auto;display:grid;gap:0;padding:9px 18px;border:1px solid #6d548f;border-radius:12px;background:#150e20;box-shadow:0 18px 50px #000b}
 #artdico-host.ah-festival.ah-cosmos .ah-site-menu nav>a{display:flex;justify-content:space-between;align-items:center;gap:16px;min-height:48px;padding:12px 0;border-bottom:1px solid var(--ah-line);font-size:15px;color:#e5deef;text-decoration:none}
 #artdico-host.ah-festival.ah-cosmos .ah-site-menu nav>a:last-child{border:0}
-/* The requested music-poster lockup is one dense type block over the sphere. */
+/* Two complete, non-repeating brand lines leave the sphere room to breathe. */
 #artdico-host.ah-festival.ah-cosmos .ah-home-hero{position:relative;display:block;isolation:isolate;min-height:0;padding:0 0 clamp(70px,5.2vw,100px);background:#000;border:0;text-align:center}
 #artdico-host.ah-festival.ah-cosmos .ah-home-hero-stage{position:relative;min-height:clamp(440px,49.8vw,956px);isolation:isolate;margin:0;padding-top:clamp(32px,2.6vw,50px);padding-bottom:clamp(35px,4vw,77px)}
 #artdico-host.ah-festival.ah-cosmos .ah-home-hero-planet{position:absolute;left:40%;top:clamp(25px,3.6vw,69px);width:55.94%;max-width:1074px;aspect-ratio:1;opacity:.76;z-index:-1;pointer-events:none}
 #artdico-host.ah-festival.ah-cosmos .ah-home-hero-planet img{display:block;width:100%;height:100%;object-fit:contain;max-width:none}
-#artdico-host.ah-festival.ah-cosmos .ah-home-hero h1{position:relative;display:flex;flex-direction:column;gap:8px;min-height:0;margin:0;padding:0 var(--ah-pad);font-size:clamp(40px,5.4vw,104px);line-height:1.12;font-weight:700;letter-spacing:-.045em;color:var(--ah-purple);text-align:left}
+#artdico-host.ah-festival.ah-cosmos .ah-home-hero h1{position:relative;display:flex;flex-direction:column;gap:clamp(28px,4vw,72px);min-height:0;margin:0;padding:0 var(--ah-pad);font-size:clamp(40px,5.4vw,104px);line-height:1.12;font-weight:700;letter-spacing:-.045em;color:var(--ah-purple);text-align:left}
 #artdico-host.ah-festival.ah-cosmos .ah-home-hero h1:not(:has(.ah-home-title-art)){padding:clamp(35px,4vw,77px) var(--ah-pad);display:block;text-align:center}
 #artdico-host.ah-festival.ah-cosmos .ah-home-hero h1:not(:has(.ah-home-title-art)) .ah-event-title-line{position:static;display:block;margin:0 0 .4em;color:inherit}
 #artdico-host.ah-festival.ah-cosmos .ah-home-hero h1:not(:has(.ah-home-title-art)) .ah-event-brand{display:block;font:inherit;color:inherit;letter-spacing:inherit;margin:0}
 #artdico-host.ah-festival.ah-cosmos .ah-home-hero h1:not(:has(.ah-home-title-art)) .ah-event-brand::before{display:none}
 #artdico-host.ah-festival.ah-cosmos .ah-home-hero h1:not(:has(.ah-home-title-art)) .ah-event-chinese{display:block;font-size:.58em;line-height:1.4}
 #artdico-host.ah-festival.ah-cosmos .ah-home-hero h1:not(:has(.ah-home-title-art)) .ah-event-title-cross{display:block;width:auto;font-size:.35em;margin:.6em 0;color:var(--ah-purple)}
-#artdico-host.ah-festival.ah-cosmos .ah-home-title-art{position:relative;display:block;width:66vw;max-width:1267px;min-width:0}
-#artdico-host.ah-festival.ah-cosmos .ah-home-title-overline{display:block;margin:0 0 8px;font-family:var(--ah-font-reading);font-size:var(--ah-display-hero-overline);font-weight:700;line-height:1.4;letter-spacing:.28em;color:var(--ah-poster-accent)}
+#artdico-host.ah-festival.ah-cosmos .ah-home-title-art{position:relative;display:block;width:82vw;max-width:1574px;min-width:0}
 #artdico-host.ah-festival.ah-cosmos .ah-home-title-type{display:grid;justify-items:start;gap:0;font-family:var(--ah-font-display);font-size:var(--ah-display-hero-latin);font-weight:var(--ah-weight-display);font-synthesis:none;line-height:var(--ah-leading-poster);letter-spacing:var(--ah-tracking-poster);color:var(--ah-poster-ink);white-space:normal;overflow-wrap:normal}
 #artdico-host.ah-festival.ah-cosmos .ah-home-title-host .ah-home-title-type{font-size:var(--ah-display-hero-host)}
 #artdico-host.ah-festival.ah-cosmos .ah-home-title-type>[data-poster-word]{display:block;width:max-content;max-width:none;white-space:nowrap;overflow-wrap:normal;transform:scaleX(var(--ah-display-hero-width));transform-origin:left center}
@@ -68,7 +67,7 @@ html:has(#artdico-host.ah-cosmos){scroll-padding-top:32px}
  #artdico-host.ah-festival.ah-cosmos .ah-poster-solid{color:var(--ah-poster-solid);-webkit-text-stroke:var(--ah-poster-solid-outline) var(--ah-poster-keyline);-webkit-text-fill-color:currentColor;paint-order:stroke fill}
 }
 @supports (-webkit-text-stroke:1px #000) and ((background-clip:text) or (-webkit-background-clip:text)){
- #artdico-host.ah-festival.ah-cosmos .ah-poster-slice{background:linear-gradient(124deg,transparent 0% 34%,var(--ah-poster-accent) 34% 48%,transparent 48% 100%),linear-gradient(72deg,var(--ah-poster-solid) 0% 59%,#a7a3ff 59% 79%,var(--ah-poster-solid) 79% 100%);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+ #artdico-host.ah-festival.ah-cosmos .ah-poster-slice{background:linear-gradient(124deg,var(--ah-poster-solid) 0% 68%,#c6b3ff 68% 82%,var(--ah-poster-solid) 82% 100%);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 }
 @media(forced-colors:active){
  #artdico-host.ah-festival.ah-cosmos :is(.ah-poster-solid,.ah-poster-outline){color:CanvasText;-webkit-text-fill-color:CanvasText;-webkit-text-stroke:0;background:none}

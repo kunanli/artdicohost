@@ -36,7 +36,8 @@ export async function observePublicRegistration({fetchFn=fetch,timeoutMs=15000}=
       if(response.status!==204||!methods.includes('POST')||headers.some(name=>!allowed.includes(name)))fail('CORS_PREFLIGHT');
       preflights[name]=true;
     }
-    return {verified:true,eventId:config.eventId,enabled:config.enabled,preflights};
+    return {verified:true,eventId:config.eventId,enabled:config.enabled,
+      attendeeReviewRequired:typeof config.attendeeReviewRequired==='boolean'?config.attendeeReviewRequired:null,preflights};
   } catch(error) {
     const allowed=new Set(['INVALID_ARGUMENTS','READ_ONLY_BOUNDARY','RESPONSE_URL','CORS_ORIGIN','EVENT_CONFIGURATION','CORS_PREFLIGHT']);
     return {verified:false,stage,...(Number.isInteger(status)&&status>=100&&status<=599?{status}:{}),

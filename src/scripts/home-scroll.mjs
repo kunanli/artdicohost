@@ -32,7 +32,7 @@ if(root&&typeof requestAnimationFrame==='function'&&typeof matchMedia==='functio
       readables=[...root.querySelectorAll(selector)];textRanges=[];
       const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node;
       while((node=walker.nextNode())){
-        const parent=node.parentElement;if(!parent||parent.closest('script,style,noscript')||parent.closest(selector)&&!parent.closest('[data-home-title-overline],[data-home-title-type],[data-home-title-subtitle],[data-footer-display-line]'))continue;
+        const parent=node.parentElement;if(!parent||parent.closest('script,style,noscript')||parent.closest(selector)&&!parent.closest('[data-home-title-type],[data-home-title-subtitle],[data-footer-display-line]'))continue;
         const range=document.createRange();range.selectNodeContents(node);textRanges.push({range,parent});
       }
       nodesDirty=false;

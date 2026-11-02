@@ -1,4 +1,4 @@
-import {createDeliveryMutations,deliverySettingsView,deliveryReminderPreviewView,deliveryReminderRequestView,createReminderMutations,
+import {createDeliveryMutations,deliverySettingsView,deliveryEmailPresentation,deliveryReminderPreviewView,deliveryReminderRequestView,createReminderMutations,
   deliveryConfirmationPreviewView,deliveryConfirmationDraftPolicy,deliveryLegacyDispatchView,createConfirmationMutations} from '../lib/delivery-settings.mjs';
 import {canManageEventOperations} from '../../shared/staff-permissions.mjs';
 import {createSettingsFormDraft} from '../lib/settings-form-draft.mjs';
@@ -83,8 +83,9 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
   }
   function render(){
     if(!state)return;$('[data-delivery-state]').hidden=false;
-    $('[data-delivery-mail-ready]').textContent=state.email.ready?(state.automaticEnabled?'设置可用，报名通知已开启。':'寄件设置可用，报名通知已暂停。'):'寄件设置尚未完成；私人参会页仍可查询与保存。';
-    const missing=$('[data-delivery-mail-missing]');missing.replaceChildren();for(const key of state.email.missing)missing.append(element('li','待配置：'+key));
+    const email=deliveryEmailPresentation(state.email);
+    $('[data-delivery-mail-ready]').textContent=state.email.ready&&state.email.reason==='CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF'?(state.automaticEnabled?'设置可用，报名通知已开启。':'寄件设置可用，报名通知已暂停。'):email.message+' 私人参会页仍可查询与保存。';
+    const missing=$('[data-delivery-mail-missing]');missing.replaceChildren();for(const label of email.fields)missing.append(element('li',label));
     $('[data-delivery-wallet-ready]').textContent=walletMessages[state.wallet.reason];
     const walletMissing=$('[data-delivery-wallet-missing]');walletMissing.replaceChildren();walletMissing.hidden=!state.wallet.missing.length;
     for(const key of state.wallet.missing)walletMissing.append(element('li','待配置：'+(walletFields[key]?walletFields[key]+'（'+key+'）':'其他签章设置')));

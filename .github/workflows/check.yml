@@ -171,6 +171,27 @@ jobs:
           path: .local-data/browser-evidence/admin-display-order/
           if-no-files-found: warn
           retention-days: 1
+      - name: Check confirmation mail diagnostics and one-time repair recovery
+        id: confirmation_mail_recovery_browser
+        timeout-minutes: 4
+        env:
+          ARTDICO_PLAYWRIGHT_MODULE: playwright-core
+          ARTDICO_DIST_DIRECTORY: dist
+          ARTDICO_MAIL_EVIDENCE_DIRECTORY: .local-data/browser-evidence/confirmation-mail-recovery
+        run: |
+          if ! artdico_browser_path="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium)"; then
+            printf '%s\n' '{"ok":false,"failure":"CHROMIUM_UNAVAILABLE"}'
+            exit 1
+          fi
+          ARTDICO_CHROMIUM_BINARY="$artdico_browser_path" node tests/browser/confirmation-mail-recovery-smoke.mjs
+      - name: Retain confirmation mail recovery evidence for one day
+        if: ${{ !cancelled() && (steps.confirmation_mail_recovery_browser.outcome == 'success' || steps.confirmation_mail_recovery_browser.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: confirmation-mail-recovery-evidence
+          path: .local-data/browser-evidence/confirmation-mail-recovery/
+          if-no-files-found: warn
+          retention-days: 1
       # Observational for future incident fixes. This repair's release acceptance
       # requires a successful actual capture and this real-asset browser report.
       - name: Check guest bubbles and actual uploaded logo bounds

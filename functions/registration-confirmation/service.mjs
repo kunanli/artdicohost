@@ -3,9 +3,10 @@ import { performance } from 'node:perf_hooks';
 import { plainObject, own, parseTimestamp } from '../registration-api/policy.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { createConfirmationTokens } from './tokens.mjs';
-import { createConfirmationRepository, canonicalConfirmationKind, formalConfirmationKind, confirmationNoticeId, confirmationRequestHash, validConfirmationOperation, MAX_CONFIRMATION_BATCH } from './repository.mjs';
+import { createConfirmationRepository, confirmationRecoveryUsed, canonicalConfirmationKind, formalConfirmationKind, confirmationNoticeId, confirmationRequestHash, validConfirmationOperation, MAX_CONFIRMATION_BATCH } from './repository.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 import { buildPosterInvitationSettings } from '../../shared/organizer-progress.mjs';
+import { CONFIRMATION_EMAIL_CONFIGURATION_FIELDS, CONFIRMATION_EMAIL_REASONS, confirmationDiagnostic } from '../../shared/confirmation-delivery.mjs';
 
 const SITE = 'https://artdico.host';
 const ID = /^[A-Za-z0-9_-]{43}$/u;
@@ -70,9 +71,10 @@ export function createRegistrationConfirmationService({ registrationService, jou
     try {
       const value = await emailProvider?.readiness?.();
       return { ready: value?.ready === true && typeof emailProvider?.send === 'function',
-        reason: value?.ready === true ? 'CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF' : 'EMAIL_NOT_READY',
+        reason: value?.ready === true ? 'CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF' : CONFIRMATION_EMAIL_REASONS.includes(value?.reason) && value.reason !== 'CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF' ? value.reason : 'EMAIL_NOT_READY',
         enabled: value?.enabled === true,
-        missing: Array.isArray(value?.missing) ? value.missing.filter(key => typeof key === 'string' && /^[A-Z][A-Z0-9_]{0,79}$/u.test(key)) : [],
+        missing: Array.isArray(value?.missing) ? [...new Set(value.missing.filter(key => CONFIRMATION_EMAIL_CONFIGURATION_FIELDS.includes(key)))] : [],
+        ...(Array.isArray(value?.invalid) ? { invalid: [...new Set(value.invalid.filter(key => CONFIRMATION_EMAIL_CONFIGURATION_FIELDS.includes(key)))] } : {}),
         template: 'confirmation', deliveryProof: false };
     } catch { return { ready: false, enabled: false, reason: 'EMAIL_NOT_READY', missing: [], template: 'confirmation', deliveryProof: false }; }
   }
@@ -215,40 +217,47 @@ export function createRegistrationConfirmationService({ registrationService, jou
     }
     failure();
   }
-  async function recordResult(notice, status, actorId) {
+  async function recordResult(notice, status, actorId, diagnostic) {
     for (let tries = 0; tries < 4; tries++) {
       const current = await target().read(), item = current.value.notices.find(value => value.id === notice.id);
-      if (!item || item.attempt !== notice.attempt || item.status !== 'reserved') failure();
-      try { const saved = await target().append(current, 'result', { noticeId: notice.id, status }, actorId); return noticeEmail(saved.value.notices.find(value => value.id === notice.id)); }
+      if (!item || item.attempt !== notice.attempt || item.status !== 'reserved' || item.actorId !== actorId) failure();
+      try { const saved = await target().append(current, 'result', { noticeId: notice.id, status, attempt: notice.attempt, ...(diagnostic ? { diagnostic } : {}) }, actorId); return noticeEmail(saved.value.notices.find(value => value.id === notice.id)); }
       catch (error) { if (!conflict(error)) throw error; }
     }
     failure();
   }
   async function notify(registrationId, { kind = 'registration', actorId = automaticActor, retryRejected = false,
-    deadline = monotonicNow() + batchTimeoutMs, expectedScope } = {}) {
-    if (!(await providerState()).ready) return { status: 'not_configured' };
-    if (monotonicNow() >= deadline) return { status: 'not_attempted' };
-    const loaded = await loadRegistration(registrationId), { record, admission } = loaded;
-    if (expectedScope && !sameScope(scopeOf(loaded), expectedScope)) return { status: 'not_attempted' };
+    deadline = monotonicNow() + batchTimeoutMs, expectedScope, recovery } = {}) {
+    if (!recovery && !(await providerState()).ready) return { status: 'not_configured' };
+    if (!recovery && monotonicNow() >= deadline) return { status: 'not_attempted' };
+    const loaded = recovery?.loaded ?? await loadRegistration(registrationId), { record, admission } = loaded;
+    if (!recovery && expectedScope && !sameScope(scopeOf(loaded), expectedScope)) return { status: 'not_attempted' };
     if ((record.accessRevision ?? 0) > 0 && actorId === automaticActor) return { status: 'not_applicable' };
-    if (!(await deliveryPermission(record)).eligible) return { status: 'not_public' };
+    if (!recovery && !(await deliveryPermission(record)).eligible) return { status: 'not_public' };
     if (admission.status === 'withdrawn') return { status: 'withdrawn' };
     if (!applicable(loaded, kind)) return { status: 'not_applicable' };
     if (typeof record.fields.email !== 'string' || !record.fields.email) return { status: 'not_applicable' };
-    const reserved = await reserve(registrationId, admission, actorId, retryRejected, deadline, kind, loaded);
+    const reserved = recovery ?? await reserve(registrationId, admission, actorId, retryRejected, deadline, kind, loaded);
     if (reserved.status) return reserved;
     if (!reserved.owned) return noticeEmail(reserved.notice);
     const notice = reserved.notice, checkedFacts = reserved.checkedFacts;
     // This guard runs here and again inside the actual transport after asynchronous
     // configuration loading. It cannot make separate admission/notice journals or
     // the external provider atomic; it closes the controllable pre-fetch window.
-    let guardUnattempted = false;
+    let guardUnattempted = false, guardCode = 'DELIVERY_GUARD_BLOCKED';
     const canStart = async ({ signal } = {}) => {
-      if (signal?.aborted || monotonicNow() >= deadline) { guardUnattempted = true; return false; }
+      if (signal?.aborted || monotonicNow() >= deadline) { guardUnattempted = true; guardCode = 'DELIVERY_WINDOW_EXPIRED'; return false; }
       const latest = await loadRegistration(registrationId), aliases = await aliasesFor(latest);
+      if (recovery && aliases.registrationIds.slice().sort().join(',') !== recovery.relatedRegistrationIds.join(',')) return false;
+      if (recovery && await configurationIdentity() !== recovery.configurationIdentity) { guardCode = 'EMAIL_CONFIGURATION_CHANGED'; return false; }
+      if (recovery && latest.admission.revision !== admission.revision) return false;
       if (aliases.primaryRegistrationId !== registrationId || !applicable(latest, kind)
         || (latest.record.accessRevision ?? 0) !== (record.accessRevision ?? 0) || latest.record.fields.email !== record.fields.email || !(await deliveryPermission(latest.record)).eligible) return false;
       const delivery = await target().read(), ownNotice = delivery.value.notices.find(item => item.id === notice.id);
+      if (recovery && (delivery.value.notices.some(item => item.id !== notice.id && aliases.registrationIds.includes(item.registrationId)
+        && formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' && ['reserved', 'unknown', 'provider_accepted'].includes(item.status))
+        || delivery.value.operations.some(op => op.operationId !== recovery.operationId && op.action === 'dispatch'
+          && op.status !== 'completed' && op.registrationIds.some(id => aliases.registrationIds.includes(id))))) return false;
       if (historicalUncertainty(delivery.value, aliases, kind, scopeOf(loaded)) || !delivery.value.settings.enabled || ownNotice?.status !== 'reserved' || ownNotice.attempt !== notice.attempt
         || relatedNotices(delivery.value, aliases, kind, scopeOf(loaded)).some(item => item.id !== notice.id && ['reserved', 'unknown', 'provider_accepted'].includes(item.status))) return false;
       const unchanged = unchangedEventFacts(checkedFacts, await currentEventFacts());
@@ -256,9 +265,9 @@ export function createRegistrationConfirmationService({ registrationService, jou
       return true;
     };
     let mayStart = false;
-    try { mayStart = await canStart(); } catch { /* No external request was started. */ }
+    try { mayStart = await canStart(); } catch { guardCode = 'DELIVERY_GUARD_UNAVAILABLE'; }
     if (!mayStart) {
-      try { await recordResult(notice, 'rejected', actorId); return { status: guardUnattempted || monotonicNow() >= deadline ? 'not_attempted' : 'rejected' }; }
+      try { await recordResult(notice, 'rejected', actorId, { code: monotonicNow() >= deadline ? 'DELIVERY_WINDOW_EXPIRED' : guardCode, transportStarted: false }); return { status: guardUnattempted || monotonicNow() >= deadline ? 'not_attempted' : 'rejected' }; }
       catch { return { status: 'unknown' }; }
     }
     const link = capability(registrationId, loaded.record.accessRevision ?? 0);
@@ -272,12 +281,15 @@ export function createRegistrationConfirmationService({ registrationService, jou
     let result;
     try {
       result = await emailProvider.send({ recipient: record.fields.email, subject, text, canStart,
+        ...(recovery ? { expectedConfigurationIdentity: recovery.configurationIdentity } : {}),
         idempotencyKey: 'c_' + confirmationRequestHash({ id: notice.id, attempt: notice.attempt }),
         templateVariables: { to_name: record.fields.name, to_email: record.fields.email, event_title: eventFacts.title,
           event_date: eventFacts.date, event_time: eventFacts.time, event_venue: eventFacts.venue, reference_code: registrationId, invitation_text: text } });
     } catch { result = { status: 'unknown' }; }
     const status = ['provider_accepted', 'rejected'].includes(result?.status) ? result.status : 'unknown';
-    try { const saved = await recordResult(notice, status, actorId);
+    try { const safeDiagnostic = confirmationDiagnostic(result?.diagnostic);
+      const diagnostic = safeDiagnostic && (safeDiagnostic.code === 'DELIVERY_UNKNOWN' ? status === 'unknown' : status === 'rejected') ? safeDiagnostic : null;
+      const saved = await recordResult(notice, status, actorId, diagnostic);
       return result?.reason === 'DELIVERY_WINDOW_EXPIRED' && status === 'rejected' ? { status: 'not_attempted' } : saved;
     } catch { return { status: 'unknown' }; }
   }
@@ -390,22 +402,68 @@ export function createRegistrationConfirmationService({ registrationService, jou
     }
     failure();
   }
-  async function dispatch({ actor, expectedRevision, operationId, registrationIds, retryRejected = false, expectedAccessRevisions } = {}, kind = 'registration') {
+  async function configurationIdentity() {
+    try { const identity = await emailProvider?.configurationIdentity?.(); return typeof identity === 'string' && /^[a-f0-9]{64}$/u.test(identity) ? identity : null; }
+    catch { return null; }
+  }
+  function recoveryEligible(state, aliases, scope, notice) {
+    const family = state.notices.filter(item => aliases.registrationIds.includes(item.registrationId) && formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed');
+    return notice?.status === 'rejected' && sameScope(notice, scope)
+      && aliases.primaryRegistrationId === notice.registrationId && notice.admissionStatus === 'confirmed'
+      && family.reduce((total, item) => total + item.attempt, 0) >= 5
+      && !family.some(item => ['reserved', 'unknown', 'provider_accepted'].includes(item.status))
+      && !state.operations.some(op => op.action === 'dispatch' && op.status !== 'completed' && op.registrationIds.some(id => aliases.registrationIds.includes(id)))
+      && !confirmationRecoveryUsed(state, aliases.registrationIds);
+  }
+  async function dispatchRecovery({ actor, operationId, registrationId, expectedAccessRevisions, requestHash, current, deadline }) {
+    const loaded = await loadRegistration(registrationId), scope = scopeOf(loaded), aliases = await aliasesFor(loaded);
+    if (scope.accessRevision !== expectedAccessRevisions[registrationId]) failure('REVISION_CONFLICT', 409);
+    const kind = canonicalConfirmationKind(current.value, registrationId, loaded.admission.status);
+    const notice = current.value.notices.find(item => item.id === confirmationNoticeId(eventId, registrationId, kind, scope.accessRevision, scope.recipientDigest));
+    if (!applicable(loaded, kind) || !loaded.record.fields.email || aliases.primaryRegistrationId !== registrationId
+      || !current.value.settings.enabled || !recoveryEligible(current.value, aliases, scope, notice)
+      || !(await deliveryPermission(loaded.record)).eligible || !(await providerState()).ready) failure('REVISION_CONFLICT', 409);
+    const checkedFacts = await currentEventFacts(), identity = await configurationIdentity();
+    if (!checkedFacts.ready || !identity || monotonicNow() >= deadline) failure('REVISION_CONFLICT', 409);
+    const relatedRegistrationIds = aliases.registrationIds.slice().sort();
+    const latest = await loadRegistration(registrationId), latestAliases = await aliasesFor(latest);
+    if (latest.record.fields.email !== loaded.record.fields.email || !sameScope(scopeOf(latest), scope)
+      || latest.admission.status !== loaded.admission.status || latest.admission.revision !== loaded.admission.revision
+      || latestAliases.primaryRegistrationId !== registrationId || latestAliases.registrationIds.slice().sort().join(',') !== relatedRegistrationIds.join(',')
+      || !(await deliveryPermission(latest.record)).eligible || !unchangedEventFacts(checkedFacts, await currentEventFacts()) || monotonicNow() >= deadline) failure('REVISION_CONFLICT', 409);
+    let reserved;
+    try { const saved = await target().append(current, 'recovery_reserved', { operationId, requestHash, registrationId, kind,
+      admissionStatus: loaded.admission.status, admissionRevision: loaded.admission.revision, retryRejected: true,
+      ...scope, relatedRegistrationIds, configurationIdentity: identity }, actor.id);
+      reserved = saved.value.notices.find(item => item.id === notice.id);
+    } catch (error) { if (conflict(error)) failure('REVISION_CONFLICT', 409); failure(); }
+    let email;
+    try { email = await notify(registrationId, { kind, actorId: actor.id, retryRejected: true, deadline, expectedScope: scope,
+      recovery: { notice: reserved, owned: true, operationId, checkedFacts, loaded, relatedRegistrationIds, configurationIdentity: identity } }); }
+    catch { email = { status: 'unknown' }; }
+    const results = [{ registrationId, status: email.status }];
+    let saved; try { saved = await completeBatch(operationId, results, actor.id); } catch { failure(); }
+    return { outcome: 'updated', revision: saved.value.revision, operationId,
+      status: ['unknown', 'unavailable', 'not_attempted'].includes(email.status) ? 'partial' : 'completed', results };
+  }
+  async function dispatch({ actor, expectedRevision, operationId, registrationIds, retryRejected = false, expectedAccessRevisions, recoverRejected } = {}, kind = 'registration') {
     if (!actorValid(actor)) failure('FORBIDDEN', 403);
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || !validConfirmationOperation(operationId)
       || !Array.isArray(registrationIds) || !registrationIds.length || registrationIds.length > MAX_CONFIRMATION_BATCH
       || new Set(registrationIds).size !== registrationIds.length || registrationIds.some(id => !ID.test(id)) || typeof retryRejected !== 'boolean') failure('INVALID_REQUEST', 400);
+    if (recoverRejected !== undefined && (typeof recoverRejected !== 'boolean' || kind !== 'registration' || registrationIds.length !== 1 || recoverRejected && (!retryRejected || expectedAccessRevisions === undefined))) failure('INVALID_REQUEST', 400);
     if (expectedAccessRevisions !== undefined && (!plainObject(expectedAccessRevisions) || Object.keys(expectedAccessRevisions).sort().join(',') !== [...registrationIds].sort().join(',') || registrationIds.some(id => !Number.isSafeInteger(expectedAccessRevisions[id]) || expectedAccessRevisions[id] < 0))) failure('INVALID_REQUEST', 400);
     const deadline = monotonicNow() + batchTimeoutMs;
     const action = kind === 'pre_event_reminder' ? 'reminder_dispatch' : 'dispatch';
     const requestHash = confirmationRequestHash({ actorId: actor.id, registrationIds, retryRejected,
-      ...(action === 'reminder_dispatch' ? { kind } : {}), ...(expectedAccessRevisions === undefined ? {} : { expectedAccessRevisions }) }), current = await target().read();
+      ...(action === 'reminder_dispatch' ? { kind } : {}), ...(recoverRejected === undefined ? {} : { recoverRejected }), ...(expectedAccessRevisions === undefined ? {} : { expectedAccessRevisions }) }), current = await target().read();
     const previous = current.value.operations.find(op => op.operationId === operationId);
     if (previous) {
       if (previous.action !== action || previous.actorId !== actor.id || previous.requestHash !== requestHash) failure('REVISION_CONFLICT', 409);
       return operationView(previous, current.value.revision);
     }
     if (current.value.revision !== expectedRevision) failure('REVISION_CONFLICT', 409);
+    if (recoverRejected === true) return dispatchRecovery({ actor, operationId, registrationId: registrationIds[0], expectedAccessRevisions, requestHash, current, deadline });
     const recipientScopes = {};
     for (const id of registrationIds) { recipientScopes[id] = scopeOf(await loadRegistration(id));
       if (expectedAccessRevisions === undefined && recipientScopes[id].accessRevision > 0 || expectedAccessRevisions !== undefined && recipientScopes[id].accessRevision !== expectedAccessRevisions[id]) failure('REVISION_CONFLICT', 409); }
@@ -596,19 +654,25 @@ export function createRegistrationConfirmationService({ registrationService, jou
       : !record.fields.email ? 'EMAIL_MISSING' : status === 'provider_accepted' ? 'ALREADY_ACCEPTED'
         : historicalUncertainty(current.value, aliases, 'registration', scope) ? 'HISTORICAL_DELIVERY_UNKNOWN' : status === 'unknown' ? 'DELIVERY_UNKNOWN' : !canSend ? 'OPERATOR_PERMISSION_REQUIRED'
           : allRelated.reduce((total, item) => total + item.attempt, 0) >= 5 ? 'RETRY_LIMIT' : null;
-    // Review-only readers can see the selected registration and durable history.
-    // Contact permission checks and encrypted provider configuration are manager scope.
-    if (reason === null) {
-      const permission = await deliveryPermission(record);
-      reason = !permission.eligible ? permission.reason : !current.value.settings.enabled ? 'EMAIL_PAUSED'
-        : !(await providerState()).ready ? 'EMAIL_NOT_READY' : 'ELIGIBLE';
-      if (reason === 'ELIGIBLE') {
+    let canRecover = false;
+    const selectedNotice = related.find(item => item.registrationId === registrationId
+      && item.kind === canonicalConfirmationKind(current.value, registrationId, admission.status));
+    if (reason === 'RETRY_LIMIT' && confirmationRecoveryUsed(current.value, aliases.registrationIds)) reason = 'RECOVERY_USED';
+    // Recovery is a separate explicit manager command; ordinary readiness stays false at the cap.
+    if (reason === null || reason === 'RETRY_LIMIT' && recoveryEligible(current.value, aliases, scope, selectedNotice)) {
+      const permission = await deliveryPermission(record), provider = permission.eligible && current.value.settings.enabled ? await providerState() : null;
+      let readinessReason = !permission.eligible ? permission.reason : !current.value.settings.enabled ? 'EMAIL_PAUSED'
+        : !provider.ready ? provider.reason : 'ELIGIBLE';
+      if (readinessReason === 'ELIGIBLE') {
         const facts = await currentEventFacts();
-        if (!facts.ready) reason = facts.reason;
+        if (!facts.ready) readinessReason = facts.reason;
       }
+      if (reason === 'RETRY_LIMIT') canRecover = readinessReason === 'ELIGIBLE' && await configurationIdentity() !== null;
+      else reason = readinessReason;
     }
     return { registrationId, revision: current.value.revision, accessRevision: scope.accessRevision, admissionStatus: admission.status, status, reason,
       ready: reason === 'ELIGIBLE' && canSend, canSend, retryRejected: status === 'rejected',
+      ...(canRecover ? { canRecover: true } : {}), ...(confirmationDiagnostic(notice?.diagnostic) ? { diagnostic: confirmationDiagnostic(notice.diagnostic) } : {}),
       recipient: admission.status === 'withdrawn' ? '' : record.fields.email ?? '' };
   }
   return Object.freeze({ prefix, forSavedReceipt, notifyApplicationReceived, authorize, authorizedRegistration, confirmation, staffConfirmationLink, settings, setSettings, dispatch,

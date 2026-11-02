@@ -228,7 +228,8 @@ test('an async final guard cannot start a late fetch after the provider has alre
     canStart: async () => { await new Promise(resolve => setTimeout(resolve, 40)); return true; }, templateVariables: {
       to_name: '合成收件人', to_email: 'synthetic@example.invalid', event_title: text, event_date: '2026-12-05', event_time: '10:00–18:00',
       event_venue: '合成地址', reference_code: 'synthetic', invitation_text: text } });
-  assert.equal(result.status, 'unknown');
+  assert.deepEqual(result, { status: 'rejected', reason: 'DELIVERY_WINDOW_EXPIRED',
+    diagnostic: { code: 'DELIVERY_WINDOW_EXPIRED', transportStarted: false } });
   await new Promise(resolve => setTimeout(resolve, 50)); assert.equal(calls, 0);
 });
 

@@ -692,6 +692,7 @@ test('confirmation provider uses a separate template, never loads disabled confi
     to_name: fields.name, to_email: fields.email, event_title: event.title, event_date: event.date.value, event_time: event.time.label,
     event_venue: event.venue.address, reference_code: 'a'.repeat(43), invitation_text: text } });
   assert.equal(blocked.status, 'rejected'); assert.equal(blocked.reason, 'DELIVERY_WINDOW_EXPIRED'); assert.equal(calls, 1, 'final transport guard runs after asynchronous config load');
+  assert.deepEqual(blocked.diagnostic, { code: 'DELIVERY_GUARD_BLOCKED', transportStarted: false });
   const broken = createConfirmationEmailProvider({ env: { ARTDICO_CONFIRMATION_EMAIL_ENABLED: 'true' }, loadConfiguration: async () => { throw new Error('PRIVATE-LOAD-ERROR'); }, fetchFn: async () => assert.fail('no network') });
   assert.equal((await broken.readiness()).ready, false); assert.equal((await broken.send({})).status, 'rejected');
 });

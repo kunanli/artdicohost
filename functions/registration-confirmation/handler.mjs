@@ -128,8 +128,9 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         return json(await service.setSettings({ ...input, actor: session.user }));
       }
       if (deliverySend) {
-        keys(input, ['expectedRevision', 'operationId', 'retryRejected', 'expectedAccessRevision'], ['expectedRevision', 'operationId']);
+        keys(input, ['expectedRevision', 'operationId', 'retryRejected', 'recoverRejected', 'expectedAccessRevision'], ['expectedRevision', 'operationId']);
         if (Object.hasOwn(input, 'expectedAccessRevision') && (!Number.isSafeInteger(input.expectedAccessRevision) || input.expectedAccessRevision < 0)) reject('INVALID_REQUEST', 400);
+        if (Object.hasOwn(input, 'recoverRejected') && (typeof input.recoverRejected !== 'boolean' || input.recoverRejected && (input.retryRejected !== true || !Object.hasOwn(input, 'expectedAccessRevision')))) reject();
         const { expectedAccessRevision, ...command } = input;
         return json(await service.dispatch({ ...command, registrationIds: [deliverySend[1]],
           ...(expectedAccessRevision === undefined ? {} : { expectedAccessRevisions: { [deliverySend[1]]: expectedAccessRevision } }), actor: session.user }));

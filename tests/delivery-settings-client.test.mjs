@@ -1,13 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createDeliveryMutations,deliverySettingsView,deliveryReminderPreviewView,deliveryReminderRequestView,createReminderMutations,
+import {createDeliveryMutations,deliverySettingsView,deliveryEmailPresentation,deliveryReminderPreviewView,deliveryReminderRequestView,createReminderMutations,
   deliveryConfirmationPreviewView,deliveryConfirmationOperationView,deliveryLegacyDispatchView,createConfirmationMutations} from '../src/lib/delivery-settings.mjs';
+import {CONFIRMATION_EMAIL_CONFIGURATION_FIELDS,CONFIRMATION_EMAIL_REASONS} from '../shared/confirmation-delivery.mjs';
 const operationId='o'.repeat(43),id='r'.repeat(43);
 const state=()=>({revision:2,automaticEnabled:false,email:{ready:false,missing:['EMAILJS_CONFIRMATION_TEMPLATE_ID'],privateKey:'PRIVATE'},wallet:{ready:false,privateKey:'PRIVATE'},counts:{total:0,providerAccepted:0,rejected:0,unknown:0}});
 test('settings projection excludes credentials and rejects unverified counts or availability',()=>{
   const safe=deliverySettingsView(state());assert.ok(safe);assert.doesNotMatch(JSON.stringify(safe),/PRIVATE/u);
   assert.equal(deliverySettingsView({...state(),email:{ready:false,missing:['private value with spaces']}}),null);
   assert.equal(deliverySettingsView({...state(),counts:{...state().counts,unknown:-1}}),null);
+});
+test('email settings preserve fixed readiness reasons and optional invalid field names without retaining provider or configuration values',()=>{
+  for(const reason of CONFIRMATION_EMAIL_REASONS){
+    const email={ready:reason==='CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF',reason,missing:['EMAILJS_CONFIRMATION_TEMPLATE_ID'],invalid:['EMAIL_FROM_ADDRESS'],privateKey:'SYNTHETIC_PRIVATE_VALUE',providerResponse:'SYNTHETIC_PROVIDER_BODY'};
+    const safe=deliverySettingsView({...state(),email});assert.ok(safe);assert.deepEqual(safe.email,{ready:email.ready,reason,missing:email.missing,invalid:email.invalid});
+    assert.doesNotMatch(JSON.stringify(safe),/SYNTHETIC_PRIVATE_VALUE|SYNTHETIC_PROVIDER_BODY|providerResponse|privateKey/u);
+    email.missing.length=0;email.invalid.length=0;assert.equal(safe.email.missing.length,1);assert.equal(safe.email.invalid.length,1,'safe projection does not retain mutable source arrays');
+  }
+  const legacy=deliverySettingsView(state()).email;assert.equal(legacy.reason,'EMAIL_NOT_READY');assert.equal(Object.hasOwn(legacy,'invalid'),false);
+  assert.equal(deliverySettingsView({...state(),email:{ready:true,missing:[]}}).email.reason,'CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF');
+  for(const reason of ['SYNTHETIC_PRIVATE_PROVIDER_ERROR',null,{},'EMAIL_CONFIGURATION_MISSING\nPRIVATE']){
+    const safe=deliverySettingsView({...state(),email:{ready:false,missing:[],reason}});assert.equal(safe.email.reason,'EMAIL_CONFIGURATION_UNAVAILABLE');assert.doesNotMatch(JSON.stringify(safe),/SYNTHETIC_PRIVATE_PROVIDER_ERROR|PRIVATE/u);
+  }
+});
+test('email missing and invalid diagnostics accept only bounded distinct confirmation configuration field names',()=>{
+  const fields=[...CONFIRMATION_EMAIL_CONFIGURATION_FIELDS];
+  assert.deepEqual(deliverySettingsView({...state(),email:{ready:false,missing:fields,invalid:[]}}).email.missing,fields);
+  for(const bad of [null,{},'EMAIL_FROM_ADDRESS',[null],Array(1),['UNKNOWN_UPPERCASE_NAME'],['EMAILJS_TEMPLATE_ID'],['EMAILJS_PRIVATE_KEY=SYNTHETIC_PRIVATE_VALUE'],['EMAIL_FROM_ADDRESS\nPRIVATE'],['EMAIL_FROM_ADDRESS','EMAIL_FROM_ADDRESS'],[...fields,'EMAIL_FROM_ADDRESS']]){
+    for(const name of ['missing','invalid'])assert.equal(deliverySettingsView({...state(),email:{ready:false,missing:[],[name]:bad}}),null,name+' must contain approved field names only');
+  }
+});
+test('email presentation renders short safe reasons and human labels without environment names, values or provider text',()=>{
+  for(const[reason,expected]of [['EMAIL_DISABLED',/未开启/u],['EMAIL_CONFIGURATION_MISSING',/未齐/u],['EMAIL_CONFIGURATION_INVALID',/有误/u],['EMAIL_CONFIGURATION_UNAVAILABLE',/无法读取/u],['EMAIL_NOT_READY',/未就绪/u],['CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF',/可用.*收件/u]]){
+    const result=deliveryEmailPresentation({ready:reason==='CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF',reason,missing:['EMAILJS_CONFIRMATION_TEMPLATE_ID'],invalid:['EMAIL_FROM_ADDRESS'],privateKey:'SYNTHETIC_PRIVATE_VALUE',providerResponse:'<img src=x onerror=PRIVATE>'});
+    assert.match(result.message,expected);assert.deepEqual(result.fields,['缺少：确认信模板','无效：寄件邮箱']);assert.doesNotMatch(JSON.stringify(result),/EMAILJS_|EMAIL_FROM_|SYNTHETIC_PRIVATE_VALUE|PRIVATE|<img/u);
+  }
+  const all=deliveryEmailPresentation({ready:false,reason:'EMAIL_CONFIGURATION_MISSING',missing:[...CONFIRMATION_EMAIL_CONFIGURATION_FIELDS]});assert.equal(all.fields.length,6);assert.doesNotMatch(JSON.stringify(all),/EMAILJS_|EMAIL_FROM_/u);
+  for(const raw of [{ready:false,reason:'PRIVATE provider body',missing:[]},{ready:false,missing:['EMAILJS_PRIVATE_KEY=PRIVATE']},{ready:false,missing:[],invalid:['<img src=x>']}]){
+    const safe=deliveryEmailPresentation(raw);assert.match(safe.message,/无法读取/u);assert.deepEqual(safe.fields,[]);assert.doesNotMatch(JSON.stringify(safe),/PRIVATE|<img|EMAILJS/u);
+  }
 });
 test('wallet setup projection preserves bounded safe diagnostics and valid expiry without exposing arbitrary errors',()=>{
   const wallet={ready:false,reason:'WALLET_DISABLED',missing:['APPLE_WALLET_PASS_TYPE_ID'],certificateExpiresAt:'2027-10-21T00:00:00.000Z',deviceTestRequired:true,privateKey:'PRIVATE'};

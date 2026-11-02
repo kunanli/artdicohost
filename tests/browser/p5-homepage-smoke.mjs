@@ -21,10 +21,12 @@ const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHRO
   args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 await mkdir(evidence, { recursive: true });
 
-async function fixture({ width, javaScriptEnabled = true, reducedMotion = 'no-preference', missingDecorations = false, longDescription = false }) {
+async function fixture({ width, javaScriptEnabled = true, reducedMotion = 'no-preference', missingDecorations = false, longDescription = false, legacyShowcases = false }) {
   const runtime = await peopleRuntimeFixture({ capacity: 300 }), requests = [], fontFailures = new Set();
   const published = structuredClone(content);
   if (longDescription) published.event.presentation.heroDescription = '合成介绍：与不同城市的游戏创作者交流经验，认识新的创作伙伴。'.repeat(5);
+  const legacy = structuredClone(published); delete legacy.showcases;
+  let legacyPending = legacyShowcases;
   const context = await browser.newContext({ viewport: { width, height: 900 }, javaScriptEnabled, reducedMotion });
   await context.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
@@ -34,7 +36,7 @@ async function fixture({ width, javaScriptEnabled = true, reducedMotion = 'no-pr
     if (url.origin === API) {
       assert.equal(req.headers().cookie, undefined);
       if (url.pathname === '/api/public/content') return route.fulfill({ status: 200, contentType: 'application/json',
-        headers: { 'access-control-allow-origin': SITE }, body: JSON.stringify({ revision: 1, publishedAt: '2026-11-01T00:00:00Z', content: published }) });
+        headers: { 'access-control-allow-origin': SITE }, body: JSON.stringify({ revision: legacyShowcases && !legacyPending ? 2 : 1, publishedAt: '2026-11-01T00:00:00Z', content: legacyPending ? legacy : published }) });
       const response = await runtime.app.handle(new Request(req.url(), { method: req.method(), headers: await req.allHeaders() }));
       return route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: Buffer.from(await response.arrayBuffer()) });
     }
@@ -51,7 +53,21 @@ async function fixture({ width, javaScriptEnabled = true, reducedMotion = 'no-pr
   if (javaScriptEnabled) await page.clock.setFixedTime(new Date('2026-11-01T00:00:00Z'));
   await page.goto(SITE + '/', { waitUntil: 'networkidle' });
   await page.evaluate(() => document.fonts.ready);
-  return { context, page, runtime, requests, fontFailures, missingDecorations };
+  if (legacyShowcases) {
+    assert.notEqual(await page.locator('#students').getAttribute('hidden'), null, 'a first response missing the required works field retains the hidden static section');
+    assert.equal(await page.locator('#students').isVisible(), false);
+    assert.equal(await page.locator('[data-public-showcases-concept],[data-public-showcases-empty]').count(), 0);
+    assert.match(await page.locator('[data-public-content-status]').textContent(), /暂时无法读取已发布安排/u, 'a malformed legacy envelope is not accepted as a publication');
+    const reads = requests.filter(row => row.path === '/api/public/content').length;
+    legacyPending = false;
+    await page.clock.setFixedTime(new Date('2026-11-01T00:00:02Z'));
+    await page.waitForTimeout(1100);
+    const refreshed = page.waitForResponse(response => response.url() === API + '/api/public/content');
+    await page.evaluate(() => window.dispatchEvent(new Event('focus'))); await refreshed;
+    await page.waitForFunction(description => document.querySelector('[data-public-hero-description]')?.textContent === description, published.event.presentation.heroDescription);
+    assert.equal(requests.filter(row => row.path === '/api/public/content').length, reads + 1, 'one bounded read recovers the valid long-description publication');
+  }
+  return { context, page, runtime, requests, fontFailures, missingDecorations, legacyShowcases, longDescription, expectedHeroDescription: published.event.presentation.heroDescription };
 }
 
 async function inspect(f, label) {
@@ -59,6 +75,13 @@ async function inspect(f, label) {
   assert.equal(await page.locator('#artdico-host.ah-cosmos').count(), 1);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, label + ': horizontal overflow');
   assert.equal(await page.locator('h1').count(), 1); assert.equal(await page.locator('h1').isVisible(), true);
+  assert.notEqual(await page.locator('#students').getAttribute('hidden'), null, 'an empty or legacy publication does not reveal the works section');
+  assert.equal(await page.locator('#students').isVisible(), false, 'no works means no heading, carousel or reserved section space');
+  assert.equal(await page.locator('#students-heading').isVisible(), false);
+  assert.equal(await page.locator('[data-public-works-controls]').isVisible(), false);
+  assert.equal(await page.locator('[data-public-showcases-concept],[data-public-showcases-empty]').count(), 0, 'empty works have no concept or waiting-state placeholder');
+  assert.equal(await page.locator('[data-showcase-id]').count(), 0);
+  if (f.longDescription) assert.equal(await page.locator('[data-public-hero-description]').textContent(), f.expectedHeroDescription, 'the long-description case still exercises the actual accepted public copy');
   assert.equal(await page.locator('h1').getAttribute('aria-label'),content.event.title,'the canonical event title remains accessible independently of the poster typography');
   assert.equal(await page.locator('#hero-heading [data-home-title-image],#hero-heading [data-home-title-fallback]').count(),0,'live title text replaces the old image and error-fallback layers');
   const titleType = page.locator('#hero-heading>.ah-home-title-art [data-home-title-type][lang=en]');
@@ -136,7 +159,7 @@ async function inspect(f, label) {
     assert.ok(layout.descriptionBottom <= layout.factsTop, 'published introductory copy cannot overlap event facts');
   }
   return { label, width: page.viewportSize().width, shareSha256: digest(bytes), readOnlyRequests: f.requests.length, noOverflow: true, noClippedHeadline: true,
-    posterTypography:titleTypography,failedFontPaths:[...f.fontFailures],backgrounds,applicationActionInHero: true, applicationKeyboardReachable: true, actionPositions:{applicationTop:primaryBox.top,agendaTop:actionLayout.agenda.top,referenceAgendaTop:page.viewportSize().width>=1024?referenceAgendaTop:null},eventFactFontPixels: { venue: venueSize, date: dateSize } };
+    emptyWorksSectionHidden:true,legacyMissingFieldKeepsInitialSectionHidden:f.legacyShowcases,validLongDescriptionRecovered:f.longDescription,posterTypography:titleTypography,failedFontPaths:[...f.fontFailures],backgrounds,applicationActionInHero: true, applicationKeyboardReachable: true, actionPositions:{applicationTop:primaryBox.top,agendaTop:actionLayout.agenda.top,referenceAgendaTop:page.viewportSize().width>=1024?referenceAgendaTop:null},eventFactFontPixels: { venue: venueSize, date: dateSize } };
 }
 
 try {
@@ -156,7 +179,7 @@ try {
     await f.page.screenshot({ path: resolve(evidence, 'hero-' + width + '.png'), fullPage: false, animations: 'disabled' });
     reports.push(await inspect(f, 'standard-' + width)); await f.context.close();
   }
-  for (const options of [{ width: 390, javaScriptEnabled: false }, { width: 390, reducedMotion: 'reduce' }, { width: 390, missingDecorations: true }, { width: 390, longDescription: true }]) {
+  for (const options of [{ width: 390, javaScriptEnabled: false }, { width: 390, reducedMotion: 'reduce' }, { width: 390, missingDecorations: true }, { width: 390, longDescription: true, legacyShowcases: true }]) {
     const f = await fixture(options), label = options.javaScriptEnabled === false ? 'no-javascript' : options.reducedMotion === 'reduce' ? 'reduced-motion' : options.longDescription ? 'long-description' : 'missing-decorations';
     reports.push(await inspect(f, label));
     if (options.javaScriptEnabled === false) {

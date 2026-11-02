@@ -183,8 +183,8 @@ function renderPublishedContent(content,url) {
     if (emptyGuests) emptyGuests.hidden = cards.length > 0;
     guestGrid.dispatchEvent(new CustomEvent('artdico:guests-rendered',{bubbles:true}));
   }
-  // Older published revisions do not contain a showcase list. Keep the labelled
-  // concept image for those revisions; an explicit empty list has no public work.
+  // The whole section is shown only for valid published work, including work
+  // without a cover. Missing/empty lists do not create a waiting placeholder.
   renderShowcases(content,url);
   const dateText = content.event.date + (content.event.dateStatus === 'confirmed' ? '' : ' · 日期暂定');
   for (const node of document.querySelectorAll('[data-public-agenda-date]')) node.textContent = dateText;
@@ -379,8 +379,14 @@ function renderPresentation(event) {
 function renderShowcases(content, sourceUrl) {
   const grid = document.querySelector('[data-public-showcases]');
   if (!grid) return;
-  const hasWorks=Object.hasOwn(content,'showcases');
   const cards=workCards,organizations=new Map(publicOrganizationCards(content.organizations).map(item=>[item.id,item]));
+  const section=grid.closest('#students')??grid.closest('section'),hasWorks=cards.length>0;
+  const redirectFocus=!hasWorks&&section?.contains(document.activeElement);
+  if(!hasWorks){
+    const dialog=section?.querySelector('[data-work-lightbox]');
+    if(dialog?.open)dialog.close();
+    dialog?.querySelector('img')?.removeAttribute('src');
+  }
   const controls=document.querySelector('[data-public-works-controls]');if(controls)controls.hidden=!hasWorks;
   grid.replaceChildren();
   for (const work of cards) {
@@ -422,10 +428,8 @@ function renderShowcases(content, sourceUrl) {
     if(detail.childElementCount)card.append(detail);
     grid.append(card);
   }
-  grid.hidden = cards.length === 0;
-  const concept = document.querySelector('[data-public-showcases-concept]');
-  if (concept) concept.hidden = hasWorks;
-  const empty = document.querySelector('[data-public-showcases-empty]');
-  if (empty) empty.hidden = !hasWorks||cards.length > 0;
+  grid.hidden=!hasWorks;
+  if(section)section.hidden=!hasWorks;
   collections.updateWorks();
+  if(redirectFocus)collections.focusWorks();
 }

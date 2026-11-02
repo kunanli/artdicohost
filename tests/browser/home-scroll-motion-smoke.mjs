@@ -23,7 +23,10 @@ async function main() {
   assert.equal(html.includes(Buffer.from('scroll-motion-guest')), false, 'the synthetic guest hash is absent from the original static document');
   const raw = createInitialContent();
   raw.guests = [{ id: 'scroll-motion-guest', name: '合成滚动嘉宾', company: '合成创作单位', title: '合成创作者', ggjRole: '', portraitId: '', status: 'pending', publicConsent: false, contactId: 'SYNTHETIC_PRIVATE_CONTACT', internalNotes: 'SYNTHETIC_PRIVATE_NOTE' }];
-  raw.organizations = [{ id: 'scroll-motion-org', name: '合成参与组织', logoId: '', website: '', participation: 'undecided', status: 'pending', publicConsent: false, internalNotes: 'SYNTHETIC_PRIVATE_ORG' }]; raw.showcases = []; raw.booths = [];
+  raw.organizations = [{ id: 'scroll-motion-org', name: '合成参与组织', logoId: '', website: '', participation: 'undecided', status: 'pending', publicConsent: false, internalNotes: 'SYNTHETIC_PRIVATE_ORG' }]; raw.booths = [];
+  // A real published work keeps the works gutter available for its existing
+  // compositing assertion. Empty collections are separately hidden by design.
+  raw.showcases = [{ id: 'scroll-motion-work', kind: 'student', title: '合成滚动作品', teamName: '合成创作团队', summary: '合成公开作品说明', coverId: '', status: 'confirmed', responseStatus: 'attending', publicConsent: false, participationForms: [], boothId: '', sessionId: '', organizationId: '', school: '', email: '', wechat: '', contactName: '', memberCount: 1, materialLinks: '', internalNotes: 'SYNTHETIC_PRIVATE_WORK' }];
   raw.sessions = raw.sessions.slice(0, 1).map(item => ({ ...item, title: '合成滚动定位活动' }));
   assert.equal(validateContent(raw).valid, true, 'the synthetic publication must pass the real schema');
   const publication = toPublicContent(raw), reports = [], pageErrors = [], servedAssets = new Map(), requests = [];

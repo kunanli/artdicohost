@@ -1,6 +1,6 @@
 // Homepage interactions only: no storage, registration state or network access.
 export function createHomeCollections({document:doc=globalThis.document,window:win=globalThis.window}={}) {
-  if(!doc||!win)return {capture:()=>null,restore:()=>{},updateWorks:()=>{},reveal:()=>{}};
+  if(!doc||!win)return {capture:()=>null,restore:()=>{},updateWorks:()=>{},reveal:()=>{},focusWorks:()=>{}};
   const grid=doc.querySelector('[data-public-showcases]'),filter=doc.querySelector('[data-public-works-filter]');
   const dialog=doc.querySelector('[data-work-lightbox]');
   const peekImage=doc.querySelector('[data-work-peek] img');
@@ -10,7 +10,21 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
   const visibleFocusTarget=node=>node?.isConnected&&!node.disabled&&!node.closest('[hidden],[inert]')&&node.getClientRects().length;
   const works=()=>[...doc.querySelectorAll('[data-public-showcases] [data-showcase-id]')];
   const filtered=()=>works().filter(card=>!['student','indie'].includes(filter?.value)||card.dataset.workKind===filter.value);
-  function heading(id){doc.getElementById(id)?.focus({preventScroll:true});}
+  function heading(id){
+    let target=doc.getElementById(id);
+    if(id==='students-heading'&&!visibleFocusTarget(target)){
+      const section=grid?.closest('section');
+      for(let next=section?.nextElementSibling;next;next=next.nextElementSibling){
+        const candidate=next.querySelector('h2');
+        if(visibleFocusTarget(candidate)){target=candidate;break;}
+      }
+      if(!visibleFocusTarget(target))target=['agenda-heading','about-heading'].map(key=>doc.getElementById(key)).find(visibleFocusTarget);
+    }
+    if(visibleFocusTarget(target)){
+      if(!target.hasAttribute('tabindex'))target.tabIndex=-1;
+      target.focus({preventScroll:true});
+    }
+  }
   function closePreview({restoreFocus=true}={}){
     if(!dialog?.open)return;
     dialog.close();previewId=null;
@@ -146,5 +160,5 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
       win.requestAnimationFrame(()=>win.scrollTo(position));
     }
   }
-  return {capture,restore,updateWorks,reveal};
+  return {capture,restore,updateWorks,reveal,focusWorks:()=>heading('students-heading')};
 }

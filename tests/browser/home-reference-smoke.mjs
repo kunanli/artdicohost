@@ -171,6 +171,13 @@ async function mobileOrganizationCircle(f,expected){
   for(let a=0;a<value.rows.length;a++)for(let b=a+1;b<value.rows.length;b++){const x=value.rows[a].card,y=value.rows[b].card;assert.ok(Math.min(x.x+x.width,y.x+y.width)-Math.max(x.x,y.x)<=1||Math.min(x.y+x.height,y.y+y.height)-Math.max(x.y,y.y)<=1,'circle organization cards never overlap');}
   return value;
 }
+async function organizationCaption(card,{name,visible=false}={}){
+  const measured=await card.evaluate(node=>{const name=node.querySelector('h3'),action=node.querySelector('.ah-organization-card'),style=getComputedStyle(name),r=name.getBoundingClientRect();return{width:r.width,height:r.height,font:parseFloat(style.fontSize),display:style.display,visibility:style.visibility,opacity:Number(style.opacity),clip:style.clipPath,aria:action.getAttribute('aria-label'),external:action.tagName==='A'};});
+  assert.equal(measured.aria,name+(measured.external?' · 打开组织页面（新窗口）':''),'the full organization name remains accessible independently of the logo');
+  const readable=measured.width>1&&measured.height>1&&measured.display!=='none'&&measured.visibility==='visible'&&measured.opacity>0&&measured.clip!=='inset(50%)';
+  assert.equal(readable,visible,visible?'missing or failed logos retain their readable name':'successful logos do not repeat a visible name caption');
+  if(visible)assert.ok(measured.font>=16,'organization name fallback remains readable');else assert.equal(measured.display,'none','a successful logo fully removes its duplicate visual caption');return measured;
+}
 async function titleReadability(page){
   assert.equal(await page.locator('#hero-heading').isVisible(),true,'the actual title remains visible');
   const measured=await page.locator('#hero-heading').evaluate(node=>{
@@ -358,6 +365,7 @@ async function otherContent(f) {
   await page.locator('[data-zone="B"]').click(); assert.equal(await page.locator('[data-zone="B"]').getAttribute('aria-selected'), 'true');
   await page.locator('[data-zone="B"]').focus(); await page.keyboard.press('ArrowRight'); assert.equal(await page.locator('[data-zone="C"]').getAttribute('aria-selected'), 'true');
   assert.equal(await page.locator('[data-agenda-panel="C"]').isVisible(), true);
+  assert.equal(await page.locator('#students').isVisible(),true,'published works reveal their whole section');
   assert.equal(await page.locator('[data-showcase-id]').count(), 2); assert.equal(await page.locator('[data-showcase-id]:visible').count(), 1);
   const peek = page.locator('[data-work-peek]'); assert.equal(await peek.getAttribute('aria-hidden'), 'true');
   assert.equal(await page.locator('[data-work-navigation]').isVisible(), true, 'two actual works expose manual navigation');
@@ -482,7 +490,8 @@ try {
         return {slot:box(node),name:box(node.querySelector('h3')),frame:box(node.querySelector('.ah-organization-image')),image:box(image),planet:box(document.querySelector('[data-organizations-planet]')),imageFilter:getComputedStyle(image).filter,
           frameBackground:getComputedStyle(node.querySelector('.ah-organization-image')).backgroundColor,mask:{ink,nonwhite,transparent,corner:pixel(0,0),counter:pixel(120,48),width:canvas.width,height:canvas.height}};
       });
-      assert.ok(extraGeometry.name.width>1&&extraGeometry.name.height>1,'an uploaded unknown logo always retains its visible name');
+      await organizationCaption(unknown,{name:'合成第八个组织'});
+      if(width<1000){near(extraGeometry.frame.height,(await unknown.locator('.ah-organization-card').boundingBox()).height,1,'a successful mobile upload uses its full fixed logo frame');}
       assert.equal(extraGeometry.imageFilter,'none','white logos use an alpha mask rather than a CSS filter on an opaque rectangle');
       assert.equal(extraGeometry.mask.nonwhite,0,'every visible generated logo pixel is white');assert.ok(extraGeometry.mask.ink>0&&extraGeometry.mask.transparent>0);
       assert.equal(extraGeometry.mask.corner[3],0,'opaque source backgrounds do not turn into a white rectangle');assert.equal(extraGeometry.mask.counter[3],0,'enclosed letter counters remain transparent');
@@ -504,17 +513,25 @@ try {
       assert.equal(mixedMask.outer[3],0);assert.equal(mixedMask.innerPanel[3],0,'a transparent outer margin does not preserve an opaque white inner panel');assert.equal(mixedMask.counter[3],0,'the panel-colored enclosed counter is also removed');assert.deepEqual(mixedMask.ink,[255,255,255,255]);
       await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogoByWidth.get(width).id;});
       await unknown.scrollIntoViewIfNeeded();await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
+      await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId='';});
+      assert.equal(await unknown.locator('.ah-organization-image').count(),0,'an organization without a source logo uses its real name');
+      await organizationCaption(unknown,{name:'合成第八个组织',visible:true});if(width<1000)await mobileOrganizationCircle(f,8);
+      await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogoByWidth.get(width).id;});
+      await unknown.scrollIntoViewIfNeeded();await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
+      await organizationCaption(unknown,{name:'合成第八个组织'});
       if(width===1440){
         await f.refresh('legacy',raw=>{raw.organizations.push({id:'synthetic-reference-duplicate',name:'游戏奇点',logoId:logoSources[0].id,website:'',participation:'undecided',status:'confirmed',publicConsent:true,internalNotes:PRIVATE});});
         const duplicate=f.page.locator('[data-organization-id="synthetic-reference-duplicate"]');
         assert.equal(await duplicate.count(),1);assert.equal(await duplicate.getAttribute('data-organization-reference'),null);
         assert.notEqual(await duplicate.evaluate(node=>getComputedStyle(node).position),'absolute','a second saved record with the same public label stays in normal flow');
         assert.equal(await f.page.locator('[data-organization-reference="gamezone"]').count(),1,'only one real card occupies each reference slot');
-        assert.ok((await duplicate.locator('h3').boundingBox()).height>1,'the distinct duplicate retains its own visible name');
+        await duplicate.scrollIntoViewIfNeeded();await duplicate.locator('img').evaluate(node=>node.decode());
+        await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-duplicate .ah-organization-image')?.dataset.logoPresentation==='white');
+        await organizationCaption(duplicate,{name:'游戏奇点'});
         await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogos.get('opaque-complex').id;});
         await unknown.scrollIntoViewIfNeeded();
         await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.hidden===true);
-        assert.ok((await unknown.locator('h3').boundingBox()).height>1,'an inseparable complex background keeps the actual readable organization name');
+        await organizationCaption(unknown,{name:'合成第八个组织',visible:true});
         assert.equal(await unknown.getAttribute('data-logo-artwork'),'published-name');
         await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogoByWidth.get(width).id;});
         await unknown.scrollIntoViewIfNeeded();
@@ -545,7 +562,7 @@ try {
       await f.page.screenshot({path:resolve(evidence,'font-fallback-'+width+'.png'),fullPage:false,animations:'disabled'});
       reports.push({ name: 'legacy-public-layout-' + width, width, profiles: 9, organizations: 7, attendance: 'not inferred; only actual profile title is displayed', geometry: measured,posterTypography,fontFailureTypography,failedFontPaths:[...f.fontFailures],
         interaction: 'native keyboard, Escape, pointer gap or touch; actual timetable tabs, works filter and FAQ', unknownOrganizationFallback,
-        duplicateKnownOrganizationRetained: width===1440, eighthOrganizationGeometry:extraGeometry,mixedTransparentPanelMask:mixedMask,organizationPaging, requests: f.calls.length, screenshots: files });
+        duplicateKnownOrganizationRetained: width===1440, eighthOrganizationGeometry:extraGeometry,missingLogoNameAndRestoredLogoOnly:true,mixedTransparentPanelMask:mixedMask,organizationPaging, requests: f.calls.length, screenshots: files });
     } finally { await f.context.close(); }
   }
   for (const mode of ['empty', 'corrupt', 'unavailable']) {
@@ -569,7 +586,7 @@ try {
     assert.equal(await first.locator('.ah-guest-name').isVisible(), true); assert.equal(await first.locator('.ah-guest-initial').isVisible(), true);
     const organization = broken.page.locator('#organization-' + organizationId(6)); await organization.scrollIntoViewIfNeeded();
     await broken.page.waitForFunction(id => document.querySelector('#organization-' + id + ' .ah-organization-image')?.hidden === true, organizationId(6));
-    assert.equal(await organization.locator('h3').isVisible(), true);
+    await organizationCaption(organization,{name:organizationNames[6],visible:true});
     const failedWork = broken.page.locator('#work-synthetic-reference-work-0');
     await failedWork.scrollIntoViewIfNeeded();
     await broken.page.waitForFunction(() => document.querySelector('#work-synthetic-reference-work-0')?.dataset.coverState === 'unavailable');
@@ -598,9 +615,15 @@ try {
   try {
     await changing.page.goto(SITE + '/', { waitUntil: 'networkidle' }); assert.equal(await changing.page.locator('[data-guest-id]').count(), 9);
     const initialTitle=await changing.page.locator('#hero-heading').getAttribute('data-initial-event-title');
-    await changing.refresh('empty'); assert.equal(await changing.page.locator('[data-guest-id]').count(), 0);
+    assert.equal(await changing.page.locator('#students').isVisible(),true);
+    await changing.refresh('empty',raw=>{raw.showcases=[];}); assert.equal(await changing.page.locator('[data-guest-id]').count(), 0);
+    assert.equal(await changing.page.locator('#students').isVisible(),false,'an explicit empty work list hides the complete section, including heading, placeholder and actions');
+    assert.equal(await changing.page.locator('#students a:visible,#students button:visible,#students select:visible').count(),0,'an empty work section leaves no visible controls');
     await changing.refresh('corrupt'); assert.equal(await changing.page.locator('[data-guest-id]').count(), 0, 'bad refresh retains the verified explicit empty proof');
-    await changing.refresh('proved', raw => { raw.event.title = '合成最新发布活动标题'; });
+    assert.equal(await changing.page.locator('#students').isVisible(),false,'a corrupt refresh retains the verified empty work section');
+    await changing.refresh('proved', raw => { raw.event.title = '合成最新发布活动标题';raw.showcases=rawFixture().showcases; });
+    assert.equal(await changing.page.locator('#students').isVisible(),true,'a later verified publication with works restores the whole section');
+    assert.equal(await changing.page.locator('[data-showcase-id]').count(),2);
     assert.equal(await changing.page.locator('[data-guest-id]').count(), 1); assert.equal(await changing.page.locator('.ah-guest-attendance').count(), 0);
     assert.equal((await changing.page.locator('#hero-heading').textContent()).trim(), '合成最新发布活动标题', 'a changed published fact replaces the fixed poster wordmark with the real title');
     assert.equal(await changing.page.locator('#hero-heading').getAttribute('aria-label'),'合成最新发布活动标题');await titleReadability(changing.page);
@@ -613,7 +636,7 @@ try {
     assert.match(await changing.page.locator('[data-public-content-status]').textContent(), /仍显示上次核对/u); await noOverflow(changing);
     await changing.refresh('proved',raw=>{raw.event.title=initialTitle;});await heroType(changing.page);
     assert.equal(await changing.page.locator('[data-guest-id]').count(),1,'restoring the event title does not change the explicit guest proof');
-    reports.push({ name: 'proof-refresh-transitions', width: 390, counts:[9,0,0,1,1,1,1],posterRestoredAfterCustomTitle:true,longPublishedTitlePreserved:true,verifiedStatePreserved: true, customPublishedTitlePreserved: true });
+    reports.push({ name: 'proof-refresh-transitions', width: 390, counts:[9,0,0,1,1,1,1],emptyWorkSectionHiddenAndRestored:true,posterRestoredAfterCustomTitle:true,longPublishedTitlePreserved:true,verifiedStatePreserved: true, customPublishedTitlePreserved: true });
   } finally { await changing.context.close(); }
   assert.deepEqual(pageErrors, []);
 } catch (error) { failure = { message: error.message, stack: error.stack }; }

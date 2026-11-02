@@ -1,5 +1,6 @@
 ---
 import '../styles/navigation.css';
+import '../styles/home-header.css';
 const links = [
   { href: '#top', label: '首页' },
   { href: '#about', label: '亮点' },
@@ -9,7 +10,7 @@ const links = [
   { href: '#faq', label: '常见问题' },
 ];
 ---
-<header class="ah-header ah-home-header">
+<header class="ah-header ah-home-header" data-home-header data-scrolled="false">
   <a class="ah-home-wordmark" href="#top" aria-label="ARTDiCO HOST 活动首页">ARTDiCO HOST</a>
   <nav class="ah-home-desktop-nav" aria-label="页面导航">
     {links.map(link => <a href={link.href}>{link.label}</a>)}

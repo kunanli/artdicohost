@@ -1,5 +1,13 @@
 # 浏览器回归验收
 
+置顶导览与捲动动效入口为 `home-scroll-motion-smoke.mjs`，在最终编译完成、来源与dist冻结后执行：
+
+```sh
+ARTDICO_PLAYWRIGHT_MODULE=playwright-core ARTDICO_CHROMIUM_BINARY=/usr/bin/google-chrome ARTDICO_SCROLL_EVIDENCE_DIRECTORY=/absolute/repository/.local-data/browser-evidence/home-scroll-motion node tests/browser/home-scroll-motion-smoke.mjs
+```
+
+预期6案：320／390／1440／1920，以及无JS／无IntersectionObserver。所有请求预先拦截，仅合成公开内容与本地编译资源，无业务POST或寄信。核对header在首中尾持续置顶、原生wheel、细进度线、实际装饰视差与进场WAAPI、焦点立即稳定、手机原生选单及Escape、平滑锚点完成后不遮标题、公开刷新保阅读位置及延迟嘉宾hash。Hero可见时验证真实ambient RAF、桌面两点游标的实际球体位移，离屏后再要求闲置没有pending RAF；初始／途中reduced-motion与明示合成hidden信号均停止球缘／页缘canvas与进场。粒子canvas须aria-hidden、pointer-events:none，不遮实际点击目标；不以截图存在代替动画与停态证据。成功摘要唯一前缀为 `Public scroll motion browser verified: `，独立于排版4案与实际素材13案，三份报告分别核对来源／HTML SHA和完整数量。合成触控、可见性与callback计数不代表真实手机、OS背景或物理电量量测。
+
 公开表单可读性的独立入口为 `public-typography-smoke.mjs`，不替代或改变下方 actual13。同样使用 playwright-core 1.64.1 与已安装的 Chrome，在最终构建后执行，不需要正式资料捕获或凭证：
 
 ```sh
@@ -7,6 +15,8 @@ ARTDICO_PLAYWRIGHT_MODULE=playwright-core ARTDICO_CHROMIUM_BINARY=/usr/bin/googl
 ```
 
 预期四案覆盖 320／390／1440／1920。使用隔离 runtime 的实际公开配置 GET、空合成公开内容及 native IndexedDB 草稿；全部网络预先拦截，只允许 GET。核对选填、分享提案、键盘焦点与同意框；表单没有两块详细告知，单一隐私链接可打开默认收合的页尾说明，完整保留当前告知且不会代为勾选。缺必填项只触发前端错误，不提交。未知恢复由合成原请求写入浏览器本机草稿后重新加载，核对原正文保持不变，不按恢复发送按钮。
+
+同四案还核对GGJ指南只在Q&A `site-role`出现、正文至少16px，现场体验气泡辅助字桌面16px／手机14px且无裁切。对外邮箱以活动配置的 `PUBLIC_CONTACT_EMAIL`（当前 `kunan@globalgamejam.org`）为准，旧政策与内容中的联络邮箱不能覆盖它；其余完整告知仍取当前权威配置。Q&A更新、关闭／不可用、复制及旧待提交恢复另由 `p5-faq-application-smoke.mjs` 的12案验证。
 
 按语义检查标签、输入、同意文字及按钮至少 16px，辅助说明／状态／错误至少 14px，表单 h3／h4 至少 20px，解释段落行高至少 1.6；同类标签、输入与按钮保持一致，艺术展示字不强制同值。检查实际布局无裁切／横向溢出，按需展开的页尾说明与恢复区域为深色表面，依据实际计算样式叠合前景／背景算出至少 4.5:1 对比。输出每案申请／恢复两张区块图、HTML／资产／脚本 SHA 及计数；成功标记为 `Public typography browser verified: `。源码存在不代表已执行，完成数量与退出码以本轮报告为准。
 

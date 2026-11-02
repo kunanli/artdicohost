@@ -87,6 +87,27 @@ jobs:
         run: pnpm test
       - name: Build the static site
         run: pnpm build
+      - name: Check pinned navigation and scroll motion
+        id: public_scroll_browser
+        timeout-minutes: 4
+        env:
+          ARTDICO_PLAYWRIGHT_MODULE: playwright-core
+          ARTDICO_DIST_DIRECTORY: dist
+          ARTDICO_SCROLL_EVIDENCE_DIRECTORY: .local-data/browser-evidence/home-scroll-motion
+        run: |
+          if ! artdico_browser_path="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium)"; then
+            printf '%s\n' '{"ok":false,"failure":"CHROMIUM_UNAVAILABLE"}'
+            exit 1
+          fi
+          ARTDICO_CHROMIUM_BINARY="$artdico_browser_path" node tests/browser/home-scroll-motion-smoke.mjs
+      - name: Retain scroll motion browser evidence for one day
+        if: ${{ !cancelled() && (steps.public_scroll_browser.outcome == 'success' || steps.public_scroll_browser.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: home-scroll-motion-evidence
+          path: .local-data/browser-evidence/home-scroll-motion/
+          if-no-files-found: warn
+          retention-days: 1
       - name: Check public form typography and keyboard recovery
         id: public_typography_browser
         timeout-minutes: 4

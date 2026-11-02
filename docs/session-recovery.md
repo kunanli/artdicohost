@@ -1,5 +1,11 @@
 # 开发接续：先读本页
 
+## 2026-11-02（Asia/Taipei）公開說明、字級與對外信箱已發布
+
+[PR #61](https://github.com/kunanli/artdicohost/pull/61) 已發布 main `749d5a532d8e5fba9b702247b3e0b6fbc4a05288`，完整回執見 [本輪紀錄](redesign/public-guidance-release.md)。嘉賓不顯示資料待確認、議程不顯示人物副欄；表單兩塊詳細告知改單一隱私連結，完整說明按需展開並保鍵盤焦點。GGJ指南移既有Q&A `site-role`，正文16px；氣泡小字桌面16／手機14。對外地址為 `kunan@globalgamejam.org`，使用event配置常數，與staff-owner身份分開。
+
+[main CI 41334337880](https://github.com/kunanli/artdicohost/actions/runs/41334337880) 四工作完成成功：1612測試、來源729、Astro479、23頁、audit0、FC128／公開61。main排版4及實際13分別在18:02:42／18:03:22 UTC通過；HTML `5eda3b6f965c7f32224cd672843c955a77d4e1b34da7c745cd6c37550b3bbdc6`，snapshot仍 `4b5486d90eed56ed762e40227b35866a07ec4cd451e16b32a67374d5a7ed79af`／R43。18:08:26正式政策與FC／私有OSS、18:08:30後台13頁及匿名CORS、18:10:16公開61物件HTTPS通過。首輪焦點失敗及中途取消資格保留於紀錄；沒有改名額、出席或重寄郵件。文件回執分支只補證據，不再部署；四項真人工作仍獨立。以下PR #60及更早為歷史。
+
 ## 2026-11-02（Asia/Taipei）單位／職位、原稿與首頁 CSS 已發布
 
 [PR #60](https://github.com/kunanli/artdicohost/pull/60) 已正式發布 main `e6e6d3f61d113b1831c06883c096db8c4a3df456`，完整回執見 [本輪紀錄](redesign/guest-identity-reference-release.md)。單位獨立 company、職位 title→ggjRole→空、原稿逐區差異與集中 CSS 管理全部納入；樣式入口為 [首頁 CSS／字級規範](frontend-typography.md)，PR #59 以下為歷史。

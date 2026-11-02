@@ -1,0 +1,24 @@
+/* Keep the original header in document flow. The page's size container would
+   become a containing block for position:fixed, while overflow:clip does not
+   create a scrolling ancestor for this viewport-sticky header. */
+#artdico-host.ah-festival.ah-cosmos .ah-header.ah-home-header{
+ position:sticky;top:0;z-index:80;
+ border-bottom:1px solid transparent;
+ background:linear-gradient(100deg,#070208f5 0%,#231001d6 22%,#030105f5 45%,#211638d6 76%,#08050ef0 100%);
+ -webkit-backdrop-filter:blur(14px) saturate(1.15);backdrop-filter:blur(14px) saturate(1.15);
+ transition:background-color .24s ease,border-color .24s ease,box-shadow .24s ease;
+}
+#artdico-host.ah-festival.ah-cosmos .ah-header.ah-home-header[data-scrolled="true"]{
+ background-color:#0d0814d9;border-bottom-color:#c3a1ff36;box-shadow:0 12px 28px -20px #000e;
+}
+#artdico-host.ah-festival.ah-cosmos .ah-home-header .ah-home-desktop-nav>a[aria-current="location"],
+#artdico-host.ah-festival.ah-cosmos .ah-home-header .ah-site-menu nav>a[aria-current="location"]{
+ color:var(--ah-text-link,#d8c1ff);text-decoration:underline;text-underline-offset:6px;text-decoration-thickness:1px;
+}
+#artdico-host.ah-festival.ah-cosmos .ah-header.ah-home-header .ah-site-menu>nav{
+ max-height:min(460px,calc(100vh - var(--ah-header-height,76px) - 24px));
+ max-height:min(460px,calc(100dvh - var(--ah-header-height,76px) - 24px));
+}
+@media(prefers-reduced-motion:reduce){
+ #artdico-host.ah-festival.ah-cosmos .ah-header.ah-home-header{transition:none}
+}

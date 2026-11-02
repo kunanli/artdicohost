@@ -14,6 +14,8 @@ import SiteFooter from '../components/SiteFooter.astro';
 import { eventConfig } from '../config/event.mjs';
 import shareImage from '../assets/home/event-share.png';
 import '../styles/home.css';
+import '../styles/home-scroll.css';
+import '../styles/home-hero-motion.css';
 import '../styles/home-typography.css';
 const shareUrl = new URL(shareImage.src, 'https://artdico.host').href;
 ---
@@ -39,4 +41,6 @@ const shareUrl = new URL(shareImage.src, 'https://artdico.host').href;
 <script>
   import '../scripts/public-content.mjs';
   import '../scripts/home-motion.mjs';
+  import '../scripts/home-scroll.mjs';
+  import '../scripts/hero-interaction.mjs';
 </script>

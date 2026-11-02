@@ -1,0 +1,22 @@
+/* The original sphere remains the artwork; enhancement adds only rim light. */
+#artdico-host.ah-festival.ah-cosmos .ah-home-hero-planet [data-hero-art]{
+ transform:translate3d(var(--ah-hero-x,0px),var(--ah-hero-y,0px),0) rotate(var(--ah-hero-angle,0deg));
+}
+#artdico-host.ah-festival.ah-cosmos .ah-home-hero-planet[data-hero-motion="active"] [data-hero-art]{will-change:transform}
+#artdico-host.ah-festival.ah-cosmos [data-hero-particles]{
+ position:absolute;inset:0;z-index:1;display:block;width:100%;height:100%;pointer-events:none;
+ transform:translate3d(var(--ah-hero-x,0px),var(--ah-hero-y,0px),0);
+}
+#artdico-host.ah-festival.ah-cosmos [data-hero-particles][hidden]{display:none}
+#artdico-host.ah-festival.ah-cosmos .ah-home-hero-planet[data-hero-motion="active"]::after{
+ content:'';position:absolute;inset:0;border-radius:50%;pointer-events:none;
+ background:radial-gradient(circle at var(--ah-hero-light-x,50%) var(--ah-hero-light-y,48%),#bc94ff90,transparent 62%);
+ -webkit-mask-image:radial-gradient(circle closest-side,transparent 65%,#000 89%,transparent 100%);
+ mask-image:radial-gradient(circle closest-side,transparent 65%,#000 89%,transparent 100%);
+ opacity:var(--ah-hero-glow,.12);transform:translate3d(var(--ah-hero-x,0px),var(--ah-hero-y,0px),0);
+}
+@media(prefers-reduced-motion:reduce){
+ #artdico-host.ah-festival.ah-cosmos .ah-home-hero-planet [data-hero-art]{transform:none!important}
+ #artdico-host.ah-festival.ah-cosmos [data-hero-particles],
+ #artdico-host.ah-festival.ah-cosmos .ah-home-hero-planet::after{display:none}
+}

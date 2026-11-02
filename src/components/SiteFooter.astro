@@ -3,12 +3,13 @@ import { eventConfig, PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
 import { Image } from 'astro:assets';
 import hostArtwork from '../assets/home/host-wordmark.webp';
 import fontLicense from '../assets/fonts/home-font-OFL.txt?raw';
+import displayFontLicense from '../assets/fonts/barlow-OFL.txt?raw';
 ---
 <footer class="ah-footer ah-home-footer">
   <div class="ah-home-footer-art" aria-hidden="true"><Image src={hostArtwork} alt="" width={640} height={1144} loading="lazy" decoding="async" /></div>
   <div class="ah-home-footer-message">
     <p class="ah-home-footer-strap">相聚一起，创意不息<span aria-hidden="true"></span></p>
-    <p class="ah-home-footer-slogan" lang="en">Come Together.<br />Create Forever.</p>
+    <p class="ah-home-footer-slogan" lang="en"><span class="ah-poster-solid" data-footer-display-line>Come Together.</span><span class="ah-poster-outline" data-footer-display-line>Create Forever.</span></p>
     <a class="ah-text-action" href="#registration">在现场，遇见下一次创作 <span aria-hidden="true">↗</span></a>
   </div>
   <div class="ah-home-footer-bottom">
@@ -16,5 +17,5 @@ import fontLicense from '../assets/fonts/home-font-OFL.txt?raw';
     <div class="ah-home-footer-contact"><a href={'mailto:'+PUBLIC_CONTACT_EMAIL}><span>联系我们：</span><span>{PUBLIC_CONTACT_EMAIL}</span></a><a href="https://artdico.host/"><span>官网：</span><span>https://artdico.host/</span></a></div>
   </div>
   <div class="ah-footer-links"><a href="#privacy">隐私告知</a><a href="/admin/">工作人员入口</a><a href="#top">回到顶部 ↑</a></div>
-  <details class="ah-home-font-license" data-home-font-license><summary>字体许可</summary><p>ARTDiCO Home SC，基于 Noto Sans SC 的网站字型子集。</p><pre>{fontLicense}</pre></details>
+  <details class="ah-home-font-license" data-home-font-license><summary>字体许可</summary><p>ARTDiCO Home SC，基于 Noto Sans SC 的网站字型子集。</p><pre>{fontLicense}</pre><p>Barlow Condensed ExtraBold · Copyright 2017 The Barlow Project Authors。保留原版字型，以 SIL Open Font License 1.1 使用。</p><pre data-display-font-license>{displayFontLicense}</pre></details>
 </footer>

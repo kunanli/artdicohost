@@ -22,7 +22,7 @@ const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHRO
 await mkdir(evidence, { recursive: true });
 
 async function fixture({ width, javaScriptEnabled = true, reducedMotion = 'no-preference', missingDecorations = false, longDescription = false }) {
-  const runtime = await peopleRuntimeFixture({ capacity: 300 }), requests = [];
+  const runtime = await peopleRuntimeFixture({ capacity: 300 }), requests = [], fontFailures = new Set();
   const published = structuredClone(content);
   if (longDescription) published.event.presentation.heroDescription = '合成介绍：与不同城市的游戏创作者交流经验，认识新的创作伙伴。'.repeat(5);
   const context = await browser.newContext({ viewport: { width, height: 900 }, javaScriptEnabled, reducedMotion });
@@ -40,7 +40,10 @@ async function fixture({ width, javaScriptEnabled = true, reducedMotion = 'no-pr
     }
     const path = url.pathname.endsWith('/') ? url.pathname + 'index.html' : url.pathname;
     const file = resolve(dist, '.' + path); assert.ok(file.startsWith(dist + '/'));
-    if (missingDecorations && /planet|home.*\.woff2$/iu.test(path)) return route.fulfill({ status: 404, body: '' });
+    if (missingDecorations && /planet|BarlowCondensed-ExtraBold.*\.woff2$/iu.test(path)) {
+      if (extname(path) === '.woff2') fontFailures.add(path);
+      return route.fulfill({ status: 404, body: '' });
+    }
     const data = await readFile(file); assets.set(path, { path, bytes: data.length, sha256: digest(data) });
     return route.fulfill({ status: 200, contentType: mime(file), body: data });
   });
@@ -48,7 +51,7 @@ async function fixture({ width, javaScriptEnabled = true, reducedMotion = 'no-pr
   if (javaScriptEnabled) await page.clock.setFixedTime(new Date('2026-11-01T00:00:00Z'));
   await page.goto(SITE + '/', { waitUntil: 'networkidle' });
   await page.evaluate(() => document.fonts.ready);
-  return { context, page, runtime, requests };
+  return { context, page, runtime, requests, fontFailures, missingDecorations };
 }
 
 async function inspect(f, label) {
@@ -56,21 +59,36 @@ async function inspect(f, label) {
   assert.equal(await page.locator('#artdico-host.ah-cosmos').count(), 1);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, label + ': horizontal overflow');
   assert.equal(await page.locator('h1').count(), 1); assert.equal(await page.locator('h1').isVisible(), true);
-  assert.equal(await page.locator('h1').getAttribute('aria-label'),content.event.title,'the canonical event title remains HTML and accessible independently of the reference artwork');
-  const titleArtwork=page.locator('#hero-heading [data-home-title-image]');
-  assert.equal(await titleArtwork.count(),2,'the two title graphics come from the supplied reference components');
-  for(const artwork of await titleArtwork.all()){
-    assert.equal(await artwork.isVisible(),true);
-    assert.equal(await artwork.evaluate(image=>image.complete&&image.naturalWidth>0),true,'the original title artwork loaded');
-    const box=await artwork.boundingBox();assert.ok(box&&box.width>0&&box.x>=-1&&box.x+box.width<=page.viewportSize().width+1,'reference title artwork stays within the viewport');
+  assert.equal(await page.locator('h1').getAttribute('aria-label'),content.event.title,'the canonical event title remains accessible independently of the poster typography');
+  assert.equal(await page.locator('#hero-heading [data-home-title-image],#hero-heading [data-home-title-fallback]').count(),0,'live title text replaces the old image and error-fallback layers');
+  const titleType = page.locator('#hero-heading>.ah-home-title-art [data-home-title-type][lang=en]');
+  assert.equal(await titleType.count(),2,'both original direct-child poster wrappers contain live English type');
+  assert.deepEqual((await titleType.allTextContents()).map(text=>text.replace(/\s/gu,'')),['GLOBALGAMEJAM','ARTDiCOHOST']);
+  assert.deepEqual(await page.locator('#hero-heading [data-home-title-subtitle][lang="zh-CN"]').allTextContents(),['中国组织者交流会','嘉年华']);
+  const titleTypography = await titleType.evaluateAll(nodes=>nodes.map(node=>{
+    const style=getComputedStyle(node),primary=style.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/gu,'');
+    const box=node.getBoundingClientRect();
+    return {primary,weight:style.fontWeight,width:box.width,height:box.height,faces:[...document.fonts].filter(face=>face.family.replace(/^['"]|['"]$/gu,'')===primary&&face.weight==='800').map(face=>face.status)};
+  }));
+  for(const type of titleTypography){
+    assert.equal(type.primary,'Barlow Condensed');assert.equal(type.weight,'800');
+    assert.ok(type.width>0&&type.height>0,'the headline consists of rendered letterforms');
+    assert.ok(type.faces.includes(f.missingDecorations?'error':'loaded'),'the exact self-hosted face is loaded, or its genuine failure exercises the readable font fallback');
   }
+  if(f.missingDecorations)assert.ok(f.fontFailures.size>0,'the missing-decoration case actually fails a requested poster font');
   const clipped = await page.locator('h1').evaluate(node => {
     const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT), failures = [];
     while (walker.nextNode()) {
       const text = walker.currentNode; if (!text.textContent.trim()) continue;
-      const parent = text.parentElement; if (!parent || getComputedStyle(parent).display === 'none' || parent.closest('[aria-hidden="true"]')) continue;
+      const parent = text.parentElement; if (!parent) continue;
+      for(let ancestor=parent;ancestor&&ancestor!==node.parentElement;ancestor=ancestor.parentElement){const style=getComputedStyle(ancestor);if(ancestor.hidden||style.display==='none'||style.visibility!=='visible'||Number(style.opacity)===0)failures.push('hidden-text');}
       const range = document.createRange(); range.selectNodeContents(text);
-      for (const box of range.getClientRects()) if (box.width && (box.left < -1 || box.right > innerWidth + 1)) failures.push(text.textContent);
+      const textBoxes=[...range.getClientRects()].filter(box=>box.width>0&&box.height>0);if(!textBoxes.length)failures.push('unrendered-text');
+      for (const box of textBoxes) {
+        if(!box.width||!box.height)continue;
+        if(box.left < -1||box.right > innerWidth+1)failures.push('viewport');
+        for(let clip=parent;clip&&clip!==node.parentElement;clip=clip.parentElement){const style=getComputedStyle(clip),rect=clip.getBoundingClientRect();if(['hidden','clip','scroll','auto'].includes(style.overflowX)&&(box.left<rect.left-1||box.right>rect.right+1))failures.push('horizontal-clip');if(['hidden','clip','scroll','auto'].includes(style.overflowY)&&(box.top<rect.top-1||box.bottom>rect.bottom+1))failures.push('vertical-clip');}
+      }
     }
     return failures;
   });
@@ -88,8 +106,10 @@ async function inspect(f, label) {
   const bytes = await readFile(resolve(dist, '.' + share.pathname));
   assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
   assert.deepEqual([bytes.readUInt32BE(16), bytes.readUInt32BE(20)], [1200, 630]);
-  const background = await page.locator('#artdico-host').evaluate(node => getComputedStyle(node).backgroundColor);
-  assert.equal(background, 'rgb(0, 0, 0)');
+  const backgrounds = await page.locator('#artdico-host').evaluate(node => ({root:getComputedStyle(node).backgroundColor,body:getComputedStyle(document.body).backgroundColor,html:getComputedStyle(document.documentElement).backgroundColor,active:node.dataset.atmosphereState==='active'}));
+  assert.equal(backgrounds.body,'rgb(0, 0, 0)','the approved full-page atmosphere has a black document backdrop');
+  assert.equal(backgrounds.html,'rgb(0, 0, 0)');
+  assert.equal(backgrounds.root,backgrounds.active?'rgba(0, 0, 0, 0)':'rgb(0, 0, 0)','the root exposes the active atmosphere and remains black in static/reduced fallback');
   const primary = page.locator('#top [data-home-primary-apply]');
   assert.equal(await primary.getAttribute('href'), '#registration');
   assert.match(await primary.innerText(), label === 'no-javascript' ? /查看申请说明/u : /申请参加/u);
@@ -116,7 +136,7 @@ async function inspect(f, label) {
     assert.ok(layout.descriptionBottom <= layout.factsTop, 'published introductory copy cannot overlap event facts');
   }
   return { label, width: page.viewportSize().width, shareSha256: digest(bytes), readOnlyRequests: f.requests.length, noOverflow: true, noClippedHeadline: true,
-    applicationActionInHero: true, applicationKeyboardReachable: true, actionPositions:{applicationTop:primaryBox.top,agendaTop:actionLayout.agenda.top,referenceAgendaTop:page.viewportSize().width>=1024?referenceAgendaTop:null},eventFactFontPixels: { venue: venueSize, date: dateSize } };
+    posterTypography:titleTypography,failedFontPaths:[...f.fontFailures],backgrounds,applicationActionInHero: true, applicationKeyboardReachable: true, actionPositions:{applicationTop:primaryBox.top,agendaTop:actionLayout.agenda.top,referenceAgendaTop:page.viewportSize().width>=1024?referenceAgendaTop:null},eventFactFontPixels: { venue: venueSize, date: dateSize } };
 }
 
 try {
@@ -125,6 +145,11 @@ try {
     await f.page.locator('footer').scrollIntoViewIfNeeded();
     assert.ok(await f.page.locator('footer img').count());
     await f.page.waitForFunction(() => [...document.querySelectorAll('footer img')].every(image => image.complete && image.naturalWidth > 0));
+    const footerType=f.page.locator('footer [data-footer-display-line]');
+    assert.deepEqual(await footerType.allTextContents(),['Come Together.','Create Forever.']);
+    const footerTypography=await footerType.evaluateAll(nodes=>nodes.map(node=>{const style=getComputedStyle(node),box=node.getBoundingClientRect();return{family:style.fontFamily,weight:style.fontWeight,stroke:parseFloat(style.webkitTextStrokeWidth),width:box.width,height:box.height};}));
+    for(const line of footerTypography){assert.match(line.family,/Barlow Condensed/u);assert.equal(line.weight,'800');assert.ok(line.width>0&&line.height>0);}
+    assert.ok(footerTypography[1].stroke>0,'the second live footer line uses the requested outline treatment');
     await f.page.locator('footer').screenshot({ path: resolve(evidence, 'footer-' + width + '.png'), animations: 'disabled' });
     await f.page.evaluate(() => scrollTo(0, 0));
     await f.page.screenshot({ path: resolve(evidence, 'homepage-' + width + '.png'), fullPage: true, animations: 'disabled' });

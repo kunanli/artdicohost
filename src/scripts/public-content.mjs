@@ -55,12 +55,9 @@ document.addEventListener('artdico:organization-reveal',event=>updateOrganizatio
 
 const presentationSelectors={heroDescription:'[data-public-hero-description]',aboutTitle:'[data-public-about-title]',aboutText:'[data-public-about-text]'};
 const initialPresentationText=new Map(Object.values(presentationSelectors).flatMap(selector=>[...document.querySelectorAll(selector)].map(node=>[node,node.textContent])));
-for(const image of document.querySelectorAll('[data-home-title-image]')){
-  const fallback=image.parentElement?.querySelector('[data-home-title-fallback]');
-  const revealFallback=()=>{image.hidden=true;if(fallback)fallback.hidden=false;};
-  image.addEventListener('error',revealFallback,{once:true});
-  if(image.complete&&image.naturalWidth===0)revealFallback();
-}
+// Keep the initial real-text lockup available when a later publication returns
+// to the branded event. A changed title always renders its published text.
+const initialPosterTitles=new Map([...document.querySelectorAll('h1[data-public-event-title]')].map(node=>[node,[...node.children].filter(child=>child.matches('.ah-home-title-art')).map(child=>child.cloneNode(true))]));
 
 // Published event content is independent from registration readiness and staff cookies.
 const endpoint = document.querySelector('meta[name="artdico-content-api"]')?.getAttribute('content');
@@ -202,14 +199,13 @@ function renderPublishedContent(content,url) {
     node.setAttribute('aria-label', eventTitle);
     if (eventTitle === (node.dataset.renderedEventTitle || node.dataset.initialEventTitle)) continue;
     node.dataset.renderedEventTitle = eventTitle;
-    if (knownTitle) {
-      const first = element('span', undefined, 'ah-event-title-line');
-      first.append(element('span', 'Global Game Jam', 'ah-event-brand'), element('span', '中国交流聚会', 'ah-event-chinese'));
-      const second = element('span', undefined, 'ah-event-title-line');
-      second.append(element('span', 'ARTDiCO HOST', 'ah-event-brand'), element('span', '学生嘉年华', 'ah-event-chinese'));
-      node.replaceChildren(first, element('span', '×', 'ah-event-title-cross'), second);
+    const poster=initialPosterTitles.get(node);
+    if (knownTitle&&poster?.length) {
+      node.replaceChildren(...poster.map(child=>child.cloneNode(true)));
+      node.dataset.titlePresentation='poster';
       continue;
     }
+    node.dataset.titlePresentation='text';
     const titles = eventTitle.split(' × ');
     if (titles.length === 2) {
       node.replaceChildren(

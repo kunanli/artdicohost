@@ -1,6 +1,6 @@
 # ARTDiCO HOST 改版執行總覽
 
-現行交付為 [PR66整合發布](mobile-organizations-profile-release.md)，main c5166922已由41402494805全四工作success正式發布；6／4／實際13、1634測試、128檔／40資產、私有OSS、13後台與61公開物件HTTPS已核對。白色Logo、手機圈內8卡及圈內分頁、全頁星空／球退遠、官方Wallet徽章及報名七欄原位更正均已交付。下面PR64等為前版歷史，未改寫其原資格。下一階段按新參考圖做Hero粗窄實心／描邊字體，其他功能閱讀角色保留。
+更新日期：2026-11-02（Asia/Taipei）。**現行交付為 [PR66手機圈內組織與報名更正](mobile-organizations-profile-release.md)，已發布main c5166922；Hero海報字體為下一階段，尚未套用。** 樣式修改先讀 [首頁CSS／字級規範](../frontend-typography.md)。下方PR64等保留前版歷史。
 
 更新日期：2026-11-02（Asia/Taipei）。**現行交付為 [PR #64 自由背景微粒與作品缺圖版型](background-showcase-release.md)，已發布 main `50bc3cd`；樣式修改先讀 [首頁 CSS／字級規範](../frontend-typography.md)。** Hero微粒在球外背景自由漂移，滑鼠輕微帶動、球／標題全alpha排除；沒有環形或尾流，保留簡報式淡入／sticky。作品缺圖轉自然文字高度、有圖保持原稿2:1／字幕／真peek，單件收起無效導航。main6／4／13、1612測試、FC128與公開61物件HTTPS核對完成；正式公開一件作品確無封面參照。下方交付保留為歷史。
 

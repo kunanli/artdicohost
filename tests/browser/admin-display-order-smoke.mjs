@@ -135,7 +135,18 @@ function assertOnlyOrder(initial,current,kind){
 async function assertPublicUnchanged(f,baseline){assert.deepEqual(await f.anonymous(),baseline,'saved order does not change the frozen public source before publication');}
 async function assertPrivate(f){const source=await f.anonymous();assert.doesNotMatch(JSON.stringify(source),new RegExp(PRIVATE+'|synthetic[.]order[.]|internalNotes|contactName|materialLinks|wechat|memberCount'));assert.equal(f.runtime.messages.length,0);}
 async function scopeIds(f,kind,scope){return f.page.locator('[data-content-order-kind="'+kind+'"][data-content-order-direction=up][data-content-order-scope="'+scope+'"]').evaluateAll(nodes=>nodes.map(node=>node.dataset.contentOrderId));}
-async function publish(f){const before=publications(f).length;f.allowPublish();await f.page.locator('[data-content-panel=publish] [data-admin-publish]').first().click();await f.page.locator('[data-admin-logout]:enabled').waitFor();assert.equal(publications(f).length,before+1);const dialog=f.dialogs.filter(row=>row.type==='confirm').at(-1);assert.ok(dialog?.accepted);assert.match(dialog.message,/顺序调整/u,'publication previews order changes explicitly');}
+async function publicationConfirmation(f,accepted){
+  f.confirmOnce(accepted);
+  const [dialog]=await Promise.all([
+    f.page.waitForEvent('dialog',{predicate:dialog=>dialog.type()==='confirm'}),
+    f.page.locator('[data-content-panel=publish] [data-admin-publish]').first().click(),
+  ]);
+  assert.match(dialog.message(),/顺序调整/u,'the actual publication confirmation previews order changes explicitly');
+  await f.page.locator('[data-admin-logout]:enabled').waitFor();
+  const recorded=f.dialogs.filter(row=>row.type==='confirm').at(-1);
+  assert.equal(recorded?.accepted,accepted,'the confirmation handler completed the intended accept or cancel action');
+}
+async function publish(f){const before=publications(f).length;f.allowPublish();await publicationConfirmation(f,true);assert.equal(publications(f).length,before+1);}
 async function draftRows(page){return page.evaluate(async()=>{const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('artdico-browser-drafts-v1',1);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});try{return await new Promise((resolve,reject)=>{const request=db.transaction('drafts').objectStore('drafts').getAll();request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}finally{db.close();}});}
 async function pendingBody(f){const row=(await draftRows(f.page)).find(item=>item.scope.page==='content');assert.equal(row?.kind,'pending_submission');return row.value.pendingSave;}
 async function allOrderingLocked(f){assert.ok(await orderSet(f.page).count()>0);assert.equal(await orderSet(f.page).evaluateAll(nodes=>nodes.every(node=>node.disabled)),true,'unresolved save prevents further sorting');}
@@ -162,7 +173,7 @@ try{
       await move(f,kind,original[0],'down','publish');const final=[original[1],original[0],original[2]];
       await edges(f,kind,'publish',final);await preview(f);assert.deepEqual(await scopeIds(f,kind,'preview'),final);await assertPublicUnchanged(f,baseline);
       assertOnlyOrder(f.initial,(await f.runtime.app.store.read()).draft.content,kind);
-      f.confirmOnce(false);await f.page.locator('[data-content-panel=publish] [data-admin-publish]').first().click();assert.equal(publications(f).length,0);assert.match(f.dialogs.filter(row=>row.type==='confirm').at(-1).message,/顺序调整/u);await assertPublicUnchanged(f,baseline);
+      await publicationConfirmation(f,false);assert.equal(publications(f).length,0,'cancelling the actual order-change confirmation never publishes');await assertPublicUnchanged(f,baseline);
       await publish(f);const after=await f.anonymous();assert.deepEqual(ids(after.content[kind]),final,'published source follows the approved saved array');for(const other of KINDS)if(other!==kind)assert.deepEqual(after.content[other],baseline.content[other]);
       await assertPrivate(f);assert.equal(await f.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
       await f.page.screenshot({path:resolve(evidence,kind+'-'+width+'.png'),fullPage:true});

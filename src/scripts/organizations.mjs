@@ -5,6 +5,7 @@ import {editStaffImage} from '../lib/staff-image-editor.mjs';
 import {organizationMemberPage,personContactPath} from '../lib/content-relationships.mjs';
 import {PUBLICATION_REASON_LABELS} from '../lib/admin-save-state.mjs';
 import {readContentForm,writeContentForm} from '../lib/content-local-drafts.mjs';
+import {displayOrderTarget,moveDisplayRecord} from '../lib/content-display-order.mjs';
 import '../styles/organizations-admin.css';
 
 const portrait=/^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
@@ -14,7 +15,7 @@ const isVisible=item=>item?.visibility!=='private';
 function node(tag,text,className){const result=document.createElement(tag);if(text!==undefined)result.textContent=text;if(className)result.className=className;return result;}
 
 /** The content controller owns cloud persistence and public publication. */
-export function createOrganizationsEditor({root,request,getContext,onApply,onSave,onChange,announce}){
+export function createOrganizationsEditor({root,request,getContext,onApply,onSave,onOrder,onChange,announce}){
   const $=selector=>root.querySelector(selector),dialog=$('[data-organization-dialog]'),form=$('[data-organization-form]');
   let generation=0,uploadController=null,uploading=false,pendingImage=null,formDirty=false,accountKey='',editingId=null,editContext=null,imageGeneration=0;
   let membersEpoch=0,saving=false,activeSave=null;const memberControllers=new Set();
@@ -107,12 +108,14 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onSav
       if(item.website&&isPublicWebsite(item.website)){const link=node('a','查看组织页面 ↗');link.href=item.website;link.target='_blank';link.rel='noopener noreferrer';body.append(link);}
       const actions=node('div',undefined,'ah-organization-actions');
       for(const [label,action]of[['编辑','edit'],['上移','up'],['下移','down']]){
-        const button=node('button',label);button.type='button';button.dataset.organizationAction=action;button.setAttribute('aria-label',label+'组织 '+item.name);button.dataset.edge=String(action==='up'&&index===0||action==='down'&&index===current.length-1);
+        const button=node('button',label);button.type='button';button.dataset.organizationAction=action;button.setAttribute('aria-label',label+'组织 '+item.name);button.dataset.edge=String(action!=='edit'&&!displayOrderTarget(current,visible.map(record=>record.id),item.id,action));
+        if(action!=='edit'){button.dataset.contentOrderKind='organizations';button.dataset.contentOrderId=item.id;button.dataset.contentOrderDirection=action;button.dataset.contentOrderScope='editor';button.dataset.contentOrderEdge=button.dataset.edge;}
         button.addEventListener('click',()=>{
           if(!allowed()||!pageActive()||blocked()||saving||uploading||dialog.open)return;
           if(action==='edit'){open(item);return;}
-          const next=structuredClone(records()),position=next.findIndex(value=>value.id===item.id);if(position<0)return;
-          const target=position+(action==='up'?-1:1);if(target<0||target>=next.length)return;[next[position],next[target]]=[next[target],next[position]];void apply(next,'组织显示顺序已应用到草稿。');
+          const visibleIds=visible.map(record=>record.id);
+          if(typeof onOrder==='function'){onOrder({id:item.id,direction:action,visibleIds,button});return;}
+          const next=moveDisplayRecord(records(),visibleIds,item.id,action);if(next)void apply(next,'组织显示顺序已应用到草稿。');
         });actions.append(button);
       }
       body.append(actions);if(canViewMembers()&&Object.hasOwn(context().content,'organizations'))appendMembers(item,body);card.append(frame,body);output.append(card);
@@ -266,9 +269,9 @@ export function createOrganizationsEditor({root,request,getContext,onApply,onSav
       if(record.imageNeedsReselect)$('[data-organization-image-status]').textContent='未上传的图片编辑无法恢复，请重新选择图片。';
       notify();configure();
     },
-    appendPublicPreview(content,output){
+    appendPublicPreview(content,output,{appendOrder=()=>{}}={}){
       const list=Object.hasOwn(content,'organizations')?content.organizations:createDefaultOrganizations();output.append(node('h3','参与组织'));if(!list.length)output.append(node('p','暂未公布参与组织。'));
-      for(const item of list){const card=node('article',undefined,'ah-organization-row'),body=node('div');const logo=(item.logoUrl??'').split('/').at(-1);if(portrait.test(logo??'')){const picture=node('img');picture.src='/api/admin/portraits/'+logo;picture.alt=item.name+'组织图片';picture.width=110;picture.height=90;picture.style.objectFit='contain';card.append(picture);}body.append(node('h4',item.name),node('p',participationLabels[item.participation]??participationLabels.undecided));if(item.website&&isPublicWebsite(item.website)){const link=node('a','组织页面 ↗');link.href=item.website;link.target='_blank';link.rel='noopener noreferrer';body.append(link);}card.append(body);output.append(card);}
+      for(const item of list){const card=node('article',undefined,'ah-organization-row'),body=node('div');card.dataset.previewOrganizationId=item.id;const logo=(item.logoUrl??'').split('/').at(-1);if(portrait.test(logo??'')){const picture=node('img');picture.src='/api/admin/portraits/'+logo;picture.alt=item.name+'组织图片';picture.width=110;picture.height=90;picture.style.objectFit='contain';card.append(picture);}body.append(node('h4',item.name),node('p',participationLabels[item.participation]??participationLabels.undecided));if(item.website&&isPublicWebsite(item.website)){const link=node('a','组织页面 ↗');link.href=item.website;link.target='_blank';link.rel='noopener noreferrer';body.append(link);}appendOrder(body,item);card.append(body);output.append(card);}
     },
   });
 }

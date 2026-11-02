@@ -14,7 +14,7 @@ test('reference logo artwork binds to one reviewed public digest and respects re
   assert.equal(organizationLogoVariant(card(),variants),null);
   assert.equal(JSON.stringify(original),before);
 });
-test('the reviewed public campus records keep their visual slots without relying on edited names',()=>{
+test('the reviewed public campus records keep their artwork keys without relying on edited names',()=>{
   for(const [id,key] of [['organization-030b43f23f33413c8f81ed1fcd1d282d','bu'],['organization-61fee7cdf16f439a85f071b0e553ed4e','teesside'],['organization-668f234fcd2640a1a35dab8f0fc63bf3','szdx']]){
     const input=card({id,name:'合成修改后的公开名称'}),before=JSON.stringify(input);
     assert.equal(organizationReferenceKey(input),key);assert.equal(JSON.stringify(input),before);
@@ -27,7 +27,7 @@ test('reference logo mapping cannot select external or unsafe URLs or invoke sup
   assert.equal(organizationLogoVariant(original,variants),null);
 });
 
-test('reference ordering sorts a copy of the seven known organizations without changing publication bytes or fields',()=>{
+test('organization ordering preserves the complete public array even when all seven known brands are shuffled',()=>{
   const input=Object.freeze([
     card({id:'g4c-hk',name:'G4C HK'}),card({id:'pengyou-gangwan',name:'鹏游港湾'}),
     card({id:'game-singularity',name:'游戏奇点'}),card({id:'igda-shenzhen',name:'IGDA 深圳'}),
@@ -35,10 +35,11 @@ test('reference ordering sorts a copy of the seven known organizations without c
     card({id:'synthetic-szdx',name:'深圳大学艺术学部'}),
   ].map(Object.freeze));
   const before=JSON.stringify(input),ordered=orderOrganizationCards(input);
-  assert.deepEqual(ordered.map(organizationReferenceKey),['gamezone','igda','szdx','bu','pengyou','g4c','teesside']);
+  assert.deepEqual(ordered,input,'brand recognition never changes the published array order');
+  assert.deepEqual(ordered.map(organizationReferenceKey),['g4c','pengyou','gamezone','igda','bu','teesside','szdx']);
   assert.equal(JSON.stringify(input),before);
   assert.notEqual(ordered,input);
-  assert.ok(ordered.every(item=>input.includes(item)), 'visual sorting neither rewrites nor replaces cards');
+  assert.ok(ordered.every((item,index)=>item===input[index]), 'ordering neither rewrites nor replaces any original card');
 });
 
 test('reference keys use explicit IDs or whole known aliases with only case and whitespace normalization',()=>{
@@ -53,11 +54,12 @@ test('reference keys use explicit IDs or whole known aliases with only case and 
   assert.equal(organizationReferenceKey({id:'g4c-hk',name:'GameZone'}),'g4c','a saved ID takes precedence without merging identities');
 });
 
-test('unknown and repeated reference organizations remain distinct in stable input order',()=>{
+test('unknown and repeated brands remain in the full public input order without deduplication',()=>{
   const unknownA=card({id:'unknown-a'}),knownA=card({id:'known-a',name:'BU'}),unknownB=card({id:'unknown-b'}),knownB=card({id:'known-b',name:'伯恩茅斯大学'});
   const input=[unknownA,knownA,unknownB,knownB],before=JSON.stringify(input);
-  assert.deepEqual(orderOrganizationCards(input),[knownA,knownB,unknownA,unknownB]);
+  assert.deepEqual(orderOrganizationCards(input),input);
   assert.equal(JSON.stringify(input),before);
+  assert.deepEqual(orderOrganizationCards([knownA,unknownA,knownA]),[knownA,unknownA,knownA],'the ordering helper does not merge repeated entries');
   assert.deepEqual(orderOrganizationCards([unknownA,unknownB]),[unknownA,unknownB]);
   assert.deepEqual(orderOrganizationCards(null),[]);
 });

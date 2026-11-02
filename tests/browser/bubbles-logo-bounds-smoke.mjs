@@ -23,6 +23,9 @@ const { toPublicContent } = await import(pathToFileURL(resolve(source, 'shared/c
 const { publicGuestCards } = await import(pathToFileURL(resolve(source,'shared/guest-display.mjs')));
 const { organizationReferenceKey } = await import(pathToFileURL(resolve(source, 'shared/organization-display.mjs')));
 const referenceKeys = ['gamezone','igda','szdx','bu','pengyou','g4c','teesside'];
+// Original desktop geometry is retained; only each public array index owns it.
+const ORGANIZATION_INDEX_SLOTS=[[23.082,11.08,24.858,8.523],[54.332,11.151,20.597,8.381],[10.156,28.267,16.761,8.523],[32.457,28.196,12.287,8.381],[53.622,27.699,7.813,10.44],[74.503,26.563,9.659,12.145],[7.031,43.466,19.602,7.458]];
+
 const artworkConfig = await readFile(resolve(source,'src/config/organization-artwork.mjs'),'utf8');
 const reviewedDigests = new Map([...artworkConfig.matchAll(/(\w+):Object\.freeze\(\{url:\w+,sourceDigest:"([a-f0-9]{64})"/gu)].map(match=>[match[1],match[2]]));
 assert.equal(reviewedDigests.size,7,'the seven original reviewed variants remain explicit');
@@ -105,16 +108,19 @@ function changedEnvelope(change, revision = snapshot.revision + 1) {
   assert.ok(publicContentEnvelope(envelope), 'explicit synthetic variant remains a valid public envelope');
   return Buffer.from(JSON.stringify(envelope));
 }
+function genericOrganizationIdentities(content){
+ const keys=new Map();content.organizations.forEach((item,index)=>{const id='synthetic-raw-upload-'+index;keys.set(item.id,id);item.id=id;item.name='合成原始公开图像 '+index;});
+ for(const item of [...content.showcases,...content.booths])if(keys.has(item.organizationId))item.organizationId=keys.get(item.organizationId);
+}
 async function fixture(width, { mode = 'actual', reducedMotion = 'no-preference', holdLogos = false } = {}) {
   const context = await browser.newContext({ viewport: { width, height: 1000 }, isMobile: width < 600, hasTouch: width < 600, reducedMotion });
   const page = await context.newPage(), calls = []; let responseBytes = snapshotBytes, revision = snapshot.revision, releaseGate;
   const gate = new Promise(resolve => { releaseGate = resolve; });
   if (!holdLogos) releaseGate();
-  if (mode === 'raw-generic') responseBytes = changedEnvelope(content => {
-    const keys = new Map(); content.organizations.forEach((item, index) => { const id = 'synthetic-raw-upload-' + index; keys.set(item.id, id); item.id = id; item.name = '合成原始公开图像 ' + index; });
-    for (const item of [...content.showcases, ...content.booths]) if (keys.has(item.organizationId)) item.organizationId = keys.get(item.organizationId);
-  });
+  if (mode === 'raw-generic') responseBytes = changedEnvelope(genericOrganizationIdentities);
   if (mode === 'adversarial') responseBytes = changedEnvelope(content => { content.organizations.forEach((item, index) => { const image = synthetic[index % synthetic.length]; item.logoId = image.id; item.logoUrl = image.path; }); });
+  revision=JSON.parse(responseBytes).revision;
+  await page.addInitScript(()=>{window.__publicVisualContentUpdates=0;document.addEventListener('artdico:public-content-updated',()=>window.__publicVisualContentUpdates++);});
   page.setDefaultTimeout(12000); page.on('pageerror', error => pageErrors.push({ width, mode, message: error.message }));
   await context.addCookies([{ name: 'synthetic_staff', value: 'SYNTHETIC_NEVER_SEND_STAFF_COOKIE', domain: new URL(API).hostname, path: '/', httpOnly: true, secure: true, sameSite: 'Strict' }]);
   await context.route('**/*', async route => {
@@ -141,10 +147,14 @@ async function fixture(width, { mode = 'actual', reducedMotion = 'no-preference'
     catch { return route.fulfill({ status: 404, body: '' }); }
   });
   async function refresh(change) {
+    const priorRevision=JSON.parse(responseBytes).revision,acceptedUpdates=await page.evaluate(()=>window.__publicVisualContentUpdates);
+    assert.ok(revision+1>priorRevision,'each fixture refresh publishes a strictly newer envelope');
     responseBytes = changedEnvelope(change, ++revision); await page.waitForTimeout(1100);
-    const read = page.waitForResponse(value => value.url() === API + '/api/public/content'); await page.evaluate(() => dispatchEvent(new Event('focus'))); await read; await page.waitForTimeout(250);
+    const expectedIds=JSON.parse(responseBytes).content.organizations.map(item=>item.id);
+    const read = page.waitForResponse(value => value.url() === API + '/api/public/content'); await page.evaluate(() => dispatchEvent(new Event('focus'))); await read;
+    await page.waitForFunction(({expectedIds,acceptedUpdates})=>{const actual=[...document.querySelectorAll('[data-organization-id]')].map(node=>node.dataset.organizationId);return window.__publicVisualContentUpdates>acceptedUpdates&&actual.length===expectedIds.length&&actual.every((id,index)=>id===expectedIds[index]);},{expectedIds,acceptedUpdates},{timeout:12000});
   }
-  return { width, mode, context, page, calls, releaseLogos: releaseGate, refresh };
+  return { width, mode, context, page, calls, releaseLogos: releaseGate, refresh,get publishedOrganizations(){return JSON.parse(responseBytes).content.organizations;} };
 }
 const noOverflow = async f => assert.equal(await f.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'no page horizontal overflow at ' + f.width);
 function contained(inner, outer, message, tolerance = 1.5) {
@@ -158,7 +168,11 @@ function nonoverlap(rects, message) {
 }
 async function organizationBounds(f, { loaded = true } = {}) {
   stage = loaded ? 'organization-loaded-bounds' : 'organization-before-load-bounds';
-  const orderedIds=await f.page.locator('[data-organization-id]').evaluateAll(nodes=>nodes.map(node=>node.id)),rows=[];
+  const publishedIds=f.publishedOrganizations.map(item=>item.id);
+  const actualOrder=await f.page.locator('[data-organization-id]').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.organizationId,slot:node.dataset.organizationSlot??null})));
+  assert.deepEqual(actualOrder.map(item=>item.id),publishedIds,'actual image DOM order follows the current public array');
+  assert.deepEqual(actualOrder.map(item=>item.slot),publishedIds.map((_,index)=>index<7?String(index):null),'all first seven entries, including unknown or failed images, keep indexed slots');
+  const orderedIds=actualOrder.map(item=>'organization-'+item.id),rows=[];
   const batchSize=f.width<=820?8:orderedIds.length;
   for(let offset=0;offset<orderedIds.length;offset+=batchSize){
     await f.page.evaluate(id=>document.getElementById(id)?.dispatchEvent(new CustomEvent('artdico:organization-reveal',{bubbles:true,detail:{id}})),orderedIds[offset]);
@@ -174,7 +188,7 @@ async function organizationBounds(f, { loaded = true } = {}) {
       for(let i=0;i<pixels.length;i+=4){if(pixels[i+3]>32){ink++;if(pixels[i]!==255||pixels[i+1]!==255||pixels[i+2]!==255)nonwhite++;}else transparent++;}
       whiteMask={width:canvas.width,height:canvas.height,ink,nonwhite,transparent};
     }
-    return { id: node.dataset.organizationId, reference: node.dataset.organizationReference ?? null, artwork: node.dataset.logoArtwork ?? null,
+    return { id: node.dataset.organizationId, slotIndex: node.dataset.organizationSlot ?? null, reference: node.dataset.organizationReference ?? null, artwork: node.dataset.logoArtwork ?? null,
       slot: box(node), card: box(card), frame: frame ? box(frame) : null, image: image ? box(image) : null,
       src: image?.getAttribute('src'), source: image?.dataset.logoSource??image?.getAttribute('src'), presentation, frameHidden:frame?.hidden??false, name:box(name),nameVisible,nameDisplay:nameStyle.display,nameFont:parseFloat(nameStyle.fontSize),accessibleNameMatches,whiteMask, complete: image?.complete, naturalWidth: image?.naturalWidth, naturalHeight: image?.naturalHeight, fit: image ? getComputedStyle(image).objectFit : null,
       imageVisibility: image ? getComputedStyle(image).visibility : null, imageDisplay: image ? getComputedStyle(image).display : null, imageOpacity: image ? Number(getComputedStyle(image).opacity) : null };
@@ -183,6 +197,14 @@ async function organizationBounds(f, { loaded = true } = {}) {
   }
   lastNumericMetrics = rows.map(({ slot, card, frame, image, naturalWidth, naturalHeight, fit }) => ({ slot, card, frame, image, naturalWidth, naturalHeight, fit }));
   assert.equal(rows.length,organizationCount,'every organization from this exact captured snapshot must render');
+  assert.deepEqual(rows.map(row=>row.id),publishedIds,'complete page traversal retains the public order without duplicates');
+  if(f.width>820){
+    const planet=await f.page.locator('[data-organizations-planet]').evaluate(node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y+scrollY,width:r.width};});
+    for(const [index,row]of rows.slice(0,7).entries()){
+      const [left,top,width,height]=ORGANIZATION_INDEX_SLOTS[index];
+      for(const [actual,expected]of [[row.slot.x,planet.x+planet.width*left/100],[row.slot.y,planet.y+planet.width*top/100],[row.slot.width,planet.width*width/100],[row.slot.height,planet.width*height/100]])assert.ok(Math.abs(actual-expected)<=1.5,'each public index retains the original desktop slot geometry');
+    }
+  }
   for (const row of rows) {
     assert.ok(row.slot.width > 0 && row.slot.height >= 40 && row.frame && row.image, 'each actual logo has its own independent nonzero slot and frame');
     assert.equal(row.accessibleNameMatches,true,'every organization retains its full accessible name');
@@ -389,7 +411,26 @@ try {
       if (mode === 'raw-generic') assert.ok(bounds.every(row => logoPaths.has(new URL(row.source, SITE).pathname)), 'generic compatibility scenario actually renders every captured upload byte');
       else assert.ok(bounds.every(row => synthetic.some(image => image.path === new URL(row.source, SITE).pathname)), 'changed hashes fall back to actual new artwork instead of silently retaining the old white reference variant');
       assert.ok(bounds.every(row=>['published-white','published-name'].includes(row.artwork)), 'unknown identities and future hashes derive white presentation from the actual new upload or retain a readable name');
-      await noOverflow(f); reports.push({ name: mode + '-' + width, width, explicitlySyntheticPublicationVariant: true, exactOriginalUploadBytes: mode === 'raw-generic', bounds, screenshots: await shots(f, mode) });
+      let orderRefresh=null;
+      if(mode==='raw-generic'){
+        const initialIds=f.publishedOrganizations.map(item=>item.id),originalSources=new Map(bounds.map(row=>[row.id,new URL(row.source,SITE).pathname]));
+        const firstLink=f.page.locator('[data-organization-id] a.ah-organization-card').first();
+        let focusSelector,focusScope;
+        if(await firstLink.count()){
+          const organizationId=await firstLink.evaluate(node=>node.closest('[data-organization-id]').id);
+          await firstLink.evaluate(node=>{const row=node.closest('[data-organization-id]');row.dispatchEvent(new CustomEvent('artdico:organization-reveal',{bubbles:true,detail:{id:row.id}}));row.scrollIntoView({block:'center',behavior:'instant'});});
+          focusSelector='#'+organizationId+' a.ah-organization-card';focusScope='existing organization link';
+        }else{focusSelector='#guest-'+motionGuest.id+' [data-guest-toggle]';focusScope='existing guest disclosure because this capture has no organization links';}
+        await f.page.locator(focusSelector).focus();
+        await f.refresh(content=>{genericOrganizationIdentities(content);content.organizations.reverse();});
+        assert.equal(await f.page.locator(focusSelector).evaluate(node=>document.activeElement===node),true,'the same existing public control retains focus immediately after order refresh');
+        await loadLogos(f);const reorderedBounds=await organizationBounds(f);
+        assert.deepEqual(reorderedBounds.map(row=>row.id),[...initialIds].reverse(),'the same captured raw images really reverse in DOM and slot order');
+        for(const row of reorderedBounds)assert.equal(new URL(row.source,SITE).pathname,originalSources.get(row.id),'reorder uses exactly the same captured raw source for each organization');
+        assert.ok(reorderedBounds.some(row=>{const before=bounds.find(item=>item.id===row.id);return before.slotIndex!==row.slotIndex&&(Math.abs(before.slot.x-row.slot.x)>1.5||Math.abs(before.slot.y-row.slot.y)>1.5);}),'same raw images really move to different physical slots after reorder');
+        orderRefresh={explicitlySyntheticOrderOnlyPhase:true,initialIds,reorderedIds:reorderedBounds.map(row=>row.id),sameRawImageBytes:true,rawImageSha256:reorderedBounds.map(row=>new URL(row.source,SITE).pathname.split('/').at(-1).split('.')[0]),focusScope,sameControlFocusImmediatelyAfterRefresh:true,bounds:reorderedBounds};
+      }
+      await noOverflow(f); reports.push({ name: mode + '-' + width, width, explicitlySyntheticPublicationVariant: true, exactOriginalUploadBytes: mode === 'raw-generic', bounds, orderRefresh, screenshots: await shots(f, mode) });
     } finally { await f.context.close(); }
   }
   const f = await fixture(320, { reducedMotion: 'reduce' });

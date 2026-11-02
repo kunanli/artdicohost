@@ -3,6 +3,8 @@ import { showcaseSummary, SHOWCASE_KIND_LABELS, SHOWCASE_EDITABLE_KINDS } from '
 import { publicGuestCards, publicSessionParticipants } from '../../shared/guest-display.mjs';
 import { createArrangementsView } from './arrangements-view.mjs';
 import { createInitialPresentation } from '../config/content.mjs';
+import { createDefaultOrganizations } from '../config/exhibiting-partners.mjs';
+import { DISPLAY_ORDER_COLLECTIONS, displayOrderTarget, moveDisplayRecord } from '../lib/content-display-order.mjs';
 import { nextBoothSlot, nextBoothCode } from '../lib/booth-slots.mjs';
 import { prepareBoothDraft } from '../lib/arrangement-planner.mjs';
 import { createArrangementPlanner } from './arrangement-planner.mjs';
@@ -306,6 +308,7 @@ organizations = createOrganizationsEditor({
   root: $('[data-organizations]'), request,
   getContext: () => ({ content: draft?.content, revision: draft?.revision, user, dirty,savePending:awaitingContentProof(),publication:publicationReport(),active:activePage==='organizations', busy: !localRecovering&&(busy||awaitingContentProof()||Boolean(localRecovery)||Boolean(localPendingArchive)) || plannerBusy || portraitUploading || coverUploading }),
   onSave: async records=>{const saved=await saveSectionCandidate({...draft.content,organizations:records},'organizations');if(!saved)throw new Error(saveProblem||'保存尚未确认，组织资料仍保留。');return true;},
+  onOrder: ({id,direction,visibleIds,button})=>requestDisplayOrder({kind:'organizations',id,direction,visibleIds,scope:'editor',button}),
   onApply: records => {
     if (!canEdit() || busy || plannerBusy || !draft) throw new Error('请重新读取可编辑草稿后，再应用组织资料。');
     const candidate = { ...draft.content, organizations: records }, checked = validateContent(candidate);
@@ -401,6 +404,7 @@ function lockControls() {
   arrangements.configure({ allowed: Boolean(activePage==='arrangements'&&canEdit() && user?.roles.includes('outreach')), busy: controlsBusy || portraitUploading || coverUploading || organizationBusy, dirty, draftRevision: draft?.revision });
   planner?.configure();
   organizations?.configure();
+  for(const button of document.querySelectorAll('[data-content-order-kind]'))button.disabled=displayOrderBlocked()||button.dataset.contentOrderEdge==='true';
   guestPeople?.configure();
   renderSaveState();
   for(const button of document.querySelectorAll('[data-admin-local-restore],[data-admin-local-discard],[data-admin-local-copy]'))button.disabled=busy||plannerBusy||localRecovering||button.hasAttribute('data-admin-local-copy')&&Boolean(localRecovery?.record&&localRecovery.record.value.roleKey!==roleKey());
@@ -637,13 +641,59 @@ function renderPublicationOverview(){
   for(const[collection,label]of[['guests','讲者与嘉宾'],['organizations','参与组织'],['showcases','游戏与作品'],['sessions','活动场次'],['booths','展位']]){
     const items=report.items[collection]??[];if(!items.length)continue;
     const section=node('section');section.append(node('h4',label+(report.orderChanged?.[collection]?' · 顺序变更待发布':'')));const list=node('ul');
+    const orderIds=items.filter(item=>item.inDraft&&item.ready).map(item=>item.id);
     for(const item of items){const row=node('li');row.dataset.publicationDetailKind=collection;row.dataset.publicationDetailId=item.id;row.append(node('strong',item.label));appendPublication(row,collection,item.id);
+      if(item.inDraft&&item.ready)appendDisplayOrder(row,collection,item.id,orderIds,'publish');
       if(item.inDraft){const link=node('a','核对资料');const type={guests:'guest',organizations:'organization',showcases:'showcase',sessions:'session',booths:'booth'}[collection];link.href=contentPageHref(collection)+'#'+type+'='+encodeURIComponent(item.id);row.append(link);}list.append(row);}
     section.append(list);detail.append(section);
   }
   if(!report.hasPublicChanges)detail.append(node('p','已保存内容与当前公开快照一致。'));
 }
-function rowActions(row, type, item) {
+function displayOrderBlocked({ignoreBusy=false}={}){
+  return !canEdit()||!draft||!loadedContent||!ignoreBusy&&busy||plannerBusy||savingContent||checkingContentSave||awaitingContentProof()||publicationUncertain||Boolean(localRecovery)||Boolean(localPendingArchive)||localRecovering||dirty||hasUnappliedInputs()||portraitUploading||coverUploading||organizations?.uploading||Boolean(document.querySelector('dialog[open]'));
+}
+function displayOrderRecords(kind){return draft?.content[kind]??(kind==='organizations'?createDefaultOrganizations():[]);}
+function appendDisplayOrder(output,kind,id,visibleIds,scope){
+  if(!DISPLAY_ORDER_COLLECTIONS.includes(kind)||!Array.isArray(draft?.content[kind]))return;
+  const records=displayOrderRecords(kind),group=node('span',undefined,'ah-admin-order-actions');
+  for(const[direction,label]of[['up','上移'],['down','下移']]){
+    const button=node('button',label,'ah-admin-button');button.type='button';
+    button.dataset.contentOrderKind=kind;button.dataset.contentOrderId=id;button.dataset.contentOrderDirection=direction;button.dataset.contentOrderScope=scope;
+    button.dataset.contentOrderEdge=String(!displayOrderTarget(records,visibleIds,id,direction));button.disabled=displayOrderBlocked()||button.dataset.contentOrderEdge==='true';
+    const record=records.find(item=>item.id===id);button.setAttribute('aria-label',label+' '+(record?.name||record?.title||id));
+    button.title='保存顺序，发布后更新前台';
+    button.addEventListener('click',()=>requestDisplayOrder({kind,id,direction,visibleIds,scope,button}));group.append(button);
+  }
+  output.append(group);
+}
+function requestDisplayOrder({kind,id,direction,visibleIds,scope,button}){
+  if(!DISPLAY_ORDER_COLLECTIONS.includes(kind)||displayOrderBlocked()||scope==='editor'&&activePage!==kind||scope!=='editor'&&activePage!=='publish')return;
+  const stamp=requestSessionGeneration,revision=draft.revision,base=loadedContent,page=activePage,top=button.getBoundingClientRect().top,previewOpen=!$('[data-admin-preview-panel]').hidden;
+  void action(async()=>{
+    if(displayOrderBlocked({ignoreBusy:true})||draft.revision!==revision||loadedContent!==base)return;
+    const records=moveDisplayRecord(displayOrderRecords(kind),visibleIds,id,direction);if(!records)return;
+    const candidate=structuredClone(draft.content);candidate[kind]=records;
+    if(!await saveSectionCandidate(candidate,kind))return;
+    if(stamp!==requestSessionGeneration||activePage!==page||!user)return;
+    const ready=await refreshPublicationProof({quiet:true});
+    if(stamp!==requestSessionGeneration||activePage!==page||!user)return;
+    if(previewOpen&&ready)previewPublic({scroll:false});
+    announce(ready?'顺序已保存，发布后更新前台。':'顺序已保存，预览待核对。');
+  }).finally(()=>{
+    if(stamp!==requestSessionGeneration||activePage!==page||!user)return;
+    const controls=[...document.querySelectorAll('[data-content-order-kind]')].filter(node=>node.dataset.contentOrderKind===kind&&node.dataset.contentOrderId===id&&node.dataset.contentOrderScope===scope);
+    const target=controls.find(node=>node.dataset.contentOrderDirection===direction&&!node.disabled)??controls.find(node=>!node.disabled);
+    if(target){window.scrollBy({top:target.getBoundingClientRect().top-top,behavior:'instant'});target.focus({preventScroll:true});}
+    else{
+      const fallback=[...document.querySelectorAll('[data-admin-check-save],[data-admin-attendance-refresh],[data-admin-preview]')]
+        .filter(node=>!node.disabled&&!node.closest('[hidden]')&&node.getClientRects().length)
+        .sort((a,b)=>Number(b.matches('[data-admin-check-save]'))-Number(a.matches('[data-admin-check-save]'))
+          ||Number(b.matches('[data-admin-attendance-refresh]'))-Number(a.matches('[data-admin-attendance-refresh]')))[0];
+      fallback?.focus();
+    }
+  });
+}
+function rowActions(row, type, item,visibleIds=[]) {
   const td = cell(row, '操作', undefined);
   const actions = type === 'guest' ? [['编辑','edit']] : [['编辑','edit'],['删除','delete']];
   for (const [label, actionName] of actions) {
@@ -666,6 +716,7 @@ function rowActions(row, type, item) {
     });
     td.append(button);
   }
+  if(type==='guest')appendDisplayOrder(td,'guests',item.id,visibleIds,'editor');
 }
 function render() {
   if (!draft) return;
@@ -727,8 +778,8 @@ function render() {
   const guests = $('[data-admin-guests]');
   guests.replaceChildren();
   const guestFilter=$('[data-admin-guest-publication-filter]')?.value??'';
-  for (const item of draft.content.guests ?? []) {
-    if(!publicationMatches(publicationItem('guests',item.id),guestFilter,item))continue;
+  const guestRecords=(draft.content.guests??[]).filter(item=>publicationMatches(publicationItem('guests',item.id),guestFilter,item)),guestIds=guestRecords.map(item=>item.id);
+  for (const item of guestRecords) {
     const row = node('tr');row.dataset.guestId=item.id;
     const photo = cell(row, '头像', undefined);
     if (portraitIdPattern.test(item.portraitId)) {
@@ -746,7 +797,7 @@ function render() {
     const affiliation=cell(row,'机构 / 职称',item.company||'待填写');if(item.title)affiliation.append(node('small',item.title));
     cell(row,'GGJ 职务',item.ggjRole||'—');
     const publicCell=cell(row,'公开',undefined);appendVisibility(publicCell,'guest',item);appendPublication(publicCell,'guests',item.id);
-    rowActions(row, 'guest', item);
+    rowActions(row, 'guest', item,guestIds);
     guests.append(row);
   }
   $('[data-admin-guests-empty]').hidden = guests.childElementCount>0;
@@ -1095,6 +1146,7 @@ function renderShowcases() {
       const button=node('button',label,'ah-admin-button');button.type='button';button.dataset.rowAction=actionName;button.setAttribute('aria-label',label+' '+item.title);
       button.addEventListener('click',()=>{if(!canEdit()||busy||portraitUploading||coverUploading)return;if(actionName==='edit')openEditor('showcase',item);else if(confirm('删除这件作品并保存？前台会在发布后更新。'))void action(async()=>{const candidate=structuredClone(draft.content);candidate.showcases=candidate.showcases.filter(entry=>entry.id!==item.id);if(await saveSectionCandidate(candidate,'showcases'))announce('作品已删除并保存。发布后更新前台。');});});actions.append(button);
     }
+    appendDisplayOrder(actions,'showcases',item.id,filtered.map(record=>record.id),'editor');
     body.append(actions);card.append(body);output.append(card);
   }
   $('[data-admin-showcases-empty]').hidden=filtered.length>0;
@@ -1197,7 +1249,7 @@ for(const name of ['kind','organizationId'])$('[data-showcase-form]').elements.n
 for(const field of $('[data-showcase-form]').querySelectorAll('[name=participationForms]'))field.addEventListener('change',()=>{
   if(!field.checked)$('[data-showcase-form]').elements.namedItem(field.value==='share'?'sessionId':'boothId').value='';syncShowcaseForms();
 });
-function previewPublic() {
+function previewPublic({scroll=true}={}) {
   if (!draft) return;
   const report=publicationReport();if(!report?.guestAttendance)throw new Error('出席资料待核对，请先重新核对。');
   const content = toPublicContent(loadedContent,{guestAttendance:report.guestAttendance});
@@ -1217,7 +1269,7 @@ function previewPublic() {
     list.append(row);
   }
   output.append(list);
-  organizations?.appendPublicPreview(content, output);
+  organizations?.appendPublicPreview(content, output,{appendOrder:(card,item)=>appendDisplayOrder(card,'organizations',item.id,(content.organizations??[]).map(record=>record.id),'preview')});
   output.append(node('h3', '公开嘉宾'));
   const guestCards=publicGuestCards(content.guests,content.guestAttendance);
   if (!guestCards.length) output.append(node('p', '嘉宾阵容，陆续公布。'));
@@ -1237,7 +1289,7 @@ function previewPublic() {
     if(item.bio)card.append(node('p',item.bio));
     if(item.website){const link=node('a','个人 / 机构网站');link.href=item.website;link.target='_blank';link.rel='noopener noreferrer';card.append(link);}
     if (item.ggjRole) card.append(node('p', item.ggjRole));
-    guestGrid.append(card);
+    appendDisplayOrder(card,'guests',item.id,guestCards.map(record=>record.id),'preview');guestGrid.append(card);
   }
   output.append(guestGrid, node('h3', '公开游戏与作品'));
   if (!content.showcases?.length) output.append(node('p', '符合公开条件的游戏与作品将在这里展示。'));
@@ -1245,13 +1297,13 @@ function previewPublic() {
   for (const item of content.showcases ?? []) {
     const card = node('article');
     if(portraitIdPattern.test(item.coverId)){const image=node('img');image.src='/api/admin/portraits/'+item.coverId;image.alt=(item.title||'作品')+'作品图';image.width=320;image.height=180;card.append(image);}else card.append(node('p','封面待补'));
-    card.append(node('h4',item.title||'作品名称待补'),node('p',showcaseKindLabels[item.kind??'student']),node('p',item.teamName),node('p',item.summary));const organization=content.organizations?.find(value=>value.id===item.organizationId);if(organization)card.append(node('p','创作者组织：'+organization.name));showcaseGrid.append(card);
+    card.dataset.previewShowcaseId=item.id;card.append(node('h4',item.title||'作品名称待补'),node('p',showcaseKindLabels[item.kind??'student']),node('p',item.teamName),node('p',item.summary));const organization=content.organizations?.find(value=>value.id===item.organizationId);if(organization)card.append(node('p','创作者组织：'+organization.name));appendDisplayOrder(card,'showcases',item.id,(content.showcases??[]).map(record=>record.id),'preview');showcaseGrid.append(card);
   }
   output.append(showcaseGrid, node('h3', '出席展位'));
   if (!content.booths.length) output.append(node('p', '确认后的展位将在这里公布。'));
   for (const item of content.booths) output.append(node('p', item.code + ' · ' + item.organization + ' · ' + item.project));
   $('[data-admin-preview-panel]').hidden = false;
-  $('[data-admin-preview-panel]').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if(scroll)$('[data-admin-preview-panel]').scrollIntoView({ behavior: 'smooth', block: 'start' });
   announce('正在预览已保存且开关设为公开的内容。私人联系方式、材料和内部备注不会公开。');
 }
 
@@ -1462,7 +1514,7 @@ async function publishContent(){
   const stamp=requestSessionGeneration,intent=contentSaveSnapshot(draft.revision,loadedContent),approvedAttendance=JSON.stringify(report.guestAttendance.confirmedGuestIds),approvedPreview=attendancePreview;
   if(!intent)throw new Error('当前内容待核对，请重新核对。');
   const counts=report.summary;
-  if(!confirm('将更新前台全部已保存内容：新增 '+counts.new+'、更新 '+counts.updated+'、撤下 '+counts.removed+(report.attendanceChanged?'，并更新嘉宾出席':'')+'。继续发布？'))return false;
+  if(!confirm('将更新前台全部已保存内容：新增 '+counts.new+'、更新 '+counts.updated+'、撤下 '+counts.removed+(DISPLAY_ORDER_COLLECTIONS.some(kind=>report.orderChanged?.[kind])?'，含顺序调整':'')+(report.attendanceChanged?'，并更新嘉宾出席':'')+'。继续发布？'))return false;
   if(stamp!==requestSessionGeneration||!canPublish()||draft?.revision!==intent.expectedRevision||attendancePreview!==approvedPreview||!sameContent(loadedContent,intent.content)||dirty||hasUnappliedInputs())throw new Error('资料已变化，请重新核对后发布。');
   // A new policy or changed attendance must never replace frozen bytes under the
   // old public revision. Only this explicitly approved publication advances it.

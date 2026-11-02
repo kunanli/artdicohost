@@ -92,6 +92,15 @@ async function fixture(width,{javascript=true,reducedMotion='no-preference',defe
  }
  return {context,page,width,calls,refresh,releaseInitialContent,get raw(){return raw;}};
 }
+async function publicArrayOrder(f){
+ const expected=projected(f.raw);
+ const order=await f.page.evaluate(()=>({guests:[...document.querySelectorAll('[data-guest-id]')].map(node=>node.dataset.guestId),works:[...document.querySelectorAll('[data-showcase-id]')].map(node=>node.dataset.showcaseId),organizations:[...document.querySelectorAll('[data-organization-id]')].map(node=>node.dataset.organizationId),slots:[...document.querySelectorAll('[data-organization-id]')].map(node=>node.dataset.organizationSlot??null)}));
+ assert.deepEqual(order.guests,expected.guests.map(item=>item.id),'guest DOM order follows the safe public array without attendance ranking');
+ assert.deepEqual(order.works,expected.showcases.map(item=>item.id),'work DOM order follows the public array independently of current selection');
+ assert.deepEqual(order.organizations,expected.organizations.map(item=>item.id),'organization DOM order follows the public array without brand ranking');
+ assert.deepEqual(order.slots,expected.organizations.map((_,index)=>index<7?String(index):null),'slots follow array index, including unknown or failed artwork');
+ return order;
+}
 async function guestDisclosureAccessibility(page,id){
  const session=await page.context().newCDPSession(page);
  try{
@@ -196,11 +205,15 @@ try{
    await page.waitForFunction(()=>document.querySelector('[data-organization-id="synthetic-org-broken"] .ah-organization-image')?.hidden===true);
    assert.deepEqual(await page.locator('[data-organization-id] .ah-organization-card').allTextContents(),[f.raw.organizations[0].name,f.raw.organizations[1].name],'participating organizations show only the saved name beside an optional logo');
    assert.equal(await page.locator('[data-organization-id] .ah-organization-participation').count(),0,'editorial participation tags are not displayed on the reference organization planet');
+   const orderEvidence={initial:await publicArrayOrder(f)};
    const organizationLink=page.locator('#organization-'+IDs.organization+' a.ah-organization-card');
    assert.equal(await organizationLink.getAttribute('href'),'https://example.invalid/synthetic-organization');
    assert.equal(await organizationLink.getAttribute('target'),'_blank');
    assert.match(await organizationLink.getAttribute('rel'),/\bnoopener\b/u);assert.match(await organizationLink.getAttribute('rel'),/\bnoreferrer\b/u);
    await noOverflow(f);
+   await organizationLink.focus();await f.refresh(raw=>{raw.organizations.reverse();});
+   assert.equal(await page.locator('#organization-'+IDs.organization+' a.ah-organization-card').evaluate(node=>document.activeElement===node),true,'organization reorder retains the same public link focus');
+   orderEvidence.organizationsReordered=await publicArrayOrder(f);orderEvidence.organizationFocusRetained=true;
 
    const alpha=page.locator('#guest-'+IDs.guest+' details'),alphaToggle=alpha.locator('[data-guest-toggle]'),beta=page.locator('#guest-'+IDs.secondGuest+' details');
    assert.equal(await alphaToggle.locator('.ah-guest-name').textContent(),longName,'the reference bubble contains the saved guest name');
@@ -263,12 +276,14 @@ try{
    await page.keyboard.press('Escape');await lightbox.waitFor({state:'hidden'});assert.equal(await preview.evaluate(node=>document.activeElement===node),true,'Escape returns focus to the opening cover');
    await preview.click();await lightbox.locator('[data-work-lightbox-close]').focus();
    await f.refresh(raw=>{raw.showcases.reverse();raw.showcases.find(work=>work.id===IDs.student).title='合成刷新后的学生作品';});
+   orderEvidence.worksReordered=await publicArrayOrder(f);
    await lightbox.waitFor({state:'visible'});assert.equal(await lightbox.locator('[data-work-lightbox-close]').evaluate(node=>document.activeElement===node),true,'refresh preserves preview focus');
    assert.equal(await page.locator('[data-public-works-filter]').inputValue(),'student');await selected(f,IDs.student);
    await lightbox.locator('[data-work-lightbox-close]').click();
 
    await guestPointer(alphaToggle,true);if(!await alpha.evaluate(node=>node.open))await guestPointer(alphaToggle,true);await alphaToggle.focus();
    await f.refresh(raw=>{raw.guests.reverse();raw.guests.find(guest=>guest.id===IDs.guest).bio='合成刷新后的嘉宾介绍';});
+   orderEvidence.guestsReordered=await publicArrayOrder(f);
    assert.equal(await page.locator('#guest-'+IDs.guest+' details').evaluate(node=>node.open),true);assert.equal(await page.locator('#guest-'+IDs.guest+' [data-guest-toggle]').evaluate(node=>document.activeElement===node),true,'refresh restores the same guest and keyboard focus after reorder');
    await page.locator('#guest-'+IDs.guest+' a[href="#program-'+IDs.afternoon+'"]').click();await activeZone(f,'B');
    await page.locator('[data-program-period]').selectOption('afternoon');await page.locator('[data-program-period]').focus();
@@ -344,7 +359,7 @@ try{
    assert.equal(await page.evaluate(()=>Boolean(document.activeElement?.closest('[hidden],[inert],dialog:not([open])'))),false,'focus is never stranded in the now-hidden works section or closed dialog');
    assert.doesNotMatch(await page.locator('body').textContent(),/SYNTHETIC_P5_PRIVATE|private\.invalid|private@example/u);
    assert.equal(f.calls.some(call=>/\/(?:submit|send|publish|approve|dispatch|token)(?:\/|$)/u.test(call.path)),false);
-   reports.push({width,publicGuestCardsIndependentOfAttendance:true,guestAttendance,explicitPrivateGuestExcluded:true,referenceNameBubblePortraitInDetails:true,organizationNamesAndOptionalLogosOnly:true,manualCarousel:'zero/single/many; filters and legacy retained',emptyWorksSectionHidden:true,publicationRestoresSection:true,emptyCategoryKeepsSection:true,lastWorkRemovalClosesPreviewAndFocusesAgenda:true,compactFallback:{failedCoverGeometry,missingCoverGeometry,singleCoverGeometry},singleNavigationHidden:true,filterRestoresNavigation:true,realDeclineRetained:true,touch:width<600,preview:'same public image; Escape/focus; refresh retained; removal closed',refresh:'stable IDs, open disclosure, carousel/filter, time/area and focus',agenda:'initial hash, cross-area links, keyboard and no jump',publicContentReads:f.calls.filter(call=>call.path==='/api/public/content').length,allRequests:f.calls.length,screenshots});
+   reports.push({width,publicArrayOrder:orderEvidence,publicGuestCardsIndependentOfAttendance:true,guestAttendance,explicitPrivateGuestExcluded:true,referenceNameBubblePortraitInDetails:true,organizationNamesAndOptionalLogosOnly:true,manualCarousel:'zero/single/many; filters and legacy retained',emptyWorksSectionHidden:true,publicationRestoresSection:true,emptyCategoryKeepsSection:true,lastWorkRemovalClosesPreviewAndFocusesAgenda:true,compactFallback:{failedCoverGeometry,missingCoverGeometry,singleCoverGeometry},singleNavigationHidden:true,filterRestoresNavigation:true,realDeclineRetained:true,touch:width<600,preview:'same public image; Escape/focus; refresh retained; removal closed',refresh:'stable IDs, open disclosure, carousel/filter, time/area and focus',agenda:'initial hash, cross-area links, keyboard and no jump',publicContentReads:f.calls.filter(call=>call.path==='/api/public/content').length,allRequests:f.calls.length,screenshots});
   }finally{await f.context.close();}
  }
  const reclassified=await fixture(390);

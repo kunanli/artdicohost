@@ -250,8 +250,9 @@ function renderOrganizations(cards,url,{initial=false}={}) {
   const focusedId=list.contains(document.activeElement)?document.activeElement.closest('[data-organization-id]')?.dataset.organizationId:null;
   list.replaceChildren();
   const referenceKeys=new Set();
-  for(const organization of orderOrganizationCards(cards)){
+  for(const [index,organization]of orderOrganizationCards(cards).entries()){
     const item=element('li');item.dataset.organizationId=organization.id;item.id='organization-'+organization.id;
+    if(index<7)item.dataset.organizationSlot=String(index);
     const referenceKey=organizationReferenceKey(organization);if(referenceKey&&!referenceKeys.has(referenceKey)){item.dataset.organizationReference=referenceKey;referenceKeys.add(referenceKey);}
     const card=element(organization.website?'a':'div',undefined,'ah-organization-card');
     card.title=organization.name;card.setAttribute('aria-label',organization.name);if(!organization.website)card.setAttribute('role','group');

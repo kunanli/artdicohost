@@ -7,7 +7,6 @@ const own=(value,key)=>Object.getOwnPropertyDescriptor(value,key)?.value;
 const idPattern=/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const logoPattern=/^\/api\/public\/portraits\/[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
 const labels=Object.freeze({undecided:'',exhibitor:'参展',attendee:'一般参与'});
-const referenceOrder=['gamezone','igda','szdx','bu','pengyou','g4c','teesside'];
 const referenceIds=Object.freeze({'game-singularity':'gamezone','igda-shenzhen':'igda','pengyou-gangwan':'pengyou','g4c-hk':'g4c',
   'organization-030b43f23f33413c8f81ed1fcd1d282d':'bu',
   'organization-61fee7cdf16f439a85f071b0e553ed4e':'teesside',
@@ -31,13 +30,10 @@ export function organizationReferenceKey(card) {
   return referenceNames.get(referenceName(own(card,'name')))??null;
 }
 
-/** Sort a copy for the artwork. Equal brands and unknown entries retain input
- * order, and every original card remains distinct and untouched. */
+/** The publication array is the display order. Copy its container without
+ * mutating, merging or ranking any independently saved organization. */
 export function orderOrganizationCards(cards) {
-  if(!Array.isArray(cards))return[];
-  return cards.map((card,index)=>({card,index,rank:referenceOrder.indexOf(organizationReferenceKey(card))}))
-    .sort((a,b)=>(a.rank<0?referenceOrder.length:a.rank)-(b.rank<0?referenceOrder.length:b.rank)||a.index-b.index)
-    .map(item=>item.card);
+  return Array.isArray(cards)?[...cards]:[];
 }
 
 /** A design variant may replace only the exact published source it was reviewed

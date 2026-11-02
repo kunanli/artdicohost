@@ -150,6 +150,27 @@ jobs:
           path: .local-data/browser-evidence/registration-auto-ui/
           if-no-files-found: warn
           retention-days: 1
+      - name: Check admin display ordering and publication
+        id: admin_display_order_browser
+        timeout-minutes: 4
+        env:
+          ARTDICO_PLAYWRIGHT_MODULE: playwright-core
+          ARTDICO_DIST_DIRECTORY: dist
+          ARTDICO_ORDER_EVIDENCE_DIRECTORY: .local-data/browser-evidence/admin-display-order
+        run: |
+          if ! artdico_browser_path="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium)"; then
+            printf '%s\n' '{"ok":false,"failure":"CHROMIUM_UNAVAILABLE"}'
+            exit 1
+          fi
+          ARTDICO_CHROMIUM_BINARY="$artdico_browser_path" node tests/browser/admin-display-order-smoke.mjs
+      - name: Retain admin display order evidence for one day
+        if: ${{ !cancelled() && (steps.admin_display_order_browser.outcome == 'success' || steps.admin_display_order_browser.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: admin-display-order-evidence
+          path: .local-data/browser-evidence/admin-display-order/
+          if-no-files-found: warn
+          retention-days: 1
       # Observational for future incident fixes. This repair's release acceptance
       # requires a successful actual capture and this real-asset browser report.
       - name: Check guest bubbles and actual uploaded logo bounds

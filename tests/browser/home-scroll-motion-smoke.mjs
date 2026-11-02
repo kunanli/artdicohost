@@ -42,7 +42,8 @@ async function main() {
       // Instrument the real browser callbacks, without replacing animation time
       // or making a continuous render loop appear idle.
       const nativeFrame = requestAnimationFrame.bind(window), nativeCancel = cancelAnimationFrame.bind(window), pending = new Set();
-      window.requestAnimationFrame = callback => { const id = nativeFrame(time => { pending.delete(id); callback(time); }); pending.add(id); return id; };
+      let currentNativeFrame = null;
+      window.requestAnimationFrame = callback => { const id = nativeFrame(time => { pending.delete(id); currentNativeFrame = id; try { callback(time); } finally { completeParticleReads(id); currentNativeFrame = null; } }); pending.add(id); return id; };
       window.cancelAnimationFrame = id => { pending.delete(id); nativeCancel(id); };
       Object.defineProperty(window, '__homeMotionQaPendingFrames', { value: () => pending.size });
       const fontEvents = [];
@@ -52,9 +53,10 @@ async function main() {
       Object.defineProperty(window, '__homeMotionQaFontEvents', { value: () => fontEvents.map(event => ({ ...event, faces: event.faces.map(face => ({ ...face })) })) });
       // Observe real canvas paint arguments without changing drawing, clocks,
       // particles or their velocity. The hero uses arc only for dot cores.
-      const frames = [], nativeClear = CanvasRenderingContext2D.prototype.clearRect, nativeArc = CanvasRenderingContext2D.prototype.arc, nativeFillRect = CanvasRenderingContext2D.prototype.fillRect, nativeEllipse = CanvasRenderingContext2D.prototype.ellipse;
+      const frames = [], reads = new Map(), results = new Map(); let clearSequence = 0, readSequence = 0;
+      const nativeClear = CanvasRenderingContext2D.prototype.clearRect, nativeArc = CanvasRenderingContext2D.prototype.arc, nativeFillRect = CanvasRenderingContext2D.prototype.fillRect, nativeEllipse = CanvasRenderingContext2D.prototype.ellipse, nativeRestore = CanvasRenderingContext2D.prototype.restore;
       CanvasRenderingContext2D.prototype.clearRect = function (...args) {
-        if (this.canvas.matches('[data-hero-particles]')) { frames.push({ at: performance.now(), points: [], maskRects: [], maskEllipses: [] }); if (frames.length > 120) frames.shift(); }
+        if (this.canvas.matches('[data-hero-particles]')) { frames.push({ sequence: ++clearSequence, at: performance.now(), completedAt: null, nativeFrame: null, points: [], maskRects: [], maskEllipses: [] }); if (frames.length > 120) frames.shift(); }
         return nativeClear.apply(this, args);
       };
       CanvasRenderingContext2D.prototype.arc = function (...args) {
@@ -69,7 +71,31 @@ async function main() {
         if (this.canvas.matches('[data-hero-particles]') && this.globalCompositeOperation === 'destination-out' && frames.length) frames.at(-1).maskEllipses.push({ x: args[0], y: args[1], rx: args[2], ry: args[3], rotation: args[4] });
         return nativeEllipse.apply(this, args);
       };
-      Object.defineProperty(window, '__homeMotionQaParticleFrames', { value: () => frames.map(frame => ({ at: frame.at, points: frame.points.map(point => ({ ...point })), maskRects: frame.maskRects.map(rect => ({ ...rect })), maskEllipses: frame.maskEllipses.map(ellipse => ({ ...ellipse })) })) });
+      CanvasRenderingContext2D.prototype.restore = function (...args) {
+        const completesMask = this.canvas.matches('[data-hero-particles]') && this.globalCompositeOperation === 'destination-out';
+        const result = nativeRestore.apply(this, args);
+        if (completesMask && frames.length) { frames.at(-1).completedAt = performance.now(); frames.at(-1).nativeFrame = currentNativeFrame; }
+        return result;
+      };
+      function completeParticleReads(nativeFrame) {
+        const frame = frames.at(-1);
+        // A geometry/font invalidation clears the bitmap outside a full paint.
+        // Sample only after the actual mask restore and native RAF callback end,
+        // in this same task, before another callback or MutationObserver clears it.
+        // No particle/pixel count participates: even a completed zero-dot paint
+        // is sampled once and must face the unchanged visibility assertions.
+        if (!frame || frame.completedAt === null || frame.nativeFrame !== nativeFrame) return;
+        for (const [id, read] of reads) {
+          if (frame.sequence <= read.afterClearSequence) continue;
+          reads.delete(id);
+          try { results.set(id, { value: read.capture({ requestedAt: read.at, clearSequenceAtRequest: read.afterClearSequence, clearOnlyAtRequest: read.clearOnlyAtRequest, clearSequence: frame.sequence, clearAt: frame.at, completedAt: frame.completedAt, sampledAt: performance.now(), nativeFrame, pendingFrames: pending.size }) }); }
+          catch (error) { results.set(id, { error: error.message }); }
+        }
+      }
+      Object.defineProperty(window, '__homeMotionQaArmParticleRead', { value: capture => { const id = ++readSequence; reads.set(id, { capture, at: performance.now(), afterClearSequence: clearSequence, clearOnlyAtRequest: Boolean(frames.length && frames.at(-1).completedAt === null) }); return id; } });
+      Object.defineProperty(window, '__homeMotionQaParticleReadReady', { value: id => results.has(id) });
+      Object.defineProperty(window, '__homeMotionQaTakeParticleRead', { value: id => { const result = results.get(id); results.delete(id); if (!result) throw new Error('No completed native particle paint was captured.'); if (result.error) throw new Error(result.error); return result.value; } });
+      Object.defineProperty(window, '__homeMotionQaParticleFrames', { value: () => frames.map(frame => ({ sequence: frame.sequence, at: frame.at, completedAt: frame.completedAt, nativeFrame: frame.nativeFrame, points: frame.points.map(point => ({ ...point })), maskRects: frame.maskRects.map(rect => ({ ...rect })), maskEllipses: frame.maskEllipses.map(ellipse => ({ ...ellipse })) })) });
     });
     if (withoutObserver) await context.addInitScript(() => Object.defineProperty(window, 'IntersectionObserver', { configurable: true, value: undefined }));
     await context.route('**/*', async route => {
@@ -167,7 +193,7 @@ async function main() {
     await noOverflow(page);
   }
   async function particlePixels(page) {
-    return page.locator('[data-hero-particles]').evaluate(canvas => {
+    const id = await page.locator('[data-hero-particles]').evaluate(canvas => window.__homeMotionQaArmParticleRead(paintObservation => {
       const context = canvas.getContext('2d'), pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
       let layerOpacity = 1; for (let node = canvas; node; node = node.parentElement) layerOpacity *= Number(getComputedStyle(node).opacity);
       const b = canvas.getBoundingClientRect(), stage = document.querySelector('.ah-home-hero-stage');
@@ -211,8 +237,13 @@ async function main() {
         components.push({ x: (sumX / count + .5) / canvas.width * b.width, y: (sumY / count + .5) / canvas.height * b.height, pixels: count });
       }
       const occupiedRegions = new Set(components.map(point => Math.min(2, Math.floor(point.x / b.width * 3)) + ',' + Math.min(2, Math.floor(point.y / b.height * 3)))).size;
-      return { brightPixels, centralBrightPixels, visibleComponents: components.length, occupiedRegions, sphereAlphaPixels, readableAlphaPixels, signature, layerOpacity, bitmapWidth: canvas.width, bitmapHeight: canvas.height, cssWidth: b.width, cssHeight: b.height, mode: canvas.dataset.heroParticleMode, inFixedBackgroundLayer: Boolean(canvas.closest('[data-reading-atmosphere]')) };
-    });
+      return { brightPixels, centralBrightPixels, visibleComponents: components.length, occupiedRegions, sphereAlphaPixels, readableAlphaPixels, signature, layerOpacity, bitmapWidth: canvas.width, bitmapHeight: canvas.height, cssWidth: b.width, cssHeight: b.height, mode: canvas.dataset.heroParticleMode, inFixedBackgroundLayer: Boolean(canvas.closest('[data-reading-atmosphere]')), paintObservation };
+    }));
+    // The pixel read already ran synchronously at the first complete native
+    // paint. This wait only retrieves that immutable result under the existing
+    // default timeout; it never polls brightness or asks the renderer to repaint.
+    await page.waitForFunction(id => window.__homeMotionQaParticleReadReady(id), id, { polling: 50 });
+    return page.evaluate(id => window.__homeMotionQaTakeParticleRead(id), id);
   }
   async function backgroundPointerForce(page) {
     // Park the real pointer away from the sampled core's force radius before

@@ -135,7 +135,7 @@ function renderPublishedContent(content,url) {
     guestGrid.replaceChildren();
     for (const guest of cards) {
       const card = element('li', undefined, 'ah-guest-card');
-      card.id='guest-'+guest.id;card.dataset.guestId=guest.id;
+      card.id='guest-'+guest.id;card.dataset.guestId=guest.id;card.dataset.guestAttendance=guest.attendance;
       card.dataset.guestFloat='';
       const details=element('details',undefined,'ah-guest-details');
       const trigger=element('summary',undefined,'ah-guest-bubble');trigger.dataset.guestToggle='';trigger.dataset.focusKey='guest-toggle';

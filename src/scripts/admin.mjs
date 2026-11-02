@@ -1220,10 +1220,10 @@ function previewPublic() {
   organizations?.appendPublicPreview(content, output);
   output.append(node('h3', '公开嘉宾'));
   const guestCards=publicGuestCards(content.guests,content.guestAttendance);
-  if (!guestCards.length) output.append(node('p', '出席嘉宾陆续公布。'));
+  if (!guestCards.length) output.append(node('p', '嘉宾阵容，陆续公布。'));
   const guestGrid = node('div', undefined, 'ah-admin-guest-preview-grid');
   for (const item of guestCards) {
-    const card = node('article');card.dataset.previewGuestId=item.id;
+    const card = node('article');card.dataset.previewGuestId=item.id;card.dataset.previewGuestAttendance=item.attendance;
     if (portraitIdPattern.test(item.portraitId)) {
       const portrait = node('img');
       portrait.src = '/api/admin/portraits/' + item.portraitId;

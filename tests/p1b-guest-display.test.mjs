@@ -10,9 +10,9 @@ const proof = (confirmedGuestIds = ['person-a'], patch = {}) => ({ schemaVersion
 const session = (patch = {}) => ({ id: 'synthetic-session', title: '合成圆桌', start: '10:00', end: '11:00', zone: 'A', status: 'scheduled',
   guestId: 'person-a', speakerName: 'PRIVATE-COPIED-NAME', speakerStatus: 'confirmed', internalNotes: 'PRIVATE-SESSION', ...patch });
 
-test('an explicit attendance proof remains authoritative over profile confirmation and legacy consent', () => {
+test('invalid attendance proofs fail closed regardless of profile confirmation and legacy consent', () => {
   const guests = [person('person-a', { publicConsent: true })];
-  for (const evidence of [null, {}, proof([]), proof([], { sourceRevision: null }), proof(['missing']), proof(['person-a'], { sourceRevision: -1 }),
+  for (const evidence of [null, {}, proof(['missing']), proof(['person-a'], { sourceRevision: -1 }),
     { ...proof(), email: 'private@example.invalid' }, proof(['person-a','person-a'])]) {
     assert.deepEqual(publicGuestCards(guests, evidence), []);
   }
@@ -24,13 +24,24 @@ test('an explicit attendance proof remains authoritative over profile confirmati
   assert.deepEqual(toPublicContent(frozen), frozen, 'the entire legacy public payload remains readable');
 });
 
-test('confirmed card IDs are independent from profile facts and no private attendance source is rendered', () => {
+test('public card IDs are independent from attendance while replies remain truthful and private sources stay hidden', () => {
   const guests = [person('person-a', { status: 'pending', publicConsent: false }), person('person-b')], evidence = proof(['person-a']);
   const before = structuredClone({ guests, evidence }), cards = publicGuestCards(guests, evidence);
-  assert.equal(cards.length, 1); assert.equal(cards[0].id, 'person-a'); assert.equal(cards[0].status, 'pending');
+  assert.deepEqual(cards.map(item => [item.id, item.attendance]), [['person-a', 'attending'], ['person-b', 'pending']]);
+  assert.equal(cards[0].status, 'pending');
   assert.equal(Object.hasOwn(cards[0], 'sourceRevision'), false);
   assert.doesNotMatch(JSON.stringify(cards), /PRIVATE-|contactId|internalNotes|email|sourceRevision/u);
   assert.deepEqual({ guests, evidence }, before);
+});
+
+test('valid empty attendance evidence keeps all public cards pending without fabricating confirmation', () => {
+  const guests = [person('person-a'), person('person-b', { status: 'pending', publicConsent: false })];
+  for (const evidence of [proof([]), proof([], { sourceRevision: null })]) {
+    const before = structuredClone({ guests, evidence }), cards = publicGuestCards(guests, evidence);
+    assert.deepEqual(cards.map(item => [item.id, item.attendance]), [['person-a', 'pending'], ['person-b', 'pending']]);
+    assert.equal(cards[1].status, 'pending');
+    assert.deepEqual({ guests, evidence }, before);
+  }
 });
 
 test('explicitly private profiles are never guest cards or named session participants', () => {
@@ -61,7 +72,7 @@ test('missing or invalid proof keeps editorial session associations visible as p
     const people = publicSessionParticipants(current, guests, evidence);
     assert.equal(people.length, 2); assert.ok(people.every(item => item.attendance === 'pending'));
     const cards = publicGuestCards(guests, evidence);
-    if (evidence === undefined) assert.deepEqual(cards.map(item => item.attendance), ['pending', 'pending']);
+    if (evidence === undefined || evidence.sourceRevision === null) assert.deepEqual(cards.map(item => item.attendance), ['pending', 'pending']);
     else assert.deepEqual(cards, []);
   }
 });

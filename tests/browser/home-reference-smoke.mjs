@@ -14,6 +14,7 @@ const evidence = resolve(process.env.ARTDICO_REFERENCE_EVIDENCE_DIRECTORY || res
 const { createInitialContent } = await import(pathToFileURL(resolve(source, 'src/config/content.mjs')));
 const { toPublicContent, validateContent } = await import(pathToFileURL(resolve(source, 'shared/content-schema.mjs')));
 const { publicContentEnvelope } = await import(pathToFileURL(resolve(source, 'src/lib/public-content-refresh.mjs')));
+const { publicGuestCards } = await import(pathToFileURL(resolve(source, 'shared/guest-display.mjs')));
 const SITE = 'https://artdico.host', API = 'https://api.artdico.host', PRIVATE = 'SYNTHETIC_REFERENCE_PRIVATE_NEVER_PUBLIC';
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const testScriptSha256 = sha(await readFile(fileURLToPath(import.meta.url)));
@@ -99,6 +100,11 @@ function publication(raw, mode) {
   assert.equal(Boolean(publicContentEnvelope(envelope)), mode !== 'corrupt', 'fixture must exercise the real public envelope boundary');
   assert.doesNotMatch(JSON.stringify(content), /SYNTHETIC_REFERENCE_PRIVATE|private@example/u);
   if (mode === 'legacy') assert.equal(Object.hasOwn(content, 'guestAttendance'), false, 'legacy proof is genuinely absent, not fabricated');
+  if(mode!=='corrupt'){
+    const cards=publicGuestCards(content.guests,content.guestAttendance),confirmed=new Set(content.guestAttendance?.confirmedGuestIds??[]);
+    assert.deepEqual(cards.map(item=>item.id),content.guests.map(item=>item.id),'valid public profiles remain displayed with missing, empty or partial attendance proof');
+    for(const card of cards)assert.equal(card.attendance,confirmed.has(card.id)?'attending':'pending','attendance comes only from the explicit proof and is never inferred from display');
+  }
   return content;
 }
 const mime = path => ({ html: 'text/html; charset=utf-8', js: 'text/javascript', mjs: 'text/javascript', css: 'text/css', png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp', svg: 'image/svg+xml', woff2: 'font/woff2', ico: 'image/x-icon' })[extname(path).slice(1)] || 'application/octet-stream';
@@ -162,6 +168,12 @@ async function fixture(width, { mode = 'legacy', brokenImages = false, javascrip
   return { width, context, page, calls, refresh, fontFailures,failPosterFont(){failPosterFont=true;} };
 }
 const noOverflow = async f => assert.equal(await f.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'no horizontal overflow at ' + f.width + 'px');
+async function guestRoster(f,confirmedIds=[]){
+  const confirmed=new Set(confirmedIds),rows=await f.page.locator('[data-guest-id]').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.guestId,attendance:node.dataset.guestAttendance})));
+  assert.deepEqual(rows,names.map((_,index)=>({id:guestId(index),attendance:confirmed.has(guestId(index))?'attending':'pending'})),'every safe public profile remains visible with only its actual proof annotation');
+  assert.equal((await f.page.locator('#guests-heading').textContent()).trim(),'嘉宾阵容');
+  return {count:rows.length,attending:rows.filter(row=>row.attendance==='attending').length,pending:rows.filter(row=>row.attendance==='pending').length};
+}
 function near(actual, expected, tolerance, description) { assert.ok(Math.abs(actual - expected) <= tolerance, `${description}: actual=${actual.toFixed(2)}, reference=${expected.toFixed(2)}, tolerance=${tolerance.toFixed(2)}`); }
 async function mobileOrganizationCircle(f,expected){
   const value=await f.page.evaluate(()=>{const rect=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height};};return{circle:rect(document.querySelector('[data-organizations-planet]')),rows:[...document.querySelectorAll('[data-organization-id]')].filter(row=>!row.hidden).map(row=>({id:row.id,slot:rect(row),card:rect(row.querySelector('.ah-organization-card')),frame:row.querySelector('.ah-organization-image')&&!row.querySelector('.ah-organization-image').hidden?rect(row.querySelector('.ah-organization-image')):null,image:row.querySelector('.ah-organization-image:not([hidden]) img')?rect(row.querySelector('img')):null}))};});
@@ -454,7 +466,7 @@ try {
     const f = await fixture(width);
     try {
       await f.page.goto(SITE + '/', { waitUntil: 'networkidle' }); await f.page.evaluate(() => document.fonts.ready); await f.page.locator('#guest-' + guestId(8)).waitFor();
-      assert.equal(await f.page.locator('[data-guest-id]').count(), 9);
+      const guestState=await guestRoster(f);
       assert.equal(await f.page.locator('.ah-guest-attendance').count(), 0, 'bubble captions do not invent attendance text');
       assert.equal(await f.page.locator('.ah-guest-affiliation').count(), 9, 'the saved company is shown independently of title');
       assert.equal(await f.page.locator('.ah-guest-affiliation').evaluateAll(nodes => nodes.every(node => node.textContent === '合成公开创作组织' && node.dataset.affiliationSource === 'company')), true);
@@ -560,7 +572,7 @@ try {
       assert.ok(f.fontFailures.size>0,'each reference width exercises a genuine poster-font 404');
       const fontFailureTypography=await heroType(f.page,{failedFont:true});await noOverflow(f);
       await f.page.screenshot({path:resolve(evidence,'font-fallback-'+width+'.png'),fullPage:false,animations:'disabled'});
-      reports.push({ name: 'legacy-public-layout-' + width, width, profiles: 9, organizations: 7, attendance: 'not inferred; only actual profile title is displayed', geometry: measured,posterTypography,fontFailureTypography,failedFontPaths:[...f.fontFailures],
+      reports.push({ name: 'legacy-public-layout-' + width, width, profiles: guestState.count, organizations: 7, attendance: guestState, geometry: measured,posterTypography,fontFailureTypography,failedFontPaths:[...f.fontFailures],
         interaction: 'native keyboard, Escape, pointer gap or touch; actual timetable tabs, works filter and FAQ', unknownOrganizationFallback,
         duplicateKnownOrganizationRetained: width===1440, eighthOrganizationGeometry:extraGeometry,missingLogoNameAndRestoredLogoOnly:true,mixedTransparentPanelMask:mixedMask,organizationPaging, requests: f.calls.length, screenshots: files });
     } finally { await f.context.close(); }
@@ -569,10 +581,12 @@ try {
     const f = await fixture(390, { mode });
     try {
       await f.page.goto(SITE + '/', { waitUntil: 'networkidle' });
-      assert.equal(await f.page.locator('[data-guest-id]').count(), 0, mode + ' never falls back to nine legacy cards');
+      const expectedCount=mode==='empty'?9:0;
+      assert.equal(await f.page.locator('[data-guest-id]').count(), expectedCount, mode==='empty'?'a valid empty proof keeps every public profile visible and pending':mode+' never falls back to unverified profiles');
+      const guestState=mode==='empty'?await guestRoster(f):null;
       if (mode !== 'empty') { assert.equal(await f.page.locator('[data-organization-id]').count(), 0); assert.match(await f.page.locator('[data-public-content-status]').textContent(), /无法|暂时/u); }
       else assert.equal(await f.page.locator('[data-organization-id]').count(), 7);
-      await noOverflow(f); reports.push({ name: 'initial-' + mode, width: 390, guestCount: 0, failClosed: true, requests: f.calls.length });
+      await noOverflow(f); reports.push({ name: 'initial-' + mode, width: 390, guestCount: expectedCount,attendance:guestState,failClosed:mode!=='empty',requests: f.calls.length });
     } finally { await f.context.close(); }
   }
   const broken = await fixture(390, { brokenImages: true });
@@ -613,32 +627,36 @@ try {
   } finally { await broken.context.close(); }
   const changing = await fixture(390);
   try {
-    await changing.page.goto(SITE + '/', { waitUntil: 'networkidle' }); assert.equal(await changing.page.locator('[data-guest-id]').count(), 9);
+    await changing.page.goto(SITE + '/', { waitUntil: 'networkidle' });
+    const initialGuestState=await guestRoster(changing),observedGuestCounts=[initialGuestState.count],observedGuestAttendance=[initialGuestState];
+    const verifyGuestRoster=async(confirmedIds=[])=>{const state=await guestRoster(changing,confirmedIds);observedGuestCounts.push(state.count);observedGuestAttendance.push(state);};
     const initialTitle=await changing.page.locator('#hero-heading').getAttribute('data-initial-event-title');
     assert.equal(await changing.page.locator('#students').isVisible(),true);
-    await changing.refresh('empty',raw=>{raw.showcases=[];}); assert.equal(await changing.page.locator('[data-guest-id]').count(), 0);
+    await changing.refresh('empty',raw=>{raw.showcases=[];});await verifyGuestRoster();
     assert.equal(await changing.page.locator('#students').isVisible(),false,'an explicit empty work list hides the complete section, including heading, placeholder and actions');
     assert.equal(await changing.page.locator('#students a:visible,#students button:visible,#students select:visible').count(),0,'an empty work section leaves no visible controls');
-    await changing.refresh('corrupt'); assert.equal(await changing.page.locator('[data-guest-id]').count(), 0, 'bad refresh retains the verified explicit empty proof');
+    await changing.refresh('corrupt');await verifyGuestRoster();
     assert.equal(await changing.page.locator('#students').isVisible(),false,'a corrupt refresh retains the verified empty work section');
     await changing.refresh('proved', raw => { raw.event.title = '合成最新发布活动标题';raw.showcases=rawFixture().showcases; });
     assert.equal(await changing.page.locator('#students').isVisible(),true,'a later verified publication with works restores the whole section');
     assert.equal(await changing.page.locator('[data-showcase-id]').count(),2);
-    assert.equal(await changing.page.locator('[data-guest-id]').count(), 1); assert.equal(await changing.page.locator('.ah-guest-attendance').count(), 0);
+    await verifyGuestRoster([guestId(0)]);assert.equal(await changing.page.locator('.ah-guest-attendance').count(), 0);
     assert.equal((await changing.page.locator('#hero-heading').textContent()).trim(), '合成最新发布活动标题', 'a changed published fact replaces the fixed poster wordmark with the real title');
     assert.equal(await changing.page.locator('#hero-heading').getAttribute('aria-label'),'合成最新发布活动标题');await titleReadability(changing.page);
     const longPublishedTitle='合成真实发布的长活动名称'.repeat(12);
     await changing.refresh('proved',raw=>{raw.event.title=longPublishedTitle;});
+    await verifyGuestRoster([guestId(0)]);
     assert.equal((await changing.page.locator('#hero-heading').textContent()).trim(),longPublishedTitle,'long published titles remain actual text rather than falling back to a decorative brand');
     assert.equal(await changing.page.locator('#hero-heading [data-home-title-type]').count(),0,'custom event facts replace the fixed brand wordmark');assert.equal(await changing.page.locator('#hero-heading').getAttribute('aria-label'),longPublishedTitle);await titleReadability(changing.page);await noOverflow(changing);
-    await changing.refresh('unavailable'); assert.equal(await changing.page.locator('[data-guest-id]').count(), 1, 'failed refresh retains only the last verified explicit proof');
+    await changing.refresh('unavailable');await verifyGuestRoster([guestId(0)]);
     assert.equal((await changing.page.locator('#hero-heading').textContent()).trim(),longPublishedTitle,'a failed refresh preserves the last verified long event title');
     assert.match(await changing.page.locator('[data-public-content-status]').textContent(), /仍显示上次核对/u); await noOverflow(changing);
     await changing.refresh('proved',raw=>{raw.event.title=initialTitle;});await heroType(changing.page);
-    assert.equal(await changing.page.locator('[data-guest-id]').count(),1,'restoring the event title does not change the explicit guest proof');
-    reports.push({ name: 'proof-refresh-transitions', width: 390, counts:[9,0,0,1,1,1,1],emptyWorkSectionHiddenAndRestored:true,posterRestoredAfterCustomTitle:true,longPublishedTitlePreserved:true,verifiedStatePreserved: true, customPublishedTitlePreserved: true });
+    await verifyGuestRoster([guestId(0)]);assert.deepEqual(observedGuestCounts,[9,9,9,9,9,9,9]);
+    reports.push({ name: 'proof-refresh-transitions', width: 390, counts:observedGuestCounts,attendance:observedGuestAttendance,emptyWorkSectionHiddenAndRestored:true,posterRestoredAfterCustomTitle:true,longPublishedTitlePreserved:true,verifiedStatePreserved: true, customPublishedTitlePreserved: true });
   } finally { await changing.context.close(); }
   assert.deepEqual(pageErrors, []);
+  assert.equal(reports.length,9,'all reference, proof, image-failure and refresh scenarios must complete');
 } catch (error) { failure = { message: error.message, stack: error.stack }; }
 finally {
   await browser.close();

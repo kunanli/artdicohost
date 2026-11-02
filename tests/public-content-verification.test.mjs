@@ -57,7 +57,7 @@ test('public diagnostics distinguish missing, empty and confirmed guest evidence
   const legacy = historicalSnapshot(), before = JSON.stringify(legacy);
   const variants = [
     [legacy, { present: false, confirmed: 0, displayed: 1 }],
-    [{ ...legacy, content: { ...legacy.content, guestAttendance: { schemaVersion: 1, sourceRevision: 3, confirmedGuestIds: [] } } }, { present: true, confirmed: 0, displayed: 0 }],
+    [{ ...legacy, content: { ...legacy.content, guestAttendance: { schemaVersion: 1, sourceRevision: 3, confirmedGuestIds: [] } } }, { present: true, confirmed: 0, displayed: 1 }],
     [{ ...legacy, content: { ...legacy.content, guestAttendance: { schemaVersion: 1, sourceRevision: 3, confirmedGuestIds: ['historical-guest'] } } }, { present: true, confirmed: 1, displayed: 1 }],
   ];
   for (const [data, expected] of variants) {

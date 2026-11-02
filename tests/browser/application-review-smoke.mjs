@@ -9,7 +9,7 @@ import { peopleRuntimeFixture, PEOPLE_FIXTURE_API as API, PEOPLE_FIXTURE_PUBLIC 
 const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
 const project = fileURLToPath(new URL('../../', import.meta.url));
 const dist = resolve(process.env.ARTDICO_DIST_DIRECTORY || resolve(project, 'dist'));
-const evidence = resolve(project, '.local-data/browser-evidence'), reports = [], errors = [];
+const evidence = resolve(process.env.ARTDICO_EVIDENCE_DIRECTORY || resolve(project, '.local-data/browser-evidence')), reports = [], errors = [];
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFElEQVR4nGN0KFjAwMDAxMDAgKAAGOQBVgs9CEsAAAAASUVORK5CYII=';
 const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless: true,
   args: ['--no-sandbox', '--disable-dev-shm-usage'] });
@@ -181,13 +181,21 @@ try {
   }
   {
     const f = await fixture({ width: 1440 }), pending = await f.runtime.seedPublic(pendingFields('合成内部意见申请'));
+    const original=await f.api('/api/admin/registrations/'+pending.reference_code),{deletionRequested,...oldReview}=original.review;
+    await f.api('/api/admin/registrations/'+pending.reference_code+'/review',{method:'PATCH',body:{expectedRevision:original.revision,review:{...oldReview,status:'approved'}}});
     await openReview(f); await f.page.locator('[data-review-filters] [name=category]').selectOption('student');
     await f.page.locator('[data-review-filters] button[type=submit]').click();
     await f.page.locator('[data-review-rows] tr').first().getByRole('button', { name: '查看与核查' }).click();
-    await f.page.locator('[data-review-dialog][open]').waitFor(); await f.page.locator('[data-review-form] .review-detail-group > summary').first().click(); await f.page.locator('[data-review-form] [name=status]').selectOption('approved');
+    await f.page.locator('[data-review-dialog][open]').waitFor();
+    assert.equal(await f.page.locator('[data-review-form] [name=status]').count(),0,'old internal decisions are no longer editable');
+    await f.page.locator('[data-review-legacy-records] > summary').click();
+    assert.match(await f.page.locator('[data-review-legacy]').innerText(),/内部建议通过（不授予名额）/u);
+    await assertPending(f,pending.reference_code);
+    await f.page.locator('[data-review-form] .review-detail-group > summary').first().click();await f.page.locator('[data-review-form] [name=internalNotes]').fill('合成日常跟进，不改变旧内部建议');
     assert.equal(await f.page.locator('[data-review-approve]').isDisabled(), true, 'unsaved internal notes must be saved before a formal decision');
     await f.page.locator('[data-review-save]').click(); await f.page.locator('[data-review-form] [data-save-state=saved]').waitFor();
     await f.page.locator('[data-review-approve]:enabled').waitFor();
+    assert.equal((await f.api('/api/admin/registrations/'+pending.reference_code)).review.status,'approved','daily save preserves the retired annotation');
     await assertPending(f, pending.reference_code);
     await f.page.locator('[data-review-approve]').click();
     await f.page.locator('[data-review-admission-status]').filter({ hasText: /已确认参会名额/u }).waitFor();

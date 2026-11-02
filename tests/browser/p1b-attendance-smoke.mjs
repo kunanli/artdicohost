@@ -18,6 +18,7 @@ const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright
 const aliases=new Map(CLOUD_ADMIN_PAGE_ALIASES),errors=[],reports=[];
 const PRIVATE='SYNTHETIC_P1B_PRIVATE_NEVER_PUBLIC';
 const IDS={speaker:'p1b-speaker',host:'p1b-host',declined:'p1b-declined',unlinked:'p1b-unlinked',private:'p1b-private',panel:'p1b-panel',cancelled:'p1b-cancelled'};
+const PUBLIC_GUEST_IDS=[IDS.speaker,IDS.host,IDS.declined,IDS.unlinked];
 const mime=file=>({html:'text/html',mjs:'text/javascript',js:'text/javascript',css:'text/css',png:'image/png',webp:'image/webp',svg:'image/svg+xml',woff2:'font/woff2'})[extname(file).slice(1)]||'application/octet-stream';
 const guest=(id,contactId,extras={})=>({id,contactId,name:'合成嘉宾 '+id,company:'合成机构',ggjRole:'',portraitId:'',status:'confirmed',publicConsent:false,internalNotes:PRIVATE,...extras});
 const session=(id,extra={})=>({id,start:'10:00',end:'11:00',zone:'B',title:'合成多人圆桌',format:'roundtable',guestId:IDS.speaker,speakerName:'',speakerStatus:'pending',status:'scheduled',internalNotes:PRIVATE,...extra});
@@ -43,6 +44,7 @@ async function fixture(browser,width){
   const legacy=await runtime.app.store.publish(0,runtime.users[0].id);assert.equal(Object.hasOwn(legacy.content,'guestAttendance'),false);
   const admissions=await runtime.app.registrationService.getAdmissions({actor:runtime.users[0]});
   const context=await browser.newContext({viewport:{width,height:940}}),calls=[],dialogs=[];
+  let publicProofOverride=null;
   const auth=await runtime.login(),[name,...value]=auth.Cookie.split('=');
   await context.addCookies([{domain:new URL(API).hostname,path:'/api/admin',name,value:value.join('='),httpOnly:true,secure:true,sameSite:'Strict'}]);
   await context.route('**/*',async route=>{
@@ -55,7 +57,9 @@ async function fixture(browser,width){
       const entry={path:url.pathname,method:request.method()};calls.push(entry);
       const response=await runtime.app.handle(new Request(request.url(),{method:request.method(),headers,...(['GET','HEAD'].includes(request.method())?{}:{body:request.postData()})}));
       const replyHeaders=Object.fromEntries(response.headers);delete replyHeaders['content-length'];entry.status=response.status;
-      return route.fulfill({status:response.status,headers:replyHeaders,body:Buffer.from(await response.arrayBuffer())});
+      let body=Buffer.from(await response.arrayBuffer());
+      if(url.pathname==='/api/public/content'&&publicProofOverride!==null){const envelope=JSON.parse(body);envelope.content.guestAttendance=publicProofOverride;body=Buffer.from(JSON.stringify(envelope));}
+      return route.fulfill({status:response.status,headers:replyHeaders,body});
     }
     const path=aliases.get(url.pathname)||url.pathname,file=resolve(dist,'.'+(path.endsWith('/')?path+'index.html':path));assert.ok(file.startsWith(dist+'/'));
     try{return route.fulfill({status:200,contentType:mime(file),body:await readFile(file)});}catch{return route.fulfill({status:404,body:''});}
@@ -63,7 +67,7 @@ async function fixture(browser,width){
   const page=await context.newPage();page.setDefaultTimeout(15000);await page.clock.setSystemTime(new Date('2026-10-21T09:00:00.000Z'));
   page.on('pageerror',error=>errors.push(error.message));
   page.on('dialog',dialog=>{dialogs.push(dialog.message());void (/^将更新前台全部已保存内容/u.test(dialog.message())?dialog.accept():dialog.dismiss());});
-  return {runtime,contacts,context,page,calls,dialogs,admissions,width,legacy};
+  return {runtime,contacts,context,page,calls,dialogs,admissions,width,legacy,overridePublicProof:proof=>{publicProofOverride=proof;}};
 }
 async function openAdmin(f,key){await f.page.goto(API+'/admin/content/'+key+'/',{waitUntil:'networkidle'});await f.page.locator('[data-admin-workspace]:visible').waitFor();await f.page.locator('[data-content-panel="'+key+'"]:visible').waitFor();}
 async function openPublic(f){await f.page.goto(SITE+'/',{waitUntil:'networkidle'});await f.page.locator('#program-'+IDS.panel).waitFor({state:'attached'});}
@@ -79,9 +83,10 @@ async function publish(f){
   assert.equal(f.dialogs.length,before+1,'exactly one impact confirmation per explicit publication');
   return body.published;
 }
-async function publicChecks(f,expectedCards,{legacy=false}={}){
+async function publicChecks(f,expectedCards,{legacy=false,attendingIds=[]}={}){
   await openPublic(f);
   assert.deepEqual(await f.page.locator('[data-public-guests] > [data-guest-id]').evaluateAll(rows=>rows.map(row=>row.dataset.guestId)),expectedCards);
+  assert.deepEqual(await f.page.locator('[data-public-guests] > [data-guest-id]').evaluateAll(rows=>rows.map(row=>({id:row.dataset.guestId,attendance:row.dataset.guestAttendance}))),expectedCards.map(id=>({id,attendance:attendingIds.includes(id)?'attending':'pending'})),'public visibility retains every saved public profile while attendance comes only from the frozen proof');
   assert.equal(await f.page.locator('#guest-'+IDS.private).count(),0,'private profiles never become public legacy cards');
   assert.equal(await f.page.locator('[data-public-guests] .ah-guest-attendance').count(),0,'bubble caption uses public profile values rather than invented attendance text');
   if(legacy)for(const id of expectedCards){const card=f.page.locator('#guest-'+id+' [data-guest-toggle]');assert.equal(await card.getAttribute('aria-label'),['合成嘉宾 '+id,'合成机构','嘉宾介绍'].join('，'));assert.equal(await card.locator('.ah-guest-affiliation').textContent(),'合成机构','legacy company remains readable without inventing a position');assert.equal(await card.locator('.ah-guest-affiliation').getAttribute('data-affiliation-source'),'company');assert.equal(await card.locator('.ah-guest-subtitle').count(),0,'missing legacy title and role stay empty instead of duplicating company');}
@@ -92,14 +97,17 @@ async function publicChecks(f,expectedCards,{legacy=false}={}){
   assert.doesNotMatch(await f.page.locator('[data-agenda]').textContent(),/合成私密人物|SYNTHETIC_P1B_PRIVATE/u);
   return panel;
 }
-async function previewChecks(f,expectedNames){
+async function previewChecks(f,attendingIds){
   await f.page.locator('[data-admin-preview]').click();
   await f.page.locator('[data-admin-preview-panel]:visible').waitFor();
   const preview=f.page.locator('[data-admin-public-preview]');
   const sessionPreview=preview.locator('[data-preview-session-id="'+IDS.panel+'"]');
   assert.match(await sessionPreview.textContent(),/主持人[\s\S]*圆桌嘉宾/u);
   assert.match(await sessionPreview.textContent(),/合成嘉宾 p1b-host[\s\S]*安排待确认/u);
-  assert.deepEqual(await preview.locator('.ah-admin-guest-preview-grid article h4').allTextContents(),expectedNames,'preview guest cards match actual attendance eligibility');
+  assert.deepEqual(await preview.locator('.ah-admin-guest-preview-grid article h4').allTextContents(),PUBLIC_GUEST_IDS.map(id=>'合成嘉宾 '+id),'preview keeps every valid public profile independently of attendance');
+  assert.deepEqual(await preview.locator('.ah-admin-guest-preview-grid article').evaluateAll(rows=>rows.map(row=>({id:row.dataset.previewGuestId,attendance:row.dataset.previewGuestAttendance}))),PUBLIC_GUEST_IDS.map(id=>({id,attendance:attendingIds.includes(id)?'attending':'pending'})),'preview attendance is checked independently from public profile membership');
+  assert.equal(await preview.locator('[data-preview-guest-id="'+IDS.private+'"]').count(),0,'the private profile is excluded even when its source reply is attending');
+  assert.equal(await preview.locator('.ah-admin-guest-preview-grid article p').filter({hasText:/^出席待确认$/u}).count(),PUBLIC_GUEST_IDS.length-attendingIds.length,'unproved profiles remain pending rather than disappearing');
   await f.page.locator('[data-admin-preview-close]').click();
 }
 
@@ -109,7 +117,7 @@ try{
   for(const width of [320,390,1440]){
     const f=await fixture(browser,width);
     try{
-      const legacyCards=[IDS.speaker,IDS.host,IDS.declined,IDS.unlinked];
+      const legacyCards=PUBLIC_GUEST_IDS;
       await publicChecks(f,legacyCards,{legacy:true});
       assert.deepEqual((await f.runtime.app.store.read()).published,f.legacy,'legacy public reads retain exact frozen bytes');
       await openAdmin(f,'sessions');
@@ -150,17 +158,17 @@ try{
       await f.page.locator('[data-close-dialog=session]').first().click();await f.page.locator('[data-session-dialog]').waitFor({state:'hidden'});
       assert.deepEqual(f.dialogs,[],'switching saved editors adds no confirmation');
       await openAdmin(f,'publish');
-      await previewChecks(f,['合成嘉宾 '+IDS.speaker]);
+      await previewChecks(f,[IDS.speaker]);
       const first=await publish(f);assert.deepEqual(first.content.guestAttendance.confirmedGuestIds,[IDS.speaker]);
       assert.equal(first.content.sessions.find(row=>row.id===IDS.panel).participants.some(row=>row.guestId===IDS.private),false,'private participant identity is not public');
       assert.doesNotMatch(JSON.stringify(first),/contactId|email|wechat|internalNotes|SYNTHETIC_P1B_PRIVATE/u);
-      let panel=await publicChecks(f,[IDS.speaker]);
+      let panel=await publicChecks(f,PUBLIC_GUEST_IDS,{attendingIds:[IDS.speaker]});
       assert.equal(await panel.locator('strong').textContent(),'合成多人圆桌','editorial participants remain saved without adding a public subtitle');
       await f.page.locator('[data-zone="B"]').first().click();
       const publicShot=await shot(f,'published-people');
 
       await setReply(f.runtime,f.contacts.speaker,'declined');
-      await publicChecks(f,[IDS.speaker]);
+      await publicChecks(f,PUBLIC_GUEST_IDS,{attendingIds:[IDS.speaker]});
       assert.deepEqual((await f.runtime.app.store.read()).published,first,'reply changes never silently replace frozen publication');
       await openAdmin(f,'publish');
       assert.match(await f.page.locator('[data-admin-publication-detail]').textContent(),/出席.*更新前台/u);
@@ -168,13 +176,21 @@ try{
       const withdrawn=await publish(f);
       assert.ok(withdrawn.revision>first.revision,'explicit attendance publication advances content revision');
       assert.deepEqual(withdrawn.content.guestAttendance.confirmedGuestIds,[]);
-      assert.equal(withdrawn.content.sessions.length,2,'guest filtering never removes the timetable');
-      panel=await publicChecks(f,[]);assert.equal(await panel.locator('strong').textContent(),'合成多人圆桌');
+      assert.equal(withdrawn.content.sessions.length,2,'attendance changes never remove the timetable');
+      panel=await publicChecks(f,PUBLIC_GUEST_IDS);assert.equal(await panel.locator('strong').textContent(),'合成多人圆桌');
+      assert.deepEqual(withdrawn.content.guests.map(row=>row.id),PUBLIC_GUEST_IDS,'an explicit empty proof preserves every saved public profile');
+      // This intercepted invalid envelope is synthetic and never written to the runtime.
+      // A private ID cannot become a valid attendance proof or public fallback card.
+      f.overridePublicProof({schemaVersion:1,sourceRevision:12,confirmedGuestIds:[IDS.private]});
+      await f.page.goto(SITE+'/',{waitUntil:'networkidle'});
+      assert.equal(await f.page.locator('[data-guest-id]').count(),0,'an invalid proof fails closed on an initial public read');
+      assert.match(await f.page.locator('[data-public-content-status]').textContent(),/无法|暂时/u);
+      assert.deepEqual((await f.runtime.app.store.read()).published,withdrawn,'invalid public input never changes the saved publication or its empty proof');
       assert.deepEqual(await f.runtime.app.registrationService.getAdmissions({actor:f.runtime.users[0]}),f.admissions);
       assert.equal(f.runtime.messages.length,0);
       assert.equal(f.calls.filter(row=>row.status>=400).length,0,'actual synthetic API responses all succeed');
       assert.equal(f.dialogs.length,2);assert.ok(f.dialogs.every(message=>/^将更新前台全部已保存内容/u.test(message)));
-      reports.push({width,legacyCards,legacyAttendance:'pending only; no invented proof',confirmedCards:[IDS.speaker],afterWithdrawalCards:0,additionalParticipants:3,publicAdditionalParticipants:2,legacyAndNewEditorClear:true,ordinarySaveConfirmations:0,publishConfirmations:f.dialogs.length,firstRevision:first.revision,withdrawnRevision:withdrawn.revision,requests:f.calls.length,screenshots:[editorShot,publicShot]});
+      reports.push({width,legacyCards,legacyAttendance:'pending only; no invented proof',publicCards:PUBLIC_GUEST_IDS,confirmedAttendanceIds:[IDS.speaker],afterWithdrawalCards:PUBLIC_GUEST_IDS.length,afterWithdrawalAttendanceCount:0,emptyProofKeepsPendingPublicCards:true,invalidProofFailClosed:true,privateProfileExcluded:true,additionalParticipants:3,publicAdditionalParticipants:2,legacyAndNewEditorClear:true,ordinarySaveConfirmations:0,publishConfirmations:f.dialogs.length,firstRevision:first.revision,withdrawnRevision:withdrawn.revision,requests:f.calls.length,screenshots:[editorShot,publicShot]});
     }catch(error){
       await writeFile(resolve(evidence,'failure.json'),JSON.stringify({width,url:f.page.url(),dialogs:f.dialogs,calls:f.calls,pageErrors:errors,text:await f.page.locator('body').innerText()},null,2)+'\n');
       await f.page.screenshot({path:resolve(evidence,'failure-'+width+'.png'),fullPage:true});throw error;

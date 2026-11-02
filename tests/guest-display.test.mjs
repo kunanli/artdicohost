@@ -49,7 +49,7 @@ test('legacy published profiles remain visible as attendance pending without cha
   assert.equal(JSON.stringify(published), before);
 });
 
-test('legacy display still validates privacy, photos and fields while explicit empty or corrupt proofs never fall back', () => {
+test('display validates privacy, photos and fields while corrupt proofs never fall back', () => {
   const hidden = person({ id: 'private-guest', visibility: 'private' });
   assert.deepEqual(publicGuestCards([hidden]), []);
   for (const patch of [{ visibility: undefined }, { status: 'approved' }, { portraitId: '../photo.png' }, { name: '' }]) {
@@ -58,16 +58,17 @@ test('legacy display still validates privacy, photos and fields while explicit e
   const accessor = person();
   Object.defineProperty(accessor, 'name', { get() { assert.fail('legacy display must not execute getters'); } });
   assert.deepEqual(publicGuestCards([accessor]), []);
-  for (const proof of [null, {}, attendance([]), { ...attendance(), confirmedGuestIds: ['missing'] }]) {
+  for (const proof of [null, {}, { ...attendance(), confirmedGuestIds: ['missing'] }]) {
     assert.deepEqual(publicGuestCards([person()], proof), []);
   }
-  assert.equal(Object.hasOwn(confirmedCards([person()])[0], 'attendance'), false, 'proved card output keeps its existing shape');
+  assert.equal(publicGuestCards([person()], attendance([]))[0].attendance, 'pending');
+  assert.equal(confirmedCards([person()])[0].attendance, 'attending');
 });
 
 test('proved attendance keeps profile confirmation and legacy consent independent while whitelisting fields', () => {
   const value = person({ ggjRole: '合成站点职务', internalNotes: 'PRIVATE-NOTE', email: 'private@example.invalid', portraitUrl: 'https://untrusted.example/track.png' });
   assert.deepEqual(confirmedCards([value]), [{ id: value.id, name: value.name, company: value.company, ggjRole: value.ggjRole,
-    portraitId: value.portraitId, portraitUrl: '/api/public/portraits/' + value.portraitId }]);
+    portraitId: value.portraitId, portraitUrl: '/api/public/portraits/' + value.portraitId, attendance: 'attending' }]);
   assert.equal(confirmedCards([person({status:'pending',publicConsent:false})])[0].status,'pending');
   assert.equal(confirmedCards([person({publicConsent:false})]).length,1);
   for (const override of [{ visibility:'private' }, { visibility:'' }, { visibility:undefined }, { status: 'approved' }]) {

@@ -44,15 +44,15 @@ function safeGuestProfiles(input) {
   });
 }
 
-/** An already-published legacy profile remains visible without inventing an
- * attendance reply. Explicit proofs, including an empty list, retain their gate. */
+/** Public visibility controls the cards; verified attendance remains a separate
+ * fact. Invalid proofs fail closed rather than inventing or discarding replies. */
 export function publicGuestCards(input, guestAttendance) {
   const profiles = safeGuestProfiles(input);
   if (guestAttendance === undefined) return profiles.map(item => ({ ...item, attendance: 'pending' }));
   let confirmed;
   try { confirmed = new Set(normalizeGuestAttendance(guestAttendance, profiles.map(item => item.id)).confirmedGuestIds); }
   catch { return []; }
-  return profiles.filter(item => confirmed.has(item.id));
+  return profiles.map(item => ({ ...item, attendance: confirmed.has(item.id) ? 'attending' : 'pending' }));
 }
 
 /** Show the affiliation separately so it never substitutes for a position. */

@@ -1,5 +1,5 @@
 import {createPersonConfirmation} from '../lib/person-confirmation.mjs';
-import {createOperationsFormDraft,operationsDraftStore,captureDraftFields,applyDraftFields,createOperationsSaveState,operationsFieldErrors} from '../lib/operations-form-draft.mjs';
+import {createOperationsFormDraft,operationsDraftStore,captureDraftFields,applyDraftFields,validDraftFields,createOperationsSaveState,operationsFieldErrors} from '../lib/operations-form-draft.mjs';
 import {canManageEventOperations} from '../../shared/staff-permissions.mjs';
 import {reviewRegistrationSelection,reviewConfirmationLink} from '../lib/registration-review-selection.mjs';
 import {registrationSchema} from '../../shared/registration-schema.mjs';
@@ -12,6 +12,9 @@ const statuses={new:'新报名',in_review:'核查中',awaiting_maria:'待 Maria 
 const accommodations={not_requested:'未申请',requested:'已申请',pending:'待核对',approved:'已批准',declined:'未批准'};
 const categories=Object.fromEntries(registrationSchema.identityOptions.map(item=>[item.value,item.label]));
 const reviewFields=['status','accommodationStatus','recommendation','proposedRole','internalNotes','assignedTo','lastContactDate','nextStep','mariaReviewDate','mariaFeedback','mariaDecision','invitationStatus'];
+const editableReviewFields=['accommodationStatus','internalNotes','assignedTo','nextStep'];
+const legacyReviewFields=reviewFields.filter(name=>!editableReviewFields.includes(name));
+let legacyReview={},restoredLegacyReview=false,reviewRelease=null;
 let user=null,csrfToken='',revision=0,nextCursor=null,selected=null,busy=false,dirty=false;
 let sessionGeneration=0;
 let filters={};
@@ -21,9 +24,43 @@ const personConfirmation=createPersonConfirmation({root:$('[data-person-confirma
 function clearConfirmationLink(){confirmationLink=null;$('[data-review-confirmation-result]').hidden=true;$('[data-review-confirmation-open]').removeAttribute('href');$('[data-review-confirmation-fallback]').value='';$('[data-review-confirmation-fallback]').hidden=true;$('[data-review-confirmation-status]').textContent='';}
 const reviewSaveState=createOperationsSaveState({form:$('[data-review-form]'),button:$('[data-review-save]')});
 reviewSaveState.set('idle','修改后保存本条报名的核查意见。');
+function captureReviewFields(form){
+  const editable=captureDraftFields(form,editableReviewFields);
+  return Object.fromEntries(reviewFields.map(name=>[name,Object.hasOwn(editable,name)?editable[name]:legacyReview[name]??'']));
+}
+function applyReviewFields(form,fields){
+  if(!validDraftFields(fields)||Object.entries(fields).some(([name,value])=>!reviewFields.includes(name)||typeof value!=='string'))throw new Error('本机草稿字段无法核对。');
+  const editable=Object.fromEntries(Object.entries(fields).filter(([name])=>editableReviewFields.includes(name)));
+  applyDraftFields(form,editable,editableReviewFields);
+  for(const name of legacyReviewFields)if(Object.hasOwn(fields,name))legacyReview[name]=fields[name];
+  restoredLegacyReview=legacyReviewFields.some(name=>legacyReview[name]!==selected?.review?.[name]);
+  renderLegacyReview();
+}
+function renderLegacyReview(){
+  const output=$('[data-review-legacy]');output.replaceChildren();
+  const labels={recommendation:{priority:'优先',consider:'考虑',follow_up:'需跟进'},mariaDecision:{approved:'已确认',discussion:'待讨论',not_this_time:'本次不邀请'},invitationStatus:{not_sent:'尚未通知',to_send:'准备通知',sent:'已人工通知',declined:'对方婉拒'}};
+  for(const[name,label]of[['status','内部核查意见'],['recommendation','内部推荐'],['proposedRole','建议参与角色 / 安排'],['lastContactDate','上次联系日期'],['mariaReviewDate','Maria 审阅日期'],['mariaDecision','Maria 审阅结果'],['mariaFeedback','Maria 审阅反馈'],['invitationStatus','人工正式通知']]){
+    const value=legacyReview[name];pair(output,label,(name==='status'?statuses[value]:labels[name]?.[value])??value);
+  }
+  $('[data-review-legacy-note]').textContent=restoredLegacyReview?'包含尚未保存的旧审阅填写，参会名额以上方状态为准。':'仅供查阅，参会名额以上方状态为准。';
+}
+function reviewInactive(review){return review?.status==='withdrawn'||Boolean(review?.deletionRequested);}
+function releaseReceipt(value){
+  if(value?.status!=='released'||!Number.isSafeInteger(value.promotedCount)||value.promotedCount<0||value.promotedCount>1000)return {status:'pending'};
+  const result={status:'released',promotedCount:value.promotedCount},email=value.promotionEmail;
+  if(['not_configured','pending','completed'].includes(email?.status)&&Number.isSafeInteger(email.attemptedCount)&&email.attemptedCount>=0&&email.attemptedCount<=value.promotedCount&&email.pendingCount===value.promotedCount-email.attemptedCount)result.promotionEmail={status:email.status};
+  return result;
+}
+function releaseMessage(){
+  const label=selected?.review.status==='withdrawn'?'报名已撤回':'已登记删除申请';
+  if(reviewRelease?.status!=='released')return label+'，名额释放与候补通知待核对。请到名额工具核对。';
+  if(!reviewRelease.promotedCount)return label+'，名额已释放。';
+  const notice={completed:'候补通知已处理，收件结果另行核对。',pending:'候补通知待核对。',not_configured:'候补通知未配置，请核对。'}[reviewRelease.promotionEmail?.status]??'候补通知请到名额工具核对。';
+  return label+'，名额已释放，'+reviewRelease.promotedCount+' 位候补已转正。'+notice;
+}
 function openReviewDraft(){
   reviewDraft?.close();reviewPending=null;const id=selected.id,generation=sessionGeneration,form=$('[data-review-form]');
-  reviewDraft=createOperationsFormDraft({actorId:user.id,roles:user.roles,page:'review',entity:id,form,baseRevision:()=>selected?.revision,isCurrent:()=>generation===sessionGeneration&&selected?.id===id&&Boolean(user),capture:()=>captureDraftFields(form,reviewFields),apply:fields=>{applyDraftFields(form,fields,reviewFields);dirty=true;reviewSaveState.set('dirty','已恢复填写，当前核查意见尚未保存。');renderAdmissionDecision();},manualPending:true,onPending:request=>{if(request.path!=='/api/admin/registrations/'+encodeURIComponent(id)+'/review'||request.method!=='PATCH')throw new Error('原审核保存操作无法核对。');reviewPending=JSON.parse(request.body);dirty=true;reviewSaveState.set('unknown','原核查提交结果待核对。');},onChange:event=>{if(event.error?.code==='STALE_ACTOR'){clear();return;}if(event.status==='discarded')reviewPending=null;lock();}});void reviewDraft.load();
+  reviewDraft=createOperationsFormDraft({actorId:user.id,roles:user.roles,page:'review',entity:id,form,baseRevision:()=>selected?.revision,isCurrent:()=>generation===sessionGeneration&&selected?.id===id&&Boolean(user),capture:()=>captureReviewFields(form),apply:fields=>{applyReviewFields(form,fields);dirty=true;reviewSaveState.set('dirty','已恢复填写，当前核查意见尚未保存。');renderAdmissionDecision();},manualPending:true,onPending:request=>{if(request.path!=='/api/admin/registrations/'+encodeURIComponent(id)+'/review'||request.method!=='PATCH')throw new Error('原审核保存操作无法核对。');reviewPending=JSON.parse(request.body);dirty=true;reviewSaveState.set('unknown','原核查提交结果待核对。');},onChange:event=>{if(event.error?.code==='STALE_ACTOR'){clear();return;}if(event.status==='discarded')reviewPending=null;lock();}});void reviewDraft.load();
 }
 
 const privateExportUrls=new Set();
@@ -45,6 +82,8 @@ function lock(){
   // Draft recovery controls remain usable while the cloud-save controls are locked.
   for(const field of $('[data-review-form]').querySelectorAll('.operations-local-draft button'))field.disabled=busy||!allowed();
   $('[data-review-save]').disabled=busy||!allowed()||!dirty||Boolean(reviewDraft?.blocked)||Boolean(reviewPending);
+  $('[data-review-withdraw]').disabled=busy||!allowed()||!selected||dirty||Boolean(reviewDraft?.blocked)||Boolean(reviewPending)||legacyReview.status==='withdrawn';
+  $('[data-review-release-open]').disabled=busy||!allowed()||Boolean(reviewPending);
   staffAdmissions.lock(busy||!allowed());
   for(const button of document.querySelectorAll('[data-review-detail-close]'))button.disabled=busy;
   renderAdmissionDecision();
@@ -54,15 +93,15 @@ function clear(){
   sessionGeneration+=1;
   for(const url of privateExportUrls)URL.revokeObjectURL(url);privateExportUrls.clear();
   personConfirmation.clear();staffAdmissions.clear();clearConfirmationLink();listState=null;
-  user=null;csrfToken='';revision=0;nextCursor=null;selected=null;dirty=false;filters={};busy=false;pendingRegistration=null;
+  user=null;csrfToken='';revision=0;nextCursor=null;selected=null;dirty=false;filters={};busy=false;pendingRegistration=null;legacyReview={};restoredLegacyReview=false;reviewRelease=null;
   $('[data-review-workspace]').hidden=true;$('[data-review-account]').hidden=true;$('[data-review-login-panel]').hidden=false;
-  for(const selector of ['[data-review-rows]','[data-review-metrics]','[data-review-details]','[data-review-summary]'])$(selector).replaceChildren();
+  for(const selector of ['[data-review-rows]','[data-review-metrics]','[data-review-details]','[data-review-summary]','[data-review-legacy]'])$(selector).replaceChildren();
   $('[data-review-form]').reset();$('[data-review-filters]').reset();$('[data-review-export-contact]').checked=false;
   reviewSaveState.set('idle');operationsFieldErrors($('[data-review-form]'));
   $('[data-review-export-answers]').checked=false;$('[data-review-export-arrangements]').checked=false;
   $('[data-review-login]').reset();
   $('[data-review-detail-title]').textContent='报名资料';
-  for(const selector of ['[data-review-user]','[data-review-result-count]','[data-review-provenance]','[data-review-detail-error]','[data-review-deletion-state]','[data-review-admission-notice]','[data-review-status]','[data-review-error]'])$(selector).textContent='';
+  for(const selector of ['[data-review-user]','[data-review-result-count]','[data-review-provenance]','[data-review-detail-error]','[data-review-deletion-state]','[data-review-admission-notice]','[data-review-release-status]','[data-review-status]','[data-review-error]'])$(selector).textContent='';
   $('[data-review-detail-error]').hidden=true;$('[data-review-error]').hidden=true;$('[data-review-next]').hidden=true;$('[data-review-empty]').hidden=true;
   renderAdmissionDecision();
   if($('[data-review-dialog]').open)$('[data-review-dialog]').close();
@@ -159,12 +198,14 @@ async function openRecord(id){
 function adoptRecord(result,id){
   if(!result.registration||result.registration.id!==id||!Number.isSafeInteger(result.revision))throw new Error('报名详情结果无效。');
   const changedPerson=selected?.id!==id;
+  if(changedPerson)reviewRelease=null;
   const review=result.review??result.registration.review??{};selected={...result.registration,review,revision:result.revision};revision=result.revision;dirty=false;
   clearConfirmationLink();
   if(changedPerson)for(const details of $('[data-review-dialog]').querySelectorAll('details'))details.open=false;
   $('[data-review-detail-title]').textContent=(selected.fields?.name||'报名资料')+' · 参会管理';renderDetails(selected);
   $('[data-review-provenance]').textContent=['staff_assisted','staff_entry'].includes(selected.provenance?.kind)?(selected.provenance.kind==='staff_entry'?'工作人员根据已核定许可逐人登记。':'工作人员根据既有意向资料代登记。')+'此记录不代表本人完成网站隐私同意；原始来源与联络许可须分别核对。':'申请人通过正式表单提交，隐私同意版本与时间随原始报名保存。';
-  const form=$('[data-review-form]');for(const name of reviewFields)form.elements.namedItem(name).value=review[name]??'';
+  legacyReview=Object.fromEntries(legacyReviewFields.map(name=>[name,review[name]??'']));restoredLegacyReview=false;renderLegacyReview();
+  const form=$('[data-review-form]');for(const name of editableReviewFields)form.elements.namedItem(name).value=review[name]??'';
   reviewSaveState.set('idle','修改后点击保存，只保存当前核查意见。');operationsFieldErrors(form);
   $('[data-review-deletion-state]').textContent=review.deletionRequested?'已登记删除申请；尚未宣称完成数据擦除，后续须按受控维护流程处理。':'';
   $('[data-review-detail-error]').hidden=true;
@@ -176,21 +217,24 @@ function adoptRecord(result,id){
 }
 function renderAdmissionDecision(){
   const person=selected?staffAdmissions.person(selected.id):null;
-  $('[data-review-admission-status]').textContent=person?'当前状态：'+(admissionLabels[person.status]||'需刷新核对')+'。':'实际名额状态尚未核对，请先刷新名额。';
-  const pending=person?.status==='pending_review',confirmed=person?.status==='confirmed';
+  const inactive=reviewInactive(selected?.review),pendingWithdrawal=!inactive&&reviewPending?.review?.status==='withdrawn';
+  $('[data-review-admission-status]').textContent=inactive?(selected.review.status==='withdrawn'?'报名已撤回':'已登记删除申请')+'；'+(reviewRelease?.status==='released'?'名额已释放。':'名额释放待核对。'):pendingWithdrawal?'撤回结果待核对，请核对原操作。':person?'当前状态：'+(admissionLabels[person.status]||'需刷新核对')+'。':'实际名额状态尚未核对，请先刷新名额。';
+  const pending=!inactive&&!pendingWithdrawal&&person?.status==='pending_review',confirmed=!inactive&&!pendingWithdrawal&&person?.status==='confirmed';
   $('[data-review-approval-actions]').hidden=!pending;
-  $('[data-review-admission-help]').textContent=pending?'核准后按剩余名额确认或进入候补；取得名额后才处理正式通知。':confirmed?'名额已确认，无需再次审核。可取得下方参会凭证。':person?.status==='waitlisted'?'已核准候补，转正前暂不提供正式票券。':person?'当前状态不提供正式票券，原始资料与历史继续保留。':'请刷新名额后再操作。';
+  $('[data-review-admission-help]').textContent=inactive?'私人参会页、群码和新票券已停用，原始资料与通知历史保留。':pendingWithdrawal?'撤回结果尚未确认，暂不提供私人参会页及新票券。':pending?'核准后按剩余名额确认或进入候补；取得名额后才处理正式通知。':confirmed?'名额已确认，无需再次审核。可取得下方参会凭证。':person?.status==='waitlisted'?'已核准候补，转正前暂不提供正式票券。':person?'当前状态不提供正式票券，原始资料与历史继续保留。':'请刷新名额后再操作。';
+  $('[data-review-release-result]').hidden=!inactive;
+  $('[data-review-release-status]').textContent=inactive?releaseMessage():'';
   personConfirmation.select(confirmed?selected.id:null);personConfirmation.lock();
   $('[data-review-ticket]').hidden=!confirmed;
   $('[data-review-confirmation-prepare]').disabled=busy||!allowed()||!confirmed||dirty||staffAdmissions.pending;
   $('[data-review-confirmation-copy]').disabled=busy||!allowed()||!confirmed||!confirmationLink;
   if(!confirmed&&confirmationLink)clearConfirmationLink();
   if(listState)renderStats(listState);
-  const disabled=busy||!allowed()||dirty||staffAdmissions.pending||person?.status!=='pending_review';
+  const disabled=busy||!allowed()||dirty||staffAdmissions.pending||!pending;
   $('[data-review-approve]').disabled=disabled;$('[data-review-reject]').disabled=disabled;
   $('[data-review-admission-pending]').hidden=!staffAdmissions.pending;
   $('[data-review-admission-retry]').disabled=busy||!allowed()||!staffAdmissions.pending;
-  for(const cell of document.querySelectorAll('[data-review-admission-row]')){const current=staffAdmissions.person(cell.dataset.reviewAdmissionRow);cell.textContent=current?admissionLabels[current.status]||'需核对':'名额状态待核对';cell.dataset.admissionState=current?.status??'unknown';}
+  for(const cell of document.querySelectorAll('[data-review-admission-row]')){const id=cell.dataset.reviewAdmissionRow,current=staffAdmissions.person(id),review=selected?.id===id?selected.review:listState?.registrations.find(record=>record.id===id)?.review;const status=reviewInactive(review)?'withdrawn':selected?.id===id&&pendingWithdrawal?'unknown':current?.status;cell.textContent=status?admissionLabels[status]||'需核对':'名额状态待核对';cell.dataset.admissionState=status??'unknown';}
 }
 
 $('[data-review-confirmation-prepare]').addEventListener('click',()=>{
@@ -223,7 +267,7 @@ async function admissionAction(callback){
 $('[data-review-approve]').addEventListener('click',()=>{if(selected)admissionAction(()=>staffAdmissions.reviewApplication(selected.id,'approve'));});
 $('[data-review-reject]').addEventListener('click',()=>{if(selected)admissionAction(()=>staffAdmissions.reviewApplication(selected.id,'reject'));});
 $('[data-review-admission-retry]').addEventListener('click',()=>admissionAction(()=>staffAdmissions.retry()));
-async function closeDetail(){if(busy)return;const generation=sessionGeneration;if(dirty&&!confirm('关闭表单并保留本机草稿？'))return;if(dirty&&!reviewDraft?.blocked&&!reviewPending)await reviewDraft?.flush().catch(()=>{});if(generation!==sessionGeneration)return;reviewDraft?.close();reviewDraft=null;reviewPending=null;dirty=false;selected=null;personConfirmation.clear();clearConfirmationLink();$('[data-review-dialog]').close();$('[data-review-form]').reset();$('[data-review-details]').replaceChildren();$('[data-review-summary]').replaceChildren();renderAdmissionDecision();}
+async function closeDetail(){if(busy)return;const generation=sessionGeneration;if(dirty&&!confirm('关闭表单并保留本机草稿？'))return;if(dirty&&!reviewDraft?.blocked&&!reviewPending)await reviewDraft?.flush().catch(()=>{});if(generation!==sessionGeneration)return;reviewDraft?.close();reviewDraft=null;reviewPending=null;dirty=false;selected=null;legacyReview={};restoredLegacyReview=false;reviewRelease=null;personConfirmation.clear();clearConfirmationLink();$('[data-review-dialog]').close();$('[data-review-form]').reset();$('[data-review-details]').replaceChildren();$('[data-review-summary]').replaceChildren();$('[data-review-legacy]').replaceChildren();renderAdmissionDecision();}
 $('[data-review-login]').addEventListener('submit',event=>{
   event.preventDefault();const form=event.currentTarget;if(!form.reportValidity())return;const login=Object.fromEntries(new FormData(form));
   action(async()=>{let result;try{result=await request('/api/admin/login',{method:'POST',body:JSON.stringify(login)});}finally{form.elements.namedItem('password').value='';login.password='';}user=result.user;csrfToken=result.csrfToken;await load();announce('已登录。请按需要核查，避免导出或分享无关个人资料。');});
@@ -231,21 +275,53 @@ $('[data-review-login]').addEventListener('submit',event=>{
 $('[data-review-logout]').addEventListener('click',()=>action(async()=>{if((dirty||staffAdmissions.pending||personConfirmation.pending)&&!confirm('退出并清除本机草稿及待核对操作？云端结果需另行核对。'))return;const actorId=user?.id;personConfirmation.clear();reviewDraft?.close();staffAdmissions.clear();try{if(actorId)await operationsDraftStore().clearActor(actorId);}finally{try{await request('/api/admin/logout',{method:'POST'});}finally{clear();}}announce('已退出，本机填写与报名资料已清空。');}));
 $('[data-review-filters]').addEventListener('submit',event=>{event.preventDefault();filters=readFilters();action(()=>load());});
 $('[data-review-filters]').addEventListener('reset',()=>{filters={};queueMicrotask(()=>action(()=>load()));});
-$('[data-review-refresh]').addEventListener('click',()=>action(async()=>{if(dirty&&!confirm('有未保存修改，放弃后刷新吗？'))return;if(dirty&&!reviewDraft?.blocked&&!reviewPending)await reviewDraft?.flush().catch(()=>{});reviewDraft?.close();reviewDraft=null;reviewPending=null;dirty=false;selected=null;if($('[data-review-dialog]').open)$('[data-review-dialog]').close();await load();announce('已读取最新保存记录。');}));
+$('[data-review-refresh]').addEventListener('click',()=>action(async()=>{if(dirty&&!confirm('有未保存修改，放弃后刷新吗？'))return;if(dirty&&!reviewDraft?.blocked&&!reviewPending)await reviewDraft?.flush().catch(()=>{});reviewDraft?.close();reviewDraft=null;reviewPending=null;dirty=false;selected=null;legacyReview={};restoredLegacyReview=false;reviewRelease=null;$('[data-review-legacy]').replaceChildren();$('[data-review-legacy-note]').textContent='';$('[data-review-release-status]').textContent='';$('[data-review-release-result]').hidden=true;clearConfirmationLink();if($('[data-review-dialog]').open)$('[data-review-dialog]').close();await load();announce('已读取最新保存记录。');}));
 $('[data-review-next]').addEventListener('click',()=>action(()=>load(nextCursor)));
 for(const button of document.querySelectorAll('[data-review-detail-close]'))button.addEventListener('click',closeDetail);
 $('[data-review-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeDetail();});
-for(const eventName of ['input','change'])$('[data-review-form]').addEventListener(eventName,event=>{if(!reviewFields.includes(event.target.name))return;dirty=true;reviewSaveState.set('dirty','当前核查意见尚未保存。');operationsFieldErrors(event.currentTarget);$('[data-review-detail-error]').hidden=true;lock();});
+for(const eventName of ['input','change'])$('[data-review-form]').addEventListener(eventName,event=>{if(!editableReviewFields.includes(event.target.name))return;dirty=true;reviewSaveState.set('dirty','当前核查意见尚未保存。');operationsFieldErrors(event.currentTarget);$('[data-review-detail-error]').hidden=true;lock();});
 $('[data-review-form]').addEventListener('invalid',event=>{let group=event.target.closest('details');while(group){group.open=true;group=group.parentElement?.closest('details');}reviewSaveState.set('error','请检查标出的字段，填写内容仍保留。');},true);
 $('[data-review-form]').addEventListener('submit',event=>{
-  event.preventDefault();if(!selected||reviewDraft?.blocked||reviewPending||!event.currentTarget.reportValidity())return;
-  const review=Object.fromEntries(reviewFields.map(name=>[name,event.currentTarget.elements.namedItem(name).value.normalize('NFC').trim()]));const id=selected.id,expectedRevision=selected.revision,generation=sessionGeneration;
-  action(async()=>{let writeAcknowledged=false,proven=null;reviewSaveState.set('saving','正在保存当前核查意见…');try{const path='/api/admin/registrations/'+encodeURIComponent(id)+'/review',body=JSON.stringify({expectedRevision,review});await reviewDraft.markPending({path,method:'PATCH',body});reviewPending={expectedRevision,review};await request(path,{method:'PATCH',body});writeAcknowledged=true;const checked=await request('/api/admin/registrations/'+encodeURIComponent(id));const saved=checked.review??checked.registration?.review;if(checked.registration?.id!==id||!Number.isSafeInteger(checked.revision)||checked.revision<=expectedRevision||!saved||!Object.entries(review).every(([key,value])=>saved[key]===value))throw new Error('云端核查结果尚未与本次填写一致，请手动核对。');proven=checked;await reviewDraft.acknowledge();reviewPending=null;dirty=false;adoptRecord(checked,id);if(generation!==sessionGeneration)return;reviewSaveState.set('saved','当前报名核查意见已保存。');try{await load();}catch{if(generation===sessionGeneration)announce('核查意见已保存；列表暂未刷新，可稍后刷新。');return;}announce('核查意见已保存。');}catch(error){if(generation===sessionGeneration&&proven){selected={...proven.registration,review:proven.review??proven.registration.review,revision:proven.revision};revision=proven.revision;reviewPending=null;dirty=false;reviewSaveState.set('saved','当前核查意见已保存；本机恢复记录尚待整理，请保留页面核对。');announce('核查意见已保存；本机恢复记录尚待整理。',true);return;}if(generation===sessionGeneration&&!writeAcknowledged&&error.status>=400&&error.status<500){await reviewDraft?.rejectPending();reviewPending=null;}else if(generation===sessionGeneration)await reviewDraft?.markUnknown().catch(()=>{});if(generation===sessionGeneration&&selected?.id===id){reviewSaveState.set(reviewPending?'unknown':error.status===409?'conflict':'error',error.message);operationsFieldErrors($('[data-review-form]'),error.fields??{});$('[data-review-detail-error]').textContent=error.message;$('[data-review-detail-error]').hidden=false;$('[data-review-detail-error]').focus();}throw error;}});
+  event.preventDefault();if(!selected||busy||!allowed()||reviewDraft?.blocked||reviewPending||!event.currentTarget.reportValidity())return;
+  const review=Object.fromEntries(Object.entries(captureReviewFields(event.currentTarget)).map(([name,value])=>[name,value.normalize('NFC').trim()]));const id=selected.id,expectedRevision=selected.revision,generation=sessionGeneration;
+  const withdrawing=selected.review.status!=='withdrawn'&&review.status==='withdrawn';
+  if(withdrawing&&!confirm('撤回将释放名额，可能使候补转正并按通知设置发送正式确认信；私人参会页、群码和新票券停用。确认撤回申请？')){
+    dirty=true;restoredLegacyReview=true;renderLegacyReview();reviewSaveState.set('dirty','撤回尚未保存，请核对后再保存。');reviewDraft?.schedule();lock();return;
+  }
+  action(async()=>{
+    let writeAcknowledged=false,proven=null;
+    reviewSaveState.set('saving',withdrawing?'正在保存撤回…':'正在保存当前核查意见…');
+    try{
+      const path='/api/admin/registrations/'+encodeURIComponent(id)+'/review',body=JSON.stringify({expectedRevision,review});
+      await reviewDraft.markPending({path,method:'PATCH',body});reviewPending={expectedRevision,review};
+      const receipt=await request(path,{method:'PATCH',body});writeAcknowledged=true;
+      const checked=await request('/api/admin/registrations/'+encodeURIComponent(id)),saved=checked.review??checked.registration?.review;
+      if(checked.registration?.id!==id||!Number.isSafeInteger(checked.revision)||checked.revision<=expectedRevision||!saved||!Object.entries(review).every(([key,value])=>saved[key]===value))throw new Error('云端核查结果尚未与本次填写一致，请手动核对。');
+      proven=checked;if(reviewInactive(saved))reviewRelease=releaseReceipt(receipt.admissionRelease);
+      await reviewDraft.acknowledge();reviewPending=null;dirty=false;adoptRecord(checked,id);if(generation!==sessionGeneration)return;
+      const savedMessage=reviewInactive(saved)?releaseMessage():'当前报名核查意见已保存。';reviewSaveState.set('saved',savedMessage);
+      try{await load();}catch{if(generation===sessionGeneration)announce(reviewInactive(saved)?savedMessage:'核查意见已保存；列表暂未刷新，可稍后刷新。');return;}
+      announce(reviewInactive(saved)?savedMessage:'核查意见已保存。');
+    }catch(error){
+      if(generation===sessionGeneration&&proven){selected={...proven.registration,review:proven.review??proven.registration.review,revision:proven.revision};revision=proven.revision;reviewPending=null;dirty=false;renderAdmissionDecision();reviewSaveState.set('saved',reviewInactive(selected.review)?releaseMessage():'当前核查意见已保存；本机恢复记录尚待整理，请保留页面核对。');announce(reviewInactive(selected.review)?releaseMessage():'核查意见已保存；本机恢复记录尚待整理。',true);return;}
+      if(generation===sessionGeneration&&!writeAcknowledged&&error.status>=400&&error.status<500){await reviewDraft?.rejectPending();reviewPending=null;}else if(generation===sessionGeneration)await reviewDraft?.markUnknown().catch(()=>{});
+      if(generation===sessionGeneration&&selected?.id===id){reviewSaveState.set(reviewPending?'unknown':error.status===409?'conflict':'error',error.message);operationsFieldErrors($('[data-review-form]'),error.fields??{});$('[data-review-detail-error]').textContent=error.message;$('[data-review-detail-error]').hidden=false;$('[data-review-detail-error]').focus();}throw error;
+    }
+  });
+});
+$('[data-review-withdraw]').addEventListener('click',()=>{
+  if(!selected||busy||!allowed()||dirty||reviewDraft?.blocked||reviewPending||legacyReview.status==='withdrawn')return;
+  legacyReview.status='withdrawn';dirty=true;$('[data-review-form]').requestSubmit();
+});
+$('[data-review-release-open]').addEventListener('click',async()=>{
+  if(busy||!allowed()||reviewPending)return;
+  await closeDetail();if($('[data-review-dialog]').open)return;
+  $('[data-review-workspace] .review-tools').open=true;const heading=document.getElementById('admissions-title');heading.tabIndex=-1;heading.focus({preventScroll:true});heading.scrollIntoView({block:'start',behavior:'instant'});
 });
 $('[data-review-deletion]').addEventListener('click',()=>{
   if(!selected||!user?.roles.includes('superadmin'))return;if(dirty){announce('请先保存或放弃核查修改，再登记删除申请。',true);return;}
   const reason=prompt('填写收到删除申请的依据（不要重复输入证件或其他敏感资料）。此操作仅登记申请，不表示资料已被擦除。');if(!reason?.trim())return;
-  const id=selected.id,expectedRevision=selected.revision;action(async()=>{await request('/api/admin/registrations/'+encodeURIComponent(id)+'/deletion-request',{method:'POST',body:JSON.stringify({expectedRevision,reason:reason.trim()})});await openRecord(id);announce('已登记删除申请。实际删除及历史快照、备份处理仍需受控维护流程。');});
+  const id=selected.id,expectedRevision=selected.revision;action(async()=>{const receipt=await request('/api/admin/registrations/'+encodeURIComponent(id)+'/deletion-request',{method:'POST',body:JSON.stringify({expectedRevision,reason:reason.trim()})});reviewRelease=releaseReceipt(receipt.admissionRelease);await openRecord(id);announce('已登记删除申请。实际删除及历史快照、备份处理仍需受控维护流程。');});
 });
 $('[data-review-export-xlsx]').addEventListener('click',()=>action(async()=>{
   const generation=sessionGeneration;

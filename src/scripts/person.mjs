@@ -24,6 +24,10 @@ const channelLabels = { manual: '人工邀请', email: '邮件', wechat: '微信
 const noticeLabels = { prepared: '已准备，未记录发出', manually_sent: '已记录人工发出', provider_accepted: '邮件服务已接收，未证明送达', unknown: '结果待核对，不重复发送', reserved: '结果待核对，不重复发送', rejected: '明确未发出', generated: '已生成，未记录发出', sent: '已记录人工发出', disabled: '通知已停用', not_configured: '寄件尚未配置' };
 let user = null, csrfToken = '', generation = 0, sequence = 0, authSequence = 0, authBusy = false, reading = false, personController = null, authController = null;
 const quickNames = ['responseStatus', 'owner', 'followUpAt', 'notes'];
+const registrationProfileLimits = {name:120,email:254,organization:300,position:200,city:160,wechat:150,phone:150};
+const registrationProfileNames = Object.keys(registrationProfileLimits);
+const registrationIdPattern = /^[A-Za-z0-9_-]{43}$/u;
+const profileOperationPattern = /^[A-Za-z0-9_-]{32,128}$/u;
 const operationNames = ['owner', 'priority', 'followUpAt', 'notes', 'responseStatus', 'participationForms', 'sessionIds', 'boothIds', 'sessionRoles'];
 const peopleNavigation=createPeopleNavigation();
 let navigationBusy=false,personFresh=false,navigationEnd=false,lastConfirmationCheck=null;
@@ -31,9 +35,13 @@ let selectedView = null, quickDraft = null, quickRevision = null, quickBase = nu
   quickPending = null, quickRetryReady = false, syncIssue = '', relatedRefresh = false, quickFocus = null, mutationController = null, credential = null, credentialBusy = false, sourceSequence = 0, transportBusy = 0;
 const quickForm = $('[data-person-quick-form]');
 const quickSaveState = createOperationsSaveState({form: quickForm, button: $('[data-person-quick-save]'), status: $('[data-person-quick-state]')});
+const profileForm = $('[data-person-profile-form]');
+const profileSaveState = createOperationsSaveState({form:profileForm,button:$('[data-person-profile-save]'),status:$('[data-person-profile-state]')});
+let profileDraft=null,profileEditing=false,profileDirty=false,profileBusy=false,profilePending=null,profileRetryReady=false,
+  profileBase=null,profileRevision=null,profileAccessRevision=null,profileController=null,profileFocus=null;
 const personConfirmation = createPersonConfirmation({root: $('[data-person-confirmation]'), request, getUser: () => user,
   draftStore:operationsDraftStore(),onInvalidated:clearPrivateState,onLockChange:confirmationStateChanged,onChecked:checked=>{lastConfirmationCheck={...checked,key:currentKey()};renderConfirmationCheck();},
-  isBlocked: () => reading || quickBusy || transportBusy > 0 || quickDirty || Boolean(quickPending),isSendBlocked:deliveryUnknown, onChanged: () => { if (!quickDirty && !quickPending) void loadPerson({preserve:true}); }});
+  isBlocked: () => reading || quickBusy || transportBusy > 0 || quickDirty || Boolean(quickPending) || profileLocked(),isSendBlocked:deliveryUnknown, onChanged: () => { if (!quickDirty && !quickPending && !profileLocked()) void loadPerson({preserve:true}); }});
 const resolution = createPeopleResolution({root: $('[data-people-resolution]'), request, getUser: () => user,
   onChanged: () => loadPerson({preserve:true}), onIntegrate: integratePerson});
 
@@ -61,7 +69,8 @@ function navigationUnresolved(){
     ||view.communications.confirmations.some(item=>['unknown','reserved','issuing'].includes(item.status))
     ||['invitations','confirmations'].some(key=>view.permissions[key]&&['unavailable','restricted'].includes(view.availability[key])));
 }
-function mayNavigate(){return Boolean(user&&selectedView&&personFresh&&!authBusy&&!reading&&!quickBusy&&!transportBusy&&!credentialBusy&&!quickDirty&&!quickPending&&!quickDraft?.blocked&&!syncIssue&&!relatedRefresh&&!personConfirmation.blocked&&!navigationUnresolved());}
+function profileLocked(){return profileDirty||profileBusy||Boolean(profilePending)||Boolean(profileDraft?.blocked);}
+function mayNavigate(){return Boolean(user&&selectedView&&personFresh&&!authBusy&&!reading&&!quickBusy&&!transportBusy&&!credentialBusy&&!quickDirty&&!quickPending&&!quickDraft?.blocked&&!profileLocked()&&!syncIssue&&!relatedRefresh&&!personConfirmation.blocked&&!navigationUnresolved());}
 function renderNavigation(){
   const panel=$('[data-person-list-context]');if(!panel)return;
   const key=currentKey(),context=user&&key?peopleNavigation.read(user,{selection:key}):null;
@@ -91,18 +100,27 @@ async function nextPerson(){
 }
 function lock() {
   $('[data-person-login-submit]').disabled = authBusy || location.protocol === 'file:';
-  $('[data-person-refresh]').disabled = authBusy || reading || quickBusy || transportBusy > 0 || credentialBusy || !allowed();
+  $('[data-person-refresh]').disabled = authBusy || reading || quickBusy || profileBusy || transportBusy > 0 || credentialBusy || !allowed();
   $('[data-person-logout]').disabled = authBusy || !user;
   const blocked = authBusy || reading || quickBusy || navigationBusy || transportBusy > 0 || !user;
-  for (const field of quickForm.querySelectorAll('input,select,textarea')) field.disabled = blocked || Boolean(quickPending) || Boolean(quickDraft?.blocked);
-  $('[data-person-quick-save]').disabled = blocked || !quickDirty || Boolean(quickPending) || !quickDraft || quickDraft.blocked;
+  for (const field of quickForm.querySelectorAll('input,select,textarea')) field.disabled = blocked || profileLocked() || Boolean(quickPending) || Boolean(quickDraft?.blocked);
+  $('[data-person-quick-save]').disabled = blocked || profileLocked() || !quickDirty || Boolean(quickPending) || !quickDraft || quickDraft.blocked;
   $('[data-person-quick-check]').disabled = blocked;
   $('[data-person-quick-retry]').disabled = blocked || !quickRetryReady;
-  $('[data-person-primary]').disabled = blocked || !selectedView;
-  $('[data-person-credential-prepare]').disabled = blocked || credentialBusy || !credentialRegistration();
-  $('[data-person-credential-copy]').disabled = blocked || credentialBusy || !credential;
+  $('[data-person-primary]').disabled = blocked || profileBusy || !selectedView;
+  $('[data-person-credential-prepare]').disabled = blocked || profileLocked() || credentialBusy || !credentialRegistration();
+  $('[data-person-credential-copy]').disabled = blocked || profileLocked() || credentialBusy || !credential;
+  const profileBlocked=blocked||profileBusy||quickDirty||Boolean(quickPending)||Boolean(quickDraft?.blocked)||personConfirmation.pending||credentialBusy;
+  for(const field of profileForm.querySelectorAll('input'))field.disabled=profileBlocked||Boolean(profilePending)||Boolean(profileDraft?.blocked);
+  $('[data-person-profile-edit]').disabled=profileBlocked||!profileEditable();
+  $('[data-person-profile-save]').disabled=profileBlocked||!profileDirty||Boolean(profilePending)||!profileDraft||profileDraft.blocked;
+  $('[data-person-profile-cancel]').disabled=profileBlocked||Boolean(profilePending);
+  $('[data-person-profile-check]').disabled=profileBlocked;
+  $('[data-person-profile-retry]').disabled=profileBlocked||!profileRetryReady;
+  $('[data-person-service-open]').disabled=blocked||profileLocked();
   personConfirmation.lock();
   resolution.lock();
+  if(profileLocked())for(const control of document.querySelectorAll('[data-people-resolution] button,[data-resolution-dialog] button,[data-resolution-dialog] input'))control.disabled=true;
   renderNavigation();
   if (transportBusy) for (const control of document.querySelectorAll('[data-resolution-dialog] button,[data-resolution-dialog] input')) control.disabled = true;
 }
@@ -121,12 +139,21 @@ function clearQuick() {
   $('[data-person-quick-check]').hidden = true; $('[data-person-quick-retry]').hidden = true;
   $('[data-person-quick-outcome]').textContent = ''; $('[data-person-quick-outcome]').hidden = true; quickSaveState.set('idle');
 }
+function clearProfile() {
+  profileDraft?.close();profileDraft=null;profileController?.abort();profileController=null;
+  profileEditing=false;profileDirty=false;profileBusy=false;profilePending=null;profileRetryReady=false;
+  profileBase=null;profileRevision=null;profileAccessRevision=null;profileFocus=null;profileForm.reset();profileForm.hidden=true;
+  $('[data-person-profile-edit]').hidden=true;$('[data-person-profile-primary]').hidden=true;$('[data-person-profile-primary]').removeAttribute('href');
+  $('[data-person-profile-check]').hidden=true;$('[data-person-profile-retry]').hidden=true;$('[data-person-profile-email-note]').hidden=true;
+  $('[data-person-profile-outcome]').textContent='';$('[data-person-profile-outcome]').hidden=true;
+  profileSaveState.set('idle');
+}
 function clearRecord(message = '到人员或报名列表，选择「个人工作页」即可查看同一人的已保存记录。') {
   personFresh=false;navigationEnd=false;
   $('[data-person-navigation-status]').textContent='';
   if(!user||lastConfirmationCheck?.key!==currentKey())lastConfirmationCheck=null;
   $('[data-person-last-check]').replaceChildren();$('[data-person-last-check]').hidden=true;
-  clearQuick(); clearCredential(); personConfirmation.clear(); resolution.clear(); selectedView = null; sourceSequence++;
+  clearQuick(); clearProfile(); clearCredential(); personConfirmation.clear(); resolution.clear(); selectedView = null; sourceSequence++;
   $('[data-person-summary]').replaceChildren(); $('[data-person-primary-reason]').textContent = '';
   $('[data-person-source]').replaceChildren(); $('[data-person-source-state]').textContent = '';
   $('[data-person-source-panel]').open = false; $('[data-person-more]').open = false; $('[data-person-service-panel]').hidden = true;
@@ -220,8 +247,8 @@ function dateLabel(value) {
 function badge(label, status) { const tag = node('span', label, 'person-badge'); if (status) tag.dataset.admission = status; return tag; }
 function renderProfile(view) {
   const output = $('[data-person-profile]');
-  if (view.availability.contact !== 'available') stateMessage(output, view.availability.contact);
-  const profile = view.contact?.profile ?? view.registration?.fields;
+  if (view.availability.contact !== 'available' && !view.registration) stateMessage(output, view.availability.contact);
+  const profile = view.registration?.profileCorrection ? {...view.contact?.profile,...view.registration.fields,displayName:view.registration.fields.name} : view.contact?.profile ?? view.registration?.fields;
   if (profile) {
     const list = facts();
     for (const [key, label] of [['name', '姓名'], ['displayName', '邀请称呼'], ['organization', '机构／团队'], ['position', '职务'], ['city', '城市'], ['email', '邮箱'], ['wechat', '微信'], ['phone', '电话']]) fact(list, label, profile[key]);
@@ -299,7 +326,8 @@ function renderCommunications(view) {
   const timeline = node('ol', undefined, 'person-timeline');
   for (const entry of view.communications.timeline) {
     const row = node('li'), title = entry.source === 'confirmation' ? entry.kind === 'promotion' ? '候补转正确认邮件' : '参会确认邮件' : entry.source === 'legacy_invitation' ? '手工邀请函记录' : '报名邀请';
-    row.append(node('strong', title + ' · ' + (noticeLabels[entry.status] ?? '状态待核对')));
+    if(entry.source==='confirmation'&&typeof entry.currentRecipient==='boolean')row.dataset.personCurrentRecipient=String(entry.currentRecipient);
+    row.append(node('strong', (entry.currentRecipient===false?'原邮箱 · ':'') + title + ' · ' + (noticeLabels[entry.status] ?? '状态待核对')));
     const time = node('time', dateLabel(entry.at)); if (entry.at) time.dateTime = entry.at; row.append(time);
     if (entry.channel) row.append(node('p', '渠道：' + (channelLabels[entry.channel] ?? '待核对'))); timeline.append(row);
   }
@@ -366,6 +394,157 @@ function openNotificationHistory() {
   $('[data-person-communications]').closest('details').scrollIntoView({block:'nearest',behavior:'instant'});
 }
 function operationCopy(input) { return Object.fromEntries(operationNames.map(name => [name, structuredClone(input[name])])); }
+function profileCopy(input) {return Object.fromEntries(registrationProfileNames.map(name=>[name,input?.[name]??'']));}
+function validProfileFields(fields,complete=false){
+  if(!fields||typeof fields!=='object'||Array.isArray(fields)||Object.keys(fields).length!==registrationProfileNames.length
+    ||Object.keys(fields).some(key=>!registrationProfileNames.includes(key)))return false;
+  for(const [name,maximum]of Object.entries(registrationProfileLimits)){
+    const value=fields[name];if(typeof value!=='string'||[...value].length>maximum||/[\u0000-\u001f\u007f]/u.test(value)
+      ||[...value].some(character=>{const point=character.codePointAt(0);return point>=0xd800&&point<=0xdfff;}))return false;
+    if(complete&&value!==value.normalize('NFC').trim())return false;
+  }
+  return !complete||Boolean(fields.name)&&(!fields.email||/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(fields.email));
+}
+function profileEditable(){
+  const view=selectedView,item=view?.registration;
+  return Boolean(user?.roles.some(role=>['reviewer','superadmin'].includes(role))&&view?.permissions.registration
+    &&view.availability.registration==='available'&&item&&(item.profileTargetId??item.id)===item.id
+    &&Number.isSafeInteger(view.revisions.registration)&&view.revisions.registration>=0);
+}
+function profilePath(id){return '/api/admin/registrations/'+encodeURIComponent(id)+'/profile';}
+function profileReceipt(value,pending){
+  const required=['outcome','operationId','registrationId','revision','fields','accessRevision'];
+  // Operation facts are immutable; a concurrent merge may add only this explicit warning.
+  if(!value||typeof value!=='object'||Array.isArray(value)||required.some(key=>!Object.hasOwn(value,key))
+    ||Object.keys(value).some(key=>![...required,'identityCheck'].includes(key))
+    ||!['updated','replayed'].includes(value.outcome)||value.operationId!==pending.input.operationId
+    ||value.registrationId!==pending.registrationId||value.revision!==pending.input.expectedRevision+1
+    ||!Number.isSafeInteger(value.accessRevision)||value.accessRevision<0||!validProfileFields(value.fields,true)
+    ||registrationProfileNames.some(name=>value.fields[name]!==pending.input.fields[name]))throw Error('原保存回执暂时无法核对。');
+  if(Object.hasOwn(value,'identityCheck')){
+    const identity=value.identityCheck;
+    if(!identity||typeof identity!=='object'||Array.isArray(identity)||Object.keys(identity).sort().join(',')!=='profileTargetId,state'
+      ||identity.state!=='changed'||!registrationIdPattern.test(identity.profileTargetId??'')||identity.profileTargetId===pending.registrationId)throw Error('主报名变化暂时无法核对。');
+  }
+  if(pending.accessRevision!==null&&value.accessRevision!==pending.accessRevision+Number(pending.emailChanged))throw Error('私人凭证修订暂时无法核对。');
+  return value;
+}
+function openProfile(){
+  if(!profileEditable()||profileBusy||quickBusy||quickDirty||quickPending||transportBusy||personConfirmation.pending||credentialBusy)return;
+  profileEditing=true;profileForm.hidden=false;$('[data-person-profile-edit]').hidden=true;
+  $('[data-person-more]').open=true;$('[data-person-profile-panel]').open=true;
+  clearCredential();personConfirmation.clear();$('[data-person-service-panel]').hidden=true;
+  renderNext();lock();
+}
+function markProfileDirty(){
+  if(!profileEditable()||profilePending||profileBusy)return;
+  profileEditing=true;profileDirty=registrationProfileNames.some(name=>profileForm.elements.namedItem(name).value.normalize('NFC').trim()!==(profileBase?.[name]??''));personFresh=!profileDirty&&!relatedRefresh&&!syncIssue;navigationEnd=false;
+  clearCredential();personConfirmation.clear();$('[data-person-service-panel]').hidden=true;
+  $('[data-person-profile-email-note]').hidden=profileForm.elements.namedItem('email').value.normalize('NFC').trim()===(profileBase?.email??'');
+  profileSaveState.set(profileDirty?'dirty':'idle');renderNext();lock();
+}
+function setupProfile(view,{preserve=false}={}){
+  const item=view.registration,target=item?.profileTargetId??item?.id,primary=$('[data-person-profile-primary]');
+  primary.hidden=!item||target===item.id||!view.permissions.registration;
+  if(!primary.hidden)primary.href='/admin/person/#registration='+encodeURIComponent(target);else primary.removeAttribute('href');
+  $('[data-person-profile-edit]').hidden=!profileEditable()||profileEditing;
+  if(!profileEditable()){if(profileDraft)clearProfile();primary.hidden=!item||target===item.id||!view.permissions.registration;if(!primary.hidden)primary.href='/admin/person/#registration='+encodeURIComponent(target);return;}
+  if(preserve&&profileDraft){
+    if(!profileDirty&&!profilePending){profileRevision=view.revisions.registration;profileBase=profileCopy(item.fields);profileAccessRevision=item.profileCorrection?.accessRevision??0;applyDraftFields(profileForm,profileBase,registrationProfileNames);}
+    return;
+  }
+  profileRevision=view.revisions.registration;profileBase=profileCopy(item.fields);profileAccessRevision=item.profileCorrection?.accessRevision??0;
+  applyDraftFields(profileForm,profileBase,registrationProfileNames);
+  const id=item.id,actor=user.id,epoch=generation,current=()=>user?.id===actor&&epoch===generation&&selectedView?.registration?.id===id&&currentKey()===viewKey(view);
+  profileDraft=createOperationsFormDraft({actorId:actor,roles:user.roles,page:'person',entity:'registration-profile:'+id,form:profileForm,
+    baseRevision:()=>profileRevision,isCurrent:current,capture:()=>captureDraftFields(profileForm,registrationProfileNames),
+    validate:fields=>validProfileFields(fields),apply:fields=>{applyDraftFields(profileForm,fields,registrationProfileNames);openProfile();markProfileDirty();},manualPending:true,
+    onEdit:markProfileDirty,onPending:original=>{
+      const input=JSON.parse(original.body);
+      if(original.path!==profilePath(id)||original.method!=='PATCH'||Object.keys(input).sort().join(',')!=='expectedRevision,fields,operationId'
+        ||!Number.isSafeInteger(input.expectedRevision)||input.expectedRevision<0||!profileOperationPattern.test(input.operationId??'')||!validProfileFields(input.fields,true))throw Error('原保存内容无法核对。');
+      profilePending={path:original.path,method:original.method,body:original.body,input,registrationId:id,accessRevision:null,emailChanged:false};
+      profileDirty=true;profileRetryReady=false;if(original.fields)applyDraftFields(profileForm,original.fields,registrationProfileNames);
+      openProfile();profileSaveState.set('unknown');$('[data-person-profile-check]').hidden=false;renderNext();lock();
+    },onChange:event=>{
+      if(event.error?.code==='STALE_ACTOR'){clearPrivateState();return;}
+      if(event.status==='discarded'){profilePending=null;profileRetryReady=false;$('[data-person-profile-check]').hidden=true;$('[data-person-profile-retry]').hidden=true;}
+      renderNext();lock();
+    }});
+  void profileDraft.load();
+}
+function restoreProfileFocus(){
+  const saved=profileFocus;profileFocus=null;
+  if(!saved||!saved.element.isConnected||saved.element.disabled||reading)return;
+  const active=document.activeElement;
+  if(active&&active!==document.body&&active!==saved.element&&!['person-profile-save','person-profile-check','person-profile-retry'].some(key=>active.hasAttribute('data-'+key)))return;
+  saved.element.focus({preventScroll:true});
+  if(Number.isInteger(saved.start)&&Number.isInteger(saved.end))try{saved.element.setSelectionRange(saved.start,saved.end);}catch{/* Email inputs have no caret API. */}
+  const epoch=generation,key=currentKey(),align=()=>{if(epoch!==generation||key!==currentKey()||document.activeElement!==saved.element)return;const bounds=saved.element.getBoundingClientRect();window.scrollBy({left:bounds.left-saved.left,top:bounds.top-saved.top,behavior:'instant'});};
+  align();requestAnimationFrame(align);
+}
+async function acknowledgeProfile(receipt,pending,draft,epoch,key){
+  if(epoch!==generation||currentKey()!==key||profilePending!==pending)return;
+  profilePending=null;profileDirty=false;profileRetryReady=false;profileBase=structuredClone(receipt.fields);profileRevision=receipt.revision;profileAccessRevision=receipt.accessRevision;
+  $('[data-person-profile-check]').hidden=true;$('[data-person-profile-retry]').hidden=true;$('[data-person-profile-email-note]').hidden=true;
+  clearCredential();personConfirmation.clear();lastConfirmationCheck=null;renderConfirmationCheck();
+  profileSaveState.set('saved',receipt.identityCheck?'已保存原报名，请核对主报名。':'');
+  try{await draft.acknowledge();}catch{if(epoch===generation&&currentKey()===key)profileSaveState.set('saved','本机恢复记录待整理。');}
+  if(epoch!==generation||currentKey()!==key)return;
+  await loadPerson({preserve:true});
+  if(epoch===generation&&currentKey()===key&&selectedView){
+    profileSaveState.set('saved',receipt.identityCheck?'已保存原报名，请核对主报名。':'');
+    if(receipt.identityCheck){$('[data-person-profile-outcome]').textContent='已保存原报名，请核对主报名。';$('[data-person-profile-outcome]').hidden=false;}
+  }
+}
+async function saveProfile(replay=false){
+  if(profileBusy||!profileEditable()||!profileDraft||!profileForm.reportValidity()||(!replay&&(!profileDirty||profilePending||profileDraft.blocked))||replay&&!profileRetryReady)return;
+  const id=selectedView.registration.id,key=viewKey(),epoch=generation,draft=profileDraft,still=()=>epoch===generation&&currentKey()===key&&selectedView?.registration?.id===id;
+  let pending=profilePending,requested=false,proven=false;
+  if(!replay){const active=document.activeElement,bounds=active&&profileForm.contains(active)?active.getBoundingClientRect():null;profileFocus=bounds?{element:active,start:active.selectionStart,end:active.selectionEnd,left:bounds.left,top:bounds.top}:null;}
+  profileBusy=true;profileRetryReady=false;profileSaveState.set('saving');lock();
+  try{
+    if(!replay){
+      const fields=Object.fromEntries(registrationProfileNames.map(name=>[name,profileForm.elements.namedItem(name).value.normalize('NFC').trim()]));
+      if(!validProfileFields(fields,true))throw Error('请核对姓名与联络资料。');
+      const input={expectedRevision:profileRevision,operationId:crypto.randomUUID().replaceAll('-',''),fields};
+      pending={path:profilePath(id),method:'PATCH',body:JSON.stringify(input),input,registrationId:id,accessRevision:profileAccessRevision,emailChanged:fields.email!==profileBase.email};
+      await draft.markPending(pending);if(!still())return;profilePending=pending;
+    }
+    if(!pending||!still())return;
+    profileController=new AbortController();requested=true;
+    const receipt=profileReceipt(await request(pending.path,{method:pending.method,body:pending.body,controller:profileController,epoch,current:still}),pending);
+    proven=true;await acknowledgeProfile(receipt,pending,draft,epoch,key);
+  }catch(error){
+    if(!still())return;if(proven){profileSaveState.set('saved','相关记录待重新核对。');return;}
+    if(!requested){profilePending=null;profileSaveState.set('error',error.message||'原保存尚未准备好，尚未发送。');}
+    else if(!replay&&[400,403,404,409,422].includes(error.status)){try{await draft.rejectPending();profilePending=null;profileSaveState.set(error.status===409?'conflict':'error',error.status===409?'版本已更新，请取消编辑并重新读取。':error.message);}catch{profileSaveState.set('unknown');await draft.markUnknown().catch(()=>{});}}
+    else{profileSaveState.set(error.status===409?'conflict':'unknown');await draft.markUnknown().catch(()=>{});}
+    profileDirty=true;$('[data-person-profile-check]').hidden=!profilePending;renderNext();
+  }finally{if(still()){profileBusy=false;profileController=null;renderNext();lock();if(!profilePending)restoreProfileFocus();}}
+}
+async function checkProfile(){
+  if(!profilePending||profileBusy||!selectedView)return;
+  const pending=profilePending,key=viewKey(),epoch=generation,draft=profileDraft,still=()=>epoch===generation&&currentKey()===key&&profilePending===pending;
+  profileBusy=true;profileRetryReady=false;profileSaveState.set('unknown','正在核对原保存…');lock();
+  try{
+    const value=await request('/api/admin/registrations/'+encodeURIComponent(pending.registrationId)+'/profile-operations/'+encodeURIComponent(pending.input.operationId),{epoch,current:still});
+    if(!still())return;const receipt=profileReceipt(value,pending);await acknowledgeProfile(receipt,pending,draft,epoch,key);
+  }catch(error){
+    if(!still())return;
+    profileRetryReady=error.status===404;
+    profileSaveState.set('unknown',profileRetryReady?'尚未找到本次保存，可重试原保存。':'暂时无法核对，原保存仍保留。');
+    $('[data-person-profile-retry]').hidden=!profileRetryReady;
+  }finally{if(epoch===generation&&currentKey()===key){profileBusy=false;renderNext();lock();if(!profilePending)restoreProfileFocus();}}
+}
+async function cancelProfile(){
+  if(profileBusy||profilePending||!profileDraft)return;
+  const draft=profileDraft,epoch=generation,key=currentKey();
+  profileBusy=true;lock();
+  try{await draft.acknowledge();if(epoch!==generation||currentKey()!==key)return;applyDraftFields(profileForm,profileBase,registrationProfileNames);profileDirty=false;profileEditing=false;profileForm.hidden=true;$('[data-person-profile-email-note]').hidden=true;$('[data-person-profile-edit]').hidden=!profileEditable();profileSaveState.set('idle');personFresh=true;}
+  catch{if(epoch===generation&&currentKey()===key)profileSaveState.set('error','本机填写暂时无法清除，请保留页面。');}
+  finally{if(epoch===generation&&currentKey()===key){profileBusy=false;renderNext();lock();if(!profileEditing)$('[data-person-profile-edit]').focus({preventScroll:true});}}
+}
 function renderSummary(view) {
   const output = $('[data-person-summary]'); output.replaceChildren();
   const reply = view.contact?.operations.responseStatus;
@@ -374,7 +553,7 @@ function renderSummary(view) {
   const admission = syncIssue ? '名额待核对' : view.admission ? ({confirmed:'名额已确认',waitlisted:'候补',pending_review:'申请待审',rejected:'申请未通过',withdrawn:'已撤回'})[view.admission.status]
     : view.availability.admission === 'restricted' ? '名额由审核人核对' : view.availability.admission === 'unavailable' ? '名额待核对' : '尚未整合名额';
   output.append(badge(admission, syncIssue ? undefined : view.admission?.status));
-  const notice = view.communications.timeline.find(item => item.source === 'confirmation');
+  const notice = view.communications.timeline.find(item => item.source === 'confirmation' && item.currentRecipient !== false);
   if (view.communications.unresolvedConfirmations) output.append(badge('寄送待核对'));
   else if (notice) output.append(badge(({provider_accepted:'邮件服务已接收',unknown:'寄送待核对',reserved:'寄送待核对',rejected:'确认信未发出'})[notice.status] ?? '通知待核对'));
   else if (view.availability.confirmations === 'unavailable') output.append(badge('通知待核对'));
@@ -390,13 +569,16 @@ function renderNext() {
   if (syncIssue && !quickDirty && !quickPending) action = {key:'check', label:'核对名额', reason:syncIssue, kind:'refresh'};
   else if (relatedRefresh && !quickDirty && !quickPending) action = {key:'check', label:'核对相关记录', reason:'回复已保存。', kind:'refresh'};
   if (quickDraft?.blocked && !quickPending) action = {key:'draft', label:'核对本机填写', reason:'', kind:'refresh'};
+  if(profileLocked())action={key:'profile',label:profilePending?'核对保存':profileDraft?.blocked?'核对本机填写':'继续编辑',reason:'',kind:'refresh'};
   if (action.key === 'details' && credentialRegistration()) action = {...action, label:'查看凭证'};
   if (action.kind === 'handoff') action = {...action, label:'复制转交链接'};
   const button = $('[data-person-primary]'); button.textContent = action.label; button.dataset.action = action.key; button.dataset.kind = action.kind;
   if (action.href) button.dataset.href = action.href; else delete button.dataset.href;
   const editing = $('[data-person-quick-panel]').open && quickDirty && !quickPending;
-  button.classList.toggle('ah-admin-primary', $('[data-person-service-panel]').hidden && !editing);
+  const editingProfile=profileEditing&&profileDirty&&!profilePending;
+  button.classList.toggle('ah-admin-primary', $('[data-person-service-panel]').hidden && !editing && !editingProfile);
   $('[data-person-quick-save]').classList.toggle('ah-admin-primary', editing);
+  $('[data-person-profile-save]').classList.toggle('ah-admin-primary',editingProfile);
   $('[data-person-primary-reason]').textContent = action.reason || '';
 }
 function setupQuick(view) {
@@ -458,7 +640,7 @@ async function acknowledgeQuick(receipt, draft, epoch, key) {
   try { await draft.acknowledge(); } catch { if (epoch === generation && currentKey() === key) quickSaveState.set('saved', '本机恢复记录待整理。'); }
 }
 async function saveQuick(replay = false) {
-  if (quickBusy || !selectedView?.contact || !quickDraft || !quickForm.reportValidity() || (!replay && (!quickDirty || quickPending || quickDraft.blocked))) return null;
+  if (quickBusy || profileLocked() || !selectedView?.contact || !quickDraft || !quickForm.reportValidity() || (!replay && (!quickDirty || quickPending || quickDraft.blocked))) return null;
   const id = selectedView.contact.id, key = viewKey(), epoch = generation, draft = quickDraft;
   const still = () => epoch === generation && currentKey() === key && selectedView?.contact?.id === id;
   let pending = quickPending, requested = false, proven = null;
@@ -540,7 +722,7 @@ async function checkQuick() {
 }
 async function prepareCredential() {
   const id = credentialRegistration(), epoch = generation, key = viewKey();
-  if (!id || credentialBusy || quickBusy || quickDirty || quickPending) return;
+  if (!id || credentialBusy || quickBusy || quickDirty || quickPending || profileLocked()) return;
   clearCredential(); credentialBusy = true; lock();
   try {
     const value = await request('/api/admin/registration-confirmation/link/' + encodeURIComponent(id), {epoch, current: () => epoch === generation && currentKey() === key});
@@ -552,13 +734,14 @@ async function prepareCredential() {
   finally { if (epoch === generation && currentKey() === key) { credentialBusy = false; lock(); } }
 }
 function openServices() {
+  if(profileLocked())return;
   $('[data-person-service-panel]').hidden = false;
   const id = credentialRegistration(); $('[data-person-credential]').hidden = !id;
   personConfirmation.select(id,{suppress:deliveryUnknown()}); renderNext(); lock();
   if (deliveryUnknown()) $('[data-person-primary-reason]').textContent = '原通知结果待核对，暂不准备新邮件。';
 }
 async function integratePerson(id, expectedRevision) {
-  if (quickDirty || quickPending || quickBusy || selectedView?.contact?.id !== id || quickRevision !== expectedRevision) throw new Error('请先核对并保存当前人员资料。');
+  if (quickDirty || quickPending || quickBusy || profileLocked() || selectedView?.contact?.id !== id || quickRevision !== expectedRevision) throw new Error('请先核对并保存当前人员资料。');
   if (selectedView.contact.operations.responseStatus !== 'attending') {
     quickForm.elements.namedItem('responseStatus').value = 'attending'; quickDirty = true;
     const receipt = await saveQuick();
@@ -592,6 +775,7 @@ function render(view, {preserveQuick = false} = {}) {
   relatedRefresh = false;
   $('[data-person-name]').textContent = view.person.displayName || view.person.name || '未填写姓名';
   $('[data-person-identity]').textContent = [view.person.organization, view.person.position, view.person.city].filter(Boolean).join(' · ');
+  if(view.registration?.profileCorrection){$('[data-person-name]').textContent=view.registration.fields.name;$('[data-person-identity]').textContent=[view.registration.fields.organization,view.registration.fields.position,view.registration.fields.city].filter(Boolean).join(' · ');}
   $('[data-person-linkage]').textContent = ({ linked: '依据已保存的关联核对人员与报名，不按同名自动合并。', unlinked: '目前只有这一份记录，尚未关联另一份人员／报名资料。', restricted: '其他关联资料按账号权限显示，未读取受限记录。', unavailable: '关联来源暂时无法完整核对，下方分别显示可用范围。' })[view.linkage.state];
   for (const action of personWorkspaceActions(view, user.roles)) { const link = node('a', action.label, 'ah-admin-button'); link.href = action.href; link.dataset.personAction = action.key; $('[data-person-actions]').append(link); }
   for (const step of personWorkspaceSteps(view, user.roles)) {
@@ -611,6 +795,7 @@ function render(view, {preserveQuick = false} = {}) {
   renderSummary(view);
   if (!preserveQuick) setupQuick(view);
   else if (!quickDirty && !quickPending && !quickBusy && view.contact) { quickRevision = view.revisions.contacts; quickBase = operationCopy(view.contact.operations); }
+  setupProfile(view,{preserve:preserveQuick});
   renderNext(); lock();
 }
 async function loadPerson({ focus = false, preserve = false } = {}) {
@@ -651,7 +836,7 @@ $('[data-person-login]').addEventListener('submit', async event => {
 });
 $('[data-person-logout]').addEventListener('click', async () => {
   if (authBusy || !user) return;
-  if ((quickDirty || quickPending || quickBusy || personConfirmation.pending) && !confirm('退出并清除本机填写？原保存结果仍需核对。')) return;
+  if ((quickDirty || quickPending || quickBusy || profileDirty || profilePending || profileBusy || personConfirmation.pending) && !confirm('退出并清除本机填写？原保存结果仍需核对。')) return;
   const actorId = user.id;peopleNavigation.clear();personConfirmation.clear(); quickDraft?.close(); quickDraft = null;
   let localCleared = false; try { await operationsDraftStore().clearActor(actorId); localCleared = true; } catch { /* The private page is still cleared below. */ }
   personController?.abort(); sequence++; reading = false; clearRecord();
@@ -661,13 +846,19 @@ $('[data-person-logout]').addEventListener('click', async () => {
   catch (error) { if (epoch === generation && operation === authSequence) { clearRecord(); announce(error.message || '退出结果尚未核对，请重试。', true); } }
   finally { if (authController === controller) authController = null; if (operation === authSequence) authBusy = false; lock(); }
 });
-$('[data-person-refresh]').addEventListener('click', () => { if (authBusy || reading || quickBusy) return; if (quickPending) void checkQuick(); else if (quickDirty) announce('请先保存或核对当前填写。'); else void loadPerson(); });
+$('[data-person-refresh]').addEventListener('click', () => { if (authBusy || reading || quickBusy || profileBusy) return; if(profilePending)void checkProfile();else if (quickPending) void checkQuick(); else if (quickDirty||profileLocked()) announce('请先保存或核对当前填写。'); else void loadPerson(); });
+profileForm.addEventListener('submit',event=>{event.preventDefault();void saveProfile();});
+$('[data-person-profile-edit]').addEventListener('click',()=>{openProfile();if(profileEditing)profileForm.elements.namedItem('name').focus({preventScroll:true});});
+$('[data-person-profile-cancel]').addEventListener('click',()=>void cancelProfile());
+$('[data-person-profile-check]').addEventListener('click',()=>void checkProfile());
+$('[data-person-profile-retry]').addEventListener('click',()=>{if(profileRetryReady)void saveProfile(true);});
+$('[data-person-profile-primary]').addEventListener('click',event=>{if(profileLocked()||quickDirty||quickPending||quickBusy){event.preventDefault();announce('请先保存或核对当前记录。',true);}});
 quickForm.addEventListener('submit', event => { event.preventDefault(); void saveQuick(); });
 $('[data-person-quick-panel]').addEventListener('toggle', renderNext);
 $('[data-person-quick-check]').addEventListener('click', () => void checkQuick());
 $('[data-person-quick-retry]').addEventListener('click', () => { if (quickRetryReady) void saveQuick(true); });
 $('[data-person-credential-prepare]').addEventListener('click', () => void prepareCredential());
-$('[data-person-service-open]').addEventListener('click', () => { if (!reading && !quickBusy && !quickDirty && !quickPending) openServices(); });
+$('[data-person-service-open]').addEventListener('click', () => { if (!reading && !quickBusy && !quickDirty && !quickPending && !profileLocked()) openServices(); });
 $('[data-person-credential-copy]').addEventListener('click', async () => {
   if (!credential || quickBusy || credentialBusy) return;
   const link = credential.confirmationUrl, key = viewKey(), epoch = generation;
@@ -679,8 +870,10 @@ $('[data-person-source-panel]').addEventListener('toggle', () => {
   else { sourceSequence++; $('[data-person-source]').replaceChildren(); $('[data-person-source-state]').textContent = ''; }
 });
 $('[data-person-primary]').addEventListener('click', async () => {
-  if (!selectedView || authBusy || reading || quickBusy) return;
+  if (!selectedView || authBusy || reading || quickBusy || profileBusy) return;
   const button = $('[data-person-primary]'), action = button.dataset.action;
+  if(profilePending)return void checkProfile();
+  if(action==='profile'){openProfile();return;}
   if (quickPending) return void checkQuick();
   if (action === 'reply' || action === 'draft') { const panel = $('[data-person-quick-panel]'); if (!panel.hidden) { panel.open = true; quickForm.elements.namedItem('responseStatus').focus({preventScroll:true}); panel.scrollIntoView({block:'nearest',behavior:'instant'}); } return; }
   if (action === 'source') { $('[data-person-more]').open = true; $('[data-person-source-panel]').open = true; $('[data-person-source-panel]').scrollIntoView({block:'nearest',behavior:'instant'}); return; }
@@ -702,8 +895,10 @@ $('[data-person-primary]').addEventListener('click', async () => {
 });
 window.addEventListener('hashchange', async () => {
   if (quickDraft && quickDirty && !quickPending && !quickBusy) await quickDraft.flush().catch(() => {});
+  if(profileDraft&&profileDirty&&!profilePending&&!profileBusy)await profileDraft.flush().catch(()=>{});
   if (user && !authBusy) void loadPerson({focus:true}); else { sequence++; personController?.abort(); clearRecord(); }
 });
+window.addEventListener('beforeunload',event=>{if(profileDirty||profileBusy||profilePending){event.preventDefault();event.returnValue='';}});
 clearPrivateState({preserveNavigation:true});
 if (location.protocol === 'file:') announce('请通过工作人员后台打开此页；离线预览不含私有人员记录。');
 else {

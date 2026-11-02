@@ -7,6 +7,7 @@ const PURPOSE = 'artdico-registration-confirmation-v1';
 const MAX_LIFETIME = 180 * 24 * 60 * 60 * 1000;
 function encoded(value) { return Buffer.from(JSON.stringify(value)).toString('base64url'); }
 function instant(value) { return Number.isSafeInteger(value) && value >= 0 && Number.isFinite(new Date(value).getTime()); }
+const revision = value => Number.isSafeInteger(value) && value >= 0;
 
 /** Receipt capabilities contain an opaque person ID only and use their own HMAC purpose. */
 export function createConfirmationTokens({ tokenSecret, eventId, expiresAt, clock = Date.now } = {}) {
@@ -16,10 +17,10 @@ export function createConfirmationTokens({ tokenSecret, eventId, expiresAt, cloc
   const sign = value => createHmac('sha256', key).update(value).digest('base64url');
   function now() { const value = clock(); if (!instant(value)) throw new TypeError('Confirmation clock is unavailable.'); return value; }
   return Object.freeze({
-    issue(registrationId) {
+    issue(registrationId, accessRevision = 0) {
       const at = now();
-      if (!ID.test(registrationId ?? '') || expiresAt <= at || expiresAt - at > MAX_LIFETIME) throw new TypeError('Confirmation token is unavailable.');
-      const payload = encoded({ eventId, registrationId, expiresAt, purpose: PURPOSE });
+      if (!ID.test(registrationId ?? '') || !revision(accessRevision) || expiresAt <= at || expiresAt - at > MAX_LIFETIME) throw new TypeError('Confirmation token is unavailable.');
+      const payload = encoded({ eventId, registrationId, expiresAt, purpose: PURPOSE, ...(accessRevision === 0 ? {} : { accessRevision }) });
       const unsigned = 'c1.' + payload;
       return { receiptToken: unsigned + '.' + sign(unsigned), expiresAt: new Date(expiresAt).toISOString() };
     },
@@ -32,10 +33,11 @@ export function createConfirmationTokens({ tokenSecret, eventId, expiresAt, cloc
         const bytes = Buffer.from(payload, 'base64url');
         if (bytes.toString('base64url') !== payload) return null;
         const claims = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-        if (Object.keys(claims).sort().join(',') !== 'eventId,expiresAt,purpose,registrationId'
+        const keys = Object.keys(claims).sort().join(','), accessRevision = Object.hasOwn(claims, 'accessRevision') ? claims.accessRevision : 0;
+        if (!['eventId,expiresAt,purpose,registrationId', 'accessRevision,eventId,expiresAt,purpose,registrationId'].includes(keys) || !revision(accessRevision)
           || claims.eventId !== eventId || claims.purpose !== PURPOSE || !ID.test(claims.registrationId ?? '')
           || claims.expiresAt !== expiresAt || expiresAt <= now() || expiresAt - now() > MAX_LIFETIME) return null;
-        return { registrationId: claims.registrationId, expiresAt: new Date(expiresAt).toISOString() };
+        return { registrationId: claims.registrationId, expiresAt: new Date(expiresAt).toISOString(), accessRevision };
       } catch { return null; }
     },
   });

@@ -54,7 +54,24 @@ import '../../../styles/people-relationships.css';
               <button type="button" class="ah-admin-button" data-person-service-open>通知与参会页</button>
               <PeopleResolution />
               <details class="ah-admin-panel person-panel" data-person-source-panel><summary>原问卷</summary><p class="person-note" data-person-source-state></p><dl class="person-facts" data-person-source></dl></details>
-              <details class="ah-admin-panel person-panel"><summary>联络资料</summary><div data-person-profile></div></details>
+              <details class="ah-admin-panel person-panel" data-person-profile-panel><summary>联络资料</summary><div data-person-profile></div>
+                <div class="person-profile-tools"><button class="ah-admin-button" type="button" data-person-profile-edit hidden>编辑</button><a class="ah-admin-button" data-person-profile-primary hidden>打开主报名</a></div>
+                <p class="person-note" data-person-profile-outcome role="status" aria-live="polite" hidden></p>
+                <form class="person-profile-form" data-person-profile-form hidden>
+                  <div class="person-profile-grid">
+                    <div class="ah-admin-field"><label for="person-profile-name">姓名</label><input id="person-profile-name" name="name" maxlength="120" required autocomplete="off" /></div>
+                    <div class="ah-admin-field"><label for="person-profile-email">邮箱</label><input id="person-profile-email" name="email" type="email" maxlength="254" autocomplete="off" autocapitalize="none" spellcheck="false" /></div>
+                    <div class="ah-admin-field"><label for="person-profile-organization">机构／团队</label><input id="person-profile-organization" name="organization" maxlength="300" autocomplete="off" /></div>
+                    <div class="ah-admin-field"><label for="person-profile-position">职务</label><input id="person-profile-position" name="position" maxlength="200" autocomplete="off" /></div>
+                    <div class="ah-admin-field"><label for="person-profile-city">城市</label><input id="person-profile-city" name="city" maxlength="160" autocomplete="off" /></div>
+                    <div class="ah-admin-field"><label for="person-profile-wechat">微信</label><input id="person-profile-wechat" name="wechat" maxlength="150" autocomplete="off" /></div>
+                    <div class="ah-admin-field"><label for="person-profile-phone">电话</label><input id="person-profile-phone" name="phone" type="tel" maxlength="150" autocomplete="off" /></div>
+                  </div>
+                  <p class="person-note" data-person-profile-email-note hidden>更正邮箱后，旧私人链接及票券在线核验将失效；不会自动重寄邮件。</p>
+                  <p data-person-profile-state role="status" aria-live="polite"></p>
+                  <div class="person-quick-actions"><button class="ah-admin-button" type="submit" data-person-profile-save disabled>保存</button><button class="ah-admin-button" type="button" data-person-profile-check hidden>核对结果</button><button class="ah-admin-text-button" type="button" data-person-profile-retry hidden>重试原保存</button><button class="ah-admin-text-button" type="button" data-person-profile-cancel>取消</button></div>
+                </form>
+              </details>
               <details class="ah-admin-panel person-panel"><summary>名额与回复</summary><div data-person-admission></div></details>
               <details class="ah-admin-panel person-panel"><summary>报名与核查</summary><div data-person-registration></div></details>
               <details class="ah-admin-panel person-panel"><summary>职责与活动安排</summary><div data-person-arrangements></div></details>

@@ -11,6 +11,7 @@ const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
 const TOKEN_PART = /^[A-Za-z0-9_-]+$/u;
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const fields = (value, names) => plainObject(value) && Object.keys(value).sort().join(',') === [...names].sort().join(',');
+const validAccessRevision = value => Number.isSafeInteger(value) && value >= 0;
 const ERRORS = {
   FORBIDDEN: [403, '当前账号没有管理入群码的权限。'],
   GROUP_INVITE_UNAVAILABLE: [503, '入群码操作未确认完成，请重新载入后核对。'],
@@ -26,12 +27,13 @@ const validOrigin = value => { try { return typeof value === 'string' && new URL
 
 /** Private current image plus short-lived receipt-bound links; no anonymous current-QR endpoint. */
 export function createGroupInviteService({ objects, journalFor, eventId, tokenSecret, apiOrigin = 'https://api.artdico.host',
-  publicPath = '/api/admin/registration/group-invite/', clock = () => Date.now(), isWithdrawn } = {}) {
+  publicPath = '/api/admin/registration/group-invite/', clock = () => Date.now(), isWithdrawn, getAccessRevision, getAccessState } = {}) {
   if (!objects || !['get', 'putImmutable'].every(key => typeof objects[key] === 'function') || typeof journalFor !== 'function'
     || typeof eventId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(eventId)
     || typeof tokenSecret !== 'string' || Buffer.byteLength(tokenSecret) < 32 || Buffer.byteLength(tokenSecret) > 1024
     || !validOrigin(apiOrigin) || !['/api/registration/group-invite/', '/api/admin/registration/group-invite/'].includes(publicPath)
-    || typeof clock !== 'function' || isWithdrawn !== undefined && typeof isWithdrawn !== 'function') throw failure();
+    || typeof clock !== 'function' || isWithdrawn !== undefined && typeof isWithdrawn !== 'function'
+    || getAccessRevision !== undefined && typeof getAccessRevision !== 'function' || getAccessState !== undefined && typeof getAccessState !== 'function') throw failure();
   const prefix = `cms/v1/group-invites/${eventId}`;
   const signingKey = createHmac('sha256', tokenSecret).update(PURPOSE).digest();
   const sign = text => createHmac('sha256', signingKey).update(text).digest();
@@ -104,6 +106,14 @@ export function createGroupInviteService({ objects, journalFor, eventId, tokenSe
     if (!isWithdrawn) return false;
     try { const value = await isWithdrawn(id); if (typeof value !== 'boolean') throw failure(); return value; } catch { throw failure(); }
   }
+  async function currentAccessRevision(id) {
+    if (!getAccessRevision) return 0;
+    try { const value = await getAccessRevision(id); if (!validAccessRevision(value)) throw failure(); return value; } catch { throw failure(); }
+  }
+  async function allowedAccess(id, revision) {
+    if (!getAccessState) return !await withdrawn(id) && await currentAccessRevision(id) === revision;
+    try { const state = await getAccessState(id); if (!fields(state, ['withdrawn', 'accessRevision']) || typeof state.withdrawn !== 'boolean' || !validAccessRevision(state.accessRevision)) throw failure(); return !state.withdrawn && state.accessRevision === revision; } catch { throw failure(); }
+  }
   return Object.freeze({
     async adminRead(actor) { actorId(actor); return projection(await read()); },
     async adminImage(actor) { actorId(actor); const state = await read(); if (!state.value.active) throw failure('GROUP_INVITE_NOT_FOUND'); return image(state.value.active); },
@@ -132,19 +142,25 @@ export function createGroupInviteService({ objects, journalFor, eventId, tokenSe
     },
     async forReceipt(input) {
       const receipt = own(input, 'receipt'), registrationId = own(receipt, 'registrationId') ?? own(receipt, 'referenceCode');
+      const accessRevision = own(receipt, 'accessRevision') === undefined ? 0 : own(receipt, 'accessRevision');
       if (own(receipt, 'committed') !== true || own(receipt, 'eventId') !== eventId || typeof registrationId !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(registrationId)
-        || own(receipt, 'referenceCode') !== registrationId || parseTimestamp(own(receipt, 'committedAt')) === null) throw failure();
+        || own(receipt, 'referenceCode') !== registrationId || parseTimestamp(own(receipt, 'committedAt')) === null || !validAccessRevision(accessRevision)) throw failure();
       // Legacy receipts without admission facts retain their trusted current-state
       // hook. A supplied non-confirmed state can never mint a new QR capability.
       if (own(receipt, 'admissionStatus') !== undefined && own(receipt, 'admissionStatus') !== 'confirmed') return null;
-      if (await withdrawn(registrationId)) return null;
       const state = await read(), at = now(), active = state.value.active;
       if (!active || parseTimestamp(active.expiresAt) <= at) return null;
+      // The private-page caller may reuse its already verified current snapshot;
+      // the final guard below always reads current state after image work.
+      const verified = own(input, 'verifiedAccess');
+      if (verified !== undefined && (!fields(verified, ['registrationId', 'accessRevision', 'admissionStatus']) || verified.registrationId !== registrationId || verified.accessRevision !== accessRevision || verified.admissionStatus !== 'confirmed')) throw failure();
+      if (verified === undefined && !await allowedAccess(registrationId, accessRevision)) return null;
       await image(active);
       const expiresAt = Math.min(at + MAX_TTL, parseTimestamp(active.expiresAt));
-      const payload = { purpose: PURPOSE, eventId, registrationId, revision: state.value.revision, imageId: active.imageId, iat: at, exp: expiresAt };
+      const payload = { purpose: PURPOSE, eventId, registrationId, revision: state.value.revision, imageId: active.imageId, iat: at, exp: expiresAt, accessRevision };
       const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
       const token = encoded + '.' + sign(encoded).toString('base64url');
+      if (!await allowedAccess(registrationId, accessRevision)) return null;
       return { platform: 'wechat', qrImageUrl: apiOrigin + publicPath + token, expiresAt: new Date(expiresAt).toISOString() };
     },
     async publicImage(token) {
@@ -157,18 +173,20 @@ export function createGroupInviteService({ objects, journalFor, eventId, tokenSe
         if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) throw failure();
         payload = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(parts[0], 'base64url')));
         const at = now();
-        if (!fields(payload, ['purpose', 'eventId', 'registrationId', 'revision', 'imageId', 'iat', 'exp']) || payload.purpose !== PURPOSE || payload.eventId !== eventId
+        if (!(fields(payload, ['purpose', 'eventId', 'registrationId', 'revision', 'imageId', 'iat', 'exp'])
+          || fields(payload, ['purpose', 'eventId', 'registrationId', 'revision', 'imageId', 'iat', 'exp', 'accessRevision'])) || payload.purpose !== PURPOSE || payload.eventId !== eventId
           || typeof payload.registrationId !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(payload.registrationId)
           || !Number.isSafeInteger(payload.revision) || payload.revision < 1 || !PORTRAIT_ID_PATTERN.test(payload.imageId ?? '')
           || !Number.isSafeInteger(payload.iat) || payload.iat < 0 || !Number.isSafeInteger(payload.exp) || payload.exp <= payload.iat || payload.exp - payload.iat > MAX_TTL
-          || payload.iat > at || payload.exp <= at) throw failure();
+          || payload.iat > at || payload.exp <= at || Object.hasOwn(payload, 'accessRevision') && !validAccessRevision(payload.accessRevision)) throw failure();
+        if (!Object.hasOwn(payload, 'accessRevision')) payload.accessRevision = 0;
       } catch { throw failure('GROUP_INVITE_NOT_FOUND'); }
-      if (await withdrawn(payload.registrationId)) throw failure('GROUP_INVITE_NOT_FOUND');
       const state = await read(), active = state.value.active;
       if (!active || state.value.revision !== payload.revision || active.imageId !== payload.imageId || parseTimestamp(active.expiresAt) < payload.exp || parseTimestamp(active.expiresAt) <= now()) throw failure('GROUP_INVITE_NOT_FOUND');
+      if (!await allowedAccess(payload.registrationId, payload.accessRevision)) throw failure('GROUP_INVITE_NOT_FOUND');
       const result = await image(active), final = await read();
       if (final.value.revision !== state.value.revision || final.value.active?.imageId !== active.imageId || parseTimestamp(final.value.active?.expiresAt) <= now()
-        || await withdrawn(payload.registrationId)) throw failure('GROUP_INVITE_NOT_FOUND');
+        || !await allowedAccess(payload.registrationId, payload.accessRevision)) throw failure('GROUP_INVITE_NOT_FOUND');
       return result;
     },
   });

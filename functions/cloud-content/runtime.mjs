@@ -181,17 +181,37 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       if (!contact) return { eligible: false, reason: 'CONTACT_NOT_FOUND' };
       if (contact.profile.contactConsent === 'declined' || contact.operations.responseStatus === 'declined') return { eligible: false, reason: 'CONTACT_DECLINED' };
       if (contact.profile.contactConsent !== 'consented') return { eligible: false, reason: 'CONTACT_CONSENT_REQUIRED' };
-      if (contact.profile.email !== record.fields.email) return { eligible: false, reason: 'CONTACT_EMAIL_CHANGED' };
+      if (!(record.profileCorrection?.accessRevision > 0) && contact.profile.email !== record.fields.email) return { eligible: false, reason: 'CONTACT_EMAIL_CHANGED' };
       return { eligible: true };
+    };
+    const primaryRegistrationId = async id => {
+      const { value } = await registrationService.repository.readIndex();
+      if (!value.entries.some(entry => entry.id === id)) throw new Error('Registration is unavailable.');
+      const group = value.admissions?.personGroups?.find(item => item.registrationIds.includes(id));
+      return group?.primaryRegistrationId ?? id;
+    };
+    const profileIdentity = async id => { const { value } = await registrationService.repository.readIndex();
+      const group = value.admissions?.personGroups?.find(item => item.registrationIds.includes(id));
+      return { primaryId: group?.primaryRegistrationId ?? id, relatedIds: group?.registrationIds ?? [id] }; };
+    const currentRegistration = async (record, index) => {
+      index ??= (await registrationService.repository.readIndex()).value;
+      const group = index.admissions?.personGroups?.find(item => item.registrationIds.includes(record.id));
+      const projected = await reviewStore.projectRegistration(record, group?.primaryRegistrationId ?? record.id, group?.registrationIds ?? [record.id]);
+      const person = admissionSnapshot(index, { capacity: policy.capacity, staffReserve: 0, waitlistEnabled: env.ARTDICO_REGISTRATION_WAITLIST_ENABLED === 'true' }).people.find(item => item.registrationId === record.id);
+      if (!person) throw new Error('Admission unavailable.');
+      return { ...projected, currentAdmission: { status: projected.reviewWithdrawn ? 'withdrawn' : person.status, kind: person.kind, revision: index.revision } };
     };
     const isWithdrawn = id => reviewStore.isWithdrawn(id);
     groupService = createGroupInviteService({ objects, journalFor, eventId: policy.eventId, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET,
-      apiOrigin: CLOUD_API_ORIGIN, clock: now, isWithdrawn: async id => {
-        // getAdmissionStatus verifies the immutable record and the review guard.
-        // The registration service itself receives only the review-only hook.
-        const admission = await registrationService.getAdmissionStatus(id);
-        if (!['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected'].includes(admission?.status)) throw new Error('Admission state is unavailable.');
-        return admission.status !== 'confirmed';
+      apiOrigin: CLOUD_API_ORIGIN, clock: now, getAccessState: async id => {
+        const { value } = await registrationService.repository.readIndex(), entry = value.entries.find(item => item.id === id);
+        if (!entry) throw new Error('Registration unavailable.');
+        await registrationService.repository.readRecord(entry);
+        const group = value.admissions?.personGroups?.find(item => item.registrationIds.includes(id));
+        const access = await reviewStore.registrationAccessState(id, group?.registrationIds ?? [id]);
+        const admission = admissionSnapshot(value, { capacity: policy.capacity, staffReserve: 0, waitlistEnabled: env.ARTDICO_REGISTRATION_WAITLIST_ENABLED === 'true' }).people.find(item => item.registrationId === id);
+        if (!admission) throw new Error('Admission unavailable.');
+        return { accessRevision: access.accessRevision, withdrawn: access.withdrawn || admission.status !== 'confirmed' };
       } });
     registrationService = createRegistrationService({ objects, journalFor, policy, capacity: policy.capacity,
       tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, allowedOrigins: [PUBLIC_SITE_ORIGIN], clock: now,
@@ -209,7 +229,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       },
       groupInviteProvider: input => groupService.forReceipt(input) });
     reviewStore = createRegistrationReviewStore({ journal: journalFor(`cms/v1/registration-reviews/${policy.eventId}`),
-      loadRegistrations: () => registrationService.repository.list(), eventId: policy.eventId, clock: now });
+      loadRegistrations: () => registrationService.repository.list(), loadRegistration: async id => { const { value } = await registrationService.repository.readIndex(); const entry = value.entries.find(item => item.id === id); if (!entry) throw new Error('Registration unavailable.'); return registrationService.repository.readRecord(entry); }, eventId: policy.eventId, clock: now });
     intentService = createIntentInvitationService({ registrationService, contactsStore, contentStore: store, eventFactsReadiness,
       repository: createIntentInvitationRepository({ journal: journalFor('cms/v1/intent-invitations') }),
       emailProvider: createInvitationEmailProvider({ env, fetchFn }), now,
@@ -223,7 +243,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       authorize: input => confirmationService.authorize(input),
       authorizedRegistration: id => confirmationService.authorizedRegistration(id),
       loadSigningBundle: ({ bundleId }) => loadEncryptedSigningBundle({ objects, secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId }) });
-    confirmationService = createRegistrationConfirmationService({ registrationService, journalFor, eventFactsReadiness,
+    confirmationService = createRegistrationConfirmationService({ registrationService, journalFor, eventFactsReadiness, currentRegistration, currentProfiles: () => reviewStore.profileScopes(),
       tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now, batchTimeoutMs: 5000,
       deliveryAliases: async record => {
         const { value } = await registrationService.repository.readIndex();
@@ -236,8 +256,8 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
         if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000 || limit !== 100
           || registrationIds !== undefined && (!Array.isArray(registrationIds) || registrationIds.length > 100
             || new Set(registrationIds).size !== registrationIds.length || registrationIds.some(id => !/^[A-Za-z0-9_-]{43}$/u.test(id)))) throw new Error('Notice preview scope is unavailable.');
-        const [index, inactiveIds, roster] = await Promise.all([
-          registrationService.repository.readIndex(), reviewStore.inactiveRegistrationIds(), contactsStore.read(),
+        const [index, inactiveIds, roster, profileRevision] = await Promise.all([
+          registrationService.repository.readIndex(), reviewStore.inactiveRegistrationIds(), contactsStore.read(), reviewStore.profileRevision(),
         ]);
         const admissions = admissionSnapshot(index.value, { capacity: policy.capacity, staffReserve: 0, waitlistEnabled: env.ARTDICO_REGISTRATION_WAITLIST_ENABLED === 'true' });
         const inactive = new Set(inactiveIds), selected = registrationIds === undefined ? null : new Set(registrationIds);
@@ -250,18 +270,19 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
           while (position < page.length) {
             const current = position++, registrationId = page[current], entry = entries.get(registrationId);
             if (!entry) throw new Error('Notice preview source is unavailable.');
-            const record = await registrationService.repository.readRecord(entry);
+            const record = await currentRegistration(await registrationService.repository.readRecord(entry), index.value);
             const person = personMailPermission(record, index.value, roster);
             const permission = person.eligible !== true ? person : record.provenance.kind === 'public' ? { eligible: true } : staffMailPermission(record, roster);
             const hasEmail = typeof record.fields.email === 'string' && record.fields.email.trim().length > 0;
             const group = admissions.personGroups?.find(item => item.registrationIds.includes(registrationId));
             rows[current] = { registrationId, name: record.fields.name, organization: record.fields.organization ?? '',
-              relatedRegistrationIds: group ? [...group.registrationIds] : [registrationId],
+              relatedRegistrationIds: group ? [...group.registrationIds] : [registrationId], accessRevision: record.accessRevision,
+              recipientDigest: createHash('sha256').update(JSON.stringify(record.fields.email ?? '')).digest('hex'),
               eligible: permission.eligible === true && hasEmail,
               reason: permission.eligible !== true ? permission.reason ?? 'PERMISSION_UNAVAILABLE' : hasEmail ? 'ELIGIBLE' : 'EMAIL_MISSING' };
           }
         }));
-        return { revision: createHash('sha256').update(JSON.stringify([index.value.revision, roster.revision, [...inactive].sort()])).digest('hex'), total: ids.length, rows };
+        return { revision: createHash('sha256').update(JSON.stringify([index.value.revision, roster.revision, [...inactive].sort(), profileRevision])).digest('hex'), total: ids.length, rows };
       },
       personDeliveryPermission: async record => {
         const index = await registrationService.repository.readIndex();
@@ -288,6 +309,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const contactsXlsxHandle = createContactsXlsxApi({ enabled: true, auth, contactsStore, clock: now, loadContent: async () => (await store.read()).draft });
   const groupHandle = createGroupInviteApi({ service: groupService, auth, apiOrigin: CLOUD_API_ORIGIN, publicOrigins: [PUBLIC_SITE_ORIGIN] });
   const reviewHandle = createRegistrationAdminApi({ enabled: Boolean(reviewStore), auth, store: reviewStore,
+    profileTarget: registrationService ? async id => { const { value } = await registrationService.repository.readIndex(); return value.admissions?.personGroups?.find(group => group.registrationIds.includes(id))?.primaryRegistrationId ?? id; } : undefined,
     onWithdrawalCommitted: registrationService ? async ({ registrationId, reviewRevision, actor }) => {
       const current = await registrationService.getAdmissions({ actor });
       if (!Number.isSafeInteger(current.revision)) return { status: 'pending' };
@@ -339,7 +361,11 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const personHandle = createPersonWorkspaceApi({ authenticate: request => auth.authenticate(request),
     loadContacts: () => contactsStore.read(),
     loadIntent: intentService ? actor => intentService.read({ actor }) : undefined,
-    loadRegistration: reviewStore ? id => reviewStore.detail(id) : undefined,
+    loadRegistration: reviewStore ? async id => { const detail = await reviewStore.detail(id), { value } = await registrationService.repository.readIndex();
+      const primaryId = value.admissions?.personGroups?.find(group => group.registrationIds.includes(id))?.primaryRegistrationId ?? id;
+      const relatedIds = value.admissions?.personGroups?.find(group => group.registrationIds.includes(id))?.registrationIds ?? [id];
+      const projected = await reviewStore.projectRegistration(detail.registration, primaryId, relatedIds);
+      return { ...detail, registration: { ...projected, profileTargetId: primaryId } }; } : undefined,
     loadAdmission: registrationService ? id => registrationService.getAdmissionStatus(id) : undefined,
     loadContent: loadPeopleContent,
     loadRegistrationDirectory: reviewStore ? () => reviewStore.directory() : undefined,

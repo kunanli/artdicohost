@@ -38,9 +38,9 @@ const noticeEmail = notice => ({ status: stateOf(notice), noticeType: notice.kin
 
 /** Durable receipts, independent email issuance and read-only attendee confirmation. */
 export function createRegistrationConfirmationService({ registrationService, journalFor, tokenSecret, event = eventConfig,
-  emailProvider, staffDeliveryPermission, personDeliveryPermission, deliveryAliases, noticePreviewSource, eventFactsReadiness, walletReadiness = () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }), groupInviteProvider,
+  emailProvider, currentRegistration, currentProfiles, staffDeliveryPermission, personDeliveryPermission, deliveryAliases, noticePreviewSource, eventFactsReadiness, walletReadiness = () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }), groupInviteProvider,
   clock = Date.now, expiresAt, batchTimeoutMs = 20_000, monotonicNow = () => performance.now() } = {}) {
-  if (typeof registrationService?.repository?.readIndex !== 'function' || typeof registrationService.repository.readRecord !== 'function'
+  if (currentProfiles !== undefined && typeof currentProfiles !== 'function' || currentRegistration !== undefined && typeof currentRegistration !== 'function' || typeof registrationService?.repository?.readIndex !== 'function' || typeof registrationService.repository.readRecord !== 'function'
     || typeof registrationService.getAdmissionStatus !== 'function' || typeof journalFor !== 'function' || typeof clock !== 'function'
     || typeof walletReadiness !== 'function' || groupInviteProvider !== undefined && typeof groupInviteProvider !== 'function'
     || staffDeliveryPermission !== undefined && typeof staffDeliveryPermission !== 'function'
@@ -90,7 +90,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     try {
       const { value } = await registrationService.repository.readIndex(), entry = value.entries.find(item => item.id === registrationId);
       if (!entry) failure('CONFIRMATION_NOT_FOUND', 404);
-      const record = await registrationService.repository.readRecord(entry), admission = await registrationService.getAdmissionStatus(registrationId);
+      const original = await registrationService.repository.readRecord(entry), record = currentRegistration ? await currentRegistration(structuredClone(original), value) : original, admission = record.currentAdmission ?? await registrationService.getAdmissionStatus(registrationId);
+      if (!record || record.id !== original.id || record.eventId !== original.eventId || !plainObject(record.fields) || !Number.isSafeInteger(record.accessRevision ?? 0) || (record.accessRevision ?? 0) < 0) failure();
       if (!STATUS.includes(admission?.status) || !['attendee', 'crew'].includes(admission?.kind)
         || !Number.isSafeInteger(admission?.revision) || admission.revision < 0) failure();
       return { record, admission, entry, index: value };
@@ -105,21 +106,29 @@ export function createRegistrationConfirmationService({ registrationService, jou
       || !value.registrationIds.includes(loaded.record.id) || !value.registrationIds.includes(value.primaryRegistrationId)) failure();
     return value;
   }
-  function relatedNotices(state, aliases, kind) {
+  const scopeOf = loaded => ({ accessRevision: loaded.record.accessRevision ?? 0, recipientDigest: confirmationRequestHash(loaded.record.fields.email ?? '') });
+  const sameScope = (notice, scope) => (notice.accessRevision ?? 0) === scope.accessRevision && (scope.accessRevision === 0 || notice.recipientDigest === scope.recipientDigest);
+  function relatedNotices(state, aliases, kind, scope) {
     return state.notices.filter(item => aliases.registrationIds.includes(item.registrationId)
-      && (formalConfirmationKind(kind) ? formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' : item.kind === kind));
+      && (formalConfirmationKind(kind) ? formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' : item.kind === kind)
+      && (!scope || sameScope(item, scope)));
   }
   function strongestNotice(notices) {
     return notices.find(item => ['reserved', 'unknown'].includes(item.status))
       ?? notices.find(item => item.status === 'provider_accepted')
       ?? [...notices].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   }
-  function formalDeliveryStatus(state, registrationIds, notice) {
+  function formalDeliveryStatus(state, registrationIds, notice, scope) {
     const status = notice ? stateOf(notice) : 'not_sent';
     // A process may stop after recording the batch and before reserving a notice.
     // Reads cannot prove that an unfinished batch did not reach the provider.
     return !['unknown', 'provider_accepted'].includes(status) && state.operations.some(operation => operation.action === 'dispatch'
-      && operation.status !== 'completed' && operation.registrationIds.some(id => registrationIds.includes(id))) ? 'unknown' : status;
+      && operation.status !== 'completed' && operation.registrationIds.some(id => registrationIds.includes(id) && (!scope || sameScope(operation.recipientScopes?.[id] ?? {}, scope)))) ? 'unknown' : status;
+  }
+  function historicalUncertainty(state, aliases, kind, scope) {
+    return relatedNotices(state, aliases, kind).some(notice => !sameScope(notice, scope) && ['reserved', 'unknown'].includes(notice.status))
+      || state.operations.some(op => op.action === (kind === 'pre_event_reminder' ? 'reminder_dispatch' : 'dispatch') && op.status !== 'completed'
+        && op.registrationIds.some(id => aliases.registrationIds.includes(id) && !sameScope(op.recipientScopes?.[id] ?? {}, scope)));
   }
   const reminderOpen = () => clock() < Date.parse(eventFacts.date + 'T' + eventFacts.checkIn + ':00+08:00');
   const applicable = (loaded, kind) => kind === 'application_received'
@@ -133,14 +142,16 @@ export function createRegistrationConfirmationService({ registrationService, jou
   function trustedProjection(registrationId, loaded) {
     const { record, admission, entry } = loaded, hidden = admission.status === 'withdrawn';
     return { registrationId, referenceCode: registrationId, admissionStatus: admission.status, admissionKind: admission.kind,
-      admissionRevision: admission.revision, name: hidden ? '' : record.fields.name, organization: hidden ? '' : record.fields.organization ?? '',
+      admissionRevision: admission.revision, accessRevision: record.accessRevision ?? 0, name: hidden ? '' : record.fields.name, organization: hidden ? '' : record.fields.organization ?? '',
       event: { ...eventFacts }, submittedAt: entry.committedAt, hasEmail: typeof record.fields.email === 'string' && Boolean(record.fields.email) };
   }
   async function authorizedRegistration(registrationId) { return trustedProjection(registrationId, await loadRegistration(registrationId)); }
   async function authorizedContext(input) {
     const claims = tokens.verify(own(input, 'receiptToken'));
     if (!claims) failure('CONFIRMATION_NOT_FOUND', 404);
-    return { registrationId: claims.registrationId, loaded: await loadRegistration(claims.registrationId) };
+    const loaded = await loadRegistration(claims.registrationId);
+    if ((claims.accessRevision ?? 0) !== (loaded.record.accessRevision ?? 0)) failure('CONFIRMATION_NOT_FOUND', 404);
+    return { registrationId: claims.registrationId, loaded };
   }
   async function authorize(input) {
     const { registrationId, loaded } = await authorizedContext(input);
@@ -152,9 +163,10 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!ID.test(registrationId ?? '')) failure('INVALID_REQUEST', 400);
     const loaded = await loadRegistration(registrationId);
     if (loaded.admission.status !== 'confirmed') return { registrationId, ready: false, reason: 'ADMISSION_NOT_CONFIRMED' };
-    const link = capability(registrationId);
+    const link = capability(registrationId, loaded.record.accessRevision ?? 0);
     // A withdrawal during issuance must not leave a newly displayed valid link.
     const latest = await loadRegistration(registrationId);
+    if ((latest.record.accessRevision ?? 0) !== (loaded.record.accessRevision ?? 0)) failure();
     if (latest.admission.status !== 'confirmed') return { registrationId, ready: false, reason: 'ADMISSION_NOT_CONFIRMED' };
     return { registrationId, ready: true, ...link };
   }
@@ -163,8 +175,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     try { return { ready: true, settings: buildPosterInvitationSettings(record.fields.name, event) }; }
     catch { return { ready: false }; }
   }
-  function capability(registrationId) {
-    const signed = tokens.issue(registrationId);
+  function capability(registrationId, accessRevision = 0) {
+    const signed = tokens.issue(registrationId, accessRevision);
     return { ...signed, confirmationUrl: SITE + '/registration/confirmation/#r=' + signed.receiptToken };
   }
   async function readEmail(registrationId, hasEmail, admissionStatus, loaded, noticeSnapshot, savedAliases) {
@@ -173,7 +185,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!current) failure();
     const aliases = savedAliases === undefined ? await aliasesFor(loaded) : savedAliases;
     if (!aliases) failure();
-    const notices = current.value.notices.filter(item => aliases.registrationIds.includes(item.registrationId) && formalConfirmationKind(item.kind));
+    const notices = current.value.notices.filter(item => aliases.registrationIds.includes(item.registrationId) && formalConfirmationKind(item.kind) && sameScope(item, scopeOf(loaded)));
     const notice = strongestNotice(notices.filter(item => item.admissionStatus === 'confirmed'))
       ?? notices.find(item => item.kind === 'promotion') ?? notices.find(item => item.kind === 'registration');
     if (notice) return noticeEmail(notice);
@@ -188,15 +200,17 @@ export function createRegistrationConfirmationService({ registrationService, jou
       if (aliases.primaryRegistrationId !== registrationId || !applicable(loaded, requestedKind)) return { status: 'not_applicable' };
       const current = await target().read(), kind = formalConfirmationKind(requestedKind)
         ? canonicalConfirmationKind(current.value, registrationId, admission.status) : requestedKind;
-      const related = relatedNotices(current.value, aliases, kind), previous = strongestNotice(related);
+      const scope = scopeOf(loaded), allRelated = relatedNotices(current.value, aliases, kind), related = allRelated.filter(item => sameScope(item, scope)), previous = strongestNotice(related);
+      if (historicalUncertainty(current.value, aliases, kind, scope)) return { status: 'unknown' };
+      if (allRelated.reduce((total, item) => total + item.attempt, 0) >= 5 && (!previous || retryRejected)) return { status: 'not_attempted' };
       if (!current.value.settings.enabled) return { status: 'disabled' };
       if (previous && (!retryRejected || previous.status !== 'rejected' || related.reduce((total, item) => total + item.attempt, 0) >= 5)) return { notice: previous, owned: false };
       if (monotonicNow() >= deadline) return { status: 'not_attempted' };
       const checkedFacts = await currentEventFacts();
       if (!checkedFacts.ready || monotonicNow() >= deadline) return { status: 'not_attempted' };
       try {
-        const saved = await target().append(current, 'reserve', { registrationId, kind, admissionStatus: admission.status, admissionRevision: admission.revision, retryRejected }, actorId);
-        return { notice: saved.value.notices.find(item => item.id === confirmationNoticeId(eventId, registrationId, kind)), owned: true, checkedFacts };
+        const saved = await target().append(current, 'reserve', { registrationId, kind, admissionStatus: admission.status, admissionRevision: admission.revision, retryRejected, ...(scope.accessRevision > 0 ? scope : {}) }, actorId);
+        return { notice: saved.value.notices.find(item => item.id === confirmationNoticeId(eventId, registrationId, kind, scope.accessRevision, scope.recipientDigest)), owned: true, checkedFacts };
       } catch (error) { if (!conflict(error)) throw error; }
     }
     failure();
@@ -211,10 +225,12 @@ export function createRegistrationConfirmationService({ registrationService, jou
     failure();
   }
   async function notify(registrationId, { kind = 'registration', actorId = automaticActor, retryRejected = false,
-    deadline = monotonicNow() + batchTimeoutMs } = {}) {
+    deadline = monotonicNow() + batchTimeoutMs, expectedScope } = {}) {
     if (!(await providerState()).ready) return { status: 'not_configured' };
     if (monotonicNow() >= deadline) return { status: 'not_attempted' };
     const loaded = await loadRegistration(registrationId), { record, admission } = loaded;
+    if (expectedScope && !sameScope(scopeOf(loaded), expectedScope)) return { status: 'not_attempted' };
+    if ((record.accessRevision ?? 0) > 0 && actorId === automaticActor) return { status: 'not_applicable' };
     if (!(await deliveryPermission(record)).eligible) return { status: 'not_public' };
     if (admission.status === 'withdrawn') return { status: 'withdrawn' };
     if (!applicable(loaded, kind)) return { status: 'not_applicable' };
@@ -231,10 +247,10 @@ export function createRegistrationConfirmationService({ registrationService, jou
       if (signal?.aborted || monotonicNow() >= deadline) { guardUnattempted = true; return false; }
       const latest = await loadRegistration(registrationId), aliases = await aliasesFor(latest);
       if (aliases.primaryRegistrationId !== registrationId || !applicable(latest, kind)
-        || latest.record.fields.email !== record.fields.email || !(await deliveryPermission(latest.record)).eligible) return false;
+        || (latest.record.accessRevision ?? 0) !== (record.accessRevision ?? 0) || latest.record.fields.email !== record.fields.email || !(await deliveryPermission(latest.record)).eligible) return false;
       const delivery = await target().read(), ownNotice = delivery.value.notices.find(item => item.id === notice.id);
-      if (!delivery.value.settings.enabled || ownNotice?.status !== 'reserved' || ownNotice.attempt !== notice.attempt
-        || relatedNotices(delivery.value, aliases, kind).some(item => item.id !== notice.id && ['reserved', 'unknown', 'provider_accepted'].includes(item.status))) return false;
+      if (historicalUncertainty(delivery.value, aliases, kind, scopeOf(loaded)) || !delivery.value.settings.enabled || ownNotice?.status !== 'reserved' || ownNotice.attempt !== notice.attempt
+        || relatedNotices(delivery.value, aliases, kind, scopeOf(loaded)).some(item => item.id !== notice.id && ['reserved', 'unknown', 'provider_accepted'].includes(item.status))) return false;
       const unchanged = unchangedEventFacts(checkedFacts, await currentEventFacts());
       if (!unchanged || signal?.aborted || monotonicNow() >= deadline) { guardUnattempted = true; return false; }
       return true;
@@ -245,7 +261,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       try { await recordResult(notice, 'rejected', actorId); return { status: guardUnattempted || monotonicNow() >= deadline ? 'not_attempted' : 'rejected' }; }
       catch { return { status: 'unknown' }; }
     }
-    const link = capability(registrationId);
+    const link = capability(registrationId, loaded.record.accessRevision ?? 0);
     const subject = eventFacts.title + (kind === 'application_received' ? '｜申请已收到，待审核' : kind === 'pre_event_reminder' ? '｜行前提醒' : '｜参会名额已确认');
     const text = kind === 'application_received' ? [record.fields.name + '，你好：', '', '你的申请已收到，待主办方人工审核。',
       '目前尚未确认参会名额；这封邮件不是正式邀请。', '登记编号：' + registrationId,
@@ -270,7 +286,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       || receipt.referenceCode !== receipt.registrationId || parseTimestamp(receipt.committedAt) === null
       || !STATUS.includes(receipt.admissionStatus) || !['attendee', 'crew'].includes(receipt.admissionKind)
       || !Number.isSafeInteger(receipt.admissionRevision) || receipt.admissionRevision < 0 || typeof send !== 'boolean') failure();
-    const result = capability(receipt.registrationId), deadline = monotonicNow() + batchTimeoutMs;
+    const result = capability(receipt.registrationId, 0), deadline = monotonicNow() + batchTimeoutMs;
     // An application receipt has no formal notification reservation. The same
     // capability reads the current decision after a later explicit approval.
     if (!send || receipt.admissionStatus !== 'confirmed') return { ...result, email: { status: 'not_applicable' } };
@@ -300,7 +316,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       const aliases = savedAliases === undefined ? await aliasesFor(loaded) : savedAliases;
       if (!aliases) failure();
       const status = kind => {
-        const notice = strongestNotice(relatedNotices(current.value, aliases, kind));
+        const notice = strongestNotice(relatedNotices(current.value, aliases, kind, scopeOf(loaded)));
         return { status: notice ? stateOf(notice) : kind === 'application_received' && loaded.record.provenance.kind !== 'public'
           || !loaded.record.fields.email ? 'not_applicable' : 'not_sent' };
       };
@@ -319,7 +335,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (value.admissionStatus === 'confirmed' && groupInviteProvider) {
       try { const offered = await groupInviteProvider({ receipt: { committed: true, eventId, registrationId: value.registrationId,
         referenceCode: value.referenceCode, committedAt: value.submittedAt, admissionStatus: value.admissionStatus,
-        admissionKind: value.admissionKind, admissionRevision: value.admissionRevision }, origin: SITE });
+        admissionKind: value.admissionKind, admissionRevision: value.admissionRevision, accessRevision: value.accessRevision },
+        verifiedAccess: { registrationId: value.registrationId, accessRevision: value.accessRevision, admissionStatus: value.admissionStatus }, origin: SITE });
         const url = new URL(offered?.qrImageUrl), expires = parseTimestamp(offered?.expiresAt);
         if (offered?.platform === 'wechat' && url.origin === 'https://api.artdico.host' && !url.username && !url.password && !url.hash
           && url.href.length <= 4096 && expires !== null && expires > clock()) groupInvite = { platform: 'wechat', qrImageUrl: url.href, expiresAt: new Date(expires).toISOString() };
@@ -331,6 +348,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (['EVENT_FACTS_MISMATCH', 'EVENT_FACTS_UNAVAILABLE'].includes(wallet.reason)) {
       currentFacts = { ready: false, reason: wallet.reason, revision: null, key: null };
     }
+    // The read is authorized against its loaded snapshot. Group/Wallet minting
+    // independently rechecks current access after asynchronous work.
     return { event: value.event, referenceCode: value.referenceCode, submittedAt: value.submittedAt,
       attendee: { name: value.name, organization: value.organization },
       admission: { status: value.admissionStatus, kind: value.admissionKind, revision: value.admissionRevision },
@@ -370,29 +389,33 @@ export function createRegistrationConfirmationService({ registrationService, jou
     }
     failure();
   }
-  async function dispatch({ actor, expectedRevision, operationId, registrationIds, retryRejected = false } = {}, kind = 'registration') {
+  async function dispatch({ actor, expectedRevision, operationId, registrationIds, retryRejected = false, expectedAccessRevisions } = {}, kind = 'registration') {
     if (!actorValid(actor)) failure('FORBIDDEN', 403);
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || !validConfirmationOperation(operationId)
       || !Array.isArray(registrationIds) || !registrationIds.length || registrationIds.length > MAX_CONFIRMATION_BATCH
       || new Set(registrationIds).size !== registrationIds.length || registrationIds.some(id => !ID.test(id)) || typeof retryRejected !== 'boolean') failure('INVALID_REQUEST', 400);
+    if (expectedAccessRevisions !== undefined && (!plainObject(expectedAccessRevisions) || Object.keys(expectedAccessRevisions).sort().join(',') !== [...registrationIds].sort().join(',') || registrationIds.some(id => !Number.isSafeInteger(expectedAccessRevisions[id]) || expectedAccessRevisions[id] < 0))) failure('INVALID_REQUEST', 400);
     const deadline = monotonicNow() + batchTimeoutMs;
     const action = kind === 'pre_event_reminder' ? 'reminder_dispatch' : 'dispatch';
     const requestHash = confirmationRequestHash({ actorId: actor.id, registrationIds, retryRejected,
-      ...(action === 'reminder_dispatch' ? { kind } : {}) }), current = await target().read();
+      ...(action === 'reminder_dispatch' ? { kind } : {}), ...(expectedAccessRevisions === undefined ? {} : { expectedAccessRevisions }) }), current = await target().read();
     const previous = current.value.operations.find(op => op.operationId === operationId);
     if (previous) {
       if (previous.action !== action || previous.actorId !== actor.id || previous.requestHash !== requestHash) failure('REVISION_CONFLICT', 409);
       return operationView(previous, current.value.revision);
     }
     if (current.value.revision !== expectedRevision) failure('REVISION_CONFLICT', 409);
-    try { await target().append(current, action + '_started', { operationId, requestHash, registrationIds, retryRejected }, actor.id); }
+    const recipientScopes = {};
+    for (const id of registrationIds) { recipientScopes[id] = scopeOf(await loadRegistration(id));
+      if (expectedAccessRevisions === undefined && recipientScopes[id].accessRevision > 0 || expectedAccessRevisions !== undefined && recipientScopes[id].accessRevision !== expectedAccessRevisions[id]) failure('REVISION_CONFLICT', 409); }
+    try { await target().append(current, action + '_started', { operationId, requestHash, registrationIds, retryRejected, recipientScopes }, actor.id); }
     catch (error) { if (conflict(error)) failure('REVISION_CONFLICT', 409); failure(); }
     const results = []; let stop = false;
     for (const registrationId of registrationIds) {
       if (monotonicNow() >= deadline) stop = true;
       if (stop) { results.push({ registrationId, status: 'not_attempted' }); continue; }
       try {
-        const email = await notify(registrationId, { kind, actorId: actor.id, retryRejected, deadline });
+        const email = await notify(registrationId, { kind, actorId: actor.id, retryRejected, deadline, expectedScope: recipientScopes[registrationId] });
         results.push({ registrationId, status: email.status });
         if (['unknown', 'not_attempted'].includes(email.status)) stop = true;
       } catch { results.push({ registrationId, status: 'unavailable' }); stop = true; }
@@ -475,14 +498,16 @@ export function createRegistrationConfirmationService({ registrationService, jou
       const ids = row.relatedRegistrationIds ?? group?.registrationIds ?? [row.registrationId];
       if (!Array.isArray(ids) || !ids.length || ids.length > 100 || ids.some(id => !ID.test(id))
         || !ids.includes(row.registrationId) || new Set(ids).size !== ids.length) failure();
-      const notices = relatedNotices(current.value, { registrationIds: ids }, kind), notice = strongestNotice(notices);
-      const status = kind === 'registration' ? formalDeliveryStatus(current.value, ids, notice) : notice ? stateOf(notice) : 'not_sent';
-      const reason = status === 'unknown' ? 'DELIVERY_UNKNOWN' : status === 'provider_accepted' ? 'ALREADY_ACCEPTED'
-        : notices.reduce((total, item) => total + item.attempt, 0) >= 5 ? 'RETRY_LIMIT'
+      const scope = { accessRevision: row.accessRevision ?? 0, recipientDigest: row.recipientDigest ?? '' };
+      if (!Number.isSafeInteger(scope.accessRevision) || scope.accessRevision < 0 || scope.accessRevision > 0 && !/^[a-f0-9]{64}$/u.test(scope.recipientDigest)) failure();
+      const allNotices = relatedNotices(current.value, { registrationIds: ids }, kind), notices = allNotices.filter(item => sameScope(item, scope)), notice = strongestNotice(notices);
+      const status = kind === 'registration' ? formalDeliveryStatus(current.value, ids, notice, scope) : notice ? stateOf(notice) : 'not_sent';
+      const reason = historicalUncertainty(current.value, { registrationIds: ids }, kind, scope) ? 'HISTORICAL_DELIVERY_UNKNOWN' : status === 'unknown' ? 'DELIVERY_UNKNOWN' : status === 'provider_accepted' ? 'ALREADY_ACCEPTED'
+        : allNotices.reduce((total, item) => total + item.attempt, 0) >= 5 ? 'RETRY_LIMIT'
           : !row.eligible ? row.reason : !current.value.settings.enabled ? 'EMAIL_PAUSED' : !provider.ready ? 'EMAIL_NOT_READY'
             : !checkedFacts.ready ? checkedFacts.reason : kind === 'pre_event_reminder' && !reminderOpen() ? 'REMINDER_WINDOW_CLOSED' : 'ELIGIBLE';
       return { registrationId: row.registrationId, name: row.name, organization: row.organization, status,
-        eligible: reason === 'ELIGIBLE', reason, retryRejected: status === 'rejected' };
+        accessRevision: scope.accessRevision, eligible: reason === 'ELIGIBLE', reason, retryRejected: status === 'rejected' };
     });
     const next = (position?.offset ?? 0) + source.rows.length;
     if (next > source.total || next < source.total && !source.rows.length) failure();
@@ -516,35 +541,46 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!Array.isArray(relatedRegistrationIds) || relatedRegistrationIds.length > 100 || relatedRegistrationIds.some(id => !ID.test(id))) failure('INVALID_REQUEST', 400);
     const registrationIds = new Set([registrationId, ...relatedRegistrationIds]);
     const current = await target().read(), notices = current.value.notices.filter(item => registrationIds.has(item.registrationId) && formalConfirmationKind(item.kind));
+    const scope = currentRegistration ? scopeOf(await loadRegistration(registrationId)) : null;
     const unresolved = !notices.some(item => stateOf(item) === 'unknown')
       && formalDeliveryStatus(current.value, [...registrationIds], strongestNotice(notices.filter(item => item.admissionStatus === 'confirmed'))) === 'unknown';
     return { revision: current.value.revision, ...(unresolved ? { unresolvedConfirmations: true } : {}),
       notices: notices
       .map(item => ({ id: item.id, kind: item.kind, status: stateOf(item), admissionStatus: item.admissionStatus, attempt: item.attempt,
-        createdAt: item.createdAt, updatedAt: item.updatedAt })) };
+        createdAt: item.createdAt, updatedAt: item.updatedAt, ...(scope ? { currentRecipient: sameScope(item, scope) } : {}) })) };
   }
   async function staffDirectory({ actor } = {}) {
     if (!readerValid(actor)) failure('FORBIDDEN', 403);
     const current = await target().read();
-    const notices = current.value.notices.filter(item => formalConfirmationKind(item.kind))
-      .map(item => ({ registrationId: item.registrationId, status: stateOf(item) }));
-    const started = current.value.operations.filter(operation => operation.action === 'dispatch' && operation.status !== 'completed');
-    if (!started.length) return { revision: current.value.revision, notices };
-    // This is a bounded status summary, not notice history. Resolve explicit saved
-    // aliases once so an unfinished secondary batch also blocks its current person.
     const index = (await registrationService.repository.readIndex()).value;
-    const known = new Set(index.entries.map(entry => entry.id)), summaries = new Map(), checked = new Set();
-    for (const notice of notices) if (summaries.get(notice.registrationId) !== 'unknown') summaries.set(notice.registrationId, notice.status);
-    for (const id of new Set(started.flatMap(operation => operation.registrationIds))) {
-      if (!known.has(id)) continue;
-      const group = index.admissions?.personGroups?.find(item => item.registrationIds.includes(id));
-      const ids = group?.registrationIds ?? [id], canonical = group?.primaryRegistrationId ?? id;
-      if (checked.has(canonical)) continue;
-      checked.add(canonical);
-      if (formalDeliveryStatus(current.value, ids, strongestNotice(relatedNotices(current.value, { registrationIds: ids }, 'registration'))) === 'unknown') summaries.set(canonical, 'unknown');
+    const candidateIds = new Set([...current.value.notices.filter(item => formalConfirmationKind(item.kind)).map(item => item.registrationId),
+      ...current.value.operations.filter(op => op.action === 'dispatch' && op.status !== 'completed').flatMap(op => op.registrationIds)]);
+    const canonical = new Set();
+    for (const id of candidateIds) {
+      if (!index.entries.some(entry => entry.id === id)) continue;
+      canonical.add(index.admissions?.personGroups?.find(group => group.registrationIds.includes(id))?.primaryRegistrationId ?? id);
     }
-    if (summaries.size > 2000) failure();
-    return { revision: current.value.revision, notices: [...summaries].map(([registrationId, status]) => ({ registrationId, status })) };
+    const notices = [], ids = [...canonical], profiles = currentProfiles ? await currentProfiles() : null; let position = 0;
+    if (profiles !== null && !plainObject(profiles)) failure();
+    await Promise.all(Array.from({ length: Math.min(8, ids.length) }, async () => {
+      while (position < ids.length) {
+        const registrationId = ids[position++];
+        let aliases, scope;
+        if (profiles !== null) {
+          const group = index.admissions?.personGroups?.find(item => item.registrationIds.includes(registrationId));
+          aliases = { registrationIds: group?.registrationIds ?? [registrationId], primaryRegistrationId: registrationId };
+          const accessRevision = aliases.registrationIds.reduce((total, id) => total + (profiles[id]?.accessRevision ?? 0), 0);
+          if (!Number.isSafeInteger(accessRevision) || accessRevision < 0) failure();
+          let email = profiles[registrationId]?.fields?.email;
+          if (accessRevision > 0 && email === undefined) { const entry = index.entries.find(item => item.id === registrationId); email = (await registrationService.repository.readRecord(entry)).fields.email ?? ''; }
+          scope = { accessRevision, recipientDigest: accessRevision > 0 ? confirmationRequestHash(email) : '' };
+        } else { const loaded = await loadRegistration(registrationId); aliases = await aliasesFor(loaded); scope = scopeOf(loaded); }
+        const notice = strongestNotice(relatedNotices(current.value, aliases, 'registration', scope));
+        const status = formalDeliveryStatus(current.value, aliases.registrationIds, notice, scope);
+        if (['provider_accepted', 'unknown', 'rejected'].includes(status)) notices.push({ registrationId, status });
+      }
+    }));
+    return { revision: current.value.revision, notices: notices.sort((a, b) => a.registrationId.localeCompare(b.registrationId)) };
   }
   /** Reads current eligibility and durable delivery state; never reserves or sends. */
   async function staffDeliveryState({ actor, registrationId } = {}) {
@@ -552,13 +588,13 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!ID.test(registrationId ?? '')) failure('INVALID_REQUEST', 400);
     const loaded = await loadRegistration(registrationId), { record, admission } = loaded;
     const current = await target().read(), canSend = actorValid(actor);
-    const aliases = await aliasesFor(loaded), related = relatedNotices(current.value, aliases, 'registration');
+    const aliases = await aliasesFor(loaded), scope = scopeOf(loaded), allRelated = relatedNotices(current.value, aliases, 'registration'), related = allRelated.filter(item => sameScope(item, scope));
     const notice = strongestNotice(related);
-    const status = formalDeliveryStatus(current.value, aliases.registrationIds, notice);
+    const status = formalDeliveryStatus(current.value, aliases.registrationIds, notice, scope);
     let reason = admission.status !== 'confirmed' ? 'ADMISSION_NOT_CONFIRMED'
       : !record.fields.email ? 'EMAIL_MISSING' : status === 'provider_accepted' ? 'ALREADY_ACCEPTED'
-        : status === 'unknown' ? 'DELIVERY_UNKNOWN' : !canSend ? 'OPERATOR_PERMISSION_REQUIRED'
-          : related.reduce((total, item) => total + item.attempt, 0) >= 5 ? 'RETRY_LIMIT' : null;
+        : historicalUncertainty(current.value, aliases, 'registration', scope) ? 'HISTORICAL_DELIVERY_UNKNOWN' : status === 'unknown' ? 'DELIVERY_UNKNOWN' : !canSend ? 'OPERATOR_PERMISSION_REQUIRED'
+          : allRelated.reduce((total, item) => total + item.attempt, 0) >= 5 ? 'RETRY_LIMIT' : null;
     // Review-only readers can see the selected registration and durable history.
     // Contact permission checks and encrypted provider configuration are manager scope.
     if (reason === null) {
@@ -570,7 +606,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
         if (!facts.ready) reason = facts.reason;
       }
     }
-    return { registrationId, revision: current.value.revision, admissionStatus: admission.status, status, reason,
+    return { registrationId, revision: current.value.revision, accessRevision: scope.accessRevision, admissionStatus: admission.status, status, reason,
       ready: reason === 'ELIGIBLE' && canSend, canSend, retryRejected: status === 'rejected',
       recipient: admission.status === 'withdrawn' ? '' : record.fields.email ?? '' };
   }

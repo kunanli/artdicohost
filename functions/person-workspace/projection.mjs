@@ -112,6 +112,8 @@ export function registrationSource(value, expectedId) {
     deletionRequested: value.review.deletionRequested !== null && value.review.deletionRequested !== undefined };
   const registration = { id: expectedId, referenceCode: text(record.referenceCode, 128, expectedId),
     submittedAt: timestamp(record.submittedAt, false), provenance: { kind }, fields, review };
+  if (record.profileTargetId !== undefined) { if (!REGISTRATION_ID.test(record.profileTargetId ?? '')) fail(); registration.profileTargetId = record.profileTargetId; }
+  if (record.profileCorrection !== undefined) { const correction = record.profileCorrection; if (!plain(correction) || Object.keys(correction).sort().join(',') !== 'accessRevision,revision') fail(); registration.profileCorrection = { accessRevision: revisionValue(correction.accessRevision), revision: revisionValue(correction.revision) }; }
   return { revision: value.revision, registration, sourceContactId: kind === 'staff_assisted' ? record.provenance.sourceContactId : null };
 }
 export function admissionSource(value) {
@@ -219,10 +221,10 @@ export function arrangementsProjection(contact, source) {
 export function confirmationsSource(value) {
   if (!plain(value)) fail();
   if (Object.hasOwn(value, 'unresolvedConfirmations') && typeof value.unresolvedConfirmations !== 'boolean') fail();
-  const notices = records(value.notices, CONTACT_ID, 2000).map(item => ({ id: item.id,
+  const notices = records(value.notices, CONTACT_ID, 2000).map(item => { if (Object.hasOwn(item, 'currentRecipient') && typeof item.currentRecipient !== 'boolean') fail(); return ({ id: item.id,
     kind: oneOf(item.kind, ['registration', 'promotion']), status: oneOf(item.status, ['reserved', 'provider_accepted', 'rejected', 'unknown']) === 'reserved' ? 'unknown' : item.status,
     admissionStatus: oneOf(item.admissionStatus, ['confirmed', 'waitlisted']), attempt: revisionValue(item.attempt),
-    createdAt: timestamp(item.createdAt, false), updatedAt: timestamp(item.updatedAt, false) }));
+    createdAt: timestamp(item.createdAt, false), updatedAt: timestamp(item.updatedAt, false), ...(Object.hasOwn(item, 'currentRecipient') ? { currentRecipient: item.currentRecipient } : {}) }); });
   return { revision: revisionValue(value.revision), notices,
     ...(Object.hasOwn(value, 'unresolvedConfirmations') ? { unresolvedConfirmations: value.unresolvedConfirmations } : {}) };
 }
@@ -272,7 +274,7 @@ export function communicationProjection({ contactRaw, contactId, registrationId,
   const notices = [...(confirmations?.notices ?? [])].sort(descending);
   const timeline = [
     ...invitations.map(item => ({ source: 'invitation', id: item.id, at: item.updatedAt, status: item.status, channel: item.channel, kind: null })),
-    ...notices.map(item => ({ source: 'confirmation', id: item.id, at: item.updatedAt, status: item.status, channel: 'email', kind: item.kind })),
+    ...notices.map(item => ({ source: 'confirmation', id: item.id, at: item.updatedAt, status: item.status, channel: 'email', kind: item.kind, ...(Object.hasOwn(item, 'currentRecipient') ? { currentRecipient: item.currentRecipient } : {}) })),
   ];
   // Legacy invitation facts belong to the already-authorized contacts source.
   // They remain readable if the independent invitation ledger is unavailable;
@@ -311,7 +313,7 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
       if (!plain(record.fields) || !plain(record.provenance) || typeof record.inactive !== 'boolean') fail();
       const kind = oneOf(record.provenance.kind, ['public', 'staff_assisted', 'staff_entry']);
       return { id: record.id, name: text(record.fields.name, 120), organization: text(record.fields.organization, 300), city: text(record.fields.city, 160),
-        kind, sourceContactId: kind === 'staff_assisted' ? identifier(record.provenance.sourceContactId) : null, inactive: record.inactive };
+        corrected: record.profileCorrection !== undefined, kind, sourceContactId: kind === 'staff_assisted' ? identifier(record.provenance.sourceContactId) : null, inactive: record.inactive };
     });
     for (const person of list(admissions.people, 1000)) {
       if (!plain(person) || !REGISTRATION_ID.test(person.registrationId ?? '') || admissionMap.has(person.registrationId)) fail();
@@ -343,7 +345,7 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
     const invited = notices.find(row => ['unknown', 'issuing'].includes(row.status))?.status ?? notices[0]?.status
       ?? (raw.invitation?.sentAt ? 'manually_sent' : raw.invitation?.generatedAt ? 'prepared' : 'not_started');
     const row = { key: 'contact:' + item.id, kind: 'person', source: application ? 'linked' : 'contact',
-      name: item.profile.displayName, organization: item.profile.organization, city: item.profile.city,
+      name: application?.corrected ? application.name : item.profile.displayName, organization: application?.corrected ? application.organization : item.profile.organization, city: application?.corrected ? application.city : item.profile.city,
       contactId: item.id, registrationId: application?.id ?? (conversion?.registrationId ?? null), profileId: null, roles: [...roles],
       responseStatus: item.operations.responseStatus, admissionStatus: admission(application),
       registrationState: application ? 'available' : conversion ? 'restricted' : 'unlinked',
@@ -384,7 +386,7 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
     const members=people.filter(row=>row.contactId&&group.contactIds.includes(row.contactId)||row.registrationId&&group.registrationIds.includes(row.registrationId));
     if(!members.length)continue;
     const chosen=group.primaryKey?.startsWith('registration:')?members.find(row=>row.registrationId===group.primaryRegistrationId):members.find(row=>row.contactId===group.primaryContactId);
-    const base=chosen??members[0],source=group.primaryKey?.startsWith('registration:')?applicationMap.get(group.primaryRegistrationId):null;
+    const base=chosen??members[0],primaryApplication=applicationMap.get(group.primaryRegistrationId),source=primaryApplication?.corrected||group.primaryKey?.startsWith('registration:')?primaryApplication:null;
     const contactId=permissions.contact?group.primaryContactId:null,registrationId=group.primaryRegistrationId;
     const originalRoles=[...new Set(members.flatMap(row=>row.roles))],basic=new Set(['attendee','speaker','guest','exhibitor']);
     const roles=group.roles===null?originalRoles:[...new Set([...originalRoles.filter(role=>!basic.has(role)),...group.roles])];

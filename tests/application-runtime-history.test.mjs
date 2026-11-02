@@ -76,3 +76,18 @@ test('short student proposal, approval, approved waitlist and refusal retain exa
   assert.equal((await confirmation(recovered,d)).admission.status,'pending_review');
   assert.equal(f.messages.length,7,'reading recovered state never resends any receipt, formal notice or reminder');
 });
+
+test('profile corrections and recipient-scoped notices restore with original source and revoked capabilities intact',async()=>{
+ const f=await peopleRuntimeFixture({mail:true}),headers=await f.login(),pending=await f.seedPublic(),id=pending.reference_code;await f.approvePublic(id,{headers});
+ const original=await f.app.registrationService.repository.list(),detail=await f.app.reviewStore.detail(id),operationId=randomBytes(24).toString('base64url');
+ const fields={...Object.fromEntries(['name','email','organization','position','city','wechat','phone'].map(key=>[key,detail.registration.fields[key]??''])),email:'synthetic.restored.corrected@example.invalid'};
+ await f.app.reviewStore.saveProfile(id,detail.revision,operationId,fields,f.users[0].id);
+ const state=await f.app.confirmationService.staffDeliveryState({actor:f.users[0],registrationId:id});
+ await f.app.confirmationService.dispatch({actor:f.users[0],registrationIds:[id],expectedRevision:state.revision,expectedAccessRevisions:{[id]:state.accessRevision},operationId:randomBytes(24).toString('base64url')});
+ const key=randomBytes(32),backup=await f.app.handle(f.request('/api/admin/maintenance/backup',{method:'POST',headers,body:{encryptionKey:key.toString('base64url'),confirmation:'CREATE_ENCRYPTED_BACKUP'}}));assert.equal(backup.status,200);const bundle=Buffer.from(await backup.arrayBuffer());
+ const destination=memoryObjects(),restored=await restoreEncryptedBackupIsolated({objects:destination,bundle,key,restoreId:'synthetic-profile-corrections'});key.fill(0);
+ const readOnly={get:(name,options)=>destination.get(restored.namespace+'/'+name.slice('cms/v1/'.length),options),putImmutable:async()=>assert.fail('read only recovery'),append:async()=>assert.fail('read only recovery')},recovered=f.make({objects:readOnly});
+ assert.deepEqual(await recovered.registrationService.repository.list(),original);assert.deepEqual((await recovered.reviewStore.profileOperation(id,operationId,f.users[0].id)).fields,fields);
+ assert.equal((await recovered.confirmationService.staffDeliveryState({actor:f.users[0],registrationId:id})).status,'provider_accepted');assert.equal((await recovered.confirmationService.staffHistory({actor:f.users[0],registrationId:id})).notices.length,2);
+ await assert.rejects(recovered.confirmationService.authorize({receiptToken:pending.confirmation.receiptToken}),error=>error.code==='CONFIRMATION_NOT_FOUND');assert.equal(f.messages.length,3,'isolated recovery never sends');
+});

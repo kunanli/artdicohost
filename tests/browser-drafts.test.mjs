@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBrowserDraftStore, BROWSER_DRAFT_TTL_MS } from '../src/lib/browser-drafts.mjs';
+import { createBrowserDraftStore, copyBrowserDraftValue, BROWSER_DRAFT_TTL_MS } from '../src/lib/browser-drafts.mjs';
 import { createStaffFormDraft } from '../src/lib/staff-form-draft.mjs';
 import {createConfirmationMutations,deliveryConfirmationDraftPolicy} from '../src/lib/delivery-settings.mjs';
 
@@ -445,4 +445,11 @@ test('formal recovery metadata enables only the fresh known rejection and atomic
       }
     }finally{binding.close();}
   }
+});
+
+
+test('opaque revision-map IDs never become credential fields and only exact bounded integer maps are accepted',()=>{
+ const id='synthetic-secret-token-'+ 'A'.repeat(43-'synthetic-secret-token-'.length);assert.equal(id.length,43);
+ const payload={registrationIds:[id],expectedAccessRevisions:{[id]:2}};assert.deepEqual(copyBrowserDraftValue(payload),payload);
+ for(const value of [{[id]:2},{registrationIds:[id],expectedAccessRevisions:{[id]:'secret'}},{registrationIds:[id],expectedAccessRevisions:{[id]:2,token:1}},{...payload,privateKey:'unsafe'}])assert.throws(()=>copyBrowserDraftValue(value));
 });

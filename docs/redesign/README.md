@@ -1,10 +1,12 @@
 # ARTDiCO HOST 改版執行總覽
 
-本輪接續已確認：嘉賓依後台公開開關全部展示，真實出席確認獨立保留；舊人工審閱移出日常編輯，歷史唯讀。展位／住宿／志工流程維持。程式與驗收正接續，正式部署結果另記於[本輪盤點與交付](admin-data-cleanup-audit.md)，下方30b4為目前已驗證版本。
+更新日期：2026-11-02（Asia/Taipei）。**[PR #68](https://github.com/kunanli/artdicohost/pull/68) 已合併至 main `3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`，PR／main驗收及正式發布回執均已完成。** 嘉賓依公開開關展示全部合法資料，真實出席獨立；舊人工審閱移出日常編輯、歷史唯讀。資料未刪除，展位／住宿／志工流程維持，範圍與證據入口見[本輪盤點與交付](admin-data-cleanup-audit.md)。
 
-更新日期：2026-11-02（Asia/Taipei）。**現行已發布為 [PR #67 Hero 海報字體與公開區域呈現](hero-poster-typography-release.md)，main `30b4ca6d0891699093f63b9ec790621906f64391`，08:56:49 UTC完成60個準確公開物件HTTPS核對。** [PR 流程 41414451982](https://github.com/kunanli/artdicohost/actions/runs/41414451982) 的1635項測試與同HTML `c4f4de59…` 的捲動6／排版4／實際素材13已核對通過；[main 流程 41415375940](https://github.com/kunanli/artdicohost/actions/runs/41415375940) 四工作與精確6／4／實際13也成功，私有OSS及13後台回執完成；細節見本輪紀錄。樣式修改先讀 [首頁CSS／字級規範](../frontend-typography.md)。
+[PR 流程 41425057862](https://github.com/kunanli/artdicohost/actions/runs/41425057862)／check `125209558100` 全部成功；1638項測試及同HTML `4180a274…86d5a` 的捲動6／排版4／實際素材13已核對。實際R44仍保留原3筆出席證明，四寬顯示完整9位公開嘉賓；未捕獲嘉賓／作品媒體以404替身明示。[main 流程 41426077899](https://github.com/kunanli/artdicohost/actions/runs/41426077899) 四工作與同版6／4／實際13也成功；10:16 UTC私有OSS／13後台、10:18:01的60公開物件HTTPS核對完成，軟體已交付。
 
-前次已驗證發布（歷史基準）為 [PR66手機圈內組織與報名更正](mobile-organizations-profile-release.md)，main `c5166922`。以下較早段落保留各階段的原回執，最新合併及發布狀態以頁首與本輪紀錄為準。
+**前次已驗證發布（歷史基準）：**[PR #67 Hero 海報字體與公開區域呈現](hero-poster-typography-release.md)，main `30b4ca6d0891699093f63b9ec790621906f64391`，當次08:56:49 UTC完成60個準確公開物件HTTPS核對。[PR 流程 41414451982](https://github.com/kunanli/artdicohost/actions/runs/41414451982) 的1635項測試及同HTML `c4f4de59…` 的捲動6／排版4／實際素材13通過；[main 流程 41415375940](https://github.com/kunanli/artdicohost/actions/runs/41415375940) 四工作、私有OSS及13後台回執已完成。樣式修改先讀 [首頁CSS／字級規範](../frontend-typography.md)。
+
+更早歷史發布為 [PR66手機圈內組織與報名更正](mobile-organizations-profile-release.md)，main `c5166922`。以下較早段落保留各階段的原回執，最新合併及發布狀態以頁首與本輪紀錄為準。
 
 歷史交付：[PR #64 自由背景微粒與作品缺圖版型](background-showcase-release.md) 已發布於當次 main `50bc3cd`。Hero微粒在球外背景自由漂移，滑鼠輕微帶動、球／標題全alpha排除；沒有環形或尾流，保留簡報式淡入／sticky。作品缺圖轉自然文字高度、有圖保持原稿2:1／字幕／真peek，單件收起無效導航。當次main6／4／13、1612測試、FC128與公開61物件HTTPS回執保留；當次公開一件作品確無封面參照。
 
@@ -35,7 +37,8 @@
 | 文件 | 使用者 | 用途 |
 | --- | --- | --- |
 | 本頁 | 主辦方與開發者 | 決策、範圍、順序、尚待核實事項 |
-| [Hero 海報字體與公開區域呈現](hero-poster-typography-release.md) | 開發者與驗收負責人 | PR67合併、精確視覺證據與待補main發布回執 |
+| [嘉賓公開展示與舊審閱精簡](admin-data-cleanup-audit.md) | 開發者與驗收負責人 | PR68合併、PR驗收與待補main發布回執；資料及三項營運流程保留 |
+| [Hero 海報字體與公開區域呈現](hero-poster-typography-release.md) | 開發者與驗收負責人 | PR67歷史發布、精確視覺及main／HTTPS回執 |
 | [開發步驟](01-implementation-steps.md) | 開發者 | P0 至 P6 的修改位置、相容要求及完成條件 |
 | [工作人員與參與者操作](02-staff-and-attendee-runbook.md) | 活動負責人、審核、邀約及現場同事 | 舊意向整合、日常操作、通知及故障處理 |
 | [驗收與發布](03-release-and-acceptance.md) | 開發者與驗收負責人 | 情境測試、實機、產物、上線及回退 |

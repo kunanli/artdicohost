@@ -1,8 +1,10 @@
 # ARTDiCO HOST · artdico.host
 
-**最新已發布：**[PR #67：Hero 海報字體與公開區域呈現](docs/redesign/hero-poster-typography-release.md) 已合併至 main `30b4ca6d0891699093f63b9ec790621906f64391`。Hero 真文字、實心／描邊、組織 Logo 單一呈現與空作品整區隱藏已納入；[PR 檢查 41414451982](https://github.com/kunanli/artdicohost/actions/runs/41414451982) 通過，精確同版捲動6／排版4／實際素材13及1635項測試已核對。[main 流程 41415375940](https://github.com/kunanli/artdicohost/actions/runs/41415375940) 四工作均成功；main同版6／4／實際13、私有OSS、13後台及08:56:49 UTC的60公開物件HTTPS回讀已核對，正式交付完成。
+**最新已發布：**[PR #68](https://github.com/kunanli/artdicohost/pull/68) 已合併至 main `3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`，範圍見[嘉賓公開展示與舊審閱精簡](docs/redesign/admin-data-cleanup-audit.md)。嘉賓依公開開關展示、真實出席獨立；舊人工審閱改歷史唯讀。資料未刪除，展位、住宿、志工流程維持。[PR 檢查 41425057862](https://github.com/kunanli/artdicohost/actions/runs/41425057862) 已通過1638項測試及同版捲動6／排版4／實際素材13；[main 流程 41426077899](https://github.com/kunanli/artdicohost/actions/runs/41426077899) 四工作成功，同版6／4／實際13、私有OSS、13後台及10:18:01 UTC的60公開物件HTTPS核對完成。
 
-**前次已驗證發布（歷史基準）：**[PR66：手機圈內組織、全頁星空與報名更正](docs/redesign/mobile-organizations-profile-release.md)，main `c5166922`。手機八個Logo留在圓內、後台原位更正、官方Wallet徽章已交付；當次 main 6／4／實際13、1634測試、13後台及61公開物件HTTPS回執保留。首頁樣式沿 [CSS／字級規範](docs/frontend-typography.md)。
+**前次已驗證發布（歷史基準）：**[PR #67：Hero 海報字體與公開區域呈現](docs/redesign/hero-poster-typography-release.md)，main `30b4ca6d0891699093f63b9ec790621906f64391`。Hero 真文字、實心／描邊、組織 Logo 單一呈現與空作品整區隱藏已交付；當次[PR 檢查 41414451982](https://github.com/kunanli/artdicohost/actions/runs/41414451982) 的1635項測試及同版捲動6／排版4／實際素材13通過，[main 流程 41415375940](https://github.com/kunanli/artdicohost/actions/runs/41415375940) 四工作成功，私有OSS、13後台與08:56:49 UTC的60公開物件HTTPS回執保留。
+
+更早 [PR66：手機圈內組織、全頁星空與報名更正](docs/redesign/mobile-organizations-profile-release.md)，main `c5166922`，保留當次1634測試、13後台及61公開物件HTTPS回執。首頁樣式沿 [CSS／字級規範](docs/frontend-typography.md)。
 
 活動行唯一一般報名路徑已整理，匯出轉接仍待匿名表頭，正式入口／審核政策尚未切換，見[操作路徑](docs/redesign/external-registration-wallet.md)。以下較早階段的發布與文檔保留作歷史，最新狀態以頁首及[接續台帳](docs/session-recovery.md)為準。
 

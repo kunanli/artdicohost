@@ -41,6 +41,8 @@ const REFERENCE = Object.freeze({
 // The user now requires both company and position beneath each name. These
 // approved control sizes intentionally exceed the source's 220px bubbles;
 // source spacing and all unrelated reference measurements remain separate.
+// Original desktop geometry is retained; only each public array index owns it.
+const ORGANIZATION_INDEX_SLOTS=[[23.082,11.08,24.858,8.523],[54.332,11.151,20.597,8.381],[10.156,28.267,16.761,8.523],[32.457,28.196,12.287,8.381],[53.622,27.699,7.813,10.44],[74.503,26.563,9.659,12.145],[7.031,43.466,19.602,7.458]];
 const GUEST_INFORMATION_LAYOUT = Object.freeze({
   reason: 'Three separate visible fields: name, company and actual position.',
   originalSourceDiameter: REFERENCE.guestDiameter,
@@ -82,7 +84,7 @@ for (const name of ['Youliya.png', 'Shaojiaqi.png']) {
 const guestId = index => 'synthetic-reference-guest-' + index;
 const organizationId = index => 'synthetic-reference-organization-' + index;
 const organizationNames = ['游戏奇点', 'IGDA 深圳', '深圳大学艺术学部', 'Bournemouth University', '鹏游港湾', 'G4C HK', 'Teesside University'];
-const organizationInputOrder = [5, 4, 0, 1, 3, 6, 2]; // Existing publication-style order; renderer must explicitly sort known public labels.
+const organizationInputOrder = [5, 4, 0, 1, 3, 6, 2]; // The public array is authoritative; brand keys select artwork only.
 const names = ['合成英文嘉宾 Alex', '合成嘉宾乙', 'Synthetic Enki', '合成嘉宾丁', 'Synthetic Wilson', '合成嘉宾己', 'Synthetic Nelson', 'Synthetic PingYao', '合成嘉宾九'];
 function rawFixture({ brokenImages = false } = {}) {
   const content = createInitialContent();
@@ -181,7 +183,7 @@ async function fixture(width, { mode = 'legacy', brokenImages = false, javascrip
     const received = page.waitForResponse(response => response.url() === API + '/api/public/content');
     await page.evaluate(() => window.dispatchEvent(new Event('focus'))); await received; await page.waitForTimeout(250);
   }
-  return { width, context, page, calls, refresh, fontFailures,failPosterFont(){failPosterFont=true;} };
+  return { width, context, page, calls, refresh, fontFailures,get raw(){return raw;},failPosterFont(){failPosterFont=true;} };
 }
 const noOverflow = async f => assert.equal(await f.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'no horizontal overflow at ' + f.width + 'px');
 async function guestRoster(f,confirmedIds=[]){
@@ -307,7 +309,7 @@ function rowsOf(boxes, tolerance = 10) {
   for (const box of boxes) { let row = rows.find(row => Math.abs(row.top - box.y) <= tolerance); if (!row) rows.push(row = { top: box.y, items: [] }); row.items.push(box); }
   return rows;
 }
-async function geometry(f) {
+async function geometry(f,{suffix=''}={}) {
   const measured = await f.page.evaluate(() => {
     const rect = node => { const b = node.getBoundingClientRect(); return { x: b.x, y: b.y + scrollY, width: b.width, height: b.height }; };
     const bubbles = [...document.querySelectorAll('[data-guest-toggle]')].map(node => ({ ...rect(node), radius: getComputedStyle(node).borderTopLeftRadius,
@@ -334,13 +336,15 @@ async function geometry(f) {
       placeholders: [...document.querySelectorAll('.ah-guest-placeholder')].map(node => ({ background: getComputedStyle(node).backgroundColor,
         padding: ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'].map(key => parseFloat(getComputedStyle(node)[key])), circle: rect(node.querySelector('.ah-guest-placeholder-circle')) })),
       organizations: [...document.querySelectorAll('[data-organization-id]')].map(node => ({ ...rect(node), id: node.dataset.organizationId,
-        reference: node.dataset.organizationReference ?? null, card: rect(node.querySelector('.ah-organization-card')),
+        reference: node.dataset.organizationReference ?? null, slotIndex: node.dataset.organizationSlot ?? null, card: rect(node.querySelector('.ah-organization-card')),
         frame: rect(node.querySelector('.ah-organization-image')), image: rect(node.querySelector('img')), paintedLogo: paintedLogo(node.querySelector('img')) })) };
   });
-  await writeFile(resolve(evidence, 'geometry-' + f.width + '.json'), JSON.stringify(measured, null, 2) + '\n');
+  await writeFile(resolve(evidence, 'geometry-' + f.width + suffix + '.json'), JSON.stringify(measured, null, 2) + '\n');
   assert.equal(measured.bubbles.length, 9, 'nine actual legacy profiles, no decorative placeholder people');
-  assert.deepEqual(measured.organizations.map(item => item.reference), REFERENCE.organizationKeys, 'known public organization labels are explicitly ordered, despite shuffled fixture input');
-  assert.deepEqual(measured.organizations.map(item => item.id), organizationNames.map((_, index) => organizationId(index)), 'visual ordering preserves all independent record IDs');
+  const publishedOrganizations=publication(f.raw,'legacy').organizations;
+  assert.deepEqual(measured.organizations.map(item=>item.id),publishedOrganizations.map(item=>item.id),'DOM order follows the public array without a brand rank');
+  assert.deepEqual(measured.organizations.map(item=>item.reference),publishedOrganizations.map(item=>REFERENCE.organizationKeys[organizationNames.indexOf(item.name)]),'brand diagnostics remain bound to the same identities');
+  assert.deepEqual(measured.organizations.map(item=>item.slotIndex),publishedOrganizations.map((_,index)=>index<7?String(index):null),'slot numbers come only from the public array index');
   const expectedDiameter = f.width >= 1000 ? GUEST_INFORMATION_LAYOUT.desktopDiameterByViewport[f.width]
     : Math.min(220, (f.width - 2 * GUEST_INFORMATION_LAYOUT.mobilePaddingByViewport[f.width] - 20) / 2);
   for (const b of measured.bubbles) {
@@ -359,6 +363,7 @@ async function geometry(f) {
   }
   if (f.width >= 1000) {
     const scale = f.width / REFERENCE.width, rows = rowsOf(measured.bubbles);
+    measured.organizations.slice(0,7).forEach((row,index)=>{const [left,top,width,height]=ORGANIZATION_INDEX_SLOTS[index],planet=measured.planet;near(row.x,planet.x+planet.width*left/100,1.5,'indexed slot retains original horizontal position');near(row.y,planet.y+planet.width*top/100,1.5,'indexed slot retains original vertical position');near(row.width,planet.width*width/100,1.5,'indexed slot retains original width');near(row.height,planet.width*height/100,1.5,'indexed slot retains original height');});
     assert.deepEqual(rows.map(row => row.items.length), [4, 4, 1], 'reference has four desktop columns, with only nine actual people');
     for (let column = 0; column < REFERENCE.guestColumns; column++) {
       const bubble = rows[0].items[column];
@@ -548,12 +553,24 @@ try {
       const posterTypography=await heroType(f.page);
       const measured = await geometry(f); await disclosures(f); await otherContent(f); await noOverflow(f);
       const files = await screenshots(f); let unknownOrganizationFallback = false;
+      const initialOrganizationIds=f.raw.organizations.map(item=>item.id),originalLogoIds=Object.fromEntries(f.raw.organizations.map(item=>[item.id,item.logoId]));
+      const organizationLink=()=>f.page.locator('#organization-'+organizationId(0)+' a.ah-organization-card');await organizationLink().focus();
+      await f.refresh('legacy',raw=>{raw.organizations.reverse();});
+      assert.equal(await organizationLink().evaluate(node=>document.activeElement===node),true,'public array reorder retains the same organization link focus');
+      for(const image of await f.page.locator('[data-organization-id] img').all()){await image.evaluate(node=>node.closest('[data-organization-id]').scrollIntoView({block:'center',behavior:'instant'}));await image.evaluate(node=>node.decode());}
+      const reorderedOrganizationGeometry=await geometry(f,{suffix:'-reordered'});
+      assert.deepEqual(reorderedOrganizationGeometry.organizations.map(item=>item.id),[...initialOrganizationIds].reverse(),'reversing the public array changes actual DOM and slot occupants');
+      assert.deepEqual(Object.fromEntries(f.raw.organizations.map(item=>[item.id,item.logoId])),originalLogoIds,'reorder changes no original image digest');
+      assert.ok(reorderedOrganizationGeometry.organizations.some(item=>{const before=measured.organizations.find(row=>row.id===item.id);return before.slotIndex!==item.slotIndex&&(Math.abs(before.x-item.x)>1.5||Math.abs(before.y-item.y)>1.5);}),'the same identities really move to different physical indexed slots');
+      await f.refresh('legacy',raw=>{raw.organizations.reverse();});
+      const organizationOrderEvidence={initial:initialOrganizationIds,reordered:reorderedOrganizationGeometry.organizations.map(item=>item.id),sameImageDigests:true,focusedId:organizationId(0),sameLinkFocusAfterRefresh:true,geometry:reorderedOrganizationGeometry.organizations};
       await f.refresh('legacy', raw => { raw.organizations.push(
         { id:'synthetic-reference-unknown',name:'合成第八个组织',logoId:syntheticLogoByWidth.get(width).id,website:'https://example.invalid/eighth-organization',participation:'undecided',status:'confirmed',publicConsent:true,internalNotes:PRIVATE }); });
       const unknown=f.page.locator('[data-organization-id="synthetic-reference-unknown"]');
       assert.equal(await f.page.locator('[data-organization-id]').count(),8,'an eighth public organization is retained beside the original seven');
       assert.equal(await unknown.getAttribute('data-organization-reference'),null);
-      if(width>=1000)assert.notEqual(await unknown.evaluate(node=>getComputedStyle(node).position),'absolute','desktop unknown identities retain normal flow');
+      assert.equal(await unknown.getAttribute('data-organization-slot'),null,'the eighth index is outside the first seven slots');
+      if(width>=1000)assert.notEqual(await unknown.evaluate(node=>getComputedStyle(node).position),'absolute','the eighth index retains the lower grid regardless of identity');
       await unknown.scrollIntoViewIfNeeded();
       await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
       await unknown.locator('img').evaluate(image=>image.decode());
@@ -600,8 +617,9 @@ try {
         await f.refresh('legacy',raw=>{raw.organizations.push({id:'synthetic-reference-duplicate',name:'游戏奇点',logoId:logoSources[0].id,website:'',participation:'undecided',status:'confirmed',publicConsent:true,internalNotes:PRIVATE});});
         const duplicate=f.page.locator('[data-organization-id="synthetic-reference-duplicate"]');
         assert.equal(await duplicate.count(),1);assert.equal(await duplicate.getAttribute('data-organization-reference'),null);
-        assert.notEqual(await duplicate.evaluate(node=>getComputedStyle(node).position),'absolute','a second saved record with the same public label stays in normal flow');
-        assert.equal(await f.page.locator('[data-organization-reference="gamezone"]').count(),1,'only one real card occupies each reference slot');
+        assert.equal(await duplicate.getAttribute('data-organization-slot'),null,'the ninth index remains outside the first seven slots');
+        assert.notEqual(await duplicate.evaluate(node=>getComputedStyle(node).position),'absolute','the ninth index stays in the lower grid without merging the repeated brand');
+        assert.equal(await f.page.locator('[data-organization-reference="gamezone"]').count(),1,'brand diagnostics remain unique without deciding position or merging records');
         await duplicate.scrollIntoViewIfNeeded();await duplicate.locator('img').evaluate(node=>node.decode());
         await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-duplicate .ah-organization-image')?.dataset.logoPresentation==='white');
         await organizationCaption(duplicate,{name:'游戏奇点'});
@@ -638,7 +656,7 @@ try {
       const fontFailureTypography=await heroType(f.page,{failedFont:true});await noOverflow(f);
       await f.page.screenshot({path:resolve(evidence,'font-fallback-'+width+'.png'),fullPage:false,animations:'disabled'});
       reports.push({ name: 'legacy-public-layout-' + width, width, profiles: guestState.count, organizations: 7, attendance: guestState, geometry: measured,posterTypography,fontFailureTypography,failedFontPaths:[...f.fontFailures],
-        interaction: 'native keyboard, Escape, pointer gap or touch; actual timetable tabs, works filter and FAQ', unknownOrganizationFallback,
+        interaction: 'native keyboard, Escape, pointer gap or touch; actual timetable tabs, works filter and FAQ', organizationOrderEvidence, unknownOrganizationFallback,
         duplicateKnownOrganizationRetained: width===1440, eighthOrganizationGeometry:extraGeometry,missingLogoNameAndRestoredLogoOnly:true,mixedTransparentPanelMask:mixedMask,organizationPaging, requests: f.calls.length, screenshots: files });
     } finally { await f.context.close(); }
   }

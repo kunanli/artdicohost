@@ -1,5 +1,7 @@
 # ARTDiCO HOST 改版執行總覽
 
+接續實作：[後台調整前台展示順序](admin-display-order-release.md)。嘉賓／組織／作品依後台保存及明確發布的順序展示，原槽位／手機圈內布局保持；本輪驗收與發布完成後追加。寄信故障排在排序交付後處理。
+
 最新報名決策：[本站報名自動取得入場名額](onsite-auto-registration-release.md)。使用者已明確選本站填表、自動確認或滿額候補；取代下方早先活動行唯一入口規劃。新空白分享提案不勾，分享審選及既有待審／未知結果仍獨立保留。[PR70](https://github.com/kunanli/artdicohost/pull/70)已發布main `124180a0dc862d4e93cf79c5a3cf1c9278c83991`；[main流程41458276411](https://github.com/kunanli/artdicohost/actions/runs/41458276411)四工作及1661測試／同HTML6／4／10／實際13通過，14:13 UTC正式mode false／13後台、14:14:45 UTC 60公開物件HTTPS核對完成。
 
 接續：[Hero完整品牌與單次標題](hero-single-title-release.md)。使用者要求GlobalGameJam在一起、兩個品牌各只一次，移除前版輪廓複行；本輪與自動報名同由PR70交付，Hero及手機／桌面、字型fallback、真Range與星空均已驗證；以下PR69為歷史基準。

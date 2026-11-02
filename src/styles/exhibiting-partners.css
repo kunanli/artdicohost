@@ -1,30 +1,30 @@
-/* Logo slots follow the reference's visible bounds, never an uploaded PNG's canvas.
-   Every public image is contained in its own box, including opaque/custom artwork. */
+/* The publication array fills the reference's seven desktop slots by index.
+   Brand identity selects artwork only; every image fits its current slot. */
 #artdico-host.ah-festival.ah-cosmos .ah-booths.ah-section{display:block;position:relative;padding-top:clamp(96px,10.3vw,198px);padding-bottom:clamp(96px,8.5vw,164px);background:linear-gradient(180deg,#1b1231,#1b1231 55%,#000)}
 #artdico-host.ah-festival.ah-cosmos .ah-booths .ah-section-heading{display:block;position:relative;z-index:1;margin:0;padding-bottom:clamp(32px,2.85vw,55px);border-bottom:1px solid #c7c4cd}
 #artdico-host.ah-festival.ah-cosmos .ah-booths .ah-section-heading h2{margin-left:var(--ah-content-inset,0px)}
 #artdico-host.ah-festival.ah-cosmos .ah-organizations-scene{position:relative;isolation:isolate;container-type:inline-size;width:min(73.333vw,1408px);max-width:100%;margin:clamp(48px,7.08vw,136px) auto 0}
 #artdico-host.ah-festival.ah-cosmos .ah-organizations-planet{position:absolute;inset:0 0 auto;z-index:-1;display:block;width:100%;aspect-ratio:1;border:1px solid #88769666;border-radius:50%;background:radial-gradient(ellipse 56% 58% at 12% 4%,#b064d0b3,transparent 82%),radial-gradient(ellipse 44% 38% at 86% 112%,#b867ffcc,transparent 95%),linear-gradient(180deg,#211631 0%,#191127 40%,#14101e 66%,#06050a);box-shadow:inset 0 0 3px #ad7cdd21;pointer-events:none}
 #artdico-host.ah-festival.ah-cosmos .ah-booths .ah-exhibiting-partners{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:42px 28px;align-content:start;align-items:center;min-height:100cqi;list-style:none;margin:0;padding:12cqi 8cqi 24cqi;border:0}
-#artdico-host.ah-festival.ah-cosmos .ah-organizations-scene:has([data-organization-reference]) .ah-exhibiting-partners{padding:60cqi 8cqi 12cqi}
+#artdico-host.ah-festival.ah-cosmos .ah-organizations-scene:has([data-organization-slot]) .ah-exhibiting-partners{padding:60cqi 8cqi 12cqi}
 #artdico-host.ah-festival.ah-cosmos .ah-exhibiting-partners>li{min-width:0;display:flex;align-items:center;justify-content:center;position:relative;border:0}
-#artdico-host.ah-festival.ah-cosmos .ah-exhibiting-partners>li[data-organization-reference]:has(.ah-organization-image:not([hidden])){position:absolute}
-#artdico-host.ah-festival.ah-cosmos [data-organization-reference="gamezone"]{left:23.082%;top:11.08cqi;width:24.858%;height:8.523cqi}
-#artdico-host.ah-festival.ah-cosmos [data-organization-reference="igda"]{left:54.332%;top:11.151cqi;width:20.597%;height:8.381cqi}
-#artdico-host.ah-festival.ah-cosmos [data-organization-reference="szdx"]{left:10.156%;top:28.267cqi;width:16.761%;height:8.523cqi}
-#artdico-host.ah-festival.ah-cosmos [data-organization-reference="bu"]{left:32.457%;top:28.196cqi;width:12.287%;height:8.381cqi}
-#artdico-host.ah-festival.ah-cosmos [data-organization-reference="pengyou"]{left:53.622%;top:27.699cqi;width:7.813%;height:10.44cqi}
-#artdico-host.ah-festival.ah-cosmos [data-organization-reference="g4c"]{left:74.503%;top:26.563cqi;width:9.659%;height:12.145cqi}
-#artdico-host.ah-festival.ah-cosmos [data-organization-reference="teesside"]{left:7.031%;top:43.466cqi;width:19.602%;height:7.458cqi}
+#artdico-host.ah-festival.ah-cosmos .ah-exhibiting-partners>li[data-organization-slot]{position:absolute}
+#artdico-host.ah-festival.ah-cosmos [data-organization-slot="0"]{left:23.082%;top:11.08cqi;width:24.858%;height:8.523cqi}
+#artdico-host.ah-festival.ah-cosmos [data-organization-slot="1"]{left:54.332%;top:11.151cqi;width:20.597%;height:8.381cqi}
+#artdico-host.ah-festival.ah-cosmos [data-organization-slot="2"]{left:10.156%;top:28.267cqi;width:16.761%;height:8.523cqi}
+#artdico-host.ah-festival.ah-cosmos [data-organization-slot="3"]{left:32.457%;top:28.196cqi;width:12.287%;height:8.381cqi}
+#artdico-host.ah-festival.ah-cosmos [data-organization-slot="4"]{left:53.622%;top:27.699cqi;width:7.813%;height:10.44cqi}
+#artdico-host.ah-festival.ah-cosmos [data-organization-slot="5"]{left:74.503%;top:26.563cqi;width:9.659%;height:12.145cqi}
+#artdico-host.ah-festival.ah-cosmos [data-organization-slot="6"]{left:7.031%;top:43.466cqi;width:19.602%;height:7.458cqi}
 #artdico-host.ah-festival.ah-cosmos .ah-organization-card{position:relative;min-width:0;width:100%;min-height:140px;padding:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:12px;color:inherit;text-decoration:none;text-align:center;overflow-wrap:anywhere;transition:opacity .25s}
 #artdico-host.ah-festival.ah-cosmos a.ah-organization-card:hover{opacity:.88}
 #artdico-host.ah-festival.ah-cosmos a.ah-organization-card:focus-visible{outline:2px solid #d7c4ff;outline-offset:7px;border-radius:8px}
 #artdico-host.ah-festival.ah-cosmos .ah-exhibiting-partners h3{margin:0;color:var(--ah-ink);font-size:clamp(15px,1.5vw,29px);font-weight:700;line-height:1.35;letter-spacing:-.025em}
 #artdico-host.ah-festival.ah-cosmos .ah-organization-image{width:100%;max-width:100%;height:120px;max-height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;contain:paint;background:transparent}
 #artdico-host.ah-festival.ah-cosmos .ah-organization-image img{display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain;object-position:center}
-#artdico-host.ah-festival.ah-cosmos [data-organization-reference]:has(.ah-organization-image:not([hidden])) .ah-organization-card{height:100%;min-height:44px}
-#artdico-host.ah-festival.ah-cosmos [data-organization-reference]:has(.ah-organization-image:not([hidden])) .ah-organization-image{height:100%;min-height:0}
-#artdico-host.ah-festival.ah-cosmos .ah-exhibiting-partners>li[data-organization-reference]:not(:has(.ah-organization-image:not([hidden]))){position:relative;left:auto;top:auto;width:auto;height:auto}
+#artdico-host.ah-festival.ah-cosmos [data-organization-slot] .ah-organization-card{height:100%;min-height:44px;gap:0;overflow:hidden}
+#artdico-host.ah-festival.ah-cosmos [data-organization-slot] .ah-organization-image{height:100%;min-height:0}
+#artdico-host.ah-festival.ah-cosmos [data-organization-slot] .ah-organization-card>h3{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;max-width:100%;max-height:2.7em;overflow:hidden}
 #artdico-host.ah-festival.ah-cosmos .ah-organization-image[hidden]{display:none}
 #artdico-host.ah-festival.ah-cosmos .ah-organization-image[data-logo-presentation="pending"] img{visibility:hidden}
 /* One visual logo slot, including while an upload loads. The full card name

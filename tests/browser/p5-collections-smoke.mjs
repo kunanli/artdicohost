@@ -271,8 +271,10 @@ try{
    await page.evaluate(id=>{location.hash='#program-'+id;},IDs.morning);await activeZone(f,'A');assert.equal(await page.locator('[data-program-period]').inputValue(),'all','deep links reveal sessions hidden by a time filter');
    assert.equal(await page.locator('#program-'+IDs.morning).isVisible(),true);
    await page.locator('[data-public-works-filter]').selectOption('student');await page.locator('#work-'+IDs.student+' a[href="#program-'+IDs.share+'"]').click();await activeZone(f,'C');assert.equal(await page.locator('#program-'+IDs.share).isVisible(),true);
-   await page.locator('#work-'+IDs.student+' a[href="#booth-'+IDs.booth+'"]').click();assert.equal(await page.locator('.ah-exhibition-details').evaluate(node=>node.open),true);
-   await page.locator('#booth-'+IDs.booth+' a[href="#work-'+IDs.indie+'"]').click();await selected(f,IDs.indie);assert.equal(await page.locator('[data-public-works-filter]').inputValue(),'all','reverse booth link reveals a work excluded by the current filter');
+   assert.equal(await page.locator('[data-booth-id],.ah-exhibition-details,a[href^="#booth-"]').count(),0,'front-end booth cards and their navigation are absent');
+   await page.locator('#work-'+IDs.student+' a[href="#organization-'+IDs.organization+'"]').click();
+   assert.equal(await page.locator('#organization-'+IDs.organization).isVisible(),true,'a work retains its explicit public organization relationship');
+   await page.locator('[data-public-works-filter]').selectOption('all');await page.locator('[data-public-work-prev]').click();await selected(f,IDs.indie);
    const screenshots=[await screenshot(f,'collections')];
 
    // A failed public read preserves the most recently verified cards and selection.
@@ -334,7 +336,7 @@ try{
   await noOverflow(reclassified);
   reports.push({width:390,previewReclassifiedOutOfFilter:true,previewRetainedUntilClose:previewRetained,closeFocus:'visible works heading'});
  }finally{await reclassified.context.close();}
- for(const[kind,id]of[['work',IDs.indie],['guest',IDs.guest],['booth',IDs.booth]]){
+ for(const[kind,id]of[['work',IDs.indie],['guest',IDs.guest],['organization',IDs.organization]]){
   const f=await fixture(390,{deferContent:true});
   try{
    const anchor=kind+'-'+id;
@@ -344,7 +346,7 @@ try{
    await f.page.locator('#'+anchor).waitFor({state:'visible'});
    if(kind==='work')await selected(f,id);
    if(kind==='guest')assert.equal(await f.page.locator('#'+anchor+' details').evaluate(node=>node.open),true,'initial guest hash opens its disclosure');
-   if(kind==='booth')assert.equal(await f.page.locator('.ah-exhibition-details').evaluate(node=>node.open),true,'initial booth hash opens its enclosing disclosure');
+   if(kind==='organization')assert.equal(await f.page.locator('[data-booth-id],.ah-exhibition-details').count(),0,'initial organization hash reveals its real card without a booth modal');
    await f.page.waitForFunction(target=>{const rect=document.getElementById(target)?.getBoundingClientRect();return rect&&rect.top>=-1&&rect.top<=250;},anchor);
    assert.equal(f.calls.filter(call=>call.path==='/api/public/content').length,1,'late hash is resolved from the initial publication, without an extra refresh');
    await noOverflow(f);

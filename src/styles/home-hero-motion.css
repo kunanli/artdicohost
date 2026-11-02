@@ -1,15 +1,14 @@
-/* Background dust is separate from the sphere, behind the original foreground. */
-#artdico-host.ah-festival.ah-cosmos .ah-home-hero-planet{isolation:isolate}
+/* The original slot keeps its layout while the same artwork recedes behind it. */
+#artdico-host.ah-festival.ah-cosmos .ah-home-hero-planet{isolation:isolate;transform-origin:0 0;transform:translate3d(var(--ah-hero-scroll-x,0px),var(--ah-hero-scroll-y,0px),0) scale(var(--ah-hero-scroll-scale,1));opacity:var(--ah-hero-opacity,1)}
 #artdico-host.ah-festival.ah-cosmos .ah-home-hero-planet [data-hero-art]{
  position:relative;z-index:0;
  transform:translate3d(var(--ah-hero-x,0px),var(--ah-hero-y,0px),0) rotate(var(--ah-hero-angle,0deg));
 }
 #artdico-host.ah-festival.ah-cosmos .ah-home-hero-planet[data-hero-motion="active"] [data-hero-art]{will-change:transform}
-#artdico-host.ah-festival.ah-cosmos .ah-home-hero-stage>[data-hero-particles]{
- position:absolute;inset:0;z-index:-2;display:block;width:100%;height:100%;opacity:1;pointer-events:none;
-}
-#artdico-host.ah-festival.ah-cosmos [data-hero-particles][hidden]{display:none}
+[data-reading-atmosphere]>[data-background-planet]{position:absolute;top:0;left:0;z-index:0;display:block;max-width:none;object-fit:contain;transform-origin:50% 50%;pointer-events:none;opacity:0}
+[data-reading-atmosphere]>[data-background-planet][hidden]{display:none}
 @media(prefers-reduced-motion:reduce){
  #artdico-host.ah-festival.ah-cosmos .ah-home-hero-planet [data-hero-art]{transform:none!important}
- #artdico-host.ah-festival.ah-cosmos [data-hero-particles]{display:none}
+ #artdico-host.ah-festival.ah-cosmos .ah-home-hero-planet{transform:none!important;opacity:1}
+ [data-reading-atmosphere]{display:none}
 }

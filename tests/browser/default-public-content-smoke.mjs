@@ -18,16 +18,19 @@ const work=(id,extra={})=>({id,title:'合成未排作品',teamName:'',summary:'�
 value.guests=[guest('default-guest'),guest('fallback-guest',{name:''}),guest('private-guest',{visibility:'private',name:'PRIVATE_HIDDEN_GUEST'})];
 value.organizations=[org('default-org'),org('withdrawn-org',{status:'withdrawn',name:'合成已退出组织'}),org('private-org',{visibility:'private',name:'PRIVATE_HIDDEN_ORG'})];
 value.booths=[booth('default-booth','C-01'),booth('cancelled-booth','C-02',{status:'cancelled',organization:'合成取消展位'}),booth('private-booth','C-03',{visibility:'private',organization:'PRIVATE_HIDDEN_BOOTH'})];
-value.showcases=[work('default-work'),work('declined-work',{title:'合成婉拒作品',responseStatus:'declined'}),work('private-work',{visibility:'private',title:'PRIVATE_HIDDEN_WORK'})];
+value.showcases=[work('default-work',{boothId:'default-booth',participationForms:['booth']}),work('declined-work',{title:'合成婉拒作品',responseStatus:'declined'}),work('private-work',{visibility:'private',title:'PRIVATE_HIDDEN_WORK'})];
 assert.equal(validateContent(value).valid,true,JSON.stringify(validateContent(value).errors));
 const original=JSON.stringify(value),initial=toPublicContent(value),hidden=structuredClone(value);
 for(const collection of ['guests','organizations','booths','showcases'])for(const item of hidden[collection])item.visibility='private';
 const withdrawn=toPublicContent(hidden);
 assert.equal(JSON.stringify(value),original);
+assert.deepEqual(initial.booths.map(item=>item.id),['default-booth','cancelled-booth'],'presentation changes retain safe booth projection and manual visibility filtering');
+assert.equal(value.showcases.find(item=>item.id==='default-work').boothId,'default-booth','backend work-to-booth arrangement remains intact');
+assert.equal(initial.showcases.find(item=>item.id==='default-work').boothId,'','a still-pending booth retains the existing public-safe arrangement gate');
 const html=`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="artdico-content-api" content="/api/public/content">
 <link rel="stylesheet" href="/src/styles/guests.css"><link rel="stylesheet" href="/src/styles/students-showcase.css"><body id="artdico-host" class="ah-festival">
 <p data-public-content-status>初始日程</p><section class="ah-guests"><ul class="ah-guest-grid" data-public-guests></ul><p data-public-guests-empty hidden>嘉宾陆续公布</p></section>
-<ul data-public-organizations></ul><p data-public-organizations-empty></p><div data-public-booths></div><p data-public-booths-empty></p>
+<ul data-public-organizations></ul><p data-public-organizations-empty></p>
 <section class="ah-students-showcase"><figure data-public-showcases-concept>初始概念</figure><div data-public-works-controls hidden><select data-public-works-filter><option value="all">全部</option><option value="indie">独立游戏</option></select><span data-public-works-count></span></div><ul class="ah-showcase-grid" data-public-showcases></ul><p data-public-showcases-empty hidden>游戏与作品陆续公布</p><p data-public-works-filter-empty hidden>此分类暂无作品</p></section>
 <script type="module" src="/src/scripts/public-content.mjs"></script>`;
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
@@ -53,16 +56,16 @@ await context.route('**/*',async route=>{
 });
 try{
   await page.goto(SITE);await page.locator('#work-default-work').waitFor();
-  for(const selector of ['[data-guest-id]','[data-organization-id]','[data-booth-id]','[data-showcase-id]'])assert.equal(await page.locator(selector).count(),2);
+  for(const selector of ['[data-guest-id]','[data-organization-id]','[data-showcase-id]'])assert.equal(await page.locator(selector).count(),2);
   assert.doesNotMatch(await page.locator('#guest-default-guest').textContent(),/资料待确认|資料待確認/u);
   assert.equal(await page.locator('#guest-fallback-guest .ah-guest-name').textContent(),'嘉宾姓名待补');
   assert.equal(await page.locator('#organization-default-org').textContent(),'合成待确认组织');
   assert.equal(await page.locator('#organization-withdrawn-org').textContent(),'合成已退出组织');
-  assert.match(await page.locator('#booth-default-booth').textContent(),/展位待安排.*展示内容待补.*展位安排待确认/u);
-  assert.match(await page.locator('#booth-cancelled-booth').textContent(),/本展位已取消/u);
+  assert.equal(await page.locator('[data-public-booths],[data-booth-id],[data-booth-dialog],#exhibition-details,a[href^="#booth-"]').count(),0,'public rendering has no booth containers, cards, details or links despite safe backend records');
+  assert.doesNotMatch(await page.locator('body').textContent(),/合成取消展位|展位待安排|本展位已取消/u);
   assert.doesNotMatch(await page.locator('#work-default-work').textContent(),/资料待确认|参加待确认|展示安排陆续公布/u,'public work text omits internal pending and missing-arrangement labels');
   assert.equal(await page.locator('#work-default-work').getAttribute('data-cover-state'),'missing');
-  assert.equal(await page.locator('#work-default-work .ah-showcase-arrangement').count(),0,'an unassigned work does not render an empty schedule row');
+  assert.equal(await page.locator('#work-default-work .ah-showcase-arrangement').count(),0,'an internal booth assignment does not create a public arrangement row');
   assert.match(await page.locator('#work-declined-work').textContent(),/已回复不参加/u);
   assert.equal(await page.locator('#work-default-work .ah-showcase-cover-empty').isVisible(),true);
   assert.equal(await page.locator('#work-default-work .ah-showcase-organization').count(),0,'a private organization cannot create a dangling public link');
@@ -77,5 +80,5 @@ try{
   assert.equal(await page.locator('[data-guest-id],[data-organization-id],[data-booth-id],[data-showcase-id]').count(),0);
   assert.equal(requests.some(path=>path.includes('/portraits/')||path.startsWith('/api/admin/')),false);
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({defaultPublicWithoutLegacyGates:true,pendingFactsPreserved:true,emptyImagesRequestNothing:true,manualPrivateWithdrawsAllKinds:true,privateFieldsAndPrivateOrganizationLinksExcluded:true,widths:[320,390,1440],pageErrors:errors,syntheticOnly:true},null,2));
+  console.log(JSON.stringify({defaultPublicWithoutLegacyGates:true,pendingFactsPreserved:true,safeBackendBoothRelationsRetainedWithoutPublicDetails:true,emptyImagesRequestNothing:true,manualPrivateWithdrawsAllKinds:true,privateFieldsAndPrivateOrganizationLinksExcluded:true,widths:[320,390,1440],pageErrors:errors,syntheticOnly:true},null,2));
 }finally{await context.close();await browser.close();}

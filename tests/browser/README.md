@@ -6,7 +6,7 @@
 ARTDICO_PLAYWRIGHT_MODULE=playwright-core ARTDICO_CHROMIUM_BINARY=/usr/bin/google-chrome ARTDICO_SCROLL_EVIDENCE_DIRECTORY=/absolute/repository/.local-data/browser-evidence/home-scroll-motion node tests/browser/home-scroll-motion-smoke.mjs
 ```
 
-预期6案：320／390／1440／1920，以及无JS／无IntersectionObserver。所有请求预先拦截，仅合成公开内容与本地编译资源，无业务POST或寄信。核对header在首中尾持续置顶、原生wheel、细进度线、实际装饰视差与进场WAAPI、焦点立即稳定、手机原生选单及Escape、平滑锚点完成后不遮标题、公开刷新保阅读位置及延迟嘉宾hash。简报式进场需实采早／中／完成的opacity与帧，确认标题先淡入、内容延后、结束全文可见；手机原生touch pan不能把尚未出现的内容提前标为seen。Hero可见时验证独立背景canvas的真实ambient RAF、实际可见微粒像素／自然位置变化、球体与文字排除及游标轻微影响，不只检查canvas存在或timer；球体可见时全页edge canvas隐藏，防止两层叠加；离屏后再要求闲置没有pending RAF。初始／途中reduced-motion与明示合成hidden信号均停止Hero背景／页缘canvas与进场；HTML预设可见，强淡入只发生在进入视窗后的短动画。粒子canvas须aria-hidden、pointer-events:none，不遮实际点击目标。成功摘要唯一前缀为 `Public scroll motion browser verified: `，独立于排版4案与实际素材13案，三份报告分别核对来源／HTML SHA和完整数量。合成触控、可见性与callback计数不代表真实手机、OS背景或物理电量量测。
+预期6案：320／390／1440／1920，以及无JS／无IntersectionObserver。所有请求预先拦截，仅合成公开内容与本地编译资源，无业务POST或寄信。核对header在首中尾持续置顶、原生wheel、细进度线、实际装饰视差与进场WAAPI、焦点立即稳定、手机原生选单及Escape、平滑锚点完成后不遮标题、公开刷新保阅读位置及延迟嘉宾hash。简报式进场需实采早／中／完成的opacity与帧，确认标题先淡入、内容延后、结束全文可见；手机原生touch pan不能把尚未出现的内容提前标为seen。2026-11-02用户要求Hero球体退入全页背景、星点覆盖中央并持续；因此改验单一全宽ambient canvas、原球与背景球的原生滚动衔接、球体实际缩放／透明度、Hero与阅读中段的可见微粒像素／自然位置变化，以及文字／球体排除和轻微游标影响，不只检查canvas或timer。桌面实际paint至多30fps、手机至多16fps，画布bitmap有界；1px真实viewport仍无页面错误。新全页ambient允许Hero离屏后运行，替代旧edge-only／离屏idle0规则；初始／途中reduced-motion与明示合成hidden信号仍必须停止canvas及进场；HTML预设可见，强淡入只发生在进入视窗后的短动画。粒子canvas须aria-hidden、pointer-events:none，不遮实际点击目标。成功摘要唯一前缀为 `Public scroll motion browser verified: `，独立于排版4案与实际素材13案，三份报告分别核对来源／HTML SHA和完整数量。合成触控、可见性与callback计数不代表真实手机、OS背景或物理电量量测。
 
 公开表单可读性的独立入口为 `public-typography-smoke.mjs`，不替代或改变下方 actual13。同样使用 playwright-core 1.64.1 与已安装的 Chrome，在最终构建后执行，不需要正式资料捕获或凭证：
 
@@ -20,15 +20,15 @@ ARTDICO_PLAYWRIGHT_MODULE=playwright-core ARTDICO_CHROMIUM_BINARY=/usr/bin/googl
 
 按语义检查标签、输入、同意文字及按钮至少 16px，辅助说明／状态／错误至少 14px，表单 h3／h4 至少 20px，解释段落行高至少 1.6；同类标签、输入与按钮保持一致，艺术展示字不强制同值。检查实际布局无裁切／横向溢出，按需展开的页尾说明与恢复区域为深色表面，依据实际计算样式叠合前景／背景算出至少 4.5:1 对比。输出每案申请／恢复两张区块图、HTML／资产／脚本 SHA 及计数；成功标记为 `Public typography browser verified: `。源码存在不代表已执行，完成数量与退出码以本轮报告为准。
 
-气泡与组织图标的正式图片回归入口为 `bubbles-logo-bounds-smoke.mjs`。使用开发工具 **playwright-core 1.64.1** 与 CI 已安装的 Chrome；不增加生产依赖。批准的 CI 先匿名捕获公开内容及七张原始组织图，再于同一工作目录构建、执行：
+气泡与组织图标的正式图片回归入口为 `bubbles-logo-bounds-smoke.mjs`。使用开发工具 **playwright-core 1.64.1** 与 CI 已安装的 Chrome；不增加生产依赖。批准的 CI 先匿名捕获公开内容及同份快照全部原始组织图（有界捕获），再于同一工作目录构建、执行：
 
 ```sh
 ARTDICO_PLAYWRIGHT_MODULE=playwright-core ARTDICO_CHROMIUM_BINARY=/usr/bin/google-chrome ARTDICO_PUBLIC_VISUAL_FIXTURE_DIRECTORY=/absolute/repository/.local-data/public-visual-fixture ARTDICO_BUBBLES_EVIDENCE_DIRECTORY=/absolute/repository/.local-data/browser-evidence/bubbles-logo-bounds node tests/browser/bubbles-logo-bounds-smoke.mjs
 ```
 
-该目录必须已有捕获器生成的 `manifest.json`、原始 `snapshot.json` 与 `media/`，并通过来源、匿名状态、字节数及 SHA 校验。脚本读取九份实际公开人物的姓名、单位、职称字段和七份实际上传图像；没有捕获数据就失败，不能悄悄换成示例图片。原始 JSON、图片、含公开姓名的截图及详细报告只留忽略目录／短期 CI artifact，不提交到 Git；日志只输出计数、摘要、固定错误码及几何数值。
+该目录必须已有捕获器生成的 `manifest.json`、原始 `snapshot.json` 与 `media/`，并通过来源、匿名状态、字节数及 SHA 校验。脚本读取九份实际公开人物的姓名、单位、职称字段和同份捕获中全部实际上传组织图像；没有捕获数据就失败，不能悄悄换成示例图片。原始 JSON、图片、含公开姓名的截图及详细报告只留忽略目录／短期 CI artifact，不提交到 Git；日志只输出计数、摘要、固定错误码及几何数值。
 
-预期十三个场景：1920／1440／390／320 的四个原始公开快照场景；四个保留七张实际上传字节、仅将组织身份明确改为合成值的普通布局兼容场景；四个不透明方图、极高／极宽、留白画布及未来图片 hash 更换场景；一个长文介绍与初始 reduced-motion 场景。核对整个图片、卡片、独立图框的包含关系及两两不重叠，不能只比较可见白色像素。当前七份已核对图像才使用绑定的白色版本，更换 hash 后必须显示新上传内容并保持边界。
+预期十三个场景：1920／1440／390／320 的四个原始公开快照场景；四个保留同份捕获全部实际上传字节、仅将组织身份明确改为合成值的普通布局兼容场景；四个不透明方图、极高／极宽、留白画布及未来图片 hash 更换场景；一个长文介绍与初始 reduced-motion 场景。核对整个图片、卡片、独立图框的包含关系及两两不重叠，不能只比较可见白色像素。原七份已核对图像才使用绑定的白色原稿版本；2026-11-02用户要求其他上图也呈白色，更换hash使用新上传来源的有界白色呈现，保留透明背景／字洞，不能显示旧图或白矩形。原上传bytes与前台白色输出分别验证。实际原图数量取捕获manifest，不强制为七张；原稿已知变体仍单独核对七份。
 
 嘉宾圆泡依序同时显示姓名、独立单位栏、职称栏；单位只取 `company`，职称只取实际 `title`，缺省时用真实 `ggjRole`，两者都缺则保留空白，不能把公司冒充职位。核对每位全部非空字段、完整 ARIA 顺序与三层矩形互不重叠／无内部滚动；实际 Maria／PingYao 的姓名与职称仍保持严格字体裁切检查。较长单位至少有一完整行，四种宽度对全部九位展开逐字核对单位及职位全文，手机展开会让后续内容让位。合成长文场景保留 160 字单位、200 字职称，并在同案另验真实角色回退、只有单位及全空字段，场景总数仍为十三。完整介绍在主页面阅读。
 

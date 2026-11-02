@@ -1,5 +1,5 @@
 import { publicGuestCards, publicGuestAffiliation, publicGuestSubtitle, publicGuestSessions } from '../../shared/guest-display.mjs';
-import { GUEST_PUBLIC_ROLE_LABELS, isPublicWebsite } from '../../shared/content-schema.mjs';
+import { GUEST_PUBLIC_ROLE_LABELS } from '../../shared/content-schema.mjs';
 import { publicShowcaseCards, SHOWCASE_KIND_LABELS } from '../../shared/showcase-display.mjs';
 import { resolvePublicContentSource } from '../../shared/public-content-source.mjs';
 import { publicOrganizationCards, orderOrganizationCards, organizationReferenceKey, organizationLogoVariant } from '../../shared/organization-display.mjs';
@@ -146,22 +146,6 @@ function renderPublishedContent(content,url) {
     if (emptyGuests) emptyGuests.hidden = cards.length > 0;
     guestGrid.dispatchEvent(new CustomEvent('artdico:guests-rendered',{bubbles:true}));
   }
-  const booths = document.querySelector('[data-public-booths]');
-  if (booths) {
-    booths.replaceChildren();
-    for (const item of content.booths.filter(item => item.visibility !== 'private')) {
-      const card = element('article', undefined, 'ah-booth-card');
-      if(/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(item.id)){card.id='booth-'+item.id;card.dataset.boothId=item.id;}
-      card.append(element('h3',item.organization || '展位待安排'),element('p',item.project || '展示内容待补','ah-booth-project'),element('small',item.code + ' · ' + item.zone + ' 区'));
-      if (item.status !== 'confirmed') card.append(element('p',item.status === 'cancelled' ? '本展位已取消' : '展位安排待确认','ah-booth-status'));
-      if(typeof item.description==='string'&&item.description)card.append(element('p',item.description,'ah-booth-description'));
-      if(typeof item.website==='string'&&item.website&&isPublicWebsite(item.website)){const link=element('a','组织网站','ah-booth-website');link.href=item.website;link.target='_blank';link.rel='noopener noreferrer';card.append(link);}
-      appendWorkLinks(card,workCards.filter(work=>work.boothId===item.id));
-      booths.append(card);
-    }
-    const empty = document.querySelector('[data-public-booths-empty]');
-    if (empty) empty.hidden = booths.childElementCount > 0;
-  }
   // Older published revisions do not contain a showcase list. Keep the labelled
   // concept image for those revisions; an explicit empty list has no public work.
   renderShowcases(content,url);
@@ -239,8 +223,28 @@ function renderOrganizations(cards,url,{initial=false}={}) {
       logo.width=240;logo.height=120;logo.alt=organization.name+'的组织图片';logo.loading='lazy';logo.decoding='async';
       item.dataset.logoArtwork=usingVariant?'reference':'published';
       logo.referrerPolicy='no-referrer';
-      const loadLogo=(path,origin)=>{if(origin!==location.origin)logo.crossOrigin='anonymous';else logo.removeAttribute('crossorigin');logo.src=new URL(path,origin).href;};
-      logo.addEventListener('error',()=>{if(usingVariant){usingVariant=false;item.dataset.logoArtwork='published-fallback';loadLogo(organization.logoUrl,url.origin);}else frame.hidden=true;});
+      let renderedSource=null;
+      const showName=()=>{frame.hidden=true;item.dataset.logoArtwork='published-name';};
+      logo.addEventListener('load',()=>{
+        if(!logo.isConnected)return;
+        if(usingVariant)return;
+        if(renderedSource){
+          if(logo.getAttribute('src')===renderedSource){frame.dataset.logoPresentation='white';item.dataset.logoArtwork='published-white';}
+          return;
+        }
+        const source=logo.getAttribute('src');
+        try{
+          const canvas=whiteOrganizationMask(logo);
+          if(!canvas){showName();return;}
+          // A bounded data URL is owned only by this image node. No blob URL or
+          // persistent derivative exists to outlive a replaced publication.
+          const result=canvas.toDataURL('image/png');
+          if(!logo.isConnected||logo.getAttribute('src')!==source)return;
+          renderedSource=result;logo.dataset.logoSource=source;logo.src=result;
+        }catch{showName();}
+      });
+      const loadLogo=(path,origin)=>{renderedSource=null;frame.dataset.logoPresentation=usingVariant?'reference':'pending';if(origin!==location.origin)logo.crossOrigin='anonymous';else logo.removeAttribute('crossorigin');logo.src=new URL(path,origin).href;};
+      logo.addEventListener('error',()=>{if(!logo.isConnected)return;if(usingVariant){usingVariant=false;item.dataset.logoArtwork='published-fallback';loadLogo(organization.logoUrl,url.origin);}else showName();});
       loadLogo(variant||organization.logoUrl,usingVariant?location.origin:url.origin);
       frame.append(logo);card.append(frame);
     }
@@ -253,17 +257,46 @@ function renderOrganizations(cards,url,{initial=false}={}) {
   if(message){message.textContent=initial?'参与组织沿用网站初始名单。':'参与组织陆续公布。';message.hidden=cards.length>0&&!initial;}
 }
 
+/** A display-only white alpha mask. Uniform opaque backgrounds are removed
+ * globally, including enclosed letter counters; complex images use the name.
+ * Work stays bounded and synchronous, with no uploads, storage or animation. */
+function whiteOrganizationMask(image){
+  const scale=Math.min(1,800/Math.max(image.naturalWidth,image.naturalHeight));
+  if(!Number.isFinite(scale)||scale<=0)return null;
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+  const context=canvas.getContext('2d',{willReadFrequently:true});if(!context)return null;
+  context.drawImage(image,0,0,canvas.width,canvas.height);
+  const data=context.getImageData(0,0,canvas.width,canvas.height),pixels=data.data,total=canvas.width*canvas.height;
+  let transparent=0;
+  for(let index=3;index<pixels.length;index+=4)if(pixels[index]<224)transparent++;
+  let background=null;
+  if(transparent/total<.02){
+    const border=[],step=Math.max(1,Math.ceil(Math.max(canvas.width,canvas.height)/128));
+    const sample=(x,y)=>{const i=(y*canvas.width+x)*4;border.push([pixels[i],pixels[i+1],pixels[i+2]]);};
+    for(let x=0;x<canvas.width;x+=step){sample(x,0);sample(x,canvas.height-1);}
+    for(let y=0;y<canvas.height;y+=step){sample(0,y);sample(canvas.width-1,y);}
+    const median=channel=>border.map(color=>color[channel]).sort((a,b)=>a-b)[Math.floor(border.length/2)];
+    background=[median(0),median(1),median(2)];
+    if(border.filter(color=>Math.max(...color.map((value,index)=>Math.abs(value-background[index])))<=32).length/border.length<.9)return null;
+  }
+  let ink=0;
+  for(let index=0;index<pixels.length;index+=4){
+    if(background){
+      const difference=Math.max(Math.abs(pixels[index]-background[0]),Math.abs(pixels[index+1]-background[1]),Math.abs(pixels[index+2]-background[2]));
+      pixels[index+3]=Math.round(pixels[index+3]*Math.min(1,Math.max(0,(difference-12)/40)));
+    }
+    pixels[index]=pixels[index+1]=pixels[index+2]=255;
+    if(pixels[index+3]>128)ink++;
+  }
+  if(!ink||ink/total>.92)return null;
+  context.putImageData(data,0,0);return canvas;
+}
+
 function reveal(link){
   link.addEventListener('click',()=>collections.reveal(link.hash.slice(1)));
   return link;
 }
-function appendWorkLinks(parent,works){
-  if(!works.length)return;
-  const list=element('ul',undefined,'ah-showcase-related');
-  for(const work of works){const item=element('li'),link=element('a',work.title);link.href='#work-'+work.id;item.append(reveal(link));list.append(item);}
-  parent.append(list);
-}
-
 function renderPresentation(event) {
   const contact=document.querySelector('[data-public-contact-email]');
   if(contact){contact.textContent='联络筹备团队 · '+PUBLIC_CONTACT_EMAIL;contact.href='mailto:'+PUBLIC_CONTACT_EMAIL;contact.hidden=false;}
@@ -334,11 +367,6 @@ function renderShowcases(content, sourceUrl) {
       && /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(session.end) && ['A', 'B', 'C'].includes(session.zone)) {
       const link=element('a','作品分享 · ' + session.start + '–' + session.end + ' · ' + session.zone + ' 区');link.href='#program-'+session.id;
       link.addEventListener('click',()=>{const agenda=document.querySelector('[data-agenda]'),period=agenda?.querySelector('[data-program-period]');if(period){period.value='all';period.dispatchEvent(new Event('change'));}agenda?.querySelector('[data-zone="'+session.zone+'"]')?.click();});arrangement.append(reveal(link));
-    }
-    const booth = content.booths.find(item => item.id === work.boothId && item.visibility !== 'private' && item.status === 'confirmed');
-    if (booth && typeof booth.code === 'string' && /^[A-Z0-9][A-Z0-9-]{0,15}$/u.test(booth.code) && booth.zone === 'C') {
-      if(arrangement.childElementCount)arrangement.append(document.createTextNode(' / '));
-      const link=element('a','展示展位 · C 区 ' + booth.code);link.href='#booth-'+booth.id;arrangement.append(reveal(link));
     }
     if(arrangement.childElementCount)detail.append(arrangement);
     if(detail.childElementCount)card.append(detail);

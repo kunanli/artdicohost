@@ -1,6 +1,4 @@
 ---
-import Icon from './Icon.astro';
-import { eventConfig } from '../config/event.mjs';
 import { exhibitingPartners } from '../config/exhibiting-partners.mjs';
 import { publicContentEndpoint } from '../../shared/public-content-source.mjs';
 import '../styles/exhibiting-partners.css';
@@ -16,12 +14,4 @@ const deferOrganizations = Boolean(publicContentEndpoint(import.meta.env.PUBLIC_
   <p class="ah-organizations-message" data-public-organizations-empty hidden={!deferOrganizations} role="status">正在读取参与组织…</p>
   {deferOrganizations && <noscript><p class="ah-organizations-message">请启用 JavaScript 以读取参与组织的最新信息。</p></noscript>}
   </div>
-  <details class="ah-exhibition-details">
-    <summary>现场展位与作品 <span aria-hidden="true">＋</span></summary>
-    <div class="ah-exhibition-content">
-      <div class="ah-booths-empty" data-public-booths-empty><Icon name="gamepad" /><p>作品与具体展位安排陆续公布。</p></div>
-      <div class="ah-public-booths" data-public-booths></div>
-      <p class="ah-agenda-caption">{eventConfig.exhibition.description}</p>
-    </div>
-  </details>
 </section>

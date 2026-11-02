@@ -2,6 +2,12 @@
 
 2026-10-30 主办方已在本人 Windows 完成凭证及匹配私钥验证、加密包的私有 OSS 上传／SHA-256 回读一致，并提供正式后台「票券签章设置可用」画面。此为主办方操作证据，开发环境未取得明文凭证或主密钥；真实 iPhone 加入仍待验收。新阶段提供单笔已确认报名的私人确认页入口，见 [操作说明](registration-workflow-simplification.md)。下文保留首次设置与轮替步骤，不重复开户或重置现有设置。
 
+## 官方添加徽章
+
+2026-11-02主辦方提供官方CN與US-UK SVG；中文站使用 [CN原檔](../public/wallet/add-to-apple-wallet.svg)，英文原檔留在 [docs素材](assets/add-to-apple-wallet-en.svg)。檔案bytes、比例及原色保留，不重畫、不調暗；44px圖片配5px留白，圖片失敗有文字動作備援。徽章只用於現有合格Safari添加動作；微信先引導到Safari，其他裝置沿用適當下載／保存入口。沿用已完成的受控簽章，不需重新申請會員、重置憑證或開發App。
+
+徽章不是新的核銷服務，也不讓本站QR與活動行自動互通；[活動行路徑](redesign/external-registration-wallet.md)仍以活動行電子票作唯一現場核銷。UI合成驗收與真iPhone加入分開記錄。
+
 ## 先选对 Apple 服务
 
 2026-10-21 已重新核对官方说明。活动普通二维码票券使用 **Apple Developer Program** 的 Pass Type ID 与证书。[Apple Business Manager](https://support.apple.com/en-gb/guide/apple-business-manager/axm3a8bb0ab8/1/web/1) 用于组织设备、账号及 App／书籍部署，不是本次签发票券所需的会员。

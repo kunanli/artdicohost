@@ -67,16 +67,22 @@ async function scenario(initialMode){
   await list.scrollIntoViewIfNeeded();await list.locator('li').first().waitFor();assert.equal(await list.locator('li').count(),4);
   assert.doesNotMatch(await list.textContent(),/PRIVATE|G4C HK/u);assert.equal(await page.evaluate(()=>window.PRIVATE_EXECUTED),undefined);
   const exhibitor=list.locator('[data-organization-id=synthetic-exhibitor]'),attendee=list.locator('[data-organization-id=synthetic-attendee]');
-  assert.match(await exhibitor.textContent(),/参展/u);assert.match(await attendee.textContent(),/一般参与/u);
+  assert.equal((await exhibitor.locator('h3').textContent()).trim(),'合成参展组织');assert.equal((await attendee.locator('h3').textContent()).trim(),'合成一般参与组织');
+  assert.equal(await list.locator('.ah-organization-participation').count(),0,'only names and logos are shown, without editorial participation tags');
   assert.equal(await exhibitor.locator('a').getAttribute('href'),'https://example.invalid/exhibitor');assert.equal(await exhibitor.locator('a').getAttribute('rel'),'noopener noreferrer');assert.equal(await exhibitor.locator('a').getAttribute('target'),'_blank');
   assert.equal(await list.locator('[data-organization-id=synthetic-name] a').count(),0);assert.equal(await list.locator('[data-organization-id=synthetic-name] img').count(),0);
   await exhibitor.locator('a').focus();assert.equal(await exhibitor.locator('a').evaluate(node=>document.activeElement===node),true);
   await page.waitForFunction(()=>{const image=document.querySelector('[data-organization-id=synthetic-exhibitor] img');return image?.complete&&image.naturalWidth>0;});
   await page.waitForFunction(()=>document.querySelector('[data-organization-id=synthetic-broken-logo] .ah-organization-image')?.hidden===true);
   assert.equal(await list.locator('[data-organization-id=synthetic-broken-logo] h3').isVisible(),true);
+  await page.waitForFunction(()=>{const frame=document.querySelector('[data-organization-id=synthetic-exhibitor] .ah-organization-image');return frame?.hidden||frame?.dataset.logoPresentation==='white';});
+  const logoFrame=exhibitor.locator('.ah-organization-image');
+  assert.ok(['transparent','rgba(0, 0, 0, 0)'].includes(await logoFrame.evaluate(node=>getComputedStyle(node).backgroundColor)),'public logos have no opaque light backing panel');
+  if(await logoFrame.isVisible())assert.equal(await exhibitor.locator('img').getAttribute('data-logo-source'),API+'/api/public/portraits/'+logoId,'a white derivative records the original canonical source');
+  else assert.equal(await exhibitor.locator('h3').isVisible(),true,'a source without a reliable alpha mask keeps a readable name');
   assert.equal(await exhibitor.locator('img').evaluate(node=>getComputedStyle(node).objectFit),'contain');
-  for(const width of [320,390,1440]){await page.setViewportSize({width,height:900});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));assert.equal(await list.evaluate(node=>getComputedStyle(node).gridTemplateColumns.split(' ').length),width===320?1:width===390?2:4);}
-  assert.equal(await page.locator('[data-public-booths] h3').textContent(),'合成独立展位');
+  for(const width of [320,390,1440]){await page.setViewportSize({width,height:900});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));assert.equal(await list.evaluate(node=>getComputedStyle(node).gridTemplateColumns.split(' ').length),width<821?2:4);}
+  assert.equal(await page.locator('[data-public-booths],[data-booth-id],.ah-exhibition-details,a[href^="#booth-"]').count(),0,'public organization section never exposes booth details or dead links');
   if(mode==='cards'){await page.setViewportSize({width:390,height:844});await page.locator('#booths').screenshot({path:resolve(evidence,'organizations-mobile.png')});}
   assert.equal(imageReads.length,2);
  }else if(['legacy','nopublication'].includes(mode)){

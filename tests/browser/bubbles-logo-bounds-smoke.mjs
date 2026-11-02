@@ -20,6 +20,11 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const testScriptSha256 = sha(await readFile(fileURLToPath(import.meta.url)));
 const { publicContentEnvelope } = await import(pathToFileURL(resolve(source, 'src/lib/public-content-refresh.mjs')));
 const { toPublicContent } = await import(pathToFileURL(resolve(source, 'shared/content-schema.mjs')));
+const { organizationReferenceKey } = await import(pathToFileURL(resolve(source, 'shared/organization-display.mjs')));
+const referenceKeys = ['gamezone','igda','szdx','bu','pengyou','g4c','teesside'];
+const artworkConfig = await readFile(resolve(source,'src/config/organization-artwork.mjs'),'utf8');
+const reviewedDigests = new Map([...artworkConfig.matchAll(/(\w+):Object\.freeze\(\{url:\w+,sourceDigest:"([a-f0-9]{64})"/gu)].map(match=>[match[1],match[2]]));
+assert.equal(reviewedDigests.size,7,'the seven original reviewed variants remain explicit');
 const manifest = JSON.parse(await readFile(resolve(capture, 'manifest.json'), 'utf8'));
 assert.equal(manifest.schemaVersion, 1); assert.equal(manifest.anonymous, true); assert.equal(manifest.source, API + '/api/public/content');
 assert.equal(manifest.snapshot.file, 'snapshot.json');
@@ -29,9 +34,16 @@ const snapshot = JSON.parse(snapshotBytes), checked = publicContentEnvelope(snap
 assert.ok(checked, 'captured publication must pass the actual public envelope boundary, with no toy fallback');
 assert.equal(snapshot.revision, manifest.snapshot.revision); assert.equal(snapshot.publishedAt, manifest.snapshot.publishedAt);
 assert.equal(snapshot.content.guests.length, 9, 'this capture must reproduce the reported nine public profiles');
-assert.equal(snapshot.content.organizations.length, 7, 'this capture must reproduce the seven actual uploaded logos');
+const organizationCount = snapshot.content.organizations.length;
+assert.equal(organizationCount,manifest.counts.organizations,'actual organization count must match the same capture manifest');
+assert.ok(organizationCount>=7&&organizationCount<=200,'the original seven organizations and any newly published organizations are all retained');
+for(const key of referenceKeys){
+ const originals=snapshot.content.organizations.filter(card=>organizationReferenceKey(card)===key);
+ assert.equal(originals.length,1,'each of the seven reviewed identities remains independently present');
+ assert.equal(originals[0].logoUrl?.split('/').at(-1)?.split('.')[0],reviewedDigests.get(key),'original reviewed upload digest is not silently replaced');
+}
 const logoPaths = new Set(snapshot.content.organizations.map(item => item.logoUrl).filter(Boolean));
-assert.equal(logoPaths.size, 7); assert.equal(manifest.media.length, logoPaths.size);
+assert.equal(logoPaths.size,organizationCount,'each currently published organization has its exact captured logo'); assert.equal(manifest.media.length, logoPaths.size);
 const actualMedia = new Map();
 for (const item of manifest.media) {
   assert.match(item.file, /^media\/[a-f0-9]{64}\.(?:png|jpg|webp)$/u);
@@ -128,26 +140,37 @@ async function organizationBounds(f, { loaded = true } = {}) {
   const rows = await f.page.locator('[data-organization-id]').evaluateAll(nodes => nodes.map(node => {
     const box = element => { const b = element.getBoundingClientRect(); return { x: b.x, y: b.y + scrollY, width: b.width, height: b.height }; };
     const card = node.querySelector('.ah-organization-card'), frame = node.querySelector('.ah-organization-image'), image = frame?.querySelector('img');
+    const presentation=frame?.dataset.logoPresentation??null;
+    let whiteMask=null;
+    if(presentation==='white'&&image?.complete&&image.naturalWidth){
+      const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;const context=canvas.getContext('2d');context.drawImage(image,0,0);const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;let ink=0,nonwhite=0,transparent=0;
+      for(let i=0;i<pixels.length;i+=4){if(pixels[i+3]>32){ink++;if(pixels[i]!==255||pixels[i+1]!==255||pixels[i+2]!==255)nonwhite++;}else transparent++;}
+      whiteMask={width:canvas.width,height:canvas.height,ink,nonwhite,transparent};
+    }
     return { id: node.dataset.organizationId, reference: node.dataset.organizationReference ?? null, artwork: node.dataset.logoArtwork ?? null,
       slot: box(node), card: box(card), frame: frame ? box(frame) : null, image: image ? box(image) : null,
-      src: image?.getAttribute('src'), complete: image?.complete, naturalWidth: image?.naturalWidth, naturalHeight: image?.naturalHeight, fit: image ? getComputedStyle(image).objectFit : null,
+      src: image?.getAttribute('src'), source: image?.dataset.logoSource??image?.getAttribute('src'), presentation, frameHidden:frame?.hidden??false, name:box(node.querySelector('h3')),whiteMask, complete: image?.complete, naturalWidth: image?.naturalWidth, naturalHeight: image?.naturalHeight, fit: image ? getComputedStyle(image).objectFit : null,
       imageVisibility: image ? getComputedStyle(image).visibility : null, imageDisplay: image ? getComputedStyle(image).display : null, imageOpacity: image ? Number(getComputedStyle(image).opacity) : null };
   }));
   lastNumericMetrics = rows.map(({ slot, card, frame, image, naturalWidth, naturalHeight, fit }) => ({ slot, card, frame, image, naturalWidth, naturalHeight, fit }));
-  assert.equal(rows.length, 7);
+  assert.equal(rows.length,organizationCount,'every organization from this exact captured snapshot must render');
   for (const row of rows) {
     assert.ok(row.slot.width > 0 && row.slot.height >= 40 && row.frame && row.image, 'each actual logo has its own independent nonzero slot and frame');
-    contained(row.card, row.slot, 'organization card stays inside its own slot'); contained(row.frame, row.card, 'image frame stays inside its card'); contained(row.image, row.frame, 'the whole image element stays inside its frame, including opaque canvas');
+    contained(row.card,row.slot,'organization card stays inside its own slot');
+    if(!row.frameHidden){contained(row.frame,row.card,'image frame stays inside its card');contained(row.image,row.frame,'the whole image element stays inside its frame, including opaque canvas');}
+    else{assert.ok(row.name.width>1&&row.name.height>1,'an inseparable image uses its readable white organization name');contained(row.name,row.card,'name fallback stays in its own fixed card');}
     assert.ok(row.slot.x >= -1 && row.slot.x + row.slot.width <= f.width + 1, 'logo slot remains in viewport');
     if (loaded) { assert.ok(row.complete && row.naturalWidth > 0 && row.naturalHeight > 0); assert.equal(row.fit, 'contain');
-      assert.equal(row.imageVisibility, 'visible'); assert.notEqual(row.imageDisplay, 'none'); assert.ok(row.imageOpacity > 0, 'a hidden image cannot masquerade as fixed bounds'); }
+      if(!row.frameHidden){assert.equal(row.imageVisibility,'visible');assert.notEqual(row.imageDisplay,'none');assert.ok(row.imageOpacity>0,'a hidden image cannot masquerade as fixed bounds');}
+      if(row.presentation==='white'){assert.ok(row.whiteMask&&row.whiteMask.ink>0&&row.whiteMask.transparent>0);assert.equal(row.whiteMask.nonwhite,0,'generated visible ink is entirely white');assert.ok(row.whiteMask.width<=800&&row.whiteMask.height<=800,'runtime masks stay bounded');}
+    }
   }
   nonoverlap(rows.map(row => row.slot), 'independent organization slots cannot overlap'); nonoverlap(rows.map(row => row.card), 'whole card rectangles cannot overlap'); nonoverlap(rows.map(row => row.image), 'whole uploaded image rectangles cannot overlap');
   return rows;
 }
 async function loadLogos(f) {
   f.releaseLogos();
-  for (const image of await f.page.locator('[data-organization-id] img').all()) { await image.scrollIntoViewIfNeeded(); await image.evaluate(node => node.decode()); }
+  for(const image of await f.page.locator('[data-organization-id] img').all()){await image.scrollIntoViewIfNeeded();await image.evaluate(node=>new Promise(resolve=>{const done=()=>{if(node.closest('.ah-organization-image')?.hidden||node.complete&&node.naturalWidth>0&&node.closest('.ah-organization-image')?.dataset.logoPresentation!=='pending')resolve();else setTimeout(done,10);};done();}));if(await image.isVisible())await image.evaluate(node=>node.decode());}
   await f.page.evaluate(() => document.fonts.ready);
 }
 async function guestText(f, { profiles = guests, allowLongNameAndTitle = false } = {}) {
@@ -290,7 +313,14 @@ try {
       await f.page.goto(SITE + '/', { waitUntil: 'domcontentloaded' }); await f.page.locator('[data-organization-id]').first().waitFor();
       const before = await organizationBounds(f, { loaded: false }); await loadLogos(f); const after = await organizationBounds(f);
       assert.equal(after.filter(row => /^\/_astro\/organization-[^/]+\.(?:png|webp)$/u.test(new URL(row.src, SITE).pathname)).length, 7, 'all seven current captured logo identities use the approved white variants');
-      assert.ok(after.every(row => row.artwork === 'reference'));
+      assert.equal(after.filter(row=>row.artwork==='reference').length,7,'the seven reviewed variants remain unchanged');
+      for(const row of after.filter(row=>row.artwork!=='reference')){
+        const original=snapshot.content.organizations.find(item=>item.id===row.id);
+        assert.ok(original&&new URL(row.source,SITE).pathname===original.logoUrl,'every additional organization derives only from its exact captured upload');
+        assert.ok(['published-white','published-name'].includes(row.artwork),'additional uploads use white masks or readable white names');
+        const name=f.page.locator('[data-organization-id="'+row.id+'"] h3');
+        const nameBox=await name.boundingBox();assert.ok(nameBox&&nameBox.width>1&&nameBox.height>1,'additional organization names remain visibly readable');
+      }
       for (const [key, label] of [['bu', /bournemouth|伯恩|\bbu\b/iu], ['szdx', /深圳|shenzhen/iu], ['teesside', /teesside|提赛德/iu]]) {
         const row = after.find(item => item.reference === key), original = snapshot.content.organizations.find(item => item.id === row?.id);
         assert.ok(original && label.test(original.name), 'an explicit campus/logo binding must match its actual published organization label');
@@ -308,9 +338,9 @@ try {
     const f = await fixture(width, { mode, reducedMotion: 'reduce' });
     try {
       await f.page.goto(SITE + '/', { waitUntil: 'networkidle' }); await loadLogos(f); const bounds = await organizationBounds(f);
-      if (mode === 'raw-generic') assert.ok(bounds.every(row => logoPaths.has(new URL(row.src, SITE).pathname)), 'generic compatibility scenario actually renders all seven captured upload bytes');
-      else assert.ok(bounds.every(row => synthetic.some(image => image.path === new URL(row.src, SITE).pathname)), 'changed hashes fall back to actual new artwork instead of silently retaining the old white reference variant');
-      assert.ok(bounds.every(row => row.artwork === 'published'), 'unknown identity or future hashes keep the actual new published artwork');
+      if (mode === 'raw-generic') assert.ok(bounds.every(row => logoPaths.has(new URL(row.source, SITE).pathname)), 'generic compatibility scenario actually renders every captured upload byte');
+      else assert.ok(bounds.every(row => synthetic.some(image => image.path === new URL(row.source, SITE).pathname)), 'changed hashes fall back to actual new artwork instead of silently retaining the old white reference variant');
+      assert.ok(bounds.every(row=>['published-white','published-name'].includes(row.artwork)), 'unknown identities and future hashes derive white presentation from the actual new upload or retain a readable name');
       await noOverflow(f); reports.push({ name: mode + '-' + width, width, explicitlySyntheticPublicationVariant: true, exactOriginalUploadBytes: mode === 'raw-generic', bounds, screenshots: await shots(f, mode) });
     } finally { await f.context.close(); }
   }
@@ -351,7 +381,7 @@ finally {
     capture: { directory: capture, capturedAt: manifest.capturedAt, anonymous: true, source: manifest.source, sourceCommit: manifest.sourceCommit, snapshotSha256: manifest.snapshot.sha256,
       revision: snapshot.revision, guestCount: guests.length, organizationCount: snapshot.content.organizations.length, mediaHashes: manifest.media.map(item => item.sha256) },
     servedAssets: Object.fromEntries([...servedAssets].sort()), actualRawImagesRendered: rawImageRequests.size, defaultReferenceLogosRendered, actualFieldCoverage,
-    uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequests.size, actualMediaScope: 'Captured public profile fields and seven organization uploads only; guest photos/work media outside the capture receive intercepted 404s.',
+    uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequests.size, actualMediaScope: 'Captured public profile fields and every organization upload in this manifest only; guest photos/work media outside the capture receive intercepted 404s.',
     syntheticImageVariants: synthetic.map(({ kind, width, height, id }) => ({ kind, width, height, id })), reports, pageErrors, ...(failure ? { failure } : {}) };
   await writeFile(resolve(evidence, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   const summary = { ok: report.ok, cases: report.passedCases, expectedCases: 13, actualFixture: true, publicHtmlSha256: report.publicHtmlSha256, snapshotSha256: report.capture.snapshotSha256,

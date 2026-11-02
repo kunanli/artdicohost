@@ -13,7 +13,12 @@ await mkdir(evidence, { recursive: true });
 const htmlPath = resolve(dist, 'registration/confirmation/index.html'), html = await readFile(htmlPath);
 assert.match(html.toString(), /https:\/\/api\.artdico\.host/u, 'build with the existing public API setting first');
 assert.match(html.toString(), /noindex,nofollow,noarchive/u);
-const build = { htmlSha256: createHash('sha256').update(html).digest('hex'), htmlModifiedAt: (await stat(htmlPath)).mtime.toISOString() };
+const badgeArtwork=await readFile(resolve(dist,'wallet/add-to-apple-wallet.svg'));
+assert.deepEqual(badgeArtwork,await readFile(resolve(project,'public/wallet/add-to-apple-wallet.svg')),'the published badge preserves the supplied official SVG bytes');
+const badgeViewBox=/\bviewBox=["']([^"']+)["']/u.exec(badgeArtwork.toString('utf8'))?.[1].trim().split(/\s+/u).map(Number);
+assert.ok(badgeViewBox?.length===4&&badgeViewBox.every(Number.isFinite)&&badgeViewBox[2]>0&&badgeViewBox[3]>0,'the actual local official badge has a measurable viewBox');
+const badgeAspectRatio=badgeViewBox[2]/badgeViewBox[3];
+const build = { htmlSha256: createHash('sha256').update(html).digest('hex'), htmlModifiedAt: (await stat(htmlPath)).mtime.toISOString(),walletBadgeSha256:createHash('sha256').update(badgeArtwork).digest('hex'),walletBadgeViewBox:badgeViewBox };
 const SITE = 'https://artdico.host', API = 'https://api.artdico.host';
 const token = 'v1.' + 'x'.repeat(100) + '.' + 'y'.repeat(43), otherToken = 'v1.' + 'b'.repeat(100) + '.' + 'c'.repeat(43);
 const link = SITE + '/registration/confirmation/#r=' + token;
@@ -25,7 +30,7 @@ const reports = [], errors = [];
 const json = (body, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(body), headers: { 'access-control-allow-origin': SITE } });
 const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 
-async function fixture({ width = 390, userAgent = ios, status = 'confirmed', group = 'valid', imageFailure = false, factsReady = true, holdFirst = false, expireSoon = false, notifications = undefined, otherNotifications = undefined } = {}) {
+async function fixture({ width = 390, userAgent = ios, status = 'confirmed', group = 'valid', imageFailure = false, badgeFailure = false, holdWallet = false, factsReady = true, holdFirst = false, expireSoon = false, notifications = undefined, otherNotifications = undefined } = {}) {
   const context = await browser.newContext({ viewport: { width, height: 844 }, userAgent });
   await context.addCookies([{ name: 'synthetic_staff', value: 'PRIVATE-COOKIE-MUST-NOT-LEAK', domain: 'api.artdico.host', path: '/', secure: true, httpOnly: true, sameSite: 'Strict' }]);
   await context.addInitScript(() => {
@@ -37,7 +42,7 @@ async function fixture({ width = 390, userAgent = ios, status = 'confirmed', gro
   });
   const page = await context.newPage(), calls = [];
   page.on('pageerror', error => errors.push(error.message));
-  const memory = { status, group, imageFailure, factsReady, notifications, otherNotifications, readStatus: 200, walletStatus: 200, readCount: 0, groupVersion: 1, held: null, mail: false, writes: 0 };
+  const memory = { status, group, imageFailure, factsReady, notifications, otherNotifications, readStatus: 200, walletStatus: 200, holdWallet, heldWallet: null, readCount: 0, groupVersion: 1, held: null, mail: false, writes: 0 };
   const receipt = received => ({
     event, referenceCode: (received === otherToken ? 's' : 'r').repeat(43), submittedAt: '2026-10-21T00:00:00Z',
     attendee: { name: received === otherToken ? '合成报名人乙' : '合成报名人甲', organization: '合成机构', email: 'PRIVATE-SOURCE-MUST-NOT-RENDER' },
@@ -50,6 +55,7 @@ async function fixture({ width = 390, userAgent = ios, status = 'confirmed', gro
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin === SITE) {
+      if(badgeFailure&&url.pathname==='/wallet/add-to-apple-wallet.svg')return route.fulfill({status:404,body:''});
       const file = resolve(dist, '.' + (url.pathname.endsWith('/') ? url.pathname + 'index.html' : url.pathname));
       assert.ok(file.startsWith(dist + '/'));
       try { return route.fulfill({ status: 200, body: await readFile(file), contentType: ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' })[extname(file)] || 'application/octet-stream' }); }
@@ -72,7 +78,9 @@ async function fixture({ width = 390, userAgent = ios, status = 'confirmed', gro
       assert.equal(request.method(), 'POST');assert.deepEqual(JSON.parse(request.postData()), { receiptToken: token });
       if (memory.walletStatus !== 200) return route.fulfill(json({ error: { code: 'SYNTHETIC_WITHDRAWN' } }, memory.walletStatus));
       // Only exercise the download UI here; signed PKPASS validation has its own disposable fixture suite.
-      return route.fulfill({ status: 200, body: Buffer.from([80, 75, 3, 4, 1]), contentType: 'application/vnd.apple.pkpass', headers: { 'access-control-allow-origin': SITE } });
+      const respond=()=>route.fulfill({ status: 200, body: Buffer.from([80, 75, 3, 4, 1]), contentType: 'application/vnd.apple.pkpass', headers: { 'access-control-allow-origin': SITE } });
+      if(memory.holdWallet){memory.heldWallet=()=>{memory.holdWallet=false;memory.heldWallet=null;return respond();};return;}
+      return respond();
     }
     if (/^\/api\/registration\/group-invite\/synthetic-p3\.[12]$/u.test(url.pathname)) {
       assert.equal(request.method(), 'GET');
@@ -98,6 +106,7 @@ async function cleared(page) {
   assert.equal(await page.locator('[data-confirmation-notifications]').evaluate(output => output.hidden), true);
   assert.equal(await page.locator('[data-confirmation-private-link]').inputValue(), '');
   assert.equal(await page.locator('[data-confirmation-wallet]').isVisible(), false);assert.equal(await page.locator('[data-confirmation-group] img').count(), 0);
+  assert.equal(await page.locator('[data-confirmation-wallet-badge]').isVisible(), false);
   for(const selector of ['[data-confirmation-more]', '[data-confirmation-registration]', '[data-confirmation-notice-records]', '[data-confirmation-group-help]'])assert.equal(await page.locator(selector).evaluate(node => node.open), false);
   assert.equal(await page.locator('[data-confirmation-safari-guide]').isVisible(), false);
   assert.equal(await page.locator('[data-confirmation-invitation-image]').getAttribute('src'), null);assert.equal(await page.locator('[data-confirmation-invitation-download]').getAttribute('href'), null);
@@ -140,13 +149,13 @@ try {
     const f = await fixture({ expireSoon: true });await f.open();await f.page.locator('[data-confirmation-group-status]').filter({ hasText: '群码待更新' }).waitFor();assert.equal(await f.page.locator('[data-confirmation-group]').isVisible(), true);assert.equal(f.memory.readCount, 1);await f.close();reports.push({ shortImageExpiryRemovesImageWithoutAutomaticRead: true });
   }
   for (const device of ['wechat-ios', 'safari-ios', 'android']) {
-    const f = await fixture({ userAgent: device === 'android' ? android : ios + (device === 'wechat-ios' ? ' MicroMessenger/8.0' : ''), notifications: { applicationReceived: { status: 'provider_accepted' }, preEventReminder: { status: 'unknown' } } });await f.open();assert.match(await f.page.locator('[data-confirmation-application-received]').textContent(), /回执不代表获邀/u);
+    const f = await fixture({ userAgent: device === 'android' ? android : ios + (device === 'wechat-ios' ? ' MicroMessenger/8.0' : ''), holdWallet: device === 'safari-ios', notifications: { applicationReceived: { status: 'provider_accepted' }, preEventReminder: { status: 'unknown' } } });await f.open();assert.match(await f.page.locator('[data-confirmation-application-received]').textContent(), /回执不代表获邀/u);
     const hint = await f.page.locator('[data-confirmation-device]').textContent();
     if (device === 'wechat-ios') assert.match(hint, /微信.*Safari/u);
     if (device === 'safari-ios') assert.match(hint, /系统提示确认添加.*不代表已加入/u);
-    if (device === 'android') { assert.match(hint, /私人链接.*PNG.*PDF/u);assert.equal(await f.page.locator('[data-confirmation-wallet]').isVisible(), false); }
+    if (device === 'android') { assert.match(hint, /私人链接.*PNG.*PDF/u);assert.equal(await f.page.locator('[data-confirmation-wallet]').isVisible(), false);assert.equal(await f.page.locator('[data-confirmation-wallet-badge]').isVisible(), false); }
     else if (device === 'wechat-ios') {
-      assert.equal(await f.page.locator('[data-confirmation-wallet]').textContent(), '查看 Safari 添加指引');
+      assert.equal(await f.page.locator('[data-confirmation-wallet]').textContent(), '查看 Safari 添加指引');assert.equal(await f.page.locator('[data-confirmation-wallet-badge]').isVisible(), false);
       await f.page.locator('[data-confirmation-wallet]').click();await f.page.locator('[data-confirmation-safari-guide]:visible').waitFor();
       assert.equal(f.calls.some(call => call.path.endsWith('/wallet')), false, 'WeChat guidance never attempts a Wallet download');
       await f.page.locator('[data-confirmation-safari-copy]').click();assert.deepEqual(await f.page.evaluate(() => globalThis.__p3.copied), [link]);
@@ -154,12 +163,32 @@ try {
       assert.equal(await f.page.locator('[data-confirmation-safari-guide]').isVisible(), false);
       assert.deepEqual(await f.page.evaluate(() => globalThis.__p3.created), []);
     } else {
-      const waiting = f.page.waitForEvent('download');await f.page.locator('[data-confirmation-wallet]').click();const download = await waiting;assert.equal(download.suggestedFilename(), 'artdico-host.pkpass');
+      const badge=f.page.locator('[data-confirmation-wallet-badge]');await badge.evaluate(img=>img.decode());await badge.waitFor({state:'visible'});
+      assert.equal(await badge.getAttribute('alt'),'添加到 Apple 钱包');assert.equal(await f.page.locator('[data-confirmation-wallet-label]').isVisible(),false);
+      assert.equal(await f.page.locator('[data-confirmation-wallet]').getAttribute('aria-label'),'加入 Apple Wallet');
+      const badgeGeometry=await badge.evaluate(img=>{const b=img.getBoundingClientRect(),button=img.closest('button'),hit=button.getBoundingClientRect(),style=getComputedStyle(button);return{width:b.width,height:b.height,naturalWidth:img.naturalWidth,naturalHeight:img.naturalHeight,hitWidth:hit.width,hitHeight:hit.height,padding:parseFloat(style.paddingTop),opacity:Number(style.opacity),filter:style.filter};});
+      assert.ok(badgeGeometry.naturalWidth>0&&badgeGeometry.naturalHeight>0);assert.ok(badgeGeometry.hitWidth>=44&&badgeGeometry.hitHeight>=44);assert.ok(badgeGeometry.padding>=badgeGeometry.height*.1);assert.equal(badgeGeometry.opacity,1);assert.equal(badgeGeometry.filter,'none');assert.ok(Math.abs(badgeGeometry.width/badgeGeometry.height-badgeAspectRatio)<.01,'official artwork keeps its original viewBox ratio without relying on rounded natural pixel dimensions');
+      await f.page.locator('.confirmation-save').screenshot({path:resolve(evidence,'wallet-badge-safari.png')});
+      const walletRequest=f.page.waitForRequest(request=>new URL(request.url()).pathname==='/api/admin/registration/wallet');
+      await f.page.locator('[data-confirmation-wallet]').focus();await f.page.keyboard.press('Space');await walletRequest;
+      assert.equal(await f.page.locator('[data-confirmation-wallet]').isDisabled(),true);assert.equal(await f.page.locator('[data-confirmation-wallet]').getAttribute('aria-busy'),'true');
+      assert.match(await f.page.locator('[data-confirmation-action-status]').textContent(),/正在准备/u);
+      const busyAppearance=await f.page.locator('[data-confirmation-wallet]').evaluate(button=>({opacity:Number(getComputedStyle(button).opacity),filter:getComputedStyle(button).filter,badgeHidden:button.querySelector('img').hidden}));
+      assert.deepEqual(busyAppearance,{opacity:1,filter:'none',badgeHidden:false},'preparing a pass preserves the official badge rather than dimming its artwork');
+      await f.page.locator('.confirmation-save').screenshot({path:resolve(evidence,'wallet-badge-busy.png')});
+      await f.page.locator('[data-confirmation-wallet]').evaluate(button=>button.click());assert.equal(f.calls.filter(call=>call.path.endsWith('/wallet')).length,1,'busy state does not start a duplicate download');
+      const waiting = f.page.waitForEvent('download');assert.equal(typeof f.memory.heldWallet,'function');await f.memory.heldWallet();const download = await waiting;assert.equal(download.suggestedFilename(), 'artdico-host.pkpass');
       assert.match(await f.page.locator('[data-confirmation-action-status]').textContent(), /票券文件已准备/u);assert.doesNotMatch(await f.page.locator('[data-confirmation-action-status]').textContent(), /已加入|添加成功/u);
+      await f.page.waitForFunction(()=>document.querySelector('[data-confirmation-wallet]')?.disabled===false);assert.equal(await f.page.locator('[data-confirmation-wallet]').getAttribute('aria-busy'),'false');
       f.memory.walletStatus = 401;await f.page.locator('[data-confirmation-wallet]').click();await f.page.locator('[data-confirmation-error]:visible').waitFor();await cleared(f.page);
       const probe = await f.page.evaluate(() => globalThis.__p3);assert.ok(probe.created.length);assert.ok(probe.created.every(url => probe.revoked.includes(url)));
+      const brokenBadge=await fixture({badgeFailure:true});await brokenBadge.open();
+      assert.equal(await brokenBadge.page.locator('[data-confirmation-wallet]').isVisible(),true);assert.equal(await brokenBadge.page.locator('[data-confirmation-wallet-badge]').isVisible(),false);assert.equal(await brokenBadge.page.locator('[data-confirmation-wallet-label]').isVisible(),true);
+      assert.equal(await brokenBadge.page.locator('[data-confirmation-wallet-label]').textContent(),'加入 Apple Wallet');assert.equal(await brokenBadge.page.locator('[data-confirmation-wallet]').evaluate(button=>button.classList.contains('confirmation-wallet-badge')),false);
+      await brokenBadge.page.locator('.confirmation-save').screenshot({path:resolve(evidence,'wallet-badge-fallback.png')});
+      const fallbackDownload=brokenBadge.page.waitForEvent('download');await brokenBadge.page.locator('[data-confirmation-wallet]').click();assert.equal((await fallbackDownload).suggestedFilename(),'artdico-host.pkpass');await brokenBadge.close();
     }
-    await f.close();reports.push({ device, correctGuidance: true, downloadIsNotInstallation: true, ...(device === 'safari-ios' ? { wallet401ClearsPrivateDataAndBlob: true } : device === 'wechat-ios' ? { guideDoesNotDownloadAnd401ClearsIt: true } : {}) });
+    await f.close();reports.push({ device, correctGuidance: true, downloadIsNotInstallation: true, ...(device === 'safari-ios' ? { officialLocalizedBadgeDecoded: true, badgeAspectAndClearSpace: true, unalteredBusyBadgeAndSingleDownload: true, badge404RetainsWorkingTextAction: true, wallet401ClearsPrivateDataAndBlob: true } : device === 'wechat-ios' ? { guideDoesNotDownloadAnd401ClearsIt: true } : {}) });
   }
   {
     const f = await fixture({ factsReady: false });await f.open();assert.match(await f.page.locator('h1').textContent(), /名额已确认/u);assert.equal(await f.page.locator('[data-confirmation-facts-warning]').isVisible(), true);assert.match(await f.page.locator('[data-confirmation-email]').textContent(), /提交发送/u);assert.equal(await f.page.locator('[data-confirmation-wallet]').isVisible(), false);assert.equal(await f.page.locator('[data-confirmation-group]').isVisible(), true);await f.close();reports.push({ factsMismatchPreservesAdmissionAndEmailHistory: true });

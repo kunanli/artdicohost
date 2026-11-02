@@ -1,5 +1,13 @@
 # 开发接续：先读本页
 
+## 2026-11-02 本輪進行中：前台呈現與資料更正
+
+已發布main仍為 `50bc3cd546f89ac622e8b12d1c80eeb34256fff6`（PR64）；根目錄分支 `feat/wallet-badge-and-registration-path` 從文件證據 `23558a2` 接續，尚未部署本輪改動。範圍是官方中文Wallet徽章、活動行認證版路徑文件、第八組織可見／白色Logo、公開攤位細節移除、Hero退遠至全頁星空。先凍結前台產物，核對新6／4／13及相關定向瀏覽器，再依既有流程PR／main／HTTPS發布；先前29案私人頁證據須比較HTML與原SVG雜湊才沿用。
+
+後台資料人工更正在 `/workspace/artdicohost-registration-corrections`、`feat/staff-registration-corrections` 獨立工作樹進行，完成前台階段後整合。原問卷／來源不覆寫，保存留在同人同位置，失回執只核對；改Email使舊私人能力／群圖片grant／Wallet驗證失效，新地址只能明確發指南，不能自動重寄。新增修正journal後，回退不得降到不認得新欄位的舊reader；實作與安全合成結果另記，不代改正式人員。
+
+活動行匯出格式仍待完全匿名表頭／範例，現有問卷解析器不能直接冒充活動行adapter。正式報名入口與審核政策未切換，未匯入或寄送真名單。
+
 ## 2026-11-02（Asia/Taipei）自由背景粒子與作品缺圖已發布
 
 [PR #64](https://github.com/kunanli/artdicohost/pull/64) 已正式發布 main `50bc3cd546f89ac622e8b12d1c80eeb34256fff6`，完整回執見 [本輪紀錄](redesign/background-showcase-release.md)。使用者否定球緣亮點，改stage背景10／24點自由漂移＋小幅mouse force，球ellipse與文字／控制區域全alpha排除，Hero可見時全頁edge隱藏；late branderror的子盒RO與清舊canvas已回歸。作品有圖保原2:1／字幕／peek，missing／真404改自然文字高度，移除內部待確認與無安排佔位，單件隱藏無效導航；真declined與實際安排保留。

@@ -7,15 +7,20 @@ html:has(#artdico-host.ah-cosmos){--ah-header-height:76px;scroll-padding-top:var
  background:linear-gradient(90deg,#4b87ff,#8655ff 60%,#c2a4ff);
  transform:scaleX(var(--ah-scroll-progress,0));transform-origin:0 50%;
 }
-.ah-scroll-atmosphere{
- position:fixed;top:var(--ah-header-height,76px);bottom:0;left:50%;
- width:min(100%,1920px);height:calc(100dvh - var(--ah-header-height,76px));
- transform:translateX(-50%);z-index:30;pointer-events:none;contain:strict;
-}
-.ah-scroll-atmosphere[hidden]{display:none}
+.ah-reading-atmosphere{position:fixed;inset:0;z-index:0;pointer-events:none;contain:strict;overflow:hidden}
+.ah-scroll-atmosphere{position:absolute;top:var(--ah-header-height,76px);left:0;width:100%;height:max(1px,calc(100dvh - var(--ah-header-height,76px)));z-index:1;pointer-events:none}
+.ah-reading-atmosphere[hidden],.ah-scroll-atmosphere[hidden]{display:none}
+#artdico-host.ah-festival.ah-cosmos[data-atmosphere-state="active"]{position:relative;isolation:isolate;z-index:1;background:transparent}
+#artdico-host.ah-festival.ah-cosmos[data-atmosphere-state="active"] :is(.ah-page-content,.ah-home-hero,.ah-recruitment,.ah-bottom-grid,.ah-privacy,.ah-home-footer,.ah-students.ah-section){background:transparent}
+#artdico-host.ah-festival.ah-cosmos[data-atmosphere-state="active"] .ah-about{background:linear-gradient(180deg,#00000010 calc(100% - 280px),#07050e66)}
+#artdico-host.ah-festival.ah-cosmos[data-atmosphere-state="active"] :is(.ah-guests.ah-section,.ah-booths.ah-section){background:linear-gradient(180deg,#110b234d,#1b123166 70%,#00000010)}
+/* program.css and students-showcase.css also own full-section backgrounds.
+   Lift only those outer surfaces; artwork cards and form controls stay solid. */
+#artdico-host.ah-festival.ah-cosmos[data-atmosphere-state="active"] .ah-program.ah-section{background:linear-gradient(180deg,transparent 4%,#10001426 52%,transparent 98%)}
+#artdico-host.ah-festival.ah-cosmos[data-atmosphere-state="active"] .ah-registration.ah-section{background:radial-gradient(ellipse at 0 45%,#1e10384d,transparent 60%)}
 body:has([data-site-menu][open],dialog[open]) .ah-scroll-atmosphere{visibility:hidden}
 @media(max-width:820px){html:has(#artdico-host.ah-cosmos){--ah-header-height:72px}}
 @media(prefers-reduced-motion:reduce){
- .ah-scroll-atmosphere{display:none}
+ .ah-reading-atmosphere{display:none}
  #artdico-host.ah-festival.ah-cosmos [data-scroll-art]{transform:none!important}
 }

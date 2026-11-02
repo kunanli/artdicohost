@@ -41,8 +41,8 @@ async function body(request) {
 }
 
 /** Route only /api/admin/registrations to this boundary; share the production auth instance. */
-export function createRegistrationAdminApi({ enabled = false, auth, store, canExport = canManageEventOperations, onWithdrawalCommitted } = {}) {
-  if (typeof enabled !== 'boolean' || typeof canExport !== 'function' || onWithdrawalCommitted !== undefined && typeof onWithdrawalCommitted !== 'function') throw new TypeError('报名审核配置无效。');
+export function createRegistrationAdminApi({ enabled = false, auth, store, canExport = canManageEventOperations, profileTarget, onWithdrawalCommitted } = {}) {
+  if (typeof enabled !== 'boolean' || typeof canExport !== 'function' || profileTarget !== undefined && typeof profileTarget !== 'function' || onWithdrawalCommitted !== undefined && typeof onWithdrawalCommitted !== 'function') throw new TypeError('报名审核配置无效。');
   if (enabled && (typeof auth?.authenticate !== 'function' || !['list', 'detail', 'saveReview', 'exportCsv', 'requestDeletion'].every(name => typeof store?.[name] === 'function'))) throw new TypeError('报名审核依赖未配置。');
   async function afterCommit(result, registrationId, actor) {
     if (!onWithdrawalCommitted || result.review?.status !== 'withdrawn' && result.review?.deletionRequested == null) return result;
@@ -91,6 +91,29 @@ export function createRegistrationAdminApi({ enabled = false, auth, store, canEx
         if (includeContact && !canManageEventOperations(session.user)) failure('FORBIDDEN');
         const result = await store.exportCsv(input.expectedRevision, input.filters ?? {}, session.user.id, { includeContact });
         return new Response(result.csv, { headers: { ...SECURITY, 'content-type': 'text/csv; charset=utf-8', 'content-disposition': 'attachment; filename="artdico-registration-review.csv"', 'x-review-revision': String(result.revision) } });
+      }
+      const profileRoute = url.pathname.match(/^\/api\/admin\/registrations\/([A-Za-z0-9_-]{43})\/(profile|profile-operations\/([A-Za-z0-9_-]{32,128}))$/u);
+      if (profileRoute) {
+        const [, id, action, operationId] = profileRoute;
+        if (action.startsWith('profile-operations/') && request.method === 'GET') {
+          const receipt = await store.profileOperation(id, operationId, session.user.id);
+          const targetId = profileTarget ? await profileTarget(id) : id;
+          return json({ ...receipt, ...(targetId !== id ? { identityCheck: { state: 'changed', profileTargetId: targetId } } : {}) });
+        }
+        if (action === 'profile' && request.method === 'PATCH') {
+          const input = await body(request);
+          keys(input, ['expectedRevision', 'operationId', 'fields'], ['expectedRevision', 'operationId', 'fields']);
+          // An already committed immutable operation belongs to its original target
+          // even if a later person merge changes the primary registration.
+          let replay;
+          try { replay = await store.profileOperation(id, input.operationId, session.user.id); }
+          catch (error) { if (error?.code !== 'NOT_FOUND') throw error; }
+          if (!replay && profileTarget && await profileTarget(id) !== id) failure('REVISION_CONFLICT');
+          const receipt = await store.saveProfile(id, input.expectedRevision, input.operationId, input.fields, session.user.id, profileTarget ? async () => await profileTarget(id) === id : undefined);
+          const targetId = profileTarget ? await profileTarget(id) : id;
+          return json({ ...receipt, ...(targetId !== id ? { identityCheck: { state: 'changed', profileTargetId: targetId } } : {}) });
+        }
+        failure('NOT_FOUND');
       }
       const route = url.pathname.match(/^\/api\/admin\/registrations\/([A-Za-z0-9_-]{43})(?:\/(review|deletion-request))?$/u);
       if (!route) failure('NOT_FOUND');

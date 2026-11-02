@@ -12,12 +12,14 @@ const own = (object, key) => { const property = object && Object.getOwnPropertyD
 const line = (value, max = 1024) => typeof value === 'string' && value.length > 0 && value.length <= max && value.isWellFormed() && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value);
 const fixed = outcome => ({ outcome });
 const configFailure = code => { throw new WalletSigningError(code); };
+const accessRevision = value => own(value, 'accessRevision') === undefined ? 0 : own(value, 'accessRevision');
 function decode(value) {
   if (typeof value !== 'string' || value.length < 128 || value.length > 32768 || !/^[A-Za-z0-9+/]+={0,2}$/u.test(value)) configFailure('WALLET_CERTIFICATE_INVALID');
   const data = Buffer.from(value, 'base64'); if (data.toString('base64') !== value) configFailure('WALLET_CERTIFICATE_INVALID'); return data;
 }
 function validRecord(value) {
   return value && typeof value === 'object' && ID.test(value.registrationId ?? '') && value.referenceCode === value.registrationId
+    && Number.isSafeInteger(accessRevision(value)) && accessRevision(value) >= 0
     && ['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected'].includes(value.admissionStatus) && /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(value.event?.id ?? '');
 }
 
@@ -66,7 +68,8 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
   function verificationToken(record, now) {
     const expiry = Date.parse(record.event.date + 'T23:59:59+08:00');
     if (!Number.isSafeInteger(expiry) || expiry <= now || expiry - now > 180 * 86400000) throw new Error('Wallet event window is unavailable.');
-    const claims = { v: 1, purpose: 'wallet-validity', eventId: record.event.id, registrationId: record.registrationId, issuedAt: now, expiresAt: expiry };
+    const claims = { v: 1, purpose: 'wallet-validity', eventId: record.event.id, registrationId: record.registrationId, issuedAt: now, expiresAt: expiry,
+      accessRevision: accessRevision(record) };
     const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
     return payload + '.' + createHmac('sha256', tokenKey).update(payload).digest('base64url');
   }
@@ -80,11 +83,13 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
       const data = Buffer.from(payload, 'base64url'); if (data.toString('base64url') !== payload) return null;
       value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(data));
     } catch { return null; }
-    if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length !== 6 || value.v !== 1 || value.purpose !== 'wallet-validity'
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+      || !['eventId,expiresAt,issuedAt,purpose,registrationId,v', 'accessRevision,eventId,expiresAt,issuedAt,purpose,registrationId,v'].includes(Object.keys(value).sort().join(','))
+      || !Number.isSafeInteger(accessRevision(value)) || accessRevision(value) < 0 || value.v !== 1 || value.purpose !== 'wallet-validity'
       || !ID.test(value.registrationId ?? '') || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(value.eventId ?? '')
       || !Number.isSafeInteger(value.issuedAt) || !Number.isSafeInteger(value.expiresAt) || value.issuedAt > now || value.expiresAt <= now
       || value.expiresAt - value.issuedAt > 180 * 86400000 || value.expiresAt <= value.issuedAt) return null;
-    return value;
+    return { ...value, accessRevision: accessRevision(value) };
   }
   return Object.freeze({
     readiness,
@@ -102,7 +107,7 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
         const data = buildAppleWalletPass({ ...config, attendee, verificationUrl, now });
         const latest = await authorizedRegistration(attendee.registrationId);
         if (!validRecord(latest) || latest.registrationId !== attendee.registrationId || latest.event.id !== attendee.event.id
-          || latest.admissionStatus !== 'confirmed') return fixed('inactive');
+          || latest.admissionStatus !== 'confirmed' || accessRevision(latest) !== accessRevision(attendee)) return fixed('inactive');
         if (!unchangedEventFacts(checkedFacts, await readEventFactsReadiness(eventFactsReadiness))) return fixed('event_unverified');
         if (Date.parse(config.identity.expiresAt) <= current()) return fixed('not_ready');
         return { outcome: 'issued', data, contentType: 'application/vnd.apple.pkpass', filename: 'artdico-' + attendee.registrationId.slice(-12) + '.pkpass' };
@@ -113,7 +118,8 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
         const now = current(), claims = verifyClaims(token, now);
         if (!claims) return { valid: false };
         const record = await authorizedRegistration(claims.registrationId);
-        if (!validRecord(record) || record.event.id !== claims.eventId || record.registrationId !== claims.registrationId || record.admissionStatus !== 'confirmed') return { valid: false };
+        if (!validRecord(record) || record.event.id !== claims.eventId || record.registrationId !== claims.registrationId || record.admissionStatus !== 'confirmed'
+          || accessRevision(record) !== claims.accessRevision) return { valid: false };
         if (!verifyClaims(token, current())) return { valid: false };
         return { valid: true, eventId: claims.eventId, admissionStatus: 'confirmed', verifiedAt: new Date(now).toISOString() };
       } catch { return { valid: false }; }

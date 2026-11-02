@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { createGroupInviteService, GroupInviteError } from '../functions/registration-api/group-invite.mjs';
 import { createGroupInviteApi } from '../functions/registration-api/group-invite-handler.mjs';
 import { createRegistrationTokens } from '../functions/registration-api/tokens.mjs';
@@ -20,11 +20,11 @@ const receipt = () => { const id = randomBytes(32).toString('base64url'); return
 const extractToken = invite => new URL(invite.qrImageUrl).pathname.split('/').at(-1);
 function fixture() {
   const remote = objectFixture(), state = { now: at, lostAck: false, withdrawn: false, withdrawalFailure: false, appends: 0 };
-  function service() {
+  function service(overrides = {}) {
     const base = createOssObjectClient({ credentials: async () => fakeCredentials, clock: () => new Date(state.now), fetchFn: remote.fetchFn });
     const objects = { ...base, async append(...args) { state.appends++; const value = await base.append(...args); if (state.lostAck) { state.lostAck = false; throw new Error('PRIVATE-SYNTHETIC-LOST-ACK'); } return value; } };
     return createGroupInviteService({ objects, journalFor: prefix => createObjectJournal({ objects, prefix }), eventId: EVENT, tokenSecret: SECRET, apiOrigin: API,
-      clock: () => state.now, isWithdrawn: async () => { if (state.withdrawalFailure) throw new Error('PRIVATE-SYNTHETIC-REVIEW-FAILURE'); return state.withdrawn; } });
+      clock: () => state.now, isWithdrawn: async () => { if (state.withdrawalFailure) throw new Error('PRIVATE-SYNTHETIC-REVIEW-FAILURE'); return state.withdrawn; }, ...overrides });
   }
   const upload = (expectedRevision = 0, patch = {}) => ({ expectedRevision, contentType: 'image/png', dataBase64: PNG, expiresAt: new Date(state.now + 3600000).toISOString(), ...patch });
   return { remote, state, service, upload };
@@ -110,6 +110,44 @@ test('supplied pending and rejected receipts cannot mint QR links even if an old
   }
   assert.equal((await service.forReceipt({ receipt: { ...receipt(), admissionStatus: 'confirmed' } })).platform, 'wechat');
   assert.equal((await service.forReceipt({ receipt: receipt() })).platform, 'wechat', 'legacy receipt still uses the trusted current-state callback');
+});
+
+test('person access revisions revoke old QR grants without upgrading stale receipts or the shared group', async () => {
+  const f = fixture(); let revision = 0;
+  const service = f.service({ getAccessRevision: async () => revision }); await service.replace(f.upload(), actor);
+  const originalReceipt = receipt(), original = await service.forReceipt({ receipt: originalReceipt }), originalToken = extractToken(original);
+  const claims = JSON.parse(Buffer.from(originalToken.split('.')[0], 'base64url'));
+  assert.equal(claims.accessRevision, 0);
+  const key = createHmac('sha256', SECRET).update('artdico-registration-group-invite-v1').digest();
+  const signed = value => { const payload = Buffer.from(JSON.stringify(value)).toString('base64url'); return payload + '.' + createHmac('sha256', key).update(payload).digest('base64url'); };
+  const { accessRevision: omitted, ...legacyClaims } = claims, legacyToken = signed(legacyClaims);
+  assert.equal((await service.publicImage(legacyToken)).contentType, 'image/png');
+  const writes = f.remote.calls.filter(call => call.method !== 'GET').length;
+  revision = 1;
+  await expectError(service.publicImage(originalToken), 'GROUP_INVITE_NOT_FOUND');
+  await expectError(service.publicImage(legacyToken), 'GROUP_INVITE_NOT_FOUND');
+  assert.equal(await service.forReceipt({ receipt: originalReceipt }), null, 'legacy receipt cannot acquire a corrected-person grant');
+  assert.equal(await service.forReceipt({ receipt: { ...originalReceipt, accessRevision: 0 } }), null);
+  const corrected = await service.forReceipt({ receipt: { ...originalReceipt, accessRevision: 1 } });
+  assert.equal((await service.publicImage(extractToken(corrected))).contentType, 'image/png');
+  for (const value of [-1, null, '1', 0.5]) await expectError(service.publicImage(signed({ ...claims, accessRevision: value })), 'GROUP_INVITE_NOT_FOUND');
+  await expectError(service.publicImage(signed({ ...claims, accessRevision: 1, unexpected: true })), 'GROUP_INVITE_NOT_FOUND');
+  assert.equal((await service.adminRead(actor)).revision, 1, 'person correction does not rotate the common QR');
+  assert.equal(f.remote.calls.filter(call => call.method !== 'GET').length, writes);
+});
+
+test('QR mint and image delivery recheck the same person revision after asynchronous work and fail closed', async () => {
+  const f = fixture(); await f.service().replace(f.upload(), actor);
+  let checks = 0;
+  const issuing = f.service({ getAccessRevision: async () => ++checks === 1 ? 0 : 1 });
+  assert.equal(await issuing.forReceipt({ receipt: receipt() }), null, 'correction while reading the image cannot mint a usable grant');
+  const stable = f.service({ getAccessRevision: async () => 1 }), current = { ...receipt(), accessRevision: 1 };
+  const token = extractToken(await stable.forReceipt({ receipt: current })); checks = 0;
+  const reading = f.service({ getAccessRevision: async () => ++checks === 1 ? 1 : 2 });
+  await expectError(reading.publicImage(token), 'GROUP_INVITE_NOT_FOUND');
+  const broken = f.service({ getAccessRevision: async () => { throw new Error('PRIVATE-SYNTHETIC-ACCESS-FAILURE'); } });
+  await expectError(broken.publicImage(token), 'GROUP_INVITE_UNAVAILABLE');
+  await expectError(f.service({ getAccessRevision: async () => null }).forReceipt({ receipt: receipt() }), 'GROUP_INVITE_UNAVAILABLE');
 });
 
 test('expired links, expired QR and withdrawn registrations cannot read an image; review failure stays opaque', async () => {

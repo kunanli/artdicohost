@@ -96,8 +96,8 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
     const counts=$('[data-delivery-counts]');counts.replaceChildren();appendCounts(counts,state.counts);
     const other=$('[data-delivery-notification-counts]');other.replaceChildren();for(const[key,label]of[['applicationReceived','申请回执'],['preEventReminder','行前提醒']])if(state.notificationCounts?.[key]){const list=element('dl');list.className='delivery-counts';appendCounts(list,state.notificationCounts[key]);other.append(element('h3',label),list);}lock();
   }
-  function appendCounts(output,counts){for(const[key,label]of[['total','已记录通知'],['providerAccepted','邮件服务已接收'],['rejected','明确未发出'],['unknown','结果不明']]){const item=element('div');item.append(element('dt',label),element('dd',String(counts[key])));output.append(item);}}
-  const reminderReasonLabels={ELIGIBLE:'可发送',EMAIL_MISSING:'缺少邮箱',ALREADY_ACCEPTED:'邮件服务已接收',DELIVERY_UNKNOWN:'结果待核对，不重寄',EMAIL_PAUSED:'通知已暂停',EMAIL_NOT_READY:'寄件设置未就绪',RETRY_LIMIT:'已达尝试上限',ADMISSION_NOT_CONFIRMED:'当前名额未确认',CONTACT_DECLINED:'已回复不参加',CONTACT_CONSENT_REQUIRED:'联系许可待核对',CONTACT_EMAIL_CHANGED:'邮箱有更新，请核对',CONTACT_NOT_FOUND:'未找到联系来源',STAFF_PERMISSION_REQUIRED:'联系许可待核对',PERMISSION_UNAVAILABLE:'联系许可待核对',EVENT_FACTS_MISMATCH:'活动信息待核对',EVENT_FACTS_UNAVAILABLE:'活动信息暂无法核对',REMINDER_WINDOW_CLOSED:'已过提醒时间'};
+  function appendCounts(output,counts){for(const[key,label]of[['total','历史通知数'],['providerAccepted','邮件服务已接收'],['rejected','明确未发出'],['unknown','结果不明']]){const item=element('div');item.append(element('dt',label),element('dd',String(counts[key])));output.append(item);}}
+  const reminderReasonLabels={ELIGIBLE:'可发送',EMAIL_MISSING:'缺少邮箱',ALREADY_ACCEPTED:'邮件服务已接收',DELIVERY_UNKNOWN:'结果待核对，不重寄',HISTORICAL_DELIVERY_UNKNOWN:'原邮箱寄送待核对',EMAIL_PAUSED:'通知已暂停',EMAIL_NOT_READY:'寄件设置未就绪',RETRY_LIMIT:'已达尝试上限',ADMISSION_NOT_CONFIRMED:'当前名额未确认',CONTACT_DECLINED:'已回复不参加',CONTACT_CONSENT_REQUIRED:'联系许可待核对',CONTACT_EMAIL_CHANGED:'邮箱有更新，请核对',CONTACT_NOT_FOUND:'未找到联系来源',STAFF_PERMISSION_REQUIRED:'联系许可待核对',PERMISSION_UNAVAILABLE:'联系许可待核对',EVENT_FACTS_MISMATCH:'活动信息待核对',EVENT_FACTS_UNAVAILABLE:'活动信息暂无法核对',REMINDER_WINDOW_CLOSED:'已过提醒时间'};
   function clearFormalPreview(message='请读取确认信名单。',{clearResults=true}={}){
     formalPreview=null;selectedFormalIds.clear();formalDirty=false;formalIdentities.clear();
     for(const selector of['[data-formal-rows]','[data-formal-subject]','[data-formal-message]'])$(selector).replaceChildren();
@@ -308,7 +308,8 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
     event.preventDefault();if(!formalPreview||pendingAny()||!selectedFormalIds.size||drafts.get('formal')?.blocked||drafts.get('dispatch')?.blocked)return;
     const retryRejected=$('[data-formal-retry-rejected]').checked,ids=formalPreview.rows.filter(row=>selectedFormalIds.has(row.registrationId)&&row.eligible&&(!row.retryRejected||retryRejected)).map(row=>row.registrationId);
     if(ids.length!==selectedFormalIds.size){clearFormalPreview('名单有更新 · 请重新读取核对');return;}
-    action(async started=>acceptFormal(await confirmations.run({registrationIds:ids,retryRejected}),started));
+    const expectedAccessRevisions=Object.fromEntries(ids.map(id=>[id,formalPreview.rows.find(row=>row.registrationId===id).accessRevision??0]));
+    action(async started=>acceptFormal(await confirmations.run({registrationIds:ids,retryRejected,expectedAccessRevisions}),started));
   });
   $('[data-formal-lookup]').addEventListener('click',()=>action(async started=>{
     try{await acceptFormal(await confirmations.lookup(),started);}catch(error){if(started===generation&&allowed())restoreFormalRecovery(confirmations,'formal');throw error;}
@@ -324,7 +325,8 @@ export function createDeliverySettings({root,request,draftStore,eventId}){
     event.preventDefault();if(!reminderPreview||pendingAny()||!selectedReminderIds.size)return;
     const retryRejected=$('[data-reminder-retry-rejected]').checked,ids=reminderPreview.rows.filter(row=>selectedReminderIds.has(row.registrationId)&&row.eligible&&(!row.retryRejected||retryRejected)).map(row=>row.registrationId);
     if(ids.length!==selectedReminderIds.size){clearReminderPreview('名单有更新 · 请重新读取核对');return;}
-    action(async started=>acceptReminder(await reminders.run({registrationIds:ids,retryRejected}),started));
+    const expectedAccessRevisions=Object.fromEntries(ids.map(id=>[id,reminderPreview.rows.find(row=>row.registrationId===id).accessRevision??0]));
+    action(async started=>acceptReminder(await reminders.run({registrationIds:ids,retryRejected,expectedAccessRevisions}),started));
   });
   $('[data-reminder-lookup]').addEventListener('click',()=>action(async started=>{const body=reminders.body;try{await acceptReminder(await reminders.lookup(),started);}catch(error){if(started===generation&&allowed()&&body&&!reminders.pending&&drafts.get('reminder')?.pending){reminders.restore(body);persistedPending.add('reminder');}throw error;}}));
   function clear(){

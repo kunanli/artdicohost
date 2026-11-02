@@ -21,7 +21,9 @@ export function deliverySettingsView(value){
     counts:copyCounts(value.counts),...(value.notificationCounts===undefined?{}:{notificationCounts:Object.fromEntries(['applicationReceived','preEventReminder'].map(key=>[key,copyCounts(value.notificationCounts[key])]))})};
 }
 
-const reminderReasons=new Set(['ELIGIBLE','EMAIL_MISSING','ALREADY_ACCEPTED','DELIVERY_UNKNOWN','EMAIL_PAUSED','EMAIL_NOT_READY','RETRY_LIMIT','ADMISSION_NOT_CONFIRMED','CONTACT_DECLINED','CONTACT_CONSENT_REQUIRED','CONTACT_EMAIL_CHANGED','CONTACT_NOT_FOUND','STAFF_PERMISSION_REQUIRED','PERMISSION_UNAVAILABLE','EVENT_FACTS_MISMATCH','EVENT_FACTS_UNAVAILABLE','REMINDER_WINDOW_CLOSED']);
+const reminderReasons=new Set(['ELIGIBLE','EMAIL_MISSING','ALREADY_ACCEPTED','DELIVERY_UNKNOWN','HISTORICAL_DELIVERY_UNKNOWN','EMAIL_PAUSED','EMAIL_NOT_READY','RETRY_LIMIT','ADMISSION_NOT_CONFIRMED','CONTACT_DECLINED','CONTACT_CONSENT_REQUIRED','CONTACT_EMAIL_CHANGED','CONTACT_NOT_FOUND','STAFF_PERMISSION_REQUIRED','PERMISSION_UNAVAILABLE','EVENT_FACTS_MISMATCH','EVENT_FACTS_UNAVAILABLE','REMINDER_WINDOW_CLOSED']);
+const validAccessRevision=value=>Number.isSafeInteger(value)&&value>=0;
+const validAccessRevisions=(value,ids)=>plain(value)&&Object.keys(value).length===ids.length&&ids.every(id=>Object.hasOwn(value,id)&&validAccessRevision(value[id]));
 const safeText=(value,max,empty=true)=>typeof value==='string'&&value.length<=max&&(empty||Boolean(value.trim()))&&!/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value);
 export function deliveryReminderPreviewView(value){
   if(!plain(value)||value.kind!=='pre_event_reminder'||!Number.isSafeInteger(value.revision)||value.revision<0||!Array.isArray(value.rows)||value.rows.length>100
@@ -30,10 +32,11 @@ export function deliveryReminderPreviewView(value){
   const ids=new Set();for(const row of value.rows){
     if(!plain(row)||!/^[A-Za-z0-9_-]{43}$/u.test(row.registrationId??'')||ids.has(row.registrationId)||!safeText(row.name,400,false)||!safeText(row.organization,500)
       ||!['not_sent','provider_accepted','rejected','unknown'].includes(row.status)||typeof row.eligible!=='boolean'||typeof row.retryRejected!=='boolean'||!reminderReasons.has(row.reason)
+      ||Object.hasOwn(row,'accessRevision')&&!validAccessRevision(row.accessRevision)
       ||row.eligible&&(!['not_sent','rejected'].includes(row.status)||row.reason!=='ELIGIBLE')||row.status==='rejected'&&row.eligible&&!row.retryRejected)return null;
     ids.add(row.registrationId);
   }
-  return{revision:value.revision,kind:value.kind,total:value.total,nextCursor:value.nextCursor,message:{subject:value.message.subject,text:value.message.text,privateUrlPlaceholder:value.message.privateUrlPlaceholder},rows:value.rows.map(row=>({registrationId:row.registrationId,name:row.name,organization:row.organization,status:row.status,eligible:row.eligible,reason:row.reason,retryRejected:row.retryRejected}))};
+  return{revision:value.revision,kind:value.kind,total:value.total,nextCursor:value.nextCursor,message:{subject:value.message.subject,text:value.message.text,privateUrlPlaceholder:value.message.privateUrlPlaceholder},rows:value.rows.map(row=>({registrationId:row.registrationId,name:row.name,organization:row.organization,status:row.status,eligible:row.eligible,reason:row.reason,retryRejected:row.retryRejected,accessRevision:row.accessRevision??0}))};
 }
 
 /** The formal family has its own read-only source proof and never borrows a reminder preview. */
@@ -95,9 +98,9 @@ export function createConfirmationMutations({request,revision,operationId=()=>cr
   }
   return Object.freeze({
     get pending(){return pending!==null;},get body(){return pending?.body??null;},get id(){return pending?.id??null;},get knownRejected(){return pending?.knownRejected===true;},
-    async run({registrationIds,retryRejected=false}){
+    async run({registrationIds,retryRejected=false,expectedAccessRevisions}){
       if(pending||busy)throw new Error('请先核对原确认信，不会另建寄送。');
-      const body=JSON.stringify({registrationIds,retryRejected,expectedRevision:revision(),operationId:operationId()}),value=deliveryConfirmationRequestView(body);
+      const body=JSON.stringify({registrationIds,retryRejected,expectedRevision:revision(),operationId:operationId(),...(expectedAccessRevisions===undefined?{}:{expectedAccessRevisions})}),value=deliveryConfirmationRequestView(body);
       if(!value)throw new Error('请重新读取确认信名单，再选择收件人。');
       pending={...value,fresh:true,knownRejected:false};return perform(false);
     },
@@ -123,11 +126,12 @@ export function deliveryReminderOperationView(value,operationId){
 
 /** Reminder unknowns are reconciled with GET; the original POST is never replayed. */
 export function deliveryReminderRequestView(body){
-    if(typeof body!=='string'||body.length>10000)return null;
+    if(typeof body!=='string'||body.length>16000)return null;
     let value;try{value=JSON.parse(body);}catch{return null;}
-    if(!plain(value)||Object.keys(value).sort().join(',')!=='expectedRevision,operationId,registrationIds,retryRejected'||!Number.isSafeInteger(value.expectedRevision)||value.expectedRevision<0
+    if(!plain(value)||!['expectedRevision,operationId,registrationIds,retryRejected','expectedAccessRevisions,expectedRevision,operationId,registrationIds,retryRejected'].includes(Object.keys(value).sort().join(','))||!Number.isSafeInteger(value.expectedRevision)||value.expectedRevision<0
       ||!/^[A-Za-z0-9_-]{32,128}$/u.test(value.operationId??'')||typeof value.retryRejected!=='boolean'||!Array.isArray(value.registrationIds)||!value.registrationIds.length||value.registrationIds.length>100
-      ||new Set(value.registrationIds).size!==value.registrationIds.length||value.registrationIds.some(id=>!/^[A-Za-z0-9_-]{43}$/u.test(id)))return null;
+      ||new Set(value.registrationIds).size!==value.registrationIds.length||value.registrationIds.some(id=>!/^[A-Za-z0-9_-]{43}$/u.test(id))
+      ||Object.hasOwn(value,'expectedAccessRevisions')&&!validAccessRevisions(value.expectedAccessRevisions,value.registrationIds))return null;
     return{body,id:value.operationId,ids:[...value.registrationIds],revision:value.expectedRevision};
 }
 export function createReminderMutations({request,revision,operationId=()=>crypto.randomUUID().replaceAll('-','')}){
@@ -145,9 +149,9 @@ export function createReminderMutations({request,revision,operationId=()=>crypto
   }
   return Object.freeze({
     get pending(){return pending!==null;},get body(){return pending?.body??null;},get id(){return pending?.id??null;},
-    async run({registrationIds,retryRejected=false}){
+    async run({registrationIds,retryRejected=false,expectedAccessRevisions}){
       if(pending||busy)throw new Error('请先核对原寄送，不会另建提醒。');
-      const body=JSON.stringify({registrationIds,retryRejected,expectedRevision:revision(),operationId:operationId()}),operation=deliveryReminderRequestView(body);
+      const body=JSON.stringify({registrationIds,retryRejected,expectedRevision:revision(),operationId:operationId(),...(expectedAccessRevisions===undefined?{}:{expectedAccessRevisions})}),operation=deliveryReminderRequestView(body);
       if(!operation)throw new Error('请重新读取提醒名单，再选择收件人。');pending=operation;return perform(false);
     },
     restore(body){if(pending||busy){if(pending?.body===body)return;throw new Error('原提醒尚待核对。');}const value=deliveryReminderRequestView(body);if(!value)throw new Error('本机提醒记录无效，请保留原记录并联系主办方。');pending=value;},

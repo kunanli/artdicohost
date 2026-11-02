@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, hkdfSync, randomBytes } from 'node:crypto';
 import { createRegistrationService } from '../functions/registration-api/service.mjs';
 import { admissionView } from '../functions/registration-api/admissions.mjs';
 import { createAdmissionsApi } from '../functions/registration-admin/admissions-handler.mjs';
@@ -254,7 +254,19 @@ test('receipt capability is stable, bounded, purpose separated and contains no p
   let now = Date.parse('2026-10-21T00:00:00Z'); const id = 'a'.repeat(43), expiry = now + 10_000;
   const tokens = createConfirmationTokens({ tokenSecret: SECRET, eventId: EVENT, expiresAt: expiry, clock: () => now });
   const first = tokens.issue(id); assert.equal(tokens.issue(id).receiptToken, first.receiptToken);
-  assert.deepEqual(tokens.verify(first.receiptToken), { registrationId: id, expiresAt: new Date(expiry).toISOString() });
+  assert.deepEqual(tokens.verify(first.receiptToken), { registrationId: id, expiresAt: new Date(expiry).toISOString(), accessRevision: 0 });
+  assert.equal(Object.hasOwn(JSON.parse(Buffer.from(first.receiptToken.split('.')[1], 'base64url')), 'accessRevision'), false, 'revision zero retains the legacy capability bytes');
+  const corrected = tokens.issue(id, 1);
+  assert.notEqual(corrected.receiptToken, first.receiptToken);
+  assert.equal(tokens.issue(id, 1).receiptToken, corrected.receiptToken);
+  assert.deepEqual(tokens.verify(corrected.receiptToken), { registrationId: id, expiresAt: new Date(expiry).toISOString(), accessRevision: 1 });
+  const key = Buffer.from(hkdfSync('sha256', Buffer.from(SECRET), Buffer.from(EVENT), Buffer.from('artdico-registration-confirmation-v1'), 32));
+  for (const value of [-1, 0.5, null, '1', Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => tokens.issue(id, value));
+    const payload = Buffer.from(JSON.stringify({ eventId: EVENT, registrationId: id, expiresAt: expiry, purpose: 'artdico-registration-confirmation-v1', accessRevision: value })).toString('base64url');
+    const unsigned = 'c1.' + payload;
+    assert.equal(tokens.verify(unsigned + '.' + createHmac('sha256', key).update(unsigned).digest('base64url')), null);
+  }
   assert.equal(tokens.verify(first.receiptToken.replace('c1.', 'r1.')), null);
   assert.equal(tokens.verify(first.receiptToken.slice(0, -1) + (first.receiptToken.endsWith('a') ? 'b' : 'a')), null);
   assert.equal(createConfirmationTokens({ tokenSecret: SECRET, eventId: 'other-event', expiresAt: expiry, clock: () => now }).verify(first.receiptToken), null);

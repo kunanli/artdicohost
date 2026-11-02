@@ -2,7 +2,7 @@ import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { createHash, generateKeyPairSync } from 'node:crypto';
+import { createHash, createHmac, generateKeyPairSync, hkdfSync } from 'node:crypto';
 import { validateSigningIdentity, buildAppleWalletPass } from '../functions/apple-wallet/pkpass.mjs';
 import { createAppleWalletService, WALLET_CONFIG_FIELDS } from '../functions/apple-wallet/service.mjs';
 import { createAppleWalletApi } from '../functions/apple-wallet/handler.mjs';
@@ -83,6 +83,32 @@ test('barcode is a separate bounded purpose, rechecks current admission and reve
   for (const value of ['pending_review', 'rejected', 'waitlisted', 'withdrawn']) { status = value; assert.deepEqual(await wallet.verify({ token: validityToken }), { valid: false }); }
   status = 'confirmed';
   now += 20 * 86400000; assert.deepEqual(await wallet.verify({ token: validityToken }), { valid: false });
+});
+
+test('email corrections invalidate old and legacy Wallet barcodes and an access change during signing returns no pass', async () => {
+  let revision = 0;
+  const wallet = service({ authorize: async () => ({ ...record, accessRevision: revision }),
+    authorizedRegistration: async () => ({ ...record, accessRevision: revision }) });
+  const original = await wallet.download({ receiptToken: token });
+  assert.equal(original.outcome, 'issued');
+  const barcode = result => JSON.parse(passFiles(result.data).get('pass.json')).barcodes[0].message.split('/').at(-1);
+  const originalToken = barcode(original), originalClaims = JSON.parse(Buffer.from(originalToken.split('.')[0], 'base64url'));
+  assert.equal(originalClaims.accessRevision, 0);
+  const key = Buffer.from(hkdfSync('sha256', Buffer.from(secret), Buffer.alloc(0), Buffer.from('artdico/apple-wallet-verification-v1'), 32));
+  const signed = claims => { const payload = Buffer.from(JSON.stringify(claims)).toString('base64url'); return payload + '.' + createHmac('sha256', key).update(payload).digest('base64url'); };
+  const { accessRevision: omitted, ...legacyClaims } = originalClaims, legacyToken = signed(legacyClaims);
+  assert.equal((await wallet.verify({ token: legacyToken })).valid, true, 'an unchanged person keeps the existing six-field barcode');
+  revision = 1;
+  assert.deepEqual(await wallet.verify({ token: originalToken }), { valid: false });
+  assert.deepEqual(await wallet.verify({ token: legacyToken }), { valid: false });
+  const corrected = await wallet.download({ receiptToken: token });
+  assert.equal(corrected.outcome, 'issued');
+  assert.equal((await wallet.verify({ token: barcode(corrected) })).valid, true);
+  for (const value of [-1, null, '1', 0.5]) assert.deepEqual(await wallet.verify({ token: signed({ ...originalClaims, accessRevision: value }) }), { valid: false });
+  assert.deepEqual(await wallet.verify({ token: signed({ ...originalClaims, accessRevision: 1, unexpected: true }) }), { valid: false });
+  assert.deepEqual(await service({ authorize: async () => ({ ...record, accessRevision: 1 }),
+    authorizedRegistration: async () => ({ ...record, accessRevision: 2 }) }).download({ receiptToken: token }), { outcome: 'inactive' });
+  assert.deepEqual(await service({ authorize: async () => ({ ...record, accessRevision: null }) }).download({ receiptToken: token }), { outcome: 'invalid' });
 });
 
 test('encrypted bundle loader is refreshed, enabled stays trusted outside the bundle, and load failure never uses stale credentials', async () => {

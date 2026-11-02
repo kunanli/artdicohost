@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,createHmac,hkdfSync} from 'node:crypto';
 import {peopleRuntimeFixture} from './helpers/people-runtime-fixture.mjs';
 const op=()=>randomBytes(24).toString('base64url');
 async function body(response,status=200){const value=await response.json();assert.equal(response.status,status,JSON.stringify(value));return value;}
@@ -143,4 +143,39 @@ test('canonical metadata preserves outreach and review-only boundaries outside t
  const outreach=await f.app.intentService.read({actor:f.users.find(user=>user.username==='outreach')});assert.equal(outreach.personGroups.length,1);assert.equal(outreach.personGroups[0].admissionStatus,null);
  const review=await f.app.registrationService.getAdmissions({actor:f.users.find(user=>user.username==='reviewer')});assert.equal(review.personGroups.length,1);assert.equal(review.personGroups[0].roles,null);assert.deepEqual(review.personGroups[0].contactIds,[]);assert.equal(review.personGroups[0].primaryContactId,null);assert.ok(review.personGroups[0].primaryKey.startsWith('registration:'));
  const owner=await f.app.registrationService.getAdmissions({actor:f.users[0]});assert.deepEqual(owner.personGroups[0].roles,['guest','speaker']);
+});
+
+async function correctProfile(f,id,email){const detail=await f.app.reviewStore.detail(id);return f.app.reviewStore.saveProfile(id,detail.revision,op(),Object.fromEntries(['name','email','organization','position','city','wechat','phone'].map(key=>[key,key==='email'?email:detail.registration.fields[key]??''])),f.users[0].id);}
+test('merged correction access sums never reset when the primary changes and later local corrections increment the same person scope',async()=>{
+ for(const bothCorrected of [false,true]){
+  const f=await peopleRuntimeFixture(),headers=await f.login(),a=await f.seedPublic({name:'合成更正甲',email:'a.original@example.invalid'}),b=await f.seedPublic({name:'合成更正乙',email:'b.original@example.invalid'}),aid=a.reference_code,bid=b.reference_code;
+  await f.approvePublic(aid,{headers});await f.approvePublic(bid,{headers});
+  await correctProfile(f,aid,'a.corrected@example.invalid');if(bothCorrected)await correctProfile(f,bid,'b.corrected@example.invalid');
+  const priorA=await f.app.confirmationService.staffConfirmationLink({actor:f.users[0],registrationId:aid}),priorB=await f.app.confirmationService.staffConfirmationLink({actor:f.users[0],registrationId:bid});
+  const png='iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFElEQVR4nGN0KFjAwMDAxMDAgKAAGOQBVgs9CEsAAAAASUVORK5CYII=';
+  await f.app.groupService.replace({expectedRevision:0,contentType:'image/png',dataBase64:png,expiresAt:'2026-10-21T10:00:00.000Z'},f.users[0]);
+  const oldAGroup=(await f.app.confirmationService.confirmation({receiptToken:priorA.receiptToken})).groupInvite,oldBGroup=(await f.app.confirmationService.confirmation({receiptToken:priorB.receiptToken})).groupInvite;
+  const groupToken=grant=>new URL(grant.qrImageUrl).pathname.split('/').at(-1);
+  const validity=(id,accessRevision)=>{const payload=Buffer.from(JSON.stringify({v:1,purpose:'wallet-validity',eventId:'ggj-cn-2026',registrationId:id,issuedAt:Date.parse('2026-10-21T09:00:00Z'),expiresAt:Date.parse('2026-12-05T23:59:59+08:00'),accessRevision})).toString('base64url'),key=Buffer.from(hkdfSync('sha256',Buffer.from('synthetic-people-registration-token-secret-123456'),Buffer.alloc(0),Buffer.from('artdico/apple-wallet-verification-v1'),32));return payload+'.'+createHmac('sha256',key).update(payload).digest('base64url');};
+  const oldAValidity=validity(aid,1),oldBValidity=validity(bid,bothCorrected?1:0);assert.equal((await f.app.walletService.verify({token:oldAValidity})).valid,true);assert.equal((await f.app.walletService.verify({token:oldBValidity})).valid,true);
+
+  assert.equal((await f.app.confirmationService.authorize({receiptToken:priorA.receiptToken})).accessRevision,1);
+  const p=await preview(f,headers,['registration:'+aid,'registration:'+bid]),input=write(p);input.primaryKey='registration:'+bid;
+  await request(f,headers,input);
+  for(const grant of [oldAGroup,oldBGroup])await assert.rejects(f.app.groupService.publicImage(groupToken(grant)),error=>error.code==='GROUP_INVITE_NOT_FOUND');
+  assert.equal((await f.app.walletService.verify({token:oldAValidity})).valid,false);assert.equal((await f.app.walletService.verify({token:oldBValidity})).valid,false);
+  await assert.rejects(f.app.confirmationService.authorize({receiptToken:a.confirmation.receiptToken}),error=>error.code==='CONFIRMATION_NOT_FOUND');
+  await assert.rejects(f.app.confirmationService.authorize({receiptToken:b.confirmation.receiptToken}),error=>error.code==='CONFIRMATION_NOT_FOUND');
+  const newB=await f.app.confirmationService.staffConfirmationLink({actor:f.users[0],registrationId:bid});
+  assert.equal((await f.app.confirmationService.authorize({receiptToken:newB.receiptToken})).accessRevision,bothCorrected?2:1);
+  if(bothCorrected)await assert.rejects(f.app.confirmationService.authorize({receiptToken:priorB.receiptToken}),error=>error.code==='CONFIRMATION_NOT_FOUND');
+  if(bothCorrected)await assert.rejects(f.app.confirmationService.authorize({receiptToken:priorA.receiptToken}),error=>error.code==='CONFIRMATION_NOT_FOUND');else {const retired=await f.app.confirmationService.confirmation({receiptToken:priorA.receiptToken});assert.equal(retired.admission.status,'withdrawn');assert.equal(retired.attendee.name,'');assert.equal(retired.groupInvite,null);assert.equal(retired.wallet.ready,false);}
+  const newGroup=(await f.app.confirmationService.confirmation({receiptToken:newB.receiptToken})).groupInvite;assert.ok(await f.app.groupService.publicImage(groupToken(newGroup)));const currentValidity=validity(bid,bothCorrected?2:1);assert.equal((await f.app.walletService.verify({token:currentValidity})).valid,true);
+  const second=await correctProfile(f,bid,'b.second@example.invalid');
+  await assert.rejects(f.app.groupService.publicImage(groupToken(newGroup)),error=>error.code==='GROUP_INVITE_NOT_FOUND');assert.equal((await f.app.walletService.verify({token:currentValidity})).valid,false);assert.equal(second.accessRevision,bothCorrected?2:1,'immutable receipt retains local correction revision');
+  await assert.rejects(f.app.confirmationService.authorize({receiptToken:newB.receiptToken}),error=>error.code==='CONFIRMATION_NOT_FOUND');
+  const current=await f.app.confirmationService.staffConfirmationLink({actor:f.users[0],registrationId:bid});assert.equal((await f.app.confirmationService.authorize({receiptToken:current.receiptToken})).accessRevision,bothCorrected?3:2);
+  const secondary=await body(await f.app.handle(f.request('/api/admin/people/registrations/'+aid,{headers})));assert.equal(secondary.registration.profileTargetId,bid);assert.equal(secondary.registration.fields.email,'b.second@example.invalid');
+  const direct=await f.app.handle(f.request('/api/admin/registrations/'+aid+'/profile',{method:'PATCH',headers,body:{expectedRevision:(await f.app.reviewStore.detail(aid)).revision,operationId:op(),fields:second.fields}}));assert.equal(direct.status,409);
+ }
 });

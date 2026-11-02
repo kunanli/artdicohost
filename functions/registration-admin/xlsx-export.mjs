@@ -110,13 +110,14 @@ export function registrationWorkbook({ registrations, admissions, arrangements =
     }) }];
   if (includeArrangements) sheets.push({ name: '当前参与职责与安排', headers: ['报名编号', '姓名', '来源联系人编号', '实际参与角色', '本人实际回复', '筹备负责人', '场次与时间', '逐场次职责', '展位与组织', '已关联参与组织与成员职责', '联系人当前身份', '联系人原始身份／意向'],
     rows: registrations.map(record => { const contact = linkedContacts.get(record.id); return [record.referenceCode, record.fields.name, contact?.id ?? '', ...arrangementValues(contact, arrangements.content), organizationMembershipValue(contact, arrangements.content), list(contact?.profile?.categories).join(' / '), sourceCategoryValue(contact)].map(value); }) });
-  if (includeAnswers) sheets.push(answerSheet('已保存原始回答', registrations, includeContact, record => record.fields, record => record.referenceCode));
+  if (includeAnswers) sheets.push(answerSheet('已保存原始回答', registrations, includeContact, record => record.originalFields ?? record.fields, record => record.referenceCode));
   sheets.push({ name: '资料说明', headers: ['项目', '说明'], rows: [
     ['导出范围', '仅当前明确筛选的已保存报名；包含撤回及取消状态，除非主动按状态筛选。'], ['导出记录数', registrations.length], ['导出时间 UTC', exportedAt],
     ['审核修订（审计后）', reviewRevision + 1], ['报名／名额修订', applicationRevision], ['联系人修订', sourceRevisions.contacts ?? '未读取'], ['内容修订', sourceRevisions.content ?? '未读取'],
     ['联络字段', includeContact ? '主动选择包含邮箱／微信。' : '未包含结构化邮箱／微信字段。'], ['完整回答', includeAnswers ? '主动选择已保存原始回答；自由文本可能包含联络信息，分享前仍须核对。' : '未包含完整回答和内部长备注。'],
     ['参会状态', 'pending_review=申请待审核，无名额；rejected=申请未通过，无名额；confirmed=确认名额；waitlisted=已核准候补，尚未确认名额；withdrawn=撤回／取消。内部审核意见、住宿、实际回复及场次职责分别记录，不互相推断。'],
     ['名额索引状态', '保留名额日志的原状态；若审核已撤回而名额释放待协调，有效参会状态仍为 withdrawn。'],
+    ['资料更正', '报名与参会表使用工作人员已保存的当前更正；已保存原始回答表保留首次提交，不以更正值冒充原件。'],
     ['角色与原始答案', '实际角色来自独立筹备安排。原填写身份／意向不会因角色调整被改写；团队关联不代表额外人数。'],
     ['学生与当前身份', 'student 表示学生；报名原填写身份不因联系人当前身份编辑而改变。联系人当前身份与原始身份／意向分别导出。'],
     ['快照范围', '报名与名额修订须一致；联系人及内容修订独立记录，不宣称跨日志原子事务。'],

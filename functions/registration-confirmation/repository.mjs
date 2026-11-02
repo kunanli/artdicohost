@@ -15,10 +15,12 @@ const exact = (value, keys) => value !== null && typeof value === 'object' && !A
 const at = value => typeof value === 'string' && parseTimestamp(value) !== null && new Date(value).toISOString() === value;
 const fail = () => { throw new ConfirmationStorageError(); };
 export class ConfirmationStorageError extends Error { constructor() { super('Confirmation storage is unavailable.'); this.code = 'CONFIRMATION_UNAVAILABLE'; } }
-export const confirmationNoticeId = (eventId, registrationId, kind = 'registration') => 'c_' + createHash('sha256').update(eventId + '\0' + registrationId + '\0' + kind).digest('hex');
+export const confirmationNoticeId = (eventId, registrationId, kind = 'registration', accessRevision = 0, recipientDigest = '') => 'c_' + createHash('sha256').update(eventId + '\0' + registrationId + '\0' + kind + (accessRevision > 0 ? '\0' + accessRevision + '\0' + recipientDigest : '')).digest('hex');
 export const confirmationRequestHash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const validConfirmationOperation = value => typeof value === 'string' && OP.test(value);
 export const formalConfirmationKind = kind => ['registration', 'promotion'].includes(kind);
+const scopeKeys = ['accessRevision', 'recipientDigest'];
+const validScope = value => exact(value, scopeKeys) && Number.isSafeInteger(value.accessRevision) && value.accessRevision >= 0 && HASH.test(value.recipientDigest ?? '');
 const additionalKind = kind => ['application_received', 'pre_event_reminder'].includes(kind);
 
 // A confirmed message has one durable identity across intake and promotion.
@@ -34,19 +36,22 @@ function initial(eventId) { return { schemaVersion: 1, eventId, revision: 0, set
 function apply(state, audit) {
   const d = audit.details;
   if (audit.action === 'reserve') {
-    if (!exact(d, ['registrationId', 'kind', 'admissionStatus', 'admissionRevision', 'retryRejected']) || !ID.test(d.registrationId ?? '')
+    if (!(exact(d, ['registrationId', 'kind', 'admissionStatus', 'admissionRevision', 'retryRejected']) || exact(d, ['registrationId', 'kind', 'admissionStatus', 'admissionRevision', 'retryRejected', ...scopeKeys]) && validScope({ accessRevision: d.accessRevision, recipientDigest: d.recipientDigest })) || !ID.test(d.registrationId ?? '')
       || !formalConfirmationKind(d.kind) && !additionalKind(d.kind)
       || !(d.kind === 'application_received' ? ['pending_review'] : d.kind === 'pre_event_reminder' ? ['confirmed'] : ['confirmed', 'waitlisted']).includes(d.admissionStatus)
       || !Number.isSafeInteger(d.admissionRevision) || d.admissionRevision < 0 || typeof d.retryRejected !== 'boolean') fail();
     if (formalConfirmationKind(d.kind) && d.kind !== canonicalConfirmationKind(state, d.registrationId, d.admissionStatus)) fail();
-    const id = confirmationNoticeId(state.eventId, d.registrationId, d.kind), existing = state.notices.find(n => n.id === id);
+    const id = confirmationNoticeId(state.eventId, d.registrationId, d.kind, d.accessRevision ?? 0, d.recipientDigest), existing = state.notices.find(n => n.id === id);
     if (existing && (!d.retryRejected || existing.status !== 'rejected' || existing.attempt >= 5 || existing.admissionStatus !== d.admissionStatus)) fail();
     if (formalConfirmationKind(d.kind) && d.admissionStatus === 'confirmed' && state.notices.some(item => item.registrationId === d.registrationId
-      && formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' && item.id !== id)) fail();
+      && formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' && (item.accessRevision ?? 0) === (d.accessRevision ?? 0) && item.id !== id)) fail();
     if (!existing && state.notices.length >= 2000) fail();
+    const priorAttempts = state.notices.filter(item => item.registrationId === d.registrationId && (formalConfirmationKind(d.kind) ? formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' : item.kind === d.kind)).reduce((total, item) => total + item.attempt, 0);
+    if (priorAttempts >= 5) fail();
     const notice = { id, registrationId: d.registrationId, kind: d.kind, status: 'reserved', admissionStatus: d.admissionStatus,
       admissionRevision: d.admissionRevision, createdAt: existing?.createdAt ?? audit.at, updatedAt: audit.at,
-      actorId: audit.actorId, attempt: (existing?.attempt ?? 0) + 1 };
+      actorId: audit.actorId, attempt: (existing?.attempt ?? 0) + 1,
+      ...(Object.hasOwn(d, 'accessRevision') ? { accessRevision: d.accessRevision, recipientDigest: d.recipientDigest } : {}) };
     if (existing) state.notices.splice(state.notices.indexOf(existing), 1, notice); else state.notices.push(notice);
   } else if (audit.action === 'result') {
     if (!exact(d, ['noticeId', 'status']) || !EMAIL_STATUSES.slice(1).includes(d.status)) fail();
@@ -60,11 +65,13 @@ function apply(state, audit) {
     state.operations.push({ operationId: d.operationId, requestHash: d.requestHash, actorId: audit.actorId,
       action: 'settings', at: audit.at, status: 'completed', registrationIds: [], retryRejected: false, results: [] });
   } else if (['dispatch_started', 'reminder_dispatch_started'].includes(audit.action)) {
-    if (!exact(d, ['operationId', 'requestHash', 'registrationIds', 'retryRejected']) || !OP.test(d.operationId ?? '') || !HASH.test(d.requestHash ?? '')
+    if (!(exact(d, ['operationId', 'requestHash', 'registrationIds', 'retryRejected']) || exact(d, ['operationId', 'requestHash', 'registrationIds', 'retryRejected', 'recipientScopes'])) || !OP.test(d.operationId ?? '') || !HASH.test(d.requestHash ?? '')
       || !Array.isArray(d.registrationIds) || !d.registrationIds.length || d.registrationIds.length > MAX_CONFIRMATION_BATCH
       || new Set(d.registrationIds).size !== d.registrationIds.length || d.registrationIds.some(id => !ID.test(id))
       || typeof d.retryRejected !== 'boolean' || state.operations.some(op => op.operationId === d.operationId)) fail();
+    if (Object.hasOwn(d, 'recipientScopes') && (!exact(d.recipientScopes, d.registrationIds) || d.registrationIds.some(id => !validScope(d.recipientScopes[id])))) fail();
     state.operations.push({ operationId: d.operationId, requestHash: d.requestHash, actorId: audit.actorId,
+      ...(d.recipientScopes ? { recipientScopes: structuredClone(d.recipientScopes) } : {}),
       action: audit.action === 'dispatch_started' ? 'dispatch' : 'reminder_dispatch', at: audit.at, status: 'started', registrationIds: [...d.registrationIds], retryRejected: d.retryRejected, results: [] });
   } else if (['dispatch_completed', 'reminder_dispatch_completed'].includes(audit.action)) {
     if (!exact(d, ['operationId', 'results']) || !Array.isArray(d.results)) fail();

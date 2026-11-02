@@ -91,7 +91,34 @@ test('restoring a pending reminder preserves its raw request and never allocates
   const body=JSON.stringify({registrationIds:[id],retryRejected:false,expectedRevision:7,operationId}),calls=[];
   const controller=createReminderMutations({revision:()=>100,operationId:()=>{throw new Error('must not allocate');},request:async(path,options)=>{calls.push({path,...options});return reminderResult({outcome:'replayed'});}});
   controller.restore(body);assert.equal(controller.body,body);await controller.lookup();assert.deepEqual(calls,[{path:'/api/admin/registration-confirmation/reminder-operation/'+operationId,method:'GET'}]);
-  for(const value of['',JSON.stringify({registrationIds:[id]}),JSON.stringify({registrationIds:[id,id],retryRejected:false,expectedRevision:7,operationId}),body+' '.repeat(10001)])assert.equal(deliveryReminderRequestView(value),null);
+  for(const value of['',JSON.stringify({registrationIds:[id]}),JSON.stringify({registrationIds:[id,id],retryRejected:false,expectedRevision:7,operationId}),body+' '.repeat(16001)])assert.equal(deliveryReminderRequestView(value),null);
+});
+
+test('preview projections preserve bounded recipient revisions and normalize legacy rows without retaining private data',()=>{
+  for(const [view,preview]of[[deliveryReminderPreviewView,reminderPreview],[deliveryConfirmationPreviewView,formalPreview]]){
+    const value=preview();assert.equal(view(value).rows[0].accessRevision,0);
+    assert.equal(view({...value,rows:[{...value.rows[0],accessRevision:3}]}).rows[0].accessRevision,3);
+    for(const accessRevision of [-1,null,'3',0.5])assert.equal(view({...value,rows:[{...value.rows[0],accessRevision}]}),null);
+    assert.equal(view({...value,rows:[{...value.rows[0],reason:'HISTORICAL_DELIVERY_UNKNOWN',eligible:false}]}).rows[0].eligible,false);
+  }
+});
+
+test('new formal and reminder requests freeze exact selected recipient revisions and restored unknowns only GET the original operation',async()=>{
+  for(const [create,result]of[[createConfirmationMutations,()=>formalResult()],[createReminderMutations,()=>reminderResult()]]){
+    const calls=[],revisions={[id]:2};const controller=create({revision:()=>7,operationId:()=>operationId,request:async(path,options)=>{calls.push({path,...options});if(options.method==='POST')throw Object.assign(Error('lost ACK'),{status:503});return result();}});
+    await assert.rejects(controller.run({registrationIds:[id],expectedAccessRevisions:revisions}));const body=controller.body;
+    revisions[id]=99;assert.equal(JSON.parse(body).expectedAccessRevisions[id],2);
+    controller.clear();controller.restore(body);await controller.lookup();
+    assert.equal(calls.length,2);assert.equal(calls[1].method,'GET');assert.equal(calls[1].body,undefined);assert.equal(controller.pending,false);
+  }
+});
+
+test('scoped pending requests require an exact revision map and accept a full 100-person batch within the HTTP limit',()=>{
+  const original={registrationIds:[id],retryRejected:false,expectedRevision:7,operationId};
+  assert.ok(deliveryReminderRequestView(JSON.stringify(original)));
+  for(const expectedAccessRevisions of [null,[],{}, {[id]:-1},{[id]:null},{[id]:'1'},{[id]:0.5},{[id]:1,extra:0},{['n'.repeat(43)]:1}])assert.equal(deliveryReminderRequestView(JSON.stringify({...original,expectedAccessRevisions})),null);
+  const ids=Array.from({length:100},(_,index)=>String(index).padStart(43,'0')),expectedAccessRevisions=Object.fromEntries(ids.map(value=>[value,Number.MAX_SAFE_INTEGER]));
+  const body=JSON.stringify({...original,registrationIds:ids,expectedAccessRevisions});assert.ok(body.length>10000&&Buffer.byteLength(body)<16*1024);assert.ok(deliveryReminderRequestView(body));
 });
 
 test('unknown reminder results and missing original operations keep the original request locked',async()=>{

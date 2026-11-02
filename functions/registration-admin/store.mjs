@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { RegistrationAdminError, isRegistrationAdminError } from './errors.mjs';
 import { validateGeneralApplicationFields } from '../../shared/general-application.mjs';
 
@@ -26,6 +27,26 @@ function safeText(value, max, optional = true) {
   if (!optional && !text) fail('INVALID_REVIEW');
   return text;
 }
+export const REGISTRATION_PROFILE_FIELDS = Object.freeze({ name: 120, email: 254, organization: 300, position: 200, city: 160, wechat: 150, phone: 150 });
+const OPERATION = /^[A-Za-z0-9_-]{32,128}$/u;
+export function registrationProfileFields(value) {
+  if (!ownValues(value) || Object.keys(value).sort().join(',') !== Object.keys(REGISTRATION_PROFILE_FIELDS).sort().join(',')) fail('INVALID_REQUEST');
+  const fields = {};
+  for (const [key, maximum] of Object.entries(REGISTRATION_PROFILE_FIELDS)) {
+    const input = value[key];
+    if (typeof input !== 'string' || !input.isWellFormed() || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(input) || [...input].length > maximum) fail('INVALID_REQUEST');
+    fields[key] = input.normalize('NFC').trim();
+  }
+  if (!fields.name || fields.email && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(fields.email)) fail('INVALID_REQUEST');
+  return fields;
+}
+function profileFrom(record) { return Object.fromEntries(Object.keys(REGISTRATION_PROFILE_FIELDS).map(key => [key, record.fields[key] ?? ''])); }
+function accessTotal(state, ids) { const total = ids.reduce((sum, id) => sum + (state.profileCorrections?.[id]?.accessRevision ?? 0), 0); if (!Number.isSafeInteger(total) || total < 0) fail('STORAGE_UNAVAILABLE'); return total; }
+function profileReceipt(entry, outcome = 'replayed') {
+  return { outcome, operationId: entry.metadata.operationId, registrationId: entry.registrationId, revision: entry.revision,
+    fields: clone(entry.metadata.fields), accessRevision: entry.metadata.accessRevision };
+}
+
 function date(value) {
   if (value === '') return '';
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(value) || !Number.isFinite(Date.parse(value + 'T00:00:00.000Z')) || new Date(value + 'T00:00:00.000Z').toISOString().slice(0, 10) !== value) fail('INVALID_REVIEW');
@@ -129,8 +150,8 @@ function validExportMetadata(meta) {
 }
 
 /** Independent review journal; accepted applications remain immutable and never get overwritten by staff. */
-export function createRegistrationReviewStore({ journal, loadRegistrations, eventId, clock = Date.now } = {}) {
-  if (!journal || !['read', 'commit'].every(name => typeof journal[name] === 'function') || typeof loadRegistrations !== 'function' || typeof eventId !== 'string' || !EVENT.test(eventId) || typeof clock !== 'function') throw new TypeError('报名审核依赖未配置。');
+export function createRegistrationReviewStore({ journal, loadRegistrations, loadRegistration, eventId, clock = Date.now } = {}) {
+  if (loadRegistration !== undefined && typeof loadRegistration !== 'function' || !journal || !['read', 'commit'].every(name => typeof journal[name] === 'function') || typeof loadRegistrations !== 'function' || typeof eventId !== 'string' || !EVENT.test(eventId) || typeof clock !== 'function') throw new TypeError('报名审核依赖未配置。');
   const initial = () => ({ schemaVersion: 1, kind: 'registration_reviews', eventId, revision: 0, reviews: {}, audit: [] });
   const at = () => { const now = clock(); if (!Number.isSafeInteger(now) || now < 0) fail('STORAGE_UNAVAILABLE'); return new Date(now).toISOString(); };
   async function guarded(action) {
@@ -140,7 +161,7 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
   function reviewState(stored) {
     if (!stored) fail('STORAGE_UNAVAILABLE');
     const state = stored.value ?? initial();
-    if (!ownValues(state) || Object.keys(state).sort().join(',') !== 'audit,eventId,kind,reviews,revision,schemaVersion'
+    if (!ownValues(state) || !['audit,eventId,kind,reviews,revision,schemaVersion', 'audit,eventId,kind,profileCorrections,reviews,revision,schemaVersion'].includes(Object.keys(state).sort().join(','))
       || state.schemaVersion !== 1 || state.kind !== 'registration_reviews' || state.eventId !== eventId || !Number.isSafeInteger(state.revision) || state.revision < 0
       || !ownValues(state.reviews) || !Array.isArray(state.audit) || state.audit.length > MAX_REGISTRATION_REVIEW_AUDIT || state.revision !== state.audit.length
       || stored.cursor?.version !== state.revision
@@ -152,18 +173,32 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
         || !['request', 'retention', 'duplicate', 'other'].includes(review.deletionRequested.reason) || review.deletionRequested.status !== 'pending'
         || !validTime(review.deletionRequested.requestedAt) || typeof review.deletionRequested.requestedBy !== 'string' || !ID.test(review.deletionRequested.requestedBy))) fail('STORAGE_UNAVAILABLE');
     }
+    const reconstructed = {}, operations = new Set();
+    if (Object.hasOwn(state, 'profileCorrections') && !ownValues(state.profileCorrections)) fail('STORAGE_UNAVAILABLE');
     let previousAt = '';
     for (let index = 0; index < state.audit.length; index++) {
       const entry = state.audit[index];
       if (!ownValues(entry) || Object.keys(entry).sort().join(',') !== 'action,actor,at,metadata,registrationId,revision'
-        || typeof entry.actor !== 'string' || !ID.test(entry.actor) || !validTime(entry.at) || entry.at < previousAt || entry.revision !== index + 1 || !['update_review', 'export', 'deletion_requested'].includes(entry.action)
-        || entry.registrationId !== null && !Object.hasOwn(state.reviews, entry.registrationId) || !ownValues(entry.metadata)) fail('STORAGE_UNAVAILABLE');
+        || typeof entry.actor !== 'string' || !ID.test(entry.actor) || !validTime(entry.at) || entry.at < previousAt || entry.revision !== index + 1 || !['update_review', 'export', 'deletion_requested', 'profile_corrected'].includes(entry.action)
+        || entry.registrationId !== null && !Object.hasOwn(state.reviews, entry.registrationId) && entry.action !== 'profile_corrected' || !ownValues(entry.metadata)) fail('STORAGE_UNAVAILABLE');
       const meta = entry.metadata;
       if (entry.action === 'update_review' && (Object.keys(meta).join(',') !== 'changedFields' || !Array.isArray(meta.changedFields) || meta.changedFields.some(key => !REVIEW_KEYS.includes(key)) || new Set(meta.changedFields).size !== meta.changedFields.length)
         || entry.action === 'export' && (entry.registrationId !== null || !validExportMetadata(meta))
         || entry.action === 'deletion_requested' && (Object.keys(meta).join(',') !== 'reason' || !['request', 'retention', 'duplicate', 'other'].includes(meta.reason))) fail('STORAGE_UNAVAILABLE');
+      if (entry.action === 'profile_corrected') {
+        if (!RECORD_ID.test(entry.registrationId ?? '') || Object.keys(meta).sort().join(',') !== 'accessRevision,fields,operationId,previousEmailHash,requestHash'
+          || !OPERATION.test(meta.operationId ?? '') || operations.has(meta.operationId) || !/^[a-f0-9]{64}$/u.test(meta.requestHash ?? '')
+          || !/^[a-f0-9]{64}$/u.test(meta.previousEmailHash ?? '') || !Number.isSafeInteger(meta.accessRevision) || meta.accessRevision < 0) fail('STORAGE_UNAVAILABLE');
+        let fields; try { fields = registrationProfileFields(meta.fields); } catch { fail('STORAGE_UNAVAILABLE'); }
+        if (!isDeepStrictEqual(fields, meta.fields) || meta.requestHash !== hash(JSON.stringify({ actor: entry.actor, registrationId: entry.registrationId, expectedRevision: entry.revision - 1, fields }))) fail('STORAGE_UNAVAILABLE');
+        const previous = reconstructed[entry.registrationId], previousRevision = previous?.accessRevision ?? 0;
+        if (previous && hash(previous.fields.email) !== meta.previousEmailHash || meta.accessRevision !== previousRevision + (hash(fields.email) === meta.previousEmailHash ? 0 : 1)) fail('STORAGE_UNAVAILABLE');
+        operations.add(meta.operationId);
+        reconstructed[entry.registrationId] = { fields, accessRevision: meta.accessRevision, revision: entry.revision };
+      }
       previousAt = entry.at;
     }
+    if (!isDeepStrictEqual(state.profileCorrections ?? {}, reconstructed)) fail('STORAGE_UNAVAILABLE');
     return state;
   }
   async function snapshot() {
@@ -192,11 +227,29 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
         const editable = { ...review }; delete editable.deletionRequested;
         validateRegistrationReview(editable, record);
       } catch { fail('STORAGE_UNAVAILABLE'); }
-      return { ...clone(record), referenceCode: record.referenceCode ?? record.id, review: clone(review) };
+      const firstCorrection = state.audit.find(entry => entry.action === 'profile_corrected' && entry.registrationId === record.id);
+      if (firstCorrection && firstCorrection.metadata.previousEmailHash !== hash(record.fields.email ?? '')) fail('STORAGE_UNAVAILABLE');
+      const correction = state.profileCorrections?.[record.id];
+      return { ...clone(record), fields: { ...clone(record.fields), ...(correction?.fields ?? {}) },
+        ...(correction ? { originalFields: clone(record.fields), profileCorrection: { accessRevision: correction.accessRevision, revision: correction.revision } } : {}),
+        referenceCode: record.referenceCode ?? record.id, review: clone(review) };
     }).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt) || a.id.localeCompare(b.id));
     // A missing application must not silently drop a review or be re-created from its audit.
-    if (Object.keys(state.reviews).some(id => !RECORD_ID.test(id) || !seen.has(id))) fail('STORAGE_UNAVAILABLE');
+    if ([...Object.keys(state.reviews), ...Object.keys(state.profileCorrections ?? {})].some(id => !RECORD_ID.test(id) || !seen.has(id))) fail('STORAGE_UNAVAILABLE');
     return { state: clone(state), cursor: stored.cursor, registrations, applicationRevision: source.revision };
+  }
+  async function checkedProfileState(ids) {
+    const state = reviewState(await journal.read());
+    ids ??= Object.keys(state.profileCorrections ?? {});
+    const corrected = ids.filter(id => Object.hasOwn(state.profileCorrections ?? {}, id));
+    let source;
+    if (corrected.length && !loadRegistration) source = await loadRegistrations();
+    for (const id of corrected) {
+      const record = loadRegistration ? await loadRegistration(id) : source?.registrations?.find(item => item.id === id);
+      const first = state.audit.find(entry => entry.action === 'profile_corrected' && entry.registrationId === id);
+      if (!record || record.id !== id || record.eventId !== eventId || !first || first.metadata.previousEmailHash !== hash(record.fields?.email ?? '')) fail('STORAGE_UNAVAILABLE');
+    }
+    return state;
   }
   async function mutation(expectedRevision, actor, action) {
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || typeof actor !== 'string' || !ID.test(actor)) fail('INVALID_REQUEST');
@@ -247,7 +300,7 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
     async directory() { return guarded(async () => {
       const current = await snapshot();
       return { revision: current.state.revision, applicationRevision: current.applicationRevision,
-        registrations: current.registrations.map(item => ({ id: item.id, fields: {
+        registrations: current.registrations.map(item => ({ id: item.id, ...(item.profileCorrection ? { profileCorrection: clone(item.profileCorrection) } : {}), fields: {
           name: item.fields.name, organization: item.fields.organization ?? '', city: item.fields.city ?? '' },
           provenance: item.provenance.kind === 'staff_assisted' ? { kind: item.provenance.kind, sourceContactId: item.provenance.sourceContactId } : { kind: item.provenance.kind },
           inactive: item.review.status === 'withdrawn' || item.review.deletionRequested !== null })) };
@@ -264,6 +317,60 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, even
           provenance: item.provenance.kind === 'staff_assisted' ? { kind: item.provenance.kind, sourceContactId: item.provenance.sourceContactId } : { kind: item.provenance.kind },
           inactive: item.review.status === 'withdrawn' || item.review.deletionRequested !== null,
           review: { status: item.review.status, accommodationStatus: item.review.accommodationStatus } })) };
+    }); },
+    /** Trusted current projection. Original immutable record and provenance remain untouched. */
+    async projectRegistration(record, primaryId = record?.id, relatedIds = [primaryId]) { return guarded(async () => {
+      if (!RECORD_ID.test(record?.id ?? '') || !RECORD_ID.test(primaryId ?? '') || !Array.isArray(relatedIds) || relatedIds.length > 100 || !relatedIds.includes(primaryId) || new Set(relatedIds).size !== relatedIds.length || relatedIds.some(id => !RECORD_ID.test(id ?? '')) || !ownValues(record.fields)) fail('INVALID_REQUEST');
+      const state = await checkedProfileState(relatedIds), correction = state.profileCorrections?.[primaryId];
+      return { ...clone(record), fields: { ...clone(record.fields), ...(correction?.fields ?? {}) }, accessRevision: accessTotal(state, relatedIds),
+        reviewWithdrawn: Boolean(state.reviews[record.id] && (state.reviews[record.id].status === 'withdrawn' || state.reviews[record.id].deletionRequested !== null)),
+        ...(correction ? { profileCorrection: { accessRevision: correction.accessRevision, revision: correction.revision } } : {}) };
+    }); },
+    async registrationAccessState(id, relatedIds = [id]) { return guarded(async () => {
+      if (!RECORD_ID.test(id ?? '') || !Array.isArray(relatedIds) || relatedIds.length > 100 || !relatedIds.includes(id) || new Set(relatedIds).size !== relatedIds.length || relatedIds.some(value => !RECORD_ID.test(value ?? ''))) fail('INVALID_REQUEST');
+      const state = await checkedProfileState(relatedIds), review = state.reviews[id];
+      return { accessRevision: accessTotal(state, relatedIds), withdrawn: Boolean(review && (review.status === 'withdrawn' || review.deletionRequested !== null)) };
+    }); },
+    async profileScopes() { return guarded(async () => { const state = await checkedProfileState(); return clone(state.profileCorrections ?? {}); }); },
+    async profileRevision() { return guarded(async () => reviewState(await journal.read()).revision); },
+    async profileAccessRevision(id, relatedIds = [id]) { return guarded(async () => {
+      if (!RECORD_ID.test(id ?? '') || !Array.isArray(relatedIds) || relatedIds.length > 100 || !relatedIds.includes(id) || new Set(relatedIds).size !== relatedIds.length || relatedIds.some(value => !RECORD_ID.test(value ?? ''))) fail('INVALID_REQUEST');
+      const state = await checkedProfileState(relatedIds);
+      return accessTotal(state, relatedIds);
+    }); },
+    async profileOperation(id, operationId, actor) { return guarded(async () => {
+      if (!RECORD_ID.test(id ?? '') || !OPERATION.test(operationId ?? '') || !ID.test(actor ?? '')) fail('INVALID_REQUEST');
+      const state = await checkedProfileState([id]), entry = state.audit.find(item => item.action === 'profile_corrected' && item.metadata.operationId === operationId);
+      if (!entry || entry.registrationId !== id || entry.actor !== actor) fail('NOT_FOUND');
+      return profileReceipt(entry);
+    }); },
+    async saveProfile(id, expectedRevision, operationId, input, actor, verifyTarget) { return guarded(async () => {
+      if (!RECORD_ID.test(id ?? '') || !OPERATION.test(operationId ?? '') || !ID.test(actor ?? '') || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) fail('INVALID_REQUEST');
+      const fields = registrationProfileFields(input), requestHash = hash(JSON.stringify({ actor, registrationId: id, expectedRevision, fields }));
+      const current = await snapshot(), previous = current.state.audit.find(item => item.action === 'profile_corrected' && item.metadata.operationId === operationId);
+      if (previous) {
+        if (previous.actor !== actor || previous.registrationId !== id || previous.metadata.requestHash !== requestHash) fail('REVISION_CONFLICT');
+        return profileReceipt(previous);
+      }
+      if (current.state.revision !== expectedRevision) fail('REVISION_CONFLICT');
+      const record = current.registrations.find(item => item.id === id);
+      if (!record) fail('NOT_FOUND');
+      if (isDeepStrictEqual(profileFrom(record), fields)) fail('INVALID_REQUEST');
+      if (current.state.audit.length >= MAX_REGISTRATION_REVIEW_AUDIT) fail('CAPACITY_REACHED');
+      const next = clone(current.state), timestamp = at();
+      if (timestamp < (next.audit.at(-1)?.at ?? '')) fail('STORAGE_UNAVAILABLE');
+      const accessRevision = (next.profileCorrections?.[id]?.accessRevision ?? 0) + (fields.email !== record.fields.email ? 1 : 0);
+      const metadata = { operationId, requestHash, fields, accessRevision, previousEmailHash: hash(record.fields.email ?? '') };
+      const entry = { revision: next.revision + 1, actor, at: timestamp, action: 'profile_corrected', registrationId: id, metadata };
+      next.profileCorrections ??= {};
+      next.profileCorrections[id] = { fields: clone(fields), accessRevision, revision: entry.revision };
+      next.revision++; next.audit.push(entry);
+      if (Buffer.byteLength(JSON.stringify(next)) > 1024 * 1024) fail('CAPACITY_REACHED');
+      if (verifyTarget !== undefined && (typeof verifyTarget !== 'function' || await verifyTarget() !== true)) fail('REVISION_CONFLICT');
+      const committed = await journal.commit(current.cursor, next);
+      if (!isDeepStrictEqual(committed?.value, next) || committed.cursor?.version !== next.revision) fail('STORAGE_UNAVAILABLE');
+      reviewState(committed);
+      return profileReceipt(entry, 'updated');
     }); },
     async detail(id) { return guarded(async () => {
       if (typeof id !== 'string' || !ID.test(id)) fail('NOT_FOUND');

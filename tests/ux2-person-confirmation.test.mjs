@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createPersonConfirmation,personConfirmationScope,personConfirmationPolicy,validPersonConfirmationOperation} from '../src/lib/person-confirmation.mjs';
+import {createPersonConfirmation,personConfirmationScope,personConfirmationPolicy,validPersonConfirmation,validPersonConfirmationOperation} from '../src/lib/person-confirmation.mjs';
 
 const A='a'.repeat(43),B='b'.repeat(43),OP='x'.repeat(32),checkedAt='2026-11-01T09:00:00.000Z';
 const pause=()=>new Promise(resolve=>setImmediate(resolve));
@@ -8,7 +8,7 @@ async function until(check){for(let n=0;n<100;n++){if(check())return;await pause
 function fixture(){
   const controls=new Map(),root={hidden:true,querySelector(selector){if(!controls.has(selector))controls.set(selector,{textContent:'',disabled:false,listeners:new Map(),addEventListener(type,fn){this.listeners.set(type,fn);},append(){}});return controls.get(selector);}};
   const records=new Map(),listeners=new Map(),epochs=new Map(),calls=[],writes=[],gates=[],readGates=[],checks=[];
-  let user={id:'synthetic-owner',roles:['outreach','reviewer']},failWrite=false,delayWrite=false,delayRead=false,lost=false,lookupStatus='provider_accepted',lookupError=null,postError=null,deliveryUnknown=false,deliveryError=null,deliveryAccepted=false,requestGate=null;
+  let user={id:'synthetic-owner',roles:['outreach','reviewer']},failWrite=false,delayWrite=false,delayRead=false,lost=false,lookupStatus='provider_accepted',lookupError=null,postError=null,deliveryUnknown=false,deliveryError=null,deliveryAccepted=false,requestGate=null,accessRevision=0;
   const key=scope=>JSON.stringify(scope),copy=value=>structuredClone(value);
   const observed=scope=>copy(records.get(key(scope))??{revision:0,actorEpoch:epochs.get(scope.actorId)??0,record:null});
   const emit=(scope,event)=>{for(const fn of listeners.get(key(scope))??[])fn(event);};
@@ -21,14 +21,14 @@ function fixture(){
   const result=(id,operationId,lookup=false)=>({outcome:lookup?'replayed':'updated',revision:3,operationId,status:['unknown','unavailable','not_attempted'].includes(lookupStatus)?'partial':'completed',results:[{registrationId:id,status:lookupStatus}],...(lookup?{kind:'registration',checkedAt}:{})});
   async function request(path,options={}){
     calls.push({path,method:options.method??'GET',body:options.body});
-    if(path.includes('/send/')){if(requestGate)await requestGate;if(postError)throw Object.assign(Error('synthetic rejection'),{status:postError});if(lost)throw Error('synthetic lost ACK');return result(path.split('/').at(-1),JSON.parse(options.body).operationId);}
+    if(path.includes('/send/')){if(requestGate)await requestGate;if(postError||JSON.parse(options.body).expectedAccessRevision!==(accessRevision??0))throw Object.assign(Error('synthetic rejection'),{status:postError??409});if(lost)throw Error('synthetic lost ACK');return result(path.split('/').at(-1),JSON.parse(options.body).operationId);}
     if(path.includes('/operation/')){if(lookupError)throw Object.assign(Error('synthetic lookup unavailable'),{status:lookupError});const saved=[...records.values()].find(value=>value.record&&JSON.parse(value.record.value.payloadJson).operationId===path.split('/').at(-1));const id=saved?.record.value.path.split('/').at(-1)??A;return result(id,path.split('/').at(-1),true);}
     if(deliveryError)throw Object.assign(Error('synthetic delivery unavailable'),{status:deliveryError});
-    const id=path.split('/').at(-1),canSend=user?.roles.includes('outreach')&&user?.roles.includes('reviewer');return{registrationId:id,revision:2,admissionStatus:'confirmed',status:deliveryUnknown?'unknown':deliveryAccepted?'provider_accepted':'not_sent',reason:deliveryUnknown?'DELIVERY_UNKNOWN':deliveryAccepted?'ALREADY_ACCEPTED':canSend?'ELIGIBLE':'OPERATOR_PERMISSION_REQUIRED',ready:Boolean(canSend&&!deliveryUnknown&&!deliveryAccepted),canSend:Boolean(canSend),retryRejected:false,recipient:'synthetic@example.invalid'};
+    const id=path.split('/').at(-1),canSend=user?.roles.includes('outreach')&&user?.roles.includes('reviewer');return{registrationId:id,revision:2,...(accessRevision===undefined?{}:{accessRevision}),admissionStatus:'confirmed',status:deliveryUnknown?'unknown':deliveryAccepted?'provider_accepted':'not_sent',reason:deliveryUnknown?'DELIVERY_UNKNOWN':deliveryAccepted?'ALREADY_ACCEPTED':canSend?'ELIGIBLE':'OPERATOR_PERMISSION_REQUIRED',ready:Boolean(canSend&&!deliveryUnknown&&!deliveryAccepted),canSend:Boolean(canSend),retryRejected:false,recipient:'synthetic@example.invalid'};
   }
   const create=()=>createPersonConfirmation({root,request,getUser:()=>user,draftStore:store,eventId:'synthetic-event',onChecked:value=>checks.push(value)});
   const click=name=>controls.get('[data-person-confirmation-'+name+']').listeners.get('click')();
-  return{root,controls,records,writes,calls,gates,readGates,checks,store,create,click,get user(){return user;},set user(v){user=v;},set failWrite(v){failWrite=v;},set delayWrite(v){delayWrite=v;},set delayRead(v){delayRead=v;},set lost(v){lost=v;},set lookupStatus(v){lookupStatus=v;},set lookupError(v){lookupError=v;},set postError(v){postError=v;},set deliveryUnknown(v){deliveryUnknown=v;},set deliveryError(v){deliveryError=v;},set deliveryAccepted(v){deliveryAccepted=v;},set requestGate(v){requestGate=v;}};
+  return{root,controls,records,writes,calls,gates,readGates,checks,store,create,click,get user(){return user;},set user(v){user=v;},set accessRevision(v){accessRevision=v;},set failWrite(v){failWrite=v;},set delayWrite(v){delayWrite=v;},set delayRead(v){delayRead=v;},set lost(v){lost=v;},set lookupStatus(v){lookupStatus=v;},set lookupError(v){lookupError=v;},set postError(v){postError=v;},set deliveryUnknown(v){deliveryUnknown=v;},set deliveryError(v){deliveryError=v;},set deliveryAccepted(v){deliveryAccepted=v;},set requestGate(v){requestGate=v;}};
 }
 globalThis.confirm=()=>true;
 test('passive initialization exposes its exact settling promise, so explicit next can await local recovery once',async()=>{
@@ -39,8 +39,29 @@ test('durable single request ACK precedes POST; raw record has no recipient or c
   const f=fixture(),c=f.create();c.select(A);await until(()=>!f.controls.get('[data-person-confirmation-send]').disabled);
   f.delayWrite=true;f.click('send');await until(()=>f.gates.length===1);assert.equal(f.calls.filter(x=>x.method==='POST').length,0);
   f.gates[0].resolve();await until(()=>f.calls.some(x=>x.method==='POST'));await until(()=>!c.blocked);
-  const original=f.calls.find(x=>x.method==='POST');assert.equal(original.body,f.writes[0].payloadJson);assert.deepEqual(Object.keys(JSON.parse(original.body)),['expectedRevision','operationId','retryRejected']);
+  const original=f.calls.find(x=>x.method==='POST');assert.equal(original.body,f.writes[0].payloadJson);assert.deepEqual(Object.keys(JSON.parse(original.body)),['expectedRevision','operationId','retryRejected','expectedAccessRevision']);assert.equal(JSON.parse(original.body).expectedAccessRevision,0);
   assert.deepEqual(Object.keys(f.writes[0]),['path','method','payloadJson']);assert.doesNotMatch(JSON.stringify(f.writes),/synthetic@example|recipient|confirmationUrl|receiptToken/u);c.clear();
+});
+test('single send freezes the displayed recipient revision and a stale rejection refreshes without automatically sending again',async()=>{
+  const f=fixture();f.accessRevision=2;const c=f.create();await c.select(A);await until(()=>!f.controls.get('[data-person-confirmation-send]').disabled);
+  f.delayWrite=true;f.click('send');await until(()=>f.gates.length===1);f.accessRevision=3;f.gates[0].resolve();
+  await until(()=>f.calls.some(call=>call.method==='POST')&&!c.pending&&!f.controls.get('[data-person-confirmation-send]').disabled);
+  assert.equal(JSON.parse(f.calls.find(call=>call.method==='POST').body).expectedAccessRevision,2);
+  assert.equal(f.calls.filter(call=>call.method==='POST').length,1,'409 only refreshes the current recipient');
+  f.delayWrite=false;f.click('send');await until(()=>f.calls.filter(call=>call.method==='POST').length===2&&!c.pending);
+  assert.equal(JSON.parse(f.calls.filter(call=>call.method==='POST')[1].body).expectedAccessRevision,3);c.clear();
+});
+test('legacy delivery reads normalize to revision zero while pending request validation accepts only bounded old or new shapes',async()=>{
+  const f=fixture();f.accessRevision=undefined;const c=f.create();await c.select(A);await until(()=>!f.controls.get('[data-person-confirmation-send]').disabled);
+  const delivery={registrationId:A,revision:2,admissionStatus:'confirmed',status:'not_sent',reason:'ELIGIBLE',ready:true,canSend:true,retryRejected:false,recipient:'synthetic@example.invalid'};
+  assert.equal(validPersonConfirmation(delivery,A),true);
+  for(const value of [-1,null,'1',0.5])assert.equal(validPersonConfirmation({...delivery,accessRevision:value},A),false);
+  const original={expectedRevision:2,operationId:OP,retryRejected:false},policy=personConfirmationPolicy(A),valid=body=>policy.validate({path:'/api/admin/registration-confirmation/send/'+A,method:'POST',payloadJson:JSON.stringify(body)},{kind:'pending_submission'});
+  assert.equal(valid(original),true);assert.equal(valid({...original,expectedAccessRevision:2}),true);
+  for(const value of [-1,null,'1',0.5])assert.equal(valid({...original,expectedAccessRevision:value}),false);
+  assert.equal(valid({...original,expectedAccessRevision:2,recipient:'private@example.invalid'}),false);
+  f.click('send');await until(()=>f.calls.some(call=>call.method==='POST')&&!c.pending);
+  assert.equal(JSON.parse(f.calls.find(call=>call.method==='POST').body).expectedAccessRevision,0);c.clear();
 });
 test('storage denial prevents all send POSTs',async()=>{
   const f=fixture(),c=f.create();c.select(A);await until(()=>!f.controls.get('[data-person-confirmation-send]').disabled);f.failWrite=true;f.click('send');await until(()=>f.writes.length===1);await pause();assert.equal(f.calls.some(x=>x.method==='POST'),false);assert.equal(c.blocked,true);c.clear();

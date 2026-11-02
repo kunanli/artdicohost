@@ -1,14 +1,24 @@
 # 开发接续：先读本页
 
-## 2026-11-02 07:03UTC：PR66正式交付，Hero字體接續
+## 2026-11-02 最新接續：PR67已正式發布並完成HTTPS核對
+
+[PR #67](https://github.com/kunanli/artdicohost/pull/67) 已合併至 main `30b4ca6d0891699093f63b9ec790621906f64391`，範圍與完整證據入口見 [Hero海報字體與公開區域呈現](redesign/hero-poster-typography-release.md)。Hero／頁尾使用原版OFL粗窄真文字及實心／描邊；有圖組織不重複顯示名稱，空作品整區隱藏，最後作品移除時焦點轉往可見下區。後台、私人頁與既有業務規則保留。
+
+[PR流程41414451982](https://github.com/kunanli/artdicohost/actions/runs/41414451982) 的 check `125174788240` 已成功；實際合成來源 `c3aa8052e6bb224f2bd111ddda6b832198a5c8e3`，Node1635，捲動6／排版4／實際素材13同首頁HTML `c4f4de59d658e3c34d87dad9b296310724991189b71b1b84db53f1524acb7c30` 通過。實際公開輸入仍為R44／snapshot SHA前綴 `71037be9`，8張組織圖含7張已知圖；raw9與有明確出席證明的visible3分開，四寬實際名片12、單位12／職稱8／完整介紹12的核對保留，未捕獲3張圖的404替身明示。這些是PR的精確輸入／產物資格。
+
+[main流程41415375940](https://github.com/kunanli/artdicohost/actions/runs/41415375940) completed／success，四工作與同HTML6／4／實際13皆通過；08:55:04 UTC私有OSS兩client／一FC、08:55:08的13後台及08:56:49的60公開物件HTTPS核對完成。正式資料仍R44／1公開作品，零作品時整區自動隱藏，未代撤該記錄；完整回執見本輪release。文件分支為 `/workspace/artdicohost-hero-type` 的 `docs/hero-typography-release-proof`，起點是上述main30b4；本分支只補入口與證據，不改產品或為文件重複部署。活動行adapter仍待完全匿名表頭，正式入口／審核政策未切換；真收件、微信群、iPhone添加與同事操作仍各自驗收。
+
+以下依日期保留各階段歷史，當時的「最新／本輪／待辦」不取代本節與當輪release的狀態。
+
+## 歷史：2026-11-02 07:03UTC，PR66正式交付，Hero字體接續
 
 已發布main `c516692245b23e59387b71d73ff1c0911f32fce5`，PR66／run41402494805全四工作success；完整[回執](redesign/mobile-organizations-profile-release.md)。main 6／4／實際13同HTML006d2635、原公開R44／8logo／raw9visible3；Node1634、source745、Astro482、23頁、128檔／40資產、07:01私有OSS兩client一FC、13後台及07:03:49的61公開物件HTTPS皆通過。PR65先前main532因observer誤換點而未部署，已由本版解決；不要把舊50bc或失敗532當現行。
 
-新Hero字體獨立工作樹 `/workspace/artdicohost-hero-type`、`feat/hero-poster-typography` 從c516建立。已完成以上才開始此階段；Latin用已驗官方Barlow Condensed ExtraBold800，自託管保原名／OFL，中文及正文角色不變；保留球／星空／手機圈內組織及新後台功能。實作／測試／發布需另記，不拿本版回執當新字體驗收。此證據分支只更新文件，不觸發重複部署。
+當時的Hero字體工作樹 `/workspace/artdicohost-hero-type`、`feat/hero-poster-typography` 從c516建立。Latin用已驗上游Barlow Condensed ExtraBold800，自託管保原名／OFL，中文及正文角色不變；保留球／星空／手機圈內組織及新後台功能。此接續計畫現已完成頁首PR67正式發布，PR66回執仍僅證明前一產品版本。
 
-## 2026-11-02 本輪進行中：前台呈現與資料更正
+## 歷史：2026-11-02，PR65／66整合前的前台與資料更正計畫
 
-已發布main仍為 `50bc3cd546f89ac622e8b12d1c80eeb34256fff6`（PR64）；根目錄分支 `feat/wallet-badge-and-registration-path` 從文件證據 `23558a2` 接續，尚未部署本輪改動。範圍是官方中文Wallet徽章、活動行認證版路徑文件、第八組織可見／白色Logo、公開攤位細節移除、Hero退遠至全頁星空。先凍結前台產物，核對新6／4／13及相關定向瀏覽器，再依既有流程PR／main／HTTPS發布；先前29案私人頁證據須比較HTML與原SVG雜湊才沿用。
+該階段已發布基準為 `50bc3cd546f89ac622e8b12d1c80eeb34256fff6`（PR64）；當時根目錄分支 `feat/wallet-badge-and-registration-path` 從文件證據 `23558a2` 接續。計畫範圍是官方中文Wallet徽章、活動行認證版路徑文件、第八組織可見／白色Logo、公開攤位細節移除、Hero退遠至全頁星空。當時安排先凍結前台產物，核對新6／4／13及相關定向瀏覽器，再走PR／main／HTTPS；這些是歷史工作步驟，後續結果見PR66及頁首PR67紀錄。
 
 後台資料人工更正在 `/workspace/artdicohost-registration-corrections`、`feat/staff-registration-corrections` 獨立工作樹進行，完成前台階段後整合。原問卷／來源不覆寫，保存留在同人同位置，失回執只核對；改Email使舊私人能力／群圖片grant／Wallet驗證失效，新地址只能明確發指南，不能自動重寄。新增修正journal後，回退不得降到不認得新欄位的舊reader；實作與安全合成結果另記，不代改正式人員。
 

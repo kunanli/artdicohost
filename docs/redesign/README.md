@@ -1,12 +1,14 @@
 # ARTDiCO HOST 改版執行總覽
 
-更新日期：2026-11-02（Asia/Taipei）。**現行交付為 [PR66手機圈內組織與報名更正](mobile-organizations-profile-release.md)，已發布main c5166922；Hero海報字體為下一階段，尚未套用。** 樣式修改先讀 [首頁CSS／字級規範](../frontend-typography.md)。下方PR64等保留前版歷史。
+更新日期：2026-11-02（Asia/Taipei）。**現行已發布為 [PR #67 Hero 海報字體與公開區域呈現](hero-poster-typography-release.md)，main `30b4ca6d0891699093f63b9ec790621906f64391`，08:56:49 UTC完成60個準確公開物件HTTPS核對。** [PR 流程 41414451982](https://github.com/kunanli/artdicohost/actions/runs/41414451982) 的1635項測試與同HTML `c4f4de59…` 的捲動6／排版4／實際素材13已核對通過；[main 流程 41415375940](https://github.com/kunanli/artdicohost/actions/runs/41415375940) 四工作與精確6／4／實際13也成功，私有OSS及13後台回執完成；細節見本輪紀錄。樣式修改先讀 [首頁CSS／字級規範](../frontend-typography.md)。
 
-更新日期：2026-11-02（Asia/Taipei）。**現行交付為 [PR #64 自由背景微粒與作品缺圖版型](background-showcase-release.md)，已發布 main `50bc3cd`；樣式修改先讀 [首頁 CSS／字級規範](../frontend-typography.md)。** Hero微粒在球外背景自由漂移，滑鼠輕微帶動、球／標題全alpha排除；沒有環形或尾流，保留簡報式淡入／sticky。作品缺圖轉自然文字高度、有圖保持原稿2:1／字幕／真peek，單件收起無效導航。main6／4／13、1612測試、FC128與公開61物件HTTPS核對完成；正式公開一件作品確無封面參照。下方交付保留為歷史。
+前次已驗證發布（歷史基準）為 [PR66手機圈內組織與報名更正](mobile-organizations-profile-release.md)，main `c5166922`。以下較早段落保留各階段的原回執，最新合併及發布狀態以頁首與本輪紀錄為準。
 
-接續 [活動行與Wallet操作方案](external-registration-wallet.md)：使用者確認帳號「認證版」有批次匯出，免費報名即確認；採活動行唯一一般報名、本站同步後提供指南／私人頁，不再重填及二審。薄轉接器待匿名匯出表頭，尚未切換正式入口或審核政策。官方CN／EN SVG已取得，中文徽章29案合成驗收通過，發布回執待完成；沒有代購、接受協議、匯入真名單或寄信。
+歷史交付：[PR #64 自由背景微粒與作品缺圖版型](background-showcase-release.md) 已發布於當次 main `50bc3cd`。Hero微粒在球外背景自由漂移，滑鼠輕微帶動、球／標題全alpha排除；沒有環形或尾流，保留簡報式淡入／sticky。作品缺圖轉自然文字高度、有圖保持原稿2:1／字幕／真peek，單件收起無效導航。當次main6／4／13、1612測試、FC128與公開61物件HTTPS回執保留；當次公開一件作品確無封面參照。
 
-本輪另接白色組織Logo、全頁星空／Hero球體退遠、未知第八組織可見與公開展位細節移除，正按視覺Skill及同份編譯頁驗收；後台保留原圖及展位資料。報名資料人工修正在獨立worktree接續，不由視覺部署代做真實資料更正。
+接續 [活動行與Wallet操作方案](external-registration-wallet.md)：使用者確認帳號「認證版」有批次匯出，免費報名即確認；採活動行唯一一般報名、本站同步後提供指南／私人頁，不再重填及二審。薄轉接器待匿名匯出表頭，尚未切換正式入口或審核政策。官方CN／EN SVG已取得，中文徽章29案合成驗收與PR66發布回執已保留，真iPhone添加仍獨立核對；沒有代購、接受協議、匯入真名單或寄信。
+
+白色組織Logo、全頁星空／Hero球體退遠、第八組織可見、公開展位細節移除與報名資料人工修正已由PR66完成軟體交付；後台保留原圖、展位、原問卷與來源，不由部署代做真實資料更正。
 
 [PR #63 明顯粒子與簡報式捲動淡入](presentation-motion-release.md) 已發布於前版 main `80895d8`；簡報淡入與觸控修正保留，使用者否定的球緣亮點／尾流由本輪自由背景取代。
 
@@ -31,6 +33,7 @@
 | 文件 | 使用者 | 用途 |
 | --- | --- | --- |
 | 本頁 | 主辦方與開發者 | 決策、範圍、順序、尚待核實事項 |
+| [Hero 海報字體與公開區域呈現](hero-poster-typography-release.md) | 開發者與驗收負責人 | PR67合併、精確視覺證據與待補main發布回執 |
 | [開發步驟](01-implementation-steps.md) | 開發者 | P0 至 P6 的修改位置、相容要求及完成條件 |
 | [工作人員與參與者操作](02-staff-and-attendee-runbook.md) | 活動負責人、審核、邀約及現場同事 | 舊意向整合、日常操作、通知及故障處理 |
 | [驗收與發布](03-release-and-acceptance.md) | 開發者與驗收負責人 | 情境測試、實機、產物、上線及回退 |
@@ -153,7 +156,7 @@ P2 的智能輔助優先使用既有進度規則，顯示建議動作、原因�
 - [x] P6 產品 `4a07f145` 的準確來源包 prepare／verify：127 檔／39 資產、7,558,358 bytes，ZIP 35,707,679 bytes；公開 prepare 51 檔。
 - [x] P6 PR CI 與實際發布；[正式流程](https://github.com/kunanli/artdicohost/actions/runs/41286440342) 核對 main `40ea32a6` 的 13 個後台頁面、51 個公開物件及新快取標頭，公開業務修訂維持 43。
 
-本輪已授權軟體工作完成。最終證據保存在 `docs/redesign-final-release-proof`，以已部署 main `40ea32a6` 為基準，不為補紀錄重複部署；人工核對不因程式上線自動完成。
+P1–P6歷史結案：當時已授權軟體工作完成，證據保存在 `docs/redesign-final-release-proof`，以當次已部署 main `40ea32a6` 為基準；後續發布狀態見頁首。人工核對不因程式上線自動完成。
 
 ## 接續來源
 

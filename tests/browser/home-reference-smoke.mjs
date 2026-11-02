@@ -83,7 +83,7 @@ function rawFixture({ brokenImages = false } = {}) {
   ];
   content.showcases = ['student', 'indie'].map((kind, index) => ({ id: 'synthetic-reference-work-' + index, kind,
     title: index ? '合成独立游戏作品' : '合成学生三维创作', teamName: '合成创作团队', summary: '合成公开作品资料；展示形式与实际安排分别核对。',
-    coverId: artworkSources[index].id, status: 'confirmed', responseStatus: 'attending', publicConsent: true, participationForms: [], boothId: '', sessionId: '',
+    coverId: brokenImages && index === 0 ? missingId : artworkSources[index].id, status: 'confirmed', responseStatus: 'attending', publicConsent: true, participationForms: [], boothId: '', sessionId: '',
     organizationId: organizationId(0), school: PRIVATE, email: 'private@example.invalid', wechat: PRIVATE, contactName: PRIVATE,
     memberCount: 2, materialLinks: '', internalNotes: PRIVATE }));
   content.event.presentation.faqItems = [{ id: 'synthetic-reference-faq', question: '合成公开问答？', answer: '公开说明保持可读；通知、名额与公开资料分别核对。' }];
@@ -290,6 +290,8 @@ async function otherContent(f) {
   assert.equal(await page.locator('[data-agenda-panel="C"]').isVisible(), true);
   assert.equal(await page.locator('[data-showcase-id]').count(), 2); assert.equal(await page.locator('[data-showcase-id]:visible').count(), 1);
   const peek = page.locator('[data-work-peek]'); assert.equal(await peek.getAttribute('aria-hidden'), 'true');
+  assert.equal(await page.locator('[data-work-navigation]').isVisible(), true, 'two actual works expose manual navigation');
+  assert.equal(await page.locator('.ah-work-stage').getAttribute('data-work-presentation'), 'image');
   assert.equal(await peek.isVisible(), true, 'a next-item glimpse is backed by the actual second published work');
   assert.equal(await peek.locator('img').getAttribute('src'), await page.locator('#work-synthetic-reference-work-1 .ah-showcase-poster img').getAttribute('src'));
   const mainImage = page.locator('#work-synthetic-reference-work-0 .ah-work-preview img');
@@ -303,7 +305,15 @@ async function otherContent(f) {
   assert.equal(await peek.isVisible(), false, 'last item does not invent another cover');
   await page.locator('[data-public-works-filter]').selectOption('student'); await page.locator('#work-synthetic-reference-work-0:visible').waitFor();
   assert.equal(await page.locator('[data-public-work-next]').isDisabled(), true); assert.equal(await peek.isVisible(), false, 'single-item filter has no decorative next work');
+  assert.equal(await page.locator('[data-work-navigation]').isVisible(), false, 'a one-item subset hides previous, next and the redundant counter');
+  assert.equal(await page.locator('[data-public-works-filter]').isVisible(), true, 'the category selector remains available for a one-item subset');
   await page.locator('[data-public-works-filter]').selectOption('all');
+  assert.equal(await page.locator('[data-work-navigation]').isVisible(), true, 'restoring all categories restores the two-item navigation');
+  assert.equal(await peek.isVisible(), true, 'restoring all categories restores the actual next cover');
+  await page.locator('[data-public-work-next]').click(); await page.locator('#work-synthetic-reference-work-1:visible').waitFor();
+  await page.locator('[data-public-work-prev]').click(); await page.locator('#work-synthetic-reference-work-0:visible').waitFor();
+  assert.equal(await page.locator('#students .ah-showcase-arrangement').count(), 0, 'works without real arrangements have no placeholder paragraph');
+  assert.doesNotMatch(await page.locator('#students').textContent(), /资料待确认|参加待确认|展示安排陆续公布|封面、展示形式与安排/u);
   assert.equal(await page.locator('[data-faq-id="synthetic-reference-faq"]').count(), 1);
   assert.match(await page.locator('[data-faq-id="lodging-support"]').textContent(), /本次活动提供少量外地来宾住宿支持/u);
   assert.match(await page.locator('[data-faq-id="lodging-support"]').textContent(), /kunan@globalgamejam\.org/u);
@@ -419,8 +429,30 @@ try {
     assert.equal(await first.locator('.ah-guest-name').isVisible(), true); assert.equal(await first.locator('.ah-guest-initial').isVisible(), true);
     const organization = broken.page.locator('#organization-' + organizationId(6)); await organization.scrollIntoViewIfNeeded();
     await broken.page.waitForFunction(id => document.querySelector('#organization-' + id + ' .ah-organization-image')?.hidden === true, organizationId(6));
-    assert.equal(await organization.locator('h3').isVisible(), true); await noOverflow(broken);
-    reports.push({ name: 'image-failure-name-and-initial', width: 390, failedHeroImagePaths: [...broken.titleImagePaths], readableHeroTitle: true, readableGuestName: true, readableGuestInitial: true, readableOrganizationName: true });
+    assert.equal(await organization.locator('h3').isVisible(), true);
+    const failedWork = broken.page.locator('#work-synthetic-reference-work-0');
+    await failedWork.scrollIntoViewIfNeeded();
+    await broken.page.waitForFunction(() => document.querySelector('#work-synthetic-reference-work-0')?.dataset.coverState === 'unavailable');
+    assert.equal(await broken.page.locator('.ah-work-stage').getAttribute('data-work-presentation'), 'text', 'a real cover 404 switches the selected work into text presentation');
+    assert.equal(await broken.page.locator('[data-work-peek]').isVisible(), false, 'the failed main artwork never leaves a decorative next-image strip');
+    assert.equal(await failedWork.locator('.ah-showcase-cover-empty').innerText(), '作品图片尚未公布');
+    const failedGeometry = await failedWork.evaluate(card => {
+      const fallback = card.querySelector('.ah-showcase-cover-empty');
+      const caption = card.querySelector('.ah-showcase-caption');
+      return { posterHeight: card.querySelector('.ah-showcase-poster').getBoundingClientRect().height,
+        fallbackHeight: fallback.getBoundingClientRect().height, captionHeight: caption.getBoundingClientRect().height,
+        captionPosition: getComputedStyle(caption).position, captionBackground: getComputedStyle(caption).backgroundColor };
+    });
+    assert.ok(failedGeometry.posterHeight <= failedGeometry.captionHeight + failedGeometry.fallbackHeight + 24, 'failed cover keeps only its natural caption and short fallback instead of an empty poster');
+    assert.ok(['transparent', 'rgba(0, 0, 0, 0)'].includes(failedGeometry.captionBackground), 'failed cover has no purple image-caption panel');
+    assert.equal(await failedWork.locator('[data-work-preview]').isVisible(), false);
+    assert.equal(await failedWork.locator('[data-work-preview]').isDisabled(), true, 'a failed cover cannot open the image viewer');
+    assert.equal(failedGeometry.captionPosition, 'static', 'failed artwork keeps its title in normal text flow');
+    await broken.page.locator('[data-public-work-next]').click();
+    await broken.page.locator('#work-synthetic-reference-work-1:visible').waitFor();
+    assert.equal(await broken.page.locator('.ah-work-stage').getAttribute('data-work-presentation'), 'image', 'manual navigation still reaches the next real cover');
+    await noOverflow(broken);
+    reports.push({ name: 'image-failure-name-and-initial', width: 390, failedHeroImagePaths: [...broken.titleImagePaths], readableHeroTitle: true, readableGuestName: true, readableGuestInitial: true, readableOrganizationName: true, failedWorkUsesCompactText: true, failedWorkGeometry: failedGeometry, nextRealCoverReachable: true });
   } finally { await broken.context.close(); }
   const changing = await fixture(390);
   try {

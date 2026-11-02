@@ -67,7 +67,9 @@ test('one validated anonymous public response supplies exact snapshot bytes and 
   assert.equal(manifest.counts.organizations, 2); assert.equal(report.media, 1); assert.equal(report.mediaBytes, png.length);
   assert.deepEqual(report.guestCaptionCoverage, { title: 0, role: 0, company: 0, empty: 1 }, 'company alone does not become a position');
   assert.deepEqual(report.guestAffiliationCoverage, { company: 1, empty: 0 });
+  assert.deepEqual(report.showcaseCoverCoverage, { total: 0, withCoverId: 0, withoutCoverId: 0 });
   assert.equal(Object.hasOwn(manifest, 'guestAffiliationCoverage'), false, 'diagnostic counts do not change the captured fixture format');
+  assert.equal(Object.hasOwn(manifest, 'showcaseCoverCoverage'), false);
   assert.equal(JSON.stringify(f.data), before); assert.doesNotMatch(JSON.stringify({ manifest, report }), /SYNTHETIC_PUBLIC_NAME|SYNTHETIC_PRIVATE|contactId|receiptToken|internalNotes/u);
 });
 
@@ -98,6 +100,10 @@ test('safe capture summary exposes only validated public organization IDs, refer
     { ...original, id: 'synthetic-company', title: '', ggjRole: '', company: PUBLIC_NAME },
     { ...original, id: 'synthetic-empty', status: 'pending', title: '', ggjRole: '', company: '' },
   ];
+  f.data.content.showcases = [sha(png) + '.png', 'b'.repeat(64) + '.png', ''].map((coverId, index) => ({
+    id: 'synthetic-work-' + index, title: PUBLIC_NAME, teamName: PUBLIC_NAME, summary: PUBLIC_NAME, coverId,
+    kind: 'indie', status: 'pending', responseStatus: 'pending', publicConsent: false, memberCount: 1,
+  }));
   f.data.content = toPublicContent(f.data.content);
   const before = JSON.stringify(f.data), report = await f.capture({ fetchFn: async (...args) => args[0] === PUBLIC_CONTENT_URL
     ? new Response(JSON.stringify(f.data), { headers: publicHeaders }) : f.fetchFn(...args) });
@@ -106,8 +112,10 @@ test('safe capture summary exposes only validated public organization IDs, refer
   assert.ok(report.referenceLogoSources.every(row => Object.keys(row).sort().join(',') === 'key,organizationId,sha256'));
   assert.deepEqual(report.guestCaptionCoverage, { title: 1, role: 1, company: 0, empty: 2 });
   assert.deepEqual(report.guestAffiliationCoverage, { company: 3, empty: 1 }, 'title and role records also count their independent company field');
+  assert.deepEqual(report.showcaseCoverCoverage, { total: 3, withCoverId: 2, withoutCoverId: 1 }, 'public cover references are counted without treating them as captured images');
   assert.equal(report.media, 8, 'unknown public logos are captured safely without guessing their reference identity');
-  assert.doesNotMatch(JSON.stringify(report), /SYNTHETIC_PUBLIC_NAME|synthetic-title|Bournemouth|深圳大学|提赛德|ggjRole|content|base64/u);
+  assert.equal(f.calls.length, 8, 'only logo fetches use the fixture transport; the validated snapshot request remains the single explicit override');
+  assert.doesNotMatch(JSON.stringify(report), /SYNTHETIC_PUBLIC_NAME|synthetic-title|synthetic-work-|Bournemouth|深圳大学|提赛德|ggjRole|content|base64/u);
   assert.equal(JSON.stringify(f.data), before);
 });
 

@@ -303,8 +303,9 @@ function renderShowcases(content, sourceUrl) {
   for (const work of cards) {
     const card = element('li', undefined, 'ah-showcase-card');
     card.id='work-'+work.id;card.dataset.showcaseId=work.id;card.dataset.workKind=work.kind;
+    card.dataset.coverState=work.coverUrl?'available':'missing';
     const poster=element('div',undefined,'ah-showcase-poster');
-    const fallback=element('div','作品封面待补','ah-showcase-cover-empty');
+    const fallback=element('p','作品图片尚未公布','ah-showcase-cover-empty');
     fallback.hidden=Boolean(work.coverUrl);
     if(work.coverUrl){
       const preview=element('button',undefined,'ah-work-preview');preview.type='button';preview.dataset.workPreview='';preview.dataset.focusKey='preview';preview.setAttribute('aria-label','查看'+work.title+'的作品大图');
@@ -316,18 +317,14 @@ function renderShowcases(content, sourceUrl) {
       if (sourceUrl.origin !== location.origin) photo.crossOrigin = 'anonymous';
       // Constructed from a content-addressed image ID, never a private materials link.
       photo.src = new URL(work.coverUrl, sourceUrl.origin).href;
-      photo.addEventListener('error', () => { photo.hidden = true; fallback.hidden=false;preview.hidden=true;preview.disabled=true;collections.updateWorks(); });
+      photo.addEventListener('error', () => { photo.hidden = true; fallback.hidden=false;preview.hidden=true;preview.disabled=true;card.dataset.coverState='unavailable';collections.updateWorks(); });
       preview.append(photo,element('span','查看大图 ↗'));poster.append(preview);
     }
-    poster.append(fallback);
     const caption=element('div',undefined,'ah-showcase-caption');
     caption.append(element('span',SHOWCASE_KIND_LABELS[work.kind],'ah-showcase-category'),element('h3',work.title),element('p',work.teamName,'ah-showcase-team'));
-    poster.append(caption);card.append(poster);
+    poster.append(caption,fallback);card.append(poster);
     const detail = element('div', undefined, 'ah-showcase-card-body');
-    const progress=[];
-    if(work.status==='pending')progress.push('资料待确认');
-    if(work.responseStatus)progress.push(work.responseStatus==='declined'?'已回复不参加':'参加待确认');
-    if(progress.length)detail.append(element('p',progress.join(' · '),'ah-showcase-status'));
+    if(work.responseStatus==='declined')detail.append(element('p','已回复不参加','ah-showcase-status'));
     const organization=organizations.get(work.organizationId);
     if(organization){const link=element('a',organization.name,'ah-showcase-organization');link.href='#organization-'+organization.id;detail.append(reveal(link));}
     if (work.summary) detail.append(element('p', work.summary));
@@ -343,9 +340,8 @@ function renderShowcases(content, sourceUrl) {
       if(arrangement.childElementCount)arrangement.append(document.createTextNode(' / '));
       const link=element('a','展示展位 · C 区 ' + booth.code);link.href='#booth-'+booth.id;arrangement.append(reveal(link));
     }
-    if (!arrangement.childElementCount) arrangement.textContent='展示安排陆续公布';
-    detail.append(arrangement);
-    card.append(detail);
+    if(arrangement.childElementCount)detail.append(arrangement);
+    if(detail.childElementCount)card.append(detail);
     grid.append(card);
   }
   grid.hidden = cards.length === 0;

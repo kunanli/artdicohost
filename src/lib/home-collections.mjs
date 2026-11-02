@@ -38,8 +38,18 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
     const empty=doc.querySelector('[data-public-works-filter-empty]');if(empty)empty.hidden=cards.length===0||visible.length>0;
     const previous=doc.querySelector('[data-public-work-prev]'),next=doc.querySelector('[data-public-work-next]');
     if(previous)previous.disabled=index<=0;if(next)next.disabled=index<0||index>=visible.length-1;
+    const navigation=doc.querySelector('[data-work-navigation]');
+    if(navigation){
+      if(visible.length<2&&navigation.contains(doc.activeElement)){
+        if(filter)filter.focus({preventScroll:true});else heading('students-heading');
+      }
+      navigation.hidden=visible.length<2;
+    }
+    const selected=visible[index],hasCover=Boolean(selected?.querySelector('[data-work-preview]:not([hidden]) img:not([hidden])'));
+    const stage=grid?.closest('.ah-work-stage');
+    if(stage)stage.dataset.workPresentation=!selected?'empty':hasCover?'image':'text';
     const peek=doc.querySelector('[data-work-peek]'),peekImage=peek?.querySelector('img');
-    const following=visible[index+1]?.querySelector('[data-work-preview] img:not([hidden])');
+    const following=hasCover?visible[index+1]?.querySelector('[data-work-preview]:not([hidden]) img:not([hidden])'):null;
     if(peek){peek.hidden=!following;if(peekImage){if(following){peekImage.src=following.src;peekImage.alt='';}else peekImage.removeAttribute('src');}}
     if(grid){grid.dataset.carouselReady='true';grid.setAttribute('aria-roledescription','作品轮播');}
     syncPreview();

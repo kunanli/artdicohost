@@ -60,7 +60,9 @@ try{
   assert.equal(await page.locator('#organization-withdrawn-org').textContent(),'合成已退出组织');
   assert.match(await page.locator('#booth-default-booth').textContent(),/展位待安排.*展示内容待补.*展位安排待确认/u);
   assert.match(await page.locator('#booth-cancelled-booth').textContent(),/本展位已取消/u);
-  assert.match(await page.locator('#work-default-work').textContent(),/资料待确认.*参加待确认.*展示安排陆续公布/u);
+  assert.doesNotMatch(await page.locator('#work-default-work').textContent(),/资料待确认|参加待确认|展示安排陆续公布/u,'public work text omits internal pending and missing-arrangement labels');
+  assert.equal(await page.locator('#work-default-work').getAttribute('data-cover-state'),'missing');
+  assert.equal(await page.locator('#work-default-work .ah-showcase-arrangement').count(),0,'an unassigned work does not render an empty schedule row');
   assert.match(await page.locator('#work-declined-work').textContent(),/已回复不参加/u);
   assert.equal(await page.locator('#work-default-work .ah-showcase-cover-empty').isVisible(),true);
   assert.equal(await page.locator('#work-default-work .ah-showcase-organization').count(),0,'a private organization cannot create a dangling public link');

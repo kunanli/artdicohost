@@ -6,7 +6,7 @@
 ARTDICO_PLAYWRIGHT_MODULE=playwright-core ARTDICO_CHROMIUM_BINARY=/usr/bin/google-chrome ARTDICO_SCROLL_EVIDENCE_DIRECTORY=/absolute/repository/.local-data/browser-evidence/home-scroll-motion node tests/browser/home-scroll-motion-smoke.mjs
 ```
 
-预期6案：320／390／1440／1920，以及无JS／无IntersectionObserver。所有请求预先拦截，仅合成公开内容与本地编译资源，无业务POST或寄信。核对header在首中尾持续置顶、原生wheel、细进度线、实际装饰视差与进场WAAPI、焦点立即稳定、手机原生选单及Escape、平滑锚点完成后不遮标题、公开刷新保阅读位置及延迟嘉宾hash。简报式进场需实采早／中／完成的opacity与帧，确认标题先淡入、内容延后、结束全文可见；手机原生touch pan不能把尚未出现的内容提前标为seen。Hero可见时验证真实ambient RAF、实际高alpha／亮核像素及两点游标位移，不只检查canvas存在或timer；离屏后再要求闲置没有pending RAF。初始／途中reduced-motion与明示合成hidden信号均停止球缘／页缘canvas与进场；HTML预设可见，强淡入只发生在进入视窗后的短动画。粒子canvas须aria-hidden、pointer-events:none，不遮实际点击目标。成功摘要唯一前缀为 `Public scroll motion browser verified: `，独立于排版4案与实际素材13案，三份报告分别核对来源／HTML SHA和完整数量。合成触控、可见性与callback计数不代表真实手机、OS背景或物理电量量测。
+预期6案：320／390／1440／1920，以及无JS／无IntersectionObserver。所有请求预先拦截，仅合成公开内容与本地编译资源，无业务POST或寄信。核对header在首中尾持续置顶、原生wheel、细进度线、实际装饰视差与进场WAAPI、焦点立即稳定、手机原生选单及Escape、平滑锚点完成后不遮标题、公开刷新保阅读位置及延迟嘉宾hash。简报式进场需实采早／中／完成的opacity与帧，确认标题先淡入、内容延后、结束全文可见；手机原生touch pan不能把尚未出现的内容提前标为seen。Hero可见时验证独立背景canvas的真实ambient RAF、实际可见微粒像素／自然位置变化、球体与文字排除及游标轻微影响，不只检查canvas存在或timer；球体可见时全页edge canvas隐藏，防止两层叠加；离屏后再要求闲置没有pending RAF。初始／途中reduced-motion与明示合成hidden信号均停止Hero背景／页缘canvas与进场；HTML预设可见，强淡入只发生在进入视窗后的短动画。粒子canvas须aria-hidden、pointer-events:none，不遮实际点击目标。成功摘要唯一前缀为 `Public scroll motion browser verified: `，独立于排版4案与实际素材13案，三份报告分别核对来源／HTML SHA和完整数量。合成触控、可见性与callback计数不代表真实手机、OS背景或物理电量量测。
 
 公开表单可读性的独立入口为 `public-typography-smoke.mjs`，不替代或改变下方 actual13。同样使用 playwright-core 1.64.1 与已安装的 Chrome，在最终构建后执行，不需要正式资料捕获或凭证：
 

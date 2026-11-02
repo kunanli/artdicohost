@@ -281,12 +281,13 @@ export function createRegistrationConfirmationService({ registrationService, jou
       return result?.reason === 'DELIVERY_WINDOW_EXPIRED' && status === 'rejected' ? { status: 'not_attempted' } : saved;
     } catch { return { status: 'unknown' }; }
   }
-  async function forSavedReceipt({ receipt, notify: send = true } = {}) {
+  async function forSavedReceipt({ receipt, notify: send = true, timeoutMs = batchTimeoutMs } = {}) {
     if (receipt?.committed !== true || receipt.eventId !== eventId || !ID.test(receipt.registrationId ?? '')
       || receipt.referenceCode !== receipt.registrationId || parseTimestamp(receipt.committedAt) === null
       || !STATUS.includes(receipt.admissionStatus) || !['attendee', 'crew'].includes(receipt.admissionKind)
-      || !Number.isSafeInteger(receipt.admissionRevision) || receipt.admissionRevision < 0 || typeof send !== 'boolean') failure();
-    const result = capability(receipt.registrationId, 0), deadline = monotonicNow() + batchTimeoutMs;
+      || !Number.isSafeInteger(receipt.admissionRevision) || receipt.admissionRevision < 0 || typeof send !== 'boolean'
+      || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > batchTimeoutMs) failure();
+    const result = capability(receipt.registrationId, 0), deadline = monotonicNow() + timeoutMs;
     // An application receipt has no formal notification reservation. The same
     // capability reads the current decision after a later explicit approval.
     if (!send || receipt.admissionStatus !== 'confirmed') return { ...result, email: { status: 'not_applicable' } };

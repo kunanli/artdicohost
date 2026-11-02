@@ -259,6 +259,12 @@ test('public admissions metadata projects only bounded aggregate counts and neve
   assert.equal(response.status, 200); const value = await response.json();
   assert.equal(value.attendeeReviewRequired, true);
   assert.deepEqual(value.admissions, admissions); assert.doesNotMatch(JSON.stringify(value), /PRIVATE-SYNTHETIC|people|teams/u);
+  metadata.attendeeReviewRequired = false;
+  const automatic = await handle(request({ url: endpoint.replace('/api/registrations', '/api/registration/config'), method: 'GET' }));
+  assert.equal(automatic.status, 200); assert.equal((await automatic.json()).attendeeReviewRequired, false);
+  metadata.attendeeReviewRequired = 'false';
+  await error(await handle(request({ url: endpoint.replace('/api/registrations', '/api/registration/config'), method: 'GET' })), 503, 'UNAVAILABLE');
+  metadata.attendeeReviewRequired = false;
   metadata.admissions.confirmedCount = 'PRIVATE-SYNTHETIC';
   await error(await handle(request({ url: endpoint.replace('/api/registrations', '/api/registration/config'), method: 'GET' })), 503, 'UNAVAILABLE');
 });

@@ -13,7 +13,7 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
 if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('申请 API 必须使用指定的 HTTPS 来源。');
 ---
 <section class="ah-registration ah-section" id="registration" aria-labelledby="registration-heading" data-registration-api-origin={apiOrigin || undefined}>
-  <div class="ah-register-intro"><h2 id="registration-heading">申请参加。</h2><p data-registration-notice>提交申请 → 主办方审核 → 确认名额与邀请</p></div>
+  <div class="ah-register-intro"><h2 id="registration-heading" data-registration-heading>报名参加。</h2><p data-registration-notice>请先核对下方报名状态。</p></div>
   <div class="ah-registration-preview ah-general-application" data-registration-preview>
     <div class="ah-form-card">
       <div class="ah-form-top"><strong data-registration-open-label>活动申请</strong><span class="ah-demo-tag" data-registration-mode-label>预览 · 不提交</span></div>
@@ -25,12 +25,12 @@ if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('申�
         <div data-application-edit-fields>
         <div class="ah-fields-grid">{['name','email','categories'].map(name => <FormField field={field(name)} />)}</div>
         <details class="ah-registration-extra ah-general-extra"><summary>学校、机构与其他联络信息（选填）</summary><div class="ah-fields-grid">{['organization','city','wechat'].map(name => <FormField field={field(name)} />)}</div></details>
-        <label class="ah-general-proposal-toggle"><input type="checkbox" name="submitProposal" data-proposal-toggle /><span>我也想申请分享一个主题</span></label>
-        <fieldset class="ah-general-proposal" data-speaker-proposal hidden disabled><legend>分享主题（选填申请）</legend><p class="ah-form-hint">与本次参会共用一份申请。主题和讲者身份另行审核，不代表已获安排。</p>{generalApplicationSchema.proposal.map(definition => <FormField field={definition} prefix="speaker" />)}</fieldset>
+        <label class="ah-general-proposal-toggle"><input type="checkbox" name="submitProposal" data-proposal-toggle autocomplete="off" /><span>我也想申请分享一个主题</span></label>
+        <fieldset class="ah-general-proposal" data-speaker-proposal hidden disabled><legend>分享主题（选填）</legend><p class="ah-form-hint">与一般参会共用一份报名。分享提案另行审选，不影响一般参会报名。</p>{generalApplicationSchema.proposal.map(definition => <FormField field={definition} prefix="speaker" />)}</fieldset>
         <FormField field={field('consentAccepted')} />
         </div>
         <button type="submit" data-submit class="ah-primary ah-full" disabled>检查预览</button>
-        <p class="ah-form-disclaimer" data-registration-disclaimer>本机暂存不等于提交；提交后等待审核。</p>
+        <p class="ah-form-disclaimer" data-registration-disclaimer>本机暂存不等于提交；报名结果以完成页为准。</p>
       </form>
       <p class="ah-form-result" data-form-result role="status" aria-live="polite"></p>
       <noscript><p class="ah-form-disclaimer">申请需要启用 JavaScript。活动信息和日程仍可直接阅读。</p></noscript>

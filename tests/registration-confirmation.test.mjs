@@ -630,18 +630,19 @@ test('manual batch deadline leaves following recipients explicitly unattempted i
 });
 
 test('slow registration, reservation or final eligibility reads cannot start a provider request after the budget', async () => {
-  for (const stage of ['registration', 'reservation', 'recheck']) {
+  for (const timeoutMs of [undefined, 1000]) for (const stage of ['registration', 'reservation', 'recheck']) {
     const f = fixture(), { saved } = await register(f); let ticks = 0, admissionReads = 0;
+    const stopAt = timeoutMs ?? 5000;
     const registrationService = { ...f.service, async getAdmissionStatus(id) {
       const result = await f.service.getAdmissionStatus(id); admissionReads++;
-      if (stage === 'registration' && admissionReads === 1 || stage === 'recheck' && admissionReads === 2) ticks = 5000;
+      if (stage === 'registration' && admissionReads === 1 || stage === 'recheck' && admissionReads === 2) ticks = stopAt;
       return result;
     } };
     const journalFor = prefix => { const journal = f.journalFor(prefix); return { ...journal, async read() {
-      const result = await journal.read(); if (stage === 'reservation') ticks = 5000; return result;
+      const result = await journal.read(); if (stage === 'reservation') ticks = stopAt; return result;
     } }; };
     const c = f.confirmation({ registrationService, journalFor, batchTimeoutMs: 5000, monotonicNow: () => ticks });
-    const receipt = await c.forSavedReceipt({ receipt: saved.receipt });
+    const receipt = await c.forSavedReceipt({ receipt: saved.receipt, ...(timeoutMs === undefined ? {} : { timeoutMs }) });
     assert.equal(receipt.email.status, 'pending'); assert.equal(f.state.messages.length, 0);
     const current = await createConfirmationRepository({ journal: f.journalFor(c.prefix), eventId: EVENT }).read();
     assert.equal(current.value.notices.length, stage === 'recheck' ? 1 : 0);

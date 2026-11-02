@@ -3,7 +3,7 @@ import { registrationFields } from '../lib/registration-fields.mjs';
 import { renderRegistrationSuccess } from './registration-success.mjs';
 import { createBrowserDraftStore } from '../lib/browser-drafts.mjs';
 import { createApplicationDraft, applicationDraftValue, applicationDraftFromFields } from '../lib/application-draft.mjs';
-import { eventConfig, PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
+import { eventConfig, PUBLIC_CONTACT_EMAIL, registrationUiCopy } from '../config/event.mjs';
 import '../lib/public-faq.mjs';
 
 function node(tag,text) { const result = document.createElement(tag); result.textContent = text; return result; }
@@ -46,19 +46,19 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
   let provenReceipt = false;
   function renderHomeAction(){
     const ready=config&&!['closed','unavailable'].includes(form.dataset.registrationMode);
-    const label=provenReceipt?'查看申请结果':client.pending?'核对原申请结果':ready?'申请参加':'查看申请说明';
+    const label=provenReceipt?'查看报名结果':client.pending?'核对原申请结果':ready?registrationUiCopy(config).homeLabel:'查看申请说明';
     for(const output of document.querySelectorAll('[data-home-primary-apply-label]'))output.textContent=label;
   }
   function draftMessage(message,state='saved'){if(draftStatus){draftStatus.textContent=message;draftStatus.dataset.state=state;}if(restoreDraft)restoreDraft.hidden=!draftBlocked;if(clearDraft)clearDraft.hidden=!draftReady||client.pending||draftBlocked||!draft?.snapshot?.record;}
   function readDraftFields(){const value={intake:'general-v2',proposal:form.querySelector('[data-proposal-toggle]').checked};for(const [key,name]of[['name','name'],['email','email'],['category','categories'],['organization','organization'],['city','city'],['wechat','wechat'],['topic','speaker.topic'],['summary','speaker.summary']])value[key]=form.elements.namedItem(name).value;return applicationDraftValue(value);}
   function applyDraft(value){const fields=applicationDraftValue(value);for(const [key,name]of[['name','name'],['email','email'],['category','categories'],['organization','organization'],['city','city'],['wechat','wechat'],['topic','speaker.topic'],['summary','speaker.summary']])form.elements.namedItem(name).value=fields[key];const proposal=form.querySelector('[data-proposal-toggle]');proposal.checked=fields.proposal;const branch=form.querySelector('[data-speaker-proposal]');branch.hidden=!fields.proposal;branch.disabled=!fields.proposal;form.elements.namedItem('consentAccepted').checked=false;}
-  function adoptSnapshot(snapshot,{force=false}={}){draftRevision=snapshot.revision;if(snapshot.record?.kind==='pending_submission'){const value=snapshot.record.value;if(client.pending&&(client.pendingSnapshot.idempotencyKey!==value.idempotencyKey||client.pendingSnapshot.payloadJson!==value.payloadJson))localFailure();if(!client.pending){applyDraft(applicationDraftFromFields(JSON.parse(value.payloadJson).fields));client.restorePending(value);}frozen=true;pendingFields=JSON.parse(value.payloadJson).fields;draftBlocked=false;draftMessage('上次申请结果待核对','pending');lock(false);return;}if(editSequence&&!force&&snapshot.record){draftBlocked=true;draftMessage('本机有另一份草稿，请先恢复','conflict');return;}if(snapshot.record?.kind==='editing'){applyDraft(snapshot.record.value);savedEditSequence=editSequence;}draftBlocked=false;draftMessage(snapshot.record?'已恢复本机草稿':'本机草稿已就绪','saved');}
+  function adoptSnapshot(snapshot,{force=false}={}){draftRevision=snapshot.revision;if(snapshot.record?.kind==='pending_submission'){const value=snapshot.record.value;if(client.pending&&(client.pendingSnapshot.idempotencyKey!==value.idempotencyKey||client.pendingSnapshot.payloadJson!==value.payloadJson))localFailure();if(!client.pending){applyDraft(applicationDraftFromFields(JSON.parse(value.payloadJson).fields));client.restorePending(value);}frozen=true;pendingFields=JSON.parse(value.payloadJson).fields;draftBlocked=false;draftMessage('上次申请结果待核对','pending');lock(false);return;}if(editSequence&&!force&&snapshot.record){draftBlocked=true;draftMessage('本机有另一份草稿，请先恢复','conflict');return;}if(snapshot.record?.kind==='editing'){applyDraft(snapshot.record.value);savedEditSequence=editSequence;}draftBlocked=false;draftMessage(snapshot.record?.kind==='editing'&&snapshot.record.value.proposal?'已恢复本机草稿，含分享提案':snapshot.record?'已恢复本机草稿':'本机草稿已就绪','saved');}
   async function loadDraft({force=false}={}){if(!draft)localFailure();const snapshot=await draft.read();draftReady=true;adoptSnapshot(snapshot,{force});return snapshot;}
   function queueDraft(){if(frozen||form.dataset.submitting==='true')return;editSequence++;clearTimeout(draftTimer);draftMessage(draftReady?'正在暂存…':'输入待暂存…','saving');if(!draftReady)return;draftTimer=setTimeout(()=>{draftTimer=null;void saveDraft().catch(()=>{});},400);}
   function saveDraft(){if(!draftReady||draftBlocked||client.pending)return Promise.resolve();const sequence=editSequence;let value;try{value=readDraftFields();}catch(error){draftBlocked=true;draftMessage(error.message,'error');if(form.dataset.submitting!=='true')lock(false);return Promise.reject(error);}draftWrite=draftWrite.catch(()=>{}).then(async()=>{if(draftBlocked)localFailure();localWrites++;try{const saved=await draft.save(value);draftRevision=saved.revision;savedEditSequence=sequence;if(sequence===editSequence)draftMessage('本机已暂存','saved');}catch(error){draftBlocked=true;draftMessage(error.code==='CONFLICT'||error.code==='PENDING_IMMUTABLE'?'另一页签已更新，请先恢复本机草稿':'本机暂存失败，请保留当前输入','conflict');if(form.dataset.submitting!=='true')lock(false);throw error;}finally{localWrites--;checkDraftHints();}});return draftWrite;}
   async function flushDraft(){clearTimeout(draftTimer);draftTimer=null;if(!draftReady||draftBlocked)localFailure();await draftWrite.catch(()=>{});if(draftBlocked)localFailure();if(!client.pending)await saveDraft();}
   function checkDraftHints(){if(!watchPending||watchRead||localWrites||form.dataset.submitting==='true'||!draft)return;watchPending=false;watchRead=true;void draft.read().then(snapshot=>{if(localWrites||form.dataset.submitting==='true'){watchPending=true;return;}if(snapshot.revision===draftRevision)return;draftBlocked=true;draftMessage(snapshot.record?.kind==='pending_submission'?'另一页签有待核对申请，请先恢复':'另一页签已更新，请先恢复本机草稿','conflict');lock(false);}).catch(()=>{if(localWrites||form.dataset.submitting==='true'){watchPending=true;return;}draftBlocked=true;draftMessage('本机草稿暂不可核对','error');lock(false);}).finally(()=>{watchRead=false;checkDraftHints();});}
-  async function initializeDraft(){try{draftStore=createBrowserDraftStore({indexedDB:globalThis.indexedDB});draft=createApplicationDraft({store:draftStore,eventId:eventConfig.id});await loadDraft();draftReady=true;if(!client.pending&&editSequence&&!draftBlocked)queueDraft();else if(!draftBlocked)draftMessage(client.pending?'上次申请结果待核对':draft.snapshot.record?'已恢复本机草稿':'本机草稿已就绪',client.pending?'pending':'saved');draft.subscribe(()=>{watchPending=true;checkDraftHints();});}catch{draftBlocked=true;draftMessage('本机暂存不可用，请保留当前输入','error');}}
+  async function initializeDraft(){try{draftStore=createBrowserDraftStore({indexedDB:globalThis.indexedDB});draft=createApplicationDraft({store:draftStore,eventId:eventConfig.id});await loadDraft();draftReady=true;if(!client.pending&&editSequence&&!draftBlocked)queueDraft();else if(!draftBlocked)draftMessage(client.pending?'上次申请结果待核对':draft.snapshot.record?.kind==='editing'&&draft.snapshot.record.value.proposal?'已恢复本机草稿，含分享提案':draft.snapshot.record?'已恢复本机草稿':'本机草稿已就绪',client.pending?'pending':'saved');draft.subscribe(()=>{watchPending=true;checkDraftHints();});}catch{draftBlocked=true;draftMessage('本机暂存不可用，请保留当前输入','error');}}
   const draftInitialization=initializeDraft();
   form.addEventListener('input',event=>{if(!event.isComposing&&event.target.name!=='consentAccepted')queueDraft();});form.addEventListener('change',event=>{if(event.target.name!=='consentAccepted'){queueDraft();captureDraft();}});form.addEventListener('compositionend',queueDraft);
   for(const button of form.querySelectorAll('[data-application-draft-save]'))button.addEventListener('click',()=>{if(!client.pending)void flushDraft().catch(error=>draftMessage(error.message,'error'));});
@@ -97,7 +97,7 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
       if (value || frozen || !config) { if (!control.disabled) { control.dataset.registrationLocked = 'true'; control.disabled = true; } }
       else if (control.dataset.registrationLocked) { control.disabled = false; delete control.dataset.registrationLocked; }
     }
-    submit.textContent = value ? '正在确认申请结果…' : frozen ? '再次确认申请结果' : '提交参会申请';
+    submit.textContent = value ? '正在确认报名结果…' : frozen ? '再次确认申请结果' : registrationUiCopy(config).submitLabel;
     renderHomeAction();
     if(!value)checkDraftHints();
   }
@@ -143,11 +143,13 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
     if (!value || value.enabled !== true) { unavailable(value?.reason??'unavailable'); return; }
     if(value.eventId!==eventConfig.id){unavailable('unavailable');return;}
     config = value;
-    section.querySelector('[data-registration-notice]').textContent='提交申请 → 主办方审核 → 确认名额与邀请';
-    section.querySelector('[data-registration-open-label]').textContent = '参会申请';
-    section.querySelector('[data-registration-mode-label]').textContent = '人工审核';
+    const copy = registrationUiCopy(config);
+    section.querySelector('[data-registration-heading]').textContent=copy.title;
+    section.querySelector('[data-registration-notice]').textContent=copy.notice;
+    section.querySelector('[data-registration-open-label]').textContent = copy.openLabel;
+    section.querySelector('[data-registration-mode-label]').textContent = copy.modeLabel;
     section.querySelector('[data-registration-data-hint]').textContent = '带 * 为必填。学校／机构、城市、微信可不填。';
-    section.querySelector('[data-registration-disclaimer]').textContent = '本机暂存不等于提交；提交后等待审核。';
+    section.querySelector('[data-registration-disclaimer]').textContent = copy.disclaimer;
     const consentCopy = form.querySelector('[data-registration-consent-copy]');
     const privacyLink=node('a','隐私说明');privacyLink.href='#privacy';
     consentCopy.replaceChildren(document.createTextNode('我已阅读并同意'),privacyLink,document.createTextNode('。'));
@@ -156,12 +158,14 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
     const consentHint = document.getElementById('field-consentAccepted-hint');
     if (consentHint) consentHint.textContent = '请阅读后勾选。';
     const emailHint = document.getElementById('field-email-hint');
-    if (emailHint) emailHint.textContent = '用于查询申请及接收审核后的通知。';
-    submit.textContent = '提交参会申请';
+    if (emailHint) emailHint.textContent = copy.emailHint;
+    submit.textContent = copy.submitLabel;
     lock(false);
     form.dataset.registrationMode = 'production';
-    for(const status of document.querySelectorAll('[data-registration-availability]'))status.textContent='参会申请开放，须人工审核';
-    document.dispatchEvent(new CustomEvent('artdico:registration-ready',{detail:{privacy:value.privacy,closesAt:value.closesAt}}));
+    for(const status of document.querySelectorAll('[data-registration-availability]'))status.textContent=copy.availability;
+    document.dispatchEvent(new CustomEvent('artdico:registration-ready',{detail:{privacy:value.privacy,closesAt:value.closesAt,
+      ...(typeof value.attendeeReviewRequired==='boolean'?{attendeeReviewRequired:value.attendeeReviewRequired}:{}),
+      ...(value.admissions?{admissions:{waitlistEnabled:value.admissions.waitlistEnabled}}:{})}}));
   }).catch(async() => {
     await draftInitialization;
     unavailable('unavailable');

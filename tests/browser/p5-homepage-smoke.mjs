@@ -13,20 +13,21 @@ const project = fileURLToPath(new URL('../../', import.meta.url));
 const dist = resolve(process.env.ARTDICO_DIST_DIRECTORY || resolve(project, 'dist'));
 const evidence = resolve(process.env.ARTDICO_HOME_EVIDENCE_DIRECTORY || resolve(project, '.local-data/browser-evidence/p5-homepage'));
 const SITE = 'https://artdico.host', API = 'https://api.artdico.host';
-// Hero v2 has its own requested poster geometry. The original PNG remains the
+// The single-title Hero has its own requested geometry. The original PNG remains the
 // reference for every unrelated guest/logo/heading/divider measurement.
 const HERO_POSTER_LAYOUT = Object.freeze({
-  reason: 'Filled complete words followed by the same outlined words in one compact, normal-flow word wall.',
-  priorHero: 'Separate GLOBAL/GAME JAM and ARTDiCO/HOST words in two absolute anchors; original PNG agenda action y=1306.',
-  currentHero: 'GLOBAL overline, GAME JAM pair, ARTDiCO HOST pair, smaller Chinese subtitles; facts and actions follow the wall.',
-  desktopWrapperWidth: 'min(66vw, 1267px)', desktopInlinePadding: 'clamp(24px, 7.3vw, 140px)', mobileInlinePadding: 20,
-  gameJamPixels: 'desktop clamp(90px, 11.7vw, 225px); mobile (viewport - 40px) / 5.45', hostSizeRatio: .7175,
-  wordWallGap: 'desktop clamp(18px, 1.5vw, 29px); mobile 18px',
-  wordWidthAlignment: 'Loaded native Barlow pairs align within 1px across both groups. Font-404 fallback retains exact pair widths and strict wrapper/viewport crop checks; different font advances do not imply cross-group equality.',
-  latinWeight: 800, cssSizeAdjust: '140%', staticWidthScale: 1.06,
-  pairLeading: 1.02, solidStrokePixels: .55, minimumOutlinePixels: 1,
-  subtitlePixels: { minimum: 16, maximum: 28 }, sliceAngles: [124, 72],
-  unchangedScope: 'No guest, organization, section heading, divider, fallback or crop tolerance changes.',
+  reason: 'Each brand appears once as a complete, unbroken line of real text.',
+  priorHero: 'A GLOBAL overline and repeated filled/outline GAME JAM and ARTDiCO HOST pairs.',
+  currentHero: 'One GlobalGameJam line and one ARTDiCO HOST line, each followed by its smaller Chinese subtitle.',
+  desktopWrapperWidth: 'min(82vw, 1574px)', desktopInlinePadding: 'clamp(24px, 7.3vw, 140px)', mobileInlinePadding: 20,
+  mainTitlePixels: 'desktop clamp(64px, 9vw, 172px); mobile (viewport - 40px) / 8.8', hostSizeRatio: 1,
+  groupGap: 'clamp(28px, 4vw, 72px)',
+  wordWidthAlignment: 'Both complete brands share the same left edge and wrapper boundaries; their distinct natural word widths remain readable without cropping.',
+  latinWeight: 800, cssSizeAdjust: '140%', staticWidthScale: 1,
+  displayLeading: 1.1, solidStrokePixels: .55,
+  subtitlePixels: { minimum: 16, maximum: 28 }, sliceAngle: 124,
+  sliceStops: [0,68,68,82,82,100], sliceColors: ['rgb(150, 100, 255)','rgb(198, 179, 255)','rgb(150, 100, 255)'],
+  unchangedScope: 'No guest, organization, section heading, divider, fallback or crop tolerance changes. Footer outline styling stays independent.',
 });
 const errors = [], reports = [], assets = new Map(), digest = value => createHash('sha256').update(value).digest('hex');
 const content = toPublicContent(createInitialContent()); content.showcases = []; content.organizations = [];
@@ -88,9 +89,11 @@ async function fixture({ width, javaScriptEnabled = true, reducedMotion = 'no-pr
 async function heroPoster(page,{failedFont=false}={}){
   await page.evaluate(()=>document.fonts.ready);
   const close=(actual,expected,tolerance,message)=>assert.ok(Math.abs(actual-expected)<=tolerance,message);
-  assert.equal(await page.locator('#hero-heading [data-home-title-image],#hero-heading [data-home-title-fallback]').count(),0,'the poster remains live text without image/error fallback layers');
-  assert.equal(await page.locator('#hero-heading').getAttribute('aria-label'),await page.locator('#hero-heading').getAttribute('data-initial-event-title'),'the canonical event title stays independent of the repeated poster words');
-  assert.deepEqual(await page.locator('#hero-heading [data-home-title-overline][lang=en]').allTextContents(),['GLOBAL'],'GLOBAL remains a separate live-text overline');
+  assert.equal(await page.locator('#hero-heading [data-home-title-image],#hero-heading [data-home-title-fallback]').count(),0,'the title remains live text without image/error fallback layers');
+  assert.equal(await page.locator('#hero-heading').getAttribute('aria-label'),await page.locator('#hero-heading').getAttribute('data-initial-event-title'),'the canonical event title stays independent of the visual brand styling');
+  assert.equal(await page.locator('#hero-heading [data-home-title-overline],#hero-heading [data-poster-repeat],#hero-heading .ah-poster-outline').count(),0,'the Hero has no split GLOBAL overline, repeated words or outline echoes');
+  assert.equal(await page.locator('#hero-heading [data-poster-word]').count(),2,'the Hero contains exactly one real-text word group for each brand');
+  assert.equal(await page.locator('#hero-heading [data-poster-primary]').count(),2,'both single brand lines remain primary text');
   assert.deepEqual(await page.locator('#hero-heading [data-home-title-subtitle][lang="zh-CN"]').allTextContents(),['中国组织者交流会','嘉年华']);
   const value=await page.evaluate(()=>{
     const box=node=>{const b=node.getBoundingClientRect();return{x:b.x,y:b.y+scrollY,right:b.right,bottom:b.bottom+scrollY,width:b.width,height:b.height};};
@@ -100,62 +103,59 @@ async function heroPoster(page,{failedFont=false}={}){
       const type=node.querySelector('[data-home-title-type][lang=en]'),style=getComputedStyle(type),range=document.createRange();range.selectNodeContents(type);
       const primary=style.fontFamily.split(',')[0].trim().replace(/^["']|["']$/gu,'');
       const words=[...type.children].map(word=>{
-        const range=document.createRange();range.selectNodeContents(word);const style=getComputedStyle(word),matrix=new DOMMatrixReadOnly(style.transform);
+        const range=document.createRange();range.selectNodeContents(word);const style=getComputedStyle(word),matrix=style.transform==='none'?new DOMMatrixReadOnly():new DOMMatrixReadOnly(style.transform);
         return{text:word.textContent.trim(),primary:word.hasAttribute('data-poster-primary'),repeat:word.hasAttribute('data-poster-repeat'),word:word.hasAttribute('data-poster-word'),classes:[...word.classList],color:style.color,fill:style.webkitTextFillColor,stroke:parseFloat(style.webkitTextStrokeWidth),strokeColor:style.webkitTextStrokeColor,background:style.backgroundImage,clip:style.webkitBackgroundClip,scaleX:matrix.a,scaleY:matrix.d,animations:word.getAnimations().length,box:box(word),boxes:boxes(range)};
       });
       const subtitle=node.querySelector('[data-home-title-subtitle]');
       return{key:type.dataset.homeTitleType,words,box:box(type),wrapper:box(node),wrapperPosition:getComputedStyle(node).position,hiddenFromSpeech:node.getAttribute('aria-hidden'),family:style.fontFamily,primary,weight:style.fontWeight,fontSize:parseFloat(style.fontSize),lineHeight:parseFloat(style.lineHeight),textBoxes:boxes(range),subtitle:{fontSize:parseFloat(getComputedStyle(subtitle).fontSize),box:box(subtitle)},faces:[...document.fonts].filter(face=>face.family.replace(/^["']|["']$/gu,'')===primary&&face.weight==='800').map(face=>({weight:face.weight,status:face.status,sizeAdjust:face.sizeAdjust}))};
     });
     const bounds=selector=>box(document.querySelector(selector));
-    return{rows,composition:{viewport:innerWidth,headingDisplay:headingStyle.display,headingDirection:headingStyle.flexDirection,headingGap:parseFloat(headingStyle.rowGap),heading:box(heading),overline:bounds('[data-home-title-overline]'),description:bounds('[data-public-hero-description]'),facts:bounds('#top .ah-event-meta'),actions:bounds('#top .ah-hero-actions'),hero:bounds('#top')}};
+    return{rows,composition:{viewport:innerWidth,headingDisplay:headingStyle.display,headingDirection:headingStyle.flexDirection,headingGap:parseFloat(headingStyle.rowGap),heading:box(heading),description:bounds('[data-public-hero-description]'),facts:bounds('#top .ah-event-meta'),actions:bounds('#top .ah-hero-actions'),hero:bounds('#top')}};
   });
   const {rows,composition}=value;
   const mobile=composition.viewport<=820;
-  const expectedLatin=mobile?(composition.viewport-40)/5.45:Math.min(210,Math.max(90,composition.viewport*.117));
+  const expectedLatin=mobile?(composition.viewport-40)/8.8:Math.min(172,Math.max(64,composition.viewport*.09));
   const expectedInset=mobile?HERO_POSTER_LAYOUT.mobileInlinePadding:Math.min(140,Math.max(24,composition.viewport*.073));
-  const expectedWrapperWidth=mobile?composition.viewport-40:Math.min(1267,composition.viewport*.66);
-  const expectedWallGap=8;
-  assert.equal(rows.length,2,'both poster wrappers remain direct children of the semantic h1');
+  const expectedWrapperWidth=mobile?composition.viewport-40:Math.min(1574,composition.viewport*.82);
+  const expectedGroupGap=Math.min(72,Math.max(28,composition.viewport*.04));
+  assert.equal(rows.length,2,'both brand wrappers remain direct children of the semantic h1');
   assert.deepEqual(rows.map(row=>row.key),['ggj','host']);
-  assert.deepEqual(rows.map(row=>row.words.map(word=>word.text)),[['GAME JAM','GAME JAM'],['ARTDiCO HOST','ARTDiCO HOST']],'every filled group repeats its own complete words in outline');
+  assert.deepEqual(rows.map(row=>row.words.map(word=>word.text)),[['GlobalGameJam'],['ARTDiCO HOST']],'each complete brand appears once, with GlobalGameJam kept together');
   for(const [index,row] of rows.entries()){
-    close(row.fontSize,expectedLatin*(index?HERO_POSTER_LAYOUT.hostSizeRatio:1),.01,'each group retains the approved large display size');
-    close(row.wrapper.x,composition.hero.x+expectedInset,1,'the word wall retains the approved desktop inset or 20px mobile margin');
-    close(row.wrapper.width,expectedWrapperWidth,1,'the word-wall wrapper retains its exact approved responsive width');
+    close(row.fontSize,expectedLatin*(index?HERO_POSTER_LAYOUT.hostSizeRatio:1),.01,'both complete brands use the approved display size');
+    close(row.wrapper.x,composition.hero.x+expectedInset,1,'the title retains the approved desktop inset or 20px mobile margin');
+    close(row.wrapper.width,expectedWrapperWidth,1,'the brand wrapper retains its exact approved responsive width');
     close(row.wrapper.right,composition.hero.x+expectedInset+expectedWrapperWidth,1,'the full wrapper retains its approved right boundary');
-    assert.notEqual(row.wrapperPosition,'absolute','the word wall participates in normal flow instead of retaining the former two anchors');assert.equal(row.hiddenFromSpeech,'true');
-    const [solid,outline]=row.words;
-    assert.equal(solid.primary,true);assert.equal(solid.repeat,false);assert.equal(outline.primary,false);assert.equal(outline.repeat,true);
-    assert.ok(solid.classes.includes('ah-poster-solid')&&solid.classes.includes('ah-poster-slice'));assert.ok(outline.classes.includes('ah-poster-outline'));
-    close(solid.stroke,HERO_POSTER_LAYOUT.solidStrokePixels,.01,'only the Hero solid uses the exact fine same-color stroke');assert.equal(solid.strokeColor,solid.color);
-    assert.ok(outline.stroke>=HERO_POSTER_LAYOUT.minimumOutlinePixels,'the repeated words retain an actual visible outline');assert.match(outline.fill,/rgba\([^)]*,\s*0\)$/u);
-    assert.equal((solid.background.match(/linear-gradient\(/gu)||[]).length,2,'two independent layers produce the color cuts');
-    for(const angle of HERO_POSTER_LAYOUT.sliceAngles)assert.ok(solid.background.includes(angle+'deg'),'color cuts retain their specified diagonal angles');
-    for(const stop of [34,48,59,79])assert.ok(solid.background.split(stop+'%').length>=3,'adjacent color spans retain the same stop for a hard edge');assert.deepEqual(solid.clip.split(',').map(value=>value.trim()),['text','text'],'both diagonal background layers clip to the real letters');
-    close(solid.box.x,outline.box.x,1,'the two rows share a left edge');close(solid.box.right,outline.box.right,1,'the repeated words share a right edge');close(solid.box.width,outline.box.width,1,'the two rows have the same rendered width');
-    close(outline.box.y,solid.box.bottom,1,'filled and outline rows form a contiguous pair');close(row.lineHeight/row.fontSize,HERO_POSTER_LAYOUT.pairLeading,.002,'the pair keeps compact Hero leading');
-    assert.ok(row.subtitle.fontSize>=HERO_POSTER_LAYOUT.subtitlePixels.minimum&&row.subtitle.fontSize<=HERO_POSTER_LAYOUT.subtitlePixels.maximum&&row.subtitle.fontSize<row.fontSize,'Chinese subtitles remain readable and smaller than the Latin display');close(row.subtitle.box.y-outline.box.bottom,mobile?4:6,1,'each subtitle follows its pair with only the approved compact gap');
-    close(row.subtitle.fontSize,mobile?Math.min(20,Math.max(16,composition.viewport*.026)):Math.min(28,Math.max(18,composition.viewport*.0145)),.01,'subtitle size follows its separate small display role');
-    for(const word of row.words){
-      assert.equal(word.word,true,'every visible repeated row participates in the native text mask');assert.equal(word.boxes.length,1,'a complete repeated group never breaks onto another line');
-      close(word.scaleX,HERO_POSTER_LAYOUT.staticWidthScale,.001,'the font retains the approved small static width adjustment');close(word.scaleY,1,.001,'letterforms are not vertically stretched');assert.equal(word.animations,0,'poster words stay static');
-      for(const rect of word.boxes)assert.ok(rect.x>=row.wrapper.x-1&&rect.right<=row.wrapper.right+1,'whole words fit their poster wrapper');
+    assert.notEqual(row.wrapperPosition,'absolute','both brands participate in normal flow');assert.equal(row.hiddenFromSpeech,'true');
+    const [word]=row.words;
+    assert.equal(word.primary,true);assert.equal(word.repeat,false);assert.equal(word.word,true,'each complete brand participates in the native text mask');assert.ok(word.classes.includes('ah-poster-solid'));
+    close(word.stroke,HERO_POSTER_LAYOUT.solidStrokePixels,.01,'the solid brand keeps its fine same-color stroke');assert.equal(word.strokeColor,word.color);
+    if(index===0){
+      assert.ok(word.classes.includes('ah-poster-slice'),'only GlobalGameJam retains the restrained diagonal color accent');
+      assert.equal((word.background.match(/linear-gradient\(/gu)||[]).length,1,'GlobalGameJam has one color layer');assert.ok(word.background.includes(HERO_POSTER_LAYOUT.sliceAngle+'deg'));
+      assert.deepEqual((word.background.match(/\d+(?:\.\d+)?%/gu)||[]).map(Number.parseFloat),HERO_POSTER_LAYOUT.sliceStops,'the single color layer keeps the exact hard-edge stops');
+      const colors=word.background.match(/rgba?\([^)]*\)/gu)||[];
+      assert.deepEqual(colors.filter((color,index)=>index===0||color!==colors[index-1]),HERO_POSTER_LAYOUT.sliceColors,'the accent stays purple, pale purple, then purple');
+      assert.equal(word.clip,'text','the single background layer clips to the real letters');assert.match(word.fill,/rgba\([^)]*,\s*0\)$/u);
+    }else{
+      assert.equal(word.classes.includes('ah-poster-slice'),false,'ARTDiCO HOST stays a plain solid brand');assert.equal(word.background,'none');assert.equal(word.fill,word.color,'ARTDiCO HOST keeps an opaque solid fill');assert.doesNotMatch(word.fill,/rgba\([^)]*,\s*0\)$/u);
     }
+    close(row.lineHeight/row.fontSize,HERO_POSTER_LAYOUT.displayLeading,.002,'each single brand retains the approved display leading');
+    assert.ok(row.subtitle.fontSize>=HERO_POSTER_LAYOUT.subtitlePixels.minimum&&row.subtitle.fontSize<=HERO_POSTER_LAYOUT.subtitlePixels.maximum&&row.subtitle.fontSize<row.fontSize,'Chinese subtitles remain readable and smaller than the Latin display');close(row.subtitle.box.y-word.box.bottom,mobile?8:10,1,'each subtitle follows its brand with the approved gap');
+    close(row.subtitle.fontSize,mobile?Math.min(20,Math.max(16,composition.viewport*.026)):Math.min(28,Math.max(18,composition.viewport*.0145)),.01,'subtitle size follows its separate small display role');
+    assert.equal(word.boxes.length,1,'a complete brand never breaks onto another line');close(word.box.x,row.wrapper.x,1,'each complete brand starts at its wrapper left edge');
+    close(word.scaleX,HERO_POSTER_LAYOUT.staticWidthScale,.001,'letterforms retain their natural width');close(word.scaleY,1,.001,'letterforms are not vertically stretched');assert.equal(word.animations,0,'brand words stay static');
+    for(const rect of word.boxes)assert.ok(rect.x>=row.wrapper.x-1&&rect.right<=row.wrapper.right+1,'the whole brand fits its wrapper');
     assert.equal(row.weight,'800');assert.equal(row.primary,'Barlow Condensed');assert.ok(row.faces.length>0);assert.ok(row.faces.some(face=>face.status===(failedFont?'error':'loaded')),'the real shipped font request reaches its expected load or fallback state');assert.ok(row.faces.every(face=>face.sizeAdjust===HERO_POSTER_LAYOUT.cssSizeAdjust),'the original display face keeps its approved CSS metrics');
     assert.ok(row.box.width>0&&row.box.height>0&&row.textBoxes.length>0,'the headline consists of rendered native letterforms');
-    for(const rect of row.textBoxes)assert.ok(rect.x>=-1&&rect.right<=composition.viewport+1,'every live brand word remains inside the viewport');
+    for(const rect of row.textBoxes)assert.ok(rect.x>=-1&&rect.right<=composition.viewport+1,'every live brand remains inside the viewport');
   }
-  assert.equal(composition.headingDisplay,'flex');assert.equal(composition.headingDirection,'column');
-  close(composition.headingGap,expectedWallGap,.01,'the wall uses the approved compact group spacing');
-  if(!failedFont){
-    close(rows[0].words[0].box.x,rows[1].words[0].box.x,1,'the loaded native words align at the left edge across both groups');
-    close(rows[0].words[0].box.right,rows[1].words[0].box.right,1,'the loaded native word groups share the same right edge');
-  }
-  close(rows[0].wrapper.x,rows[1].wrapper.x,1,'both groups share the word-wall left edge');close(rows[0].wrapper.right,rows[1].wrapper.right,1,'both groups share the word-wall right boundary');
-  close(rows[1].wrapper.y-rows[0].wrapper.bottom,composition.headingGap,1,'only the explicit compact wall gap separates the two groups');
-  close(rows[0].box.y-composition.overline.bottom,8,1,'GLOBAL sits immediately above the first pair with the approved overline gap');
-  assert.ok(composition.description.y>=composition.heading.bottom-1,'published introductory copy follows the entire normal-flow word wall');
-  assert.ok(composition.facts.y>=composition.description.bottom-1&&composition.facts.y>=composition.heading.bottom-1,'event facts follow both the word wall and the published copy');
+  assert.equal(composition.headingDisplay,'flex');assert.equal(composition.headingDirection,'column');close(composition.headingGap,expectedGroupGap,.01,'the two single brands use their approved responsive spacing');
+  close(rows[0].words[0].box.x,rows[1].words[0].box.x,1,'the complete brands share one left edge');
+  close(rows[0].wrapper.x,rows[1].wrapper.x,1,'both brand wrappers share a left edge');close(rows[0].wrapper.right,rows[1].wrapper.right,1,'both brand wrappers share the same right boundary');
+  close(rows[1].wrapper.y-rows[0].wrapper.bottom,composition.headingGap,1,'the two brand groups are separated by their explicit normal-flow gap');
+  assert.ok(composition.description.y>=composition.heading.bottom-1,'published introductory copy follows both complete brands');
+  assert.ok(composition.facts.y>=composition.description.bottom-1&&composition.facts.y>=composition.heading.bottom-1,'event facts follow both brand lines and the published copy');
   assert.ok(composition.actions.y>=composition.facts.bottom-1&&composition.actions.bottom<=composition.hero.bottom+1,'Hero actions follow the facts and remain inside the Hero');
   return{layout:HERO_POSTER_LAYOUT,...value};
 }
@@ -235,7 +235,7 @@ async function inspect(f, label) {
     assert.ok(layout.descriptionBottom <= layout.factsTop, 'published introductory copy cannot overlap event facts');
   }
   return { label, width: page.viewportSize().width, shareSha256: digest(bytes), readOnlyRequests: f.requests.length, noOverflow: true, noClippedHeadline: true,
-    emptyWorksSectionHidden:true,legacyMissingFieldKeepsInitialSectionHidden:f.legacyShowcases,validLongDescriptionRecovered:f.longDescription,posterTypography:titleTypography,failedFontPaths:[...f.fontFailures],backgrounds,applicationActionInHero: true, applicationKeyboardReachable: true, actionPositions:{applicationTop:primaryBox.top,agendaTop:actionLayout.agenda.top,scope:'Hero v2 follows the complete word wall and facts; the original PNG y=1306 CTA proportion is superseded only here.'},eventFactFontPixels: { venue: venueSize, date: dateSize } };
+    emptyWorksSectionHidden:true,legacyMissingFieldKeepsInitialSectionHidden:f.legacyShowcases,validLongDescriptionRecovered:f.longDescription,posterTypography:titleTypography,failedFontPaths:[...f.fontFailures],backgrounds,applicationActionInHero: true, applicationKeyboardReachable: true, actionPositions:{applicationTop:primaryBox.top,agendaTop:actionLayout.agenda.top,scope:'The single-title Hero follows both complete brand lines and facts; the original PNG y=1306 CTA proportion is superseded only here.'},eventFactFontPixels: { venue: venueSize, date: dateSize } };
 }
 
 try {

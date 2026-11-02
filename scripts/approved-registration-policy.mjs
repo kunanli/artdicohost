@@ -8,6 +8,7 @@ export function approvedRegistrationPolicy({ enabled = true } = {}) {
     opensAt: '2026-10-20T00:00:00+08:00',
     closesAt: '2026-12-05T12:00:00+08:00',
     capacity: 300,
+    attendeeReviewRequired: false,
     privacy: {
       version: 'artdico-registration-2026-10-20-v1',
       processor: 'ARTDiCO HOST 活动筹备团队',

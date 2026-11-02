@@ -1,6 +1,6 @@
 import { registrationReceiptState } from '../lib/admission-view.mjs';
 const REFERENCE_PATTERN = /^[A-Za-z0-9_-]{32,128}$/u;
-const GROUP_FALLBACK = '报名已完成，入群二维码暂时无法显示。请保留报名编号，无需重复报名。';
+const GROUP_FALLBACK = '参会名额已确认，入群二维码暂时无法显示。请保留报名编号，无需重复报名。';
 
 function own(value, key) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
@@ -87,7 +87,7 @@ export function renderRegistrationSuccess(container, response = {}) {
     return true;
   }
   const fallback = () => {
-    heading.textContent = '报名已完成';
+    heading.textContent = '报名成功，名额已确认';
     status.textContent = GROUP_FALLBACK;
     status.hidden = false;
     imageHolder.hidden = true;
@@ -114,7 +114,7 @@ export function renderRegistrationSuccess(container, response = {}) {
     imageHolder.replaceChildren();
     fallback();
   }, { once: true });
-  heading.textContent = '报名成功，扫码加入活动微信群';
+  heading.textContent = '报名成功，名额已确认';
   imageHolder.hidden = false;
   help.hidden = false;
   imageHolder.append(image);

@@ -17,7 +17,7 @@ consent: { accepted: true, version: policy.privacy.version } };
 const receiptToken = 'c1.' + 'a'.repeat(43) + '.' + 'b'.repeat(43);
 const confirmation = { receiptToken, confirmationUrl: 'https://artdico.host/registration/confirmation/#r=' + receiptToken,
   expiresAt: '2026-12-12T00:00:00Z', email: { status: 'not_configured' } };
-function setup(onSaved) {
+function setup(onSaved, policyOverride = {}) {
   const fixture = objectFixture(), state = { loseAck: false };
   const base = createOssObjectClient({ credentials: async () => fakeCredentials, clock: () => new Date(NOW), fetchFn: fixture.fetchFn });
   const objects = { ...base, async append(key, position, data) {
@@ -25,7 +25,7 @@ function setup(onSaved) {
     if (state.loseAck && key.endsWith('/index/commits.jsonl')) { state.loseAck = false; throw new Error('SYNTHETIC_LOST_ACK'); }
     return saved;
   } };
-  const service = createRegistrationService({ objects, journalFor: prefix => createObjectJournal({ objects, prefix }), policy, capacity: 300,
+  const service = createRegistrationService({ objects, journalFor: prefix => createObjectJournal({ objects, prefix }), policy: { ...policy, ...policyOverride }, capacity: 300,
     tokenSecret: 'SYNTHETIC_CONFIRMATION_INDEPENDENT_SERVER_SECRET_1234567890', allowedOrigins: [ORIGIN], clock: () => NOW, onSaved });
   return { fixture, state, service };
 }
@@ -60,6 +60,17 @@ test('unknown registration acknowledgement never runs optional delivery until an
   assert.deepEqual(await f.service.submit(request), { outcome: 'unavailable' }); assert.equal(calls, 0);
   const replayed = await f.service.submit(request);
   assert.equal(replayed.outcome, 'replayed'); assert.equal(calls, 1);
+  assert.equal((await f.service.repository.list()).registrations.length, 1);
+});
+
+test('only a fresh automatically confirmed public commit grants its hook notification authority', async () => {
+  const calls = [];
+  const f = setup(async context => { calls.push({ outcome: context.outcome, notify: context.notify, admissionStatus: context.receipt.admissionStatus }); return confirmation; },
+    { attendeeReviewRequired: false });
+  const request = await input(f.service), saved = await f.service.submit(request);
+  assert.equal(saved.outcome, 'created'); assert.equal(saved.receipt.admissionStatus, 'confirmed');
+  const replay = await f.service.submit(request); assert.equal(replay.outcome, 'replayed');
+  assert.deepEqual(calls, [{ outcome: 'created', notify: true, admissionStatus: 'confirmed' }, { outcome: 'replayed', notify: false, admissionStatus: 'confirmed' }]);
   assert.equal((await f.service.repository.list()).registrations.length, 1);
 });
 

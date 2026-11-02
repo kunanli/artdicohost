@@ -217,13 +217,24 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, allowedOrigins: [PUBLIC_SITE_ORIGIN], clock: now,
       isWithdrawn, getWithdrawnIds: () => reviewStore.inactiveRegistrationIds(),
       waitlistEnabled: env.ARTDICO_REGISTRATION_WAITLIST_ENABLED === 'true', staffReserve: 0,
-      onSaved: async ({ receipt, outcome }) => {
-        const confirmation = await confirmationService.forSavedReceipt({ receipt, notify: false });
+      onSaved: async ({ receipt, outcome, notify: send, promotedIds }) => {
+        const created = outcome === 'created', confirmed = receipt.admissionStatus === 'confirmed', automatic = created && confirmed && send === true;
+        const started = performance.now(), automaticBudgetMs = 5000;
+        const confirmation = await confirmationService.forSavedReceipt({ receipt, notify: automatic,
+          ...(automatic ? { timeoutMs: automaticBudgetMs } : {}) });
         // A new, proven application may receive a receipt. Replays retain the
         // original capability without authorizing a historical backfill.
-        if (outcome === 'created' && receipt.admissionStatus === 'pending_review') {
+        if (created && receipt.admissionStatus === 'pending_review') {
           try { await confirmationService.notifyApplicationReceived({ receipt, outcome }); }
           catch { /* Optional mail cannot undo a durable application or its link. */ }
+        }
+        // Intake may durably release a withdrawn seat and promote an existing
+        // waiter. Only that new commit authorizes this bounded attempt; reads
+        // and receipt replays never backfill notifications. An uncertain send
+        // leaves the remaining people for explicit staff dispatch.
+        if (created && confirmation.email?.status !== 'unknown' && Array.isArray(promotedIds) && promotedIds.length) {
+          const remaining = automaticBudgetMs - Math.ceil(performance.now() - started);
+          if (remaining > 0) await notifyPromoted(promotedIds, remaining);
         }
         return confirmation;
       },

@@ -1,12 +1,15 @@
 import {eventConfig} from '../config/event.mjs';
+import {confirmationDiagnostic,validConfirmationDiagnostic} from '../../shared/confirmation-delivery.mjs';
 const ID=/^[A-Za-z0-9_-]{43}$/u;
-const REASONS={OPERATOR_PERMISSION_REQUIRED:'此账号可核对通知记录。',ELIGIBLE:'可以寄送确认信。',ADMISSION_NOT_CONFIRMED:'名额尚未确认，暂不寄送正式凭证。',EMAIL_MISSING:'未记录邮箱，请先核对联络资料。',CONTACT_CONSENT_REQUIRED:'联络授权尚未核实，暂不寄送。',CONTACT_DECLINED:'对方已拒绝联络或出席，暂不寄送。',CONTACT_EMAIL_CHANGED:'联络邮箱与原报名不同，请先核对原记录。',CONTACT_NOT_FOUND:'原联系人无法核对，请先处理关联。',STAFF_PERMISSION_REQUIRED:'缺少工作人员代登记依据，暂不寄送。',PERMISSION_UNAVAILABLE:'联络授权暂时无法核对。',EMAIL_PAUSED:'确认邮件已暂停，请在设置中核对。',EMAIL_NOT_READY:'邮件服务暂不可用，请在设置中核对。',EVENT_FACTS_MISMATCH:'活动资料待核对。',EVENT_FACTS_UNAVAILABLE:'活动资料暂时无法核对。',ALREADY_ACCEPTED:'邮件服务已接收；请向收件人核实收件。',HISTORICAL_DELIVERY_UNKNOWN:'原邮箱寄送结果未明，请先核对历史记录。',DELIVERY_UNKNOWN:'上次寄送结果不明，请核实服务商或收件箱后处理，系统不会自动重寄。',RETRY_LIMIT:'已到达明确失败的重试次数上限。'};
+const REASONS={OPERATOR_PERMISSION_REQUIRED:'此账号可核对通知记录。',ELIGIBLE:'可以寄送确认信。',ADMISSION_NOT_CONFIRMED:'名额尚未确认，暂不寄送正式凭证。',EMAIL_MISSING:'未记录邮箱，请先核对联络资料。',CONTACT_CONSENT_REQUIRED:'联络授权尚未核实，暂不寄送。',CONTACT_DECLINED:'对方已拒绝联络或出席，暂不寄送。',CONTACT_EMAIL_CHANGED:'联络邮箱与原报名不同，请先核对原记录。',CONTACT_NOT_FOUND:'原联系人无法核对，请先处理关联。',STAFF_PERMISSION_REQUIRED:'缺少工作人员代登记依据，暂不寄送。',PERMISSION_UNAVAILABLE:'联络授权暂时无法核对。',EMAIL_PAUSED:'确认邮件已暂停，请在设置中核对。',EMAIL_NOT_READY:'邮件服务暂不可用，请在设置中核对。',EMAIL_DISABLED:'邮件服务已暂停。',EMAIL_CONFIGURATION_MISSING:'邮件设置缺少必要资料。',EMAIL_CONFIGURATION_INVALID:'邮件设置有待修正。',EMAIL_CONFIGURATION_UNAVAILABLE:'邮件设置暂时无法核对。',CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF:'邮件服务已配置，收件结果须另行核对。',EVENT_FACTS_MISMATCH:'活动资料待核对。',EVENT_FACTS_UNAVAILABLE:'活动资料暂时无法核对。',ALREADY_ACCEPTED:'邮件服务已接收；请向收件人核实收件。',HISTORICAL_DELIVERY_UNKNOWN:'原邮箱寄送结果未明，请先核对历史记录。',DELIVERY_UNKNOWN:'上次寄送结果不明，请核实服务商或收件箱后处理，系统不会自动重寄。',RETRY_LIMIT:'请先核对邮件设置再重寄。',RECOVERY_USED:'请重新核对当前寄送资格。'};
 const STATUSES=['not_sent','provider_accepted','rejected','unknown'];
 export function validPersonConfirmation(value,id){return Boolean(value&&value.registrationId===id&&ID.test(id)&&Number.isSafeInteger(value.revision)&&value.revision>=0
   &&(!Object.hasOwn(value,'accessRevision')||Number.isSafeInteger(value.accessRevision)&&value.accessRevision>=0)
   &&['pending_review','confirmed','waitlisted','rejected','withdrawn'].includes(value.admissionStatus)&&STATUSES.includes(value.status)&&Object.hasOwn(REASONS,value.reason)
   &&typeof value.ready==='boolean'&&typeof value.canSend==='boolean'&&typeof value.retryRejected==='boolean'&&value.retryRejected===(value.status==='rejected')
   &&(!value.ready||value.canSend&&value.reason==='ELIGIBLE'&&value.admissionStatus==='confirmed'&&['not_sent','rejected'].includes(value.status))
+  &&(!Object.hasOwn(value,'canRecover')||value.canRecover===true&&!value.ready&&value.canSend&&value.retryRejected&&value.reason==='RETRY_LIMIT'&&value.status==='rejected'&&value.admissionStatus==='confirmed'&&Object.hasOwn(value,'accessRevision'))
+  &&(!Object.hasOwn(value,'diagnostic')||validConfirmationDiagnostic(value.diagnostic)&&(value.diagnostic.code==='DELIVERY_UNKNOWN'?value.status==='unknown':value.status==='rejected'))
   &&typeof value.recipient==='string'&&value.recipient.length<=320&&!/[\u0000-\u001f\u007f]/u.test(value.recipient));}
 const OP=/^[A-Za-z0-9_-]{32,128}$/u;
 const RESULTS=['provider_accepted','rejected','unknown','disabled','not_configured','not_applicable','not_public','withdrawn','unavailable','not_attempted'];
@@ -20,8 +23,9 @@ export function personConfirmationPolicy(id){
   return{fields:['path','method','payloadJson'],pendingFields:['path','method','payloadJson'],jsonFields:['payloadJson'],validate(value,{kind}){
     if(kind!=='pending_submission'||value.path!=='/api/admin/registration-confirmation/send/'+id||value.method!=='POST'||typeof value.payloadJson!=='string'||value.payloadJson.length>1024)return false;
     let body;try{body=JSON.parse(value.payloadJson);}catch{return false;}
-    return Boolean(body&&['expectedRevision,operationId,retryRejected','expectedAccessRevision,expectedRevision,operationId,retryRejected'].includes(Object.keys(body).sort().join(','))&&Number.isSafeInteger(body.expectedRevision)&&body.expectedRevision>=0&&OP.test(body.operationId)&&typeof body.retryRejected==='boolean'
-      &&(!Object.hasOwn(body,'expectedAccessRevision')||Number.isSafeInteger(body.expectedAccessRevision)&&body.expectedAccessRevision>=0));
+    return Boolean(body&&['expectedRevision,operationId,retryRejected','expectedAccessRevision,expectedRevision,operationId,retryRejected','expectedAccessRevision,expectedRevision,operationId,recoverRejected,retryRejected'].includes(Object.keys(body).sort().join(','))&&Number.isSafeInteger(body.expectedRevision)&&body.expectedRevision>=0&&OP.test(body.operationId)&&typeof body.retryRejected==='boolean'
+      &&(!Object.hasOwn(body,'expectedAccessRevision')||Number.isSafeInteger(body.expectedAccessRevision)&&body.expectedAccessRevision>=0)
+      &&(!Object.hasOwn(body,'recoverRejected')||body.recoverRejected===true&&body.retryRejected===true&&Object.hasOwn(body,'expectedAccessRevision')));
   }};
 }
 export function validPersonConfirmationOperation(value,{registrationId,operationId,lookup=false}={}){
@@ -37,13 +41,18 @@ export function createPersonConfirmation({root,request,getUser,draftStore,eventI
   let id=null,actor='',sequence=0,state=null,pending=null,snapshot=null,scope=null,policy=null,busy=false,storageReady=false,readUnavailable=false,writingGeneration=null,unsubscribe=null,activated=true,settling=Promise.resolve();
   const active=(generation,selected)=>generation===sequence&&id===selected&&actor===actorKey(getUser());
   const blocked=()=>busy||Boolean(pending)||!storageReady||readUnavailable||state?.status==='unknown'||state?.reason==='DELIVERY_UNKNOWN';
-  function lock(){const disabled=busy||isBlocked()||!getUser();$('[data-person-confirmation-send]').disabled=disabled||isSendBlocked()||!state?.ready||Boolean(pending)||!storageReady;$('[data-person-confirmation-check]').disabled=disabled;onLockChange();}
+  function lock(){const disabled=busy||isBlocked()||!getUser();$('[data-person-confirmation-send]').disabled=disabled||isSendBlocked()||!(state?.ready||state?.canRecover===true)||Boolean(pending)||!storageReady;$('[data-person-confirmation-check]').disabled=disabled;onLockChange();}
   function message(text){root.hidden=!id;$('[data-person-confirmation-status]').textContent=text;lock();}
   function render(){
     if(!state)return;root.hidden=false;$('[data-person-confirmation-recipient]').textContent=state.recipient?'收件人：'+state.recipient:'';
-    const status=$('[data-person-confirmation-status]');status.textContent=pending?'原寄送结果待核对，不会重复寄送。':(state.status==='rejected'?'上次明确未发出。':'')+REASONS[state.reason]+(!state.canSend?' 当前账号可查看，寄送需要活动管理权限。':'');
+    const status=$('[data-person-confirmation-status]');status.textContent=pending?'原寄送结果待核对，不会重复寄送。':(state.status==='rejected'&&(state.ready||state.canRecover===true)?'上次明确未发出，可手动重寄。':(state.status==='rejected'?'上次明确未发出。':'')+REASONS[state.reason])+(!state.canSend?' 当前账号可查看，寄送需要活动管理权限。':'');
+    const diagnostic=confirmationDiagnostic(state.diagnostic);
+    if(!pending&&diagnostic)status.append(' ',diagnostic.code==='PROVIDER_REJECTED'?'EmailJS拒绝请求（HTTP '+diagnostic.httpStatus+'）。':diagnostic.transportStarted?'EmailJS请求结果待核对。':'发送前核对未通过。');
+    if(!pending&&(['EMAIL_PAUSED','EMAIL_NOT_READY','EMAIL_DISABLED','EMAIL_CONFIGURATION_MISSING','EMAIL_CONFIGURATION_INVALID','EMAIL_CONFIGURATION_UNAVAILABLE','RETRY_LIMIT','RECOVERY_USED'].includes(state.reason)||diagnostic)){
+      const link=document.createElement('a');link.href='/admin/settings/delivery/';link.dataset.personConfirmationSettings='';link.textContent='核对邮件设置';status.append(' ',link);
+    }
     if(['EVENT_FACTS_MISMATCH','EVENT_FACTS_UNAVAILABLE'].includes(state.reason)){if(getUser()?.roles?.some(role=>['editor','superadmin'].includes(role))){const link=document.createElement('a');link.href='/admin/content/event/';link.textContent='核对活动资料';status.append(' ',link);}else status.append(' 请交由活动编辑核对。');}
-    $('[data-person-confirmation-send]').textContent=state.retryRejected?'重试明确失败的确认信':'寄送确认信';$('[data-person-confirmation-check]').textContent=pending?'核对原寄送结果':'核对寄送状态';lock();
+    $('[data-person-confirmation-send]').textContent=state.status==='rejected'?'重寄确认信':'寄送确认信';$('[data-person-confirmation-check]').textContent=pending?'核对原寄送结果':'核对寄送状态';lock();
   }
   async function removePending(generation,selected){
     writingGeneration=generation;try{
@@ -92,9 +101,11 @@ export function createPersonConfirmation({root,request,getUser,draftStore,eventI
     finally{if(active(generation,selected)){busy=false;lock();}}
   }
   async function send(){
-    if(!id||busy||isBlocked()||isSendBlocked()||!getUser()||!state?.ready||pending||!storageReady)return;
-    if(!confirm('寄送这位参加人的确认信？邮件会包含私人确认页与 Apple Wallet 入口。'))return;
+    if(!id||busy||isBlocked()||isSendBlocked()||!getUser()||!(state?.ready||state?.canRecover===true)||pending||!storageReady)return;
+    const recovering=state.canRecover===true;
+    if(!confirm(state.status==='rejected'?'重寄这位参加人的确认信？邮件会包含私人确认页与 Apple Wallet 入口。':'寄送这位参加人的确认信？邮件会包含私人确认页与 Apple Wallet 入口。'))return;
     const selected=id,generation=++sequence,original={expectedRevision:state.revision,operationId:crypto.randomUUID().replaceAll('-',''),retryRejected:state.retryRejected,expectedAccessRevision:state.accessRevision??0};
+    if(recovering)original.recoverRejected=true;
     const value={path:'/api/admin/registration-confirmation/send/'+selected,method:'POST',payloadJson:JSON.stringify(original)};
     busy=true;let sent=false,received=false;lock();
     try{

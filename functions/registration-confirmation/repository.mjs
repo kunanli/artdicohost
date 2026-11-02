@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { parseTimestamp } from '../registration-api/policy.mjs';
+import { validConfirmationDiagnostic } from '../../shared/confirmation-delivery.mjs';
 
 export const MAX_CONFIRMATION_AUDIT = 4000;
 export const MAX_CONFIRMATION_BATCH = 100;
@@ -35,29 +36,54 @@ export function canonicalConfirmationKind(state, registrationId, admissionStatus
 function initial(eventId) { return { schemaVersion: 1, eventId, revision: 0, settings: { enabled: true }, notices: [], operations: [], audit: [] }; }
 function apply(state, audit) {
   const d = audit.details;
-  if (audit.action === 'reserve') {
-    if (!(exact(d, ['registrationId', 'kind', 'admissionStatus', 'admissionRevision', 'retryRejected']) || exact(d, ['registrationId', 'kind', 'admissionStatus', 'admissionRevision', 'retryRejected', ...scopeKeys]) && validScope({ accessRevision: d.accessRevision, recipientDigest: d.recipientDigest })) || !ID.test(d.registrationId ?? '')
+  if (audit.action === 'reserve' || audit.action === 'recovery_reserved') {
+    const recovery = audit.action === 'recovery_reserved';
+    const reserveKeys = ['registrationId', 'kind', 'admissionStatus', 'admissionRevision', 'retryRejected'];
+    if (recovery) {
+      if (!exact(d, [...reserveKeys, ...scopeKeys, 'operationId', 'requestHash', 'relatedRegistrationIds', 'configurationIdentity'])
+        || !OP.test(d.operationId ?? '') || !HASH.test(d.requestHash ?? '') || !HASH.test(d.configurationIdentity ?? '')
+        || !validScope({ accessRevision: d.accessRevision, recipientDigest: d.recipientDigest })
+        || !Array.isArray(d.relatedRegistrationIds) || !d.relatedRegistrationIds.length || d.relatedRegistrationIds.length > MAX_CONFIRMATION_BATCH
+        || d.relatedRegistrationIds.some(id => !ID.test(id)) || new Set(d.relatedRegistrationIds).size !== d.relatedRegistrationIds.length
+        || !d.relatedRegistrationIds.includes(d.registrationId) || d.relatedRegistrationIds.join(',') !== [...d.relatedRegistrationIds].sort().join(',')
+        || !formalConfirmationKind(d.kind) || d.admissionStatus !== 'confirmed' || d.retryRejected !== true || !state.settings.enabled
+        || state.operations.some(op => op.operationId === d.operationId)) fail();
+      const family = state.notices.filter(item => d.relatedRegistrationIds.includes(item.registrationId) && formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed');
+      if (family.some(item => ['reserved', 'unknown', 'provider_accepted'].includes(item.status))
+        || family.reduce((total, item) => total + item.attempt, 0) < 5
+        || state.operations.some(op => op.action === 'dispatch' && op.status !== 'completed' && op.registrationIds.some(id => d.relatedRegistrationIds.includes(id)))) fail();
+    }
+    if (!(recovery || exact(d, reserveKeys) || exact(d, [...reserveKeys, ...scopeKeys]) && validScope({ accessRevision: d.accessRevision, recipientDigest: d.recipientDigest })) || !ID.test(d.registrationId ?? '')
       || !formalConfirmationKind(d.kind) && !additionalKind(d.kind)
       || !(d.kind === 'application_received' ? ['pending_review'] : d.kind === 'pre_event_reminder' ? ['confirmed'] : ['confirmed', 'waitlisted']).includes(d.admissionStatus)
       || !Number.isSafeInteger(d.admissionRevision) || d.admissionRevision < 0 || typeof d.retryRejected !== 'boolean') fail();
     if (formalConfirmationKind(d.kind) && d.kind !== canonicalConfirmationKind(state, d.registrationId, d.admissionStatus)) fail();
     const id = confirmationNoticeId(state.eventId, d.registrationId, d.kind, d.accessRevision ?? 0, d.recipientDigest), existing = state.notices.find(n => n.id === id);
-    if (existing && (!d.retryRejected || existing.status !== 'rejected' || existing.attempt >= 5 || existing.admissionStatus !== d.admissionStatus)) fail();
+    if (existing && (!d.retryRejected || existing.status !== 'rejected' || !recovery && existing.attempt >= 5 || existing.admissionStatus !== d.admissionStatus)) fail();
     if (formalConfirmationKind(d.kind) && d.admissionStatus === 'confirmed' && state.notices.some(item => item.registrationId === d.registrationId
       && formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' && (item.accessRevision ?? 0) === (d.accessRevision ?? 0) && item.id !== id)) fail();
     if (!existing && state.notices.length >= 2000) fail();
     const priorAttempts = state.notices.filter(item => item.registrationId === d.registrationId && (formalConfirmationKind(d.kind) ? formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' : item.kind === d.kind)).reduce((total, item) => total + item.attempt, 0);
-    if (priorAttempts >= 5) fail();
+    if (!recovery && priorAttempts >= 5 || recovery && (!existing || existing.status !== 'rejected')) fail();
     const notice = { id, registrationId: d.registrationId, kind: d.kind, status: 'reserved', admissionStatus: d.admissionStatus,
       admissionRevision: d.admissionRevision, createdAt: existing?.createdAt ?? audit.at, updatedAt: audit.at,
       actorId: audit.actorId, attempt: (existing?.attempt ?? 0) + 1,
       ...(Object.hasOwn(d, 'accessRevision') ? { accessRevision: d.accessRevision, recipientDigest: d.recipientDigest } : {}) };
     if (existing) state.notices.splice(state.notices.indexOf(existing), 1, notice); else state.notices.push(notice);
+    if (recovery) state.operations.push({ operationId: d.operationId, requestHash: d.requestHash, actorId: audit.actorId,
+      recipientScopes: { [d.registrationId]: { accessRevision: d.accessRevision, recipientDigest: d.recipientDigest } },
+      action: 'dispatch', at: audit.at, status: 'started', registrationIds: [d.registrationId], retryRejected: true, results: [] });
   } else if (audit.action === 'result') {
-    if (!exact(d, ['noticeId', 'status']) || !EMAIL_STATUSES.slice(1).includes(d.status)) fail();
+    if (!(exact(d, ['noticeId', 'status']) || exact(d, ['noticeId', 'status', 'attempt']) || exact(d, ['noticeId', 'status', 'attempt', 'diagnostic']))
+      || !EMAIL_STATUSES.slice(1).includes(d.status) || Object.hasOwn(d, 'attempt') && (!Number.isSafeInteger(d.attempt) || d.attempt < 1)
+      || Object.hasOwn(d, 'diagnostic') && (!validConfirmationDiagnostic(d.diagnostic) || (d.diagnostic.code === 'DELIVERY_UNKNOWN' ? d.status !== 'unknown' : d.status !== 'rejected'))) fail();
     const notice = state.notices.find(n => n.id === d.noticeId);
-    if (!notice || notice.status !== 'reserved' || notice.actorId !== audit.actorId) fail();
+    const reservation = state.audit.findLast(item => ['reserve', 'recovery_reserved'].includes(item.action)
+      && confirmationNoticeId(state.eventId, item.details.registrationId, item.details.kind, item.details.accessRevision ?? 0, item.details.recipientDigest) === d.noticeId);
+    if (reservation?.action === 'recovery_reserved' && !Object.hasOwn(d, 'attempt')) fail();
+    if (!notice || notice.status !== 'reserved' || notice.actorId !== audit.actorId || Object.hasOwn(d, 'attempt') && notice.attempt !== d.attempt) fail();
     notice.status = d.status; notice.updatedAt = audit.at;
+    if (d.diagnostic) notice.diagnostic = structuredClone(d.diagnostic);
   } else if (audit.action === 'settings') {
     if (!exact(d, ['operationId', 'requestHash', 'enabled']) || !OP.test(d.operationId ?? '') || !HASH.test(d.requestHash ?? '')
       || typeof d.enabled !== 'boolean' || state.operations.some(op => op.operationId === d.operationId)) fail();
@@ -91,9 +117,10 @@ function validate(value, eventId, cursor) {
   for (const [i, item] of value.audit.entries()) {
     if (!exact(item, ['revision', 'action', 'actorId', 'at', 'details']) || item.revision !== i + 1 || !ACTOR.test(item.actorId ?? '')
       || !at(item.at) || Date.parse(item.at) < previous) fail();
-    apply(expected, item); previous = Date.parse(item.at);
+    // Reservation ownership must also hold during journal replay.
+    apply(expected, item); expected.audit.push(structuredClone(item)); previous = Date.parse(item.at);
   }
-  expected.revision = value.revision; expected.audit = structuredClone(value.audit);
+  expected.revision = value.revision;
   if (!isDeepStrictEqual(expected, value)) fail();
   return structuredClone(value);
 }

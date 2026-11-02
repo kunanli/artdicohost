@@ -12,6 +12,10 @@
   color: var(--ah-ink, #17233a);
 }
 #artdico-host .ah-registration-success[hidden] { display: none; }
+#artdico-host .ah-registration-preview[hidden],
+#artdico-host .ah-registration-success [hidden] { display: none; }
+#artdico-host .ah-registration-success[data-registration-success-compact] { padding: 24px; }
+#artdico-host .ah-registration-success[data-registration-success-compact] h3 { margin: 0; }
 #artdico-host .ah-registration-success::before {
   position: absolute;
   inset: 0 0 auto;

@@ -26,8 +26,8 @@ async function fixture({ width = 390, capacity = 3, mail = true, username = 'own
   // The real fixture clock is fixed; keep browser capability/token expiry checks on that same wall clock.
   // setFixedTime leaves event-loop timers running normally.
   await page.clock.setFixedTime(new Date('2026-10-21T09:00:00.000Z'));
-  const calls = [], writes = [], reads = [];
-  let loseSubmit = submitAckLost, loseApproval = approvalAckLost, approving = false, rejectAdmissionRead = false, rejectNextApproval = false, rejectReviewSave = false, failReviewList = false, wrongReviewIdentity = false;
+  const calls = [], writes = [], reads = [], navigations = [];
+  let loseSubmit = submitAckLost, loseApproval = approvalAckLost, approving = false, rejectAdmissionRead = false, rejectNextApproval = false, rejectReviewSave = false, failReviewList = false, wrongReviewIdentity = false, receiptProven = false;
   const append = runtime.objects.append.bind(runtime.objects);
   runtime.objects.append = async (key, ...args) => {
     const result = await append(key, ...args);
@@ -41,9 +41,11 @@ async function fixture({ width = 390, capacity = 3, mail = true, username = 'own
   await context.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url()), path = url.pathname;
     assert.ok([SITE, API].includes(url.origin), 'all browser origins must remain intercepted');
+    if(req.isNavigationRequest())navigations.push({origin:url.origin,path});
     if (url.origin === API && path.startsWith('/api/')) {
       const requestHeaders = await req.allHeaders(), body = req.postData() ? JSON.parse(req.postData()) : null;
-      const entry = { path, method: req.method(), body, headers: requestHeaders };
+      if(receiptProven&&req.method()==='POST'&&/\/registration\/(?:token|submit)$/u.test(path))assert.fail('a proven compact receipt never starts another registration POST');
+      const entry = { path, method: req.method(), body, rawBody:req.postData(), headers: requestHeaders };
       calls.push(entry); if (req.method() === 'GET') reads.push(entry); else if (req.method() !== 'OPTIONS') writes.push(entry);
       if (/^\/api\/(?:public\/|admin\/registration\/)/u.test(path)) assert.equal(requestHeaders.cookie, undefined, 'public request omits the private staff cookie');
       if (path.endsWith('/registration/confirmation')) assert.equal(requestHeaders.referer, undefined, 'private receipt is not a Referer');
@@ -57,6 +59,7 @@ async function fixture({ width = 390, capacity = 3, mail = true, username = 'own
       let response;
       try { response = await runtime.app.handle(request); } finally { approving = false; }
       entry.status = response.status;
+      if(path.endsWith('/registration/submit')&&[200,201].includes(response.status))entry.receipt=await response.clone().json();
       if (loseSubmit && path === '/api/admin/registration/submit') {
         loseSubmit = false; await response.arrayBuffer();
         return route.fulfill(json({ error: { code: 'UNAVAILABLE' } }, 503, { 'access-control-allow-origin': SITE }));
@@ -73,7 +76,7 @@ async function fixture({ width = 390, capacity = 3, mail = true, username = 'own
     const response = await runtime.app.handle(runtime.request(path, { method, body, headers: useHeaders }));
     const value = await response.json(); assert.equal(response.status, status, JSON.stringify(value)); return value;
   }
-  return { runtime, context, page, headers, calls, writes, reads, api, mail, expireNextApproval: () => { rejectNextApproval = true; }, expireAdmissionRead: () => { rejectAdmissionRead = true; },rejectNextReviewSave:()=>{rejectReviewSave=true;},failNextReviewList:()=>{failReviewList=true;},wrongNextReviewIdentity:()=>{wrongReviewIdentity=true;} };
+  return { runtime, context, page, headers, calls, writes, reads, navigations, proveReceipt:()=>{receiptProven=true;}, api, mail, expireNextApproval: () => { rejectNextApproval = true; }, expireAdmissionRead: () => { rejectAdmissionRead = true; },rejectNextReviewSave:()=>{rejectReviewSave=true;},failNextReviewList:()=>{failReviewList=true;},wrongNextReviewIdentity:()=>{wrongReviewIdentity=true;} };
 }
 async function noOverflow(page) { assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true); }
 async function openPublic(f) {
@@ -87,10 +90,22 @@ async function fillApplication(form, fields = {}) {
   await form.locator('[name=categories]').selectOption(fields.category || 'student');
   await form.locator('[name=consentAccepted]').check();
 }
+async function compactReceipt(f,previousURL,admission='pending_review') {
+  const labels={confirmed:'报名成功',pending_review:'申请已收到，待审核',waitlisted:'候补登记已保存，尚未确认名额',rejected:'本次申请未通过审核'};
+  const success=f.page.locator('[data-registration-success][data-registration-success-compact]');await success.waitFor({state:'visible'});
+  await f.page.waitForFunction(()=>document.activeElement===document.querySelector('[data-registration-success][data-registration-success-compact]'));
+  assert.equal(f.page.url(),previousURL,'a committed application keeps the original form URL and hash');assert.equal(await success.getAttribute('role'),'status');assert.equal(await success.getAttribute('tabindex'),'-1');
+  assert.equal((await success.innerText()).trim(),labels[admission],'only the accurate compact result is presented');
+  const form=f.page.locator('[data-registration-form]');assert.equal(await form.isVisible(),false);assert.equal(await form.locator('[data-submit]').isDisabled(),true);assert.equal(await f.page.locator('[data-registration-preview]').isVisible(),false);
+  assert.equal(await success.locator('[data-registration-success-details]').isVisible(),false);assert.equal(await success.locator('[data-registration-reference]').textContent(),'');assert.equal(await success.locator('[data-registration-group-status]').textContent(),'');assert.equal(await success.locator('[data-registration-group-image] img').count(),0);
+  assert.equal(f.navigations.some(item=>item.path==='/registration/confirmation/'),false,'submission never navigates to a private confirmation document');assert.equal(f.calls.some(item=>/\/registration\/confirmation(?:\/|$)/u.test(item.path)),false,'submission never starts a private confirmation API read');
+  const receipt=f.writes.filter(item=>item.path.endsWith('/registration/submit')).at(-1);assert.ok(receipt&&[200,201].includes(receipt.status));assert.equal(receipt.receipt.admissionStatus,admission,'the status is backed by the actual isolated runtime receipt');
+  const posts=f.writes.filter(item=>item.method==='POST').length,mail=f.runtime.messages.length;f.proveReceipt();
+  await form.evaluate(node=>{node.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));node.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));node.querySelector('[data-submit]').click();});
+  assert.equal(f.writes.filter(item=>item.method==='POST').length,posts,'completed form events never start another POST');assert.equal(f.runtime.messages.length,mail,'completed form events never resend mail');assert.equal(f.page.url(),previousURL);return receipt.receipt;
+}
 async function submitApplication(f, form) {
-  await form.locator('[data-submit]').click();
-  await f.page.waitForURL(url => url.origin === SITE && url.pathname === '/registration/confirmation/' && url.hash.startsWith('#r='));
-  await f.page.locator('[data-confirmation-content]:visible').waitFor();
+  const previousURL=f.page.url();await form.locator('[data-submit]').click();await compactReceipt(f,previousURL);
   return (await f.runtime.app.registrationService.repository.list()).registrations.at(-1);
 }
 async function openReview(f) {
@@ -129,8 +144,11 @@ try {
   }
   {
     const f = await fixture(), form = await openPublic(f); await seedGroup(f); await fillApplication(form);
-    await form.locator('[data-submit]').evaluate(button => { button.click(); button.click(); });
-    await f.page.waitForURL(url => url.pathname === '/registration/confirmation/' && url.hash.startsWith('#r='));
+    const formURL=f.page.url();await form.locator('[data-submit]').evaluate(button => { button.click(); button.click(); });
+    const receipt=await compactReceipt(f,formURL);
+    // Explicit compatibility-only navigation preserves the old private-route,
+    // print, group and Wallet guards. It is not the public submission outcome.
+    await f.page.goto(receipt.confirmation.confirmationUrl,{waitUntil:'domcontentloaded'});
     await f.page.locator('[data-confirmation-content]:visible').waitFor();
     const records = await f.runtime.app.registrationService.repository.list(), record = records.registrations[0];
     assert.equal(records.registrations.length, 1); await assertPending(f, record.id);
@@ -153,7 +171,7 @@ try {
     await f.page.locator('[data-confirmation-refresh]').click(); await f.page.locator('[data-confirmation-page][data-admission=confirmed]').waitFor();
     await f.page.locator('[data-confirmation-group] img').waitFor(); assert.ok(f.reads.some(item => item.path.includes('/group-invite/')));
     await f.page.locator('[data-confirmation-refresh]').click(); assert.equal(f.runtime.messages.length, 2, 'read refresh never sends another receipt or formal invitation');
-    await f.context.close(); reports.push({ sparseStudentSaved: true, doubleClickOneApplication: true, independentApplicationReceipt: true, pendingNoSeatFormalMailGroupOrWallet: true, privatePrint: true, explicitApprovalOneMailAndGroup: true });
+    await f.context.close(); reports.push({ sparseStudentSaved: true, doubleClickOneApplication: true, independentApplicationReceipt: true, sameURLFocusedCompactResult:true, noAutomaticPrivateConfirmationRequest:true, explicitLegacyPrivateRouteNavigation:true, pendingNoSeatFormalMailGroupOrWallet: true, privatePrint: true, explicitApprovalOneMailAndGroup: true });
   }
   {
     const f = await fixture(), form = await openPublic(f); await fillApplication(form, { category: 'so', name: '合成组织者主题申请' });
@@ -173,9 +191,9 @@ try {
     await form.locator('[data-submit]').click(); await form.locator('[data-submit]').filter({ hasText: /再次确认/u }).waitFor();
     assert.equal(await form.locator('[name=name]').isDisabled(), true); assert.equal(await form.locator('[name=name]').inputValue(), '合成学生申请人');
     assert.equal(f.writes.filter(item => item.path.endsWith('/registration/submit')).length, 1); assert.equal(f.runtime.messages.length, 1);
-    await form.locator('[data-submit]').click(); await f.page.waitForURL(url => url.pathname === '/registration/confirmation/');
+    const retryURL=f.page.url();await form.locator('[data-submit]').click();await compactReceipt(f,retryURL);
     const attempts = f.writes.filter(item => item.path.endsWith('/registration/submit')); assert.equal(attempts.length, 2);
-    assert.deepEqual(attempts[0].body, attempts[1].body); assert.equal(attempts[0].headers['idempotency-key'], attempts[1].headers['idempotency-key']);
+    assert.deepEqual(attempts[0].body, attempts[1].body);assert.equal(attempts[0].rawBody,attempts[1].rawBody,'the pending replay keeps the exact original JSON bytes');assert.equal(attempts[0].headers['idempotency-key'], attempts[1].headers['idempotency-key']);
     const saved = await f.runtime.app.registrationService.repository.list(); assert.equal(saved.registrations.length, 1); await assertPending(f, saved.registrations[0].id);
     await f.context.close(); reports.push({ publicUnknownAckFrozen: true, samePayloadAndKeyRetry: true, noDuplicateApplicationOrMail: true });
   }

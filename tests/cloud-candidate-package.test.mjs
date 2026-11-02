@@ -6,13 +6,21 @@ import { tmpdir } from 'node:os';
 import { dirname, basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { crc32 } from 'node:zlib';
-import { CANDIDATE_SOURCES, CANDIDATE_NODE, CANDIDATE_KIND, CANDIDATE_ARCHIVE,
+import { CANDIDATE_SOURCES, CANDIDATE_NODE, CANDIDATE_KIND, CANDIDATE_ARCHIVE, MAX_CANDIDATE_FILES,
   candidateAssetPath, candidateReferences, candidateFileRecords, candidateZipEntries,
   candidateSha256, validateCandidateAssets, parseCandidateArguments,
   prepareCloudContentCandidate, verifyCloudContentCandidate } from '../scripts/cloud-content-package.mjs';
 import { verifyFcPublication } from '../scripts/verify-fc-package.mjs';
 
 const gitEnv = { PATH: process.env.PATH ?? '', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' };
+test('the shared diagnostic module fits the exact 129-file candidate without admitting an extra file or source', () => {
+  const record=(path,mode='0644')=>({path,mode,bytes:1,sha256:'a'.repeat(64)});
+  const files=[...CANDIDATE_SOURCES.map(([,path,mode])=>record(path,mode)),record('runtime/node/bin/node.xz'),record('release.json')];
+  for(let index=0;files.length<MAX_CANDIDATE_FILES;index++)files.push(record('admin-assets/_astro/synthetic-'+index+'.js'));
+  assert.equal(files.length,129);assert.doesNotThrow(()=>candidateFileRecords(files));
+  assert.throws(()=>candidateFileRecords([...files,record('admin-assets/_astro/overflow.js')]),/Invalid candidate file list/u);
+  assert.throws(()=>candidateFileRecords([...files.slice(0,-1),record('private/unlisted.json')]),/candidate/iu);
+});
 function git(directory, args) {
   const result = spawnSync('git', ['--no-replace-objects', '-C', directory, '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-c', 'user.name=Candidate Fixture', '-c', 'user.email=candidate@example.invalid', ...args], { encoding: 'utf8', env: gitEnv });
   assert.equal(result.status, 0); return result.stdout.trim();

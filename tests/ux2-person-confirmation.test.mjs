@@ -5,10 +5,17 @@ import {createPersonConfirmation,personConfirmationScope,personConfirmationPolic
 const A='a'.repeat(43),B='b'.repeat(43),OP='x'.repeat(32),checkedAt='2026-11-01T09:00:00.000Z';
 const pause=()=>new Promise(resolve=>setImmediate(resolve));
 async function until(check){for(let n=0;n<100;n++){if(check())return;await pause();}assert.fail('controller did not settle');}
+function uiNode(tagName=''){
+  return{tagName,dataset:{},children:[],listeners:new Map(),disabled:false,_text:'',
+    get textContent(){return this._text+this.children.map(value=>typeof value==='string'?value:value.textContent).join('');},
+    set textContent(value){this._text=String(value);this.children=[];},
+    addEventListener(type,fn){this.listeners.set(type,fn);},append(...values){this.children.push(...values);}};
+}
+globalThis.document={createElement:tagName=>uiNode(tagName.toUpperCase())};
 function fixture(){
-  const controls=new Map(),root={hidden:true,querySelector(selector){if(!controls.has(selector))controls.set(selector,{textContent:'',disabled:false,listeners:new Map(),addEventListener(type,fn){this.listeners.set(type,fn);},append(){}});return controls.get(selector);}};
+  const controls=new Map(),root={hidden:true,querySelector(selector){if(!controls.has(selector))controls.set(selector,uiNode());return controls.get(selector);}};
   const records=new Map(),listeners=new Map(),epochs=new Map(),calls=[],writes=[],gates=[],readGates=[],checks=[];
-  let user={id:'synthetic-owner',roles:['outreach','reviewer']},failWrite=false,delayWrite=false,delayRead=false,lost=false,lookupStatus='provider_accepted',lookupError=null,postError=null,deliveryUnknown=false,deliveryError=null,deliveryAccepted=false,requestGate=null,accessRevision=0;
+  let user={id:'synthetic-owner',roles:['outreach','reviewer']},failWrite=false,delayWrite=false,delayRead=false,lost=false,lookupStatus='provider_accepted',lookupError=null,postError=null,deliveryUnknown=false,deliveryError=null,deliveryAccepted=false,requestGate=null,accessRevision=0,deliveryState=null,afterSendState=null;
   const key=scope=>JSON.stringify(scope),copy=value=>structuredClone(value);
   const observed=scope=>copy(records.get(key(scope))??{revision:0,actorEpoch:epochs.get(scope.actorId)??0,record:null});
   const emit=(scope,event)=>{for(const fn of listeners.get(key(scope))??[])fn(event);};
@@ -21,14 +28,14 @@ function fixture(){
   const result=(id,operationId,lookup=false)=>({outcome:lookup?'replayed':'updated',revision:3,operationId,status:['unknown','unavailable','not_attempted'].includes(lookupStatus)?'partial':'completed',results:[{registrationId:id,status:lookupStatus}],...(lookup?{kind:'registration',checkedAt}:{})});
   async function request(path,options={}){
     calls.push({path,method:options.method??'GET',body:options.body});
-    if(path.includes('/send/')){if(requestGate)await requestGate;if(postError||JSON.parse(options.body).expectedAccessRevision!==(accessRevision??0))throw Object.assign(Error('synthetic rejection'),{status:postError??409});if(lost)throw Error('synthetic lost ACK');return result(path.split('/').at(-1),JSON.parse(options.body).operationId);}
+    if(path.includes('/send/')){if(requestGate)await requestGate;if(postError||JSON.parse(options.body).expectedAccessRevision!==(accessRevision??0))throw Object.assign(Error('synthetic rejection'),{status:postError??409});if(lost)throw Error('synthetic lost ACK');if(afterSendState)deliveryState=afterSendState;return result(path.split('/').at(-1),JSON.parse(options.body).operationId);}
     if(path.includes('/operation/')){if(lookupError)throw Object.assign(Error('synthetic lookup unavailable'),{status:lookupError});const saved=[...records.values()].find(value=>value.record&&JSON.parse(value.record.value.payloadJson).operationId===path.split('/').at(-1));const id=saved?.record.value.path.split('/').at(-1)??A;return result(id,path.split('/').at(-1),true);}
     if(deliveryError)throw Object.assign(Error('synthetic delivery unavailable'),{status:deliveryError});
-    const id=path.split('/').at(-1),canSend=user?.roles.includes('outreach')&&user?.roles.includes('reviewer');return{registrationId:id,revision:2,...(accessRevision===undefined?{}:{accessRevision}),admissionStatus:'confirmed',status:deliveryUnknown?'unknown':deliveryAccepted?'provider_accepted':'not_sent',reason:deliveryUnknown?'DELIVERY_UNKNOWN':deliveryAccepted?'ALREADY_ACCEPTED':canSend?'ELIGIBLE':'OPERATOR_PERMISSION_REQUIRED',ready:Boolean(canSend&&!deliveryUnknown&&!deliveryAccepted),canSend:Boolean(canSend),retryRejected:false,recipient:'synthetic@example.invalid'};
+    const id=path.split('/').at(-1),canSend=user?.roles.includes('outreach')&&user?.roles.includes('reviewer');return{registrationId:id,revision:2,...(accessRevision===undefined?{}:{accessRevision}),admissionStatus:'confirmed',status:deliveryUnknown?'unknown':deliveryAccepted?'provider_accepted':'not_sent',reason:deliveryUnknown?'DELIVERY_UNKNOWN':deliveryAccepted?'ALREADY_ACCEPTED':canSend?'ELIGIBLE':'OPERATOR_PERMISSION_REQUIRED',ready:Boolean(canSend&&!deliveryUnknown&&!deliveryAccepted),canSend:Boolean(canSend),retryRejected:false,recipient:'synthetic@example.invalid',...(deliveryState??{})};
   }
   const create=()=>createPersonConfirmation({root,request,getUser:()=>user,draftStore:store,eventId:'synthetic-event',onChecked:value=>checks.push(value)});
   const click=name=>controls.get('[data-person-confirmation-'+name+']').listeners.get('click')();
-  return{root,controls,records,writes,calls,gates,readGates,checks,store,create,click,get user(){return user;},set user(v){user=v;},set accessRevision(v){accessRevision=v;},set failWrite(v){failWrite=v;},set delayWrite(v){delayWrite=v;},set delayRead(v){delayRead=v;},set lost(v){lost=v;},set lookupStatus(v){lookupStatus=v;},set lookupError(v){lookupError=v;},set postError(v){postError=v;},set deliveryUnknown(v){deliveryUnknown=v;},set deliveryError(v){deliveryError=v;},set deliveryAccepted(v){deliveryAccepted=v;},set requestGate(v){requestGate=v;}};
+  return{root,controls,records,writes,calls,gates,readGates,checks,store,create,click,get user(){return user;},set user(v){user=v;},set accessRevision(v){accessRevision=v;},set failWrite(v){failWrite=v;},set delayWrite(v){delayWrite=v;},set delayRead(v){delayRead=v;},set lost(v){lost=v;},set lookupStatus(v){lookupStatus=v;},set lookupError(v){lookupError=v;},set postError(v){postError=v;},set deliveryUnknown(v){deliveryUnknown=v;},set deliveryError(v){deliveryError=v;},set deliveryAccepted(v){deliveryAccepted=v;},set requestGate(v){requestGate=v;},set deliveryState(v){deliveryState=v;},set afterSendState(v){afterSendState=v;}};
 }
 globalThis.confirm=()=>true;
 test('passive initialization exposes its exact settling promise, so explicit next can await local recovery once',async()=>{
@@ -116,4 +123,87 @@ test('operation receipts must bind kind, original ordered ID, operation and serv
   for(const patch of [{kind:'pre_event_reminder'},{checkedAt:'unknown'},{operationId:'z'.repeat(32)},{results:[{registrationId:B,status:'provider_accepted'}]},{results:[...valid.results,...valid.results]},{results:[{...valid.results[0],email:'private@example.invalid'}]}])assert.equal(validPersonConfirmationOperation({...valid,...patch},context),false);
   const scope=personConfirmationScope({id:'actor',roles:['reviewer','outreach']},A,'event');assert.equal(scope.page,'person-confirmation:roles=outreach,reviewer');
   assert.equal(personConfirmationPolicy(A).validate({path:'/api/admin/registration-confirmation/send/'+A,method:'POST',payloadJson:JSON.stringify({expectedRevision:1,operationId:OP,retryRejected:false,recipient:'private'})},{kind:'pending_submission'}),false);
+});
+
+const recoveryState={status:'rejected',reason:'RETRY_LIMIT',ready:false,canSend:true,retryRejected:true,canRecover:true};
+test('recovery eligibility and diagnostic fields are strict while legacy missing evidence remains valid',()=>{
+  const value={registrationId:A,revision:2,accessRevision:3,admissionStatus:'confirmed',recipient:'synthetic@example.invalid',...recoveryState};
+  assert.equal(validPersonConfirmation(value,A),true);
+  for(const patch of[{canRecover:false},{canRecover:'true'},{ready:true},{canSend:false},{reason:'RECOVERY_USED'},{status:'unknown',retryRejected:false},{status:'provider_accepted',retryRejected:false},{admissionStatus:'waitlisted'},{accessRevision:undefined},{retryRejected:false}])assert.equal(validPersonConfirmation({...value,...patch},A),false);
+  const {canRecover,accessRevision,...legacy}=value;assert.equal(validPersonConfirmation(legacy,A),true);
+  assert.equal(validPersonConfirmation({...value,diagnostic:{code:'PROVIDER_REJECTED',transportStarted:true,httpStatus:403}},A),true);
+  assert.equal(validPersonConfirmation({...value,diagnostic:{code:'DELIVERY_GUARD_BLOCKED',transportStarted:false}},A),true);
+  assert.equal(validPersonConfirmation({...value,diagnostic:{code:'DELIVERY_UNKNOWN',transportStarted:true}},A),false,'a rejected notice cannot carry an ambiguous transport result');
+  const uncertain={...legacy,status:'unknown',reason:'DELIVERY_UNKNOWN',retryRejected:false,diagnostic:{code:'DELIVERY_UNKNOWN',transportStarted:true}};
+  assert.equal(validPersonConfirmation(uncertain,A),true);
+  assert.equal(validPersonConfirmation({...uncertain,diagnostic:{code:'DELIVERY_GUARD_BLOCKED',transportStarted:false}},A),false,'unknown cannot masquerade as proven not started');
+  for(const diagnostic of[{code:'PRIVATE_PROVIDER_BODY',transportStarted:true},{code:'PROVIDER_REJECTED',transportStarted:false,httpStatus:403},{code:'PROVIDER_REJECTED',transportStarted:true,httpStatus:503},{code:'PROVIDER_REJECTED',transportStarted:true,httpStatus:403,body:'PRIVATE'}])assert.equal(validPersonConfirmation({...value,diagnostic},A),false);
+});
+test('pending policy accepts recovery only with true retry permission and a bounded explicit recipient revision',()=>{
+  const policy=personConfirmationPolicy(A),valid=body=>policy.validate({path:'/api/admin/registration-confirmation/send/'+A,method:'POST',payloadJson:JSON.stringify(body)},{kind:'pending_submission'});
+  const body={expectedRevision:2,operationId:OP,retryRejected:true,expectedAccessRevision:3,recoverRejected:true};assert.equal(valid(body),true);
+  for(const patch of[{recoverRejected:false},{recoverRejected:1},{retryRejected:false},{expectedAccessRevision:undefined},{expectedAccessRevision:null},{expectedAccessRevision:-1},{recipient:'PRIVATE'},{other:true}])assert.equal(valid({...body,...patch}),false);
+  const {recoverRejected,expectedAccessRevision,...legacy}=body;assert.equal(valid(legacy),true);
+});
+test('known rejected sends use ordinary manual confirmation for this person and cancellation performs no write or POST',async()=>{
+  for(const deliveryState of[recoveryState,{status:'rejected',reason:'ELIGIBLE',ready:true,canSend:true,retryRejected:true}]){
+    const f=fixture();f.deliveryState=deliveryState;const c=f.create();await c.select(A);
+    const send=f.controls.get('[data-person-confirmation-send]'),status=f.controls.get('[data-person-confirmation-status]');assert.equal(send.disabled,false);assert.equal(send.textContent,'重寄确认信');
+    assert.match(status.textContent,/上次明确未发出，可手动重寄/u);
+    if(deliveryState.canRecover){const link=status.children.find(node=>typeof node==='object'&&node.dataset.personConfirmationSettings==='');assert.equal(link.href,'/admin/settings/delivery/');}
+    const confirmations=[],previous=globalThis.confirm;try{globalThis.confirm=message=>{confirmations.push(message);return false;};f.click('send');await pause();}finally{globalThis.confirm=previous;}
+    assert.deepEqual(confirmations,['重寄这位参加人的确认信？邮件会包含私人确认页与 Apple Wallet 入口。']);assert.doesNotMatch(confirmations[0],/已修复|一次/u);assert.equal(f.writes.length,0);assert.equal(f.calls.some(call=>call.method==='POST'),false);assert.equal(c.pending,false);c.clear();
+  }
+});
+test('manual resend is stored before one POST and accepted results disable further sends',async()=>{
+  const f=fixture();f.accessRevision=3;f.deliveryState=recoveryState;f.afterSendState={status:'provider_accepted',reason:'ALREADY_ACCEPTED',ready:false,retryRejected:false};f.delayWrite=true;
+  const c=f.create();await c.select(A);f.click('send');await until(()=>f.gates.length===1);assert.equal(f.calls.some(call=>call.method==='POST'),false);
+  const original=f.writes[0].payloadJson;assert.deepEqual(JSON.parse(original),{expectedRevision:2,operationId:JSON.parse(original).operationId,retryRejected:true,expectedAccessRevision:3,recoverRejected:true});
+  f.gates[0].resolve();await until(()=>f.calls.some(call=>call.method==='POST')&&!c.pending&&!c.blocked);
+  assert.equal(f.calls.filter(call=>call.method==='POST').length,1);assert.equal(f.calls.find(call=>call.method==='POST').body,original);assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,true);
+  f.click('send');await pause();assert.equal(f.calls.filter(call=>call.method==='POST').length,1);c.clear();
+});
+test('each known manual rejection permits another fresh operation while its original pending request never repeats',async()=>{
+  const f=fixture();f.accessRevision=3;f.deliveryState=recoveryState;f.delayWrite=true;const c=f.create();await c.select(A);
+  for(const [index,outcome]of['rejected','rejected','provider_accepted'].entries()){
+    f.lookupStatus=outcome;f.afterSendState=outcome==='rejected'?{...recoveryState,revision:3+index}:{status:'provider_accepted',reason:'ALREADY_ACCEPTED',ready:false,canSend:true,retryRejected:false,revision:3+index};
+    assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,false);assert.equal(f.controls.get('[data-person-confirmation-send]').textContent,'重寄确认信');
+    f.click('send');await until(()=>f.gates.length===index+1);f.click('send');await pause();assert.equal(f.writes.length,index+1);assert.equal(f.calls.filter(call=>call.method==='POST').length,index,'no POST before this exact local write is acknowledged');
+    const raw=f.writes[index].payloadJson,body=JSON.parse(raw);assert.equal(body.expectedRevision,2+index);assert.equal(body.expectedAccessRevision,3);assert.equal(body.retryRejected,true);assert.equal(body.recoverRejected,true);
+    f.gates[index].resolve();await until(()=>f.calls.filter(call=>call.method==='POST').length===index+1&&!c.pending&&!c.blocked);
+    assert.equal(f.calls.filter(call=>call.method==='POST')[index].body,raw);assert.equal([...f.records.values()].every(value=>value.record===null),true);
+    if(outcome==='rejected')assert.match(f.controls.get('[data-person-confirmation-status]').textContent,/上次明确未发出，可手动重寄/u);
+  }
+  const posts=f.calls.filter(call=>call.method==='POST');assert.equal(new Set(posts.map(call=>JSON.parse(call.body).operationId)).size,3);assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,true);
+  f.click('send');await pause();assert.equal(f.calls.filter(call=>call.method==='POST').length,3);c.clear();
+});
+test('raw recovery pending survives reload unchanged and only looks up the original operation',async()=>{
+  const f=fixture(),scope=personConfirmationScope(f.user,A,'synthetic-event');
+  const raw='{ "recoverRejected":true, "operationId":"'+OP+'", "retryRejected":true, "expectedAccessRevision":3, "expectedRevision":2 }';
+  const value={path:'/api/admin/registration-confirmation/send/'+A,method:'POST',payloadJson:raw};
+  f.records.set(JSON.stringify(scope),{revision:1,actorEpoch:0,record:{kind:'pending_submission',baseRevision:2,value}});f.lookupStatus='unknown';
+  const c=f.create();await c.select(A);assert.equal(c.pending,true);assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,true);
+  assert.deepEqual(f.calls.map(call=>[call.path,call.method,call.body]),[['/api/admin/registration-confirmation/operation/'+OP,'GET',undefined]]);
+  assert.equal([...f.records.values()][0].record.value.payloadJson,raw);f.click('send');await pause();assert.equal(f.calls.length,1);
+  f.lookupError=404;await c.refresh();assert.equal(c.pending,true);assert.equal([...f.records.values()][0].record.value.payloadJson,raw);
+  f.lookupError=null;f.lookupStatus='provider_accepted';f.deliveryAccepted=true;await c.refresh();assert.equal(c.pending,false);assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,true);assert.equal(f.calls.some(call=>call.method==='POST'),false);c.clear();
+});
+test('only fixed safe diagnostics render and old retry-limit records do not invent a cause',async()=>{
+  const f=fixture(),c=f.create();f.deliveryState={...recoveryState,diagnostic:{code:'PROVIDER_REJECTED',transportStarted:true,httpStatus:403}};await c.select(A);
+  assert.match(f.controls.get('[data-person-confirmation-status]').textContent,/EmailJS拒绝请求（HTTP 403）/u);
+  f.deliveryState={...recoveryState,diagnostic:{code:'DELIVERY_GUARD_UNAVAILABLE',transportStarted:false}};await c.refresh();assert.match(f.controls.get('[data-person-confirmation-status]').textContent,/发送前核对未通过/u);
+  f.deliveryState={status:'rejected',reason:'RETRY_LIMIT',ready:false,retryRejected:true};await c.refresh();assert.doesNotMatch(f.controls.get('[data-person-confirmation-status]').textContent,/HTTP|发送前核对|EmailJS拒绝/u);assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,true);
+  assert.match(f.controls.get('[data-person-confirmation-status]').textContent,/请先核对邮件设置再重寄/u);
+  f.deliveryState={status:'rejected',reason:'RECOVERY_USED',ready:false,retryRejected:true};await c.refresh();assert.match(f.controls.get('[data-person-confirmation-status]').textContent,/重新核对当前寄送资格/u);assert.doesNotMatch(f.controls.get('[data-person-confirmation-status]').textContent,/一次|已使用|上限/u);assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,true);
+  c.clear();assert.equal(f.controls.get('[data-person-confirmation-status]').textContent,'');assert.equal(f.controls.get('[data-person-confirmation-recipient]').textContent,'');
+});
+test('manual resend obeys current recipient revisions and person or actor switches before local ACK',async()=>{
+  for(const change of['person','actor','access']){
+    const f=fixture();f.accessRevision=2;f.deliveryState=recoveryState;f.delayWrite=true;const c=f.create();await c.select(A);f.click('send');await until(()=>f.gates.length===1);
+    if(change==='person'){f.deliveryState=null;await c.select(B);}else if(change==='actor'){f.user={id:'other-owner',roles:['reviewer','outreach']};f.deliveryState=null;await c.select(A);}else{f.accessRevision=3;f.deliveryState={status:'rejected',reason:'EMAIL_NOT_READY',ready:false,retryRejected:true};}
+    f.gates[0].resolve();await pause();await pause();
+    if(change==='access'){await until(()=>!c.pending&&!c.blocked);assert.equal(f.calls.filter(call=>call.method==='POST').length,1);assert.equal(JSON.parse(f.calls.find(call=>call.method==='POST').body).expectedAccessRevision,2);assert.equal(f.controls.get('[data-person-confirmation-send]').disabled,true);}
+    else assert.equal(f.calls.some(call=>call.method==='POST'),false);
+    c.clear();
+  }
 });

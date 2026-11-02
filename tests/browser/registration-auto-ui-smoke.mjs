@@ -32,13 +32,13 @@ const cors = { 'access-control-allow-origin': SITE, 'access-control-allow-method
 const json = (value, status = 200) => ({ status, contentType: 'application/json', headers: cors, body: JSON.stringify(value) });
 const form = page => page.locator('[data-registration-form]');
 
-async function fixture({ width = 390, flag = false, omitFlag = false, capacity = 3, fillCapacity = false, loseFirstAck = false, restoreBrowserCheckbox = false } = {}) {
+async function fixture({ width = 390, flag = false, omitFlag = false, capacity = 3, fillCapacity = false, loseFirstAck = false, restoreBrowserCheckbox = false, mail = false } = {}) {
   const initialReview = omitFlag || typeof flag !== 'boolean' ? true : flag;
-  const runtime = await peopleRuntimeFixture({ capacity, mail: false, attendeeReviewRequired: initialReview });
+  const runtime = await peopleRuntimeFixture({ capacity, mail, attendeeReviewRequired: initialReview });
   const initialMetadata = await runtime.app.registrationService.metadata();
   if (fillCapacity) await runtime.seedPublic({ intake: 'general-v2', name: '合成既有参与者', email: 'synthetic.first@example.invalid' });
-  const context = await browser.newContext({ viewport: { width, height: 940 } }), calls = [];
-  let reviewFlag = initialReview, privacyVersion = initialMetadata.privacy.version, lose = loseFirstAck, app = runtime.app;
+  const context = await browser.newContext({ viewport: { width, height: 940 } }), calls = [], navigations = [];
+  let reviewFlag = initialReview, privacyVersion = initialMetadata.privacy.version, lose = loseFirstAck, app = runtime.app, receiptProven = false;
   const reconfigure = () => { app = runtime.make({ policyOverride: { attendeeReviewRequired: reviewFlag,
     privacy: { ...initialMetadata.privacy, version: privacyVersion } } }); };
   if (restoreBrowserCheckbox) await context.addInitScript(() => {
@@ -52,6 +52,7 @@ async function fixture({ width = 390, flag = false, omitFlag = false, capacity =
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     assert.ok([SITE, API].includes(url.origin), 'every request must remain intercepted');
+    if(request.isNavigationRequest())navigations.push({origin:url.origin,path:url.pathname});
     if (url.origin === API) {
       assert.ok(url.pathname.startsWith('/api/'));
       const headers = await request.allHeaders(); assert.equal(headers.cookie, undefined);
@@ -59,10 +60,12 @@ async function fixture({ width = 390, flag = false, omitFlag = false, capacity =
         const response = await app.handle(new Request(request.url(), { method: request.method(), headers }));
         return route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: '' });
       }
-      calls.push({ method: request.method(), path: url.pathname, body: request.postData(), headers });
+      if(receiptProven&&request.method()==='POST'&&/\/registration\/(?:token|submit)$/u.test(url.pathname))assert.fail('a proven receipt never starts another registration POST');
+      const call={ method: request.method(), path: url.pathname, body: request.postData(), headers };calls.push(call);
       const response = await app.handle(new Request(request.url(), { method: request.method(), headers,
         ...(['GET', 'HEAD'].includes(request.method()) ? {} : { body: request.postData() }) }));
       let bytes = Buffer.from(await response.arrayBuffer());
+      if(url.pathname.endsWith('/registration/submit')&&[200,201].includes(response.status)){call.receipt=JSON.parse(bytes);call.status=response.status;}
       if (url.pathname === '/api/admin/registration/config' && (omitFlag || typeof flag !== 'boolean')) {
         const metadata = JSON.parse(bytes);
         if (omitFlag) delete metadata.attendeeReviewRequired; else metadata.attendeeReviewRequired = flag;
@@ -96,7 +99,7 @@ async function fixture({ width = 390, flag = false, omitFlag = false, capacity =
   await page.goto(SITE + '/#registration', { waitUntil: 'networkidle' });
   await form(page).locator('[data-submit]:enabled').waitFor();
   await page.locator('[data-registration-form][data-registration-mode=production]').waitFor();
-  return { page, context, calls, width, runtime, get app() { return app; }, initialPrivacyVersion: privacyVersion,
+  return { page, context, calls, navigations, width, runtime, proveReceipt:()=>{receiptProven=true;}, get app() { return app; }, initialPrivacyVersion: privacyVersion,
     setFlag: value => { reviewFlag = value; reconfigure(); }, setPrivacyVersion: value => { privacyVersion = value; reconfigure(); } };
 }
 async function fill(page) {
@@ -112,10 +115,27 @@ async function records(page) {
       read.onsuccess = () => resolveRecords(read.result); read.onerror = () => reject(read.error); tx.oncomplete = () => db.close(); };
   }));
 }
-async function submit(page) {
-  await form(page).locator('[name=consentAccepted]').check(); await form(page).locator('[data-submit]').click();
-  await page.waitForURL(url => url.origin === SITE && url.pathname === '/registration/confirmation/' && url.hash.startsWith('#r='));
-  await page.locator('[data-confirmation-content]:visible').waitFor();
+async function compactReceipt(f,previousURL,admission='confirmed') {
+  const labels={confirmed:'报名成功',pending_review:'申请已收到，待审核',waitlisted:'候补登记已保存，尚未确认名额',rejected:'本次申请未通过审核'};
+  const success=f.page.locator('[data-registration-success][data-registration-success-compact]');await success.waitFor({state:'visible'});
+  await f.page.waitForFunction(()=>document.activeElement===document.querySelector('[data-registration-success][data-registration-success-compact]'));
+  assert.equal(f.page.url(),previousURL,'the form origin, path, query and hash remain unchanged after a genuine receipt');
+  assert.equal(await success.getAttribute('role'),'status');assert.equal(await success.getAttribute('tabindex'),'-1');
+  assert.equal((await success.innerText()).trim(),labels[admission],'the compact result shows only the accurate completion message');
+  assert.equal(await form(f.page).isVisible(),false);assert.equal(await form(f.page).locator('[data-submit]').isDisabled(),true);
+  assert.equal(await f.page.locator('[data-registration-preview]').isVisible(),false);assert.equal(await success.locator('[data-registration-success-details]').isVisible(),false);
+  assert.equal(await success.locator('[data-registration-reference]').textContent(),'');assert.equal(await success.locator('[data-registration-group-status]').textContent(),'');assert.equal(await success.locator('[data-registration-group-image] img').count(),0);
+  assert.equal(f.navigations.some(item=>item.path==='/registration/confirmation/'),false,'completion never opens the private confirmation document');
+  assert.equal(f.calls.some(item=>/\/registration\/confirmation(?:\/|$)/u.test(item.path)),false,'completion never requests the private confirmation API');
+  const submits=f.calls.filter(call=>call.path.endsWith('/registration/submit')),last=submits.at(-1);assert.ok(last&&[200,201].includes(last.status),'success follows a real committed runtime receipt');assert.equal(last.receipt.admissionStatus,admission);
+  if(admission==='waitlisted')assert.doesNotMatch(await success.innerText(),/报名成功|名额已确认/u);
+  f.proveReceipt();const posts=f.calls.filter(call=>call.method==='POST').length,mail=f.runtime.messages.length;
+  await form(f.page).evaluate(node=>{node.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));node.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));node.querySelector('[data-submit]').click();});
+  assert.equal(f.calls.filter(call=>call.method==='POST').length,posts,'completed form events do not start another POST');assert.equal(f.runtime.messages.length,mail,'completed form events never resend mail');
+  assert.equal(f.page.url(),previousURL);return last.receipt;
+}
+async function submit(f,admission='confirmed') {
+  const previousURL=f.page.url();await form(f.page).locator('[name=consentAccepted]').check();await form(f.page).locator('[data-submit]').click();return compactReceipt(f,previousURL,admission);
 }
 async function assertAutomatic(page) {
   assert.equal(await page.locator('[data-registration-heading]').textContent(), '报名参加。');
@@ -131,42 +151,40 @@ async function assertAutomatic(page) {
 try {
   await mkdir(evidence, { recursive: true });
   for (const width of [320, 390, 768, 1440]) {
-    const f = await fixture({ width, restoreBrowserCheckbox: true }); await assertAutomatic(f.page);
+    const f = await fixture({ width, restoreBrowserCheckbox: true, mail: true }); await assertAutomatic(f.page);
     assert.equal(await f.page.evaluate(() => window.syntheticRestoredCheckbox), true);
     assert.equal(await form(f.page).locator('[data-proposal-toggle]').isChecked(), false, 'new forms reset browser-restored checkbox state');
     assert.equal(await form(f.page).locator('[data-speaker-proposal]').isVisible(), false);
     await fill(f.page);
     assert.equal(await form(f.page).locator('[data-proposal-toggle]').isChecked(), false, 'changing identity does not select a proposal');
-    await submit(f.page);
-    assert.match(await f.page.locator('[data-confirmation-heading]').textContent(), /参会名额已确认/u);
+    const receipt=await submit(f);
     const sent = JSON.parse(f.calls.find(call => call.path.endsWith('/submit')).body);
     assert.deepEqual(sent.fields.participationInterests, ['attend']); assert.equal(Object.hasOwn(sent.fields, 'speaker'), false);
     const admissions = await f.app.registrationService.getAdmissions({ actor: f.runtime.users[0] });
     assert.equal(admissions.summary.confirmedCount, 1); assert.equal(admissions.summary.pendingReviewCount, 0);
     assert.equal((await f.app.registrationService.repository.list()).registrations.length, 1);
-    assert.equal(f.runtime.messages.length, 0, 'mail remains disabled in this UI fixture');
+    assert.equal(receipt.confirmation.email.status,'provider_accepted','the actual runtime records the synthetic provider acknowledgement');
+    assert.equal(f.runtime.messages.length,1,'a newly confirmed automatic intake starts exactly one synthetic formal email');
+    assert.equal(f.runtime.messages[0].template_params.reference_code,receipt.reference_code);assert.match(f.runtime.messages[0].template_params.invitation_text,/参会名额已确认/u);assert.match(f.runtime.messages[0].template_params.invitation_text,/\/registration\/confirmation\/#r=/u);
+    const original=f.calls.find(call=>call.path.endsWith('/registration/submit')),replayed=await f.app.handle(new Request(API+'/api/admin/registration/submit',{method:'POST',headers:original.headers,body:original.body}));
+    assert.equal(replayed.status,200);assert.equal((await replayed.json()).admissionStatus,'confirmed');assert.equal(f.runtime.messages.length,1,'an explicit synthetic replay does not send another formal email');
     assert.equal(await f.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
     await f.page.screenshot({ path: resolve(evidence, 'automatic-confirmed-' + width + '.png'), fullPage: true });
-    reports.push({ width, mode: 'automatic', receipt: 'confirmed', freshProposal: false, realNetworkRequests: 0 }); await f.context.close();
+    reports.push({ width, mode: 'automatic', receipt: 'confirmed', freshProposal: false, compactFocusedSamePage:true, noPrivateConfirmationRequest:true, syntheticFormalMail:1, syntheticReceiptReplayNoExtraMail:true, realNetworkRequests: 0 }); await f.context.close();
   }
   for (const options of [{ flag: true }, { omitFlag: true }, { flag: 'false' }]) {
     const f = await fixture(options);
     assert.equal(await f.page.locator('[data-registration-mode-label]').textContent(), '人工审核');
     assert.equal(await form(f.page).locator('[data-submit]').textContent(), '提交参会申请');
     assert.match(await f.page.locator('[data-faq-id=registration-status] .ah-faq-answer').textContent(), /人工审核/u);
-    await fill(f.page); await submit(f.page);
-    assert.match(await f.page.locator('[data-confirmation-heading]').textContent(), /待审核/u);
-    assert.equal(await f.page.locator('[data-confirmation-group]').isVisible(), false);
-    assert.equal(await f.page.locator('[data-confirmation-wallet]').isVisible(), false);
+    await fill(f.page); await submit(f,'pending_review');
+    assert.equal(await f.page.locator('[data-confirmation-group],[data-confirmation-wallet]').count(),0);
     assert.equal((await f.app.registrationService.getAdmissions({ actor: f.runtime.users[0] })).summary.pendingReviewCount, 1);
     reports.push({ mode: 'review-fallback', flag: options.omitFlag ? 'missing' : options.flag, receipt: 'pending_review' }); await f.context.close();
   }
   {
-    const f = await fixture({ capacity: 1, fillCapacity: true }); await assertAutomatic(f.page); await fill(f.page); await submit(f.page);
-    assert.match(await f.page.locator('[data-confirmation-heading]').textContent(), /候补/u);
-    assert.doesNotMatch(await f.page.locator('[data-confirmation-intro]').textContent(), /名额已确认|报名成功/u);
-    assert.equal(await f.page.locator('[data-confirmation-group]').isVisible(), false);
-    assert.equal(await f.page.locator('[data-confirmation-wallet]').isVisible(), false);
+    const f = await fixture({ capacity: 1, fillCapacity: true }); await assertAutomatic(f.page); await fill(f.page); await submit(f,'waitlisted');
+    assert.equal(await f.page.locator('[data-confirmation-group],[data-confirmation-wallet]').count(),0);
     const admissions = await f.app.registrationService.getAdmissions({ actor: f.runtime.users[0] });
     assert.equal(admissions.summary.confirmedCount, 1); assert.equal(admissions.summary.waitlistCount, 1);
     reports.push({ mode: 'automatic', receipt: 'waitlisted', fabricatedTicket: false }); await f.context.close();
@@ -182,10 +200,9 @@ try {
     assert.equal(await form(f.page).locator('[data-proposal-toggle]').isChecked(), true, 'an intentional editing draft restores its selection');
     assert.match(await form(f.page).locator('[data-application-draft-status]').textContent(), /已恢复本机草稿.*分享提案/u);
     assert.equal(await form(f.page).locator('[name="speaker.topic"]').inputValue(), '合成分享主题');
-    await submit(f.page);
+    await submit(f);
     const sent = JSON.parse(f.calls.find(call => call.path.endsWith('/submit')).body);
     assert.deepEqual(sent.fields.participationInterests, ['attend', 'talk']);
-    assert.match(await f.page.locator('[data-confirmation-heading]').textContent(), /名额已确认/u);
     assert.equal((await f.app.registrationService.getAdmissions({ actor: f.runtime.users[0] })).summary.confirmedCount, 1);
     reports.push({ explicitProposalRestored: true, automaticAttendanceIndependentFromProposalSelection: true }); await f.context.close();
   }
@@ -208,14 +225,14 @@ try {
     assert.equal(recovered.value.payloadJson, original.value.payloadJson); assert.equal(recovered.value.idempotencyKey, original.value.idempotencyKey);
     assert.equal(f.calls.filter(call => call.path.endsWith('/submit')).length, 1, 'reload and CTA do not submit');
     assert.equal(f.calls.slice(beforeReload).every(call => call.method === 'GET'), true, 'pending restoration only reads settings and publication');
-    await form(f.page).locator('[data-submit]').click();
-    await f.page.waitForURL(url => url.pathname === '/registration/confirmation/' && url.hash.startsWith('#r='));
-    await f.page.locator('[data-confirmation-content]:visible').waitFor();
+    const replayURL=f.page.url();await form(f.page).locator('[data-submit]').click();
+    await compactReceipt(f,replayURL,'pending_review');
     const replay = f.calls.filter(call => call.path.endsWith('/submit')).at(-1);
     assert.equal(replay.body, first.body); assert.equal(replay.headers['idempotency-key'], first.headers['idempotency-key']);
     assert.equal(JSON.parse(replay.body).consent.version, f.initialPrivacyVersion);
-    assert.match(await f.page.locator('[data-confirmation-heading]').textContent(), /待审核/u);
-    assert.equal(await f.page.locator('[data-confirmation-group]').isVisible(), false);
+    assert.equal(await f.page.locator('[data-confirmation-group],[data-confirmation-wallet]').count(),0);
+    assert.equal(f.calls.filter(call=>call.path.endsWith('/registration/submit')).length,2,'only the explicit original-payload proof retry posts again');
+    assert.equal(f.runtime.messages.length,0,'restoring and replaying an old pending receipt does not backfill mail');
     assert.equal((await f.app.registrationService.repository.list()).registrations.length, 1);
     const admissions = await f.app.registrationService.getAdmissions({ actor: f.runtime.users[0] });
     assert.equal(admissions.summary.confirmedCount, 0); assert.equal(admissions.summary.pendingReviewCount, 1);

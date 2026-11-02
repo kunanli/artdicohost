@@ -42,23 +42,27 @@ function qrUrl(value) {
 }
 
 /**
- * Displays a future API receipt only; this does not submit, persist, or authenticate a registration.
+ * Displays a proven API receipt only; this does not submit, persist, or authenticate a registration.
  * The mock walkthrough never calls this helper. No QR image exists before a valid receipt/invite.
  */
-export function renderRegistrationSuccess(container, response = {}) {
+export function renderRegistrationSuccess(container, response = {}, {compact=false} = {}) {
   if (typeof HTMLElement === 'undefined' || !(container instanceof HTMLElement) || !container.matches('[data-registration-success]')) return false;
   const heading = container.querySelector('[data-registration-success-heading]');
   const reference = container.querySelector('[data-registration-reference]');
   const status = container.querySelector('[data-registration-group-status]');
   const imageHolder = container.querySelector('[data-registration-group-image]');
   const help = container.querySelector('[data-registration-group-help]');
+  const details = container.querySelector('[data-registration-success-details]');
   container.hidden = true;
+  if(details)details.hidden=compact;
+  if(compact)container.setAttribute('data-registration-success-compact','');
+  else container.removeAttribute('data-registration-success-compact');
   if (imageHolder) {
     for (const previous of imageHolder.querySelectorAll('img')) previous.removeAttribute('src');
     imageHolder.replaceChildren();
     imageHolder.hidden = true;
   }
-  if (heading) heading.textContent = '报名已完成';
+  if (heading) heading.textContent = compact?'':'报名已完成';
   if (reference) reference.textContent = '';
   if (status) { status.textContent = ''; status.hidden = true; }
   if (help) help.hidden = true;
@@ -69,6 +73,13 @@ export function renderRegistrationSuccess(container, response = {}) {
   const referenceCode = own(body, 'reference_code');
   const admissionState = registrationReceiptState(body);
   if (![200, 201].includes(httpStatus) || !admissionState || typeof referenceCode !== 'string' || !REFERENCE_PATTERN.test(referenceCode)) return false;
+
+  if(compact){
+    const labels={confirmed:'报名成功',waitlisted:'候补登记已保存，尚未确认名额',pending_review:'申请已收到，待审核',rejected:'本次申请未通过审核'};
+    heading.textContent=labels[admissionState];
+    container.hidden=false;
+    return true;
+  }
 
   reference.textContent = referenceCode;
   container.hidden = false;

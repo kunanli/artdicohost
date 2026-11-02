@@ -1,5 +1,26 @@
+import {CONFIRMATION_EMAIL_CONFIGURATION_FIELDS,CONFIRMATION_EMAIL_REASONS} from '../../shared/confirmation-delivery.mjs';
+
 const plain=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const states=['provider_accepted','rejected','unknown','disabled','not_configured','not_applicable','not_public','withdrawn','unavailable','not_attempted'];
+const emailFields=new Set(CONFIRMATION_EMAIL_CONFIGURATION_FIELDS),emailReasons=new Set(CONFIRMATION_EMAIL_REASONS);
+const validEmailFields=value=>Array.isArray(value)&&value.length<=emailFields.size&&new Set(value).size===value.length&&[...value].every(key=>emailFields.has(key));
+const emailMessages={CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF:'寄件设置可用，实际收件另行核对。',EMAIL_NOT_READY:'寄件设置未就绪，请核对设置。',
+  EMAIL_DISABLED:'寄件服务未开启，请核对设置。',EMAIL_CONFIGURATION_MISSING:'寄件设置未齐，请补齐所列项目。',
+  EMAIL_CONFIGURATION_INVALID:'寄件设置有误，请核对所列项目。',EMAIL_CONFIGURATION_UNAVAILABLE:'寄件设置暂时无法读取，请重新核对。'};
+const emailFieldLabels={EMAILJS_SERVICE_ID:'寄件服务',EMAILJS_CONFIRMATION_TEMPLATE_ID:'确认信模板',EMAILJS_PUBLIC_KEY:'服务公钥',
+  EMAILJS_PRIVATE_KEY:'服务私钥',EMAIL_FROM_ADDRESS:'寄件邮箱',EMAIL_FROM_NAME:'寄件名称'};
+function emailSettingsView(value){
+  if(!plain(value)||typeof value.ready!=='boolean'||!validEmailFields(value.missing)||value.invalid!==undefined&&!validEmailFields(value.invalid))return null;
+  const reason=value.reason===undefined?(value.ready?'CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF':'EMAIL_NOT_READY')
+    :emailReasons.has(value.reason)?value.reason:'EMAIL_CONFIGURATION_UNAVAILABLE';
+  return{ready:value.ready,reason,missing:[...value.missing],...(value.invalid===undefined?{}:{invalid:[...value.invalid]})};
+}
+/** Staff-facing text is selected only from the safe vocabulary; values never enter the UI. */
+export function deliveryEmailPresentation(value){
+  const email=emailSettingsView(value);
+  if(!email)return{message:emailMessages.EMAIL_CONFIGURATION_UNAVAILABLE,fields:[]};
+  return{message:emailMessages[email.reason],fields:[...email.missing.map(key=>'缺少：'+emailFieldLabels[key]),...(email.invalid??[]).map(key=>'无效：'+emailFieldLabels[key])]};
+}
 const walletReasons=new Set(['WALLET_NOT_CONFIGURED','WALLET_DISABLED','CONFIGURED_SIGNER_DEVICE_TEST_REQUIRED','WALLET_BUNDLE_UNAVAILABLE',
   'WALLET_CERTIFICATE_INVALID','WALLET_CERTIFICATE_EXPIRED','WALLET_CERTIFICATE_CHAIN_INVALID','WALLET_CERTIFICATE_ID_MISMATCH',
   'WALLET_CERTIFICATE_TYPE_INVALID','WALLET_IDENTITY_INVALID','WALLET_PRIVATE_KEY_INVALID','WALLET_UNAVAILABLE']);
@@ -7,15 +28,15 @@ const validExpiry=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2
 const validCounts=value=>plain(value)&&['total','providerAccepted','rejected','unknown'].every(key=>Number.isSafeInteger(value[key])&&value[key]>=0&&value[key]<=10000);
 const copyCounts=value=>Object.fromEntries(['total','providerAccepted','rejected','unknown'].map(key=>[key,value[key]]));
 export function deliverySettingsView(value){
-  if(!plain(value)||!Number.isSafeInteger(value.revision)||value.revision<0||typeof value.automaticEnabled!=='boolean'||typeof value.email?.ready!=='boolean'
-    ||!Array.isArray(value.email.missing)||value.email.missing.length>30||value.email.missing.some(key=>typeof key!=='string'||!/^[A-Z][A-Z0-9_]{0,100}$/u.test(key))
+  const email=emailSettingsView(value?.email);
+  if(!plain(value)||!Number.isSafeInteger(value.revision)||value.revision<0||typeof value.automaticEnabled!=='boolean'||!email
     ||typeof value.wallet?.ready!=='boolean'||value.wallet.missing!==undefined&&(!Array.isArray(value.wallet.missing)||value.wallet.missing.length>20||value.wallet.missing.some(key=>typeof key!=='string'||!/^[A-Z][A-Z0-9_]{0,79}$/u.test(key)))
     ||value.wallet.deviceTestRequired!==undefined&&typeof value.wallet.deviceTestRequired!=='boolean'
     ||value.wallet.certificateExpiresAt!==undefined&&!validExpiry(value.wallet.certificateExpiresAt)
     ||!validCounts(value.counts)||value.notificationCounts!==undefined&&(!plain(value.notificationCounts)||['applicationReceived','preEventReminder'].some(key=>!validCounts(value.notificationCounts[key]))))return null;
   const reason=value.wallet.reason===undefined?(value.wallet.ready?'CONFIGURED_SIGNER_DEVICE_TEST_REQUIRED':'WALLET_NOT_CONFIGURED')
     :walletReasons.has(value.wallet.reason)?value.wallet.reason:'WALLET_UNAVAILABLE';
-  return{revision:value.revision,automaticEnabled:value.automaticEnabled,email:{ready:value.email.ready,missing:[...value.email.missing]},
+  return{revision:value.revision,automaticEnabled:value.automaticEnabled,email,
     wallet:{ready:value.wallet.ready,reason,missing:[...(value.wallet.missing??[])],deviceTestRequired:value.wallet.deviceTestRequired!==false,
       ...(value.wallet.certificateExpiresAt===undefined?{}:{certificateExpiresAt:value.wallet.certificateExpiresAt})},
     counts:copyCounts(value.counts),...(value.notificationCounts===undefined?{}:{notificationCounts:Object.fromEntries(['applicationReceived','preEventReminder'].map(key=>[key,copyCounts(value.notificationCounts[key])]))})};

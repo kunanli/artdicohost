@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInvitationEmailProvider } from '../functions/intent-invitations/email-provider.mjs';
+import { validConfirmationDiagnostic } from '../shared/confirmation-delivery.mjs';
 
 const env = { ARTDICO_INVITATION_EMAIL_ENABLED: 'true', EMAILJS_SERVICE_ID: 'synthetic_service', EMAILJS_TEMPLATE_ID: 'synthetic_template',
   EMAILJS_PUBLIC_KEY: 'SYNTHETIC-PUBLIC', EMAILJS_PRIVATE_KEY: 'SYNTHETIC-PRIVATE', EMAIL_FROM_ADDRESS: 'synthetic-sender@artdico.co', EMAIL_FROM_NAME: '合成筹备团队' };
@@ -13,7 +14,8 @@ test('provider requires explicit enable, exact company sender and all server-onl
   for (const name of Object.keys(env)) {
     const config = { ...env }; delete config[name];
     const provider = createInvitationEmailProvider({ env: config, fetchFn });
-    assert.equal(provider.readiness().ready, false, name); assert.equal((await provider.send(input)).status, 'rejected');
+    assert.equal(provider.readiness().ready, false, name);const result=await provider.send(input);assert.equal(result.status,'rejected');
+    assert.equal(validConfirmationDiagnostic(result.diagnostic),true);assert.equal(result.diagnostic.transportStarted,false);
   }
   for (const sender of ['bad@example.invalid', 'Display <staff@artdico.co>', 'staff@sub.artdico.co', 'staff@artdico.co\r\nBcc:someone@example.invalid']) {
     assert.equal(createInvitationEmailProvider({ env: { ...env, EMAIL_FROM_ADDRESS: sender }, fetchFn }).readiness().ready, false);
@@ -29,6 +31,7 @@ test('one fixed EmailJS POST uses the configured template and returns acceptance
   const body = JSON.parse(calls[0].options.body);
   assert.equal(body.accessToken, env.EMAILJS_PRIVATE_KEY); assert.equal(body.template_params.from_email, env.EMAIL_FROM_ADDRESS);
   assert.equal(body.template_params.to_email, input.recipient); assert.equal(body.template_params.invitation_text, input.text);
+  assert.deepEqual(provider.readiness(),{ready:true,reason:'CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF'});
   assert.doesNotMatch(JSON.stringify(provider.readiness()), /SYNTHETIC|@/u);
 });
 
@@ -36,7 +39,7 @@ test('recipient lists, header injection and caller-selected template variables a
   let calls = 0; const provider = createInvitationEmailProvider({ env, fetchFn: async () => { calls++; return new Response('OK'); } });
   for (const patch of [{ recipient: 'a@example.invalid,b@example.invalid' }, { subject: 'hello\r\nBcc: injected@example.invalid' },
     { templateVariables: { ...input.templateVariables, from_email: 'attacker@example.invalid' } }, { idempotencyKey: '../other' }]) {
-    assert.equal((await provider.send({ ...input, ...patch })).status, 'rejected');
+    assert.deepEqual(await provider.send({ ...input, ...patch }),{status:'rejected',reason:'INVALID_EMAIL_INPUT',diagnostic:{code:'INVALID_EMAIL_INPUT',transportStarted:false}});
   }
   assert.equal(calls, 0);
 });
@@ -47,10 +50,11 @@ test('lost ACK, unbounded body, redirect and provider failures remain safe and n
     async () => new Response('<html>OK</html>', { status: 200, headers: { 'content-type': 'text/html' } }),
     async () => new Response('PRIVATE-SYNTHETIC', { status: 500 }), async () => new Response('PRIVATE-SYNTHETIC', { headers: { 'content-length': '9999' } })]) {
     let calls = 0; const provider = createInvitationEmailProvider({ env, fetchFn: async (...args) => { calls++; return implementation(...args); } });
-    assert.deepEqual(await provider.send(input), { status: 'unknown' }); assert.equal(calls, 1);
+    const result=await provider.send(input);assert.equal(result.status,'unknown');assert.equal(validConfirmationDiagnostic(result.diagnostic),true);
+    assert.equal(result.diagnostic.code,'DELIVERY_UNKNOWN');assert.equal(result.diagnostic.transportStarted,true);assert.doesNotMatch(JSON.stringify(result),/PRIVATE|SYNTHETIC|@/u);assert.equal(calls,1);
   }
   const denied = createInvitationEmailProvider({ env, fetchFn: async () => new Response('PRIVATE-SYNTHETIC', { status: 400 }) });
-  assert.deepEqual(await denied.send(input), { status: 'rejected', reason: 'PROVIDER_REJECTED' });
+  assert.deepEqual(await denied.send(input), { status: 'rejected', reason: 'PROVIDER_REJECTED',diagnostic:{code:'PROVIDER_REJECTED',transportStarted:true,httpStatus:400} });
 });
 
 test('fixed timeout bounds unknown provider acknowledgement without a second request', async () => {
@@ -58,6 +62,6 @@ test('fixed timeout bounds unknown provider acknowledgement without a second req
   const provider = createInvitationEmailProvider({ env, timeoutMs: 20, fetchFn: async () => { calls++; return new Promise(() => {}); } });
   // Keep the runner alive while the production timeout is unref'ed.
   const timer = setTimeout(() => {}, 1000);
-  try { assert.deepEqual(await provider.send(input), { status: 'unknown' }); assert.equal(calls, 1); }
+  try { assert.deepEqual(await provider.send(input), { status: 'unknown',diagnostic:{code:'DELIVERY_UNKNOWN',transportStarted:true} }); assert.equal(calls, 1); }
   finally { clearTimeout(timer); }
 });

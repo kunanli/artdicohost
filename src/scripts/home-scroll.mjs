@@ -32,7 +32,7 @@ if(root&&typeof requestAnimationFrame==='function'&&typeof matchMedia==='functio
       readables=[...root.querySelectorAll(selector)];textRanges=[];
       const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node;
       while((node=walker.nextNode())){
-        const parent=node.parentElement;if(!parent||parent.closest('script,style,noscript')||parent.closest(selector)&&!parent.closest('[data-home-title-type],[data-home-title-subtitle],[data-footer-display-line]'))continue;
+        const parent=node.parentElement;if(!parent||parent.closest('script,style,noscript')||parent.closest(selector)&&!parent.closest('[data-home-title-overline],[data-home-title-type],[data-home-title-subtitle],[data-footer-display-line]'))continue;
         const range=document.createRange();range.selectNodeContents(node);textRanges.push({range,parent});
       }
       nodesDirty=false;
@@ -102,7 +102,9 @@ if(root&&typeof requestAnimationFrame==='function'&&typeof matchMedia==='functio
     const circles=spheres.map(box=>({x:box.x,y:box.y-height,rx:box.rx+18,ry:box.ry+18}));
     const excluded=(x,py,pad=0)=>circles.some(ball=>((x-ball.x)/(ball.rx+pad))**2+((py-ball.y)/(ball.ry+pad))**2<=1)
       ||maskBoxes.some(box=>x>=box.x-pad&&x<=box.x+box.width+pad&&py>=box.y-pad&&py<=box.y+box.height+pad);
-    const count=compact.matches?24:particles.length,dt=Math.min(100,delta)/1000;let rendered=0;phase+=dt;
+    // The dense title excludes more of the phone viewport. Keep a bounded,
+    // reduced pool so its remaining background still carries visible stars.
+    const count=compact.matches?32:particles.length,dt=Math.min(100,delta)/1000;let rendered=0;phase+=dt;
     if(width>=8&&viewHeight>=8)for(let i=0;i<count;i++){
       const particle=particles[i];
       let px=particle.x*width,py=particle.y*viewHeight;

@@ -2,6 +2,24 @@
 
 2026-11-02。已發布程式基準 `30b4ca6d0891699093f63b9ec790621906f64391`；本次僅依程式、契約及合成資料盤點，沒有讀私人名單、刪正式資料或修改出席。使用者希望只保留真正業務流程需要的資料，人工操作簡約、直覺且少字。不依未公開、未回覆或未關聯就判定資料無用。
 
+## 已正式發布
+
+[PR68](https://github.com/kunanli/artdicohost/pull/68) 已發布 main **`3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`**。[PR流程41425057862](https://github.com/kunanli/artdicohost/actions/runs/41425057862) 與 [main流程41426077899](https://github.com/kunanli/artdicohost/actions/runs/41426077899) 均 completed／success，main的check、transport、FC與OSS四工作皆成功。下方候選及首次失敗保留執行資格，正式結果以本節為準。
+
+| 證據 | 準確結果 |
+| --- | --- |
+| 來源與產物 | PR head a9773fafec0d59fb9f330d6c9dc76bd993b93cc1，PR合成來源cac595603b52b796bd5199e6bd1bfc0b54189dbe；main3bf1；同首頁HTML `4180a2747b612c1c562855348fe6c7f4b2163c9bad8c17f6f3259ecb67186d5a` |
+| PR／main三份報告 | 兩邊皆捲動6／6、排版4／4、實際公開素材13／13；source／captureSource各自匹配，page errors0、合成業務POST／寄信0，最低閱讀對比11.03 |
+| main執行時間 | 捲動10:09:36.0632113、排版10:09:46.7066011、實際素材10:10:28.8708680 UTC |
+| 真實公開輸入 | R44／snapshot SHA `71037be9782b05af1da404fd6ab667b538fbb5e4f4356fdbec943787d241c8d7`；raw9／visible9，原出席證明sourceRevision55／confirmed3完全保留，逐卡3attending／6pending |
+| 四寬實際欄位 | 實際卡片36、單位36／職稱32／空職稱4／完整介紹36；兩個原文字拼寫邊界，8個原始Logo／7款綁定變體均核對 |
+| 媒體範圍 | 未捕獲的人物／作品媒體42次請求／9個獨立路徑明示404替身；不冒稱真肖像或作品圖片bytes已驗 |
+| 一般與準確包 | PR／main各1638／1638 Node、source749、Astro482（零錯誤／警告，1既有hint）、23頁、audit0；128檔／40後台資產及原資源上限保持 |
+
+**10:16:09.2184367 UTC** 正式報名alias核對既有批准政策與容量；**10:16:09.2188163** `Cloud lifecycle verified`核對來源3bf1、內容及報名啟用、私有OSS acceptance通過、兩獨立client／一FC程序，run ID `r41426077899-a1-b7da7948164e4da4-3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`。**10:16:13.3443191** 核對13個準確後台HTTPS頁；**10:16:14.3778106** 匿名公開HTTPS／CORS仍R44、計數9／8／1／16／43，原出席confirmed3、展示displayed9。
+
+**10:18:01.7995878 UTC** 已核對 `https://artdico.host` 的 **60個準確公開物件**，來源3bf1相符，軟體交付完成。沒有永久刪除、真人資料更正、出席／名額操作、寄信、業務草稿發布或停用展位／住宿／志工。此證據分支僅補文件，不重複部署；真收件、微信群及iPhone仍各自驗收。
+
 ## 本輪實作與候選驗收（尚未發布）
 
 使用者已選定公開開關決定嘉賓展示，出席確認獨立；亦接受舊人工審閱移出日常表單、歷史唯讀。已實作公開集合、首頁／預覽狀態與「嘉宾阵容」標題；health差異清單也依公開設定，保留真實出席同步檢查。

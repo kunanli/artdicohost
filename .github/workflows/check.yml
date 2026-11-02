@@ -368,6 +368,14 @@ jobs:
       - name: Verify all fixed admin subpages through the activated HTTPS API domain without credentials
         timeout-minutes: 1
         run: node scripts/verify-cloud-admin-pages.mjs .local-data/cloud-content-publication
+      - name: Observe confirmation mail configuration without sending mail
+        id: confirmation_mail_readiness
+        continue-on-error: true
+        timeout-minutes: 1
+        env:
+          ARTDICO_ADMIN_USERNAME: ${{ vars.ARTDICO_ADMIN_USERNAME }}
+          ARTDICO_ADMIN_PASSWORD: ${{ secrets.ARTDICO_ADMIN_PASSWORD }}
+        run: node scripts/observe-confirmation-mail.mjs
       - name: Verify anonymous public content and frontend CORS without credentials
         timeout-minutes: 1
         run: node scripts/verify-public-content.mjs

@@ -13,7 +13,7 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
 if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('申请 API 必须使用指定的 HTTPS 来源。');
 ---
 <section class="ah-registration ah-section" id="registration" aria-labelledby="registration-heading" data-registration-api-origin={apiOrigin || undefined}>
-  <div class="ah-register-intro"><h2 id="registration-heading" data-registration-heading>报名参加。</h2><p data-registration-notice>请先核对下方报名状态。</p></div>
+  <div class="ah-register-intro" data-registration-intro><h2 id="registration-heading" data-registration-heading>报名参加。</h2><p data-registration-notice>请先核对下方报名状态。</p></div>
   <div class="ah-registration-preview ah-general-application" data-registration-preview>
     <div class="ah-form-card">
       <div class="ah-form-top"><strong data-registration-open-label>活动申请</strong><span class="ah-demo-tag" data-registration-mode-label>预览 · 不提交</span></div>

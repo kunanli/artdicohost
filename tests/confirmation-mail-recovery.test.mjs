@@ -264,3 +264,36 @@ test('provider asynchronous configuration window rechecks scope, permission, eve
     assert.equal(f.state.value.notices[0].status, 'rejected'); assert.equal(f.state.value.notices[0].diagnostic.transportStarted, false);
   }
 });
+
+test('automatic intake keeps a truthful durable confirmed receipt when EmailJS rejects, with or without an optional sharing proposal', async () => {
+  const { peopleRuntimeFixture, PEOPLE_FIXTURE_EVENT, PEOPLE_FIXTURE_PUBLIC } = await import('./helpers/people-runtime-fixture.mjs');
+  for (const sharing of [false, true]) {
+    const f = await peopleRuntimeFixture({ attendeeReviewRequired: false, mail: true, mailResult: 'rejected' });
+    const metadata = await f.app.registrationService.metadata(), key = op();
+    const tokenResponse = await f.app.handle(f.request('/api/admin/registration/token', { method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC,
+      body: { eventId: PEOPLE_FIXTURE_EVENT, idempotencyKey: key } }));
+    assert.equal(tokenResponse.status, 200); const token = (await tokenResponse.json()).submissionToken;
+    const payload = { eventId: PEOPLE_FIXTURE_EVENT, fields: { intake: 'general-v2', name: '合成自動報名者', email: 'synthetic.automatic.reject@example.invalid',
+      categories: ['industry'], participationInterests: sharing ? ['attend', 'talk'] : ['attend'],
+      ...(sharing ? { speaker: { topic: '合成自願分享', summary: '合成摘要' } } : {}) }, consent: { accepted: true, version: metadata.privacy.version } };
+    const submit = app => app.handle(f.request('/api/admin/registration/submit', { method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC,
+      headers: { 'Idempotency-Key': key, 'X-Registration-Token': token }, body: payload }));
+    const response = await submit(f.app); assert.equal(response.status, 201); const receipt = await response.json();
+    assert.equal(receipt.admissionStatus, 'confirmed'); assert.equal(receipt.confirmation.email.status, 'rejected'); assert.equal(f.messages.length, 1);
+    assert.match(f.messages[0].template_params.invitation_text, /你的参会名额已确认/u);
+    assert.equal(f.messages[0].template_params.reference_code, receipt.reference_code);
+    const stored = (await f.app.registrationService.repository.list()).registrations;
+    assert.equal(stored.length, 1); assert.deepEqual(stored[0].fields.participationInterests, payload.fields.participationInterests);
+    assert.deepEqual(stored[0].fields.speaker, payload.fields.speaker);
+    assert.equal((await f.app.registrationService.getAdmissionStatus(receipt.reference_code)).status, 'confirmed');
+    const restarted = f.make(), replayResponse = await submit(restarted); assert.equal(replayResponse.status, 200);
+    const replay = await replayResponse.json(); assert.equal(replay.reference_code, receipt.reference_code); assert.equal(replay.admissionStatus, 'confirmed');
+    const privateResponse = await restarted.handle(f.request('/api/admin/registration/confirmation', { method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC,
+      body: { receiptToken: receipt.confirmation.receiptToken } }));
+    assert.equal(privateResponse.status, 200); const privatePage = await privateResponse.json();
+    assert.equal(privatePage.admission.status, 'confirmed'); assert.equal(privatePage.email.status, 'rejected');
+    assert.equal((await restarted.handle(f.request('/api/admin/registration/config', { origin: PEOPLE_FIXTURE_PUBLIC }))).status, 200);
+    assert.equal(f.messages.length, 1, 'replay, private status reads and metadata GET never retry a rejected automatic notice');
+    assert.doesNotMatch(JSON.stringify([receipt, replay, privatePage]), /PRIVATE|EMAILJS_|service_id|accessToken|diagnostic/u);
+  }
+});

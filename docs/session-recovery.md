@@ -1,5 +1,13 @@
 # 开发接续：先读本页
 
+## 2026-11-02（Asia/Taipei）明顯粒子與簡報式淡入已發布
+
+[PR #63](https://github.com/kunanli/artdicohost/pull/63) 已正式發布 main `80895d8d4f64e7d9806f1f2c6c0606d3a33215de`，完整結果見 [本輪紀錄](redesign/presentation-motion-release.md)。使用者指出上一版動效太弱：改為標題先0→1、840ms，內容／嘉賓／組織／日程依序進場；Hero手機16／桌面32點、亮核與短尾流、頁緣24／56點。手機非互動背景的touch pan不再把整段後續內容提前seen，穩定ID刷新不重淡出。預設HTML可見、focus／操作／hash／reduced立即穩定；原稿、字級、sticky與原生scroll保留。
+
+[main流程41379869399](https://github.com/kunanli/artdicohost/actions/runs/41379869399) 四工作completed／success：737來源、Astro482、1612測試、23頁、audit0、FC128及公開61。捲動6／排版4／actual13分別02:54:01／02:54:13／02:55:15 UTC通過，三報source均80895d8、HTML `fa1b8175ddc894fd175a1e1f5019a3f0768aaad1620e148a971e589bf795aab6`；snapshot仍R43／`4b5486d90eed56ed762e40227b35866a07ec4cd451e16b32a67374d5a7ed79af`。03:00:42正式政策與FC／私有OSS、03:00:45後台13頁、03:00:46匿名CORS、03:02:38公開61物件HTTPS通過。PR來源719b5ce、head308e3d7與main分別核對，不借用舊報告。
+
+本機六案有早／中／完成opacity與實際亮像素，不只確認RAF；三幀與手機／桌面Hero已人工看。兩次early視窗取樣失敗、提交前9b0來源欄及samebytes308e資格保留於紀錄，最終CI以準確來源補齊。`docs/presentation-motion-release-proof`只補文件回執，不為紀錄重部署；真人四項仍獨立。以下PR #62及更早為歷史。
+
 ## 2026-11-02（Asia/Taipei）置頂導覽、捲動光流與Hero互動已發布
 
 [PR #62](https://github.com/kunanli/artdicohost/pull/62) 已發布 main `941d6f661b3740da85a475c8d9ed561b8bce6114`，完整回執見 [本輪紀錄](redesign/scroll-motion-release.md)。Header保持76／72px原佔位、viewport sticky及實測錨點留白；低密度頁緣顆粒隨捲動、Hero可見時球緣10／18點慢流與游標輕回應，標題／表單不持續位移。原文／字級／嘉賓三層與業務資料保留；reduced-motion／隱藏／離屏及無JS／無IO皆有驗證。

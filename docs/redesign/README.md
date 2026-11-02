@@ -1,10 +1,10 @@
 # ARTDiCO HOST 改版執行總覽
 
-最新報名決策：[本站報名自動取得入場名額](onsite-auto-registration-release.md)。使用者已明確選本站填表、自動確認或滿額候補；取代下方早先活動行唯一入口規劃。新空白分享提案不勾，分享審選及既有待審／未知結果仍獨立保留。本輪實作驗收與政策發布尚在進行。
+最新報名決策：[本站報名自動取得入場名額](onsite-auto-registration-release.md)。使用者已明確選本站填表、自動確認或滿額候補；取代下方早先活動行唯一入口規劃。新空白分享提案不勾，分享審選及既有待審／未知結果仍獨立保留。[PR70](https://github.com/kunanli/artdicohost/pull/70)已發布main `124180a0dc862d4e93cf79c5a3cf1c9278c83991`；[main流程41458276411](https://github.com/kunanli/artdicohost/actions/runs/41458276411)四工作及1661測試／同HTML6／4／10／實際13通過，14:13 UTC正式mode false／13後台、14:14:45 UTC 60公開物件HTTPS核對完成。
 
-接續：[Hero完整品牌與單次標題](hero-single-title-release.md)。使用者要求GlobalGameJam在一起、兩個品牌各只一次，移除前版輪廓複行；本輪驗證與發布結果另記，以下PR69為上一個已驗證部署。
+接續：[Hero完整品牌與單次標題](hero-single-title-release.md)。使用者要求GlobalGameJam在一起、兩個品牌各只一次，移除前版輪廓複行；本輪與自動報名同由PR70交付，Hero及手機／桌面、字型fallback、真Range與星空均已驗證；以下PR69為歷史基準。
 
-更新日期：2026-11-02。**[PR69 Hero緊密海報字組](hero-type-wall-release.md) 已合併並發布main `9f5dbdcf7cc1d03e46ade5e6c7dce32f10525722`。** 同詞實心／輪廓複行、斜切紫色色面、210px桌面字級上限及手機自然流已完成；保持原球體、星空與頁尾。PR／main各1638測試、捲動6／排版4／實際素材13，同HTML `af375d83…7301d` 及R44／公開9位／出席證明3／8Logo已核對；[main流程41440261686](https://github.com/kunanli/artdicohost/actions/runs/41440261686)四工作成功，12:03 UTC私有OSS及13後台、**12:05:45 UTC 60個準確公開物件HTTPS**驗證完成。
+前次已驗證發布：2026-11-02。**[PR69 Hero緊密海報字組](hero-type-wall-release.md) 已合併並發布main `9f5dbdcf7cc1d03e46ade5e6c7dce32f10525722`。** 同詞實心／輪廓複行、斜切紫色色面、210px桌面字級上限及手機自然流已完成；保持原球體、星空與頁尾。PR／main各1638測試、捲動6／排版4／實際素材13，同HTML `af375d83…7301d` 及R44／公開9位／出席證明3／8Logo已核對；[main流程41440261686](https://github.com/kunanli/artdicohost/actions/runs/41440261686)四工作成功，12:03 UTC私有OSS及13後台、**12:05:45 UTC 60個準確公開物件HTTPS**驗證完成。
 
 前次已驗證發布（歷史基準）：**[PR #68](https://github.com/kunanli/artdicohost/pull/68) 已合併至 main `3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`，PR／main驗收及正式發布回執均已完成。** 嘉賓依公開開關展示全部合法資料，真實出席獨立；舊人工審閱移出日常編輯、歷史唯讀。資料未刪除，展位／住宿／志工流程維持，範圍與證據入口見[本輪盤點與交付](admin-data-cleanup-audit.md)。
 

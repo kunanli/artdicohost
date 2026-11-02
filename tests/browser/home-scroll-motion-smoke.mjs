@@ -206,7 +206,7 @@ async function main() {
         if (node.nodeType !== Node.TEXT_NODE) return [];
         const range = document.createRange(); range.selectNodeContents(node); return [...range.getClientRects()];
       });
-      for (const node of title.querySelectorAll('[data-poster-word],[data-home-title-subtitle]')) {
+      for (const node of title.querySelectorAll('[data-poster-word],[data-home-title-overline],[data-home-title-subtitle]')) {
         const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT); let text;
         while ((text = walker.nextNode())) if (text.textContent.trim()) { const range = document.createRange(); range.selectNodeContents(text); titleRects.push(...range.getClientRects()); }
       }
@@ -301,43 +301,118 @@ async function main() {
     return page.evaluate(() => {
       const heading = document.getElementById('hero-heading'), box = node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
       const ranges = node => { const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT), result = []; let text; while ((text = walker.nextNode())) if (text.textContent.trim()) { const range = document.createRange(); range.selectNodeContents(text); for (const r of range.getClientRects()) result.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }); } return result; };
-      const inspect = node => { const style = getComputedStyle(node); return { text: node.textContent.trim().replace(/\s+/gu, ' '), classes: [...node.classList], family: style.fontFamily, weight: Number(style.fontWeight), fontSize: parseFloat(style.fontSize), fill: style.webkitTextFillColor, stroke: parseFloat(style.webkitTextStrokeWidth), clip: style.webkitBackgroundClip, background: style.backgroundImage, box: box(node), ranges: ranges(node), overflowX: style.overflowX, overflowY: style.overflowY, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }; };
-      return { at: performance.now(), viewport: innerWidth, headerBottom: document.querySelector('.ah-home-header').getBoundingClientRect().bottom, heading: { label: heading.getAttribute('aria-label'), hidden: Boolean(heading.closest('[aria-hidden=true]')), count: document.querySelectorAll('h1').length, imageCount: heading.querySelectorAll('img,[data-home-title-image],[data-home-title-fallback]').length }, rows: [...heading.querySelectorAll('[data-home-title-type]')].map(inspect), words: [...heading.querySelectorAll('[data-poster-word]')].map(inspect), subtitles: [...heading.querySelectorAll('[data-home-title-subtitle]')].map(inspect), footer: [...document.querySelectorAll('[data-footer-display-line]')].map(inspect), strokeSupported: CSS.supports('-webkit-text-stroke', '1px #fff'), clipSupported: CSS.supports('background-clip', 'text') || CSS.supports('-webkit-background-clip', 'text'), faces: [...document.fonts].filter(face => face.family.includes('Barlow Condensed')).map(face => ({ family: face.family, status: face.status, weight: face.weight, style: face.style, stretch: face.stretch, display: face.display, sizeAdjust: face.sizeAdjust })) };
+      const marker = node => ({ tag: node.tagName, type: node.getAttribute('data-home-title-type'), word: node.hasAttribute('data-poster-word'), primary: node.hasAttribute('data-poster-primary'), repeat: node.hasAttribute('data-poster-repeat'), overline: node.hasAttribute('data-home-title-overline'), subtitle: node.hasAttribute('data-home-title-subtitle') });
+      const gradientLayers = background => { const layers = []; let depth = 0, start = 0; for (let index = 0; index < background.length; index++) { if (background[index] === '(') depth++; else if (background[index] === ')') depth--; else if (background[index] === ',' && depth === 0) { layers.push(background.slice(start, index).trim()); start = index + 1; } } layers.push(background.slice(start).trim()); return layers.map(layer => ({ angle: Number(/^linear-gradient\(([-\d.]+)deg,/u.exec(layer)?.[1]), stops: [...layer.matchAll(/([\d.]+)%/gu)].map(match => Number(match[1])) })); };
+      const inspect = node => { const style = getComputedStyle(node); return { ...marker(node), text: node.textContent.trim().replace(/\s+/gu, ' '), classes: [...node.classList], children: [...node.children].map(marker), directTextNodes: [...node.childNodes].filter(child => child.nodeType === Node.TEXT_NODE && child.textContent.trim()).length, parentType: node.parentElement.getAttribute('data-home-title-type'), family: style.fontFamily, weight: Number(style.fontWeight), fontSize: parseFloat(style.fontSize), lineHeight: parseFloat(style.lineHeight), color: style.color, fill: style.webkitTextFillColor, stroke: parseFloat(style.webkitTextStrokeWidth), strokeColor: style.webkitTextStrokeColor, clip: style.webkitBackgroundClip, background: style.backgroundImage, gradients: gradientLayers(style.backgroundImage), display: style.display, visibility: style.visibility, position: style.position, box: box(node), ranges: ranges(node), overflowX: style.overflowX, overflowY: style.overflowY, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }; };
+      return { at: performance.now(), viewport: innerWidth, headerBottom: document.querySelector('.ah-home-header').getBoundingClientRect().bottom, heading: { label: heading.getAttribute('aria-label'), hidden: Boolean(heading.closest('[aria-hidden=true]')), count: document.querySelectorAll('h1').length, imageCount: heading.querySelectorAll('img,[data-home-title-image],[data-home-title-fallback]').length, children: [...heading.children].map(inspect) }, rows: [...heading.querySelectorAll('[data-home-title-type]')].map(inspect), words: [...heading.querySelectorAll('[data-poster-word]')].map(inspect), overlines: [...heading.querySelectorAll('[data-home-title-overline]')].map(inspect), subtitles: [...heading.querySelectorAll('[data-home-title-subtitle]')].map(inspect), footer: [...document.querySelectorAll('[data-footer-display-line]')].map(inspect), strokeSupported: CSS.supports('-webkit-text-stroke', '1px #fff'), clipSupported: CSS.supports('background-clip', 'text') || CSS.supports('-webkit-background-clip', 'text'), faces: [...document.fonts].filter(face => face.family.includes('Barlow Condensed')).map(face => ({ family: face.family, status: face.status, weight: face.weight, style: face.style, stretch: face.stretch, display: face.display, sizeAdjust: face.sizeAdjust })) };
     });
   }
   async function posterTitle(page, { fontFailure = false } = {}) {
     const value = await posterGeometry(page); numericMetrics = { posterTitle: value };
     assert.equal(value.heading.count, 1); assert.equal(value.heading.hidden, false); assert.equal(value.heading.imageCount, 0, 'the semantic Hero is live HTML type without obsolete PNG/error fallback');
     assert.match(value.heading.label, /Global\s*Game\s*Jam|GlobalGameJam/iu); assert.match(value.heading.label, /ARTDiCO HOST/u);
-    assert.deepEqual(value.rows.map(row => row.text.replace(/\s+/gu, '')), ['GLOBALGAMEJAM', 'ARTDiCOHOST']); assert.deepEqual(value.words.map(word => word.text), ['GLOBAL', 'GAME JAM', 'ARTDiCO', 'HOST']); assert.deepEqual(value.subtitles.map(row => row.text), ['中国组织者交流会', '嘉年华']);
+    assert.equal(value.heading.children.length, 2, 'the Hero has exactly two live normal-flow title wrappers');
+    assert.deepEqual(value.overlines.map(row => row.text), ['GLOBAL']);
+    assert.deepEqual(value.rows.map(row => row.type), ['ggj', 'host']); assert.deepEqual(value.rows.map(row => row.text.replace(/\s+/gu, '')), ['GAMEJAMGAMEJAM', 'ARTDiCOHOSTARTDiCOHOST']);
+    assert.deepEqual(value.words.map(word => word.text), ['GAME JAM', 'GAME JAM', 'ARTDiCO HOST', 'ARTDiCO HOST']); assert.deepEqual(value.subtitles.map(row => row.text), ['中国组织者交流会', '嘉年华']);
+    for (const [index, wrapper] of value.heading.children.entries()) {
+      assert.equal(wrapper.tag, 'SPAN'); assert.ok(['static', 'relative'].includes(wrapper.position), 'the two title wrappers remain in normal document flow');
+      assert.deepEqual(wrapper.children.map(child => child.overline ? 'overline' : child.type || (child.subtitle ? 'subtitle' : 'unknown')), index === 0 ? ['overline', 'ggj', 'subtitle'] : ['host', 'subtitle']);
+      assert.ok(Math.abs(wrapper.box.width - (value.viewport <= 820 ? value.viewport - 40 : Math.min(value.viewport * .66, 1267))) <= 1, 'the title wall keeps its requested width');
+      if (value.viewport <= 820) assert.ok(Math.abs(wrapper.box.left - 20) <= 1 && Math.abs(value.viewport - wrapper.box.right - 20) <= 1, 'mobile title wrappers keep twenty-pixel page margins');
+    }
+    for (const row of value.rows) {
+      assert.equal(row.tag, 'SPAN'); assert.equal(row.directTextNodes, 0); assert.equal(row.children.length, 2);
+      assert.deepEqual(row.children.map(child => ({ tag: child.tag, word: child.word, primary: child.primary, repeat: child.repeat })), [{ tag: 'SPAN', word: true, primary: true, repeat: false }, { tag: 'SPAN', word: true, primary: false, repeat: true }], 'each type row contains a real primary span followed by its real outline repeat');
+      assert.ok(Math.abs(row.lineHeight / row.fontSize - 1.02) < .001, 'Hero poster rows use the compact requested leading');
+    }
     for (const word of value.words) {
+      assert.equal(word.tag, 'SPAN'); assert.equal(word.children.length, 0); assert.equal(word.directTextNodes, 1); assert.equal(word.parentType, word.text === 'GAME JAM' ? 'ggj' : 'host');
+      assert.ok(word.primary !== word.repeat, 'every native poster word has exactly one explicit role');
       assert.match(word.family, /Barlow Condensed/u); assert.ok(word.weight >= 800 && word.fontSize >= 24 && word.box.width > 0 && word.box.height > 0 && word.ranges.length);
       assert.equal(['auto', 'scroll'].includes(word.overflowX) || ['auto', 'scroll'].includes(word.overflowY), false, 'poster words do not become internal scroll areas');
       for (const rect of word.ranges) assert.ok(rect.width > 0 && rect.height > 0 && rect.left >= -1 && rect.right <= value.viewport + 1 && rect.top >= value.headerBottom - 1, 'every native word Range stays readable inside the first-view canvas');
       if (value.strokeSupported) {
-        assert.ok(word.stroke >= 1, 'poster keylines and outlines are real computed strokes');
-        if (word.classes.includes('ah-poster-outline')) assert.match(word.fill, /rgba\([^)]*,\s*0\)$/u);
-        if (word.classes.includes('ah-poster-solid') && !word.classes.includes('ah-poster-slice')) assert.doesNotMatch(word.fill, /rgba\([^)]*,\s*0\)$/u);
-        if (word.classes.includes('ah-poster-slice') && value.clipSupported) { assert.match(word.background, /gradient/u); assert.equal(word.clip, 'text'); }
+        if (word.repeat) { assert.ok(word.classes.includes('ah-poster-outline')); assert.ok(word.stroke >= 1, 'outline repeats retain a real computed stroke of at least one pixel'); assert.match(word.fill, /rgba\([^)]*,\s*0\)$/u); }
+        if (word.primary) {
+          assert.ok(word.classes.includes('ah-poster-solid') && word.classes.includes('ah-poster-slice')); assert.ok(Math.abs(word.stroke - .55) <= .01, 'the solid Hero letters use the fine requested keyline'); assert.equal(word.strokeColor, word.color, 'the fine Hero keyline has the same color as the solid letters');
+          if (value.clipSupported) { assert.deepEqual(word.clip.split(',').map(clip => clip.trim()), ['text', 'text']); assert.deepEqual(word.gradients, [{ angle: 124, stops: [0, 34, 34, 48, 48, 100] }, { angle: 72, stops: [0, 59, 59, 79, 79, 100] }], 'the live primary uses two diagonal gradients with hard slice boundaries'); }
+          else assert.doesNotMatch(word.fill, /rgba\([^)]*,\s*0\)$/u);
+        }
       }
     }
-    for (const row of value.subtitles) assert.ok(row.fontSize >= 20 && row.ranges.every(rect => rect.left >= -1 && rect.right <= value.viewport + 1), 'Chinese subtitles remain live readable text');
-    assert.ok(value.faces.length > 0); assert.equal(value.faces.some(face => face.status === (fontFailure ? 'error' : 'loaded')), true, 'the expected real font load state is observed');
+    for (const row of [...value.overlines, ...value.subtitles]) { assert.equal(row.tag, 'SPAN'); assert.equal(row.children.length, 0); assert.equal(row.directTextNodes, 1); assert.ok(row.display !== 'none' && row.visibility === 'visible' && row.ranges.length > 0); for (const rect of row.ranges) assert.ok(rect.width > 0 && rect.height > 0 && rect.left >= -1 && rect.right <= value.viewport + 1 && rect.top >= value.headerBottom - 1, 'every native overline and subtitle Range remains readable inside the viewport'); }
+    for (const row of value.subtitles) assert.ok(row.fontSize >= 16 && row.fontSize <= 28, 'Chinese subtitles retain their explicit sixteen-to-twenty-eight-pixel display role');
+    assert.ok(value.faces.length > 0); for (const face of value.faces) assert.equal(face.sizeAdjust, '140%', 'the shipped font keeps its existing adjusted metrics'); assert.equal(value.faces.some(face => face.status === (fontFailure ? 'error' : 'loaded')), true, 'the expected real font load state is observed');
     assert.equal(value.footer.length, 2); for (const line of value.footer) assert.ok(line.family.includes('Barlow Condensed') && line.weight >= 800);
     if (value.strokeSupported) assert.ok(value.footer[1].stroke >= 1, 'the footer outline uses the same actual poster role');
     return value;
   }
   async function typedMaskAfter(page, since) {
-    await page.waitForFunction(since => {
-      const canvas = document.querySelector('[data-hero-particles]').getBoundingClientRect(), frame = window.__homeMotionQaParticleFrames().find(frame => frame.at > since && frame.maskRects.length);
+    const observation = await page.waitForFunction(since => {
+      const canvas = document.querySelector('[data-hero-particles]').getBoundingClientRect(), frame = window.__homeMotionQaParticleFrames().find(frame => frame.at > since && frame.completedAt !== null && frame.maskRects.length);
       if (!frame) return false;
-      return [...document.querySelectorAll('#hero-heading [data-poster-word],#hero-heading [data-home-title-subtitle]')].every(node => {
-        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT); let text;
-        while ((text = walker.nextNode())) if (text.textContent.trim()) { const range = document.createRange(); range.selectNodeContents(text); for (const rect of range.getClientRects()) if (!frame.maskRects.some(mask => mask.x <= rect.left - canvas.left - 1 && mask.y <= rect.top - canvas.top - 1 && mask.x + mask.width >= rect.right - canvas.left + 1 && mask.y + mask.height >= rect.bottom - canvas.top + 1)) return false; }
-        return true;
+      const nodes = [...document.querySelectorAll('#hero-heading [data-poster-word],#hero-heading [data-home-title-overline],#hero-heading [data-home-title-subtitle]')];
+      if (nodes.length !== 7) return false;
+      const targets = nodes.map((node, index) => {
+        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT); let text, ranges = 0, visibleRanges = 0, fullyVisibleRanges = 0, maskedRanges = 0;
+        while ((text = walker.nextNode())) if (text.textContent.trim()) {
+          const range = document.createRange(); range.selectNodeContents(text);
+          for (const rect of range.getClientRects()) {
+            ranges++;
+            const visible = { left: Math.max(rect.left, canvas.left), right: Math.min(rect.right, canvas.right), top: Math.max(rect.top, canvas.top), bottom: Math.min(rect.bottom, canvas.bottom) };
+            if (visible.right <= visible.left || visible.bottom <= visible.top) continue;
+            visibleRanges++;
+            if (rect.left >= canvas.left + 1 && rect.right <= canvas.right - 1 && rect.top >= canvas.top + 1 && rect.bottom <= canvas.bottom - 1) fullyVisibleRanges++;
+            if (frame.maskRects.some(mask => mask.x <= visible.left - canvas.left - 1 && mask.y <= visible.top - canvas.top - 1 && mask.x + mask.width >= visible.right - canvas.left + 1 && mask.y + mask.height >= visible.bottom - canvas.top + 1)) maskedRanges++;
+          }
+        }
+        return { index, role: node.hasAttribute('data-poster-primary') ? 'primary' : node.hasAttribute('data-poster-repeat') ? 'repeat' : node.hasAttribute('data-home-title-overline') ? 'overline' : 'subtitle', group: node.closest('[data-home-title-type]')?.getAttribute('data-home-title-type') ?? (node.closest('.ah-home-title-ggj') ? 'ggj' : 'host'), ranges, visibleRanges, fullyVisibleRanges, maskedRanges };
       });
+      if (!targets.every(target => target.ranges > 0 && target.visibleRanges === target.maskedRanges) || !targets.some(target => target.visibleRanges > 0)) return false;
+      // Return the evidence from this same task: no second geometry read can
+      // substitute a different paint or scroll position for the checked one.
+      return { eventAt: since, sampledAt: performance.now(), scrollY, firstMaskPaintAt: frame.at, completedAt: frame.completedAt, nativeFrame: frame.nativeFrame, rectangles: frame.maskRects.length, targets };
     }, since);
-    return page.evaluate(since => { const frame = window.__homeMotionQaParticleFrames().find(frame => frame.at > since && frame.maskRects.length); return { eventAt: since, firstMaskPaintAt: frame.at, rectangles: frame.maskRects.length }; }, since);
+    try { return await observation.jsonValue(); } finally { await observation.dispose(); }
+  }
+  async function posterMaskSweep(page, initial) {
+    const startY = await page.evaluate(() => scrollY), covered = new Map(), steps = [];
+    const include = mask => { for (const target of mask.targets) if (target.ranges > 0 && target.fullyVisibleRanges === target.ranges && target.maskedRanges === target.ranges) covered.set(target.index, target); };
+    include(initial);
+    const geometry = index => page.evaluate(index => {
+      const canvas = document.querySelector('[data-hero-particles]').getBoundingClientRect(), nodes = [...document.querySelectorAll('#hero-heading [data-poster-word],#hero-heading [data-home-title-overline],#hero-heading [data-home-title-subtitle]')], node = nodes[index], rects = [];
+      if (node) { const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT); let text; while ((text = walker.nextNode())) if (text.textContent.trim()) { const range = document.createRange(); range.selectNodeContents(text); rects.push(...range.getClientRects()); } }
+      return { scrollY, canvasTop: canvas.top, canvasBottom: canvas.bottom, top: rects.length ? Math.min(...rects.map(rect => rect.top)) : null, bottom: rects.length ? Math.max(...rects.map(rect => rect.bottom)) : null, fullyVisible: rects.length > 0 && rects.every(rect => rect.left >= canvas.left + 1 && rect.right <= canvas.right - 1 && rect.top >= canvas.top + 1 && rect.bottom <= canvas.bottom - 1) };
+    }, index);
+    const settleWheel = async (index, expectedY = null) => {
+      const deadline = Date.now() + 4000; let lastY = null, stableAt = Date.now(), final;
+      while (Date.now() < deadline) {
+        final = await geometry(index);
+        if (lastY === null || Math.abs(final.scrollY - lastY) > .5) stableAt = Date.now(); lastY = final.scrollY;
+        if ((expectedY === null ? final.fullyVisible : Math.abs(final.scrollY - expectedY) <= 1) && Date.now() - stableAt >= 100) return final;
+        await page.waitForTimeout(50);
+      }
+      numericMetrics = { posterMaskWheel: { index, expectedY, final } };
+      assert.fail('native wheel must expose the complete real title Range and restore the original reading position');
+    };
+    for (let index = 0; index < initial.targets.length; index++) {
+      if (covered.has(index)) continue;
+      const before = await geometry(index); assert.ok(before.top !== null && before.bottom !== null);
+      const delta = (before.top + before.bottom - before.canvasTop - before.canvasBottom) / 2;
+      await page.mouse.wheel(0, delta); const landed = await settleWheel(index);
+      const since = await page.evaluate(() => performance.now()), mask = await typedMaskAfter(page, since), pixels = await particlePixels(page);
+      assert.equal(pixels.readableAlphaPixels, 0, 'newly exposed native title Ranges contain no actual star alpha'); assert.equal(pixels.sphereAlphaPixels, 0, 'the same completed paint keeps sphere pixels clear during native title scrolling');
+      include(mask); assert.equal(covered.has(index), true, 'each initially clipped title target receives its own fully visible Range-mask observation');
+      steps.push({ index, nativeWheelDelta: delta, scrollY: landed.scrollY, mask, readableAlphaPixels: pixels.readableAlphaPixels, sphereAlphaPixels: pixels.sphereAlphaPixels });
+    }
+    assert.equal(covered.size, 7, 'all seven real poster targets are fully visible and masked across the native-wheel sweep');
+    let restoredMask = initial;
+    if (steps.length) {
+      await page.mouse.wheel(0, startY - await page.evaluate(() => scrollY)); await settleWheel(0, startY);
+      restoredMask = await typedMaskAfter(page, await page.evaluate(() => performance.now()));
+    }
+    return { initialScrollY: startY, restoredScrollY: await page.evaluate(() => scrollY), nativeWheelSteps: steps, coveredTargets: [...covered.values()].sort((a, b) => a.index - b.index), restoredMask };
   }
   async function lateTitleFonts(page, f) {
     const path = f.displayFontPath(); assert.ok(path, 'the actual compiled display-font request was intercepted');
@@ -355,6 +430,7 @@ async function main() {
     const errorEvent = await page.evaluate(start => window.__homeMotionQaFontEvents().find(event => event.at >= start && event.type === 'loadingerror'), failed.startedAt), errorMask = await typedMaskAfter(page, errorEvent.at);
     const failurePixels = await particlePixels(page); assert.equal(failurePixels.readableAlphaPixels + failurePixels.sphereAlphaPixels, 0, 'real late font failure leaves fallback text and sphere clear of star alpha');
     await page.screenshot({ path: resolve(evidence, 'hero-late-font-error-' + width + '.png') });
+    const errorMaskSweep = await posterMaskSweep(page, errorMask);
     const loaded = await load('late-loaded'); assert.equal(loaded.status, 'loaded'); assert.equal(loaded.rejected, false); assert.equal(loaded.sizeAdjust, original.sizeAdjust, 'late native retry uses the actual shipped face metrics');
     await page.waitForFunction(start => window.__homeMotionQaFontEvents().some(event => event.at >= start && event.type === 'loadingdone'), loaded.startedAt);
     const doneEvent = await page.evaluate(start => window.__homeMotionQaFontEvents().find(event => event.at >= start && event.type === 'loadingdone'), loaded.startedAt), loadedMask = await typedMaskAfter(page, doneEvent.at), after = await posterTitle(page);
@@ -363,7 +439,8 @@ async function main() {
     assert.equal(changed, true, 'the native shipped font actually replaces fallback glyph metrics');
     const pixels = await particlePixels(page); assert.ok(pixels.brightPixels >= 15 && pixels.visibleComponents >= 6 && pixels.occupiedRegions >= 3, 'the loaded title retains the original visible star-field threshold'); assert.equal(pixels.readableAlphaPixels, 0, 'actual new glyph Ranges remain free of star alpha after late font reflow'); assert.equal(pixels.sphereAlphaPixels, 0);
     await page.screenshot({ path: resolve(evidence, 'hero-active-' + width + '.png') }); await page.screenshot({ path: resolve(evidence, 'hero-late-font-loaded-' + width + '.png') });
-    return { realFontRequests: f.displayFontReads(), failed, loaded, errorEvent, doneEvent, errorMask, loadedMask, nativeGlyphMetricsChanged: changed, before, after, readableAlphaPixels: pixels.readableAlphaPixels, sphereAlphaPixels: pixels.sphereAlphaPixels };
+    const loadedMaskSweep = await posterMaskSweep(page, loadedMask);
+    return { realFontRequests: f.displayFontReads(), failed, loaded, errorEvent, doneEvent, errorMask, loadedMask, errorMaskSweep, loadedMaskSweep, nativeGlyphMetricsChanged: changed, before, after, readableAlphaPixels: pixels.readableAlphaPixels, sphereAlphaPixels: pixels.sphereAlphaPixels };
   }
   async function backgroundPlanet(page) {
     return page.locator('[data-background-planet]').evaluate(node => {
@@ -536,6 +613,7 @@ async function main() {
         stage = 'enable-motion'; await page.emulateMedia({ reducedMotion: 'no-preference' });
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.motionState === 'active'); await settled(page);
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.atmosphereState === 'active');
+        const initialTitleMask = await typedMaskAfter(page, typedHero.at), initialTitleMaskSweep = await posterMaskSweep(page, initialTitleMask);
         const atmosphere = await page.locator('[data-scroll-atmosphere]').evaluate(node => ({ hidden: node.hidden, ariaHidden: node.getAttribute('aria-hidden'), pointerEvents: getComputedStyle(node).pointerEvents }));
         assert.equal(await page.locator('canvas[data-scroll-atmosphere][data-hero-particles]').count(), 1, 'one canvas supplies hero and full-page stars');
         assert.equal(atmosphere.ariaHidden, 'true'); assert.equal(atmosphere.pointerEvents, 'none', 'background stars cannot intercept reading or form controls');
@@ -648,7 +726,7 @@ async function main() {
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.motionState === 'active');
         await page.emulateMedia({ reducedMotion: 'reduce' }); await page.screenshot({ path: resolve(evidence, 'pinned-header-' + width + '.png') });
         stage='one-pixel-viewport';const narrowViewport=width===1440?await onePixelViewport(page,width):null;
-        reports.push({ width, typedHero, initialAndLiveReducedMotion: true, visibleHeroAmbientFrameLoop: true, visibleParticlePixels: [firstParticles, secondParticles], finePointerInteraction: pointerInteraction, backgroundPointer, lateTitleFontLifecycle, nativeWheel: true, boundedDecorativeShift: artShift, originalSphere, distantSphere, sphereAfterWheel, ambientBudget, compositing, continuousFullPageBackgroundWithOneBoundedLoop: true, realEntryAndFocusCancellation: true, guestFade, organizationFade, touchPan, rowFade, narrowViewport, pointerTransparentBackground: true, frameProbeExplicitlySyntheticInstrumentation: true, pinnedHeader: true, anchorsBelowHeader: alignment, mobileMenu: width < 1000, publicRefreshPositionPreserved: true, delayedGuestHash: true, hiddenSignalExplicitlySynthetic: true });
+        reports.push({ width, typedHero, initialTitleMask, initialTitleMaskSweep, initialAndLiveReducedMotion: true, visibleHeroAmbientFrameLoop: true, visibleParticlePixels: [firstParticles, secondParticles], finePointerInteraction: pointerInteraction, backgroundPointer, lateTitleFontLifecycle, nativeWheel: true, boundedDecorativeShift: artShift, originalSphere, distantSphere, sphereAfterWheel, ambientBudget, compositing, continuousFullPageBackgroundWithOneBoundedLoop: true, realEntryAndFocusCancellation: true, guestFade, organizationFade, touchPan, rowFade, narrowViewport, pointerTransparentBackground: true, frameProbeExplicitlySyntheticInstrumentation: true, pinnedHeader: true, anchorsBelowHeader: alignment, mobileMenu: width < 1000, publicRefreshPositionPreserved: true, delayedGuestHash: true, hiddenSignalExplicitlySynthetic: true });
       } catch (error) { await captureFailureSignals(page); throw error; } finally { activePage = null; await f.context.close(); }
     }
     for (const mode of ['no-javascript', 'no-intersection-observer']) {

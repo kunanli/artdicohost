@@ -49,6 +49,21 @@ const GUEST_INFORMATION_LAYOUT = Object.freeze({
   desktopDiameterByViewport: { 1920: 260, 1440: 224 },
   mobilePaddingByViewport: { 390: 24, 320: 20 },
 });
+// Hero v2 has its own requested poster geometry. The original PNG remains the
+// reference for every unrelated guest/logo/heading/divider measurement.
+const HERO_POSTER_LAYOUT = Object.freeze({
+  reason: 'Filled complete words followed by the same outlined words in one compact, normal-flow word wall.',
+  priorHero: 'Separate GLOBAL/GAME JAM and ARTDiCO/HOST words in two absolute anchors; original PNG agenda action y=1306.',
+  currentHero: 'GLOBAL overline, GAME JAM pair, ARTDiCO HOST pair, smaller Chinese subtitles; facts and actions follow the wall.',
+  desktopWrapperWidth: 'min(66vw, 1267px)', desktopInlinePadding: 'clamp(24px, 7.3vw, 140px)', mobileInlinePadding: 20,
+  gameJamPixels: 'desktop clamp(90px, 11.7vw, 225px); mobile (viewport - 40px) / 5.45', hostSizeRatio: .7175,
+  wordWallGap: 'desktop clamp(18px, 1.5vw, 29px); mobile 18px',
+  wordWidthAlignment: 'Loaded native Barlow pairs align within 1px across both groups. Font-404 fallback retains exact pair widths and strict wrapper/viewport crop checks; different font advances do not imply cross-group equality.',
+  latinWeight: 800, cssSizeAdjust: '140%', staticWidthScale: 1.06,
+  pairLeading: 1.02, solidStrokePixels: .55, minimumOutlinePixels: 1,
+  subtitlePixels: { minimum: 16, maximum: 28 }, sliceAngles: [124, 72],
+  unchangedScope: 'No guest, organization, section heading, divider, fallback or crop tolerance changes.',
+});
 assert.equal(sha(referenceBytes), REFERENCE.sha256, 'geometry measurements must refer to the unchanged original image');
 assert.equal(referenceBytes.readUInt32BE(16), REFERENCE.width); assert.equal(referenceBytes.readUInt32BE(20), REFERENCE.height);
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFElEQVR4nGN0KFjAwMDAxMDAgKAAGOQBVgs9CEsAAAAASUVORK5CYII=','base64');
@@ -208,35 +223,84 @@ async function titleReadability(page){
   });
   assert.ok(measured.textFragments>0,'the title has rendered letterforms');assert.deepEqual(measured.failures,[],'title letters and subtitles are visible and unclipped');return measured;
 }
-async function heroType(page,{failedFont=false}={}){
+async function heroPoster(page,{failedFont=false}={}){
   await page.evaluate(()=>document.fonts.ready);
-  assert.equal(await page.locator('#hero-heading [data-home-title-image],#hero-heading [data-home-title-fallback]').count(),0,'the poster is live text, without image/error fallback layers');
-  assert.equal(await page.locator('#hero-heading').getAttribute('aria-label'),await page.locator('#hero-heading').getAttribute('data-initial-event-title'),'the semantic title remains independent of the English poster letters');
-  assert.deepEqual(await page.locator('#hero-heading [data-home-title-subtitle][lang="zh-CN"]').allTextContents(),['中国组织者交流会','嘉年华'],'the Chinese subtitles also remain real text');
-  const rows=await page.locator('#hero-heading>.ah-home-title-art').evaluateAll(nodes=>nodes.map(node=>{
-    const type=node.querySelector('[data-home-title-type][lang=en]'),style=getComputedStyle(type),range=document.createRange();range.selectNodeContents(type);
-    const box=element=>{const b=element.getBoundingClientRect();return{x:b.x,y:b.y,width:b.width,height:b.height,right:b.right,bottom:b.bottom};};
-    const textBoxes=[...range.getClientRects()].filter(b=>b.width&&b.height).map(b=>({x:b.x,y:b.y,width:b.width,height:b.height,right:b.right,bottom:b.bottom}));
-    const primary=style.fontFamily.split(',')[0].trim().replace(/^['"]|['"]$/gu,'');
-    const words=[...type.children].map(word=>{const r=document.createRange();r.selectNodeContents(word);const style=getComputedStyle(word);return{text:word.textContent.trim(),fill:style.webkitTextFillColor,stroke:parseFloat(style.webkitTextStrokeWidth),background:style.backgroundImage,boxes:[...r.getClientRects()].filter(b=>b.width&&b.height).map(b=>({x:b.x,y:b.y,width:b.width,height:b.height,right:b.right,bottom:b.bottom}))};});
-    return {text:type.textContent.trim(),words,box:box(type),wrapper:box(node),font:style.fontFamily,weight:style.fontWeight,fontSize:parseFloat(style.fontSize),primary,faces:[...document.fonts].filter(face=>face.family.replace(/^['"]|['"]$/gu,'')===primary&&face.weight==='800').map(face=>({weight:face.weight,status:face.status})),textBoxes};
-  }));
-  assert.equal(rows.length,2,'both fixed poster wrappers remain direct children of the semantic h1');
-  assert.deepEqual(rows.map(row=>row.text.replace(/\s/gu,'')),['GLOBALGAMEJAM','ARTDiCOHOST']);
-  assert.deepEqual(rows.map(row=>row.words.map(word=>word.text)),[['GLOBAL','GAME JAM'],['ARTDiCO','HOST']],'the poster preserves whole word groups');
-  assert.ok(rows[0].words[0].stroke>0&&rows[1].words[1].stroke>0,'the outlined word groups have actual strokes');
-  assert.match(rows[0].words[1].background,/linear-gradient/u,'the filled GAME JAM group has the requested color split');
-  for(const row of rows){
-    for(const word of row.words){assert.equal(word.boxes.length,1,'a poster word is not split between lines');for(const box of word.boxes)assert.ok(box.x>=row.wrapper.x-1&&box.right<=row.wrapper.right+1,'whole words fit their original poster wrapper');}
-    assert.equal(row.weight,'800','the poster uses the actual heavy display weight');
-    assert.equal(row.primary,'Barlow Condensed','the declared face is the self-hosted condensed display family');
-    assert.ok(row.faces.length>0,'the poster face is registered by the built page');
-    assert.ok(row.faces.some(face=>face.status===(failedFont?'error':'loaded')),'the real font request exercises loaded or failed fallback state');
-    assert.ok(row.box.width>0&&row.box.height>0&&row.textBoxes.length>0,'live letters have rendered dimensions');
-    for(const box of row.textBoxes)assert.ok(box.x>=-1&&box.right<=page.viewportSize().width+1,'every live brand word remains inside the viewport');
+  const close=(actual,expected,tolerance,message)=>assert.ok(Math.abs(actual-expected)<=tolerance,message);
+  assert.equal(await page.locator('#hero-heading [data-home-title-image],#hero-heading [data-home-title-fallback]').count(),0,'the poster remains live text without image/error fallback layers');
+  assert.equal(await page.locator('#hero-heading').getAttribute('aria-label'),await page.locator('#hero-heading').getAttribute('data-initial-event-title'),'the canonical event title stays independent of the repeated poster words');
+  assert.deepEqual(await page.locator('#hero-heading [data-home-title-overline][lang=en]').allTextContents(),['GLOBAL'],'GLOBAL remains a separate live-text overline');
+  assert.deepEqual(await page.locator('#hero-heading [data-home-title-subtitle][lang="zh-CN"]').allTextContents(),['中国组织者交流会','嘉年华']);
+  const value=await page.evaluate(()=>{
+    const box=node=>{const b=node.getBoundingClientRect();return{x:b.x,y:b.y+scrollY,right:b.right,bottom:b.bottom+scrollY,width:b.width,height:b.height};};
+    const boxes=range=>[...range.getClientRects()].filter(b=>b.width&&b.height).map(b=>({x:b.x,y:b.y+scrollY,right:b.right,bottom:b.bottom+scrollY,width:b.width,height:b.height}));
+    const heading=document.querySelector('#hero-heading'),headingStyle=getComputedStyle(heading);
+    const rows=[...heading.querySelectorAll(':scope>.ah-home-title-art')].map(node=>{
+      const type=node.querySelector('[data-home-title-type][lang=en]'),style=getComputedStyle(type),range=document.createRange();range.selectNodeContents(type);
+      const primary=style.fontFamily.split(',')[0].trim().replace(/^["']|["']$/gu,'');
+      const words=[...type.children].map(word=>{
+        const range=document.createRange();range.selectNodeContents(word);const style=getComputedStyle(word),matrix=new DOMMatrixReadOnly(style.transform);
+        return{text:word.textContent.trim(),primary:word.hasAttribute('data-poster-primary'),repeat:word.hasAttribute('data-poster-repeat'),word:word.hasAttribute('data-poster-word'),classes:[...word.classList],color:style.color,fill:style.webkitTextFillColor,stroke:parseFloat(style.webkitTextStrokeWidth),strokeColor:style.webkitTextStrokeColor,background:style.backgroundImage,clip:style.webkitBackgroundClip,scaleX:matrix.a,scaleY:matrix.d,animations:word.getAnimations().length,box:box(word),boxes:boxes(range)};
+      });
+      const subtitle=node.querySelector('[data-home-title-subtitle]');
+      return{key:type.dataset.homeTitleType,words,box:box(type),wrapper:box(node),wrapperPosition:getComputedStyle(node).position,hiddenFromSpeech:node.getAttribute('aria-hidden'),family:style.fontFamily,primary,weight:style.fontWeight,fontSize:parseFloat(style.fontSize),lineHeight:parseFloat(style.lineHeight),textBoxes:boxes(range),subtitle:{fontSize:parseFloat(getComputedStyle(subtitle).fontSize),box:box(subtitle)},faces:[...document.fonts].filter(face=>face.family.replace(/^["']|["']$/gu,'')===primary&&face.weight==='800').map(face=>({weight:face.weight,status:face.status,sizeAdjust:face.sizeAdjust}))};
+    });
+    const bounds=selector=>box(document.querySelector(selector));
+    return{rows,composition:{viewport:innerWidth,headingDisplay:headingStyle.display,headingDirection:headingStyle.flexDirection,headingGap:parseFloat(headingStyle.rowGap),heading:box(heading),overline:bounds('[data-home-title-overline]'),description:bounds('[data-public-hero-description]'),facts:bounds('#top .ah-event-meta'),actions:bounds('#top .ah-hero-actions'),hero:bounds('#top')}};
+  });
+  const {rows,composition}=value;
+  const mobile=composition.viewport<=820;
+  const expectedLatin=mobile?(composition.viewport-40)/5.45:Math.min(210,Math.max(90,composition.viewport*.117));
+  const expectedInset=mobile?HERO_POSTER_LAYOUT.mobileInlinePadding:Math.min(140,Math.max(24,composition.viewport*.073));
+  const expectedWrapperWidth=mobile?composition.viewport-40:Math.min(1267,composition.viewport*.66);
+  const expectedWallGap=8;
+  assert.equal(rows.length,2,'both poster wrappers remain direct children of the semantic h1');
+  assert.deepEqual(rows.map(row=>row.key),['ggj','host']);
+  assert.deepEqual(rows.map(row=>row.words.map(word=>word.text)),[['GAME JAM','GAME JAM'],['ARTDiCO HOST','ARTDiCO HOST']],'every filled group repeats its own complete words in outline');
+  for(const [index,row] of rows.entries()){
+    close(row.fontSize,expectedLatin*(index?HERO_POSTER_LAYOUT.hostSizeRatio:1),.01,'each group retains the approved large display size');
+    close(row.wrapper.x,composition.hero.x+expectedInset,1,'the word wall retains the approved desktop inset or 20px mobile margin');
+    close(row.wrapper.width,expectedWrapperWidth,1,'the word-wall wrapper retains its exact approved responsive width');
+    close(row.wrapper.right,composition.hero.x+expectedInset+expectedWrapperWidth,1,'the full wrapper retains its approved right boundary');
+    assert.notEqual(row.wrapperPosition,'absolute','the word wall participates in normal flow instead of retaining the former two anchors');assert.equal(row.hiddenFromSpeech,'true');
+    const [solid,outline]=row.words;
+    assert.equal(solid.primary,true);assert.equal(solid.repeat,false);assert.equal(outline.primary,false);assert.equal(outline.repeat,true);
+    assert.ok(solid.classes.includes('ah-poster-solid')&&solid.classes.includes('ah-poster-slice'));assert.ok(outline.classes.includes('ah-poster-outline'));
+    close(solid.stroke,HERO_POSTER_LAYOUT.solidStrokePixels,.01,'only the Hero solid uses the exact fine same-color stroke');assert.equal(solid.strokeColor,solid.color);
+    assert.ok(outline.stroke>=HERO_POSTER_LAYOUT.minimumOutlinePixels,'the repeated words retain an actual visible outline');assert.match(outline.fill,/rgba\([^)]*,\s*0\)$/u);
+    assert.equal((solid.background.match(/linear-gradient\(/gu)||[]).length,2,'two independent layers produce the color cuts');
+    for(const angle of HERO_POSTER_LAYOUT.sliceAngles)assert.ok(solid.background.includes(angle+'deg'),'color cuts retain their specified diagonal angles');
+    for(const stop of [34,48,59,79])assert.ok(solid.background.split(stop+'%').length>=3,'adjacent color spans retain the same stop for a hard edge');assert.deepEqual(solid.clip.split(',').map(value=>value.trim()),['text','text'],'both diagonal background layers clip to the real letters');
+    close(solid.box.x,outline.box.x,1,'the two rows share a left edge');close(solid.box.right,outline.box.right,1,'the repeated words share a right edge');close(solid.box.width,outline.box.width,1,'the two rows have the same rendered width');
+    close(outline.box.y,solid.box.bottom,1,'filled and outline rows form a contiguous pair');close(row.lineHeight/row.fontSize,HERO_POSTER_LAYOUT.pairLeading,.002,'the pair keeps compact Hero leading');
+    assert.ok(row.subtitle.fontSize>=HERO_POSTER_LAYOUT.subtitlePixels.minimum&&row.subtitle.fontSize<=HERO_POSTER_LAYOUT.subtitlePixels.maximum&&row.subtitle.fontSize<row.fontSize,'Chinese subtitles remain readable and smaller than the Latin display');close(row.subtitle.box.y-outline.box.bottom,mobile?4:6,1,'each subtitle follows its pair with only the approved compact gap');
+    close(row.subtitle.fontSize,mobile?Math.min(20,Math.max(16,composition.viewport*.026)):Math.min(28,Math.max(18,composition.viewport*.0145)),.01,'subtitle size follows its separate small display role');
+    for(const word of row.words){
+      assert.equal(word.word,true,'every visible repeated row participates in the native text mask');assert.equal(word.boxes.length,1,'a complete repeated group never breaks onto another line');
+      close(word.scaleX,HERO_POSTER_LAYOUT.staticWidthScale,.001,'the font retains the approved small static width adjustment');close(word.scaleY,1,.001,'letterforms are not vertically stretched');assert.equal(word.animations,0,'poster words stay static');
+      for(const rect of word.boxes)assert.ok(rect.x>=row.wrapper.x-1&&rect.right<=row.wrapper.right+1,'whole words fit their poster wrapper');
+    }
+    assert.equal(row.weight,'800');assert.equal(row.primary,'Barlow Condensed');assert.ok(row.faces.length>0);assert.ok(row.faces.some(face=>face.status===(failedFont?'error':'loaded')),'the real shipped font request reaches its expected load or fallback state');assert.ok(row.faces.every(face=>face.sizeAdjust===HERO_POSTER_LAYOUT.cssSizeAdjust),'the original display face keeps its approved CSS metrics');
+    assert.ok(row.box.width>0&&row.box.height>0&&row.textBoxes.length>0,'the headline consists of rendered native letterforms');
+    for(const rect of row.textBoxes)assert.ok(rect.x>=-1&&rect.right<=composition.viewport+1,'every live brand word remains inside the viewport');
   }
-  await titleReadability(page);return rows;
+  assert.equal(composition.headingDisplay,'flex');assert.equal(composition.headingDirection,'column');
+  close(composition.headingGap,expectedWallGap,.01,'the wall uses the approved compact group spacing');
+  if(!failedFont){
+    close(rows[0].words[0].box.x,rows[1].words[0].box.x,1,'the loaded native words align at the left edge across both groups');
+    close(rows[0].words[0].box.right,rows[1].words[0].box.right,1,'the loaded native word groups share the same right edge');
+  }
+  close(rows[0].wrapper.x,rows[1].wrapper.x,1,'both groups share the word-wall left edge');close(rows[0].wrapper.right,rows[1].wrapper.right,1,'both groups share the word-wall right boundary');
+  close(rows[1].wrapper.y-rows[0].wrapper.bottom,composition.headingGap,1,'only the explicit compact wall gap separates the two groups');
+  close(rows[0].box.y-composition.overline.bottom,8,1,'GLOBAL sits immediately above the first pair with the approved overline gap');
+  assert.ok(composition.description.y>=composition.heading.bottom-1,'published introductory copy follows the entire normal-flow word wall');
+  assert.ok(composition.facts.y>=composition.description.bottom-1&&composition.facts.y>=composition.heading.bottom-1,'event facts follow both the word wall and the published copy');
+  assert.ok(composition.actions.y>=composition.facts.bottom-1&&composition.actions.bottom<=composition.hero.bottom+1,'Hero actions follow the facts and remain inside the Hero');
+  return{layout:HERO_POSTER_LAYOUT,...value};
 }
+async function heroType(page,options){
+  const value=await heroPoster(page,options);await titleReadability(page);return value;
+}
+
 function rowsOf(boxes, tolerance = 10) {
   const rows = [];
   for (const box of boxes) { let row = rows.find(row => Math.abs(row.top - box.y) <= tolerance); if (!row) rows.push(row = { top: box.y, items: [] }); row.items.push(box); }
@@ -664,8 +728,8 @@ finally {
   const result = { ok: !failure, syntheticOnly: true, zeroRealNetwork: true, zeroBusinessWrites: true, zeroRealMail: true,
     source, testScriptSha256, gitHeadAtRun: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), dist,
     htmlMtime: metadata.mtime.toISOString(), publicHtmlSha256: sha(html), servedAssets: Object.fromEntries([...servedAssets].sort()),
-    reference: REFERENCE, guestInformationLayout: GUEST_INFORMATION_LAYOUT, referenceScreenshots, organizationInputOrder: organizationInputOrder.map(index => organizationNames[index]),
-    logoSources, artworkSources, geometryScope: 'Desktop scaled reference ratios with explicit tolerances; mobile functional adaptation. Screenshots require visual review and are not pixel-diff equivalence.',
+    reference: REFERENCE, guestInformationLayout: GUEST_INFORMATION_LAYOUT, heroPosterLayout:HERO_POSTER_LAYOUT, referenceScreenshots, organizationInputOrder: organizationInputOrder.map(index => organizationNames[index]),
+    logoSources, artworkSources, geometryScope: 'Guest, organization, heading and divider measurements retain their existing reference tolerances. Hero v2 separately checks same-word filled/outline pairs in a normal-flow word wall; its old absolute anchors are superseded. Screenshots require visual review and are not pixel-diff equivalence.',
     passedCases: reports.length, reports, pageErrors, ...(failure ? { failure } : {}) };
   await writeFile(resolve(evidence, 'report.json'), JSON.stringify(result, null, 2) + '\n'); process.stdout.write(JSON.stringify(result, null, 2) + '\n');
 }

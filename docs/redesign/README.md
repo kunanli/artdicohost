@@ -1,5 +1,7 @@
 # ARTDiCO HOST 改版執行總覽
 
+接續實作：[Hero緊密海報字組重做](hero-type-wall-release.md)。依使用者否定前版的反饋，改同詞實心／輪廓複行、斜切紫色色面與緊密字組；最終發布結果另記，以下PR68仍為目前已驗證線上版本。
+
 更新日期：2026-11-02（Asia/Taipei）。**[PR #68](https://github.com/kunanli/artdicohost/pull/68) 已合併至 main `3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`，PR／main驗收及正式發布回執均已完成。** 嘉賓依公開開關展示全部合法資料，真實出席獨立；舊人工審閱移出日常編輯、歷史唯讀。資料未刪除，展位／住宿／志工流程維持，範圍與證據入口見[本輪盤點與交付](admin-data-cleanup-audit.md)。
 
 [PR 流程 41425057862](https://github.com/kunanli/artdicohost/actions/runs/41425057862)／check `125209558100` 全部成功；1638項測試及同HTML `4180a274…86d5a` 的捲動6／排版4／實際素材13已核對。實際R44仍保留原3筆出席證明，四寬顯示完整9位公開嘉賓；未捕獲嘉賓／作品媒體以404替身明示。[main 流程 41426077899](https://github.com/kunanli/artdicohost/actions/runs/41426077899) 四工作與同版6／4／實際13也成功；10:16 UTC私有OSS／13後台、10:18:01的60公開物件HTTPS核對完成，軟體已交付。

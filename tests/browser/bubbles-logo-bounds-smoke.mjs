@@ -119,6 +119,8 @@ async function fixture(width, { mode = 'actual', reducedMotion = 'no-preference'
   if (!holdLogos) releaseGate();
   if (mode === 'raw-generic') responseBytes = changedEnvelope(genericOrganizationIdentities);
   if (mode === 'adversarial') responseBytes = changedEnvelope(content => { content.organizations.forEach((item, index) => { const image = synthetic[index % synthetic.length]; item.logoId = image.id; item.logoUrl = image.path; }); });
+  revision=JSON.parse(responseBytes).revision;
+  await page.addInitScript(()=>{window.__publicVisualContentUpdates=0;document.addEventListener('artdico:public-content-updated',()=>window.__publicVisualContentUpdates++);});
   page.setDefaultTimeout(12000); page.on('pageerror', error => pageErrors.push({ width, mode, message: error.message }));
   await context.addCookies([{ name: 'synthetic_staff', value: 'SYNTHETIC_NEVER_SEND_STAFF_COOKIE', domain: new URL(API).hostname, path: '/', httpOnly: true, secure: true, sameSite: 'Strict' }]);
   await context.route('**/*', async route => {
@@ -145,8 +147,12 @@ async function fixture(width, { mode = 'actual', reducedMotion = 'no-preference'
     catch { return route.fulfill({ status: 404, body: '' }); }
   });
   async function refresh(change) {
+    const priorRevision=JSON.parse(responseBytes).revision,acceptedUpdates=await page.evaluate(()=>window.__publicVisualContentUpdates);
+    assert.ok(revision+1>priorRevision,'each fixture refresh publishes a strictly newer envelope');
     responseBytes = changedEnvelope(change, ++revision); await page.waitForTimeout(1100);
-    const read = page.waitForResponse(value => value.url() === API + '/api/public/content'); await page.evaluate(() => dispatchEvent(new Event('focus'))); await read; await page.waitForTimeout(250);
+    const expectedIds=JSON.parse(responseBytes).content.organizations.map(item=>item.id);
+    const read = page.waitForResponse(value => value.url() === API + '/api/public/content'); await page.evaluate(() => dispatchEvent(new Event('focus'))); await read;
+    await page.waitForFunction(({expectedIds,acceptedUpdates})=>{const actual=[...document.querySelectorAll('[data-organization-id]')].map(node=>node.dataset.organizationId);return window.__publicVisualContentUpdates>acceptedUpdates&&actual.length===expectedIds.length&&actual.every((id,index)=>id===expectedIds[index]);},{expectedIds,acceptedUpdates},{timeout:12000});
   }
   return { width, mode, context, page, calls, releaseLogos: releaseGate, refresh,get publishedOrganizations(){return JSON.parse(responseBytes).content.organizations;} };
 }

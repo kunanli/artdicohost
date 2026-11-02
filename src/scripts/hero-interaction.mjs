@@ -10,7 +10,7 @@ if(planet&&typeof matchMedia==='function'){
   const hasObserver=typeof IntersectionObserver==='function';
   let visible=false,enabled=true,frame=0,touchTimer=0,lastPaint=0,phase=0,width=0,height=0,scale=1;
   let targetX=0,targetY=0,currentX=0,currentY=0,pointerStrength=0,pointerAngle=0;
-  const particles=Array.from({length:18},(_,index)=>({phase:index*Math.PI*2/18+.07*Math.sin(index*7),speed:.7+(index%5)*.09,size:.7+(index%3)*.22}));
+  const particles=Array.from({length:32},(_,index)=>({phase:index*Math.PI*2/32+.07*Math.sin(index*7),speed:.7+(index%5)*.09,size:2.2+(index%3)*.35}));
   const clamp=(value,min=-1,max=1)=>Math.min(max,Math.max(min,value));
   function status(){return !enabled||document.hidden?'hidden':reduced.matches?'reduced':hasObserver&&context&&visible?'active':'idle';}
   function neutral(){targetX=0;targetY=0;pointerStrength=0;}
@@ -21,7 +21,7 @@ if(planet&&typeof matchMedia==='function'){
   function stop(){
     if(frame)cancelAnimationFrame(frame);frame=0;lastPaint=0;
     clearTimeout(touchTimer);touchTimer=0;canvas.hidden=true;
-    context?.clearRect(0,0,canvas.width,canvas.height);clearPose();
+    context?.clearRect(0,0,canvas.width,canvas.height);canvas.dataset.heroRenderedCount='0';clearPose();
   }
   function resize(){
     const box=planet.getBoundingClientRect();width=Math.max(1,box.width);height=Math.max(1,box.height);
@@ -31,7 +31,7 @@ if(planet&&typeof matchMedia==='function'){
   }
   function draw(delta){
     if(!context)return;
-    phase+=delta*.000055;
+    phase+=delta*.0001;
     currentX+=(targetX-currentX)*.2;currentY+=(targetY-currentY)*.2;
     if(Math.abs(currentX)<.001)currentX=0;if(Math.abs(currentY)<.001)currentY=0;
     planet.style.setProperty('--ah-hero-x',(currentX*6).toFixed(3)+'px');
@@ -41,18 +41,29 @@ if(planet&&typeof matchMedia==='function'){
     planet.style.setProperty('--ah-hero-light-y',(48+currentY*25).toFixed(2)+'%');
     planet.style.setProperty('--ah-hero-glow',String(.12+pointerStrength*.35));
     context.setTransform(scale,0,0,scale,0,0);context.clearRect(0,0,width,height);
-    const count=compact.matches?10:particles.length,cx=width*.5,cy=height*.5,radius=Math.min(width,height)*.474;
+    const count=compact.matches?16:particles.length,cx=width*.5,cy=height*.5,radius=Math.min(width,height)*.465;
+    if(canvas.dataset.heroRenderedCount!==String(count))canvas.dataset.heroRenderedCount=String(count);
     for(let index=0;index<count;index++){
       const particle=particles[index],angle=phase*particle.speed+index*Math.PI*2/count+particle.phase*.05;
       const difference=Math.abs(Math.atan2(Math.sin(angle-pointerAngle),Math.cos(angle-pointerAngle)));
       const response=Math.max(0,1-difference/.65)*pointerStrength;
       const orbit=radius+Math.sin(angle*3+index)*width*.002+response*width*.004;
-      const depth=.5+.5*Math.sin(angle),alpha=.22+depth*.34+response*.16;
-      for(let trail=3;trail>=0;trail--){
-        const theta=angle-trail*.012;
-        context.fillStyle=(index%3===0?'rgba(124,172,255,':'rgba(183,142,255,')+(alpha*(1-trail*.23)).toFixed(3)+')';
-        context.beginPath();context.arc(cx+Math.cos(theta)*orbit,cy+Math.sin(theta)*orbit*.98,particle.size*(trail? .55:1),0,Math.PI*2);context.fill();
-      }
+      const depth=.5+.5*Math.sin(angle),alpha=Math.min(.98,.68+depth*.2+response*.1);
+      const core=compact.matches?particle.size*.88:particle.size;
+      const px=cx+Math.cos(angle)*orbit,py=cy+Math.sin(angle)*orbit*.98;
+      const color=index%3===0?'135,185,255':'190,151,255';
+      const tailAngle=(compact.matches?11:22)/Math.max(1,orbit),tailStart=angle-tailAngle;
+      const tail=context.createLinearGradient(cx+Math.cos(tailStart)*orbit,cy+Math.sin(tailStart)*orbit*.98,px,py);
+      tail.addColorStop(0,'rgba('+color+',0)');tail.addColorStop(1,'rgba('+color+','+(alpha*.75).toFixed(3)+')');
+      context.strokeStyle=tail;context.lineWidth=compact.matches?1.2:1.6;context.lineCap='round';
+      context.beginPath();context.ellipse(cx,cy,orbit,orbit*.98,0,tailStart,angle);context.stroke();
+      const halo=context.createRadialGradient(px,py,0,px,py,core*3.5);
+      halo.addColorStop(0,'rgba('+color+','+(alpha*.55).toFixed(3)+')');halo.addColorStop(1,'rgba('+color+',0)');
+      context.fillStyle=halo;context.fillRect(px-core*3.5,py-core*3.5,core*7,core*7);
+      context.fillStyle='rgba('+color+','+alpha.toFixed(3)+')';
+      context.beginPath();context.arc(px,py,core,0,Math.PI*2);context.fill();
+      context.fillStyle='rgba(239,230,255,'+(alpha*.9).toFixed(3)+')';
+      context.beginPath();context.arc(px,py,core*.42,0,Math.PI*2);context.fill();
     }
   }
   function tick(time){

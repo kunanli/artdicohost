@@ -1,8 +1,8 @@
 # ARTDiCO HOST · artdico.host
 
-本輪接續：官方Wallet徽章、白色組織Logo／第八組織可見、公開展位細節移除、全頁星空與球體退遠正在驗收；[執行計畫](docs/implementation-plan.md)保留準確進度。活動行認證版採唯一一般報名，本站承接批次指南／私人頁，轉接器待匿名匯出格式，尚未切正式入口；[操作路徑](docs/redesign/external-registration-wallet.md)。後台人工更正在獨立階段接續，原問卷不改寫。
+接續製作使用者新參考圖的Hero海報字體，維持既有紫色系，以粗窄實心／描邊呼應，功能字體保持。活動行唯一一般報名路徑已整理，匯出轉接仍待匿名表頭，正式入口／審核政策尚未切換，見[操作路徑](docs/redesign/external-registration-wallet.md)。
 
-**已發布基準：**[PR #64：自由背景微粒與作品缺圖版型](docs/redesign/background-showcase-release.md)，main `50bc3cd`；捲動6／6、排版4／4、實際素材13／13、1612項測試及61個公開物件HTTPS已核對。首頁樣式請先讀 [CSS／字級規範](docs/frontend-typography.md)；下方PR #60等為前輪歷史。
+**現行已發布：**[PR66：手機圈內組織、全頁星空與報名更正](docs/redesign/mobile-organizations-profile-release.md)，main `c5166922`。手機八個Logo留在圓內、後台原位更正、官方Wallet徽章已交付；main 6／4／實際13、1634測試、13後台及61公開物件HTTPS均核對完成。首頁樣式沿 [CSS／字級規範](docs/frontend-typography.md)。
 
 本次改版執行入口：[分階段總覽](docs/redesign/README.md)、[操作手冊](docs/redesign/02-staff-and-attendee-runbook.md)、[驗收與發布](docs/redesign/03-release-and-acceptance.md)。P1–P6、[UX1 操作／層級](docs/redesign/ux-clarity-release.md) 及 [UX2 具名寄送與連續處理](docs/redesign/ux-workflow-release.md) 均已完成程式交付及正式發布；UX2 main `5ec45815` 的 1586 項測試、私有 OSS、13 個後台頁面及 51 個公開物件核驗通過。四項真人／真實資料驗收仍待主辦方記錄。下方 10 月發布資訊為歷史基準，現況以接續台帳及當輪紀錄為準。
 

@@ -1,5 +1,23 @@
 # 开发接续：先读本页
 
+## 2026-11-02 本輪進行中：前台呈現與資料更正
+
+已發布main仍為 `50bc3cd546f89ac622e8b12d1c80eeb34256fff6`（PR64）；根目錄分支 `feat/wallet-badge-and-registration-path` 從文件證據 `23558a2` 接續，尚未部署本輪改動。範圍是官方中文Wallet徽章、活動行認證版路徑文件、第八組織可見／白色Logo、公開攤位細節移除、Hero退遠至全頁星空。先凍結前台產物，核對新6／4／13及相關定向瀏覽器，再依既有流程PR／main／HTTPS發布；先前29案私人頁證據須比較HTML與原SVG雜湊才沿用。
+
+後台資料人工更正在 `/workspace/artdicohost-registration-corrections`、`feat/staff-registration-corrections` 獨立工作樹進行，完成前台階段後整合。原問卷／來源不覆寫，保存留在同人同位置，失回執只核對；改Email使舊私人能力／群圖片grant／Wallet驗證失效，新地址只能明確發指南，不能自動重寄。新增修正journal後，回退不得降到不認得新欄位的舊reader；實作與安全合成結果另記，不代改正式人員。
+
+活動行匯出格式仍待完全匿名表頭／範例，現有問卷解析器不能直接冒充活動行adapter。正式報名入口與審核政策未切換，未匯入或寄送真名單。
+
+## 2026-11-02（Asia/Taipei）自由背景粒子與作品缺圖已發布
+
+[PR #64](https://github.com/kunanli/artdicohost/pull/64) 已正式發布 main `50bc3cd546f89ac622e8b12d1c80eeb34256fff6`，完整回執見 [本輪紀錄](redesign/background-showcase-release.md)。使用者否定球緣亮點，改stage背景10／24點自由漂移＋小幅mouse force，球ellipse與文字／控制區域全alpha排除，Hero可見時全頁edge隱藏；late branderror的子盒RO與清舊canvas已回歸。作品有圖保原2:1／字幕／peek，missing／真404改自然文字高度，移除內部待確認與無安排佔位，單件隱藏無效導航；真declined與實際安排保留。
+
+[main流程41384857720](https://github.com/kunanli/artdicohost/actions/runs/41384857720) 四工作completed／success：739來源、Astro482、1612測試、23頁、audit0、FC128／公開61。捲動6／排版4／actual13分別03:48:46／03:48:56／03:49:42 UTC通過；三報source均50bc3cd，HTML `b5a7165c2b7948e088b38c1842dfbeb27fd2ad08a5ee6bb82fdbaf6edadee0b9`、snapshot仍R43／`4b5486d90eed56ed762e40227b35866a07ec4cd451e16b32a67374d5a7ed79af`。新安全摘要確定一件公開作品無coverId；actual13仍只有七張組織圖、其餘九媒體404明示替身。03:54:49正式政策／私有OSS、03:54:54後台13頁、03:54:55匿名CORS、03:56:39公開61HTTPS核驗完成。前版a8d通過後發現latefallback保護洞，最終ade69bf建置與新六案、PR/main準確CI才作最終資格；reference9／collections9同最終HTML也通過。
+
+**最新接續需求與未完成範圍：** 使用者給活動行 `https://9525102647817.huodongxing.com/event/8884819113200`，確認免費報名即確認、希望一般參會不用審核，並說只有基礎會員。官方批量匯出列認證版、API列專業版，不能預設帳號能匯出；已建議本站作唯一報名、活動行宣傳，或實際可匯出時採檔案轉接。詳見 [操作與開發接續](redesign/external-registration-wallet.md)。目前沒有更改網站審核設定、接通活動行或匯真名單；免審需server-controlled policy／原子名額／正式通知與UI／部署驗收一起改，不是現成開關，保留舊pending／原鍵／未知回執。user活動頁CONNECT403／索引未取得，票種為本人回覆，勿猜其他欄位。Wallet簽章已具備、圖標未替換：官方下載需本人接受協議且工作區沒有用戶附圖原檔；保留文字入口，不自製或放brokenimage。請勿以本輪視覺通過宣稱以上接續已實作。
+
+`docs/background-particles-release-proof`只補回執與會員調查，不為文件重部署。以下PR #63及更早為歷史，真人收件、微信群／iPhone與同事觀察仍獨立。
+
 ## 2026-11-02（Asia/Taipei）明顯粒子與簡報式淡入已發布
 
 [PR #63](https://github.com/kunanli/artdicohost/pull/63) 已正式發布 main `80895d8d4f64e7d9806f1f2c6c0606d3a33215de`，完整結果見 [本輪紀錄](redesign/presentation-motion-release.md)。使用者指出上一版動效太弱：改為標題先0→1、840ms，內容／嘉賓／組織／日程依序進場；Hero手機16／桌面32點、亮核與短尾流、頁緣24／56點。手機非互動背景的touch pan不再把整段後續內容提前seen，穩定ID刷新不重淡出。預設HTML可見、focus／操作／hash／reduced立即穩定；原稿、字級、sticky與原生scroll保留。

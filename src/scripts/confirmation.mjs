@@ -12,6 +12,16 @@ if (root) {
   const canvases=new Set();
   const contactButtons=[...root.querySelectorAll('[data-confirmation-contact-copy]')];
   const contactLabels=new Map(contactButtons.map(button=>[button,button.textContent]));
+  const walletButton=$('[data-confirmation-wallet]'),walletBadge=$('[data-confirmation-wallet-badge]'),walletLabel=$('[data-confirmation-wallet-label]');
+  let walletBadgeReady=Boolean(walletBadge?.complete&&walletBadge.naturalWidth>0);
+  function syncWalletBadge(){
+    const showBadge=walletBadgeReady&&!walletButton.hidden&&walletButton.dataset.walletAction==='add';
+    if(walletBadge)walletBadge.hidden=!showBadge;
+    if(walletLabel)walletLabel.hidden=showBadge;
+    walletButton.classList.toggle('confirmation-wallet-badge',showBadge);
+  }
+  walletBadge?.addEventListener('load',()=>{walletBadgeReady=walletBadge.naturalWidth>0;syncWalletBadge();});
+  walletBadge?.addEventListener('error',()=>{walletBadgeReady=false;syncWalletBadge();});
   const walletGuidance=()=>confirmationWalletGuidance({userAgent:navigator.userAgent,maxTouchPoints:navigator.maxTouchPoints,walletReady:state?.wallet.ready===true,invitationReady:state?.invitation.ready===true});
   function hideSafariGuide(){ $('[data-confirmation-safari-guide]').hidden=true;$('[data-confirmation-wechat-step]').hidden=true; }
   function releaseWallet() { if (walletUrl) URL.revokeObjectURL(walletUrl); walletUrl = null; }
@@ -26,7 +36,7 @@ if (root) {
   function clearPrivateView(){
     for(const key of ['name','organization','event','date','time','venue','reference','email','application-received','pre-event-reminder'])$('[data-confirmation-'+key+']').textContent='';
     $('[data-confirmation-notifications]').hidden=true;$('[data-confirmation-private-link]').value='';$('[data-confirmation-copy-fallback]').hidden=true;
-    $('[data-confirmation-wallet]').hidden=true;delete $('[data-confirmation-wallet]').dataset.walletAction;
+    walletButton.hidden=true;delete walletButton.dataset.walletAction;walletButton.removeAttribute('aria-label');walletButton.removeAttribute('aria-busy');if(walletLabel)walletLabel.textContent='加入 Apple Wallet';syncWalletBadge();
     $('[data-confirmation-invitation]').hidden=true;$('[data-confirmation-device]').textContent='';$('[data-confirmation-device]').hidden=true;
     $('[data-confirmation-facts-warning]').hidden=true;$('[data-confirmation-outcome-contact]').hidden=true;
     for(const selector of ['[data-confirmation-more]','[data-confirmation-registration]','[data-confirmation-notice-records]','[data-confirmation-group-help]'])$(selector).open=false;
@@ -39,6 +49,7 @@ if (root) {
     // Refresh explicitly cancels an older read, render or file preparation.
     $('[data-confirmation-refresh]').disabled=!token||!client.available;
     for(const button of root.querySelectorAll('[data-confirmation-print],[data-confirmation-copy],[data-confirmation-safari-copy],[data-confirmation-wallet]'))button.disabled=busy||!state;
+    walletButton.setAttribute('aria-busy',String(busy&&Boolean(state)));
     const groupRefresh=$('[data-confirmation-group-refresh]'),cooling=Date.now()<groupNextReadAt;
     groupRefresh.disabled=busy||!state||cooling;groupRefresh.textContent=cooling?'稍后重读':'重新读取群码';
     const eligible=Boolean(confirmationInvitationFacts(state));$('[data-confirmation-invitation]').hidden=!eligible;$('[data-confirmation-invitation]').disabled=busy||!eligible;
@@ -68,8 +79,9 @@ if (root) {
     $('[data-confirmation-outcome-contact]').hidden=!['rejected','withdrawn'].includes(value.admission.status);
     $('[data-confirmation-facts-warning]').hidden=value.eventFacts?.ready!==false;
     const guidance=walletGuidance();hideSafariGuide();
-    $('[data-confirmation-wallet]').hidden=value.admission.status!=='confirmed'||!guidance.showWallet;
-    $('[data-confirmation-wallet]').textContent=guidance.label;$('[data-confirmation-wallet]').dataset.walletAction=guidance.action;
+    walletButton.hidden=value.admission.status!=='confirmed'||!guidance.showWallet;
+    if(walletLabel)walletLabel.textContent=guidance.label;else walletButton.textContent=guidance.label;
+    walletButton.dataset.walletAction=guidance.action;walletButton.setAttribute('aria-label',guidance.label);syncWalletBadge();
     $('[data-confirmation-device]').textContent=value.admission.status==='confirmed'?guidance.message:'';$('[data-confirmation-device]').hidden=value.admission.status!=='confirmed';
     renderGroup(value);
     $('[data-confirmation-content]').hidden=false;$('[data-confirmation-error]').hidden=true;controls();
@@ -119,7 +131,7 @@ if (root) {
       $('#confirmation-safari-heading').focus();return;
     }
     if(!['add','download'].includes(guidance.action))return;
-    const current=generation;busy=true;controller=new AbortController();const signal=controller.signal;controls();releaseWallet();
+    const current=generation;busy=true;controller=new AbortController();const signal=controller.signal;controls();releaseWallet();$('[data-confirmation-action-status]').textContent='正在准备 Wallet 票券…';
     try{const blob=await client.wallet(token,{signal});if(current!==generation)return;walletUrl=URL.createObjectURL(blob);const link=document.createElement('a');link.href=walletUrl;link.download='artdico-host.pkpass';document.body.append(link);link.click();link.remove();$('[data-confirmation-action-status]').textContent='票券文件已准备。请在支持 Apple Wallet 的设备上打开。';}
     catch(error){if(current===generation&&!error.cancelled)showReadError(error);}
     finally{if(current===generation){busy=false;controller=null;controls();}}

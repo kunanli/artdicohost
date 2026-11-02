@@ -9,10 +9,11 @@ import { createHash } from 'node:crypto';
 const project = fileURLToPath(new URL('../../', import.meta.url));
 const source = resolve(process.env.ARTDICO_SOURCE_DIRECTORY || project);
 const dist = resolve(process.env.ARTDICO_DIST_DIRECTORY || resolve(source, 'dist'));
-const evidence = resolve(project, '.local-data/browser-evidence/games-publication');
+const evidence = resolve(process.env.ARTDICO_GAMES_EVIDENCE_DIRECTORY || resolve(project, '.local-data/browser-evidence/games-publication'));
 const { peopleRuntimeFixture, PEOPLE_FIXTURE_API: API, PEOPLE_FIXTURE_PUBLIC: SITE } = await import(pathToFileURL(resolve(source, 'tests/helpers/people-runtime-fixture.mjs')));
 const { createOssPortraitStore } = await import(pathToFileURL(resolve(source, 'functions/cloud-content/portrait-store.mjs')));
 const { createObjectJournal } = await import(pathToFileURL(resolve(source, 'functions/cloud-content/object-journal.mjs')));
+const { createGuestAttendancePublicationGuard } = await import(pathToFileURL(resolve(source, 'functions/people-operations/service.mjs')));
 const { validateContent, toPublicContent } = await import(pathToFileURL(resolve(source, 'shared/content-schema.mjs')));
 const { CLOUD_ADMIN_PAGE_ALIASES } = await import(pathToFileURL(resolve(source, 'functions/cloud-content/http-server.mjs')));
 const aliases = new Map(CLOUD_ADMIN_PAGE_ALIASES);
@@ -39,12 +40,12 @@ async function seed(runtime, { published = true } = {}) {
   const photo = await createOssPortraitStore({ objects: runtime.objects }).upload({ contentType: 'image/png', dataBase64: PNG });
   const content = (await runtime.app.store.read()).draft.content;
   content.organizations = [
-    { id: IDS.creator, name: '合成作品创作组织', logoId: '', website: 'https://example.invalid/creator', participation: 'attendee', status: 'confirmed', publicConsent: false, internalNotes: PRIVATE },
+    { id: IDS.creator, visibility: 'private', name: '合成作品创作组织', logoId: '', website: 'https://example.invalid/creator', participation: 'attendee', status: 'confirmed', publicConsent: false, internalNotes: PRIVATE },
     { id: IDS.occupant, name: '合成展位占用组织', logoId: '', website: 'https://example.invalid/occupant', participation: 'exhibitor', status: 'confirmed', publicConsent: true, internalNotes: PRIVATE },
   ];
-  content.guests = [{ id: IDS.guest, contactId: people[0], name: '合成公开人物', company: '合成创作机构', ggjRole: '', title: '', bio: '', portraitId: '', publicRoles: [], status: 'pending', publicConsent: false, internalNotes: PRIVATE }];
+  content.guests = [{ id: IDS.guest, visibility: 'private', contactId: people[0], name: '合成公开人物', company: '合成创作机构', ggjRole: '', title: '', bio: '', portraitId: '', publicRoles: [], status: 'pending', publicConsent: false, internalNotes: PRIVATE }];
   content.booths = [{ id: IDS.booth, code: 'C-01', slotNumber: 1, zone: 'C', organization: '合成展位占用组织', organizationId: IDS.occupant, project: '合成多作品展位', website: '', description: '合成展位说明', contactName: PRIVATE, contactMethods: 'synthetic.private@example.invalid', status: 'confirmed', internalNotes: PRIVATE }];
-  const work = (id, title, extras = {}) => ({ id, title, teamName: '合成创作者署名', school: PRIVATE, contactName: PRIVATE, email: 'synthetic.private@example.invalid', wechat: PRIVATE, memberCount: 7, participationForms: ['booth'], responseStatus: 'attending', materialLinks: 'https://example.invalid/' + PRIVATE, summary: '合成可公开介绍', coverId: photo.id, status: 'confirmed', publicConsent: false, sessionId: '', boothId: IDS.booth, internalNotes: PRIVATE, ...extras });
+  const work = (id, title, extras = {}) => ({ id, visibility: 'private', title, teamName: '合成创作者署名', school: PRIVATE, contactName: PRIVATE, email: 'synthetic.private@example.invalid', wechat: PRIVATE, memberCount: 7, participationForms: ['booth'], responseStatus: 'attending', materialLinks: 'https://example.invalid/' + PRIVATE, summary: '合成可公开介绍', coverId: photo.id, status: 'confirmed', publicConsent: false, sessionId: '', boothId: IDS.booth, internalNotes: PRIVATE, ...extras });
   content.showcases = [work(IDS.legacy, '合成原记录作品'), work(IDS.indie, '合成独立游戏', { kind: 'indie', organizationId: IDS.creator }), work(IDS.team, '合成团队作品', { kind: 'team', organizationId: IDS.creator })];
   const checked = validateContent(content); assert.equal(checked.valid, true, JSON.stringify(checked.errors));
   assert.equal(Object.hasOwn(checked.value.showcases[0], 'kind'), false, 'legacy kind must stay absent');
@@ -128,14 +129,16 @@ async function fixture(browser, errors, { width = 1440, published = true, userna
 }
 
 async function openAdmin(f, key) { await f.admin.bringToFront(); await f.admin.goto(API + routeFor(key), { waitUntil: 'networkidle' }); await f.admin.locator('[data-admin-workspace]:visible').waitFor(); await f.admin.locator('[data-content-panel="' + key + '"]:visible').waitFor(); }
-async function openFront(f) { await f.front.bringToFront(); await f.front.goto(SITE + '/', { waitUntil: 'networkidle' }); assert.equal(await f.front.locator('meta[name=artdico-content-api]').getAttribute('content'), API + '/api/public/content'); }
+async function noPublicBoothDetails(f) { assert.equal(await f.front.locator('[data-public-booths],[data-booth-id],[data-booth-dialog],#exhibition-details,a[href^="#booth-"]').count(), 0, 'safe backend booth arrangements never create public booth details or navigation'); }
+async function openFront(f) { await f.front.bringToFront(); await f.front.goto(SITE + '/', { waitUntil: 'networkidle' }); assert.equal(await f.front.locator('meta[name=artdico-content-api]').getAttribute('content'), API + '/api/public/content'); await noPublicBoothDetails(f); }
 async function anonymous(f) { const response = await f.runtime.app.handle(f.runtime.request('/api/public/content', { origin: SITE })); assert.equal(response.headers.get('access-control-allow-origin'), SITE); return { status: response.status, value: await response.json() }; }
-async function saveAndClose(f, kind) { await f.admin.locator('[data-' + kind + '-submit]').click(); await f.admin.locator('[data-admin-savebar][data-save-state=saved]').waitFor({ state: 'attached' }); await f.admin.locator('[data-' + kind + '-dialog]').waitFor({ state: 'hidden' }); }
+async function saveAndClose(f, kind) { const dialog = f.admin.locator('[data-' + kind + '-dialog]'), id = await dialog.locator('[name=id]').inputValue(); await f.admin.locator('[data-' + kind + '-submit]').click(); await dialog.locator('.ah-form-save-state[data-save-state=saved]').waitFor(); assert.equal(await dialog.evaluate(node => node.open), true, 'ordinary Save keeps the current editor open'); assert.equal(await dialog.locator('[name=id]').inputValue(), id, 'saving retains the same stable entity'); await dialog.locator('[data-close-dialog=' + kind + '],[data-organization-close]').first().click(); await dialog.waitFor({ state: 'hidden' }); }
 async function editGuest(f) { await openAdmin(f, 'guests'); await f.admin.locator('[data-guest-id="' + IDS.guest + '"] [data-row-action=edit]').click(); return f.admin.locator('[data-guest-form]'); }
+async function setFormPublic(form) { if (await form.locator('[name=visibility]').inputValue() === 'private') await form.locator('[data-content-visibility-switch],[data-organization-visibility]').click(); assert.equal(await form.locator('[name=visibility]').inputValue(), 'public', 'publication is controlled by the visible explicit switch, not a hidden legacy authorization field'); }
 async function editWork(f, id) { await openAdmin(f, 'showcases'); await f.admin.locator('[data-showcase-id="' + id + '"] [data-row-action=edit]').click(); return f.admin.locator('[data-showcase-form]'); }
 async function editOrganization(f, id = IDS.creator) { await openAdmin(f, 'organizations'); await f.admin.locator('[data-organization-id="' + id + '"] [data-organization-action=edit]').click(); return f.admin.locator('[data-organization-form]'); }
 async function until(page, predicate, message) { for (let i = 0; i < 500; i++) { if (await predicate()) return; await page.waitForTimeout(20); } assert.fail(message); }
-async function publish(f) { await openAdmin(f, 'publish'); const before = (await f.runtime.app.store.read()).draft.revision; f.allowPublish(); await f.admin.locator('[data-admin-publish]:enabled').click(); await until(f.admin, async () => (await f.runtime.app.store.read()).published?.revision === before, 'the explicit publish reached durable storage'); await f.admin.locator('[data-admin-publish]:enabled').waitFor(); const head = await f.runtime.app.store.read(); assert.equal(head.published.revision, before); assert.deepEqual(head.published.content, toPublicContent(head.draft.content)); return head.published; }
+async function publish(f) { await openAdmin(f, 'publish'); const before = (await f.runtime.app.store.read()).draft.revision; f.allowPublish(); const button = f.admin.locator('[data-content-panel=publish] [data-admin-publish]:enabled'); await button.click(); await until(f.admin, async () => (await f.runtime.app.store.read()).published?.revision === before, 'the explicit publish reached durable storage'); await button.waitFor(); const head = await f.runtime.app.store.read(), prepared = await createGuestAttendancePublicationGuard({ contactsStore: f.runtime.app.contactsStore, errorFactory: (code, message, status) => Object.assign(new Error(message), { code, status }) })({ content: head.draft.content }); assert.equal(head.published.revision, before); assert.deepEqual(head.published.content, toPublicContent(head.draft.content, { guestAttendance: prepared.guestAttendance })); return head.published; }
 async function returnToFront(f) { await f.front.waitForTimeout(1100); await f.front.bringToFront(); await f.front.evaluate(() => { dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })); dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); }); }
 async function publicState(page, kind, id, state, label) { const status = publication(page, kind, id); await status.waitFor(); assert.equal(await status.getAttribute('data-publication-state'), state); assert.match(await status.textContent(), label); return status; }
 async function noOverflow(page) { assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'no horizontal viewport overflow'); }
@@ -154,14 +157,14 @@ async function flowCases(browser, errors, reports) {
       const admissions = await f.runtime.app.registrationService.getAdmissions({ actor: f.runtime.users[0] });
       await openFront(f); const baseline = await anonymous(f); assert.equal(baseline.value.revision, 1);
       const form = await editGuest(f);
-      await publicState(f.admin, 'guests', IDS.guest, 'unpublished', /未公开/u);
-      await form.locator('[name=status]').selectOption('confirmed'); await form.locator('[name=publicConsent]').check();
+      await publicState(f.admin, 'guests', IDS.guest, 'unpublished', /未发布|待发布/u);
+      await form.locator('[name=status]').selectOption('confirmed'); await setFormPublic(form);
       assert.equal(await form.locator('[name=portraitId]').inputValue(), ''); assert.equal(await form.locator('[name=publicRoles]:checked').count(), 0);
       await saveAndClose(f, 'guest');
-      const ready = await publicState(f.admin, 'guests', IDS.guest, 'unpublished', /未公开/u); assert.equal(await ready.getAttribute('data-publication-change'), 'new');
+      const ready = await publicState(f.admin, 'guests', IDS.guest, 'unpublished', /未发布|待发布/u); assert.equal(await ready.getAttribute('data-publication-change'), 'new');
       assert.deepEqual((await anonymous(f)).value, baseline.value, 'saving valid draft does not publish');
       assert.equal(f.calls.filter(call => call.path.endsWith('/publish')).length, 0);
-      await publish(f); await openAdmin(f, 'guests'); const publishedBadge = await publicState(f.admin, 'guests', IDS.guest, 'published', /已公开/u);
+      await publish(f); await openAdmin(f, 'guests'); const publishedBadge = await publicState(f.admin, 'guests', IDS.guest, 'published', /已发布|待更新|待撤下/u);
       await visibleHit(publishedBadge); await f.admin.screenshot({ path: resolve(evidence, 'guest-published-status-' + width + '.png') });
       const editButton = f.admin.locator('[data-guest-id="' + IDS.guest + '"] [data-row-action=edit]'); await visibleHit(editButton); await editButton.click(); await f.admin.locator('[data-guest-dialog][open]').waitFor(); await f.admin.locator('[data-guest-dialog] [data-close-dialog=guest]').first().click();
       await returnToFront(f); const card = f.front.locator('[data-public-guests] [data-guest-id="' + IDS.guest + '"]'); await card.waitFor();
@@ -177,27 +180,27 @@ async function flowCases(browser, errors, reports) {
   {
     const f = await fixture(browser, errors);
     try {
-      let form = await editGuest(f); await form.locator('[name=status]').selectOption('confirmed'); await form.locator('[name=publicConsent]').check(); await saveAndClose(f, 'guest'); await publish(f); await openFront(f);
+      let form = await editGuest(f); await form.locator('[name=status]').selectOption('confirmed'); await setFormPublic(form); await saveAndClose(f, 'guest'); await publish(f); await openFront(f);
       form = await editGuest(f); await form.locator('[name=company]').fill('合成更新机构');
-      assert.equal(await form.locator('[name=publicConsent]').isChecked(), false, 'public identity change requires authorization again');
-      await form.locator('[name=publicConsent]').check(); await saveAndClose(f, 'guest');
-      let status = await publicState(f.admin, 'guests', IDS.guest, 'published', /已公开/u); assert.equal(await status.getAttribute('data-publication-change'), 'updated');
+      assert.equal(await form.locator('[name=publicConsent]').isChecked(), false, 'identity changes reset legacy authorization metadata independently from visibility');
+      await setFormPublic(form); await saveAndClose(f, 'guest');
+      let status = await publicState(f.admin, 'guests', IDS.guest, 'published', /已发布|待更新|待撤下/u); assert.equal(await status.getAttribute('data-publication-change'), 'updated');
       assert.equal((await anonymous(f)).value.content.guests[0].company, '合成创作机构');
       await publish(f); await returnToFront(f); await f.front.locator('[data-guest-id="' + IDS.guest + '"]').filter({ hasText: '合成更新机构' }).waitFor();
-      await openAdmin(f, 'guests'); const beforeWithdrawal = f.calls.filter(call => call.method === 'PUT').length; await f.admin.locator('[data-guest-id="' + IDS.guest + '"] [data-row-action=unpublish]').click();
+      await openAdmin(f, 'guests'); const beforeWithdrawal = f.calls.filter(call => call.method === 'PUT').length; await f.admin.locator('[data-guest-id="' + IDS.guest + '"] [data-row-action=visibility]').click();
       await f.admin.locator('[data-admin-savebar][data-save-state=saved]').waitFor({ state: 'attached' }); assert.equal(f.calls.filter(call => call.method === 'PUT').length, beforeWithdrawal + 1, 'withdrawal saves once in its own explicit action');
-      status = await publicState(f.admin, 'guests', IDS.guest, 'published', /已公开/u); assert.equal(await status.getAttribute('data-publication-change'), 'removed');
-      const draft = (await f.runtime.app.store.read()).draft.content.guests[0]; assert.equal(draft.status, 'confirmed'); assert.equal(draft.publicConsent, false);
+      status = await publicState(f.admin, 'guests', IDS.guest, 'published', /已发布|待更新|待撤下/u); assert.equal(await status.getAttribute('data-publication-change'), 'removed');
+      const draft = (await f.runtime.app.store.read()).draft.content.guests[0]; assert.equal(draft.status, 'confirmed'); assert.equal(draft.visibility, 'private'); assert.equal(draft.publicConsent, false, 'withdrawal preserves authorization metadata independently from visibility');
       assert.equal((await anonymous(f)).value.content.guests.length, 1, 'draft withdrawal does not hide the already-published card');
       await publish(f); await returnToFront(f); await until(f.front, async () => await f.front.locator('[data-public-guests] [data-guest-id]').count() === 0, 'published withdrawal reaches frontend');
-      await openAdmin(f, 'guests'); await publicState(f.admin, 'guests', IDS.guest, 'unpublished', /未公开/u);
-      reports.push({ group: 'flow', changedDraftRetainsActualOldPublication: true, consentRechecked: true, withdrawalGreenUntilPublish: true, statusPreserved: true, publishedWithdrawalRemovesFrontCard: true });
+      await openAdmin(f, 'guests'); await publicState(f.admin, 'guests', IDS.guest, 'unpublished', /未发布|待发布/u);
+      reports.push({ group: 'flow', changedDraftRetainsActualOldPublication: true, legacyAuthorizationResetOnIdentityChange: true, withdrawalGreenUntilPublish: true, statusPreserved: true, publishedWithdrawalRemovesFrontCard: true });
     } finally { await f.close(); }
   }
   {
     const f = await fixture(browser, errors, { published: false });
     try {
-      await openAdmin(f, 'organizations'); const state = await publicState(f.admin, 'organizations', IDS.occupant, 'unpublished', /未公开/u); assert.equal(await state.getAttribute('data-publication-change'), 'new');
+      await openAdmin(f, 'organizations'); const state = await publicState(f.admin, 'organizations', IDS.occupant, 'unpublished', /未发布|待发布/u); assert.equal(await state.getAttribute('data-publication-change'), 'new');
       assert.equal((await anonymous(f)).status, 404); await openAdmin(f, 'publish'); assert.match(await f.admin.locator('[data-content-panel=publish]').textContent(), /尚未发布|初始/u);
       assert.equal(f.calls.some(call => call.method === 'POST' && call.path.endsWith('/publish')), false);
       reports.push({ group: 'flow', noPublicationNotMisreportedAsSynced: true, readOnlyUntilExplicitPublish: true });
@@ -216,7 +219,7 @@ async function gamesCases(browser, errors, reports) {
     let form = await editWork(f, IDS.legacy);
     assert.equal(await form.locator('[name=kind]').inputValue(), '', 'legacy display default is an explicit empty choice');
     assert.match(await form.locator('[name=kind] option:checked').textContent(), /学生/u);
-    await form.locator('[name=title]').fill('合成原记录更新名称'); await form.locator('[name=publicConsent]').check(); await saveAndClose(f, 'showcase');
+    await form.locator('[name=title]').fill('合成原记录更新名称'); await setFormPublic(form); await saveAndClose(f, 'showcase');
     let head = await f.runtime.app.store.read(); assert.equal(Object.hasOwn(head.draft.content.showcases[0], 'kind'), false); assert.equal(Object.hasOwn(head.draft.content.showcases[0], 'organizationId'), false);
     assert.deepEqual((await anonymous(f)).value, baseline.value);
     reports.push({ group: 'games', legacyStudentDisplayDoesNotWriteKind: true, unrelatedSavePreservesAbsentOrganizationField: true, saveNotPublication: true });
@@ -227,8 +230,8 @@ async function gamesCases(browser, errors, reports) {
         assert.equal(await form.locator('[name=kind] option[value=team]').isDisabled(),true);
         assert.match(await form.locator('[name=kind] option:checked').textContent(),/待分类/u);
       }else await form.locator('[name=kind]').selectOption(kind);
-      await form.locator('[name=organizationId]').selectOption(IDS.creator); await form.locator('[name=publicConsent]').check(); await saveAndClose(f, 'showcase');
-      const status = await publicState(f.admin, 'showcases', id, 'unpublished', /未公开/u); assert.equal(await status.getAttribute('data-publication-change'), 'new');
+      await form.locator('[name=organizationId]').selectOption(IDS.creator); await setFormPublic(form); await saveAndClose(f, 'showcase');
+      const status = await publicState(f.admin, 'showcases', id, 'unpublished', /未发布|待发布/u); assert.equal(await status.getAttribute('data-publication-change'), 'new');
     }
     head = await f.runtime.app.store.read(); assert.equal(head.draft.content.showcases.filter(work => work.boothId === IDS.booth).length, 3);
     assert.equal(head.draft.content.booths[0].organizationId, IDS.occupant); assert.equal(head.draft.content.showcases[1].organizationId, IDS.creator);
@@ -236,22 +239,29 @@ async function gamesCases(browser, errors, reports) {
     const grid = f.front.locator('[data-public-showcases]'); await grid.locator('[data-showcase-id]').first().waitFor(); assert.equal(await grid.locator('[data-showcase-id]').count(), 3);
     assert.deepEqual(await grid.locator('[data-showcase-id]').evaluateAll(nodes => nodes.map(node => node.dataset.showcaseId).sort()), [IDS.legacy, IDS.indie, IDS.team].sort());
     assert.equal(await grid.locator('a.ah-showcase-organization').count(), 0, 'unauthorized creator organization is not revealed by a work');
-    assert.equal((await anonymous(f)).value.content.showcases.find(work => work.id === IDS.indie).organizationId ?? '', '', 'public relation requires independently authorized organization in the same snapshot');
+    assert.equal((await anonymous(f)).value.content.showcases.find(work => work.id === IDS.indie).organizationId ?? '', '', 'public relation requires an independently public organization in the same snapshot');
     assert.deepEqual(await f.front.locator('[data-public-works-filter] option').evaluateAll(options=>options.map(option=>option.value)),['all','student','indie']);
     assert.match(await grid.locator('[data-showcase-id="'+IDS.team+'"]').textContent(),/待分类/u);
     for (const [kind, count] of [['student', 1], ['indie', 1], ['all', 3]]) {
       await f.front.locator('[data-public-works-filter]').selectOption(kind); assert.equal(await grid.locator('[data-showcase-id]:visible').count(), count);
     }
-    assert.equal(await f.front.locator('#booth-' + IDS.booth + ' a[href^="#work-"]').count(), 3, 'one booth points to all distinct works');
-    reports.push({ group: 'games', currentKindsAndUnchangedLegacyTeamPersisted: true, legacyTeamNotASelectableCategory: true, threeWorksShareOneBooth: true, creatorAndOccupantIndependent: true, unauthorizedCreatorRelationOmitted: true, stableIdDedupeAndKindFilters: true });
-    form = await editOrganization(f); await form.locator('[name=publicConsent]').check(); await saveAndClose(f, 'organization');
+    const safeArrangements = (await anonymous(f)).value.content;
+    assert.equal(safeArrangements.booths.find(booth => booth.id === IDS.booth).id, IDS.booth);
+    assert.equal(safeArrangements.showcases.filter(work => work.boothId === IDS.booth).length, 3, 'the backend/public projection retains all distinct works on their shared booth');
+    await noPublicBoothDetails(f);
+    reports.push({ group: 'games', currentKindsAndUnchangedLegacyTeamPersisted: true, legacyTeamNotASelectableCategory: true, threeWorksShareOneBackendBoothWithoutPublicDetails: true, creatorAndOccupantIndependent: true, unauthorizedCreatorRelationOmitted: true, stableIdDedupeAndKindFilters: true });
+    form = await editOrganization(f); await setFormPublic(form); await saveAndClose(f, 'organization');
     assert.equal((await anonymous(f)).value.content.organizations.some(item => item.id === IDS.creator), false);
     await publish(f); await returnToFront(f);
     await grid.locator('[data-showcase-id="' + IDS.indie + '"] a.ah-showcase-organization[href="#organization-' + IDS.creator + '"]').waitFor();
-    assert.equal(await f.front.locator('#organization-' + IDS.creator + ' a[href^="#work-"]').count(), 2);
-    assert.equal(await f.front.locator('#booth-' + IDS.booth + ' a[href^="#work-"]').count(), 3);
-    reports.push({ group: 'games', creatorRelationAppearsOnlyAfterOwnAuthorizationAndPublication: true, samePublishedSnapshotRelations: true });
-    form = await editWork(f, IDS.indie); await form.locator('[name=organizationId]').selectOption(''); assert.equal(await form.locator('[name=publicConsent]').isChecked(), false); await form.locator('[name=publicConsent]').check(); await saveAndClose(f, 'showcase');
+    assert.equal(await f.front.locator('#organization-' + IDS.creator + ' h3').textContent(), '合成作品创作组织');
+    assert.equal(await f.front.locator('#organization-' + IDS.creator + ' .ah-showcase-related').count(), 0, 'organization cards retain their identity without work or booth detail lists');
+    const safeCreatorSnapshot = (await anonymous(f)).value.content;
+    assert.equal(safeCreatorSnapshot.showcases.filter(work => work.organizationId === IDS.creator).length, 2, 'explicit creator relationships persist independently from booth occupants');
+    assert.equal(safeCreatorSnapshot.showcases.filter(work => work.boothId === IDS.booth).length, 3);
+    await noPublicBoothDetails(f);
+    reports.push({ group: 'games', creatorRelationAppearsOnlyAfterOwnVisibilityAndPublication: true, samePublishedSnapshotRelations: true, organizationIdentityWithoutPublicBoothDetails: true });
+    form = await editWork(f, IDS.indie); await form.locator('[name=organizationId]').selectOption(''); assert.equal(await form.locator('[name=publicConsent]').isChecked(), false); await setFormPublic(form); await saveAndClose(f, 'showcase');
     head = await f.runtime.app.store.read(); assert.equal(head.draft.content.showcases.find(work => work.id === IDS.indie).organizationId, '');
     assert.equal((await anonymous(f)).value.content.showcases.find(work => work.id === IDS.indie).organizationId, IDS.creator);
     await publish(f); await returnToFront(f); await until(f.front, async () => await grid.locator('[data-showcase-id="' + IDS.indie + '"] a.ah-showcase-organization').count() === 0, 'explicit relation clear reaches frontend');
@@ -433,7 +443,7 @@ async function peopleCases(browser, errors, reports) {
   {
     const f = await fixture(browser, errors);
     try {
-      const form = await editGuest(f); await form.locator('[name=status]').selectOption('confirmed'); await form.locator('[name=publicConsent]').check(); await saveAndClose(f, 'guest');
+      const form = await editGuest(f); await form.locator('[name=status]').selectOption('confirmed'); await setFormPublic(form); await saveAndClose(f, 'guest');
       await openPerson(f, f.initial.people[0]); assert.equal(await f.admin.locator('[data-person-step=public]').getAttribute('data-step-state'), 'pending');
       const badge = f.admin.locator('[data-profile-publication="' + IDS.guest + '"]'); assert.equal(await badge.getAttribute('data-publication-state'), 'unpublished');
       await publish(f); await openPerson(f, f.initial.people[0]); assert.equal(await f.admin.locator('[data-person-step=public]').getAttribute('data-step-state'), 'complete');

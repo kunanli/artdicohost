@@ -17,6 +17,11 @@ body[data-admission=waitlisted] .confirmation-state{color:#83581f}body[data-admi
 .confirmation-registration .confirmation-details{border-top:0}.confirmation-group-help{margin-top:12px}.confirmation-group-help .confirmation-group-validity{margin:0 0 10px}
 .confirmation-safari-guide{margin-top:16px;padding:18px;background:#f3f6fc;border:1px solid #cbd8ee;border-radius:8px;font-size:13px;color:#34455e}
 .confirmation-safari-guide h3{font-size:16px;margin:0 0 10px;color:#1c283a}.confirmation-safari-guide ol{padding-left:20px;margin:0 0 16px}.confirmation-safari-guide li+li{margin-top:8px}
+/* Apple-provided artwork keeps its original colors and aspect ratio. The
+   5px padding exceeds the 0.1X clear space around the 44px-high badge. */
+.confirmation-actions button.confirmation-wallet-badge{display:inline-flex;align-items:center;justify-content:center;width:max-content;max-width:100%;min-height:54px;padding:5px;border:0;border-radius:0;background:transparent;color:inherit;opacity:1;filter:none}
+.confirmation-actions button.confirmation-wallet-badge img{display:block;width:auto;height:44px;max-width:100%;object-fit:contain}
+.confirmation-actions button.confirmation-wallet-badge:hover,.confirmation-actions button.confirmation-wallet-badge:disabled{opacity:1;filter:none}
 @media(max-width:480px){.confirmation-card{margin-top:12px}.confirmation-actions{flex-direction:column}.confirmation-actions button{width:100%}.confirmation-details{grid-template-columns:64px minmax(0,1fr);gap:12px}.confirmation-header{padding-block:22px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 @page{size:A4;margin:18mm}

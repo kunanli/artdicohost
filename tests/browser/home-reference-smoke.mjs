@@ -104,6 +104,24 @@ function publication(raw, mode) {
 const mime = path => ({ html: 'text/html; charset=utf-8', js: 'text/javascript', mjs: 'text/javascript', css: 'text/css', png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp', svg: 'image/svg+xml', woff2: 'font/woff2', ico: 'image/x-icon' })[extname(path).slice(1)] || 'application/octet-stream';
 const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
 const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+// A synthetic transparent dark mark exercises uploaded artwork without borrowing
+// the real additional organization's identity or pretending to capture its bytes.
+const syntheticLogoContext=await browser.newContext();
+const syntheticLogoPage=await syntheticLogoContext.newPage();
+const syntheticLogoSources=await syntheticLogoPage.evaluate(()=>['transparent-black','transparent-blue','opaque-white','opaque-black','opaque-complex','mixed-transparent-panel'].map(kind=>{
+  const canvas=document.createElement('canvas');canvas.width=240;canvas.height=96;
+  const context=canvas.getContext('2d'),opaque=kind.startsWith('opaque'),background=kind==='opaque-black'?'#000':'#fff';
+  if(opaque){context.fillStyle=background;context.fillRect(0,0,240,96);}
+  context.fillStyle=kind==='opaque-black'?'#fff':kind==='transparent-blue'?'#164bb7':'#080808';
+  context.fillRect(24,16,192,64);
+  if(opaque){context.fillStyle=background;context.fillRect(72,32,96,32);}else context.clearRect(72,32,96,32);
+  if(kind==='opaque-complex'){for(const [x,y,color]of[[0,0,'#c00'],[120,0,'#0c0'],[0,48,'#00c'],[120,48,'#fff']]){context.fillStyle=color;context.fillRect(x,y,120,48);}}
+  if(kind==='mixed-transparent-panel'){context.clearRect(0,0,240,96);context.fillStyle='#fff';context.fillRect(5,5,230,86);context.fillStyle='#000';context.fillRect(24,16,192,64);context.fillStyle='#fff';context.fillRect(72,32,96,32);}
+  return {kind,base64:canvas.toDataURL('image/png').split(',')[1]};
+}));
+await syntheticLogoContext.close();
+const syntheticLogos=new Map(syntheticLogoSources.map(item=>{const bytes=Buffer.from(item.base64,'base64'),id=sha(bytes)+'.png';media.set(id,bytes);return [item.kind,{kind:item.kind,id}];}));
+const syntheticLogoByWidth=new Map([320,390,1440,1920].map((width,index)=>[width,syntheticLogos.get(['transparent-black','transparent-blue','opaque-white','opaque-black'][index])]));
 const reports = [], pageErrors = [], servedAssets = new Map();
 await mkdir(evidence, { recursive: true });
 async function fixture(width, { mode = 'legacy', brokenImages = false, javascript = true } = {}) {
@@ -312,6 +330,7 @@ async function otherContent(f) {
   assert.equal(await peek.isVisible(), true, 'restoring all categories restores the actual next cover');
   await page.locator('[data-public-work-next]').click(); await page.locator('#work-synthetic-reference-work-1:visible').waitFor();
   await page.locator('[data-public-work-prev]').click(); await page.locator('#work-synthetic-reference-work-0:visible').waitFor();
+  assert.equal(await page.locator('[data-booth-id],.ah-exhibition-details,a[href^="#booth-"]').count(),0,'the public page has no booth detail interface');
   assert.equal(await page.locator('#students .ah-showcase-arrangement').count(), 0, 'works without real arrangements have no placeholder paragraph');
   assert.doesNotMatch(await page.locator('#students').textContent(), /资料待确认|参加待确认|展示安排陆续公布|封面、展示形式与安排/u);
   assert.equal(await page.locator('[data-faq-id="synthetic-reference-faq"]').count(), 1);
@@ -350,7 +369,9 @@ async function screenshots(f) {
 async function loadOrganizationImages(f) {
   await f.page.mouse.move(0, 0);
   for (const image of await f.page.locator('[data-public-organizations] img').all()) {
-    await image.scrollIntoViewIfNeeded(); await image.evaluate(node => node.decode());
+    await image.scrollIntoViewIfNeeded();
+    await image.evaluate(node=>new Promise(resolve=>{const done=()=>{if(node.closest('.ah-organization-image')?.hidden||node.complete&&node.naturalWidth>0&&node.closest('.ah-organization-image')?.dataset.logoPresentation!=='pending')resolve();else setTimeout(done,10);};done();}));
+    if(await image.isVisible())await image.evaluate(node=>node.decode());
   }
   await f.page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
 }
@@ -389,23 +410,67 @@ try {
       await loadOrganizationImages(f);
       const measured = await geometry(f); await disclosures(f); await otherContent(f); await noOverflow(f);
       const files = await screenshots(f); let unknownOrganizationFallback = false;
-      if (width === 1440) {
-        await f.refresh('legacy', raw => { raw.organizations.push(
-          { id: 'synthetic-reference-unknown', name: '合成未知组织', logoId: '', website: '', participation: 'undecided', status: 'confirmed', publicConsent: true, internalNotes: PRIVATE },
-          { id: 'synthetic-reference-duplicate', name: '游戏奇点', logoId: logoSources[0].id, website: '', participation: 'undecided', status: 'confirmed', publicConsent: true, internalNotes: PRIVATE }); });
-        const unknown = f.page.locator('[data-organization-id="synthetic-reference-unknown"]');
-        assert.equal(await unknown.count(), 1); assert.equal(await unknown.getAttribute('data-organization-reference'), null);
-        assert.notEqual(await unknown.evaluate(node => getComputedStyle(node).position), 'absolute', 'unknown organization remains in normal flow without guessing a reference identity');
-        const duplicate = f.page.locator('[data-organization-id="synthetic-reference-duplicate"]');
-        assert.equal(await duplicate.count(), 1); assert.equal(await duplicate.getAttribute('data-organization-reference'), null);
-        assert.notEqual(await duplicate.evaluate(node => getComputedStyle(node).position), 'absolute', 'a second saved record with the same public label is retained in normal flow');
-        assert.equal(await f.page.locator('[data-organization-reference="gamezone"]').count(), 1, 'only the first actual reference card occupies its orbit');
-        assert.equal(await unknown.locator('h3').isVisible(), true); await noOverflow(f); unknownOrganizationFallback = true;
+      await f.refresh('legacy', raw => { raw.organizations.push(
+        { id:'synthetic-reference-unknown',name:'合成第八个组织',logoId:syntheticLogoByWidth.get(width).id,website:'https://example.invalid/eighth-organization',participation:'undecided',status:'confirmed',publicConsent:true,internalNotes:PRIVATE }); });
+      const unknown=f.page.locator('[data-organization-id="synthetic-reference-unknown"]');
+      assert.equal(await f.page.locator('[data-organization-id]').count(),8,'an eighth public organization is retained beside the original seven');
+      assert.equal(await unknown.getAttribute('data-organization-reference'),null);
+      assert.notEqual(await unknown.evaluate(node=>getComputedStyle(node).position),'absolute','an unknown identity keeps a normal-flow slot');
+      await unknown.scrollIntoViewIfNeeded();
+      await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
+      await unknown.locator('img').evaluate(image=>image.decode());
+      assert.equal(await unknown.locator('img').getAttribute('data-logo-source'),API+'/api/public/portraits/'+syntheticLogoByWidth.get(width).id,'white presentation retains an explicit exact original upload source');
+      const extraGeometry=await unknown.evaluate(node=>{
+        const box=element=>{const r=element.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};};
+        const image=node.querySelector('img'),canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
+        const context=canvas.getContext('2d');context.drawImage(image,0,0);const data=context.getImageData(0,0,canvas.width,canvas.height).data;
+        const pixel=(x,y)=>[...data.slice((y*canvas.width+x)*4,(y*canvas.width+x)*4+4)];let ink=0,nonwhite=0,transparent=0;
+        for(let i=0;i<data.length;i+=4){if(data[i+3]>32){ink++;if(data[i]!==255||data[i+1]!==255||data[i+2]!==255)nonwhite++;}else transparent++;}
+        return {slot:box(node),name:box(node.querySelector('h3')),frame:box(node.querySelector('.ah-organization-image')),image:box(image),planet:box(document.querySelector('[data-organizations-planet]')),imageFilter:getComputedStyle(image).filter,
+          frameBackground:getComputedStyle(node.querySelector('.ah-organization-image')).backgroundColor,mask:{ink,nonwhite,transparent,corner:pixel(0,0),counter:pixel(120,48),width:canvas.width,height:canvas.height}};
+      });
+      assert.ok(extraGeometry.name.width>1&&extraGeometry.name.height>1,'an uploaded unknown logo always retains its visible name');
+      assert.equal(extraGeometry.imageFilter,'none','white logos use an alpha mask rather than a CSS filter on an opaque rectangle');
+      assert.equal(extraGeometry.mask.nonwhite,0,'every visible generated logo pixel is white');assert.ok(extraGeometry.mask.ink>0&&extraGeometry.mask.transparent>0);
+      assert.equal(extraGeometry.mask.corner[3],0,'opaque source backgrounds do not turn into a white rectangle');assert.equal(extraGeometry.mask.counter[3],0,'enclosed letter counters remain transparent');
+      assert.ok(['transparent','rgba(0, 0, 0, 0)'].includes(extraGeometry.frameBackground),'white logos sit on the page without a light panel');
+      assert.equal(await unknown.locator('a').getAttribute('href'),'https://example.invalid/eighth-organization');
+      if(width>=1000){
+        assert.ok(extraGeometry.slot.y>=extraGeometry.planet.y+extraGeometry.planet.height*.5,'additional logos occupy the lower portion of the same planet');
+        assert.ok(extraGeometry.slot.bottom<=extraGeometry.planet.bottom+1,'the eighth card is discoverable inside the visible planet rather than one planet below it');
+      }
+      const allSlots=await f.page.locator('[data-organization-id]').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom};}));
+      for(let a=0;a<allSlots.length;a++)for(let b=a+1;b<allSlots.length;b++)assert.ok(Math.min(allSlots[a].right,allSlots[b].right)-Math.max(allSlots[a].x,allSlots[b].x)<=1.5||Math.min(allSlots[a].bottom,allSlots[b].bottom)-Math.max(allSlots[a].y,allSlots[b].y)<=1.5,'the additional card never overlaps any original organization');
+      await noOverflow(f);unknownOrganizationFallback=true;
+      const extraScreenshot=resolve(evidence,'eight-organizations-'+width+'.png');await f.page.locator('#booths').screenshot({path:extraScreenshot});files.push(extraScreenshot);
+      await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogos.get('mixed-transparent-panel').id;});
+      await unknown.scrollIntoViewIfNeeded();
+      await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
+      const mixedMask=await unknown.locator('img').evaluate(image=>{const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;const context=canvas.getContext('2d');context.drawImage(image,0,0);const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;const pixel=(x,y)=>[...pixels.slice((y*canvas.width+x)*4,(y*canvas.width+x)*4+4)];return {outer:pixel(0,0),innerPanel:pixel(8,8),counter:pixel(120,48),ink:pixel(32,24)};});
+      assert.equal(mixedMask.outer[3],0);assert.equal(mixedMask.innerPanel[3],0,'a transparent outer margin does not preserve an opaque white inner panel');assert.equal(mixedMask.counter[3],0,'the panel-colored enclosed counter is also removed');assert.deepEqual(mixedMask.ink,[255,255,255,255]);
+      await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogoByWidth.get(width).id;});
+      await unknown.scrollIntoViewIfNeeded();await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
+      if(width===1440){
+        await f.refresh('legacy',raw=>{raw.organizations.push({id:'synthetic-reference-duplicate',name:'游戏奇点',logoId:logoSources[0].id,website:'',participation:'undecided',status:'confirmed',publicConsent:true,internalNotes:PRIVATE});});
+        const duplicate=f.page.locator('[data-organization-id="synthetic-reference-duplicate"]');
+        assert.equal(await duplicate.count(),1);assert.equal(await duplicate.getAttribute('data-organization-reference'),null);
+        assert.notEqual(await duplicate.evaluate(node=>getComputedStyle(node).position),'absolute','a second saved record with the same public label stays in normal flow');
+        assert.equal(await f.page.locator('[data-organization-reference="gamezone"]').count(),1,'only one real card occupies each reference slot');
+        assert.ok((await duplicate.locator('h3').boundingBox()).height>1,'the distinct duplicate retains its own visible name');
+        await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogos.get('opaque-complex').id;});
+        await unknown.scrollIntoViewIfNeeded();
+        await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.hidden===true);
+        assert.ok((await unknown.locator('h3').boundingBox()).height>1,'an inseparable complex background keeps the actual readable organization name');
+        assert.equal(await unknown.getAttribute('data-logo-artwork'),'published-name');
+        await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogoByWidth.get(width).id;});
+        await unknown.scrollIntoViewIfNeeded();
+        await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
+        assert.equal(await unknown.locator('img').getAttribute('data-logo-source'),API+'/api/public/portraits/'+syntheticLogoByWidth.get(width).id,'a new revision replaces the fallback instead of retaining stale output');
       }
       assert.doesNotMatch(await f.page.locator('body').textContent(), /SYNTHETIC_REFERENCE_PRIVATE|private@example/u);
       reports.push({ name: 'legacy-public-layout-' + width, width, profiles: 9, organizations: 7, attendance: 'not inferred; only actual profile title is displayed', geometry: measured,
         interaction: 'native keyboard, Escape, pointer gap or touch; actual timetable tabs, works filter and FAQ', unknownOrganizationFallback,
-        duplicateKnownOrganizationRetained: unknownOrganizationFallback, requests: f.calls.length, screenshots: files });
+        duplicateKnownOrganizationRetained: width===1440, eighthOrganizationGeometry:extraGeometry,mixedTransparentPanelMask:mixedMask, requests: f.calls.length, screenshots: files });
     } finally { await f.context.close(); }
   }
   for (const mode of ['empty', 'corrupt', 'unavailable']) {

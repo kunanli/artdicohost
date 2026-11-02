@@ -1,6 +1,6 @@
 # ARTDiCO HOST 改版執行總覽
 
-接續實作：[確認郵件診斷與手動重寄](confirmation-mail-recovery-release.md)。使用者明確要求失敗後能再次重寄；保留自動重試限制及歷史，人工以新操作／當前版本明確重寄，結果未知仍先核對原操作。實際EmailJS原因待安全錯誤證據，不宣稱已完成真實收件。
+已交付：[最少報名成功提示、確認函與手動重寄](confirmation-mail-recovery-release.md)。[PR72](https://github.com/kunanli/artdicohost/pull/72)已發布main `765a7bcc1a547b63b85fb90f9420a6cce2a1fe13`；1750測試與同來源／HTML的6／4／10／8／8／實際素材13案通過，台北2026-11-03 01:04:40核對60公開HTTPS物件。報名留原頁僅顯示「报名成功」，後端寄確認函，已知失敗可再次明確手動重寄。正式觀測確認自動寄信與寄件服務均啟用、readiness有效且無缺項／格式錯；實際EmailJS接受及真人收件仍未驗證。
 
 已交付：[後台調整前台展示順序](admin-display-order-release.md)。[PR71](https://github.com/kunanli/artdicohost/pull/71)已發布main `c102d50b92691fc3ccf867ec7de988ea5be523d2`；1664項測試及同來源／HTML的6／4／10／8／正式素材13案通過，台北2026-11-02 23:39:51完成60公開HTTPS物件核對。嘉賓／組織／作品依保存並明確發布的順序展示。下一階段處理使用者回報的寄信故障，不清除通知歷史或以重試上限推定服務商錯誤。
 

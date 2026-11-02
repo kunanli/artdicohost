@@ -108,7 +108,7 @@ const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHRO
 // the real additional organization's identity or pretending to capture its bytes.
 const syntheticLogoContext=await browser.newContext();
 const syntheticLogoPage=await syntheticLogoContext.newPage();
-const syntheticLogoSources=await syntheticLogoPage.evaluate(()=>['transparent-black','transparent-blue','opaque-white','opaque-black','opaque-complex'].map(kind=>{
+const syntheticLogoSources=await syntheticLogoPage.evaluate(()=>['transparent-black','transparent-blue','opaque-white','opaque-black','opaque-complex','mixed-transparent-panel'].map(kind=>{
   const canvas=document.createElement('canvas');canvas.width=240;canvas.height=96;
   const context=canvas.getContext('2d'),opaque=kind.startsWith('opaque'),background=kind==='opaque-black'?'#000':'#fff';
   if(opaque){context.fillStyle=background;context.fillRect(0,0,240,96);}
@@ -116,6 +116,7 @@ const syntheticLogoSources=await syntheticLogoPage.evaluate(()=>['transparent-bl
   context.fillRect(24,16,192,64);
   if(opaque){context.fillStyle=background;context.fillRect(72,32,96,32);}else context.clearRect(72,32,96,32);
   if(kind==='opaque-complex'){for(const [x,y,color]of[[0,0,'#c00'],[120,0,'#0c0'],[0,48,'#00c'],[120,48,'#fff']]){context.fillStyle=color;context.fillRect(x,y,120,48);}}
+  if(kind==='mixed-transparent-panel'){context.clearRect(0,0,240,96);context.fillStyle='#fff';context.fillRect(5,5,230,86);context.fillStyle='#000';context.fillRect(24,16,192,64);context.fillStyle='#fff';context.fillRect(72,32,96,32);}
   return {kind,base64:canvas.toDataURL('image/png').split(',')[1]};
 }));
 await syntheticLogoContext.close();
@@ -442,6 +443,13 @@ try {
       for(let a=0;a<allSlots.length;a++)for(let b=a+1;b<allSlots.length;b++)assert.ok(Math.min(allSlots[a].right,allSlots[b].right)-Math.max(allSlots[a].x,allSlots[b].x)<=1.5||Math.min(allSlots[a].bottom,allSlots[b].bottom)-Math.max(allSlots[a].y,allSlots[b].y)<=1.5,'the additional card never overlaps any original organization');
       await noOverflow(f);unknownOrganizationFallback=true;
       const extraScreenshot=resolve(evidence,'eight-organizations-'+width+'.png');await f.page.locator('#booths').screenshot({path:extraScreenshot});files.push(extraScreenshot);
+      await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogos.get('mixed-transparent-panel').id;});
+      await unknown.scrollIntoViewIfNeeded();
+      await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
+      const mixedMask=await unknown.locator('img').evaluate(image=>{const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;const context=canvas.getContext('2d');context.drawImage(image,0,0);const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;const pixel=(x,y)=>[...pixels.slice((y*canvas.width+x)*4,(y*canvas.width+x)*4+4)];return {outer:pixel(0,0),innerPanel:pixel(8,8),counter:pixel(120,48),ink:pixel(32,24)};});
+      assert.equal(mixedMask.outer[3],0);assert.equal(mixedMask.innerPanel[3],0,'a transparent outer margin does not preserve an opaque white inner panel');assert.equal(mixedMask.counter[3],0,'the panel-colored enclosed counter is also removed');assert.deepEqual(mixedMask.ink,[255,255,255,255]);
+      await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogoByWidth.get(width).id;});
+      await unknown.scrollIntoViewIfNeeded();await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
       if(width===1440){
         await f.refresh('legacy',raw=>{raw.organizations.push({id:'synthetic-reference-duplicate',name:'游戏奇点',logoId:logoSources[0].id,website:'',participation:'undecided',status:'confirmed',publicConsent:true,internalNotes:PRIVATE});});
         const duplicate=f.page.locator('[data-organization-id="synthetic-reference-duplicate"]');
@@ -462,7 +470,7 @@ try {
       assert.doesNotMatch(await f.page.locator('body').textContent(), /SYNTHETIC_REFERENCE_PRIVATE|private@example/u);
       reports.push({ name: 'legacy-public-layout-' + width, width, profiles: 9, organizations: 7, attendance: 'not inferred; only actual profile title is displayed', geometry: measured,
         interaction: 'native keyboard, Escape, pointer gap or touch; actual timetable tabs, works filter and FAQ', unknownOrganizationFallback,
-        duplicateKnownOrganizationRetained: width===1440, eighthOrganizationGeometry:extraGeometry, requests: f.calls.length, screenshots: files });
+        duplicateKnownOrganizationRetained: width===1440, eighthOrganizationGeometry:extraGeometry,mixedTransparentPanelMask:mixedMask, requests: f.calls.length, screenshots: files });
     } finally { await f.context.close(); }
   }
   for (const mode of ['empty', 'corrupt', 'unavailable']) {

@@ -26,11 +26,11 @@ ARTDICO_PLAYWRIGHT_MODULE=playwright-core ARTDICO_CHROMIUM_BINARY=/usr/bin/googl
 ARTDICO_PLAYWRIGHT_MODULE=playwright-core ARTDICO_CHROMIUM_BINARY=/usr/bin/google-chrome ARTDICO_PUBLIC_VISUAL_FIXTURE_DIRECTORY=/absolute/repository/.local-data/public-visual-fixture ARTDICO_BUBBLES_EVIDENCE_DIRECTORY=/absolute/repository/.local-data/browser-evidence/bubbles-logo-bounds node tests/browser/bubbles-logo-bounds-smoke.mjs
 ```
 
-该目录必须已有捕获器生成的 `manifest.json`、原始 `snapshot.json` 与 `media/`，并通过来源、匿名状态、字节数及 SHA 校验。脚本读取九份实际公开人物的姓名、单位、职称字段和同份捕获中全部实际上传组织图像；没有捕获数据就失败，不能悄悄换成示例图片。原始 JSON、图片、含公开姓名的截图及详细报告只留忽略目录／短期 CI artifact，不提交到 Git；日志只输出计数、摘要、固定错误码及几何数值。
+该目录必须已有捕获器生成的 `manifest.json`、原始 `snapshot.json` 与 `media/`，并通过来源、匿名状态、字节数及 SHA 校验。脚本分别核对同份捕获的原始公开人物数量与原出席证明允许显示的实际名片，只对真正显示者逐项验证姓名、单位、职称和DOM ID；同份捕获全部实际上传组织图像都验证；没有捕获数据就失败，不能悄悄换成示例图片。原始 JSON、图片、含公开姓名的截图及详细报告只留忽略目录／短期 CI artifact，不提交到 Git；日志只输出计数、摘要、固定错误码及几何数值。
 
 预期十三个场景：1920／1440／390／320 的四个原始公开快照场景；四个保留同份捕获全部实际上传字节、仅将组织身份明确改为合成值的普通布局兼容场景；四个不透明方图、极高／极宽、留白画布及未来图片 hash 更换场景；一个长文介绍与初始 reduced-motion 场景。核对整个图片、卡片、独立图框的包含关系及两两不重叠，不能只比较可见白色像素。原七份已核对图像才使用绑定的白色原稿版本；2026-11-02用户要求其他上图也呈白色，更换hash使用新上传来源的有界白色呈现，保留透明背景／字洞，不能显示旧图或白矩形。原上传bytes与前台白色输出分别验证。实际原图数量取捕获manifest，不强制为七张；原稿已知变体仍单独核对七份。
 
-嘉宾圆泡依序同时显示姓名、独立单位栏、职称栏；单位只取 `company`，职称只取实际 `title`，缺省时用真实 `ggjRole`，两者都缺则保留空白，不能把公司冒充职位。核对每位全部非空字段、完整 ARIA 顺序与三层矩形互不重叠／无内部滚动；实际 Maria／PingYao 的姓名与职称仍保持严格字体裁切检查。较长单位至少有一完整行，四种宽度对全部九位展开逐字核对单位及职位全文，手机展开会让后续内容让位。合成长文场景保留 160 字单位、200 字职称，并在同案另验真实角色回退、只有单位及全空字段，场景总数仍为十三。完整介绍在主页面阅读。
+嘉宾圆泡依序同时显示姓名、独立单位栏、职称栏；单位只取 `company`，职称只取实际 `title`，缺省时用真实 `ggjRole`，两者都缺则保留空白，不能把公司冒充职位。核对每位全部非空字段、完整 ARIA 顺序与三层矩形互不重叠／无内部滚动；Maria／PingYao若在实际显示名单，姓名与职称保持严格字体裁切检查；未显示时只在明示合成文本边界保留同样检查，不计为实际人物覆盖。较长单位至少有一完整行，四种宽度对原证明确实显示的全部人物展开逐字核对单位及职位全文，手机展开会让后续内容让位。合成长文场景保留 160 字单位、200 字职称，并在同案另验真实角色回退、只有单位及全空字段，场景总数仍为十三。完整介绍在主页面阅读。
 
 普通浮动、悬停／焦点／展开暂停、移出视窗、reduced-motion 与恢复均检查实际 WAAPI 对象、时间和位置。headless Playwright 强制页面可见，因此 `document.hidden` 分支使用**明示的合成 visibility 信号**驱动实际动画，不冒称真实操作系统遮挡或切换背景标签已验。捕获范围只有公开资料与组织图；未捕获的嘉宾照片／作品图片请求会在拦截器返回 404，并记录数量，不能宣称全站正式图片均已验证。
 

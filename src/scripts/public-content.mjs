@@ -268,14 +268,24 @@ function whiteOrganizationMask(image){
   const context=canvas.getContext('2d',{willReadFrequently:true});if(!context)return null;
   context.drawImage(image,0,0,canvas.width,canvas.height);
   const data=context.getImageData(0,0,canvas.width,canvas.height),pixels=data.data,total=canvas.width*canvas.height;
-  let transparent=0;
-  for(let index=3;index<pixels.length;index+=4)if(pixels[index]<224)transparent++;
+  let transparent=0,opaque=0,left=canvas.width,top=canvas.height,right=-1,bottom=-1;
+  for(let index=0;index<pixels.length;index+=4){
+    const alpha=pixels[index+3];if(alpha<224)transparent++;else opaque++;
+    if(alpha<32)continue;
+    const pixel=index/4,x=pixel%canvas.width,y=Math.floor(pixel/canvas.width);
+    left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);
+  }
+  if(right<left||bottom<top)return null;
   let background=null;
-  if(transparent/total<.02){
-    const border=[],step=Math.max(1,Math.ceil(Math.max(canvas.width,canvas.height)/128));
-    const sample=(x,y)=>{const i=(y*canvas.width+x)*4;border.push([pixels[i],pixels[i+1],pixels[i+2]]);};
-    for(let x=0;x<canvas.width;x+=step){sample(x,0);sample(x,canvas.height-1);}
-    for(let y=0;y<canvas.height;y+=step){sample(0,y);sample(canvas.width-1,y);}
+  // A transparent outer margin does not make an opaque inner panel safe to
+  // whiten. Inspect the occupied rectangle too, including enclosed counters.
+  const occupiedArea=(right-left+1)*(bottom-top+1);
+  if(transparent/total<.02||opaque/occupiedArea>.95){
+    const border=[],step=Math.max(1,Math.ceil(Math.max(right-left+1,bottom-top+1)/128));
+    const sample=(x,y)=>{const i=(y*canvas.width+x)*4;if(pixels[i+3]>=224)border.push([pixels[i],pixels[i+1],pixels[i+2]]);};
+    for(let x=left;x<=right;x+=step){sample(x,top);sample(x,bottom);}
+    for(let y=top;y<=bottom;y+=step){sample(left,y);sample(right,y);}
+    if(border.length<4)return null;
     const median=channel=>border.map(color=>color[channel]).sort((a,b)=>a-b)[Math.floor(border.length/2)];
     background=[median(0),median(1),median(2)];
     if(border.filter(color=>Math.max(...color.map((value,index)=>Math.abs(value-background[index])))<=32).length/border.length<.9)return null;

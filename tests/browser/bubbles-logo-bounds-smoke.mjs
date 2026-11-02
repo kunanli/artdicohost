@@ -20,6 +20,7 @@ const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const testScriptSha256 = sha(await readFile(fileURLToPath(import.meta.url)));
 const { publicContentEnvelope } = await import(pathToFileURL(resolve(source, 'src/lib/public-content-refresh.mjs')));
 const { toPublicContent } = await import(pathToFileURL(resolve(source, 'shared/content-schema.mjs')));
+const { publicGuestCards } = await import(pathToFileURL(resolve(source,'shared/guest-display.mjs')));
 const { organizationReferenceKey } = await import(pathToFileURL(resolve(source, 'shared/organization-display.mjs')));
 const referenceKeys = ['gamezone','igda','szdx','bu','pengyou','g4c','teesside'];
 const artworkConfig = await readFile(resolve(source,'src/config/organization-artwork.mjs'),'utf8');
@@ -33,7 +34,8 @@ assert.equal(snapshotBytes.length, manifest.snapshot.bytes); assert.equal(sha(sn
 const snapshot = JSON.parse(snapshotBytes), checked = publicContentEnvelope(snapshot);
 assert.ok(checked, 'captured publication must pass the actual public envelope boundary, with no toy fallback');
 assert.equal(snapshot.revision, manifest.snapshot.revision); assert.equal(snapshot.publishedAt, manifest.snapshot.publishedAt);
-assert.equal(snapshot.content.guests.length, 9, 'this capture must reproduce the reported nine public profiles');
+const rawGuestCount=snapshot.content.guests.length;
+assert.equal(rawGuestCount,manifest.counts.guests,'raw published profile count matches this exact manifest');
 const organizationCount = snapshot.content.organizations.length;
 assert.equal(organizationCount,manifest.counts.organizations,'actual organization count must match the same capture manifest');
 assert.ok(organizationCount>=7&&organizationCount<=200,'the original seven organizations and any newly published organizations are all retained');
@@ -52,10 +54,15 @@ for (const item of manifest.media) {
   assert.equal(bytes.length, item.bytes); assert.equal(sha(bytes), item.sha256); assert.equal(item.sha256, item.file.slice(6, 70));
   actualMedia.set(item.path, { bytes, contentType: item.contentType });
 }
-const maria = snapshot.content.guests.find(item => /maria/iu.test(item.name));
-const pingYao = snapshot.content.guests.find(item => /ping\s*yao/iu.test(item.name));
-assert.ok(maria && pingYao, 'actual public Maria and PingYao profiles must be present, without inventing short stand-ins');
-const guests = snapshot.content.guests, ids = guests.map(item => item.id);
+const rawGuests=snapshot.content.guests;
+const attendancePresent=Object.hasOwn(snapshot.content,'guestAttendance');
+const guests=publicGuestCards(rawGuests,attendancePresent?snapshot.content.guestAttendance:undefined),ids=guests.map(item=>item.id);
+assert.ok(guests.length>0,'actual guest interaction scenarios need at least one genuinely displayed profile');
+const visibleGuestCount=guests.length,motionGuest=guests[0],syntheticBase=rawGuests.find(item=>item.id===motionGuest.id);
+const spellingBoundaryProfiles=rawGuests.filter(item=>/maria|ping\s*yao/iu.test(item.name));
+const actualSpellingBoundaryIds=spellingBoundaryProfiles.filter(item=>ids.includes(item.id)).map(item=>item.id);
+const attendanceProof={present:attendancePresent,confirmedIds:attendancePresent?snapshot.content.guestAttendance.confirmedGuestIds.length:null};
+
 const mime = file => ({ html: 'text/html; charset=utf-8', js: 'text/javascript', mjs: 'text/javascript', css: 'text/css', png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp', svg: 'image/svg+xml', woff2: 'font/woff2', ico: 'image/x-icon' })[extname(file).slice(1)] || 'application/octet-stream';
 const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
 const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
@@ -82,6 +89,7 @@ const synthetic = await syntheticImages(), media = new Map([...actualMedia, ...s
 function changedEnvelope(change, revision = snapshot.revision + 1) {
   const content = structuredClone(snapshot.content); change(content);
   const envelope = { revision, publishedAt: snapshot.publishedAt, content: toPublicContent(content) };
+  assert.deepEqual(envelope.content.guestAttendance,snapshot.content.guestAttendance,'synthetic text/image variants never replace or remove the original attendance proof');
   assert.ok(publicContentEnvelope(envelope), 'explicit synthetic variant remains a valid public envelope');
   return Buffer.from(JSON.stringify(envelope));
 }
@@ -173,9 +181,10 @@ async function loadLogos(f) {
   for(const image of await f.page.locator('[data-organization-id] img').all()){await image.scrollIntoViewIfNeeded();await image.evaluate(node=>new Promise(resolve=>{const done=()=>{if(node.closest('.ah-organization-image')?.hidden||node.complete&&node.naturalWidth>0&&node.closest('.ah-organization-image')?.dataset.logoPresentation!=='pending')resolve();else setTimeout(done,10);};done();}));if(await image.isVisible())await image.evaluate(node=>node.decode());}
   await f.page.evaluate(() => document.fonts.ready);
 }
-async function guestText(f, { profiles = guests, allowLongNameAndTitle = false } = {}) {
+async function guestText(f, { profiles = guests, allowLongNameAndTitle = false, requireUnclippedNameAndTitle = false } = {}) {
   stage = 'actual-public-caption';
   assert.equal(await f.page.locator('[data-guest-id]').count(), guests.length);
+  assert.deepEqual(await f.page.locator('[data-guest-id]').evaluateAll(nodes=>nodes.map(node=>node.dataset.guestId)),ids,'only the profiles admitted by the original published attendance proof are rendered');
   const result = [];
   for (const guest of profiles) {
     const card = f.page.locator('#guest-' + guest.id), toggle = card.locator('[data-guest-toggle]');
@@ -209,7 +218,7 @@ async function guestText(f, { profiles = guests, allowLongNameAndTitle = false }
       }
     }
     nonoverlap(measured.text.map(text => text.box), 'name, company and title rectangles cannot overlap');
-    if (!allowLongNameAndTitle && [maria.id, pingYao.id].includes(guest.id)) for (const text of measured.text.filter(item => item.className !== 'ah-guest-affiliation')) assert.ok(text.scrollHeight <= text.clientHeight + 1, 'reported actual Maria/PingYao name and title must fit, not be clipped or scroll');
+    if (!allowLongNameAndTitle && (requireUnclippedNameAndTitle||actualSpellingBoundaryIds.includes(guest.id))) for (const text of measured.text.filter(item => item.className !== 'ah-guest-affiliation')) assert.ok(text.scrollHeight <= text.clientHeight + 1, 'selected actual or explicitly synthetic reference spelling must fit without an inner scroll');
     assert.ok(measured.text[0].font >= (f.width >= 1800 ? 30 : f.width >= 1000 ? 24 : 18), 'names are enlarged at usable responsive sizes');
     if (expected) assert.ok(measured.text.find(text => text.className === 'ah-guest-subtitle').font >= (f.width >= 1800 ? 19 : f.width >= 1000 ? 16 : 14));
     result.push({ id: guest.id, affiliationSource: affiliation ? 'company' : 'none', subtitleSource: kind, metrics: measured });
@@ -246,7 +255,7 @@ async function detail(f, guest, { longText = false } = {}) {
     assert.equal(await body.evaluate(node => node.scrollTop), 0, 'the introduction never consumes an inner scroll');
   }
   await f.page.keyboard.press('Escape'); assert.equal(await card.locator('details').evaluate(node => node.open), false);
-  if (f.width < 600 && !longText && guest.id === maria.id) { await toggle.tap(); assert.equal(await card.locator('details').evaluate(node => node.open), true); await toggle.tap(); assert.equal(await card.locator('details').evaluate(node => node.open), false); }
+  if (f.width < 600 && !longText && guest.id === motionGuest.id) { await toggle.tap(); assert.equal(await card.locator('details').evaluate(node => node.open), true); await toggle.tap(); assert.equal(await card.locator('details').evaluate(node => node.open), false); }
   return { id: guest.id, ...bounds };
 }
 async function animationState(page, id) {
@@ -256,22 +265,22 @@ async function animationState(page, id) {
 }
 async function motion(f) {
   stage = 'actual-waapi-motion';
-  const { page } = f, target = page.locator('#guest-' + maria.id), toggle = target.locator('[data-guest-toggle]');
+  const { page } = f, target = page.locator('#guest-' + motionGuest.id), toggle = target.locator('[data-guest-toggle]');
   await page.mouse.move(0, 0); await page.locator('#guests-heading').focus(); await target.evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
-  await page.waitForFunction(id => document.getElementById('guest-' + id)?.getAnimations().some(animation => animation.playState === 'running'), maria.id);
-  const moving = await animationState(page, maria.id); await page.waitForTimeout(650); const later = await animationState(page, maria.id);
-  await page.waitForTimeout(650); const third = await animationState(page, maria.id);
+  await page.waitForFunction(id => document.getElementById('guest-' + id)?.getAnimations().some(animation => animation.playState === 'running'), motionGuest.id);
+  const moving = await animationState(page, motionGuest.id); await page.waitForTimeout(650); const later = await animationState(page, motionGuest.id);
+  await page.waitForTimeout(650); const third = await animationState(page, motionGuest.id);
   lastNumericMetrics = { moving, later, third };
   assert.equal(moving.animations.length, 1); assert.equal(later.animations.length, 1); assert.ok(later.animations[0].time - moving.animations[0].time > 300);
   assert.ok(later.animations[0].duration >= 5000 && later.animations[0].duration <= 10000); assert.equal(later.animations[0].iterations, 'infinite');
   const positions = [moving.rect.y, later.rect.y, third.rect.y], travel = Math.max(...positions) - Math.min(...positions);
   assert.ok(travel > .05 && travel <= 12, 'real bubble positions change gently, not just an unused animation timer');
   async function paused(reason) {
-    await page.waitForFunction(id => document.getElementById('guest-' + id)?.getAnimations().every(animation => animation.playState !== 'running'), maria.id);
-    const a = await animationState(page, maria.id); await page.waitForTimeout(220); const b = await animationState(page, maria.id);
+    await page.waitForFunction(id => document.getElementById('guest-' + id)?.getAnimations().every(animation => animation.playState !== 'running'), motionGuest.id);
+    const a = await animationState(page, motionGuest.id); await page.waitForTimeout(220); const b = await animationState(page, motionGuest.id);
     assert.equal(a.animations.length, 1); assert.equal(b.animations[0].state, 'paused'); assert.ok(Math.abs(b.animations[0].time - a.animations[0].time) < 2, reason + ' freezes real WAAPI time');
   }
-  async function resumed() { await page.waitForFunction(id => document.getElementById('guest-' + id)?.getAnimations().some(animation => animation.playState === 'running'), maria.id); }
+  async function resumed() { await page.waitForFunction(id => document.getElementById('guest-' + id)?.getAnimations().some(animation => animation.playState === 'running'), motionGuest.id); }
   const aim = await toggle.boundingBox(); await page.mouse.move(aim.x + aim.width / 2, aim.y + aim.height / 2); await paused('hover/open');
   const bubble = await toggle.boundingBox(), body = await target.locator('.ah-guest-detail-body').boundingBox();
   await page.mouse.move(bubble.x + bubble.width / 2, bubble.y + bubble.height - 1); await page.mouse.move(bubble.x + bubble.width / 2, (bubble.y + bubble.height + body.y) / 2);
@@ -288,11 +297,11 @@ async function motion(f) {
   await paused('synthetic hidden policy signal');
   await page.evaluate(() => { delete document.hidden; delete document.visibilityState; document.dispatchEvent(new Event('visibilitychange')); }); await resumed();
   await page.emulateMedia({ reducedMotion: 'reduce' }); await page.waitForTimeout(100);
-  assert.equal((await animationState(page, maria.id)).animations.length, 0, 'real prefers-reduced-motion cancels the animation');
+  assert.equal((await animationState(page, motionGuest.id)).animations.length, 0, 'real prefers-reduced-motion cancels the animation');
   const still = await target.boundingBox(); await page.waitForTimeout(300); const stillLater = await target.boundingBox(); assert.ok(Math.abs(still.y - stillLater.y) < .5);
   await page.emulateMedia({ reducedMotion: 'no-preference' }); await resumed();
   await page.evaluate(() => { for (let i = 0; i < 3; i++) dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })); });
-  await page.waitForTimeout(100); assert.equal((await animationState(page, maria.id)).animations.length, 1, 'returning to the page never stacks float animations');
+  await page.waitForTimeout(100); assert.equal((await animationState(page, motionGuest.id)).animations.length, 1, 'returning to the page never stacks float animations');
   return { realWAAPI: true, runningTimeAdvanced: true, hoverFocusOpenAndOffscreenPaused: true, reducedMotionCancelledAndReturnResumed: true,
     hiddenPolicy: { explicitlySyntheticSignal: true, realWAAPIPaused: true, realOSOrTabOcclusionClaimed: false } };
 }
@@ -348,21 +357,29 @@ try {
   currentWidth = 320; currentMode = 'long-detail'; stage = 'navigate';
   try {
     await f.page.goto(SITE + '/', { waitUntil: 'networkidle' });
-    const long = { ...maria, name: 'SYNTHETICLONGNAME'.repeat(10).slice(0, 120), company: '合成完整公开单位'.repeat(24).slice(0, 160), title: '合成完整公开职称'.repeat(30).slice(0, 200), bio: '合成长简介保留全文，不生成内部滚动区域。\n'.repeat(150).slice(0, 3900) };
-    await f.refresh(content => { const index = content.guests.findIndex(item => item.id === maria.id); content.guests[index] = long; });
+    // Public spellings excluded by the real attendance gate are exercised only
+    // as explicit synthetic text on an already-displayed fixture ID. The actual
+    // default snapshot and its proof remain unchanged and are never relabelled.
+    for(const sample of spellingBoundaryProfiles){
+      const boundary={...syntheticBase,name:sample.name,company:syntheticBase.status==='confirmed'&&!sample.company?.trim()?syntheticBase.company:sample.company,title:sample.title??'',ggjRole:sample.ggjRole??''};
+      await f.refresh(content=>{const index=content.guests.findIndex(item=>item.id===motionGuest.id);content.guests[index]=boundary;});
+      await guestText(f,{profiles:[boundary],requireUnclippedNameAndTitle:true});await detail(f,boundary);
+    }
+    const long = { ...syntheticBase, name: 'SYNTHETICLONGNAME'.repeat(10).slice(0, 120), company: '合成完整公开单位'.repeat(24).slice(0, 160), title: '合成完整公开职称'.repeat(30).slice(0, 200), bio: '合成长简介保留全文，不生成内部滚动区域。\n'.repeat(150).slice(0, 3900) };
+    await f.refresh(content => { const index = content.guests.findIndex(item => item.id === motionGuest.id); content.guests[index] = long; });
     const text = await guestText(f, { profiles: [long], allowLongNameAndTitle: true });
     const result = await detail(f, long, { longText: true }); await noOverflow(f);
-    const roleOnly = { ...maria, company: '合成独立单位', title: '', ggjRole: '合成角色' };
-    await f.refresh(content => { const index = content.guests.findIndex(item => item.id === maria.id); content.guests[index] = roleOnly; });
+    const roleOnly = { ...syntheticBase, company: '合成独立单位', title: '', ggjRole: '合成角色' };
+    await f.refresh(content => { const index = content.guests.findIndex(item => item.id === motionGuest.id); content.guests[index] = roleOnly; });
     await guestText(f, { profiles: [roleOnly] }); await detail(f, roleOnly);
-    const companyOnly = { ...maria, company: '合成只有单位', title: '', ggjRole: '' };
-    await f.refresh(content => { const index = content.guests.findIndex(item => item.id === maria.id); content.guests[index] = companyOnly; });
+    const companyOnly = { ...syntheticBase, company: '合成只有单位', title: '', ggjRole: '' };
+    await f.refresh(content => { const index = content.guests.findIndex(item => item.id === motionGuest.id); content.guests[index] = companyOnly; });
     await guestText(f, { profiles: [companyOnly] }); await detail(f, companyOnly);
-    const empty = { ...maria, status: 'pending', company: '', title: '', ggjRole: '' };
-    await f.refresh(content => { const index = content.guests.findIndex(item => item.id === maria.id); content.guests[index] = empty; });
+    const empty={...syntheticBase,company:syntheticBase.status==='confirmed'?syntheticBase.company:'',title:'',ggjRole:''};
+    await f.refresh(content => { const index = content.guests.findIndex(item => item.id === motionGuest.id); content.guests[index] = empty; });
     await guestText(f, { profiles: [empty] }); await detail(f, empty); await noOverflow(f);
-    assert.equal((await animationState(f.page, maria.id)).animations.length, 0, 'initial real reduced-motion preference creates no float');
-    reports.push({ name: 'long-detail-and-initial-reduced-motion', width: 320, explicitlySyntheticTextVariant: true, fullTextRendered: true, separateCompanyAndTitle: true, roleFallbackAndEmptyFields: true, text, result });
+    assert.equal((await animationState(f.page, motionGuest.id)).animations.length, 0, 'initial real reduced-motion preference creates no float');
+    reports.push({ name: 'long-detail-and-initial-reduced-motion', width: 320, explicitlySyntheticTextVariant:true,syntheticReferenceSpellingBoundaries:spellingBoundaryProfiles.length,actualAttendanceProofUnchanged:true,profileStatusUnchanged:true,emptyCompanyFieldTested:empty.company==='',emptyPositionAndRoleFieldsTested:true,fullTextRendered: true, separateCompanyAndTitle: true, roleFallbackAndEmptyFields: true, text, result });
   } finally { await f.context.close(); }
   assert.equal(rawImageRequests.size, actualMedia.size, 'every actual uploaded organization image was rendered in the raw compatibility scenarios'); assert.deepEqual(pageErrors, []);
   assert.equal(reports.length, 13, 'all actual, raw-upload, adversarial and long-text scenarios must complete');
@@ -379,14 +396,14 @@ finally {
   const report = { ok: !failure, passedCases: reports.length, expectedCases: 13, syntheticBusinessWrites: 0, realNetworkRequests: 0, mailRequests: 0,
     source, dist, testScriptSha256, gitHeadAtRun: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), htmlMtime: info.mtime.toISOString(), publicHtmlSha256: sha(html),
     capture: { directory: capture, capturedAt: manifest.capturedAt, anonymous: true, source: manifest.source, sourceCommit: manifest.sourceCommit, snapshotSha256: manifest.snapshot.sha256,
-      revision: snapshot.revision, guestCount: guests.length, organizationCount: snapshot.content.organizations.length, mediaHashes: manifest.media.map(item => item.sha256) },
+      revision:snapshot.revision,guestCount:rawGuestCount,rawGuestCount,visibleGuestCount,attendanceProof,organizationCount: snapshot.content.organizations.length, mediaHashes: manifest.media.map(item => item.sha256) },
     servedAssets: Object.fromEntries([...servedAssets].sort()), actualRawImagesRendered: rawImageRequests.size, defaultReferenceLogosRendered, actualFieldCoverage,
-    uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequests.size, actualMediaScope: 'Captured public profile fields and every organization upload in this manifest only; guest photos/work media outside the capture receive intercepted 404s.',
+    uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequests.size, actualMediaScope: 'Captured raw profiles are counted separately; only profiles displayed by the original attendance proof receive actual DOM checks. Every organization upload is captured; guest photos/work media outside that scope receive intercepted 404s.',
     syntheticImageVariants: synthetic.map(({ kind, width, height, id }) => ({ kind, width, height, id })), reports, pageErrors, ...(failure ? { failure } : {}) };
   await writeFile(resolve(evidence, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   const summary = { ok: report.ok, cases: report.passedCases, expectedCases: 13, actualFixture: true, publicHtmlSha256: report.publicHtmlSha256, snapshotSha256: report.capture.snapshotSha256,
     sourceCommit: report.gitHeadAtRun, captureSourceCommit: manifest.sourceCommit, actualRawLogosTested: report.actualRawImagesRendered, defaultReferenceLogosRendered,
-    guestCount: guests.length, organizationCount: snapshot.content.organizations.length, pageErrorCount: pageErrors.length,
+    guestCount:rawGuestCount,rawGuestCount,visibleGuestCount,actualGuestCardsChecked:actualReports.reduce((total,item)=>total+item.text.length,0),actualReferenceSpellingsChecked:actualSpellingBoundaryIds.length,attendanceProof,organizationCount: snapshot.content.organizations.length, pageErrorCount: pageErrors.length,
     actualFieldCoverage,
     uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequests.size,
     ...(failure ? { failure: { code: 'PUBLIC_VISUAL_ASSERTION_FAILED', stage, width: currentWidth, mode: currentMode,

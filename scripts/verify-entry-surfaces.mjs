@@ -78,9 +78,11 @@ export async function verifyEntrySurfaces({ directory, commit = process.env.GITH
     if (!exactKeys(invalid, ['error']) || !exactKeys(invalid.error, ['code', 'message'])
       || invalid.error.code !== 'ENTRY_NOT_FOUND' || typeof invalid.error.message !== 'string') throw failed();
 
+    // The FC gateway adds canonical ACAC=true. This probe still omits all
+    // credentials; the public capability route never authorizes via cookies.
     await request({ url: ENTRY_API_PREFIX + 'A'.repeat(22), method: 'OPTIONS', status: 204, maxBytes: 0,
       headers: { origin: SITE, 'access-control-request-method': 'GET' }, validate(headers) {
-        if (headers.get('access-control-allow-origin') !== SITE || headers.has('access-control-allow-credentials')
+        if (headers.get('access-control-allow-origin') !== SITE || ![null, 'false', 'true'].includes(headers.get('access-control-allow-credentials'))
           || directives(headers.get('access-control-allow-methods')) !== 'get,head,options'
           || directives(headers.get('cache-control')) !== 'no-store,private') throw failed();
       } });

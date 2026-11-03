@@ -1,5 +1,5 @@
-import { publicGuestCards, publicGuestAffiliation, publicGuestSubtitle, publicGuestSessions } from '../../shared/guest-display.mjs';
-import { GUEST_PUBLIC_ROLE_LABELS, orderedSessions } from '../../shared/content-schema.mjs';
+import { publicGuestCards, publicGuestAffiliation, publicGuestSubtitle } from '../../shared/guest-display.mjs';
+import { orderedSessions } from '../../shared/content-schema.mjs';
 import { publicShowcaseCards, SHOWCASE_KIND_LABELS } from '../../shared/showcase-display.mjs';
 import { resolvePublicContentSource } from '../../shared/public-content-source.mjs';
 import { publicOrganizationCards, orderOrganizationCards, organizationReferenceKey, organizationLogoVariant } from '../../shared/organization-display.mjs';
@@ -128,39 +128,44 @@ function renderPublishedContent(content,url) {
       const card = element('li', undefined, 'ah-guest-card');
       card.id='guest-'+guest.id;card.dataset.guestId=guest.id;card.dataset.guestAttendance=guest.attendance;
       card.dataset.guestFloat='';
-      const details=element('details',undefined,'ah-guest-details');
-      const trigger=element('summary',undefined,'ah-guest-bubble');trigger.dataset.guestToggle='';trigger.dataset.focusKey='guest-toggle';
-      const portrait = element('span', undefined, 'ah-guest-portrait');
-      const initial = element('span', Array.from(guest.name)[0], 'ah-guest-initial');initial.setAttribute('aria-hidden','true');portrait.append(initial);
+      const trigger=element('button',undefined,'ah-guest-bubble');
+      trigger.type='button';trigger.dataset.guestToggle='';trigger.dataset.focusKey='guest-toggle';
+      trigger.setAttribute('aria-pressed','false');
+      const copy=element('span',undefined,'ah-guest-copy');
+      const subtitle=publicGuestSubtitle(guest),affiliation=publicGuestAffiliation(guest);
+      copy.append(element('span',guest.name,'ah-guest-name'));
+      if(affiliation){const company=element('span',affiliation,'ah-guest-affiliation');company.dataset.affiliationSource='company';copy.append(company);}
+      if(subtitle.text){const caption=element('span',subtitle.text,'ah-guest-subtitle');caption.dataset.subtitleSource=subtitle.kind;copy.append(caption);}
+      trigger.dataset.guestIdentity=[guest.name,affiliation,subtitle.text].filter(Boolean).join('，');
+      trigger.setAttribute('aria-label',trigger.dataset.guestIdentity+(guest.portraitUrl?'，查看照片':''));
+      trigger.append(copy);
       if(guest.portraitUrl){
-        const photo=element('img');photo.width=116;photo.height=116;photo.alt='';photo.loading='lazy';photo.decoding='async';
-        photo.addEventListener('error',()=>{photo.hidden=true;});
-        if(url.origin!==location.origin)photo.crossOrigin='anonymous';photo.referrerPolicy='no-referrer';photo.src=new URL(guest.portraitUrl,url.origin).href;portrait.append(photo);
+        const portrait=element('span',undefined,'ah-guest-portrait');portrait.setAttribute('aria-hidden','true');
+        const photo=element('img');photo.width=260;photo.height=260;photo.alt='';photo.loading='lazy';photo.decoding='async';
+        trigger.dataset.photoState='loading';
+        const unavailable=()=>{
+          delete trigger.dataset.photoReady;trigger.dataset.photoState='unavailable';
+          trigger.setAttribute('aria-pressed','false');trigger.setAttribute('aria-disabled','true');
+          trigger.setAttribute('aria-label',trigger.dataset.guestIdentity);photo.hidden=true;
+          trigger.dispatchEvent(new CustomEvent('artdico:guest-photo-change',{bubbles:true}));
+        };
+        photo.addEventListener('error',unavailable);
+        photo.addEventListener('load',async()=>{
+          try{
+            if(typeof photo.decode==='function')await photo.decode();
+            if(!photo.naturalWidth||!photo.naturalHeight)throw new Error('EMPTY_PORTRAIT');
+            if(!trigger.isConnected)return;
+            trigger.dataset.photoReady='true';trigger.dataset.photoState='ready';
+            trigger.dispatchEvent(new CustomEvent('artdico:guest-photo-change',{bubbles:true}));
+          }catch{unavailable();}
+        });
+        if(url.origin!==location.origin)photo.crossOrigin='anonymous';
+        photo.referrerPolicy='no-referrer';photo.src=new URL(guest.portraitUrl,url.origin).href;
+        portrait.append(photo);trigger.append(portrait);
+      }else{
+        trigger.dataset.photoState='unavailable';trigger.setAttribute('aria-disabled','true');
       }
-      const name=element('span',guest.name,'ah-guest-name');
-      trigger.append(name,element('span','查看嘉宾','ah-guest-prompt ah-guest-prompt-closed'),element('span','收起简介','ah-guest-prompt ah-guest-prompt-open'));
-      const subtitle=publicGuestSubtitle(guest);
-      const affiliation=publicGuestAffiliation(guest);
-      if(affiliation){const company=element('span',affiliation,'ah-guest-affiliation');company.dataset.affiliationSource='company';trigger.append(company);}
-      if(subtitle.text){const caption=element('span',subtitle.text,'ah-guest-subtitle');caption.dataset.subtitleSource=subtitle.kind;trigger.append(caption);}
-      trigger.setAttribute('aria-label',[guest.name,affiliation,subtitle.text,'嘉宾介绍'].filter(Boolean).join('，'));
-      const body=element('div',undefined,'ah-guest-detail-body');
-      body.setAttribute('role','region');body.setAttribute('aria-label',guest.name+'简介');
-      body.append(portrait);
-      body.append(element('h3',guest.name,'ah-guest-detail-name'));
-      body.append(element('p',guest.publicRoles?.length?guest.publicRoles.map(role=>GUEST_PUBLIC_ROLE_LABELS[role]).join(' · '):'嘉宾','ah-guest-duty'));
-      if(guest.company)body.append(element('p',guest.company,'ah-guest-company'));
-      if(guest.title)body.append(element('p',guest.title,'ah-guest-title'));
-      if(guest.ggjRole)body.append(element('p',guest.ggjRole,'ah-guest-role'));
-      if(guest.bio)body.append(element('p',guest.bio,'ah-guest-bio'));
-      const sessions=publicGuestSessions(content.sessions,guest.id);
-      if(sessions.length){
-        const list=element('ul');
-        for(const session of sessions){const item=element('li'),link=element('a',session.start+'–'+session.end+' · '+session.zone+' 区 · '+session.title);link.href='#program-'+session.id;item.append(reveal(link));list.append(item);}
-        body.append(list);
-      }
-      if(guest.website){const link=element('a','个人 / 机构网站');link.href=guest.website;link.target='_blank';link.rel='noopener noreferrer';body.append(link);}
-      details.append(trigger,body);card.append(details);
+      card.append(trigger);
       guestGrid.append(card);
     }
     const placeholders=cards.length?(4-cards.length%4)%4:0;

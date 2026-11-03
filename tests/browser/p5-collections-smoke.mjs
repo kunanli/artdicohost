@@ -20,7 +20,7 @@ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFElEQVR4n
 const coverId=createHash('sha256').update(png).digest('hex')+'.png',missingId='b'.repeat(64)+'.png';
 const IDs={guest:'synthetic-guest-alpha',secondGuest:'synthetic-guest-beta',unproved:'synthetic-guest-unproved',student:'synthetic-work-student',indie:'synthetic-work-indie',legacy:'synthetic-work-team',organization:'synthetic-org',booth:'synthetic-booth',morning:'synthetic-program-a',afternoon:'synthetic-program-b',share:'synthetic-program-c'};
 const longName='合成跨领域创作者与青年游戏社区分享嘉宾'.repeat(3);
-const guest=(id,extra={})=>({id,name:'合成嘉宾 '+id,company:'合成创意机构',ggjRole:'',portraitId:'',status:'confirmed',publicConsent:false,contactId:PRIVATE+'-'+id,internalNotes:PRIVATE,title:'合成创作者',bio:'合成嘉宾介绍。\n作品与创作经验将在现场交流。',website:'',publicRoles:['guest'],...extra});
+const guest=(id,extra={})=>({id,name:'合成嘉宾 '+id,company:'合成创意机构',ggjRole:'合成GGJ站点组织者',portraitId:'',status:'confirmed',publicConsent:false,contactId:PRIVATE+'-'+id,internalNotes:PRIVATE,title:'合成创作者',bio:'合成嘉宾介绍。\n作品与创作经验将在现场交流。',website:'',publicRoles:['guest'],...extra});
 const session=(id,zone,start,end,extra={})=>({id,zone,start,end,title:'合成 '+zone+' 区交流',format:'talk',guestId:'',speakerName:'',speakerStatus:'pending',status:'scheduled',internalNotes:PRIVATE,...extra});
 const work=(id,kind,extra={})=>({id,kind,title:'合成'+(kind==='student'?'学生美术与三维创作':kind==='indie'?'独立游戏':'历史团队作品'),teamName:'合成创作团队与作者'.repeat(4),summary:'合成创作说明；展示形式以现场安排为准。',coverId:'',status:'confirmed',responseStatus:'attending',publicConsent:false,participationForms:['booth'],boothId:IDs.booth,sessionId:'',organizationId:IDs.organization,school:PRIVATE,email:'private@example.invalid',wechat:PRIVATE,contactName:PRIVATE,memberCount:3,materialLinks:'https://private.invalid/'+PRIVATE,internalNotes:PRIVATE,...extra});
 function rawFixture(){
@@ -107,13 +107,22 @@ async function guestDisclosureAccessibility(page,id){
   const {root}=await session.send('DOM.getDocument');
   const {nodeId}=await session.send('DOM.querySelector',{nodeId:root.nodeId,selector:'#guest-'+id+' [data-guest-toggle]'});
   const {nodes}=await session.send('Accessibility.getPartialAXTree',{nodeId,fetchRelatives:false});
-  assert.equal(nodes.length,1);assert.equal(nodes[0].role?.value,'DisclosureTriangle','the native summary retains its disclosure role');
-  return nodes[0].properties.find(property=>property.name==='expanded')?.value.value;
+  assert.equal(nodes.length,1);assert.equal(nodes[0].role?.value,'button','the native circle remains a keyboard-operable button');
+  const pressed=nodes[0].properties.find(property=>property.name==='pressed')?.value.value;
+  assert.ok([true,false,'true','false'].includes(pressed),'the photo toggle exposes a real pressed state');
+  return pressed===true||pressed==='true';
  }finally{await session.detach();}
 }
 async function noOverflow(f){assert.equal(await f.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,'no horizontal overflow at '+f.width+'px');}
 // A floating target intentionally never satisfies Playwright's stable-element
 // actionability check. Aim a real pointer at its generously sized current center.
+// Native touch, like the pointer helper, aims at the current moving circle.
+// Locator.tap() waits for stable geometry that a deliberate float never has.
+async function guestTouch(locator){
+ await locator.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
+ const box=await locator.boundingBox();assert.ok(box);
+ await locator.page().touchscreen.tap(box.x+box.width/2,box.y+box.height/2);
+}
 async function guestPointer(locator,click=false){
  await locator.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
  const box=await locator.boundingBox();assert.ok(box);
@@ -215,46 +224,39 @@ try{
    assert.equal(await page.locator('#organization-'+IDs.organization+' a.ah-organization-card').evaluate(node=>document.activeElement===node),true,'organization reorder retains the same public link focus');
    orderEvidence.organizationsReordered=await publicArrayOrder(f);orderEvidence.organizationFocusRetained=true;
 
-   const alpha=page.locator('#guest-'+IDs.guest+' details'),alphaToggle=alpha.locator('[data-guest-toggle]'),beta=page.locator('#guest-'+IDs.secondGuest+' details');
-   assert.equal(await alphaToggle.locator('.ah-guest-name').textContent(),longName,'the reference bubble contains the saved guest name');
-   assert.equal(await alphaToggle.locator('.ah-guest-affiliation').textContent(),'合成创意机构','the company and title are visible together, rather than choosing just one');
-   assert.equal(await alphaToggle.locator('.ah-guest-affiliation').getAttribute('data-affiliation-source'),'company');
-   assert.equal(await alphaToggle.locator('.ah-guest-subtitle').textContent(),'合成创作者');
-   assert.equal(await alphaToggle.locator('.ah-guest-subtitle').getAttribute('data-subtitle-source'),'title');
-   assert.equal(await alphaToggle.getAttribute('aria-label'),[longName,'合成创意机构','合成创作者','嘉宾介绍'].join('，'));
-   assert.equal(await alphaToggle.locator('img').count(),0,'portrait photos belong to the expanded details rather than the reference name bubble');
-   assert.equal(await alpha.locator('.ah-guest-detail-body .ah-guest-portrait img').count(),1,'the existing public portrait remains available in expanded details');
-   assert.equal(await alphaToggle.locator('.ah-guest-prompt-closed').isVisible(),true);
-   assert.equal(await alphaToggle.locator('.ah-guest-prompt-open').isVisible(),false);
-   const closedGuestName=await alphaToggle.ariaSnapshot();assert.match(closedGuestName,/合成跨领域创作者/u);assert.match(closedGuestName,/合成创意机构/u);assert.match(closedGuestName,/合成创作者/u);
-   assert.equal(await guestDisclosureAccessibility(page,IDs.guest),false);
+   const alpha=page.locator('#guest-'+IDs.guest),alphaToggle=alpha.locator('[data-guest-toggle]'),beta=page.locator('#guest-'+IDs.secondGuest),betaToggle=beta.locator('[data-guest-toggle]');
    await alphaToggle.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
+   await alphaToggle.locator('img').evaluate(node=>node.decode());
+   await page.waitForFunction(id=>document.querySelector('#guest-'+id+' [data-guest-toggle]')?.dataset.photoReady==='true',IDs.guest);
+   assert.equal(await alphaToggle.evaluate(node=>node.tagName),'BUTTON');
+   assert.equal(await alphaToggle.locator('.ah-guest-name').textContent(),longName,'the original circle contains the saved guest name');
+   assert.equal(await alphaToggle.locator('.ah-guest-affiliation').textContent(),'合成创意机构','the saved organization remains visible');
+   assert.equal(await alphaToggle.locator('.ah-guest-affiliation').getAttribute('data-affiliation-source'),'company');
+   assert.equal(await alphaToggle.locator('.ah-guest-subtitle').textContent(),'合成GGJ站点组织者');
+   assert.equal(await alphaToggle.locator('.ah-guest-subtitle').getAttribute('data-subtitle-source'),'role');
+   assert.equal(await alphaToggle.getAttribute('aria-label'),[longName,'合成创意机构','合成GGJ站点组织者','查看照片'].join('，'));
+   assert.equal(await alphaToggle.locator('.ah-guest-portrait img').count(),1,'the saved portrait belongs to the same original circle');
+   assert.equal(await page.locator('[data-public-guests] details,.ah-guest-detail-body').count(),0,'there is no rectangular disclosure or duplicate profile panel');
+   assert.equal(await alpha.locator('.ah-guest-title,.ah-guest-duty,.ah-guest-bio,a').count(),0,'company job titles, duties, biographies and duplicate links are not rendered');
+   const closedGuestName=await alphaToggle.ariaSnapshot();assert.match(closedGuestName,/合成跨领域创作者/u);assert.match(closedGuestName,/合成创意机构/u);assert.match(closedGuestName,/合成GGJ站点组织者/u);
+   assert.equal(await guestDisclosureAccessibility(page,IDs.guest),false);
+   const originalCircle=await alphaToggle.boundingBox(),originalFollowingTop=await page.locator('#booths').evaluate(node=>node.getBoundingClientRect().top+scrollY);
    if(width===1440){
-    await guestPointer(alphaToggle);await page.waitForFunction(id=>document.querySelector('#guest-'+id+' details')?.open,IDs.guest);
-    await alpha.locator('.ah-guest-detail-body').hover();await page.waitForTimeout(200);assert.equal(await alpha.evaluate(node=>node.open),true,'moving from bubble into its own detail body keeps the card open');
-    await page.mouse.move(0,0);await page.waitForTimeout(60);assert.equal(await alpha.evaluate(node=>node.open),true,'desktop close has a grace interval');
-    await guestPointer(alphaToggle);await page.waitForTimeout(200);assert.equal(await alpha.evaluate(node=>node.open),true,'re-entering during the grace interval cancels the pending close');
-    await page.mouse.move(0,0);
-    await page.waitForFunction(id=>!document.querySelector('#guest-'+id+' details')?.open,IDs.guest);
+    await guestPointer(alphaToggle);await page.waitForFunction(id=>document.querySelector('#guest-'+id+' [data-guest-toggle]')?.getAttribute('aria-pressed')==='true',IDs.guest);
+    await page.mouse.move(0,0);await page.waitForFunction(id=>document.querySelector('#guest-'+id+' [data-guest-toggle]')?.getAttribute('aria-pressed')==='false',IDs.guest);
    }
-   await alphaToggle.focus();await page.keyboard.press('Enter');assert.equal(await alpha.evaluate(node=>node.open),true,'keyboard opens the same guest bubble');
-   assert.equal(await alphaToggle.locator('.ah-guest-prompt-closed').isVisible(),false);
-   assert.equal(await alphaToggle.locator('.ah-guest-prompt-open').isVisible(),true);
-   assert.match(await alphaToggle.innerText(),/收起简介/u);
-   const openGuestName=await alphaToggle.ariaSnapshot();assert.match(openGuestName,/合成跨领域创作者/u);assert.match(openGuestName,/合成创意机构/u);assert.match(openGuestName,/合成创作者/u);
+   await alphaToggle.focus();await page.keyboard.press('Enter');assert.equal(await alphaToggle.getAttribute('aria-pressed'),'true','native keyboard activation swaps the same circle to its decoded portrait');
+   assert.equal(await alphaToggle.getAttribute('aria-label'),[longName,'合成创意机构','合成GGJ站点组织者','显示文字'].join('，'));
    assert.equal(await guestDisclosureAccessibility(page,IDs.guest),true);
-   assert.match(await alpha.textContent(),/讲者.*主持人/u);assert.match(await alpha.textContent(),/合成创意机构.*合成嘉宾介绍/su);
-   if(width===1440){
-    const focusedLink=alpha.locator('a[href="#program-'+IDs.afternoon+'"]');
-    await focusedLink.focus();await guestPointer(beta.locator('[data-guest-toggle]'));await page.waitForTimeout(200);
-    assert.equal(await alpha.evaluate(node=>node.open),true,'hovering a different guest does not close the guest being used by keyboard');
-    assert.equal(await beta.evaluate(node=>node.open),false,'passive hover cannot replace a guest that contains keyboard focus');
-    assert.equal(await focusedLink.evaluate(node=>document.activeElement===node),true,'mixed pointer use does not hide or move the focused guest link');
-   }
-   await guestPointer(beta.locator('[data-guest-toggle]'),true);assert.equal(await beta.evaluate(node=>node.open),true);assert.equal(await alpha.evaluate(node=>node.open),false,'only one guest disclosure stays open');
-   if(width===1440)assert.equal(await beta.locator('[data-guest-toggle]').evaluate(node=>document.activeElement===node),true,'an explicit click still switches guest and focus');
-   await guestPointer(beta.locator('[data-guest-toggle]'),true);assert.equal(await beta.evaluate(node=>node.open),false,'a mobile click can close its bubble');
-   await guestPointer(alphaToggle,true);await alpha.locator('a[href="#program-'+IDs.afternoon+'"]').click();await activeZone(f,'B');assert.equal(await page.locator('#program-'+IDs.afternoon).isVisible(),true);
+   const photoCircle=await alphaToggle.boundingBox();assert.ok(Math.abs(photoCircle.width-originalCircle.width)<=1&&Math.abs(photoCircle.height-originalCircle.height)<=1,'photo switching preserves circle size');
+   assert.ok(Math.abs(await page.locator('#booths').evaluate(node=>node.getBoundingClientRect().top+scrollY)-originalFollowingTop)<=1,'photo switching never pushes subsequent sections down');
+   await page.keyboard.press('Escape');assert.equal(await alphaToggle.getAttribute('aria-pressed'),'false');assert.equal(await alphaToggle.evaluate(node=>document.activeElement===node),true,'Escape restores text and retains the existing button focus');
+   await page.keyboard.press('Space');assert.equal(await alphaToggle.getAttribute('aria-pressed'),'true');await page.keyboard.press('Space');assert.equal(await alphaToggle.getAttribute('aria-pressed'),'false');
+   await guestPointer(betaToggle,true);assert.equal(await betaToggle.getAttribute('aria-pressed'),'false','a broken photo never hides its saved text');
+   assert.equal(await betaToggle.locator('.ah-guest-copy').evaluate(node=>Number(getComputedStyle(node).opacity)),1);
+   if(width===1440)assert.equal(await betaToggle.evaluate(node=>document.activeElement===node),true,'an explicit pointer click retains native button focus');
+   if(width<600){await guestTouch(alphaToggle);assert.equal(await alphaToggle.getAttribute('aria-pressed'),'true');await guestTouch(alphaToggle);assert.equal(await alphaToggle.getAttribute('aria-pressed'),'false','touch can switch back to text inside the same circle');}
+   await page.evaluate(id=>{location.hash='#program-'+id;},IDs.afternoon);await activeZone(f,'B');assert.equal(await page.locator('#program-'+IDs.afternoon).isVisible(),true);
 
    await page.locator('[data-public-work-next]').click();await selected(f,IDs.indie);
    const failedCoverGeometry=await compactWork(f,IDs.indie,'unavailable');
@@ -281,11 +283,13 @@ try{
    assert.equal(await page.locator('[data-public-works-filter]').inputValue(),'student');await selected(f,IDs.student);
    await lightbox.locator('[data-work-lightbox-close]').click();
 
-   await guestPointer(alphaToggle,true);if(!await alpha.evaluate(node=>node.open))await guestPointer(alphaToggle,true);await alphaToggle.focus();
+   await alphaToggle.focus();if(await alphaToggle.getAttribute('aria-pressed')!=='true')await page.keyboard.press('Enter');
    await f.refresh(raw=>{raw.guests.reverse();raw.guests.find(guest=>guest.id===IDs.guest).bio='合成刷新后的嘉宾介绍';});
    orderEvidence.guestsReordered=await publicArrayOrder(f);
-   assert.equal(await page.locator('#guest-'+IDs.guest+' details').evaluate(node=>node.open),true);assert.equal(await page.locator('#guest-'+IDs.guest+' [data-guest-toggle]').evaluate(node=>document.activeElement===node),true,'refresh restores the same guest and keyboard focus after reorder');
-   await page.locator('#guest-'+IDs.guest+' a[href="#program-'+IDs.afternoon+'"]').click();await activeZone(f,'B');
+   await page.waitForFunction(id=>document.querySelector('#guest-'+id+' [data-guest-toggle]')?.getAttribute('aria-pressed')==='true',IDs.guest);
+   assert.equal(await page.locator('#guest-'+IDs.guest+' [data-guest-toggle]').evaluate(node=>document.activeElement===node),true,'refresh restores the same guest and keyboard focus after reorder');
+   assert.equal(await page.locator('#guest-'+IDs.guest+' .ah-guest-bio').count(),0,'a source biography edit does not reintroduce the removed panel');
+   await page.evaluate(id=>{location.hash='#program-'+id;},IDs.afternoon);await activeZone(f,'B');
    await page.locator('[data-program-period]').selectOption('afternoon');await page.locator('[data-program-period]').focus();
    const beforeRefreshScroll=(await settledScroll(f)).y;
    await f.refresh(raw=>{raw.sessions.find(session=>session.id===IDs.afternoon).title='合成刷新后的 B 区交流';});
@@ -359,7 +363,7 @@ try{
    assert.equal(await page.evaluate(()=>Boolean(document.activeElement?.closest('[hidden],[inert],dialog:not([open])'))),false,'focus is never stranded in the now-hidden works section or closed dialog');
    assert.doesNotMatch(await page.locator('body').textContent(),/SYNTHETIC_P5_PRIVATE|private\.invalid|private@example/u);
    assert.equal(f.calls.some(call=>/\/(?:submit|send|publish|approve|dispatch|token)(?:\/|$)/u.test(call.path)),false);
-   reports.push({width,publicArrayOrder:orderEvidence,publicGuestCardsIndependentOfAttendance:true,guestAttendance,explicitPrivateGuestExcluded:true,referenceNameBubblePortraitInDetails:true,organizationNamesAndOptionalLogosOnly:true,manualCarousel:'zero/single/many; filters and legacy retained',emptyWorksSectionHidden:true,publicationRestoresSection:true,emptyCategoryKeepsSection:true,lastWorkRemovalClosesPreviewAndFocusesAgenda:true,compactFallback:{failedCoverGeometry,missingCoverGeometry,singleCoverGeometry},singleNavigationHidden:true,filterRestoresNavigation:true,realDeclineRetained:true,touch:width<600,preview:'same public image; Escape/focus; refresh retained; removal closed',refresh:'stable IDs, open disclosure, carousel/filter, time/area and focus',agenda:'initial hash, cross-area links, keyboard and no jump',publicContentReads:f.calls.filter(call=>call.path==='/api/public/content').length,allRequests:f.calls.length,screenshots});
+   reports.push({width,publicArrayOrder:orderEvidence,publicGuestCardsIndependentOfAttendance:true,guestAttendance,explicitPrivateGuestExcluded:true,referenceCirclePortraitToggle:true,companyJobTitlesRendered:false,organizationNamesAndOptionalLogosOnly:true,manualCarousel:'zero/single/many; filters and legacy retained',emptyWorksSectionHidden:true,publicationRestoresSection:true,emptyCategoryKeepsSection:true,lastWorkRemovalClosesPreviewAndFocusesAgenda:true,compactFallback:{failedCoverGeometry,missingCoverGeometry,singleCoverGeometry},singleNavigationHidden:true,filterRestoresNavigation:true,realDeclineRetained:true,touch:width<600,preview:'same public image; Escape/focus; refresh retained; removal closed',refresh:'stable IDs, photo selection, carousel/filter, time/area and focus',agenda:'initial hash, cross-area links, keyboard and no jump',publicContentReads:f.calls.filter(call=>call.path==='/api/public/content').length,allRequests:f.calls.length,screenshots});
   }finally{await f.context.close();}
  }
  const reclassified=await fixture(390);
@@ -394,7 +398,7 @@ try{
    f.releaseInitialContent();
    await f.page.locator('#'+anchor).waitFor({state:'visible'});
    if(kind==='work')await selected(f,id);
-   if(kind==='guest')assert.equal(await f.page.locator('#'+anchor+' details').evaluate(node=>node.open),true,'initial guest hash opens its disclosure');
+   if(kind==='guest'){await f.page.waitForFunction(target=>document.querySelector('#'+target+' [data-guest-toggle]')?.getAttribute('aria-pressed')==='true',anchor);assert.equal(await f.page.locator('#'+anchor+' .ah-guest-detail-body').count(),0,'initial guest hash reveals only the same circular portrait');}
    if(kind==='organization')assert.equal(await f.page.locator('[data-booth-id],.ah-exhibition-details').count(),0,'initial organization hash reveals its real card without a booth modal');
    await f.page.waitForFunction(target=>{const rect=document.getElementById(target)?.getBoundingClientRect();return rect&&rect.top>=-1&&rect.top<=250;},anchor);
    assert.equal(f.calls.filter(call=>call.path==='/api/public/content').length,1,'late hash is resolved from the initial publication, without an extra refresh');

@@ -38,13 +38,13 @@ const REFERENCE = Object.freeze({
   method: 'Original PNG pixel runs and edge samples; desktop ratios use viewport/1921. Glyph-to-CSS size is an explicit font-metric estimate.',
   limitation: 'Geometry and manually reviewable screenshots; no full-page pixel-diff or pixel-perfect equivalence claim.',
 });
-// The user now requires both company and position beneath each name. These
+// The user now requests the organization and GGJ role beneath each name. These
 // approved control sizes intentionally exceed the source's 220px bubbles;
 // source spacing and all unrelated reference measurements remain separate.
 // Original desktop geometry is retained; only each public array index owns it.
 // Organization slots now form the user's count-aware centred composition.
 const GUEST_INFORMATION_LAYOUT = Object.freeze({
-  reason: 'Three separate visible fields: name, company and actual position.',
+  reason: 'Original circle with name, saved organization and GGJ role; company job titles are omitted.',
   originalSourceDiameter: REFERENCE.guestDiameter,
   desktopDiameter: 'min(19.270833vw - 8px, clamp(224px, 13.541667vw, 260px)); track capped at 370px',
   mobileDiameter: 'min(220px, (viewport - 2 * page padding - 20px column gap) / 2); page padding 20px at 320 and 24px at 390',
@@ -81,9 +81,9 @@ const organizationInputOrder = [5, 4, 0, 1, 3, 6, 2]; // The public array is aut
 const names = ['合成英文嘉宾 Alex', '合成嘉宾乙', 'Synthetic Enki', '合成嘉宾丁', 'Synthetic Wilson', '合成嘉宾己', 'Synthetic Nelson', 'Synthetic PingYao', '合成嘉宾九'];
 function rawFixture({ brokenImages = false } = {}) {
   const content = createInitialContent();
-  content.guests = names.map((name, index) => ({ id: guestId(index), name, company: '合成公开创作组织', ggjRole: '',
-    portraitId: brokenImages && index === 0 ? missingId : '', status: 'confirmed', publicConsent: true, internalNotes: PRIVATE,
-    title: '合成创作者', bio: '这是一段合成公开资料简介，用于检查姓名气泡和原生展开交互。', website: 'https://example.invalid/synthetic-public-profile', publicRoles: ['guest'] }));
+  content.guests = names.map((name, index) => ({ id: guestId(index), name, company: '合成公开创作组织', ggjRole: '合成GGJ站点组织者',
+    portraitId: brokenImages && index === 0 ? missingId : index === 0 ? artworkSources[0].id : '', status: 'confirmed', publicConsent: true, internalNotes: PRIVATE,
+    title: '合成创作者', bio: '这是一段不应出现在圆形切换界面的合成公开简介。', website: 'https://example.invalid/synthetic-public-profile', publicRoles: ['guest'] }));
   content.organizations = organizationInputOrder.map(index => ({ id: organizationId(index), name: organizationNames[index],
     logoId: brokenImages && index === 6 ? missingId : logoSources[index].id, website: index === 0 ? 'https://example.invalid/synthetic-organization' : '',
     participation: index % 2 ? 'attendee' : 'exhibitor', status: index === 5 ? 'pending' : index === 6 ? 'withdrawn' : 'confirmed', publicConsent: true, internalNotes: PRIVATE }));
@@ -177,6 +177,12 @@ async function fixture(width, { mode = 'legacy', brokenImages = false, javascrip
     await page.evaluate(() => window.dispatchEvent(new Event('focus'))); await received; await page.waitForTimeout(250);
   }
   return { width, context, page, calls, refresh, fontFailures,get raw(){return raw;},failPosterFont(){failPosterFont=true;} };
+}
+// Use a native touch at the current centre of an intentionally floating circle.
+async function touchCircle(toggle){
+  await toggle.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
+  const point=await toggle.boundingBox();assert.ok(point);
+  await toggle.page().touchscreen.tap(point.x+point.width/2,point.y+point.height/2);
 }
 const noOverflow = async f => assert.equal(await f.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'no horizontal overflow at ' + f.width + 'px');
 async function guestRoster(f,confirmedIds=[]){
@@ -366,27 +372,30 @@ async function geometry(f,{suffix=''}={}) {
   return measured;
 }
 async function disclosures(f) {
-  const { page } = f, details = page.locator('#guest-' + guestId(0) + ' details'), toggle = details.locator('[data-guest-toggle]');
-  assert.equal(await toggle.evaluate(node => node.tagName), 'SUMMARY'); assert.equal(await details.evaluate(node => node.tagName), 'DETAILS');
+  const { page } = f, card = page.locator('#guest-' + guestId(0)), toggle = card.locator('[data-guest-toggle]');
+  assert.equal(await toggle.evaluate(node => node.tagName), 'BUTTON');
+  assert.equal(await card.locator('details,.ah-guest-detail-body').count(), 0, 'the circle has no square profile disclosure');
+  assert.equal(await card.locator('.ah-guest-title,.ah-guest-duty,.ah-guest-bio,a').count(), 0, 'the requested compact identity has no company job title or duplicate profile content');
   await toggle.evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await toggle.locator('img').evaluate(node=>node.decode());
+  await page.waitForFunction(id=>document.querySelector('#guest-'+id+' [data-guest-toggle]')?.dataset.photoReady==='true',guestId(0));
   if (f.width >= 1000) {
-    await toggle.hover(); await page.waitForFunction(id => document.querySelector('#guest-' + id + ' details')?.open, guestId(0));
-    const bubble = await toggle.boundingBox(), body = await details.locator('.ah-guest-detail-body').boundingBox(); assert.ok(bubble && body);
-    const x = Math.max(bubble.x, body.x) + Math.min(bubble.width, body.width) / 2;
-    await page.mouse.move(x, bubble.y + bubble.height - 2);
-    await page.mouse.move(x, (bubble.y + bubble.height + body.y) / 2); await page.waitForTimeout(60);
-    await page.mouse.move(Math.min(body.x + body.width - 10, Math.max(body.x + 10, x)), body.y + 12);
-    await page.waitForTimeout(200); assert.equal(await details.evaluate(node => node.open), true, 'pointer crosses the circle/detail gap without losing its card');
-    await page.mouse.move(0, 0); await page.waitForFunction(id => !document.querySelector('#guest-' + id + ' details')?.open, guestId(0));
+    await toggle.hover(); await page.waitForFunction(id => document.querySelector('#guest-' + id + ' [data-guest-toggle]')?.getAttribute('aria-pressed')==='true', guestId(0));
+    await page.mouse.move(0, 0); await page.waitForFunction(id => document.querySelector('#guest-' + id + ' [data-guest-toggle]')?.getAttribute('aria-pressed')==='false', guestId(0));
   }
-  await toggle.focus(); await page.keyboard.press('Enter'); assert.equal(await details.evaluate(node => node.open), true, 'native keyboard disclosure opens');
-  assert.equal(await details.locator('.ah-guest-detail-body > .ah-guest-portrait').count(), 1, 'portrait belongs to the expanded introduction');
-  await page.keyboard.press('Escape'); assert.equal(await details.evaluate(node => node.open), false); assert.equal(await toggle.evaluate(node => document.activeElement === node), true);
+  await toggle.focus();const circle=await toggle.boundingBox(),followingTop=await page.locator('#booths').evaluate(node=>node.getBoundingClientRect().top+scrollY);
+  await page.keyboard.press('Enter'); assert.equal(await toggle.getAttribute('aria-pressed'), 'true', 'native keyboard activation shows the same circular photo');
+  assert.equal(await toggle.locator('.ah-guest-portrait img').count(), 1, 'portrait remains inside the original circle');
+  const changed=await toggle.boundingBox();assert.ok(Math.abs(changed.width-circle.width)<=1&&Math.abs(changed.height-circle.height)<=1);
+  assert.ok(Math.abs(await page.locator('#booths').evaluate(node=>node.getBoundingClientRect().top+scrollY)-followingTop)<=1,'photo selection does not add a panel or move following content');
+  await page.keyboard.press('Escape'); assert.equal(await toggle.getAttribute('aria-pressed'), 'false'); assert.equal(await toggle.evaluate(node => document.activeElement === node), true);
+  await page.keyboard.press('Space');assert.equal(await toggle.getAttribute('aria-pressed'),'true');await page.keyboard.press('Space');assert.equal(await toggle.getAttribute('aria-pressed'),'false');
   if (f.width < 600) {
-    await toggle.tap(); assert.equal(await details.evaluate(node => node.open), true); await noOverflow(f);
-    await toggle.tap(); assert.equal(await details.evaluate(node => node.open), false, 'touch can open and close the same native detail');
+    await touchCircle(toggle); assert.equal(await toggle.getAttribute('aria-pressed'), 'true'); await noOverflow(f);
+    await touchCircle(toggle); assert.equal(await toggle.getAttribute('aria-pressed'), 'false', 'touch switches photo and text inside the same circle');
   }
 }
+
 async function otherContent(f) {
   const { page } = f;
   assert.equal(await page.locator('#program-synthetic-reference-a strong').textContent(), '合成公开交流场次 A', 'the activity title remains unchanged');
@@ -455,7 +464,7 @@ async function screenshots(f) {
     await image.evaluate(node => node.decode());
   }
   await f.page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' })); await f.page.waitForTimeout(150);
-  assert.equal(await f.page.locator('[data-public-guests] details[open]').count(), 0, 'reference layout captures do not accidentally hover-open a guest');
+  assert.equal(await f.page.locator('[data-public-guests] [data-guest-toggle][aria-pressed="true"]').count(), 0, 'reference layout captures retain the default identity text');
   const files = [];
   const full = resolve(evidence, 'homepage-' + f.width + '.png'); await f.page.screenshot({ path: full, fullPage: true }); files.push(full);
   for (const [name, selector] of [['hero', '#top'], ['about', '#about'], ['guests', '#guests'], ['organizations', '#booths'], ['works', '#students'], ['agenda', '#agenda'], ['faq', '#faq'], ['footer', '.ah-footer']]) {
@@ -495,9 +504,9 @@ try {
       assert.equal(await f.page.locator('.ah-guest-attendance').count(), 0, 'bubble captions do not invent attendance text');
       assert.equal(await f.page.locator('.ah-guest-affiliation').count(), 9, 'the saved company is shown independently of title');
       assert.equal(await f.page.locator('.ah-guest-affiliation').evaluateAll(nodes => nodes.every(node => node.textContent === '合成公开创作组织' && node.dataset.affiliationSource === 'company')), true);
-      assert.equal(await f.page.locator('.ah-guest-subtitle').count(), 9, 'all nine supplied titles remain visible alongside company');
-      assert.equal(await f.page.locator('.ah-guest-subtitle').evaluateAll(nodes => nodes.every(node => node.textContent === '合成创作者' && node.dataset.subtitleSource === 'title')), true, 'caption uses the supplied profile title');
-      for (let index = 0; index < 9; index++) assert.equal(await f.page.locator('#guest-' + guestId(index) + ' [data-guest-toggle]').getAttribute('aria-label'), [names[index], '合成公开创作组织', '合成创作者', '嘉宾介绍'].join('，'));
+      assert.equal(await f.page.locator('.ah-guest-subtitle').count(), 9, 'all nine supplied GGJ roles remain visible alongside their organizations');
+      assert.equal(await f.page.locator('.ah-guest-subtitle').evaluateAll(nodes => nodes.every(node => node.textContent === '合成GGJ站点组织者' && node.dataset.subtitleSource === 'role')), true, 'caption uses the saved GGJ role rather than the company job title');
+      for (let index = 0; index < 9; index++) assert.equal(await f.page.locator('#guest-' + guestId(index) + ' [data-guest-toggle]').getAttribute('aria-label'), [names[index], '合成公开创作组织', '合成GGJ站点组织者', ...(index===0?['查看照片']:[])].join('，'));
       assert.equal(await f.page.locator('[data-organization-id]').count(), 7);
       const blanks = f.page.locator('.ah-guest-placeholder');
       assert.equal(await blanks.count(), 3, 'the reference final row may be completed with three purely decorative circles');
@@ -638,9 +647,9 @@ try {
     assert.equal(await broken.page.locator('#hero-heading').getAttribute('aria-label'),createInitialContent().event.title);
     const titleImages=broken.page.locator('[data-home-title-image]');assert.equal(await titleImages.count(),2);
     for(const image of await titleImages.all()){await image.evaluate(node=>node.decode());assert.equal(await image.isVisible(),true);assert.ok(await image.evaluate(node=>node.complete&&node.naturalWidth>0&&node.naturalHeight>0));}
-    const first = broken.page.locator('#guest-' + guestId(0)); await first.locator('[data-guest-toggle]').tap();
-    await broken.page.waitForFunction(id => document.querySelector('#guest-' + id + ' .ah-guest-portrait img')?.hidden === true, guestId(0));
-    assert.equal(await first.locator('.ah-guest-name').isVisible(), true); assert.equal(await first.locator('.ah-guest-initial').isVisible(), true);
+    const first = broken.page.locator('#guest-' + guestId(0)); await touchCircle(first.locator('[data-guest-toggle]'));
+    await broken.page.waitForFunction(id => {const image=document.querySelector('#guest-'+id+' .ah-guest-portrait img');return image?.complete&&image.naturalWidth===0;}, guestId(0));
+    assert.equal(await first.locator('.ah-guest-name').isVisible(), true);assert.equal(await first.locator('[data-guest-toggle]').getAttribute('aria-pressed'),'false');assert.equal(await first.locator('.ah-guest-copy').evaluate(node=>Number(getComputedStyle(node).opacity)),1);assert.equal(await first.locator('.ah-guest-initial,.ah-guest-detail-body').count(),0,'a failed photo retains the full identity without an initial or popup');
     const organization = broken.page.locator('#organization-' + organizationId(6)); await organization.scrollIntoViewIfNeeded();
     await broken.page.waitForFunction(id => document.querySelector('#organization-' + id + ' .ah-organization-image')?.hidden === true, organizationId(6));
     await organizationCaption(organization,{name:organizationNames[6],visible:true});

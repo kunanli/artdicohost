@@ -60,14 +60,11 @@ export function publicGuestAffiliation(guest) {
   return record(guest) ? line(ownValue(guest,'company')??'',160,false)||'' : '';
 }
 
-/** Use only a position or role already present in the safe public profile. */
+/** Guest bubbles show the saved GGJ role, never a company job title. */
 export function publicGuestSubtitle(guest) {
   if(!record(guest))return {text:'',kind:'none'};
-  for(const [key,limit,kind] of [['title',200,'title'],['ggjRole',160,'role']]){
-    const value=line(ownValue(guest,key)??'',limit,false);
-    if(value)return {text:value,kind};
-  }
-  return {text:'',kind:'none'};
+  const value=line(ownValue(guest,'ggjRole')??'',160,false);
+  return value?{text:value,kind:'role'}:{text:'',kind:'none'};
 }
 
 /** Timetable roles are editorial associations, separate from guest-card eligibility.

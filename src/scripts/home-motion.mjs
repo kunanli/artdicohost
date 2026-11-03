@@ -1,6 +1,6 @@
 // Guest floating is independent of the page's scroll decoration.
 const root = document.querySelector('#artdico-host.ah-cosmos');
-// Guest motion belongs to the wrapper so text and an open disclosure stay still
+// Guest motion belongs to the wrapper so text and its circle portrait stay still
 // together. Nothing is hidden while waiting for an observer or an animation.
 if(root&&typeof matchMedia==='function'&&typeof IntersectionObserver==='function'){
   const reduced=matchMedia('(prefers-reduced-motion: reduce)'),bubbles=new Map();
@@ -11,7 +11,7 @@ if(root&&typeof matchMedia==='function'&&typeof IntersectionObserver==='function
   },{threshold:.1});
   function synchronize(){
     for(const [element,state] of bubbles){
-      const still=element.matches(':hover,:focus-within')||Boolean(element.querySelector('details[open]'));
+      const still=element.matches(':hover,:focus-within')||Boolean(element.querySelector('[data-guest-toggle][aria-pressed="true"]'));
       if(active&&!document.hidden&&!reduced.matches&&state.visible&&!still)state.motion.play();else state.motion.pause();
     }
   }
@@ -33,7 +33,7 @@ if(root&&typeof matchMedia==='function'&&typeof IntersectionObserver==='function
     synchronize();
   }
   root.addEventListener('artdico:guests-rendered',refresh);
-  for(const event of ['pointerover','focusin','toggle'])root.addEventListener(event,synchronize,true);
+  for(const event of ['pointerover','focusin','artdico:guest-photo-state'])root.addEventListener(event,synchronize,true);
   for(const event of ['pointerout','focusout','click'])root.addEventListener(event,()=>queueMicrotask(synchronize),true);
   reduced.addEventListener('change',refresh);
   document.addEventListener('visibilitychange',synchronize);

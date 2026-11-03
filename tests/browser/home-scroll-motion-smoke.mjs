@@ -738,7 +738,7 @@ async function main() {
         await page.goto(SITE + '/__scroll-blank/', { waitUntil: 'domcontentloaded' });
         await page.goto(SITE + '/#guest-scroll-motion-guest', { waitUntil: 'networkidle' }); await page.evaluate(() => document.fonts.ready);
         assert.ok(f.publicReads() > readsBeforeDeepLink, 'initial guest hash is tested against a new delayed publication, not an existing document');
-        await page.locator('#guest-scroll-motion-guest details[open]').waitFor(); await settled(page);
+        await page.locator('#guest-scroll-motion-guest button[data-guest-toggle]').waitFor(); assert.equal(await page.locator('#guest-scroll-motion-guest details,.ah-guest-detail-body').count(),0,'a guest anchor reveals its circle without a rectangular panel'); await settled(page);
         const deepTop = await page.locator('#guest-scroll-motion-guest').evaluate(node => node.getBoundingClientRect().top), deepHeader = await header(page);
         assert.ok(deepTop >= deepHeader.bottom - 1, 'an asynchronously published guest hash is not covered by the pinned header'); await essentialContent(page);
         stage = 'synthetic-hidden'; await page.emulateMedia({ reducedMotion: 'no-preference' });

@@ -62,7 +62,7 @@ async function draftRows(page){return page.evaluate(()=>new Promise((resolve,rej
 const pendingRows=async f=>(await draftRows(f.page)).filter(row=>row.scope.page.startsWith('person-confirmation:roles='));
 const sends=f=>f.calls.filter(call=>call.method==='POST'&&call.path.startsWith('/api/admin/registration-confirmation/send/'));
 async function fixture(browser,errors,options={}){
- const f=await isolated(options),context=await browser.newContext({viewport:{width:f.width,height:940}}),[name,...value]=f.auth.Cookie.split('=');
+ const f=await isolated(options),context=await browser.newContext({locale:'zh-CN',viewport:{width:f.width,height:940}}),[name,...value]=f.auth.Cookie.split('=');
  await context.addCookies([{domain:new URL(API).hostname,path:'/api/admin',name,value:value.join('='),secure:true,httpOnly:true,sameSite:'Strict'}]);
  await context.addInitScript(()=>{window.__mailRecoveryDurability={acked:[]};const original=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(value,...args){if(this.name==='drafts'&&value?.kind==='pending_submission'&&value.scope?.page?.startsWith('person-confirmation:roles=')){const raw=value.value.payloadJson;this.transaction.addEventListener('complete',()=>window.__mailRecoveryDurability.acked.push(raw),{once:true});}return original.call(this,value,...args);};});
  const page=await context.newPage(),calls=[],assets=new Map(),dialogs=[],decisions=[];

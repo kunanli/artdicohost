@@ -18,7 +18,7 @@ try{
   for(const width of [390,1440]){
     let clock=Date.parse('2026-11-02T08:00:00.000Z');const f=await peopleRuntimeFixture({attendeeReviewRequired:false,clock:()=>clock}),calls=[];
     const registration=await f.seedPublic({intake:'general-v2'});clock+=60000;const first=await f.createContact({name:'A 合成较早'});clock+=60000;const latest=await f.createContact({name:'Z 合成最新'});
-    const auth=await f.login(),context=await browser.newContext({viewport:{width,height:960}}),[cookieName,...cookieValue]=auth.Cookie.split('=');
+    const auth=await f.login(),context=await browser.newContext({locale:'zh-CN',viewport:{width,height:960}}),[cookieName,...cookieValue]=auth.Cookie.split('=');
     await context.addCookies([{domain:new URL(API).hostname,path:'/api/admin',name:cookieName,value:cookieValue.join('='),httpOnly:true,secure:true,sameSite:'Strict'}]);
     let dropArchiveAck=width===390;
     await context.route('**/*',async route=>{

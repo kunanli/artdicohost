@@ -54,7 +54,7 @@ async function fixture(browser, { width = 390, role = 'owner', existing = false,
     }
     return result;
   };
-  const context = await browser.newContext({ viewport: { width, height: 960 } }), calls = [];
+  const context = await browser.newContext({locale:'zh-CN', viewport: { width, height: 960 } }), calls = [];
   const auth = await runtime.login(role), [name, ...value] = auth.Cookie.split('=');
   await context.addCookies([{ domain: new URL(API).hostname, path: '/api/admin', name, value: value.join('='), httpOnly: true, secure: true, sameSite: 'Strict' }]);
   await context.route('**/*', async route => {

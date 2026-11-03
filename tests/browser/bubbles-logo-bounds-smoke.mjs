@@ -113,7 +113,7 @@ function genericOrganizationIdentities(content){
  for(const item of [...content.showcases,...content.booths])if(keys.has(item.organizationId))item.organizationId=keys.get(item.organizationId);
 }
 async function fixture(width, { mode = 'actual', reducedMotion = 'no-preference', holdLogos = false } = {}) {
-  const context = await browser.newContext({ viewport: { width, height: 1000 }, isMobile: width < 600, hasTouch: width < 600, reducedMotion });
+  const context = await browser.newContext({locale:'zh-CN', viewport: { width, height: 1000 }, isMobile: width < 600, hasTouch: width < 600, reducedMotion });
   const page = await context.newPage(), calls = []; let responseBytes = snapshotBytes, revision = snapshot.revision, releaseGate;
   const gate = new Promise(resolve => { releaseGate = resolve; });
   if (!holdLogos) releaseGate();

@@ -22,7 +22,7 @@ const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM
 await mkdir(evidence,{recursive:true});
 try{
   for(const scenario of ['valid','invalid-code','offsite-target','revoked-retry']){
-    const context=await browser.newContext({viewport:{width:390,height:940}}),calls=[],navigations=[],storageCalls=[];
+    const context=await browser.newContext({locale:'zh-CN',viewport:{width:390,height:940}}),calls=[],navigations=[],storageCalls=[];
     await context.addCookies([{domain:new URL(API).hostname,path:'/',name:'synthetic_link_cookie',value:'must-not-send',secure:true,httpOnly:true,sameSite:'None'}]);
     await context.exposeBinding('__entryLinkStorageProbe',(_,method)=>storageCalls.push(method));
     await context.addInitScript(()=>{

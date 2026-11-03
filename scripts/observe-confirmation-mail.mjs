@@ -78,14 +78,17 @@ export async function observeConfirmationMail({ env = process.env, fetchFn = fet
     session = { cookie: sessionCookie(login.headers), csrf: login.value.csrfToken };
     failure = 'SETTINGS_UNAVAILABLE';
     const { value } = await request(SETTINGS, 'GET', { cookie: session.cookie }), email = value.email;
+    const hasWallet = Object.hasOwn(value, 'wallet'), wallet = own(value, 'wallet');
     if (typeof value.automaticEnabled !== 'boolean' || !plain(email) || typeof email.enabled !== 'boolean' || typeof email.ready !== 'boolean'
       || !CONFIRMATION_EMAIL_REASONS.includes(email.reason) || !fixedFields(email.missing)
       || Object.hasOwn(email, 'invalid') && !fixedFields(email.invalid)
       || email.ready && (!email.enabled || email.reason !== 'CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF')
       || !email.ready && email.reason === 'CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF'
-      || email.reason === 'EMAIL_DISABLED' && email.enabled) invalid();
+      || email.reason === 'EMAIL_DISABLED' && email.enabled
+      || hasWallet && (!plain(wallet) || typeof own(wallet, 'ready') !== 'boolean')) invalid();
     observation = { automaticEnabled: value.automaticEnabled, email: { enabled: email.enabled, ready: email.ready, reason: email.reason,
-      missing: [...email.missing], ...(Object.hasOwn(email, 'invalid') ? { invalid: [...email.invalid] } : {}) } };
+      missing: [...email.missing], ...(Object.hasOwn(email, 'invalid') ? { invalid: [...email.invalid] } : {}) },
+      ...(hasWallet ? { walletReady: own(wallet, 'ready') } : {}) };
     failure = null;
   } catch { /* Only fixed failure codes leave this module. */ }
   finally {

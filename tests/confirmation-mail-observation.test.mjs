@@ -45,6 +45,25 @@ test('one fixed login/read/logout observation reports only safe readiness bound 
   assert.deepEqual(f.calls.map(call => call.path), paths); safe(result);
 });
 
+test('Wallet readiness projects only its optional boolean and filters private signer details', async () => {
+  for (const ready of [true, false]) {
+    const f = fixture({ settings: { ...setting, wallet: { ready, reason: 'PRIVATE_SIGNER_REASON',
+      missing: ['PRIVATE_CONFIG_FIELD'], certificateExpiresAt: 'PRIVATE_CERTIFICATE', credentialFingerprint: 'PRIVATE_SIGNER_ID' } } });
+    const result = await observeConfirmationMail({ env, fetchFn: f.fetchFn });
+    assert.deepEqual(result, { verified: true, sourceCommit: SHA, mailRequests: 0, businessWrites: 0, ...setting, walletReady: ready });
+    assert.deepEqual(f.calls.map(call => call.path), paths); safe(result);
+  }
+});
+
+test('a present malformed Wallet readiness fails settings safely and still logs out once', async () => {
+  for (const wallet of [null, [], true, {}, { ready: 'PRIVATE_BOOLEAN' }]) {
+    const f = fixture({ settings: { ...setting, wallet } });
+    const result = await observeConfirmationMail({ env, fetchFn: f.fetchFn });
+    assert.deepEqual(result, { verified: false, sourceCommit: SHA, mailRequests: 0, businessWrites: 0, failure: 'SETTINGS_UNAVAILABLE' });
+    assert.deepEqual(f.calls.map(call => call.path), paths); safe(result);
+  }
+});
+
 test('paused, provider-disabled, missing, invalid and unavailable configurations are verified observations without delivery claims', async () => {
   for (const settings of [{ ...setting, automaticEnabled: false },
     { automaticEnabled: true, email: { enabled: false, ready: false, reason: 'EMAIL_DISABLED', missing: [] } },

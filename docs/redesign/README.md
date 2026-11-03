@@ -1,6 +1,6 @@
 # ARTDiCO HOST 改版執行總覽
 
-接續階段：[活動行報名、獨立講者提案與客服三段狀態](external-registration-staff-status-release.md)。使用者2026-11-03最新決策優先於下方舊本站一般報名規劃；入口切換與後台顯示在本輪實作，活動行Excel轉接及真人寄信另行處理。
+最新完成：[PR77活動行報名、獨立講者提案與客服三段狀態](external-registration-staff-status-release.md)。main `b1f83a7d76578114d85e723f9d154a4f1f74858b`／正式流程41594339072五工作成功，1856測試、74同來源瀏覽器案、14後台與68公開HTTPS物件通過，07:22:59 UTC完成。正式speaker_only已核對；活動行Excel轉接與真人寄信另行處理。此決策優先於下方舊本站一般報名規劃。
 
 目前階段：[日程可讀性、電話／微信與組織居中](public-readability-contact-layout-release.md)。依使用者圖四原稿恢復日程展示比例；兩個聯絡欄直接顯示並維持選填；組織依發布順序對稱排在球內。電話新增為私有general-v2選填欄位，回退保留新讀取器。正式來源與素材驗收回執記於該頁，不以本機cached資料代替。
 

@@ -1,6 +1,6 @@
 # ARTDiCO HOST · artdico.host
 
-**最新已發布：**[PR76 日程字級、電話／微信與組織居中](docs/redesign/public-readability-contact-layout-release.md)，main `a8ec877271ceddf5cdece0ff0655024755d1e7fe`。[正式流程41588441006](https://github.com/kunanli/artdicohost/actions/runs/41588441006)五工作成功，1820項Node測試及同來源67個瀏覽器案例、私有OSS、14個後台頁面、68個公開HTTPS物件與3項入場路徑核對通過，2026-11-03 06:27:09 UTC完成。郵件與Wallet配置就緒，真人收件及裝置添加仍另驗。
+**最新已發布：**[PR77 活動行報名、獨立講者提案與客服出席分類](docs/redesign/external-registration-staff-status-release.md)，main `b1f83a7d76578114d85e723f9d154a4f1f74858b`。[正式流程41594339072](https://github.com/kunanli/artdicohost/actions/runs/41594339072)五工作成功，1856項Node測試、74個同來源瀏覽器案例、私有OSS、14後台、68公開HTTPS物件及3項入場路徑均通過，2026-11-03 07:22:59 UTC完成。正式API已核對speaker_only；活動行匯出格式含微信已確認，轉接器與即時Wallet同步尚未實作。
 
 **前輪嘉賓規則（歷史基準）：**[PR #68](https://github.com/kunanli/artdicohost/pull/68) 已合併至 main `3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`，範圍見[嘉賓公開展示與舊審閱精簡](docs/redesign/admin-data-cleanup-audit.md)。嘉賓依公開開關展示、真實出席獨立；舊人工審閱改歷史唯讀。資料未刪除，展位、住宿、志工流程維持。[PR 檢查 41425057862](https://github.com/kunanli/artdicohost/actions/runs/41425057862) 已通過1638項測試及同版捲動6／排版4／實際素材13；[main 流程 41426077899](https://github.com/kunanli/artdicohost/actions/runs/41426077899) 四工作成功，同版6／4／實際13、私有OSS、13後台及10:18:01 UTC的60公開物件HTTPS核對完成。
 

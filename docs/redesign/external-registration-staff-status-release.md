@@ -50,3 +50,21 @@
 首輪PR77流程41591916945的1855項Node、捲動6／字體4／講者10／出席目錄7／寄信恢復8／入場6均成功，但舊排序刪除harness直接操作已收合的進階篩選而停止後續gate。測試改為核對預設all及保持收合，排序、刪除、遺失回執只核對與0mail守門不減；相同最終contacts產物本機2／2成功。固定人員整合旅程相同一處也更新並完整3／3通過。郵件預覽6與短鏈4在相同公開HTML另通過。首輪失敗保留於CI，不把部分通過當成整輪成功。
 
 發布前唯讀觀測應報現行政策，不能要求尚未發布的speaker_only；已將模式期望與一般觀測分開。正式FC啟用後由`verify-public-registration.mjs --expect-approved-mode`強制比對審核的speaker_only與講者可用，cloud-lifecycle本身亦保留完整政策比對。18項readiness/lifecycle測試通過，含舊政策觀測成功及發布後錯模式／關閉提案必敗；所有路徑仍僅GET＋OPTIONS，零token或業務POST。
+
+## PR77 正式發布回執
+
+[PR77](https://github.com/kunanli/artdicohost/pull/77)最終head `90f414bb552966e0da5c3b7ed12e75f6d34940ed`；[PR流程41593098866](https://github.com/kunanli/artdicohost/actions/runs/41593098866)的準確synthetic merge為`c323b5512d8928184bf1af0d38bb6a16f542ee8b`，所有必要工作成功。合併main `b1f83a7d76578114d85e723f9d154a4f1f74858b`，[正式流程41594339072](https://github.com/kunanli/artdicohost/actions/runs/41594339072)五工作均completed／success。
+
+PR及main各1856／1856 Node測試，fail／cancelled／skipped／todo皆0；來源802、Astro521、0errors／0warnings／2hints，依賴審計無已知漏洞。兩次瀏覽器回執皆為捲動6、字體4、講者／舊申請10、排序8、出席目錄7、寄信恢復8、入場6、名單排序刪除2、郵件預覽6、短鏈4、正式素材13，共74案；頁面錯誤0。各sourceCommit及當次captureSourceCommit皆等於該PR synthetic merge或main，不以舊base或本機dirty產物當正式證據。
+
+公開HTML兩次皆為`00d99b669056d389209717f9c8079b59c0f5fed3c49b831f5eb37725172e005c`；contacts為`572c82c802381c59fa19d62acc6def048f701d21d14308a154e853d5e89c0c57`，person為`2e0b7642e68b58436391053f2c7a54d1d61c358055d235e4fc5f6d6e8f7c37bf`。正式公開輸入snapshot SHA `71037be9782b05af1da404fd6ab667b538fbb5e4f4356fdbec943787d241c8d7`，9嘉賓／8組織，實際漢字ink300次、blank／missing均0及90負控制。未捕獲媒體仍以明示404替身處理。
+
+準確候選ZIP仍137檔、136release索引、42資產，未放寬任何限制。PR與main的實際ZIP離線啟動、closedMode、syntheticConfigurationOnly皆passed；main於07:17:13 UTC以network=none、code=read-only完成。主程式及簽章runtime沿已核對版本，不新增服務、來源檔、DNS或憑據。
+
+2026-11-03 07:20:48 UTC，FC準確main驗證contentEnabled／registrationEnabled=true、privateOssAcceptance=passed、2獨立clients／1FCprocess；07:20:54核對14個準確後台HTTPS頁。07:20:57匿名GET／OPTIONS核對enabled=true、publicRegistrationMode=speaker_only、speakerApplicationsEnabled=true及兩個preflight=true。attendeeReviewRequired=false保留舊一般申請相容名額政策；新公開提案由speaker_only及talk-only服務端規則強制待審，不能以此舊flag推定本站仍開放一般出票。
+
+07:20:50唯讀郵件readiness verified=true、automaticEnabled=true、Email enabled／ready=true、missing／invalid空、walletReady=true；mailRequests／businessWrites均0。僅配置就緒，不表示實際EmailJS接受、真人收件、入群或iPhone添加已驗證。
+
+07:22:57 UTC，68個準確公開物件逐一HTTPS通過；07:22:59入場路徑publicEntry／invalidEntry／cors皆true，共3請求，commit同上述main。一般報名外連及講者表單的正式產物已發布；活動行Excel轉接器／即時Wallet同步仍未實作。最新真人匯出僅核對格式，沒有匯入、合併、改正式名額、發送真信或更新業務內容草稿。
+
+本補記保存在獨立docs分支，不另建PR或重複觸發main部署。程式回退須保留本輪talk-only／phone-aware讀取器及speaker_only入口守門；私有備份／刪除仍沿既有受控流程，不用程式回退覆蓋最新真人資料。

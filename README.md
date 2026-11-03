@@ -1,6 +1,8 @@
 # ARTDiCO HOST · artdico.host
 
-**最新已發布：**[PR73 原稿 Hero、精簡報名與手機入場](docs/redesign/entry-ticket-release.md)及[PR74 正式路徑驗證修正](https://github.com/kunanli/artdicohost/pull/74)，main `321940c4a13c5174eac4378d291dd42b6c980f3a`。[main 流程41563515292](https://github.com/kunanli/artdicohost/actions/runs/41563515292)五工作成功，1809項測試、67個同來源瀏覽器案例、私有OSS、14後台、68公開HTTPS物件及3項短網址／入場路徑檢查均通過；2026-11-03 02:16:44 UTC完成正式核對。郵件程式與官方Wallet／兩種QR範本已交付；EmailJS控制台套用範本及先前403、真實收件仍獨立待核對。
+**最新修復已發布：**[確認函官方Wallet圖標](docs/redesign/wallet-mail-badge-release.md)，[PR75](https://github.com/kunanli/artdicohost/pull/75)／main `ae5cee86270b3de5875a4bdba1024957d99ada69`。移除250ms導致的靜默漏圖，保留整體期限及可核對重寄；[main流程41569299507](https://github.com/kunanli/artdicohost/actions/runs/41569299507)五工作、1814測試、67瀏覽器案、私有OSS、14後台／68公開HTTPS物件及3項路徑回執皆成功，臺北2026-11-03 11:11:50完成。正式Wallet-ready=true；EmailJS託管正文仍須輸出`{{{confirmation_actions}}}`，實際新信圖片另行核對。
+
+**前輪功能發布：**[PR73 原稿 Hero、精簡報名與手機入場](docs/redesign/entry-ticket-release.md)及[PR74 正式路徑驗證修正](https://github.com/kunanli/artdicohost/pull/74)，main `321940c4a13c5174eac4378d291dd42b6c980f3a`。[main 流程41563515292](https://github.com/kunanli/artdicohost/actions/runs/41563515292)五工作成功，1809項測試、67個同來源瀏覽器案例、私有OSS、14後台、68公開HTTPS物件及3項短網址／入場路徑檢查均通過；2026-11-03 02:16:44 UTC完成正式核對。郵件程式與官方Wallet／兩種QR範本已交付；EmailJS控制台套用範本及先前403、真實收件仍獨立待核對。
 
 **前輪嘉賓規則（歷史基準）：**[PR #68](https://github.com/kunanli/artdicohost/pull/68) 已合併至 main `3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`，範圍見[嘉賓公開展示與舊審閱精簡](docs/redesign/admin-data-cleanup-audit.md)。嘉賓依公開開關展示、真實出席獨立；舊人工審閱改歷史唯讀。資料未刪除，展位、住宿、志工流程維持。[PR 檢查 41425057862](https://github.com/kunanli/artdicohost/actions/runs/41425057862) 已通過1638項測試及同版捲動6／排版4／實際素材13；[main 流程 41426077899](https://github.com/kunanli/artdicohost/actions/runs/41426077899) 四工作成功，同版6／4／實際13、私有OSS、13後台及10:18:01 UTC的60公開物件HTTPS核對完成。
 

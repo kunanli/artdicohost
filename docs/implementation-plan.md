@@ -1,5 +1,9 @@
 # ARTDiCO HOST 实施计划
 
+## 2026-11-03 已發布：確認函 Wallet 圖標漏圖修正
+
+[PR75與正式回執](redesign/wallet-mail-badge-release.md)：main ae5cee8／run41569299507五工作成功，1814測試、67案同來源瀏覽器、私有OSS、14後台／68公開HTTPS物件與3路徑回執已完成；臺北11:11:50核對。正式walletReady=true，自動寄信及email設定就緒，沒有實寄或更動正式業務資料。使用者提供的是舊版渲染文字而非HTML來源，已給出EmailJS正文需加入的`{{{confirmation_actions}}}`及完整範本；實際控制台套用與新信收件另行核對。
+
 ## 2026-11-03：確認函 Wallet 圖標遺漏修復
 
 基準main `321940c4a13c5174eac4378d291dd42b6c980f3a`；前輪正式回執見[不可變交付紀錄](https://github.com/kunanli/artdicohost/blob/50189386b39223d05fa5cb440292e9c69decd3b3/docs/redesign/entry-ticket-release.md)。使用者回報收到的信沒有官方Wallet圖標；原SVG／PNG都保留，不能把程式範本存在當實際收件成功。

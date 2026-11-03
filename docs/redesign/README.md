@@ -1,6 +1,8 @@
 # ARTDiCO HOST 改版執行總覽
 
-接續階段：[活動行報名、獨立講者提案與客服三段狀態](external-registration-staff-status-release.md)。使用者2026-11-03最新決策優先於下方舊本站一般報名規劃；入口切換與後台顯示在本輪實作，活動行Excel轉接及真人寄信另行處理。
+本輪：[活動行名單轉入Wallet與體檢](huodongxing-wallet-health.md)。一般報名維持活動行，專用XLSX預覽／明確匯入共用名額，確認信另預覽並明確寄送。沒有即時API同步或真人資料操作。
+
+前輪已發布：[活動行報名、獨立講者提案與客服三段狀態](external-registration-staff-status-release.md)。使用者2026-11-03最新決策優先於下方舊本站一般報名規劃；入口切換與後台顯示在本輪實作，活動行Excel轉接及真人寄信另行處理。
 
 目前階段：[日程可讀性、電話／微信與組織居中](public-readability-contact-layout-release.md)。依使用者圖四原稿恢復日程展示比例；兩個聯絡欄直接顯示並維持選填；組織依發布順序對稱排在球內。電話新增為私有general-v2選填欄位，回退保留新讀取器。正式來源與素材驗收回執記於該頁，不以本機cached資料代替。
 

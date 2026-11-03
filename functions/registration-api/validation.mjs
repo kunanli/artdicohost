@@ -113,6 +113,7 @@ export function validateRegistrationSubmission(payload, { policy, now } = {}) {
 }
 
 /** Existing permission plus staff provenance is a distinct intake route, never public consent. */
+export const validStaffRegistrationPhone=value=>typeof value==='string'&&value.isWellFormed()&&[...value].length<=150&&!/[\u0000-\u001f\u007f]/u.test(value);
 export function validateStaffRegistrationFields(source) {
   if (!plainObject(source) || !boundedJson(source)) return { valid: false, errors: { fields: '请提供有效的已有联络资料。' } };
   const errors = {}, fields = {};
@@ -123,6 +124,11 @@ export function validateStaffRegistrationFields(source) {
     else target[field.name] = checked.value;
   }
   for (const field of registrationSchema.baseFields) if (field.name !== 'consentAccepted') read(source, field, fields, `fields.${field.name}`);
+  if(Object.hasOwn(source,'phone')){
+    const phone=own(source,'phone');
+    if(!validStaffRegistrationPhone(phone))errors['fields.phone']='请提供150字以内的电话文字。';
+    else fields.phone=phone.normalize('NFC').trim();
+  }
   if (!fields.email && !fields.wechat) errors['fields.contact'] = '至少保留邮箱或微信联络方式。';
   for (const name of getActiveBranches(fields).filter(name => name !== 'accommodation')) {
     const branch = own(source, name);

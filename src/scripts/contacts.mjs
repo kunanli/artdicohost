@@ -2,14 +2,15 @@ import {createPeopleResolution} from '../lib/people-resolution.mjs';
 import {canManageEventOperations} from '../../shared/staff-permissions.mjs';
 import {createPersonConfirmation} from '../lib/person-confirmation.mjs';
 import {createOperationsFormDraft,createOperationsSaveState,operationsFieldErrors,operationsDraftStore,captureDraftFields,applyDraftFields} from '../lib/operations-form-draft.mjs';
-import { parseContactImport, WORKBOOK_SOURCE_KEY, sourceLabels } from '../../shared/contact-import.mjs';
+import { parseContactImport, parseHuodongxingImport, huodongxingReadOptions, WORKBOOK_SOURCE_KEY, sourceLabels } from '../../shared/contact-import.mjs';
 import { renderInvitation, invitationPngBlob, invitationFilename } from '../lib/invitation-renderer.mjs';
 import { EDITABLE_CONTACT_FIELDS, EDITABLE_CONTACT_ARRAY_FIELDS, savedContactProfileReceipt } from '../../shared/contact-editor.mjs';
-import { SESSION_ROLES, SESSION_ROLE_LABELS } from '../../shared/contacts-schema.mjs';
+import { SESSION_ROLES, SESSION_ROLE_LABELS, HUODONGXING_SOURCE_EVENT_ID } from '../../shared/contacts-schema.mjs';
 import { eventConfig } from '../config/event.mjs';
 import { contactProgress, summarizeContactProgress, invitationProgressLabels, contactDeclined,buildPosterInvitationSettings,INVITATION_POSTER_RENDER_VERSION } from '../../shared/organizer-progress.mjs';
 import { peopleRelationships, organizationMemberships, relationshipForContact, matchesPeopleRelationships, parseOrganizationSelection, admissionForContact, ADMISSION_LABELS, PUBLIC_ROLE_LABELS, savedContactReceipt, conversionForContact, conversionPreview, conversionReceipt, privateResponseAction, ownerTagPresentation, attendancePresentation, profilePublicationPresentation } from '../lib/people-relationships.mjs';
 import {createPeopleDirectory} from '../lib/people-directory.mjs';
+import {createHuodongxingMutations,huodongxingReasonLabel} from '../lib/delivery-settings.mjs';
 
 const $ = value => document.querySelector(value);
 const contactSaveState=createOperationsSaveState({form:$('[data-contact-form]'),button:$('[data-contact-save]')});
@@ -33,6 +34,8 @@ let relationships = null, relationshipSequence = 0, operationRevision = null, me
 const admissionReceipts = new Map();
 let profileDraft=null,contactDraft=null,profilePending=false;
 let directoryStamp='';
+let hdxActor='',hdxResult=null,hdxLookupDone=false;const hdxNames=new Map(),hdxChoices=new Map(),hdxSelected=new Set(),hdxMailSelected=new Set();
+const hdx=createHuodongxingMutations({request,getUser:()=>user,eventId:eventConfig.id});
 const resolution=createPeopleResolution({root:$('[data-people-resolution]'),request,getUser:()=>user,onChanged:()=>loadWorkspace(),onIntegrate:integratePerson});
 const personConfirmation=createPersonConfirmation({root:$('[data-person-confirmation]'),request,getUser:()=>user,draftStore:operationsDraftStore(),onInvalidated:clearPrivateState,isBlocked:()=>busy||operationsDirty||Boolean(uncertainSave),onChanged:()=>void directory.load()});
 const directory=createPeopleDirectory({root:$('[data-people-directory]'),request,getUser:()=>user,
@@ -149,7 +152,7 @@ function lock() {
   $('[data-contacts-sync-attending]').disabled=busy||!permitted()||!user?.roles.some(role=>['reviewer','superadmin'].includes(role))||!intentState||!contacts.some(item=>item.operations.responseStatus==='attending'&&!intentState.conversions?.some(row=>row.sourceContactId===item.id));
   $('[data-conversion-confirm]').disabled=busy||!permitted()||!conversionDraft||conversionDraft.unknown||!conversionDraft.eligibleIds.length;
   for(const button of document.querySelectorAll('[data-conversion-close]'))button.disabled=busy;
-  $('[data-contacts-refresh]').disabled=busy||!directoryAllowed();directory.lock(busy);personConfirmation.lock();resolution.lock();
+  $('[data-contacts-refresh]').disabled=busy||!directoryAllowed();directory.lock(busy);personConfirmation.lock();resolution.lock();hdxLock();
 }
 async function request(path, options = {}) {
   const generation=sessionGeneration;
@@ -175,7 +178,7 @@ async function request(path, options = {}) {
   if (!response.ok) {
     if ([401,403].includes(response.status) && path !== '/api/admin/login') clearPrivateState();
     const details = result.error?.fields ? [...new Set(Object.values(result.error.fields))].join(' ') : '';
-    const error=new Error(response.status === 409 ? (result.error?.code === 'INVITATION_GENERATION_MISMATCH' ? '邀请函生成记录已变化，请重新生成并下载当前版本，再核对实际发出的版本。' : '名单版本已更新或预览已过期。当前编辑仍保留，请先核对并刷新名单后重试。') : (result.error?.message || '操作未完成，请确认本地服务已启动。') + (details ? ' ' + details : ''));error.status=response.status;error.fields=result.error?.fields;throw error;
+    const error=new Error(response.status === 409 ? (result.error?.code === 'INVITATION_GENERATION_MISMATCH' ? '邀请函生成记录已变化，请重新生成并下载当前版本，再核对实际发出的版本。' : '名单版本已更新或预览已过期。当前编辑仍保留，请先核对并刷新名单后重试。') : (result.error?.message || '操作未完成，请确认本地服务已启动。') + (details ? ' ' + details : ''));error.status=response.status;error.code=result.error?.code;error.fields=result.error?.fields;throw error;
   }
   return result;
 }
@@ -198,6 +201,7 @@ function clearImport() {
   $('[data-contacts-file-name]').textContent = '支持原始 Excel 问卷或旧后台 contacts.json 快照';
 }
 function clearPrivateState() {
+  hdx.clear();hdxActor='';clearHdxView();
   resolution.clear();personConfirmation.clear();directory.clear();directoryStamp='';
   invitationGeneration++;invitationRenderVersion=undefined;
   profileDraft?.close();profileDraft=null;contactDraft?.close();contactDraft=null;profilePending=false;
@@ -258,6 +262,8 @@ function clearPrivateState() {
 }
 async function loadWorkspace() {
   const generation=sessionGeneration;
+  $('[data-hdx-open]').hidden=!canManageEventOperations(user);
+  const nextHdxActor=user?.id+'|'+[...(user?.roles??[])].sort().join(',');if(hdxActor!==nextHdxActor){if(hdxActor){hdx.clear();clearHdxView();}hdxActor=nextHdxActor;hdx.restore();}
   if (!directoryAllowed()) throw new Error('此账号没有人员或报名审核权限。');
   for(const element of document.querySelectorAll('[data-contact-only]'))element.hidden=!permitted();
   if(!permitted()){
@@ -749,3 +755,55 @@ async function integratePerson(contactId,expectedRevision){
  if(!result.admission?.registrationId)throw new Error('出席回复已保存，报名整合尚待核对。请重新预览后处理。');
  return (ADMISSION_LABELS[result.admission.status]??'报名已记录')+'。确认信状态以报名与票券页为准。';
 }
+
+const hdxReason=huodongxingReasonLabel;
+function hdxLock(){
+  const allowed=canManageEventOperations(user),pending=hdx.pending,mailPending=hdx.mailPending,blocked=busy||!allowed;
+  $('[data-hdx-open]').disabled=blocked;$('[data-hdx-file]').disabled=blocked||mailPending;
+  for(const control of $('[data-hdx-preview]').querySelectorAll('input,select'))control.disabled=blocked||pending||mailPending||control.dataset.hdxInvalid==='true'||control.dataset.hdxNeedsChoice==='true';
+  const total=hdxSelected.size;$('[data-hdx-commit]').textContent='导入'+total+'人';$('[data-hdx-commit]').disabled=blocked||pending||mailPending||!hdx.currentPreview?.canCommit||!total||total>100||!$('[data-hdx-source-confirm]').checked||!$('[data-hdx-permission-confirm]').checked;
+  $('[data-hdx-pending]').hidden=!pending;$('[data-hdx-lookup]').disabled=blocked||!pending;$('[data-hdx-resume]').disabled=blocked||!pending||!hdx.canResume||!hdxLookupDone;$('[data-hdx-repreview]').hidden=!hdx.canRestart;$('[data-hdx-repreview]').disabled=blocked||!hdx.canRestart;
+  $('[data-hdx-mail-preview]').disabled=blocked||pending||mailPending||!hdxResult?.registrationIds?.length;
+  $('[data-hdx-mail-pending]').hidden=!mailPending;$('[data-hdx-mail-lookup]').disabled=blocked||!mailPending;$('[data-hdx-mail-repreview]').hidden=!hdx.mailKnownRejected;$('[data-hdx-mail-repreview]').disabled=blocked||!hdx.mailKnownRejected;
+  $('[data-hdx-mail-select]').disabled=blocked||pending||mailPending||!hdx.currentMailPreview;
+  $('[data-hdx-mail-send]').textContent='寄送'+hdxMailSelected.size+'人';$('[data-hdx-mail-send]').disabled=blocked||pending||mailPending||!hdxMailSelected.size;
+  for(const control of $('[data-hdx-mail-rows]').querySelectorAll('input'))control.disabled=blocked||pending||mailPending||control.dataset.hdxInvalid==='true';
+  for(const button of document.querySelectorAll('[data-hdx-close]'))button.disabled=busy;
+}
+function clearHdxView(){hdxResult=null;hdxLookupDone=false;hdxNames.clear();hdxChoices.clear();hdxSelected.clear();hdxMailSelected.clear();for(const key of ['rows','results','mail-rows','mail-results'])$('[data-hdx-'+key+']').replaceChildren();for(const key of ['preview','result','mail','pending','mail-pending','error'])$('[data-hdx-'+key+']').hidden=true;$('[data-hdx-status]').textContent='';$('[data-hdx-summary]').textContent='';$('[data-hdx-source-confirm]').checked=false;$('[data-hdx-permission-confirm]').checked=false;$('[data-hdx-file]').value='';$('[data-hdx-file-name]').textContent='原始 .xlsx · 每次最多500行，导入最多100人';$('[data-hdx-mail-subject]').textContent='';$('[data-hdx-mail-text]').textContent='';if($('[data-hdx-dialog]').open)$('[data-hdx-dialog]').close();}
+function hdxStatus(text){$('[data-hdx-status]').textContent=text;}
+function hdxAction(run){const started=sessionGeneration,actor=user?.id;return action(async()=>{if(!canManageEventOperations(user))return;$('[data-hdx-error]').hidden=true;try{await run(()=>started===sessionGeneration&&actor===user?.id&&canManageEventOperations(user));}catch(error){if(started!==sessionGeneration||actor!==user?.id)return;$('[data-hdx-error]').textContent=error.message||'结果尚未核对，请保留原操作。';$('[data-hdx-error]').hidden=false;$('[data-hdx-error]').focus();}finally{hdxLock();}});}
+function renderHdxPreview(value){
+  hdxSelected.clear();hdxChoices.clear();hdxResult=null;hdxMailSelected.clear();$('[data-hdx-result]').hidden=true;$('[data-hdx-mail]').hidden=true;$('[data-hdx-mail-results]').replaceChildren();const output=$('[data-hdx-rows]');output.replaceChildren();
+  $('[data-hdx-summary]').textContent='新增 '+value.summary.new+' · 已有 '+value.summary.existing+' · 需核对 '+value.summary.needsReview;
+  for(const row of value.rows)hdxNames.set(row.tid,row.name);
+  for(const row of [...value.rows].sort((a,b)=>Number(b.status==='needs_review')-Number(a.status==='needs_review')||a.sourceRow-b.sourceRow)){
+    const li=node('li'),label=node('label'),checkbox=node('input');checkbox.type='checkbox';checkbox.dataset.hdxTid=row.tid;checkbox.dataset.hdxInvalid=String(!row.canSelect);checkbox.dataset.hdxNeedsChoice=String(row.canSelect&&(row.candidates.length>0||row.reason==='POSSIBLE_DUPLICATE'));const text=node('span');text.append(node('strong',row.name||'第'+row.sourceRow+'行'),node('small',row.email||'邮箱未提供'),node('small',({new:'新增',existing:'已有',needs_review:'需核对'})[row.status]+(row.reason?' · '+hdxReason(row.reason):'')));label.append(checkbox,text);li.append(label);
+    checkbox.addEventListener('change',()=>{if(checkbox.checked)hdxSelected.add(row.tid);else hdxSelected.delete(row.tid);hdxLock();});
+    if(row.canSelect&&(row.candidates.length||row.reason==='POSSIBLE_DUPLICATE')){const select=node('select');select.setAttribute('aria-label','核对第'+row.sourceRow+'行的报名关联');for(const [id,title]of [['','请选择关联方式'],['separate','已核对为不同人，新增报名'],...row.candidates.filter(item=>item.status==='confirmed').map(item=>[item.registrationId,'关联：'+item.name+(item.organization?' · '+item.organization:'')])]){const option=node('option',title);option.value=id;select.append(option);}select.addEventListener('change',()=>{hdxChoices.set(row.tid,select.value);checkbox.dataset.hdxNeedsChoice=String(!select.value);checkbox.checked=false;hdxSelected.delete(row.tid);hdxLock();});li.append(select);}
+    if(row.registrationId){const link=node('a','查看已有报名');link.href='/admin/person/#registration='+encodeURIComponent(row.registrationId);link.target='_blank';link.rel='noopener noreferrer';li.append(link);}output.append(li);
+  }
+  $('[data-hdx-source-confirm]').checked=false;$('[data-hdx-permission-confirm]').checked=false;$('[data-hdx-preview]').hidden=false;hdxStatus('请选择需要导入的有效票；相同联系方式不代表同一人。');
+}
+async function acceptHdxResult(value){
+  hdxResult=value;hdxMailSelected.clear();const holder=$('[data-hdx-results]');holder.replaceChildren();for(const row of value.results){const name=hdxNames.get(row.tid)||'票号 '+row.tid,li=node('li');li.append(node('strong',name),node('small',({imported:'已导入',linked:'已关联现有报名',existing:'已有，不重复新增',needs_review:'需核对',capacity_conflict:'名额需核对',unknown:'结果待核对'})[row.status]+(row.reason?' · '+hdxReason(row.reason):'')));if(row.registrationId){const link=node('a','查看报名');link.href='/admin/person/#registration='+encodeURIComponent(row.registrationId);link.target='_blank';link.rel='noopener noreferrer';li.append(link);}holder.append(li);}$('[data-hdx-result]').hidden=false;hdxStatus(value.status==='completed'||value.finished===true?'本批已核对，未寄送邮件。':'原导入尚未全部完成，请先核对原操作。');if(value.status==='completed'||value.finished===true){$('[data-hdx-preview]').hidden=true;await directory.load();}hdxLock();
+}
+async function lookupHdx(){try{const result=await hdx.lookup();hdxLookupDone=true;await acceptHdxResult(result);}catch(error){hdxLookupDone=error.status===404;throw error;}}
+$('[data-hdx-open]').addEventListener('click',()=>{if(busy||!canManageEventOperations(user))return;$('[data-hdx-dialog]').showModal();hdxLock();if(hdx.pending)void hdxAction(lookupHdx);else if(hdx.mailPending)hdxStatus('原确认函结果待核对，请核对原寄送。');});
+function closeHdx(){if(busy)return;if(!hdx.pending&&!hdx.mailPending)hdx.clear();clearHdxView();}
+for(const button of document.querySelectorAll('[data-hdx-close]'))button.addEventListener('click',closeHdx);$('[data-hdx-dialog]').addEventListener('cancel',event=>{event.preventDefault();closeHdx();});
+$('[data-hdx-file]').addEventListener('change',event=>{const file=event.currentTarget.files?.[0];if(!file||busy||!canManageEventOperations(user))return;void hdxAction(async current=>{
+  if(!/\.xlsx$/iu.test(file.name)||file.size<=0||file.size>2*1024*1024)throw Error('请选择不超过2 MiB的原始 .xlsx。');const bytes=new Uint8Array(await file.arrayBuffer());if(!current())return;const sha=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),byte=>byte.toString(16).padStart(2,'0')).join('');const {readSheet}=await import('read-excel-file/universal');const parsed=parseHuodongxingImport(await readSheet(bytes.buffer,huodongxingReadOptions));if(!current())return;let binary='';for(let offset=0;offset<bytes.length;offset+=32768)binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));const source={kind:'huodongxing',sourceEventId:HUODONGXING_SOURCE_EVENT_ID,rows:parsed.rows,sourceFileBase64:btoa(binary),originalSha256:sha};$('[data-hdx-file-name]').textContent=file.name;
+  if(hdx.pending){await hdx.attachSource(source);hdxStatus('已核对同一份原文件。请核对原操作后，明确继续原导入。');try{await lookupHdx();}catch(error){if(error.status!==404)throw error;hdxStatus('尚未找到原操作；可明确继续同一操作，不会另建一批。');}}
+  else renderHdxPreview(await hdx.preview(source));
+});});
+for(const selector of ['[data-hdx-source-confirm]','[data-hdx-permission-confirm]'])$(selector).addEventListener('change',hdxLock);
+$('[data-hdx-commit]').addEventListener('click',()=>void hdxAction(async()=>{const selectedTids=[...hdxSelected],links=[],separateTids=[];for(const tid of selectedTids){const choice=hdxChoices.get(tid);if(choice==='separate')separateTids.push(tid);else if(choice)links.push({tid,registrationId:choice});}hdxLookupDone=false;await acceptHdxResult(await hdx.commit({selectedTids,links,separateTids,confirmSource:$('[data-hdx-source-confirm]').checked,confirmPermission:$('[data-hdx-permission-confirm]').checked}));}));
+$('[data-hdx-repreview]').addEventListener('click',()=>void hdxAction(async()=>{const original=hdx.resetUnstarted();if(original)renderHdxPreview(await hdx.preview(original));else{clearHdxView();$('[data-hdx-dialog]').showModal();hdxStatus('请重新选择原文件，读取新的预览。');}}));
+$('[data-hdx-lookup]').addEventListener('click',()=>void hdxAction(lookupHdx));$('[data-hdx-resume]').addEventListener('click',()=>void hdxAction(async()=>{hdxLookupDone=false;await acceptHdxResult(await hdx.resume());}));
+function renderHdxMail(value){hdxMailSelected.clear();$('[data-hdx-mail-subject]').textContent=value.message.subject;$('[data-hdx-mail-text]').textContent=value.message.text;const output=$('[data-hdx-mail-rows]');output.replaceChildren();for(const row of value.rows){const li=node('li'),label=node('label'),checkbox=node('input');checkbox.type='checkbox';checkbox.value=row.registrationId;checkbox.dataset.hdxMail='';checkbox.dataset.hdxInvalid=String(!row.eligible||row.status!=='not_sent');const text=node('span');text.append(node('strong',row.name),node('small',row.organization),node('small',row.eligible&&row.status==='not_sent'?'可发送':({provider_accepted:'已由邮件服务接收，不重复发送',unknown:'结果待核对，不重寄',rejected:'明确未发出，请到报名页单独重寄'})[row.status]||'当前不可发送'));label.append(checkbox,text);li.append(label);checkbox.addEventListener('change',()=>{if(checkbox.checked)hdxMailSelected.add(row.registrationId);else hdxMailSelected.delete(row.registrationId);hdxLock();});output.append(li);}$('[data-hdx-mail]').hidden=false;hdxStatus('请明确选择本批收件人，点击寄送后才会发信。');}
+$('[data-hdx-mail-preview]').addEventListener('click',()=>void hdxAction(async()=>renderHdxMail(await hdx.previewMail(hdxResult.registrationIds))));
+$('[data-hdx-mail-repreview]').addEventListener('click',()=>void hdxAction(async()=>{const ids=hdx.acknowledgeRejectedMail();renderHdxMail(await hdx.previewMail(ids));}));
+$('[data-hdx-mail-select]').addEventListener('click',()=>{if(busy||hdx.pending||hdx.mailPending)return;for(const input of $('[data-hdx-mail-rows]').querySelectorAll('input'))if(input.dataset.hdxInvalid!=='true'){input.checked=true;hdxMailSelected.add(input.value);}hdxLock();});
+function acceptHdxMail(result){const output=$('[data-hdx-mail-results]');output.replaceChildren();const names=new Map((hdx.currentMailPreview?.rows??[]).map(row=>[row.registrationId,row.name]));for(const row of result.results){const li=node('li');li.append(node('strong',names.get(row.registrationId)||'本批报名'),node('small',({provider_accepted:'邮件服务已接收',rejected:'明确未发出',unknown:'结果待核对，不重寄',not_attempted:'尚未尝试',withdrawn:'名额已取消',disabled:'邮件通知已暂停',not_configured:'邮件设置未就绪'})[row.status]||'请到报名页核对当前寄送结果'));output.append(li);}hdxMailSelected.clear();for(const input of $('[data-hdx-mail-rows]').querySelectorAll('input'))input.checked=false;hdxStatus(hdx.mailPending?'原确认函结果待核对，不会重寄。':'已取得本批寄送回执；邮件服务接收不等于送达。');hdxLock();}
+$('[data-hdx-mail-send]').addEventListener('click',()=>void hdxAction(async()=>acceptHdxMail(await hdx.sendMail([...hdxMailSelected]))));$('[data-hdx-mail-lookup]').addEventListener('click',()=>void hdxAction(async()=>acceptHdxMail(await hdx.lookupMail())));

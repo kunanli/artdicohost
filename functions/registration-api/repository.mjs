@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { isSpeakerApplicationFields } from '../../shared/general-application.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { own, plainObject, parseTimestamp } from './policy.mjs';
+import { validStaffRegistrationPhone } from './validation.mjs';
 import { AdmissionError, admissionDefaults, admissionView, validateAdmissions, admissionSnapshot, admissionFor,
   transitionAdmission, appendAdmissionAudit, addAdmission, releaseWithdrawn, promoteEligible, operationResult, validAdmissionOperation, personGroupFor } from './admissions.mjs';
 
@@ -91,6 +92,7 @@ function checkedRecord(value, entry, eventId) {
       || typeof source.permissionReference !== 'string' || !source.permissionReference.trim() || source.permissionReference.length > 1000
       || /[\u0000-\u001f\u007f]/u.test(source.permissionReference)
       || value.consent.accepted !== false || value.consent.version !== null || value.consent.acceptedAt !== null) throw unavailable();
+    if(Object.hasOwn(value.fields,'phone')&&!validStaffRegistrationPhone(own(value.fields,'phone')))throw unavailable();
   } else throw unavailable();
   registrationJson(value, { maxBytes: 160 * 1024 });
   return value;
@@ -250,11 +252,11 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
       if (entry.payloadHash !== payloadHash) return { outcome: 'conflict' };
       return saved(state.value, entry, 'replayed', operationId);
     },
-    async accept({ value, keyHash, payloadHash, capacity: requestedCapacity = defaults.capacity, beforeCommit, admissionKind = 'attendee', actorId = 'public', operationId = null, expectedRevision, requestHash = payloadHash, getExcluded }) {
+    async accept({ value, keyHash, payloadHash, capacity: requestedCapacity = defaults.capacity, beforeCommit, admissionKind = 'attendee', actorId = 'public', operationId = null, expectedRevision, requestHash = payloadHash, getExcluded,requireConfirmed=false }) {
       const capacity = requestedCapacity;
       if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > MAX_REGISTRATIONS || !HASH.test(keyHash ?? '') || !HASH.test(payloadHash ?? '')
         || !plainObject(value) || value.eventId !== eventId || !plainObject(value.fields) || !plainObject(value.consent)
-        || beforeCommit !== undefined && typeof beforeCommit !== 'function') throw unavailable();
+        || beforeCommit !== undefined && typeof beforeCommit !== 'function'||typeof requireConfirmed!=='boolean'||requireConfirmed&&value.provenance?.kind!=='staff_assisted') throw unavailable();
       if (pinned && capacity !== defaults.capacity) throw unavailable();
       const submittedAt = ['staff_assisted', 'staff_entry'].includes(value.provenance?.kind) ? value.submittedAt : value.consent.acceptedAt;
       if (parseTimestamp(submittedAt) === null) throw unavailable();
@@ -282,10 +284,12 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
         // Saved keys are resolved above; switching policy never approves old applications.
         const reviewRequired = record.provenance.kind === 'public' && (attendeeReviewRequired || isSpeakerApplicationFields(record.fields));
         const automaticPublic = record.provenance.kind === 'public' && !reviewRequired;
-        const releasedIds = reviewRequired ? [] : releaseWithdrawn(next, await exclusions(next, getExcluded, automaticPublic), changedAt);
-        const promotedIds = reviewRequired ? [] : promoteEligible(next, changedAt);
-        const status = addAdmission(next, entry, admissionKind, changedAt, { reviewRequired });
-        if (status === null) return { outcome: 'closed' };
+        // Confirmed-only staff intake never changes other people's admissions.
+        // Capacity is checked on this same CAS candidate, after every conflict reread.
+        const releasedIds = reviewRequired||requireConfirmed ? [] : releaseWithdrawn(next, await exclusions(next, getExcluded, automaticPublic), changedAt);
+        const promotedIds = reviewRequired||requireConfirmed ? [] : promoteEligible(next, changedAt);
+        const status = addAdmission(next, entry, admissionKind, changedAt, { reviewRequired,requireConfirmed });
+        if (status === null) return { outcome: requireConfirmed?'capacity_conflict':'closed' };
         if(linked){const group=personGroupFor(next,{contactId:record.provenance.sourceContactId});group.registrationIds.push(entry.id);group.primaryRegistrationId=entry.id;}
         try {
           await objects.putImmutable(`${prefix}/records/${recordHash}.json`, bytes, { contentType: 'application/json' });

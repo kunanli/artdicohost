@@ -19,9 +19,9 @@ const aborted = request => { if (request.signal.aborted) throw new Error('Person
  * Full original answers, capability links and provider configuration never enter the projection.
  */
 export function createPersonWorkspaceApi({ authenticate, loadContacts, loadIntent, loadPersonGroups, loadRegistration, loadAdmission, loadContent, loadConfirmations, loadVolunteers,
-  loadRegistrationDirectory, loadAdmissions, loadDeliveryDirectory, loadHealthRegistrations } = {}) {
+  loadRegistrationDirectory, loadAdmissions, loadDeliveryDirectory, loadHealthRegistrations, externalAttendanceEvidence } = {}) {
   if (typeof authenticate !== 'function') throw new TypeError('Person authentication required.');
-  for (const loader of [loadContacts, loadIntent, loadRegistration, loadAdmission, loadContent, loadConfirmations, loadVolunteers, loadRegistrationDirectory, loadAdmissions, loadDeliveryDirectory, loadHealthRegistrations])
+  for (const loader of [loadContacts, loadIntent, loadRegistration, loadAdmission, loadContent, loadConfirmations, loadVolunteers, loadRegistrationDirectory, loadAdmissions, loadDeliveryDirectory, loadHealthRegistrations,externalAttendanceEvidence])
     if (loader !== undefined && typeof loader !== 'function') throw new TypeError('Trusted person source required.');
   return async function handle(request) {
     const url = new URL(request.url), origin = request.headers.get('origin');
@@ -37,6 +37,20 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
       const session = await authenticate(request), actor = session?.user;
       if (typeof actor?.id !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/u.test(actor.id) || !Array.isArray(actor.roles)) return error('AUTH_REQUIRED', '请先登录。', 401);
       const permissions = personPermissions(actor);
+      async function externalEvidence(ids) {
+        if (!externalAttendanceEvidence || !canManageEventOperations(actor) || !permissions.registration || !ids.length) return null;
+        try {
+          const value = await externalAttendanceEvidence({registrationIds:ids,actor}); aborted(request);
+          if (!value || value.kind!=='huodongxing' || value.verified!==true || value.sourceEventId!=='8884819113200'
+            || !Number.isSafeInteger(value.revision) || value.revision<0 || !Array.isArray(value.registrationIds)
+            || value.registrationIds.length>ids.length || new Set(value.registrationIds).size!==value.registrationIds.length
+            || Array.from(value.registrationIds).some(id=>typeof id!=='string'||!REGISTRATION_ID.test(id)||!ids.includes(id))) throw new Error('External attendance unavailable.');
+          return {state:'available',revision:value.revision,registrationIds:[...value.registrationIds]};
+        } catch(failure) {
+          aborted(request);if(failure?.status===401||failure?.code==='AUTH_REQUIRED')throw failure;
+          return {state:'unavailable',revision:null,registrationIds:[]};
+        }
+      }
       if (original) {
         if (!permissions.contact) return error('FORBIDDEN', '原问卷需要人员邀约读取权限。', 403);
         if (!CONTACT_ID.test(original[1])) return error('INVALID_PERSON_ID', '人员编号无效。', 400);
@@ -74,11 +88,13 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
           load(loadAdmissions, permissions.registration), load(loadContent, permissions.contact),
           load(loadDeliveryDirectory, permissions.registration && Boolean(loadDeliveryDirectory)).catch(()=>null),
         ]);
-        const result = peopleDirectoryProjection({ permissions, roster, intent, registrationDirectory, admissions, content, deliveries });
+        const externalAttendance=await externalEvidence((registrationDirectory?.registrations??[]).map(row=>row.id));
+        const result = peopleDirectoryProjection({ permissions, roster, intent, registrationDirectory, admissions, content, deliveries,externalAttendance });
         const revisions = { contacts: roster?.revision ?? null, invitations: intent?.revision ?? null, registration: registrationDirectory?.revision ?? null,
           applications: registrationDirectory?.applicationRevision ?? null, admissions: admissions?.revision ?? null, content: content?.revision ?? null, delivery: deliveries?.revision ?? null, publishedContent: content?.published?.revision ?? null };
-        peopleDirectoryWork(result, {actor, roster, registrationDirectory, admissions, content, revisions});
-        const revision = createHash('sha256').update(JSON.stringify({ revisions, permissions, view, query, work,attendance })).digest('hex');
+        peopleDirectoryWork(result, {actor, roster, registrationDirectory, admissions, content, revisions,externalAttendance});
+        const revision = createHash('sha256').update(JSON.stringify({ revisions, permissions, view, query, work,attendance,
+          ...(externalAttendance?{externalAttendanceRevision:externalAttendance.revision,externalAttendanceState:externalAttendance.state}:{}) })).digest('hex');
         let offset=0;
         if (cursor) {
           let parsed; try { parsed=JSON.parse(Buffer.from(cursor,'base64url').toString('utf8')); } catch { return error('INVALID_REQUEST','分页格式无效。',400); }
@@ -115,11 +131,12 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
           return { state: 'unavailable', value: null, notFound: failure?.status === 404 || failure?.code === 'NOT_FOUND' };
         }
       }
-      let contactRaw = null, contact = null, registration = null, contactId = kind === 'contact' ? id : null,
+      let contactRoster = null, contactRaw = null, contact = null, registration = null, contactId = kind === 'contact' ? id : null,
         registrationId = kind === 'registration' ? id : null, linkageState = 'unlinked', intent = null, admission = null, content = null, confirmations = null;
       if (kind === 'contact') {
         const roster = await attempt(loadContacts, [actor], contactsSource);
         if (roster.state !== 'available') return unavailable();
+        contactRoster = roster.value;
         contactRaw = roster.value.contacts.find(item => item.id === id);
         if (!contactRaw) return error('PERSON_NOT_FOUND', '未找到这位人员。', 404);
         try { contact = contactProjection(contactRaw); } catch { return unavailable(); }
@@ -158,6 +175,7 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
         const roster = await attempt(loadContacts, [actor], contactsSource);
         availability.contact = roster.state;
         if (roster.value) {
+          contactRoster = roster.value;
           contactRaw = roster.value.contacts.find(item => item.id === contactId);
           try { contact = contactRaw ? contactProjection(contactRaw) : null; } catch { contact = null; }
           if (contact) { revisions.contacts = roster.value.revision; availability.contact = 'available'; }
@@ -230,6 +248,14 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
       catch { return unavailable(); }
       aborted(request);
       const linkage={ state: linkageState, contactId: permissions.contact ? contactId : null, registrationId };
+      const externalAttendance=await externalEvidence(registrationId?[registrationId]:[]);
+      const attendanceGroup=intent?.personGroups?.find(group=>group.registrationIds.includes(registrationId)||group.contactIds.includes(contactId));
+      const relatedContacts=attendanceGroup?contactRoster?.contacts.filter(item=>attendanceGroup.contactIds.includes(item.id))??[]:[contactRaw].filter(Boolean);
+      const externalSource=relatedContacts.some(item=>item.source?.key==='huodongxing-8884819113200');
+      const explicitDecline=relatedContacts.some(item=>item.profile?.contactConsent==='declined'||item.operations?.responseStatus==='declined');
+      if(registration&&externalSource&&explicitDecline)registration.externalAttendance='declined';
+      else if(registration&&admission?.status==='confirmed'&&externalAttendance?.registrationIds.includes(registrationId))registration.externalAttendance='verified';
+      else if(registration&&externalSource&&externalAttendance?.state==='unavailable')registration.externalAttendance='unavailable';
       const attendance=personAttendanceProjection({contactRaw,registration,admission,intent,content,communications,availability,linkage});
       return json({ schemaVersion: 1, selected: { kind, id }, person,attendance,
         linkage,

@@ -122,6 +122,8 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         const sourceContactId = own(input, 'sourceContactId'), actor = own(input, 'actor'), supplied = own(input, 'input');
         const actorId = own(actor, 'id');
         if (!staffSource(sourceContactId) || !staffActor(actor)) return result('forbidden');
+        const requireConfirmed=own(input,'requireConfirmed');
+        if(Object.hasOwn(input,'requireConfirmed')&&requireConfirmed!==true)return result('invalid');
         const permissionReference = own(supplied, 'permissionReference');
         if (typeof permissionReference !== 'string' || !permissionReference.trim() || permissionReference.length > 1000 || /[\u0000-\u001f\u007f]/u.test(permissionReference)) return result('invalid');
         const fields = own(supplied, 'fields'), keyHash = digest('staff\0' + eventId + '\0' + sourceContactId);
@@ -136,7 +138,8 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         const value = { eventId, fields: validation.value, submittedAt: recordedAt,
           consent: { accepted: false, version: null, acceptedAt: null },
           provenance: { kind: 'staff_assisted', sourceContactId, actorId, recordedAt, permissionReference: permissionReference.trim() } };
-        return await decorate(await repository.accept({ value, keyHash, payloadHash, capacity, actorId, getExcluded: admissions.getExcluded(), beforeCommit: () => policyAt(current()).valid }), undefined, false);
+        return await decorate(await repository.accept({ value, keyHash, payloadHash, capacity, actorId, requireConfirmed:requireConfirmed===true,
+          getExcluded: admissions.getExcluded(), beforeCommit: () => policyAt(current()).valid }), undefined, false);
       } catch { return result('unavailable'); }
     },
     async getStaffRegistrationBySource(input) {

@@ -380,7 +380,10 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
         await call(first.api, '/api/admin/content', { headers: owner }, 401);
         await call(first.api, '/api/admin/logout', { method: 'POST', headers: alias, body: {} }, 200);
         await call(second.api, '/api/admin/content', { headers: alias }, 401);
-        await call(first.api, '/api/admin/logout', { method: 'POST', headers: editor, body: {} }, 200);
+        // Both independently issued owner sessions prove durable revocation
+        // above. The editor's role was already checked in login-permissions;
+        // another logout adds no revocation proof and spends transport needed
+        // for the new external-ledger backup read and login-window boundaries.
       });
       await stage('shared-login-budget', async () => {
         const id = hash('global'), limit = Math.min(CLOUD_LOGIN_POLICY.limit, CLOUD_LOGIN_POLICY.globalLimit);

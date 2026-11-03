@@ -158,10 +158,10 @@ export function promoteEligible(index, at) {
   return promotedIds;
 }
 
-export function addAdmission(index, entry, kind, at, { reviewRequired = false } = {}) {
+export function addAdmission(index, entry, kind, at, { reviewRequired = false,requireConfirmed=false } = {}) {
   if (!ADMISSION_KINDS.includes(kind) || Object.hasOwn(index.admissions.people, entry.id)) fail('invalid');
-  if (typeof reviewRequired !== 'boolean' || reviewRequired && (index.schemaVersion !== 3 || kind !== 'attendee')) fail('invalid');
-  const status = reviewRequired ? 'pending_review' : canConfirm(index, kind) ? 'confirmed' : index.admissions.settings.waitlistEnabled ? 'waitlisted' : null;
+  if (typeof reviewRequired !== 'boolean' || typeof requireConfirmed!=='boolean'||reviewRequired&&requireConfirmed || reviewRequired && (index.schemaVersion !== 3 || kind !== 'attendee')) fail('invalid');
+  const status = reviewRequired ? 'pending_review' : canConfirm(index, kind) ? 'confirmed' : !requireConfirmed&&index.admissions.settings.waitlistEnabled ? 'waitlisted' : null;
   if (status === null) return null;
   index.entries.push(entry);
   index.admissions.people[entry.id] = { kind, status, queueNumber: index.entries.length, changedAt: at };

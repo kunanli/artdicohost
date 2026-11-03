@@ -3,6 +3,28 @@ import { INVITATION_POSTER_RENDER_VERSION } from './organizer-progress.mjs';
 export const CONTACT_SCHEMA_VERSION = 1;
 export const MAX_IMPORT_ROWS = 500;
 export const MAX_CONTACTS = 5000;
+export const HUODONGXING_SOURCE_EVENT_ID = '8884819113200';
+export const HUODONGXING_SOURCE_KEY = 'huodongxing-' + HUODONGXING_SOURCE_EVENT_ID;
+export const HUODONGXING_JOURNAL_PREFIX = 'cms/v1/external-registrations/' + HUODONGXING_SOURCE_EVENT_ID;
+export const HUODONGXING_TICKET_FIELDS = Object.freeze(['sourceRow','tid','registrationNumber','orderNumber','name','email','phone','wechat','registeredAt','lastVerifiedAt','status']);
+
+/** Staff-normalized export projection, not a platform verification response.
+ * Row position is diagnostic only; source identity is the fixed event plus TID. */
+export function validateHuodongxingTicketRow(input) {
+  const errors = {}, plain = input !== null && typeof input === 'object' && !Array.isArray(input) && [Object.prototype,null].includes(Object.getPrototypeOf(input));
+  if (!plain || Reflect.ownKeys(input).length !== HUODONGXING_TICKET_FIELDS.length || HUODONGXING_TICKET_FIELDS.some(key => { const property=Object.getOwnPropertyDescriptor(input,key);return !property?.enumerable || !Object.hasOwn(property,'value'); })) return {valid:false,errors:{row:'活动行票资料字段无效。'},value:null};
+  const value={sourceRow:input.sourceRow};
+  if (!Number.isSafeInteger(value.sourceRow) || value.sourceRow<2 || value.sourceRow>MAX_IMPORT_ROWS+1) errors.sourceRow='请保留有效的原始表格行号。';
+  for (const [key,limit] of [['tid',100],['registrationNumber',100],['orderNumber',100],['name',80],['email',254],['phone',150],['wechat',100],['registeredAt',100],['lastVerifiedAt',100],['status',80]]) {
+    const text=input[key];
+    if (typeof text!=='string' || text.length>limit*2 || !text.isWellFormed() || [...text].length>limit || /[\u0000-\u001f\u007f-\u009f]/u.test(text)) {errors[key]='请使用长度及格式有效的原始文字。';value[key]='';}
+    else value[key]=text.normalize('NFC').trim();
+  }
+  if (!value.tid || /\s/u.test(value.tid)) errors.tid='每张票须有独立、完整的文字 TID。';
+  value.email=value.email.toLowerCase();
+  if (value.email && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(value.email)) errors.email='请核对原报名邮箱。';
+  return {valid:Object.keys(errors).length===0,errors,value};
+}
 export const CONTACT_PRIORITIES = Object.freeze(['normal', 'high']);
 export const RESPONSE_STATUSES = Object.freeze(['pending', 'attending', 'declined']);
 export const PARTICIPATION_FORMS = Object.freeze(['guest', 'speaker', 'panelist', 'host', 'organizer', 'booth', 'student_showcase', 'attendee']);

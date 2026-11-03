@@ -13,11 +13,11 @@ import { CANDIDATE_SOURCES, CANDIDATE_NODE, CANDIDATE_KIND, CANDIDATE_ARCHIVE, M
 import { verifyFcPublication } from '../scripts/verify-fc-package.mjs';
 
 const gitEnv = { PATH: process.env.PATH ?? '', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' };
-test('the entry ticket modules fit the bounded 140-file candidate without admitting an extra file or source', () => {
+test('the entry ticket modules fit the bounded 137-file candidate without admitting an extra file or source', () => {
   const record=(path,mode='0644')=>({path,mode,bytes:1,sha256:'a'.repeat(64)});
   const files=[...CANDIDATE_SOURCES.map(([,path,mode])=>record(path,mode)),record('runtime/node/bin/node.xz'),record('release.json')];
   for(let index=0;files.length<MAX_CANDIDATE_FILES;index++)files.push(record('admin-assets/_astro/synthetic-'+index+'.js'));
-  assert.equal(files.length,140);assert.doesNotThrow(()=>candidateFileRecords(files));
+  assert.equal(files.length,137);assert.doesNotThrow(()=>candidateFileRecords(files));
   assert.throws(()=>candidateFileRecords([...files,record('admin-assets/_astro/overflow.js')]),/Invalid candidate file list/u);
   assert.throws(()=>candidateFileRecords([...files.slice(0,-1),record('private/unlisted.json')]),/candidate/iu);
 });

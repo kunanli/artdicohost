@@ -66,7 +66,7 @@ export async function loadCloudContentRelease({ codeDirectory } = {}) {
       || !exactKeys(release.node, Object.keys(NODE)) || Object.keys(NODE).some(key => release.node[key] !== NODE[key])
       || !Array.isArray(release.files) || release.files.length > 128 || !release.files.every(validRecord)
       || new Set(release.files.map(file => file.path)).size !== release.files.length
-      || !Array.isArray(release.assets) || release.assets.length > 40 || release.assets.length < REQUIRED.length) throw failure();
+      || !Array.isArray(release.assets) || release.assets.length > 42 || release.assets.length < REQUIRED.length) throw failure();
     const records = new Map(release.files.map(file => [file.path, file]));
     const assets = new Map(); let total = 0;
     for (const asset of release.assets) {

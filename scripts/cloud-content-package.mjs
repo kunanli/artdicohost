@@ -11,7 +11,7 @@ export const CANDIDATE_KIND = 'fc-cloud-content-candidate';
 export const CANDIDATE_ARCHIVE = 'artdicohost-cloud-content-candidate.zip';
 // Entry ticket modules, MIT QR source/license and one staff page extend the fixed
 // package. Byte, inflation, source-path and FC request limits remain unchanged.
-export const MAX_CANDIDATE_FILES = 140;
+export const MAX_CANDIDATE_FILES = 137;
 export const CANDIDATE_NODE = Object.freeze({ version: 'v24.19.0', platform: 'linux', arch: 'x64', sha256: 'bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12' });
 const MiB = 1024 * 1024;
 const BUILD_SCOPES = ['src', 'shared', 'public', 'astro.config.mjs', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json'];
@@ -177,7 +177,7 @@ async function buildAssets({ repository, sourceCommit, output, nodeBinary, execu
     if (selected.has(url)) continue;
     const path = candidateAssetPath(url).slice('admin-assets/'.length);
     const bytes = await candidateBytes(resolve(dist, path), 2 * MiB);
-    if (selected.size >= 40 || (capacity += bytes.length) > 8 * MiB) fail('Candidate static asset capacity exceeded');
+    if (selected.size >= 42 || (capacity += bytes.length) > 8 * MiB) fail('Candidate static asset capacity exceeded');
     if (/-----BEGIN [A-Z ]*PRIVATE KEY-----|github_pat_[A-Za-z0-9_]{30,}|ghp_[A-Za-z0-9]{30,}/u.test(bytes.toString('utf8'))) fail('Possible secret in candidate static output');
     selected.set(url, bytes);
     if (url.endsWith('/') || /\.(?:css|m?js)$/u.test(url)) pending.push(...candidateReferences(bytes, url));
@@ -295,7 +295,7 @@ export function candidateZipEntries(bytes, records) {
 }
 
 export function validateCandidateAssets(release, contents) {
-  if (!Array.isArray(release.assets) || release.assets.length < FIXED_ASSETS.length || release.assets.length > 40) fail('Invalid candidate asset map');
+  if (!Array.isArray(release.assets) || release.assets.length < FIXED_ASSETS.length || release.assets.length > 42) fail('Invalid candidate asset map');
   const urls = new Set(), paths = new Set(); let total = 0;
   for (const item of release.assets) {
     exactKeys(item, ['url', 'path', 'bytes', 'sha256', 'mode'], 'asset');

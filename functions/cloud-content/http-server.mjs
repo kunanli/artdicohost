@@ -26,7 +26,7 @@ export function isCloudAdminAssetUrl(path) {
 }
 
 function staticAssets(input) {
-  if (!(input instanceof Map) || input.size > 40) throw new TypeError('后台静态资源清单无效。');
+  if (!(input instanceof Map) || input.size > 42) throw new TypeError('后台静态资源清单无效。');
   const result = new Map(); let total = 0;
   for (const [path, bytes] of input) {
     const html = ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/'].includes(path);

@@ -35,3 +35,17 @@
 首輪PR76 run41585957754／check125751365286的1820測試通過，但scroll6在1920的組織淡入停於3案：單組織的新置中位置在標題進入時仍低於視窗，舊測試要求兩者同時低透明度的幾何前提已不成立。僅將合成組織樣本改為與目前正式資料相同的8張，保留第一張ID及原有低透明度／延遲／焦點取消／原生輸入／FPS／降級守門；不修改產品或放寬斷言。相同最終HTML本機6案成功，腳本SHA `286d022e2e26f4d9c84b72a0911f80ebe370f4be0b3e31b08dbafe53e2fee781`。首輪失敗回執保留；首輪新捕獲確認仍為R44、snapshot SHA `71037be9782b05af1da404fd6ab667b538fbb5e4f4356fdbec943787d241c8d7`、8原始Logo，與本機cached輸入一致，但最終提交仍須完整CI再驗。
 
 後續活動行需求另行處理：使用者已確認可匯出Excel／CSV，建議先做每人票號／有效狀態的批次轉接，沿用本站同一名額、Wallet郵件與核銷；目前缺匯出表頭，已請使用者提供欄位名稱而非個資。本階段不切換報名CTA、不匯入名單、不新增活動行轉接器，不宣稱即時同步或兩種QR互通。
+
+## PR76 正式發布回執
+
+[PR76](https://github.com/kunanli/artdicohost/pull/76) 最終head `fefe1e7a02b4ec1f73342a6d34269d1cb80b3cf5`，[PR流程41587101536](https://github.com/kunanli/artdicohost/actions/runs/41587101536) 全部必要工作成功；synthetic merge `aac03e28ccf3595cf594ef3b4e363c3d5a4bb29c`。合併main `a8ec877271ceddf5cdece0ff0655024755d1e7fe`，[正式流程41588441006](https://github.com/kunanli/artdicohost/actions/runs/41588441006) 五工作均成功。
+
+PR及main各核對1820／1820 Node測試、fail／cancelled／skipped／todo皆0；來源796、Astro517、0errors／0warnings／2hints。兩次同準確來源的10組瀏覽器回執為捲動6、字體4、報名10、排序8、寄信恢復8、入場6、名單排序刪除2、郵件預覽6、短鏈4、正式素材13，共67案；頁面錯誤0。首頁HTML兩次皆為 `a0a1342b6f253138aeeaa3f80885bbdc6ec696457fefae0e9e2c32528826be45`。
+
+正式素材在各次CI獨立匿名捕獲，同次sourceCommit與captureSourceCommit分別等於該PR synthetic merge／main。snapshot SHA `71037be9782b05af1da404fd6ab667b538fbb5e4f4356fdbec943787d241c8d7`，9位嘉賓、8組織、8原始Logo；漢字300次實際ink檢查，blank／missing均0，90負控制。未捕獲媒體明示404替身，不當作真人裝置或實寄證明。
+
+2026-11-03 06:25:06 UTC，FC準確main驗證contentEnabled／registrationEnabled=true、私有OSS acceptance=passed、2獨立client／1FC process；06:25:13核對14個準確後台HTTPS頁，06:25:15匿名GET／OPTIONS核對enabled=true、attendeeReviewRequired=false及兩個preflight=true。06:25:08唯讀郵件readiness verified=true、automaticEnabled=true、email ready=true、missing／invalid空、walletReady=true；mailRequests／businessWrites均0，只代表配置就緒，不證明EmailJS接受或實際收件。
+
+06:27:06 UTC，68個準確公開物件逐一HTTPS通過；06:27:09短網址／入場路徑的publicEntry、invalidEntry、cors三項共3請求通過，commit皆為上述main。本輪未提交真實報名、匯入真人、寄信、修改名額或發布內容草稿。
+
+這份補記保存在獨立docs分支，不另建PR或重複觸發main部署。後續使用者已補最新19欄（含選填微信）匯出並授權普通報名改活動行、本站保留講者及後台三段出席分類，屬下一階段；本回執只證明PR76版型與聯絡欄位版本。

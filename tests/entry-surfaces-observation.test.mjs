@@ -70,7 +70,7 @@ test('observation checks fixed sources in order without local checkout, credenti
   assert.equal(result.phases[0].receipt, true);
   assert.equal(result.phases[1].size, true); assert.equal(result.phases[1].hash, true); assert.equal(result.phases[1].attachment, false);
   assert.equal(result.phases[2].envelope, true); assert.equal(result.phases[2].errorCode, 'ENTRY_NOT_FOUND');
-  assert.equal(result.phases[3].origin, true); assert.equal(result.phases[3].methods, true); assert.equal(result.phases[3].credentials, false); assert.equal(result.phases[3].empty, true);
+  assert.equal(result.phases[3].origin, true); assert.equal(result.phases[3].methods, true); assert.equal(result.phases[3].credentials, false); assert.equal(result.phases[3].credentialsValue, 'absent'); assert.equal(result.phases[3].empty, true);
 });
 
 test('transport and response failures remain observations and cannot prevent the other fixed probes', async () => {
@@ -85,7 +85,7 @@ test('transport and response failures remain observations and cannot prevent the
   assert.equal(result.phases[0].transport, false); assert.equal(result.phases[0].status, null);
   assert.equal(result.phases[1].status, 302); assert.equal(result.phases[1].redirect, true); assert.equal(result.phases[1].url, false);
   assert.equal(result.phases[1].encoding, false); assert.equal(result.phases[1].cookie, true); assert.equal(result.phases[1].hash, false);
-  assert.equal(result.phases[2].errorCode, 'AUTH_REQUIRED'); assert.equal(result.phases[3].origin, false); assert.equal(result.phases[3].methods, false); assert.equal(result.phases[3].credentials, true);
+  assert.equal(result.phases[2].errorCode, 'AUTH_REQUIRED'); assert.equal(result.phases[3].origin, false); assert.equal(result.phases[3].methods, false); assert.equal(result.phases[3].credentials, true); assert.equal(result.phases[3].credentialsValue, 'other');
 });
 
 test('untrusted receipts cannot claim a commit or authorize an entry hash comparison', async () => {

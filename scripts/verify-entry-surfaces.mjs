@@ -101,7 +101,7 @@ export async function observeEntrySurfaces({ fetchFn = fetch, timeoutMs = 10_000
     if (phase === 'release') Object.assign(facts, { mime: false, cache: false, receipt: false });
     if (phase === 'public-entry') Object.assign(facts, { mime: false, cache: false, attachment: false, size: false, hash: false });
     if (phase === 'invalid-entry') Object.assign(facts, { mime: false, cache: false, errorCode: 'UNREADABLE', envelope: false });
-    if (phase === 'preflight') Object.assign(facts, { cache: false, origin: false, methods: false, credentials: false, empty: false });
+    if (phase === 'preflight') Object.assign(facts, { cache: false, origin: false, methods: false, credentials: false, credentialsValue: 'absent', empty: false });
     const controller = new AbortController(); let timer, response, reader;
     const timeout = new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(failed()); }, timeoutMs); timer.unref(); });
     const bounded = value => Promise.race([value, timeout]);
@@ -129,6 +129,8 @@ export async function observeEntrySurfaces({ fetchFn = fetch, timeoutMs = 10_000
         facts.origin = response.headers.get('access-control-allow-origin') === SITE;
         facts.methods = directives(response.headers.get('access-control-allow-methods')) === 'get,head,options';
         facts.credentials = response.headers.has('access-control-allow-credentials');
+        const credentialsHeader = response.headers.get('access-control-allow-credentials');
+        facts.credentialsValue = credentialsHeader === null ? 'absent' : ['true','false'].includes(credentialsHeader) ? credentialsHeader : 'other';
       }
       const declared = response.headers.get('content-length');
       facts.declared = declared === null || /^(?:0|[1-9]\d*)$/u.test(declared) && Number.isSafeInteger(Number(declared)) && Number(declared) <= maxBytes;

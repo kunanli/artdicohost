@@ -1,5 +1,5 @@
 // Built-page regression over an anonymously captured PUBLIC snapshot and its
-// exact uploaded organization image bytes. Actual data stays in ignored paths.
+// exact uploaded organization and guest portrait image bytes. Actual data stays in ignored paths.
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
@@ -48,11 +48,14 @@ for(const key of referenceKeys){
  assert.equal(originals[0].logoUrl?.split('/').at(-1)?.split('.')[0],reviewedDigests.get(key),'original reviewed upload digest is not silently replaced');
 }
 const logoPaths = new Set(snapshot.content.organizations.map(item => item.logoUrl).filter(Boolean));
-assert.equal(logoPaths.size,organizationCount,'each currently published organization has its exact captured logo'); assert.equal(manifest.media.length, logoPaths.size);
+assert.equal(logoPaths.size,organizationCount,'each currently published organization has its exact captured logo');
+const portraitPaths = new Set(snapshot.content.guests.map(item => item.portraitUrl).filter(Boolean));
+const capturedPaths = new Set([...logoPaths, ...portraitPaths]);
+assert.equal(manifest.media.length, capturedPaths.size, 'the current capture contains every referenced public logo and guest portrait');
 const actualMedia = new Map();
 for (const item of manifest.media) {
   assert.match(item.file, /^media\/[a-f0-9]{64}\.(?:png|jpg|webp)$/u);
-  assert.equal(item.path, '/api/public/portraits/' + item.file.slice(6)); assert.ok(logoPaths.has(item.path));
+  assert.equal(item.path, '/api/public/portraits/' + item.file.slice(6)); assert.ok(capturedPaths.has(item.path), 'captured bytes belong to an exact public logo or guest portrait');
   const bytes = await readFile(resolve(capture, item.file));
   assert.equal(bytes.length, item.bytes); assert.equal(sha(bytes), item.sha256); assert.equal(item.sha256, item.file.slice(6, 70));
   actualMedia.set(item.path, { bytes, contentType: item.contentType });
@@ -114,7 +117,7 @@ function genericOrganizationIdentities(content){
 }
 async function fixture(width, { mode = 'actual', reducedMotion = 'no-preference', holdLogos = false } = {}) {
   const context = await browser.newContext({locale:'zh-CN', viewport: { width, height: 1000 }, isMobile: width < 600, hasTouch: width < 600, reducedMotion });
-  const page = await context.newPage(), calls = []; let responseBytes = snapshotBytes, revision = snapshot.revision, releaseGate;
+  const page = await context.newPage(), calls = []; let responseBytes = snapshotBytes, revision = snapshot.revision, releaseGate, delayedPortraitPath = null, portraitGate = Promise.resolve();
   const gate = new Promise(resolve => { releaseGate = resolve; });
   if (!holdLogos) releaseGate();
   if (mode === 'raw-generic') responseBytes = changedEnvelope(genericOrganizationIdentities);
@@ -131,12 +134,12 @@ async function fixture(width, { mode = 'actual', reducedMotion = 'no-preference'
       if (url.pathname === '/api/public/content') return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': SITE }, body: responseBytes });
       if (url.pathname.startsWith('/api/public/portraits/')) {
         if (media.has(url.pathname)) {
-          await gate; if (actualMedia.has(url.pathname)) rawImageRequests.add(url.pathname);
+          await gate; if (url.pathname === delayedPortraitPath) await portraitGate; if (actualMedia.has(url.pathname)) rawImageRequests.add(url.pathname);
           const image = media.get(url.pathname); return route.fulfill({ status: 200, contentType: image.contentType, headers: { 'access-control-allow-origin': SITE }, body: image.bytes });
         }
         uncapturedMediaRequests.add(url.pathname);
         uncapturedMediaRequestCount++;
-        return route.fulfill({ status: 404, body: '' }); // Guest photos/work media outside the logo capture are deliberately stubbed.
+        return route.fulfill({ status: 404, body: '' }); // Only explicitly synthetic broken images and uncaptured work media are stubbed.
       }
       assert.equal(url.pathname, '/api/admin/registration/config'); return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': SITE }, body: '{"enabled":false,"reason":"closed"}' });
     }
@@ -154,7 +157,7 @@ async function fixture(width, { mode = 'actual', reducedMotion = 'no-preference'
     const read = page.waitForResponse(value => value.url() === API + '/api/public/content'); await page.evaluate(() => dispatchEvent(new Event('focus'))); await read;
     await page.waitForFunction(({expectedIds,acceptedUpdates})=>{const actual=[...document.querySelectorAll('[data-organization-id]')].map(node=>node.dataset.organizationId);return window.__publicVisualContentUpdates>acceptedUpdates&&actual.length===expectedIds.length&&actual.every((id,index)=>id===expectedIds[index]);},{expectedIds,acceptedUpdates},{timeout:12000});
   }
-  return { width, mode, context, page, calls, releaseLogos: releaseGate, refresh,get publishedOrganizations(){return JSON.parse(responseBytes).content.organizations;} };
+  return { width, mode, context, page, calls, releaseLogos: releaseGate, holdPortrait(path){delayedPortraitPath=path;let release;portraitGate=new Promise(done=>{release=done;});return release;}, refresh,get publishedOrganizations(){return JSON.parse(responseBytes).content.organizations;} };
 }
 const noOverflow = async f => assert.equal(await f.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'no page horizontal overflow at ' + f.width);
 function contained(inner, outer, message, tolerance = 1.5) {
@@ -286,7 +289,7 @@ async function guestGlyphInk(f) {
   stage = 'actual-public-caption';
   return coverage;
 }
-async function guestText(f, { profiles = guests, allowLongNameAndTitle = false, requireUnclippedNameAndTitle = false } = {}) {
+async function guestText(f, { profiles = guests, allowLongFields = false, requireUnclippedNameAndRole = false } = {}) {
   stage = 'actual-public-caption';
   assert.equal(await f.page.locator('[data-guest-id]').count(), guests.length);
   assert.deepEqual(await f.page.locator('[data-guest-id]').evaluateAll(nodes=>nodes.map(node=>node.dataset.guestId)),ids,'every safe public profile renders in captured order independently of attendance');
@@ -297,15 +300,17 @@ async function guestText(f, { profiles = guests, allowLongNameAndTitle = false, 
   for (const guest of profiles) {
     const card = f.page.locator('#guest-' + guest.id), toggle = card.locator('[data-guest-toggle]');
     const affiliation = guest.company?.trim() || '';
-    const expected = guest.title?.trim() || guest.ggjRole?.trim() || '';
-    const kind = guest.title?.trim() ? 'title' : guest.ggjRole?.trim() ? 'role' : 'none';
+    const expected = guest.ggjRole?.trim() || '';
+    const kind = expected ? 'role' : 'none';
     assert.equal((await toggle.locator('.ah-guest-name').textContent()).trim(), guest.name.trim());
     if (affiliation) { assert.equal((await toggle.locator('.ah-guest-affiliation').textContent()).trim(), affiliation); assert.equal(await toggle.locator('.ah-guest-affiliation').getAttribute('data-affiliation-source'), 'company'); }
     else assert.equal(await toggle.locator('.ah-guest-affiliation').count(), 0);
     if (expected) { assert.equal((await toggle.locator('.ah-guest-subtitle').textContent()).trim(), expected); assert.equal(await toggle.locator('.ah-guest-subtitle').getAttribute('data-subtitle-source'), kind); }
     else assert.equal(await toggle.locator('.ah-guest-subtitle').count(), 0);
-    assert.equal(await toggle.getAttribute('aria-label'), [guest.name, affiliation, expected, '嘉宾介绍'].filter(Boolean).join('，'));
-    assert.equal(await toggle.locator('.ah-guest-attendance').count(), 0, 'affiliation and title come from separate actual public fields, not invented attendance text');
+    assert.equal(await toggle.getAttribute('aria-label'), [guest.name, affiliation, expected, ...(guest.portraitUrl ? ['查看照片'] : [])].filter(Boolean).join('，'));
+    assert.equal(await toggle.evaluate(node=>node.tagName), 'BUTTON');
+    assert.equal(await card.locator('details,.ah-guest-detail-body,.ah-guest-title,.ah-guest-bio,.ah-guest-duty,a').count(), 0, 'a guest has one circle, with no square panel, company job title, biography, duty or duplicated links');
+    assert.equal(await toggle.locator('.ah-guest-attendance').count(), 0, 'affiliation and GGJ identity come only from actual public fields, not a company title or invented attendance text');
     const measured = await toggle.evaluate(node => {
       const box = element => { const b = element.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; };
       return { circle: box(node), text: [...node.querySelectorAll('.ah-guest-name,.ah-guest-affiliation,.ah-guest-subtitle')].map(element => {
@@ -318,53 +323,119 @@ async function guestText(f, { profiles = guests, allowLongNameAndTitle = false, 
     });
     lastNumericMetrics = { guestIndex: ids.indexOf(guest.id), ...measured };
     for (const text of measured.text) {
-      contained(text.box, measured.circle, 'actual name, affiliation and title stay in their bubble'); assert.ok(!['auto', 'scroll'].includes(text.overflowX) && !['auto', 'scroll'].includes(text.overflowY)); assert.ok(text.scrollWidth <= text.clientWidth + 1);
+      contained(text.box, measured.circle, 'actual name, organization and GGJ identity stay in their bubble'); assert.ok(!['auto', 'scroll'].includes(text.overflowX) && !['auto', 'scroll'].includes(text.overflowY)); assert.ok(text.scrollWidth <= text.clientWidth + 1);
       assert.ok(text.clientWidth > 0 && text.clientHeight > 0 && text.display !== 'none' && text.visibility === 'visible' && text.opacity > 0, 'each nonempty public field is visibly rendered');
       if (text.className === 'ah-guest-affiliation') {
         assert.ok(Number.isFinite(text.lineHeight) && text.clientHeight >= text.lineHeight - 1 && text.firstLine, 'a clamped company still shows at least one complete line');
         contained(text.firstLine, text.box, 'the first company line glyph box is fully visible even when later lines are clamped');
       }
     }
-    nonoverlap(measured.text.map(text => text.box), 'name, company and title rectangles cannot overlap');
-    if (!allowLongNameAndTitle && (requireUnclippedNameAndTitle||actualSpellingBoundaryIds.includes(guest.id))) for (const text of measured.text.filter(item => item.className !== 'ah-guest-affiliation')) assert.ok(text.scrollHeight <= text.clientHeight + 1, 'selected actual or explicitly synthetic reference spelling must fit without an inner scroll');
+    nonoverlap(measured.text.map(text => text.box), 'name, organization and GGJ identity rectangles cannot overlap');
+    if (!allowLongFields && (requireUnclippedNameAndRole||actualSpellingBoundaryIds.includes(guest.id))) for (const text of measured.text.filter(item => item.className !== 'ah-guest-affiliation')) assert.ok(text.scrollHeight <= text.clientHeight + 1, 'selected actual or explicitly synthetic reference spelling must fit without an inner scroll');
     assert.ok(measured.text[0].font >= (f.width >= 1800 ? 30 : f.width >= 1000 ? 24 : 18), 'names are enlarged at usable responsive sizes');
     if (expected) assert.ok(measured.text.find(text => text.className === 'ah-guest-subtitle').font >= (f.width >= 1800 ? 19 : f.width >= 1000 ? 16 : 14));
     result.push({ id: guest.id, attendance:guest.attendance, affiliationSource: affiliation ? 'company' : 'none', subtitleSource: kind, metrics: measured });
   }
   return result;
 }
-async function detail(f, guest, { longText = false } = {}) {
-  stage = longText ? 'synthetic-long-full-detail' : 'actual-full-detail';
-  const card = f.page.locator('#guest-' + guest.id), toggle = card.locator('[data-guest-toggle]'), body = card.locator('.ah-guest-detail-body');
-  await f.page.mouse.move(0, 0); await toggle.evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
-  const before = await f.page.locator('#booths').evaluate(node => node.getBoundingClientRect().top + scrollY);
-  await toggle.focus(); await f.page.keyboard.press('Enter'); assert.equal(await card.locator('details').evaluate(node => node.open), true);
-  assert.equal((await body.locator('.ah-guest-detail-name').textContent()).trim(), guest.name.trim());
-  assert.equal(await body.locator('.ah-guest-company').filter({ hasText: /^(?:资料待确认|資料待確認)$/u }).count(), 0, 'public introductions omit the internal profile-review label');
-  if (guest.company?.trim()) assert.ok((await body.locator('.ah-guest-company').allTextContents()).map(text => text.trim()).includes(guest.company.trim()), 'expanded detail retains the entire published company');
-  if (guest.title) assert.equal((await body.locator('.ah-guest-title').textContent()).trim(), guest.title.trim());
-  else assert.equal(await body.locator('.ah-guest-title').count(), 0);
-  if (guest.ggjRole) assert.equal((await body.locator('.ah-guest-role').textContent()).trim(), guest.ggjRole.trim());
-  else assert.equal(await body.locator('.ah-guest-role').count(), 0);
-  if (guest.bio) assert.equal((await body.locator('.ah-guest-bio').textContent()).trim(), guest.bio.trim());
-  const bounds = await body.evaluate(node => ({ overflowX: getComputedStyle(node).overflowX, overflowY: getComputedStyle(node).overflowY, maxHeight: getComputedStyle(node).maxHeight,
-    scrollHeight: node.scrollHeight, clientHeight: node.clientHeight, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, height: node.getBoundingClientRect().height, scrollTop: node.scrollTop }));
-  lastNumericMetrics = { guestIndex: ids.indexOf(guest.id), ...bounds };
-  assert.ok(!['auto', 'scroll'].includes(bounds.overflowX) && !['auto', 'scroll'].includes(bounds.overflowY), 'a hidden Linux scrollbar is not proof: computed inner scrolling is forbidden');
-  assert.equal(bounds.maxHeight, 'none'); assert.ok(bounds.scrollHeight <= bounds.clientHeight + 1 && bounds.scrollWidth <= bounds.clientWidth + 1, 'full detail content fits the document-flow box');
-  assert.notEqual(await body.getAttribute('tabindex'), '0', 'detail is not a second keyboard scroll pane');
-  if (f.width < 600) assert.ok(await f.page.locator('#booths').evaluate(node => node.getBoundingClientRect().top + scrollY) > before + 80, 'phone details make room in the main page');
-  if (longText) assert.ok(bounds.height > 1000, 'long synthetic text is genuinely rendered in full, not mirrored by a small empty box');
-  if (f.width >= 1000) {
-    const point = await body.boundingBox(), start = await f.page.evaluate(() => scrollY);
-    await f.page.mouse.move(Math.max(10, Math.min(f.width - 10, point.x + point.width / 2)), Math.max(10, Math.min(900, point.y + 32)));
-    await f.page.mouse.wheel(0, 240); await f.page.waitForTimeout(180);
-    assert.ok(await f.page.evaluate(() => scrollY) > start + 40, 'wheel over a desktop introduction scrolls the main page');
-    assert.equal(await body.evaluate(node => node.scrollTop), 0, 'the introduction never consumes an inner scroll');
+async function touchCircle(toggle){
+  await toggle.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
+  const point=await toggle.boundingBox();assert.ok(point);
+  await toggle.page().touchscreen.tap(point.x+point.width/2,point.y+point.height/2);
+}
+async function circlePhoto(f, guest, { expectPhoto = Boolean(guest.portraitUrl), screenshot = false } = {}) {
+  stage = expectPhoto ? 'actual-circle-portrait' : 'text-circle-without-photo';
+  const { page } = f, card = page.locator('#guest-' + guest.id), toggle = card.locator('[data-guest-toggle]');
+  await page.mouse.move(0, 0); await page.keyboard.press('Escape'); await page.waitForTimeout(280);
+  await toggle.evaluate(node => { node.scrollIntoView({ block: 'center', behavior: 'instant' }); node.focus({ preventScroll: true }); });
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+  assert.equal(await card.locator('details,.ah-guest-detail-body').count(), 0, 'hover never creates an outside rectangular disclosure');
+  const before = await toggle.boundingBox(), beforeNextSection = await page.locator('#booths').evaluate(node => node.getBoundingClientRect().top + scrollY);
+  const copy = toggle.locator('.ah-guest-copy');
+  assert.equal(await copy.evaluate(node => Number(getComputedStyle(node).opacity)), 1, 'text is initially visible in the original circle');
+  const identity = [guest.name, guest.company?.trim(), guest.ggjRole?.trim()].filter(Boolean).join('，');
+  if (expectPhoto) {
+    const image = toggle.locator('.ah-guest-portrait img');
+    assert.equal(await image.count(), 1);
+    assert.equal(new URL(await image.getAttribute('src'), API).pathname, guest.portraitUrl, 'this circle uses only its own published portrait URL');
+    await image.evaluate(node => node.decode());
+    await page.waitForFunction(id => document.querySelector('#guest-' + id + ' [data-guest-toggle]')?.dataset.photoReady === 'true', guest.id);
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(id => document.querySelector('#guest-' + id + ' [data-guest-toggle]')?.getAttribute('aria-pressed') === 'true', guest.id);
+    await page.waitForTimeout(350);
+    assert.equal(await toggle.getAttribute('aria-label'), identity + '，显示文字');
+    const photoMetrics = await toggle.evaluate(node => {
+      const box = element => { const r = element.getBoundingClientRect(); return { x:r.x,y:r.y,width:r.width,height:r.height }; };
+      const portrait = node.querySelector('.ah-guest-portrait'), image = portrait.querySelector('img');
+      return { circle:box(node),portrait:box(portrait),image:box(image),circleRadius:getComputedStyle(node).borderRadius,
+        portraitRadius:getComputedStyle(portrait).borderRadius,portraitOverflow:getComputedStyle(portrait).overflow,
+        photoOpacity:Number(getComputedStyle(portrait).opacity),copyOpacity:Number(getComputedStyle(node.querySelector('.ah-guest-copy')).opacity),
+        objectFit:getComputedStyle(image).objectFit,naturalWidth:image.naturalWidth,naturalHeight:image.naturalHeight };
+    });
+    lastNumericMetrics = { guestIndex:ids.indexOf(guest.id),...photoMetrics };
+    contained(photoMetrics.portrait, photoMetrics.circle, 'the portrait stays in the original circular action area');
+    contained(photoMetrics.image, photoMetrics.circle, 'the full photo element stays inside its own circle');
+    assert.equal(photoMetrics.circleRadius, '50%'); assert.equal(photoMetrics.portraitRadius, '50%');
+    assert.ok(['hidden','clip'].includes(photoMetrics.portraitOverflow));
+    assert.equal(photoMetrics.objectFit, 'cover'); assert.ok(photoMetrics.naturalWidth > 0 && photoMetrics.naturalHeight > 0);
+    assert.equal(photoMetrics.photoOpacity, 1); assert.equal(photoMetrics.copyOpacity, 0);
+    if(screenshot && [390,1920].includes(f.width)){
+      await card.screenshot({path:resolve(evidence,'actual-circle-photo-'+f.width+'.png'),animations:'disabled'});
+      await page.locator('#guests').screenshot({path:resolve(evidence,'actual-guests-photo-state-'+f.width+'.png'),animations:'disabled'});
+    }
+    await page.keyboard.press('Escape'); await page.waitForTimeout(350);
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'false'); assert.equal(await toggle.evaluate(node=>document.activeElement===node), true, 'Escape keeps the same native button focus');
+    assert.equal(await copy.evaluate(node => Number(getComputedStyle(node).opacity)), 1);
+    await page.keyboard.press('Space'); assert.equal(await toggle.getAttribute('aria-pressed'), 'true', 'Space uses the same native photo switch');
+    await page.keyboard.press('Escape');
+    if(f.width < 600){await touchCircle(toggle);assert.equal(await toggle.getAttribute('aria-pressed'),'true');await touchCircle(toggle);assert.equal(await toggle.getAttribute('aria-pressed'),'false','touch toggles the image without adding a panel');}
+    else {
+      await page.locator('#guests-heading').focus();
+      const aim=await toggle.boundingBox();await page.mouse.move(aim.x+aim.width/2,aim.y+aim.height/2);
+      await page.waitForFunction(id=>document.querySelector('#guest-'+id+' [data-guest-toggle]')?.getAttribute('aria-pressed')==='true',guest.id);
+      await page.mouse.move(0,0);
+      await page.waitForFunction(id=>document.querySelector('#guest-'+id+' [data-guest-toggle]')?.getAttribute('aria-pressed')==='false',guest.id);
+    }
+  } else {
+    await page.keyboard.press('Enter'); assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+    assert.equal(await copy.evaluate(node => Number(getComputedStyle(node).opacity)), 1, 'a missing image keeps readable text instead of a blank circle');
   }
-  await f.page.keyboard.press('Escape'); assert.equal(await card.locator('details').evaluate(node => node.open), false);
-  if (f.width < 600 && !longText && guest.id === motionGuest.id) { await toggle.tap(); assert.equal(await card.locator('details').evaluate(node => node.open), true); await toggle.tap(); assert.equal(await card.locator('details').evaluate(node => node.open), false); }
-  return { id: guest.id, ...bounds };
+  const after=await toggle.boundingBox(), afterNextSection=await page.locator('#booths').evaluate(node=>node.getBoundingClientRect().top+scrollY);
+  assert.ok(Math.abs(after.width-before.width)<=1 && Math.abs(after.height-before.height)<=1,'photo switching keeps the original circle size');
+  assert.ok(Math.abs(afterNextSection-beforeNextSection)<=1,'switching never pushes or covers the next section');
+  return { id:guest.id,ownPublishedPortrait:expectPhoto,photoDecoded:expectPhoto,noOutsidePanel:true,noLayoutShift:true,
+    circularPhotoBounds:expectPhoto,keyboardEnterSpaceEscape:expectPhoto,touchSwitch:expectPhoto&&f.width<600,hoverRestoresText:expectPhoto&&f.width>=600 };
+}
+// Public profile text remains source data; only the bounded action suffix is localized.
+async function photoControlLanguages(f,guest){
+  const {page}=f,toggle=page.locator('#guest-'+guest.id+' [data-guest-toggle]');
+  const identity=await toggle.getAttribute('data-guest-identity');
+  const fields=await toggle.locator('.ah-guest-name,.ah-guest-affiliation,.ah-guest-subtitle').allTextContents();
+  const original=await toggle.boundingBox();
+  async function label(value){
+    await page.waitForFunction(({id,value})=>document.querySelector('#guest-'+id+' [data-guest-toggle]')?.getAttribute('aria-label')===value,{id:guest.id,value});
+    assert.equal(await toggle.getAttribute('aria-label'),value);
+    assert.equal(await toggle.getAttribute('data-guest-identity'),identity,'switching UI language preserves the complete published identity prefix');
+    assert.deepEqual(await toggle.locator('.ah-guest-name,.ah-guest-affiliation,.ah-guest-subtitle').allTextContents(),fields,'names, organizations and GGJ identities are not translated or replaced');
+    assert.equal(await page.locator('[data-public-guests] details,.ah-guest-detail-body').count(),0,'localized photo controls do not reintroduce an outside panel');
+    const current=await toggle.boundingBox();
+    assert.ok(Math.abs(current.width-original.width)<=1&&Math.abs(current.height-original.height)<=1,'the same circle bounds survive language and photo-state changes');
+  }
+  const english=page.locator('.ah-language-switch [data-language="en"]'),chinese=page.locator('.ah-language-switch [data-language="zh-CN"]');
+  assert.equal(await english.count(),1);assert.equal(await chinese.count(),1);
+  await english.click();await page.waitForFunction(()=>document.documentElement.lang==='en');
+  await label(identity+' · View photo');assert.equal(await toggle.getAttribute('aria-pressed'),'false');
+  await toggle.focus();await page.keyboard.press('Enter');
+  await label(identity+' · Show text');assert.equal(await toggle.getAttribute('aria-pressed'),'true');
+  await noOverflow(f);
+  await page.keyboard.press('Escape');await label(identity+' · View photo');
+  await chinese.click();await page.waitForFunction(()=>document.documentElement.lang==='zh-CN');
+  await label(identity+'，查看照片');assert.equal(await toggle.getAttribute('aria-pressed'),'false');
+  await toggle.focus();await page.keyboard.press('Space');
+  await label(identity+'，显示文字');assert.equal(await toggle.getAttribute('aria-pressed'),'true');
+  await page.keyboard.press('Escape');await label(identity+'，查看照片');
+  assert.equal(await toggle.getAttribute('aria-pressed'),'false');
+  return {languages:['en','zh-CN'],actions:['view-photo','show-text'],samePublishedIdentity:true,sameCircleBounds:true,noOutsidePanel:true,returnedToChinese:true};
 }
 async function animationState(page, id) {
   return page.locator('#guest-' + id).evaluate(node => ({ visible: document.visibilityState, rect: node.getBoundingClientRect().toJSON(),
@@ -390,12 +461,10 @@ async function motion(f) {
   }
   async function resumed() { await page.waitForFunction(id => document.getElementById('guest-' + id)?.getAnimations().some(animation => animation.playState === 'running'), motionGuest.id); }
   const aim = await toggle.boundingBox(); await page.mouse.move(aim.x + aim.width / 2, aim.y + aim.height / 2); await paused('hover/open');
-  const bubble = await toggle.boundingBox(), body = await target.locator('.ah-guest-detail-body').boundingBox();
-  await page.mouse.move(bubble.x + bubble.width / 2, bubble.y + bubble.height - 1); await page.mouse.move(bubble.x + bubble.width / 2, (bubble.y + bubble.height + body.y) / 2);
-  await page.waitForTimeout(60); await page.mouse.move(Math.max(body.x + 12, Math.min(body.x + body.width - 12, bubble.x + bubble.width / 2)), body.y + 12);
-  await page.waitForTimeout(180); assert.equal(await target.locator('details').evaluate(node => node.open), true, 'hover remains usable across the bubble/card gap');
+  if(motionGuest.portraitUrl)assert.equal(await toggle.getAttribute('aria-pressed'), 'true', 'fine-pointer hover reveals the decoded photo inside its circle');
+  assert.equal(await target.locator('.ah-guest-detail-body,details').count(), 0, 'hover creates no rectangle or extra disclosure');
   await page.keyboard.press('Escape'); await page.mouse.move(0, 0); await page.locator('#guests-heading').focus(); await resumed();
-  await toggle.focus(); await paused('keyboard focus'); await page.keyboard.press('Enter'); await paused('open detail');
+  await toggle.focus(); await paused('keyboard focus'); await page.keyboard.press('Enter'); await paused('photo switch');
   await page.keyboard.press('Escape'); await page.locator('#guests-heading').focus(); await resumed();
   await page.locator('.ah-footer').evaluate(node => node.scrollIntoView({ block: 'start', behavior: 'instant' })); await paused('actual offscreen intersection');
   await target.evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' })); await resumed();
@@ -410,7 +479,7 @@ async function motion(f) {
   await page.emulateMedia({ reducedMotion: 'no-preference' }); await resumed();
   await page.evaluate(() => { for (let i = 0; i < 3; i++) dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })); });
   await page.waitForTimeout(100); assert.equal((await animationState(page, motionGuest.id)).animations.length, 1, 'returning to the page never stacks float animations');
-  return { realWAAPI: true, runningTimeAdvanced: true, hoverFocusOpenAndOffscreenPaused: true, reducedMotionCancelledAndReturnResumed: true,
+  return { realWAAPI: true, runningTimeAdvanced: true, hoverFocusPhotoAndOffscreenPaused: true, reducedMotionCancelledAndReturnResumed: true,
     hiddenPolicy: { explicitlySyntheticSignal: true, realWAAPIPaused: true, realOSOrTabOcclusionClaimed: false } };
 }
 async function shots(f, prefix) {
@@ -449,15 +518,15 @@ try {
       }
       defaultReferenceLogosRendered = 7;
       before.forEach((row, index) => { assert.ok(Math.abs(row.slot.width - after[index].slot.width) <= 1 && Math.abs(row.slot.height - after[index].slot.height) <= 1, 'image intrinsic size cannot resize its independent slot'); });
-      const text = await guestText(f), details = [];
-      for (const guest of guests) details.push(await detail(f, guest));
+      const text = await guestText(f), portraits = [];
+      for (const guest of guests) portraits.push(await circlePhoto(f, guest, { screenshot:guest.id===motionGuest.id }));
       const animation = width === 1920 ? await motion(f) : null; await noOverflow(f);
       const renderedGuestIds=await f.page.locator('[data-guest-id]').evaluateAll(nodes=>nodes.map(node=>node.dataset.guestId));
       const renderedAttendance=await f.page.locator('[data-guest-id]').evaluateAll(nodes=>({attending:nodes.filter(node=>node.dataset.guestAttendance==='attending').length,pending:nodes.filter(node=>node.dataset.guestAttendance==='pending').length}));
       assert.deepEqual(renderedGuestIds,safePublicIds,'each actual viewport retains the complete safe captured guest ID collection');
       assert.deepEqual(renderedAttendance,{attending:attendanceProof.displayedAttending,pending:attendanceProof.displayedPending},'actual DOM attendance counts come only from the original captured proof');
       reports.push({ name: 'actual-public-' + width, width, exactCapturedSnapshot: true, exactRawImageHashesVerified: true, renderedGuestIds,
-        guestAttendance:{source:'unchanged captured proof',...renderedAttendance},bounds: after, text, details, animation, screenshots: await shots(f, 'actual') });
+        guestAttendance:{source:'unchanged captured proof',...renderedAttendance},bounds: after, text, portraits, animation, screenshots: await shots(f, 'actual') });
     } finally { f.releaseLogos(); await f.context.close(); }
   }
   for (const mode of ['raw-generic', 'adversarial']) for (const width of [1920, 1440, 390, 320]) {
@@ -491,7 +560,7 @@ try {
     } finally { await f.context.close(); }
   }
   const f = await fixture(320, { reducedMotion: 'reduce' });
-  currentWidth = 320; currentMode = 'long-detail'; stage = 'navigate';
+  currentWidth = 320; currentMode = 'long-circle-and-photo-fallbacks'; stage = 'navigate';
   try {
     await f.page.goto(SITE + '/', { waitUntil: 'networkidle' });
     // All safe captured profiles already received actual four-width checks.
@@ -500,25 +569,55 @@ try {
     for(const sample of spellingBoundaryProfiles){
       const boundary={...syntheticBase,name:sample.name,company:syntheticBase.status==='confirmed'&&!sample.company?.trim()?syntheticBase.company:sample.company,title:sample.title??'',ggjRole:sample.ggjRole??''};
       await f.refresh(content=>{const index=content.guests.findIndex(item=>item.id===motionGuest.id);content.guests[index]=boundary;});
-      await guestText(f,{profiles:[boundary],requireUnclippedNameAndTitle:true});await detail(f,boundary);
+      await guestText(f,{profiles:[boundary],requireUnclippedNameAndRole:true});await circlePhoto(f,boundary);
     }
-    const long = { ...syntheticBase, name: 'SYNTHETICLONGNAME'.repeat(10).slice(0, 120), company: '合成完整公开单位'.repeat(24).slice(0, 160), title: '合成完整公开职称'.repeat(30).slice(0, 200), bio: '合成长简介保留全文，不生成内部滚动区域。\n'.repeat(150).slice(0, 3900) };
+    const long = { ...syntheticBase, name: 'SYNTHETICLONGNAME'.repeat(10).slice(0, 120), company: '合成完整公开单位'.repeat(24).slice(0, 160), title: '不应显示的公司职称'.repeat(30).slice(0, 200), ggjRole:'合成完整GGJ站点组织者'.repeat(20).slice(0,160), bio: '合成长简介保留全文，不生成内部滚动区域。\n'.repeat(150).slice(0, 3900) };
     await f.refresh(content => { const index = content.guests.findIndex(item => item.id === motionGuest.id); content.guests[index] = long; });
-    const text = await guestText(f, { profiles: [long], allowLongNameAndTitle: true });
-    const result = await detail(f, long, { longText: true }); await noOverflow(f);
+    const text = await guestText(f, { profiles: [long], allowLongFields: true });
+    const result = await circlePhoto(f, long); await noOverflow(f);
     const roleOnly = { ...syntheticBase, company: '合成独立单位', title: '', ggjRole: '合成角色' };
     await f.refresh(content => { const index = content.guests.findIndex(item => item.id === motionGuest.id); content.guests[index] = roleOnly; });
-    await guestText(f, { profiles: [roleOnly] }); await detail(f, roleOnly);
+    await guestText(f, { profiles: [roleOnly] }); await circlePhoto(f, roleOnly);
     const companyOnly = { ...syntheticBase, company: '合成只有单位', title: '', ggjRole: '' };
     await f.refresh(content => { const index = content.guests.findIndex(item => item.id === motionGuest.id); content.guests[index] = companyOnly; });
-    await guestText(f, { profiles: [companyOnly] }); await detail(f, companyOnly);
+    await guestText(f, { profiles: [companyOnly] }); await circlePhoto(f, companyOnly);
     const empty={...syntheticBase,company:syntheticBase.status==='confirmed'?syntheticBase.company:'',title:'',ggjRole:''};
     await f.refresh(content => { const index = content.guests.findIndex(item => item.id === motionGuest.id); content.guests[index] = empty; });
-    await guestText(f, { profiles: [empty] }); await detail(f, empty); await noOverflow(f);
+    await guestText(f, { profiles: [empty] }); await circlePhoto(f, empty); await noOverflow(f);
+    const absent={...syntheticBase,portraitId:'',portraitUrl:''};
+    await f.refresh(content=>{content.guests[content.guests.findIndex(item=>item.id===motionGuest.id)]=absent;});
+    await circlePhoto(f,absent,{expectPhoto:false});
+    const brokenId='f'.repeat(64)+'.png',brokenPath='/api/public/portraits/'+brokenId;
+    assert.equal(media.has(brokenPath),false,'the failure path is an explicit synthetic image, never an actual capture');
+    const broken={...syntheticBase,portraitId:brokenId,portraitUrl:brokenPath};
+    await f.refresh(content=>{content.guests[content.guests.findIndex(item=>item.id===motionGuest.id)]=broken;});
+    const fallbackButton=f.page.locator('#guest-'+motionGuest.id+' [data-guest-toggle]');
+    await fallbackButton.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
+    await f.page.waitForFunction(id=>document.querySelector('#guest-'+id+' [data-guest-toggle]')?.dataset.photoState==='unavailable',motionGuest.id);
+    await circlePhoto(f,broken,{expectPhoto:false});
+    assert.equal(await fallbackButton.getAttribute('aria-disabled'),'true','a failed photo remains a focusable identity with no empty image action');
+    const delayedImage=synthetic.at(-1),releaseHeld=f.holdPortrait(delayedImage.path);
+    const delayed={...syntheticBase,portraitId:delayedImage.id,portraitUrl:delayedImage.path};
+    try{
+      await f.refresh(content=>{content.guests[content.guests.findIndex(item=>item.id===motionGuest.id)]=delayed;});
+      const delayedButton=f.page.locator('#guest-'+motionGuest.id+' [data-guest-toggle]');
+      await delayedButton.evaluate(node=>{node.scrollIntoView({block:'center',behavior:'instant'});node.focus({preventScroll:true});});
+      assert.equal(await delayedButton.getAttribute('data-photo-state'),'loading');
+      await f.page.keyboard.press('Enter');
+      assert.equal(await delayedButton.getAttribute('aria-pressed'),'false','a request before image decode does not hide the identity');
+      assert.equal(await delayedButton.locator('.ah-guest-copy').evaluate(node=>Number(getComputedStyle(node).opacity)),1);
+      releaseHeld();
+      await f.page.waitForFunction(id=>document.querySelector('#guest-'+id+' [data-guest-toggle]')?.dataset.photoReady==='true'&&document.querySelector('#guest-'+id+' [data-guest-toggle]')?.getAttribute('aria-pressed')==='true',motionGuest.id);
+      await delayedButton.locator('img').evaluate(node=>node.decode());
+      await f.page.keyboard.press('Escape');
+      assert.equal(await delayedButton.getAttribute('aria-pressed'),'false','a late successful photo still supports the same Escape reset');
+    }finally{releaseHeld();}
+    const photoControlLanguage=await photoControlLanguages(f,delayed);
+    await noOverflow(f);
     assert.equal((await animationState(f.page, motionGuest.id)).animations.length, 0, 'initial real reduced-motion preference creates no float');
-    reports.push({ name: 'long-detail-and-initial-reduced-motion', width: 320, explicitlySyntheticTextVariant:true,syntheticReferenceSpellingBoundaries:spellingBoundaryProfiles.length,actualAttendanceProofUnchanged:true,profileStatusUnchanged:true,emptyCompanyFieldTested:empty.company==='',emptyPositionAndRoleFieldsTested:true,fullTextRendered: true, separateCompanyAndTitle: true, roleFallbackAndEmptyFields: true, text, result });
+    reports.push({ name: 'long-circle-fallbacks-and-initial-reduced-motion' , width: 320, explicitlySyntheticTextVariant:true,syntheticReferenceSpellingBoundaries:spellingBoundaryProfiles.length,actualAttendanceProofUnchanged:true,profileStatusUnchanged:true,emptyCompanyFieldTested:empty.company==='',emptyPositionAndRoleFieldsTested:true,fullAccessibleIdentityRetained:true,companyJobTitlesExcluded:true,organizationAndGgjIdentityOnly:true,emptyFields:true,missingPhotoKeepsText:true,brokenPhotoKeepsText:true,delayedPhotoKeepsTextUntilDecode:true,photoControlLanguage, text, result });
   } finally { await f.context.close(); }
-  assert.equal(rawImageRequests.size, actualMedia.size, 'every actual uploaded organization image was rendered in the raw compatibility scenarios'); assert.deepEqual(pageErrors, []);
+  assert.equal(rawImageRequests.size, actualMedia.size, 'every captured public logo and guest portrait was requested by actual page rendering'); assert.deepEqual(pageErrors, []);
   assert.equal(reports.length, 13, 'all actual, raw-upload, adversarial and long-text scenarios must complete');
 } catch (error) { failure = { message: error.message, stack: error.stack }; }
 finally {
@@ -531,18 +630,19 @@ finally {
     roleFieldsChecked: actualReports.reduce((total, item) => total + item.text.filter(text => text.subtitleSource === 'role').length, 0),
     emptyCompanyFieldsChecked:actualReports.reduce((total,item)=>total+item.text.filter(text=>text.affiliationSource==='none').length,0),
     emptySubtitleFieldsChecked:actualReports.reduce((total,item)=>total+item.text.filter(text=>text.subtitleSource==='none').length,0),
-    fullGuestDetailsChecked: actualReports.reduce((total, item) => total + item.details.length, 0),
+    guestCirclePhotoStatesChecked:actualReports.reduce((total,item)=>total+item.portraits.length,0),
+    actualDecodedPortraitChecks:actualReports.reduce((total,item)=>total+item.portraits.filter(photo=>photo.photoDecoded).length,0),
   };
   const report = { ok: !failure, passedCases: reports.length, expectedCases: 13, syntheticBusinessWrites: 0, realNetworkRequests: 0, mailRequests: 0,
     source, dist, testScriptSha256, gitHeadAtRun: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), htmlMtime: info.mtime.toISOString(), publicHtmlSha256: sha(html),
     capture: { directory: capture, capturedAt: manifest.capturedAt, anonymous: true, source: manifest.source, sourceCommit: manifest.sourceCommit, snapshotSha256: manifest.snapshot.sha256,
       revision:snapshot.revision,guestCount:rawGuestCount,rawGuestCount,visibleGuestCount,attendanceProof,organizationCount: snapshot.content.organizations.length, mediaHashes: manifest.media.map(item => item.sha256) },
-    servedAssets: Object.fromEntries([...servedAssets].sort()), actualRawImagesRendered: rawImageRequests.size, defaultReferenceLogosRendered, actualFieldCoverage, glyphInkChecks,
-    uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequestCount,uncapturedPublicMediaUniquePathsStubbed:uncapturedMediaRequests.size, actualMediaScope: 'Every safe public guest profile receives four-width DOM text and detail checks; attendance is read only from the unchanged captured proof. Every organization upload is captured. Guest photos and work media outside that capture receive intercepted 404s; their original image bytes are not visually verified.',
+    servedAssets: Object.fromEntries([...servedAssets].sort()), actualRawImagesRendered: rawImageRequests.size, actualRawLogosRendered:[...rawImageRequests].filter(path=>logoPaths.has(path)).length,actualRawPortraitsRendered:[...rawImageRequests].filter(path=>portraitPaths.has(path)).length, defaultReferenceLogosRendered, actualFieldCoverage, glyphInkChecks,
+    uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequestCount,uncapturedPublicMediaUniquePathsStubbed:uncapturedMediaRequests.size, actualMediaScope: 'Every safe public guest profile receives four-width name/organization/GGJ identity checks and its own captured portrait is decoded and switched inside the original circle. Company job titles and outside panels are absent. Attendance remains bound to the unchanged captured proof. Every referenced logo and guest portrait is captured; only uncaptured work media and explicitly synthetic failed images receive intercepted 404s.',
     syntheticImageVariants: synthetic.map(({ kind, width, height, id }) => ({ kind, width, height, id })), reports, pageErrors, ...(failure ? { failure } : {}) };
   await writeFile(resolve(evidence, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   const summary = { ok: report.ok, cases: report.passedCases, expectedCases: 13, actualFixture: true, publicHtmlSha256: report.publicHtmlSha256, snapshotSha256: report.capture.snapshotSha256,
-    sourceCommit: report.gitHeadAtRun, captureSourceCommit: manifest.sourceCommit, actualRawLogosTested: report.actualRawImagesRendered, defaultReferenceLogosRendered,
+    sourceCommit: report.gitHeadAtRun, captureSourceCommit: manifest.sourceCommit, actualRawLogosTested:report.actualRawLogosRendered,actualRawPortraitsTested:report.actualRawPortraitsRendered, defaultReferenceLogosRendered,
     guestCount:rawGuestCount,rawGuestCount,visibleGuestCount,actualGuestCardsChecked:actualReports.reduce((total,item)=>total+item.text.length,0),actualReferenceSpellingsChecked:actualSpellingBoundaryIds.length,attendanceProof,organizationCount: snapshot.content.organizations.length, pageErrorCount: pageErrors.length,
     actualFieldCoverage,
     actualHanGlyphInk: { cases: glyphInkChecks.filter(item => item.exactCapturedSnapshot).length, checkedGlyphs: glyphInkChecks.filter(item => item.exactCapturedSnapshot).reduce((total, item) => total + item.checkedGlyphs, 0), blankGlyphs: glyphInkChecks.reduce((total, item) => total + item.blankGlyphs, 0), missingMarkerGlyphs: glyphInkChecks.reduce((total, item) => total + item.missingMarkerGlyphs, 0), negativeControls: glyphInkChecks.reduce((total, item) => total + item.negativeControls, 0) },

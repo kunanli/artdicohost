@@ -17,20 +17,21 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const publicHeaders = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store',
   'access-control-allow-origin': PUBLIC_CONTENT_ORIGIN, vary: 'Origin' };
-function publication(images = [png]) {
+function publication(images = [png], portraits = [images[0] ?? png]) {
   const content = createInitialContent(); content.event.title = PUBLIC_NAME;
   content.organizations = images.map((bytes, index) => ({ id: 'synthetic-org-' + index, name: PUBLIC_NAME + index,
     logoId: sha(bytes) + '.png', website: '', participation: 'undecided', status: 'confirmed', publicConsent: false, internalNotes: PRIVATE }));
-  content.guests = [{ id: 'synthetic-public-guest', name: PUBLIC_NAME, company: '合成机构', portraitId: 'd'.repeat(64) + '.png',
-    ggjRole: '', status: 'confirmed', publicConsent: false, internalNotes: PRIVATE, contactId: '' }];
+  content.guests = portraits.map((bytes, index) => ({ id: 'synthetic-public-guest' + (index ? '-' + index : ''), name: PUBLIC_NAME,
+    company: '合成机构', portraitId: bytes ? sha(bytes) + '.png' : '',
+    ggjRole: '', status: 'confirmed', publicConsent: false, internalNotes: PRIVATE, contactId: '' }));
   return { revision: 43, publishedAt: new Date(AT).toISOString(), content: toPublicContent(content) };
 }
-async function fixture(t, images = [png]) {
+async function fixture(t, images = [png], portraits = [images[0] ?? png]) {
   const temporary = await mkdtemp(resolve(tmpdir(), 'artdico-public-visual-test-'));
   t.after(() => rm(temporary, { recursive: true, force: true }));
-  const outputDirectory = resolve(temporary, 'capture'), data = publication(images), calls = [];
+  const outputDirectory = resolve(temporary, 'capture'), data = publication(images, portraits), calls = [];
   const raw = Buffer.from(' \n' + JSON.stringify(data, null, 1) + '\n');
-  const media = new Map(images.map(bytes => ['/api/public/portraits/' + sha(bytes) + '.png', bytes]));
+  const media = new Map([...images, ...portraits.filter(Boolean)].map(bytes => ['/api/public/portraits/' + sha(bytes) + '.png', bytes]));
   const fetchFn = async (url, options) => {
     calls.push({ url, options });
     if (url === PUBLIC_CONTENT_URL) return new Response(raw, { headers: { ...publicHeaders, 'content-length': String(raw.length) } });
@@ -47,10 +48,10 @@ async function rejected(promise, code) {
 }
 async function absent(directory) { await assert.rejects(access(directory), { code: 'ENOENT' }); }
 
-test('one validated anonymous public response supplies exact snapshot bytes and only referenced deduplicated organization logos', async t => {
+test('one validated anonymous response supplies exact bytes and deduplicates a shared published logo and portrait', async t => {
   const f = await fixture(t, [png, png]), before = JSON.stringify(f.data), report = await f.capture();
   assert.equal(f.calls.filter(call => call.url === PUBLIC_CONTENT_URL).length, 1);
-  assert.equal(f.calls.length, 2, 'no second snapshot GET, guest portrait request or guessed media URL');
+  assert.equal(f.calls.length, 2, 'one snapshot and one shared image GET; no duplicate portrait or guessed media URL');
   for (const { url, options } of f.calls) {
     assert.equal(options.method, 'GET'); assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error');
     assert.equal(options.cache, 'no-store'); assert.equal(options.referrerPolicy, 'no-referrer'); assert.equal(options.referrer, '');
@@ -67,10 +68,92 @@ test('one validated anonymous public response supplies exact snapshot bytes and 
   assert.equal(manifest.counts.organizations, 2); assert.equal(report.media, 1); assert.equal(report.mediaBytes, png.length);
   assert.deepEqual(report.guestCaptionCoverage, { title: 0, role: 0, company: 0, empty: 1 }, 'company alone does not become a position');
   assert.deepEqual(report.guestAffiliationCoverage, { company: 1, empty: 0 });
+  assert.deepEqual(report.guestPortraitCoverage, { total: 1, withPortrait: 1, withoutPortrait: 0, uniqueImages: 1, capturedImages: 1 });
   assert.deepEqual(report.showcaseCoverCoverage, { total: 0, withCoverId: 0, withoutCoverId: 0 });
   assert.equal(Object.hasOwn(manifest, 'guestAffiliationCoverage'), false, 'diagnostic counts do not change the captured fixture format');
   assert.equal(Object.hasOwn(manifest, 'showcaseCoverCoverage'), false);
   assert.equal(JSON.stringify(f.data), before); assert.doesNotMatch(JSON.stringify({ manifest, report }), /SYNTHETIC_PUBLIC_NAME|SYNTHETIC_PRIVATE|contactId|receiptToken|internalNotes/u);
+});
+
+test('distinct public guest portraits join the exact logo capture without identity labels, duplicate fetches or invented missing portraits', async t => {
+  const logo = Buffer.concat([png, Buffer.from('synthetic-second-logo')]);
+  const photo = Buffer.concat([png, Buffer.from('synthetic-distinct-portrait')]);
+  const f = await fixture(t, [png, logo], [photo, photo, null, png]);
+  const before = JSON.stringify(f.data), report = await f.capture();
+  const expected = [png, logo, photo];
+  assert.equal(f.calls.length, 4, 'one snapshot plus the three distinct public content-addressed images');
+  assert.deepEqual(f.calls.slice(1).map(call => new URL(call.url).pathname), expected.map(bytes => '/api/public/portraits/' + sha(bytes) + '.png'));
+  for (const call of f.calls) {
+    assert.equal(call.options.credentials, 'omit'); assert.equal(call.options.redirect, 'error');
+    assert.equal(call.options.referrerPolicy, 'no-referrer');
+    assert.equal(Object.keys(call.options.headers).some(name => /cookie|authorization/iu.test(name)), false);
+  }
+  const manifest = JSON.parse(await readFile(resolve(f.outputDirectory, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.schemaVersion, 1); assert.equal(manifest.sourceCommit, COMMIT);
+  assert.deepEqual(manifest.media, expected.map(bytes => ({ file: 'media/' + sha(bytes) + '.png',
+    path: '/api/public/portraits/' + sha(bytes) + '.png', sha256: sha(bytes), bytes: bytes.length, contentType: 'image/png' })));
+  for (const bytes of expected) assert.deepEqual(await readFile(resolve(f.outputDirectory, 'media/' + sha(bytes) + '.png')), bytes);
+  assert.deepEqual(await readFile(resolve(f.outputDirectory, 'snapshot.json')), f.raw);
+  assert.deepEqual(report.guestPortraitCoverage, { total: 4, withPortrait: 3, withoutPortrait: 1, uniqueImages: 2, capturedImages: 2 });
+  assert.equal(report.mediaBytes, expected.reduce((total, bytes) => total + bytes.length, 0));
+  assert.equal(Object.hasOwn(manifest, 'guestPortraitCoverage'), false, 'media records remain the compatible shared fixture format');
+  assert.equal(JSON.stringify(f.data), before);
+  assert.doesNotMatch(JSON.stringify({ manifest, report }), /SYNTHETIC_PUBLIC_NAME|SYNTHETIC_PRIVATE|synthetic-public-guest|portraitId|portraitUrl/u);
+});
+
+test('a guest without a published portrait remains valid and causes no guessed portrait request', async t => {
+  const f = await fixture(t, [png], [null]), report = await f.capture();
+  assert.equal(f.calls.length, 2);
+  assert.deepEqual(report.guestPortraitCoverage, { total: 1, withPortrait: 0, withoutPortrait: 1, uniqueImages: 0, capturedImages: 0 });
+});
+
+test('foreign, query-bearing, mismatched or private guest portraits are rejected with the snapshot before any media request', async t => {
+  for (const mutate of [
+    guest => { guest.portraitUrl = 'https://foreign.invalid/' + PRIVATE; },
+    guest => { guest.portraitUrl += '?secret=' + PRIVATE; },
+    guest => { guest.portraitUrl = '/api/public/portraits/../' + PRIVATE; },
+    guest => { guest.portraitId = 'd'.repeat(64) + '.png'; },
+    guest => { guest.visibility = 'private'; },
+  ]) {
+    const f = await fixture(t); let requests = 0;
+    await rejected(f.capture({ fetchFn: async url => {
+      requests++; assert.equal(url, PUBLIC_CONTENT_URL); mutate(f.data.content.guests[0]);
+      return new Response(JSON.stringify(f.data), { headers: publicHeaders });
+    } }));
+    assert.equal(requests, 1); await absent(f.outputDirectory);
+  }
+});
+
+test('a missing or invalid distinct portrait fails the whole capture and removes already captured logo bytes', async t => {
+  const photo = Buffer.concat([png, Buffer.from('synthetic-distinct-portrait')]);
+  for (const change of [
+    () => new Response(PRIVATE, { status: 404, headers: { 'content-type': 'image/png' } }),
+    response => { response.headers.set('content-type', 'image/jpeg'); return response; },
+    response => { response.headers.set('set-cookie', PRIVATE); return response; },
+    response => { Object.defineProperty(response, 'redirected', { value: true }); return response; },
+    response => { Object.defineProperty(response, 'url', { value: 'https://foreign.invalid/' + PRIVATE }); return response; },
+    () => new Response(Buffer.alloc(photo.length), { headers: { 'content-type': 'image/png' } }),
+  ]) {
+    const f = await fixture(t, [png], [photo]);
+    await rejected(f.capture({ fetchFn: async (...args) => {
+      const response = await f.fetchFn(...args);
+      return args[0].endsWith('/' + sha(photo) + '.png') ? change(response) : response;
+    } }));
+    assert.equal(f.calls.length, 3); await absent(f.outputDirectory);
+  }
+});
+
+test('portrait and logo media share the unchanged thirty-image and eight-MiB limits', async t => {
+  const logos = Array.from({ length: 15 }, (_, index) => Buffer.concat([png, Buffer.from('synthetic-logo-' + index)]));
+  const photos = Array.from({ length: 16 }, (_, index) => Buffer.concat([png, Buffer.from('synthetic-photo-' + index)]));
+  const many = await fixture(t, logos, photos);
+  await rejected(many.capture(), 'MEDIA_LIMIT'); assert.equal(many.calls.length, 1); await absent(many.outputDirectory);
+  const maximumLogos = Array.from({ length: 4 }, (_, index) => { const bytes = Buffer.alloc(2 * 1024 * 1024, index); png.copy(bytes); return bytes; });
+  const total = await fixture(t, maximumLogos, [png]);
+  await rejected(total.capture(), 'MEDIA_BODY'); assert.equal(total.calls.length, 6); await absent(total.outputDirectory);
+  const largePhoto = Buffer.alloc(2 * 1024 * 1024 + 1); png.copy(largePhoto);
+  const individual = await fixture(t, [png], [largePhoto]);
+  await rejected(individual.capture(), 'MEDIA_BODY'); assert.equal(individual.calls.length, 3); await absent(individual.outputDirectory);
 });
 
 test('unpublished, private, malformed or foreign-logo snapshots never start a media request and leave no output', async t => {

@@ -5,8 +5,8 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
   const dialog=doc.querySelector('[data-work-lightbox]');
   const peekImage=doc.querySelector('[data-work-peek] img');
   peekImage?.addEventListener('error',()=>{const peek=doc.querySelector('[data-work-peek]');if(peek)peek.hidden=true;});
-  let selectedId=null,previewId=null,previewTrigger=null,touch=null,closeTimer=null;
-  const hoverOpened=new WeakSet();
+  let selectedId=null,previewId=null,previewTrigger=null,touch=null;
+  const guestRequests=new WeakMap();
   const visibleFocusTarget=node=>node?.isConnected&&!node.disabled&&!node.closest('[hidden],[inert]')&&node.getClientRects().length;
   const works=()=>[...doc.querySelectorAll('[data-public-showcases] [data-showcase-id]')];
   const filtered=()=>works().filter(card=>!['student','indie'].includes(filter?.value)||card.dataset.workKind===filter.value);
@@ -78,44 +78,52 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
     if(!touch)return;const dx=event.clientX-touch.x,dy=event.clientY-touch.y;touch=null;
     if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.5)step(dx<0?1:-1);
   });
-  const guestDetails=()=>[...doc.querySelectorAll('[data-public-guests] details.ah-guest-details')];
-  function openGuest(details){clearTimeout(closeTimer);for(const other of guestDetails())other.open=other===details;}
-  doc.addEventListener('toggle',event=>{const details=event.target;if(details.matches?.('[data-public-guests] details.ah-guest-details')&&details.open)openGuest(details);},true);
+  const guestButtons=()=>[...doc.querySelectorAll('[data-public-guests] [data-guest-toggle]')];
+  function updateGuest(button,wanted){
+    if(!button)return;
+    guestRequests.set(button,Boolean(wanted));
+    const shown=Boolean(wanted)&&button.dataset.photoReady==='true';
+    button.setAttribute('aria-pressed',String(shown));
+    button.setAttribute('aria-label',button.dataset.guestIdentity+(button.dataset.photoState==='unavailable'?'':shown?'，显示文字':'，查看照片'));
+    button.dispatchEvent(new CustomEvent('artdico:guest-photo-state',{bubbles:true}));
+  }
+  function openGuest(button){
+    if(!button)return;
+    for(const other of guestButtons())updateGuest(other,other===button);
+  }
+  doc.addEventListener('artdico:guest-photo-change',event=>{
+    const button=event.target;
+    if(button.matches?.('[data-public-guests] [data-guest-toggle]'))updateGuest(button,button.dataset.photoState!=='unavailable'&&guestRequests.get(button));
+  });
   doc.addEventListener('pointerover',event=>{
-    const details=event.target.closest?.('[data-public-guests] details.ah-guest-details');
-    if(details&&win.matchMedia('(hover:hover) and (pointer:fine)').matches&&!details.contains(event.relatedTarget)){
-      clearTimeout(closeTimer);
-      // Hover must not collapse the card currently used by the keyboard.
-      if(guestDetails().some(other=>other!==details&&other.open&&other.contains(doc.activeElement)))return;
-      if(!details.open){openGuest(details);hoverOpened.add(details);}
+    const button=event.target.closest?.('[data-public-guests] [data-guest-toggle]');
+    if(button&&event.pointerType!=='touch'&&win.matchMedia('(hover:hover) and (pointer:fine)').matches&&!button.contains(event.relatedTarget)){
+      // Keep a photo being used by the keyboard stable while the pointer passes.
+      if(guestButtons().some(other=>other!==button&&other===doc.activeElement&&other.getAttribute('aria-pressed')==='true'))return;
+      openGuest(button);
     }
   });
   doc.addEventListener('pointerout',event=>{
-    const details=event.target.closest?.('[data-public-guests] details.ah-guest-details');
-    if(details&&win.matchMedia('(hover:hover) and (pointer:fine)').matches&&!details.contains(event.relatedTarget)){
-      clearTimeout(closeTimer);closeTimer=setTimeout(()=>{if(!details.contains(doc.activeElement))details.open=false;},150);
-    }
+    const button=event.target.closest?.('[data-public-guests] [data-guest-toggle]');
+    if(button&&event.pointerType!=='touch'&&win.matchMedia('(hover:hover) and (pointer:fine)').matches&&!button.contains(event.relatedTarget))updateGuest(button,false);
+  });
+  doc.addEventListener('focusout',event=>{
+    const button=event.target.closest?.('[data-public-guests] [data-guest-toggle]');
+    if(button&&!button.contains(event.relatedTarget))updateGuest(button,false);
   });
   doc.addEventListener('click',event=>{
-    const summary=event.target.closest?.('[data-guest-toggle]'),guest=summary?.closest('details');
-    if(guest){
-      // Apply the single-card rule before the deferred native toggle event.
-      // A pointer click after hover keeps its just-revealed card open.
-      event.preventDefault();
-      summary.focus({preventScroll:true});
-      if(!(event.detail>0&&hoverOpened.has(guest)&&guest.open)){
-        if(guest.open)guest.open=false;else openGuest(guest);
-      }
-      hoverOpened.delete(guest);
+    const guest=event.target.closest?.('[data-public-guests] [data-guest-toggle]');
+    if(guest&&guest.getAttribute('aria-disabled')!=='true'){
+      if(guestRequests.get(guest))updateGuest(guest,false);else openGuest(guest);
     }
-    if(!event.target.closest?.('[data-public-guests]'))for(const details of guestDetails())details.open=false;
+    if(!event.target.closest?.('[data-public-guests]'))for(const button of guestButtons())updateGuest(button,false);
     const button=event.target.closest?.('[data-work-preview]');if(!button||button.disabled||!dialog)return;
     const image=button.querySelector('img:not([hidden])');if(!image)return;
     previewId=button.closest('[data-showcase-id]').dataset.showcaseId;previewTrigger=button;
     if(!dialog.open)dialog.showModal();syncPreview();
   });
   doc.addEventListener('keydown',event=>{
-    if(event.key==='Escape')for(const details of guestDetails())if(details.open){details.open=false;if(details.contains(doc.activeElement))details.querySelector('summary')?.focus({preventScroll:true});}
+    if(event.key==='Escape')for(const button of guestButtons())updateGuest(button,false);
   });
   dialog?.querySelector('[data-work-lightbox-close]')?.addEventListener('click',()=>closePreview());
   dialog?.addEventListener('cancel',event=>{event.preventDefault();closePreview();});
@@ -128,19 +136,18 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
     }
     for(let parent=target.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
     if(target.matches('[data-organization-id]'))target.dispatchEvent(new CustomEvent('artdico:organization-reveal',{bubbles:true,detail:{id:target.id}}));
-    if(target.matches('[data-guest-id]'))openGuest(target.querySelector('details'));
+    if(target.matches('[data-guest-id]'))openGuest(target.querySelector('[data-guest-toggle]'));
     return true;
   }
   win.addEventListener('hashchange',()=>{const id=win.location.hash.slice(1);if(reveal(id)&&doc.getElementById(id)?.matches('[data-organization-id]'))win.requestAnimationFrame(()=>doc.getElementById(id)?.scrollIntoView({block:'start',behavior:'instant'}));});
   function capture(){
-    clearTimeout(closeTimer);
     const active=doc.activeElement,card=active?.closest?.('[data-guest-id],[data-showcase-id],[data-organization-id],[id^="program-"]');
     const focus=card?{id:card.id,self:card===active,index:[...card.querySelectorAll('a,button,summary,[tabindex]')].indexOf(active),href:active.getAttribute('href'),key:active.dataset.focusKey}:null;
-    return {open:guestDetails().filter(details=>details.open).map(details=>details.closest('[data-guest-id]').id),focus,active,scrollX:win.scrollX,scrollY:win.scrollY};
+    return {open:guestButtons().filter(button=>guestRequests.get(button)).map(button=>button.closest('[data-guest-id]').id),focus,active,scrollX:win.scrollX,scrollY:win.scrollY};
   }
   function restore(state){
     updateWorks();
-    for(const id of state?.open||[]){const details=doc.getElementById(id)?.querySelector('details');if(details)openGuest(details);}
+    for(const id of state?.open||[])openGuest(doc.getElementById(id)?.querySelector('[data-guest-toggle]'));
     if(state?.focus&&!state.active.isConnected){
       const card=doc.getElementById(state.focus.id),controls=card?[...card.querySelectorAll('a,button,summary,[tabindex]')]:[];
       const target=state.focus.self?card:controls.find(node=>state.focus.key&&node.dataset.focusKey===state.focus.key)||controls.find(node=>state.focus.href&&node.getAttribute('href')===state.focus.href)||controls[state.focus.index];
@@ -156,7 +163,7 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
     if(state){
       const position={left:state.scrollX,top:state.scrollY,behavior:'instant'};
       win.scrollTo(position);
-      // Disclosure layout and browser scroll anchoring settle on the next frame.
+      // Browser scroll anchoring settles on the next frame after replacement.
       win.requestAnimationFrame(()=>win.scrollTo(position));
     }
   }

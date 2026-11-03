@@ -1,5 +1,8 @@
 # 浏览器回归验收
 
+2026-11-03嘉賓最新規則：沿原圓形，文字僅姓名／公開company組織／ggjRole；不顯示title及方形介紹浮框。hover、手機點按與原生鍵盤在同一圓內切換本人照片，失敗／缺圖維持文字。這覆蓋下方歷史版本的職稱及展開面板說明。實際素材擷取的manifest.media包含公開Logo及本人照片，兩者分開計數；同源／雜湊／格式／bytes限制保持。當輪案例與證據以[圓內照片紀錄](../../docs/redesign/guest-circle-portrait-release.md)及實際報告為準。
+
+
 置顶导览与捲动动效入口为 `home-scroll-motion-smoke.mjs`，在最终编译完成、来源与dist冻结后执行：
 
 ```sh

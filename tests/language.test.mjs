@@ -21,3 +21,11 @@ test('exact copy and bounded UI templates translate without guessing editorial f
   assert.equal(translate('未经翻译的公开主题与姓名','en'),'未经翻译的公开主题与姓名');
   assert.equal(translate('<img src=x onerror=alert(1)>','en'),'<img src=x onerror=alert(1)>');
 });
+
+test('circle photo actions translate while the published identity stays unchanged',()=>{
+  const identity='合成姓名，原始社群，GGJ合成站组织者';
+  assert.equal(translate(identity+'，查看照片','en'),identity+' · View photo');
+  assert.equal(translate(identity+'，显示文字','en'),identity+' · Show text');
+  assert.equal(translate(identity+'，查看照片','zh-CN'),identity+'，查看照片');
+  assert.equal(translate(identity,'en'),identity);
+});

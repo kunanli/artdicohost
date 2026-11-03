@@ -49,6 +49,7 @@ export function translate(value, language) {
   if ((match=/^(.+)的作品图$/u.exec(key))) return 'Project image: '+match[1];
   if ((match=/^(.+)的组织图片$/u.exec(key))) return 'Organization image: '+match[1];
   if ((match=/^(.+) · 打开组织页面（新窗口）$/u.exec(key))) return match[1]+' · Open organization website (new window)';
+  if ((match=/^(.+)，(查看照片|显示文字)$/u.exec(key))) return match[1]+' · '+(match[2]==='查看照片'?'View photo':'Show text');
   if ((match=/^(.+)，嘉宾介绍$/u.exec(key))) return match[1]+' · Guest introduction';
   if ((match=/^(.+)简介$/u.exec(key))) return 'Bio: '+match[1];
   if ((match=/^请检查 (\d+) 项标记内容，当前没有提交申请。$/u.exec(key))) return `Please check the ${match[1]} highlighted fields. No application has been submitted.`;

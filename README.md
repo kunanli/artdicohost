@@ -1,6 +1,8 @@
 # ARTDiCO HOST · artdico.host
 
-**最新已發布：**[PR78 活動行名單接入Wallet與體檢](docs/redesign/huodongxing-wallet-health.md)，main `3c13de91b8da04a2232b4ad6916cd1cfdffacbd5`。[正式流程41606971922](https://github.com/kunanli/artdicohost/actions/runs/41606971922)五工作成功，1941項Node、81案同來源瀏覽器、137檔候選離線啟動、私有OSS、14後台及68公開HTTPS物件均核對；2026-11-03 09:11:20 UTC完成入場路徑三項驗證。郵件／Wallet配置就緒，先前403及真人收件／iPhone添加仍未實寄驗證。
+**最新已發布：**[PR79 場次發布入口與前台日程排序](docs/redesign/session-publication-order-release.md)，main `82daf5a8316e37ae9647ca8d7c84ec5020de35d8`。場次頁可就近發布、查看逐場公開進度，並在同區、同上午／下午內上移／下移；保存與明確發布分開。[PR檢查41624929578](https://github.com/kunanli/artdicohost/actions/runs/41624929578)及[main流程41626550368](https://github.com/kunanli/artdicohost/actions/runs/41626550368)均通過1961項Node、13組89案瀏覽器及137檔候選離線啟動。正式五工作成功，私有OSS、14後台及68公開HTTPS物件已核對，2026-11-03 11:36:03 UTC完成入場路徑三項驗證。主辦方仍須明確發布已保存講座；部署沒有代發正式草稿。
+
+**前次已驗證發布（歷史基準）：**[PR78 活動行名單接入Wallet與體檢](docs/redesign/huodongxing-wallet-health.md)，main `3c13de91b8da04a2232b4ad6916cd1cfdffacbd5`。[正式流程41606971922](https://github.com/kunanli/artdicohost/actions/runs/41606971922)五工作成功，1941項Node、81案同來源瀏覽器、137檔候選離線啟動、私有OSS、14後台及68公開HTTPS物件均核對；2026-11-03 09:11:20 UTC完成入場路徑三項驗證。郵件／Wallet配置就緒，先前403及真人收件／iPhone添加仍未實寄驗證。
 
 **前輪嘉賓規則（歷史基準）：**[PR #68](https://github.com/kunanli/artdicohost/pull/68) 已合併至 main `3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`，範圍見[嘉賓公開展示與舊審閱精簡](docs/redesign/admin-data-cleanup-audit.md)。嘉賓依公開開關展示、真實出席獨立；舊人工審閱改歷史唯讀。資料未刪除，展位、住宿、志工流程維持。[PR 檢查 41425057862](https://github.com/kunanli/artdicohost/actions/runs/41425057862) 已通過1638項測試及同版捲動6／排版4／實際素材13；[main 流程 41426077899](https://github.com/kunanli/artdicohost/actions/runs/41426077899) 四工作成功，同版6／4／實際13、私有OSS、13後台及10:18:01 UTC的60公開物件HTTPS核對完成。
 
@@ -8,7 +10,7 @@
 
 更早 [PR66：手機圈內組織、全頁星空與報名更正](docs/redesign/mobile-organizations-profile-release.md)，main `c5166922`，保留當次1634測試、13後台及61公開物件HTTPS回執。首頁樣式沿 [CSS／字級規範](docs/frontend-typography.md)。
 
-2026-11-03使用者最新決策：一般報名由官網前往活動行，本站只保留講者提案；客服以三段出席分類查看，寄送異常另列提示。[本輪範圍與驗證](docs/redesign/external-registration-staff-status-release.md)記錄實作及發布進度；[活動行Excel→Wallet轉接與體檢](docs/redesign/huodongxing-wallet-health.md)在本輪實作；批次同步與寄信不因切換入口自動完成。下方本站自動報名及更早紀錄保留作歷史。
+2026-11-03使用者最新決策：一般報名由官網前往活動行，本站只保留講者提案；客服以三段出席分類查看，寄送異常另列提示。[本輪範圍與驗證](docs/redesign/external-registration-staff-status-release.md)記錄實作及發布進度；[活動行Excel→Wallet轉接與體檢](docs/redesign/huodongxing-wallet-health.md)已由PR78交付；批次同步與寄信不因切換入口自動完成。下方本站自動報名及更早紀錄保留作歷史。
 
 本次改版執行入口：[分階段總覽](docs/redesign/README.md)、[操作手冊](docs/redesign/02-staff-and-attendee-runbook.md)、[驗收與發布](docs/redesign/03-release-and-acceptance.md)。P1–P6、[UX1 操作／層級](docs/redesign/ux-clarity-release.md) 及 [UX2 具名寄送與連續處理](docs/redesign/ux-workflow-release.md) 均已完成程式交付及正式發布；UX2 main `5ec45815` 的 1586 項測試、私有 OSS、13 個後台頁面及 51 個公開物件核驗通過。四項真人／真實資料驗收仍待主辦方記錄。下方 10 月發布資訊為歷史基準，現況以接續台帳及當輪紀錄為準。
 

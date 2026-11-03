@@ -7,13 +7,16 @@ const attendance = (confirmedGuestIds = ['synthetic-guest']) => ({ schemaVersion
 const confirmedCards = input => publicGuestCards(input, attendance());
 const person = (overrides = {}) => ({ id: 'synthetic-guest', name: '合成嘉宾', company: '合成机构', ggjRole: '', portraitId: 'a'.repeat(64) + '.png', status: 'confirmed', publicConsent: true, ...overrides });
 
-test('bubble affiliation and position remain separate when both public fields are present',()=>{
+test('bubble captions keep the public affiliation and GGJ role while omitting company titles',()=>{
   assert.equal(publicGuestAffiliation({company:'  合成机构 ',title:'合成技术总监'}),'合成机构');
-  assert.deepEqual(publicGuestSubtitle({title:'  合成技术总监 ',ggjRole:'合成组织者',company:'合成机构'}),{text:'合成技术总监',kind:'title'});
+  const profile={title:'  合成技术总监 ',ggjRole:' 合成组织者 ',company:'合成机构'};
+  assert.deepEqual(publicGuestSubtitle(profile),{text:'合成组织者',kind:'role'});
+  assert.equal(profile.title,'  合成技术总监 ','rendering does not alter the saved company title');
+  assert.deepEqual(publicGuestSubtitle({title:'合成技术总监',company:'合成机构'}),{text:'',kind:'none'});
   assert.deepEqual(publicGuestSubtitle({title:'',ggjRole:'合成组织者',company:'合成机构'}),{text:'合成组织者',kind:'role'});
   assert.deepEqual(publicGuestSubtitle({company:'合成机构'}),{text:'',kind:'none'});
 });
-test('bubble subtitle never invents a position from a name or private notes',()=>{
+test('bubble subtitle never invents a GGJ role from a name, title or private notes',()=>{
   assert.deepEqual(publicGuestSubtitle({name:'合成姓名',internalNotes:'合成私有职位'}),{text:'',kind:'none'});
   assert.deepEqual(publicGuestSubtitle(null),{text:'',kind:'none'});
 });
@@ -28,6 +31,15 @@ test('bubble subtitle does not invoke accessors or display unsafe field values',
   const value={company:'安全公开机构',ggjRole:'无效\n身份'};
   Object.defineProperty(value,'title',{get(){throw Error('must not invoke an accessor');}});
   assert.deepEqual(publicGuestSubtitle(value),{text:'',kind:'none'});
+  value.ggjRole=' 合成站点组织者 ';
+  assert.deepEqual(publicGuestSubtitle(value),{text:'合成站点组织者',kind:'role'});
+  for(const ggjRole of ['a'.repeat(161),'身份\n私密',12,{toString(){throw Error('must not coerce');}}]){
+    assert.deepEqual(publicGuestSubtitle({ggjRole,title:'合成技术总监'}),{text:'',kind:'none'});
+  }
+  const roleAccessor={title:'合成技术总监'};
+  Object.defineProperty(roleAccessor,'ggjRole',{get(){throw Error('must not invoke a role accessor');}});
+  assert.deepEqual(publicGuestSubtitle(roleAccessor),{text:'',kind:'none'});
+  assert.deepEqual(publicGuestSubtitle(Object.assign(Object.create(null),{ggjRole:' 合成组织者 '})),{text:'合成组织者',kind:'role'});
   assert.equal(publicGuestAffiliation(value),'安全公开机构');
 });
 

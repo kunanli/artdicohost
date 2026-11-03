@@ -74,7 +74,8 @@ async function mediaBytes(path, fetchFn, maximum, timeoutMs) {
 }
 
 /** Capture only a validated public publication and its explicitly referenced
- * organization logos. URL selection is fixed; injectable I/O exists for tests. */
+ * organization logos and guest portraits. Both use the same bounded public
+ * content-addressed image route; injectable I/O exists only for tests. */
 export async function capturePublicVisualFixture({ fetchFn = fetch, outputDirectory = PUBLIC_VISUAL_FIXTURE_DIRECTORY,
   timeoutMs = 15_000, sourceCommit = process.env.GITHUB_SHA ?? null, clock = Date.now } = {}) {
   let created = false, complete = false, snapshotClone;
@@ -103,7 +104,9 @@ export async function capturePublicVisualFixture({ fetchFn = fetch, outputDirect
     const observed = await captured;
     if (!observed?.bytes) throw failures.has(observed?.error) ? observed.error : failure('SNAPSHOT_UNAVAILABLE');
     const snapshot = observed.bytes, data = JSON.parse(snapshot.toString('utf8'));
-    const paths = [...new Set((data.content.organizations ?? []).map(item => item.logoUrl).filter(Boolean))];
+    const logoPaths = (data.content.organizations ?? []).map(item => item.logoUrl).filter(Boolean);
+    const portraitPaths = data.content.guests.map(item => item.portraitUrl).filter(Boolean);
+    const paths = [...new Set([...logoPaths, ...portraitPaths])];
     if (paths.length > MAX_MEDIA || paths.some(path => typeof path !== 'string' || !MEDIA_PATH.test(path))) throw failure('MEDIA_LIMIT');
     const media = []; let totalBytes = 0;
     for (const path of paths) {
@@ -125,8 +128,8 @@ export async function capturePublicVisualFixture({ fetchFn = fetch, outputDirect
       const key = organizationReferenceKey(card), image = MEDIA_PATH.exec(card.logoUrl ?? '');
       return image ? [{ organizationId: card.id, key, sha256: image[1] }] : [];
     });
-    // Count independent public position and affiliation availability without
-    // copying their text. Company never substitutes for a missing position.
+    // Count legacy public field availability without copying their text. These
+    // diagnostics do not claim which fields the current circle displays.
     const guestCaptionCoverage = { title: 0, role: 0, company: 0, empty: 0 };
     const guestAffiliationCoverage = { company: 0, empty: 0 };
     for (const guest of data.content.guests) {
@@ -134,14 +137,17 @@ export async function capturePublicVisualFixture({ fetchFn = fetch, outputDirect
       guestCaptionCoverage[kind]++;
       guestAffiliationCoverage[hasPublicText(guest, 'company') ? 'company' : 'empty']++;
     }
-    // A published cover reference is distinct from fetching/decoding that image.
-    // This diagnostic does not expand the organization-only media capture.
+    const guestPortraitCoverage = { total: data.content.guests.length, withPortrait: portraitPaths.length,
+      withoutPortrait: data.content.guests.length - portraitPaths.length, uniqueImages: new Set(portraitPaths).size,
+      capturedImages: new Set(portraitPaths).size };
+    // Work covers remain outside this capture. A published cover reference is
+    // distinct from fetching/decoding that image.
     const showcases = data.content.showcases;
     const withCoverId = showcases.filter(work => hasPublicText(work, 'coverId')).length;
     const showcaseCoverCoverage = { total: showcases.length, withCoverId, withoutCoverId: showcases.length - withCoverId };
     complete = true;
     return { captured: true, revision: verified.revision, snapshotSha256: manifest.snapshot.sha256, snapshotBytes: snapshot.length,
-      organizations: verified.counts.organizations, media: media.length, mediaBytes: totalBytes, referenceLogoSources, guestCaptionCoverage, guestAffiliationCoverage, showcaseCoverCoverage };
+      organizations: verified.counts.organizations, media: media.length, mediaBytes: totalBytes, referenceLogoSources, guestCaptionCoverage, guestAffiliationCoverage, guestPortraitCoverage, showcaseCoverCoverage };
   } catch (error) { throw failures.has(error) ? error : failure('PUBLIC_CONTENT_UNAVAILABLE'); }
   finally {
     snapshotAbort.abort(); cancel(snapshotClone);

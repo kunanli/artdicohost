@@ -33,7 +33,7 @@ const profileFields: [string, string, number][] = [
       <section class="ah-admin-workspace-layout" data-contacts-workspace hidden>
         <StaffNavigation current="contacts" />
         <div class="ah-admin-workspace-content">
-        <div class="ah-admin-page-heading"><div><h1>人员与报名</h1><p>集中核对邀约、参会名额与职责；参展商、讲者和嘉宾分别查看。</p></div><div class="contacts-action-row"><a class="ah-admin-button" href="/admin/volunteers/">志愿者与分工</a><button type="button" class="ah-admin-button" data-contacts-refresh>刷新名单</button><button type="button" class="ah-admin-button ah-admin-primary" data-contact-new data-contact-only>＋ 新增联系人</button></div></div>
+        <div class="ah-admin-page-heading"><div><h1>人员与报名</h1><p>集中核对邀约、参会名额与职责；参展商、讲者和嘉宾分别查看。</p></div><div class="contacts-action-row"><a class="ah-admin-button" href="/admin/volunteers/">志愿者与分工</a><button type="button" class="ah-admin-button" data-hdx-open hidden>导入活动行</button><button type="button" class="ah-admin-button" data-contacts-refresh>刷新名单</button><button type="button" class="ah-admin-button ah-admin-primary" data-contact-new data-contact-only>＋ 新增联系人</button></div></div>
         <PeopleViews /><PeopleResolution /><PeopleDirectory />
         <details class="people-advanced-tools" data-contacts-legacy-tools data-contact-only><summary>导入与原始资料工具</summary>
         <div class="contacts-metrics people-overview" data-contacts-metrics data-people-overview hidden></div><p class="ah-admin-small people-source-status" data-people-relationships-status role="status"></p><p class="ah-admin-small" data-contacts-progress-note></p><p class="contacts-planning-summary" data-contacts-planning></p>
@@ -68,6 +68,23 @@ const profileFields: [string, string, number][] = [
     </form>
   </dialog>
   <dialog class="ah-admin-dialog contacts-dialog" data-conversion-dialog aria-labelledby="conversion-title"><div class="ah-admin-dialog-heading"><h2 id="conversion-title">核对代登记与名额同步</h2><button class="ah-admin-icon-button" type="button" data-conversion-close aria-label="关闭名额预览">×</button></div><p class="ah-admin-small">只转换已核对的现有人員，每批最多 100 位。正式名额由共同 300 人规则确认，满额为候补；不会发送邀请、邮件或代替本人网站隐私同意。</p><p data-conversion-summary role="status"></p><ul class="people-conversion-results" data-conversion-entries></ul><p class="ah-admin-alert" data-conversion-error role="alert" hidden></p><div class="ah-admin-dialog-actions"><button class="ah-admin-button" type="button" data-conversion-close>取消</button><button class="ah-admin-button ah-admin-primary" type="button" data-conversion-confirm>确认代登记并核对名额</button></div></dialog>
+  <dialog class="ah-admin-dialog contacts-dialog hdx-import-dialog" data-hdx-dialog aria-labelledby="hdx-title">
+    <div class="ah-admin-dialog-heading"><h2 id="hdx-title">导入活动行</h2><button type="button" class="ah-admin-icon-button" data-hdx-close aria-label="关闭活动行导入">×</button></div>
+    <p class="ah-admin-small">选择本次活动的报名名单。先核对再导入，不会自动寄信。</p>
+    <label class="ah-admin-button contacts-file">选择 Excel<input type="file" accept=".xlsx" data-hdx-file /></label><span class="ah-admin-small" data-hdx-file-name>原始 .xlsx · 每次最多500行，导入最多100人</span>
+    <p class="ah-admin-small" data-hdx-source-note>按工作人员核对的原文件读取；不代表活动行即时验票。请核对原始内容，公式只可能读到原文件的缓存值。</p>
+    <p class="ah-admin-status" data-hdx-status role="status" aria-live="polite"></p><p class="ah-admin-alert" data-hdx-error role="alert" tabindex="-1" hidden></p>
+    <section data-hdx-preview hidden><p data-hdx-summary></p><ul class="hdx-import-rows" data-hdx-rows></ul>
+      <label class="contacts-check"><input type="checkbox" data-hdx-source-confirm />我已核对原始文件、本次活动和导入范围</label>
+      <label class="contacts-check"><input type="checkbox" data-hdx-permission-confirm />我已核对，并有权为这些票持有人提供本次必要参会通知</label>
+      <button type="button" class="ah-admin-button ah-admin-primary" data-hdx-commit disabled>导入0人</button>
+    </section>
+    <div class="hdx-recovery" data-hdx-pending hidden><p>原导入待核对。继续导入会沿用同一操作，不会另建一批。</p><button type="button" class="ah-admin-button" data-hdx-lookup>核对原导入</button><button type="button" class="ah-admin-button" data-hdx-resume disabled>继续原导入</button><button type="button" class="ah-admin-button" data-hdx-repreview hidden>重新预览</button></div>
+    <section data-hdx-result hidden><h3>导入结果</h3><ul class="hdx-import-rows" data-hdx-results></ul><button type="button" class="ah-admin-button" data-hdx-mail-preview disabled>预览本批确认函</button></section>
+    <section data-hdx-mail hidden><h3>本批确认函</h3><details><summary>查看邮件内容</summary><strong data-hdx-mail-subject></strong><pre class="hdx-mail-text" data-hdx-mail-text></pre></details><ul class="hdx-import-rows" data-hdx-mail-rows></ul><button type="button" class="ah-admin-button" data-hdx-mail-select>选择本批可发送者</button><button type="button" class="ah-admin-button ah-admin-primary" data-hdx-mail-send disabled>寄送0人</button></section>
+    <div class="hdx-recovery" data-hdx-mail-pending hidden><p>原确认函结果待核对，不会重寄。</p><button type="button" class="ah-admin-button" data-hdx-mail-lookup>核对原寄送</button><button type="button" class="ah-admin-button" data-hdx-mail-repreview hidden>重新核对收件人</button></div><ul class="hdx-import-rows" data-hdx-mail-results></ul>
+    <div class="ah-admin-dialog-actions"><button type="button" class="ah-admin-button" data-hdx-close>关闭</button></div>
+  </dialog>
   <script>
     import '../../../scripts/contacts.mjs';
   </script>

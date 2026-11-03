@@ -121,6 +121,7 @@ export function personWorkspaceView(value, selection) {
         || !lines(registration.review, ['status', 'accommodationStatus', 'assignedTo', 'nextStep', 'invitationStatus']) || typeof registration.review.deletionRequested !== 'boolean'
         || value.linkage.registrationId !== registration.id) return null;
       if (registration.profileTargetId !== undefined && !REGISTRATION.test(registration.profileTargetId ?? '')) return null;
+      if (registration.externalAttendance!==undefined&&!['verified','unavailable','declined'].includes(registration.externalAttendance))return null;
       if (registration.profileCorrection !== undefined && (!plain(registration.profileCorrection) || Object.keys(registration.profileCorrection).sort().join(',') !== 'accessRevision,revision' || !integer(registration.profileCorrection.accessRevision) || !integer(registration.profileCorrection.revision) || registration.profileCorrection.revision > value.revisions.registration)) return null;
     } else if (registration !== null) return null;
     if (selection.kind === 'contact' ? contact?.id !== selection.id : registration?.id !== selection.id) return null;
@@ -171,10 +172,10 @@ export function personAttendanceView(view){
   const deliveryStatus=current.some(item=>['unknown','reserved'].includes(item.status))?'unknown'
     :view?.availability?.confirmations==='restricted'?'restricted':view?.availability?.confirmations==='unavailable'?'unavailable'
       :current.some(item=>item.status==='provider_accepted')?'provider_accepted':current[0]?.status??'not_sent';
-  return personAttendanceStage({responseStatus:view?.contact?.operations.responseStatus??null,admissionStatus:view?.admission?.status??null,
-    contactConsent:view?.contact?.profile.contactConsent??null,selfRegistered:view?.registration?.provenance.kind==='public',deliveryStatus,historicalDeliveryUnknown,
+  return personAttendanceStage({responseStatus:view?.registration?.externalAttendance==='declined'?'declined':view?.contact?.operations.responseStatus??null,admissionStatus:view?.admission?.status??null,
+    contactConsent:view?.contact?.profile.contactConsent??null,selfRegistered:view?.registration?.provenance.kind==='public'||view?.registration?.externalAttendance==='verified',deliveryStatus,historicalDeliveryUnknown,
     invitationStatus:view?.communications?.unresolvedInvitations?'unknown':'not_applicable',
-    sourceUnavailable:view?.linkage?.state==='unavailable'||['contact','registration','admission'].some(key=>view?.availability?.[key]==='unavailable')});
+    sourceUnavailable:view?.registration?.externalAttendance==='unavailable'||view?.linkage?.state==='unavailable'||['contact','registration','admission'].some(key=>view?.availability?.[key]==='unavailable')});
 }
 
 export function personWorkspaceActions(view, roles = []) {
@@ -209,11 +210,12 @@ export function personWorkspaceSteps(view, roles = []) {
     ? step('intent', '核对原始意向', ['consented', 'declined'].includes(consent) ? 'complete' : 'pending', consent === 'consented' ? '已记录联络许可；原始身份与意向继续保留，不替代当前安排。' : consent === 'declined' ? '已记录不同意联络，请停止邀约。' : '先查看原始身份、参与意向与联络许可，不按同名自动合并。', 'arrangements')
     : step('intent', '核对原始意向', unavailable('contact'), personAvailabilityText(view.availability.contact), 'review')];
   if (contact) {
-    const response = operations.responseStatus;
+    const externalRegistered=view.registration?.externalAttendance==='verified'&&view.admission?.status==='confirmed'&&operations.responseStatus!=='declined';
+    const response = view.registration?.externalAttendance==='declined'?'declined':externalRegistered?'attending':operations.responseStatus;
     const unknownSend = view.communications.timeline.some(entry => ['unknown', 'reserved'].includes(entry.status));
     const contacted = view.communications.timeline.some(entry => (entry.source !== 'confirmation' || entry.currentRecipient !== false) && ['manually_sent', 'sent', 'provider_accepted'].includes(entry.status));
     steps.push(step('reply', '联络与本人回复', response === 'attending' || response === 'declined' || consent === 'declined' ? 'complete' : unknownSend ? 'review' : 'pending',
-      response === 'attending' ? '已保存本人答应出席；参会名额仍单独核对。' : response === 'declined' || consent === 'declined' ? '已记录拒绝联络或出席，请停止邀约。' : unknownSend ? '存在发送结果待核对的记录，请先核对，再继续跟进。' : contacted ? '已记录人工发出或邮件服务已接收，仍待本人回复；不代表邮件已送达。' : '先核实联络许可并发出邀请，再保存实际回复；名额已确认也不代表本人答应。', 'arrangements'));
+      externalRegistered ? '已核实活动行有效报名；原联络回复记录继续保留。' : response === 'attending' ? '已保存本人答应出席；参会名额仍单独核对。' : response === 'declined' || consent === 'declined' ? '已记录拒绝联络或出席，请停止邀约。' : unknownSend ? '存在发送结果待核对的记录，请先核对，再继续跟进。' : contacted ? '已记录人工发出或邮件服务已接收，仍待本人回复；不代表邮件已送达。' : '先核实联络许可并发出邀请，再保存实际回复；名额已确认也不代表本人答应。', 'arrangements'));
     steps.push(step('roles', '确认参与身份', forms.length ? 'complete' : 'pending', forms.length ? '已保存内部活动职责；讲者、组织者等可在「详情与安排」调整。' : '按本人协商结果选择一般参与、嘉宾、讲者、组织者等职责，可多选。', 'arrangements'));
   } else {
     for (const [key, label] of [['reply', '联络与本人回复'], ['roles', '确认参与身份']]) steps.push(step(key, label, unavailable('contact'), personAvailabilityText(view.availability.contact), 'review'));
@@ -303,11 +305,11 @@ export function personNextAction(view, roles = [], localPending = false) {
   const publicNeedsUpdate = profiles.some(item => item.published ? !item.publishedMatchesDraft : isContentVisible(item))
     || forms.some(role => ['guest', 'speaker', 'panelist', 'host', 'organizer'].includes(role)) && !profiles.length && availability.publicProfile !== 'restricted';
   const arrangementStep = personWorkspaceSteps(current, roles).find(item => item.key === 'arrangements');
-  const sourceUnavailable = current.linkage.state === 'unavailable'
+  const sourceUnavailable = registration?.externalAttendance==='unavailable'||current.linkage.state === 'unavailable'
     || ['contact', 'registration', 'admission'].some(key => availability[key] === 'unavailable')
     || Boolean(contact && ['arrangements', 'publicProfile', 'invitations'].some(key => availability[key] === 'unavailable'));
   return personWorkRecommendation({contactId, registrationId, profileId: profile?.id ?? null,
-    responseStatus: contact?.operations.responseStatus ?? null, admissionStatus: current.admission?.status ?? null,
+    responseStatus: current.registration?.externalAttendance==='declined'?'declined':current.registration?.externalAttendance==='verified'&&current.admission?.status==='confirmed'&&contact?.operations.responseStatus!=='declined'?'attending':contact?.operations.responseStatus ?? null, admissionStatus: current.admission?.status ?? null,
     registrationState: current.linkage.state === 'linked' ? 'available' : current.linkage.state, invitationStatus: invitation, deliveryStatus: delivery,
     contactConsent: contact?.profile.contactConsent ?? null, pendingResult: pending, sourceUnavailable,
     publicNeedsUpdate, missingArrangement: Boolean(forms.length && arrangementStep && ['review', 'pending'].includes(arrangementStep.state)),

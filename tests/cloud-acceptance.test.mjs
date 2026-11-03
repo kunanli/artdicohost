@@ -74,16 +74,21 @@ async function acceptanceAcrossLoginWindow(boundary) {
 test('all logical object categories are mapped to one private acceptance namespace and nested or malformed scopes are rejected', async () => {
   const seen = [], objects = Object.fromEntries(['get', 'putImmutable', 'append'].map(operation => [operation, (...args) => { seen.push([operation, ...args]); return Promise.resolve(null); }]));
   const scoped = createAcceptanceObjects({ objects, runId: RUN, instanceId: INSTANCE });
-  for (const category of ['content', 'contacts', 'portraits', 'sessions', 'limits', 'probes', 'registrations', 'registration-reviews', 'registration-confirmations', 'wallet-signing', 'confirmation-mail', 'intent-invitations', 'group-invites', 'users', 'maintenance', 'restores', 'volunteers']) {
-    const logical = `cms/v1/${category}/synthetic.json`;
+  const categories = ['content', 'contacts', 'portraits', 'sessions', 'limits', 'probes', 'registrations', 'registration-reviews', 'registration-confirmations', 'wallet-signing', 'confirmation-mail', 'intent-invitations', 'external-registrations/8884819113200', 'group-invites', 'users', 'maintenance', 'restores', 'volunteers'];
+  const ledger = 'external-registrations/8884819113200', blob = 'blobs/' + 'd'.repeat(64) + '.json';
+  const logicalKeys = [...categories.map(category => `cms/v1/${category}/synthetic.json`),
+    ...[ledger, 'restores/synthetic-ledger-restore/' + ledger].flatMap(prefix => ['commits.jsonl', blob].map(suffix => 'cms/v1/' + prefix + '/' + suffix))];
+  for (const logical of logicalKeys) {
     await scoped.get(logical); await scoped.putImmutable(logical, Buffer.from('{}')); await scoped.append(logical, 0, Buffer.from('{}'));
   }
-  assert.equal(seen.length, 51);
-  assert.ok(seen.every(([, key]) => key.startsWith(`cms/v1/acceptance/${RUN}/${INSTANCE}/`)));
-  for (const value of ['cms/v1/acceptance/existing/probe.json', 'cms/v1/content/../private.json', 'cms/v1/other/probe.json', 'cms/v1/content//probe.json', 'other/content/probe.json', null, ['cms/v1/content/probe.json']]) {
+  assert.equal(seen.length, logicalKeys.length * 3);
+  assert.deepEqual(seen.map(([operation, key]) => [operation, key]), logicalKeys.flatMap(logical => ['get', 'putImmutable', 'append']
+    .map(operation => [operation, `cms/v1/acceptance/${RUN}/${INSTANCE}/` + logical.slice('cms/v1/'.length)])));
+  for (const value of ['cms/v1/acceptance/existing/probe.json', 'cms/v1/content/../private.json', 'cms/v1/other/probe.json', 'cms/v1/content//probe.json', 'other/content/probe.json',
+    'cms/v1/external-registrations/synthetic.json', 'cms/v1/external-registrations/8884819113201/commits.jsonl', 'cms/v1/external-registrations/88848191132000/commits.jsonl', null, ['cms/v1/content/probe.json']]) {
     assert.throws(() => scoped.get(value), { message: 'Acceptance object scope is invalid.' });
   }
-  assert.equal(seen.length, 51);
+  assert.equal(seen.length, logicalKeys.length * 3);
   for (const runId of ['production', 'r0-a1-' + 'c'.repeat(16) + '-' + SOURCE, 'r1-a0-' + 'c'.repeat(16) + '-' + SOURCE,
     'r1-' + SOURCE, 'r1-a1-../' + SOURCE, 'r1-a1-' + 'c'.repeat(16) + '-' + 'A'.repeat(40), RUN + '/extra']) {
     assert.throws(() => createAcceptanceObjects({ objects, runId, instanceId: INSTANCE }));
@@ -108,6 +113,13 @@ test('isolated acceptance uses only synthetic settings even when both real-mail 
   const prefix = `cms/v1/acceptance/${RUN}/${result.instanceId}/`;
   assert.ok(fixture.calls.every(call => call.key.startsWith(prefix)));
   assert.ok([...fixture.stored.keys()].every(key => key.startsWith(prefix)));
+  assert.ok(fixture.calls.some(call => call.method === 'GET' && call.key === prefix + 'external-registrations/8884819113200/commits.jsonl'),
+    'the real maintenance backup checks the external ledger through the isolated acceptance namespace');
+  const latestSessions = [...fixture.stored].filter(([key]) => key.startsWith(prefix + 'sessions/') && key.endsWith('/commits.jsonl'))
+    .map(([key, value]) => { const entry = JSON.parse(value.data.toString('utf8').trimEnd().split('\n').at(-1));
+      return JSON.parse(fixture.stored.get(key.slice(0, -'/commits.jsonl'.length) + '/blobs/' + entry.valueHash + '.json').data); });
+  assert.equal(latestSessions.filter(value => value.userId === 'synthetic-owner' && value.revoked === true).length, 2,
+    'both independently issued owner sessions are durably revoked after their cross-client 401 probes');
   for (const category of ['content', 'contacts', 'portraits', 'sessions', 'limits', 'probes', 'registrations', 'registration-reviews', 'intent-invitations', 'group-invites', 'maintenance', 'restores', 'volunteers']) assert.ok([...fixture.stored.keys()].some(key => key.startsWith(prefix + category + '/')), category);
   const contentSnapshots = [...fixture.stored].filter(([key]) => key.startsWith(prefix + 'content/blobs/'))
     .map(([,value]) => JSON.parse(value.data));

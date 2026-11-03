@@ -1,3 +1,5 @@
+import { validateHuodongxingTicketRow, MAX_IMPORT_ROWS } from './contacts-schema.mjs';
+
 /** Strict, pure importer for the supplied 2026 questionnaire export. No transport or storage. */
 export const WORKBOOK_SOURCE_KEY = 'wjx-388636468';
 
@@ -286,5 +288,118 @@ export function parseContactImport(matrix, configuration = {}) {
   const unknownConsent = result.filter((row) => row.contactConsent === 'unknown').length;
   if (declinedConsent) warnings.push({ code: 'declined_contact_consent', count: declinedConsent, message: '有来宾在原问卷中不同意信息使用，应从待邀约及批量生成范围中排除。' });
   if (unknownConsent) warnings.push({ code: 'unknown_contact_consent', count: unknownConsent, message: '有来宾的原问卷信息使用同意状态待核对，应从待邀约范围中排除。' });
+  return { rows: result, warnings };
+}
+
+
+/** Exact exported headings for the supplied event's staff-reviewed ticket list.
+ * This path does not interpret the questionnaire's historic consent answers. */
+export const HUODONGXING_IMPORT_HEADERS = Object.freeze([
+  'TID', '报名编号', '订单编号', '票种', '票价', '场次日期', '姓名', '电子邮箱', '手机号码',
+  '报名时间', '最后验票', '状态', '报名方式', '备注1', '备注2', '备注3', '验票提醒',
+  '本场活动您感兴趣的方向是？', '微信',
+]);
+
+// The XLSX reader otherwise coerces long numeric identifiers to imprecise JS
+// numbers. Preserve their type before rejecting them in identity/contact fields.
+export const huodongxingReadOptions = Object.freeze({
+  trim: false,
+  parseNumber: value => ({ type: 'number', value }),
+});
+const hdxFields = Object.freeze({ tid: 0, registrationNumber: 1, orderNumber: 2, name: 6, email: 7,
+  phone: 8, registeredAt: 9, lastVerifiedAt: 10, status: 11, wechat: 18 });
+const hdxDateColumns = new Set([9, 10]);
+const hdxIdColumns = new Set([0, 1, 2, 8, 18]);
+function hdxArray(value, max, row) {
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype || value.length > max
+    || Reflect.ownKeys(value).some(key => typeof key !== 'string' || key !== 'length'
+      && (!/^(?:0|[1-9][0-9]*)$/u.test(key) || Number(key) >= value.length
+        || !Object.hasOwn(Object.getOwnPropertyDescriptor(value, key), 'value')))) {
+    fail('invalid_row', '活动行表格行列格式无效。', row);
+  }
+}
+function hdxNumericCell(value) {
+  if (value === null || typeof value !== 'object' || Object.getPrototypeOf(value) !== Object.prototype
+    || Reflect.ownKeys(value).length !== 2) return false;
+  const type = Object.getOwnPropertyDescriptor(value, 'type'), raw = Object.getOwnPropertyDescriptor(value, 'value');
+  return type?.enumerable && Object.hasOwn(type, 'value') && type.value === 'number'
+    && raw?.enumerable && Object.hasOwn(raw, 'value') && typeof raw.value === 'string'
+    && raw.value.length <= 100 && /^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/u.test(raw.value);
+}
+function hdxCell(value, row, column, retained, actualColumn = column) {
+  if (empty(value)) return '';
+  if (typeof value === 'string') {
+    if (!retained) return '';
+    if (value.length > 8192 || !value.isWellFormed() || /[\u0000-\u001f\u007f-\u009f]/u.test(value)) {
+      fail('invalid_cell_text', '活动行表格含过长、换行或无效文字，请核对原文件。', row, actualColumn + 1);
+    }
+    return value.normalize('NFC').trim();
+  }
+  if (value instanceof Date && Object.getPrototypeOf(value) === Date.prototype) {
+    const time = Date.prototype.getTime.call(value);
+    if (!Number.isFinite(time)) fail('invalid_date', '活动行表格日期无法读取。', row, actualColumn + 1);
+    if (!retained) return '';
+    if (!hdxDateColumns.has(column)) fail('invalid_cell_type', '此活动行字段须以原始文字保存。', row, actualColumn + 1);
+    // readSheet represents an Excel wall-clock cell with UTC calendar fields.
+    // Keep those fields without inventing a timezone or a registration instant.
+    return Date.prototype.toISOString.call(value).slice(0, 19).replace('T', ' ');
+  }
+  if (typeof value === 'number' && Number.isFinite(value) || hdxNumericCell(value)) {
+    if (!retained) return '';
+    fail(hdxIdColumns.has(column) ? 'numeric_ticket_identity' : 'invalid_cell_type',
+      hdxIdColumns.has(column) ? '票号、订单号、手机或微信须为原始文字；请核对数字精度及前导零。' : '此活动行字段须以原始文字保存。', row, actualColumn + 1);
+  }
+  if (!retained && typeof value === 'boolean') return '';
+  // Reject formula/rich-cell wrappers instead of stringifying unknown objects.
+  // The XLSX reader itself cannot expose cached-formula provenance; see warning.
+  fail('invalid_cell_type', '活动行表格含无法核对的单元格类型。', row, actualColumn + 1);
+}
+
+/** Browser-normalized staff import only; not a platform authentication result.
+ * Retains ten required source fields, never payment, remarks or marketing data.
+ * Formula cached results cannot be distinguished by readSheet's public API. */
+export function parseHuodongxingImport(matrix) {
+  hdxArray(matrix, 10001);
+  if (!matrix.length) fail('empty_workbook', '没有找到活动行表头与资料。');
+  for (let index = 0; index < matrix.length; index++) hdxArray(matrix[index], HUODONGXING_IMPORT_HEADERS.length, index + 1);
+  const header = matrix[0];
+  if (header.length !== HUODONGXING_IMPORT_HEADERS.length) fail('missing_header', '请选择含完整19列表头的活动行导出文件。', 1);
+  const positions = new Map();
+  for (let index = 0; index < header.length; index++) {
+    const raw = header[index];
+    if (typeof raw !== 'string') fail('invalid_header', '活动行表头须为原始文字。', 1, index + 1);
+    const name = raw.replace(/^\uFEFF/u, '').normalize('NFC').trim();
+    if (positions.has(name)) fail('duplicate_header', '活动行表头重复，请核对原始文件。', 1, index + 1);
+    if (!HUODONGXING_IMPORT_HEADERS.includes(name)) fail('unknown_header', '活动行表头不匹配，请核对原始文件。', 1, index + 1);
+    positions.set(name, index);
+  }
+  const blank = line => line.every(value => empty(value));
+  let last = matrix.length - 1;
+  while (last > 0 && blank(matrix[last])) last--;
+  if (last > MAX_IMPORT_ROWS) fail('too_many_rows', '每批请保留前500行资料；请拆分活动行导出文件。');
+  const result = [], seen = new Set(), kept = new Set(Object.values(hdxFields));
+  let skipped = matrix.length - 1 - last;
+  for (let index = 1; index <= last; index++) {
+    const line = matrix[index], sourceRow = index + 1;
+    if (blank(line)) { skipped++; continue; }
+    const row = { sourceRow };
+    // Inspect even discarded cells for unsupported wrappers; never persist them.
+    for (let sourceColumn = 0; sourceColumn < HUODONGXING_IMPORT_HEADERS.length; sourceColumn++) {
+      const actual = positions.get(HUODONGXING_IMPORT_HEADERS[sourceColumn]);
+      const value = hdxCell(line[actual], sourceRow, sourceColumn, kept.has(sourceColumn), actual);
+      for (const [key, column] of Object.entries(hdxFields)) if (column === sourceColumn) row[key] = value;
+    }
+    const parsed = validateHuodongxingTicketRow(row);
+    if (!parsed.valid) {
+      const key = Object.keys(parsed.errors)[0];
+      fail('invalid_ticket_row', '活动行票资料需要修正，请核对标记的行与字段。', sourceRow,
+        Object.hasOwn(hdxFields, key) ? positions.get(HUODONGXING_IMPORT_HEADERS[hdxFields[key]]) + 1 : undefined);
+    }
+    if (seen.has(parsed.value.tid)) fail('duplicate_ticket_id', '同一份文件出现重复TID，请核对是否重复导出同一张票。', sourceRow, positions.get('TID') + 1);
+    seen.add(parsed.value.tid); result.push(parsed.value);
+  }
+  if (!result.length) fail('no_data_rows', '活动行表格没有可预览的票资料。');
+  const warnings = [{ code: 'staff_normalized_source', message: '资料由当前浏览器读取；请核对原始导出文件，此预览不代表平台实时验票或公式来源已独立核查。' }];
+  if (skipped) warnings.push({ code: 'blank_rows_skipped', count: skipped, message: '已跳过空白行。' });
   return { rows: result, warnings };
 }

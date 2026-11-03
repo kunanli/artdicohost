@@ -1,3 +1,4 @@
+import { HUODONGXING_JOURNAL_PREFIX } from '../../shared/contacts-schema.mjs';
 import { createHash } from 'node:crypto';
 import { createOssObjectClient } from './oss-client.mjs';
 import { createObjectJournal } from './object-journal.mjs';
@@ -23,7 +24,7 @@ import { createInvitationEmailProvider } from '../intent-invitations/email-provi
 import { createGroupInviteService } from '../registration-api/group-invite.mjs';
 import { createGroupInviteApi } from '../registration-api/group-invite-handler.mjs';
 import { createMaintenanceApi, createMaintenanceAuditStore } from '../registration-admin/maintenance-handler.mjs';
-import { createIntentContactImporter } from '../intent-invitations/importer.mjs';
+import { createIntentContactImporter, createHuodongxingImporter } from '../intent-invitations/importer.mjs';
 import { createIntentContactImportApi, isIntentContactImportPath } from '../intent-invitations/import-handler.mjs';
 import { createAdmissionsApi } from '../registration-admin/admissions-handler.mjs';
 import { createOrganizerTasksApi } from '../organizer-tasks/handler.mjs';
@@ -122,7 +123,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const userStore = createCloudUserStore({ journal: journalFor('cms/v1/users'), bootstrapUsers: env.ADMIN_USERS_JSON, now });
   const auth = createCloudAuth({ users: env.ADMIN_USERS_JSON, usersProvider: () => userStore.users(), journalFor, now });
   const userHandle = createCloudUserApi({ enabled: true, auth, store: userStore });
-  let registrationService, reviewStore, intentService, groupService, confirmationService, walletService, entryService, attendanceSynchronizer;
+  let registrationService, reviewStore, intentService, groupService, confirmationService, walletService, entryService, attendanceSynchronizer, huodongxingImporter;
   // Notification is optional after a proven admission commit. Unknown mail
   // acknowledgements remain in the outbox; remaining people require explicit
   // administrator dispatch and must never turn a saved mutation into a failure.
@@ -164,7 +165,8 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
         admission.confirmationEmail = await notifyApproved(admission.registrationId);
       return admission;
     } });
-  const importHandle = createIntentContactImportApi({ importer: createIntentContactImporter({ contactsStore, now }), authenticate: request => auth.authenticate(request) });
+  const genericContactImporter=createIntentContactImporter({contactsStore,now});
+  const importHandle=createIntentContactImportApi({importer:{preview:input=>input.kind==='huodongxing'?huodongxingImporter?huodongxingImporter.preview(input):Promise.reject(new Error('Import unavailable')):genericContactImporter.preview(input),commit:input=>input.kind==='huodongxing'?huodongxingImporter?huodongxingImporter.commit(input):Promise.reject(new Error('Import unavailable')):genericContactImporter.commit(input),operation:input=>huodongxingImporter?huodongxingImporter.operation(input):Promise.reject(new Error('Import unavailable'))},authenticate:request=>auth.authenticate(request)});
   const policy = registrationPolicy(env);
   if (policy) {
     const personMailPermission = (record, index, roster) => {
@@ -176,13 +178,13 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       return related.some(item => item.profile.contactConsent === 'declined' || item.operations.responseStatus === 'declined')
         ? { eligible: false, reason: 'CONTACT_DECLINED' } : { eligible: true };
     };
-    const staffMailPermission = (record, roster) => {
+    const staffMailPermission = async (record, roster) => {
       if (record.provenance.kind === 'staff_entry') return { eligible: Boolean(record.provenance.permissionReference), reason: 'STAFF_PERMISSION_REQUIRED' };
       if (record.provenance.kind !== 'staff_assisted') return { eligible: false, reason: 'STAFF_PERMISSION_REQUIRED' };
       const contact = roster.contacts.find(item => item.id === record.provenance.sourceContactId);
       if (!contact) return { eligible: false, reason: 'CONTACT_NOT_FOUND' };
       if (contact.profile.contactConsent === 'declined' || contact.operations.responseStatus === 'declined') return { eligible: false, reason: 'CONTACT_DECLINED' };
-      if (contact.profile.contactConsent !== 'consented') return { eligible: false, reason: 'CONTACT_CONSENT_REQUIRED' };
+      if (contact.profile.contactConsent !== 'consented') {const external=huodongxingImporter?await huodongxingImporter.deliveryPermission(record,roster):null;return external?.eligible===true||external?.reason==='CONTACT_EMAIL_CHANGED'||external?.reason==='CONTACT_DECLINED'?external:{eligible:false,reason:'CONTACT_CONSENT_REQUIRED'};}
       if (!(record.profileCorrection?.accessRevision > 0) && contact.profile.email !== record.fields.email) return { eligible: false, reason: 'CONTACT_EMAIL_CHANGED' };
       return { eligible: true };
     };
@@ -287,7 +289,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
             if (!entry) throw new Error('Notice preview source is unavailable.');
             const record = await currentRegistration(await registrationService.repository.readRecord(entry), index.value);
             const person = personMailPermission(record, index.value, roster);
-            const permission = person.eligible !== true ? person : record.provenance.kind === 'public' ? { eligible: true } : staffMailPermission(record, roster);
+            const permission = person.eligible !== true ? person : record.provenance.kind === 'public' ? { eligible: true } : await staffMailPermission(record, roster);
             const hasEmail = typeof record.fields.email === 'string' && record.fields.email.trim().length > 0;
             const group = admissions.personGroups?.find(item => item.registrationIds.includes(registrationId));
             rows[current] = { registrationId, name: record.fields.name, organization: record.fields.organization ?? '',
@@ -328,6 +330,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       groupInviteProvider: input => groupService.forReceipt({ ...input, emailMetadata: true }),
       groupImageProvider: token => groupService.publicImage(token) });
   }
+  if(registrationService)huodongxingImporter=createHuodongxingImporter({contactsStore,registrationService,journal:journalFor(HUODONGXING_JOURNAL_PREFIX),now,inactiveRegistrationIds:()=>reviewStore.inactiveRegistrationIds(),currentProfiles:()=>reviewStore.profileScopes(),currentProfileRevision:()=>reviewStore.profileRevision()});
   if (registrationService && intentService) attendanceSynchronizer = createAttendanceSynchronizer({ intentService, registrationService, contactsStore });
   const entryHandle = entryService ? createEntryTicketApi({ service: entryService, authenticate: request => auth.authenticate(request) }) : null;
   const registrationHandle = createRegistrationApi({ allowedOrigins: [PUBLIC_SITE_ORIGIN], submissionService: registrationService, allowedGroupInviteOrigins: [CLOUD_API_ORIGIN], clock: now });
@@ -390,7 +393,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const relationshipsHandle = createPersonRelationshipsApi({ authenticate: request => auth.authenticate(request),
     loadContent: loadPeopleContent, loadContacts: () => contactsStore.read() });
   const resolutionHandle=createPeopleResolutionApi({authenticate:request=>auth.authenticate(request),registrationService,contactsStore,contentStore:store});
-  const personHandle = createPersonWorkspaceApi({ authenticate: request => auth.authenticate(request),
+  const personHandle = createPersonWorkspaceApi({ externalAttendanceEvidence:input=>huodongxingImporter?huodongxingImporter.attendanceEvidence(input):Promise.reject(new Error('External evidence unavailable')), authenticate: request => auth.authenticate(request),
     loadContacts: () => contactsStore.read(),
     loadIntent: intentService ? actor => intentService.read({ actor }) : undefined,
     loadRegistration: reviewStore ? async id => { const detail = await reviewStore.detail(id), { value } = await registrationService.repository.readIndex();
@@ -421,7 +424,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const maintenanceHandle = createMaintenanceApi({ enabled: true, auth, objects, clock: now,
     additionalKeys: configurationKeys,
     audit: createMaintenanceAuditStore({ journal: journalFor('cms/v1/maintenance'), clock: now }),
-    journalPrefixes: ['cms/v1/content', 'cms/v1/contacts', 'cms/v1/intent-invitations', 'cms/v1/maintenance',
+    journalPrefixes: [HUODONGXING_JOURNAL_PREFIX, 'cms/v1/content', 'cms/v1/contacts', 'cms/v1/intent-invitations', 'cms/v1/maintenance',
       `cms/v1/registrations/${eventId}/index`, `cms/v1/registration-reviews/${eventId}`, `cms/v1/registration-confirmations/${eventId}`,
       `cms/v1/volunteers/${eventId}`, `cms/v1/group-invites/${eventId}/state`] });
   const registrationEnabled = Boolean(policy?.enabled);
@@ -474,6 +477,6 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     }
     return result;
   };
-  return { handle, store, contactsStore, userStore, auth, registrationService, reviewStore, intentService, groupService, confirmationService, walletService, entryService,
+  return { handle, store, contactsStore, userStore, auth, registrationService, reviewStore, intentService, groupService, confirmationService, walletService, entryService, huodongxingImporter,
     volunteerRepository, volunteerService, registrationEnabled };
 }

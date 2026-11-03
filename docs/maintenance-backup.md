@@ -18,6 +18,8 @@
 
 ## 备份范围
 
+活动行专用私有账本 `cms/v1/external-registrations/8884819113200` 已纳入受控维护：快照／提交日志、TID对照、操作者与来源／必要通知依据均随加密备份保存，恢复后必须用 `validateHuodongxingLedger` 校验。恢复不会继续未完成导入或寄信。原始XLSX文件不存入对象或备份；已筛出的正規化票资料仍属私有个资，不能以“只有票号”为由公开。权利请求及保留删除范围同时涵盖账本、联系人、名额、通知与审计，不删账本来解除去重；现有删除请求 `erased:false` 不代表已物理抹除全部历史。
+
 P4 三类通知共用原 `cms/v1/registration-confirmations/<eventId>`，运行时维护清单已包含它，无新前缀。申请回执 `application_received`、正式信 `registration`／`promotion`、提醒 `pre_event_reminder` 的预留、未知、尝试次数与原批次操作必须全部保留。隔离恢复后用兼容 P4 的 repository／service 逐类试读，核对当前名额及原同意，验证只读、零重寄；恢复字节本身不等于领域验证。合成端到端恢复见 `tests/application-runtime-history.test.mjs`。
 
 回退仅用认识新种类和提醒操作的兼容版本。旧写入者无法验证扩充后的审计，不可直接部署旧版、删新记录或清空 reserved／unknown；先暂停发送，保留原正文／操作，再用兼容修复。代码回退与业务恢复分开，不以旧快照覆盖当前名额、撤回或通知事实。保留、权利请求及受控删除继续涵盖同一前缀，不额外复制收件人名单。

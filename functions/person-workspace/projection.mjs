@@ -323,16 +323,16 @@ export function personAttendanceProjection({contactRaw,registration,admission,in
     :availability?.confirmations==='restricted'?'restricted':availability?.confirmations==='unavailable'?'unavailable'
       :current.some(item=>item.status==='provider_accepted')?'provider_accepted':current[0]?.status??(registration?'not_sent':'not_applicable');
   const admissionStatus=registration?.review?.status==='withdrawn'||registration?.review?.deletionRequested?'withdrawn':admission?.status??null;
-  return personAttendanceStage({responseStatus:contactRaw?.operations?.responseStatus??null,admissionStatus,
-    contactConsent:contactRaw?.profile?.contactConsent??null,selfRegistered:registration?.provenance.kind==='public',historicalDeliveryUnknown,
+  return personAttendanceStage({responseStatus:registration?.externalAttendance==='declined'?'declined':contactRaw?.operations?.responseStatus??null,admissionStatus,
+    contactConsent:contactRaw?.profile?.contactConsent??null,selfRegistered:registration?.provenance.kind==='public'||registration?.externalAttendance==='verified',historicalDeliveryUnknown,
     currentManualInvitationSent:currentManualInvitation(contactRaw,{intent,content,registrationId:registration?.id,
       accessRevision:registration?.profileCorrection?.accessRevision??0,name:registration?.profileCorrection?registration.fields.name:null,admissionStatus}),
     deliveryStatus,invitationStatus:communications?.unresolvedInvitations?'unknown':'not_applicable',
-    sourceUnavailable:linkage?.state==='unavailable'||['contact','registration','admission'].some(key=>availability?.[key]==='unavailable')});
+    sourceUnavailable:registration?.externalAttendance==='unavailable'||linkage?.state==='unavailable'||['contact','registration','admission'].some(key=>availability?.[key]==='unavailable')});
 }
 
 /** Minimal staff directory. Never use names or email addresses as identity links. */
-export function peopleDirectoryProjection({ permissions, roster, intent, registrationDirectory, admissions, content, deliveries } = {}) {
+export function peopleDirectoryProjection({ permissions, roster, intent, registrationDirectory, admissions, content, deliveries,externalAttendance=null } = {}) {
   if (!plain(permissions)) fail();
   const allContacts = permissions.contact ? contactsSource(roster).contacts : [];
   const archivedContacts = new Set(allContacts.filter(item => item.archivedAt).map(item => item.id));
@@ -456,9 +456,10 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
     const primary=originals.find(contact=>contact.id===row.contactId);
     row.attendance=personAttendanceStage({responseStatus:row.responseStatus,admissionStatus:row.admissionStatus,
       contactConsent:originals.some(contact=>contact.profile?.contactConsent==='declined')?'declined':primary?.profile?.contactConsent??null,
-      selfRegistered:application?.kind==='public',historicalDeliveryUnknown:row.deliveryHistoryUnknown===true,currentManualInvitationSent:originals.some(contact=>currentManualInvitation(contact,{intent:outreach,content:program,
+      selfRegistered:application?.kind==='public'||externalAttendance?.registrationIds.includes(row.registrationId),historicalDeliveryUnknown:row.deliveryHistoryUnknown===true,currentManualInvitationSent:originals.some(contact=>currentManualInvitation(contact,{intent:outreach,content:program,
         registrationId:row.registrationId,accessRevision,name:row.name,admissionStatus:row.admissionStatus})),
-      deliveryStatus:row.deliveryStatus,invitationStatus:row.invitationStatus});
+      deliveryStatus:row.deliveryStatus,invitationStatus:row.invitationStatus,
+      sourceUnavailable:externalAttendance?.state==='unavailable'&&originals.some(contact=>contact.source.key==='huodongxing-8884819113200')});
   }
   return { people: rows, companies, summary: { people: people.length,
     unassigned:permissions.contact?rows.filter(row=>(row.contactId||row.registrationId)&&!row.roles.some(role=>['attendee','speaker','guest','panelist','exhibitor','host','organizer','moderator','student_showcase'].includes(role))).length:null,
@@ -519,7 +520,7 @@ function duplicateSources(roster, registrations, admissions) {
 }
 
 /** Decorates the minimal directory, without returning comparison emails or original answers. */
-export function peopleDirectoryWork(result, {actor, roster, registrationDirectory, admissions, content, revisions} = {}) {
+export function peopleDirectoryWork(result, {actor, roster, registrationDirectory, admissions, content, revisions,externalAttendance=null} = {}) {
   const full = canManageEventOperations(actor), candidateKeys = new Set();
   if (full && roster && registrationDirectory && admissions) {
     if (registrationDirectory.applicationRevision !== admissions.revision) fail();
@@ -535,8 +536,12 @@ export function peopleDirectoryWork(result, {actor, roster, registrationDirector
       publicNeedsUpdate = profile.profiles.some(item => item.published && !item.publishedMatchesDraft || !item.published && isContentVisible(item));
     } catch { sourceUnavailable = true; }
     const contact = roster?.contacts?.find(item => item.id === row.contactId);
-    const work = personWorkRecommendation({...row, historicalDeliveryUnknown:row.deliveryHistoryUnknown===true,sourceUnavailable, duplicateCandidate: keys.some(key => candidateKeys.has(key)), publicNeedsUpdate,
-      contactConsent: contact?.profile.contactConsent, canContact: Boolean(row.contactId), canReview: Boolean(actor?.roles?.some(role => ['reviewer', 'superadmin'].includes(role))),
+    const originals=group?roster?.contacts?.filter(item=>group.contactIds.includes(item.id))??[]:[contact].filter(Boolean);
+    const explicitDecline=originals.some(item=>item.profile?.contactConsent==='declined'||item.operations?.responseStatus==='declined');
+    const externalRegistered=externalAttendance?.registrationIds.includes(row.registrationId)&&row.admissionStatus==='confirmed'&&!explicitDecline;
+    sourceUnavailable||=externalAttendance?.state==='unavailable'&&originals.some(item=>item.source?.key==='huodongxing-8884819113200');
+    const work = personWorkRecommendation({...row, ...(explicitDecline?{responseStatus:'declined'}:externalRegistered&&row.responseStatus!=='declined'?{responseStatus:'attending'}:{}),historicalDeliveryUnknown:row.deliveryHistoryUnknown===true,sourceUnavailable, duplicateCandidate: keys.some(key => candidateKeys.has(key)), publicNeedsUpdate,
+      contactConsent: explicitDecline?'declined':contact?.profile.contactConsent, canContact: Boolean(row.contactId), canReview: Boolean(actor?.roles?.some(role => ['reviewer', 'superadmin'].includes(role))),
       canIntegrate: full, canEdit: Boolean(actor?.roles?.some(role => ['editor', 'superadmin'].includes(role)))});
     Object.assign(row, work, {basisRevisions: {...revisions}});
   }

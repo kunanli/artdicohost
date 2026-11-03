@@ -1,12 +1,14 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { validObjectKey, MAX_OSS_OBJECT_BYTES } from '../cloud-content/oss-client.mjs';
 import { PORTRAIT_ID_PATTERN } from '../../shared/portrait-codec.mjs';
+import { validateHuodongxingLedger } from '../intent-invitations/importer.mjs';
 
 const MAGIC = Buffer.from('ARTDICO-BKP1\n');
 const MAX_OBJECTS = 5000;
 const MAX_TOTAL_BYTES = 24 * 1024 * 1024;
 const MAX_BUNDLE_BYTES = 40 * 1024 * 1024;
 const HASH = /^[a-f0-9]{64}$/u;
+const EXTERNAL_REGISTRATION_PREFIX = 'cms/v1/external-registrations/8884819113200';
 const safe = new WeakSet();
 const clone = value => structuredClone(value);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -49,12 +51,22 @@ function journalReferences(item) {
   return refs;
 }
 function objectReferences(item) {
+  const externalLedger = item.key.startsWith(EXTERNAL_REGISTRATION_PREFIX + '/');
+  const externalBlob = /^cms\/v1\/external-registrations\/8884819113200\/blobs\/[a-f0-9]{64}\.json$/u.test(item.key);
+  if (externalLedger && item.key !== EXTERNAL_REGISTRATION_PREFIX + '/commits.jsonl' && !externalBlob) fail('BACKUP_INVALID');
   if (item.key.endsWith('/commits.jsonl')) return journalReferences(item);
+  if (externalLedger && item.objectType !== 'Normal') fail('BACKUP_INVALID');
   if (item.objectType !== 'Normal' || !/\/blobs\/[a-f0-9]{64}\.json$/u.test(item.key)) return [];
   let value;
   try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.from(item.dataBase64, 'base64'))); } catch { fail('BACKUP_INVALID'); }
   if (!plain(value)) fail('BACKUP_INVALID');
   const refs = [];
+  if (value.kind === 'huodongxing_ticket_ledger' || externalLedger) {
+    if (!externalBlob) fail('BACKUP_INVALID');
+    try { validateHuodongxingLedger(value); } catch { fail('BACKUP_INVALID'); }
+    // The private ledger has no raw workbook or arbitrary object references.
+    // Its journal snapshots are the entire additional backup closure.
+  }
   if (value.kind === 'registration_index') {
     const location = item.key.match(/^cms\/v1\/registrations\/([A-Za-z0-9_-]{1,80})\/index\/blobs\/[a-f0-9]{64}\.json$/u);
     if (!location || value.eventId !== location[1] || !Array.isArray(value.entries) || value.entries.length > 1000) fail('BACKUP_INVALID');

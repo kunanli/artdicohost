@@ -25,7 +25,7 @@ function optionalProjectionWarnings(profile) {
   return warnings;
 }
 const fields = profile => ({ name: profile.name, city: profile.city, organization: profile.organization, position: profile.position,
-  email: profile.email, wechat: profile.wechat, background: profile.background,
+  email: profile.email, wechat: profile.wechat, phone: profile.phone, background: profile.background,
   ...(!optionalProjectionWarnings(profile).includes('website') ? { website: profile.website } : {}),
   ...(!optionalProjectionWarnings(profile).includes('caseLinks') ? { caseLinks: profile.caseLinks } : {}),
   categories: [...new Set(profile.categories.map(category => CATEGORY[category] ?? category))],

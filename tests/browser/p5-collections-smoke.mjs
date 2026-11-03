@@ -49,7 +49,7 @@ const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const pageErrors=[],reports=[];
 async function fixture(width,{javascript=true,reducedMotion='no-preference',deferContent=false}={}){
- const context=await browser.newContext({viewport:{width,height:960},isMobile:width<600,hasTouch:width<600,javaScriptEnabled:javascript,reducedMotion});
+ const context=await browser.newContext({locale:'zh-CN',viewport:{width,height:960},isMobile:width<600,hasTouch:width<600,javaScriptEnabled:javascript,reducedMotion});
  const page=await context.newPage(),calls=[];let raw=rawFixture(),revision=1,content=projected(raw),failure=false;
  let releaseInitialContent;const initialContentGate=new Promise(resolve=>{releaseInitialContent=resolve;});
  page.setDefaultTimeout(10000);page.on('pageerror',error=>pageErrors.push({width,message:error.message}));

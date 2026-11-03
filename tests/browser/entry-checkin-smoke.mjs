@@ -9,7 +9,7 @@ const session={user:{id:'synthetic-door-staff',label:'合成工作人员',roles:
 const initial={ticketCode:code,revision:0,registrationId:id,name:'合成参会者',organization:'合成组织',admissionStatus:'confirmed',checkedInAt:null,eligible:true,canCheckIn:true};
 const mime=file=>({html:'text/html',js:'text/javascript',mjs:'text/javascript',css:'text/css',svg:'image/svg+xml',woff2:'font/woff2'})[extname(file).slice(1)]||'application/octet-stream';
 async function fixture(browser,width,mode){
-  const context=await browser.newContext({viewport:{width,height:900}}),calls=[];let authenticated=mode!=='login',checked=mode==='already',operation=null,unknownThrown=false;
+  const context=await browser.newContext({locale:'zh-CN',viewport:{width,height:900}}),calls=[];let authenticated=mode!=='login',checked=mode==='already',operation=null,unknownThrown=false;
   const view=()=>({...initial,...(checked?{revision:1,checkedInAt:'2026-12-05T02:00:00.000Z',canCheckIn:false}:{})});
   await context.route('**/*',async route=>{
     const request=route.request(),url=new URL(request.url());assert.equal(url.origin,origin,'all requests stay inside synthetic interception');

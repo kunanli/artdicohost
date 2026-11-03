@@ -116,6 +116,19 @@ jobs:
         run: pnpm test
       - name: Build the static site
         run: pnpm build
+      - name: Check browser language selection and bilingual form preservation
+        timeout-minutes: 4
+        run: |
+          artdico_browser_path="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium)"
+          ARTDICO_CHROMIUM_BINARY="$artdico_browser_path" node tests/browser/language-smoke.mjs
+      - name: Retain bilingual browser evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: bilingual-language-evidence
+          path: .local-data/browser-evidence/language/
+          if-no-files-found: warn
+          retention-days: 1
       - name: Check pinned navigation and scroll motion
         id: public_scroll_browser
         timeout-minutes: 4

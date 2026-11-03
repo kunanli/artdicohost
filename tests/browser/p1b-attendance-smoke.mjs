@@ -43,7 +43,7 @@ async function fixture(browser,width){
   // Deliberately construct a real historical publication without attendance proof.
   const legacy=await runtime.app.store.publish(0,runtime.users[0].id);assert.equal(Object.hasOwn(legacy.content,'guestAttendance'),false);
   const admissions=await runtime.app.registrationService.getAdmissions({actor:runtime.users[0]});
-  const context=await browser.newContext({viewport:{width,height:940}}),calls=[],dialogs=[];
+  const context=await browser.newContext({locale:'zh-CN',viewport:{width,height:940}}),calls=[],dialogs=[];
   let publicProofOverride=null;
   const auth=await runtime.login(),[name,...value]=auth.Cookie.split('=');
   await context.addCookies([{domain:new URL(API).hostname,path:'/api/admin',name,value:value.join('='),httpOnly:true,secure:true,sameSite:'Strict'}]);

@@ -44,7 +44,7 @@ async function setup(browser,{width=1440,role='owner',unsorted=false,unrelatedDr
     await runtime.app.store.save(current.revision,changed,runtime.users[0].id);}
   let username=role;
   if(role==='publisher'){username='synthetic-session-publisher';await runtime.app.userStore.save({expectedRevision:0,username,label:'合成仅发布同事',roles:['publisher'],active:true,password:PEOPLE_FIXTURE_PASSWORD},runtime.users[0].id);}
-  const auth=role==='owner'?owner:await runtime.login(username),context=await browser.newContext({viewport:{width,height:960}}),calls=[],dialogs=[],assets=new Map();
+  const auth=role==='owner'?owner:await runtime.login(username),context=await browser.newContext({locale:'zh-CN',viewport:{width,height:960}}),calls=[],dialogs=[],assets=new Map();
   const [name,...value]=auth.Cookie.split('=');await context.addCookies([{domain:new URL(API).hostname,path:'/api/admin',name,value:value.join('='),httpOnly:true,secure:true,sameSite:'Strict'}]);
   let publishBudget=0,nextSaveFault=null,failReads=false,nextPublishFault=false;
   await context.route('**/*',async route=>{

@@ -116,7 +116,7 @@ function genericOrganizationIdentities(content){
  for(const item of [...content.showcases,...content.booths])if(keys.has(item.organizationId))item.organizationId=keys.get(item.organizationId);
 }
 async function fixture(width, { mode = 'actual', reducedMotion = 'no-preference', holdLogos = false } = {}) {
-  const context = await browser.newContext({ viewport: { width, height: 1000 }, isMobile: width < 600, hasTouch: width < 600, reducedMotion });
+  const context = await browser.newContext({locale:'zh-CN', viewport: { width, height: 1000 }, isMobile: width < 600, hasTouch: width < 600, reducedMotion });
   const page = await context.newPage(), calls = []; let responseBytes = snapshotBytes, revision = snapshot.revision, releaseGate, delayedPortraitPath = null, portraitGate = Promise.resolve();
   const gate = new Promise(resolve => { releaseGate = resolve; });
   if (!holdLogos) releaseGate();
@@ -406,6 +406,37 @@ async function circlePhoto(f, guest, { expectPhoto = Boolean(guest.portraitUrl),
   return { id:guest.id,ownPublishedPortrait:expectPhoto,photoDecoded:expectPhoto,noOutsidePanel:true,noLayoutShift:true,
     circularPhotoBounds:expectPhoto,keyboardEnterSpaceEscape:expectPhoto,touchSwitch:expectPhoto&&f.width<600,hoverRestoresText:expectPhoto&&f.width>=600 };
 }
+// Public profile text remains source data; only the bounded action suffix is localized.
+async function photoControlLanguages(f,guest){
+  const {page}=f,toggle=page.locator('#guest-'+guest.id+' [data-guest-toggle]');
+  const identity=await toggle.getAttribute('data-guest-identity');
+  const fields=await toggle.locator('.ah-guest-name,.ah-guest-affiliation,.ah-guest-subtitle').allTextContents();
+  const original=await toggle.boundingBox();
+  async function label(value){
+    await page.waitForFunction(({id,value})=>document.querySelector('#guest-'+id+' [data-guest-toggle]')?.getAttribute('aria-label')===value,{id:guest.id,value});
+    assert.equal(await toggle.getAttribute('aria-label'),value);
+    assert.equal(await toggle.getAttribute('data-guest-identity'),identity,'switching UI language preserves the complete published identity prefix');
+    assert.deepEqual(await toggle.locator('.ah-guest-name,.ah-guest-affiliation,.ah-guest-subtitle').allTextContents(),fields,'names, organizations and GGJ identities are not translated or replaced');
+    assert.equal(await page.locator('[data-public-guests] details,.ah-guest-detail-body').count(),0,'localized photo controls do not reintroduce an outside panel');
+    const current=await toggle.boundingBox();
+    assert.ok(Math.abs(current.width-original.width)<=1&&Math.abs(current.height-original.height)<=1,'the same circle bounds survive language and photo-state changes');
+  }
+  const english=page.locator('.ah-language-switch [data-language="en"]'),chinese=page.locator('.ah-language-switch [data-language="zh-CN"]');
+  assert.equal(await english.count(),1);assert.equal(await chinese.count(),1);
+  await english.click();await page.waitForFunction(()=>document.documentElement.lang==='en');
+  await label(identity+' · View photo');assert.equal(await toggle.getAttribute('aria-pressed'),'false');
+  await toggle.focus();await page.keyboard.press('Enter');
+  await label(identity+' · Show text');assert.equal(await toggle.getAttribute('aria-pressed'),'true');
+  await noOverflow(f);
+  await page.keyboard.press('Escape');await label(identity+' · View photo');
+  await chinese.click();await page.waitForFunction(()=>document.documentElement.lang==='zh-CN');
+  await label(identity+'，查看照片');assert.equal(await toggle.getAttribute('aria-pressed'),'false');
+  await toggle.focus();await page.keyboard.press('Space');
+  await label(identity+'，显示文字');assert.equal(await toggle.getAttribute('aria-pressed'),'true');
+  await page.keyboard.press('Escape');await label(identity+'，查看照片');
+  assert.equal(await toggle.getAttribute('aria-pressed'),'false');
+  return {languages:['en','zh-CN'],actions:['view-photo','show-text'],samePublishedIdentity:true,sameCircleBounds:true,noOutsidePanel:true,returnedToChinese:true};
+}
 async function animationState(page, id) {
   return page.locator('#guest-' + id).evaluate(node => ({ visible: document.visibilityState, rect: node.getBoundingClientRect().toJSON(),
     animations: node.getAnimations().map(animation => ({ state: animation.playState, time: animation.currentTime, duration: animation.effect.getTiming().duration,
@@ -581,9 +612,10 @@ try {
       await f.page.keyboard.press('Escape');
       assert.equal(await delayedButton.getAttribute('aria-pressed'),'false','a late successful photo still supports the same Escape reset');
     }finally{releaseHeld();}
+    const photoControlLanguage=await photoControlLanguages(f,delayed);
     await noOverflow(f);
     assert.equal((await animationState(f.page, motionGuest.id)).animations.length, 0, 'initial real reduced-motion preference creates no float');
-    reports.push({ name: 'long-circle-fallbacks-and-initial-reduced-motion' , width: 320, explicitlySyntheticTextVariant:true,syntheticReferenceSpellingBoundaries:spellingBoundaryProfiles.length,actualAttendanceProofUnchanged:true,profileStatusUnchanged:true,emptyCompanyFieldTested:empty.company==='',emptyPositionAndRoleFieldsTested:true,fullAccessibleIdentityRetained:true,companyJobTitlesExcluded:true,organizationAndGgjIdentityOnly:true,emptyFields:true,missingPhotoKeepsText:true,brokenPhotoKeepsText:true,delayedPhotoKeepsTextUntilDecode:true, text, result });
+    reports.push({ name: 'long-circle-fallbacks-and-initial-reduced-motion' , width: 320, explicitlySyntheticTextVariant:true,syntheticReferenceSpellingBoundaries:spellingBoundaryProfiles.length,actualAttendanceProofUnchanged:true,profileStatusUnchanged:true,emptyCompanyFieldTested:empty.company==='',emptyPositionAndRoleFieldsTested:true,fullAccessibleIdentityRetained:true,companyJobTitlesExcluded:true,organizationAndGgjIdentityOnly:true,emptyFields:true,missingPhotoKeepsText:true,brokenPhotoKeepsText:true,delayedPhotoKeepsTextUntilDecode:true,photoControlLanguage, text, result });
   } finally { await f.context.close(); }
   assert.equal(rawImageRequests.size, actualMedia.size, 'every captured public logo and guest portrait was requested by actual page rendering'); assert.deepEqual(pageErrors, []);
   assert.equal(reports.length, 13, 'all actual, raw-upload, adversarial and long-text scenarios must complete');

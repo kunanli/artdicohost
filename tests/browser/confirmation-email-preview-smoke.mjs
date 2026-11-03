@@ -20,7 +20,7 @@ const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM
 const reports=[],pageErrors=[],assetHashes=new Map();await mkdir(evidence,{recursive:true});
 try{
   for(const scenario of [{width:320,locale:'zh-CN',group:'current'},{width:600,locale:'zh-CN',group:'current'},{width:320,locale:'en',group:'current'},{width:600,locale:'en',group:'current'},{width:320,locale:'zh-CN',group:'missing'},{width:600,locale:'en',group:'expired'}]){
-    const context=await browser.newContext({viewport:{width:scenario.width,height:1000}}),requests=[];
+    const context=await browser.newContext({locale:'zh-CN',viewport:{width:scenario.width,height:1000}}),requests=[];
     const ticket={confirmationUrl:short,admissionQrImageUrl:entry,...(scenario.group==='current'?{groupQrImageUrl:group,groupExpiresAt:'2026-11-05T04:00:00.000Z'}:{})};
     const variables={event_title:'ARTDiCO HOST · Synthetic Event',invitation_text:scenario.locale==='en'?'Synthetic attendee,\n\nYour attendance is confirmed.\nDate: 2026-12-05\nTime: 10:00–18:00 (UTC+8)\nYour private attendance page:\n'+short:'合成参会者，你好：\n\n你的参会名额已确认。\n日期：2026-12-05\n时间：10:00–18:00（UTC+8）\n私人参会页：\n'+short,...confirmationEmailPresentation({locale:scenario.locale,kind:'registration',subject:'Synthetic attendance confirmation',confirmationUrl:short,ticket,walletReady:true})};
     const rendered=template.replaceAll('{{{confirmation_actions}}}',variables.confirmation_actions).replace(/\{\{([a-z_]+)\}\}/gu,(_,key)=>escape(variables[key]??''));

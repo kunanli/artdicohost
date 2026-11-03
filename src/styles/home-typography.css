@@ -159,3 +159,11 @@
 #artdico-host.ah-festival.ah-cosmos .ah-registration :is(.ah-registration-policy,.ah-application-recovery) :focus-visible{outline:2px solid var(--ah-text-link);outline-offset:4px}
 #artdico-host.ah-festival.ah-cosmos .ah-privacy [data-public-privacy]{background:var(--ah-surface-reading);color:var(--ah-text-primary);padding:16px;margin-top:12px;overflow-wrap:anywhere}
 #artdico-host.ah-festival.ah-cosmos .ah-privacy [data-public-privacy] p{color:var(--ah-text-secondary)}
+
+/* Bilingual controls keep the same reading/control roles as the public form. */
+#artdico-host.ah-festival.ah-cosmos{
+ --ah-display-wordmark-mobile:clamp(14px,4vw,20px);
+ --ah-display-fact-en:clamp(18px,2.5vw,42px);
+}
+#artdico-host.ah-festival.ah-cosmos .ah-language-switch button{font-size:var(--ah-type-control);line-height:var(--ah-leading-ui)}
+#artdico-host.ah-festival.ah-cosmos .ah-language-note{font-size:var(--ah-type-meta);line-height:var(--ah-leading-reading)}

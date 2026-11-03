@@ -142,7 +142,7 @@ const syntheticLogoByWidth=new Map([320,390,1440,1920].map((width,index)=>[width
 const reports = [], pageErrors = [], servedAssets = new Map();
 await mkdir(evidence, { recursive: true });
 async function fixture(width, { mode = 'legacy', brokenImages = false, javascript = true } = {}) {
-  const context = await browser.newContext({ viewport: { width, height: 1000 }, isMobile: width < 600, hasTouch: width < 600, javaScriptEnabled: javascript, reducedMotion: 'reduce' });
+  const context = await browser.newContext({locale:'zh-CN', viewport: { width, height: 1000 }, isMobile: width < 600, hasTouch: width < 600, javaScriptEnabled: javascript, reducedMotion: 'reduce' });
   const page = await context.newPage(), calls = [], raw = rawFixture({ brokenImages }); let currentMode = mode, revision = 1;
   const fontFailures=new Set();let failPosterFont=brokenImages;
   page.setDefaultTimeout(12000); page.on('pageerror', error => pageErrors.push({ width, mode, message: error.message }));
@@ -482,7 +482,7 @@ async function loadOrganizationImages(f) {
   await f.page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
 }
 async function referenceCrops() {
-  const context = await browser.newContext({ viewport: { width: REFERENCE.width, height: REFERENCE.height }, deviceScaleFactor: 1 });
+  const context = await browser.newContext({locale:'zh-CN', viewport: { width: REFERENCE.width, height: REFERENCE.height }, deviceScaleFactor: 1 });
   try {
     await context.route('**/*', route => { assert.equal(route.request().url(), SITE + '/__reference.png'); assert.equal(route.request().method(), 'GET'); return route.fulfill({ status: 200, contentType: 'image/png', body: referenceBytes }); });
     const page = await context.newPage(); await page.setContent('<body style="margin:0"><img src="' + SITE + '/__reference.png" style="display:block;width:1921px;height:19362px"></body>');

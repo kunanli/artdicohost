@@ -1,6 +1,6 @@
 # ARTDiCO HOST · artdico.host
 
-**最新已發布：**[PR77 活動行入口、獨立講者提案與客服三段出席分類](docs/redesign/external-registration-staff-status-release.md)，main `b1f83a7d76578114d85e723f9d154a4f1f74858b`。[正式流程41594339072](https://github.com/kunanli/artdicohost/actions/runs/41594339072)五工作成功，1856項Node、74案同來源瀏覽器、137檔候選離線啟動、私有OSS、14個後台與68個公開HTTPS物件均核對。真人Email收件及iPhone添加仍另驗。
+**最新已發布：**[PR78 活動行名單接入Wallet與體檢](docs/redesign/huodongxing-wallet-health.md)，main `3c13de91b8da04a2232b4ad6916cd1cfdffacbd5`。[正式流程41606971922](https://github.com/kunanli/artdicohost/actions/runs/41606971922)五工作成功，1941項Node、81案同來源瀏覽器、137檔候選離線啟動、私有OSS、14後台及68公開HTTPS物件均核對；2026-11-03 09:11:20 UTC完成入場路徑三項驗證。郵件／Wallet配置就緒，先前403及真人收件／iPhone添加仍未實寄驗證。
 
 **前輪嘉賓規則（歷史基準）：**[PR #68](https://github.com/kunanli/artdicohost/pull/68) 已合併至 main `3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`，範圍見[嘉賓公開展示與舊審閱精簡](docs/redesign/admin-data-cleanup-audit.md)。嘉賓依公開開關展示、真實出席獨立；舊人工審閱改歷史唯讀。資料未刪除，展位、住宿、志工流程維持。[PR 檢查 41425057862](https://github.com/kunanli/artdicohost/actions/runs/41425057862) 已通過1638項測試及同版捲動6／排版4／實際素材13；[main 流程 41426077899](https://github.com/kunanli/artdicohost/actions/runs/41426077899) 四工作成功，同版6／4／實際13、私有OSS、13後台及10:18:01 UTC的60公開物件HTTPS核對完成。
 

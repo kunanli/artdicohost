@@ -1,10 +1,10 @@
-import { validateContent, toPublicContent, GUEST_PUBLIC_ROLES, GUEST_PUBLIC_ROLE_LABELS, SESSION_PARTICIPANT_ROLES, SESSION_PARTICIPANT_ROLE_LABELS, preserveFaqItemIds } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, GUEST_PUBLIC_ROLES, GUEST_PUBLIC_ROLE_LABELS, SESSION_PARTICIPANT_ROLES, SESSION_PARTICIPANT_ROLE_LABELS, preserveFaqItemIds, orderedSessions } from '../../shared/content-schema.mjs';
 import { showcaseSummary, SHOWCASE_KIND_LABELS, SHOWCASE_EDITABLE_KINDS } from '../../shared/showcase-display.mjs';
 import { publicGuestCards, publicSessionParticipants } from '../../shared/guest-display.mjs';
 import { createArrangementsView } from './arrangements-view.mjs';
 import { createInitialPresentation } from '../config/content.mjs';
 import { createDefaultOrganizations } from '../config/exhibiting-partners.mjs';
-import { DISPLAY_ORDER_COLLECTIONS, displayOrderTarget, moveDisplayRecord } from '../lib/content-display-order.mjs';
+import { DISPLAY_ORDER_COLLECTIONS, displayOrderTarget, moveDisplayRecord, sessionDisplayOrderTarget, moveSessionDisplayRecord } from '../lib/content-display-order.mjs';
 import { nextBoothSlot, nextBoothCode } from '../lib/booth-slots.mjs';
 import { prepareBoothDraft } from '../lib/arrangement-planner.mjs';
 import { createArrangementPlanner } from './arrangement-planner.mjs';
@@ -330,6 +330,7 @@ function announce(message, error = false) {
   status.textContent = error ? '' : message;
   errorBox.textContent = error ? message : '';
   errorBox.hidden = !error;
+  if(activePage==='sessions')for(const output of document.querySelectorAll('[data-session-publication-feedback]')){output.textContent=message;output.hidden=!message;output.dataset.state=error?'error':'ready';output.setAttribute('role',error?'alert':'status');}
 }
 function canEdit() { return user?.roles.includes('editor'); }
 function canPublish() { return user?.roles.includes('publisher'); }
@@ -398,6 +399,8 @@ function lockControls() {
     button.textContent=dirty||hasUnappliedInputs()?'保存并发布':'发布到前台';
     button.title='发布已保存的全部活动内容；本页修改会先保存并核对回执。';
   }
+  for(const output of document.querySelectorAll('[data-session-publication-feedback]')){if(activePage!=='sessions')output.hidden=true;}
+  const sessionPermission=$('[data-session-publish-permission]');if(sessionPermission)sessionPermission.hidden=canPublish();
   $('[data-admin-preview]').disabled = controlsBusy || !draft;
   $('[data-admin-logout]').disabled = busy || plannerBusy || localRecovering || savingContent || checkingContentSave || portraitUploading || coverUploading || organizationBusy;
   for(const button of document.querySelectorAll('[data-admin-proof-logout]'))button.disabled=$('[data-admin-logout]').disabled;
@@ -516,7 +519,7 @@ function showLogin() {
   $('[data-event-form]').reset();
   workspace.hidden = true;
   loginPanel.hidden = false;
-  $('[data-admin-sessions]').replaceChildren();
+  $('[data-admin-sessions]').replaceChildren();for(const output of document.querySelectorAll('[data-session-publication-feedback]')){output.textContent='';output.hidden=true;}
   $('[data-admin-booths]').replaceChildren();
   $('[data-admin-guests]').replaceChildren();
   $('[data-admin-showcases]').replaceChildren();
@@ -618,7 +621,7 @@ function publicationMatches(item,filter,record){
   return filter==='blocked'&&item.change==='blocked';
 }
 function appendPublication(output,collection,id){
-  const report=publicationReport(),item=report?.items[collection]?.find(value=>value.id===id),badge=node('span',!report?'发布状态待核对':!item?'待保存':item.change==='removed'?'待撤下':item.change==='updated'?'待更新':item.published?'已发布':item.visible===false?'未发布':'待发布','ah-status');
+  const report=publicationReport(),item=report?.items[collection]?.find(value=>value.id===id),badge=node('span',!report?'发布状态待核对':!item?'待保存':item.change==='removed'?'待撤下':item.change==='updated'?'待更新':item.published?'已发布':collection==='sessions'&&item.change==='blocked'?'未公开':item.visible===false?'未发布':'待发布','ah-status');
   badge.dataset.publicationRecord='';badge.dataset.publicationKind=collection;badge.dataset.publicationId=id;
   badge.dataset.publicationState=!report?'unknown':!item?'unsaved':item.published?'published':'unpublished';
   badge.dataset.statusTone='neutral';badge.dataset.publicationChange=item?.change??'';output.append(badge);
@@ -639,7 +642,8 @@ function renderPublicationOverview(){
   if(report.eventChanged)detail.append(node('p','活动基本资料有变更，明确发布后才更新前台。'));
   if(report.attendanceChanged)detail.append(node('p','嘉宾出席已变更，需更新前台。'));
   for(const[collection,label]of[['guests','讲者与嘉宾'],['organizations','参与组织'],['showcases','游戏与作品'],['sessions','活动场次'],['booths','展位']]){
-    const items=report.items[collection]??[];if(!items.length)continue;
+    let items=report.items[collection]??[];if(!items.length)continue;
+    if(collection==='sessions'){const byId=new Map(items.map(item=>[item.id,item])),ids=displayOrderRecords('sessions').map(item=>item.id);items=[...ids.map(id=>byId.get(id)).filter(Boolean),...items.filter(item=>!ids.includes(item.id))];}
     const section=node('section');section.append(node('h4',label+(report.orderChanged?.[collection]?' · 顺序变更待发布':'')));const list=node('ul');
     const orderIds=items.filter(item=>item.inDraft&&item.ready).map(item=>item.id);
     for(const item of items){const row=node('li');row.dataset.publicationDetailKind=collection;row.dataset.publicationDetailId=item.id;row.append(node('strong',item.label));appendPublication(row,collection,item.id);
@@ -652,16 +656,17 @@ function renderPublicationOverview(){
 function displayOrderBlocked({ignoreBusy=false}={}){
   return !canEdit()||!draft||!loadedContent||!ignoreBusy&&busy||plannerBusy||savingContent||checkingContentSave||awaitingContentProof()||publicationUncertain||Boolean(localRecovery)||Boolean(localPendingArchive)||localRecovering||dirty||hasUnappliedInputs()||portraitUploading||coverUploading||organizations?.uploading||Boolean(document.querySelector('dialog[open]'));
 }
-function displayOrderRecords(kind){return draft?.content[kind]??(kind==='organizations'?createDefaultOrganizations():[]);}
+function displayOrderRecords(kind){return kind==='sessions'?orderedSessions(draft?.content.sessions??[],draft?.content.sessionOrder):draft?.content[kind]??(kind==='organizations'?createDefaultOrganizations():[]);}
+const orderTarget=(kind,records,visibleIds,id,direction)=>kind==='sessions'?sessionDisplayOrderTarget(records,visibleIds,id,direction):displayOrderTarget(records,visibleIds,id,direction);
 function appendDisplayOrder(output,kind,id,visibleIds,scope){
-  if(!DISPLAY_ORDER_COLLECTIONS.includes(kind)||!Array.isArray(draft?.content[kind]))return;
+  if(!DISPLAY_ORDER_COLLECTIONS.includes(kind)||!Array.isArray(draft?.content[kind])||kind==='sessions'&&!visibleIds.includes(id))return;
   const records=displayOrderRecords(kind),group=node('span',undefined,'ah-admin-order-actions');
   for(const[direction,label]of[['up','上移'],['down','下移']]){
     const button=node('button',label,'ah-admin-button');button.type='button';
     button.dataset.contentOrderKind=kind;button.dataset.contentOrderId=id;button.dataset.contentOrderDirection=direction;button.dataset.contentOrderScope=scope;
-    button.dataset.contentOrderEdge=String(!displayOrderTarget(records,visibleIds,id,direction));button.disabled=displayOrderBlocked()||button.dataset.contentOrderEdge==='true';
+    button.dataset.contentOrderEdge=String(!orderTarget(kind,records,visibleIds,id,direction));button.disabled=displayOrderBlocked()||button.dataset.contentOrderEdge==='true';
     const record=records.find(item=>item.id===id);button.setAttribute('aria-label',label+' '+(record?.name||record?.title||id));
-    button.title='保存顺序，发布后更新前台';
+    button.title=kind==='sessions'?'仅调整同区域、同上午／下午的前台顺序，时间不变；发布后更新':'保存顺序，发布后更新前台';
     button.addEventListener('click',()=>requestDisplayOrder({kind,id,direction,visibleIds,scope,button}));group.append(button);
   }
   output.append(group);
@@ -671,8 +676,8 @@ function requestDisplayOrder({kind,id,direction,visibleIds,scope,button}){
   const stamp=requestSessionGeneration,revision=draft.revision,base=loadedContent,page=activePage,top=button.getBoundingClientRect().top,previewOpen=!$('[data-admin-preview-panel]').hidden;
   void action(async()=>{
     if(displayOrderBlocked({ignoreBusy:true})||draft.revision!==revision||loadedContent!==base)return;
-    const records=moveDisplayRecord(displayOrderRecords(kind),visibleIds,id,direction);if(!records)return;
-    const candidate=structuredClone(draft.content);candidate[kind]=records;
+    const records=(kind==='sessions'?moveSessionDisplayRecord:moveDisplayRecord)(displayOrderRecords(kind),visibleIds,id,direction);if(!records)return;
+    const candidate=structuredClone(draft.content);candidate[kind]=records;if(kind==='sessions')candidate.sessionOrder='manual';
     if(!await saveSectionCandidate(candidate,kind))return;
     if(stamp!==requestSessionGeneration||activePage!==page||!user)return;
     const ready=await refreshPublicationProof({quiet:true});
@@ -716,7 +721,7 @@ function rowActions(row, type, item,visibleIds=[]) {
     });
     td.append(button);
   }
-  if(type==='guest')appendDisplayOrder(td,'guests',item.id,visibleIds,'editor');
+  if(type==='guest'||type==='session')appendDisplayOrder(td,contentKey(type),item.id,visibleIds,'editor');
 }
 function render() {
   if (!draft) return;
@@ -742,7 +747,8 @@ function render() {
   $('[data-admin-booth-count]').textContent = String(draft.content.booths.length);
   const sessions = $('[data-admin-sessions]');
   sessions.replaceChildren();
-  for (const item of [...draft.content.sessions].sort((a,b) => a.start.localeCompare(b.start) || a.zone.localeCompare(b.zone))) {
+  const sessionRows=orderedSessions(draft.content.sessions,draft.content.sessionOrder),sessionIds=sessionRows.filter(item=>['scheduled','cancelled'].includes(item.status)).map(item=>item.id);
+  for (const item of sessionRows) {
     const row = node('tr');
     cell(row, '时间', item.start + '–' + item.end);
     cell(row, '场地', item.zone + ' 区');
@@ -751,8 +757,8 @@ function render() {
     const linkedGuest = item.guestId ? draft.content.guests?.find(guest => guest.id === item.guestId) : null;
     const speakerCell=cell(row, '参与者', linkedGuest ? linkedGuest.name + (linkedGuest.status === 'confirmed' ? '（资料已确认）' : '（资料待核对）') : item.speakerStatus === 'confirmed' ? item.speakerName : '讲者待确认');
     for(const participant of item.participants??[]){const guest=draft.content.guests.find(value=>value.id===participant.guestId);speakerCell.append(node('small',(guest?.name||'嘉宾待核对')+' · '+participant.roles.map(role=>SESSION_PARTICIPANT_ROLE_LABELS[role]).join(' / ')));}
-    cell(row, '状态', { draft: '草稿', scheduled: '已安排', cancelled: '已取消' }[item.status]);
-    rowActions(row, 'session', item);
+    const stateCell=cell(row, '状态', { draft: '草稿', scheduled: '已安排', cancelled: '已取消' }[item.status]);appendPublication(stateCell,'sessions',item.id);
+    rowActions(row, 'session', item,sessionIds);
     sessions.append(row);
   }
   $('[data-admin-sessions-empty]').hidden = draft.content.sessions.length > 0;
@@ -1257,7 +1263,7 @@ function previewPublic({scroll=true}={}) {
   output.replaceChildren();
   output.append(node('h3', content.event.title), node('p', content.event.date + ' · ' + content.event.venue));
   const list = node('div');
-  for (const item of [...content.sessions].sort((a,b) => a.start.localeCompare(b.start) || a.zone.localeCompare(b.zone))) {
+  for (const item of orderedSessions(content.sessions,content.sessionOrder)) {
     const row=node('article');row.dataset.previewSessionId=item.id;
     row.append(node('p',item.start+'–'+item.end+' / '+item.zone+' 区 · '+item.title));
     if(item.status==='cancelled')row.append(node('small','本场已取消'));

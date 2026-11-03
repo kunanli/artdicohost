@@ -42,6 +42,7 @@ export const contentSchema = Object.freeze({
   maxOrganizations: MAX_CONTENT_ITEMS,
   zones: ['A', 'B', 'C'],
   sessionStatuses: ['draft', 'scheduled', 'cancelled'],
+  sessionOrders: ['time', 'manual'],
   sessionFormats: ['talk', 'workshop', 'roundtable', 'showcase', 'social', 'break', 'other'],
   speakerStatuses: ['pending', 'confirmed'],
   maxSessionParticipants: 20,
@@ -67,7 +68,7 @@ export const contentSchema = Object.freeze({
 /** @typedef {{id:string,name:string,logoId:string,website:string,participation:string,status:string,publicConsent:boolean,internalNotes:string,visibility?:string}} Organization */
 /** @typedef {{id:string,title:string,teamName:string,school:string,contactName:string,email:string,wechat:string,memberCount:number,participationForms:string[],responseStatus:string,materialLinks:string,summary:string,coverId:string,status:string,publicConsent:boolean,sessionId:string,boothId:string,internalNotes:string,kind?:string,organizationId?:string,visibility?:string}} Showcase */
 /** @typedef {{heroDescription:string,aboutTitle:string,aboutText:string,faqItems:{id?:string,question:string,answer:string}[],contactEmail:string,mapUrl:string,openingTime:string,endTime:string,checkInTime:string}} EventPresentation */
-/** @typedef {{schemaVersion:number,eventId:string,event:{title:string,date:string,timezone:string,venue:string,status:string,dateStatus:string,venueStatus:string,presentation?:EventPresentation},sessions:Session[],booths:Booth[],guests:Guest[],showcases:Showcase[],organizations?:Organization[]}} Content */
+/** @typedef {{schemaVersion:number,eventId:string,event:{title:string,date:string,timezone:string,venue:string,status:string,dateStatus:string,venueStatus:string,presentation?:EventPresentation},sessions:Session[],sessionOrder?:'time'|'manual',booths:Booth[],guests:Guest[],showcases:Showcase[],organizations?:Organization[]}} Content */
 
 /** Only server-created content-addressed portraits are accepted; no external URLs. */
 export const PORTRAIT_ID_PATTERN = /^[a-f0-9]{64}\.(?:jpg|png|webp)$/u;
@@ -293,6 +294,21 @@ function validTimezone(value) {
 /** @param {string} value */
 function validTime(value) { return /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(value); }
 
+/** A view of saved rows; ordering never changes a session's time or identity.
+ * Legacy content remains chronological. Manual order still presents morning
+ * before afternoon, preserving array order inside each period and filtered zone.
+ * @template {{start:string,zone:string}} T
+ * @param {readonly T[]} rows
+ * @param {'time'|'manual'} [mode]
+ * @returns {T[]}
+ */
+export function orderedSessions(rows, mode) {
+  if (mode !== undefined && !contentSchema.sessionOrders.includes(mode)) throw new TypeError('场次排序方式无效。');
+  return [...rows].sort(mode === 'manual'
+    ? (left, right) => Number(left.start >= '12:00') - Number(right.start >= '12:00')
+    : (left, right) => left.start.localeCompare(right.start) || left.zone.localeCompare(right.zone));
+}
+
 /**
  * Whitelists editable data and checks scheduling constraints. Unknown fields are
  * dropped, while malformed required shapes are rejected. Revision handling belongs
@@ -308,6 +324,7 @@ export function validateContent(input) {
   const rawGuests = Array.isArray(source.guests) ? source.guests : [];
   const rawShowcases = Array.isArray(source.showcases) ? source.showcases : [];
   const organizationsField = Object.getOwnPropertyDescriptor(source, 'organizations');
+  const sessionOrderField = Object.getOwnPropertyDescriptor(source, 'sessionOrder');
   const rawOrganizations = Array.isArray(organizationsField?.value) ? organizationsField.value : [];
   /** @type {Content} */
   const value = {
@@ -323,6 +340,7 @@ export function validateContent(input) {
     guests: rawGuests.slice(0, MAX_CONTENT_ITEMS + 1).map(guest),
     showcases: rawShowcases.slice(0, MAX_CONTENT_ITEMS + 1).map(showcase),
     ...(organizationsField ? { organizations: rawOrganizations.slice(0, MAX_CONTENT_ITEMS + 1).map(organization) } : {}),
+    ...(sessionOrderField ? { sessionOrder: sessionOrderField.value } : {}),
   };
   /** @type {Record<string,string>} */
   const errors = {};
@@ -340,6 +358,8 @@ export function validateContent(input) {
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(candidate)) errors[key] = 'ID 必须为 1–80 位字母、数字、短横线或下划线，且保持稳定。';
   }
 
+  if (sessionOrderField && (!sessionOrderField.enumerable || !('value' in sessionOrderField)
+    || !contentSchema.sessionOrders.includes(sessionOrderField.value))) errors.sessionOrder = '请选择按时间或手动排序。';
   if (source.schemaVersion !== CONTENT_SCHEMA_VERSION) errors.schemaVersion = '不支持的内容版本。';
   stableId('eventId', value.eventId);
   stringField('event.title', value.event.title, 200);
@@ -641,6 +661,7 @@ export function toPublicContent(input, options = {}) {
     schemaVersion: value.schemaVersion,
     eventId: value.eventId,
     event: { ...value.event },
+    ...(Object.hasOwn(value, 'sessionOrder') ? { sessionOrder: value.sessionOrder } : {}),
     sessions: value.sessions.filter((item) => item.status !== 'draft').map((item) => {
       const linked = item.guestId ? guestsById.get(item.guestId) : undefined;
       return {

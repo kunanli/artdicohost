@@ -348,6 +348,9 @@ jobs:
         run: node scripts/deploy-oss.mjs .local-data/oss-publish "$RUNNER_TEMP/artdico-ossutil/ossutil-2.4.0-linux-amd64/ossutil"
       - name: Verify the exact release through the public HTTPS domain without credentials
         run: node scripts/verify-public-domain.mjs .local-data/oss-publish
+      - name: Verify the short entry directory and fixed API routes without private reads or writes
+        timeout-minutes: 2
+        run: node scripts/verify-entry-surfaces.mjs .local-data/oss-publish
 
   deploy-fc:
     name: Publish and verify the complete Hong Kong cloud lifecycle

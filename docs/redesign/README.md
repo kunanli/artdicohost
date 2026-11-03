@@ -1,8 +1,10 @@
 # ARTDiCO HOST 改版執行總覽
 
-本輪：[嘉賓圓內照片切換](guest-circle-portrait-release.md)。原圓文字採姓名／組織社群／GGJ身分，移除公司職稱及方形浮框，hover在同一圓內換照片；手機與鍵盤可切換，缺圖／破圖保留文字。驗證與正式發布回執待本輪完成。
+最新已發布：[PR81嘉賓圓內照片切換](guest-circle-portrait-release.md)，main `1003c8b39df104f35687f7b34b4fc6aa81b84896`。原圓顯示姓名／組織社群／GGJ身分，hover、手機與鍵盤在同圓切換照片，缺圖保留文字；不再顯示方框及公司職稱。[PR檢查41635778833](https://github.com/kunanli/artdicohost/actions/runs/41635778833)及[main流程41637939359](https://github.com/kunanli/artdicohost/actions/runs/41637939359)均通過1969項Node與14組99案。正式五工作、137檔／42資產、私有OSS、14後台、67公開HTTPS及入場三項已核對，12:58:34 UTC完成。R52正常捲動的手機／桌面人工視窗另補通過，不以整段截圖限制冒充完整人工證據。
 
-最新已發布：[PR79場次發布入口與前台日程排序](session-publication-order-release.md)，main `82daf5a8316e37ae9647ca8d7c84ec5020de35d8`。場次頁提供就近發布與逐場公開進度；同區、同上午／下午內上移／下移後先保存，再明確發布，舊快照維持時間排序。[PR檢查41624929578](https://github.com/kunanli/artdicohost/actions/runs/41624929578)與[main流程41626550368](https://github.com/kunanli/artdicohost/actions/runs/41626550368)均通過1961項Node及13組89案瀏覽器。正式五工作、137檔候選離線、私有OSS、14後台及68公開HTTPS均成功，11:36:03 UTC完成入場路徑三項核對。業務草稿仍由主辦方明確發布。
+前輪語言功能：[PR80中英文公開網站](bilingual-language-release.md)已合併main `bf8703b34d294d2e9d0bc9ad5ad6b176d2c17ae4`；本輪保留其自動偵測與切換，照片操作提示隨語言切換，公開身分文字不推測翻譯。
+
+較早已驗證發布（歷史基準）：[PR79場次發布入口與前台日程排序](session-publication-order-release.md)，main `82daf5a8316e37ae9647ca8d7c84ec5020de35d8`。場次頁提供就近發布與逐場公開進度；同區、同上午／下午內上移／下移後先保存，再明確發布，舊快照維持時間排序。[PR檢查41624929578](https://github.com/kunanli/artdicohost/actions/runs/41624929578)與[main流程41626550368](https://github.com/kunanli/artdicohost/actions/runs/41626550368)均通過1961項Node及13組89案瀏覽器。正式五工作、137檔候選離線、私有OSS、14後台及68公開HTTPS均成功，11:36:03 UTC完成入場路徑三項核對。業務草稿仍由主辦方明確發布。
 
 前次已驗證發布PR78，main `3c13de91b8da04a2232b4ad6916cd1cfdffacbd5`：[活動行名單轉入Wallet與體檢](huodongxing-wallet-health.md)。1941項測試、81案瀏覽器、私有OSS／14後台／68公開HTTPS及入場路徑均已核對，2026-11-03 09:11:20 UTC完成。一般報名維持活動行，專用XLSX預覽／明確匯入共用名額，確認信另預覽並明確寄送。沒有即時API同步或真人資料操作。
 

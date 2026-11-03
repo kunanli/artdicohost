@@ -1,6 +1,10 @@
 # ARTDiCO HOST · artdico.host
 
-**最新已發布：**[PR79 場次發布入口與前台日程排序](docs/redesign/session-publication-order-release.md)，main `82daf5a8316e37ae9647ca8d7c84ec5020de35d8`。場次頁可就近發布、查看逐場公開進度，並在同區、同上午／下午內上移／下移；保存與明確發布分開。[PR檢查41624929578](https://github.com/kunanli/artdicohost/actions/runs/41624929578)及[main流程41626550368](https://github.com/kunanli/artdicohost/actions/runs/41626550368)均通過1961項Node、13組89案瀏覽器及137檔候選離線啟動。正式五工作成功，私有OSS、14後台及68公開HTTPS物件已核對，2026-11-03 11:36:03 UTC完成入場路徑三項驗證。主辦方仍須明確發布已保存講座；部署沒有代發正式草稿。
+**最新已發布：**[PR81 嘉賓圓內照片切換](docs/redesign/guest-circle-portrait-release.md)，main `1003c8b39df104f35687f7b34b4fc6aa81b84896`。姓名、組織／社群及GGJ身分留在原圓，hover或手機／鍵盤操作在同一圓內切換照片，缺圖保留文字；沿用中英文切換，不改公開身分資料。[PR檢查41635778833](https://github.com/kunanli/artdicohost/actions/runs/41635778833)及[main流程41637939359](https://github.com/kunanli/artdicohost/actions/runs/41637939359)均通過1969項Node、14組99案瀏覽器及137檔／42資產離線驗證。正式五工作成功，私有OSS、14後台及67公開HTTPS核對完成，2026-11-03 12:58:31 UTC完成入場路徑三項驗證。R52實際10張照片及正常捲動手機／桌面視窗均已核對，範圍與來源詳見本輪紀錄。
+
+**前輪語言功能：**[PR80中英文公開網站](docs/redesign/bilingual-language-release.md)已合併main `bf8703b34d294d2e9d0bc9ad5ad6b176d2c17ae4`；PR81在此基準整合，保留語言自動偵測、手動切換及表單原輸入。
+
+**較早已驗證發布（歷史基準）：**[PR79 場次發布入口與前台日程排序](docs/redesign/session-publication-order-release.md)，main `82daf5a8316e37ae9647ca8d7c84ec5020de35d8`。場次頁可就近發布、查看逐場公開進度，並在同區、同上午／下午內上移／下移；保存與明確發布分開。[PR檢查41624929578](https://github.com/kunanli/artdicohost/actions/runs/41624929578)及[main流程41626550368](https://github.com/kunanli/artdicohost/actions/runs/41626550368)均通過1961項Node、13組89案瀏覽器及137檔候選離線啟動。正式五工作成功，私有OSS、14後台及68公開HTTPS物件已核對，2026-11-03 11:36:03 UTC完成入場路徑三項驗證。主辦方仍須明確發布已保存講座；部署沒有代發正式草稿。
 
 **前次已驗證發布（歷史基準）：**[PR78 活動行名單接入Wallet與體檢](docs/redesign/huodongxing-wallet-health.md)，main `3c13de91b8da04a2232b4ad6916cd1cfdffacbd5`。[正式流程41606971922](https://github.com/kunanli/artdicohost/actions/runs/41606971922)五工作成功，1941項Node、81案同來源瀏覽器、137檔候選離線啟動、私有OSS、14後台及68公開HTTPS物件均核對；2026-11-03 09:11:20 UTC完成入場路徑三項驗證。郵件／Wallet配置就緒，先前403及真人收件／iPhone添加仍未實寄驗證。
 

@@ -1,6 +1,20 @@
 # 开发接续：先读本页
 
-## 2026-11-03 接續：PR79已正式發布
+## 2026-11-03 接續：PR81已正式發布
+
+[嘉賓圓內照片切換](redesign/guest-circle-portrait-release.md)已由PR81合併至main `1003c8b39df104f35687f7b34b4fc6aa81b84896`。公開圓內只呈現姓名、組織／社群及GGJ身分，同圓切換本人照片；原生手機／鍵盤操作、缺圖文字回退及中英文提示均保留，不刪後台欄位或代改公開身分。
+
+整合基準是[PR80語言功能](redesign/bilingual-language-release.md)的main `bf8703b34d294d2e9d0bc9ad5ad6b176d2c17ae4`；PR81 head為`9d640156efe74a095b9bd3345cc82b339e691761`，實際PR檢查來源為合成提交`2e07ed1b03e2bb24792aa86b1b9db0b7af33e2f5`。[PR流程41635778833](https://github.com/kunanli/artdicohost/actions/runs/41635778833)／[check125916470547](https://github.com/kunanli/artdicohost/actions/runs/41635778833/job/125916470547)通過1969項Node、14組99案瀏覽器與137檔／42資產候選離線啟動；13報明示上述來源，語言10案僅由同job checkout及編譯HTML綁定。
+
+新PR匿名捕獲是主辦方自行發布後的R52，snapshot SHA為`bccd91e2af3e0eeb1aba9eec56d3a7c131afdd2e4581358b13f8bf9ba4e72367`，含10位嘉賓、9組織及19媒體；出席證明來源56仍是3位已確認、7位待確認。舊本機54案沿用R44擷取，不能冒充新R52 CI。來源與HTML、腳本綁定及人工視覺範圍見本輪紀錄。
+
+[main流程41637939359](https://github.com/kunanli/artdicohost/actions/runs/41637939359)五工作全部成功，12:58:34 UTC完成。準確main的1969項Node、14組99案與137檔／42資產離線驗證均獨立核對；13報及捕獲來源明示main，語言10案由checkout加HTML綁定。12:56:21 UTC私有OSS兩獨立客戶端／一FC、12:56:28 UTC 14後台、12:58:28 UTC 67公開HTTPS、12:58:31 UTC入場三項均通過。R52／10位嘉賓／9組織／19媒體、40次本人照片解碼及職稱0皆核對；未改出席證明、名額或正式業務資料。
+
+手機整段截圖的離屏呈現限制未作完整人工視覺證據；另以原生wheel正常捲動390／1920各查看10人，20次有效透明度皆1、無強制樣式，照片／文字／還原與最後一列8張正常viewport圖均人工核對。補充圖保留local9d／PR捕獲2e07／main1003的不同來源；與main同R52快照及HTML，不冒稱正式站瀏覽器操作。範圍詳見本輪紀錄。
+
+本輪證據在獨立`docs/guest-circle-portrait-release-proof`提交，只補文件，不新建PR或重複部署。主工作樹main保持乾淨；沒有匯入真人名單、寄真信或代發業務草稿。
+
+## 歷史：2026-11-03，PR79已正式發布
 
 [PR79場次發布入口與前台日程排序](redesign/session-publication-order-release.md)已合併main `82daf5a8316e37ae9647ca8d7c84ec5020de35d8`。場次頁補就近發布、逐場公開進度及同區／同半天上移下移；保存只改草稿，發布仍需核對全部已保存差異並明確確認。既有未知保存先核對原結果，舊無排序模式快照維持時間排序，部署不代發正式草稿。
 

@@ -87,7 +87,7 @@ test('preflight rejects wildcard or credentialed CORS, changed methods, redirect
   const f = await fixture(t);
   const changes = [
     response => { response.headers.set('access-control-allow-origin', '*'); return response; },
-    response => { response.headers.set('access-control-allow-credentials', 'true'); return response; },
+    response => { response.headers.set('access-control-allow-credentials', 'true, false'); return response; },
     response => { response.headers.set('access-control-allow-methods', 'GET, HEAD, OPTIONS, POST'); return response; },
     response => { response.headers.set('access-control-allow-methods', 'GET, OPTIONS'); return response; },
     response => ({ status: 204, redirected: true, headers: response.headers, body: null }),
@@ -115,4 +115,18 @@ test('deadlines cover ignored fetch aborts and pending body readers, and raw dep
     : f.fetchFn(...args) }));
   assert.equal(read, true); assert.equal(cancelled, 1);
   await reject(verifyEntrySurfaces({ directory: f.directory, commit, fetchFn: async () => { throw new Error(PRIVATE); } }));
+});
+
+
+test('canonical gateway credential metadata does not turn an omit probe into an authenticated request', async t => {
+  for (const value of ['false','true']) {
+    const f=await fixture(t);
+    const result=await verifyEntrySurfaces({directory:f.directory,commit,fetchFn:async(...args)=>{
+      const response=await f.fetchFn(...args);
+      if(args[0]===PREFLIGHT)response.headers.set('access-control-allow-credentials',value);
+      return response;
+    }});
+    assert.equal(result.verified,true);assert.equal(f.calls.length,3);
+    for(const {settings}of f.calls){assert.equal(settings.credentials,'omit');const headers=new Headers(settings.headers);assert.equal(headers.has('cookie'),false);assert.equal(headers.has('authorization'),false);}
+  }
 });

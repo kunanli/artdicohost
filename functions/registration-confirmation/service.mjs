@@ -301,7 +301,16 @@ export function createRegistrationConfirmationService({ registrationService, jou
         'Keep this link and your QR code private. For help, contact '+PUBLIC_CONTACT_EMAIL+'.'].join('\n');
     }
     let result,presentation,walletReady=false;
-    if(kind!=='application_received')try{walletReady=(await beforeDeadline(()=>walletState(),250)).ready;}catch{/* Optional badge readiness cannot hold up confirmation delivery. */}
+    if(kind!=='application_received'){
+      try{walletReady=(await beforeDeadline(()=>walletState())).ready;}
+      catch{
+        // A slow signer check is not evidence that Wallet is unconfigured.
+        // Keep the original send window, and retain a known-unsent notice
+        // rather than successfully delivering a silently incomplete email.
+        try{await recordResult(notice,'rejected',actorId,{code:'DELIVERY_WINDOW_EXPIRED',transportStarted:false});return{status:'not_attempted'};}
+        catch{return{status:'unknown'};}
+      }
+    }
     try { presentation=confirmationEmailPresentation({locale,kind,subject,confirmationUrl:link.confirmationUrl,ticket,walletReady}); }
     catch { try{return await recordResult(notice,'rejected',actorId,{code:'DELIVERY_GUARD_UNAVAILABLE',transportStarted:false});}catch{return{status:'unknown'};} }
     try {

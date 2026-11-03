@@ -1,5 +1,11 @@
 # support@artdico.co 報名確認信設定
 
+## 2026-11-03：收到的信缺少 Wallet 圖標
+
+先分開核對三層：官方PNG是否仍在、服務端實際`confirmation_actions`是否包含`<img>`、EmailJS目前Content是否用`{{{confirmation_actions}}}`輸出原HTML。Repo範本存在、API接受及版型預覽都不能證明實際收件已含圖標。官方圖片網址為`https://artdico.host/wallet/add-to-apple-wallet-cn.png`及`https://artdico.host/wallet/add-to-apple-wallet-en.png`；無需重新上傳或繪製。
+
+已知程式缺口為Wallet完整可用性只等250ms，OSS冷讀取稍慢便成功寄出缺圖的確認函。本輪改為沿原通知總期限核對；正常的慢回覆仍附官方圖標，整體準備超時不呼叫EmailJS、記錄已知未開始寄送，可由既有明確重寄流程處理。明確未配置或無效憑證仍不顯示可用Wallet，已確認／待審資格保持原規則。
+
 ## 2026-11-03：確認信語言、Wallet 徽章與二維碼
 
 本階段新增三個固定參數 `email_subject`、`email_language`、`confirmation_actions`，原八個參數保留。新一般報名保存明確 `locale`（`zh-CN`／`en`），缺省舊記錄仍用簡體中文，不由 Email 地址或姓名猜語言。只有新送出的信使用新內容；讀取、部署與舊發信紀錄不補寄。

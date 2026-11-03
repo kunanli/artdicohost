@@ -11,7 +11,7 @@ const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const receipt = () => ({ schemaVersion: 1, commit, files: [{ path: 'r/index.html', bytes: html.length, sha256: sha256(html) }] });
 const PHASES = ['release', 'public-entry', 'invalid-entry', 'preflight'];
 const COMMON = ['phase', 'status', 'transport', 'redirect', 'url', 'encoding', 'cookie', 'declared', 'body', 'bytes'];
-const EXTRA = [['mime', 'cache', 'receipt'], ['mime', 'cache', 'attachment', 'size', 'hash'], ['mime', 'cache', 'errorCode', 'envelope'], ['cache', 'origin', 'methods', 'credentials', 'empty']];
+const EXTRA = [['mime', 'cache', 'receipt'], ['mime', 'cache', 'attachment', 'size', 'hash'], ['mime', 'cache', 'errorCode', 'envelope'], ['cache', 'origin', 'methods', 'credentials', 'credentialsValue', 'empty']];
 const ERROR_CODES = new Set(['ENTRY_NOT_FOUND', 'AUTH_REQUIRED', 'FORBIDDEN', 'NOT_FOUND', 'ORIGIN_REJECTED', 'ENTRY_UNAVAILABLE', 'OTHER', 'UNREADABLE']);
 function fixture(change = async (_url, response) => response) {
   const calls = [];
@@ -36,8 +36,9 @@ function safe(result, reports = []) {
     assert.ok(phase.status === null || Number.isInteger(phase.status) && phase.status >= 100 && phase.status <= 599);
     assert.ok(Number.isSafeInteger(phase.bytes) && phase.bytes >= 0);
     for (const [key, value] of Object.entries(phase)) {
-      if (!['phase', 'status', 'bytes', 'errorCode'].includes(key)) assert.equal(typeof value, 'boolean', key);
+      if (!['phase', 'status', 'bytes', 'errorCode', 'credentialsValue'].includes(key)) assert.equal(typeof value, 'boolean', key);
       if (key === 'errorCode') assert.ok(ERROR_CODES.has(value));
+      if (key === 'credentialsValue') assert.ok(['absent','true','false','other'].includes(value));
     }
   }
   const serialized = JSON.stringify([result, ...reports]);

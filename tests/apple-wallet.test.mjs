@@ -175,3 +175,17 @@ test('encoded Wallet requests are rejected before parsing or invoking the signin
   }
   assert.equal(calls, 2, 'only absent or identity encoding reaches the trusted service');
 });
+
+test('new Wallet passes use the same dedicated short staff check-in capability and preserve legacy verification reads', async () => {
+  const admissionUrl = 'https://api.artdico.host/admin/checkin/#ticket=' + 'x'.repeat(22); let calls = 0;
+  const wallet = service({ admissionUrlProvider: async input => { calls++; assert.deepEqual(input, { registrationId: id, accessRevision: 0 }); return { admissionUrl }; } });
+  assert.equal(calls, 0); await wallet.readiness(); assert.equal(calls, 0, 'readiness does not create short mappings');
+  const issued = await wallet.download({ receiptToken: token }); assert.equal(issued.outcome, 'issued'); assert.equal(calls, 1);
+  const pass = JSON.parse(passFiles(issued.data).get('pass.json')); assert.equal(pass.barcodes[0].message, admissionUrl);
+  assert.equal(JSON.stringify(pass).includes('synthetic.receipt'), false);
+  assert.equal((await service({ admissionUrlProvider: async () => ({ admissionUrl: 'https://external.invalid/' }) }).download({ receiptToken: token })).outcome, 'unavailable');
+  assert.equal((await service({ admissionUrlProvider: async () => { throw new Error('PRIVATE_SYNTHETIC_LINK'); } }).download({ receiptToken: token })).outcome, 'unavailable');
+  calls = 0;
+  assert.equal((await service({ authorize: async () => ({ ...record, admissionStatus: 'withdrawn' }), admissionUrlProvider: async () => { calls++; return { admissionUrl }; } }).download({ receiptToken: token })).outcome, 'inactive');
+  assert.equal(calls, 0);
+});

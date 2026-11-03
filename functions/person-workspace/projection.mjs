@@ -301,7 +301,9 @@ export function personPermissions(actor) {
 /** Minimal staff directory. Never use names or email addresses as identity links. */
 export function peopleDirectoryProjection({ permissions, roster, intent, registrationDirectory, admissions, content, deliveries } = {}) {
   if (!plain(permissions)) fail();
-  const contacts = permissions.contact ? contactsSource(roster).contacts : [];
+  const allContacts = permissions.contact ? contactsSource(roster).contacts : [];
+  const archivedContacts = new Set(allContacts.filter(item => item.archivedAt).map(item => item.id));
+  const contacts = allContacts.filter(item => !item.archivedAt);
   const outreach = permissions.contact ? intentSource(intent) : null;
   const program = permissions.contact ? contentSource(content) : null;
   const organizations = program ? organizationLookupProjection(program) : [];
@@ -313,7 +315,7 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
       if (!plain(record.fields) || !plain(record.provenance) || typeof record.inactive !== 'boolean') fail();
       const kind = oneOf(record.provenance.kind, ['public', 'staff_assisted', 'staff_entry']);
       return { id: record.id, name: text(record.fields.name, 120), organization: text(record.fields.organization, 300), city: text(record.fields.city, 160),
-        corrected: record.profileCorrection !== undefined, kind, sourceContactId: kind === 'staff_assisted' ? identifier(record.provenance.sourceContactId) : null, inactive: record.inactive };
+        recordedAt: timestamp(record.submittedAt), deleted: record.deleted === true, corrected: record.profileCorrection !== undefined, kind, sourceContactId: kind === 'staff_assisted' ? identifier(record.provenance.sourceContactId) : null, inactive: record.inactive };
     });
     for (const person of list(admissions.people, 1000)) {
       if (!plain(person) || !REGISTRATION_ID.test(person.registrationId ?? '') || admissionMap.has(person.registrationId)) fail();
@@ -346,6 +348,7 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
       ?? (raw.invitation?.sentAt ? 'manually_sent' : raw.invitation?.generatedAt ? 'prepared' : 'not_started');
     const row = { key: 'contact:' + item.id, kind: 'person', source: application ? 'linked' : 'contact',
       name: application?.corrected ? application.name : item.profile.displayName, organization: application?.corrected ? application.organization : item.profile.organization, city: application?.corrected ? application.city : item.profile.city,
+      recordedAt: [timestamp(raw.createdAt), application?.recordedAt].filter(Boolean).sort().at(-1) ?? null, deleted: application?.deleted === true,
       contactId: item.id, registrationId: application?.id ?? (conversion?.registrationId ?? null), profileId: null, roles: [...roles],
       responseStatus: item.operations.responseStatus, admissionStatus: admission(application),
       registrationState: application ? 'available' : conversion ? 'restricted' : 'unlinked',
@@ -354,16 +357,17 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
     contactRows.set(item.id, row); people.push(row);
   }
   for (const item of applications) if (!linked.has(item.id)) people.push({ key: 'registration:' + item.id, kind: 'person', source: item.kind,
-    name: item.name, organization: item.organization, city: item.city, contactId: null, registrationId: item.id, profileId: null, roles: [],
+    name: item.name, organization: item.organization, city: item.city, recordedAt: item.recordedAt, deleted: item.deleted, contactId: null, registrationId: item.id, profileId: null, roles: [],
     responseStatus: null, admissionStatus: admission(item), registrationState: 'available', invitationStatus: 'not_applicable',
     owner: '', followUpAt: '', deliveryStatus: email(item.id) });
   for (const profile of program ? records(program.content.guests ?? [], CONTACT_ID, 200) : []) {
+    if (archivedContacts.has(profile.contactId)) continue;
     const roles = strings(profile.publicRoles, GUEST_PUBLIC_ROLES.length, 40, GUEST_PUBLIC_ROLES);
     const contactId = profile.contactId ? identifier(profile.contactId) : null, target = contactId ? contactRows.get(contactId) : null;
     if (target) {
       if (target.profileId) fail(); target.profileId = profile.id; target.roles = [...new Set([...target.roles, ...roles])];
     } else people.push({ key: 'profile:' + profile.id, kind: 'person', source: 'profile', name: text(profile.name, 120), organization: text(profile.company, 300), city: '',
-      contactId: null, registrationId: null, profileId: profile.id, roles, responseStatus: null, admissionStatus: null, registrationState: 'unlinked',
+      recordedAt: null, deleted: false, contactId: null, registrationId: null, profileId: profile.id, roles, responseStatus: null, admissionStatus: null, registrationState: 'unlinked',
       invitationStatus: 'not_applicable', owner: '', followUpAt: '', deliveryStatus: 'not_applicable' });
   }
   const booth = item => ({ id: identifier(item.id), code: text(item.code, 80), zone: text(item.zone, 10), status: oneOf(item.status, ['pending', 'confirmed', 'cancelled']) });
@@ -396,6 +400,7 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
     const current=registrationId?applicationMap.get(registrationId):null;
     const consolidated={...base,key:contactId?'contact:'+contactId:'registration:'+registrationId,contactId,registrationId,
       name:source?.name??base.name,organization:source?.organization??base.organization,city:source?.city??base.city,
+      recordedAt:members.map(row=>row.recordedAt).filter(Boolean).sort().at(-1)??null,deleted:primaryApplication?.deleted===true,
       roles:permissions.contact?roles:[],profileId:permissions.contact?(base.profileId??members.find(row=>row.profileId)?.profileId??null):null,admissionStatus:permissions.registration?admission(current):null,registrationState:registrationId?(permissions.registration?'available':'restricted'):'unlinked',
       source:contactId&&registrationId?'linked':base.source,deliveryStatus:members.some(row=>row.deliveryStatus==='unknown')?'unknown':registrationId?email(registrationId):'not_applicable',
       invitationStatus:members.some(row=>['unknown','issuing'].includes(row.invitationStatus))?'unknown':base.invitationStatus,
@@ -405,7 +410,9 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
   }
   for(const row of people){if(permissions.contact&&!row.roles.some(role=>['attendee','speaker','guest','panelist','exhibitor','host','organizer','moderator','student_showcase'].includes(role))&&row.registrationId&&!groups.some(g=>g.primaryRegistrationId===row.registrationId&&g.roles!==null))row.roles.push('attendee');}
   for(const company of companies){const seen=new Map();for(const raw of contacts){const member=organizationMemberships(raw.operations).find(link=>link.organizationId===company.organizationId);if(!member)continue;const id=identityContacts.get(raw.id)??raw.id,current=seen.get(id),person=people.find(row=>row.contactId===id);if(!current)seen.set(id,{id,name:person?.name??contactProjection(raw).profile.displayName,role:member.role});else if(member.role==='lead')current.role='lead';}company.memberTotal=seen.size;company.members=[...seen.values()].slice(0,20);}
-  const rows = people.sort((a,b) => Number(b.admissionStatus === 'pending_review') - Number(a.admissionStatus === 'pending_review') || a.name.localeCompare(b.name, 'zh-CN') || a.key.localeCompare(b.key));
+  for (let index = people.length - 1; index >= 0; index--) if (people[index].deleted) people.splice(index, 1);
+  const rows = people.sort((a,b) => (b.recordedAt ?? '').localeCompare(a.recordedAt ?? '') || a.name.localeCompare(b.name, 'zh-CN') || a.key.localeCompare(b.key));
+  for (const row of rows) delete row.deleted;
   return { people: rows, companies, summary: { people: people.length,
     unassigned:permissions.contact?rows.filter(row=>(row.contactId||row.registrationId)&&!row.roles.some(role=>['attendee','speaker','guest','panelist','exhibitor','host','organizer','moderator','student_showcase'].includes(role))).length:null,
     attendees:permissions.contact?rows.filter(row=>row.roles.includes('attendee')).length:null,

@@ -128,7 +128,7 @@ for configured in [False, True]:
                                  ('/admin/tasks/', 'GET'),
                                  ('/admin/settings/', 'GET'),
                                  ('/admin/person/', 'GET'),
-                                 ('/admin/volunteers/', 'GET'),
+                                 ('/admin/volunteers/', 'GET'), ('/admin/checkin/', 'GET'),
                                  ('/api/admin/login', 'POST'),
                                  ('/api/registrations', 'POST')] + [
                                      (path, 'GET') for path in page_aliases]:
@@ -137,7 +137,7 @@ for configured in [False, True]:
                 assert json.loads(body)['error']['code'] == 'CONTENT_NOT_READY'
         else:
             page_headers = {}
-            for path in ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/']:
+            for path in ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/']:
                 status, headers, body = request(path)
                 assert status == 200 and 'text/html' in headers['content-type']
                 assert headers.get('cache-control') == 'no-store'

@@ -147,8 +147,14 @@ export function createCloudContentApi({ enabled = false, store, portraitStore, a
           return json(await contactsStore.createContact(input.expectedRevision, input.profile, session.user.id), 201);
         }
         if (['/api/admin/contacts/import', '/api/admin/contacts/import/preview'].includes(url.pathname)) throw new CloudContentError('CONTACT_IMPORT_UNAVAILABLE', '云端 Excel 导入尚未开放，请勿上传来源文件。', 503);
-        const contactRoute = url.pathname.match(/^\/api\/admin\/contacts\/([A-Za-z0-9][A-Za-z0-9_-]{0,79})(?:\/(profile|guest-prefill|invitation\/(?:generated|sent)|(?:email|wallet)\/preview))?$/u);
+        const contactRoute = url.pathname.match(/^\/api\/admin\/contacts\/([A-Za-z0-9][A-Za-z0-9_-]{0,79})(?:\/(archive|profile|guest-prefill|invitation\/(?:generated|sent)|(?:email|wallet)\/preview))?$/u);
         const id = contactRoute?.[1], action = contactRoute?.[2];
+        if (id && action === 'archive' && request.method === 'POST') {
+          requireRole(session, ['superadmin']);
+          const input = await inputBody(request);
+          if (Object.keys(input).sort().join(',') !== 'archived,expectedRevision' || typeof input.archived !== 'boolean') throw new CloudContentError('VALIDATION_ERROR', '删除请求无效。', 422);
+          return json(await contactsStore.setArchived(id, input.expectedRevision, input.archived, session.user.id));
+        }
         if (id && action === 'guest-prefill' && request.method === 'GET') {
           requireRole(session, ['editor']);
           return json(await contactsStore.guestPrefill(id));

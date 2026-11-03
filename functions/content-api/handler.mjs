@@ -158,6 +158,13 @@ export function createContentApi({ store, contactsStore, portraitStore, communic
           const input = await body(request);
           return json(await contactsStore.createContact(input.expectedRevision, input.profile, session.user.id), 201);
         }
+        const archiveRoute = url.pathname.match(/^\/api\/admin\/contacts\/([A-Za-z0-9][A-Za-z0-9_-]{0,79})\/archive$/u);
+        if (archiveRoute && request.method === 'POST') {
+          permit(session, 'superadmin');
+          const input = await body(request);
+          if (Object.keys(input).sort().join(',') !== 'archived,expectedRevision' || typeof input.archived !== 'boolean') throw new ContentError('VALIDATION_ERROR', '删除请求无效。', 422);
+          return json(await contactsStore.setArchived(archiveRoute[1], input.expectedRevision, input.archived, session.user.id));
+        }
         const profileRoute = url.pathname.match(/^\/api\/admin\/contacts\/([A-Za-z0-9][A-Za-z0-9_-]{0,79})\/(profile|guest-prefill)$/u);
         if (profileRoute?.[2] === 'profile' && request.method === 'PUT') {
           const input = await body(request);

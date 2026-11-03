@@ -21,6 +21,17 @@ async function main() {
   const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
   const html = await readFile(resolve(dist, 'index.html')), scriptSha256 = sha(await readFile(fileURLToPath(import.meta.url)));
   assert.equal(html.includes(Buffer.from('scroll-motion-guest')), false, 'the synthetic guest hash is absent from the original static document');
+  const originalArtwork = [];
+  for (const [path, expectedSha256, width, height] of [
+    ['src/assets/home/brand-ggj.png', '5fec057f899f88e3a2e75dff0fc05b15d04b0d4bcbcb46cfb5612ea0fbf8deac', 1227, 229],
+    ['src/assets/home/brand-host.png', 'b6a6e36e0cf2359c24126b7c8fa0572db1688b108f238c2255cb2d25553339fc', 981, 225],
+  ]) {
+    const bytes = await readFile(resolve(source, path));
+    assert.equal(sha(bytes), expectedSha256, 'the original supplied title artwork remains unchanged');
+    assert.equal(bytes.readUInt32BE(16), width); assert.equal(bytes.readUInt32BE(20), height);
+    originalArtwork.push({ path, sha256: expectedSha256, width, height });
+  }
+
   const raw = createInitialContent();
   raw.guests = [{ id: 'scroll-motion-guest', name: '合成滚动嘉宾', company: '合成创作单位', title: '合成创作者', ggjRole: '', portraitId: '', status: 'pending', publicConsent: false, contactId: 'SYNTHETIC_PRIVATE_CONTACT', internalNotes: 'SYNTHETIC_PRIVATE_NOTE' }];
   raw.organizations = [{ id: 'scroll-motion-org', name: '合成参与组织', logoId: '', website: '', participation: 'undecided', status: 'pending', publicConsent: false, internalNotes: 'SYNTHETIC_PRIVATE_ORG' }]; raw.booths = [];
@@ -304,72 +315,76 @@ async function main() {
       const marker = node => ({ tag: node.tagName, type: node.getAttribute('data-home-title-type'), word: node.hasAttribute('data-poster-word'), primary: node.hasAttribute('data-poster-primary'), repeat: node.hasAttribute('data-poster-repeat'), overline: node.hasAttribute('data-home-title-overline'), subtitle: node.hasAttribute('data-home-title-subtitle') });
       const gradientLayers = background => { const layers = []; let depth = 0, start = 0; for (let index = 0; index < background.length; index++) { if (background[index] === '(') depth++; else if (background[index] === ')') depth--; else if (background[index] === ',' && depth === 0) { layers.push(background.slice(start, index).trim()); start = index + 1; } } layers.push(background.slice(start).trim()); return layers.map(layer => ({ angle: Number(/^linear-gradient\(([-\d.]+)deg,/u.exec(layer)?.[1]), stops: [...layer.matchAll(/([\d.]+)%/gu)].map(match => Number(match[1])) })); };
       const inspect = node => { const style = getComputedStyle(node), matrix = new DOMMatrixReadOnly(style.transform === 'none' ? undefined : style.transform); return { ...marker(node), text: node.textContent.trim().replace(/\s+/gu, ' '), classes: [...node.classList], children: [...node.children].map(marker), directTextNodes: [...node.childNodes].filter(child => child.nodeType === Node.TEXT_NODE && child.textContent.trim()).length, parentType: node.parentElement.getAttribute('data-home-title-type'), family: style.fontFamily, weight: Number(style.fontWeight), fontSize: parseFloat(style.fontSize), lineHeight: parseFloat(style.lineHeight), transformIdentity: matrix.isIdentity, color: style.color, fill: style.webkitTextFillColor, stroke: parseFloat(style.webkitTextStrokeWidth), strokeColor: style.webkitTextStrokeColor, clip: style.webkitBackgroundClip, background: style.backgroundImage, gradients: gradientLayers(style.backgroundImage), display: style.display, visibility: style.visibility, position: style.position, box: box(node), ranges: ranges(node), overflowX: style.overflowX, overflowY: style.overflowY, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }; };
-      return { at: performance.now(), viewport: innerWidth, headerBottom: document.querySelector('.ah-home-header').getBoundingClientRect().bottom, heading: { label: heading.getAttribute('aria-label'), hidden: Boolean(heading.closest('[aria-hidden=true]')), count: document.querySelectorAll('h1').length, imageCount: heading.querySelectorAll('img,[data-home-title-image],[data-home-title-fallback]').length, children: [...heading.children].map(inspect), repeatCount: heading.querySelectorAll('[data-poster-repeat]').length }, rows: [...heading.querySelectorAll('[data-home-title-type]')].map(inspect), words: [...heading.querySelectorAll('[data-poster-word]')].map(inspect), overlines: [...heading.querySelectorAll('[data-home-title-overline]')].map(inspect), subtitles: [...heading.querySelectorAll('[data-home-title-subtitle]')].map(inspect), footer: [...document.querySelectorAll('[data-footer-display-line]')].map(inspect), strokeSupported: CSS.supports('-webkit-text-stroke', '1px #fff'), clipSupported: CSS.supports('background-clip', 'text') || CSS.supports('-webkit-background-clip', 'text'), faces: [...document.fonts].filter(face => face.family.includes('Barlow Condensed')).map(face => ({ family: face.family, status: face.status, weight: face.weight, style: face.style, stretch: face.stretch, display: face.display, sizeAdjust: face.sizeAdjust })) };
+      return { at: performance.now(), viewport: innerWidth, headerBottom: document.querySelector('.ah-home-header').getBoundingClientRect().bottom, heading: { label: heading.getAttribute('aria-label'), hidden: Boolean(heading.closest('[aria-hidden=true]')), count: document.querySelectorAll('h1').length, imageCount: heading.querySelectorAll('[data-home-title-image]').length, children: [...heading.children].map(inspect), repeatCount: heading.querySelectorAll('[data-poster-repeat]').length }, images: [...heading.querySelectorAll('[data-home-title-image]')].map(node => ({ role: node.dataset.homeTitleImage, src: node.currentSrc, complete: node.complete, naturalWidth: node.naturalWidth, naturalHeight: node.naturalHeight, hidden: node.hidden, box: box(node), wrapper: box(node.parentElement), fallbackHidden: node.parentElement.querySelector('[data-home-title-fallback]').hidden })), rows: [...heading.querySelectorAll('[data-home-title-type]')].map(inspect), words: [...heading.querySelectorAll('[data-poster-word]')].map(inspect), overlines: [...heading.querySelectorAll('[data-home-title-overline]')].map(inspect), subtitles: [...heading.querySelectorAll('[data-home-title-subtitle]')].map(inspect), footer: [...document.querySelectorAll('[data-footer-display-line]')].map(inspect), strokeSupported: CSS.supports('-webkit-text-stroke', '1px #fff'), clipSupported: CSS.supports('background-clip', 'text') || CSS.supports('-webkit-background-clip', 'text'), faces: [...document.fonts].filter(face => face.family.includes('Barlow Condensed')).map(face => ({ family: face.family, status: face.status, weight: face.weight, style: face.style, stretch: face.stretch, display: face.display, sizeAdjust: face.sizeAdjust })) };
     });
   }
   async function posterTitle(page, { fontFailure = false } = {}) {
     const value = await posterGeometry(page); numericMetrics = { posterTitle: value };
-    assert.equal(value.heading.count, 1); assert.equal(value.heading.hidden, false); assert.equal(value.heading.imageCount, 0, 'the semantic Hero is live HTML type without obsolete PNG/error fallback');
+    assert.equal(value.heading.count, 1); assert.equal(value.heading.hidden, false);
     assert.match(value.heading.label, /Global\s*Game\s*Jam|GlobalGameJam/iu); assert.match(value.heading.label, /ARTDiCO HOST/u);
-    assert.equal(value.heading.children.length, 2, 'the Hero has exactly two live normal-flow title wrappers');
-    assert.equal(value.overlines.length, 0); assert.equal(value.heading.repeatCount, 0, 'the Hero has no separate overline or repeated title copies');
-    assert.deepEqual(value.rows.map(row => row.type), ['ggj', 'host']); assert.deepEqual(value.rows.map(row => row.text), ['GlobalGameJam', 'ARTDiCO HOST']);
-    assert.deepEqual(value.words.map(word => word.text), ['GlobalGameJam', 'ARTDiCO HOST']); assert.deepEqual(value.subtitles.map(row => row.text), ['中国组织者交流会', '嘉年华']);
-    for (const [index, wrapper] of value.heading.children.entries()) {
-      assert.equal(wrapper.tag, 'SPAN'); assert.ok(['static', 'relative'].includes(wrapper.position), 'the two title wrappers remain in normal document flow');
-      assert.deepEqual(wrapper.children.map(child => child.type || (child.subtitle ? 'subtitle' : 'unknown')), index === 0 ? ['ggj', 'subtitle'] : ['host', 'subtitle']);
-      assert.ok(Math.abs(wrapper.box.width - (value.viewport <= 820 ? value.viewport - 40 : Math.min(value.viewport * .82, 1574))) <= 1, 'the single-title composition keeps its requested width');
-      if (value.viewport <= 820) assert.ok(Math.abs(wrapper.box.left - 20) <= 1 && Math.abs(value.viewport - wrapper.box.right - 20) <= 1, 'mobile title wrappers keep twenty-pixel page margins');
+    assert.equal(value.heading.imageCount, 2, 'both exact supplied title artworks are restored');
+    assert.equal(value.heading.children.length, 2); assert.equal(value.heading.repeatCount, 0);
+    assert.equal(value.rows.length, 0); assert.equal(value.words.length, 0); assert.equal(value.overlines.length, 0);
+    assert.deepEqual(value.images.map(image => image.role), ['ggj', 'host']);
+    for (const [index, image] of value.images.entries()) {
+      assert.equal(image.complete, true); assert.equal(image.hidden, false); assert.equal(image.fallbackHidden, true);
+      assert.equal(image.naturalWidth, index === 0 ? 1227 : 981); assert.equal(image.naturalHeight, index === 0 ? 229 : 225);
+      const expectedWidth = value.viewport * (value.viewport <= 820 ? index === 0 ? .94 : .82 : index === 0 ? .6391 : .511);
+      assert.ok(Math.abs(image.box.width - expectedWidth) <= 1, 'original title artwork retains its independently measured width');
+      assert.ok(Math.abs(image.box.height / image.box.width - image.naturalHeight / image.naturalWidth) < .001, 'original title artwork retains its aspect ratio');
+      assert.ok(image.box.left >= -1 && image.box.right <= value.viewport + 1 && image.box.top >= value.headerBottom - 1, 'the full original title artwork remains inside the readable canvas');
+      assert.equal(value.heading.children[index].position, 'absolute');
+      if (index === 0) assert.ok(Math.abs(image.box.left) <= 1, 'the first original title aligns with the left canvas edge');
+      else assert.ok(Math.abs(image.box.right - value.viewport) <= 1, 'the second original title aligns with the right canvas edge');
+      assert.equal(value.heading.children[index].background, 'none', 'no replacement diagonal gradient or repeated outline overlays the original');
     }
-    for (const row of value.rows) {
-      assert.equal(row.tag, 'SPAN'); assert.equal(row.directTextNodes, 0); assert.equal(row.children.length, 1);
-      assert.deepEqual(row.children.map(child => ({ tag: child.tag, word: child.word, primary: child.primary, repeat: child.repeat })), [{ tag: 'SPAN', word: true, primary: true, repeat: false }], 'each type row contains exactly one real primary title span');
-      assert.ok(Math.abs(row.lineHeight / row.fontSize - 1.1) < .001, 'Hero title rows use the requested leading');
-      const expectedSize = value.viewport <= 820 ? (value.viewport - 40) / 8.8 : Math.min(172, Math.max(64, value.viewport * .09));
-      assert.ok(Math.abs(row.fontSize - expectedSize) <= .05, 'both single-title rows use the requested shared display size');
-    }
-    for (const word of value.words) {
-      assert.equal(word.tag, 'SPAN'); assert.equal(word.children.length, 0); assert.equal(word.directTextNodes, 1); assert.equal(word.parentType, word.text === 'GlobalGameJam' ? 'ggj' : 'host');
-      assert.equal(word.primary, true); assert.equal(word.repeat, false, 'each native title appears once in its explicit primary role');
-      assert.equal(word.transformIdentity, true, 'single-title words retain their natural scale');
-      assert.match(word.family, /Barlow Condensed/u); assert.ok(word.weight >= 800 && word.fontSize >= 24 && word.box.width > 0 && word.box.height > 0 && word.ranges.length);
-      assert.equal(['auto', 'scroll'].includes(word.overflowX) || ['auto', 'scroll'].includes(word.overflowY), false, 'poster words do not become internal scroll areas');
-      for (const rect of word.ranges) assert.ok(rect.width > 0 && rect.height > 0 && rect.left >= -1 && rect.right <= value.viewport + 1 && rect.top >= value.headerBottom - 1, 'every native word Range stays readable inside the first-view canvas');
-      if (value.strokeSupported) {
-        assert.ok(word.classes.includes('ah-poster-solid')); assert.equal(word.classes.includes('ah-poster-outline'), false); assert.ok(Math.abs(word.stroke - .55) <= .01, 'the solid Hero letters use the fine requested keyline'); assert.equal(word.strokeColor, word.color, 'the fine Hero keyline has the same color as the solid letters');
-        if (word.parentType === 'ggj') { assert.ok(word.classes.includes('ah-poster-slice')); if (value.clipSupported) { assert.deepEqual(word.clip.split(',').map(clip => clip.trim()), ['text']); assert.deepEqual(word.gradients, [{ angle: 124, stops: [0, 68, 68, 82, 82, 100] }], 'GlobalGameJam uses one diagonal gradient with hard slice boundaries'); } else assert.doesNotMatch(word.fill, /rgba\([^)]*,\s*0\)$/u); }
-        else { assert.equal(word.classes.includes('ah-poster-slice'), false); assert.equal(word.background, 'none'); assert.doesNotMatch(word.fill, /rgba\([^)]*,\s*0\)$/u, 'ARTDiCO HOST remains opaque solid type'); }
-      }
-    }
-    for (const row of value.subtitles) { assert.equal(row.tag, 'SPAN'); assert.equal(row.children.length, 0); assert.equal(row.directTextNodes, 1); assert.ok(row.display !== 'none' && row.visibility === 'visible' && row.ranges.length > 0); for (const rect of row.ranges) assert.ok(rect.width > 0 && rect.height > 0 && rect.left >= -1 && rect.right <= value.viewport + 1 && rect.top >= value.headerBottom - 1, 'every native subtitle Range remains readable inside the viewport'); }
-    for (const row of value.subtitles) assert.ok(row.fontSize >= 16 && row.fontSize <= 28, 'Chinese subtitles retain their explicit sixteen-to-twenty-eight-pixel display role');
-    assert.ok(value.faces.length > 0); for (const face of value.faces) assert.equal(face.sizeAdjust, '140%', 'the shipped font keeps its existing adjusted metrics'); assert.equal(value.faces.some(face => face.status === (fontFailure ? 'error' : 'loaded')), true, 'the expected real font load state is observed');
+    assert.ok(value.images[1].box.top > value.images[0].box.bottom + 20, 'the original two events have distinct vertical positions');
+    assert.ok(value.faces.length > 0); for (const face of value.faces) assert.equal(face.sizeAdjust, '140%', 'the unrelated footer keeps its licensed display metrics');
+    assert.equal(value.faces.some(face => face.status === (fontFailure ? 'error' : 'loaded')), true, 'the footer font load state remains observed');
     assert.equal(value.footer.length, 2); for (const line of value.footer) assert.ok(line.family.includes('Barlow Condensed') && line.weight >= 800);
-    if (value.strokeSupported) assert.ok(value.footer[1].stroke >= 1, 'the footer outline uses the same actual poster role');
+    if (value.strokeSupported) assert.ok(value.footer[1].stroke >= 1, 'the footer outline retains its own actual display role');
     return value;
+  }
+  async function originalArtworkFallback(page) {
+    const reports = [];
+    for (const role of ['ggj', 'host']) {
+      const selector = '[data-home-title-image="' + role + '"]';
+      const originalSrc = await page.locator(selector).getAttribute('src');
+      await page.locator(selector).evaluate((image, role) => {
+        // The second test replaces the DOM node just as a public refresh does;
+        // delegated image-error handling must still expose the real fallback.
+        if (role === 'host') { const clone = image.cloneNode(false); image.replaceWith(clone); image = clone; }
+        image.src = '/__synthetic_missing_title_' + role + '.png';
+      }, role);
+      await page.waitForFunction(selector => { const image = document.querySelector(selector), fallback = image.parentElement.querySelector('[data-home-title-fallback]'); return image.complete && image.naturalWidth === 0 && image.hidden && !fallback.hidden; }, selector);
+      const fallback = await page.locator(selector).evaluate(image => {
+        const node = image.parentElement.querySelector('[data-home-title-fallback]'), style = getComputedStyle(node), ranges = [...node.children].flatMap(child => { const range = document.createRange(); range.selectNodeContents(child); return [...range.getClientRects()].map(rect => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height })); });
+        return { text: node.textContent.replace(/\s+/gu, ' ').trim(), visible: style.display !== 'none', overflowX: style.overflowX, overflowY: style.overflowY, viewport: innerWidth, ranges };
+      });
+      assert.equal(fallback.visible, true); assert.match(fallback.text, role === 'ggj' ? /GLOBAL GAME JAM.*中国组织者交流会/u : /ARTDiCO HOST.*嘉年华/u);
+      assert.ok(fallback.ranges.length >= 2 && fallback.ranges.every(rect => rect.width > 0 && rect.height > 0 && rect.left >= -1 && rect.right <= fallback.viewport + 1), 'actual failed-image fallback remains readable without horizontal clipping');
+      assert.equal(['auto', 'scroll'].includes(fallback.overflowX) || ['auto', 'scroll'].includes(fallback.overflowY), false);
+      await page.screenshot({ path: resolve(evidence, 'hero-original-fallback-' + role + '-' + width + '.png') });
+      await page.locator(selector).evaluate((image, src) => { image.src = src; }, originalSrc);
+      await page.waitForFunction(selector => { const image = document.querySelector(selector), fallback = image.parentElement.querySelector('[data-home-title-fallback]'); return image.complete && image.naturalWidth > 0 && !image.hidden && fallback.hidden; }, selector);
+      reports.push({ role, cloneReplacement: role === 'host', readableFallback: true, actualArtworkRestored: true });
+    }
+    return reports;
   }
   async function typedMaskAfter(page, since) {
     const observation = await page.waitForFunction(since => {
       const canvas = document.querySelector('[data-hero-particles]').getBoundingClientRect(), frame = window.__homeMotionQaParticleFrames().find(frame => frame.at > since && frame.completedAt !== null && frame.maskRects.length);
       if (!frame) return false;
-      const nodes = [...document.querySelectorAll('#hero-heading [data-poster-word],#hero-heading [data-home-title-subtitle]')];
-      if (nodes.length !== 4) return false;
+      const nodes = [...document.querySelectorAll('#hero-heading .ah-home-title-art')];
+      if (nodes.length !== 2) return false;
       const targets = nodes.map((node, index) => {
-        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT); let text, ranges = 0, visibleRanges = 0, fullyVisibleRanges = 0, maskedRanges = 0;
-        while ((text = walker.nextNode())) if (text.textContent.trim()) {
-          const range = document.createRange(); range.selectNodeContents(text);
-          for (const rect of range.getClientRects()) {
-            ranges++;
-            const visible = { left: Math.max(rect.left, canvas.left), right: Math.min(rect.right, canvas.right), top: Math.max(rect.top, canvas.top), bottom: Math.min(rect.bottom, canvas.bottom) };
-            if (visible.right <= visible.left || visible.bottom <= visible.top) continue;
-            visibleRanges++;
-            if (rect.left >= canvas.left + 1 && rect.right <= canvas.right - 1 && rect.top >= canvas.top + 1 && rect.bottom <= canvas.bottom - 1) fullyVisibleRanges++;
-            if (frame.maskRects.some(mask => mask.x <= visible.left - canvas.left - 1 && mask.y <= visible.top - canvas.top - 1 && mask.x + mask.width >= visible.right - canvas.left + 1 && mask.y + mask.height >= visible.bottom - canvas.top + 1)) maskedRanges++;
-          }
-        }
-        return { index, role: node.hasAttribute('data-poster-primary') ? 'primary' : 'subtitle', group: node.closest('[data-home-title-type]')?.getAttribute('data-home-title-type') ?? (node.closest('.ah-home-title-ggj') ? 'ggj' : 'host'), ranges, visibleRanges, fullyVisibleRanges, maskedRanges };
+        const rect = node.getBoundingClientRect();
+        const visible = { left: Math.max(rect.left, canvas.left), right: Math.min(rect.right, canvas.right), top: Math.max(rect.top, canvas.top), bottom: Math.min(rect.bottom, canvas.bottom) };
+        const visibleRanges = Number(visible.right > visible.left && visible.bottom > visible.top);
+        const fullyVisibleRanges = Number(visibleRanges && rect.left >= canvas.left - .1 && rect.right <= canvas.right + .1 && rect.top >= canvas.top && rect.bottom <= canvas.bottom);
+        const maskedRanges = Number(visibleRanges && frame.maskRects.some(mask => mask.x <= visible.left - canvas.left - 1 && mask.y <= visible.top - canvas.top - 1 && mask.x + mask.width >= visible.right - canvas.left + 1 && mask.y + mask.height >= visible.bottom - canvas.top + 1));
+        return { index, role: 'original-artwork', group: index === 0 ? 'ggj' : 'host', ranges: Number(rect.width > 0 && rect.height > 0), visibleRanges, fullyVisibleRanges, maskedRanges };
       });
-      if (targets.map(target => target.group + ':' + target.role).join(',') !== 'ggj:primary,ggj:subtitle,host:primary,host:subtitle') return false;
       if (!targets.every(target => target.ranges > 0 && target.visibleRanges === target.maskedRanges) || !targets.some(target => target.visibleRanges > 0)) return false;
       // Return the evidence from this same task: no second geometry read can
       // substitute a different paint or scroll position for the checked one.
@@ -382,9 +397,8 @@ async function main() {
     const include = mask => { for (const target of mask.targets) if (target.ranges > 0 && target.fullyVisibleRanges === target.ranges && target.maskedRanges === target.ranges) covered.set(target.index, target); };
     include(initial);
     const geometry = index => page.evaluate(index => {
-      const canvas = document.querySelector('[data-hero-particles]').getBoundingClientRect(), nodes = [...document.querySelectorAll('#hero-heading [data-poster-word],#hero-heading [data-home-title-subtitle]')], node = nodes[index], rects = [];
-      if (node) { const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT); let text; while ((text = walker.nextNode())) if (text.textContent.trim()) { const range = document.createRange(); range.selectNodeContents(text); rects.push(...range.getClientRects()); } }
-      return { scrollY, canvasTop: canvas.top, canvasBottom: canvas.bottom, top: rects.length ? Math.min(...rects.map(rect => rect.top)) : null, bottom: rects.length ? Math.max(...rects.map(rect => rect.bottom)) : null, fullyVisible: rects.length > 0 && rects.every(rect => rect.left >= canvas.left + 1 && rect.right <= canvas.right - 1 && rect.top >= canvas.top + 1 && rect.bottom <= canvas.bottom - 1) };
+      const canvas = document.querySelector('[data-hero-particles]').getBoundingClientRect(), node = document.querySelectorAll('#hero-heading .ah-home-title-art')[index], rects = node ? [node.getBoundingClientRect()] : [];
+      return { scrollY, canvasTop: canvas.top, canvasBottom: canvas.bottom, top: rects.length ? Math.min(...rects.map(rect => rect.top)) : null, bottom: rects.length ? Math.max(...rects.map(rect => rect.bottom)) : null, fullyVisible: rects.length > 0 && rects.every(rect => rect.left >= canvas.left - .1 && rect.right <= canvas.right + .1 && rect.top >= canvas.top && rect.bottom <= canvas.bottom) };
     }, index);
     const settleWheel = async (index, expectedY = null) => {
       const deadline = Date.now() + 4000; let lastY = null, stableAt = Date.now(), final;
@@ -407,7 +421,7 @@ async function main() {
       include(mask); assert.equal(covered.has(index), true, 'each initially clipped title target receives its own fully visible Range-mask observation');
       steps.push({ index, nativeWheelDelta: delta, scrollY: landed.scrollY, mask, readableAlphaPixels: pixels.readableAlphaPixels, sphereAlphaPixels: pixels.sphereAlphaPixels });
     }
-    assert.equal(covered.size, 4, 'both real titles and both subtitles are fully visible and masked across the native-wheel sweep');
+    assert.equal(covered.size, 2, 'both original title artworks, including their Chinese subtitles, are fully visible and masked across the native-wheel sweep');
     let restoredMask = initial;
     if (steps.length) {
       await page.mouse.wheel(0, startY - await page.evaluate(() => scrollY)); await settleWheel(0, startY);
@@ -435,9 +449,10 @@ async function main() {
     const loaded = await load('late-loaded'); assert.equal(loaded.status, 'loaded'); assert.equal(loaded.rejected, false); assert.equal(loaded.sizeAdjust, original.sizeAdjust, 'late native retry uses the actual shipped face metrics');
     await page.waitForFunction(start => window.__homeMotionQaFontEvents().some(event => event.at >= start && event.type === 'loadingdone'), loaded.startedAt);
     const doneEvent = await page.evaluate(start => window.__homeMotionQaFontEvents().find(event => event.at >= start && event.type === 'loadingdone'), loaded.startedAt), loadedMask = await typedMaskAfter(page, doneEvent.at), after = await posterTitle(page);
-    const changed = after.words.some((word, index) => word.ranges.length !== before.words[index].ranges.length || word.ranges.some((rect, part) => Math.abs(rect.width - (before.words[index].ranges[part]?.width ?? 0)) > 1 || Math.abs(rect.height - (before.words[index].ranges[part]?.height ?? 0)) > 1));
+    const changed = after.footer.some((line, index) => line.ranges.length !== before.footer[index].ranges.length || line.ranges.some((rect, part) => Math.abs(rect.width - (before.footer[index].ranges[part]?.width ?? 0)) > 1 || Math.abs(rect.height - (before.footer[index].ranges[part]?.height ?? 0)) > 1));
     numericMetrics = { lateTitleFonts: { failed, loaded, before, after, errorMask, loadedMask, changed } };
-    assert.equal(changed, true, 'the native shipped font actually replaces fallback glyph metrics');
+    assert.equal(changed, true, 'the native shipped font actually replaces fallback footer glyph metrics');
+    for (const [index, artwork] of after.images.entries()) assert.deepEqual(artwork.box, before.images[index].box, 'late display fonts cannot change the original Hero artwork geometry');
     const pixels = await particlePixels(page); assert.ok(pixels.brightPixels >= 15 && pixels.visibleComponents >= 6 && pixels.occupiedRegions >= 3, 'the loaded title retains the original visible star-field threshold'); assert.equal(pixels.readableAlphaPixels, 0, 'actual new glyph Ranges remain free of star alpha after late font reflow'); assert.equal(pixels.sphereAlphaPixels, 0);
     await page.screenshot({ path: resolve(evidence, 'hero-active-' + width + '.png') }); await page.screenshot({ path: resolve(evidence, 'hero-late-font-loaded-' + width + '.png') });
     const loadedMaskSweep = await posterMaskSweep(page, loadedMask);
@@ -611,6 +626,7 @@ async function main() {
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.scrollMotion === 'ready');
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.motionState === 'reduced');
         await essentialContent(page); const typedHero = await posterTitle(page, { fontFailure: width === 1920 }); await noDecorativeMotion(page); await header(page);
+        await originalArtworkFallback(page);
         stage = 'enable-motion'; await page.emulateMedia({ reducedMotion: 'no-preference' });
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.motionState === 'active'); await settled(page);
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.atmosphereState === 'active');
@@ -754,9 +770,9 @@ async function main() {
   } finally {
     await browser.close(); browser = null;
     assert.equal(sha(await readFile(resolve(dist, 'index.html'))), sha(html), 'the compiled build stays frozen throughout the checks');
-    const report = { ok: !failure, cases: reports.length, expectedCases, syntheticOnly: true, sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), publicHtmlSha256: sha(html), scriptSha256, businessPostRequests: 0, mailRequests: 0, realNetworkRequests: 0, reports, pageErrors, requests, servedAssets: Object.fromEntries([...servedAssets].sort()), ...(failure ? { failure } : {}) };
+    const report = { ok: !failure, cases: reports.length, expectedCases, syntheticOnly: true, originalArtwork, sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), publicHtmlSha256: sha(html), scriptSha256, businessPostRequests: 0, mailRequests: 0, realNetworkRequests: 0, reports, pageErrors, requests, servedAssets: Object.fromEntries([...servedAssets].sort()), ...(failure ? { failure } : {}) };
     await writeFile(resolve(evidence, 'report.json'), JSON.stringify(report, null, 2) + '\n');
-    const summary = { ok: report.ok, cases: report.cases, expectedCases, widths: [320, 390, 1440, 1920], syntheticOnly: true, sourceCommit: report.sourceCommit, publicHtmlSha256: report.publicHtmlSha256, scriptSha256, pageErrorCount: pageErrors.length, businessPostRequests: 0, mailRequests: 0, ...(failure ? { failure: { code: 'HOME_SCROLL_ASSERTION_FAILED', stage, width, location: /home-scroll-motion-smoke\.mjs:\d+:\d+/u.exec(failure.stack)?.[0] ?? null }, numericMetrics } : {}) };
+    const summary = { ok: report.ok, cases: report.cases, expectedCases, widths: [320, 390, 1440, 1920], syntheticOnly: true, originalArtwork, sourceCommit: report.sourceCommit, publicHtmlSha256: report.publicHtmlSha256, scriptSha256, pageErrorCount: pageErrors.length, businessPostRequests: 0, mailRequests: 0, ...(failure ? { failure: { code: 'HOME_SCROLL_ASSERTION_FAILED', stage, width, location: /home-scroll-motion-smoke\.mjs:\d+:\d+/u.exec(failure.stack)?.[0] ?? null }, numericMetrics } : {}) };
     process.stdout.write((report.ok ? 'Public scroll motion browser verified: ' : 'Public scroll motion browser failed: ') + JSON.stringify(summary) + '\n');
     if (failure) process.exitCode = 1;
   }

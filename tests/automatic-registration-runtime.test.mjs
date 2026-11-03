@@ -37,7 +37,7 @@ test('new automatic public intake sends one formal confirmation; replay, reads a
   assert.equal(f.messages.length, 1);
   assert.match(f.messages[0].template_params.invitation_text, /你的参会名额已确认/u);
   assert.doesNotMatch(f.messages[0].template_params.invitation_text, /待主办方人工审核|申请已收到，待审核/u);
-  assert.match(f.messages[0].template_params.invitation_text, /\/registration\/confirmation\/#r=/u);
+  assert.match(f.messages[0].template_params.invitation_text, /https:\/\/artdico\.host\/r\/#[A-Za-z0-9_-]{22}/u);
   const view = await page(f, f.app, receipt);
   assert.equal(view.admission.status, 'confirmed');
   const stored = (await f.app.registrationService.repository.list()).registrations[0];

@@ -8,6 +8,7 @@ import { CANDIDATE_ARCHIVE, CANDIDATE_KIND, CANDIDATE_NODE, candidateBytes, cand
 import { assertFcCodeRequestFits, MAX_FC_ZIP_BYTES } from './fc-upload-limits.mjs';
 
 export const CLOUD_ADMIN_ORIGIN = 'https://api.artdico.host';
+export const VERIFIED_ADMIN_PAGES = Object.freeze([...CLOUD_ADMIN_PAGE_ALIASES, ['/admin/checkin/', '/admin/checkin/']]);
 const HTML_LIMIT = 2 * 1024 * 1024;
 const failed = () => new Error('Cloud admin page verification failed.');
 const decode = bytes => JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
@@ -48,7 +49,7 @@ async function expectedPages(directory, commit) {
   if (JSON.stringify(release.files) !== JSON.stringify(manifest.files.filter(file => file.path !== 'release.json'))) throw failed();
   validateCandidateAssets(release, contents);
   const pages = new Map();
-  for (const source of new Set(CLOUD_ADMIN_PAGE_ALIASES.map(([, source]) => source))) {
+  for (const source of new Set(VERIFIED_ADMIN_PAGES.map(([, source]) => source))) {
     const item = release.assets.find(asset => asset.url === source), bytes = item && contents.get(item.path);
     if (!item || !bytes || bytes.length < 1 || bytes.length > HTML_LIMIT || candidateSha256(bytes) !== item.sha256) throw failed();
     pages.set(source, { bytes: item.bytes, sha256: item.sha256, csp: csp(bytes) });
@@ -113,11 +114,11 @@ export async function verifyCloudAdminPages({ directory, commit = process.env.GI
       return value;
     };
     const pages = await bounded(expectedPages(resolve(directory), commit));
-    for (const [path, source] of CLOUD_ADMIN_PAGE_ALIASES) {
+    for (const [path, source] of VERIFIED_ADMIN_PAGES) {
       await bounded(verifyPage(path, pages.get(source), { fetchFn, signal: controller.signal, timeoutMs }));
       report('Verified HTTPS admin page ' + path);
     }
-    return { verified: true, origin: CLOUD_ADMIN_ORIGIN, commit, pages: CLOUD_ADMIN_PAGE_ALIASES.length };
+    return { verified: true, origin: CLOUD_ADMIN_ORIGIN, commit, pages: VERIFIED_ADMIN_PAGES.length };
   } catch { throw failed(); }
   finally { clearTimeout(timer); controller.abort(); }
 }

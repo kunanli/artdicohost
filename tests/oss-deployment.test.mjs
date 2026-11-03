@@ -19,7 +19,7 @@ async function fixture(t) {
   });
   const dist = resolve(directory, 'dist');
   const output = resolve(directory, 'publication');
-  for (const part of ['_astro', 'invitation', 'invitations', 'registration/confirmation', 'admin/contacts', 'admin/settings', 'admin/person', 'admin/volunteers']) await mkdir(resolve(dist, part), { recursive: true });
+  for (const part of ['_astro', 'invitation', 'invitations', 'registration/confirmation', 'admin/contacts', 'admin/settings', 'admin/person', 'admin/volunteers', 'r', 'wallet']) await mkdir(resolve(dist, part), { recursive: true });
   await writeFile(resolve(dist, 'index.html'), '<script type="module" src="/_astro/public.hash.js"></script><a href="/admin/">后台</a>');
   await writeFile(resolve(dist, '_astro/public.hash.js'), 'import "./shared.hash.js";');
   await writeFile(resolve(dist, '_astro/shared.hash.js'), 'console.log("public-only");');
@@ -37,6 +37,8 @@ async function fixture(t) {
   await writeFile(resolve(dist, '_astro/receipt.hash.js'), '/* Synthetic empty receipt controller; no participant data. */');
   await writeFile(resolve(dist, 'invitations/template-blank.png'), 'synthetic-test-image');
   await writeFile(resolve(dist, 'invitations/ggj2026-poster-v2.webp'), 'synthetic-test-image');
+  await writeFile(resolve(dist, 'r/index.html'), '<h1>私人链接</h1>');
+  for (const locale of ['cn','en']) for (const ext of ['png','svg']) await writeFile(resolve(dist, 'wallet/add-to-apple-wallet-'+locale+'.'+ext), 'SYNTHETIC-OFFICIAL-BADGE');
   await writeFile(resolve(dist, 'contacts.json'), 'synthetic-private-contact');
   return { directory, dist, output };
 }
@@ -44,7 +46,7 @@ async function fixture(t) {
 test('publication selects reachable public assets and replaces local admin with notices', async t => {
   const { dist, output } = await fixture(t);
   const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
-  assert.equal(manifest.files.length, 30);
+  assert.equal(manifest.files.length, 36);
   const receipt = JSON.parse(await readFile(resolve(output, 'release.json'), 'utf8'));
   assert.equal(receipt.commit, commit);
   assert.deepEqual(receipt.files, manifest.files.filter(item => item.path !== 'release.json'));

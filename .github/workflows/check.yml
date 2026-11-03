@@ -192,6 +192,31 @@ jobs:
           path: .local-data/browser-evidence/confirmation-mail-recovery/
           if-no-files-found: warn
           retention-days: 1
+      - name: Check mobile entry admission and newest people deletion
+        id: entry_journey_browser
+        timeout-minutes: 4
+        env:
+          ARTDICO_PLAYWRIGHT_MODULE: playwright-core
+          ARTDICO_DIST_DIRECTORY: dist
+        run: |
+          artdico_browser_path="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium)"
+          export ARTDICO_CHROMIUM_BINARY="$artdico_browser_path"
+          node tests/browser/entry-checkin-smoke.mjs
+          node tests/browser/people-entry-order-delete-smoke.mjs
+          node tests/browser/confirmation-email-preview-smoke.mjs
+          node tests/browser/entry-link-smoke.mjs
+      - name: Retain entry journey browser evidence for one day
+        if: ${{ !cancelled() && (steps.entry_journey_browser.outcome == 'success' || steps.entry_journey_browser.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: entry-journey-evidence
+          path: |
+            .local-data/browser-evidence/entry-checkin/
+            .local-data/browser-evidence/people-entry-order-delete/
+            .local-data/browser-evidence/confirmation-email-preview/
+            .local-data/browser-evidence/entry-link/
+          if-no-files-found: warn
+          retention-days: 1
       # Observational for future incident fixes. This repair's release acceptance
       # requires a successful actual capture and this real-asset browser report.
       - name: Check guest bubbles and actual uploaded logo bounds

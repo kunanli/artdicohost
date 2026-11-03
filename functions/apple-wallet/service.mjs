@@ -25,11 +25,12 @@ function validRecord(value) {
 
 /** No credentials or personal data are returned by readiness. All callback dependencies are server supplied. */
 export function createAppleWalletService({ env = {}, loadSigningBundle, authorize, authorizedRegistration, tokenSecret, clock = () => Date.now(),
-  trustedRootFingerprints = APPLE_ROOT_FINGERPRINTS, eventFactsReadiness } = {}) {
+  trustedRootFingerprints = APPLE_ROOT_FINGERPRINTS, eventFactsReadiness, admissionUrlProvider } = {}) {
   if (typeof authorize !== 'function' || typeof authorizedRegistration !== 'function' || typeof clock !== 'function'
     || typeof tokenSecret !== 'string' || Buffer.byteLength(tokenSecret) < 32 || Buffer.byteLength(tokenSecret) > 4096
     || loadSigningBundle !== undefined && typeof loadSigningBundle !== 'function'
-    || eventFactsReadiness !== undefined && typeof eventFactsReadiness !== 'function') throw new TypeError('Trusted Wallet receipt and signing dependencies required.');
+    || eventFactsReadiness !== undefined && typeof eventFactsReadiness !== 'function'
+    || admissionUrlProvider !== undefined && typeof admissionUrlProvider !== 'function') throw new TypeError('Trusted Wallet receipt and signing dependencies required.');
   const enabled = own(env, 'APPLE_WALLET_ENABLED') === 'true', bundleId = own(env, 'APPLE_WALLET_BUNDLE_ID');
   const direct = Object.fromEntries([...WALLET_CONFIG_FIELDS, 'APPLE_WALLET_KEY_PASSPHRASE'].map(name => [name, own(env, name)]));
   const tokenKey = Buffer.from(hkdfSync('sha256', Buffer.from(tokenSecret), Buffer.alloc(0), Buffer.from('artdico/apple-wallet-verification-v1'), 32));
@@ -103,7 +104,13 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
         if (!checkedFacts.ready) return fixed('event_unverified');
         if (!enabled) return fixed('not_ready');
         const config = await signing(); if (config.missing.length) return fixed('not_ready');
-        const now = current(), token = verificationToken(attendee, now), verificationUrl = API + '/api/admin/registration/wallet/verify/' + token;
+        const now = current();
+        let verificationUrl;
+        if (admissionUrlProvider) {
+          const issued = await admissionUrlProvider({ registrationId: attendee.registrationId, accessRevision: accessRevision(attendee) });
+          if (typeof issued?.admissionUrl !== 'string' || !/^https:\/\/api\.artdico\.host\/admin\/checkin\/#ticket=[A-Za-z0-9_-]{22}$/u.test(issued.admissionUrl)) return fixed('unavailable');
+          verificationUrl = issued.admissionUrl;
+        } else verificationUrl = API + '/api/admin/registration/wallet/verify/' + verificationToken(attendee, now);
         const data = buildAppleWalletPass({ ...config, attendee, verificationUrl, now });
         const latest = await authorizedRegistration(attendee.registrationId);
         if (!validRecord(latest) || latest.registrationId !== attendee.registrationId || latest.event.id !== attendee.event.id

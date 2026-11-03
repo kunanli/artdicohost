@@ -10,7 +10,7 @@ const exact = (value, names) => plainData(value) && Object.keys(value).length ==
 const profileFields = [...Object.keys(PROFILE_FIELDS), ...Object.keys(CONTACT_SOURCE_CHOICES), 'categories', 'interests'];
 
 export function validateSnapshotContact(contact) {
-  const optional = Object.hasOwn(contact ?? {}, 'sourceProfile') ? ['sourceProfile', 'sourceProfileDigest'] : [];
+  const optional = [...(Object.hasOwn(contact ?? {}, 'sourceProfile') ? ['sourceProfile', 'sourceProfileDigest'] : []), ...(Object.hasOwn(contact ?? {}, 'archivedAt') ? ['archivedAt'] : [])];
   const operationFields = Object.keys(createEmptyContactOperations());
   if (!exact(contact, ['id', 'source', 'profile', 'operations', 'invitation', 'createdAt', 'updatedAt', ...optional])
     || !exact(contact.source, ['key', 'rowId', 'digest', 'importedAt']) || !exact(contact.profile, profileFields)
@@ -49,7 +49,7 @@ export function readContactSnapshot(snapshot) {
     if (byId.has(contact.id) || identities.has(identity)) throw failure('INVALID_INPUT', 400);
     byId.set(contact.id, contact); identities.add(identity);
   }
-  const created = new Set(), last = new Map(), generated = new Map(), sent = new Map();
+  const created = new Set(), last = new Map(), generated = new Map(), sent = new Map(), deleted = new Map();
   const importedAt = new Map(); let previous = '', importedCount = 0;
   for (const [index, entry] of value.audit.entries()) {
     const names = ['action', 'actorId', 'revision', 'at'];
@@ -60,7 +60,7 @@ export function readContactSnapshot(snapshot) {
       : entry?.action === 'create_contact' ? ['contactId', 'consentSource', 'contactConsent', ...optionalSource]
         : entry?.action === 'record_invitation_generated' ? ['contactId', ...optionalSettings]
           : entry?.action === 'record_invitation_manually_sent' ? ['contactId', 'channel']
-            : ['save_contact_profile', 'save_contact_operations'].includes(entry?.action) ? ['contactId'] : null;
+            : ['save_contact_profile', 'save_contact_operations', 'archive_contact', 'restore_contact'].includes(entry?.action) ? ['contactId'] : null;
     if (!extras || !exact(entry, [...names, ...extras]) || !identifier(entry.actorId) || entry.revision !== index + 1
       || !iso(entry.at) || entry.at < previous) throw failure('INVALID_INPUT', 400);
     previous = entry.at;
@@ -87,6 +87,8 @@ export function readContactSnapshot(snapshot) {
         || optionalSource.length && entry.sourceDigest !== contact.source.digest) throw failure('INVALID_INPUT', 400);
       created.add(contact.id);
     } else if (!created.has(contact.id)) throw failure('INVALID_INPUT', 400);
+    if (entry.action === 'archive_contact') { if(deleted.has(contact.id)) throw failure('INVALID_INPUT', 400); deleted.set(contact.id,entry.at); }
+    if (entry.action === 'restore_contact') { if(!deleted.has(contact.id)) throw failure('INVALID_INPUT',400); deleted.delete(contact.id); }
     if (entry.action === 'record_invitation_generated') {
       if (contact.profile.contactConsent !== 'consented' || optionalSettings.length && !HASH.test(entry.settingsDigest)) throw failure('INVALID_INPUT', 400);
       generated.set(contact.id, { at: entry.at, digest: entry.settingsDigest });
@@ -100,6 +102,7 @@ export function readContactSnapshot(snapshot) {
   if (created.size !== contacts.length || importedCount !== contacts.filter(contact => contact.source.key !== 'manual').length) throw failure('INVALID_INPUT', 400);
   for (const [at, count] of importedAt) if (contacts.filter(contact => contact.source.key !== 'manual' && contact.createdAt === at).length !== count) throw failure('INVALID_INPUT', 400);
   for (const contact of contacts) {
+    if ((contact.archivedAt ?? null) !== (deleted.get(contact.id) ?? null)) throw failure('INVALID_INPUT', 400);
     const invitation = contact.invitation, generation = generated.get(contact.id), delivery = sent.get(contact.id);
     if (last.get(contact.id) !== contact.updatedAt || invitation.generatedAt !== (generation?.at ?? null)
       || generation?.digest && generation.digest !== contactHash(JSON.stringify(invitation.settings))

@@ -6,6 +6,7 @@ import { createConfirmationTokens } from './tokens.mjs';
 import { createConfirmationRepository, canonicalConfirmationKind, formalConfirmationKind, confirmationNoticeId, confirmationRequestHash, validConfirmationOperation, MAX_CONFIRMATION_BATCH } from './repository.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 import { buildPosterInvitationSettings } from '../../shared/organizer-progress.mjs';
+import { confirmationEmailPresentation } from './presentation.mjs';
 import { CONFIRMATION_EMAIL_CONFIGURATION_FIELDS, CONFIRMATION_EMAIL_REASONS, confirmationDiagnostic } from '../../shared/confirmation-delivery.mjs';
 
 const SITE = 'https://artdico.host';
@@ -39,10 +40,11 @@ const noticeEmail = notice => ({ status: stateOf(notice), noticeType: notice.kin
 
 /** Durable receipts, independent email issuance and read-only attendee confirmation. */
 export function createRegistrationConfirmationService({ registrationService, journalFor, tokenSecret, event = eventConfig,
-  emailProvider, currentRegistration, currentProfiles, staffDeliveryPermission, personDeliveryPermission, deliveryAliases, noticePreviewSource, eventFactsReadiness, walletReadiness = () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }), groupInviteProvider,
+  emailProvider, currentRegistration, currentProfiles, staffDeliveryPermission, personDeliveryPermission, deliveryAliases, noticePreviewSource, eventFactsReadiness, walletReadiness = () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }), groupInviteProvider, emailTicketProvider,
   clock = Date.now, expiresAt, batchTimeoutMs = 20_000, monotonicNow = () => performance.now() } = {}) {
   if (currentProfiles !== undefined && typeof currentProfiles !== 'function' || currentRegistration !== undefined && typeof currentRegistration !== 'function' || typeof registrationService?.repository?.readIndex !== 'function' || typeof registrationService.repository.readRecord !== 'function'
     || typeof registrationService.getAdmissionStatus !== 'function' || typeof journalFor !== 'function' || typeof clock !== 'function'
+    || emailTicketProvider !== undefined && typeof emailTicketProvider !== 'function'
     || typeof walletReadiness !== 'function' || groupInviteProvider !== undefined && typeof groupInviteProvider !== 'function'
     || staffDeliveryPermission !== undefined && typeof staffDeliveryPermission !== 'function'
     || personDeliveryPermission !== undefined && typeof personDeliveryPermission !== 'function'
@@ -270,21 +272,44 @@ export function createRegistrationConfirmationService({ registrationService, jou
       try { await recordResult(notice, 'rejected', actorId, { code: monotonicNow() >= deadline ? 'DELIVERY_WINDOW_EXPIRED' : guardCode, transportStarted: false }); return { status: guardUnattempted || monotonicNow() >= deadline ? 'not_attempted' : 'rejected' }; }
       catch { return { status: 'unknown' }; }
     }
-    const link = capability(registrationId, loaded.record.accessRevision ?? 0);
-    const subject = eventFacts.title + (kind === 'application_received' ? '｜申请已收到，待审核' : kind === 'pre_event_reminder' ? '｜行前提醒' : '｜参会名额已确认');
-    const text = kind === 'application_received' ? [record.fields.name + '，你好：', '', '你的申请已收到，待主办方人工审核。',
+    async function beforeDeadline(work, maxMs) {
+      const remaining=Math.max(0,Math.floor(deadline-monotonicNow())), duration=maxMs===undefined?remaining:Math.min(maxMs,remaining);
+      if(duration<1)throw new Error('Confirmation preparation deadline.');
+      let timer;try{return await Promise.race([Promise.resolve().then(work),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Confirmation preparation deadline.')),duration);timer.unref?.();})]);}finally{clearTimeout(timer);}
+    }
+    let link = capability(registrationId, loaded.record.accessRevision ?? 0), ticket;
+    if (emailTicketProvider && kind !== 'application_received') {
+      try { ticket=await beforeDeadline(()=>emailTicketProvider({ registrationId, accessRevision:record.accessRevision ?? 0 }));
+        if(!plainObject(ticket)||typeof ticket.confirmationUrl!=='string')throw new Error('Ticket unavailable.');
+        link={...link,confirmationUrl:ticket.confirmationUrl};
+      } catch { try{return await recordResult(notice,'rejected',actorId,{code:'DELIVERY_GUARD_UNAVAILABLE',transportStarted:false});}catch{return{status:'unknown'};} }
+    }
+    const locale=record.fields.locale==='en'?'en':'zh-CN';
+    let subject = eventFacts.title + (kind === 'application_received' ? '｜申请已收到，待审核' : kind === 'pre_event_reminder' ? '｜行前提醒' : '｜参会名额已确认');
+    let text = kind === 'application_received' ? [record.fields.name + '，你好：', '', '你的申请已收到，待主办方人工审核。',
       '目前尚未确认参会名额；这封邮件不是正式邀请。', '登记编号：' + registrationId,
       '保存私人查询链接，核对后续审核结果：', link.confirmationUrl,
       '请保管此私人链接，无需重复申请。需要协助请联系 '+PUBLIC_CONTACT_EMAIL+'。'].join('\n')
       : kind === 'pre_event_reminder' ? reminderMessage(link.confirmationUrl, record.fields.name, registrationId).text
       : confirmationMessage(link.confirmationUrl, record.fields.name, registrationId).text;
-    let result;
+    if(locale==='en'){
+      subject=eventFacts.title+(kind==='application_received'?' | Application received':kind==='pre_event_reminder'?' | Event reminder':' | Attendance confirmed');
+      text=[record.fields.name+',', '',kind==='application_received'?'We have received your application. Your attendance has not yet been confirmed.':kind==='pre_event_reminder'?'We look forward to seeing you. Please check your current attendance details before travelling.':'Your attendance is confirmed.',
+        'Reference: '+registrationId,'Date: '+eventFacts.date,'Time: '+eventFacts.time+' (UTC+8)','Check-in: '+eventFacts.checkIn,'Venue: '+eventFacts.venue,
+        'Your private attendance page:',link.confirmationUrl,
+        ...(kind==='application_received'?[]:['On iPhone, open this page in Safari to add your pass to Apple Wallet.','Show the admission QR code below to staff on arrival.']),
+        'Keep this link and your QR code private. For help, contact '+PUBLIC_CONTACT_EMAIL+'.'].join('\n');
+    }
+    let result,presentation,walletReady=false;
+    if(kind!=='application_received')try{walletReady=(await beforeDeadline(()=>walletState(),250)).ready;}catch{/* Optional badge readiness cannot hold up confirmation delivery. */}
+    try { presentation=confirmationEmailPresentation({locale,kind,subject,confirmationUrl:link.confirmationUrl,ticket,walletReady}); }
+    catch { try{return await recordResult(notice,'rejected',actorId,{code:'DELIVERY_GUARD_UNAVAILABLE',transportStarted:false});}catch{return{status:'unknown'};} }
     try {
       result = await emailProvider.send({ recipient: record.fields.email, subject, text, canStart,
         ...(recovery ? { expectedConfigurationIdentity: recovery.configurationIdentity } : {}),
         idempotencyKey: 'c_' + confirmationRequestHash({ id: notice.id, attempt: notice.attempt }),
         templateVariables: { to_name: record.fields.name, to_email: record.fields.email, event_title: eventFacts.title,
-          event_date: eventFacts.date, event_time: eventFacts.time, event_venue: eventFacts.venue, reference_code: registrationId, invitation_text: text } });
+          event_date: eventFacts.date, event_time: eventFacts.time, event_venue: eventFacts.venue, reference_code: registrationId, invitation_text: text, ...presentation } });
     } catch { result = { status: 'unknown' }; }
     const status = ['provider_accepted', 'rejected'].includes(result?.status) ? result.status : 'unknown';
     try { const safeDiagnostic = confirmationDiagnostic(result?.diagnostic);

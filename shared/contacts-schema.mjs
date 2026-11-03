@@ -253,6 +253,7 @@ export function validateStoredContact(input) {
     if (fields.some(key => !EDITABLE_CONTACT_FIELDS.includes(key) && !EDITABLE_CONTACT_ARRAY_FIELDS.includes(key)
       && JSON.stringify(original.value[key]) !== JSON.stringify(profileResult.value[key]))) return false;
   } else if (Object.hasOwn(source, 'sourceProfileDigest')) return false;
+  if (Object.hasOwn(source, 'archivedAt') && (typeof source.archivedAt !== 'string' || !Number.isFinite(Date.parse(source.archivedAt)) || new Date(source.archivedAt).toISOString() !== source.archivedAt || source.archivedAt < source.createdAt || source.archivedAt > source.updatedAt)) return false;
   for (const date of [source.source?.importedAt, source.createdAt, source.updatedAt]) if (typeof date !== 'string' || !Number.isFinite(Date.parse(date))) return false;
   const operations = object(source.operations);
   if (!validateContactOperations(operations).valid) return false;

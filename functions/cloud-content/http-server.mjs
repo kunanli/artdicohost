@@ -16,12 +16,12 @@ export const CLOUD_ADMIN_PAGE_ALIASES = Object.freeze([
 ]);
 const PAGE_ALIASES = new Map(CLOUD_ADMIN_PAGE_ALIASES);
 const PAGE_REDIRECTS = new Map([
-  '/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/',
+  '/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/',
   ...PAGE_ALIASES.keys(),
 ].map(path => [path.slice(0, -1), path]));
 
 export function isCloudAdminAssetUrl(path) {
-  return ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/invitations/template-blank.png', '/invitations/ggj2026-poster-v2.webp'].includes(path)
+  return ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/', '/invitations/template-blank.png', '/invitations/ggj2026-poster-v2.webp'].includes(path)
     || typeof path === 'string' && /^\/_astro\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,200}\.(?:css|js|mjs|woff|woff2)$/u.test(path) && !path.includes('..');
 }
 
@@ -29,7 +29,7 @@ function staticAssets(input) {
   if (!(input instanceof Map) || input.size > 40) throw new TypeError('后台静态资源清单无效。');
   const result = new Map(); let total = 0;
   for (const [path, bytes] of input) {
-    const html = ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/'].includes(path);
+    const html = ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/'].includes(path);
     const invitation = path === '/invitations/template-blank.png' ? 'image/png' : path === '/invitations/ggj2026-poster-v2.webp' ? 'image/webp' : null;
     const suffix = typeof path === 'string' ? /\.[a-z0-9]+$/u.exec(path)?.[0] : null;
     if (!isCloudAdminAssetUrl(path)) throw new TypeError('后台静态资源路径无效。');

@@ -1,7 +1,7 @@
 import { identityOptions } from './registration-schema.mjs';
 
 export const GENERAL_APPLICATION_INTAKE = 'general-v2';
-export const GENERAL_APPLICATION_FIELDS = Object.freeze(['intake','name','email','categories','participationInterests','organization','city','wechat','speaker']);
+export const GENERAL_APPLICATION_FIELDS = Object.freeze(['intake','locale','name','email','categories','participationInterests','organization','city','wechat','speaker']);
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && [Object.prototype,null].includes(Object.getPrototypeOf(value));
 const own = (value,key) => Object.getOwnPropertyDescriptor(value ?? {},key)?.value;
 const safeObject = value => plain(value) && Reflect.ownKeys(value).every(key=>typeof key==='string'&&Object.getOwnPropertyDescriptor(value,key)?.enumerable&&'value' in Object.getOwnPropertyDescriptor(value,key));
@@ -17,6 +17,7 @@ export function validateGeneralApplicationFields(input){
   const errors={};if(!safeObject(input)||Reflect.ownKeys(input).some(key=>!GENERAL_APPLICATION_FIELDS.includes(key)))return{valid:false,errors:{fields:'申请字段无效，请使用当前简表。'},value:null};
   if(own(input,'intake')!==GENERAL_APPLICATION_INTAKE)errors.intake='申请版本无效。';
   const value={intake:GENERAL_APPLICATION_INTAKE,name:string(input,'name',80,errors,{required:true,min:2}),email:string(input,'email',254,errors,{required:true}),categories:[],participationInterests:[]};
+  if(Object.hasOwn(input,'locale')){if(!['zh-CN','en'].includes(own(input,'locale')))errors.locale='请选择有效的报名语言。';else value.locale=own(input,'locale');}
   if(value.email&&!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(value.email))errors.email='请填写有效邮箱。';
   const categories=own(input,'categories');if(!safeList(categories,1)||categories.length!==1||typeof categories[0]!=='string'||!identityOptions.some(option=>option.value===categories[0]))errors.categories='请选择一项参与身份。';else value.categories=[categories[0]];
   const interests=own(input,'participationInterests');const interestList=safeList(interests,2),proposal=interestList&&interests.length===2&&interests[0]==='attend'&&interests[1]==='talk';

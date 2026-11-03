@@ -49,3 +49,9 @@ test('review reader supports mixed sparse/student and legacy records without add
   const detail=await store.detail(sparse.id);assert.deepEqual(detail.registration.fields,fields());assert.equal(detail.review.accommodationStatus,'not_requested');assert.deepEqual(registrationFilters({category:'student'}),{category:'student'});assert.equal(objects.files.size,0);
   sparse.fields.accommodationChoice='not_needed';await assert.rejects(store.list(),{code:'STORAGE_UNAVAILABLE'});
 });
+
+test('optional signup locale persists only an explicit supported language and leaves legacy records unchanged',()=>{
+  assert.equal(Object.hasOwn(validate(fields()).value.fields,'locale'),false);
+  for(const locale of ['zh-CN','en']){const input={...fields(),locale};assert.deepEqual(validate(input).value.fields,input);assert.deepEqual(registrationFields({...input,consentAccepted:true}),input);}
+  for(const locale of ['zh-TW','en-US','',null,{},1,'<script>'])assert.equal(validate({...fields(),locale}).valid,false);
+});

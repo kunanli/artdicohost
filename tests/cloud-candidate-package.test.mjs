@@ -13,11 +13,11 @@ import { CANDIDATE_SOURCES, CANDIDATE_NODE, CANDIDATE_KIND, CANDIDATE_ARCHIVE, M
 import { verifyFcPublication } from '../scripts/verify-fc-package.mjs';
 
 const gitEnv = { PATH: process.env.PATH ?? '', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' };
-test('the shared diagnostic module fits the exact 129-file candidate without admitting an extra file or source', () => {
+test('the entry ticket modules fit the bounded 140-file candidate without admitting an extra file or source', () => {
   const record=(path,mode='0644')=>({path,mode,bytes:1,sha256:'a'.repeat(64)});
   const files=[...CANDIDATE_SOURCES.map(([,path,mode])=>record(path,mode)),record('runtime/node/bin/node.xz'),record('release.json')];
   for(let index=0;files.length<MAX_CANDIDATE_FILES;index++)files.push(record('admin-assets/_astro/synthetic-'+index+'.js'));
-  assert.equal(files.length,129);assert.doesNotThrow(()=>candidateFileRecords(files));
+  assert.equal(files.length,140);assert.doesNotThrow(()=>candidateFileRecords(files));
   assert.throws(()=>candidateFileRecords([...files,record('admin-assets/_astro/overflow.js')]),/Invalid candidate file list/u);
   assert.throws(()=>candidateFileRecords([...files.slice(0,-1),record('private/unlisted.json')]),/candidate/iu);
 });
@@ -69,6 +69,8 @@ async function fixture(t) {
         ['admin/tasks/index.html', '<html><script type="module" src="/_astro/contacts.hash.js"></script></html>'],
         ['admin/settings/index.html', '<html><script type="module" src="/_astro/settings.hash.js"></script></html>'],
         ['admin/person/index.html', '<html><script type="module" src="/_astro/person.hash.js"></script></html>'],
+        ['admin/checkin/index.html', '<html><script type="module" src="/_astro/checkin.hash.js"></script></html>'],
+        ['_astro/checkin.hash.js', 'export const checkin = true;'],
         ['admin/volunteers/index.html', '<html><script type="module" src="/_astro/volunteers.hash.js"></script></html>'],
         ['invitations/template-blank.png', 'SYNTHETIC-PNG-BYTES'],
         ['invitations/ggj2026-poster-v2.webp', 'SYNTHETIC-WEBP-BYTES'],

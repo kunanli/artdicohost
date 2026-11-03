@@ -8,14 +8,23 @@ import { contentType } from '../scripts/deploy-oss.mjs';
 import { verifyPublicDomain, PUBLIC_SITE_ORIGIN } from '../scripts/verify-public-domain.mjs';
 
 const commit = 'a'.repeat(40), PRIVATE = 'PRIVATE-SYNTHETIC-RESPONSE';
+// The previous synthetic release had 28 exact objects. This stage adds precisely
+// the short entry page, four official-badge variants, and the public check-in notice.
+const ENTRY_PUBLIC_OBJECTS = Object.freeze(['r/index.html', 'wallet/add-to-apple-wallet-cn.png', 'wallet/add-to-apple-wallet-cn.svg',
+  'wallet/add-to-apple-wallet-en.png', 'wallet/add-to-apple-wallet-en.svg', 'admin/checkin/index.html']);
 async function fixture(t) {
   const directory = await mkdtemp(resolve(tmpdir(), 'artdico-domain-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const dist = resolve(directory, 'dist'), output = resolve(directory, 'publication');
-  for (const name of ['invitation', 'invitations', 'registration/confirmation', '_astro']) await mkdir(resolve(dist, name), { recursive: true });
+  for (const name of ['invitation', 'invitations', 'registration/confirmation', 'r', 'wallet', '_astro']) await mkdir(resolve(dist, name), { recursive: true });
   await writeFile(resolve(dist, 'index.html'), '<html><script src="/_astro/public.js"></script></html>');
   await writeFile(resolve(dist, 'invitation/index.html'), '<html>合成邀请</html>');
   await writeFile(resolve(dist, 'registration/confirmation/index.html'), '<html>合成确认页；无参会资料</html>');
+  await writeFile(resolve(dist, 'r/index.html'), '<html>合成短链接入口；无票码或参会资料</html>');
+  for (const locale of ['cn', 'en']) {
+    await writeFile(resolve(dist, 'wallet/add-to-apple-wallet-' + locale + '.png'), Buffer.from([137, 80, 78, 71, locale === 'cn' ? 1 : 2]));
+    await writeFile(resolve(dist, 'wallet/add-to-apple-wallet-' + locale + '.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><title>synthetic ' + locale + ' badge</title></svg>');
+  }
   await writeFile(resolve(dist, 'invitations/template-blank.png'), Buffer.from([0, 1, 2, 255]));
   await writeFile(resolve(dist, 'invitations/ggj2026-poster-v2.webp'), Buffer.from([0, 1, 2, 255]));
   await writeFile(resolve(dist, '_astro/public.js'), '/* synthetic public script */');
@@ -34,7 +43,13 @@ test('real-domain verification validates publication then reads every exact obje
   const f = await fixture(t), reports = [];
   const result = await verifyPublicDomain({ directory: f.output, commit, fetchFn: f.fetchFn, report: line => reports.push(line) });
   assert.deepEqual(result, { verified: true, origin: PUBLIC_SITE_ORIGIN, commit, files: f.manifest.files.length });
+  assert.equal(f.manifest.files.length, 28 + 6, 'the fixture adds exactly six reviewed public objects');
   assert.equal(f.calls.length, f.manifest.files.length); assert.equal(reports.length, f.manifest.files.length);
+  for (const path of ENTRY_PUBLIC_OBJECTS) {
+    assert.equal(f.manifest.files.filter(item => item.path === path).length, 1, path);
+    assert.equal(f.calls.filter(({ url }) => new URL(url).pathname === '/' + path).length, 1, path);
+    assert.equal(reports.filter(line => line === 'Verified HTTPS public object ' + path).length, 1, path);
+  }
   for (const route of PUBLIC_ADMIN_PAGE_ALIASES) {
     assert.ok(f.calls.some(({ url }) => new URL(url).pathname === route + 'index.html'), route);
   }

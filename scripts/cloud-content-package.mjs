@@ -9,9 +9,9 @@ import { assertFcCodeRequestFits, MAX_FC_ZIP_BYTES } from './fc-upload-limits.mj
 
 export const CANDIDATE_KIND = 'fc-cloud-content-candidate';
 export const CANDIDATE_ARCHIVE = 'artdicohost-cloud-content-candidate.zip';
-// One explicitly allowlisted shared diagnostic module extends the prior 128-file
-// package by one. Byte, inflation, source-path and FC request limits stay fixed.
-export const MAX_CANDIDATE_FILES = 129;
+// Entry ticket modules, MIT QR source/license and one staff page extend the fixed
+// package. Byte, inflation, source-path and FC request limits remain unchanged.
+export const MAX_CANDIDATE_FILES = 140;
 export const CANDIDATE_NODE = Object.freeze({ version: 'v24.19.0', platform: 'linux', arch: 'x64', sha256: 'bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12' });
 const MiB = 1024 * 1024;
 const BUILD_SCOPES = ['src', 'shared', 'public', 'astro.config.mjs', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json'];
@@ -22,7 +22,8 @@ export const CANDIDATE_SOURCES = Object.freeze([
   ...['auth.mjs', 'store.mjs', 'communications.mjs'].map(name => ['functions/content-api/' + name, 'functions/content-api/' + name, '0644']),
   ...['handler.mjs', 'policy.mjs', 'validation.mjs', 'tokens.mjs', 'rate-limit.mjs', 'repository.mjs', 'service.mjs', 'group-invite.mjs', 'group-invite-handler.mjs', 'admissions.mjs', 'admission-service.mjs'].map(name => ['functions/registration-api/' + name, 'functions/registration-api/' + name, '0644']),
   ...['handler.mjs', 'store.mjs', 'errors.mjs', 'maintenance.mjs', 'maintenance-handler.mjs', 'admissions-handler.mjs', 'xlsx-handler.mjs', 'xlsx-export.mjs'].map(name => ['functions/registration-admin/' + name, 'functions/registration-admin/' + name, '0644']),
-  ...['tokens.mjs', 'repository.mjs', 'email-provider.mjs', 'service.mjs', 'handler.mjs', 'config-bundle.mjs'].map(name => ['functions/registration-confirmation/' + name, 'functions/registration-confirmation/' + name, '0644']),
+  ...['tokens.mjs', 'repository.mjs', 'email-provider.mjs', 'service.mjs', 'handler.mjs', 'config-bundle.mjs', 'presentation.mjs'].map(name => ['functions/registration-confirmation/' + name, 'functions/registration-confirmation/' + name, '0644']),
+  ...['service.mjs', 'handler.mjs', 'qr.mjs', 'vendor/qrcode.mjs', 'vendor/LICENSE.txt'].map(name => ['functions/entry-ticket/' + name, 'functions/entry-ticket/' + name, '0644']),
   ...['der.mjs', 'pkpass.mjs', 'service.mjs', 'handler.mjs', 'bundle.mjs'].map(name => ['functions/apple-wallet/' + name, 'functions/apple-wallet/' + name, '0644']),
   ['functions/delivery-config/bundle.mjs', 'functions/delivery-config/bundle.mjs', '0644'],
   ...['handler.mjs', 'service.mjs', 'repository.mjs', 'email-provider.mjs', 'errors.mjs', 'importer.mjs', 'contact-snapshot.mjs', 'import-handler.mjs', 'batch.mjs'].map(name => ['functions/intent-invitations/' + name, 'functions/intent-invitations/' + name, '0644']),
@@ -37,7 +38,7 @@ const FIXED_ASSETS = Object.freeze([
   ['/admin/', 'admin/index.html'], ['/admin/contacts/', 'admin/contacts/index.html'],
   ['/admin/registrations/', 'admin/registrations/index.html'], ['/admin/tasks/', 'admin/tasks/index.html'],
   ['/admin/settings/', 'admin/settings/index.html'], ['/admin/person/', 'admin/person/index.html'],
-  ['/admin/volunteers/', 'admin/volunteers/index.html'],
+  ['/admin/volunteers/', 'admin/volunteers/index.html'], ['/admin/checkin/', 'admin/checkin/index.html'],
   ['/invitations/template-blank.png', 'invitations/template-blank.png'],
   ['/invitations/ggj2026-poster-v2.webp', 'invitations/ggj2026-poster-v2.webp'],
 ]);

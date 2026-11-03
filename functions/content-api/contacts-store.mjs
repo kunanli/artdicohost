@@ -108,6 +108,7 @@ export function createFileContactsStore({ directory, contentStore, now = () => D
     return contact;
   }
   function permitInvitation(contact) {
+    if (contact.archivedAt) throw new ContentError('CONTACT_NOT_FOUND', '此联系人已删除。', 404);
     if (contact.profile.contactConsent !== 'consented') throw new ContentError('CONTACT_NOT_CONSENTED', '来源资料未明确同意后续联系，不能生成或记录发送邀请函。', 422);
   }
 
@@ -150,6 +151,14 @@ export function createFileContactsStore({ directory, contentStore, now = () => D
       audit(state, 'create_contact', actorId, { contactId: contact.id, consentSource: 'staff_assertion', contactConsent: profile.contactConsent });
       await commit(state);
       return contactResult(state, contact);
+    }),
+    setArchived: (id, expectedRevision, archived, actorId) => serial(async () => {
+      if (typeof archived !== 'boolean') throw new ContentError('VALIDATION_ERROR', '删除状态无效。', 422);
+      const state = await load(); checkRevision(expectedRevision, state.revision); const contact = findContact(state, id);
+      if (Boolean(contact.archivedAt) === archived) throw new ContentError('REVISION_CONFLICT', '联系人已更新，请重新载入。', 409);
+      const at = new Date(now()).toISOString(); if (archived) contact.archivedAt = at; else delete contact.archivedAt;
+      contact.updatedAt = at; state.revision++; audit(state, archived ? 'archive_contact' : 'restore_contact', actorId, { contactId: id });
+      await commit(state); return contactResult(state, contact);
     }),
     saveProfile: (id, expectedRevision, profileInput, actorId) => serial(async () => {
       const state = await load();

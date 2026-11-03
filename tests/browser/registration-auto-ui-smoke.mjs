@@ -165,7 +165,7 @@ try {
     assert.equal((await f.app.registrationService.repository.list()).registrations.length, 1);
     assert.equal(receipt.confirmation.email.status,'provider_accepted','the actual runtime records the synthetic provider acknowledgement');
     assert.equal(f.runtime.messages.length,1,'a newly confirmed automatic intake starts exactly one synthetic formal email');
-    assert.equal(f.runtime.messages[0].template_params.reference_code,receipt.reference_code);assert.match(f.runtime.messages[0].template_params.invitation_text,/参会名额已确认/u);assert.match(f.runtime.messages[0].template_params.invitation_text,/\/registration\/confirmation\/#r=/u);
+    assert.equal(f.runtime.messages[0].template_params.reference_code,receipt.reference_code);assert.match(f.runtime.messages[0].template_params.invitation_text,/参会名额已确认/u);assert.match(f.runtime.messages[0].template_params.invitation_text,/https:\/\/artdico\.host\/r\/#[A-Za-z0-9_-]{22}/u);
     const original=f.calls.find(call=>call.path.endsWith('/registration/submit')),replayed=await f.app.handle(new Request(API+'/api/admin/registration/submit',{method:'POST',headers:original.headers,body:original.body}));
     assert.equal(replayed.status,200);assert.equal((await replayed.json()).admissionStatus,'confirmed');assert.equal(f.runtime.messages.length,1,'an explicit synthetic replay does not send another formal email');
     assert.equal(await f.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
@@ -195,7 +195,8 @@ try {
     assert.equal(await form(f.page).locator('[data-proposal-toggle]').isChecked(), true);
     await form(f.page).locator('[name="speaker.topic"]').fill('合成分享主题');
     await form(f.page).locator('[name="speaker.summary"]').fill('合成分享简介');
-    await form(f.page).locator('[data-application-draft-status]').filter({ hasText: '本机已暂存' }).waitFor();
+    await form(f.page).locator('[data-application-draft-status]').filter({ hasText: '本机已暂存' }).waitFor({state:'attached'});
+    assert.equal(await form(f.page).locator('[data-application-draft-status]').isVisible(),false);
     await f.page.reload({ waitUntil: 'networkidle' }); await form(f.page).locator('[data-submit]:enabled').waitFor();
     assert.equal(await form(f.page).locator('[data-proposal-toggle]').isChecked(), true, 'an intentional editing draft restores its selection');
     assert.match(await form(f.page).locator('[data-application-draft-status]').textContent(), /已恢复本机草稿.*分享提案/u);

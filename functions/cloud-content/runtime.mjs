@@ -13,7 +13,7 @@ import { validateRegistrationPolicy, parseTimestamp } from '../registration-api/
 import { createRegistrationReviewStore } from '../registration-admin/store.mjs';
 import { createRegistrationAdminApi } from '../registration-admin/handler.mjs';
 import { createInitialContent } from '../../src/config/content.mjs';
-import { assessPublishedEventFacts } from '../../src/config/event.mjs';
+import { assessPublishedEventFacts, eventConfig } from '../../src/config/event.mjs';
 import { createCloudUserStore } from './user-store.mjs';
 import { createCloudUserApi } from './user-handler.mjs';
 import { createIntentInvitationRepository } from '../intent-invitations/repository.mjs';
@@ -43,6 +43,8 @@ import { createVolunteerRepository } from '../volunteers/repository.mjs';
 import { createVolunteerService } from '../volunteers/service.mjs';
 import { createVolunteersApi, isVolunteersPath } from '../volunteers/handler.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
+import { createEntryTicketService, EntryTicketError } from '../entry-ticket/service.mjs';
+import { createEntryTicketApi, isEntryTicketPath } from '../entry-ticket/handler.mjs';
 
 const credentialFields = ['ALIBABA_CLOUD_ACCESS_KEY_ID', 'ALIBABA_CLOUD_ACCESS_KEY_SECRET', 'ALIBABA_CLOUD_SECURITY_TOKEN'];
 const PUBLIC_ALIASES = new Map([
@@ -120,7 +122,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const userStore = createCloudUserStore({ journal: journalFor('cms/v1/users'), bootstrapUsers: env.ADMIN_USERS_JSON, now });
   const auth = createCloudAuth({ users: env.ADMIN_USERS_JSON, usersProvider: () => userStore.users(), journalFor, now });
   const userHandle = createCloudUserApi({ enabled: true, auth, store: userStore });
-  let registrationService, reviewStore, intentService, groupService, confirmationService, walletService, attendanceSynchronizer;
+  let registrationService, reviewStore, intentService, groupService, confirmationService, walletService, entryService, attendanceSynchronizer;
   // Notification is optional after a proven admission commit. Unknown mail
   // acknowledgements remain in the outbox; remaining people require explicit
   // administrator dispatch and must never turn a saved mutation into a failure.
@@ -252,9 +254,11 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       }}) });
     walletService = createAppleWalletService({ env, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now, eventFactsReadiness,
       authorize: input => confirmationService.authorize(input),
+      admissionUrlProvider: input => entryService.issueEntry(input),
       authorizedRegistration: id => confirmationService.authorizedRegistration(id),
       loadSigningBundle: ({ bundleId }) => loadEncryptedSigningBundle({ objects, secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId }) });
-    confirmationService = createRegistrationConfirmationService({ registrationService, journalFor, eventFactsReadiness, currentRegistration, currentProfiles: () => reviewStore.profileScopes(),
+    confirmationService = createRegistrationConfirmationService({ registrationService, journalFor, eventFactsReadiness, currentRegistration,
+      emailTicketProvider: input => entryService.issue(input), currentProfiles: () => reviewStore.profileScopes(),
       tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now, batchTimeoutMs: 5000,
       deliveryAliases: async record => {
         const { value } = await registrationService.repository.readIndex();
@@ -307,8 +311,25 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
         ...(env.ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID ? { loadConfiguration: () => loadEncryptedConfirmationMail({ objects,
           secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId: env.ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID }) } : {}) }),
       walletReadiness: () => walletService.readiness(), groupInviteProvider: input => groupService.forReceipt(input) });
+    entryService = createEntryTicketService({ objects, journalFor, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, event: eventConfig, clock: now,
+      authorizedRegistration: async id => {
+        // A merged person has one entry record, on the same primary as its seat and formal notice.
+        const index = (await registrationService.repository.readIndex()).value;
+        const related = index.admissions?.personGroups?.find(group => group.registrationIds.includes(id));
+        if (related && related.primaryRegistrationId !== id) throw new EntryTicketError('ENTRY_NOT_FOUND');
+        const record = await confirmationService.authorizedRegistration(id);
+        const after = (await registrationService.repository.readIndex()).value;
+        const latest = after.admissions?.personGroups?.find(group => group.registrationIds.includes(id));
+        if (latest && latest.primaryRegistrationId !== id) throw new EntryTicketError('ENTRY_NOT_FOUND');
+        const ids = related?.registrationIds ?? [id];
+        if (JSON.stringify([...(latest?.registrationIds ?? [id])].sort()) !== JSON.stringify([...ids].sort())) throw new EntryTicketError('ENTRY_CONFLICT');
+        return { ...record, relatedRegistrationIds: ids };
+      },
+      groupInviteProvider: input => groupService.forReceipt({ ...input, emailMetadata: true }),
+      groupImageProvider: token => groupService.publicImage(token) });
   }
   if (registrationService && intentService) attendanceSynchronizer = createAttendanceSynchronizer({ intentService, registrationService, contactsStore });
+  const entryHandle = entryService ? createEntryTicketApi({ service: entryService, authenticate: request => auth.authenticate(request) }) : null;
   const registrationHandle = createRegistrationApi({ allowedOrigins: [PUBLIC_SITE_ORIGIN], submissionService: registrationService, allowedGroupInviteOrigins: [CLOUD_API_ORIGIN], clock: now });
   const confirmationHandle = createRegistrationConfirmationApi({ service: confirmationService, auth, apiOrigin: CLOUD_API_ORIGIN, publicOrigins: [PUBLIC_SITE_ORIGIN] });
   const walletHandle = createAppleWalletApi({ service: walletService ?? { download: async () => ({ outcome: 'not_ready' }), verify: async () => ({ valid: false }) }, apiOrigin: CLOUD_API_ORIGIN, publicOrigins: [PUBLIC_SITE_ORIGIN] });
@@ -410,6 +431,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     if (['/api/registration/confirmation', '/api/admin/registration/confirmation', '/api/admin/registration-confirmation/settings', '/api/admin/registration-confirmation/dispatch',
       '/api/admin/registration-confirmation/preview', '/api/admin/registration-confirmation/reminder-preview', '/api/admin/registration-confirmation/reminder-dispatch'].includes(url.pathname)
       || ['/link/', '/delivery/', '/send/', '/operation/', '/reminder-operation/'].some(suffix => url.pathname.startsWith('/api/admin/registration-confirmation' + suffix))) return confirmationHandle(request);
+    if (isEntryTicketPath(url.pathname)) return entryHandle ? entryHandle(request) : new Response(JSON.stringify({ error: { code: 'ENTRY_UNAVAILABLE', message: '票券暂不可用。' } }), { status: 503, headers: { 'content-type': 'application/json', 'cache-control': 'private, no-store' } });
     if (isAppleWalletPath(url.pathname)) return walletHandle(request);
     if (url.pathname === '/api/admin/registrations/export.xlsx') return registrationXlsxHandle(request);
     if (url.pathname === '/api/admin/contacts/export.xlsx') return contactsXlsxHandle(request);
@@ -452,6 +474,6 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     }
     return result;
   };
-  return { handle, store, contactsStore, userStore, auth, registrationService, reviewStore, intentService, groupService, confirmationService, walletService,
+  return { handle, store, contactsStore, userStore, auth, registrationService, reviewStore, intentService, groupService, confirmationService, walletService, entryService,
     volunteerRepository, volunteerService, registrationEnabled };
 }

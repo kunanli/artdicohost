@@ -101,7 +101,9 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
     || !['Asia/Shanghai', 'Asia/Taipei', 'Asia/Hong_Kong'].includes(event?.timezone) || !line(verificationUrl, 2048)) fail('WALLET_PASS_INPUT_INVALID');
   let url;
   try { url = new URL(verificationUrl); } catch { fail('WALLET_PASS_INPUT_INVALID'); }
-  if (url.origin !== 'https://api.artdico.host' || !['/api/registration/wallet/verify/', '/api/admin/registration/wallet/verify/'].some(prefix => url.pathname.startsWith(prefix)) || url.search || url.hash || url.username || url.password) fail('WALLET_PASS_INPUT_INVALID');
+  const legacyVerification = ['/api/registration/wallet/verify/', '/api/admin/registration/wallet/verify/'].some(prefix => url.pathname.startsWith(prefix)) && !url.hash;
+  const staffEntry = url.pathname === '/admin/checkin/' && /^#ticket=[A-Za-z0-9_-]{22}$/u.test(url.hash);
+  if (url.origin !== 'https://api.artdico.host' || !(legacyVerification || staffEntry) || url.search || url.username || url.password) fail('WALLET_PASS_INPUT_INVALID');
   const start = /^([01]\d|2[0-3]):[0-5]\d/u.exec(event.time)?.[0]; if (!start) fail('WALLET_PASS_INPUT_INVALID');
   const relevantDate = event.date + 'T' + start + ':00+08:00';
   if (!Number.isFinite(Date.parse(relevantDate)) || new Date(Date.parse(event.date + 'T00:00:00Z')).toISOString().slice(0, 10) !== event.date) fail('WALLET_PASS_INPUT_INVALID');

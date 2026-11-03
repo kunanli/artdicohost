@@ -5,7 +5,7 @@ import { mkdtemp, writeFile, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { crc32 } from 'node:zlib';
-import { verifyCloudAdminPages, CLOUD_ADMIN_ORIGIN } from '../scripts/verify-cloud-admin-pages.mjs';
+import { verifyCloudAdminPages, CLOUD_ADMIN_ORIGIN, VERIFIED_ADMIN_PAGES } from '../scripts/verify-cloud-admin-pages.mjs';
 import { CLOUD_ADMIN_PAGE_ALIASES } from '../functions/cloud-content/http-server.mjs';
 import { CANDIDATE_ARCHIVE, CANDIDATE_KIND, CANDIDATE_NODE, CANDIDATE_SOURCES, candidateSha256 } from '../scripts/cloud-content-package.mjs';
 
@@ -40,6 +40,7 @@ async function fixture(t, { mutateManifest = () => {}, mutateRelease = () => {} 
   // executes server sources or re-decompresses the already checked Node binary.
   items.push({ path: 'runtime/node/bin/node.xz', mode: '0644', data: Buffer.from('synthetic runtime bytes; never executed') });
   const sources = [
+    ['/admin/checkin/', 'admin/checkin/index.html', settingsHtml],
     ['/admin/', 'admin/index.html', rootHtml],
     ['/admin/contacts/', 'admin/contacts/index.html', Buffer.from('<html>contacts</html>')],
     ['/admin/registrations/', 'admin/registrations/index.html', Buffer.from('<html>registrations</html>')],
@@ -63,7 +64,7 @@ async function fixture(t, { mutateManifest = () => {}, mutateRelease = () => {} 
   const calls = [];
   const fetchFn = async (url, settings) => {
     calls.push({ url, settings });
-    const path = new URL(url).pathname, source = CLOUD_ADMIN_PAGE_ALIASES.find(([route]) => route === path)?.[1];
+    const path = new URL(url).pathname, source = VERIFIED_ADMIN_PAGES.find(([route]) => route === path)?.[1];
     assert.ok(source, 'no canonical or fallback request');
     const bytes = source === '/admin/' ? rootHtml : settingsHtml;
     return new Response(bytes, { headers: { 'content-type': 'text/html; charset=utf-8', 'content-length': String(bytes.length),
@@ -76,12 +77,12 @@ async function rejects(promise) {
   await assert.rejects(promise, error => error.message === 'Cloud admin page verification failed.' && !error.cause && !error.stack.includes(PRIVATE));
 }
 
-test('all13 HTTPS aliases match the exact checked canonical bytes, SHA, MIME and inline CSP anonymously', async t => {
+test('all14 HTTPS pages match the exact checked canonical bytes, SHA, MIME and inline CSP anonymously', async t => {
   const f = await fixture(t), reports = [];
   const result = await verifyCloudAdminPages({ directory: f.directory, commit, fetchFn: f.fetchFn, report: line => reports.push(line) });
-  assert.deepEqual(result, { verified: true, origin: CLOUD_ADMIN_ORIGIN, commit, pages: 13 });
-  assert.deepEqual(f.calls.map(({ url }) => new URL(url).pathname), CLOUD_ADMIN_PAGE_ALIASES.map(([path]) => path));
-  assert.equal(reports.length, 13);
+  assert.deepEqual(result, { verified: true, origin: CLOUD_ADMIN_ORIGIN, commit, pages: 14 });
+  assert.deepEqual(f.calls.map(({ url }) => new URL(url).pathname), VERIFIED_ADMIN_PAGES.map(([path]) => path));
+  assert.equal(reports.length, 14);
   for (const { url, settings } of f.calls) {
     const target = new URL(url);
     assert.equal(target.origin, 'https://api.artdico.host'); assert.equal(target.search, ''); assert.equal(target.hash, '');

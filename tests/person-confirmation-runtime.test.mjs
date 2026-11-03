@@ -8,6 +8,16 @@ import {createObjectJournal} from '../functions/cloud-content/object-journal.mjs
 import {personNextAction,personWorkspaceView} from '../src/lib/person-workspace.mjs';
 import {validPersonConfirmation} from '../src/lib/person-confirmation.mjs';
 const operation=()=>randomBytes(24).toString('base64url');
+function shortCodeFromMail(text){
+ const links=text.match(/https:\/\/artdico\.host\/r\/#[A-Za-z0-9_-]{22}(?![A-Za-z0-9_-])/gu);assert.equal(links?.length,1,'the actual email contains one exact first-party short confirmation URL');
+ assert.doesNotMatch(text,/https:\/\/artdico\.host\/registration\/confirmation\/#r=/u,'the long private capability is not embedded in email text');
+ return new URL(links[0]).hash.slice(1);
+}
+async function resolveMailReceipt(f,text){
+ const code=shortCodeFromMail(text),resolved=await f.app.entryService.resolve({code});
+ assert.match(resolved.confirmationUrl,/^https:\/\/artdico\.host\/registration\/confirmation\/#r=c1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/u);
+ return {code,receiptToken:new URL(resolved.confirmationUrl).hash.slice(3)};
+}
 async function response(value,status=200){assert.equal(value.status,status);return value.json();}
 async function reply(f,contactId,changes,headers){const roster=await f.app.contactsStore.read(),contact=roster.contacts.find(item=>item.id===contactId);
  return response(await f.app.handle(f.request('/api/admin/contacts/'+contactId,{method:'PUT',headers,body:{expectedRevision:roster.revision,operations:{...contact.operations,...changes}}})));}
@@ -20,7 +30,8 @@ test('explicit confirmed contact decision sends one private Wallet confirmation,
  const f=await peopleRuntimeFixture({mail:true}),headers=await f.login(),contact=(await f.createContact()).contact;
  const saved=await reply(f,contact.id,{responseStatus:'attending'},headers),id=saved.admission.registrationId;
  assert.equal(saved.admission.status,'confirmed');assert.deepEqual(saved.admission.confirmationEmail,{status:'completed'});assert.equal(f.messages.length,1);
- const message=f.messages[0].template_params;assert.equal(message.to_email,contact.profile.email);assert.match(message.invitation_text,/https:\/\/artdico\.host\/registration\/confirmation\/#r=c1\./u);assert.match(message.invitation_text,/Apple Wallet/u);
+ const message=f.messages[0].template_params;assert.equal(message.to_email,contact.profile.email);assert.match(message.invitation_text,/Apple Wallet/u);
+ const mailed=await resolveMailReceipt(f,message.invitation_text);assert.equal((await f.app.confirmationService.authorize({receiptToken:mailed.receiptToken})).registrationId,id,'the emailed short URL resolves to the same confirmed person');
  assert.doesNotMatch(JSON.stringify(saved),/receiptToken|confirmationUrl|synthetic-private-key/u);
  const start=f.objects.calls.length,state=await delivery(f,id,headers);assert.equal(state.reason,'ALREADY_ACCEPTED');assert.equal(state.ready,false);
  assert.ok(f.objects.calls.slice(start).every(call=>call.operation==='get'),'read state never reserves or writes');
@@ -141,10 +152,14 @@ test('an email correction while provider ACK is pending cannot turn the old atte
  let release,started;const began=new Promise(resolve=>{started=resolve;});
  const f=await peopleRuntimeFixture({mail:true,mailResult:async message=>{if(message.template_params.invitation_text.includes('Apple Wallet')){started();return new Promise(resolve=>{release=resolve;});}return 'accepted';}}),headers=await f.login(),pending=await f.seedPublic(),id=pending.reference_code;
  const approving=f.approvePublic(id,{headers});await began;
+ const oldMailed=await resolveMailReceipt(f,f.messages[1].template_params.invitation_text);
+ assert.equal((await f.app.confirmationService.authorize({receiptToken:oldMailed.receiptToken})).registrationId,id);
  await correctRegistration(f,id,{email:'late.ack@example.invalid'},headers);assert.equal((await delivery(f,id,headers)).reason,'HISTORICAL_DELIVERY_UNKNOWN');
  release('accepted');await approving;
  const state=await delivery(f,id,headers);assert.equal(state.recipient,'late.ack@example.invalid');assert.equal(state.status,'not_sent');assert.equal(state.reason,'ELIGIBLE');assert.equal(f.messages.length,2);
- const oldMail=f.messages[1].template_params.invitation_text,oldToken=oldMail.match(/#r=(c1\.[A-Za-z0-9_.-]+)/u)[1];await assert.rejects(f.app.confirmationService.authorize({receiptToken:oldToken}),e=>e.code==='CONFIRMATION_NOT_FOUND');
+ assert.equal(shortCodeFromMail(f.messages[1].template_params.invitation_text),oldMailed.code,'the in-flight provider request retains its original short capability');
+ await assert.rejects(f.app.entryService.resolve({code:oldMailed.code}),e=>e.code==='ENTRY_NOT_FOUND');
+ await assert.rejects(f.app.confirmationService.authorize({receiptToken:oldMailed.receiptToken}),e=>e.code==='CONFIRMATION_NOT_FOUND');
 });
 
 

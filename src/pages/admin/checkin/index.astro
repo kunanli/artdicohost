@@ -1,0 +1,36 @@
+---
+import SiteLayout from '../../../layouts/SiteLayout.astro';
+import '../../../styles/admin.css';
+import '../../../styles/checkin.css';
+---
+<SiteLayout title="入场核验｜ARTDiCO HOST" description="工作人员扫描票券，核对后确认入场。">
+  <Fragment slot="head"><meta name="referrer" content="no-referrer" /></Fragment>
+  <div class="ah-admin entry-app" data-entry-app>
+    <header class="ah-admin-header"><a class="ah-admin-brand" href="/admin/">ARTDiCO <span>HOST</span></a><a href="/admin/contacts/">人员名单</a></header>
+    <main class="entry-main" id="main-content">
+      <h1>入场核验</h1>
+      <p class="entry-status" data-entry-message role="status" aria-live="polite"></p>
+      <p class="ah-admin-alert" data-entry-error role="alert" hidden></p>
+      <section class="entry-panel" data-entry-login-panel aria-labelledby="entry-login-heading">
+        <h2 id="entry-login-heading">工作人员登录</h2>
+        <form method="post" data-entry-login>
+          <div class="ah-admin-field"><label for="entry-user">用户名或邮箱</label><input id="entry-user" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="160" required /></div>
+          <div class="ah-admin-field"><label for="entry-password">密码</label><input id="entry-password" name="password" type="password" autocomplete="current-password" maxlength="1024" required /></div>
+          <button class="ah-admin-button ah-admin-primary" type="submit" disabled>登录并核验</button>
+        </form>
+        <noscript><p>请启用 JavaScript 后核验入场。</p></noscript>
+      </section>
+      <section class="entry-panel" data-entry-workspace hidden aria-label="当前票券">
+        <div class="entry-account"><span data-entry-account></span><button class="ah-admin-text-button" type="button" data-entry-logout>退出</button></div>
+        <div data-entry-record hidden><h2 class="entry-name" data-entry-name></h2><p data-entry-organization></p><p class="entry-time" data-entry-time></p></div>
+        <div class="entry-actions">
+          <button type="button" class="ah-admin-button ah-admin-primary" data-entry-confirm hidden>确认入场</button>
+          <button type="button" class="ah-admin-button ah-admin-primary" data-entry-check hidden>核对入场结果</button>
+          <button type="button" class="ah-admin-button" data-entry-refresh disabled>重新核对</button>
+        </div>
+      </section>
+      <p class="entry-help">用手机扫描参会者的入场二维码，核对姓名后确认。重复扫描会显示已入场。</p>
+    </main>
+  </div>
+  <script>import { mountEntryCheckin } from '../../../lib/checkin.mjs';mountEntryCheckin(document.querySelector('[data-entry-app]'));</script>
+</SiteLayout>

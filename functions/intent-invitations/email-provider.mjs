@@ -1,5 +1,6 @@
 import { plainData, identifier } from './errors.mjs';
 import { confirmationDiagnostic } from '../../shared/confirmation-delivery.mjs';
+import { CONFIRMATION_PRESENTATION_KEYS, validConfirmationPresentationVariables } from '../registration-confirmation/presentation.mjs';
 
 const ENDPOINT = 'https://api.emailjs.com/api/v1.0/email/send';
 const VARIABLE_KEYS = ['to_name', 'to_email', 'event_title', 'event_date', 'event_time', 'event_venue', 'reference_code', 'invitation_text'];
@@ -27,8 +28,8 @@ const failed = (status,reason,code,transportStarted,httpStatus) => ({status,...(
 
 /** Fixed server-only provider. Local durable issuance prevents replay; EmailJS
  * does not document an idempotency-key guarantee. HTTP 200 means accepted only. */
-export function createInvitationEmailProvider({ env = {}, fetchFn = fetch, timeoutMs = 10_000 } = {}) {
-  if (typeof fetchFn !== 'function' || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 10_000) throw new TypeError('Invalid invitation provider dependencies.');
+export function createInvitationEmailProvider({ env = {}, fetchFn = fetch, timeoutMs = 10_000, confirmationPresentation = false } = {}) {
+  if (typeof confirmationPresentation !== 'boolean' || typeof fetchFn !== 'function' || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 10_000) throw new TypeError('Invalid invitation provider dependencies.');
   const config = {};
   for (const name of ['ARTDICO_INVITATION_EMAIL_ENABLED', ...CONFIG_KEYS]) {
     const field = Object.getOwnPropertyDescriptor(env, name);
@@ -36,15 +37,17 @@ export function createInvitationEmailProvider({ env = {}, fetchFn = fetch, timeo
   }
   const issues=invitationEmailConfigurationIssues(config),enabled=config.ARTDICO_INVITATION_EMAIL_ENABLED==='true';
   const ready = enabled&&!issues.missing.length&&!issues.invalid.length;
+  const extra = value => confirmationPresentation && CONFIRMATION_PRESENTATION_KEYS.some(key=>Object.hasOwn(value,key));
   return Object.freeze({
     readiness: () => ({ ready, reason: ready ? 'CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF' : 'EMAIL_NOT_READY' }),
     async send({ recipient, subject, text, templateVariables, idempotencyKey } = {}) {
       if (!ready) return failed('rejected','EMAIL_NOT_READY',!enabled?'EMAIL_DISABLED':issues.missing.length?'EMAIL_CONFIGURATION_MISSING':'EMAIL_CONFIGURATION_INVALID',false);
       if (!mailbox(recipient) || !line(subject, 500) || typeof text !== 'string' || !text.length || text.length > 16_000
         || !text.isWellFormed() || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text) || !identifier(idempotencyKey)
-        || !plainData(templateVariables) || Object.keys(templateVariables).length !== VARIABLE_KEYS.length
+        || !plainData(templateVariables) || Object.keys(templateVariables).length !== VARIABLE_KEYS.length + (extra(templateVariables) ? CONFIRMATION_PRESENTATION_KEYS.length : 0)
         || VARIABLE_KEYS.some(key => typeof templateVariables[key] !== 'string' || templateVariables[key].length > (key === 'invitation_text' ? 16_000 : 500))
-        || Object.keys(templateVariables).some(key => !VARIABLE_KEYS.includes(key))
+        || Object.keys(templateVariables).some(key => !VARIABLE_KEYS.includes(key) && !(extra(templateVariables) && CONFIRMATION_PRESENTATION_KEYS.includes(key)))
+        || extra(templateVariables) && (!validConfirmationPresentationVariables(templateVariables) || templateVariables.email_subject !== subject)
         || templateVariables.to_email !== recipient || templateVariables.invitation_text !== text) return failed('rejected','INVALID_EMAIL_INPUT','INVALID_EMAIL_INPUT',false);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs); timer.unref?.();

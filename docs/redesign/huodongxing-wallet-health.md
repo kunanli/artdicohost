@@ -1,10 +1,10 @@
 # 活動行 → Wallet 體檢與接續
 
-2026-11-03；程式基準main `b1f83a7d76578114d85e723f9d154a4f1f74858b`。本輪依使用者要求檢查報名、匯入、確認信、Wallet、微信群與工作人員手機核銷，並接續製作活動行專用匯入。真人匯出僅沿先前已核對的19欄結構，不在回歸中讀原始個資。
+2026-11-03；程式基準main `b1f83a7d76578114d85e723f9d154a4f1f74858b`。本輪依使用者要求檢查報名、匯入、確認信、Wallet、微信群與工作人員手機核銷，已完成活動行專用匯入及正式發布，準確回執見文末。真人匯出僅沿先前已核對的19欄結構，不在回歸中讀原始個資。
 
-## 體檢結論
+## 體檢基準缺口與處理
 
-既有票券與通知可重用，主要缺少活動行來源與共同名額的轉接，不需要重建Wallet或加入第二份一般報名表。
+本輪沿用既有票券與通知，補齊活動行來源與共同名額的轉接。以下記錄起始缺口及處理。
 
 | 範圍 | 已核對結果 | 本輪處理 |
 | --- | --- | --- |
@@ -83,3 +83,37 @@ API沿既有contacts/import入口，以`kind:huodongxing`分流；一般問卷�
 最終靜態HTML SHA：公開`e9c0d5d84d4446b346162c3167c090869dd39460647ee36ab7d7f8ea98548ebd`、contacts`34b6f8c6a6c2040890eb9d2e05b180cc99f53effc2158833251e0236cd5da5dd`、person`2b800611ba79aa58d7f07e88da889e236f196801f437a9fb5d111606d88063a6`；新七案腳本SHA`3a3c11779e39da9190b47dd51b543dbe6133297fe2644df8d507931a9bac69c5`。最終閉包仍93來源／42資產／137總檔、資產7,675,002 bytes，不放寬任何限制。
 
 這是凍結dirty候選的本機驗收，不把base b1f83a7稱新提交。PR／main的準確來源CI、七案新旅程與原74案、離線包及正式FC／OSS／HTTPS回執另行核對；任何步驟失敗不能宣稱發布完成。
+
+## 操作邊界與後續小項
+
+目前來源封存沿既有migrationArchives總上限20（含舊問卷匯入）；每個有新增聯絡人的活動行批次只用一份，已存在票重匯不再新增。建議合併處理本批新票，避免每人各建一批。本輪不刪來源封存來解除上限；到限需依維護流程核對相容處理，不盲重試。
+
+具名寄送完成後，下方結果為準；同次較早的預覽列可能仍寫「可发送」。重新預覽可讀當前狀態，服務端去重及版本核對會阻止重複寄信。這是次要顯示改進，未列為投遞成功證明。明確失敗者可從「查看报名」使用既有單人確認函重寄；結果未知先核對原寄送。
+
+私人確認頁尚無直接入場QR備援；目前確認信與Wallet提供QR。實際EmailJS接受／收件、群碼有效與真實入群、iPhone加入及現場人員操作仍分開驗證，沒有用本輪合成或配置readiness代替。
+
+## PR78 準確提交驗收
+
+[PR78](https://github.com/kunanli/artdicohost/pull/78)head為`60628c79a186038c6f336d0c2f6a1e42f202f778`；[PR流程41605530306](https://github.com/kunanli/artdicohost/actions/runs/41605530306)checkout的準確synthetic merge為`3a561f0e87f8d9ea8126482f80e72997798ec609`，三個必要工作成功，兩個僅main發布工作如預期skipped。不是把PR的skipped部署當正式發布。
+
+1941／1941 Node、811來源與529 Astro（0errors／0warnings／2hints）通過，依賴審計無已知漏洞。12份準確瀏覽器回執共81案：捲動6、字體4、講者10、展示排序8、出席目錄7、重寄恢復8、入場6、排序刪除2、郵件預覽6、短鏈4、新匯入7、正式素材13；sourceCommit均等於上述synthetic merge，所有適用公開HTML都等於e9c0d5d…948ebd，contacts／person及新腳本均與凍結hash一致。
+
+新七案sourceTreeClean=true、realMail／realBusinessWrites／uninterceptedNetwork=0、pageErrors空。正式公開輸入snapshot仍`71037be9782b05af1da404fd6ab667b538fbb5e4f4356fdbec943787d241c8d7`，9嘉賓／8組織、300次漢字ink檢查、blank／missing0及90負控制；未捕獲媒體仍使用明示404替身。
+
+準確候選137檔，network=none、code=read-only的實際ZIP離線啟動、closedMode及syntheticConfigurationOnly皆passed，42靜態資產，沒有提高bytes或檔數上限。正式main為`3c13de91b8da04a2232b4ad6916cd1cfdffacbd5`，tree與head均為`e073744c12914a150ec38e6a569f0d1b23483775`；main工作樹乾淨。正式main回執如下。
+
+## PR78 正式發布回執
+
+[main流程41606971922](https://github.com/kunanli/artdicohost/actions/runs/41606971922)五工作均completed／success；來源main `3c13de91b8da04a2232b4ad6916cd1cfdffacbd5`，程式tree仍為`e073744c12914a150ec38e6a569f0d1b23483775`，與PR head完全一致。
+
+main再次1941／1941通過、fail／cancelled／skipped／todo皆0；811來源、529 Astro0errors／0warnings／2hints，無已知依賴漏洞。12份瀏覽器回執共81案及所有適用公開HTML、contacts／person、新匯入腳本均與前述凍結hash吻合；每份sourceCommit及正式素材captureSourceCommit都為此main，沒有用dirty base代替。新七案仍clean checkout、pageErrors空、realMail／realBusinessWrites／uninterceptedNetwork0。正式素材snapshot、9位／8Logo、300漢字與90負控制亦吻合。
+
+實際ZIP的network=none／code=read-only離線啟動、closedMode與syntheticConfigurationOnly全部passed；cloud candidate離線12.606秒、42資產／137檔，不增加來源檔、預算、服務或DNS。
+
+2026-11-03 09:08:48 UTC，準確main FC驗證contentEnabled／registrationEnabled=true、privateOssAcceptance=passed、2獨立clients／1FCprocess。09:08:56核對14個準確後台HTTPS頁。09:08:58匿名GET／OPTIONS核對enabled=true、publicRegistrationMode=speaker_only、speakerApplicationsEnabled=true及兩preflight=true；舊attendeeReviewRequired=false只作歷史相容，新一般報名仍由官網外連活動行。
+
+09:08:51 UTC郵件readiness verified=true、automaticEnabled=true、Email enabled／ready=true、missing／invalid空、walletReady=true，mailRequests／businessWrites0。這是配置就緒，**先前EmailJS403是否已解除仍未透過真人寄達證明**，本輪沒有實寄。
+
+09:11:17 UTC，68個準確公開物件逐一HTTPS及hash／來源核對通過，包含官方CN／EN Wallet PNG與SVG；09:11:20入場路徑publicEntry／invalidEntry／cors皆true，共3請求且commit同此main。新「导入活动行」前端與後端程式已發布；沒有匯入真人名單、改真人名額／同意、實寄、改群碼或驗證真實iPhone添加。
+
+本發布補記存於獨立docs分支的不可變提交，不另建PR或重複觸發main部署。main工作樹保持乾淨；受控相容回退及備份／刪除範圍見上文，不能刪原操作或來源以解除去重。

@@ -1,6 +1,6 @@
 # ARTDiCO HOST 改版執行總覽
 
-本輪：[活動行名單轉入Wallet與體檢](huodongxing-wallet-health.md)。一般報名維持活動行，專用XLSX預覽／明確匯入共用名額，確認信另預覽並明確寄送。沒有即時API同步或真人資料操作。
+已發布PR78，main `3c13de91b8da04a2232b4ad6916cd1cfdffacbd5`：[活動行名單轉入Wallet與體檢](huodongxing-wallet-health.md)。1941項測試、81案瀏覽器、私有OSS／14後台／68公開HTTPS及入場路徑均已核對，2026-11-03 09:11:20 UTC完成。一般報名維持活動行，專用XLSX預覽／明確匯入共用名額，確認信另預覽並明確寄送。沒有即時API同步或真人資料操作。
 
 前輪已發布：[活動行報名、獨立講者提案與客服三段狀態](external-registration-staff-status-release.md)。使用者2026-11-03最新決策優先於下方舊本站一般報名規劃；入口切換與後台顯示在本輪實作，活動行Excel轉接及真人寄信另行處理。
 

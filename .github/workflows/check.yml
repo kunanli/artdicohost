@@ -58,6 +58,18 @@ jobs:
       - name: Install locked dependencies
         id: install
         run: pnpm install --frozen-lockfile
+      - name: Install original OFL Chinese fonts as browser system fallbacks
+        run: |
+          sha256sum -c <<'ARTDICO_BROWSER_FONTS'
+          d45f67f0a7c0ca3f256950777ce6a61cc7ce5f9696d02900cbbaac25f8aa7d16  FrontEnd_Resource/字体/NotoSansSC-Regular.ttf
+          9a38ae0ab28cd5a256f9ea8e00dedc688aac17f7915fcb000572990afa956b96  FrontEnd_Resource/字体/NotoSansSC-Bold.ttf
+          ARTDICO_BROWSER_FONTS
+          artdico_browser_font_dir="$HOME/.local/share/fonts/artdico-host-browser"
+          mkdir -p "$artdico_browser_font_dir"
+          install -m 0644 FrontEnd_Resource/字体/NotoSansSC-Regular.ttf FrontEnd_Resource/字体/NotoSansSC-Bold.ttf "$artdico_browser_font_dir/"
+          install -m 0644 src/assets/fonts/home-font-OFL.txt "$artdico_browser_font_dir/OFL.txt"
+          fc-cache -f "$artdico_browser_font_dir"
+          fc-match -f '%{family}\n' 'sans-serif:charset=745e'
       - name: Observe anonymous public content and CORS without credentials or business writes
         timeout-minutes: 1
         continue-on-error: true

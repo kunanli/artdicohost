@@ -39,7 +39,7 @@ export function validatePeopleDirectory(value,view){
     ||!(value.nextCursor===null||typeof value.nextCursor==='string'&&/^[A-Za-z0-9_-]{1,512}$/u.test(value.nextCursor)))return false;
   const seen=new Set();
   for(const row of value.rows){
-    if(!row||!string(row.key,160)||seen.has(row.key)||!string(row.name)||!row.name||!string(row.organization))return false;seen.add(row.key);
+    if(!row||row.recordedAt!==undefined&&row.recordedAt!==null&&!(typeof row.recordedAt==='string'&&Number.isFinite(Date.parse(row.recordedAt))&&new Date(row.recordedAt).toISOString()===row.recordedAt)||!string(row.key,160)||seen.has(row.key)||!string(row.name)||!row.name||!string(row.organization))return false;seen.add(row.key);
     if(row.kind==='person'){
       if (['stateLabel','workKinds','nextAction','basisRevisions'].some(key => Object.hasOwn(row,key)) && (!string(row.stateLabel, 80) || !Array.isArray(row.workKinds)
         || row.workKinds.some(kind => !PEOPLE_WORK_FILTERS.includes(kind) || kind === 'all') || new Set(row.workKinds).size !== row.workKinds.length || !validNextAction(row.nextAction) || !validRevisions(row.basisRevisions))) return false;
@@ -127,6 +127,7 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
     const row=node('tr');row.dataset.directoryPerson=item.personKey??item.key;
     const identity=node('td'),status=node('td'),actions=node('td');
     identity.append(node('div',item.name,'people-directory-name'),node('small',item.organization||'机构未填写'));
+    const recorded=node('time',item.recordedAt?'录入：'+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Taipei',dateStyle:'medium',timeStyle:'short',hourCycle:'h23'}).format(new Date(item.recordedAt)):'录入时间未记录','people-recorded-at');if(item.recordedAt)recorded.dateTime=item.recordedAt;identity.append(recorded);
     if(item.contactId||item.owner){const owner=ownerTagPresentation(item.owner),tag=node('span',owner.label,'ah-owner-tag');tag.dataset.ownerTone=owner.tone;identity.append(tag);}
     const next=item.nextAction;
     status.append(badge(item.stateLabel||fallbackState(item),next?.key||item.admissionStatus||'pending'));
@@ -152,7 +153,32 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
       if(onInvitation&&canInvite(item.contactId))action('准备邀请函',()=>onInvitation(item.contactId));
     }
     if(item.registrationId&&state.permissions.registrations)options.append(link('报名与票券','/admin/registrations/#registration='+encodeURIComponent(item.registrationId)));
+    if(getUser()?.roles?.includes('superadmin')&&(item.registrationId||item.contactId))action('删除',()=>void deletePerson(item));
     menu.append(options);actions.append(menu);row.append(identity,status,actions);return row;
+  }
+  async function deletePerson(item){
+    if(!active()||busy||blocked||!getUser()?.roles?.includes('superadmin'))return;
+    const registration=Boolean(item.registrationId),id=registration?item.registrationId:item.contactId;
+    if(!id||!confirm(registration?'删除此报名并释放名额？入场券和私人参会页将停用，候补可能转正并收到确认信；原始资料与历史保留。':'从人员名单删除此联系人？原始资料与历史保留；已有报名和入场券不会被取消。'))return;
+    const generation=++sequence,actor=actorKey(),current=()=>generation===sequence&&actorKey()===actor&&active();
+    busy=true;lock();let started=false;
+    const check=async()=>{
+      if(registration){const value=await request('/api/admin/registrations/'+encodeURIComponent(id),{current});if(value.registration?.id!==id||!value.review||!Object.hasOwn(value.review,'deletionRequested'))throw Error('Invalid deletion source');return{revision:value.revision,deleted:Boolean(value.review.deletionRequested)};}
+      const value=await request('/api/admin/contacts',{current}),contact=value.contacts?.find(row=>row.id===id);if(!contact||contact.archivedAt!==undefined&&!(typeof contact.archivedAt==='string'&&Number.isFinite(Date.parse(contact.archivedAt))&&new Date(contact.archivedAt).toISOString()===contact.archivedAt))throw Error('Missing contact');return{revision:value.revision,deleted:Boolean(contact.archivedAt)};
+    };
+    try{
+      const before=await check();if(!current())return;
+      if(!Number.isSafeInteger(before.revision)||before.revision<0)throw Error('Invalid deletion source');
+      if(!before.deleted){started=true;await request(registration?'/api/admin/registrations/'+encodeURIComponent(id)+'/deletion-request':'/api/admin/contacts/'+encodeURIComponent(id)+'/archive',{method:'POST',body:JSON.stringify(registration?{expectedRevision:before.revision,reason:'other'}:{expectedRevision:before.revision,archived:true}),current});}
+      if(!current())return;const after=await check();if(!after.deleted)throw Error('Deletion not verified');
+      busy=false;await load();if(active()&&actorKey()===actor)$('[data-directory-status]').textContent=registration?'已删除报名，历史保留。':'已从名单删除，历史保留。';
+    }catch{
+      if(!current())return;
+      if(started){try{const after=await check();if(current()&&after.deleted){busy=false;await load();$('[data-directory-status]').textContent='已核对删除结果，历史保留。';return;}}catch{}}
+      if(!current())return;$('[data-directory-error]').replaceChildren(node('span',started?'删除结果待核对。':'删除未完成，请重新核对。'));
+      if(started){const verify=node('button','核对删除结果');verify.type='button';verify.addEventListener('click',async()=>{if(busy||blocked||!active()||actorKey()!==actor)return;busy=true;lock();try{const after=await check();if(!current())return;if(after.deleted){busy=false;await load();$('[data-directory-status]').textContent='已核对删除结果，历史保留。';}else{$('[data-directory-error]').textContent='已核对，未删除。请刷新名单后重新操作。';}}catch{$('[data-directory-error]').textContent='结果仍无法核对，请稍后刷新名单。';}finally{busy=false;lock();}});$('[data-directory-error]').append(verify);}
+      $('[data-directory-error]').hidden=false;
+    }finally{if(current()){busy=false;lock();}}
   }
   function companyRow(item){const row=node('tr'),identity=node('td'),members=node('td',undefined,'people-directory-members'),booths=node('td'),actions=node('td');
     identity.append(node('div',item.name,'people-directory-name'),node('small',item.kind==='unlinked_booth'?'组织关系待关联':'参展组织／团队'));

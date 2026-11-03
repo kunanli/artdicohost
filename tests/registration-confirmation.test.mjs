@@ -237,7 +237,7 @@ test('future confirmation email links to personal downloads while durable identi
   assert.match(message.text,/Safari/u);
   assert.ok(message.text.includes('地点：' + posterEvent.venue.address), 'email keeps its original event facts');
   assert.equal(message.templateVariables.invitation_text, message.text);
-  assert.deepEqual(Object.keys(message.templateVariables).sort(), ['to_name', 'to_email', 'event_title', 'event_date', 'event_time', 'event_venue', 'reference_code', 'invitation_text'].sort());
+  assert.deepEqual(Object.keys(message.templateVariables).sort(), ['to_name', 'to_email', 'event_title', 'event_date', 'event_time', 'event_venue', 'reference_code', 'invitation_text', 'email_subject', 'email_language', 'confirmation_actions'].sort());
   const stored = await createConfirmationRepository({ journal: f.journalFor(c.prefix), eventId: EVENT }).read();
   assert.equal(stored.value.notices.length, 1); assert.equal(stored.value.notices[0].kind, 'registration');
   assert.doesNotMatch(JSON.stringify(stored.value), /ggj2026-poster-v2|PRIVATE-SYNTHETIC|receiptToken|confirmationUrl/u);
@@ -734,4 +734,22 @@ test('trusted staff history treats an uncertain reservation as unknown and refus
   const bad = f.confirmation({ journalFor: () => ({ read: async () => ({ ...persisted, value: forged }), commit: async () => assert.fail('no journal repair') }) });
   await assert.rejects(bad.staffHistory({ actor, registrationId: saved.receipt.registrationId }), /unavailable/u);
   assert.equal(f.state.messages.length, 0); assert.equal(f.state.confirmationWrites, writes);
+});
+
+test('confirmed mail uses locale, short link and both current private QR images without replay issuance',async()=>{
+  for(const locale of ['zh-CN','en']){
+    const f=fixture(),source={intake:'general-v2',locale,name:'合成来宾',email:'synthetic.locale@example.invalid',categories:['industry'],participationInterests:['attend']};
+    const {saved}=await register(f,source);let issues=0;const short='https://artdico.host/r/#'+'s'.repeat(22);
+    const c=f.confirmation({emailTicketProvider:async input=>{issues++;assert.equal(input.registrationId,saved.receipt.registrationId);assert.equal(input.accessRevision,0);return{confirmationUrl:short,admissionQrImageUrl:'https://api.artdico.host/api/admin/registration/entry-links/'+'s'.repeat(22)+'/entry.png',groupQrImageUrl:'https://api.artdico.host/api/admin/registration/entry-links/'+'s'.repeat(22)+'/group.png',groupExpiresAt:'2026-11-05T04:00:00.000Z'};}});
+    const result=await c.forSavedReceipt({receipt:saved.receipt});assert.equal(result.email.status,'provider_accepted');assert.equal(issues,1);assert.equal(f.state.messages.length,1);
+    const sent=f.state.messages[0];assert.ok(sent.text.includes(short));assert.ok(!sent.text.includes('/registration/confirmation/#r='));assert.equal(sent.templateVariables.email_language,locale);assert.match(sent.templateVariables.confirmation_actions,/\/entry\.png/u);assert.match(sent.templateVariables.confirmation_actions,/\/group\.png/u);assert.equal(sent.templateVariables.email_subject,sent.subject);
+    if(locale==='en'){assert.match(sent.text,/Your attendance is confirmed/u);assert.match(sent.subject,/Attendance confirmed/u);assert.match(sent.templateVariables.confirmation_actions,/wallet-en\.png/u);}else{assert.match(sent.text,/你的参会名额已确认/u);assert.match(sent.templateVariables.confirmation_actions,/wallet-cn\.png/u);}
+    await c.confirmation({receiptToken:result.receiptToken});await c.forSavedReceipt({receipt:saved.receipt});assert.equal(issues,1);assert.equal(f.state.messages.length,1);
+  }
+});
+test('failed or malformed short-ticket issuance is recorded as known not started and never contacts EmailJS',async()=>{
+  for(const emailTicketProvider of [async()=>{throw new Error('PRIVATE-TICKET-FAILURE');},async()=>({confirmationUrl:'https://evil.example.invalid/'})]){
+    const f=fixture(),{saved}=await register(f),c=f.confirmation({emailTicketProvider});const result=await c.forSavedReceipt({receipt:saved.receipt});assert.equal(result.email.status,'rejected');assert.equal(f.state.messages.length,0);
+    const journal=await createConfirmationRepository({journal:f.journalFor(c.prefix),eventId:EVENT}).read();assert.equal(journal.value.notices[0].diagnostic.code,'DELIVERY_GUARD_UNAVAILABLE');assert.equal(journal.value.notices[0].diagnostic.transportStarted,false);
+  }
 });

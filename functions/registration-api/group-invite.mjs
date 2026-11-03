@@ -161,7 +161,8 @@ export function createGroupInviteService({ objects, journalFor, eventId, tokenSe
       const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
       const token = encoded + '.' + sign(encoded).toString('base64url');
       if (!await allowedAccess(registrationId, accessRevision)) return null;
-      return { platform: 'wechat', qrImageUrl: apiOrigin + publicPath + token, expiresAt: new Date(expiresAt).toISOString() };
+      return { platform: 'wechat', qrImageUrl: apiOrigin + publicPath + token, expiresAt: new Date(expiresAt).toISOString(),
+        ...(own(input, 'emailMetadata') === true ? { groupExpiresAt: active.expiresAt } : {}) };
     },
     async publicImage(token) {
       let payload;

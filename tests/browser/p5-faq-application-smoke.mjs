@@ -184,7 +184,8 @@ try {
       assert.equal(await form(page).locator('[data-speaker-proposal]').isVisible(), true);
       assert.equal(await form(page).locator('[name=name]').inputValue(), '合成申请人'); assert.equal(await form(page).locator('[name=email]').inputValue(), 'synthetic.faq@example.invalid');
       await form(page).locator('[name="speaker.topic"]').fill('合成分享主题'); await form(page).locator('[name="speaker.summary"]').fill('合成主题简介');
-      await form(page).locator('[data-application-draft-status]').filter({ hasText: /本机已暂存/u }).waitFor();
+      await form(page).locator('[data-application-draft-status]').filter({ hasText: /本机已暂存/u }).waitFor({state:'attached'});
+      assert.equal(await form(page).locator('[data-application-draft-status]').isVisible(),false);
       const saved = await records(page); assert.equal(saved[0].value.proposal, true); assert.equal(saved[0].value.name, '合成申请人');
     }
     assert.equal(await page.locator('[data-recruit="site"], [data-recruit="booth"], [data-recruit="work"]').count(), 0);

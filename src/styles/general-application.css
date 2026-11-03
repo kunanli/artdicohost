@@ -3,3 +3,5 @@
 .ah-application-draft-bar{display:flex;gap:8px 15px;align-items:center;flex-wrap:wrap;font-size:12px;margin:12px 0 22px;line-height:1.7}.ah-application-draft-bar>span{flex:1 1 190px;color:#52637e}.ah-application-draft-bar button{font:inherit;border:0;background:none;padding:5px 0;min-height:36px;text-decoration:underline;cursor:pointer}.ah-application-draft-bar [data-state=error],.ah-application-draft-bar [data-state=conflict]{color:#934a21}
 
 .ah-application-recovery{border:1px solid #b9c9ee;background:#f3f6ff;padding:20px;border-radius:8px;margin:18px 0}.ah-application-recovery h3{font-size:18px;margin:0 0 12px}.ah-application-recovery p{font-size:13px;line-height:1.8;margin:8px 0;overflow-wrap:anywhere}.ah-general-application [data-application-pending="true"] [data-application-edit-fields]{display:none}.ah-general-application [data-application-pending="true"] [data-registration-data-hint]{display:none}
+
+.ah-general-application [data-application-draft-recovery][hidden], .ah-general-application [data-registration-mode-label][hidden] { display: none !important; }

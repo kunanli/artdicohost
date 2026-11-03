@@ -6,8 +6,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { request as httpRequest } from 'node:http';
-import { loadCloudContentRelease, createProductionCloudServer } from '../functions/cloud-content/server.mjs';
+import { loadCloudContentRelease, createProductionCloudServer, MAX_CLOUD_RELEASE_FILES } from '../functions/cloud-content/server.mjs';
 import { hashPassword } from '../functions/content-api/auth.mjs';
+
+import { MAX_CANDIDATE_FILES } from '../scripts/cloud-content-package.mjs';
 
 const SOURCE = 'd'.repeat(40);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -20,6 +22,7 @@ const syntheticAssets = [
   { url: '/admin/settings/', path: 'admin-assets/admin/settings/index.html', data: '<!doctype html><p>synthetic settings</p>' },
   { url: '/admin/person/', path: 'admin-assets/admin/person/index.html', data: '<!doctype html><p>synthetic person workspace</p>' },
   { url: '/admin/volunteers/', path: 'admin-assets/admin/volunteers/index.html', data: '<!doctype html><p>synthetic volunteer workspace</p>' },
+  { url: '/admin/checkin/', path: 'admin-assets/admin/checkin/index.html', data: '<!doctype html><p>synthetic staff entry check-in</p>' },
   { url: '/invitations/template-blank.png', path: 'admin-assets/invitations/template-blank.png', data: 'synthetic blank image' },
   { url: '/invitations/ggj2026-poster-v2.webp', path: 'admin-assets/invitations/ggj2026-poster-v2.webp', data: 'synthetic blank image' },
   { url: '/_astro/staff-test.js', path: 'admin-assets/_astro/staff-test.js', data: 'export const synthetic=true;' },
@@ -82,6 +85,15 @@ test('entry reads only explicit hashed static assets and ignores unlisted privat
   assert.equal([...loaded.assets.values()].some(bytes => bytes.includes(Buffer.from('PRIVATE-'))), false);
 });
 
+test('the actual runtime accepts the exact 136-record release map and rejects an extra record', async t => {
+  assert.equal(MAX_CLOUD_RELEASE_FILES, MAX_CANDIDATE_FILES - 1);
+  const f=await fixture(t);
+  while(f.release.files.length<MAX_CLOUD_RELEASE_FILES)f.release.files.push({path:'functions/synthetic-'+f.release.files.length+'.mjs',bytes:1,sha256:'a'.repeat(64),mode:'0644'});
+  await f.writeRelease();assert.equal((await loadCloudContentRelease({codeDirectory:f.directory})).assets.size,syntheticAssets.length);
+  f.release.files.push({path:'functions/overflow.mjs',bytes:1,sha256:'a'.repeat(64),mode:'0644'});
+  await f.writeRelease();await rejects(f);
+});
+
 test('entry rejects changed, missing, nonregular, incorrectly-moded and symlinked assets', async t => {
   for (const mutation of ['changed', 'missing', 'directory', 'mode', 'symlink', 'parent-symlink', 'release-symlink']) {
     await t.test(mutation, async t => {
@@ -117,6 +129,7 @@ test('entry rejects unreviewed manifest schema, identity, static URLs, paths and
     missingSettingsPage: release => { release.assets = release.assets.filter(asset => asset.url !== '/admin/settings/'); },
     missingPersonPage: release => { release.assets = release.assets.filter(asset => asset.url !== '/admin/person/'); },
     missingVolunteerPage: release => { release.assets = release.assets.filter(asset => asset.url !== '/admin/volunteers/'); },
+    missingCheckinPage: release => { release.assets = release.assets.filter(asset => asset.url !== '/admin/checkin/'); },
     duplicateUrl: release => { release.assets.push({ ...release.assets[0] }); },
     duplicateFile: release => { release.files.push({ ...release.files[0] }); },
     publicHomepage: release => { release.assets[0].url = '/'; },
@@ -153,7 +166,7 @@ test('closed production factory preserves exact process health while serving no 
   const health = await send(port, '/healthz', { host: 'synthetic-fc-signature-gateway.invalid' });
   assert.equal(health.status, 200);
   assert.deepEqual(JSON.parse(health.text), { status: 'ok', scope: 'process-only', sourceCommit: SOURCE });
-  for (const path of ['/admin/', '/admin/contacts/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/invitations/template-blank.png', '/api/admin/environment', '/api/admin/session', '/api/registrations']) {
+  for (const path of ['/admin/', '/admin/contacts/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/', '/invitations/template-blank.png', '/api/admin/environment', '/api/admin/session', '/api/registrations']) {
     const result = await send(port, path);
     assert.equal(result.status, 503, path);
     assert.equal(result.headers['cache-control'], 'no-store');
@@ -178,5 +191,5 @@ test('an acceptance setting always closes the business runtime and refuses to te
   const health = JSON.parse((await send(port, '/healthz')).text);
   assert.equal(health.scope, 'process-only'); assert.equal(health.acceptance.status, 'rejected');
   assert.equal(health.acceptance.requests, 0); assert.equal(calls, 0);
-  for (const path of ['/admin/', '/api/admin/session', '/api/admin/content']) assert.equal((await send(port, path)).status, 503);
+  for (const path of ['/admin/', '/admin/checkin/', '/api/admin/session', '/api/admin/content']) assert.equal((await send(port, path)).status, 503);
 });

@@ -58,6 +58,18 @@ jobs:
       - name: Install locked dependencies
         id: install
         run: pnpm install --frozen-lockfile
+      - name: Install original OFL Chinese fonts as browser system fallbacks
+        run: |
+          sha256sum -c <<'ARTDICO_BROWSER_FONTS'
+          d45f67f0a7c0ca3f256950777ce6a61cc7ce5f9696d02900cbbaac25f8aa7d16  FrontEnd_Resource/字体/NotoSansSC-Regular.ttf
+          9a38ae0ab28cd5a256f9ea8e00dedc688aac17f7915fcb000572990afa956b96  FrontEnd_Resource/字体/NotoSansSC-Bold.ttf
+          ARTDICO_BROWSER_FONTS
+          artdico_browser_font_dir="$HOME/.local/share/fonts/artdico-host-browser"
+          mkdir -p "$artdico_browser_font_dir"
+          install -m 0644 FrontEnd_Resource/字体/NotoSansSC-Regular.ttf FrontEnd_Resource/字体/NotoSansSC-Bold.ttf "$artdico_browser_font_dir/"
+          install -m 0644 src/assets/fonts/home-font-OFL.txt "$artdico_browser_font_dir/OFL.txt"
+          fc-cache -f "$artdico_browser_font_dir"
+          fc-match -f '%{family}\n' 'sans-serif:charset=745e'
       - name: Observe anonymous public content and CORS without credentials or business writes
         timeout-minutes: 1
         continue-on-error: true
@@ -192,6 +204,31 @@ jobs:
           path: .local-data/browser-evidence/confirmation-mail-recovery/
           if-no-files-found: warn
           retention-days: 1
+      - name: Check mobile entry admission and newest people deletion
+        id: entry_journey_browser
+        timeout-minutes: 4
+        env:
+          ARTDICO_PLAYWRIGHT_MODULE: playwright-core
+          ARTDICO_DIST_DIRECTORY: dist
+        run: |
+          artdico_browser_path="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium)"
+          export ARTDICO_CHROMIUM_BINARY="$artdico_browser_path"
+          node tests/browser/entry-checkin-smoke.mjs
+          node tests/browser/people-entry-order-delete-smoke.mjs
+          node tests/browser/confirmation-email-preview-smoke.mjs
+          node tests/browser/entry-link-smoke.mjs
+      - name: Retain entry journey browser evidence for one day
+        if: ${{ !cancelled() && (steps.entry_journey_browser.outcome == 'success' || steps.entry_journey_browser.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: entry-journey-evidence
+          path: |
+            .local-data/browser-evidence/entry-checkin/
+            .local-data/browser-evidence/people-entry-order-delete/
+            .local-data/browser-evidence/confirmation-email-preview/
+            .local-data/browser-evidence/entry-link/
+          if-no-files-found: warn
+          retention-days: 1
       # Observational for future incident fixes. This repair's release acceptance
       # requires a successful actual capture and this real-asset browser report.
       - name: Check guest bubbles and actual uploaded logo bounds
@@ -323,6 +360,9 @@ jobs:
         run: node scripts/deploy-oss.mjs .local-data/oss-publish "$RUNNER_TEMP/artdico-ossutil/ossutil-2.4.0-linux-amd64/ossutil"
       - name: Verify the exact release through the public HTTPS domain without credentials
         run: node scripts/verify-public-domain.mjs .local-data/oss-publish
+      - name: Verify the short entry directory and fixed API routes without private reads or writes
+        timeout-minutes: 2
+        run: node scripts/verify-entry-surfaces.mjs .local-data/oss-publish
 
   deploy-fc:
     name: Publish and verify the complete Hong Kong cloud lifecycle

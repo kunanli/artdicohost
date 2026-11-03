@@ -28,7 +28,7 @@ export function createConfirmationEmailProvider({ env = {}, fetchFn = globalThis
       EMAILJS_TEMPLATE_ID: config.EMAILJS_CONFIRMATION_TEMPLATE_ID,
       ARTDICO_INVITATION_EMAIL_ENABLED: enabled ? 'true' : 'false' };
     const issues=invitationEmailConfigurationIssues(transportConfig);
-    const transport = createInvitationEmailProvider({env:transportConfig,fetchFn:transportFetch,timeoutMs});
+    const transport = createInvitationEmailProvider({env:transportConfig,fetchFn:transportFetch,timeoutMs,confirmationPresentation:true});
     return { transport, issues, configurationIdentity:identity(config,issues) };
   }
   const readiness = async () => {

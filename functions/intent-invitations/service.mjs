@@ -51,7 +51,7 @@ function reference(value) {
 function contactValue(roster, id, allowDeclined = false) {
   if (!identifier(id) || !plainData(roster) || !revision(roster.revision) || !Array.isArray(roster.contacts)) throw failure();
   const contact = roster.contacts.find(item => item.id === id);
-  if (!contact) throw failure('CONTACT_NOT_FOUND', 404);
+  if (!contact || contact.archivedAt) throw failure('CONTACT_NOT_FOUND', 404);
   if (!validateStoredContact(contact)) throw failure();
   if (!allowDeclined && declined(contact)) throw failure('CONTACT_DECLINED', 422);
   return structuredClone(contact);

@@ -2,6 +2,8 @@
 import { eventConfig } from '../config/event.mjs';
 import { Image } from 'astro:assets';
 import planet from '../assets/home/planet-purple.webp';
+import ggjTitle from '../assets/home/brand-ggj.png';
+import hostTitle from '../assets/home/brand-host.png';
 const startsAt = `${eventConfig.date.value}T${eventConfig.time.opening}:00+08:00`;
 const endsAt = `${eventConfig.date.value}T${eventConfig.time.end}:00+08:00`;
 ---
@@ -12,12 +14,12 @@ const endsAt = `${eventConfig.date.value}T${eventConfig.time.end}:00+08:00`;
     </div>
     <h1 id="hero-heading" data-public-event-title data-initial-event-title={eventConfig.title} data-title-presentation="poster" aria-label={eventConfig.title}>
       <span class="ah-home-title-art ah-home-title-ggj" aria-hidden="true">
-        <span class="ah-home-title-type" data-home-title-type="ggj" lang="en"><span class="ah-poster-solid ah-poster-slice" data-poster-word data-poster-primary>GlobalGameJam</span></span>
-        <span class="ah-home-title-subtitle" data-home-title-subtitle lang="zh-CN">中国组织者交流会</span>
+        <Image src={ggjTitle} alt="GLOBAL GAME JAM 中国组织者交流会" width={1227} height={229} format="png" loading="eager" decoding="async" data-home-title-image="ggj" />
+        <span class="ah-home-title-fallback" data-home-title-fallback hidden><span>GLOBAL GAME JAM</span><span>中国组织者交流会</span></span>
       </span>
       <span class="ah-home-title-art ah-home-title-host" aria-hidden="true">
-        <span class="ah-home-title-type" data-home-title-type="host" lang="en"><span class="ah-poster-solid" data-poster-word data-poster-primary>ARTDiCO HOST</span></span>
-        <span class="ah-home-title-subtitle" data-home-title-subtitle lang="zh-CN">嘉年华</span>
+        <Image src={hostTitle} alt="ARTDiCO HOST 嘉年华" width={981} height={225} format="png" loading="eager" decoding="async" data-home-title-image="host" />
+        <span class="ah-home-title-fallback" data-home-title-fallback hidden><span>ARTDiCO HOST</span><span>嘉年华</span></span>
       </span>
     </h1>
     <p class="ah-hero-description" data-public-hero-description>组织者交流　/　学生作品　/　游戏体验</p>
@@ -45,4 +47,5 @@ const endsAt = `${eventConfig.date.value}T${eventConfig.time.end}:00+08:00`;
 </section>
 <script>
   import '../scripts/countdown.mjs';
+  import '../scripts/hero-title.mjs';
 </script>

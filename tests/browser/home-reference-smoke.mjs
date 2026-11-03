@@ -54,18 +54,11 @@ const GUEST_INFORMATION_LAYOUT = Object.freeze({
 // The single-title Hero has its own requested geometry. The original PNG remains the
 // reference for every unrelated guest/logo/heading/divider measurement.
 const HERO_POSTER_LAYOUT = Object.freeze({
-  reason: 'Each brand appears once as a complete, unbroken line of real text.',
-  priorHero: 'A GLOBAL overline and repeated filled/outline GAME JAM and ARTDiCO HOST pairs.',
-  currentHero: 'One GlobalGameJam line and one ARTDiCO HOST line, each followed by its smaller Chinese subtitle.',
-  desktopWrapperWidth: 'min(82vw, 1574px)', desktopInlinePadding: 'clamp(24px, 7.3vw, 140px)', mobileInlinePadding: 20,
-  mainTitlePixels: 'desktop clamp(64px, 9vw, 172px); mobile (viewport - 40px) / 8.8', hostSizeRatio: 1,
-  groupGap: 'clamp(28px, 4vw, 72px)',
-  wordWidthAlignment: 'Both complete brands share the same left edge and wrapper boundaries; their distinct natural word widths remain readable without cropping.',
-  latinWeight: 800, cssSizeAdjust: '140%', staticWidthScale: 1,
-  displayLeading: 1.1, solidStrokePixels: .55,
-  subtitlePixels: { minimum: 16, maximum: 28 }, sliceAngle: 124,
-  sliceStops: [0,68,68,82,82,100], sliceColors: ['rgb(150, 100, 255)','rgb(198, 179, 255)','rgb(150, 100, 255)'],
-  unchangedScope: 'No guest, organization, section heading, divider, fallback or crop tolerance changes. Footer outline styling stays independent.',
+  reason:'Restore the exact original title artwork and original opposite-edge composition.',
+  firstArtwork:{width:1227,height:229,desktopWidthRatio:.6391,mobileWidthRatio:.94},
+  secondArtwork:{width:981,height:225,desktopWidthRatio:.511,mobileWidthRatio:.82},
+  desktopSphere:{leftRatio:.22,widthRatio:.5594},
+  unchangedScope:'Guest, organization, heading and divider geometry remain unchanged; functional typography and footer styling remain independent.',
 });
 assert.equal(sha(referenceBytes), REFERENCE.sha256, 'geometry measurements must refer to the unchanged original image');
 assert.equal(referenceBytes.readUInt32BE(16), REFERENCE.width); assert.equal(referenceBytes.readUInt32BE(20), REFERENCE.height);
@@ -213,7 +206,7 @@ async function titleReadability(page){
   const measured=await page.locator('#hero-heading').evaluate(node=>{
     const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT),failures=[];let textFragments=0;
     while(walker.nextNode()){
-      const text=walker.currentNode,parent=text.parentElement;if(!text.textContent.trim()||!parent)continue;
+      const text=walker.currentNode,parent=text.parentElement;if(!text.textContent.trim()||!parent||parent.closest('[hidden]'))continue;
       const range=document.createRange();range.selectNodeContents(text);const boxes=[...range.getClientRects()].filter(box=>box.width>0&&box.height>0);
       if(!boxes.length)failures.push('unrendered-text');textFragments+=boxes.length;
       for(let ancestor=parent;ancestor&&ancestor!==node.parentElement;ancestor=ancestor.parentElement){const style=getComputedStyle(ancestor);if(ancestor.hidden||style.display==='none'||style.visibility!=='visible'||Number(style.opacity)===0)failures.push('hidden-text');}
@@ -224,80 +217,35 @@ async function titleReadability(page){
     }
     return {textFragments,failures};
   });
-  assert.ok(measured.textFragments>0,'the title has rendered letterforms');assert.deepEqual(measured.failures,[],'title letters and subtitles are visible and unclipped');return measured;
+  assert.ok(measured.textFragments>0||await page.locator('#hero-heading [data-home-title-image]:visible').count()===2,'the semantic title has visible original artwork or real fallback text');assert.deepEqual(measured.failures,[],'title letters and subtitles are visible and unclipped');return measured;
 }
 async function heroPoster(page,{failedFont=false}={}){
   await page.evaluate(()=>document.fonts.ready);
-  const close=(actual,expected,tolerance,message)=>assert.ok(Math.abs(actual-expected)<=tolerance,message);
-  assert.equal(await page.locator('#hero-heading [data-home-title-image],#hero-heading [data-home-title-fallback]').count(),0,'the title remains live text without image/error fallback layers');
-  assert.equal(await page.locator('#hero-heading').getAttribute('aria-label'),await page.locator('#hero-heading').getAttribute('data-initial-event-title'),'the canonical event title stays independent of the visual brand styling');
-  assert.equal(await page.locator('#hero-heading [data-home-title-overline],#hero-heading [data-poster-repeat],#hero-heading .ah-poster-outline').count(),0,'the Hero has no split GLOBAL overline, repeated words or outline echoes');
-  assert.equal(await page.locator('#hero-heading [data-poster-word]').count(),2,'the Hero contains exactly one real-text word group for each brand');
-  assert.equal(await page.locator('#hero-heading [data-poster-primary]').count(),2,'both single brand lines remain primary text');
-  assert.deepEqual(await page.locator('#hero-heading [data-home-title-subtitle][lang="zh-CN"]').allTextContents(),['中国组织者交流会','嘉年华']);
+  assert.equal(await page.locator('#hero-heading [data-home-title-image]').count(),2,'the two original supplied title artworks are restored');
+  assert.equal(await page.locator('#hero-heading').getAttribute('aria-label'),await page.locator('#hero-heading').getAttribute('data-initial-event-title'),'the semantic event name remains independent of decorative artwork');
+  assert.equal(await page.locator('#hero-heading [data-home-title-overline],#hero-heading [data-poster-repeat],#hero-heading .ah-poster-outline').count(),0,'no split overline or repeated title echo is added');
   const value=await page.evaluate(()=>{
     const box=node=>{const b=node.getBoundingClientRect();return{x:b.x,y:b.y+scrollY,right:b.right,bottom:b.bottom+scrollY,width:b.width,height:b.height};};
-    const boxes=range=>[...range.getClientRects()].filter(b=>b.width&&b.height).map(b=>({x:b.x,y:b.y+scrollY,right:b.right,bottom:b.bottom+scrollY,width:b.width,height:b.height}));
-    const heading=document.querySelector('#hero-heading'),headingStyle=getComputedStyle(heading);
-    const rows=[...heading.querySelectorAll(':scope>.ah-home-title-art')].map(node=>{
-      const type=node.querySelector('[data-home-title-type][lang=en]'),style=getComputedStyle(type),range=document.createRange();range.selectNodeContents(type);
-      const primary=style.fontFamily.split(',')[0].trim().replace(/^["']|["']$/gu,'');
-      const words=[...type.children].map(word=>{
-        const range=document.createRange();range.selectNodeContents(word);const style=getComputedStyle(word),matrix=style.transform==='none'?new DOMMatrixReadOnly():new DOMMatrixReadOnly(style.transform);
-        return{text:word.textContent.trim(),primary:word.hasAttribute('data-poster-primary'),repeat:word.hasAttribute('data-poster-repeat'),word:word.hasAttribute('data-poster-word'),classes:[...word.classList],color:style.color,fill:style.webkitTextFillColor,stroke:parseFloat(style.webkitTextStrokeWidth),strokeColor:style.webkitTextStrokeColor,background:style.backgroundImage,clip:style.webkitBackgroundClip,scaleX:matrix.a,scaleY:matrix.d,animations:word.getAnimations().length,box:box(word),boxes:boxes(range)};
-      });
-      const subtitle=node.querySelector('[data-home-title-subtitle]');
-      return{key:type.dataset.homeTitleType,words,box:box(type),wrapper:box(node),wrapperPosition:getComputedStyle(node).position,hiddenFromSpeech:node.getAttribute('aria-hidden'),family:style.fontFamily,primary,weight:style.fontWeight,fontSize:parseFloat(style.fontSize),lineHeight:parseFloat(style.lineHeight),textBoxes:boxes(range),subtitle:{fontSize:parseFloat(getComputedStyle(subtitle).fontSize),box:box(subtitle)},faces:[...document.fonts].filter(face=>face.family.replace(/^["']|["']$/gu,'')===primary&&face.weight==='800').map(face=>({weight:face.weight,status:face.status,sizeAdjust:face.sizeAdjust}))};
-    });
-    const bounds=selector=>box(document.querySelector(selector));
-    return{rows,composition:{viewport:innerWidth,headingDisplay:headingStyle.display,headingDirection:headingStyle.flexDirection,headingGap:parseFloat(headingStyle.rowGap),heading:box(heading),description:bounds('[data-public-hero-description]'),facts:bounds('#top .ah-event-meta'),actions:bounds('#top .ah-hero-actions'),hero:bounds('#top')}};
+    const heading=document.querySelector('#hero-heading'),bounds=selector=>box(document.querySelector(selector));
+    const rows=[...heading.querySelectorAll(':scope>.ah-home-title-art')].map(node=>{const image=node.querySelector('[data-home-title-image]');return{key:image.dataset.homeTitleImage,box:box(image),wrapper:box(node),wrapperPosition:getComputedStyle(node).position,hiddenFromSpeech:node.getAttribute('aria-hidden'),complete:image.complete,naturalWidth:image.naturalWidth,naturalHeight:image.naturalHeight,hidden:image.hidden,fallbackHidden:node.querySelector('[data-home-title-fallback]').hidden};});
+    return{rows,composition:{viewport:innerWidth,heading:box(heading),description:bounds('[data-public-hero-description]'),facts:bounds('#top .ah-event-meta'),actions:bounds('#top .ah-hero-actions'),hero:bounds('#top')}};
   });
-  const {rows,composition}=value;
-  const mobile=composition.viewport<=820;
-  const expectedLatin=mobile?(composition.viewport-40)/8.8:Math.min(172,Math.max(64,composition.viewport*.09));
-  const expectedInset=mobile?HERO_POSTER_LAYOUT.mobileInlinePadding:Math.min(140,Math.max(24,composition.viewport*.073));
-  const expectedWrapperWidth=mobile?composition.viewport-40:Math.min(1574,composition.viewport*.82);
-  const expectedGroupGap=Math.min(72,Math.max(28,composition.viewport*.04));
-  assert.equal(rows.length,2,'both brand wrappers remain direct children of the semantic h1');
+  const{rows,composition}=value,mobile=composition.viewport<=820;
   assert.deepEqual(rows.map(row=>row.key),['ggj','host']);
-  assert.deepEqual(rows.map(row=>row.words.map(word=>word.text)),[['GlobalGameJam'],['ARTDiCO HOST']],'each complete brand appears once, with GlobalGameJam kept together');
-  for(const [index,row] of rows.entries()){
-    close(row.fontSize,expectedLatin*(index?HERO_POSTER_LAYOUT.hostSizeRatio:1),.01,'both complete brands use the approved display size');
-    close(row.wrapper.x,composition.hero.x+expectedInset,1,'the title retains the approved desktop inset or 20px mobile margin');
-    close(row.wrapper.width,expectedWrapperWidth,1,'the brand wrapper retains its exact approved responsive width');
-    close(row.wrapper.right,composition.hero.x+expectedInset+expectedWrapperWidth,1,'the full wrapper retains its approved right boundary');
-    assert.notEqual(row.wrapperPosition,'absolute','both brands participate in normal flow');assert.equal(row.hiddenFromSpeech,'true');
-    const [word]=row.words;
-    assert.equal(word.primary,true);assert.equal(word.repeat,false);assert.equal(word.word,true,'each complete brand participates in the native text mask');assert.ok(word.classes.includes('ah-poster-solid'));
-    close(word.stroke,HERO_POSTER_LAYOUT.solidStrokePixels,.01,'the solid brand keeps its fine same-color stroke');assert.equal(word.strokeColor,word.color);
-    if(index===0){
-      assert.ok(word.classes.includes('ah-poster-slice'),'only GlobalGameJam retains the restrained diagonal color accent');
-      assert.equal((word.background.match(/linear-gradient\(/gu)||[]).length,1,'GlobalGameJam has one color layer');assert.ok(word.background.includes(HERO_POSTER_LAYOUT.sliceAngle+'deg'));
-      assert.deepEqual((word.background.match(/\d+(?:\.\d+)?%/gu)||[]).map(Number.parseFloat),HERO_POSTER_LAYOUT.sliceStops,'the single color layer keeps the exact hard-edge stops');
-      const colors=word.background.match(/rgba?\([^)]*\)/gu)||[];
-      assert.deepEqual(colors.filter((color,index)=>index===0||color!==colors[index-1]),HERO_POSTER_LAYOUT.sliceColors,'the accent stays purple, pale purple, then purple');
-      assert.equal(word.clip,'text','the single background layer clips to the real letters');assert.match(word.fill,/rgba\([^)]*,\s*0\)$/u);
-    }else{
-      assert.equal(word.classes.includes('ah-poster-slice'),false,'ARTDiCO HOST stays a plain solid brand');assert.equal(word.background,'none');assert.equal(word.fill,word.color,'ARTDiCO HOST keeps an opaque solid fill');assert.doesNotMatch(word.fill,/rgba\([^)]*,\s*0\)$/u);
-    }
-    close(row.lineHeight/row.fontSize,HERO_POSTER_LAYOUT.displayLeading,.002,'each single brand retains the approved display leading');
-    assert.ok(row.subtitle.fontSize>=HERO_POSTER_LAYOUT.subtitlePixels.minimum&&row.subtitle.fontSize<=HERO_POSTER_LAYOUT.subtitlePixels.maximum&&row.subtitle.fontSize<row.fontSize,'Chinese subtitles remain readable and smaller than the Latin display');close(row.subtitle.box.y-word.box.bottom,mobile?8:10,1,'each subtitle follows its brand with the approved gap');
-    close(row.subtitle.fontSize,mobile?Math.min(20,Math.max(16,composition.viewport*.026)):Math.min(28,Math.max(18,composition.viewport*.0145)),.01,'subtitle size follows its separate small display role');
-    assert.equal(word.boxes.length,1,'a complete brand never breaks onto another line');close(word.box.x,row.wrapper.x,1,'each complete brand starts at its wrapper left edge');
-    close(word.scaleX,HERO_POSTER_LAYOUT.staticWidthScale,.001,'letterforms retain their natural width');close(word.scaleY,1,.001,'letterforms are not vertically stretched');assert.equal(word.animations,0,'brand words stay static');
-    for(const rect of word.boxes)assert.ok(rect.x>=row.wrapper.x-1&&rect.right<=row.wrapper.right+1,'the whole brand fits its wrapper');
-    assert.equal(row.weight,'800');assert.equal(row.primary,'Barlow Condensed');assert.ok(row.faces.length>0);assert.ok(row.faces.some(face=>face.status===(failedFont?'error':'loaded')),'the real shipped font request reaches its expected load or fallback state');assert.ok(row.faces.every(face=>face.sizeAdjust===HERO_POSTER_LAYOUT.cssSizeAdjust),'the original display face keeps its approved CSS metrics');
-    assert.ok(row.box.width>0&&row.box.height>0&&row.textBoxes.length>0,'the headline consists of rendered native letterforms');
-    for(const rect of row.textBoxes)assert.ok(rect.x>=-1&&rect.right<=composition.viewport+1,'every live brand remains inside the viewport');
+  for(const[index,row]of rows.entries()){
+    const ratio=mobile?index===0?.94:.82:index===0?.6391:.511;
+    assert.ok(Math.abs(row.box.width-composition.viewport*ratio)<=1,'original artwork retains its separately measured responsive width');
+    assert.equal(row.complete,true);assert.equal(row.hidden,false);assert.equal(row.fallbackHidden,true);
+    assert.equal(row.naturalWidth,index===0?1227:981);assert.equal(row.naturalHeight,index===0?229:225);
+    assert.ok(Math.abs(row.box.height/row.box.width-row.naturalHeight/row.naturalWidth)<.001,'artwork preserves its original aspect ratio');
+    assert.equal(row.wrapperPosition,'absolute');assert.equal(row.hiddenFromSpeech,'true');
+    assert.ok(row.box.x>=-1&&row.box.right<=composition.viewport+1,'both complete title graphics remain within the viewport');
+    assert.ok(Math.abs(index===0?row.box.x:row.box.right-composition.viewport)<=1,'the original brands retain opposite page-edge alignment');
   }
-  assert.equal(composition.headingDisplay,'flex');assert.equal(composition.headingDirection,'column');close(composition.headingGap,expectedGroupGap,.01,'the two single brands use their approved responsive spacing');
-  close(rows[0].words[0].box.x,rows[1].words[0].box.x,1,'the complete brands share one left edge');
-  close(rows[0].wrapper.x,rows[1].wrapper.x,1,'both brand wrappers share a left edge');close(rows[0].wrapper.right,rows[1].wrapper.right,1,'both brand wrappers share the same right boundary');
-  close(rows[1].wrapper.y-rows[0].wrapper.bottom,composition.headingGap,1,'the two brand groups are separated by their explicit normal-flow gap');
-  assert.ok(composition.description.y>=composition.heading.bottom-1,'published introductory copy follows both complete brands');
-  assert.ok(composition.facts.y>=composition.description.bottom-1&&composition.facts.y>=composition.heading.bottom-1,'event facts follow both brand lines and the published copy');
-  assert.ok(composition.actions.y>=composition.facts.bottom-1&&composition.actions.bottom<=composition.hero.bottom+1,'Hero actions follow the facts and remain inside the Hero');
-  return{layout:HERO_POSTER_LAYOUT,...value};
+  assert.ok(rows[1].wrapper.y>rows[0].wrapper.bottom+20,'the original two title groups have independent vertical positions');
+  assert.ok(composition.facts.y>=composition.description.bottom-1,'event facts follow the introductory copy');
+  assert.ok(composition.actions.y>=composition.facts.bottom-1&&composition.actions.bottom<=composition.hero.bottom+1,'Hero actions remain after the facts and inside the Hero');
+  return{layout:HERO_POSTER_LAYOUT,...value,footerFontFailure:failedFont};
 }
 
 async function heroType(page,options){
@@ -748,7 +696,7 @@ finally {
     source, testScriptSha256, gitHeadAtRun: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), dist,
     htmlMtime: metadata.mtime.toISOString(), publicHtmlSha256: sha(html), servedAssets: Object.fromEntries([...servedAssets].sort()),
     reference: REFERENCE, guestInformationLayout: GUEST_INFORMATION_LAYOUT, heroPosterLayout:HERO_POSTER_LAYOUT, referenceScreenshots, organizationInputOrder: organizationInputOrder.map(index => organizationNames[index]),
-    logoSources, artworkSources, geometryScope: 'Guest, organization, heading and divider measurements retain their existing reference tolerances. Hero separately checks one complete GlobalGameJam line and one complete ARTDiCO HOST line in normal flow; the earlier overline and repeated outline pairs are superseded. Screenshots require visual review and are not pixel-diff equivalence.',
+    logoSources, artworkSources, geometryScope: 'Guest, organization, heading and divider measurements retain their existing reference tolerances. Hero separately checks the exact original title assets, their aspect ratios and opposite-edge layout; later condensed-font approximations are superseded. Screenshots require visual review and are not pixel-diff equivalence.',
     passedCases: reports.length, reports, pageErrors, ...(failure ? { failure } : {}) };
   await writeFile(resolve(evidence, 'report.json'), JSON.stringify(result, null, 2) + '\n'); process.stdout.write(JSON.stringify(result, null, 2) + '\n');
 }

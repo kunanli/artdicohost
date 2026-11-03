@@ -1,5 +1,23 @@
 # support@artdico.co 報名確認信設定
 
+## 2026-11-03：確認信語言、Wallet 徽章與二維碼
+
+本階段新增三個固定參數 `email_subject`、`email_language`、`confirmation_actions`，原八個參數保留。新一般報名保存明確 `locale`（`zh-CN`／`en`），缺省舊記錄仍用簡體中文，不由 Email 地址或姓名猜語言。只有新送出的信使用新內容；讀取、部署與舊發信紀錄不補寄。
+
+**需在既有 EmailJS 模板貼上新的 [完整 HTML](templates/emailjs-registration-confirmation.html)，並把 Subject 改成 `{{email_subject}}`。** 網站後端無 EmailJS 模板管理權限，部署程式無法替你修改控制台模板；原模板未更新時仍會寄出原文字，不能宣稱圖標／二維碼已顯示。保留同一 Template ID、收件人與寄件設定，不新增 Auto-Reply。實際 EmailJS 403 還需核對 Account → Security 的 non-browser API 權限與服務商失敗原因，本階段模板不會解除帳戶限制。
+
+- `invitation_text` 維持雙大括號跳脫姓名和活動文字；只有 `confirmation_actions` 用三大括號。這個片段由服務端固定程式生成，僅含驗證過的本站短連結、同源私密 QR 圖片 URL、官方圖標 URL與固定語系文案，不接受自由 HTML、任意外部 URL 或參加者文字。
+- Wallet 圖標使用主辦方上傳的原始 CN／US-UK SVG，等比例 rasterize 成郵件較相容的 PNG，不重繪或改色。CN：`/wallet/add-to-apple-wallet-cn.png`；EN：`/wallet/add-to-apple-wallet-en.png`。郵件以44px高呈現並保留圖標原比例；點擊打開短參會頁，在 iPhone Safari 取得票券，並不把一般頁面連結冒稱直接加入 Wallet。
+- 正式確認／行前提醒由明確寄送流程建立 `/r/#<隨機22字元>` 私人短連結及專用入場 QR。只在可核對當前名額、權限和短連結建立成功後呼叫 EmailJS；不能建立時記錄已知未開始傳送，可人工重寄。一般申請待審回執不附正式入場碼或 Wallet 徽章。
+- 入場 QR 由本站產生，不把能力碼送到第三方圖片服務；工作人員掃碼仍須登入並明確確認，圖片載入不簽到。
+- 入群圖片使用同源、參會能力綁定的穩定圖片端點，每次取圖重查當前群碼與資格，**不在信中放十分鐘到期的臨時群碼圖片 URL**。未設定／已到期就不顯示圖片；有設定時顯示實際到期時間，並提供參會頁取得最新碼。郵件代理可能快取圖片，信中靜態圖不能保證永遠為最新；失效以參會頁為準。
+- 模板預覽／合成測試不等於真實收件、微信入群或 iPhone Wallet 加入；需獨立核對收件匣與裝置結果。
+
+官方徽章派生記錄（原始SVG另行保留）：CN SVG SHA-256 `4b832d82c1fe7cf51a9821706566c411234dbdefc54b4ce3487c366f67650d7e` → PNG488×176、15114 bytes、SHA `359b17cea9d2f249026388f9c3f625c163f2d872c02e0353363a301cdf6928d5`；EN SVG SHA `052b3b446860fd2f9b49c2f0336038947623a5a9433ee3583585b8552ff6f506` → PNG557×176、14952 bytes、SHA `5c81903d7e9c789fc8b25f5db02a3ecf47746c7e99d967cc651e4ff29703a8e1`。使用既有 Sharp0.35.5，SVGdensity288、目標高176px、保留透明與長寬比。
+
+以下為歷史配置記錄，與上段新模板規則衝突時以上段為準。
+
+
 2026-11-01 P4：沿用下方已正常運作的服務、模板及憑據。新增申請回執與行前提醒共用原 `invitation_text`，八個模板參數及中性 Subject 不變，無須新增模板、Auto-Reply 或重新設定。原政策版本不遷移；表單說明必要通知與 EmailJS 最小傳送欄位。三類獨立去重、人工提醒預覽與未知結果核對見 [最新通知流程](registration-confirmation.md)。真實收件、SPF／DKIM／DMARC 仍須按實際郵件獨立記錄，不把開發合成測試當作新實寄證據。
 
 最新回報（2026-10-21）：使用者確認 Email 已正常發送、此部分暫時 OK，接續改為 Apple Wallet 設定。以下保留實際模板與操作流程；此回報不冒充開發端新取得的 FC 狀態或獨立實寄證據。

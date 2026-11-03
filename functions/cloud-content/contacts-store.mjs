@@ -54,7 +54,7 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
       || input.audit.length !== input.revision || size(input) > MAX_CONTACT_STATE_BYTES) throw unavailable();
     const ids = new Set(), identities = new Set();
     for (const contact of input.contacts) {
-      const optional = Object.hasOwn(contact ?? {}, 'sourceProfile') ? ['sourceProfile', 'sourceProfileDigest'] : [];
+      const optional = [...(Object.hasOwn(contact ?? {}, 'sourceProfile') ? ['sourceProfile', 'sourceProfileDigest'] : []), ...(Object.hasOwn(contact ?? {}, 'archivedAt') ? ['archivedAt'] : [])];
       const operationFields = Object.keys(createEmptyContactOperations());
       const missingOperationDefaults = ['participationForms', 'sessionRoles', 'organizationMemberships'].filter(key => !Object.hasOwn(contact?.operations ?? {}, key));
       if (!keys(contact, ['id', 'source', 'profile', 'operations', 'invitation', 'createdAt', 'updatedAt', ...optional])
@@ -64,7 +64,7 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
         || !keys(contact.operations, operationFields.filter(key => !missingOperationDefaults.includes(key)))
         || !keys(contact.invitation, ['settings', 'generatedAt', 'sentAt', 'sentGenerationAt', 'channel'])) throw unavailable();
       profileValue(contact.profile, contact.source.rowId);
-      if (optional.length) {
+      if (Object.hasOwn(contact, 'sourceProfile')) {
         profileValue(contact.sourceProfile, contact.source.rowId);
         if (contact.sourceProfileDigest !== hash(JSON.stringify(contact.sourceProfile))) throw unavailable();
       }
@@ -102,7 +102,7 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
         archives.set(archive.digest, { archive, baselines });
       }
     }
-    const usedArchives = new Set(), created = new Set(), last = new Map(), generated = new Map(), sent = new Map(); let at = '';
+    const usedArchives = new Set(), created = new Set(), last = new Map(), generated = new Map(), sent = new Map(), deleted = new Map(); let at = '';
     for (const [index, entry] of input.audit.entries()) {
       if (entry.action === 'export_contacts') {
         if (!keys(entry, ['action', 'actorId', 'revision', 'at', 'count', 'includeContact', 'includeAnswers', 'workbookSha256'])
@@ -119,7 +119,7 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
         for (const id of archive.contactIds) {
           const baseline = baselines.get(id);
           if (created.has(id)) throw unavailable();
-          created.add(id); last.set(id, baseline.updatedAt);
+          created.add(id); last.set(id, baseline.updatedAt); if (baseline.archivedAt) deleted.set(id, baseline.archivedAt);
           if (baseline.invitation.generatedAt) generated.set(id, { at: baseline.invitation.generatedAt, settingsDigest: hash(JSON.stringify(baseline.invitation.settings)) });
           if (baseline.invitation.sentAt) sent.set(id, { at: baseline.invitation.sentAt, generatedAt: baseline.invitation.sentGenerationAt, channel: baseline.invitation.channel });
         }
@@ -136,7 +136,9 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
         if (created.has(entry.contactId) || entry.at !== contact.createdAt || entry.consentSource !== 'staff_assertion'
           || entry.contactConsent !== (contact.sourceProfile ?? contact.profile).contactConsent || entry.sourceDigest !== contact.source.digest) throw unavailable();
         created.add(entry.contactId);
-      } else if (!created.has(entry.contactId) || !['save_contact_profile', 'save_contact_operations', 'record_invitation_generated', 'record_invitation_manually_sent'].includes(entry.action)) throw unavailable();
+      } else if (!created.has(entry.contactId) || !['save_contact_profile', 'save_contact_operations', 'record_invitation_generated', 'record_invitation_manually_sent', 'archive_contact', 'restore_contact'].includes(entry.action)) throw unavailable();
+      if (entry.action === 'archive_contact') { if (deleted.has(entry.contactId)) throw unavailable(); deleted.set(entry.contactId, entry.at); }
+      if (entry.action === 'restore_contact') { if (!deleted.has(entry.contactId)) throw unavailable(); deleted.delete(entry.contactId); }
       if (entry.action === 'record_invitation_generated') {
         if (!SHA.test(entry.settingsDigest) || contact.profile.contactConsent !== 'consented') throw unavailable();
         generated.set(entry.contactId, { at: entry.at, settingsDigest: entry.settingsDigest });
@@ -149,6 +151,7 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
     }
     if (created.size !== ids.size || usedArchives.size !== archives.size || input.contacts.some(contact => last.get(contact.id) !== contact.updatedAt)) throw unavailable();
     for (const contact of input.contacts) {
+      if ((contact.archivedAt ?? null) !== (deleted.get(contact.id) ?? null)) throw unavailable();
       const invitation = contact.invitation, generation = generated.get(contact.id), delivery = sent.get(contact.id);
       if (invitation.generatedAt !== (generation?.at ?? null)
         || generation && hash(JSON.stringify(invitation.settings)) !== generation.settingsDigest
@@ -196,6 +199,7 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
     return contact;
   }
   function permitInvitation(contact) {
+    if (contact.archivedAt) throw new CloudContentError('CONTACT_NOT_FOUND', '此联系人已删除。', 404);
     if (contact.profile.contactConsent !== 'consented') throw new CloudContentError('CONTACT_NOT_CONSENTED', '来源资料未明确同意后续联系，不能生成或记录发送邀请函。', 422);
   }
   async function mutate(expected, actorId, update) {
@@ -271,6 +275,13 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
         invitation: { settings: null, generatedAt: null, sentAt: null, sentGenerationAt: null, channel: null }, createdAt: at, updatedAt: at };
       state.contacts.push(contact);
       return { contact, action: 'create_contact', detail: { consentSource: 'staff_assertion', contactConsent: profile.contactConsent, sourceDigest: contact.source.digest } };
+    }),
+    setArchived: (id, expected, archived, actorId) => mutate(expected, actorId, (state, at) => {
+      if (typeof archived !== 'boolean') throw new CloudContentError('VALIDATION_ERROR', '删除状态无效。', 422);
+      const contact = find(state, id);
+      if (Boolean(contact.archivedAt) === archived) throw conflict();
+      if (archived) contact.archivedAt = at; else delete contact.archivedAt;
+      return { contact, action: archived ? 'archive_contact' : 'restore_contact' };
     }),
     saveProfile: (id, expected, input, actorId) => mutate(expected, actorId, state => {
       const contact = find(state, id), profile = checked(validateContactProfileEdit(input, contact.profile));

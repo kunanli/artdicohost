@@ -82,7 +82,7 @@ const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'play
 const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 activeBrowser = browser;
 await mkdir(evidence, { recursive: true });
-const reports = [], pageErrors = [], servedAssets = new Map(), rawImageRequests = new Set(), uncapturedMediaRequests = new Set();
+const reports = [], glyphInkChecks = [], pageErrors = [], servedAssets = new Map(), rawImageRequests = new Set(), uncapturedMediaRequests = new Set();
 let uncapturedMediaRequestCount=0;
 let defaultReferenceLogosRendered = 0;
 let stage = 'fixture', currentWidth = null, currentMode = null, lastNumericMetrics = null;
@@ -230,12 +230,67 @@ async function loadLogos(f) {
   for(const image of await f.page.locator('[data-organization-id] img').all()){await image.evaluate(node=>{const row=node.closest('[data-organization-id]');row?.dispatchEvent(new CustomEvent('artdico:organization-reveal',{bubbles:true,detail:{id:row.id}}));row?.scrollIntoView({block:'center',behavior:'instant'});});await image.evaluate(node=>new Promise(resolve=>{const done=()=>{if(node.closest('.ah-organization-image')?.hidden||node.complete&&node.naturalWidth>0&&node.closest('.ah-organization-image')?.dataset.logoPresentation!=='pending')resolve();else setTimeout(done,10);};done();}));if(await image.isVisible())await image.evaluate(node=>node.decode());}
   await f.page.evaluate(() => document.fonts.ready);
 }
+// DOM geometry can be correct even when a subset font renders missing Han
+// characters as blank advances or generic tofu. Inspect actual font raster ink,
+// not font availability APIs; keep characters and bitmaps inside the browser.
+async function guestGlyphInk(f) {
+  stage = 'actual-han-glyph-ink';
+  const coverage = await f.page.evaluate(async () => {
+    await document.fonts.ready;
+    const canvas = document.createElement('canvas'); canvas.width = 96; canvas.height = 96;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) throw new Error('PUBLIC_GLYPH_CANVAS_UNAVAILABLE');
+    context.textAlign = 'left'; context.textBaseline = 'alphabetic'; context.fillStyle = '#fff';
+    const draw = text => {
+      context.clearRect(0, 0, canvas.width, canvas.height); context.fillText(text, 24, 64);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data, alpha = new Uint8Array(canvas.width * canvas.height);
+      let ink = 0; for (let index = 0; index < alpha.length; index++) { alpha[index] = pixels[index * 4 + 3]; if (alpha[index]) ink++; }
+      return { alpha, ink };
+    };
+    const equalInk = (a, b) => a.ink === b.ink && a.alpha.every((value, index) => value === b.alpha[index]);
+    const unavailable = (glyph, markers) => glyph.ink === 0 || markers.some(marker => marker.ink > 0 && equalInk(glyph, marker));
+    const fonts = new Map(), seen = new Set();
+    let fields = 0, fieldsWithHan = 0, hanOccurrences = 0, checkedGlyphs = 0, blankGlyphs = 0, missingMarkerGlyphs = 0, negativeControls = 0;
+    for (const element of document.querySelectorAll('[data-guest-toggle] .ah-guest-name,[data-guest-toggle] .ah-guest-affiliation,[data-guest-toggle] .ah-guest-subtitle')) {
+      fields++; const characters = [...element.textContent].filter(character => /\p{Script=Han}/u.test(character));
+      if (!characters.length) continue;
+      fieldsWithHan++; hanOccurrences += characters.length;
+      const style = getComputedStyle(element), font = [style.fontStyle, style.fontWeight, '32px', style.fontFamily].join(' ');
+      context.font = font;
+      let markers = fonts.get(font);
+      if (!markers) {
+        // Both a Unicode noncharacter and an unassigned codepoint are tested:
+        // platform last-resort fonts may rasterize either as blank or tofu.
+        markers = [draw(String.fromCodePoint(0x10ffff)), draw(String.fromCodePoint(0x0378))]; fonts.set(font, markers);
+        const blank = draw(' ');
+        if (blank.ink !== 0 || !unavailable(blank, markers) || !markers.every(marker => unavailable(marker, markers))) throw new Error('PUBLIC_GLYPH_NEGATIVE_CONTROL_FAILED');
+        negativeControls += 3;
+      }
+      for (const character of characters) {
+        const key = JSON.stringify([font, character]); if (seen.has(key)) continue; seen.add(key);
+        const glyph = draw(character); checkedGlyphs++;
+        if (glyph.ink === 0) blankGlyphs++;
+        else if (markers.some(marker => marker.ink > 0 && equalInk(glyph, marker))) missingMarkerGlyphs++;
+      }
+    }
+    return { fields, fieldsWithHan, hanOccurrences, checkedGlyphs, blankGlyphs, missingMarkerGlyphs, fontStacks: fonts.size, negativeControls, canvasPixels: canvas.width * canvas.height, probeSizePx: 32 };
+  });
+  lastNumericMetrics = { glyphInk: coverage };
+  glyphInkChecks.push({ width: f.width, mode: currentMode, exactCapturedSnapshot: currentMode === 'actual', ...coverage });
+  assert.ok(coverage.fields > 0 && coverage.fieldsWithHan > 0 && coverage.checkedGlyphs > 0, 'the actual displayed guest fields exercise Han rasterization');
+  assert.equal(coverage.blankGlyphs, 0, 'every actual Han glyph must paint visible ink rather than a blank advance');
+  assert.equal(coverage.missingMarkerGlyphs, 0, 'actual Han glyph ink must differ from platform missing-codepoint marker bitmaps');
+  assert.equal(coverage.negativeControls, coverage.fontStacks * 3, 'each actual font stack rejects blank and missing-codepoint controls');
+  stage = 'actual-public-caption';
+  return coverage;
+}
 async function guestText(f, { profiles = guests, allowLongNameAndTitle = false, requireUnclippedNameAndTitle = false } = {}) {
   stage = 'actual-public-caption';
   assert.equal(await f.page.locator('[data-guest-id]').count(), guests.length);
   assert.deepEqual(await f.page.locator('[data-guest-id]').evaluateAll(nodes=>nodes.map(node=>node.dataset.guestId)),ids,'every safe public profile renders in captured order independently of attendance');
   assert.deepEqual(await f.page.locator('[data-guest-id]').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.guestId,attendance:node.dataset.guestAttendance}))),guests.map(item=>({id:item.id,attendance:item.attendance})),'the DOM attendance annotation matches the unchanged real proof for every profile');
   assert.equal((await f.page.locator('#guests-heading').textContent()).trim(),'嘉宾阵容','the public collection title does not claim attendance confirmation');
+  await guestGlyphInk(f);
   const result = [];
   for (const guest of profiles) {
     const card = f.page.locator('#guest-' + guest.id), toggle = card.locator('[data-guest-toggle]');
@@ -480,7 +535,7 @@ finally {
     source, dist, testScriptSha256, gitHeadAtRun: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), htmlMtime: info.mtime.toISOString(), publicHtmlSha256: sha(html),
     capture: { directory: capture, capturedAt: manifest.capturedAt, anonymous: true, source: manifest.source, sourceCommit: manifest.sourceCommit, snapshotSha256: manifest.snapshot.sha256,
       revision:snapshot.revision,guestCount:rawGuestCount,rawGuestCount,visibleGuestCount,attendanceProof,organizationCount: snapshot.content.organizations.length, mediaHashes: manifest.media.map(item => item.sha256) },
-    servedAssets: Object.fromEntries([...servedAssets].sort()), actualRawImagesRendered: rawImageRequests.size, defaultReferenceLogosRendered, actualFieldCoverage,
+    servedAssets: Object.fromEntries([...servedAssets].sort()), actualRawImagesRendered: rawImageRequests.size, defaultReferenceLogosRendered, actualFieldCoverage, glyphInkChecks,
     uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequestCount,uncapturedPublicMediaUniquePathsStubbed:uncapturedMediaRequests.size, actualMediaScope: 'Every safe public guest profile receives four-width DOM text and detail checks; attendance is read only from the unchanged captured proof. Every organization upload is captured. Guest photos and work media outside that capture receive intercepted 404s; their original image bytes are not visually verified.',
     syntheticImageVariants: synthetic.map(({ kind, width, height, id }) => ({ kind, width, height, id })), reports, pageErrors, ...(failure ? { failure } : {}) };
   await writeFile(resolve(evidence, 'report.json'), JSON.stringify(report, null, 2) + '\n');
@@ -488,6 +543,7 @@ finally {
     sourceCommit: report.gitHeadAtRun, captureSourceCommit: manifest.sourceCommit, actualRawLogosTested: report.actualRawImagesRendered, defaultReferenceLogosRendered,
     guestCount:rawGuestCount,rawGuestCount,visibleGuestCount,actualGuestCardsChecked:actualReports.reduce((total,item)=>total+item.text.length,0),actualReferenceSpellingsChecked:actualSpellingBoundaryIds.length,attendanceProof,organizationCount: snapshot.content.organizations.length, pageErrorCount: pageErrors.length,
     actualFieldCoverage,
+    actualHanGlyphInk: { cases: glyphInkChecks.filter(item => item.exactCapturedSnapshot).length, checkedGlyphs: glyphInkChecks.filter(item => item.exactCapturedSnapshot).reduce((total, item) => total + item.checkedGlyphs, 0), blankGlyphs: glyphInkChecks.reduce((total, item) => total + item.blankGlyphs, 0), missingMarkerGlyphs: glyphInkChecks.reduce((total, item) => total + item.missingMarkerGlyphs, 0), negativeControls: glyphInkChecks.reduce((total, item) => total + item.negativeControls, 0) },
     uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequestCount,uncapturedPublicMediaUniquePathsStubbed:uncapturedMediaRequests.size,
     ...(failure ? { failure: { code: 'PUBLIC_VISUAL_ASSERTION_FAILED', stage, width: currentWidth, mode: currentMode,
       location: /bubbles-logo-bounds-smoke\.mjs:\d+:\d+/u.exec(failure.stack)?.[0] ?? null }, numericMetrics: lastNumericMetrics } : {}) };

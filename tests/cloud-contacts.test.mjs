@@ -369,3 +369,15 @@ test('complete roster export audit uses one CAS without modifying a person and r
   assert.equal((await second.read()).revision,3);assert.equal(journal.snapshot().value.audit.filter(entry=>entry.action==='export_contacts').length,2);
   assert.deepEqual((await second.read()).contacts,before.contacts);
 });
+
+
+test('archived contacts retain immutable source and audit across restart, support undo, and reject forged archive metadata',async()=>{
+  const {first,second,journal,make}=unitSetup();const original=await first.createContact(0,profile(),'owner'),id=original.contact.id;
+  const archived=await first.setArchived(id,1,true,'owner');assert.equal(archived.revision,2);assert.equal(archived.contact.archivedAt,AT);
+  assert.deepEqual(archived.contact.source,original.contact.source);assert.deepEqual(archived.contact.profile,original.contact.profile);
+  assert.equal((await second.read()).contacts[0].archivedAt,AT);assert.equal(readContactSnapshot(JSON.stringify(journal.snapshot().value)).contacts[0].archivedAt,AT);
+  await fails(()=>first.setArchived(id,1,true,'owner'),'REVISION_CONFLICT',409);
+  await fails(()=>first.recordGenerated(id,2,settings,'owner'),'CONTACT_NOT_FOUND',404);
+  const restored=await second.setArchived(id,2,false,'owner');assert.equal(Object.hasOwn(restored.contact,'archivedAt'),false);assert.equal((await make().read()).revision,3);
+  const bad=journal.snapshot().value;bad.contacts[0].archivedAt=AT;journal.corrupt(bad);await fails(()=>make().read(),'CONTACT_STORAGE_ERROR',503);
+});

@@ -65,3 +65,43 @@ test('directory cursors bind source revisions, filter and permission scope; malf
   await f.createContact({name:'合成三'});assert.equal((await read(f,headers,'/api/admin/people/directory?cursor='+first.value.nextCursor)).response.status,409);
   for(const query of ['?view=unknown','?limit=0','?view=all&view=all','?query='+encodeURIComponent('\n')])assert.equal((await read(f,headers,'/api/admin/people/directory'+query)).response.status,400);
 });
+
+
+test('directory orders by actual creation time newest first, not review state or later edits',async()=>{
+  let clock=Date.parse('2026-10-21T09:00:00.000Z');const f=await peopleRuntimeFixture({clock:()=>clock}),headers=await f.login();
+  const pending=await f.seedPublic({intake:'general-v2'});clock+=60000;
+  const recent=await f.createContact({name:'A 合成较新录入'}),recentAt=recent.contact.createdAt;clock+=60000;
+  const latest=await f.createContact({name:'Z 合成最新录入'}),latestAt=latest.contact.createdAt;clock+=60000;
+  await f.app.contactsStore.saveProfile(recent.contact.id,latest.revision,{name:'A 合成后续修正'},f.users[0].id);
+  const result=await read(f,headers);assert.equal(result.response.status,200);
+  assert.deepEqual(result.value.rows.map(row=>row.key),['contact:'+latest.contact.id,'contact:'+recent.contact.id,'registration:'+pending.reference_code]);
+  assert.equal(result.value.rows[0].recordedAt,latestAt);assert.equal(result.value.rows[1].recordedAt,recentAt);
+  const first=await read(f,headers,'/api/admin/people/directory?limit=1');assert.equal(first.value.rows[0].key,'contact:'+latest.contact.id);
+  const second=await read(f,headers,'/api/admin/people/directory?limit=1&cursor='+first.value.nextCursor);assert.equal(second.value.rows[0].key,'contact:'+recent.contact.id);
+});
+
+test('contact deletion is permission checked, durable and restorable without erasing source or withdrawing a linked registration',async()=>{
+  const f=await peopleRuntimeFixture(),created=await f.createContact(),id=created.contact.id,headers=await f.login(),onlyOutreach=await f.login('outreach');
+  const path='/api/admin/contacts/'+id+'/archive',body={expectedRevision:created.revision,archived:true};
+  assert.equal((await f.app.handle(f.request(path,{method:'POST',headers:onlyOutreach,body}))).status,403);
+  assert.equal((await f.app.handle(f.request(path,{method:'POST',headers:{Cookie:headers.Cookie},body}))).status,403);
+  const removed=await f.app.handle(f.request(path,{method:'POST',headers,body}));assert.equal(removed.status,200);const receipt=await removed.json();assert.ok(receipt.contact.archivedAt);
+  assert.deepEqual(receipt.contact.profile,created.contact.profile);assert.deepEqual(receipt.contact.source,created.contact.source);
+  assert.equal((await read(f,headers)).value.rows.length,0);assert.equal((await f.app.contactsStore.read()).contacts.length,1);
+  assert.equal((await f.make().contactsStore.read()).contacts[0].archivedAt,receipt.contact.archivedAt,'archive survives a fresh runtime');
+  assert.equal((await f.app.handle(f.request(path,{method:'POST',headers,body}))).status,409,'stale deletion never rewrites');
+  const restored=await f.app.handle(f.request(path,{method:'POST',headers,body:{expectedRevision:receipt.revision,archived:false}}));assert.equal(restored.status,200);assert.equal((await read(f,headers)).value.rows.length,1);
+  const current=await f.app.contactsStore.read(),conversion=await f.app.intentService.convertContacts({actor:f.users[0],contactIds:[id],expectedContactRevision:current.revision,permissionReference:'synthetic explicit permission'});
+  const registrationId=conversion.registrations[0].registrationId,beforeAdmission=await f.app.registrationService.getAdmissions({actor:f.users[0]});
+  assert.equal((await f.app.handle(f.request(path,{method:'POST',headers,body:{expectedRevision:current.revision,archived:true}}))).status,200);
+  const rows=(await read(f,headers)).value.rows;assert.equal(rows.length,1);assert.equal(rows[0].registrationId,registrationId);assert.equal(rows[0].contactId,null);
+  assert.deepEqual(await f.app.registrationService.getAdmissions({actor:f.users[0]}),beforeAdmission);assert.equal(f.messages.length,0);
+});
+
+test('deletion-marked registration is excluded while its original record remains and its admission is revoked',async()=>{
+  const f=await peopleRuntimeFixture({attendeeReviewRequired:false}),saved=await f.seedPublic({intake:'general-v2'}),id=saved.reference_code,headers=await f.login();
+  const detail=await(await f.app.handle(f.request('/api/admin/registrations/'+id,{headers}))).json();
+  const response=await f.app.handle(f.request('/api/admin/registrations/'+id+'/deletion-request',{method:'POST',headers,body:{expectedRevision:detail.revision,reason:'other'}}));assert.equal(response.status,200);
+  assert.equal((await read(f,headers)).value.rows.length,0);const retained=await(await f.app.handle(f.request('/api/admin/registrations/'+id,{headers}))).json();assert.ok(retained.review.deletionRequested);
+  assert.equal((await f.app.registrationService.getAdmissions({actor:f.users[0]})).people.find(row=>row.registrationId===id).status,'withdrawn');assert.equal(f.messages.length,0);
+});

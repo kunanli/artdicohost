@@ -80,8 +80,9 @@ test('the unbound adapter imports without listening and rejects non-allowlisted 
   for (const path of ['/admin/index.html', '/admin/contacts/private/', '/etc/passwd', '../admin/', '/_astro/../hidden.js', '/_astro/nested/file.js', '/_astro/private.json', '/_astro/portrait.png', '/_astro/staff.js?secret=x', '/invitations/private.png']) {
     assert.throws(() => createCloudContentServer({ runtime, assets: new Map([[path, Buffer.from('synthetic')]]) }), TypeError);
   }
+  assert.doesNotThrow(() => createCloudContentServer({ runtime, assets: new Map(Array.from({length:42},(_,index)=>['/_astro/'+index+'.js',Buffer.from('x')])) }));
   for (const assets of [new Map([['/admin/', Buffer.alloc(0)]]), new Map([['/admin/', Buffer.alloc(2 * 1024 * 1024 + 1)]]),
-    new Map(Array.from({ length: 41 }, (_, index) => [`/_astro/${index}.js`, Buffer.from('x')])),
+    new Map(Array.from({ length: 43 }, (_, index) => [`/_astro/${index}.js`, Buffer.from('x')])),
     new Map(Array.from({ length: 9 }, (_, index) => [`/_astro/${index}.js`, Buffer.alloc(1024 * 1024, 1)]))]) {
     assert.throws(() => createCloudContentServer({ runtime, assets }), TypeError);
   }

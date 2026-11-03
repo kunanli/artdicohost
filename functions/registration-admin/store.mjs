@@ -300,7 +300,7 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, load
     async directory() { return guarded(async () => {
       const current = await snapshot();
       return { revision: current.state.revision, applicationRevision: current.applicationRevision,
-        registrations: current.registrations.map(item => ({ id: item.id, ...(item.profileCorrection ? { profileCorrection: clone(item.profileCorrection) } : {}), fields: {
+        registrations: current.registrations.map(item => ({ id: item.id, submittedAt: item.submittedAt, deleted: item.review.deletionRequested !== null, ...(item.profileCorrection ? { profileCorrection: clone(item.profileCorrection) } : {}), fields: {
           name: item.fields.name, organization: item.fields.organization ?? '', city: item.fields.city ?? '' },
           provenance: item.provenance.kind === 'staff_assisted' ? { kind: item.provenance.kind, sourceContactId: item.provenance.sourceContactId } : { kind: item.provenance.kind },
           inactive: item.review.status === 'withdrawn' || item.review.deletionRequested !== null })) };
@@ -310,7 +310,7 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, load
     async healthDirectory() { return guarded(async () => {
       const current = await snapshot();
       return { revision: current.state.revision, applicationRevision: current.applicationRevision,
-        registrations: current.registrations.map(item => ({ id: item.id,
+        registrations: current.registrations.map(item => ({ id: item.id, submittedAt: item.submittedAt, deleted: item.review.deletionRequested !== null,
           fields: { name: item.fields.name, organization: item.fields.organization ?? '', city: item.fields.city ?? '',
             email: item.fields.email ?? '', wechat: item.fields.wechat ?? '',
             ...(Object.hasOwn(item.fields, 'accommodationChoice') ? { accommodationChoice: item.fields.accommodationChoice } : {}) },

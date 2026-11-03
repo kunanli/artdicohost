@@ -1,12 +1,14 @@
 # ARTDiCO HOST · artdico.host
 
-**最新已發布：**[PR #68](https://github.com/kunanli/artdicohost/pull/68) 已合併至 main `3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`，範圍見[嘉賓公開展示與舊審閱精簡](docs/redesign/admin-data-cleanup-audit.md)。嘉賓依公開開關展示、真實出席獨立；舊人工審閱改歷史唯讀。資料未刪除，展位、住宿、志工流程維持。[PR 檢查 41425057862](https://github.com/kunanli/artdicohost/actions/runs/41425057862) 已通過1638項測試及同版捲動6／排版4／實際素材13；[main 流程 41426077899](https://github.com/kunanli/artdicohost/actions/runs/41426077899) 四工作成功，同版6／4／實際13、私有OSS、13後台及10:18:01 UTC的60公開物件HTTPS核對完成。
+**最新已發布：**[PR73 原稿 Hero、精簡報名與手機入場](docs/redesign/entry-ticket-release.md)及[PR74 正式路徑驗證修正](https://github.com/kunanli/artdicohost/pull/74)，main `321940c4a13c5174eac4378d291dd42b6c980f3a`。[main 流程41563515292](https://github.com/kunanli/artdicohost/actions/runs/41563515292)五工作成功，1809項測試、67個同來源瀏覽器案例、私有OSS、14後台、68公開HTTPS物件及3項短網址／入場路徑檢查均通過；2026-11-03 02:16:44 UTC完成正式核對。郵件程式與官方Wallet／兩種QR範本已交付；EmailJS控制台套用範本及先前403、真實收件仍獨立待核對。
+
+**前輪嘉賓規則（歷史基準）：**[PR #68](https://github.com/kunanli/artdicohost/pull/68) 已合併至 main `3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`，範圍見[嘉賓公開展示與舊審閱精簡](docs/redesign/admin-data-cleanup-audit.md)。嘉賓依公開開關展示、真實出席獨立；舊人工審閱改歷史唯讀。資料未刪除，展位、住宿、志工流程維持。[PR 檢查 41425057862](https://github.com/kunanli/artdicohost/actions/runs/41425057862) 已通過1638項測試及同版捲動6／排版4／實際素材13；[main 流程 41426077899](https://github.com/kunanli/artdicohost/actions/runs/41426077899) 四工作成功，同版6／4／實際13、私有OSS、13後台及10:18:01 UTC的60公開物件HTTPS核對完成。
 
 **前次已驗證發布（歷史基準）：**[PR #67：Hero 海報字體與公開區域呈現](docs/redesign/hero-poster-typography-release.md)，main `30b4ca6d0891699093f63b9ec790621906f64391`。Hero 真文字、實心／描邊、組織 Logo 單一呈現與空作品整區隱藏已交付；當次[PR 檢查 41414451982](https://github.com/kunanli/artdicohost/actions/runs/41414451982) 的1635項測試及同版捲動6／排版4／實際素材13通過，[main 流程 41415375940](https://github.com/kunanli/artdicohost/actions/runs/41415375940) 四工作成功，私有OSS、13後台與08:56:49 UTC的60公開物件HTTPS回執保留。
 
 更早 [PR66：手機圈內組織、全頁星空與報名更正](docs/redesign/mobile-organizations-profile-release.md)，main `c5166922`，保留當次1634測試、13後台及61公開物件HTTPS回執。首頁樣式沿 [CSS／字級規範](docs/frontend-typography.md)。
 
-活動行唯一一般報名路徑已整理，匯出轉接仍待匿名表頭，正式入口／審核政策尚未切換，見[操作路徑](docs/redesign/external-registration-wallet.md)。以下較早階段的發布與文檔保留作歷史，最新狀態以頁首及[接續台帳](docs/session-recovery.md)為準。
+一般報名直接於本站填表，依共享容量自動確認或候補；分享主題另行審選。活動行為既有外部來源，其[早期整合規劃](docs/redesign/external-registration-wallet.md)不再是唯一報名入口，名單轉接仍須先核對欄位與身分。以下較早階段的發布與文檔保留作歷史，最新狀態以頁首及當輪交付紀錄為準。
 
 本次改版執行入口：[分階段總覽](docs/redesign/README.md)、[操作手冊](docs/redesign/02-staff-and-attendee-runbook.md)、[驗收與發布](docs/redesign/03-release-and-acceptance.md)。P1–P6、[UX1 操作／層級](docs/redesign/ux-clarity-release.md) 及 [UX2 具名寄送與連續處理](docs/redesign/ux-workflow-release.md) 均已完成程式交付及正式發布；UX2 main `5ec45815` 的 1586 項測試、私有 OSS、13 個後台頁面及 51 個公開物件核驗通過。四項真人／真實資料驗收仍待主辦方記錄。下方 10 月發布資訊為歷史基準，現況以接續台帳及當輪紀錄為準。
 
@@ -18,7 +20,7 @@
 
 [PR #42](https://github.com/kunanli/artdicohost/pull/42)／[PR #43](https://github.com/kunanli/artdicohost/pull/43) 已实际发布，main **`d9d0dd2cc52eac755aef8deda5de9c91024b741d`**，2026-10-22 **01:05:35（UTC+08）**完成。[正式运行 39639330823](https://github.com/kunanli/artdicohost/actions/runs/39639330823) attempt 1 的 check／deploy-fc／deploy 全成功。 1304项main检查、真实私有OSS／共同300政策、13个API后台路径、46个公开对象HTTPS及匿名公开内容／CORS核对通过。公开／出席红绿状态、前台返回刷新、统一游戏与作品及组织／展位关系、嘉宾照片选填、跟进人固定彩色标签均已上线。[准确证据](docs/games-publication-release-2026-10-21.md)、[操作](docs/publication-games-operations.md)、[新session接续](docs/session-recovery.md)。
 
-**仍需主办方操作：**本次未代建 `zhouyufei`、`wangying`；现有管理员先在[用户管理](https://api.artdico.host/admin/settings/accounts/)核对，未建立才按准备／保存及回执流程创建，快捷预填不是已建立账号。Wallet沿用已配置的受控签章，iPhone真机添加另验；EmailJS用户已确认正常，保留受控设置。
+**仍需主办方操作：**本次未代建 `zhouyufei`、`wangying`；现有管理员先在[用户管理](https://api.artdico.host/admin/settings/accounts/)核对，未建立才按准备／保存及回执流程创建，快捷预填不是已建立账号。Wallet沿用已配置的受控签章，iPhone真机添加另验；EmailJS必要字段完整、自动寄信已启用，但先前403尚未证明解除，托管範本和真实收件按[本轮记录](docs/redesign/entry-ticket-release.md)另行核对。
 
 ## 目标
 一页式简体中文活动落地页；展示日程和参与方式；正式报名收集 GGJ SO/RO、新站点、行业嘉宾、机构及生态合作伙伴资料，并支持独立确认讲者、赞助、展位与住宿安排。已确认 2026-12-05、09:30 签到、10:00–18:00 正式活动，场地为深圳前海5号楼；待邀嘉宾、协办署名与其他安排仍按各自确认状态展示。
@@ -68,4 +70,4 @@
 
 ## 范围
 
-已实现活动页、私有报名与审核、人员／组织关系、活动与展位编排、志愿者、通知、邀请图、Excel及后台账号。Wallet 已有签章配置与下载流程，真实 iPhone 加入验收待完成。二维码签到、支付、邮件营销及自动奖项评定尚未实施；不把计划当作现有功能。
+已实现活动页、私有报名与审核、人员／组织关系、活动与展位编排、志愿者、通知、邀请图、Excel及后台账号。Wallet 已有签章配置与下载流程，真实 iPhone 加入验收待完成。手机扫描专用入场码、工作人员登录核对并明确确认入场已有软件与隔离验证；真实现场操作另验。支付、邮件营销及自动奖项评定尚未实施。

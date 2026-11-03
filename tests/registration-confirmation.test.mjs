@@ -747,6 +747,71 @@ test('confirmed mail uses locale, short link and both current private QR images 
     await c.confirmation({receiptToken:result.receiptToken});await c.forSavedReceipt({receipt:saved.receipt});assert.equal(issues,1);assert.equal(f.state.messages.length,1);
   }
 });
+test('confirmed mail retains the official CN and EN Wallet badges when configured readiness takes over 250ms', async () => {
+  for (const locale of ['zh-CN', 'en']) {
+    const f = fixture(), { saved } = await register(f, { intake: 'general-v2', locale, name: '合成来宾',
+      email: 'synthetic.wallet-latency@example.invalid', categories: ['industry'], participationInterests: ['attend'] });
+    let readinessReads = 0;
+    const c = f.confirmation({ batchTimeoutMs: 5000, walletReadiness: async () => {
+      readinessReads++;
+      await new Promise(resolve => setTimeout(resolve, 350));
+      return { ready: true, reason: 'CONFIGURED_SIGNER_DEVICE_TEST_REQUIRED' };
+    } });
+    const result = await c.forSavedReceipt({ receipt: saved.receipt });
+    assert.equal(result.email.status, 'provider_accepted');
+    assert.equal(readinessReads, 1); assert.equal(f.state.messages.length, 1);
+    const sent = f.state.messages[0];
+    assert.equal(sent.templateVariables.email_language, locale);
+    assert.match(sent.templateVariables.confirmation_actions, new RegExp('add-to-apple-wallet-' + (locale === 'en' ? 'en' : 'cn') + '\\.png', 'u'));
+    await c.forSavedReceipt({ receipt: saved.receipt });
+    assert.equal(readinessReads, 1); assert.equal(f.state.messages.length, 1, 'receipt replay never resends the confirmation');
+  }
+});
+test('confirmed mail still omits the Wallet badge when signing is explicitly unavailable', async () => {
+  const f = fixture(), { saved } = await register(f), c = f.confirmation({
+    walletReadiness: async () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }),
+  });
+  const result = await c.forSavedReceipt({ receipt: saved.receipt });
+  assert.equal(result.email.status, 'provider_accepted'); assert.equal(f.state.messages.length, 1);
+  assert.doesNotMatch(f.state.messages[0].templateVariables.confirmation_actions, /add-to-apple-wallet-/u);
+});
+test('Wallet readiness exhausting the shared window stays known unsent and retries the original notice', async () => {
+  const f = fixture(), { saved } = await register(f);
+  let finishReadiness;
+  const readiness = new Promise(resolve => { finishReadiness = resolve; });
+  const c = f.confirmation({ batchTimeoutMs: 1000, walletReadiness: () => readiness });
+  // Production deadline timers are deliberately unref'ed. Keep this isolated
+  // test alive while a signer dependency never settles within its window.
+  const keepAlive = setInterval(() => {}, 1000);
+  let result;
+  try { result = await c.forSavedReceipt({ receipt: saved.receipt }); }
+  finally { clearInterval(keepAlive); }
+  assert.equal(result.email.status, 'pending'); assert.equal(f.state.messages.length, 0);
+  const repository = createConfirmationRepository({ journal: f.journalFor(c.prefix), eventId: EVENT });
+  const before = await repository.read();
+  assert.equal(before.value.notices.length, 1);
+  const notice = before.value.notices[0];
+  assert.equal(notice.status, 'rejected'); assert.equal(notice.attempt, 1);
+  assert.deepEqual(notice.diagnostic, { code: 'DELIVERY_WINDOW_EXPIRED', transportStarted: false });
+  finishReadiness({ ready: true, reason: 'CONFIGURED_SIGNER_DEVICE_TEST_REQUIRED' });
+  await new Promise(resolve => setImmediate(resolve));
+  const afterLateRead = await repository.read();
+  assert.equal(afterLateRead.value.revision, before.value.revision);
+  assert.equal(f.state.messages.length, 0, 'late readiness cannot start a send');
+  await c.forSavedReceipt({ receipt: saved.receipt });
+  assert.equal(f.state.messages.length, 0, 'public replay never retries known unsent mail');
+  const command = { actor, expectedRevision: afterLateRead.value.revision, operationId: operationId(),
+    registrationIds: [saved.receipt.registrationId], retryRejected: true };
+  const retry = await c.dispatch(command);
+  assert.deepEqual(retry.results.map(item => item.status), ['provider_accepted']);
+  assert.equal(f.state.messages.length, 1);
+  assert.match(f.state.messages[0].templateVariables.confirmation_actions, /add-to-apple-wallet-cn\.png/u);
+  const after = await repository.read();
+  assert.equal(after.value.notices.length, 1); assert.equal(after.value.notices[0].id, notice.id);
+  assert.equal(after.value.notices[0].attempt, 2); assert.equal(after.value.notices[0].status, 'provider_accepted');
+  await c.dispatch(command);
+  assert.equal(f.state.messages.length, 1, 'the same staff operation never sends twice');
+});
 test('failed or malformed short-ticket issuance is recorded as known not started and never contacts EmailJS',async()=>{
   for(const emailTicketProvider of [async()=>{throw new Error('PRIVATE-TICKET-FAILURE');},async()=>({confirmationUrl:'https://evil.example.invalid/'})]){
     const f=fixture(),{saved}=await register(f),c=f.confirmation({emailTicketProvider});const result=await c.forSavedReceipt({receipt:saved.receipt});assert.equal(result.email.status,'rejected');assert.equal(f.state.messages.length,0);

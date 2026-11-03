@@ -1,6 +1,6 @@
 # 報名、確認信與手機入場
 
-本階段接續 main `765a7bc`；改用最初 Hero 原始標題素材，並將報名、郵件與工作人員入場接成同一份名額。正式發布與精確產物回執完成後追加於本頁，以下實作完成不等於已實寄或已上線。
+本階段接續 main `765a7bc`；改用最初 Hero 原始標題素材，並將報名、郵件與工作人員入場接成同一份名額。PR73功能與PR74驗證修正均已正式發布，最終main為 `321940c4a13c5174eac4378d291dd42b6c980f3a`，精確回執見下方。EmailJS託管範本套用、先前403與實際收件仍獨立待核對。
 
 ## 參加者與工作人員
 
@@ -41,4 +41,28 @@ PR73 第一輪 run41555491464 的1801項Node及10份瀏覽器回執通過，但�
 
 ## 正式路徑核對的閘道差異
 
-main a3f9411 的FC／14後台／68公開HTTPS回執已成功，但新增路徑驗證器因要求ACAC標頭完全缺省而失敗。PR74獨立只讀觀察確認：/r/200且SHA／bytes與已發布r/index.html相同、無效入場路徑404 ENTRY_NOT_FOUND、預檢204且固定本站Origin／唯讀方法／空內容／私有不快取皆正確；FC閘道另回ACAC=true。公開端點在登入處理之前以短碼授權，忽略Cookie；用戶端及驗證器固定credentials:omit，實測無Set-Cookie。修正驗證器接受缺省或明確true／false，拒絕未知／合併值，保留Origin、方法、禁止Set-Cookie、時限／體積與不跟隨重新導向的檢查；未修改閘道、DNS、IAM或業務程式。前輪路徑失敗回執保留，等待正確驗證器的正式成功結果。
+main a3f9411 的FC／14後台／68公開HTTPS回執已成功，但新增路徑驗證器因要求ACAC標頭完全缺省而失敗。PR74獨立只讀觀察確認：/r/200且SHA／bytes與已發布r/index.html相同、無效入場路徑404 ENTRY_NOT_FOUND、預檢204且固定本站Origin／唯讀方法／空內容／私有不快取皆正確；FC閘道另回ACAC=true。公開端點在登入處理之前以短碼授權，忽略Cookie；用戶端及驗證器固定credentials:omit，實測無Set-Cookie。修正驗證器接受缺省或明確true／false，拒絕未知／合併值，保留Origin、方法、禁止Set-Cookie、時限／體積與不跟隨重新導向的檢查；未修改閘道、DNS、IAM或業務程式。前輪路徑失敗回執保留，修正後正式成功結果如下。
+
+## 最終來源與正式發布回執
+
+功能[PR73](https://github.com/kunanli/artdicohost/pull/73)來源 `3e603411b4aaebd027613d654b49f40cd7187eae`，PR測試來源 `5a272a8dc598f04c04b5921c88bd31aaf8613986`，run41557744637／check125660645838。首次main `a3f9411cc003d6e1c9a2deede759691f6772f0a1` 的run41559080033取得私有OSS、14後台及68公開HTTPS回執，但最後的路徑誤判失敗，該次workflow不記為全成功。
+
+驗證修正[PR74](https://github.com/kunanli/artdicohost/pull/74)來源 `6f92212c79b930e126dcd32e99df928a8fc5b2ac`，PR測試來源 `7489ec929cb65340943d30df6f4783dc8bb0941b`，run41562400558／check125675969814全通過。最終main **`321940c4a13c5174eac4378d291dd42b6c980f3a`** 的[run41563515292](https://github.com/kunanli/artdicohost/actions/runs/41563515292)五工作均completed／success，已逐項讀取實際回執：
+
+| 正式核對 | 工作與結果 |
+| --- | --- |
+| 原始來源與完整測試 | check125679412164；795來源、Astro516檔，0錯誤／0警告／2提示；1809測試全通過，fail／cancelled／skipped／todo皆0；套件審計0已知漏洞 |
+| 同來源瀏覽器 | 十份回執共67案：捲動6、字體4、自動報名10、後台排序8、確認信重寄8、手機入場6、名單排序／刪除2、郵件6、短連結4、實際公開素材13；各自sourceCommit綁最終main，頁面錯誤0 |
+| 精確後端封包 | 137檔、136筆release索引、42靜態資產；準確ZIP在無網路、唯讀code、無真人帳號的Docker通過closed／synthetic兩模式，15.066秒；未把離線測試當私有OSS驗證 |
+| 正式FC與私有OSS | job125682732514；02:14:16 UTC精確sourceCommit、content／registration啟用、私有OSS passed、2獨立客戶端／1FC程序；02:14:22核對14個精確後台HTTPS頁面 |
+| 自動名額與寄信設定 | 02:14:24公開GET／兩種OPTIONS成功，attendeeReviewRequired=false；02:14:18自動寄信、email.enabled／ready皆true，missing／invalid空。mailRequests=0、businessWrites=0，reason仍為CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF |
+| 公開靜態網站 | job125683842820；**2026-11-03 02:16:41 UTC**，68個準確公開物件HTTPS核對成功，包含/r/index.html及官方四個Wallet資產 |
+| 正式短網址及入場路徑 | **02:16:44 UTC**，Entry surfaces release verification verified／publicEntry／invalidEntry／cors皆true，3 requests，commit為最終main；核對目錄/r/實際bytes／SHA、固定無效入場碼404及預檢204，不使用真票券 |
+
+公開首頁SHA `fdc57538b5e2be588e19db835c4ea79cdd3d11dbea940521129560cf8f17d302`；/r/頁SHA `e1a7aa2232bd688745b7d47f077296bf3b19619b8992bc556b778747236e5e23`。這兩份產物已由最終公開HTTPS清單核對。後台瀏覽器回執使用公開設定dist中的私人頁HTML；FC候選另建，其14頁由候選自身manifest與HTTPS核對，不把兩種建置的HTML摘要混用。
+
+實際公開素材回歸同為R44，snapshot SHA `71037be9782b05af1da404fd6ab667b538fbb5e4f4356fdbec943787d241c8d7`；8原始上傳Logo／7原稿白色匹配、9公開嘉賓，4寬共36卡（公司36、職稱32、空字幕4）。實際素材腳本SHA `07a05a439c6f1af94a92a980cfb1fe605929f0c7d1924d9fdf2e7c2040594905`；300個漢字／字體像素檢查、空白／缺字0、90控制檢查。42次／9路徑未捕獲頭像或作品媒體以明示404替身處理，不冒稱驗過圖片內容。既有原稿完整OFL字體只作CI系統後備，未增加前端字體流量。
+
+官方CN／EN原始SVG bytes保持不變；郵件PNG由同份向量渲染，CN SHA `359b17cea9d2f249026388f9c3f625c163f2d872c02e0353363a301cdf6928d5`、EN SHA `5c81903d7e9c789fc8b25f5db02a3ecf47746c7e99d967cc651e4ff29703a8e1`；郵件範本SHA `551b4687af3d859a61b5a44bca1619dd7eef24dbded2ba89d24b477df9c86b7a`。QR本機編碼，獨立zxing-cpp對22／120字元合成URL精確解碼。原137檔本機候選ZIP摘要 `608a95acc420686547df38d8c446898a2eaab621a4809270333f90d970688c69` 只綁3e603來源，並非最終正式ZIP摘要。
+
+本輪沒有建立／修改／刪除正式報名、核銷真實入場或發真實郵件。伺服器能力與版型已上線；**EmailJS託管範本仍須套用上方HTML與Subject，403未以真實接受／收件證明解除**。有效群碼須由後台現行設定提供；iPhone加入Wallet、實際微信入群及現場同事操作保持獨立驗收。

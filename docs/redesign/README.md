@@ -1,6 +1,8 @@
 # ARTDiCO HOST 改版執行總覽
 
-目前階段：[原稿 Hero、簡化報名與手機入場](entry-ticket-release.md)。短連結、官方 Wallet 郵件圖標、入場／入群碼、按錄入時間排序與可追溯刪除已實作，精確發布回執完成後記於該頁；EmailJS 託管範本與403帳戶設定分開核對。
+目前修復：確認函官方Wallet圖標遺漏。250ms狀態讀取上限可能把已配置的慢回覆誤判為不可用；本輪移除獨立短上限，沿通知總期限核對，準備超時保留已知未開始寄送。圖標素材沒有遺失；EmailJS實際託管正文仍待使用者提供核對，不以程式或預覽代替實際收件證明。
+
+最新已交付：[原稿 Hero、簡化報名與手機入場](entry-ticket-release.md)。PR73功能及PR74驗證器修正已發布main `321940c4a13c5174eac4378d291dd42b6c980f3a`；[main流程41563515292](https://github.com/kunanli/artdicohost/actions/runs/41563515292)五工作成功，1809項測試／同來源67個瀏覽器案例、私有OSS、14後台與68公開HTTPS物件通過，2026-11-03 02:16:44 UTC取得短網址及入場API三項精確回執。官方Wallet圖標及入場／入群碼郵件範本已備妥；EmailJS控制台範本套用、先前403與真實送達仍分開核對。
 
 已交付：[最少報名成功提示、確認函與手動重寄](confirmation-mail-recovery-release.md)。[PR72](https://github.com/kunanli/artdicohost/pull/72)已發布main `765a7bcc1a547b63b85fb90f9420a6cce2a1fe13`；1750測試與同來源／HTML的6／4／10／8／8／實際素材13案通過，台北2026-11-03 01:04:40核對60公開HTTPS物件。報名留原頁僅顯示「报名成功」，後端寄確認函，已知失敗可再次明確手動重寄。正式觀測確認自動寄信與寄件服務均啟用、readiness有效且無缺項／格式錯；實際EmailJS接受及真人收件仍未驗證。
 

@@ -1,14 +1,27 @@
 import { english } from './en.mjs';
 import { registrationEnglish } from './registration-en.mjs';
-import { eventConfig, faqItems } from '../config/event.mjs';
 for (const pair of registrationEnglish) english.set(...pair);
-const faqAnswers = {
-  'registration-status':'Register for general admission on Huodongxing. Availability, results and admission credentials are shown there. Submit speaker proposals on this website; the organizing team will follow up. Check the form here for proposal availability.',
-  'site-role':'Current or former GGJ site organizers (SO / RO) and prospective organizers can register to attend on Huodongxing. Contact kunan@globalgamejam.org about starting a new site or exchanging site experience. The organizing team will follow up about support needs.\nOn-site guidance does not replace the official GGJ application; GGJ confirms the result. Prepare a local organizer, team and venue, then apply through Start a Jam Site on the GGJ website. Check the official website for application dates.',
-  'lodging-support':'Limited accommodation support is available for visitors from outside the area. Contact kunan@globalgamejam.org in advance to discuss arrangements. Places are limited and accommodation will be confirmed separately.',
-};
-for (const item of faqItems) if (faqAnswers[item.id]) english.set(item.answer, faqAnswers[item.id]);
-english.set(eventConfig.privacy.notice,'This form is a preview and does not collect real applications. Before enabling the live form, the personal information notice and procedures for access, correction, withdrawal and deletion will be published.');
+// Bind reviewed English copy to its exact Chinese source, so future editorial
+// changes fall back to their new original text rather than an outdated translation.
+for (const pair of [
+  [
+    "普通参会请前往活动行报名，开放状态、报名结果与参会凭证以活动行页面为准。讲者分享提案在本站提交，由筹备团队另行联系；提案开放情况请查看本站表单。",
+    "Register for general admission on Huodongxing. Availability, results and admission credentials are shown there. Submit speaker proposals on this website; the organizing team will follow up. Check the form here for proposal availability."
+  ],
+  [
+    "现任或曾任 GGJ 站点负责人（SO / RO），以及筹备新站点的朋友，均可通过活动行报名参会。新站点筹备或站点交流需求，可通过 kunan@globalgamejam.org 留言，筹备团队会联系了解支持需求。\n现场咨询不替代 GGJ 官方申请，正式结果由 GGJ 官方确认。请准备本地负责人、组织团队与场地，再通过 GGJ 官网 Start a Jam Site 申请，开放时间以官方信息为准。",
+    "Current or former GGJ site organizers (SO / RO) and prospective organizers can register to attend on Huodongxing. Contact kunan@globalgamejam.org about starting a new site or exchanging site experience. The organizing team will follow up about support needs.\nOn-site guidance does not replace the official GGJ application; GGJ confirms the result. Prepare a local organizer, team and venue, then apply through Start a Jam Site on the GGJ website. Check the official website for application dates."
+  ],
+  [
+    "本次活动提供少量外地来宾住宿支持。有需要的朋友，欢迎提前通过 kunan@globalgamejam.org 联系主办方了解安排；名额有限，住宿安排将另行确认。",
+    "Limited accommodation support is available for visitors from outside the area. Contact kunan@globalgamejam.org in advance to discuss arrangements. Places are limited and accommodation will be confirmed separately."
+  ],
+  [
+    "本页表单仅供预览，不收集真实报名。本站正式表单启用前，将公布个人信息处理告知及查阅、更正、撤回、删除方式。",
+    "This form is a preview and does not collect real applications. Before enabling the live form, the personal information notice and procedures for access, correction, withdrawal and deletion will be published."
+  ]
+]) english.set(...pair);
+
 english.set('本站正式表单启用前，将核定处理者、联系邮箱、存储地区、保留期限及查阅、更正、撤回、删除方式。第一阶段不收取证件、酒店订单或财务账单；对外分享个人信息须另行告知并取得适用授权。','Before enabling the live form, the controller, contact email, storage region, retention period and procedures for access, correction, withdrawal and deletion will be confirmed. The first phase does not collect identity documents, hotel bookings or financial statements. Sharing personal information externally requires separate notice and applicable authorization.');
 
 /** Translate complete messages, plus a bounded set of UI templates. Never use

@@ -15,6 +15,18 @@ test('editing draft permits incomplete inputs but only fixed fields and never co
   for(const key of ['password','cookie','submissionToken','receiptToken','consentAccepted','API_KEY'])assert.throws(()=>applicationDraftValue({...value,[key]:'private'}));
   assert.throws(()=>applicationDraftValue({...value,summary:'x'.repeat(1501)}));assert.throws(()=>applicationDraftValue({...value,name:'\ud800'}));
 });
+test('phone editing roundtrips without changing legacy draft or pending submission bytes',async()=>{
+  const value=applicationDraftFromFields({...fields(),phone:'+852 0012 3456',wechat:'synthetic-contact'});
+  assert.equal(applicationDraftValue(value).phone,'+852 0012 3456');
+  const legacy=structuredClone(value);delete legacy.phone;assert.deepEqual(applicationDraftValue(legacy),legacy);
+  const store=memoryStore(),draft=createApplicationDraft({store,eventId:EVENT});await draft.read();await draft.save(value);
+  const recovered=createApplicationDraft({store,eventId:EVENT});assert.equal((await recovered.read()).record.value.phone,value.phone);
+  const withPhone=pending();const parsed=JSON.parse(withPhone.payloadJson);parsed.fields.phone=value.phone;parsed.fields.wechat=value.wechat;withPhone.payloadJson=JSON.stringify(parsed);
+  assert.deepEqual(applicationPendingValue(withPhone),withPhone);
+  const old=pending({attempted:true,uncertain:true});assert.deepEqual(applicationPendingValue(old),old);
+  assert.equal(Object.hasOwn(JSON.parse(applicationPendingValue(old).payloadJson).fields,'phone'),false);
+  for(const phone of [5,null,'x'.repeat(151),'bad\nline'])assert.throws(()=>applicationDraftValue({...value,phone}));
+});
 test('pending envelope keeps exact canonical payload and key while rejecting tokens and changed scope',()=>{
   assert.deepEqual(applicationPendingValue(pending(),EVENT),pending());
   for(const mutate of [v=>{v.submissionToken='private';},v=>{v.payloadJson+=' ';},v=>{v.idempotencyKey='short';},v=>{v.uncertain=true;},v=>{const payload=JSON.parse(v.payloadJson);payload.fields.accommodationChoice='not_needed';v.payloadJson=JSON.stringify(payload);},v=>{const payload=JSON.parse(v.payloadJson);payload.consent.token='private';v.payloadJson=JSON.stringify(payload);}]){const value=pending();mutate(value);assert.throws(()=>applicationPendingValue(value,EVENT));}

@@ -10,7 +10,7 @@ const name = prefix ? `${prefix}.${field.name}` : field.name;
 const id = `field-${name.replaceAll('.', '-')}`;
 const describedBy = `${field.hint ? `${id}-hint ` : ''}${id}-error`;
 const isLongText = field.type === 'textarea' || field.type === 'url-list';
-const inputType: 'email' | 'url' | 'number' | 'text' = field.type === 'email' ? 'email' : field.type === 'url' ? 'url' : field.type === 'number' ? 'number' : 'text';
+const inputType: 'email' | 'url' | 'number' | 'text' | 'tel' = field.type === 'email' ? 'email' : field.type === 'url' ? 'url' : field.type === 'number' ? 'number' : field.type === 'tel' ? 'tel' : 'text';
 ---
 {field.type === 'checkbox-group' ? <fieldset class="ah-option-field" data-field={name} aria-describedby={describedBy} data-required={field.required ? 'true' : undefined}>
   <legend>{field.label}{field.required && <em aria-label="必填"> *</em>}</legend>
@@ -28,7 +28,7 @@ const inputType: 'email' | 'url' | 'number' | 'text' = field.type === 'email' ? 
   {field.type === 'select' ? <select id={id} name={name} required={field.required} aria-describedby={describedBy}>
     <option value="">请选择</option>
     {field.options?.map(option => <option value={option.value}>{option.label}</option>)}
-  </select> : isLongText ? <textarea id={id} name={name} rows={field.type === 'url-list' ? 2 : 3} required={field.required} minlength={field.minLength} maxlength={field.maxLength} aria-describedby={describedBy} autocomplete="off" placeholder={field.type === 'url-list' ? 'https://example.com/project' : undefined}></textarea> : <input id={id} name={name} type={inputType} required={field.required} minlength={field.minLength} maxlength={field.maxLength} min={field.min} max={field.max} step={inputType === 'number' ? 1 : undefined} inputmode={inputType === 'number' ? 'numeric' : undefined} autocomplete="off" aria-describedby={describedBy} placeholder={inputType === 'url' ? 'https://example.com' : inputType === 'email' ? 'name@example.com' : undefined} />}
+  </select> : isLongText ? <textarea id={id} name={name} rows={field.type === 'url-list' ? 2 : 3} required={field.required} minlength={field.minLength} maxlength={field.maxLength} aria-describedby={describedBy} autocomplete="off" placeholder={field.type === 'url-list' ? 'https://example.com/project' : undefined}></textarea> : <input id={id} name={name} type={inputType} required={field.required} minlength={field.minLength} maxlength={field.maxLength} min={field.min} max={field.max} step={inputType === 'number' ? 1 : undefined} inputmode={inputType === 'number' ? 'numeric' : inputType === 'tel' ? 'tel' : undefined} autocomplete={inputType === 'tel' ? 'tel' : 'off'} aria-describedby={describedBy} placeholder={inputType === 'url' ? 'https://example.com' : inputType === 'email' ? 'name@example.com' : undefined} />}
   {field.hint && <small id={`${id}-hint`} class="ah-field-hint">{field.hint}</small>}
   <p class="ah-form-error" id={`${id}-error`} data-error-for={name} hidden></p>
 </div>}

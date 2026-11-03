@@ -98,7 +98,7 @@ async function publicArrayOrder(f){
  assert.deepEqual(order.guests,expected.guests.map(item=>item.id),'guest DOM order follows the safe public array without attendance ranking');
  assert.deepEqual(order.works,expected.showcases.map(item=>item.id),'work DOM order follows the public array independently of current selection');
  assert.deepEqual(order.organizations,expected.organizations.map(item=>item.id),'organization DOM order follows the public array without brand ranking');
- assert.deepEqual(order.slots,expected.organizations.map((_,index)=>index<7?String(index):null),'slots follow array index, including unknown or failed artwork');
+ assert.deepEqual(order.slots,expected.organizations.map((_,index)=>String(index)),'all centred slots follow array index, including unknown or failed artwork');
  return order;
 }
 async function guestDisclosureAccessibility(page,id){

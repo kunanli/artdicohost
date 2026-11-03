@@ -5,11 +5,14 @@ const plain=value=>value!==null&&typeof value==='object'&&!Array.isArray(value)&
 const exact=(value,keys)=>plain(value)&&Reflect.ownKeys(value).length===keys.length&&keys.every(key=>Object.getOwnPropertyDescriptor(value,key)?.enumerable&&'value' in Object.getOwnPropertyDescriptor(value,key));
 const fail=()=>{const error=new Error('本机恢复记录无法核对，请保留当前页面。');error.code='DRAFT_INVALID';throw error;};
 const formed=value=>{for(const character of value){const point=character.codePointAt(0);if(point>=0xd800&&point<=0xdfff)return false;}return true;};
-export const APPLICATION_DRAFT_KEYS=Object.freeze(['intake','name','email','category','organization','city','wechat','proposal','topic','summary']);
+export const APPLICATION_DRAFT_KEYS=Object.freeze(['intake','name','email','category','organization','city','wechat','phone','proposal','topic','summary']);
+const LEGACY_APPLICATION_DRAFT_KEYS=Object.freeze(APPLICATION_DRAFT_KEYS.filter(key=>key!=='phone'));
 export function applicationDraftValue(value){
-  if(!exact(value,APPLICATION_DRAFT_KEYS)||value.intake!==GENERAL_APPLICATION_INTAKE||typeof value.proposal!=='boolean')fail();
+  // Older editing snapshots omit phone. Validation never upgrades the stored
+  // snapshot or the separate immutable pending payload while restoring it.
+  if(!(exact(value,APPLICATION_DRAFT_KEYS)||exact(value,LEGACY_APPLICATION_DRAFT_KEYS))||value.intake!==GENERAL_APPLICATION_INTAKE||typeof value.proposal!=='boolean')fail();
   const result={intake:GENERAL_APPLICATION_INTAKE};
-  for(const[key,max]of[['name',80],['email',254],['category',80],['organization',160],['city',100],['wechat',100],['topic',200],['summary',1500]]){const text=value[key];if(typeof text!=='string'||text.length>max*2||[...text].length>max||!formed(text)||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)||key!=='summary'&&/[\r\n\t]/u.test(text))fail();result[key]=text;}
+  for(const[key,max]of[['name',80],['email',254],['category',80],['organization',160],['city',100],['wechat',100],['phone',150],['topic',200],['summary',1500]]){const text=value[key];if(key==='phone'&&!Object.hasOwn(value,key))continue;if(typeof text!=='string'||text.length>max*2||[...text].length>max||!formed(text)||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)||key!=='summary'&&/[\r\n\t]/u.test(text))fail();result[key]=text;}
   result.proposal=value.proposal;return result;
 }
 export function applicationPendingValue(value,eventId){
@@ -19,7 +22,7 @@ export function applicationPendingValue(value,eventId){
   return{eventId:value.eventId,idempotencyKey:value.idempotencyKey,payloadJson:value.payloadJson,attempted:value.attempted,uncertain:value.uncertain};
 }
 export function applicationDraftFromFields(fields){
-  return applicationDraftValue({intake:GENERAL_APPLICATION_INTAKE,name:fields.name??'',email:fields.email??'',category:fields.categories?.[0]??'',organization:fields.organization??'',city:fields.city??'',wechat:fields.wechat??'',proposal:fields.participationInterests?.includes('talk')===true,topic:fields.speaker?.topic??'',summary:fields.speaker?.summary??''});
+  return applicationDraftValue({intake:GENERAL_APPLICATION_INTAKE,name:fields.name??'',email:fields.email??'',category:fields.categories?.[0]??'',organization:fields.organization??'',city:fields.city??'',wechat:fields.wechat??'',phone:fields.phone??'',proposal:fields.participationInterests?.includes('talk')===true,topic:fields.speaker?.topic??'',summary:fields.speaker?.summary??''});
 }
 export function applicationDraftScope(eventId){if(!EVENT.test(eventId))fail();return{actorId:'public',eventId,page:'application',entityId:GENERAL_APPLICATION_INTAKE};}
 export const applicationDraftPolicy=Object.freeze({fields:[...new Set([...APPLICATION_DRAFT_KEYS,'eventId','idempotencyKey','payloadJson','attempted','uncertain'])],pendingFields:['idempotencyKey','payloadJson'],jsonFields:['payloadJson'],rejectPending(value){try{const original=applicationPendingValue(value);if(!original.attempted||original.uncertain)return false;return applicationDraftFromFields(JSON.parse(original.payloadJson).fields);}catch{return false;}},validate(value,{kind}){try{if(kind==='editing')applicationDraftValue(value);else if(kind==='pending_submission')applicationPendingValue(value);else return false;return true;}catch{return false;}}});

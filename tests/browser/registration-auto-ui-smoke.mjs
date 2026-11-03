@@ -156,13 +156,31 @@ try {
     assert.equal(await form(f.page).locator('[data-proposal-toggle]').isChecked(), false, 'new forms reset browser-restored checkbox state');
     assert.equal(await form(f.page).locator('[data-speaker-proposal]').isVisible(), false);
     await fill(f.page);
+    for(const name of ['phone','wechat']){
+      const input=form(f.page).locator('[name='+name+']');assert.equal(await input.isVisible(),true,'contact fields are visible without opening optional details');
+      assert.equal(await input.getAttribute('required'),null);assert.equal(await input.locator('xpath=ancestor::details').count(),0);
+    }
+    assert.equal(await form(f.page).locator('[name=phone]').getAttribute('type'),'tel');
+    assert.equal(await form(f.page).locator('[name=phone]').getAttribute('inputmode'),'tel');
+    await form(f.page).locator('[name=phone]').fill('+852 0012 3456');await form(f.page).locator('[name=wechat]').fill('synthetic-contact');
+    if(width===320){
+      // waitForFunction treats an async predicate's Promise as truthy. Use the
+      // latest-input saved-state barrier, then independently read native IDB.
+      await form(f.page).locator('[data-application-draft-status]').filter({hasText:'本机已暂存'}).waitFor({state:'attached'});
+      const persisted=(await records(f.page)).find(row=>row.kind==='editing');assert.equal(persisted?.value.phone,'+852 0012 3456');assert.equal(persisted?.value.wechat,'synthetic-contact');
+      await f.page.reload({waitUntil:'networkidle'});await form(f.page).locator('[data-submit]:enabled').waitFor();
+      assert.equal(await form(f.page).locator('[name=phone]').inputValue(),'+852 0012 3456');assert.equal(await form(f.page).locator('[name=wechat]').inputValue(),'synthetic-contact');
+    }
     assert.equal(await form(f.page).locator('[data-proposal-toggle]').isChecked(), false, 'changing identity does not select a proposal');
     const receipt=await submit(f);
     const sent = JSON.parse(f.calls.find(call => call.path.endsWith('/submit')).body);
     assert.deepEqual(sent.fields.participationInterests, ['attend']); assert.equal(Object.hasOwn(sent.fields, 'speaker'), false);
+    assert.equal(sent.fields.phone,'+852 0012 3456');assert.equal(sent.fields.wechat,'synthetic-contact');
     const admissions = await f.app.registrationService.getAdmissions({ actor: f.runtime.users[0] });
     assert.equal(admissions.summary.confirmedCount, 1); assert.equal(admissions.summary.pendingReviewCount, 0);
     assert.equal((await f.app.registrationService.repository.list()).registrations.length, 1);
+    const stored=(await f.app.registrationService.repository.list()).registrations[0];assert.equal(stored.fields.phone,sent.fields.phone);assert.equal(stored.fields.wechat,sent.fields.wechat);
+    const detail=await f.app.reviewStore.detail(receipt.reference_code);assert.equal(detail.registration.fields.phone,sent.fields.phone);
     assert.equal(receipt.confirmation.email.status,'provider_accepted','the actual runtime records the synthetic provider acknowledgement');
     assert.equal(f.runtime.messages.length,1,'a newly confirmed automatic intake starts exactly one synthetic formal email');
     assert.equal(f.runtime.messages[0].template_params.reference_code,receipt.reference_code);assert.match(f.runtime.messages[0].template_params.invitation_text,/参会名额已确认/u);assert.match(f.runtime.messages[0].template_params.invitation_text,/https:\/\/artdico\.host\/r\/#[A-Za-z0-9_-]{22}/u);
@@ -170,7 +188,7 @@ try {
     assert.equal(replayed.status,200);assert.equal((await replayed.json()).admissionStatus,'confirmed');assert.equal(f.runtime.messages.length,1,'an explicit synthetic replay does not send another formal email');
     assert.equal(await f.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
     await f.page.screenshot({ path: resolve(evidence, 'automatic-confirmed-' + width + '.png'), fullPage: true });
-    reports.push({ width, mode: 'automatic', receipt: 'confirmed', freshProposal: false, compactFocusedSamePage:true, noPrivateConfirmationRequest:true, syntheticFormalMail:1, syntheticReceiptReplayNoExtraMail:true, realNetworkRequests: 0 }); await f.context.close();
+    reports.push({ width, mode: 'automatic', receipt: 'confirmed', freshProposal: false, visibleOptionalContacts:true, phoneStringPreserved:true, contactDraftRefresh:width===320, compactFocusedSamePage:true, noPrivateConfirmationRequest:true, syntheticFormalMail:1, syntheticReceiptReplayNoExtraMail:true, realNetworkRequests: 0 }); await f.context.close();
   }
   for (const options of [{ flag: true }, { omitFlag: true }, { flag: 'false' }]) {
     const f = await fixture(options);
@@ -214,6 +232,7 @@ try {
     await form(f.page).locator('[name=consentAccepted]').check(); await form(f.page).locator('[data-submit]').click();
     await form(f.page).locator('[data-submit]').filter({ hasText: '再次确认申请结果' }).waitFor();
     const original = (await records(f.page)).find(row => row.kind === 'pending_submission'); assert.ok(original);
+    assert.equal(Object.hasOwn(JSON.parse(original.value.payloadJson).fields,'phone'),false,'an omitted phone remains absent in the frozen original body');
     assert.equal((await f.app.registrationService.getAdmissions({ actor: f.runtime.users[0] })).summary.pendingReviewCount, 1);
     const first = f.calls.find(call => call.path.endsWith('/submit'));
     f.setFlag(false); f.setPrivacyVersion('notice-auto-ui-v2');
@@ -223,6 +242,7 @@ try {
     assert.equal(await form(f.page).locator('[data-proposal-toggle]').isDisabled(), true);
     await f.page.locator('a[data-recruit=speaker]').click();
     const recovered = (await records(f.page)).find(row => row.kind === 'pending_submission');
+    assert.equal(await form(f.page).locator('[name=phone]').inputValue(),'');assert.equal(await form(f.page).locator('[name=phone]').isDisabled(),true);
     assert.equal(recovered.value.payloadJson, original.value.payloadJson); assert.equal(recovered.value.idempotencyKey, original.value.idempotencyKey);
     assert.equal(f.calls.filter(call => call.path.endsWith('/submit')).length, 1, 'reload and CTA do not submit');
     assert.equal(f.calls.slice(beforeReload).every(call => call.method === 'GET'), true, 'pending restoration only reads settings and publication');

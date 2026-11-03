@@ -28,6 +28,22 @@ async function withdrawReview(f, app, receipt) {
   await app.reviewStore.saveReview(receipt.reference_code, detail.revision, review, f.users[0].id);
 }
 
+test('optional public phone and WeChat persist to staff detail and can be corrected without rewriting the original',async()=>{
+  const f=await peopleRuntimeFixture({attendeeReviewRequired:false}),phone='+852 0012 3456',wechat='synthetic-contact';
+  const input=await application(f,f.app,{phone,wechat}),receipt=await json(await submit(f,f.app,input),201),id=receipt.reference_code;
+  const original=(await f.app.registrationService.repository.list()).registrations.find(row=>row.id===id);
+  assert.equal(original.fields.phone,phone);assert.equal(original.fields.wechat,wechat);
+  const headers=await f.login(),person=await json(await f.app.handle(f.request('/api/admin/people/registrations/'+id,{headers})));
+  assert.equal(person.registration.fields.phone,phone);assert.equal(person.registration.fields.wechat,wechat);
+  const detail=await f.app.reviewStore.detail(id),profile=Object.fromEntries(['name','email','organization','position','city','wechat','phone'].map(key=>[key,detail.registration.fields[key]??'']));
+  profile.phone='0086 001 2345';
+  const result=await f.app.reviewStore.saveProfile(id,detail.revision,operation(),profile,f.users[0].id);assert.equal(result.outcome,'updated');
+  const restarted=f.make(),after=await json(await restarted.handle(f.request('/api/admin/people/registrations/'+id,{headers})));
+  assert.equal(after.registration.fields.phone,profile.phone);assert.equal(after.registration.fields.wechat,wechat);
+  assert.equal((await restarted.registrationService.repository.list()).registrations.find(row=>row.id===id).fields.phone,phone,'the immutable original remains intact');
+  assert.equal(f.messages.length,0,'read and contact correction never send confirmation mail');
+});
+
 test('new automatic public intake sends one formal confirmation; replay, reads and optional proposal never add review or mail', async () => {
   const f = await peopleRuntimeFixture({ attendeeReviewRequired: false, mail: true });
   const input = await application(f, f.app, { participationInterests: ['attend', 'talk'], speaker: { topic: '合成提案', summary: '合成摘要' } });

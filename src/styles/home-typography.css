@@ -28,6 +28,11 @@
  --ah-display-person:clamp(26px,1.67vw,32px);
  --ah-display-affiliation:clamp(16px,.9vw,17px);
  --ah-display-position:clamp(17px,1.04vw,20px);
+ /* The reference timeline treats time, venue badge and title as display
+    hierarchy. They must not inherit the 14px helper-text role. */
+ --ah-display-agenda-time:clamp(16px,1.67vw,32px);
+ --ah-display-agenda-zone:clamp(14px,1.3vw,25px);
+ --ah-display-agenda-title:clamp(20px,2.08vw,40px);
  --ah-display-footer:clamp(44px,4.15vw,79.7px);
  --ah-display-footer-poster:var(--ah-display-footer);
  font-family:var(--ah-font-reading);font-size:var(--ah-type-body);
@@ -108,10 +113,11 @@
 #artdico-host.ah-festival.ah-cosmos .ah-showcase-cover-empty{font-size:var(--ah-type-meta);line-height:var(--ah-leading-reading)}
 #artdico-host.ah-festival.ah-cosmos .ah-program :is(.ah-zone-label,.ah-zone-name){font-size:var(--ah-type-label);line-height:var(--ah-leading-ui)}
 #artdico-host.ah-festival.ah-cosmos .ah-program .ah-panel-heading{font-size:var(--ah-type-panel-title);font-weight:var(--ah-weight-strong);line-height:var(--ah-leading-ui)}
-#artdico-host.ah-festival.ah-cosmos .ah-program .ah-agenda-row{--ah-time-size:var(--ah-type-meta)}
-#artdico-host.ah-festival.ah-cosmos .ah-program .ah-agenda-row>time{font-size:var(--ah-type-meta);line-height:var(--ah-leading-ui)}
-#artdico-host.ah-festival.ah-cosmos .ah-program .ah-agenda-row strong{font-size:var(--ah-type-card-title);font-weight:var(--ah-weight-strong);line-height:var(--ah-leading-ui)}
-#artdico-host.ah-festival.ah-cosmos .ah-program .ah-agenda-row :is(small,.ah-session-category){font-size:var(--ah-type-meta);line-height:var(--ah-leading-reading)}
+#artdico-host.ah-festival.ah-cosmos .ah-program .ah-agenda-row{--ah-time-size:var(--ah-display-agenda-time)}
+#artdico-host.ah-festival.ah-cosmos .ah-program .ah-agenda-row>time{font-size:var(--ah-display-agenda-time);line-height:var(--ah-leading-ui)}
+#artdico-host.ah-festival.ah-cosmos .ah-program .ah-agenda-row strong{font-size:var(--ah-display-agenda-title);font-weight:var(--ah-weight-strong);line-height:var(--ah-leading-ui)}
+#artdico-host.ah-festival.ah-cosmos .ah-program .ah-agenda-row .ah-session-category{font-size:var(--ah-display-agenda-zone);line-height:var(--ah-leading-reading)}
+#artdico-host.ah-festival.ah-cosmos .ah-program .ah-agenda-row small{font-size:var(--ah-type-meta);line-height:var(--ah-leading-reading)}
 
 /* Form roles explicitly cover leaf nodes: inherited body size cannot override
    the 11–13px values in legacy field, consent and recovery components. */

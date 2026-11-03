@@ -34,7 +34,13 @@ async function main() {
 
   const raw = createInitialContent();
   raw.guests = [{ id: 'scroll-motion-guest', name: '合成滚动嘉宾', company: '合成创作单位', title: '合成创作者', ggjRole: '', portraitId: '', status: 'pending', publicConsent: false, contactId: 'SYNTHETIC_PRIVATE_CONTACT', internalNotes: 'SYNTHETIC_PRIVATE_NOTE' }];
-  raw.organizations = [{ id: 'scroll-motion-org', name: '合成参与组织', logoId: '', website: '', participation: 'undecided', status: 'pending', publicConsent: false, internalNotes: 'SYNTHETIC_PRIVATE_ORG' }]; raw.booths = [];
+  // Match the current eight-organization composition. A single centred card
+  // legitimately sits below the viewport when its distant heading first enters;
+  // eight cards keep the real first row and heading visible together so the
+  // unchanged simultaneous low-opacity/stagger assertions exercise both fades.
+  raw.organizations = Array.from({length:8},(_,index)=>({ id:index===0?'scroll-motion-org':'scroll-motion-org-'+index,
+    name:'合成参与组织'+(index||''),logoId:'',website:'',participation:'undecided',status:'pending',publicConsent:false,internalNotes:'SYNTHETIC_PRIVATE_ORG' }));
+  assert.equal(raw.organizations.length,8);raw.booths = [];
   // A real published work keeps the works gutter available for its existing
   // compositing assertion. Empty collections are separately hidden by design.
   raw.showcases = [{ id: 'scroll-motion-work', kind: 'student', title: '合成滚动作品', teamName: '合成创作团队', summary: '合成公开作品说明', coverId: '', status: 'confirmed', responseStatus: 'attending', publicConsent: false, participationForms: [], boothId: '', sessionId: '', organizationId: '', school: '', email: '', wechat: '', contactName: '', memberCount: 1, materialLinks: '', internalNotes: 'SYNTHETIC_PRIVATE_WORK' }];

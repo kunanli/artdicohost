@@ -1,5 +1,5 @@
 import { publicGuestCards, publicGuestAffiliation, publicGuestSubtitle, publicGuestSessions } from '../../shared/guest-display.mjs';
-import { GUEST_PUBLIC_ROLE_LABELS } from '../../shared/content-schema.mjs';
+import { GUEST_PUBLIC_ROLE_LABELS, orderedSessions } from '../../shared/content-schema.mjs';
 import { publicShowcaseCards, SHOWCASE_KIND_LABELS } from '../../shared/showcase-display.mjs';
 import { resolvePublicContentSource } from '../../shared/public-content-source.mjs';
 import { publicOrganizationCards, orderOrganizationCards, organizationReferenceKey, organizationLogoVariant } from '../../shared/organization-display.mjs';
@@ -100,7 +100,7 @@ function renderPublishedContent(content,url) {
   for (const panel of agenda?.querySelectorAll('[data-agenda-panel]') ?? []) {
     const list = panel.querySelector('.ah-agenda-list');
     if (!list) continue;
-    const rows = content.sessions.filter(item => item.zone === panel.dataset.agendaPanel && item.status !== 'draft').sort((a,b) => a.start.localeCompare(b.start));
+    const rows = orderedSessions(content.sessions.filter(item => item.zone === panel.dataset.agendaPanel && item.status !== 'draft'), content.sessionOrder);
     list.replaceChildren();
     for (const item of rows) {
       const row = element('article', undefined, 'ah-agenda-row');

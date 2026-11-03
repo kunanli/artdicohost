@@ -1,4 +1,4 @@
-import { validateContent, toPublicContent, isContentVisible, matchesPublishedContent, normalizeGuestAttendance, preserveFaqItemIds } from '../../shared/content-schema.mjs';
+import { validateContent, toPublicContent, isContentVisible, matchesPublishedContent, normalizeGuestAttendance, preserveFaqItemIds, orderedSessions } from '../../shared/content-schema.mjs';
 
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
 const revision = value => Number.isSafeInteger(value) && value >= 0;
@@ -9,22 +9,23 @@ export function sameContent(left, right) {
   const a = canonicalContent(left), b = canonicalContent(right);
   return Boolean(a && b && JSON.stringify(a) === JSON.stringify(b));
 }
-/** A legacy editor can omit FAQ IDs which the store preserves. Only that
- * metadata addition is accepted; every question, answer, order and other field
+/** A legacy editor can omit FAQ IDs or session order which the store preserves.
+ * Only these metadata additions are accepted; every question, answer, row and other field
  * must still equal the submitted snapshot. The original pending body is untouched. */
 export function matchesSavedContent(saved, submitted) {
   if (sameContent(saved, submitted)) return true;
   const actual = canonicalContent(saved), expected = canonicalContent(submitted);
-  const faqs = expected?.event.presentation?.faqItems, stored = actual?.event.presentation?.faqItems;
-  if (!actual || !expected || !Array.isArray(faqs) || !Array.isArray(stored)) return false;
-  expected.event.presentation.faqItems = preserveFaqItemIds(faqs, stored);
+  if (!actual || !expected) return false;
+  if (!Object.hasOwn(expected, 'sessionOrder') && Object.hasOwn(actual, 'sessionOrder')) expected.sessionOrder = actual.sessionOrder;
+  const faqs = expected.event.presentation?.faqItems, stored = actual.event.presentation?.faqItems;
+  if (Array.isArray(faqs) && Array.isArray(stored)) expected.event.presentation.faqItems = preserveFaqItemIds(faqs, stored);
   return sameContent(actual, expected);
 }
 export function contentSaveSnapshot(expectedRevision, content) {
   const checked = canonicalContent(content);
   return revision(expectedRevision) && expectedRevision < Number.MAX_SAFE_INTEGER && checked ? { expectedRevision, content: structuredClone(checked) } : null;
 }
-const sectionFields = Object.freeze({overview:[],event:['event'],arrangements:['booths'],guests:['guests'],organizations:['organizations'],showcases:['showcases'],sessions:['sessions'],booths:['booths'],publish:[]});
+const sectionFields = Object.freeze({overview:[],event:['event'],arrangements:['booths'],guests:['guests'],organizations:['organizations'],showcases:['showcases'],sessions:['sessions','sessionOrder'],booths:['booths'],publish:[]});
 /** Scope one page to the loaded full cloud base. This is not a rebase onto a newer revision. */
 export function contentSectionSnapshot(expectedRevision, loadedContent, candidateContent, section, options = {}) {
   if(!plain(options)||Object.keys(options).some(key=>key!=='allowWholeWorkspace')
@@ -36,7 +37,7 @@ export function contentSectionSnapshot(expectedRevision, loadedContent, candidat
   const fields=sectionFields[section];if(!fields.length)return null;
   const content=structuredClone(base);
   for(const key of fields){
-    if(!Object.hasOwn(candidate,key))return null;
+    if(!Object.hasOwn(candidate,key)){if(key==='sessionOrder')continue;return null;}
     content[key]=structuredClone(candidate[key]);
   }
   return contentSaveSnapshot(expectedRevision,content);
@@ -155,7 +156,9 @@ export function contentPublicationReadiness(input) {
           inDraft:Boolean(draft),visible:Boolean(draft&&isContentVisible(draft)),visibility:draft?(isContentVisible(draft)?'public':'private'):null,published,ready,change,reasons:publicationReasons(kind,draft,content,ready),suggestions,
           ...(kind==='guests'?{attendanceConfirmed,publishedAttendanceConfirmed,attendanceChanged}:{})};
       });
-      orderChanged[kind]=!samePublic(nextRows.map(row=>row.id),savedRows.map(row=>row.id));
+      orderChanged[kind]=kind==='sessions'
+        ? next.sessionOrder!==saved?.sessionOrder || !samePublic(orderedSessions(nextRows,next.sessionOrder).map(row=>row.id),orderedSessions(savedRows,saved?.sessionOrder).map(row=>row.id))
+        : !samePublic(nextRows.map(row=>row.id),savedRows.map(row=>row.id));
     }
     return {draftRevision:input.draft.revision,publishedRevision,publishedAt,
       organizationSource:saved&&Object.hasOwn(saved,'organizations')?'published':'initial',

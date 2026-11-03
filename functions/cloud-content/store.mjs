@@ -38,6 +38,7 @@ function preserveArrangementFields(input, current) {
     const result = Object.create(null);
     for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
       if (!descriptor.enumerable) {
+        if (field === 'content' && key === 'sessionOrder') throw new CloudContentError('VALIDATION_ERROR', '场次排序方式无效。', 422, { sessionOrder: '请明确选择排序方式。' });
         if (key === 'visibility' || field === 'showcases' && ['kind', 'organizationId'].includes(key)) throw new CloudContentError('VALIDATION_ERROR', '作品字段无效。', 422, { [field]: '请提供明确的作品分类与组织关联。' });
         continue;
       }
@@ -47,6 +48,7 @@ function preserveArrangementFields(input, current) {
     return result;
   };
   const result = copy(input, 'content');
+  if (!Object.hasOwn(result, 'sessionOrder') && Object.hasOwn(current, 'sessionOrder')) result.sessionOrder = current.sessionOrder;
   if (result.event && typeof result.event === 'object' && !Array.isArray(result.event)
     && result.event.presentation && typeof result.event.presentation === 'object' && !Array.isArray(result.event.presentation)) {
     result.event = copy(result.event, 'event');

@@ -1,5 +1,8 @@
 # 开发接续：先读本页
 
+2026-11-03最新發布為[PR78活動行名單接Wallet](redesign/huodongxing-wallet-health.md)，main `3c13de91b8da04a2232b4ad6916cd1cfdffacbd5`。1941項／81案、137檔／42資產、私有OSS、14後台、68公開HTTPS及入場3項均通過；官網一般報名仍活動行，後台已可預覽XLSX→明確匯入→另預覽寄信。沒有真人匯入或寄信，舊403實際寄達未驗。本回執在獨立docs提交，不以較舊main README的PR77標示推定轉接器尚未完成。
+
+
 ## 2026-11-02 最新接續：PR68已正式發布，9位公開嘉賓與舊審閱精簡交付完成
 
 [PR #68](https://github.com/kunanli/artdicohost/pull/68) 已合併至 main `3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`，範圍與交付入口見[嘉賓公開展示與舊審閱精簡](redesign/admin-data-cleanup-audit.md)。嘉賓依公開開關全部展示，真實出席獨立；舊人工審閱移出日常表單、歷史唯讀。沒有資料遷移或永久刪除，展位、住宿跟進、志工排班維持原功能。

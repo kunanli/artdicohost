@@ -1,5 +1,5 @@
 import {resolvePeopleView} from './admin-sections.mjs';
-import { PEOPLE_WORK_FILTERS, PEOPLE_HEALTH_KINDS } from '../../shared/organizer-progress.mjs';
+import { PEOPLE_WORK_FILTERS, PEOPLE_HEALTH_KINDS, PEOPLE_ATTENDANCE_FILTERS, personAttendanceStage, validPersonAttendanceStage } from '../../shared/organizer-progress.mjs';
 import {eventConfig} from '../config/event.mjs';
 const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u,REG=/^[A-Za-z0-9_-]{43}$/u;
 const string=(value,max=300)=>typeof value==='string'&&value.length<=max&&!/[\u0000-\u001f\u007f]/u.test(value);
@@ -33,7 +33,7 @@ export function validatePeopleHealth(value) {
 }
 export function validatePeopleDirectory(value,view){
   if(!value||value.schemaVersion!==1||value.view!==view||!['all','exhibitors','speakers','guests','unassigned','attendees'].includes(view)
-    ||value.work!==undefined&&!PEOPLE_WORK_FILTERS.includes(value.work)||typeof value.permissions?.contacts!=='boolean'||typeof value.permissions?.registrations!=='boolean'
+    ||value.work!==undefined&&!PEOPLE_WORK_FILTERS.includes(value.work)||value.attendance!==undefined&&!PEOPLE_ATTENDANCE_FILTERS.includes(value.attendance)||typeof value.permissions?.contacts!=='boolean'||typeof value.permissions?.registrations!=='boolean'
     ||!value.summary||!['people','confirmed','pendingReview','exhibitors','speakers','guests','unassigned','attendees','pendingIntegration'].every(key=>value.summary[key]===null||count(value.summary[key]))
     ||!count(value.total)||value.rows?.length>value.total||!/^[a-f0-9]{64}$/u.test(value.revision??'')||!Array.isArray(value.rows)||value.rows.length>100
     ||!(value.nextCursor===null||typeof value.nextCursor==='string'&&/^[A-Za-z0-9_-]{1,512}$/u.test(value.nextCursor)))return false;
@@ -41,6 +41,8 @@ export function validatePeopleDirectory(value,view){
   for(const row of value.rows){
     if(!row||row.recordedAt!==undefined&&row.recordedAt!==null&&!(typeof row.recordedAt==='string'&&Number.isFinite(Date.parse(row.recordedAt))&&new Date(row.recordedAt).toISOString()===row.recordedAt)||!string(row.key,160)||seen.has(row.key)||!string(row.name)||!row.name||!string(row.organization))return false;seen.add(row.key);
     if(row.kind==='person'){
+      if(Object.hasOwn(row,'attendance')&&!validPersonAttendanceStage(row.attendance))return false;
+      if(Object.hasOwn(row,'deliveryHistoryUnknown')&&row.deliveryHistoryUnknown!==true)return false;
       if (['stateLabel','workKinds','nextAction','basisRevisions'].some(key => Object.hasOwn(row,key)) && (!string(row.stateLabel, 80) || !Array.isArray(row.workKinds)
         || row.workKinds.some(kind => !PEOPLE_WORK_FILTERS.includes(kind) || kind === 'all') || new Set(row.workKinds).size !== row.workKinds.length || !validNextAction(row.nextAction) || !validRevisions(row.basisRevisions))) return false;
       if(view==='exhibitors'||!optional(row.contactId,ID)||!optional(row.registrationId,REG)||!optional(row.profileId,ID)
@@ -76,7 +78,7 @@ const VIEWS={unassigned:['待分流','核对身份后继续处理。'],attendees
 const RESPONSE_LABELS={pending:'待回复',attending:'已答应出席',declined:'不出席'};
 
 const NAV_KEY='artdico:people-navigation:v1',NAV_TTL=30*60*1000;
-const NAV_FIELDS=['schemaVersion','actorId','roles','eventId','view','query','work','cursor','trail','revision','ids','selected','focus','scrollY','capturedAt'];
+const NAV_FIELDS=['schemaVersion','actorId','roles','eventId','view','query','work','attendance','cursor','trail','revision','ids','selected','focus','scrollY','capturedAt'];
 export const peopleSelectionKey=item=>item?.contactId?'contact:'+item.contactId:item?.registrationId?'registration:'+item.registrationId:null;
 const selectionKey=value=>typeof value==='string'&&/^(?:contact:[A-Za-z0-9][A-Za-z0-9_-]{0,79}|registration:[A-Za-z0-9_-]{43})$/u.test(value);
 export function peopleSelectionHref(key){if(!selectionKey(key))return null;const cut=key.indexOf(':');return '/admin/person/#'+key.slice(0,cut)+'='+encodeURIComponent(key.slice(cut+1));}
@@ -87,7 +89,7 @@ export function peopleNextSelection(original,current,fresh){
   return original.slice(anchor+1).find(key=>fresh.includes(key))??null;
 }
 export function validPeopleNavigation(value,user,{eventId=eventConfig.id,view,selection,now=Date.now()}={}){
-  if(!value||Object.keys(value).length!==NAV_FIELDS.length||Object.keys(value).some(key=>!NAV_FIELDS.includes(key))||value.schemaVersion!==1||!user?.id||value.actorId!==user.id||value.eventId!==eventId||!Array.isArray(value.roles)||JSON.stringify(value.roles)!==JSON.stringify([...(user.roles??[])].sort())||!peopleReturnHref(value.view)||view&&value.view!==view)return false;
+  if(!value||Object.keys(value).length!==NAV_FIELDS.length-(Object.hasOwn(value,'attendance')?0:1)||Object.keys(value).some(key=>!NAV_FIELDS.includes(key))||Object.hasOwn(value,'attendance')&&!PEOPLE_ATTENDANCE_FILTERS.includes(value.attendance)||value.schemaVersion!==1||!user?.id||value.actorId!==user.id||value.eventId!==eventId||!Array.isArray(value.roles)||JSON.stringify(value.roles)!==JSON.stringify([...(user.roles??[])].sort())||!peopleReturnHref(value.view)||view&&value.view!==view)return false;
   if(!string(value.query,160)||/https?:\/\/|#r=|\b(?:c1|v1)\.[A-Za-z0-9_.-]{20,}/iu.test(value.query)||!PEOPLE_WORK_FILTERS.includes(value.work)||!string(value.cursor,512)||value.cursor&&!/^[A-Za-z0-9_-]+$/u.test(value.cursor)||!Array.isArray(value.trail)||value.trail.length>20||value.trail.some(cursor=>!string(cursor,512)||cursor&&!/^[A-Za-z0-9_-]+$/u.test(cursor))||!/^[a-f0-9]{64}$/u.test(value.revision))return false;
   return Boolean(Array.isArray(value.ids)&&value.ids.length>0&&value.ids.length<=50&&new Set(value.ids).size===value.ids.length&&value.ids.every(selectionKey)&&value.ids.includes(value.selected)&&selectionKey(value.focus)&&value.focus===value.selected&&(!selection||selection===value.selected)&&Number.isSafeInteger(value.scrollY)&&value.scrollY>=0&&value.scrollY<=2000000&&Number.isSafeInteger(value.capturedAt)&&value.capturedAt<=now+5000&&now-value.capturedAt<=NAV_TTL&&JSON.stringify(value).length<=16384);
 }
@@ -107,7 +109,8 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
   const navigation=createPeopleNavigation();
   const view=()=>resolvePeopleView(location.pathname,location.hash),active=()=>Boolean(getUser()?.id);
   const actorKey=()=>{const user=getUser();return user?.id+'|'+[...(user?.roles??[])].sort().join(',');};
-  const work=()=>view()==='exhibitors'?'all':$('[name=work]')?.value||'pending';
+  const work=()=>view()==='exhibitors'?'all':$('[name=work]')?.value||'all';
+  const attendance=()=>view()==='exhibitors'?'all':$('[name=attendance]')?.value||'all';
   const healthAllowed=()=>active()&&canResolve();
   function link(text,href,cls){const a=node('a',text,cls);a.href=href;return a;}
   function badge(text,status){const p=node('div',text,'people-directory-state');p.dataset.state=status;return p;}
@@ -115,7 +118,7 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
   function remember(key){
     if(!state||!key)return;const ids=state.rows.filter(item=>item.kind==='person').map(peopleSelectionKey).filter(Boolean).slice(0,50);
     if(!ids.includes(key)){ids.length=0;ids.push(key);}
-    navigation.save(getUser(),{view:view(),query:$('[name=query]').value,work:work(),cursor:currentCursor,trail:[...trail].slice(-20),revision:state.revision,ids,selected:key,focus:key,scrollY:Math.max(0,Math.round(window.scrollY))});
+    navigation.save(getUser(),{view:view(),query:$('[name=query]').value,work:work(),attendance:attendance(),cursor:currentCursor,trail:[...trail].slice(-20),revision:state.revision,ids,selected:key,focus:key,scrollY:Math.max(0,Math.round(window.scrollY))});
   }
   function personHref(item){return peopleSelectionHref(peopleSelectionKey(item));}
   function fallbackState(item){
@@ -130,8 +133,11 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
     const recorded=node('time',item.recordedAt?'录入：'+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Taipei',dateStyle:'medium',timeStyle:'short',hourCycle:'h23'}).format(new Date(item.recordedAt)):'录入时间未记录','people-recorded-at');if(item.recordedAt)recorded.dateTime=item.recordedAt;identity.append(recorded);
     if(item.contactId||item.owner){const owner=ownerTagPresentation(item.owner),tag=node('span',owner.label,'ah-owner-tag');tag.dataset.ownerTone=owner.tone;identity.append(tag);}
     const next=item.nextAction;
-    status.append(badge(item.stateLabel||fallbackState(item),next?.key||item.admissionStatus||'pending'));
-    if(next?.reason&&(next.kind==='handoff'||next.kind==='refresh'||item.workKinds?.includes('unavailable')))status.append(node('small',next.reason,'people-directory-warning'));
+    const progress=item.attendance??personAttendanceStage({responseStatus:item.responseStatus,admissionStatus:item.admissionStatus,deliveryStatus:item.deliveryStatus,invitationStatus:item.invitationStatus,historicalDeliveryUnknown:item.deliveryHistoryUnknown===true});
+    const primaryStatus=badge(progress.label,progress.key);primaryStatus.dataset.directoryAttendanceStage=progress.key;status.append(primaryStatus);
+    if(progress.invitationLabel)status.append(node('small',progress.invitationLabel,'people-directory-invitation'));
+    const warning=progress.warning||(next?.reason&&(next.kind==='handoff'||next.kind==='refresh'||item.workKinds?.includes('unavailable'))?next.reason:'');
+    if(warning)status.append(node('small',warning,'people-directory-warning'));
     const href=personHref(item);
     if(href){const primary=link(next?.kind==='handoff'?'查看转交方式':next?.label||'查看下一步',href,'people-directory-action');primary.dataset.directoryPrimary='';primary.addEventListener('click',event=>{if(blocked||busy||!active())event.preventDefault();else remember(peopleSelectionKey(item));});actions.append(primary);}
     else if(item.profileId&&getUser()?.roles?.some(role=>['editor','superadmin'].includes(role)))actions.append(link('核对人物资料','/admin/content/guests/#guest='+encodeURIComponent(item.profileId),'people-directory-action'));
@@ -198,6 +204,8 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
   function render(){
     const selected=view(),labels=VIEWS[selected]??VIEWS.all;$('[data-directory-title]').textContent=labels[0];$('[data-directory-description]').textContent=labels[1];
     root.dataset.directoryKind=selected==='exhibitors'?'companies':'people';$('[data-directory-work]').closest('div').hidden=selected==='exhibitors';
+    if($('[data-directory-attendance]'))$('[data-directory-attendance]').closest('div').hidden=selected==='exhibitors';
+    if($('[data-directory-advanced]'))$('[data-directory-advanced]').hidden=selected==='exhibitors';
     const metrics=$('[data-directory-metrics]');metrics.replaceChildren();for(const[label,key]of[['人员','people'],['名额已确认','confirmed'],['待审核','pendingReview'],['待整合','pendingIntegration']]){const card=node('article');card.append(node('span',label),node('strong',state.summary[key]===null||state.summary[key]===undefined?'—':String(state.summary[key])));metrics.append(card);}
     for(const link of document.querySelectorAll('[data-people-view]')){if(['exhibitors','speakers','guests','unassigned','attendees'].includes(link.dataset.peopleView))link.hidden=!state.permissions.contacts;const output=link.querySelector('[data-people-count]');const key=({all:'people',registrations:'pendingReview',exhibitors:'exhibitors',speakers:'speakers',guests:'guests',unassigned:'unassigned',attendees:'attendees'})[link.dataset.peopleView];if(output)output.textContent=state.summary[key]===null||state.summary[key]===undefined?'':link.dataset.peopleView==='registrations'?state.summary[key]+' 待审':String(state.summary[key]);}
     const head=$('[data-directory-head]');head.replaceChildren();const tr=node('tr');for(const label of selected==='exhibitors'?['公司／团队','联络人／成员','展位与状态','操作']:['姓名／机构','当前状态','下一步'])tr.append(node('th',label));head.append(tr);
@@ -210,13 +218,15 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
     let restoring=null;
     if(!restoreAttempted&&active()){
       restoreAttempted=true;restoring=navigation.read(getUser(),{view:view()});
-      if(restoring){$('[name=query]').value=restoring.query;$('[name=work]').value=restoring.work;cursor=restoring.cursor;history=[...restoring.trail];}
+      if(restoring){$('[name=query]').value=restoring.query;$('[name=work]').value=restoring.work;if($('[name=attendance]'))$('[name=attendance]').value=restoring.attendance??'all';if(restoring.work!=='all'&&$('[data-directory-advanced]'))$('[data-directory-advanced]').open=true;cursor=restoring.cursor;history=[...restoring.trail];}
     }
-    if(!active())return clear();const generation=++sequence,actor=actorKey(),selected=view()==='registrations'?'all':view(),query=$('[name=query]').value,selectedWork=work();
-    const current=()=>generation===sequence&&actorKey()===actor&&active();busy=true;$('[data-directory-error]').hidden=true;root.setAttribute('aria-busy','true');lock();
-    try{let stale=false;const read=position=>request('/api/admin/people/directory?'+new URLSearchParams({view:selected,work:selectedWork,limit:'50',...(query?{query}:{}),...(position?{cursor:position}:{})}),{current});let value;
+    if(!active())return clear();const generation=++sequence,actor=actorKey(),selected=view()==='registrations'?'all':view(),query=$('[name=query]').value,selectedWork=work(),selectedAttendance=attendance();
+    const current=()=>generation===sequence&&actorKey()===actor&&active();
+    const filterFocus=$('[data-directory-search]')?.contains?.(document.activeElement)?document.activeElement:null;
+    busy=true;$('[data-directory-error]').hidden=true;root.setAttribute('aria-busy','true');lock();
+    try{let stale=false;const read=position=>request('/api/admin/people/directory?'+new URLSearchParams({view:selected,work:selectedWork,attendance:selectedAttendance,limit:'50',...(query?{query}:{}),...(position?{cursor:position}:{})}),{current});let value;
       try{value=await read(cursor);}catch(error){if(error.status!==409||!cursor)throw error;if(!current())return;cursor='';history=[];stale=true;value=await read('');}
-      if(!current())return;if(!validatePeopleDirectory(value,selected)||value.work!==undefined&&value.work!==selectedWork)throw new Error('Invalid directory response.');state=value;currentCursor=cursor;trail=history;render();
+      if(!current())return;if(!validatePeopleDirectory(value,selected)||value.work!==undefined&&value.work!==selectedWork||value.attendance!==undefined&&value.attendance!==selectedAttendance)throw new Error('Invalid directory response.');state=value;currentCursor=cursor;trail=history;render();
       if(restoring){
         stale=stale||restoring.revision!==value.revision;
         const target=!stale?[...root.querySelectorAll('[data-directory-person]')].find(row=>row.dataset.directoryPerson===restoring.focus)?.querySelector('[data-directory-primary]'):null;
@@ -225,7 +235,8 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
       }
       if(stale)$('[data-directory-status]').textContent='名单已更新，已保留搜索与筛选。';
     }catch(error){if(!current())return;clearRows();$('[data-directory-error]').textContent=error.status===409?'名单已更新，请重新搜索。':'名单暂时无法核对，请重试。';$('[data-directory-error]').hidden=false;$('[data-directory-status]').textContent='此次读取未完成，不能据此判断为零。';onFallback();}
-    finally{if(current()){busy=false;root.removeAttribute('aria-busy');lock();}}
+    finally{if(current()){busy=false;root.removeAttribute('aria-busy');lock();
+      if(filterFocus?.isConnected&&!filterFocus.disabled&&document.activeElement===document.body)filterFocus.focus({preventScroll:true});}}
   }
   function clearHealth(){healthSequence++;healthBusy=false;$('[data-directory-health]').open=false;$('[data-directory-health]').hidden=true;$('[data-directory-health-items]').replaceChildren();$('[data-directory-health-status]').textContent='打开后核对已保存资料。';$('[data-directory-health-error]').textContent='';$('[data-directory-health-error]').hidden=true;$('[data-directory-health-empty]').hidden=true;}
   async function loadHealth(){
@@ -243,6 +254,7 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
   function clear(){sequence++;busy=false;currentCursor='';trail=[];restoreAttempted=false;navigation.clear();resetting=true;$('[data-directory-search]').reset();resetting=false;clearRows();clearHealth();$('[data-directory-error]').textContent='';$('[data-directory-error]').hidden=true;$('[data-directory-status]').textContent='';lock();}
   $('[data-directory-search]').addEventListener('submit',event=>{event.preventDefault();void load();});$('[data-directory-search]').addEventListener('reset',()=>{if(!resetting)queueMicrotask(()=>{if(active())void load();});});
   $('[data-directory-work]').addEventListener('change',()=>{if(active())void load();});
+  $('[data-directory-attendance]')?.addEventListener('change',()=>{if(active())void load();});
   $('[data-directory-next]').addEventListener('click',()=>{if(!busy&&state?.nextCursor)void load(state.nextCursor,[...trail,currentCursor]);});$('[data-directory-prev]').addEventListener('click',()=>{if(!busy&&trail.length)void load(trail.at(-1),trail.slice(0,-1));});
   $('[data-directory-health]').addEventListener('toggle',()=>{if($('[data-directory-health]').open&&healthAllowed())void loadHealth();});$('[data-directory-health-refresh]').addEventListener('click',()=>void loadHealth());
   window.addEventListener('hashchange',()=>{if(active()&&(/^#people=(exhibitors|speakers|guests|unassigned|attendees)$/u.test(location.hash)||!location.hash))void load();});

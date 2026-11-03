@@ -176,6 +176,9 @@ export function createRegistrationApi({ allowedOrigins, submissionService, allow
           const reviewRequired = own(value, 'attendeeReviewRequired');
           if (reviewRequired !== undefined && typeof reviewRequired !== 'boolean') return failure('UNAVAILABLE');
           checked.attendeeReviewRequired = reviewRequired !== false;
+          const publicRegistrationMode = own(value, 'publicRegistrationMode'), speakerApplicationsEnabled = own(value, 'speakerApplicationsEnabled');
+          if (publicRegistrationMode !== undefined) { if (!['legacy','speaker_only'].includes(publicRegistrationMode)) return failure('UNAVAILABLE'); checked.publicRegistrationMode = publicRegistrationMode; }
+          if (speakerApplicationsEnabled !== undefined) { if (typeof speakerApplicationsEnabled !== 'boolean') return failure('UNAVAILABLE'); checked.speakerApplicationsEnabled = speakerApplicationsEnabled; }
           if (own(value, 'admissions') !== undefined) {
             checked.admissions = publicAdmissions(own(value, 'admissions'), checked.capacity);
             if (!checked.admissions) return failure('UNAVAILABLE');
@@ -186,8 +189,9 @@ export function createRegistrationApi({ allowedOrigins, submissionService, allow
         if (!/^application\/json(?:\s*;\s*charset\s*=\s*(?:utf-8|"utf-8"))?\s*$/iu.test(request.headers.get('content-type') ?? '')
           || ![null, 'identity'].includes(request.headers.get('content-encoding'))) return failure('UNSUPPORTED_MEDIA_TYPE');
         const payload = await readPayload(request);
-        if (Object.keys(payload).sort().join(',') !== 'eventId,idempotencyKey' || !KEY_PATTERN.test(own(payload, 'idempotencyKey') ?? '')) return failure('INVALID_HEADERS');
-        const value = await issueToken({ eventId: own(payload, 'eventId'), idempotencyKey: own(payload, 'idempotencyKey'), origin });
+        const keys = Object.keys(payload).sort().join(',');
+        if (!['eventId,idempotencyKey','eventId,idempotencyKey,speakerApplication'].includes(keys) || keys.endsWith(',speakerApplication') && own(payload,'speakerApplication') !== true || !KEY_PATTERN.test(own(payload, 'idempotencyKey') ?? '')) return failure('INVALID_HEADERS');
+        const value = await issueToken({ eventId: own(payload, 'eventId'), idempotencyKey: own(payload, 'idempotencyKey'), origin, ...(own(payload,'speakerApplication') === true ? {speakerApplication:true} : {}) });
         if (request.signal.aborted) return failure('UNAVAILABLE');
         if (own(value, 'outcome') !== 'issued') {
           if (own(value, 'outcome') === 'rate_limited' && Number.isSafeInteger(own(value, 'retryAfter')) && own(value, 'retryAfter') >= 1 && own(value, 'retryAfter') <= 86400) headers['retry-after'] = String(own(value, 'retryAfter'));

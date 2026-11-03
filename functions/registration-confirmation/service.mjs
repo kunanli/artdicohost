@@ -634,7 +634,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const registrationIds = new Set([registrationId, ...relatedRegistrationIds]);
     const current = await target().read(), notices = current.value.notices.filter(item => registrationIds.has(item.registrationId) && formalConfirmationKind(item.kind));
     const scope = currentRegistration ? scopeOf(await loadRegistration(registrationId)) : null;
-    const unresolved = !notices.some(item => stateOf(item) === 'unknown')
+    const unresolved = current.value.operations.some(operation=>operation.action==='dispatch'&&operation.status!=='completed'&&operation.registrationIds.some(id=>registrationIds.has(id)))
+      || !notices.some(item => stateOf(item) === 'unknown')
       && formalDeliveryStatus(current.value, [...registrationIds], strongestNotice(notices.filter(item => item.admissionStatus === 'confirmed'))) === 'unknown';
     return { revision: current.value.revision, ...(unresolved ? { unresolvedConfirmations: true } : {}),
       notices: notices
@@ -669,7 +670,10 @@ export function createRegistrationConfirmationService({ registrationService, jou
         } else { const loaded = await loadRegistration(registrationId); aliases = await aliasesFor(loaded); scope = scopeOf(loaded); }
         const notice = strongestNotice(relatedNotices(current.value, aliases, 'registration', scope));
         const status = formalDeliveryStatus(current.value, aliases.registrationIds, notice, scope);
-        if (['provider_accepted', 'unknown', 'rejected'].includes(status)) notices.push({ registrationId, status });
+        const historicalUnknown=historicalUncertainty(current.value,aliases,'registration',scope)
+          ||current.value.operations.some(operation=>operation.action==='dispatch'&&operation.status!=='completed'&&operation.registrationIds.some(id=>aliases.registrationIds.includes(id)));
+        if (['provider_accepted', 'unknown', 'rejected'].includes(status)||historicalUnknown) notices.push({ registrationId, status,
+          ...(historicalUnknown?{historicalUnknown:true}:{}) });
       }
     }));
     return { revision: current.value.revision, notices: notices.sort((a, b) => a.registrationId.localeCompare(b.registrationId)) };

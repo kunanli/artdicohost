@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createInitialContent } from '../src/config/content.mjs';
-import { faqItems } from '../src/config/event.mjs';
+import { faqItems, PUBLIC_REGISTRATION_URL } from '../src/config/event.mjs';
 import { validateContent, toPublicContent, preserveFaqItemIds, legacyFaqId } from '../shared/content-schema.mjs';
 import { createFileContentStore } from '../functions/content-api/store.mjs';
 import { createOssContentStore } from '../functions/cloud-content/store.mjs';
@@ -67,24 +67,40 @@ test('explicit save assigns IDs once while raw old drafts and exact pending cont
     [{ id: 'faq-already-saved', question: '合成自订问题', answer: '恢复后修改的答案' }]);
 });
 
-test('one public FAQ projection always applies live availability, rights and exact lodging without losing custom entries', () => {
+test('one public FAQ projection keeps external attendance separate from onsite availability, rights and exact lodging without losing custom entries', () => {
   const input = [{ id: 'registration-status', question: '申请状态更新了吗？', answer: '过期开放声明' },
     { question: '报名成功就有住宿吗？', answer: '过期住宿表单说明' }, { id: 'custom-experience', question: '合成自订问题', answer: '合成自订回答' },
     { question: '现在可以报名吗？自订说明', answer: '这是自订问题，保留原答覆' },
     { id: 'site-role', question: '合成旧站点问题', answer: '合成过期简短指南' }];
   const copy = structuredClone(input), rows = publicFaqItems(input, { availability: { message: '合成申请已关闭' },
     privacy: { rightsRequest: '合成申请更正及撤回方式', contactEmail: 'synthetic.privacy@example.invalid' } });
-  assert.equal(rows.find(item => item.id === 'registration-status').answer, '合成申请已关闭');
+  assert.equal(rows.find(item => item.id === 'registration-status').answer, faqItems.find(item => item.id === 'registration-status').answer);
+  assert.equal(rows.find(item => item.id === 'registration-status').registrationUrl, PUBLIC_REGISTRATION_URL);
   assert.equal(rows.find(item => item.id === 'data-rights').answer, '合成申请更正及撤回方式');
   assert.equal(rows.find(item => item.id === 'data-rights').contactEmail, 'kunan@globalgamejam.org', 'legacy policy and editorial contacts cannot replace the approved public support address');
   assert.equal(rows.find(item => item.id === 'lodging-support').question, '外地来宾有住宿支持吗？');
   assert.equal(rows.find(item => item.id === 'lodging-support').answer, housing); assert.equal(rows.find(item => item.id === 'lodging-support').contactEmail, 'kunan@globalgamejam.org');
   assert.equal(rows.find(item => item.id === 'site-role').question, faqItems.find(item => item.id === 'site-role').question);
+  assert.equal(rows.find(item => item.id === 'site-role').registrationUrl, PUBLIC_REGISTRATION_URL);
   assert.doesNotMatch(rows.find(item => item.id === 'site-role').answer, /合成过期/u, 'old published guides use the current complete instructions without rewriting their saved bytes');
   assert.equal(rows.find(item => item.id === 'custom-experience').answer, '合成自订回答');
   assert.equal(rows.find(item => item.question === '现在可以报名吗？自订说明').answer, '这是自订问题，保留原答覆');
   assert.deepEqual(input, copy); assert.equal(new Set(rows.map(item => item.id)).size, rows.length);
   assert.doesNotThrow(() => setPublicFaqs(input), 'frontend helper is safe to import and call without a browser');
+});
+
+test('approved external attendance route cannot be replaced by editorial URLs or onsite proposal status', () => {
+  assert.equal(PUBLIC_REGISTRATION_URL, 'https://9525102647817.huodongxing.com/event/8884819113200');
+  for (const message of ['报名已开放，本站即刻出票', '讲者申请已关闭', '申请服务暂时无法核对']) {
+    const rows = publicFaqItems([{ id: 'registration-status', question: '现在可以报名吗？', answer: message,
+      registrationUrl: 'https://unapproved.example.invalid/registration' }], { availability: { message } });
+    const entry = rows.find(item => item.id === 'registration-status');
+    assert.equal(entry.registrationUrl, PUBLIC_REGISTRATION_URL);
+    assert.match(entry.answer, /普通参会请前往活动行报名/u);
+    assert.match(entry.answer, /讲者分享提案在本站提交/u);
+    assert.doesNotMatch(entry.answer, /即刻出票|立即.*Wallet|本站即|服务暂时无法/u);
+    assert.deepEqual(rows.filter(item => item.registrationUrl).map(item => item.id), ['registration-status', 'site-role']);
+  }
 });
 
 test('empty or twenty custom FAQs keep all custom questions plus bounded required service entries', () => {

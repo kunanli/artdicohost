@@ -151,3 +151,27 @@ test('published wall-clock times resolve accurately and reject missing or ambigu
   assert.equal(eventTimeInstant('2026-03-08','02:30','America/New_York'),null);
   assert.equal(eventTimeInstant('2026-11-01','01:30','America/New_York'),null);
 });
+
+
+test('speaker client uses an explicit proposal capability at full capacity and sends only the talk-only token marker',async()=>{
+  const calls=[],source={intake:'general-v2',name:'合成讲者',email:'synthetic@example.invalid',categories:['industry'],participationInterests:['talk'],speaker:{topic:'合成主题',summary:'合成简介'}};
+  const closed={...policy,enabled:false,reason:'closed',publicRegistrationMode:'legacy',speakerApplicationsEnabled:true};
+  const client=createRegistrationClient({apiOrigin:'https://api.artdico.host',pageOrigin:'https://artdico.host',applicationKind:'speaker',clock:()=>NOW,randomBytes:()=>new Uint8Array(32).fill(5),fetchFn:async(url,options)=>{calls.push({url,options});return url.endsWith('/config')?json(closed):url.endsWith('/token')?json(token):json({status:'pending_review',admissionStatus:'pending_review',reference_code:reference},201);}});
+  assert.equal((await client.configure()).enabled,true);const result=await client.submit(source);assert.equal(result.body.admissionStatus,'pending_review');
+  const issued=JSON.parse(calls.find(value=>value.url.endsWith('/token')).options.body);assert.equal(issued.speakerApplication,true);
+  assert.deepEqual(JSON.parse(calls.find(value=>value.url.endsWith('/submit')).options.body).fields,source);
+  const general=fixture(null,closed);assert.equal((await general.client.configure()).enabled,false);await assert.rejects(general.client.submit(source),/暂未开放/u);
+});
+
+test('new speaker client rejects ordinary attendance fields before making a token request',async()=>{
+  const calls=[],client=createRegistrationClient({apiOrigin:'https://api.artdico.host',pageOrigin:'https://artdico.host',applicationKind:'speaker',clock:()=>NOW,fetchFn:async(url)=>{calls.push(url);return json({...policy,publicRegistrationMode:'speaker_only',speakerApplicationsEnabled:true});}});
+  await client.configure();await assert.rejects(client.submit({intake:'general-v2',name:'合成来宾',participationInterests:['attend']}),/活动行/u);assert.equal(calls.length,1);
+});
+
+
+test('a speaker capability flag cannot make malformed enabled metadata open collection',async()=>{
+  for(const enabled of [undefined,null,'false',0]){
+    const client=createRegistrationClient({apiOrigin:'https://api.artdico.host',pageOrigin:'https://artdico.host',applicationKind:'speaker',clock:()=>NOW,fetchFn:async()=>json({...policy,enabled,speakerApplicationsEnabled:true})});
+    await assert.rejects(client.configure(),{code:'CONFIG_INVALID'});
+  }
+});

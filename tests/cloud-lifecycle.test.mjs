@@ -260,7 +260,7 @@ test('enabled registration requires credential-free HTTPS alias metadata matchin
   const policy = approvedRegistrationPolicy();
   assert.equal(policy.privacy.contactEmail, 'kunan@globalgamejam.org');
   assert.notEqual(policy.privacy.contactEmail, ENV.ARTDICO_ADMIN_EMAIL);
-  const metadata = { ...policy, attendeeReviewRequired: false, opensAt: new Date(policy.opensAt).toISOString(), closesAt: new Date(policy.closesAt).toISOString() };
+  const metadata = { ...policy, attendeeReviewRequired: false, speakerApplicationsEnabled: true, opensAt: new Date(policy.opensAt).toISOString(), closesAt: new Date(policy.closesAt).toISOString() };
   const reply = value => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json', 'access-control-allow-origin': 'https://artdico.host' } });
   const f = fixture(); f.options.env = { ...ENV, ARTDICO_REGISTRATION_SETUP_ENABLED: 'true' };
   f.options.fetchPublic = async (url, options) => {
@@ -278,6 +278,8 @@ test('enabled registration requires credential-free HTTPS alias metadata matchin
     await assert.rejects(verifyPublicRegistrationAlias(async () => reply({ ...metadata, admissions: summary }), policy), /PUBLIC_REGISTRATION_NOT_VERIFIED/u);
   }
   for (const change of [{ ...metadata, attendeeReviewRequired: true }, { ...metadata, attendeeReviewRequired: 'false' }, { ...metadata, capacity: 301 }, { ...metadata, closesAt: '2026-12-05T05:00:00.000Z' },
+    { ...metadata, publicRegistrationMode: 'legacy' }, { ...metadata, publicRegistrationMode: undefined },
+    { ...metadata, publicRegistrationMode: 'foreign' }, { ...metadata, speakerApplicationsEnabled: false },
     { enabled: false, reason: 'unavailable' }, { ...metadata, privacy: { ...metadata.privacy, retention: 'wrong' } },
     { ...metadata, privacy: { ...metadata.privacy, contactEmail: ENV.ARTDICO_ADMIN_EMAIL } }]) {
     await assert.rejects(verifyPublicRegistrationAlias(async () => reply(change), policy), /PUBLIC_REGISTRATION_NOT_VERIFIED/u);

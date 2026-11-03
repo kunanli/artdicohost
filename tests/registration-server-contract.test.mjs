@@ -197,3 +197,11 @@ test('decoded JSON size is bounded and invalid results contain fixed errors with
   assert.equal(JSON.stringify(bad).includes('PRIVATE-'), false);
   for (const value of [undefined, null, [], 'PRIVATE-RAW-STRING', 123]) rejected(validate(value), 'payload');
 });
+
+
+test('external registration mode is optional server policy and never accepts malformed values or accessors',()=>{
+  assert.equal(Object.hasOwn(validateRegistrationPolicy(policy(),{now}).value,'publicRegistrationMode'),false);
+  for(const publicRegistrationMode of ['legacy','speaker_only'])assert.equal(validateRegistrationPolicy(policy({publicRegistrationMode}),{now}).value.publicRegistrationMode,publicRegistrationMode);
+  for(const publicRegistrationMode of [undefined,null,'onsite',true,1,{},[]])rejected(validateRegistrationPolicy(policy({publicRegistrationMode}),{now}),'publicRegistrationMode');
+  let invoked=false;const value=policy();Object.defineProperty(value,'publicRegistrationMode',{enumerable:true,get(){invoked=true;return'speaker_only';}});rejected(validateRegistrationPolicy(value,{now}),'publicRegistrationMode');assert.equal(invoked,false);
+});

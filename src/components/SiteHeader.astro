@@ -1,4 +1,5 @@
 ---
+import { PUBLIC_REGISTRATION_URL } from '../config/event.mjs';
 import '../styles/navigation.css';
 import '../styles/home-header.css';
 const links = [
@@ -14,14 +15,14 @@ const links = [
   <a class="ah-home-wordmark" href="#top" aria-label="ARTDiCO HOST 活动首页">ARTDiCO HOST</a>
   <nav class="ah-home-desktop-nav" aria-label="页面导航">
     {links.map(link => <a href={link.href}>{link.label}</a>)}
-    <a href="#registration" class="ah-home-nav-apply">了解报名</a>
+    <a href={PUBLIC_REGISTRATION_URL} class="ah-home-nav-apply" data-general-registration>活动行报名</a>
   </nav>
   <details class="ah-site-menu" data-site-menu data-mobile-nav>
     <summary aria-controls="site-navigation">菜单 <span class="ah-menu-icon" aria-hidden="true"><span></span><span></span></span></summary>
     <nav id="site-navigation" aria-label="页面导航">
       {links.map(link => <a href={link.href}>{link.label}<span aria-hidden="true">↗</span></a>)}
       <a href="#venue">地点与常见问题<span aria-hidden="true">↗</span></a>
-      <a href="#registration" class="ah-menu-action">了解报名<span aria-hidden="true">↗</span></a>
+      <a href={PUBLIC_REGISTRATION_URL} class="ah-menu-action" data-general-registration>活动行报名<span aria-hidden="true">↗</span></a>
     </nav>
   </details>
 </header>

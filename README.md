@@ -1,6 +1,6 @@
 # ARTDiCO HOST · artdico.host
 
-**最新已發布：**[PR73 原稿 Hero、精簡報名與手機入場](docs/redesign/entry-ticket-release.md)及[PR74 正式路徑驗證修正](https://github.com/kunanli/artdicohost/pull/74)，main `321940c4a13c5174eac4378d291dd42b6c980f3a`。[main 流程41563515292](https://github.com/kunanli/artdicohost/actions/runs/41563515292)五工作成功，1809項測試、67個同來源瀏覽器案例、私有OSS、14後台、68公開HTTPS物件及3項短網址／入場路徑檢查均通過；2026-11-03 02:16:44 UTC完成正式核對。郵件程式與官方Wallet／兩種QR範本已交付；EmailJS控制台套用範本及先前403、真實收件仍獨立待核對。
+**最新已發布：**[PR76 日程字級、電話／微信與組織居中](docs/redesign/public-readability-contact-layout-release.md)，main `a8ec877271ceddf5cdece0ff0655024755d1e7fe`。[正式流程41588441006](https://github.com/kunanli/artdicohost/actions/runs/41588441006)五工作成功，1820項Node測試及同來源67個瀏覽器案例、私有OSS、14個後台頁面、68個公開HTTPS物件與3項入場路徑核對通過，2026-11-03 06:27:09 UTC完成。郵件與Wallet配置就緒，真人收件及裝置添加仍另驗。
 
 **前輪嘉賓規則（歷史基準）：**[PR #68](https://github.com/kunanli/artdicohost/pull/68) 已合併至 main `3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`，範圍見[嘉賓公開展示與舊審閱精簡](docs/redesign/admin-data-cleanup-audit.md)。嘉賓依公開開關展示、真實出席獨立；舊人工審閱改歷史唯讀。資料未刪除，展位、住宿、志工流程維持。[PR 檢查 41425057862](https://github.com/kunanli/artdicohost/actions/runs/41425057862) 已通過1638項測試及同版捲動6／排版4／實際素材13；[main 流程 41426077899](https://github.com/kunanli/artdicohost/actions/runs/41426077899) 四工作成功，同版6／4／實際13、私有OSS、13後台及10:18:01 UTC的60公開物件HTTPS核對完成。
 
@@ -8,7 +8,7 @@
 
 更早 [PR66：手機圈內組織、全頁星空與報名更正](docs/redesign/mobile-organizations-profile-release.md)，main `c5166922`，保留當次1634測試、13後台及61公開物件HTTPS回執。首頁樣式沿 [CSS／字級規範](docs/frontend-typography.md)。
 
-一般報名直接於本站填表，依共享容量自動確認或候補；分享主題另行審選。活動行為既有外部來源，其[早期整合規劃](docs/redesign/external-registration-wallet.md)不再是唯一報名入口，名單轉接仍須先核對欄位與身分。以下較早階段的發布與文檔保留作歷史，最新狀態以頁首及當輪交付紀錄為準。
+2026-11-03使用者最新決策：一般報名由官網前往活動行，本站只保留講者提案；客服以三段出席分類查看，寄送異常另列提示。[本輪範圍與驗證](docs/redesign/external-registration-staff-status-release.md)記錄實作及發布進度；活動行Excel→Wallet轉接器尚未實作，批次同步與寄信不因切換入口自動完成。下方本站自動報名及更早紀錄保留作歷史。
 
 本次改版執行入口：[分階段總覽](docs/redesign/README.md)、[操作手冊](docs/redesign/02-staff-and-attendee-runbook.md)、[驗收與發布](docs/redesign/03-release-and-acceptance.md)。P1–P6、[UX1 操作／層級](docs/redesign/ux-clarity-release.md) 及 [UX2 具名寄送與連續處理](docs/redesign/ux-workflow-release.md) 均已完成程式交付及正式發布；UX2 main `5ec45815` 的 1586 項測試、私有 OSS、13 個後台頁面及 51 個公開物件核驗通過。四項真人／真實資料驗收仍待主辦方記錄。下方 10 月發布資訊為歷史基準，現況以接續台帳及當輪紀錄為準。
 

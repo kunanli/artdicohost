@@ -2,16 +2,17 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRegistrationClient } from '../src/lib/registration-client.mjs';
 import { eventConfig } from '../src/config/event.mjs';
+import { approvedRegistrationPolicy } from './approved-registration-policy.mjs';
 
 const API='https://api.artdico.host',SITE='https://artdico.host';
 const ROUTES=['/api/admin/registration/config','/api/admin/registration/token','/api/admin/registration/submit'];
 
 /** Anonymous GET + OPTIONS only. No token issuance, application, or staff cookie. */
-export async function observePublicRegistration({fetchFn=fetch,timeoutMs=15000}={}) {
+export async function observePublicRegistration({fetchFn=fetch,timeoutMs=15000,expectedPublicRegistrationMode=approvedRegistrationPolicy().publicRegistrationMode??'legacy'}={}) {
   let stage='config',status,verificationFailure;
   const fail=code=>{verificationFailure=code;throw new Error('Public registration read verification failed.');};
   try {
-    if(typeof fetchFn!=='function'||!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>15000)fail('INVALID_ARGUMENTS');
+    if(typeof fetchFn!=='function'||!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>15000||!['legacy','speaker_only'].includes(expectedPublicRegistrationMode))fail('INVALID_ARGUMENTS');
     async function read(url,options={}) {
       status=undefined;
       if(!ROUTES.some(path=>url===API+path)||!['GET','OPTIONS'].includes(options.method))fail('READ_ONLY_BOUNDARY');
@@ -26,6 +27,8 @@ export async function observePublicRegistration({fetchFn=fetch,timeoutMs=15000}=
     const client=createRegistrationClient({apiOrigin:API,pageOrigin:SITE,fetchFn:read});
     const config=await client.configure();
     if(config?.eventId!==eventConfig.id||typeof config.enabled!=='boolean')fail('EVENT_CONFIGURATION');
+    if((config.publicRegistrationMode??'legacy')!==expectedPublicRegistrationMode
+      ||expectedPublicRegistrationMode==='speaker_only'&&config.speakerApplicationsEnabled!==true)fail('REGISTRATION_MODE');
     const preflights={};
     for(const [name,path,headers] of [['token',ROUTES[1],['content-type']],['submit',ROUTES[2],['content-type','idempotency-key','x-registration-token']]]) {
       stage=name+'_preflight';
@@ -37,9 +40,10 @@ export async function observePublicRegistration({fetchFn=fetch,timeoutMs=15000}=
       preflights[name]=true;
     }
     return {verified:true,eventId:config.eventId,enabled:config.enabled,
-      attendeeReviewRequired:typeof config.attendeeReviewRequired==='boolean'?config.attendeeReviewRequired:null,preflights};
+      attendeeReviewRequired:typeof config.attendeeReviewRequired==='boolean'?config.attendeeReviewRequired:null,
+      publicRegistrationMode:config.publicRegistrationMode??'legacy',speakerApplicationsEnabled:typeof config.speakerApplicationsEnabled==='boolean'?config.speakerApplicationsEnabled:null,preflights};
   } catch(error) {
-    const allowed=new Set(['INVALID_ARGUMENTS','READ_ONLY_BOUNDARY','RESPONSE_URL','CORS_ORIGIN','EVENT_CONFIGURATION','CORS_PREFLIGHT']);
+    const allowed=new Set(['INVALID_ARGUMENTS','READ_ONLY_BOUNDARY','RESPONSE_URL','CORS_ORIGIN','EVENT_CONFIGURATION','CORS_PREFLIGHT','REGISTRATION_MODE']);
     return {verified:false,stage,...(Number.isInteger(status)&&status>=100&&status<=599?{status}:{}),
       failure:allowed.has(verificationFailure)?verificationFailure:'READ_UNAVAILABLE'};
   }

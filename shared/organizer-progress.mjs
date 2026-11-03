@@ -196,6 +196,58 @@ export function buildOrganizerTasks({ contacts = [], contactRevision = 0, conten
 export const PEOPLE_WORK_FILTERS = Object.freeze(['pending', 'all', 'reply', 'integration', 'duplicate', 'notification', 'unavailable', 'review', 'publication', 'arrangement']);
 export const PEOPLE_HEALTH_KINDS = Object.freeze(['unlinked_source', 'duplicate', 'attending_unintegrated', 'email_mismatch', 'publication', 'lodging', 'legacy_work', 'event_facts']);
 
+export const PEOPLE_ATTENDANCE_FILTERS = Object.freeze(['all', 'awaiting', 'confirmed', 'invited', 'other']);
+const attendanceLabels = Object.freeze({awaiting:'待确认是否出席',confirmed:'已确认出席',invited:'已确认出席并发送邀请函',
+  waitlisted:'候补',pending_review:'待审核',rejected:'申请未通过',withdrawn:'已撤回',declined:'不出席／拒绝联络',unavailable:'资料待核对'});
+const manualInvitationLabel = '人工已记录发出', emailInvitationLabel = '邮件服务已接收，未证明送达';
+const attendanceInvitationLabels = new Set(['',manualInvitationLabel,emailInvitationLabel,manualInvitationLabel+'；'+emailInvitationLabel]);
+const attendanceWarnings = Object.freeze({unknown:'寄送结果待核对，请勿重寄。',emailUnavailable:'确认信状态暂时无法核对。',
+  emailRestricted:'确认信状态需由审核同事核对。',sourceUnavailable:'资料来源暂时无法核对。'});
+const attendanceWarningLabels = new Set(['',...Object.values(attendanceWarnings)]);
+const attendanceFacts = Object.freeze({
+  responseStatus:[null,'pending','attending','declined'],admissionStatus:[null,'confirmed','waitlisted','pending_review','rejected','withdrawn'],
+  contactConsent:[null,'consented','unknown','declined'],deliveryStatus:['not_applicable','provider_accepted','unknown','rejected','restricted','unavailable','not_sent'],
+  invitationStatus:[null,'prepared','issuing','reserved','provider_accepted','unknown','rejected','manually_sent','not_started','not_applicable'],
+  selfRegistered:[false,true],currentManualInvitationSent:[false,true],sourceUnavailable:[false,true],historicalDeliveryUnknown:[false,true],
+});
+/** A read-only attendance grouping. The caller verifies canonical public provenance
+ * and supplies current manual-send evidence; aggregate history is never
+ * upgraded to a current invitation or an attendee reply here. */
+export function personAttendanceStage(facts = {}) {
+  const unavailable = () => ({key:'unavailable',label:attendanceLabels.unavailable,invitationLabel:'',warning:attendanceWarnings.sourceUnavailable});
+  let values;
+  try {
+    if (!facts || ![Object.prototype,null].includes(Object.getPrototypeOf(facts))) return unavailable();
+    values = Object.fromEntries(Object.entries(attendanceFacts).map(([key,choices]) => {
+      const field = Object.getOwnPropertyDescriptor(facts,key);
+      if (field && (!field.enumerable || !Object.hasOwn(field,'value'))) throw new TypeError();
+      const value = field?.value === undefined ? choices[0] : field.value;
+      if (!choices.includes(value)) throw new TypeError();
+      return [key,value];
+    }));
+  } catch { return unavailable(); }
+  const unknown = values.historicalDeliveryUnknown || ['unknown','reserved','issuing'].includes(values.invitationStatus) || values.deliveryStatus === 'unknown';
+  const warning = unknown ? attendanceWarnings.unknown : values.sourceUnavailable ? attendanceWarnings.sourceUnavailable
+    : values.deliveryStatus === 'unavailable' ? attendanceWarnings.emailUnavailable : values.deliveryStatus === 'restricted' ? attendanceWarnings.emailRestricted : '';
+  const invitationLabel = values.sourceUnavailable ? '' : [values.currentManualInvitationSent ? manualInvitationLabel : '',values.deliveryStatus === 'provider_accepted' ? emailInvitationLabel : ''].filter(Boolean).join('；');
+  const key = values.responseStatus === 'declined' || values.contactConsent === 'declined' ? 'declined'
+    : ['withdrawn','rejected','waitlisted','pending_review'].includes(values.admissionStatus) ? values.admissionStatus
+      : values.sourceUnavailable ? 'unavailable' : values.responseStatus === 'attending' || values.selfRegistered && values.admissionStatus === 'confirmed'
+        ? invitationLabel ? 'invited' : 'confirmed' : 'awaiting';
+  return {key,label:attendanceLabels[key],invitationLabel,warning};
+}
+/** Exact safe DTO only; private fields, accessors and provider text are rejected. */
+export function validPersonAttendanceStage(value) {
+  try {
+    if (!value || ![Object.prototype,null].includes(Object.getPrototypeOf(value))) return false;
+    const keys = Reflect.ownKeys(value), expected = ['key','label','invitationLabel','warning'];
+    if (keys.length !== expected.length || keys.some(key => !expected.includes(key)) || expected.some(key => !Object.hasOwn(value,key))) return false;
+    for (const key of expected) { const field = Object.getOwnPropertyDescriptor(value,key); if (!field?.enumerable || !Object.hasOwn(field,'value') || typeof field.value !== 'string') return false; }
+    return Object.hasOwn(attendanceLabels,value.key) && value.label === attendanceLabels[value.key]
+      && attendanceInvitationLabels.has(value.invitationLabel) && attendanceWarningLabels.has(value.warning);
+  } catch { return false; }
+}
+
 /** One short recommendation shared by the directory and selected-person page.
  * Hrefs are constructed from stable identifiers, never provided source URLs.
  * @param {Record<string, unknown>} facts
@@ -232,7 +284,7 @@ export function personWorkRecommendation(facts = {}) {
   const canEdit = own(facts, 'canEdit') === true, canContact = own(facts, 'canContact') === true;
   const terminal = ['rejected', 'withdrawn'].includes(admission);
   const pendingResult = own(facts, 'pendingResult') === true;
-  const unknownSend = ['unknown', 'reserved', 'issuing'].includes(invitation) || ['unknown', 'reserved'].includes(delivery);
+  const unknownSend = own(facts,'historicalDeliveryUnknown')===true || ['unknown', 'reserved', 'issuing'].includes(invitation) || ['unknown', 'reserved'].includes(delivery);
   const unavailable = invalid || own(facts, 'sourceUnavailable') === true || registrationState === 'unavailable' || delivery === 'unavailable';
   const duplicate = own(facts, 'duplicateCandidate') === true;
   const integration = Boolean(contactId && response === 'attending' && !registrationId && !admission

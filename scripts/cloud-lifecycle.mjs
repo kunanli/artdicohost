@@ -87,6 +87,7 @@ export async function verifyPublicRegistrationAlias(fetchFn, policy, externalSig
   }
   try {
     if (Object.hasOwn(policy ?? {}, 'attendeeReviewRequired') && typeof policy.attendeeReviewRequired !== 'boolean') throw failure('PUBLIC_REGISTRATION_NOT_VERIFIED');
+    if (Object.hasOwn(policy ?? {}, 'publicRegistrationMode') && !['legacy', 'speaker_only'].includes(policy.publicRegistrationMode)) throw failure('PUBLIC_REGISTRATION_NOT_VERIFIED');
     response = await readBounded(() => fetchFn(url, { method: 'GET', headers: { accept: 'application/json', origin: 'https://artdico.host' },
       credentials: 'omit', redirect: 'error', cache: 'no-store', signal }));
     if (response.status !== 200 || response.redirected || response.url && response.url !== url
@@ -107,6 +108,8 @@ export async function verifyPublicRegistrationAlias(fetchFn, policy, externalSig
     if (value?.enabled !== true || value.attendeeReviewRequired !== (policy.attendeeReviewRequired !== false) || value.eventId !== policy.eventId || value.capacity !== policy.capacity
       || value.opensAt !== new Date(policy.opensAt).toISOString() || value.closesAt !== new Date(policy.closesAt).toISOString()
       || !isDeepStrictEqual(value.privacy, policy.privacy)) throw failure('PUBLIC_REGISTRATION_NOT_VERIFIED');
+    if ((value.publicRegistrationMode ?? 'legacy') !== (policy.publicRegistrationMode ?? 'legacy')
+      || policy.publicRegistrationMode === 'speaker_only' && value.speakerApplicationsEnabled !== true) throw failure('PUBLIC_REGISTRATION_NOT_VERIFIED');
     if (value.admissions !== undefined) {
       const summary = value.admissions;
       const applicationCounts = ['waitlistCount', 'pendingReviewCount', 'rejectedCount'];

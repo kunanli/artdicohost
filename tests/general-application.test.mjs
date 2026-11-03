@@ -23,7 +23,13 @@ test('identity is one explicit choice and never activates a legacy organizer que
 });
 test('optional proposal belongs to the same applicant and only topic and summary are accepted',()=>{
   const source={...fields(),participationInterests:['attend','talk'],speaker:{topic:'合成主题',summary:'合成摘要\n第二行'}};assert.equal(validate(source).valid,true);assert.deepEqual(validate(source).value.fields,source);
-  for(const change of [value=>{delete value.speaker;},value=>{value.speaker.topic='';},value=>{value.speaker.language='中文';},value=>{value.speaker.extra='hidden';},value=>{value.participationInterests=['talk'];},value=>{value.participationInterests=['attend','talk','exhibition'];},value=>{value.participationInterests=['attend'];}]){const input=structuredClone(source);change(input);assert.equal(validate(input).valid,false);}
+  for(const change of [value=>{delete value.speaker;},value=>{value.speaker.topic='';},value=>{value.speaker.language='中文';},value=>{value.speaker.extra='hidden';},value=>{value.participationInterests=['attend','talk','exhibition'];},value=>{value.participationInterests=['attend'];}]){const input=structuredClone(source);change(input);assert.equal(validate(input).valid,false);}
+});
+test('standalone speaker applications require a topic and never synthesize attendance',()=>{
+  const source={...fields(),participationInterests:['talk'],speaker:{topic:'独立讲者主题',summary:'仅申请分享，未申请一般名额。'},phone:'+852 0012 3456',wechat:'synthetic-contact'};
+  assert.deepEqual(validate(source).value.fields,source);
+  assert.deepEqual(registrationFields({...source,consentAccepted:true}),source);
+  for(const change of [value=>{delete value.speaker;},value=>{value.speaker.summary='';},value=>{value.participationInterests=['talk','attend'];},value=>{value.participationInterests=[];}]){const input=structuredClone(source);change(input);assert.equal(validate(input).valid,false);}
 });
 test('new intake strictly rejects extra policy, status, unknown marker and malformed fields',()=>{
   for(const change of [value=>{value.admissionStatus='confirmed';},value=>{value.attendance='expected';},value=>{value.accommodationChoice='not_needed';},value=>{value.cooperationInterest='none';},value=>{value.intake='future-v9';},value=>{value.email='not-email';},value=>{value.name='单';},value=>{value.organization=3;},value=>{value.wechat='bad\nline';},value=>{value.name='\ud800';}]){const input=fields();change(input);assert.equal(validate(input).valid,false);}

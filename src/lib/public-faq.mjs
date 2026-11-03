@@ -1,4 +1,4 @@
-import { faqItems as defaults, PUBLIC_CONTACT_EMAIL, registrationUiCopy } from '../config/event.mjs';
+import { faqItems as defaults, PUBLIC_CONTACT_EMAIL, PUBLIC_REGISTRATION_URL } from '../config/event.mjs';
 import { legacyFaqId } from '../../shared/content-schema.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
@@ -15,7 +15,7 @@ function legacyKey(question, answer) {
 
 /** Public, read-only projection. Optional stable IDs are persisted only by an
  * explicit editor save; an old fixed question is adapted by exact name here. */
-export function publicFaqItems(items = defaults, { availability = null, privacy = null } = {}) {
+export function publicFaqItems(items = defaults, { privacy = null } = {}) {
   const rows = [], used = new Set();
   const input = Array.isArray(items) ? items.slice(0, 20) : defaults;
   for (const item of input) {
@@ -26,24 +26,26 @@ export function publicFaqItems(items = defaults, { availability = null, privacy 
       if (!id.startsWith('legacy-')) continue;
       let suffix = 2; while (used.has(id + '-' + suffix)) suffix++; id += '-' + suffix;
     }
-    used.add(id); rows.push({ id, question: item.question, answer: item.answer, contactEmail: null });
+    used.add(id); rows.push({ id, question: item.question, answer: item.answer, contactEmail: null, registrationUrl: null });
   }
   for (const id of REQUIRED) if (!used.has(id)) {
-    const item = defaults.find(row => row.id === id); rows.push({ ...item, contactEmail: null });
+    const item = defaults.find(row => row.id === id); rows.push({ ...item, contactEmail: null, registrationUrl: null });
   }
   return rows.map(item => {
-    if (item.id === 'registration-status') return { ...item, answer: line(availability?.message, 4000) ? availability.message : defaults.find(row => row.id === item.id).answer };
+    // General attendance belongs to the external platform. The onsite proposal
+    // service must never override that route with its own availability or status.
+    if (item.id === 'registration-status') return { ...item, answer: defaults.find(row => row.id === item.id).answer, registrationUrl: PUBLIC_REGISTRATION_URL };
     if (item.id === 'data-rights') return { ...item, answer: line(privacy?.rightsRequest, 4000) ? privacy.rightsRequest : defaults.find(row => row.id === item.id).answer,
       contactEmail: CONTACT };
-    if (item.id === 'lodging-support') return { ...defaults.find(row => row.id === item.id), contactEmail: CONTACT };
-    if (item.id === 'site-role') return { ...defaults.find(row => row.id === item.id), contactEmail: null };
+    if (item.id === 'lodging-support') return { ...defaults.find(row => row.id === item.id), contactEmail: CONTACT, registrationUrl: null };
+    if (item.id === 'site-role') return { ...defaults.find(row => row.id === item.id), contactEmail: null, registrationUrl: PUBLIC_REGISTRATION_URL };
     return item;
   });
 }
 
-let currentItems = defaults, currentPrivacy = null, currentAvailability = null;
+let currentItems = defaults, currentPrivacy = null;
 /** The only FAQ DOM owner. Public content refresh supplies editorial items;
- * current registration/privacy state remains independent of those snapshots. */
+ * current privacy state remains independent of those snapshots. */
 export function setPublicFaqs(items) {
   if (Array.isArray(items)) currentItems = items;
   else if (items === null) currentItems = defaults;
@@ -57,7 +59,7 @@ function renderFaqs() {
   const output = document.querySelector('[data-public-faq]'); if (!output) return;
   const focused = document.activeElement, hadFocus = output.contains(focused), focusId = focused?.closest?.('[data-faq-id]')?.dataset.faqId;
   const saved = new Map([...output.children].filter(row => row instanceof HTMLDetailsElement).map(row => [row.dataset.faqId, row]));
-  const rows = publicFaqItems(currentItems, { availability: currentAvailability, privacy: currentPrivacy });
+  const rows = publicFaqItems(currentItems, { privacy: currentPrivacy });
   for (const item of rows) {
     const previous = saved.get(item.id), row = previous ?? node('details', undefined, 'ah-faq-message');
     if (!previous) row.open = true;
@@ -67,6 +69,13 @@ function renderFaqs() {
     question.className = 'ah-faq-question'; question.textContent = item.question;
     const icon = node('span', '+'); icon.setAttribute('aria-hidden', 'true'); question.append(icon);
     if (!answer) { answer = node('p', undefined, 'ah-faq-answer'); row.append(answer); } answer.textContent = item.answer;
+    let registration = row.querySelector('.ah-faq-registration');
+    if (item.registrationUrl) {
+      if (!registration) { registration = node('p', undefined, 'ah-faq-registration'); row.append(registration); }
+      let link = registration.querySelector('a');
+      if (!link) { link = node('a', '前往活动行报名', 'ah-text-action'); link.dataset.generalRegistration = ''; registration.append(link); }
+      link.href = item.registrationUrl;
+    } else registration?.remove();
     let contact = row.querySelector('.ah-faq-contact');
     if (item.contactEmail) {
       if (!contact) { contact = node('p', undefined, 'ah-faq-contact'); row.append(contact); }
@@ -87,12 +96,9 @@ function renderFaqs() {
 if (typeof document !== 'undefined') {
   document.addEventListener('artdico:registration-ready', event => {
     currentPrivacy = event.detail?.privacy ?? currentPrivacy;
-    currentAvailability = { message: registrationUiCopy(event.detail).faq }; renderFaqs();
+    renderFaqs();
   });
   document.addEventListener('artdico:registration-policy', event => { currentPrivacy = event.detail?.privacy ?? currentPrivacy; renderFaqs(); });
-  document.addEventListener('artdico:registration-unavailable', event => {
-    currentAvailability = { message: line(event.detail?.message, 4000) ? event.detail.message : '申请服务暂时无法核对，请稍后再试。' }; renderFaqs();
-  });
   document.addEventListener('click', async event => {
     const button = event.target instanceof Element ? event.target.closest('[data-faq-copy-email]') : null;
     if (!(button instanceof HTMLButtonElement) || !button.closest('[data-public-faq]')) return;

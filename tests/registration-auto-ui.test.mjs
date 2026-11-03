@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { registrationUiCopy } from '../src/config/event.mjs';
+import { registrationUiCopy, PUBLIC_REGISTRATION_URL } from '../src/config/event.mjs';
 import { publicFaqItems } from '../src/lib/public-faq.mjs';
 import { createRegistrationClient } from '../src/lib/registration-client.mjs';
 import { applicationDraftFromFields, applicationPendingValue } from '../src/lib/application-draft.mjs';
@@ -21,12 +21,14 @@ test('automatic presentation requires an explicit false server review flag; lega
   assert.doesNotMatch(registrationUiCopy({ attendeeReviewRequired: false, admissions: { waitlistEnabled: false } }).disclaimer, /将登记候补/u);
 });
 
-test('live automatic mode replaces a stale published review answer without rewriting unrelated FAQ content', () => {
+test('external general registration stays independent of local admission mode without rewriting unrelated FAQ content', () => {
   const input = [{ id: 'registration-status', question: '现在可以报名吗？', answer: '合成旧审核说明' },
     { id: 'custom-help', question: '合成活动问题', answer: '合成自订说明' }];
   const original = structuredClone(input), copy = registrationUiCopy({ attendeeReviewRequired: false });
   const rows = publicFaqItems(input, { availability: { message: copy.faq } });
-  assert.equal(rows.find(row => row.id === 'registration-status').answer, copy.faq);
+  assert.match(rows.find(row => row.id === 'registration-status').answer,/活动行/u);
+  assert.equal(rows.find(row => row.id === 'registration-status').registrationUrl,PUBLIC_REGISTRATION_URL);
+  assert.notEqual(rows.find(row => row.id === 'registration-status').answer,copy.faq);
   assert.equal(rows.find(row => row.id === 'custom-help').answer, original[1].answer);
   assert.deepEqual(input, original);
 });

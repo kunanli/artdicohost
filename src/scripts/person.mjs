@@ -1,4 +1,4 @@
-import { parsePersonSelection, personWorkspacePath, personWorkspaceView, personWorkspaceActions, personWorkspaceSteps, personAvailabilityText, personNextAction, personSourceView } from '../lib/person-workspace.mjs';
+import { parsePersonSelection, personWorkspacePath, personWorkspaceView, personWorkspaceActions, personWorkspaceSteps, personAvailabilityText, personNextAction, personSourceView, personAttendanceView } from '../lib/person-workspace.mjs';
 import { ownerTagPresentation, attendancePresentation, profilePublicationPresentation, savedContactReceipt, conversionPreview, conversionReceipt } from '../lib/people-relationships.mjs';
 import { createPeopleResolution } from '../lib/people-resolution.mjs';
 import { createOperationsFormDraft, createOperationsSaveState, captureDraftFields, applyDraftFields, operationsDraftStore } from '../lib/operations-form-draft.mjs';
@@ -547,17 +547,13 @@ async function cancelProfile(){
 }
 function renderSummary(view) {
   const output = $('[data-person-summary]'); output.replaceChildren();
-  const reply = view.contact?.operations.responseStatus;
-  if (reply) { const status = attendancePresentation(reply); output.append(statusBadge(status.label, status.tone)); }
-  else output.append(badge(view.availability.contact === 'restricted' ? '回复按权限核对' : '本人申请'));
+  const progress=personAttendanceView(view),stage=badge(progress.label,progress.key);stage.dataset.personAttendanceStage=progress.key;output.append(stage);
   const admission = syncIssue ? '名额待核对' : view.admission ? ({confirmed:'名额已确认',waitlisted:'候补',pending_review:'申请待审',rejected:'申请未通过',withdrawn:'已撤回'})[view.admission.status]
     : view.availability.admission === 'restricted' ? '名额由审核人核对' : view.availability.admission === 'unavailable' ? '名额待核对' : '尚未整合名额';
   output.append(badge(admission, syncIssue ? undefined : view.admission?.status));
-  const notice = view.communications.timeline.find(item => item.source === 'confirmation' && item.currentRecipient !== false);
-  if (view.communications.unresolvedConfirmations) output.append(badge('寄送待核对'));
-  else if (notice) output.append(badge(({provider_accepted:'邮件服务已接收',unknown:'寄送待核对',reserved:'寄送待核对',rejected:'确认信未发出'})[notice.status] ?? '通知待核对'));
-  else if (view.availability.confirmations === 'unavailable') output.append(badge('通知待核对'));
-  else if (view.admission?.status === 'confirmed' && view.availability.confirmations === 'available') output.append(badge('确认信未寄送'));
+  if(progress.invitationLabel)output.append(node('span',progress.invitationLabel,'person-invitation-evidence'));
+  if(progress.warning)output.append(node('span',progress.warning,'person-attendance-warning'));
+  else if(!progress.invitationLabel&&view.admission?.status==='confirmed'&&view.availability.confirmations==='available')output.append(badge('确认信未寄送'));
   if (view.publicProfile.profiles.some(item => item.published && !item.publishedMatchesDraft)) output.append(badge('前台待更新'));
   if (view.contact?.operations.owner) { const owner = ownerTagPresentation(view.contact.operations.owner), tag = node('span', owner.label, 'ah-owner-tag'); tag.dataset.ownerTone = owner.tone; output.append(tag); }
 }
@@ -633,6 +629,7 @@ async function acknowledgeQuick(receipt, draft, epoch, key) {
   relatedRefresh = quickBase?.responseStatus !== receipt.contact.operations.responseStatus;
   quickRevision = receipt.revision; quickBase = operationCopy(receipt.contact.operations);
   selectedView.contact.operations = structuredClone(quickBase); selectedView.revisions.contacts = receipt.revision;
+  delete selectedView.attendance;
   quickPending = null; quickRetryReady = false; quickDirty = false;
   // The cloud receipt is authoritative even if local cleanup or another source fails.
   quickSaveState.set('saved'); $('[data-person-quick-check]').hidden = true; $('[data-person-quick-retry]').hidden = true;

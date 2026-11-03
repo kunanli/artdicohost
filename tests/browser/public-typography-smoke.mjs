@@ -201,7 +201,9 @@ async function main() {
         assert.equal(noteMetrics.length, 4);
         for (const note of noteMetrics) { assert.ok(note.font >= (width >= 768 ? 16 : 14)); assert.ok(note.scrollWidth <= note.width + 1 && note.scrollHeight <= note.height + 1, 'larger bubble notes stay readable without clipping'); }
         await form.locator('.ah-general-extra > summary').focus(); await page.keyboard.press('Enter'); assert.equal(await form.locator('.ah-general-extra').evaluate(node => node.open), true);
-        await form.locator('[data-proposal-toggle]').focus(); await page.keyboard.press('Space'); assert.equal(await form.locator('[data-proposal-toggle]').isChecked(), true); assert.equal(await form.locator('[data-speaker-proposal]').isVisible(), true);
+        assert.equal(await form.locator('[data-proposal-toggle]').count(),0,'the speaker form has no general attendance toggle');assert.equal(await form.locator('[data-speaker-proposal]').isVisible(),true);
+        await form.locator('[name="speaker.topic"]').focus();assert.equal(await form.locator('[name="speaker.topic"]').evaluate(node=>document.activeElement===node),true);
+        for(const name of ['speaker.topic','speaker.summary'])assert.notEqual(await form.locator('[name="'+name+'"]').getAttribute('required'),null);
         assert.equal(await form.locator('[data-registration-policy],[data-registration-email-policy],[data-registration-email-notice]').count(), 0, 'the form omits the two detailed notices and duplicate email explanation');
         assert.equal(await page.locator('#privacy > details').evaluate(node => node.open), false, 'privacy details start collapsed');
         await form.locator('a[href="#privacy"]').focus(); await page.keyboard.press('Enter');

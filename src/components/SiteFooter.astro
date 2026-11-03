@@ -1,5 +1,5 @@
 ---
-import { eventConfig, PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
+import { eventConfig, PUBLIC_CONTACT_EMAIL, PUBLIC_REGISTRATION_URL } from '../config/event.mjs';
 import { Image } from 'astro:assets';
 import hostArtwork from '../assets/home/host-wordmark.webp';
 import fontLicense from '../assets/fonts/home-font-OFL.txt?raw';
@@ -10,7 +10,7 @@ import displayFontLicense from '../assets/fonts/barlow-OFL.txt?raw';
   <div class="ah-home-footer-message">
     <p class="ah-home-footer-strap">相聚一起，创意不息<span aria-hidden="true"></span></p>
     <p class="ah-home-footer-slogan" lang="en"><span class="ah-poster-solid" data-footer-display-line>Come Together.</span><span class="ah-poster-outline" data-footer-display-line>Create Forever.</span></p>
-    <a class="ah-text-action" href="#registration">在现场，遇见下一次创作 <span aria-hidden="true">↗</span></a>
+    <a class="ah-text-action" href={PUBLIC_REGISTRATION_URL} data-general-registration>在现场，遇见下一次创作 <span aria-hidden="true">↗</span></a>
   </div>
   <div class="ah-home-footer-bottom">
     <p>ARTDiCO HOST · {eventConfig.year}<small>Come Together. Create Forever.</small></p>

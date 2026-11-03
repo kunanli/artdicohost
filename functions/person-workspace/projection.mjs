@@ -3,8 +3,8 @@ import { PARTICIPATION_FORMS, SESSION_ROLES, validateStoredContact } from '../..
 import { GUEST_PUBLIC_ROLES, PORTRAIT_ID_PATTERN, isContentVisible, contentSchema, normalizeGuestAttendance } from '../../shared/content-schema.mjs';
 import { parseTimestamp } from '../registration-api/policy.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
-import { personWorkRecommendation, PEOPLE_HEALTH_KINDS } from '../../shared/organizer-progress.mjs';
-import { assessPublishedEventFacts } from '../../src/config/event.mjs';
+import { personWorkRecommendation, personAttendanceStage, contactProgress, PEOPLE_HEALTH_KINDS } from '../../shared/organizer-progress.mjs';
+import { assessPublishedEventFacts, eventConfig } from '../../src/config/event.mjs';
 
 export const CONTACT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 export const REGISTRATION_ID = /^[A-Za-z0-9_-]{43}$/u;
@@ -298,6 +298,39 @@ export function personPermissions(actor) {
     volunteers: roles.includes('superadmin') || roles.includes('outreach') && roles.includes('reviewer') };
 }
 
+/** A current manual send must still match this person's current identity and
+ * event. Historical send timestamps and downloaded images are not evidence.
+ * Old manual ledgers have no recipient revision, so cannot prove a corrected
+ * registration's current recipient was sent this version. */
+function currentManualInvitation(contact, {intent,content,registrationId=null,accessRevision=0,name=null,admissionStatus=null}={}) {
+  if(!contact||accessRevision!==0||name&&!['name','displayName'].some(key=>contact.profile?.[key]===name)
+    ||!content?.hasPublished||!assessPublishedEventFacts(content.published).ready)return false;
+  const modern=(intent?.invitations??[]).filter(item=>item.sourceContactId===contact.id&&item.channel==='manual')
+    .sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+  const legacyAt=contact.invitation?.generatedAt??'',modernAt=modern?.createdAt??'';
+  const currentContact=modernAt>legacyAt?{...contact,invitation:null}:contact;
+  const currentIntent=legacyAt>modernAt&&intent?{...intent,invitations:intent.invitations.filter(item=>item.sourceContactId!==contact.id||item.channel!=='manual')}:intent;
+  const progress=contactProgress(currentContact,{intent:currentIntent,content:content.content,event:eventConfig,
+    admissionStatuses:registrationId&&admissionStatus?[{registrationId,status:admissionStatus}]:[]});
+  return progress.manuallySent===true&&(!registrationId||!progress.conversion||progress.conversion.registrationId===registrationId);
+}
+
+export function personAttendanceProjection({contactRaw,registration,admission,intent,content,communications,availability,linkage}={}) {
+  const currentRecipient=item=>registration?.profileCorrection?.accessRevision>0?item.currentRecipient===true:item.currentRecipient!==false;
+  const current=(communications?.confirmations??[]).filter(currentRecipient);
+  const historicalDeliveryUnknown=communications?.unresolvedConfirmations===true||(communications?.confirmations??[]).some(item=>['unknown','reserved'].includes(item.status));
+  const deliveryStatus=current.some(item=>['unknown','reserved'].includes(item.status))?'unknown'
+    :availability?.confirmations==='restricted'?'restricted':availability?.confirmations==='unavailable'?'unavailable'
+      :current.some(item=>item.status==='provider_accepted')?'provider_accepted':current[0]?.status??(registration?'not_sent':'not_applicable');
+  const admissionStatus=registration?.review?.status==='withdrawn'||registration?.review?.deletionRequested?'withdrawn':admission?.status??null;
+  return personAttendanceStage({responseStatus:contactRaw?.operations?.responseStatus??null,admissionStatus,
+    contactConsent:contactRaw?.profile?.contactConsent??null,selfRegistered:registration?.provenance.kind==='public',historicalDeliveryUnknown,
+    currentManualInvitationSent:currentManualInvitation(contactRaw,{intent,content,registrationId:registration?.id,
+      accessRevision:registration?.profileCorrection?.accessRevision??0,name:registration?.profileCorrection?registration.fields.name:null,admissionStatus}),
+    deliveryStatus,invitationStatus:communications?.unresolvedInvitations?'unknown':'not_applicable',
+    sourceUnavailable:linkage?.state==='unavailable'||['contact','registration','admission'].some(key=>availability?.[key]==='unavailable')});
+}
+
 /** Minimal staff directory. Never use names or email addresses as identity links. */
 export function peopleDirectoryProjection({ permissions, roster, intent, registrationDirectory, admissions, content, deliveries } = {}) {
   if (!plain(permissions)) fail();
@@ -315,7 +348,8 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
       if (!plain(record.fields) || !plain(record.provenance) || typeof record.inactive !== 'boolean') fail();
       const kind = oneOf(record.provenance.kind, ['public', 'staff_assisted', 'staff_entry']);
       return { id: record.id, name: text(record.fields.name, 120), organization: text(record.fields.organization, 300), city: text(record.fields.city, 160),
-        recordedAt: timestamp(record.submittedAt), deleted: record.deleted === true, corrected: record.profileCorrection !== undefined, kind, sourceContactId: kind === 'staff_assisted' ? identifier(record.provenance.sourceContactId) : null, inactive: record.inactive };
+        recordedAt: timestamp(record.submittedAt), deleted: record.deleted === true, corrected: record.profileCorrection !== undefined,
+        accessRevision:record.profileCorrection===undefined?0:revisionValue(record.profileCorrection.accessRevision),kind, sourceContactId: kind === 'staff_assisted' ? identifier(record.provenance.sourceContactId) : null, inactive: record.inactive };
     });
     for (const person of list(admissions.people, 1000)) {
       if (!plain(person) || !REGISTRATION_ID.test(person.registrationId ?? '') || admissionMap.has(person.registrationId)) fail();
@@ -324,12 +358,13 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
     if (applications.some(item => !admissionMap.has(item.id))) fail();
   }
   const applicationMap = new Map(applications.map(row => [row.id, row])), linked = new Set(), people = [], contactRows = new Map();
-  const deliveryMap = new Map();
+  const deliveryMap = new Map(),deliveryHistoryUnknown=new Set();
   if (permissions.registration && deliveries) {
     revisionValue(deliveries.revision);
     for (const item of list(deliveries.notices, 2000)) {
       if (!plain(item) || !REGISTRATION_ID.test(item.registrationId ?? '')) fail();
-      const status = oneOf(item.status, ['provider_accepted', 'unknown', 'rejected']);
+      const status = oneOf(item.status, ['provider_accepted', 'unknown', 'rejected','not_sent']);
+      if(Object.hasOwn(item,'historicalUnknown')){if(item.historicalUnknown!==true)fail();deliveryHistoryUnknown.add(item.registrationId);}
       if (deliveryMap.get(item.registrationId) !== 'unknown' || status === 'unknown') deliveryMap.set(item.registrationId, status);
     }
   }
@@ -353,13 +388,13 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
       responseStatus: item.operations.responseStatus, admissionStatus: admission(application),
       registrationState: application ? 'available' : conversion ? 'restricted' : 'unlinked',
       invitationStatus: invited, owner: item.operations.owner, followUpAt: item.operations.followUpAt,
-      deliveryStatus: application ? email(application.id) : 'not_applicable' };
+      deliveryStatus: application ? email(application.id) : 'not_applicable',...(application&&deliveryHistoryUnknown.has(application.id)?{deliveryHistoryUnknown:true}:{}) };
     contactRows.set(item.id, row); people.push(row);
   }
   for (const item of applications) if (!linked.has(item.id)) people.push({ key: 'registration:' + item.id, kind: 'person', source: item.kind,
     name: item.name, organization: item.organization, city: item.city, recordedAt: item.recordedAt, deleted: item.deleted, contactId: null, registrationId: item.id, profileId: null, roles: [],
     responseStatus: null, admissionStatus: admission(item), registrationState: 'available', invitationStatus: 'not_applicable',
-    owner: '', followUpAt: '', deliveryStatus: email(item.id) });
+    owner: '', followUpAt: '', deliveryStatus: email(item.id),...(deliveryHistoryUnknown.has(item.id)?{deliveryHistoryUnknown:true}:{}) });
   for (const profile of program ? records(program.content.guests ?? [], CONTACT_ID, 200) : []) {
     if (archivedContacts.has(profile.contactId)) continue;
     const roles = strings(profile.publicRoles, GUEST_PUBLIC_ROLES.length, 40, GUEST_PUBLIC_ROLES);
@@ -403,6 +438,7 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
       recordedAt:members.map(row=>row.recordedAt).filter(Boolean).sort().at(-1)??null,deleted:primaryApplication?.deleted===true,
       roles:permissions.contact?roles:[],profileId:permissions.contact?(base.profileId??members.find(row=>row.profileId)?.profileId??null):null,admissionStatus:permissions.registration?admission(current):null,registrationState:registrationId?(permissions.registration?'available':'restricted'):'unlinked',
       source:contactId&&registrationId?'linked':base.source,deliveryStatus:members.some(row=>row.deliveryStatus==='unknown')?'unknown':registrationId?email(registrationId):'not_applicable',
+      ...(members.some(row=>row.deliveryHistoryUnknown)||deliveryHistoryUnknown.has(registrationId)?{deliveryHistoryUnknown:true}:{}),
       invitationStatus:members.some(row=>['unknown','issuing'].includes(row.invitationStatus))?'unknown':base.invitationStatus,
       sourceCount:group.contactIds.length+group.registrationIds.length,personKey:group.primaryKey,
       ...(members.some(row=>row.responseStatus==='declined')?{responseStatus:'declined'}:{})};
@@ -412,7 +448,18 @@ export function peopleDirectoryProjection({ permissions, roster, intent, registr
   for(const company of companies){const seen=new Map();for(const raw of contacts){const member=organizationMemberships(raw.operations).find(link=>link.organizationId===company.organizationId);if(!member)continue;const id=identityContacts.get(raw.id)??raw.id,current=seen.get(id),person=people.find(row=>row.contactId===id);if(!current)seen.set(id,{id,name:person?.name??contactProjection(raw).profile.displayName,role:member.role});else if(member.role==='lead')current.role='lead';}company.memberTotal=seen.size;company.members=[...seen.values()].slice(0,20);}
   for (let index = people.length - 1; index >= 0; index--) if (people[index].deleted) people.splice(index, 1);
   const rows = people.sort((a,b) => (b.recordedAt ?? '').localeCompare(a.recordedAt ?? '') || a.name.localeCompare(b.name, 'zh-CN') || a.key.localeCompare(b.key));
-  for (const row of rows) delete row.deleted;
+  for (const row of rows) {
+    delete row.deleted;
+    const group=personGroupFor(admissions,{contactId:row.contactId,registrationId:row.registrationId}),application=applicationMap.get(row.registrationId);
+    const originals=group?contacts.filter(contact=>group.contactIds.includes(contact.id)):contacts.filter(contact=>contact.id===row.contactId);
+    const accessRevision=group?group.registrationIds.reduce((sum,id)=>sum+(applicationMap.get(id)?.accessRevision??0),0):application?.accessRevision??0;
+    const primary=originals.find(contact=>contact.id===row.contactId);
+    row.attendance=personAttendanceStage({responseStatus:row.responseStatus,admissionStatus:row.admissionStatus,
+      contactConsent:originals.some(contact=>contact.profile?.contactConsent==='declined')?'declined':primary?.profile?.contactConsent??null,
+      selfRegistered:application?.kind==='public',historicalDeliveryUnknown:row.deliveryHistoryUnknown===true,currentManualInvitationSent:originals.some(contact=>currentManualInvitation(contact,{intent:outreach,content:program,
+        registrationId:row.registrationId,accessRevision,name:row.name,admissionStatus:row.admissionStatus})),
+      deliveryStatus:row.deliveryStatus,invitationStatus:row.invitationStatus});
+  }
   return { people: rows, companies, summary: { people: people.length,
     unassigned:permissions.contact?rows.filter(row=>(row.contactId||row.registrationId)&&!row.roles.some(role=>['attendee','speaker','guest','panelist','exhibitor','host','organizer','moderator','student_showcase'].includes(role))).length:null,
     attendees:permissions.contact?rows.filter(row=>row.roles.includes('attendee')).length:null,
@@ -488,7 +535,7 @@ export function peopleDirectoryWork(result, {actor, roster, registrationDirector
       publicNeedsUpdate = profile.profiles.some(item => item.published && !item.publishedMatchesDraft || !item.published && isContentVisible(item));
     } catch { sourceUnavailable = true; }
     const contact = roster?.contacts?.find(item => item.id === row.contactId);
-    const work = personWorkRecommendation({...row, sourceUnavailable, duplicateCandidate: keys.some(key => candidateKeys.has(key)), publicNeedsUpdate,
+    const work = personWorkRecommendation({...row, historicalDeliveryUnknown:row.deliveryHistoryUnknown===true,sourceUnavailable, duplicateCandidate: keys.some(key => candidateKeys.has(key)), publicNeedsUpdate,
       contactConsent: contact?.profile.contactConsent, canContact: Boolean(row.contactId), canReview: Boolean(actor?.roles?.some(role => ['reviewer', 'superadmin'].includes(role))),
       canIntegrate: full, canEdit: Boolean(actor?.roles?.some(role => ['editor', 'superadmin'].includes(role)))});
     Object.assign(row, work, {basisRevisions: {...revisions}});

@@ -53,7 +53,7 @@ async function fixture(width, mode = 'ready', lostAck = false) {
       const response = await runtime.app.handle(new Request(request.url(), { method: request.method(), headers,
         ...(['GET', 'HEAD'].includes(request.method()) ? {} : { body: request.postData() }) }));
       let body = Buffer.from(await response.arrayBuffer());
-      if (url.pathname.endsWith('/config') && mode === 'closed') { const metadata = JSON.parse(body); metadata.enabled = false; metadata.reason = 'closed'; body = Buffer.from(JSON.stringify(metadata)); }
+      if (url.pathname.endsWith('/config') && mode === 'closed') { const metadata = JSON.parse(body); metadata.enabled = false; metadata.speakerApplicationsEnabled = false; metadata.reason = 'closed'; body = Buffer.from(JSON.stringify(metadata)); }
       if (url.pathname.endsWith('/submit') && lose) { lose = false; return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'UNAVAILABLE' } }) }); }
       const responseHeaders = Object.fromEntries(response.headers); delete responseHeaders['content-length'];
       return route.fulfill({ status: response.status, headers: responseHeaders, body });
@@ -83,6 +83,7 @@ async function records(page) {
 async function fill(page, name = '合成申请人') {
   await form(page).locator('[name=name]').fill(name); await form(page).locator('[name=email]').fill('synthetic.faq@example.invalid');
   await form(page).locator('[name=categories]').selectOption('student');
+  await form(page).locator('[name="speaker.topic"]').fill('合成分享主题');await form(page).locator('[name="speaker.summary"]').fill('合成主题简介');
 }
 async function legacyStaffRecovery(mode) {
   const runtime = await peopleRuntimeFixture({ capacity: 300, mail: false }), context = await browser.newContext({ viewport: { width: 390, height: 940 } });
@@ -149,9 +150,10 @@ try {
   for (const width of [320, 390, 1440]) for (const mode of ['ready', 'closed', 'unavailable']) {
     const f = await fixture(width, mode), { page } = f;
     const primaryLabel = page.locator('[data-home-primary-apply-label]');
-    assert.equal(await primaryLabel.textContent(), mode === 'ready' ? '申请参加' : '查看申请说明');
+    assert.equal(await primaryLabel.textContent(), '前往活动行报名');
     const status = page.locator('[data-faq-id="registration-status"] .ah-faq-answer');
-    assert.match(await status.textContent(), mode === 'ready' ? /可以提交参会申请/u : mode === 'closed' ? /停止接收新申请/u : /服务暂时无法/u);
+    assert.match(await status.textContent(), /活动行/u);
+    assert.equal(await page.locator('[data-faq-id="registration-status"] [data-general-registration]').getAttribute('href'),'https://9525102647817.huodongxing.com/event/8884819113200');
     assert.equal(await page.locator('[data-faq-id="lodging-support"] .ah-faq-answer').textContent(), housing);
     assert.equal(await page.locator('[data-faq-id="lodging-support"] a').getAttribute('href'), 'mailto:kunan@globalgamejam.org');
     assert.doesNotMatch(await page.locator('[data-public-faq]').textContent(), /SYNTHETIC_STALE|一晚住宿须单独申请/u);
@@ -165,9 +167,10 @@ try {
     if (mode === 'unavailable') assert.equal(await page.locator('[data-faq-id="data-rights"] a').textContent(), 'kunan@globalgamejam.org', 'explicitly cleared publication email cannot retain an old contact');
     assert.equal(await custom.evaluate(row => row.open), true);
     assert.equal(await page.evaluate(() => document.activeElement.closest('[data-faq-id]')?.dataset.faqId), 'custom-experience');
-    assert.match(await status.textContent(), mode === 'ready' ? /可以提交参会申请/u : mode === 'closed' ? /停止接收新申请/u : /服务暂时无法/u);
+    assert.match(await status.textContent(), /活动行/u);
+    assert.equal(await page.locator('[data-faq-id="registration-status"] [data-general-registration]').getAttribute('href'),'https://9525102647817.huodongxing.com/event/8884819113200');
     await page.evaluate(() => document.dispatchEvent(new CustomEvent('artdico:registration-policy', { detail: { privacy: { processor: '合成处理者', contactEmail: 'synthetic.rights@example.invalid', purpose: '合成测试', storageRegion: '合成地区', retention: '合成期限', rightsRequest: '合成最新权利核对方式', sharing: '合成范围', version: 'synthetic-faq-v2' } } })));
-    assert.equal(await primaryLabel.textContent(), mode === 'ready' ? '申请参加' : '查看申请说明', 'a content refresh does not override current application availability');
+    assert.equal(await primaryLabel.textContent(), '前往活动行报名', 'a content refresh does not override the external general registration route');
     assert.equal(await page.locator('[data-faq-id="data-rights"] .ah-faq-answer').textContent(), '合成最新权利核对方式');
     await f.refresh(); assert.equal(await page.locator('[data-faq-id="data-rights"] .ah-faq-answer').textContent(), '合成最新权利核对方式');
     assert.equal(await page.locator('[data-faq-id="site-role"]').count(), 1);
@@ -180,7 +183,7 @@ try {
     if (mode === 'ready') {
       await form(page).locator('[data-submit]:enabled').waitFor(); await fill(page);
       await page.locator('a[data-recruit="speaker"]').click();
-      assert.equal(await form(page).locator('[data-proposal-toggle]').isChecked(), true);
+      assert.equal(await form(page).locator('[data-proposal-toggle]').count(), 0, 'speaker applications never select general attendance');
       assert.equal(await form(page).locator('[data-speaker-proposal]').isVisible(), true);
       assert.equal(await form(page).locator('[name=name]').inputValue(), '合成申请人'); assert.equal(await form(page).locator('[name=email]').inputValue(), 'synthetic.faq@example.invalid');
       await form(page).locator('[name="speaker.topic"]').fill('合成分享主题'); await form(page).locator('[name="speaker.summary"]').fill('合成主题简介');
@@ -199,12 +202,12 @@ try {
   {
     const f = await fixture(390, 'ready', true), { page } = f; await form(page).locator('[data-submit]:enabled').waitFor(); await fill(page, '合成未知申请');
     await form(page).locator('[name=consentAccepted]').check(); await form(page).locator('[data-submit]').click();
-    await form(page).locator('[data-submit]').filter({ hasText: /再次确认申请结果/u }).waitFor();
-    assert.equal(await page.locator('[data-home-primary-apply-label]').textContent(), '核对原申请结果');
+    await form(page).locator('[data-submit]').filter({ hasText: /再次确认原申请结果/u }).waitFor();
+    assert.equal(await page.locator('[data-home-primary-apply-label]').textContent(), '前往活动行报名');
     const before = (await records(page))[0]; assert.equal(before.kind, 'pending_submission');
     await page.locator('a[data-recruit="speaker"]').click(); const after = (await records(page))[0];
     assert.equal(after.value.payloadJson, before.value.payloadJson); assert.equal(after.value.idempotencyKey, before.value.idempotencyKey);
-    assert.equal(await form(page).locator('[data-proposal-toggle]').isChecked(), false); assert.equal(await form(page).locator('[data-speaker-proposal]').isVisible(), false);
+    assert.equal(await form(page).locator('[data-proposal-toggle]').count(), 0); assert.equal(await form(page).locator('[data-speaker-proposal]').isVisible(), false, 'unknown recovery hides every editing field');assert.equal(await form(page).locator('[name="speaker.topic"]').isDisabled(),true);
     assert.equal(f.calls.filter(call => call.path.endsWith('/submit')).length, 1); assert.equal((await f.runtime.app.registrationService.repository.list()).registrations.length, 1); assert.equal(f.runtime.messages.length, 0);
     reports.push({ width: 390, pendingProposalClickLeavesExactRequestUntouched: true, savedApplications: 1, syntheticProviderCalls: 0 }); await f.context.close();
   }

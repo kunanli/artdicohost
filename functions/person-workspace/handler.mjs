@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import { CONTACT_ID, REGISTRATION_ID, contactsSource, contactProjection, intentSource, registrationSource, admissionSource,
   contentSource, arrangementsProjection, publicProfileProjection, organizationsProjection, confirmationsSource, volunteersSource, communicationProjection, personPermissions, peopleDirectoryProjection,
-  peopleDirectoryWork, peopleHealthProjection, personSourceProjection } from './projection.mjs';
+  peopleDirectoryWork, peopleHealthProjection, personSourceProjection, personAttendanceProjection } from './projection.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
-import { PEOPLE_WORK_FILTERS, PEOPLE_HEALTH_KINDS } from '../../shared/organizer-progress.mjs';
+import { PEOPLE_WORK_FILTERS, PEOPLE_HEALTH_KINDS, PEOPLE_ATTENDANCE_FILTERS } from '../../shared/organizer-progress.mjs';
 
 const ORIGIN = 'https://api.artdico.host';
 const ROOT = '/api/admin/people/';
@@ -61,11 +61,11 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
       }
       if (directory) {
         if (!permissions.contact && !permissions.registration) return error('FORBIDDEN', '此账号没有人员或报名读取权限。', 403);
-        for (const key of url.searchParams.keys()) if (!['view', 'query', 'cursor', 'limit', 'work'].includes(key) || url.searchParams.getAll(key).length !== 1) return error('INVALID_REQUEST', '筛选格式无效。', 400);
+        for (const key of url.searchParams.keys()) if (!['view', 'query', 'cursor', 'limit', 'work','attendance'].includes(key) || url.searchParams.getAll(key).length !== 1) return error('INVALID_REQUEST', '筛选格式无效。', 400);
         const view = url.searchParams.get('view') ?? 'all', rawQuery = url.searchParams.get('query') ?? '', query = rawQuery.normalize('NFC').trim().toLocaleLowerCase('zh-CN');
-        const inputLimit = url.searchParams.get('limit') ?? '50', cursor = url.searchParams.get('cursor') ?? '', work = url.searchParams.get('work') ?? 'all';
+        const inputLimit = url.searchParams.get('limit') ?? '50', cursor = url.searchParams.get('cursor') ?? '', work = url.searchParams.get('work') ?? 'all',attendance=url.searchParams.get('attendance')??'all';
         if (!['all', 'exhibitors', 'speakers', 'guests','unassigned','attendees'].includes(view) || rawQuery.length > 160 || /[\u0000-\u001f\u007f]/u.test(rawQuery)
-          || !PEOPLE_WORK_FILTERS.includes(work) || !/^(?:[1-9]|[1-9]\d|100)$/u.test(inputLimit) || cursor.length > 512 || cursor && !/^[A-Za-z0-9_-]+$/u.test(cursor)) return error('INVALID_REQUEST', '筛选格式无效。', 400);
+          || !PEOPLE_WORK_FILTERS.includes(work)||!PEOPLE_ATTENDANCE_FILTERS.includes(attendance) || !/^(?:[1-9]|[1-9]\d|100)$/u.test(inputLimit) || cursor.length > 512 || cursor && !/^[A-Za-z0-9_-]+$/u.test(cursor)) return error('INVALID_REQUEST', '筛选格式无效。', 400);
         if (work === 'duplicate' && !canManageEventOperations(actor)) return error('FORBIDDEN', '身份核对需要完整活动管理权限。', 403);
         if (view!=='all' && !permissions.contact) return error('FORBIDDEN', '角色名单需要人员邀约读取权限。', 403);
         const load = async (loader, needed) => { if (!needed) return null; if (!loader) throw new Error('Directory source unavailable.'); const value=await loader(actor); aborted(request); return value; };
@@ -78,7 +78,7 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
         const revisions = { contacts: roster?.revision ?? null, invitations: intent?.revision ?? null, registration: registrationDirectory?.revision ?? null,
           applications: registrationDirectory?.applicationRevision ?? null, admissions: admissions?.revision ?? null, content: content?.revision ?? null, delivery: deliveries?.revision ?? null, publishedContent: content?.published?.revision ?? null };
         peopleDirectoryWork(result, {actor, roster, registrationDirectory, admissions, content, revisions});
-        const revision = createHash('sha256').update(JSON.stringify({ revisions, permissions, view, query, work })).digest('hex');
+        const revision = createHash('sha256').update(JSON.stringify({ revisions, permissions, view, query, work,attendance })).digest('hex');
         let offset=0;
         if (cursor) {
           let parsed; try { parsed=JSON.parse(Buffer.from(cursor,'base64url').toString('utf8')); } catch { return error('INVALID_REQUEST','分页格式无效。',400); }
@@ -86,10 +86,11 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
           if (parsed.revision!==revision) return error('REVISION_CONFLICT','名单已更新，请从第一页重新核对。',409); offset=parsed.offset;
         }
         const candidates = view==='exhibitors'?result.companies:result.people.filter(item=>view==='all'||view==='unassigned'&&(item.contactId||item.registrationId)&&!item.roles.length||view==='attendees'&&item.roles.includes('attendee')||view==='speakers'&&item.roles.includes('speaker')||view==='guests'&&(item.roles.includes('guest')||item.roles.includes('panelist')));
-        const selected = candidates.filter(item => (item.kind !== 'person' || work === 'all' || (work === 'pending' ? item.workKinds.length > 0 : item.workKinds.includes(work)))
+        const selected = candidates.filter(item => (item.kind!=='person'||attendance==='all'||(attendance==='other'?!['awaiting','confirmed','invited'].includes(item.attendance.key):item.attendance.key===attendance))
+          &&(item.kind !== 'person' || work === 'all' || (work === 'pending' ? item.workKinds.length > 0 : item.workKinds.includes(work)))
           && (!query||[item.name,item.organization,item.city??'',item.contactId??'',item.registrationId??''].some(value=>value.toLocaleLowerCase('zh-CN').includes(query))));
         const limit=Number(inputLimit),next=offset+limit;
-        return json({ schemaVersion:1,view,work,permissions:{contacts:permissions.contact,registrations:permissions.registration},summary:result.summary,
+        return json({ schemaVersion:1,view,work,attendance,permissions:{contacts:permissions.contact,registrations:permissions.registration},summary:result.summary,
           revisions,revision,rows:selected.slice(offset,next),total:selected.length,
           nextCursor:next<selected.length?Buffer.from(JSON.stringify({offset:next,revision})).toString('base64url'):null });
       }
@@ -228,8 +229,10 @@ export function createPersonWorkspaceApi({ authenticate, loadContacts, loadInten
       try { communications = communicationProjection({ contactRaw, contactId, registrationId, intent, confirmations }); }
       catch { return unavailable(); }
       aborted(request);
-      return json({ schemaVersion: 1, selected: { kind, id }, person,
-        linkage: { state: linkageState, contactId: permissions.contact ? contactId : null, registrationId },
+      const linkage={ state: linkageState, contactId: permissions.contact ? contactId : null, registrationId };
+      const attendance=personAttendanceProjection({contactRaw,registration,admission,intent,content,communications,availability,linkage});
+      return json({ schemaVersion: 1, selected: { kind, id }, person,attendance,
+        linkage,
         permissions, availability, revisions, contact, registration, admission, arrangements, publicProfile, organizations, communications, volunteers });
     } catch (failure) {
       if (failure?.status === 401 || failure?.code === 'AUTH_REQUIRED') return error('AUTH_REQUIRED', '会话已结束，请重新登录。', 401);

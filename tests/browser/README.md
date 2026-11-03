@@ -217,3 +217,10 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 ```
 
 本机自动暂存仍有短暂写入时间；浏览器关闭、进程崩溃或存储配额中断时无法承诺最后一个字符已落盘。页面只在 IndexedDB 完成回执后显示已暂存；离页提醒用于尚未完成的本机写入与结果未明的原申请。该脚本不使用内存存储替身，也不连接正式服务或发送真实邮件。
+# 2026-11-03：活動行一般報名與講者申請
+
+一般報名CTA固定前往活動行，不受本站講者API可用性影響；本站新表單只送`['talk']`，服務端待審、不占席。`registration-auto-ui-smoke.mjs`沿用10案與既有回執prefix，現在驗獨立講者及舊一般申請的精確恢復；不把舊測試檔名當成目前普通報名仍在本站的依據。
+
+`p2-directory-smoke.mjs`保留原4案，增加320／390／1440三段出席及歷史未知寄送，共7案，CI新增必要gate。成功prefix為`People attendance directory browser verified:`，必須7案、0頁面錯誤、sourceCommit／公開與contacts／person HTML SHA及script SHA齊全。狀態篩選由後端先於分頁執行；同次已寄但未回覆、舊收件人unknown、當前accepted但歷史unknown、核對不重寄、返回同人焦點及手機無溢出都保留。
+
+`p5-homepage-smoke.mjs`7案另外驗7個一般外連、講者錨點、無JS手機點擊及FAQ鍵盤焦點；`p5-faq-application-smoke.mjs`12案、`application-review-smoke.mjs`15案按新表單更新，保留原正文／key／審核／授權／未知結果守門。所有瀏覽器仍以本地產物與隔離服務全攔截，不讀正式名單或實寄。正式來源資格由最終CI產物另驗。

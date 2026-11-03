@@ -14,6 +14,7 @@ const evidence = resolve(process.env.ARTDICO_EVIDENCE_DIRECTORY || resolve(sourc
 const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
 const { peopleRuntimeFixture } = await import(pathToFileURL(resolve(source, 'tests/helpers/people-runtime-fixture.mjs')));
 const SITE = 'https://artdico.host', API = 'https://api.artdico.host', EVENT = 'ggj-cn-2026';
+const PUBLIC_REGISTRATION = 'https://9525102647817.huodongxing.com/event/8884819113200';
 const NOW = '2026-10-21T09:00:00.000Z', reports = [], errors = [];
 const html = await readFile(resolve(dist, 'index.html'));
 const publicHtmlSha256 = createHash('sha256').update(html).digest('hex');
@@ -32,23 +33,16 @@ const cors = { 'access-control-allow-origin': SITE, 'access-control-allow-method
 const json = (value, status = 200) => ({ status, contentType: 'application/json', headers: cors, body: JSON.stringify(value) });
 const form = page => page.locator('[data-registration-form]');
 
-async function fixture({ width = 390, flag = false, omitFlag = false, capacity = 3, fillCapacity = false, loseFirstAck = false, restoreBrowserCheckbox = false, mail = false } = {}) {
+async function fixture({ width = 390, flag = false, omitFlag = false, omitSpeakerMetadata = false, mode = 'speaker_only', capacity = 3, fillCapacity = false, loseFirstAck = false, mail = false } = {}) {
   const initialReview = omitFlag || typeof flag !== 'boolean' ? true : flag;
   const runtime = await peopleRuntimeFixture({ capacity, mail, attendeeReviewRequired: initialReview });
   const initialMetadata = await runtime.app.registrationService.metadata();
   if (fillCapacity) await runtime.seedPublic({ intake: 'general-v2', name: '合成既有参与者', email: 'synthetic.first@example.invalid' });
   const context = await browser.newContext({ viewport: { width, height: 940 } }), calls = [], navigations = [];
-  let reviewFlag = initialReview, privacyVersion = initialMetadata.privacy.version, lose = loseFirstAck, app = runtime.app, receiptProven = false;
+  let reviewFlag = initialReview, registrationMode = mode, privacyVersion = initialMetadata.privacy.version, lose = loseFirstAck, app, receiptProven = false;
   const reconfigure = () => { app = runtime.make({ policyOverride: { attendeeReviewRequired: reviewFlag,
-    privacy: { ...initialMetadata.privacy, version: privacyVersion } } }); };
-  if (restoreBrowserCheckbox) await context.addInitScript(() => {
-    const observer = new MutationObserver(() => {
-      const proposal = document.querySelector('[data-proposal-toggle]');
-      if (!proposal) return;
-      proposal.checked = true; window.syntheticRestoredCheckbox = true; observer.disconnect();
-    });
-    observer.observe(document, { subtree: true, childList: true });
-  });
+    publicRegistrationMode: registrationMode, privacy: { ...initialMetadata.privacy, version: privacyVersion } } }); };
+  reconfigure();
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     assert.ok([SITE, API].includes(url.origin), 'every request must remain intercepted');
@@ -66,9 +60,10 @@ async function fixture({ width = 390, flag = false, omitFlag = false, capacity =
         ...(['GET', 'HEAD'].includes(request.method()) ? {} : { body: request.postData() }) }));
       let bytes = Buffer.from(await response.arrayBuffer());
       if(url.pathname.endsWith('/registration/submit')&&[200,201].includes(response.status)){call.receipt=JSON.parse(bytes);call.status=response.status;}
-      if (url.pathname === '/api/admin/registration/config' && (omitFlag || typeof flag !== 'boolean')) {
+      if (url.pathname === '/api/admin/registration/config' && (omitFlag || typeof flag !== 'boolean' || omitSpeakerMetadata)) {
         const metadata = JSON.parse(bytes);
         if (omitFlag) delete metadata.attendeeReviewRequired; else metadata.attendeeReviewRequired = flag;
+        if (omitSpeakerMetadata) { delete metadata.speakerApplicationsEnabled; delete metadata.publicRegistrationMode; }
         bytes = Buffer.from(JSON.stringify(metadata));
       }
       if (url.pathname === '/api/admin/registration/submit') {
@@ -80,7 +75,7 @@ async function fixture({ width = 390, flag = false, omitFlag = false, capacity =
     }
     if (url.pathname.startsWith('/__test_source__/')) {
       const relative = url.pathname.slice('/__test_source__/'.length);
-      assert.match(relative, /^(?:src\/lib|shared)\/[A-Za-z0-9_./-]+\.mjs$/u);
+      assert.ok(relative === 'src/config/event.mjs' || /^(?:src\/lib|shared)\/[A-Za-z0-9_./-]+\.mjs$/u.test(relative), 'source imports are limited to browser libraries, shared schemas and the exact public event config');
       const file = resolve(source, relative); assert.ok(file.startsWith(source + '/'));
       return route.fulfill({ status: 200, contentType: 'text/javascript', body: await readFile(file) });
     }
@@ -96,16 +91,19 @@ async function fixture({ width = 390, flag = false, omitFlag = false, capacity =
   const page = await context.newPage(); page.setDefaultTimeout(15000);
   await page.clock.setFixedTime(new Date(NOW));
   page.on('pageerror', error => errors.push(error.message)); page.on('dialog', dialog => { void dialog.accept(); });
-  await page.goto(SITE + '/#registration', { waitUntil: 'networkidle' });
+  await page.goto(SITE + '/#speaker-application', { waitUntil: 'networkidle' });
   await form(page).locator('[data-submit]:enabled').waitFor();
   await page.locator('[data-registration-form][data-registration-mode=production]').waitFor();
   return { page, context, calls, navigations, width, runtime, proveReceipt:()=>{receiptProven=true;}, get app() { return app; }, initialPrivacyVersion: privacyVersion,
-    setFlag: value => { reviewFlag = value; reconfigure(); }, setPrivacyVersion: value => { privacyVersion = value; reconfigure(); } };
+    setFlag: value => { reviewFlag = value; reconfigure(); }, setMode: value => { registrationMode = value; reconfigure(); },
+    setPrivacyVersion: value => { privacyVersion = value; reconfigure(); } };
 }
 async function fill(page) {
   await form(page).locator('[name=name]').fill('合成报名人');
   await form(page).locator('[name=email]').fill('synthetic.auto-ui@example.invalid');
   await form(page).locator('[name=categories]').selectOption('student');
+  await form(page).locator('[name="speaker.topic"]').fill('合成讲者主题');
+  await form(page).locator('[name="speaker.summary"]').fill('合成讲者简介，供隔离浏览器回归核对。');
 }
 async function records(page) {
   return page.evaluate(() => new Promise((resolveRecords, reject) => {
@@ -115,149 +113,259 @@ async function records(page) {
       read.onsuccess = () => resolveRecords(read.result); read.onerror = () => reject(read.error); tx.oncomplete = () => db.close(); };
   }));
 }
-async function compactReceipt(f,previousURL,admission='confirmed') {
-  const labels={confirmed:'报名成功',pending_review:'申请已收到，待审核',waitlisted:'候补登记已保存，尚未确认名额',rejected:'本次申请未通过审核'};
-  const success=f.page.locator('[data-registration-success][data-registration-success-compact]');await success.waitFor({state:'visible'});
-  await f.page.waitForFunction(()=>document.activeElement===document.querySelector('[data-registration-success][data-registration-success-compact]'));
-  assert.equal(f.page.url(),previousURL,'the form origin, path, query and hash remain unchanged after a genuine receipt');
-  assert.equal(await success.getAttribute('role'),'status');assert.equal(await success.getAttribute('tabindex'),'-1');
-  assert.equal((await success.innerText()).trim(),labels[admission],'the compact result shows only the accurate completion message');
-  assert.equal(await form(f.page).isVisible(),false);assert.equal(await form(f.page).locator('[data-submit]').isDisabled(),true);
-  assert.equal(await f.page.locator('[data-registration-preview]').isVisible(),false);assert.equal(await success.locator('[data-registration-success-details]').isVisible(),false);
-  assert.equal(await success.locator('[data-registration-reference]').textContent(),'');assert.equal(await success.locator('[data-registration-group-status]').textContent(),'');assert.equal(await success.locator('[data-registration-group-image] img').count(),0);
-  assert.equal(f.navigations.some(item=>item.path==='/registration/confirmation/'),false,'completion never opens the private confirmation document');
-  assert.equal(f.calls.some(item=>/\/registration\/confirmation(?:\/|$)/u.test(item.path)),false,'completion never requests the private confirmation API');
-  const submits=f.calls.filter(call=>call.path.endsWith('/registration/submit')),last=submits.at(-1);assert.ok(last&&[200,201].includes(last.status),'success follows a real committed runtime receipt');assert.equal(last.receipt.admissionStatus,admission);
-  if(admission==='waitlisted')assert.doesNotMatch(await success.innerText(),/报名成功|名额已确认/u);
-  f.proveReceipt();const posts=f.calls.filter(call=>call.method==='POST').length,mail=f.runtime.messages.length;
-  await form(f.page).evaluate(node=>{node.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));node.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));node.querySelector('[data-submit]').click();});
-  assert.equal(f.calls.filter(call=>call.method==='POST').length,posts,'completed form events do not start another POST');assert.equal(f.runtime.messages.length,mail,'completed form events never resend mail');
-  assert.equal(f.page.url(),previousURL);return last.receipt;
+async function compactReceipt(f, previousURL, admission = 'pending_review', { speaker = true } = {}) {
+  const labels = { confirmed: '报名成功', pending_review: '申请已收到，待审核', waitlisted: '候补登记已保存，尚未确认名额', rejected: '本次申请未通过审核' };
+  const success = f.page.locator(speaker ? '[data-speaker-application-received]' : '[data-registration-success][data-registration-success-compact]');
+  await success.waitFor({ state: 'visible' });
+  await f.page.waitForFunction(selector => document.activeElement === document.querySelector(selector), speaker ? '[data-speaker-application-received]' : '[data-registration-success][data-registration-success-compact]');
+  assert.equal(f.page.url(), previousURL, 'a proven result keeps the original origin, path, query and hash');
+  assert.equal(await success.getAttribute('role'), 'status'); assert.equal(await success.getAttribute('tabindex'), '-1');
+  assert.equal((await success.innerText()).trim(), speaker ? '讲者申请已收到。筹备团队将另行联系；讲者安排与入场资格尚未确认。' : labels[admission]);
+  assert.equal(await form(f.page).isVisible(), false); assert.equal(await form(f.page).locator('[data-submit]').isDisabled(), true);
+  assert.equal(await f.page.locator('[data-registration-preview]').isVisible(), false);
+  assert.equal(await f.page.locator('[data-registration-success-details]').isVisible(), false);
+  assert.equal(await f.page.locator('[data-registration-reference]').textContent(), '');
+  assert.equal(await f.page.locator('[data-registration-group-status]').textContent(), '');
+  assert.equal(await f.page.locator('[data-registration-group-image] img').count(), 0);
+  assert.equal(f.navigations.some(item => item.path === '/registration/confirmation/'), false);
+  assert.equal(f.calls.some(item => /\/registration\/confirmation(?:\/|$)/u.test(item.path)), false, 'completion does not request a private ticket page');
+  const last = f.calls.filter(call => call.path.endsWith('/registration/submit')).at(-1);
+  assert.ok(last && [200, 201].includes(last.status), 'success follows a genuine committed runtime receipt');
+  assert.equal(last.receipt.admissionStatus, admission);
+  if (speaker) { assert.equal(admission, 'pending_review'); assert.doesNotMatch(await success.innerText(), /报名成功|参会名额已确认/u); }
+  f.proveReceipt(); const posts = f.calls.filter(call => call.method === 'POST').length, mail = f.runtime.messages.length;
+  await form(f.page).evaluate(node => { node.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); node.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); node.querySelector('[data-submit]').click(); });
+  assert.equal(f.calls.filter(call => call.method === 'POST').length, posts, 'completed form events never start another POST');
+  assert.equal(f.runtime.messages.length, mail, 'completed form events never resend mail');
+  assert.equal(f.page.url(), previousURL); return last.receipt;
 }
-async function submit(f,admission='confirmed') {
-  const previousURL=f.page.url();await form(f.page).locator('[name=consentAccepted]').check();await form(f.page).locator('[data-submit]').click();return compactReceipt(f,previousURL,admission);
+async function submit(f) {
+  const previousURL = f.page.url(); await form(f.page).locator('[name=consentAccepted]').check();
+  await form(f.page).locator('[data-submit]').click(); return compactReceipt(f, previousURL);
 }
-async function assertAutomatic(page) {
-  assert.equal(await page.locator('[data-registration-heading]').textContent(), '报名参加。');
-  assert.equal(await form(page).locator('[data-submit]').textContent(), '提交报名');
-  assert.equal(await page.locator('[data-home-primary-apply-label]').first().textContent(), '报名参加');
-  assert.doesNotMatch(await page.locator('[data-registration-notice]').textContent(), /人工审核|主办方审核/u);
-  assert.doesNotMatch(await page.locator('[data-registration-disclaimer]').textContent(), /等待审核/u);
-  assert.match(await page.locator('[data-registration-disclaimer]').textContent(), /名额用完将登记候补/u);
-  assert.doesNotMatch(await page.locator('#field-email-hint').textContent(), /审核后/u);
-  assert.match(await page.locator('[data-faq-id=registration-status] .ah-faq-answer').textContent(), /直接在本站报名.*分享提案另行审选/u);
+async function assertSpeakerForm(page) {
+  assert.equal(await form(page).getAttribute('id'), 'speaker-application');
+  assert.equal(await page.locator('[data-registration-heading]').textContent(), '讲者申请');
+  assert.equal(await form(page).locator('[data-submit]').textContent(), '提交讲者申请');
+  assert.equal(await form(page).locator('[data-proposal-toggle]').count(), 0, 'the standalone speaker form has no attendance/proposal toggle');
+  assert.equal(await form(page).locator('[data-speaker-proposal]').isVisible(), true);
+  for (const name of ['speaker.topic', 'speaker.summary']) {
+    const input = form(page).locator('[name="' + name + '"]');
+    assert.equal(await input.isVisible(), true); assert.notEqual(await input.getAttribute('required'), null);
+  }
+  assert.match(await page.locator('[data-registration-notice]').textContent(), /不代表确认讲者或入场资格/u);
+  assert.match(await page.locator('[data-registration-disclaimer]').textContent(), /仅表示已收到讲者申请/u);
+  assert.match(await page.locator('#field-email-hint').textContent(), /讲者申请/u);
+  const links = page.locator('[data-general-registration]'); assert.ok(await links.count() > 0);
+  for (const link of await links.all()) assert.equal(await link.getAttribute('href'), PUBLIC_REGISTRATION, 'general registration always retains the external activities URL');
+  assert.equal(await page.locator('[data-home-primary-apply-label]').first().textContent(), '前往活动行报名');
+  assert.match(await page.locator('[data-faq-id=registration-status] .ah-faq-answer').textContent(), /活动行/u);
+}
+async function assertPendingSpeaker(f, receipt, { confirmed = 0, expectedMail } = {}) {
+  const admissions = await f.app.registrationService.getAdmissions({ actor: f.runtime.users[0] });
+  assert.equal(admissions.summary.confirmedCount, confirmed); assert.equal(admissions.summary.pendingReviewCount, 1);
+  assert.equal(admissions.summary.waitlistCount, 0, 'speaker proposals never occupy a seat or enter the attendance waitlist');
+  assert.equal(receipt.confirmation.email.status, 'not_applicable'); assert.equal(receipt.groupInvite, null);
+  const view = await f.app.confirmationService.confirmation({ receiptToken: receipt.confirmation.receiptToken });
+  assert.equal(view.admission.status, 'pending_review'); assert.equal(view.wallet.ready, false); assert.equal(view.invitation.ready, false); assert.equal(view.groupInvite, null);
+  const formal = await f.app.confirmationService.staffHistory({ actor: f.runtime.users[0], registrationId: receipt.reference_code });
+  assert.deepEqual(formal.notices, [], 'no formal confirmation notice is reserved for a new speaker proposal');
+  if (expectedMail !== undefined) assert.equal(f.runtime.messages.length, expectedMail);
+  for (const message of f.runtime.messages) {
+    if (message.template_params.reference_code !== receipt.reference_code) continue;
+    assert.match(message.template_params.invitation_text, /申请已收到/u);
+    assert.doesNotMatch(message.template_params.invitation_text, /你的参会名额已确认/u);
+    assert.doesNotMatch(message.template_params.confirmation_actions, /apple-wallet|entry\.png|group\.png/u);
+  }
+  assert.equal(await f.page.locator('[data-confirmation-group],[data-confirmation-wallet]').count(), 0);
+}
+function assertSpeakerTokenCalls(f) {
+  const tokens = f.calls.filter(call => call.path.endsWith('/registration/token'));
+  assert.ok(tokens.length > 0);
+  for (const call of tokens) assert.deepEqual(Object.keys(JSON.parse(call.body)).sort(), ['eventId', 'idempotencyKey', 'speakerApplication'].sort());
+  for (const call of tokens) assert.equal(JSON.parse(call.body).speakerApplication, true);
+}
+async function repeatOriginal(f, original, admission) {
+  const mail = f.runtime.messages.length;
+  const response = await f.app.handle(new Request(API + '/api/admin/registration/submit', { method: 'POST', headers: original.headers, body: original.body }));
+  assert.equal(response.status, 200); const receipt = await response.json(); assert.equal(receipt.admissionStatus, admission);
+  assert.equal(f.runtime.messages.length, mail, 'replaying a proven original never backfills mail'); return receipt;
 }
 
 try {
   await mkdir(evidence, { recursive: true });
   for (const width of [320, 390, 768, 1440]) {
-    const f = await fixture({ width, restoreBrowserCheckbox: true, mail: true }); await assertAutomatic(f.page);
-    assert.equal(await f.page.evaluate(() => window.syntheticRestoredCheckbox), true);
-    assert.equal(await form(f.page).locator('[data-proposal-toggle]').isChecked(), false, 'new forms reset browser-restored checkbox state');
-    assert.equal(await form(f.page).locator('[data-speaker-proposal]').isVisible(), false);
-    await fill(f.page);
-    for(const name of ['phone','wechat']){
-      const input=form(f.page).locator('[name='+name+']');assert.equal(await input.isVisible(),true,'contact fields are visible without opening optional details');
-      assert.equal(await input.getAttribute('required'),null);assert.equal(await input.locator('xpath=ancestor::details').count(),0);
+    const f = await fixture({ width, mail: true }); await assertSpeakerForm(f.page); await fill(f.page);
+    for (const name of ['phone', 'wechat']) {
+      const input = form(f.page).locator('[name=' + name + ']');
+      assert.equal(await input.isVisible(), true, 'contacts are visible without opening optional details');
+      assert.equal(await input.getAttribute('required'), null); assert.equal(await input.locator('xpath=ancestor::details').count(), 0);
     }
-    assert.equal(await form(f.page).locator('[name=phone]').getAttribute('type'),'tel');
-    assert.equal(await form(f.page).locator('[name=phone]').getAttribute('inputmode'),'tel');
-    await form(f.page).locator('[name=phone]').fill('+852 0012 3456');await form(f.page).locator('[name=wechat]').fill('synthetic-contact');
-    if(width===320){
-      // waitForFunction treats an async predicate's Promise as truthy. Use the
-      // latest-input saved-state barrier, then independently read native IDB.
-      await form(f.page).locator('[data-application-draft-status]').filter({hasText:'本机已暂存'}).waitFor({state:'attached'});
-      const persisted=(await records(f.page)).find(row=>row.kind==='editing');assert.equal(persisted?.value.phone,'+852 0012 3456');assert.equal(persisted?.value.wechat,'synthetic-contact');
-      await f.page.reload({waitUntil:'networkidle'});await form(f.page).locator('[data-submit]:enabled').waitFor();
-      assert.equal(await form(f.page).locator('[name=phone]').inputValue(),'+852 0012 3456');assert.equal(await form(f.page).locator('[name=wechat]').inputValue(),'synthetic-contact');
+    assert.equal(await form(f.page).locator('[name=phone]').getAttribute('type'), 'tel');
+    assert.equal(await form(f.page).locator('[name=phone]').getAttribute('inputmode'), 'tel');
+    await form(f.page).locator('[name=phone]').fill('+852 0012 3456'); await form(f.page).locator('[name=wechat]').fill('synthetic-contact');
+    if (width === 320) {
+      // The attached saved-state barrier waits for the actual IDB commit; an
+      // async waitForFunction predicate would treat its Promise as truthy.
+      await form(f.page).locator('[data-application-draft-status]').filter({ hasText: '本机已暂存' }).waitFor({ state: 'attached' });
+      const persisted = (await records(f.page)).find(row => row.kind === 'editing');
+      assert.equal(persisted?.value.phone, '+852 0012 3456'); assert.equal(persisted?.value.wechat, 'synthetic-contact'); assert.equal(persisted?.value.proposal, true);
+      await f.page.reload({ waitUntil: 'networkidle' }); await form(f.page).locator('[data-submit]:enabled').waitFor();
+      assert.equal(await form(f.page).locator('[name=phone]').inputValue(), '+852 0012 3456');
+      assert.equal(await form(f.page).locator('[name=wechat]').inputValue(), 'synthetic-contact');
+      assert.equal(await form(f.page).locator('[name="speaker.topic"]').inputValue(), '合成讲者主题');
     }
-    assert.equal(await form(f.page).locator('[data-proposal-toggle]').isChecked(), false, 'changing identity does not select a proposal');
-    const receipt=await submit(f);
-    const sent = JSON.parse(f.calls.find(call => call.path.endsWith('/submit')).body);
-    assert.deepEqual(sent.fields.participationInterests, ['attend']); assert.equal(Object.hasOwn(sent.fields, 'speaker'), false);
-    assert.equal(sent.fields.phone,'+852 0012 3456');assert.equal(sent.fields.wechat,'synthetic-contact');
-    const admissions = await f.app.registrationService.getAdmissions({ actor: f.runtime.users[0] });
-    assert.equal(admissions.summary.confirmedCount, 1); assert.equal(admissions.summary.pendingReviewCount, 0);
+    const receipt = await submit(f), original = f.calls.find(call => call.path.endsWith('/registration/submit')), sent = JSON.parse(original.body);
+    assert.deepEqual(sent.fields.participationInterests, ['talk']);
+    assert.deepEqual(sent.fields.speaker, { topic: '合成讲者主题', summary: '合成讲者简介，供隔离浏览器回归核对。' });
+    assert.equal(sent.fields.phone, '+852 0012 3456'); assert.equal(sent.fields.wechat, 'synthetic-contact'); assertSpeakerTokenCalls(f);
     assert.equal((await f.app.registrationService.repository.list()).registrations.length, 1);
-    const stored=(await f.app.registrationService.repository.list()).registrations[0];assert.equal(stored.fields.phone,sent.fields.phone);assert.equal(stored.fields.wechat,sent.fields.wechat);
-    const detail=await f.app.reviewStore.detail(receipt.reference_code);assert.equal(detail.registration.fields.phone,sent.fields.phone);
-    assert.equal(receipt.confirmation.email.status,'provider_accepted','the actual runtime records the synthetic provider acknowledgement');
-    assert.equal(f.runtime.messages.length,1,'a newly confirmed automatic intake starts exactly one synthetic formal email');
-    assert.equal(f.runtime.messages[0].template_params.reference_code,receipt.reference_code);assert.match(f.runtime.messages[0].template_params.invitation_text,/参会名额已确认/u);assert.match(f.runtime.messages[0].template_params.invitation_text,/https:\/\/artdico\.host\/r\/#[A-Za-z0-9_-]{22}/u);
-    const original=f.calls.find(call=>call.path.endsWith('/registration/submit')),replayed=await f.app.handle(new Request(API+'/api/admin/registration/submit',{method:'POST',headers:original.headers,body:original.body}));
-    assert.equal(replayed.status,200);assert.equal((await replayed.json()).admissionStatus,'confirmed');assert.equal(f.runtime.messages.length,1,'an explicit synthetic replay does not send another formal email');
+    const stored = (await f.app.registrationService.repository.list()).registrations[0];
+    assert.equal(stored.fields.phone, sent.fields.phone); assert.equal(stored.fields.wechat, sent.fields.wechat);
+    const detail = await f.app.reviewStore.detail(receipt.reference_code); assert.equal(detail.registration.fields.phone, sent.fields.phone);
+    await assertPendingSpeaker(f, receipt, { expectedMail: 1 });
+    await repeatOriginal(f, original, 'pending_review');
     assert.equal(await f.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
-    await f.page.screenshot({ path: resolve(evidence, 'automatic-confirmed-' + width + '.png'), fullPage: true });
-    reports.push({ width, mode: 'automatic', receipt: 'confirmed', freshProposal: false, visibleOptionalContacts:true, phoneStringPreserved:true, contactDraftRefresh:width===320, compactFocusedSamePage:true, noPrivateConfirmationRequest:true, syntheticFormalMail:1, syntheticReceiptReplayNoExtraMail:true, realNetworkRequests: 0 }); await f.context.close();
+    await f.page.screenshot({ path: resolve(evidence, 'speaker-received-' + width + '.png'), fullPage: true });
+    reports.push({ width, mode: 'speaker_only', receipt: 'pending_review', visibleOptionalContacts: true, phoneStringPreserved: true,
+      contactDraftRefresh: width === 320, compactFocusedSamePage: true, noPrivateConfirmationRequest: true,
+      externalGeneralRegistration: true, noAttendanceTicket: true, syntheticApplicationMail: 1, syntheticFormalMail: 0, syntheticReceiptReplayNoExtraMail: true, realNetworkRequests: 0 });
+    await f.context.close();
   }
-  for (const options of [{ flag: true }, { omitFlag: true }, { flag: 'false' }]) {
-    const f = await fixture(options);
-    assert.equal(await f.page.locator('[data-registration-mode-label]').textContent(), '人工审核');
-    assert.equal(await form(f.page).locator('[data-submit]').textContent(), '提交参会申请');
-    assert.match(await f.page.locator('[data-faq-id=registration-status] .ah-faq-answer').textContent(), /人工审核/u);
-    await fill(f.page); await submit(f,'pending_review');
-    assert.equal(await f.page.locator('[data-confirmation-group],[data-confirmation-wallet]').count(),0);
-    assert.equal((await f.app.registrationService.getAdmissions({ actor: f.runtime.users[0] })).summary.pendingReviewCount, 1);
-    reports.push({ mode: 'review-fallback', flag: options.omitFlag ? 'missing' : options.flag, receipt: 'pending_review' }); await f.context.close();
+  for (const options of [{ flag: true }, { omitFlag: true }, { flag: 'false', omitSpeakerMetadata: true }]) {
+    const f = await fixture({ ...options, mode: 'legacy' }); await assertSpeakerForm(f.page);
+    if (options.omitFlag) {
+      // A historical editable attendance draft is still an editing snapshot,
+      // never an instruction to submit or to silently add attendance to a new
+      // speaker request. Persist it through the same native CAS wrapper.
+      await f.page.evaluate(async () => {
+        const [{ createApplicationDraft }, { createBrowserDraftStore }] = await Promise.all([
+          import('/__test_source__/src/lib/application-draft.mjs'), import('/__test_source__/src/lib/browser-drafts.mjs'),
+        ]);
+        const store = createBrowserDraftStore({ indexedDB, BroadcastChannel: null });
+        try {
+          const draft = createApplicationDraft({ store, eventId: 'ggj-cn-2026' }); await draft.read();
+          await draft.save({ intake: 'general-v2', name: '合成旧草稿人', email: 'synthetic.old-draft@example.invalid', category: 'student',
+            organization: '合成旧草稿机构', city: '合成旧草稿城市', phone: '+852 0012 3456', wechat: 'synthetic-old-draft', proposal: false, topic: '', summary: '' });
+        } finally { store.close(); }
+      });
+      assert.equal((await records(f.page)).find(row => row.kind === 'editing')?.value.proposal, false);
+      const beforeReload = f.calls.length;
+      await f.page.reload({ waitUntil: 'networkidle' }); await form(f.page).locator('[data-submit]:enabled').waitFor(); await assertSpeakerForm(f.page);
+      assert.equal((await records(f.page)).find(row => row.kind === 'editing')?.value.proposal, false, 'reading an old editing draft does not rewrite its stored selection');
+      for (const [name, value] of [['name', '合成旧草稿人'], ['email', 'synthetic.old-draft@example.invalid'], ['phone', '+852 0012 3456'], ['wechat', 'synthetic-old-draft']]) assert.equal(await form(f.page).locator('[name=' + name + ']').inputValue(), value);
+      for (const name of ['speaker.topic', 'speaker.summary']) assert.equal(await form(f.page).locator('[name="' + name + '"]').inputValue(), '');
+      assert.equal(f.calls.slice(beforeReload).every(call => call.method === 'GET'), true, 'an old editing draft reload only reads settings and publication');
+      assert.equal(f.calls.some(call => call.method === 'POST'), false, 'restoring an attendance-only editing draft never auto-submits');
+      await form(f.page).locator('[name=consentAccepted]').check(); await form(f.page).locator('[data-submit]').click();
+      assert.match(await form(f.page).locator('[data-form-error]').textContent(), /当前没有提交申请/u);
+      for (const name of ['speaker.topic', 'speaker.summary']) assert.equal(await form(f.page).locator('[name="' + name + '"]').getAttribute('aria-invalid'), 'true');
+      assert.equal(f.calls.some(call => call.method === 'POST'), false, 'an explicit incomplete speaker request is blocked before token issuance');
+      await form(f.page).locator('[name="speaker.topic"]').fill('合成从旧草稿明确申请的主题');
+      await form(f.page).locator('[name="speaker.summary"]').fill('合成从旧草稿明确填写的主题简介');
+    } else await fill(f.page);
+    const receipt = await submit(f); assertSpeakerTokenCalls(f); await assertPendingSpeaker(f, receipt, { expectedMail: 0 });
+    const sent = JSON.parse(f.calls.find(call => call.path.endsWith('/registration/submit')).body);
+    assert.deepEqual(sent.fields.participationInterests, ['talk']);
+    if (options.omitFlag) { assert.equal(sent.fields.email, 'synthetic.old-draft@example.invalid'); assert.equal(sent.fields.phone, '+852 0012 3456'); assert.equal(sent.fields.wechat, 'synthetic-old-draft'); }
+    reports.push({ mode: 'legacy-metadata', reviewFlag: options.omitFlag ? 'missing' : options.flag,
+      speakerMetadata: options.omitSpeakerMetadata ? 'missing' : 'present', oldAttendanceOnlyEditingDraftRestored: options.omitFlag === true,
+      receipt: 'pending_review', externalGeneralRegistration: true });
+    await f.context.close();
   }
   {
-    const f = await fixture({ capacity: 1, fillCapacity: true }); await assertAutomatic(f.page); await fill(f.page); await submit(f,'waitlisted');
-    assert.equal(await f.page.locator('[data-confirmation-group],[data-confirmation-wallet]').count(),0);
-    const admissions = await f.app.registrationService.getAdmissions({ actor: f.runtime.users[0] });
-    assert.equal(admissions.summary.confirmedCount, 1); assert.equal(admissions.summary.waitlistCount, 1);
-    reports.push({ mode: 'automatic', receipt: 'waitlisted', fabricatedTicket: false }); await f.context.close();
+    const f = await fixture({ capacity: 1, fillCapacity: true }); await assertSpeakerForm(f.page); await fill(f.page);
+    const receipt = await submit(f); await assertPendingSpeaker(f, receipt, { confirmed: 1, expectedMail: 0 }); assertSpeakerTokenCalls(f);
+    assert.equal((await f.app.registrationService.repository.list()).registrations.length, 2);
+    reports.push({ mode: 'speaker_only', fullAttendanceCapacity: true, receipt: 'pending_review', consumesCapacity: false, fabricatedTicket: false });
+    await f.context.close();
   }
   {
-    const f = await fixture(); await fill(f.page);
-    await f.page.locator('a[data-recruit=speaker]').click();
-    assert.equal(await form(f.page).locator('[data-proposal-toggle]').isChecked(), true);
-    await form(f.page).locator('[name="speaker.topic"]').fill('合成分享主题');
-    await form(f.page).locator('[name="speaker.summary"]').fill('合成分享简介');
-    await form(f.page).locator('[data-application-draft-status]').filter({ hasText: '本机已暂存' }).waitFor({state:'attached'});
-    assert.equal(await form(f.page).locator('[data-application-draft-status]').isVisible(),false);
+    const f = await fixture({ loseFirstAck: true }); await fill(f.page);
+    await form(f.page).locator('[name="speaker.topic"]').fill('合成恢复讲者主题');
+    await form(f.page).locator('[name="speaker.summary"]').fill('合成恢复讲者简介');
+    await form(f.page).locator('[data-application-draft-status]').filter({ hasText: '本机已暂存' }).waitFor({ state: 'attached' });
+    const draft = (await records(f.page)).find(row => row.kind === 'editing'); assert.equal(draft?.value.proposal, true);
+    assert.equal(await form(f.page).locator('[data-application-draft-status]').isVisible(), false);
     await f.page.reload({ waitUntil: 'networkidle' }); await form(f.page).locator('[data-submit]:enabled').waitFor();
-    assert.equal(await form(f.page).locator('[data-proposal-toggle]').isChecked(), true, 'an intentional editing draft restores its selection');
-    assert.match(await form(f.page).locator('[data-application-draft-status]').textContent(), /已恢复本机草稿.*分享提案/u);
-    assert.equal(await form(f.page).locator('[name="speaker.topic"]').inputValue(), '合成分享主题');
-    await submit(f);
-    const sent = JSON.parse(f.calls.find(call => call.path.endsWith('/submit')).body);
-    assert.deepEqual(sent.fields.participationInterests, ['attend', 'talk']);
-    assert.equal((await f.app.registrationService.getAdmissions({ actor: f.runtime.users[0] })).summary.confirmedCount, 1);
-    reports.push({ explicitProposalRestored: true, automaticAttendanceIndependentFromProposalSelection: true }); await f.context.close();
-  }
-  {
-    const f = await fixture({ flag: true, loseFirstAck: true }); await fill(f.page);
-    await f.page.locator('a[data-recruit=speaker]').click();
-    await form(f.page).locator('[name="speaker.topic"]').fill('合成原提案'); await form(f.page).locator('[name="speaker.summary"]').fill('合成原提案简介');
+    assert.match(await form(f.page).locator('[data-application-draft-status]').textContent(), /已恢复讲者主题草稿/u);
+    assert.equal(await form(f.page).locator('[name="speaker.topic"]').inputValue(), '合成恢复讲者主题');
+    assert.equal(await form(f.page).locator('[name="speaker.summary"]').inputValue(), '合成恢复讲者简介');
     await form(f.page).locator('[name=consentAccepted]').check(); await form(f.page).locator('[data-submit]').click();
-    await form(f.page).locator('[data-submit]').filter({ hasText: '再次确认申请结果' }).waitFor();
-    const original = (await records(f.page)).find(row => row.kind === 'pending_submission'); assert.ok(original);
-    assert.equal(Object.hasOwn(JSON.parse(original.value.payloadJson).fields,'phone'),false,'an omitted phone remains absent in the frozen original body');
-    assert.equal((await f.app.registrationService.getAdmissions({ actor: f.runtime.users[0] })).summary.pendingReviewCount, 1);
-    const first = f.calls.find(call => call.path.endsWith('/submit'));
-    f.setFlag(false); f.setPrivacyVersion('notice-auto-ui-v2');
+    await form(f.page).locator('[data-submit]').filter({ hasText: '再次确认原申请结果' }).waitFor();
+    const original = (await records(f.page)).find(row => row.kind === 'pending_submission'); assert.ok(original?.value.attempted); assert.equal(original.value.uncertain, true);
+    const first = f.calls.find(call => call.path.endsWith('/registration/submit')); assert.deepEqual(JSON.parse(first.body).fields.participationInterests, ['talk']);
+    assert.equal(Object.hasOwn(JSON.parse(first.body).fields, 'phone'), false, 'an empty optional phone is omitted from a new frozen body');
+    assert.equal(first.receipt.admissionStatus, 'pending_review', 'the server committed before the synthetic ACK loss');
     const beforeReload = f.calls.length;
     await f.page.reload({ waitUntil: 'networkidle' }); await form(f.page).locator('[data-submit]:enabled').waitFor();
-    assert.equal(await form(f.page).locator('[data-proposal-toggle]').isChecked(), true);
-    assert.equal(await form(f.page).locator('[data-proposal-toggle]').isDisabled(), true);
     await f.page.locator('a[data-recruit=speaker]').click();
     const recovered = (await records(f.page)).find(row => row.kind === 'pending_submission');
-    assert.equal(await form(f.page).locator('[name=phone]').inputValue(),'');assert.equal(await form(f.page).locator('[name=phone]').isDisabled(),true);
     assert.equal(recovered.value.payloadJson, original.value.payloadJson); assert.equal(recovered.value.idempotencyKey, original.value.idempotencyKey);
-    assert.equal(f.calls.filter(call => call.path.endsWith('/submit')).length, 1, 'reload and CTA do not submit');
-    assert.equal(f.calls.slice(beforeReload).every(call => call.method === 'GET'), true, 'pending restoration only reads settings and publication');
-    const replayURL=f.page.url();await form(f.page).locator('[data-submit]').click();
-    await compactReceipt(f,replayURL,'pending_review');
-    const replay = f.calls.filter(call => call.path.endsWith('/submit')).at(-1);
+    assert.equal(recovered.value.attempted, true); assert.equal(recovered.value.uncertain, true);
+    for (const input of await form(f.page).locator('input,select,textarea').all()) assert.equal(await input.isDisabled(), true, 'all frozen original inputs remain locked');
+    assert.equal(f.calls.slice(beforeReload).every(call => call.method === 'GET'), true, 'restoring an unknown result never resubmits automatically');
+    const replayURL = f.page.url(); await form(f.page).locator('[data-submit]').click(); const receipt = await compactReceipt(f, replayURL);
+    const replay = f.calls.filter(call => call.path.endsWith('/registration/submit')).at(-1);
+    assert.equal(replay.body, first.body); assert.equal(replay.headers['idempotency-key'], first.headers['idempotency-key']); assertSpeakerTokenCalls(f);
+    assert.equal(f.calls.filter(call => call.path.endsWith('/registration/submit')).length, 2);
+    assert.equal((await f.app.registrationService.repository.list()).registrations.length, 1); await assertPendingSpeaker(f, receipt, { expectedMail: 0 });
+    assert.equal((await records(f.page)).some(row => row.kind === 'pending_submission'), false);
+    reports.push({ editingSpeakerDraftRestored: true, unknownNewProposalLocked: true, originalBodyAndKeyPreserved: true, receipt: 'pending_review', automaticReplay: false });
+    await f.context.close();
+  }
+  {
+    const f = await fixture({ mode: 'legacy', loseFirstAck: true });
+    // Produce a real pre-migration general-client pending operation through its
+    // native CAS store. The new UI must recover it, never reinterpret it as a
+    // fresh talk-only submission or manufacture a different idempotency key.
+    const oldResult = await f.page.evaluate(async () => {
+      const [{ createRegistrationClient }, { createApplicationDraft }, { createBrowserDraftStore }] = await Promise.all([
+        import('/__test_source__/src/lib/registration-client.mjs'), import('/__test_source__/src/lib/application-draft.mjs'), import('/__test_source__/src/lib/browser-drafts.mjs'),
+      ]);
+      const store = createBrowserDraftStore({ indexedDB, BroadcastChannel: null });
+      try {
+        const draft = createApplicationDraft({ store, eventId: 'ggj-cn-2026' }); await draft.read();
+        const client = createRegistrationClient({ apiOrigin: 'https://api.artdico.host', pageOrigin: location.origin, pendingStore: draft.pendingStore });
+        await client.configure();
+        try { await client.submit({ intake: 'general-v2', name: '合成历史待核对人', email: 'synthetic.old-pending@example.invalid', categories: ['student'], participationInterests: ['attend', 'talk'], speaker: { topic: '合成历史分享主题', summary: '合成历史分享简介' } }); return { unexpectedSuccess: true }; }
+        catch (error) { return { code: error.code, uncertain: error.uncertain, pending: client.pendingSnapshot }; }
+      } finally { store.close(); }
+    });
+    assert.equal(oldResult.code, 'UNCONFIRMED'); assert.equal(oldResult.uncertain, true);
+    const original = (await records(f.page)).find(row => row.kind === 'pending_submission'); assert.ok(original); assert.equal(original.value.uncertain, true);
+    assert.equal(original.value.payloadJson, oldResult.pending.payloadJson); assert.equal(original.value.idempotencyKey, oldResult.pending.idempotencyKey);
+    assert.equal(Object.hasOwn(JSON.parse(original.value.payloadJson).fields, 'phone'), false, 'old omitted phone stays absent in the frozen body');
+    const first = f.calls.find(call => call.path.endsWith('/registration/submit')); assert.equal(first.receipt.admissionStatus, 'confirmed');
+    assert.deepEqual(JSON.parse(f.calls.find(call => call.path.endsWith('/registration/token')).body), { eventId: EVENT, idempotencyKey: original.value.idempotencyKey });
+    f.setMode('speaker_only'); f.setFlag(true); f.setPrivacyVersion('notice-speaker-ui-v2');
+    const beforeReload = f.calls.length;
+    await f.page.reload({ waitUntil: 'networkidle' }); await form(f.page).locator('[data-submit]:enabled').waitFor();
+    assert.equal(await form(f.page).locator('[data-application-recovery]').isVisible(), true);
+    assert.match(await form(f.page).locator('[data-application-recovery-person]').textContent(), /合成历史待核对人/u);
+    for (const input of await form(f.page).locator('input,select,textarea').all()) assert.equal(await input.isDisabled(), true, 'all historical original inputs remain locked');
+    assert.equal(await form(f.page).locator('[name=phone]').inputValue(), '');
+    assert.equal(await form(f.page).locator('[name="speaker.topic"]').inputValue(), '合成历史分享主题');
+    await f.page.locator('a[data-recruit=speaker]').click();
+    const recovered = (await records(f.page)).find(row => row.kind === 'pending_submission');
+    assert.equal(recovered.value.payloadJson, original.value.payloadJson); assert.equal(recovered.value.idempotencyKey, original.value.idempotencyKey);
+    assert.equal(recovered.value.attempted, true); assert.equal(recovered.value.uncertain, true);
+    assert.equal(f.calls.filter(call => call.path.endsWith('/registration/submit')).length, 1, 'reload and speaker CTA do not post');
+    assert.equal(f.calls.slice(beforeReload).every(call => call.method === 'GET'), true);
+    const replayURL = f.page.url(); await form(f.page).locator('[data-submit]').click(); await compactReceipt(f, replayURL, 'confirmed', { speaker: false });
+    const replay = f.calls.filter(call => call.path.endsWith('/registration/submit')).at(-1);
     assert.equal(replay.body, first.body); assert.equal(replay.headers['idempotency-key'], first.headers['idempotency-key']);
     assert.equal(JSON.parse(replay.body).consent.version, f.initialPrivacyVersion);
-    assert.equal(await f.page.locator('[data-confirmation-group],[data-confirmation-wallet]').count(),0);
-    assert.equal(f.calls.filter(call=>call.path.endsWith('/registration/submit')).length,2,'only the explicit original-payload proof retry posts again');
-    assert.equal(f.runtime.messages.length,0,'restoring and replaying an old pending receipt does not backfill mail');
+    assert.deepEqual(JSON.parse(replay.body).fields.participationInterests, ['attend', 'talk']);
+    const tokens = f.calls.filter(call => call.path.endsWith('/registration/token')); assert.equal(tokens.length, 2);
+    for (const call of tokens) assert.deepEqual(JSON.parse(call.body), { eventId: EVENT, idempotencyKey: original.value.idempotencyKey }, 'legacy token requests are not upgraded to speakerApplication');
+    assert.notEqual(first.headers['x-registration-token'], replay.headers['x-registration-token'], 'an explicit original-operation retry obtains a fresh token');
+    assert.equal(f.calls.filter(call => call.path.endsWith('/registration/submit')).length, 2);
+    assert.equal(f.runtime.messages.length, 0, 'historical restoration/replay never backfills formal mail');
     assert.equal((await f.app.registrationService.repository.list()).registrations.length, 1);
     const admissions = await f.app.registrationService.getAdmissions({ actor: f.runtime.users[0] });
-    assert.equal(admissions.summary.confirmedCount, 0); assert.equal(admissions.summary.pendingReviewCount, 1);
-    reports.push({ modeChangedToAutomatic: true, originalPendingProposalLocked: true, originalBodyAndKeyPreserved: true, receipt: 'pending_review' });
+    assert.equal(admissions.summary.confirmedCount, 1); assert.equal(admissions.summary.pendingReviewCount, 0);
+    reports.push({ modeChangedToSpeakerOnly: true, originalPendingAttendanceLocked: true, originalBodyAndKeyPreserved: true, receipt: 'confirmed', historicalMailBackfill: false });
     await f.context.close();
   }
   assert.deepEqual(errors, []);

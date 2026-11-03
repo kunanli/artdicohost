@@ -35,7 +35,9 @@ try{
     const page=await context.newPage();page.setDefaultTimeout(18000);page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>void dialog.accept());
     const loaded=async()=>{await page.locator('[data-directory-status]').filter({hasText:'符合筛选'}).waitFor();await page.locator('[data-directory-search] [type=submit]:enabled').waitFor();};
     try{
-      await page.goto(API+'/admin/contacts/',{waitUntil:'networkidle'});await loaded();await page.locator('[data-directory-work]').selectOption('all');await loaded();
+      await page.goto(API+'/admin/contacts/',{waitUntil:'networkidle'});await loaded();
+      assert.equal(await page.locator('[data-directory-work]').inputValue(),'all');assert.equal(await page.locator('[data-directory-attendance]').inputValue(),'all');
+      assert.equal(await page.locator('[data-directory-advanced]').getAttribute('open'),null,'the default complete directory does not need advanced work filtering');
       const rows=page.locator('[data-directory-rows] tr');assert.equal(await rows.count(),3);
       assert.equal(await rows.nth(0).getAttribute('data-directory-person'),'contact:'+latest.contact.id);
       assert.equal(await rows.nth(1).getAttribute('data-directory-person'),'contact:'+first.contact.id);

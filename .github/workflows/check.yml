@@ -158,7 +158,7 @@ jobs:
           path: .local-data/browser-evidence/public-typography/
           if-no-files-found: warn
           retention-days: 1
-      - name: Check onsite automatic tickets and optional sharing
+      - name: Check speaker applications and legacy ticket recovery
         id: automatic_registration_browser
         timeout-minutes: 4
         env:
@@ -198,6 +198,27 @@ jobs:
         with:
           name: admin-display-order-evidence
           path: .local-data/browser-evidence/admin-display-order/
+          if-no-files-found: warn
+          retention-days: 1
+      - name: Check staff attendance stages and uncertain delivery recovery
+        id: people_attendance_browser
+        timeout-minutes: 4
+        env:
+          ARTDICO_PLAYWRIGHT_MODULE: playwright-core
+          ARTDICO_DIST_DIRECTORY: dist
+          ARTDICO_EVIDENCE_DIRECTORY: .local-data/browser-evidence/people-attendance
+        run: |
+          if ! artdico_browser_path="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium)"; then
+            printf '%s\n' '{"ok":false,"failure":"CHROMIUM_UNAVAILABLE"}'
+            exit 1
+          fi
+          ARTDICO_CHROMIUM_BINARY="$artdico_browser_path" node tests/browser/p2-directory-smoke.mjs
+      - name: Retain staff attendance browser evidence for one day
+        if: ${{ !cancelled() && (steps.people_attendance_browser.outcome == 'success' || steps.people_attendance_browser.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: people-attendance-evidence
+          path: .local-data/browser-evidence/people-attendance/
           if-no-files-found: warn
           retention-days: 1
       - name: Check confirmation mail diagnostics and explicit manual resends
@@ -438,7 +459,7 @@ jobs:
         run: node scripts/verify-public-content.mjs
       - name: Verify anonymous registration settings and both browser preflights without submitting an application
         timeout-minutes: 1
-        run: node scripts/verify-public-registration.mjs
+        run: node scripts/verify-public-registration.mjs --expect-approved-mode
       - name: Verify gateway-compatible registration transport using rejected diagnostic requests
         timeout-minutes: 3
         run: node scripts/observe-registration-transport.mjs

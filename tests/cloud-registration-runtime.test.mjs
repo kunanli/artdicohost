@@ -62,7 +62,7 @@ test('exact public aliases compose the real durable service while protected plur
   const config = await f.first.handle(request('/api/admin/registration/config', { origin: PUBLIC }));
   assert.equal(config.status, 200); assert.equal(config.headers.get('access-control-allow-origin'), PUBLIC);
   assert.equal(config.headers.get('access-control-allow-credentials'), null);
-  assert.deepEqual(await config.json(), { ...POLICY, attendeeReviewRequired: true, opensAt: new Date(POLICY.opensAt).toISOString(), closesAt: new Date(POLICY.closesAt).toISOString(),
+  assert.deepEqual(await config.json(), { ...POLICY, attendeeReviewRequired: true, publicRegistrationMode:'legacy', speakerApplicationsEnabled:true, opensAt: new Date(POLICY.opensAt).toISOString(), closesAt: new Date(POLICY.closesAt).toISOString(),
     admissions: { capacity: 3, staffReserve: 0, waitlistEnabled: false, confirmedCount: 0, attendeeConfirmedCount: 0, crewConfirmedCount: 0, waitlistCount: 0,
       pendingReviewCount: 0, rejectedCount: 0, remainingPublic: 3, remainingTotal: 3 } });
   const preflight = await f.first.handle(request('/api/admin/registration/token', { method: 'OPTIONS', origin: PUBLIC, headers: { 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' } }));

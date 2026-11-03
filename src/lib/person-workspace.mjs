@@ -1,6 +1,6 @@
 import { isContentVisible } from '../../shared/content-schema.mjs';
 import {canManageEventOperations} from '../../shared/staff-permissions.mjs';
-import { personWorkRecommendation } from '../../shared/organizer-progress.mjs';
+import { personWorkRecommendation, personAttendanceStage, validPersonAttendanceStage } from '../../shared/organizer-progress.mjs';
 const CONTACT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const REGISTRATION = /^[A-Za-z0-9_-]{43}$/u;
 const STATES = new Set(['available', 'unlinked', 'restricted', 'unavailable']);
@@ -104,6 +104,7 @@ export function personWorkspaceView(value, selection) {
       || !plain(value.availability) || !['contact', 'registration', 'admission', 'arrangements', 'invitations', 'confirmations', 'publicProfile'].every(key => STATES.has(value.availability[key]))
       || !plain(value.revisions) || !['contacts', 'content', 'invitations', 'registration', 'admission', 'confirmations'].every(key => value.revisions[key] === null || integer(value.revisions[key]))) return null;
     const { contact, registration, admission, arrangements, communications, publicProfile } = value;
+    if(Object.hasOwn(value,'attendance')&&!validPersonAttendanceStage(value.attendance))return null;
     if (value.availability.contact === 'available') {
       if (!plain(contact) || !CONTACT.test(contact.id ?? '') || !lines(contact.profile, ['name', 'displayName', 'organization', 'position', 'city', 'email', 'wechat', 'phone', 'contactConsent'])
         || !strings(contact.profile.categories) || !strings(contact.profile.interests)
@@ -154,11 +155,27 @@ export function personWorkspaceView(value, selection) {
     return { schemaVersion: 1, selected: { ...value.selected }, person: { ...value.person }, linkage: { ...value.linkage }, permissions: { ...value.permissions, volunteers: volunteering.permission },
       availability: { ...value.availability, volunteers: volunteering.state, organizations: organizations.state }, revisions: { ...value.revisions, volunteers: volunteering.revision },
       contact: contact ? { ...contact, sourceCategories: [...(contact.sourceCategories ?? contact.profile.categories)] } : null,
+      ...(Object.hasOwn(value,'attendance')?{attendance:{...value.attendance}}:{}),
       registration, admission, arrangements, communications: registration?.profileCorrection?.accessRevision > 0 ? { ...communications, confirmations: communications.confirmations.map(item=>({...item,currentRecipient:item.currentRecipient===true})), timeline:communications.timeline.map(item=>item.source==='confirmation'?{...item,currentRecipient:item.currentRecipient===true}:item) } : communications, publicProfile, organizations, volunteers: volunteering.value };
   } catch { return null; }
 }
 
 export const personAvailabilityText = state => ({ restricted: '此账号没有读取这部分资料的权限。', unavailable: '这部分已保存资料暂时无法核对，请稍后重新读取。', unlinked: '尚未关联这部分记录。' })[state] ?? '';
+
+/** Older projections have no proof of current manual delivery. Their fallback
+ * keeps actual replies and current recipient notices, never admission alone. */
+export function personAttendanceView(view){
+  if(validPersonAttendanceStage(view?.attendance))return{...view.attendance};
+  const current=(view?.communications?.confirmations??[]).filter(item=>view?.registration?.profileCorrection?.accessRevision>0?item.currentRecipient===true:item.currentRecipient!==false);
+  const historicalDeliveryUnknown=view?.communications?.unresolvedConfirmations===true||(view?.communications?.confirmations??[]).some(item=>['unknown','reserved'].includes(item.status));
+  const deliveryStatus=current.some(item=>['unknown','reserved'].includes(item.status))?'unknown'
+    :view?.availability?.confirmations==='restricted'?'restricted':view?.availability?.confirmations==='unavailable'?'unavailable'
+      :current.some(item=>item.status==='provider_accepted')?'provider_accepted':current[0]?.status??'not_sent';
+  return personAttendanceStage({responseStatus:view?.contact?.operations.responseStatus??null,admissionStatus:view?.admission?.status??null,
+    contactConsent:view?.contact?.profile.contactConsent??null,selfRegistered:view?.registration?.provenance.kind==='public',deliveryStatus,historicalDeliveryUnknown,
+    invitationStatus:view?.communications?.unresolvedInvitations?'unknown':'not_applicable',
+    sourceUnavailable:view?.linkage?.state==='unavailable'||['contact','registration','admission'].some(key=>view?.availability?.[key]==='unavailable')});
+}
 
 export function personWorkspaceActions(view, roles = []) {
   const actions = [];

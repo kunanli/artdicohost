@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { createInitialContent } from '../../src/config/content.mjs';
 import { toPublicContent } from '../../shared/content-schema.mjs';
 import { peopleRuntimeFixture } from '../helpers/people-runtime-fixture.mjs';
+import { PUBLIC_REGISTRATION_URL } from '../../src/config/event.mjs';
 
 const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
 const project = fileURLToPath(new URL('../../', import.meta.url));
@@ -36,9 +37,15 @@ async function fixture({ width, javaScriptEnabled = true, reducedMotion = 'no-pr
   if (longDescription) published.event.presentation.heroDescription = '合成介绍：与不同城市的游戏创作者交流经验，认识新的创作伙伴。'.repeat(5);
   const legacy = structuredClone(published); delete legacy.showcases;
   let legacyPending = legacyShowcases;
+  let externalNavigationAllowed = false, externalNavigations = 0;
   const context = await browser.newContext({ viewport: { width, height: 900 }, javaScriptEnabled, reducedMotion });
   await context.route('**/*', async route => {
     const req = route.request(), url = new URL(req.url());
+    if (url.href === PUBLIC_REGISTRATION_URL) {
+      assert.equal(externalNavigationAllowed, true, 'only an explicit test click may open external registration');
+      assert.equal(req.isNavigationRequest(), true); assert.equal(req.method(), 'GET'); externalNavigations++;
+      return route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Synthetic registration destination</title><p>Intercepted external registration; no live platform request.</p>' });
+    }
     assert.ok([SITE, API].includes(url.origin), 'all resources must be served from the intercepted fixture origins');
     requests.push({ path: url.pathname, method: req.method(), origin: url.origin });
     assert.ok(['GET', 'HEAD', 'OPTIONS'].includes(req.method()), 'homepage viewing must not submit applications or mail');
@@ -76,7 +83,8 @@ async function fixture({ width, javaScriptEnabled = true, reducedMotion = 'no-pr
     await page.waitForFunction(description => document.querySelector('[data-public-hero-description]')?.textContent === description, published.event.presentation.heroDescription);
     assert.equal(requests.filter(row => row.path === '/api/public/content').length, reads + 1, 'one bounded read recovers the valid long-description publication');
   }
-  return { context, page, runtime, requests, fontFailures, missingDecorations, legacyShowcases, longDescription, expectedHeroDescription: published.event.presentation.heroDescription };
+  return { context, page, runtime, requests, fontFailures, missingDecorations, legacyShowcases, longDescription, expectedHeroDescription: published.event.presentation.heroDescription,
+    allowExternalNavigation: () => { externalNavigationAllowed = true; }, externalNavigationCount: () => externalNavigations };
 }
 
 async function heroPoster(page,{failedFont=false}={}){
@@ -159,8 +167,30 @@ async function inspect(f, label) {
   assert.equal(backgrounds.html,'rgb(0, 0, 0)');
   assert.equal(backgrounds.root,backgrounds.active?'rgba(0, 0, 0, 0)':'rgb(0, 0, 0)','the root exposes the active atmosphere and remains black in static/reduced fallback');
   const primary = page.locator('#top [data-home-primary-apply]');
-  assert.equal(await primary.getAttribute('href'), '#registration');
-  assert.match(await primary.innerText(), label === 'no-javascript' ? /查看申请说明/u : /申请参加/u);
+  assert.equal(page.url(), SITE + '/', 'the event remains readable and never redirects the entire page');
+  assert.equal(await primary.getAttribute('href'), PUBLIC_REGISTRATION_URL);
+  assert.match(await primary.innerText(), /前往活动行报名/u);
+  assert.match(await page.locator('[data-general-registration-notice]').innerText(), /普通参会请前往活动行报名/u);
+  const generalRoutes = await page.locator('a[data-general-registration]').evaluateAll(nodes => nodes.map(node => ({ href: node.getAttribute('href'), target: node.getAttribute('target') })));
+  assert.equal(generalRoutes.length, 7, 'Hero, desktop/mobile navigation, footer, both service FAQs and the old registration section all retain explicit external registration links');
+  for (const link of generalRoutes) { assert.equal(link.href, PUBLIC_REGISTRATION_URL); assert.ok(link.target === null || link.target === '_self'); }
+  assert.equal(await page.locator('[data-recruit="speaker"]').getAttribute('href'), '#speaker-application');
+  assert.equal(await page.locator('[data-recruit="site"],[data-recruit="student"]').count(), 0, 'ordinary attendees never prefill the onsite speaker application');
+  assert.equal(await page.locator('#speaker-application').count(), 1);
+  for (const id of ['registration-status', 'site-role']) assert.match(await page.locator('#faq-' + id + ' .ah-faq-answer').textContent(), /活动行报名/u);
+  if (label !== 'no-javascript') {
+    const faq = page.locator('#faq-registration-status'), summary = faq.locator('summary');
+    await summary.focus();
+    await page.evaluate(() => {
+      document.dispatchEvent(new CustomEvent('artdico:registration-unavailable', { detail: { message: '合成讲者服务暂时不可用' } }));
+      document.dispatchEvent(new CustomEvent('artdico:registration-ready', { detail: { availability: { status: 'closed' } } }));
+    });
+    assert.equal(await summary.evaluate(node => document.activeElement === node), true, 'privacy and speaker availability refresh keep FAQ keyboard focus');
+    assert.match(await faq.locator('.ah-faq-answer').textContent(), /普通参会请前往活动行报名/u);
+    assert.equal(await faq.locator('a[data-general-registration]').getAttribute('href'), PUBLIC_REGISTRATION_URL);
+    assert.match(await primary.innerText(), /前往活动行报名/u, 'onsite proposal availability cannot rewrite the general attendance action');
+    assert.match(await page.locator('[data-general-registration-notice]').innerText(), /普通参会请前往活动行报名/u, 'proposal outages cannot mark external attendance unavailable');
+  }
   assert.equal(await page.locator('#top [data-home-agenda-primary]').getAttribute('href'), '#agenda');
   assert.equal(await page.locator('#top .ah-hero-actions .ah-primary[data-home-agenda-primary]').count(),1,'the reference primary action opens the timetable while the application remains explicit');
   assert.equal(await page.locator('#recruitment .ah-primary').count(), 0, 'recruitment links do not compete with the main application action');
@@ -183,7 +213,7 @@ async function inspect(f, label) {
     assert.ok(layout.descriptionBottom <= layout.factsTop, 'published introductory copy cannot overlap event facts');
   }
   return { label, width: page.viewportSize().width, shareSha256: digest(bytes), readOnlyRequests: f.requests.length, noOverflow: true, noClippedHeadline: true,
-    emptyWorksSectionHidden:true,legacyMissingFieldKeepsInitialSectionHidden:f.legacyShowcases,validLongDescriptionRecovered:f.longDescription,posterTypography:titleTypography,failedFontPaths:[...f.fontFailures],backgrounds,applicationActionInHero: true, applicationKeyboardReachable: true, actionPositions:{applicationTop:primaryBox.top,agendaTop:actionLayout.agenda.top,scope:'The single-title Hero follows both complete brand lines and facts; the original PNG y=1306 CTA proportion is superseded only here.'},eventFactFontPixels: { venue: venueSize, date: dateSize } };
+    emptyWorksSectionHidden:true,legacyMissingFieldKeepsInitialSectionHidden:f.legacyShowcases,validLongDescriptionRecovered:f.longDescription,posterTypography:titleTypography,failedFontPaths:[...f.fontFailures],backgrounds,applicationActionInHero: true, applicationKeyboardReachable: true, externalRegistrationLinks: generalRoutes.length, generalAttendanceIndependentOfProposalService:true, actionPositions:{applicationTop:primaryBox.top,agendaTop:actionLayout.agenda.top,scope:'The single-title Hero follows both complete brand lines and facts; the original PNG y=1306 CTA proportion is superseded only here.'},eventFactFontPixels: { venue: venueSize, date: dateSize } };
 }
 
 try {
@@ -209,11 +239,21 @@ try {
     if (options.javaScriptEnabled === false) {
       assert.equal(f.requests.filter(row => row.origin === API).length, 0);
       assert.equal(await f.page.locator('[data-registration-form] [data-submit]').isDisabled(), true);
-      assert.doesNotMatch(await f.page.locator('[data-registration-availability]').textContent(), /报名已开放/u);
+      assert.match(await f.page.locator('[data-general-registration-notice]').textContent(), /普通参会请前往活动行报名/u);
     }
     if (options.reducedMotion === 'reduce') assert.equal(await f.page.evaluate(() => document.getAnimations().some(animation =>
       animation.playState === 'running' && animation.effect.getComputedTiming().iterations === Infinity)), false);
-    await f.page.screenshot({ path: resolve(evidence, label + '.png'), fullPage: false }); await f.context.close();
+    await f.page.screenshot({ path: resolve(evidence, label + '.png'), fullPage: false });
+    if (options.javaScriptEnabled === false) {
+      f.allowExternalNavigation();
+      await f.page.locator('[data-site-menu] summary').click();
+      await f.page.locator('[data-site-menu] a[data-general-registration]').click();
+      await f.page.waitForURL(PUBLIC_REGISTRATION_URL);
+      assert.equal(await f.page.title(), 'Synthetic registration destination');
+      assert.equal(f.externalNavigationCount(), 1, 'the no-JS native menu link reaches only the intercepted external destination');
+      reports.at(-1).nativeNoScriptExternalNavigation = true;
+    }
+    await f.context.close();
   }
   assert.deepEqual(errors, []);
 } finally { await browser.close(); }

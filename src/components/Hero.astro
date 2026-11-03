@@ -1,5 +1,5 @@
 ---
-import { eventConfig } from '../config/event.mjs';
+import { eventConfig, PUBLIC_REGISTRATION_URL } from '../config/event.mjs';
 import { Image } from 'astro:assets';
 import planet from '../assets/home/planet-purple.webp';
 import ggjTitle from '../assets/home/brand-ggj.png';
@@ -30,9 +30,9 @@ const endsAt = `${eventConfig.date.value}T${eventConfig.time.end}:00+08:00`;
   </div>
   <div class="ah-hero-actions">
     <a class="ah-primary" href="#agenda" data-home-agenda-primary>查看活动日程</a>
-    <a class="ah-text-action" href="#registration" data-home-primary-apply><span data-home-primary-apply-label>查看申请说明</span><span aria-hidden="true">↗</span></a>
+    <a class="ah-text-action" href={PUBLIC_REGISTRATION_URL} data-home-primary-apply data-general-registration><span data-home-primary-apply-label>前往活动行报名</span><span aria-hidden="true">↗</span></a>
   </div>
-  <p class="ah-fine"><span data-public-static-checkin>09:30 开始签到 · </span><span data-registration-availability>申请开放情况请查看下方说明</span></p>
+  <p class="ah-fine"><span data-public-static-checkin>09:30 开始签到 · </span><span data-general-registration-notice>普通参会请前往活动行报名</span></p>
   <div class="ah-event-countdown" data-event-countdown data-countdown-source-date={eventConfig.date.value} data-countdown-source-timezone={eventConfig.time.timezone} data-starts-at={startsAt} data-ends-at={endsAt} data-public-static-hours>
     <p class="ah-countdown-label" data-countdown-label hidden>距离活动开场</p>
     <div class="ah-countdown-timer" data-countdown-timer role="timer" aria-live="off" aria-label="距离活动开场" hidden>

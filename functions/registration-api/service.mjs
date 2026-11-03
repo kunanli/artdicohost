@@ -1,3 +1,4 @@
+import { isSpeakerApplicationFields } from '../../shared/general-application.mjs';
 import { createHash } from 'node:crypto';
 import { clockTime, own, plainObject, validateRegistrationPolicy } from './policy.mjs';
 import { validateRegistrationSubmission, validateStaffRegistrationFields } from './validation.mjs';
@@ -30,7 +31,8 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
   if (Object.hasOwn(configured, 'capacity') && configured.capacity !== capacity) throw new TypeError('Registration capacity configuration does not match.');
   const eventId = own(configured, 'eventId'), origins = new Set(allowedOrigins);
   const attendeeReviewRequired = own(configured, 'attendeeReviewRequired') !== false;
-  const repository = createRegistrationRepository({ objects, journalFor, eventId, capacity, waitlistEnabled, staffReserve, attendeeReviewRequired });
+  const publicRegistrationMode = own(configured, 'publicRegistrationMode') ?? 'legacy';
+  const repository = createRegistrationRepository({ objects, journalFor, eventId, capacity, waitlistEnabled, staffReserve, attendeeReviewRequired, publicRegistrationMode });
   const tokens = createRegistrationTokens({ secret: tokenSecret, eventId });
   const budgets = createRegistrationRateLimit({ journalFor, eventId, tokenLimit, submissionLimit });
   const current = () => { const value = clockTime(clock()); if (value === null || value < 0) throw new Error(); return value; };
@@ -38,7 +40,7 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
   const admissions = createAdmissionOperations({ repository, eventId, current, policyAt, isWithdrawn, getWithdrawnIds });
   // Validate public notice facts independently of the current intake window, without opening writes.
   const noticeCheck = validateRegistrationPolicy({ ...configured, enabled: true }, { now: configured.opensAt });
-  const publicNotice = noticeCheck.valid ? { ...noticeCheck.value, capacity, attendeeReviewRequired } : null;
+  const publicNotice = noticeCheck.valid ? { ...noticeCheck.value, capacity, attendeeReviewRequired, publicRegistrationMode } : null;
   async function decorate(saved, origin, includeInvite = true) {
     if (!['created', 'replayed'].includes(saved.outcome)) return saved;
     const admission = await admissions.getAdmissionStatus(saved.receipt.registrationId);
@@ -70,22 +72,22 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
       try {
         const checked = policyAt(current());
         const snapshot = await repository.getAdmissions(), summary = snapshot.summary;
-        if (!checked.valid) return { ...publicNotice, admissions: summary, enabled: false, reason: Object.keys(checked.errors).some(key => !['enabled', 'window'].includes(key)) ? 'unavailable' : 'closed' };
-        if (summary.totalRegistered >= MAX_REGISTRATIONS) return { ...publicNotice, admissions: summary, enabled: false, reason: 'closed' };
-        if (!attendeeReviewRequired && !summary.waitlistEnabled && summary.remainingPublic === 0) return { ...publicNotice, admissions: summary, enabled: false, reason: 'closed' };
-        return { ...checked.value, capacity, attendeeReviewRequired, admissions: summary };
+        if (!checked.valid) return { ...publicNotice, admissions: summary, speakerApplicationsEnabled: false, enabled: false, reason: Object.keys(checked.errors).some(key => !['enabled', 'window'].includes(key)) ? 'unavailable' : 'closed' };
+        if (summary.totalRegistered >= MAX_REGISTRATIONS) return { ...publicNotice, admissions: summary, speakerApplicationsEnabled: false, enabled: false, reason: 'closed' };
+        if (publicRegistrationMode !== 'speaker_only' && !attendeeReviewRequired && !summary.waitlistEnabled && summary.remainingPublic === 0) return { ...publicNotice, admissions: summary, speakerApplicationsEnabled: true, enabled: false, reason: 'closed' };
+        return { ...checked.value, capacity, attendeeReviewRequired, publicRegistrationMode, speakerApplicationsEnabled: true, admissions: summary };
       } catch { return { ...publicNotice, enabled: false, reason: 'unavailable' }; }
     },
     async issueToken(input) {
       try {
-        const origin = own(input, 'origin'), idempotencyKey = own(input, 'idempotencyKey');
+        const origin = own(input, 'origin'), idempotencyKey = own(input, 'idempotencyKey'), speakerApplication = own(input, 'speakerApplication') === true;
         if (!origins.has(origin) || own(input, 'eventId') !== eventId || !KEY.test(idempotencyKey ?? '')) return result('forbidden');
         const now = current(), checked = policyAt(now);
         const state = await repository.readIndex();
         const previous = state.value.entries.some(entry => entry.keyHash === digest('public\0' + eventId + '\0' + idempotencyKey));
         const summary = (await repository.getAdmissions()).summary;
         if (!previous && (!checked.valid || summary.totalRegistered >= MAX_REGISTRATIONS
-          || !attendeeReviewRequired && !summary.waitlistEnabled && summary.remainingPublic === 0)) return result('closed');
+          || !speakerApplication && (publicRegistrationMode === 'speaker_only' || !attendeeReviewRequired && !summary.waitlistEnabled && summary.remainingPublic === 0))) return result('closed');
         const budget = await budgets.consume('tokens', now);
         if (!budget.allowed) return { outcome: 'rate_limited', retryAfter: budget.retryAfter };
         return { outcome: 'issued', ...tokens.issue({ origin, idempotencyKey, now }) };
@@ -110,6 +112,7 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         if (!budget.allowed) return { outcome: 'rate_limited', retryAfter: budget.retryAfter };
         const validation = validateRegistrationSubmission(payload, { policy: configured, now });
         if (!validation.valid) return result('invalid');
+        if (publicRegistrationMode === 'speaker_only' && !isSpeakerApplicationFields(validation.value.fields)) return result('closed');
         return await decorate(await repository.accept({ value: { ...validation.value, provenance: { kind: 'public' } }, keyHash, payloadHash, capacity, getExcluded: admissions.getExcluded(),
           beforeCommit: () => { const at = current(); return policyAt(at).valid && tokens.verify({ token: submissionToken, origin, idempotencyKey, now: at }); } }), origin);
       } catch { return result('unavailable'); }

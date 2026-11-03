@@ -114,7 +114,7 @@ test('formal preview and delivery conservatively expose another operator unfinis
   const history = await f.service.staffHistory({ actor, registrationId: f.ids[1], relatedRegistrationIds: f.ids.slice(0, 2) });
   assert.equal(history.notices.length, 0, 'no invented notice or original operation'); assert.equal(history.unresolvedConfirmations, true);
   const directory = await f.service.staffDirectory({ actor });
-  assert.deepEqual(directory.notices, [{ registrationId: f.ids[1], status: 'unknown' }]);
+  assert.deepEqual(directory.notices, [{ registrationId: f.ids[1], status: 'unknown',historicalUnknown:true }]);
   await assert.rejects(f.service.confirmationOperation({ actor, operationId: op }), error => error.code === 'CONFIRMATION_NOT_FOUND');
   assert.ok(f.objects.calls.slice(before).every(call => call.operation === 'get')); assert.equal(f.state.messages.length, 0);
   await f.append('dispatch_completed', { operationId: op, results: [{ registrationId: f.ids[0], status: 'not_attempted' }] }, other);
@@ -136,8 +136,9 @@ test('directory resolves started aliases with accepted confirmed proof, retains 
   const f = fixture(3); f.state.group = { registrationIds: f.ids.slice(0, 2), primaryRegistrationId: f.ids[1] };
   await f.notice(f.ids[1], 'registration', 'provider_accepted'); await f.start([f.ids[0]], other);
   const accepted = await f.service.staffDirectory({ actor });
-  assert.deepEqual(accepted.notices, [{ registrationId: f.ids[1], status: 'provider_accepted' }]);
-  assert.notEqual((await f.service.staffHistory({ actor, registrationId: f.ids[1], relatedRegistrationIds: f.ids.slice(0, 2) })).unresolvedConfirmations, true);
+  assert.deepEqual(accepted.notices, [{ registrationId: f.ids[1], status: 'provider_accepted',historicalUnknown:true }]);
+  assert.equal((await f.service.staffHistory({ actor, registrationId: f.ids[1], relatedRegistrationIds: f.ids.slice(0, 2) })).unresolvedConfirmations, true,'current accepted evidence never hides an unfinished canonical dispatch');
+  const delivery=await f.service.staffDeliveryState({actor,registrationId:f.ids[1]});assert.equal(delivery.status,'provider_accepted');assert.equal(delivery.ready,false,'an accepted current recipient cannot be sent again while the original batch is checked');
   await f.notice(f.ids[0], 'registration', 'unknown');
   assert.ok((await f.service.staffDirectory({ actor })).notices.some(item => item.registrationId === f.ids[1] && item.status === 'unknown'));
   f.state.indexUnavailable = true;

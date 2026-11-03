@@ -145,6 +145,10 @@ test('old-recipient unknown delivery remains historical and blocks new sends wit
  await f.approvePublic(id,{headers});assert.equal(f.messages.length,2);
  await correctRegistration(f,id,{email:'unknown.corrected@example.invalid'},headers);
  const state=await delivery(f,id,headers);assert.equal(state.status,'not_sent');assert.equal(state.reason,'HISTORICAL_DELIVERY_UNKNOWN');assert.equal(state.ready,false);
+ const beforeReads=f.messages.length,person=await response(await f.app.handle(f.request('/api/admin/people/registrations/'+id,{headers})));
+ assert.equal(person.attendance.key,'confirmed');assert.equal(person.attendance.invitationLabel,'');assert.match(person.attendance.warning,/待核对.*勿重寄/u);assert.equal(personNextAction(person,f.users[0].roles).key,'check');
+ const directory=await response(await f.app.handle(f.request('/api/admin/people/directory',{headers}))),row=directory.rows.find(item=>item.registrationId===id);
+ assert.equal(row.deliveryStatus,'not_sent');assert.equal(row.deliveryHistoryUnknown,true);assert.equal(row.attendance.key,'confirmed');assert.equal(row.attendance.invitationLabel,'');assert.match(row.attendance.warning,/待核对.*勿重寄/u);assert.equal(row.nextAction.key,'check');assert.equal(f.messages.length,beforeReads,'reading historical uncertainty never retries the original mail');
  await send(f,id,headers,state);assert.equal(f.messages.length,2);assert.equal((await delivery(f,id,headers)).status,'not_sent');
 });
 

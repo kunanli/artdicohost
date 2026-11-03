@@ -14,7 +14,7 @@ const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAFElEQVR4nGN0KFjAwMD
 const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless: true,
   args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 const operationId = () => randomBytes(32).toString('base64url');
-const pendingFields = (name = '合成学生申请人') => ({ intake: 'general-v2', name, email: 'synthetic.application@example.invalid', categories: ['student'], participationInterests: ['attend'] });
+const pendingFields = (name = '合成学生申请人') => ({ intake: 'general-v2', locale:'zh-CN', name, email: 'synthetic.application@example.invalid', categories: ['student'], participationInterests: ['talk'], speaker: {topic:'合成分享主题',summary:'合成主题简介，只用于隔离浏览器验收。'} });
 const json = (value, status = 200, headers = {}) => ({ status, contentType: 'application/json', body: JSON.stringify(value), headers });
 
 async function fixture({ width = 390, capacity = 3, mail = true, username = 'owner', submitAckLost = false, approvalAckLost = false } = {}) {
@@ -88,16 +88,17 @@ async function fillApplication(form, fields = {}) {
   await form.locator('[name=name]').fill(fields.name || '合成学生申请人');
   await form.locator('[name=email]').fill(fields.email || 'synthetic.application@example.invalid');
   await form.locator('[name=categories]').selectOption(fields.category || 'student');
+  if(!fields.emptyTopic){await form.locator('[name="speaker.topic"]').fill('合成分享主题');await form.locator('[name="speaker.summary"]').fill('合成主题简介，只用于隔离浏览器验收。');}
   await form.locator('[name=consentAccepted]').check();
 }
 async function compactReceipt(f,previousURL,admission='pending_review') {
   const labels={confirmed:'报名成功',pending_review:'申请已收到，待审核',waitlisted:'候补登记已保存，尚未确认名额',rejected:'本次申请未通过审核'};
-  const success=f.page.locator('[data-registration-success][data-registration-success-compact]');await success.waitFor({state:'visible'});
-  await f.page.waitForFunction(()=>document.activeElement===document.querySelector('[data-registration-success][data-registration-success-compact]'));
+  const success=f.page.locator('[data-speaker-application-received]');await success.waitFor({state:'visible'});
+  await f.page.waitForFunction(()=>document.activeElement===document.querySelector('[data-speaker-application-received]'));
   assert.equal(f.page.url(),previousURL,'a committed application keeps the original form URL and hash');assert.equal(await success.getAttribute('role'),'status');assert.equal(await success.getAttribute('tabindex'),'-1');
-  assert.equal((await success.innerText()).trim(),labels[admission],'only the accurate compact result is presented');
+  assert.equal((await success.innerText()).trim(),'讲者申请已收到。筹备团队将另行联系；讲者安排与入场资格尚未确认。','only the accurate speaker receipt is presented');assert.equal(admission,'pending_review');
   const form=f.page.locator('[data-registration-form]');assert.equal(await form.isVisible(),false);assert.equal(await form.locator('[data-submit]').isDisabled(),true);assert.equal(await f.page.locator('[data-registration-preview]').isVisible(),false);
-  assert.equal(await success.locator('[data-registration-success-details]').isVisible(),false);assert.equal(await success.locator('[data-registration-reference]').textContent(),'');assert.equal(await success.locator('[data-registration-group-status]').textContent(),'');assert.equal(await success.locator('[data-registration-group-image] img').count(),0);
+  assert.equal(await f.page.locator('[data-registration-success-details]').isVisible(),false);assert.equal(await f.page.locator('[data-registration-reference]').textContent(),'');assert.equal(await f.page.locator('[data-registration-group-status]').textContent(),'');assert.equal(await f.page.locator('[data-registration-group-image] img').count(),0);
   assert.equal(f.navigations.some(item=>item.path==='/registration/confirmation/'),false,'submission never navigates to a private confirmation document');assert.equal(f.calls.some(item=>/\/registration\/confirmation(?:\/|$)/u.test(item.path)),false,'submission never starts a private confirmation API read');
   const receipt=f.writes.filter(item=>item.path.endsWith('/registration/submit')).at(-1);assert.ok(receipt&&[200,201].includes(receipt.status));assert.equal(receipt.receipt.admissionStatus,admission,'the status is backed by the actual isolated runtime receipt');
   const posts=f.writes.filter(item=>item.method==='POST').length,mail=f.runtime.messages.length;f.proveReceipt();
@@ -137,7 +138,7 @@ try {
     for (const key of ['city', 'organization', 'wechat']) assert.equal(await form.locator('[name=' + key + ']').getAttribute('required'), null);
     for (const key of ['attendance', 'accommodationChoice', 'cooperationInterest', 'background', 'position', 'speaker.language']) assert.equal(await form.locator('[name="' + key + '"]').count(), 0);
     assert.equal(await form.locator('[data-form-step],[data-next-step]').count(), 0);
-    assert.equal(await form.locator('[data-speaker-proposal]').isVisible(), false);
+    assert.equal(await form.locator('[data-speaker-proposal]').isVisible(), true);assert.equal(await form.locator('[data-proposal-toggle]').count(),0);
     assert.equal(f.calls.filter(item => item.method === 'POST').length, 0);
     await noOverflow(f.page); await f.context.close();
     reports.push({ width, singleShortApplication: true, studentIdentity: true, noUnaskedControlsOrWrites: true });
@@ -174,17 +175,17 @@ try {
     await f.context.close(); reports.push({ sparseStudentSaved: true, doubleClickOneApplication: true, independentApplicationReceipt: true, sameURLFocusedCompactResult:true, noAutomaticPrivateConfirmationRequest:true, explicitLegacyPrivateRouteNavigation:true, pendingNoSeatFormalMailGroupOrWallet: true, privatePrint: true, explicitApprovalOneMailAndGroup: true });
   }
   {
-    const f = await fixture(), form = await openPublic(f); await fillApplication(form, { category: 'so', name: '合成组织者主题申请' });
-    await form.locator('[data-proposal-toggle]').check(); await form.locator('[data-submit]').click();
+    const f = await fixture(), form = await openPublic(f); await fillApplication(form, { category: 'so', name: '合成组织者主题申请', emptyTopic:true });
+    await form.locator('[data-submit]').click();
     await form.locator('[data-error-for="speaker.topic"]:visible').waitFor();
     assert.equal(f.writes.filter(item => item.path.endsWith('/registration/submit')).length, 0);
     await form.locator('[name="speaker.topic"]').fill('合成分享主题'); await form.locator('[name="speaker.summary"]').fill('合成主题简介，只用于隔离浏览器验收。');
     const record = await submitApplication(f, form); await assertPending(f, record.id);
-    assert.deepEqual(record.fields.categories, ['so']); assert.deepEqual(record.fields.participationInterests, ['attend', 'talk']);
+    assert.deepEqual(record.fields.categories, ['so']); assert.deepEqual(record.fields.participationInterests, ['talk']);
     assert.deepEqual(record.fields.speaker, { topic: '合成分享主题', summary: '合成主题简介，只用于隔离浏览器验收。' });
     assert.equal(Object.hasOwn(record.fields, 'organization'), false); assert.equal(Object.hasOwn(record.fields, 'soRo'), false);
     assert.equal((await f.runtime.app.registrationService.repository.list()).registrations.length, 1);
-    await f.context.close(); reports.push({ optionalTopicSharesApplication: true, proposalValidated: true, ordinaryOrganizerNoLegacyBranch: true });
+    await f.context.close(); reports.push({ standaloneSpeakerApplication: true, proposalValidated: true, ordinaryOrganizerNoLegacyBranch: true });
   }
   {
     const f = await fixture({ submitAckLost: true }), form = await openPublic(f); await fillApplication(form);

@@ -224,3 +224,10 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 `p2-directory-smoke.mjs`保留原4案，增加320／390／1440三段出席及歷史未知寄送，共7案，CI新增必要gate。成功prefix為`People attendance directory browser verified:`，必須7案、0頁面錯誤、sourceCommit／公開與contacts／person HTML SHA及script SHA齊全。狀態篩選由後端先於分頁執行；同次已寄但未回覆、舊收件人unknown、當前accepted但歷史unknown、核對不重寄、返回同人焦點及手機無溢出都保留。
 
 `p5-homepage-smoke.mjs`7案另外驗7個一般外連、講者錨點、無JS手機點擊及FAQ鍵盤焦點；`p5-faq-application-smoke.mjs`12案、`application-review-smoke.mjs`15案按新表單更新，保留原正文／key／審核／授權／未知結果守門。所有瀏覽器仍以本地產物與隔離服務全攔截，不讀正式名單或實寄。正式來源資格由最終CI產物另驗。
+
+
+## 中英文介面
+
+`ARTDICO_CHROMIUM_BINARY=/usr/bin/chromium node tests/browser/language-smoke.mjs`：10 案包含四寬度、瀏覽器語言、自訂偏好、重載、儲存封鎖、無 JS、切換保留表單值、動態狀態與本地錯誤翻譯。全部請求攔截，僅合成資料與 GET，不向正式平台提交。報告及截圖在 `.local-data/browser-evidence/language/`。
+
+既有中文畫面斷言的 CI runner 明確設 `locale: 'zh-CN'`；新語言測試獨立使用 en-US／zh-TW／其他語言，不靠 Playwright 預設值。

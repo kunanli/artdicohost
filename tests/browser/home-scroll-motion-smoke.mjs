@@ -53,7 +53,7 @@ async function main() {
   browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 
   async function fixture({ viewportWidth, javaScriptEnabled = true, withoutObserver = false }) {
-    const context = await browser.newContext({ viewport: { width: viewportWidth, height: 900 }, isMobile: viewportWidth < 600, hasTouch: viewportWidth < 600, reducedMotion: withoutObserver ? 'no-preference' : 'reduce', javaScriptEnabled });
+    const context = await browser.newContext({locale:'zh-CN', viewport: { width: viewportWidth, height: 900 }, isMobile: viewportWidth < 600, hasTouch: viewportWidth < 600, reducedMotion: withoutObserver ? 'no-preference' : 'reduce', javaScriptEnabled });
     let revision = 1, publicReads = 0, displayFontPath = null; const displayFontReads = [];
     if (javaScriptEnabled) await context.addInitScript(() => {
       // Instrument the real browser callbacks, without replacing animation time

@@ -17,6 +17,10 @@ const links = [
     {links.map(link => <a href={link.href}>{link.label}</a>)}
     <a href={PUBLIC_REGISTRATION_URL} class="ah-home-nav-apply" data-general-registration>活动行报名</a>
   </nav>
+  <div class="ah-language-switch" data-language-switch role="group" aria-label="Language / 语言" hidden>
+    <button type="button" data-language="zh-CN" lang="zh-CN" aria-pressed="true">中文</button>
+    <button type="button" data-language="en" lang="en" aria-pressed="false">EN</button>
+  </div>
   <details class="ah-site-menu" data-site-menu data-mobile-nav>
     <summary aria-controls="site-navigation">菜单 <span class="ah-menu-icon" aria-hidden="true"><span></span><span></span></span></summary>
     <nav id="site-navigation" aria-label="页面导航">

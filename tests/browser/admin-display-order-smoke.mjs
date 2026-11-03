@@ -51,7 +51,7 @@ async function seed(runtime){
 async function fixture(browser,errors,{width=1440,username='owner',fault='normal'}={}){
   const runtime=await peopleRuntimeFixture({capacity:300,mail:false}),initial=await seed(runtime);
   if(username==='synthetic-order-publisher'){await runtime.app.userStore.save({expectedRevision:0,username,label:'合成仅发布同事',roles:['publisher'],active:true,password:PEOPLE_FIXTURE_PASSWORD},runtime.users[0].id);syntheticWrites.accountSaves++;}
-  const auth=await runtime.login(username),context=await browser.newContext({viewport:{width,height:940}});
+  const auth=await runtime.login(username),context=await browser.newContext({locale:'zh-CN',viewport:{width,height:940}});
   const [cookieName,...cookieValue]=auth.Cookie.split('=');
   await context.addCookies([{domain:new URL(API).hostname,path:'/api/admin',name:cookieName,value:cookieValue.join('='),httpOnly:true,secure:true,sameSite:'Strict'}]);
   const page=await context.newPage();page.setDefaultTimeout(12000);await page.clock.setFixedTime(new Date(AT));

@@ -161,7 +161,7 @@ async function main() {
     for (const width of [320, 390, 1440, 1920]) {
       currentWidth = width; stage = 'isolated-runtime';
       const runtime = await peopleRuntimeFixture({ capacity: 300, mail: false });
-      const context = await browser.newContext({ viewport: { width, height: 1000 }, isMobile: width < 600, hasTouch: width < 600, reducedMotion: 'reduce' });
+      const context = await browser.newContext({locale:'zh-CN', viewport: { width, height: 1000 }, isMobile: width < 600, hasTouch: width < 600, reducedMotion: 'reduce' });
       let config;
       try {
         await context.route('**/*', async route => {

@@ -56,7 +56,7 @@ async function stageSeed(){
   return{runtime,manualSent,pendingSent,confirmed,accepted,unknown};
 }
 async function fixture(browser,width,username='owner',{stages=false}={}){
-  const seeded=await(stages?stageSeed():seed()),{runtime}=seeded,context=await browser.newContext({viewport:{width,height:960}}),calls=[];
+  const seeded=await(stages?stageSeed():seed()),{runtime}=seeded,context=await browser.newContext({locale:'zh-CN',viewport:{width,height:960}}),calls=[];
   const auth=await runtime.login(username),[name,...value]=auth.Cookie.split('=');
   await context.addCookies([{domain:new URL(API).hostname,path:'/api/admin',name,value:value.join('='),httpOnly:true,secure:true,sameSite:'Strict'}]);
   const controls={directoryFailure:false,contactsFailure:false,holdHealth:false,releaseHealth:null};

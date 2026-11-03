@@ -38,7 +38,7 @@ async function fixture({ width = 390, flag = false, omitFlag = false, omitSpeake
   const runtime = await peopleRuntimeFixture({ capacity, mail, attendeeReviewRequired: initialReview });
   const initialMetadata = await runtime.app.registrationService.metadata();
   if (fillCapacity) await runtime.seedPublic({ intake: 'general-v2', name: '合成既有参与者', email: 'synthetic.first@example.invalid' });
-  const context = await browser.newContext({ viewport: { width, height: 940 } }), calls = [], navigations = [];
+  const context = await browser.newContext({locale:'zh-CN', viewport: { width, height: 940 } }), calls = [], navigations = [];
   let reviewFlag = initialReview, registrationMode = mode, privacyVersion = initialMetadata.privacy.version, lose = loseFirstAck, app, receiptProven = false;
   const reconfigure = () => { app = runtime.make({ policyOverride: { attendeeReviewRequired: reviewFlag,
     publicRegistrationMode: registrationMode, privacy: { ...initialMetadata.privacy, version: privacyVersion } } }); };

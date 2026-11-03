@@ -1,9 +1,21 @@
 # 开发接续：先读本页
 
-2026-11-03最新發布為[PR78活動行名單接Wallet](redesign/huodongxing-wallet-health.md)，main `3c13de91b8da04a2232b4ad6916cd1cfdffacbd5`。1941項／81案、137檔／42資產、私有OSS、14後台、68公開HTTPS及入場3項均通過；官網一般報名仍活動行，後台已可預覽XLSX→明確匯入→另預覽寄信。沒有真人匯入或寄信，舊403實際寄達未驗。本回執在獨立docs提交，不以較舊main README的PR77標示推定轉接器尚未完成。
+## 2026-11-03 接續：PR79已正式發布
+
+[PR79場次發布入口與前台日程排序](redesign/session-publication-order-release.md)已合併main `82daf5a8316e37ae9647ca8d7c84ec5020de35d8`。場次頁補就近發布、逐場公開進度及同區／同半天上移下移；保存只改草稿，發布仍需核對全部已保存差異並明確確認。既有未知保存先核對原結果，舊無排序模式快照維持時間排序，部署不代發正式草稿。
+
+[PR流程41624929578](https://github.com/kunanli/artdicohost/actions/runs/41624929578)／[check125879770293](https://github.com/kunanli/artdicohost/actions/runs/41624929578/job/125879770293)已通過1961項Node、13組89案瀏覽器及137檔候選離線啟動。PR回執來源是合成提交 `6845dbf78ee4cd041d7c1eda418e1f9b163bfa51`，PR head為 `85546f2acef828071098cdf1163660ffd2932450`；不可當作main部署回執。詳細HTML與腳本綁定見本輪紀錄。
+
+[main流程41626550368](https://github.com/kunanli/artdicohost/actions/runs/41626550368)五工作全部成功，11:36:07 UTC完成。準確main `82daf5a8316e37ae9647ca8d7c84ec5020de35d8`的1961項Node、13組89案瀏覽器及137檔／42資產候選離線均獨立核對；公開HTML、後台HTML及新8案腳本SHA與本輪紀錄一致。11:34:02 UTC私有OSS兩獨立客戶端／一FC、11:34:09 UTC 14後台、11:36:01 UTC 68公開HTTPS及11:36:03 UTC入場三項驗證成功。一般報名仍活動行，本站只收講者提案；郵件／Wallet配置就緒，但沒有真實寄信或正式草稿發布。公開仍R44舊講座，主辦方須在新入口核對全部變更後明確發布。
+
+本輪證據於獨立`docs/session-publication-order-release-proof`提交，只補文件，不新建PR或重複部署。主工作樹main保持乾淨；實際收件、入群、iPhone加入及業務資料操作仍獨立核對。
+
+## 前次已驗證發布：PR78
+
+2026-11-03前次已驗證發布為[PR78活動行名單接Wallet](redesign/huodongxing-wallet-health.md)，main `3c13de91b8da04a2232b4ad6916cd1cfdffacbd5`。1941項／81案、137檔／42資產、私有OSS、14後台、68公開HTTPS及入場3項均通過；官網一般報名仍活動行，後台已可預覽XLSX→明確匯入→另預覽寄信。沒有真人匯入或寄信，舊403實際寄達未驗。本回執在獨立docs提交，不以較舊main README的PR77標示推定轉接器尚未完成。
 
 
-## 2026-11-02 最新接續：PR68已正式發布，9位公開嘉賓與舊審閱精簡交付完成
+## 歷史：2026-11-02，PR68已正式發布，9位公開嘉賓與舊審閱精簡交付完成
 
 [PR #68](https://github.com/kunanli/artdicohost/pull/68) 已合併至 main `3bf1b6956ebbe1f14af0ac50b5b6883f569de15a`，範圍與交付入口見[嘉賓公開展示與舊審閱精簡](redesign/admin-data-cleanup-audit.md)。嘉賓依公開開關全部展示，真實出席獨立；舊人工審閱移出日常表單、歷史唯讀。沒有資料遷移或永久刪除，展位、住宿跟進、志工排班維持原功能。
 

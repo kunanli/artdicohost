@@ -5,7 +5,7 @@ import { resolvePublicContentSource } from '../../shared/public-content-source.m
 import { publicOrganizationCards, orderOrganizationCards, organizationReferenceKey, organizationLogoVariant } from '../../shared/organization-display.mjs';
 import { PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
 import { organizationArtwork } from '../config/organization-artwork.mjs';
-import { createDefaultOrganizations } from '../config/exhibiting-partners.mjs';
+import { createDefaultOrganizations, organizationLayout, ORGANIZATIONS_PER_PAGE } from '../config/exhibiting-partners.mjs';
 import { eventTimeInstant } from '../lib/event-presentation.mjs';
 import { createPublicContentRefresh } from '../lib/public-content-refresh.mjs';
 import { createHomeCollections } from '../lib/home-collections.mjs';
@@ -15,30 +15,21 @@ let displayedContent=null,workCards=[];
 const collections=createHomeCollections();
 const organizationMobile=typeof matchMedia==='function'?matchMedia('(max-width: 820px)'):null;
 let organizationPage=0,organizationPageAnchor=null,organizationMobileApplied=null;
-const organizationPatterns={
-  1:[[50,50,40]],2:[[30,50,36],[70,50,36]],
-  3:[[50,24,40],[30,60,36],[70,60,36]],
-  4:[[30,34,36],[70,34,36],[30,66,36],[70,66,36]],
-  5:[[50,20,40],[30,44,36],[70,44,36],[30,68,36],[70,68,36]],
-  6:[[30,28,36],[70,28,36],[30,50,36],[70,50,36],[30,72,36],[70,72,36]],
-  7:[[50,14,40],[30,34,36],[70,34,36],[30,53,36],[70,53,36],[30,72,36],[70,72,36]],
-  8:[[50,14,40],[30,32,36],[70,32,36],[30,50,36],[70,50,36],[30,68,36],[70,68,36],[50,86,40]],
-};
 function updateOrganizationLayout({id=null,page=null}={}){
   const list=document.querySelector('[data-public-organizations]');if(!list)return;
   const rows=[...list.querySelectorAll('[data-organization-id]')],mobile=Boolean(organizationMobile?.matches);organizationMobileApplied=mobile;
   const requested=id?rows.findIndex(row=>row.id===id||row.dataset.organizationId===id):-1;
-  if(requested>=0)organizationPage=Math.floor(requested/8);
+  if(requested>=0)organizationPage=Math.floor(requested/ORGANIZATIONS_PER_PAGE);
   else if(page!==null)organizationPage=page;
-  else if(organizationPageAnchor){const index=rows.findIndex(row=>row.dataset.organizationId===organizationPageAnchor);if(index>=0)organizationPage=Math.floor(index/8);}
-  const pages=Math.max(1,Math.ceil(rows.length/8));organizationPage=Math.max(0,Math.min(pages-1,organizationPage));
-  const current=rows.slice(organizationPage*8,organizationPage*8+8),pattern=organizationPatterns[current.length]??[];
-  for(const row of rows)row.hidden=mobile&&!current.includes(row);
-  current.forEach((row,index)=>{const [x,y,width]=pattern[index];row.style.setProperty('--ah-org-x',x+'%');row.style.setProperty('--ah-org-y',y+'%');row.style.setProperty('--ah-org-width',width+'%');});
+  else if(organizationPageAnchor){const index=rows.findIndex(row=>row.dataset.organizationId===organizationPageAnchor);if(index>=0)organizationPage=Math.floor(index/ORGANIZATIONS_PER_PAGE);}
+  const pages=Math.max(1,Math.ceil(rows.length/ORGANIZATIONS_PER_PAGE));organizationPage=Math.max(0,Math.min(pages-1,organizationPage));
+  const current=rows.slice(organizationPage*ORGANIZATIONS_PER_PAGE,organizationPage*ORGANIZATIONS_PER_PAGE+ORGANIZATIONS_PER_PAGE),pattern=organizationLayout(current.length,{mobile});
+  for(const row of rows)row.hidden=!current.includes(row);
+  current.forEach((row,index)=>{const {x,y,width,height}=pattern[index];row.style.setProperty('--ah-org-x',x+'%');row.style.setProperty('--ah-org-y',y+'%');row.style.setProperty('--ah-org-width',width+'%');row.style.setProperty('--ah-org-height',height+'cqi');});
   organizationPageAnchor=current[0]?.dataset.organizationId??null;
   const scene=list.closest('.ah-organizations-scene');if(scene)scene.dataset.organizationsReady='true';
   const navigation=document.querySelector('[data-organizations-pagination]'),previous=document.querySelector('[data-organizations-previous]'),next=document.querySelector('[data-organizations-next]');
-  if(navigation)navigation.hidden=!mobile||rows.length<=8||list.hidden;
+  if(navigation)navigation.hidden=rows.length<=ORGANIZATIONS_PER_PAGE||list.hidden;
   if(previous)previous.disabled=organizationPage===0;if(next)next.disabled=organizationPage===pages-1;
   const label=document.querySelector('[data-organizations-page]');if(label)label.textContent=`${organizationPage+1} / ${pages}`;
   const active=document.activeElement;
@@ -252,7 +243,7 @@ function renderOrganizations(cards,url,{initial=false}={}) {
   const referenceKeys=new Set();
   for(const [index,organization]of orderOrganizationCards(cards).entries()){
     const item=element('li');item.dataset.organizationId=organization.id;item.id='organization-'+organization.id;
-    if(index<7)item.dataset.organizationSlot=String(index);
+    item.dataset.organizationSlot=String(index);
     const referenceKey=organizationReferenceKey(organization);if(referenceKey&&!referenceKeys.has(referenceKey)){item.dataset.organizationReference=referenceKey;referenceKeys.add(referenceKey);}
     const card=element(organization.website?'a':'div',undefined,'ah-organization-card');
     card.title=organization.name;card.setAttribute('aria-label',organization.name);if(!organization.website)card.setAttribute('role','group');

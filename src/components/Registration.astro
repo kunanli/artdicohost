@@ -23,8 +23,8 @@ if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('申�
         <section class="ah-application-recovery" data-application-recovery hidden aria-labelledby="application-recovery-title"><h3 id="application-recovery-title">核对上次申请</h3><p data-application-recovery-person></p><p>尚未取得最终回执。下方按钮会沿用原内容与同一个申请标识核对，避免另建重复申请。请保留本页。</p></section>
         <p class="ah-form-error" data-form-error role="alert" tabindex="-1" hidden></p>
         <div data-application-edit-fields>
-        <div class="ah-fields-grid">{['name','email','categories'].map(name => <FormField field={field(name)} />)}</div>
-        <details class="ah-registration-extra ah-general-extra"><summary>学校、机构与其他联络信息（选填）</summary><div class="ah-fields-grid">{['organization','city','wechat'].map(name => <FormField field={field(name)} />)}</div></details>
+        <div class="ah-fields-grid">{['name','email','phone','wechat','categories'].map(name => <FormField field={field(name)} />)}</div>
+        <details class="ah-registration-extra ah-general-extra"><summary>学校、机构与其他信息（选填）</summary><div class="ah-fields-grid">{['organization','city'].map(name => <FormField field={field(name)} />)}</div></details>
         <label class="ah-general-proposal-toggle"><input type="checkbox" name="submitProposal" data-proposal-toggle autocomplete="off" /><span>我也想申请分享一个主题</span></label>
         <fieldset class="ah-general-proposal" data-speaker-proposal hidden disabled><legend>分享主题（选填）</legend><p class="ah-form-hint">与一般参会共用一份报名。分享提案另行审选，不影响一般参会报名。</p>{generalApplicationSchema.proposal.map(definition => <FormField field={definition} prefix="speaker" />)}</fieldset>
         <FormField field={field('consentAccepted')} />

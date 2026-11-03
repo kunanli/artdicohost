@@ -1,7 +1,7 @@
 import { identityOptions } from './registration-schema.mjs';
 
 export const GENERAL_APPLICATION_INTAKE = 'general-v2';
-export const GENERAL_APPLICATION_FIELDS = Object.freeze(['intake','locale','name','email','categories','participationInterests','organization','city','wechat','speaker']);
+export const GENERAL_APPLICATION_FIELDS = Object.freeze(['intake','locale','name','email','categories','participationInterests','organization','city','wechat','phone','speaker']);
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && [Object.prototype,null].includes(Object.getPrototypeOf(value));
 const own = (value,key) => Object.getOwnPropertyDescriptor(value ?? {},key)?.value;
 const safeObject = value => plain(value) && Reflect.ownKeys(value).every(key=>typeof key==='string'&&Object.getOwnPropertyDescriptor(value,key)?.enumerable&&'value' in Object.getOwnPropertyDescriptor(value,key));
@@ -22,7 +22,7 @@ export function validateGeneralApplicationFields(input){
   const categories=own(input,'categories');if(!safeList(categories,1)||categories.length!==1||typeof categories[0]!=='string'||!identityOptions.some(option=>option.value===categories[0]))errors.categories='请选择一项参与身份。';else value.categories=[categories[0]];
   const interests=own(input,'participationInterests');const interestList=safeList(interests,2),proposal=interestList&&interests.length===2&&interests[0]==='attend'&&interests[1]==='talk';
   if(!interestList||!(interests.length===1&&interests[0]==='attend'||proposal))errors.participationInterests='请确认本次参会申请。';else value.participationInterests=[...interests];
-  for(const [key,max]of[['organization',160],['city',100],['wechat',100]]){const field=string(input,key,max,errors);if(field)value[key]=field;}
+  for(const [key,max]of[['organization',160],['city',100],['wechat',100],['phone',150]]){const field=string(input,key,max,errors);if(field)value[key]=field;}
   const speaker=own(input,'speaker');
   if(proposal){if(!safeObject(speaker)||Reflect.ownKeys(speaker).length!==2||!Object.hasOwn(speaker,'topic')||!Object.hasOwn(speaker,'summary'))errors.speaker='请填写分享主题和简介。';else{const branchErrors={};value.speaker={topic:string(speaker,'topic',200,branchErrors,{required:true}),summary:string(speaker,'summary',1500,branchErrors,{required:true,multiline:true})};for(const [key,message]of Object.entries(branchErrors))errors['speaker.'+key]=message;}}
   else if(Object.hasOwn(input,'speaker'))errors.speaker='未选择分享主题时，请勿提交隐藏的提案资料。';

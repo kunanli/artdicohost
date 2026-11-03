@@ -42,7 +42,7 @@ const REFERENCE = Object.freeze({
 // approved control sizes intentionally exceed the source's 220px bubbles;
 // source spacing and all unrelated reference measurements remain separate.
 // Original desktop geometry is retained; only each public array index owns it.
-const ORGANIZATION_INDEX_SLOTS=[[23.082,11.08,24.858,8.523],[54.332,11.151,20.597,8.381],[10.156,28.267,16.761,8.523],[32.457,28.196,12.287,8.381],[53.622,27.699,7.813,10.44],[74.503,26.563,9.659,12.145],[7.031,43.466,19.602,7.458]];
+// Organization slots now form the user's count-aware centred composition.
 const GUEST_INFORMATION_LAYOUT = Object.freeze({
   reason: 'Three separate visible fields: name, company and actual position.',
   originalSourceDiameter: REFERENCE.guestDiameter,
@@ -188,11 +188,20 @@ async function guestRoster(f,confirmedIds=[]){
 function near(actual, expected, tolerance, description) { assert.ok(Math.abs(actual - expected) <= tolerance, `${description}: actual=${actual.toFixed(2)}, reference=${expected.toFixed(2)}, tolerance=${tolerance.toFixed(2)}`); }
 async function mobileOrganizationCircle(f,expected){
   const value=await f.page.evaluate(()=>{const rect=node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height};};return{circle:rect(document.querySelector('[data-organizations-planet]')),rows:[...document.querySelectorAll('[data-organization-id]')].filter(row=>!row.hidden).map(row=>({id:row.id,slot:rect(row),card:rect(row.querySelector('.ah-organization-card')),frame:row.querySelector('.ah-organization-image')&&!row.querySelector('.ah-organization-image').hidden?rect(row.querySelector('.ah-organization-image')):null,image:row.querySelector('.ah-organization-image:not([hidden]) img')?rect(row.querySelector('img')):null}))};});
-  near(value.circle.width,value.circle.height,1,'mobile planet remains a true circle');assert.equal(value.rows.length,expected);
+  near(value.circle.width,value.circle.height,1,'organization planet remains a true circle');assert.equal(value.rows.length,expected);
   const cx=value.circle.x+value.circle.width/2,cy=value.circle.y+value.circle.height/2,r=value.circle.width/2;
-  for(const row of value.rows){assert.ok(row.card.width>=44&&row.card.height>=44,'every mobile organization keeps a complete 44px action frame');for(const box of[row.slot,row.card,row.frame,row.image].filter(Boolean))for(const x of[box.x,box.x+box.width])for(const y of[box.y,box.y+box.height])assert.ok(Math.hypot(x-cx,y-cy)<=r-4+.75,'every complete logo/card corner stays inside the real circle with safety padding');}
+  for(const row of value.rows){assert.ok(row.card.width>=44&&row.card.height>=44,'every organization keeps a complete 44px action frame');for(const box of[row.slot,row.card,row.frame,row.image].filter(Boolean))for(const x of[box.x,box.x+box.width])for(const y of[box.y,box.y+box.height])assert.ok(Math.hypot(x-cx,y-cy)<=r-4+.75,'every complete logo/card corner stays inside the real circle with safety padding');}
+  const centers=value.rows.map(row=>({x:row.slot.x+row.slot.width/2,y:row.slot.y+row.slot.height/2}));
+  near(centers.reduce((sum,p)=>sum+p.x,0)/expected,cx,1.5,'the whole organization page shares the horizontal sphere centre');
+  near(centers.reduce((sum,p)=>sum+p.y,0)/expected,cy,1.5,'the whole organization page shares the vertical sphere centre');
+  near((Math.min(...value.rows.map(row=>row.slot.x))+Math.max(...value.rows.map(row=>row.slot.x+row.slot.width)))/2,cx,1.5,'the last row and complete horizontal group remain symmetric');
+  near((Math.min(...value.rows.map(row=>row.slot.y))+Math.max(...value.rows.map(row=>row.slot.y+row.slot.height)))/2,cy,1.5,'the complete vertical group remains symmetric');
   for(let a=0;a<value.rows.length;a++)for(let b=a+1;b<value.rows.length;b++){const x=value.rows[a].card,y=value.rows[b].card;assert.ok(Math.min(x.x+x.width,y.x+y.width)-Math.max(x.x,y.x)<=1||Math.min(x.y+x.height,y.y+y.height)-Math.max(x.y,y.y)<=1,'circle organization cards never overlap');}
   return value;
+}
+async function revealOrganization(f,card){
+  await card.evaluate(node=>node.dispatchEvent(new CustomEvent('artdico:organization-reveal',{bubbles:true,detail:{id:node.id}})));
+  await card.scrollIntoViewIfNeeded();
 }
 async function organizationCaption(card,{name,visible=false}={}){
   const measured=await card.evaluate(node=>{const name=node.querySelector('h3'),action=node.querySelector('.ah-organization-card'),style=getComputedStyle(name),r=name.getBoundingClientRect();return{width:r.width,height:r.height,font:parseFloat(style.fontSize),display:style.display,visibility:style.visibility,opacity:Number(style.opacity),clip:style.clipPath,aria:action.getAttribute('aria-label'),external:action.tagName==='A'};});
@@ -292,7 +301,7 @@ async function geometry(f,{suffix=''}={}) {
   const publishedOrganizations=publication(f.raw,'legacy').organizations;
   assert.deepEqual(measured.organizations.map(item=>item.id),publishedOrganizations.map(item=>item.id),'DOM order follows the public array without a brand rank');
   assert.deepEqual(measured.organizations.map(item=>item.reference),publishedOrganizations.map(item=>REFERENCE.organizationKeys[organizationNames.indexOf(item.name)]),'brand diagnostics remain bound to the same identities');
-  assert.deepEqual(measured.organizations.map(item=>item.slotIndex),publishedOrganizations.map((_,index)=>index<7?String(index):null),'slot numbers come only from the public array index');
+  assert.deepEqual(measured.organizations.map(item=>item.slotIndex),publishedOrganizations.map((_,index)=>String(index)),'slot numbers come only from the public array index');
   const expectedDiameter = f.width >= 1000 ? GUEST_INFORMATION_LAYOUT.desktopDiameterByViewport[f.width]
     : Math.min(220, (f.width - 2 * GUEST_INFORMATION_LAYOUT.mobilePaddingByViewport[f.width] - 20) / 2);
   for (const b of measured.bubbles) {
@@ -311,7 +320,7 @@ async function geometry(f,{suffix=''}={}) {
   }
   if (f.width >= 1000) {
     const scale = f.width / REFERENCE.width, rows = rowsOf(measured.bubbles);
-    measured.organizations.slice(0,7).forEach((row,index)=>{const [left,top,width,height]=ORGANIZATION_INDEX_SLOTS[index],planet=measured.planet;near(row.x,planet.x+planet.width*left/100,1.5,'indexed slot retains original horizontal position');near(row.y,planet.y+planet.width*top/100,1.5,'indexed slot retains original vertical position');near(row.width,planet.width*width/100,1.5,'indexed slot retains original width');near(row.height,planet.width*height/100,1.5,'indexed slot retains original height');});
+    await mobileOrganizationCircle(f,7);
     assert.deepEqual(rows.map(row => row.items.length), [4, 4, 1], 'reference has four desktop columns, with only nine actual people');
     for (let column = 0; column < REFERENCE.guestColumns; column++) {
       const bubble = rows[0].items[column];
@@ -338,9 +347,7 @@ async function geometry(f,{suffix=''}={}) {
     near(measured.planet.width, REFERENCE.planetDiameter * scale, REFERENCE.planetDiameter * scale * .16, 'source 1408px organization planet diameter');
     near(measured.planet.x + measured.planet.width / 2, f.width / 2, 40 * scale, 'planet centered as in source');
     near(measured.planet.y - measured.organizationHeading.shell.y - measured.organizationHeading.shell.height, REFERENCE.organizationDividerToPlanet * scale, 60 * scale, 'source divider-to-planet spacing');
-    // Original middle-row logo tops differ by 24px. Allow another 8px between
-    // painted logo edges and the measured DOM frames, then scale by viewport.
-    assert.deepEqual(rowsOf(measured.organizations, (REFERENCE.organizationMiddleRowStagger + 8) * scale).map(row => row.items.length), [2, 4, 1], 'source seven-organization layout is 2/4/1 with its intentional stagger');
+    assert.deepEqual(rowsOf(measured.organizations,2).map(row=>row.items.length),[2,3,2],'the seven-logo desktop group follows the requested centred 2/3/2 rows');
     // These reference PNGs are not the captured uploads. Unknown/new artwork
     // must stay bounded; painted-pixel similarity must not permit huge canvases.
     for (const row of measured.organizations) {
@@ -517,9 +524,9 @@ try {
       const unknown=f.page.locator('[data-organization-id="synthetic-reference-unknown"]');
       assert.equal(await f.page.locator('[data-organization-id]').count(),8,'an eighth public organization is retained beside the original seven');
       assert.equal(await unknown.getAttribute('data-organization-reference'),null);
-      assert.equal(await unknown.getAttribute('data-organization-slot'),null,'the eighth index is outside the first seven slots');
-      if(width>=1000)assert.notEqual(await unknown.evaluate(node=>getComputedStyle(node).position),'absolute','the eighth index retains the lower grid regardless of identity');
-      await unknown.scrollIntoViewIfNeeded();
+      assert.equal(await unknown.getAttribute('data-organization-slot'),'7','the eighth index owns a centred slot like every other public row');
+      if(width>=1000)await mobileOrganizationCircle(f,8);
+      await revealOrganization(f,unknown);
       await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
       await unknown.locator('img').evaluate(image=>image.decode());
       assert.equal(await unknown.locator('img').getAttribute('data-logo-source'),API+'/api/public/portraits/'+syntheticLogoByWidth.get(width).id,'white presentation retains an explicit exact original upload source');
@@ -549,35 +556,35 @@ try {
       await noOverflow(f);unknownOrganizationFallback=true;
       const extraScreenshot=resolve(evidence,'eight-organizations-'+width+'.png');await f.page.locator('#booths').screenshot({path:extraScreenshot});files.push(extraScreenshot);
       await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogos.get('mixed-transparent-panel').id;});
-      await unknown.scrollIntoViewIfNeeded();
+      await revealOrganization(f,unknown);
       await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
       const mixedMask=await unknown.locator('img').evaluate(image=>{const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;const context=canvas.getContext('2d');context.drawImage(image,0,0);const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;const pixel=(x,y)=>[...pixels.slice((y*canvas.width+x)*4,(y*canvas.width+x)*4+4)];return {outer:pixel(0,0),innerPanel:pixel(8,8),counter:pixel(120,48),ink:pixel(32,24)};});
       assert.equal(mixedMask.outer[3],0);assert.equal(mixedMask.innerPanel[3],0,'a transparent outer margin does not preserve an opaque white inner panel');assert.equal(mixedMask.counter[3],0,'the panel-colored enclosed counter is also removed');assert.deepEqual(mixedMask.ink,[255,255,255,255]);
       await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogoByWidth.get(width).id;});
-      await unknown.scrollIntoViewIfNeeded();await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
+      await revealOrganization(f,unknown);await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
       await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId='';});
       assert.equal(await unknown.locator('.ah-organization-image').count(),0,'an organization without a source logo uses its real name');
       await organizationCaption(unknown,{name:'合成第八个组织',visible:true});if(width<1000)await mobileOrganizationCircle(f,8);
       await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogoByWidth.get(width).id;});
-      await unknown.scrollIntoViewIfNeeded();await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
+      await revealOrganization(f,unknown);await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
       await organizationCaption(unknown,{name:'合成第八个组织'});
       if(width===1440){
         await f.refresh('legacy',raw=>{raw.organizations.push({id:'synthetic-reference-duplicate',name:'游戏奇点',logoId:logoSources[0].id,website:'',participation:'undecided',status:'confirmed',publicConsent:true,internalNotes:PRIVATE});});
         const duplicate=f.page.locator('[data-organization-id="synthetic-reference-duplicate"]');
         assert.equal(await duplicate.count(),1);assert.equal(await duplicate.getAttribute('data-organization-reference'),null);
-        assert.equal(await duplicate.getAttribute('data-organization-slot'),null,'the ninth index remains outside the first seven slots');
-        assert.notEqual(await duplicate.evaluate(node=>getComputedStyle(node).position),'absolute','the ninth index stays in the lower grid without merging the repeated brand');
+        assert.equal(await duplicate.getAttribute('data-organization-slot'),'8','the ninth index remains distinct on its next centred page');
+        assert.equal(await f.page.locator('[data-organizations-pagination]').isVisible(),true,'a ninth desktop organization retains its own accessible page');
         assert.equal(await f.page.locator('[data-organization-reference="gamezone"]').count(),1,'brand diagnostics remain unique without deciding position or merging records');
-        await duplicate.scrollIntoViewIfNeeded();await duplicate.locator('img').evaluate(node=>node.decode());
+        await revealOrganization(f,duplicate);await duplicate.locator('img').evaluate(node=>node.decode());
         await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-duplicate .ah-organization-image')?.dataset.logoPresentation==='white');
         await organizationCaption(duplicate,{name:'游戏奇点'});
         await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogos.get('opaque-complex').id;});
-        await unknown.scrollIntoViewIfNeeded();
+        await revealOrganization(f,unknown);
         await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.hidden===true);
         await organizationCaption(unknown,{name:'合成第八个组织',visible:true});
         assert.equal(await unknown.getAttribute('data-logo-artwork'),'published-name');
         await f.refresh('legacy',raw=>{raw.organizations.find(item=>item.id==='synthetic-reference-unknown').logoId=syntheticLogoByWidth.get(width).id;});
-        await unknown.scrollIntoViewIfNeeded();
+        await revealOrganization(f,unknown);
         await f.page.waitForFunction(()=>document.querySelector('#organization-synthetic-reference-unknown .ah-organization-image')?.dataset.logoPresentation==='white');
         assert.equal(await unknown.locator('img').getAttribute('data-logo-source'),API+'/api/public/portraits/'+syntheticLogoByWidth.get(width).id,'a new revision replaces the fallback instead of retaining stale output');
       }
@@ -625,7 +632,12 @@ try {
     await broken.page.goto(SITE + '/', { waitUntil: 'networkidle' });
     assert.ok(broken.fontFailures.size>0,'the font fallback case blocks actual font requests with 404 responses');
     const fallbackTypography=await heroType(broken.page,{failedFont:true});
-    assert.match(await broken.page.locator('#hero-heading').innerText(), /GlobalGameJam/u); assert.match(await broken.page.locator('#hero-heading').innerText(), /ARTDiCO\s*HOST/u);
+    // This fixture fails fonts and portrait/work images, not the supplied
+    // Hero title artwork. Its actual H1 name stays accessible while both PNGs
+    // remain visible; genuine title-image 404s are verified by the motion suite.
+    assert.equal(await broken.page.locator('#hero-heading').getAttribute('aria-label'),createInitialContent().event.title);
+    const titleImages=broken.page.locator('[data-home-title-image]');assert.equal(await titleImages.count(),2);
+    for(const image of await titleImages.all()){await image.evaluate(node=>node.decode());assert.equal(await image.isVisible(),true);assert.ok(await image.evaluate(node=>node.complete&&node.naturalWidth>0&&node.naturalHeight>0));}
     const first = broken.page.locator('#guest-' + guestId(0)); await first.locator('[data-guest-toggle]').tap();
     await broken.page.waitForFunction(id => document.querySelector('#guest-' + id + ' .ah-guest-portrait img')?.hidden === true, guestId(0));
     assert.equal(await first.locator('.ah-guest-name').isVisible(), true); assert.equal(await first.locator('.ah-guest-initial').isVisible(), true);
@@ -696,7 +708,7 @@ finally {
     source, testScriptSha256, gitHeadAtRun: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), dist,
     htmlMtime: metadata.mtime.toISOString(), publicHtmlSha256: sha(html), servedAssets: Object.fromEntries([...servedAssets].sort()),
     reference: REFERENCE, guestInformationLayout: GUEST_INFORMATION_LAYOUT, heroPosterLayout:HERO_POSTER_LAYOUT, referenceScreenshots, organizationInputOrder: organizationInputOrder.map(index => organizationNames[index]),
-    logoSources, artworkSources, geometryScope: 'Guest, organization, heading and divider measurements retain their existing reference tolerances. Hero separately checks the exact original title assets, their aspect ratios and opposite-edge layout; later condensed-font approximations are superseded. Screenshots require visual review and are not pixel-diff equivalence.',
+    logoSources, artworkSources, geometryScope: 'Guest, heading and divider measurements retain their existing reference tolerances. Organization rows explicitly supersede the source 2/4/1 slots with centred count-aware sphere bounds at every width. Hero separately checks the exact original title assets, their aspect ratios and opposite-edge layout; later condensed-font approximations are superseded. Screenshots require visual review and are not pixel-diff equivalence.',
     passedCases: reports.length, reports, pageErrors, ...(failure ? { failure } : {}) };
   await writeFile(resolve(evidence, 'report.json'), JSON.stringify(result, null, 2) + '\n'); process.stdout.write(JSON.stringify(result, null, 2) + '\n');
 }

@@ -22,7 +22,10 @@ async function main() {
   const html = await readFile(resolve(dist, 'index.html')), htmlInfo = await stat(resolve(dist, 'index.html'));
   const scriptSha256 = sha(await readFile(fileURLToPath(import.meta.url)));
   const raw = createInitialContent();
-  for (const key of ['sessions', 'guests', 'showcases', 'booths', 'organizations']) raw[key] = [];
+  // Keep only documented seed sessions for a synthetic timeline. Empty public
+  // guests/organizations still isolate form readability from live publication.
+  raw.sessions = raw.sessions.filter(item => ['session-arrival-a', 'session-arrival-b', 'session-arrival-c', 'session-speaker-one-b'].includes(item.id));
+  for (const key of ['guests', 'showcases', 'booths', 'organizations']) raw[key] = [];
   const publication = JSON.stringify({ revision: 1, publishedAt: '2026-10-21T09:00:00.000Z', content: toPublicContent(raw) });
   const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');
   const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
@@ -109,6 +112,51 @@ async function main() {
     return measurements;
   }
 
+  async function measureAgenda(page, width) {
+    stage = 'agenda-readability';
+    const reports = [];
+    for (const zone of ['A', 'B', 'C']) {
+      await page.locator('[data-zone="' + zone + '"]').click();
+      const panel = page.locator('[data-agenda-panel="' + zone + '"]');
+      await panel.waitFor({ state: 'visible' });
+      const metrics = await panel.locator('.ah-agenda-row').evaluateAll(rows => rows.map(row => {
+        const box = node => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; };
+        const text = node => { const s = getComputedStyle(node); return { ...box(node), font: parseFloat(s.fontSize), line: parseFloat(s.lineHeight), clientWidth: node.clientWidth, scrollWidth: node.scrollWidth, overflowX: s.overflowX, overflowY: s.overflowY }; };
+        const time = row.querySelector('time'), category = row.querySelector('.ah-session-category'), title = row.querySelector('strong');
+        const range = document.createRange(); range.selectNodeContents(time);
+        const point = getComputedStyle(row, '::after');
+        return { row: box(row), time: text(time), category: text(category), title: text(title), timeLines: range.getClientRects().length,
+          pointCenterY: row.getBoundingClientRect().y + parseFloat(point.top) + parseFloat(point.height) / 2 };
+      }));
+      assert.ok(metrics.length > 0, 'each venue has a documented synthetic session');
+      const timeSize = Math.max(16, Math.min(32, width * .0167));
+      const categorySize = Math.max(14, Math.min(25, width * .013));
+      const titleSize = Math.max(20, Math.min(40, width * .0208));
+      for (const row of metrics) {
+        numericMetrics = { agendaWidth: width, zone, ...row };
+        assert.ok(Math.abs(row.time.font - timeSize) < .02, 'timeline time uses its reference-scaled display role');
+        assert.ok(Math.abs(row.category.font - categorySize) < .02, 'venue badge uses its own readable display role');
+        assert.ok(Math.abs(row.title.font - titleSize) < .02, 'session title preserves the original larger hierarchy');
+        assert.ok(row.title.font / row.time.font >= 1.2 && row.title.font / row.time.font <= 1.35, 'session title remains larger than the time');
+        assert.equal(row.timeLines, 1, 'the complete time range stays on one line');
+        assert.ok(row.category.y >= row.time.bottom + 4, 'the venue badge stays below the complete time line');
+        assert.ok(Math.abs(row.category.x - row.time.x) < 1, 'time and venue badge share a clean left edge');
+        assert.ok(row.title.x >= row.time.right + 8, 'larger time text does not intrude into the session title');
+        assert.ok(Math.abs(row.pointCenterY - (row.time.y + row.time.height / 2)) < 1, 'the timeline point aligns with the time line');
+        for (const item of [row.time, row.category, row.title]) {
+          assert.ok(item.x >= row.row.x && item.right <= row.row.right + 1 && item.bottom <= row.row.bottom + 1, 'each timeline label stays in its row');
+          assert.ok(item.scrollWidth <= item.clientWidth + 1, 'timeline text has no hidden horizontal clipping');
+          assert.ok(!['scroll', 'auto'].includes(item.overflowX) && !['scroll', 'auto'].includes(item.overflowY), 'timeline text never becomes an inner scroll area');
+        }
+      }
+      reports.push({ zone, rows: metrics.length, timeSize: metrics[0].time.font, categorySize: metrics[0].category.font, titleSize: metrics[0].title.font,
+        singleLineTimes: true, labelSeparation: true, titleHierarchy: true, pointAlignment: true });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'venue switching preserves the viewport bounds');
+    }
+    await page.locator('[data-zone="A"]').click();
+    return reports;
+  }
+
   try {
     for (const width of [320, 390, 1440, 1920]) {
       currentWidth = width; stage = 'isolated-runtime';
@@ -144,6 +192,7 @@ async function main() {
         page.on('pageerror', error => pageErrors.push(error.message)); await page.clock.setFixedTime(new Date('2026-10-21T09:00:00.000Z'));
         stage = 'open-form'; await page.goto(SITE + '/#registration', { waitUntil: 'networkidle' }); await page.evaluate(() => document.fonts.ready);
         const form = page.locator('[data-registration-form]'); await form.locator('[data-submit]:enabled').waitFor(); assert.equal(await form.getAttribute('data-registration-mode'), 'production');
+        const agenda = await measureAgenda(page, width); stage = 'form-keyboard';
         assert.equal(await page.locator('#about .ah-program-detail').count(), 0, 'organizer instructions no longer interrupt the visual bubbles');
         const organizer = page.locator('[data-faq-id="site-role"] .ah-faq-answer');
         assert.equal(await organizer.count(), 1, 'organizer participation is available in Q&A even with a legacy publication');
@@ -194,7 +243,7 @@ async function main() {
         assert.deepEqual(stored, pending, 'rendering unknown recovery preserves the exact original local request');
         const recoveryShot = resolve(evidence, 'recovery-' + width + '.png'); await page.locator('#registration').screenshot({ path: recoveryShot });
         assert.equal((await runtime.app.registrationService.repository.list()).registrations.length, 0); assert.equal(runtime.messages.length, 0);
-        reports.push({ width, keyboardAndConsent: true, optionalAndProposal: true, clientErrorsWithoutSubmission: true, unknownRecoveryFromBrowserDraft: true, originalPendingUnchanged: true, applicationRecords: 0, providerCalls: 0, open, invalid, recovery, screenshots: [applicationShot, recoveryShot] });
+        reports.push({ width, keyboardAndConsent: true, optionalAndProposal: true, clientErrorsWithoutSubmission: true, unknownRecoveryFromBrowserDraft: true, originalPendingUnchanged: true, applicationRecords: 0, providerCalls: 0, agenda, open, invalid, recovery, screenshots: [applicationShot, recoveryShot] });
       } catch (error) {
         await activePage?.screenshot({ path: resolve(evidence, 'failure-' + width + '.png'), fullPage: true }).catch(() => {});
         throw error;

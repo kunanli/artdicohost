@@ -37,6 +37,15 @@ test('optional text is normalized, empty fields omitted and bounds enforced befo
   const input={...fields(),name:' 合成学生 ',organization:'  合成学校 ',city:'',wechat:'  合成微信  '};const checked=validate(input);assert.equal(checked.valid,true);assert.deepEqual(checked.value.fields,{...fields(),organization:'合成学校',wechat:'合成微信'});
   assert.equal(validate({...fields(),organization:'字'.repeat(161)}).valid,false);assert.equal(validate({...fields(),email:'x'.repeat(250)+'@example.invalid'}).valid,false);
 });
+test('optional phone and WeChat retain country codes and leading zeros as private text fields',()=>{
+  const input={...fields(),phone:'  +852 0012 3456  ',wechat:'  synthetic-contact  '},checked=validate(input);
+  assert.equal(checked.valid,true);assert.equal(checked.value.fields.phone,'+852 0012 3456');assert.equal(checked.value.fields.wechat,'synthetic-contact');
+  assert.deepEqual(registrationFields({...input,consentAccepted:true}),checked.value.fields);
+  for(const phone of ['', '   '])assert.equal(Object.hasOwn(validate({...fields(),phone}).value.fields,'phone'),false);
+  for(const phone of [123456,null,{},'bad\nline','x'.repeat(151),'\ud800'])assert.equal(validate({...fields(),phone}).valid,false);
+  const accessor={...fields()};let invoked=false;Object.defineProperty(accessor,'phone',{enumerable:true,get(){invoked=true;return'private';}});
+  assert.equal(validateGeneralApplicationFields(accessor).valid,false);assert.equal(invoked,false);
+});
 test('legacy full public validation remains required when no intake marker is supplied',()=>{
   const legacy={name:'合成来宾',city:'合成城市',organization:'合成机构',position:'合成角色',email:'legacy@example.invalid',categories:['industry'],participationInterests:['attend'],attendance:'expected',accommodationChoice:'not_needed',cooperationInterest:'none'};
   assert.equal(validate(legacy).valid,true);delete legacy.city;assert.equal(validate(legacy).valid,false);

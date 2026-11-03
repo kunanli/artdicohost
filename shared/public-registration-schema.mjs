@@ -53,6 +53,7 @@ export const generalApplicationSchema = Object.freeze({
   fields: [
     {name:'name',label:'姓名',type:'text',required:true,minLength:2,maxLength:80},
     {name:'email',label:'Email',type:'email',required:true,maxLength:254,hint:'用于接收报名结果及参会通知。'},
+    {name:'phone',label:'电话',type:'tel',required:false,maxLength:150,hint:'可填写国家／地区码。'},
     {name:'categories',label:'参与身份',type:'select',required:true,options:projectOptions(registrationSchema.identityOptions)},
     {name:'organization',label:'学校／机构／团队',type:'text',required:false,maxLength:160},
     {name:'city',label:'所在城市',type:'text',required:false,maxLength:100},

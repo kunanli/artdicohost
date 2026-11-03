@@ -23,8 +23,8 @@ const { toPublicContent } = await import(pathToFileURL(resolve(source, 'shared/c
 const { publicGuestCards } = await import(pathToFileURL(resolve(source,'shared/guest-display.mjs')));
 const { organizationReferenceKey } = await import(pathToFileURL(resolve(source, 'shared/organization-display.mjs')));
 const referenceKeys = ['gamezone','igda','szdx','bu','pengyou','g4c','teesside'];
-// Original desktop geometry is retained; only each public array index owns it.
-const ORGANIZATION_INDEX_SLOTS=[[23.082,11.08,24.858,8.523],[54.332,11.151,20.597,8.381],[10.156,28.267,16.761,8.523],[32.457,28.196,12.287,8.381],[53.622,27.699,7.813,10.44],[74.503,26.563,9.659,12.145],[7.031,43.466,19.602,7.458]];
+// The user's centred sphere replaces the old seven-slot 2/4/1 composition.
+// Independent bounds/centroid checks below apply to every actual page and width.
 
 const artworkConfig = await readFile(resolve(source,'src/config/organization-artwork.mjs'),'utf8');
 const reviewedDigests = new Map([...artworkConfig.matchAll(/(\w+):Object\.freeze\(\{url:\w+,sourceDigest:"([a-f0-9]{64})"/gu)].map(match=>[match[1],match[2]]));
@@ -171,9 +171,9 @@ async function organizationBounds(f, { loaded = true } = {}) {
   const publishedIds=f.publishedOrganizations.map(item=>item.id);
   const actualOrder=await f.page.locator('[data-organization-id]').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.organizationId,slot:node.dataset.organizationSlot??null})));
   assert.deepEqual(actualOrder.map(item=>item.id),publishedIds,'actual image DOM order follows the current public array');
-  assert.deepEqual(actualOrder.map(item=>item.slot),publishedIds.map((_,index)=>index<7?String(index):null),'all first seven entries, including unknown or failed images, keep indexed slots');
+  assert.deepEqual(actualOrder.map(item=>item.slot),publishedIds.map((_,index)=>String(index)),'every entry retains its public array index independently of identity or load state');
   const orderedIds=actualOrder.map(item=>'organization-'+item.id),rows=[];
-  const batchSize=f.width<=820?8:orderedIds.length;
+  const batchSize=8;
   for(let offset=0;offset<orderedIds.length;offset+=batchSize){
     await f.page.evaluate(id=>document.getElementById(id)?.dispatchEvent(new CustomEvent('artdico:organization-reveal',{bubbles:true,detail:{id}})),orderedIds[offset]);
     const batch=await f.page.locator('[data-organization-id]').evaluateAll(nodes => nodes.filter(node=>!node.hidden).map(node => {
@@ -198,13 +198,6 @@ async function organizationBounds(f, { loaded = true } = {}) {
   lastNumericMetrics = rows.map(({ slot, card, frame, image, naturalWidth, naturalHeight, fit }) => ({ slot, card, frame, image, naturalWidth, naturalHeight, fit }));
   assert.equal(rows.length,organizationCount,'every organization from this exact captured snapshot must render');
   assert.deepEqual(rows.map(row=>row.id),publishedIds,'complete page traversal retains the public order without duplicates');
-  if(f.width>820){
-    const planet=await f.page.locator('[data-organizations-planet]').evaluate(node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y+scrollY,width:r.width};});
-    for(const [index,row]of rows.slice(0,7).entries()){
-      const [left,top,width,height]=ORGANIZATION_INDEX_SLOTS[index];
-      for(const [actual,expected]of [[row.slot.x,planet.x+planet.width*left/100],[row.slot.y,planet.y+planet.width*top/100],[row.slot.width,planet.width*width/100],[row.slot.height,planet.width*height/100]])assert.ok(Math.abs(actual-expected)<=1.5,'each public index retains the original desktop slot geometry');
-    }
-  }
   for (const row of rows) {
     assert.ok(row.slot.width > 0 && row.slot.height >= 40 && row.frame && row.image, 'each actual logo has its own independent nonzero slot and frame');
     assert.equal(row.accessibleNameMatches,true,'every organization retains its full accessible name');
@@ -218,10 +211,19 @@ async function organizationBounds(f, { loaded = true } = {}) {
     }
   }
   for(const page of new Set(rows.map(row=>row.page))){const group=rows.filter(row=>row.page===page);nonoverlap(group.map(row=>row.slot),'independent organization slots cannot overlap');nonoverlap(group.map(row=>row.card),'whole card rectangles cannot overlap');nonoverlap(group.filter(row=>!row.frameHidden).map(row=>row.image),'whole uploaded image rectangles cannot overlap');}
-  if(f.width<=820){
+  {
     const circle=await f.page.locator('[data-organizations-planet]').evaluate(node=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y+scrollY,width:r.width,height:r.height};});
-    assert.ok(Math.abs(circle.width-circle.height)<=1,'actual mobile logo container is a true circle');
-    for(const row of rows){assert.ok(row.card.width>=44&&row.card.height>=44,'actual mobile logos retain 44px action frames');for(const box of[row.slot,row.card,...(row.frameHidden?[]:[row.frame,row.image])])for(const x of[box.x,box.x+box.width])for(const y of[box.y,box.y+box.height])assert.ok(Math.hypot(x-circle.x-circle.width/2,y-circle.y-circle.height/2)<=circle.width/2-4+.75,'every actual complete logo/card corner stays inside its current circle');}
+    assert.ok(Math.abs(circle.width-circle.height)<=1,'actual logo container is a true circle');
+    for(const row of rows){assert.ok(row.card.width>=44&&row.card.height>=44,'actual logos retain 44px action frames');for(const box of[row.slot,row.card,...(row.frameHidden?[]:[row.frame,row.image])])for(const x of[box.x,box.x+box.width])for(const y of[box.y,box.y+box.height])assert.ok(Math.hypot(x-circle.x-circle.width/2,y-circle.y-circle.height/2)<=circle.width/2-4+.75,'every actual complete logo/card corner stays inside its current circle');}
+    for(const page of new Set(rows.map(row=>row.page))){
+      const group=rows.filter(row=>row.page===page),cx=circle.x+circle.width/2,cy=circle.y+circle.height/2;
+      const centres=group.map(row=>({x:row.slot.x+row.slot.width/2,y:row.slot.y+row.slot.height/2}));
+      assert.ok(Math.abs(centres.reduce((sum,p)=>sum+p.x,0)/group.length-cx)<=1.5,'actual logo group horizontal centroid shares sphere centre');
+      assert.ok(Math.abs(centres.reduce((sum,p)=>sum+p.y,0)/group.length-cy)<=1.5,'actual logo group vertical centroid shares sphere centre');
+      const left=Math.min(...group.map(row=>row.slot.x)),right=Math.max(...group.map(row=>row.slot.x+row.slot.width));
+      const top=Math.min(...group.map(row=>row.slot.y)),bottom=Math.max(...group.map(row=>row.slot.y+row.slot.height));
+      assert.ok(Math.abs((left+right)/2-cx)<=1.5&&Math.abs((top+bottom)/2-cy)<=1.5,'the complete actual logo group is symmetric within the circle');
+    }
   }
   return rows;
 }

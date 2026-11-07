@@ -111,12 +111,14 @@ try {
    if(width===320){
    const identityOverflow=await page.locator('.ah-guest-subtitle').first().evaluate(node=>{
     const original=node.textContent;let max=0,cases=0;
-    for(const token of ['GGJ','GlobalGameJam','区域负责人','站点负责人','中国区组织者','Global Game Jam Site Organizer'])for(let length=1;length<=30;length++){
+    for(const token of ['GGJ','GlobalGameJam','区域负责人','站点负责人','中国区组织者','Global Game Jam Site Organizer','GGJ Regional Organizer (RO)','GGJ 站点组织者（SO / RO）'])for(let length=1;length<=30;length++){
      node.textContent=(token+' ').repeat(length);max=Math.max(max,node.scrollWidth-node.clientWidth);cases++;
     }
-    node.textContent=original;return{cases,max};
+    node.textContent='合成角色';const short=node.getBoundingClientRect(),circle=node.closest('[data-guest-toggle]').getBoundingClientRect();const shortCentred=Math.abs(short.x+short.width/2-circle.x-circle.width/2)<1;
+    node.textContent=original;return{cases,max,shortCentred};
    });
-   assert.equal(identityOverflow.cases,180);assert.ok(identityOverflow.max<=1,'long centred guest identities do not overflow while clamped at '+width+' overflow '+identityOverflow.max);
+   assert.ok(identityOverflow.shortCentred,'short guest identities remain centred in the original circle');
+   assert.equal(identityOverflow.cases,240);assert.ok(identityOverflow.max<=1,'long centred guest identities do not overflow while clamped at '+width+' overflow '+identityOverflow.max);
    }
    const rail=page.locator('[data-public-showcases]');
    assert.equal(await page.locator('[data-showcase-id]:visible').count(),3,'every work is in the native scroll rail');

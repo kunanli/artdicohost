@@ -1025,3 +1025,10 @@ CSV 和 Excel 导出先通过事件授权、字段白名单及用途检查，在
 - 驗證：語言優先序、儲存不可用、重載、動態內容更新、報名值／焦點保留、四寬度、原有測試、Astro check、build 與來源安全檢查。
 - 人工事項：使用者已確認保留簡體中文；未知公開稿件不猜譯姓名／職稱或變更事實。GitHub CLI 在此網路不能存取 API；改用已連線 GitHub 工具建立與核對 PR。
 - 回滾：回退本功能提交並走現有 Actions；僅本機 `artdico-language` 儲存語言，不更動名單／備份／資料刪除規則，沿用 maintenance-backup.md。
+
+## 2026-11-07：作品資訊移出圖片
+
+依使用者截圖修正作品底部紫色遮擋。沿用 Astro／OSS／FC，不改資料契約、API 或公開內容；無新增資源、依賴或人工確認事項。單階段調整桌面與手機 caption 為正常流透明背景、左對齊圖片，保留輪播與大圖入口。執行建置與適用檢查，瀏覽器核對四寬度圖片／資訊不重疊；正式素材與部署未驗證前不宣稱上線。回退僅還原本次樣式。
+
+本機驗證：Astro 25頁建置成功；1969項Node測試全通過；825檔來源與傳輸邊界掃描通過；`git diff --check`通過。以編譯頁與既有隔離公開fixture核對320／390／1440／1920：圖片decode成功、caption正常流且透明，圖片與文字矩形不重疊、頁面無橫向溢出、無pageerror；已人工查看桌面合成截圖。首次瀏覽器驗證因未設公開API origin未載入資料，補上既有CI相同origin後重建；首次量測遇lazy image未decode，改等decode後四案通過。這些合成輸入不代表正式作品素材或正式站已驗收；未部署。
+既有`p5-collections-smoke.mjs`輪播／篩選／大圖／公開刷新互動回歸亦通過（ok=true、syntheticOnly=true、noBusinessWrites=true、pageErrors空）；Astro check 539檔0errors／0warnings／2hints。

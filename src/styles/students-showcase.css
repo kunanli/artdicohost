@@ -1,4 +1,4 @@
-/* The supplied artwork leads: a flat horizontal image rail and a translucent caption. */
+/* Keep the artwork unobstructed, with its caption below the image rail. */
 #artdico-host.ah-festival.ah-cosmos .ah-students.ah-section{padding-inline:var(--ah-content-pad,clamp(24px,14.4vw,276px));background:#000}
 #artdico-host.ah-festival.ah-cosmos .ah-students .ah-section-heading{margin-bottom:clamp(30px,4.3vw,82px)}
 #artdico-host.ah-festival.ah-cosmos .ah-showcase-filters{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:clamp(24px,4vw,76px)}
@@ -15,7 +15,7 @@
 #artdico-host.ah-festival.ah-cosmos .ah-showcase-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;min-width:0;list-style:none;margin:0;padding:0;touch-action:pan-y}
 #artdico-host.ah-festival.ah-cosmos .ah-showcase-grid[data-carousel-ready]{display:block}
 #artdico-host.ah-festival.ah-cosmos .ah-showcase-card{min-width:0;overflow:hidden;border:0;border-radius:0;background:transparent}
-#artdico-host.ah-festival.ah-cosmos .ah-showcase-poster{position:relative;min-width:0;isolation:isolate;background:#0a060d}
+#artdico-host.ah-festival.ah-cosmos .ah-showcase-poster{position:relative;min-width:0;isolation:isolate;background:transparent}
 #artdico-host.ah-festival.ah-cosmos .ah-work-preview{position:relative;display:block;width:100%;padding:0;border:0;border-radius:0;background:#0a060d;color:#fff;cursor:zoom-in;touch-action:pan-y}
 #artdico-host.ah-festival.ah-cosmos .ah-work-preview img{display:block;width:100%;height:auto;aspect-ratio:2/1;max-height:none;object-fit:contain;background:#0a060d}
 #artdico-host.ah-festival.ah-cosmos .ah-work-preview span{position:absolute;right:14px;top:14px;bottom:auto;padding:5px 9px;border:0;border-radius:0;background:#0009;font-size:12px;opacity:0;transition:opacity .18s}
@@ -25,8 +25,8 @@
 #artdico-host.ah-festival.ah-cosmos .ah-work-stage:has([data-work-peek]:not([hidden])) .ah-work-peek{height:auto;aspect-ratio:auto;align-self:start}
 #artdico-host.ah-festival.ah-cosmos .ah-work-stage:has([data-work-peek]:not([hidden])) .ah-work-peek img{width:calc(min(100vw,1920px) - var(--ah-content-pad,24px) - clamp(52px,12vw,230px));height:auto;aspect-ratio:2/1;max-width:none}
 #artdico-host.ah-festival.ah-cosmos .ah-showcase-cover-empty{margin:14px 0 0;color:var(--ah-text-muted);background:transparent}
-#artdico-host.ah-festival.ah-cosmos .ah-showcase-caption{position:absolute;inset:auto 0 0;display:grid;gap:2px;min-width:0;padding:clamp(13px,1.65vw,32px) clamp(16px,2.2vw,42px);background:#68246e8a;color:#fff;pointer-events:none}
-#artdico-host.ah-festival.ah-cosmos .ah-showcase-category{justify-self:start;display:block;margin:0;padding:0;border:0;border-radius:0;color:#fff;font-size:clamp(11px,1.05vw,20px);font-weight:400;line-height:1.5}
+#artdico-host.ah-festival.ah-cosmos .ah-showcase-caption{position:static;display:grid;gap:6px;min-width:0;padding:20px 0 0;background:transparent;color:#fff}
+#artdico-host.ah-festival.ah-cosmos .ah-showcase-category{justify-self:start;display:block;margin:0;padding:0;border:0;border-radius:0;color:#c6bdce;font-size:clamp(11px,1.05vw,20px);font-weight:400;line-height:1.5}
 #artdico-host.ah-festival.ah-cosmos .ah-showcase-caption h3{margin:0;color:#fff;font-size:clamp(15px,1.35vw,26px);font-weight:500;line-height:1.45;overflow-wrap:anywhere}
 #artdico-host.ah-festival.ah-cosmos .ah-showcase-caption .ah-showcase-team{margin:0;color:#f7eff9;font-size:clamp(11px,1.05vw,20px);line-height:1.5;overflow-wrap:anywhere}
 #artdico-host.ah-festival.ah-cosmos .ah-showcase-card-body{display:grid;gap:10px;min-width:0;padding:20px 0 0;background:transparent}
@@ -65,7 +65,7 @@
  #artdico-host.ah-festival.ah-cosmos .ah-work-navigation{gap:9px}
  #artdico-host.ah-festival.ah-cosmos .ah-work-navigation button{width:44px;height:44px}
  #artdico-host.ah-festival.ah-cosmos .ah-work-navigation p{min-width:62px;font-size:11px}
- #artdico-host.ah-festival.ah-cosmos .ah-showcase-caption{position:static;padding:12px 15px;background:#3b1745}
+ #artdico-host.ah-festival.ah-cosmos .ah-showcase-caption{padding:16px 0 0}
  #artdico-host.ah-festival.ah-cosmos .ah-showcase-caption h3{font-size:16px}
  #artdico-host.ah-festival.ah-cosmos .ah-showcase-caption .ah-showcase-team,#artdico-host.ah-festival.ah-cosmos .ah-showcase-category{font-size:12px}
  #artdico-host.ah-festival.ah-cosmos .ah-showcase-card-body{padding-top:15px;gap:8px}

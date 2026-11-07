@@ -6,14 +6,8 @@ import '../styles/students-showcase.css';
   <div class="ah-section-heading">
     <h2 id="students-heading" tabindex="-1">游戏与作品</h2>
   </div>
-  <div class="ah-showcase-filters" data-public-works-controls hidden>
-    <label for="public-works-filter">作品分类<select id="public-works-filter" data-public-works-filter><option value="all">全部作品</option><option value="student">学生作品</option><option value="indie">独立游戏</option></select></label>
-    <div class="ah-work-navigation" data-work-navigation aria-label="浏览作品" hidden><button type="button" data-public-work-prev aria-label="上一件作品" disabled>←</button><p data-public-works-count role="status" aria-live="polite"></p><button type="button" data-public-work-next aria-label="下一件作品" disabled>→</button></div>
-  </div>
-  <p class="ah-showcase-filter-empty" data-public-works-filter-empty role="status" hidden>这个分类的作品尚未公布。</p>
   <div class="ah-work-stage">
-    <ul class="ah-showcase-grid" data-public-showcases aria-label="已公布的游戏与作品" hidden></ul>
-    <div class="ah-work-peek" data-work-peek aria-hidden="true" hidden><img alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" crossorigin="anonymous" /></div>
+    <ul class="ah-showcase-grid" data-public-showcases aria-label="已公布的游戏与作品，可横向滚动" tabindex="0" hidden></ul>
   </div>
   <div class="ah-student-actions">
     <a href="#agenda" class="ah-text-action">查看全天日程 <span aria-hidden="true">↗</span></a>

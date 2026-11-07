@@ -38,6 +38,7 @@ export function publicFaqItems(items = defaults, { privacy = null } = {}) {
     if (item.id === 'data-rights') return { ...item, answer: line(privacy?.rightsRequest, 4000) ? privacy.rightsRequest : defaults.find(row => row.id === item.id).answer,
       contactEmail: CONTACT };
     if (item.id === 'lodging-support') return { ...defaults.find(row => row.id === item.id), contactEmail: CONTACT, registrationUrl: null };
+    if (item.id === 'site-official') return { ...defaults.find(row => row.id === item.id), contactEmail: null, registrationUrl: null };
     if (item.id === 'site-role') return { ...defaults.find(row => row.id === item.id), contactEmail: null, registrationUrl: PUBLIC_REGISTRATION_URL };
     return item;
   });

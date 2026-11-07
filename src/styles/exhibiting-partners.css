@@ -25,11 +25,6 @@
 #artdico-host.ah-festival.ah-cosmos .ah-organization-card:has(.ah-organization-image:not([hidden]))>h3{display:none!important}
 #artdico-host.ah-festival.ah-cosmos .ah-organizations-message{font-size:14px;line-height:1.8;color:var(--ah-muted);padding:24px 0;margin:0;text-align:center}
 #artdico-host.ah-festival.ah-cosmos .ah-organizations-scene:has(.ah-exhibiting-partners[hidden]) .ah-organizations-planet{display:none}
-#artdico-host.ah-festival.ah-cosmos .ah-organizations-pagination{display:flex;justify-content:center;align-items:center;gap:16px;padding-top:20px;color:var(--ah-ink);font-size:var(--ah-type-meta);line-height:var(--ah-leading-ui)}
-#artdico-host.ah-festival.ah-cosmos .ah-organizations-pagination button{min-width:72px;min-height:44px;padding:8px 12px;border:1px solid #ffffff70;background:transparent;color:inherit;font:inherit;font-size:var(--ah-type-action);line-height:var(--ah-leading-ui);border-radius:6px}
-#artdico-host.ah-festival.ah-cosmos .ah-organizations-pagination button:disabled{opacity:.35}
-#artdico-host.ah-festival.ah-cosmos .ah-organizations-pagination :focus-visible{outline:2px solid #d7c4ff;outline-offset:3px}
-#artdico-host.ah-festival.ah-cosmos :is(.ah-organizations-pagination,.ah-exhibiting-partners>li)[hidden]{display:none!important}
 @media(max-width:820px){
  #artdico-host.ah-festival.ah-cosmos .ah-booths.ah-section{padding-top:82px;padding-bottom:96px}
  #artdico-host.ah-festival.ah-cosmos .ah-booths .ah-section-heading{padding-bottom:24px}
@@ -43,3 +38,8 @@
  #artdico-host.ah-festival.ah-cosmos .ah-booths .ah-exhibiting-partners h3{font-size:var(--ah-type-body);line-height:20px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-width:100%;max-height:40px}
 }
 @media(prefers-reduced-motion:reduce){#artdico-host.ah-festival.ah-cosmos .ah-organization-card{transition:none}}
+
+#artdico-host.ah-festival.ah-cosmos .ah-exhibiting-partners>li[hidden]{display:none!important}
+
+#artdico-host.ah-festival.ah-cosmos .ah-organizations-scene[data-compact-organizations] .ah-exhibiting-partners>li[data-organization-id]{height:var(--ah-org-height)}
+#artdico-host.ah-festival.ah-cosmos .ah-organizations-scene[data-compact-organizations] .ah-organization-card{min-height:0}

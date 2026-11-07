@@ -130,7 +130,7 @@ test('speaker proposals and official site guidance stay separate from attendance
   assert.equal(recruitment.sites.interestValue, 'site_support');
   assert.equal(recruitment.sites.guideUrl, 'https://globalgamejam.org/running-jam');
   assert.match(recruitment.sites.description, /负责人、组织团队与场地.*Start a Jam Site/u);
-  assert.match(recruitment.sites.notice, /本次聚会与现场咨询不替代官方申请/u);
+  assert.match(recruitment.sites.notice, /现场可进行 GGJ 站点审核/u);
   assert.deepEqual(eventConfig.guests.people, []);
   for (const id of ['speaker-one', 'speaker-two', 'speaker-three']) {
     assert.match(agenda.find((slot) => slot.id === id)?.A ?? '', /讲者待定/u);

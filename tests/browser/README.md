@@ -1,3 +1,9 @@
+# 2026-11-07：單頁組織與原生作品圖廊
+
+`homepage-gallery-smoke.mjs` 為本輪四寬度（320／390／1440／1920）驗收：13個組織全數同球呈現、矩形不重疊且在球內；作品原生觸控／橫向wheel／鍵盤捲動、圖片下方透明資訊、大圖與焦點、公開刷新保位置、日程刪除指定文字／時段選單、中英文現場站點審核及舊FAQ適配。全部網路攔截只允許GET，僅合成資料，不能替代正式素材／真機。成功prefix為`Homepage gallery browser verified:`，報告包含4案、來源／HTML／script SHA與零pageErrors，已加入CI。
+
+本輪需求取代舊`p5-collections-smoke.mjs`中的翻頁、單件隱藏輪播／篩選與日程時段選單斷言；舊腳本保留作歷史，不作本輪驗收入口。實際公開Logo與照片仍由`bubbles-logo-bounds-smoke.mjs`以同份匿名捕獲驗證，組織改為一次檢查全數而不逐頁切換，邊界、原圖與非重疊斷言維持。
+
 # 浏览器回归验收
 
 2026-11-03嘉賓最新規則：沿原圓形，文字僅姓名／公開company組織／ggjRole；不顯示title及方形介紹浮框。hover、手機點按與原生鍵盤在同一圓內切換本人照片，失敗／缺圖維持文字。這覆蓋下方歷史版本的職稱及展開面板說明。實際素材擷取的manifest.media包含公開Logo及本人照片，兩者分開計數；同源／雜湊／格式／bytes限制保持。當輪案例與證據以[圓內照片紀錄](../../docs/redesign/guest-circle-portrait-release.md)及實際報告為準。

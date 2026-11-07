@@ -48,5 +48,5 @@
  #artdico-host.ah-festival.ah-cosmos .ah-guests-empty{gap:18px;align-items:flex-start;margin-left:0}
  #artdico-host.ah-festival.ah-cosmos .ah-guests-orbit{width:58px}
 }
-@media(max-width:359px){#artdico-host.ah-festival.ah-cosmos .ah-guest-subtitle{-webkit-line-clamp:1;line-clamp:1}}
+@media(max-width:359px){#artdico-host.ah-festival.ah-cosmos .ah-guest-subtitle{-webkit-line-clamp:1;line-clamp:1;word-break:break-all;text-align:left}}
 @media(prefers-reduced-motion:reduce){#artdico-host.ah-festival.ah-cosmos :is(.ah-guest-bubble,.ah-guest-copy,.ah-guest-portrait){transition:none}}

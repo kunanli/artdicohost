@@ -12,7 +12,7 @@ export const eventConfig = {
   siteRegistration: {
     existing: { title: '我已是 GGJ 站点负责人', categories: ['so', 'ro'], description: '普通参会请前往活动行报名；站点交流与合作需求请联系筹备团队。' },
     prospective: { title: '我想在城市组织 GGJ 站点', categories: ['new_site'], description: '了解本地负责人、团队与场地准备，并通过 GGJ 官网 Start a Jam Site 申请。' },
-    notice: '现场咨询不替代 GGJ 官方申请，正式结果由 GGJ 官方确认。',
+    notice: '现场可进行 GGJ 站点审核，请提前准备本地负责人、组织团队与场地资料。',
   },
   status: 'confirmed',
   language: 'zh-CN',
@@ -49,7 +49,7 @@ export const recruitment = {
     status: 'guidance', title: '想在您的城市组织 GGJ 站点？',
     description: '准备本地负责人、组织团队与场地，再通过 GGJ 官网的 Start a Jam Site 入口提交申请。',
     ctaLabel: '查看官方申请指引', interestValue: 'site_support', guideUrl: 'https://globalgamejam.org/running-jam',
-    notice: '申请开放时间与要求以 GGJ 官网最新信息为准。本次聚会与现场咨询不替代官方申请，正式结果由 GGJ 官方确认。',
+    notice: '现场可进行 GGJ 站点审核。请准备本地负责人、组织团队与场地资料，申请要求请查看 GGJ 官方指引。',
   },
 };
 
@@ -78,7 +78,7 @@ export const agenda = [
 ];
 
 export const highlights = [
-  { title: '交换经验', description: 'GGJ 主题分享、组织者圆桌与新站点筹备咨询。现场咨询不替代 GGJ 官方申请；主题与嘉宾待确认。' },
+  { title: '交换经验', description: 'GGJ 主题分享、组织者圆桌与现场站点审核。' },
   { title: '发现作品', description: 'ARTDiCO HOST 学员作品分享、游戏试玩与开放展示，让青年创作者的想法获得交流与反馈。' },
   { title: '连接彼此', description: '产业技术与专题交流，连接高校、工具生态与社群，分享创作经验。' },
 ];
@@ -87,7 +87,7 @@ export const faqItems = [
   { id: 'registration-status', question: '现在可以报名吗？', answer: '普通参会请前往活动行报名，开放状态、报名结果与参会凭证以活动行页面为准。讲者分享提案在本站提交，由筹备团队另行联系；提案开放情况请查看本站表单。' },
   { id: 'audience', question: '不是 GGJ 组织者也能参加吗？', answer: '可以，欢迎学生、开发者、高校、行业与生态伙伴参加。' },
   { id: 'site-role', question: '已经是站点负责人，或想建立新站点，怎么登记？', answer: '现任或曾任 GGJ 站点负责人（SO / RO），以及筹备新站点的朋友，均可通过活动行报名参会。新站点筹备或站点交流需求，可通过 '+PUBLIC_CONTACT_EMAIL+' 留言，筹备团队会联系了解支持需求。\n'+eventConfig.siteRegistration.notice+'请准备本地负责人、组织团队与场地，再通过 GGJ 官网 Start a Jam Site 申请，开放时间以官方信息为准。' },
-  { id: 'site-official', question: '新站点现场咨询代表已通过申请吗？', answer: '不代表。请准备本地负责人、团队与场地，再通过 GGJ 官网 Start a Jam Site 申请。本次聚会和现场咨询不替代官方申请，开放时间与结果以 GGJ 官方信息为准。' },
+  { id: 'site-official', question: '现场可以进行 GGJ 站点审核吗？', answer: '可以。现场可进行 GGJ 站点审核，请准备本地负责人、组织团队与场地资料，并提前联系筹备团队了解安排。' },
   { id: 'lodging-support', question: '外地来宾有住宿支持吗？', answer: '本次活动提供少量外地来宾住宿支持。有需要的朋友，欢迎提前通过 '+PUBLIC_CONTACT_EMAIL+' 联系主办方了解安排；名额有限，住宿安排将另行确认。' },
   { id: 'data-rights', question: '如何修改或撤回资料？', answer: '如需查阅、更正、撤回或删除资料，请联系主办方核对本人后处理；正式告知与联络方式以本页资料与隐私说明为准。' },
 ];

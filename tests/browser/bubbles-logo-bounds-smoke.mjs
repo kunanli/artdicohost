@@ -176,7 +176,8 @@ async function organizationBounds(f, { loaded = true } = {}) {
   assert.deepEqual(actualOrder.map(item=>item.id),publishedIds,'actual image DOM order follows the current public array');
   assert.deepEqual(actualOrder.map(item=>item.slot),publishedIds.map((_,index)=>String(index)),'every entry retains its public array index independently of identity or load state');
   const orderedIds=actualOrder.map(item=>'organization-'+item.id),rows=[];
-  const batchSize=8;
+  const batchSize=Math.max(1,orderedIds.length);
+  assert.equal(await f.page.locator('[data-organizations-pagination]').count(),0,'all organizations appear in one composition without pagination');
   for(let offset=0;offset<orderedIds.length;offset+=batchSize){
     await f.page.evaluate(id=>document.getElementById(id)?.dispatchEvent(new CustomEvent('artdico:organization-reveal',{bubbles:true,detail:{id}})),orderedIds[offset]);
     const batch=await f.page.locator('[data-organization-id]').evaluateAll(nodes => nodes.filter(node=>!node.hidden).map(node => {
@@ -200,7 +201,7 @@ async function organizationBounds(f, { loaded = true } = {}) {
   }
   lastNumericMetrics = rows.map(({ slot, card, frame, image, naturalWidth, naturalHeight, fit }) => ({ slot, card, frame, image, naturalWidth, naturalHeight, fit }));
   assert.equal(rows.length,organizationCount,'every organization from this exact captured snapshot must render');
-  assert.deepEqual(rows.map(row=>row.id),publishedIds,'complete page traversal retains the public order without duplicates');
+  assert.deepEqual(rows.map(row=>row.id),publishedIds,'single composition retains every published organization in order without duplicates');
   for (const row of rows) {
     assert.ok(row.slot.width > 0 && row.slot.height >= 40 && row.frame && row.image, 'each actual logo has its own independent nonzero slot and frame');
     assert.equal(row.accessibleNameMatches,true,'every organization retains its full accessible name');

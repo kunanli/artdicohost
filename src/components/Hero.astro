@@ -41,7 +41,7 @@ const endsAt = `${eventConfig.date.value}T${eventConfig.time.end}:00+08:00`;
       <span><strong data-countdown-value="minutes">—</strong><small>分</small></span>
       <span><strong data-countdown-value="seconds">—</strong><small>秒</small></span>
     </div>
-    <p class="ah-countdown-target" data-countdown-fallback><time datetime={startsAt}>{eventConfig.date.label} {eventConfig.time.opening}</time><span>北京时间 · UTC+8 开场</span></p>
+    <p class="ah-countdown-target" data-countdown-fallback><time datetime={startsAt}>{eventConfig.date.label} {eventConfig.time.opening}</time></p>
     <p class="ah-countdown-status" data-countdown-status role="status" aria-live="polite" aria-atomic="true"></p>
   </div>
 </section>

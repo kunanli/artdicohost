@@ -9,8 +9,8 @@ for (const pair of [
     "Register for general admission on Huodongxing. Availability, results and admission credentials are shown there. Submit speaker proposals on this website; the organizing team will follow up. Check the form here for proposal availability."
   ],
   [
-    "现任或曾任 GGJ 站点负责人（SO / RO），以及筹备新站点的朋友，均可通过活动行报名参会。新站点筹备或站点交流需求，可通过 kunan@globalgamejam.org 留言，筹备团队会联系了解支持需求。\n现场咨询不替代 GGJ 官方申请，正式结果由 GGJ 官方确认。请准备本地负责人、组织团队与场地，再通过 GGJ 官网 Start a Jam Site 申请，开放时间以官方信息为准。",
-    "Current or former GGJ site organizers (SO / RO) and prospective organizers can register to attend on Huodongxing. Contact kunan@globalgamejam.org about starting a new site or exchanging site experience. The organizing team will follow up about support needs.\nOn-site guidance does not replace the official GGJ application; GGJ confirms the result. Prepare a local organizer, team and venue, then apply through Start a Jam Site on the GGJ website. Check the official website for application dates."
+    "现任或曾任 GGJ 站点负责人（SO / RO），以及筹备新站点的朋友，均可通过活动行报名参会。新站点筹备或站点交流需求，可通过 kunan@globalgamejam.org 留言，筹备团队会联系了解支持需求。\n现场可进行 GGJ 站点审核，请提前准备本地负责人、组织团队与场地资料。请准备本地负责人、组织团队与场地，再通过 GGJ 官网 Start a Jam Site 申请，开放时间以官方信息为准。",
+    "Current or former GGJ site organizers (SO / RO) and prospective organizers can register to attend on Huodongxing. Contact kunan@globalgamejam.org about starting a new site or exchanging site experience. The organizing team will follow up about support needs.\nGGJ jam-site reviews are available on site. Please prepare details of your local organizer, team and venue in advance. Prepare a local organizer, team and venue, then apply through Start a Jam Site on the GGJ website. Check the official website for application dates."
   ],
   [
     "本次活动提供少量外地来宾住宿支持。有需要的朋友，欢迎提前通过 kunan@globalgamejam.org 联系主办方了解安排；名额有限，住宿安排将另行确认。",
@@ -20,6 +20,15 @@ for (const pair of [
     "本页表单仅供预览，不收集真实报名。本站正式表单启用前，将公布个人信息处理告知及查阅、更正、撤回、删除方式。",
     "This form is a preview and does not collect real applications. Before enabling the live form, the personal information notice and procedures for access, correction, withdrawal and deletion will be published."
   ]
+]) english.set(...pair);
+
+for (const pair of [
+ ['现场可以进行 GGJ 站点审核吗？','Can GGJ jam sites be reviewed on site?'],
+ ['可以。现场可进行 GGJ 站点审核，请准备本地负责人、组织团队与场地资料，并提前联系筹备团队了解安排。','Yes. GGJ jam-site reviews are available on site. Prepare details of your local organizer, team and venue, and contact the organizing team in advance to discuss arrangements.'],
+ ['现场可进行 GGJ 站点审核。请准备本地负责人、组织团队与场地资料，申请要求请查看 GGJ 官方指引。','GGJ jam-site reviews are available on site. Prepare details of your local organizer, team and venue. See the official GGJ guide for application requirements.'],
+ ['GGJ 主题分享、组织者圆桌与现场站点审核。','GGJ talks, organizer roundtables and on-site jam-site reviews.'],
+ ['已公布的游戏与作品，可横向滚动','Published games and projects; scroll horizontally'],
+ ['作品画廊','Project gallery']
 ]) english.set(...pair);
 
 english.set('本站正式表单启用前，将核定处理者、联系邮箱、存储地区、保留期限及查阅、更正、撤回、删除方式。第一阶段不收取证件、酒店订单或财务账单；对外分享个人信息须另行告知并取得适用授权。','Before enabling the live form, the controller, contact email, storage region, retention period and procedures for access, correction, withdrawal and deletion will be confirmed. The first phase does not collect identity documents, hotel bookings or financial statements. Sharing personal information externally requires separate notice and applicable authorization.');

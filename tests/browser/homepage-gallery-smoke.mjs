@@ -108,6 +108,16 @@ try {
    const circle=await page.locator('[data-organizations-planet]').boundingBox();
    for(const b of boxes){assert.ok(b.width>=44&&b.height>=44);for(const x of[b.x,b.x+b.width])for(const y of[b.y,b.y+b.height])assert.ok(Math.hypot(x-circle.x-circle.width/2,y-circle.y-circle.height/2)<circle.width/2);}
    for(let i=0;i<boxes.length;i++)for(let j=i+1;j<boxes.length;j++){const a=boxes[i],b=boxes[j];assert.ok(Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x)<=1||Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y)<=1);}
+   if(width===320){
+   const identityOverflow=await page.locator('.ah-guest-subtitle').first().evaluate(node=>{
+    const original=node.textContent;let max=0,cases=0;
+    for(const token of ['GGJ','GlobalGameJam','区域负责人','站点负责人','中国区组织者','Global Game Jam Site Organizer'])for(let length=1;length<=30;length++){
+     node.textContent=(token+' ').repeat(length);max=Math.max(max,node.scrollWidth-node.clientWidth);cases++;
+    }
+    node.textContent=original;return{cases,max};
+   });
+   assert.equal(identityOverflow.cases,180);assert.ok(identityOverflow.max<=1,'long centred guest identities do not overflow while clamped at '+width+' overflow '+identityOverflow.max);
+   }
    const rail=page.locator('[data-public-showcases]');
    assert.equal(await page.locator('[data-showcase-id]:visible').count(),3,'every work is in the native scroll rail');
    const first=page.locator('#work-'+IDs.student);await first.scrollIntoViewIfNeeded();

@@ -8,7 +8,10 @@ test('actual-asset browser QA follows the build using captured files and install
   const build = check.indexOf('run: pnpm build'), browser = check.indexOf('id: public_visual_browser'), audit = check.indexOf('name: Audit application');
   assert.ok(browser > build && audit > browser);
   const block = check.slice(check.lastIndexOf('      - name:', browser), audit);
-  assert.match(block, /steps\.public_visual_fixture\.outcome == 'success'/u); assert.match(block, /continue-on-error: true/u);
+  assert.match(block, /steps\.public_visual_fixture\.outcome == 'success'/u); assert.doesNotMatch(block, /continue-on-error: true/u);
+  assert.match(block, /Require captured public assets and complete visual acceptance/u);
+  assert.match(block, /steps\.public_visual_fixture\.outcome != 'success' \|\| steps\.public_visual_browser\.outcome != 'success'/u);
+  assert.match(block, /exit 1/u);
   assert.match(block, /ARTDICO_PLAYWRIGHT_MODULE: playwright-core/u);
   assert.match(block, /ARTDICO_PUBLIC_VISUAL_FIXTURE_DIRECTORY: \.local-data\/public-visual-fixture/u);
   assert.match(block, /ARTDICO_BUBBLES_EVIDENCE_DIRECTORY: \.local-data\/browser-evidence\/bubbles-logo-bounds/u);

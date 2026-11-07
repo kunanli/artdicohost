@@ -11,11 +11,6 @@ const deferOrganizations = Boolean(publicContentEndpoint(import.meta.env.PUBLIC_
   <ul class="ah-exhibiting-partners" data-public-organizations aria-label="参与组织" hidden={deferOrganizations}>
     {exhibitingPartners.map(partner => <li><div class="ah-organization-card"><h3>{partner.name}</h3></div></li>)}
   </ul>
-  <nav class="ah-organizations-pagination" data-organizations-pagination aria-label="浏览参与组织" hidden>
-    <button type="button" data-organizations-previous aria-label="上一页参与组织">上一页</button>
-    <span data-organizations-page role="status" aria-live="polite"></span>
-    <button type="button" data-organizations-next aria-label="下一页参与组织">下一页</button>
-  </nav>
   <p class="ah-organizations-message" data-public-organizations-empty hidden={!deferOrganizations} role="status">正在读取参与组织…</p>
   {deferOrganizations && <noscript><p class="ah-organizations-message">请启用 JavaScript 以读取参与组织的最新信息。</p></noscript>}
   </div>

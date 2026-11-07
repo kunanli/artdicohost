@@ -10,15 +10,13 @@ const period = (start: string) => start < '12:00' ? 'morning' : 'afternoon';
   <div class="ah-program-shell">
     <div class="ah-program-datebar">
       <span class="ah-program-date" data-public-agenda-date>{eventConfig.date.label}</span>
-      <span class="ah-program-timezone" data-public-program-timezone>北京时间 · UTC+8</span>
     </div>
     <div class="ah-program-controls" data-program-controls hidden>
       <div class="ah-zone-tabs" role="tablist" aria-label="选择场地日程" aria-orientation="horizontal">
         {zones.map((zone, index) => <button type="button" id={`tab-${zone.id}`} data-zone={zone.id} role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-controls={`agenda-${zone.id}`} tabindex={index === 0 ? 0 : -1}><span class="ah-zone-swatch" aria-hidden="true"></span><span class="ah-zone-label"><b>{zone.id} 区</b><span class="ah-zone-name">{zone.name}</span></span><span class="ah-sr-only">{zone.description}</span></button>)}
       </div>
-      <label class="ah-program-period" for="program-period"><span>浏览时段</span><select id="program-period" data-program-period><option value="all">全日</option><option value="morning">上午 · AM</option><option value="afternoon">午后 · PM</option></select></label>
     </div>
-    <p class="ah-agenda-caption ah-program-notice" data-public-content-status>讲者与具体主题陆续公布。</p>
+    <p class="ah-agenda-caption ah-program-notice" data-public-content-status role="status"></p>
     <div class="ah-agenda-main">
       {zones.map(zone => {
         const rows = agenda.filter(item => item[zone.id as 'A' | 'B' | 'C'] !== '—');

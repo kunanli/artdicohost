@@ -144,3 +144,11 @@ for (const mode of ['file', 'cloud']) {
     assert.deepEqual((await store.save(3, clear, 'synthetic-editor')).content.event.presentation.faqItems, []);
   });
 }
+
+
+test('old published on-site guidance uses the organizer-confirmed review copy without changing saved FAQ bytes',()=>{
+ const old={id:'site-official',question:'新站点现场咨询代表已通过申请吗？',answer:'合成旧咨询说明'};
+ const before=JSON.stringify(old),row=publicFaqItems([old]).find(item=>item.id==='site-official');
+ assert.equal(row.question,'现场可以进行 GGJ 站点审核吗？');assert.match(row.answer,/现场可进行 GGJ 站点审核/u);
+ assert.equal(JSON.stringify(old),before);
+});

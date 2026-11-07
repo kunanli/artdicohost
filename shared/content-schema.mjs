@@ -12,7 +12,7 @@ export const ORGANIZATION_PARTICIPATION_LABELS = Object.freeze({undecided:'参�
  * questions never acquire a service meaning by prefix or position. */
 export function legacyFaqId(question) {
   const ids = { '现在可以报名吗？': 'registration-status', '不是 GGJ 组织者也能参加吗？': 'audience',
-    '已经是站点负责人，或想建立新站点，怎么登记？': 'site-role', '新站点现场咨询代表已通过申请吗？': 'site-official',
+    '已经是站点负责人，或想建立新站点，怎么登记？': 'site-role', '新站点现场咨询代表已通过申请吗？': 'site-official', '现场可以进行 GGJ 站点审核吗？': 'site-official',
     '报名成功就有住宿吗？': 'lodging-support', '外地来宾有住宿支持吗？': 'lodging-support', '如何修改或撤回资料？': 'data-rights' };
   return typeof question === 'string' && Object.hasOwn(ids, question) ? ids[question] : null;
 }

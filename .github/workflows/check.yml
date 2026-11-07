@@ -129,6 +129,22 @@ jobs:
           path: .local-data/browser-evidence/language/
           if-no-files-found: warn
           retention-days: 1
+      - name: Check single-page organizations and native project gallery
+        timeout-minutes: 3
+        env:
+          ARTDICO_PLAYWRIGHT_MODULE: playwright-core
+          ARTDICO_GALLERY_EVIDENCE_DIRECTORY: .local-data/browser-evidence/homepage-gallery
+        run: |
+          artdico_browser_path="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          test -n "$artdico_browser_path"
+          ARTDICO_CHROMIUM_BINARY="$artdico_browser_path" node tests/browser/homepage-gallery-smoke.mjs
+      - name: Retain homepage gallery evidence for one day
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: homepage-gallery-evidence
+          path: .local-data/browser-evidence/homepage-gallery/
+          retention-days: 1
       - name: Check pinned navigation and scroll motion
         id: public_scroll_browser
         timeout-minutes: 4

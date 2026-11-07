@@ -5,7 +5,7 @@ import { resolvePublicContentSource } from '../../shared/public-content-source.m
 import { publicOrganizationCards, orderOrganizationCards, organizationReferenceKey, organizationLogoVariant } from '../../shared/organization-display.mjs';
 import { PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
 import { organizationArtwork } from '../config/organization-artwork.mjs';
-import { createDefaultOrganizations, organizationLayout, ORGANIZATIONS_PER_PAGE } from '../config/exhibiting-partners.mjs';
+import { createDefaultOrganizations, organizationLayout } from '../config/exhibiting-partners.mjs';
 import { eventTimeInstant } from '../lib/event-presentation.mjs';
 import { createPublicContentRefresh } from '../lib/public-content-refresh.mjs';
 import { createHomeCollections } from '../lib/home-collections.mjs';
@@ -14,35 +14,16 @@ import { setPublicFaqs } from '../lib/public-faq.mjs';
 let displayedContent=null,workCards=[];
 const collections=createHomeCollections();
 const organizationMobile=typeof matchMedia==='function'?matchMedia('(max-width: 820px)'):null;
-let organizationPage=0,organizationPageAnchor=null,organizationMobileApplied=null;
-function updateOrganizationLayout({id=null,page=null}={}){
+let organizationMobileApplied=null;
+function updateOrganizationLayout(){
   const list=document.querySelector('[data-public-organizations]');if(!list)return;
   const rows=[...list.querySelectorAll('[data-organization-id]')],mobile=Boolean(organizationMobile?.matches);organizationMobileApplied=mobile;
-  const requested=id?rows.findIndex(row=>row.id===id||row.dataset.organizationId===id):-1;
-  if(requested>=0)organizationPage=Math.floor(requested/ORGANIZATIONS_PER_PAGE);
-  else if(page!==null)organizationPage=page;
-  else if(organizationPageAnchor){const index=rows.findIndex(row=>row.dataset.organizationId===organizationPageAnchor);if(index>=0)organizationPage=Math.floor(index/ORGANIZATIONS_PER_PAGE);}
-  const pages=Math.max(1,Math.ceil(rows.length/ORGANIZATIONS_PER_PAGE));organizationPage=Math.max(0,Math.min(pages-1,organizationPage));
-  const current=rows.slice(organizationPage*ORGANIZATIONS_PER_PAGE,organizationPage*ORGANIZATIONS_PER_PAGE+ORGANIZATIONS_PER_PAGE),pattern=organizationLayout(current.length,{mobile});
-  for(const row of rows)row.hidden=!current.includes(row);
-  current.forEach((row,index)=>{const {x,y,width,height}=pattern[index];row.style.setProperty('--ah-org-x',x+'%');row.style.setProperty('--ah-org-y',y+'%');row.style.setProperty('--ah-org-width',width+'%');row.style.setProperty('--ah-org-height',height+'cqi');});
-  organizationPageAnchor=current[0]?.dataset.organizationId??null;
-  const scene=list.closest('.ah-organizations-scene');if(scene)scene.dataset.organizationsReady='true';
-  const navigation=document.querySelector('[data-organizations-pagination]'),previous=document.querySelector('[data-organizations-previous]'),next=document.querySelector('[data-organizations-next]');
-  if(navigation)navigation.hidden=rows.length<=ORGANIZATIONS_PER_PAGE||list.hidden;
-  if(previous)previous.disabled=organizationPage===0;if(next)next.disabled=organizationPage===pages-1;
-  const label=document.querySelector('[data-organizations-page]');if(label)label.textContent=`${organizationPage+1} / ${pages}`;
-  const active=document.activeElement;
-  if(navigation?.contains(active)&&(navigation.hidden||active.disabled)){
-    const available=[previous,next].find(button=>button&&!button.disabled&&!navigation.hidden);
-    (available??document.getElementById('booths-heading'))?.focus({preventScroll:true});
-  }
+  const pattern=organizationLayout(rows.length,{mobile});
+  rows.forEach((row,index)=>{const {x,y,width,height}=pattern[index];row.hidden=false;row.style.setProperty('--ah-org-x',x+'%');row.style.setProperty('--ah-org-y',y+'%');row.style.setProperty('--ah-org-width',width+'%');row.style.setProperty('--ah-org-height',height+'cqi');});
+  const scene=list.closest('.ah-organizations-scene');if(scene){scene.dataset.organizationsReady='true';scene.toggleAttribute('data-compact-organizations',rows.length>16);}
 }
-organizationMobile?.addEventListener('change',()=>updateOrganizationLayout({id:document.activeElement?.closest('[data-organization-id]')?.id}));
-window.addEventListener('resize',()=>{if(organizationMobileApplied!==Boolean(organizationMobile?.matches))updateOrganizationLayout({id:document.activeElement?.closest('[data-organization-id]')?.id});},{passive:true});
-document.querySelector('[data-organizations-previous]')?.addEventListener('click',()=>updateOrganizationLayout({page:organizationPage-1}));
-document.querySelector('[data-organizations-next]')?.addEventListener('click',()=>updateOrganizationLayout({page:organizationPage+1}));
-document.addEventListener('artdico:organization-reveal',event=>updateOrganizationLayout({id:event.detail?.id}));
+organizationMobile?.addEventListener('change',()=>updateOrganizationLayout());
+window.addEventListener('resize',()=>{if(organizationMobileApplied!==Boolean(organizationMobile?.matches))updateOrganizationLayout();},{passive:true});
 
 const presentationSelectors={heroDescription:'[data-public-hero-description]',aboutTitle:'[data-public-about-title]',aboutText:'[data-public-about-text]'};
 const initialPresentationText=new Map(Object.values(presentationSelectors).flatMap(selector=>[...document.querySelectorAll(selector)].map(node=>[node,node.textContent])));
@@ -63,7 +44,7 @@ if (endpoint) {
       }else if(state.status==='unavailable'){
         if(!state.current)organizationsUnavailable();
         if(notice)notice.textContent=state.current?'暂未取得最新安排，仍显示上次核对的发布版本。':'暂时无法读取已发布安排，以下显示网站初始日程。';
-      }else if(state.status==='published'&&notice){notice.textContent=displayedContent?.event.status==='cancelled'?'本次活动已取消。':'讲者与主题陆续公布。';}
+      }else if(state.status==='published'&&notice){notice.textContent=displayedContent?.event.status==='cancelled'?'本次活动已取消。':'';}
     }}).start();
   } else organizationsUnavailable();
 }
@@ -94,9 +75,6 @@ function renderPublishedContent(content,url) {
       && content.event.dateStatus === 'confirmed' && content.event.status !== 'cancelled';
     hint.hidden = !sameCountdown;
   }
-  const programTimezone = document.querySelector('[data-public-program-timezone]');
-  if (programTimezone) programTimezone.textContent = ['Asia/Shanghai', 'Asia/Hong_Kong'].includes(content.event.timezone)
-    ? '北京时间 · UTC+8' : '活动时区 · ' + content.event.timezone;
   for (const panel of agenda?.querySelectorAll('[data-agenda-panel]') ?? []) {
     const list = panel.querySelector('.ah-agenda-list');
     if (!list) continue;
@@ -224,7 +202,7 @@ function renderPublishedContent(content,url) {
   for (const node of document.querySelectorAll('[data-public-event-venue]')) node.textContent = content.event.venue + (content.event.venueStatus === 'confirmed' ? '' : '（暂定）');
   renderPresentation(content.event);
   const notice = document.querySelector('[data-public-content-status]');
-  if (notice) notice.textContent = content.event.status === 'cancelled' ? '本次活动已取消。' : '讲者与主题陆续公布。';
+  if (notice) notice.textContent = content.event.status === 'cancelled' ? '本次活动已取消。' : '';
   collections.restore(collectionState);
   document.dispatchEvent(new Event('artdico:public-content-updated'));
 }
@@ -404,7 +382,7 @@ function renderShowcases(content, sourceUrl) {
       // Constructed from a content-addressed image ID, never a private materials link.
       photo.src = new URL(work.coverUrl, sourceUrl.origin).href;
       photo.addEventListener('error', () => { photo.hidden = true; fallback.hidden=false;preview.hidden=true;preview.disabled=true;card.dataset.coverState='unavailable';collections.updateWorks(); });
-      preview.append(photo,element('span','查看大图 ↗'));poster.append(preview);
+      preview.append(photo);poster.append(preview);
     }
     const caption=element('div',undefined,'ah-showcase-caption');
     caption.append(element('span',SHOWCASE_KIND_LABELS[work.kind],'ah-showcase-category'),element('h3',work.title),element('p',work.teamName,'ah-showcase-team'));

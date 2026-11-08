@@ -188,6 +188,47 @@ async function main() {
     if (requireCurrent) await page.waitForFunction(id => [...document.querySelectorAll('.ah-home-header a[aria-current="location"]')].some(node => node.hash === '#' + id), id);
     return { initial, final, top, headerBottom: nav.bottom };
   }
+  async function factBubbleMotion(page, viewportWidth) {
+    const orbit=page.locator('.ah-home-fact-orbit');
+    await orbit.evaluate(node=>scrollTo({top:node.getBoundingClientRect().top+scrollY-document.querySelector('.ah-home-header').getBoundingClientRect().height-28,behavior:'instant'}));
+    await page.mouse.move(viewportWidth-2,400);
+    await page.waitForFunction(()=>[...document.querySelectorAll('.ah-home-fact-bubble')].every(node=>node.dataset.factMotion==='active'&&node.dataset.scrollReveal==='seen'&&!node.getAnimations().some(a=>a.id==='ah-scroll-reveal')));
+    const sample=()=>page.locator('.ah-home-fact-bubble').evaluateAll(nodes=>nodes.map(node=>{const style=getComputedStyle(node),box=node.getBoundingClientRect();return {state:node.dataset.factMotion,float:parseFloat(style.getPropertyValue('--ah-fact-float'))||0,drift:parseFloat(style.getPropertyValue('--ah-fact-scroll'))||0,translate:style.translate,box:box.toJSON()};}));
+    const first=await sample();await page.waitForTimeout(650);const second=await sample();
+    assert.ok(second.some((item,i)=>Math.abs(item.float-first[i].float)>.35),'fact bubbles visibly float with real time and no scroll');
+    const before=await page.evaluate(()=>scrollY);await page.mouse.wheel(0,100);
+    await page.waitForFunction(y=>scrollY>y+30,before);await page.waitForTimeout(100);const down=await sample();
+    assert.ok(down.some((item,i)=>item.drift>second[i].drift+.25),'native downward scroll adds a separate positive drift');
+    const lower=await page.evaluate(()=>scrollY);await page.mouse.wheel(0,-100);
+    await page.waitForFunction(y=>scrollY<y-30,lower);await page.waitForTimeout(100);const up=await sample();
+    assert.ok(up.some((item,i)=>item.drift<down[i].drift-.25),'reversing the wheel reverses the drift');
+    for(const values of [first,second,down,up]){
+      for(const item of values){assert.ok(Math.abs(item.float+item.drift)<=(viewportWidth<=820?12.1:24.1));assert.ok(item.box.left>=-1&&item.box.right<=viewportWidth+1);}
+      for(let i=0;i<values.length;i++)for(let j=i+1;j<values.length;j++){
+        const a=values[i].box,b=values[j].box;
+        assert.ok(Math.hypot(a.x+a.width/2-b.x-b.width/2,a.y+a.height/2-b.y-b.height/2)>=(a.width+b.width)/2-1,'moving fact circles never collide');
+      }
+    }
+    const pixels=await particlePixels(page);assert.equal(pixels.sphereAlphaPixels,0,'background stars remain outside the complete moving fact bubbles');
+    const path=resolve(evidence,'fact-bubbles-'+viewportWidth+'.png');await orbit.screenshot({path});
+    await page.evaluate(()=>scrollTo({top:0,behavior:'instant'}));
+    await page.waitForFunction(()=>[...document.querySelectorAll('.ah-home-fact-bubble')].every(node=>node.dataset.factMotion==='paused'));
+    const paused=await sample();await page.waitForTimeout(180);assert.deepEqual((await sample()).map(v=>[v.float,v.drift]),paused.map(v=>[v.float,v.drift]),'offscreen bubbles freeze both motion layers');
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.waitForFunction(()=>[...document.querySelectorAll('.ah-home-fact-bubble')].every(node=>node.dataset.factMotion==='reduced'));
+    assert.ok((await sample()).every(item=>item.float===0&&item.drift===0),'reduced motion clears both offsets');
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    await orbit.evaluate(node=>scrollTo({top:node.getBoundingClientRect().top+scrollY-110,behavior:'instant'}));
+    await page.waitForFunction(()=>document.querySelector('.ah-home-fact-bubble').dataset.factMotion==='active');
+    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'));});
+    await page.waitForFunction(()=>document.querySelector('.ah-home-fact-bubble').dataset.factMotion==='hidden');
+    const hidden=await sample();await page.waitForTimeout(150);assert.deepEqual((await sample()).map(v=>[v.float,v.drift]),hidden.map(v=>[v.float,v.drift]),'synthetic hidden-page signal freezes both layers');
+    await page.evaluate(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});
+    await page.waitForFunction(()=>document.querySelector('.ah-home-fact-bubble').dataset.factMotion==='active');
+    await noOverflow(page);
+    return {independentRealTimeFloat:true,nativeWheelBothDirections:true,boundedAndNoncolliding:true,offscreenAndHiddenPaused:true,reducedResetsAndResumes:true,sharedAtmosphereClock:true,screenshot:path};
+  }
+
   async function noDecorativeMotion(page) {
     const value = await page.evaluate(() => ({ reveals: document.getAnimations().filter(animation => animation.id === 'ah-scroll-reveal').length,
       artwork: [...document.querySelectorAll('[data-scroll-art]')].map(node => ({ transform: getComputedStyle(node).transform, translate: getComputedStyle(node).translate })) }));
@@ -214,7 +255,7 @@ async function main() {
       const context = canvas.getContext('2d'), pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
       let layerOpacity = 1; for (let node = canvas; node; node = node.parentElement) layerOpacity *= Number(getComputedStyle(node).opacity);
       const b = canvas.getBoundingClientRect(), stage = document.querySelector('.ah-home-hero-stage');
-      const spheres = [...document.querySelectorAll('.ah-home-hero-planet,[data-background-planet]')].filter(node => {
+      const spheres = [...document.querySelectorAll('.ah-home-hero-planet,[data-background-planet],.ah-home-fact-bubble')].filter(node => {
         let opacity = 1; for (let parent = node; parent; parent = parent.parentElement) opacity *= Number(getComputedStyle(parent).opacity);
         return opacity > .01 && !node.closest('[hidden]');
       }).map(node => node.getBoundingClientRect()).filter(rect => rect.width > 2 && rect.height > 2);
@@ -733,6 +774,7 @@ async function main() {
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.motionState === 'reduced'); await noDecorativeMotion(page);
         stage = 'background-compositing'; await page.emulateMedia({ reducedMotion: 'no-preference' });
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.atmosphereState === 'active'); const compositing = await backgroundCompositing(page);
+        stage='fact-bubble-motion';const factBubbles=await factBubbleMotion(page,width);
         await page.emulateMedia({ reducedMotion: 'reduce' }); await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.motionState === 'reduced'); await noDecorativeMotion(page);
         stage = 'deep-link'; const readsBeforeDeepLink = f.publicReads();
         await page.goto(SITE + '/__scroll-blank/', { waitUntil: 'domcontentloaded' });
@@ -749,7 +791,7 @@ async function main() {
         await page.waitForFunction(() => document.querySelector('#artdico-host')?.dataset.motionState === 'active');
         await page.emulateMedia({ reducedMotion: 'reduce' }); await page.screenshot({ path: resolve(evidence, 'pinned-header-' + width + '.png') });
         stage='one-pixel-viewport';const narrowViewport=width===1440?await onePixelViewport(page,width):null;
-        reports.push({ width, typedHero, initialTitleMask, initialTitleMaskSweep, initialAndLiveReducedMotion: true, visibleHeroAmbientFrameLoop: true, visibleParticlePixels: [firstParticles, secondParticles], finePointerInteraction: pointerInteraction, backgroundPointer, lateTitleFontLifecycle, nativeWheel: true, boundedDecorativeShift: artShift, originalSphere, distantSphere, sphereAfterWheel, ambientBudget, compositing, continuousFullPageBackgroundWithOneBoundedLoop: true, realEntryAndFocusCancellation: true, guestFade, organizationFade, touchPan, rowFade, narrowViewport, pointerTransparentBackground: true, frameProbeExplicitlySyntheticInstrumentation: true, pinnedHeader: true, anchorsBelowHeader: alignment, mobileMenu: width < 1000, publicRefreshPositionPreserved: true, delayedGuestHash: true, hiddenSignalExplicitlySynthetic: true });
+        reports.push({ width, typedHero, initialTitleMask, initialTitleMaskSweep, initialAndLiveReducedMotion: true, visibleHeroAmbientFrameLoop: true, visibleParticlePixels: [firstParticles, secondParticles], finePointerInteraction: pointerInteraction, backgroundPointer, lateTitleFontLifecycle, nativeWheel: true, boundedDecorativeShift: artShift, originalSphere, distantSphere, sphereAfterWheel, ambientBudget, compositing, factBubbles, continuousFullPageBackgroundWithOneBoundedLoop: true, realEntryAndFocusCancellation: true, guestFade, organizationFade, touchPan, rowFade, narrowViewport, pointerTransparentBackground: true, frameProbeExplicitlySyntheticInstrumentation: true, pinnedHeader: true, anchorsBelowHeader: alignment, mobileMenu: width < 1000, publicRefreshPositionPreserved: true, delayedGuestHash: true, hiddenSignalExplicitlySynthetic: true });
       } catch (error) { await captureFailureSignals(page); throw error; } finally { activePage = null; await f.context.close(); }
     }
     for (const mode of ['no-javascript', 'no-intersection-observer']) {
@@ -758,6 +800,7 @@ async function main() {
         await essentialContent(f.page); await posterTitle(f.page);
         if (mode === 'no-intersection-observer') {
           assert.equal(await f.page.locator('.ah-home-hero-planet').getAttribute('data-hero-motion'), 'idle');
+          assert.equal(await f.page.locator('.ah-home-fact-bubble[data-fact-motion=active]').count(),0,'no observer leaves fact bubbles static without another frame loop');
           assert.equal(await f.page.locator('[data-reading-atmosphere]').evaluate(node => node.hidden), true);
           await f.page.waitForFunction(() => window.__homeMotionQaPendingFrames() === 0, null, { timeout: 4000 });
         }

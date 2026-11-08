@@ -1,9 +1,12 @@
+import { createWorkCarousel } from './work-carousel.mjs';
+
 // Homepage interactions only: no storage, registration state or network access.
 export function createHomeCollections({document:doc=globalThis.document,window:win=globalThis.window}={}) {
-  if(!doc||!win)return {capture:()=>null,restore:()=>{},updateWorks:()=>{},reveal:()=>{},focusWorks:()=>{}};
+  if(!doc||!win)return {capture:()=>null,restore:()=>{},updateWorks:()=>{},prepareWorks:()=>{},reveal:()=>{},focusWorks:()=>{}};
   const grid=doc.querySelector('[data-public-showcases]'),filter=doc.querySelector('[data-public-works-filter]');
   const dialog=doc.querySelector('[data-work-lightbox]');
-  let selectedId=null,previewId=null,previewTrigger=null;
+  const workCarousel=createWorkCarousel({grid,window:win});
+  let previewId=null,previewTrigger=null;
   const guestRequests=new WeakMap();
   const visibleFocusTarget=node=>node?.isConnected&&!node.disabled&&!node.closest('[hidden],[inert]')&&node.getClientRects().length;
   const works=()=>[...doc.querySelectorAll('[data-public-showcases] [data-showcase-id]')];
@@ -40,30 +43,13 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
     if(title)title.textContent=card.querySelector('h3')?.textContent||'作品图';
     previewTrigger=card.querySelector('[data-work-preview]');
   }
-  function updateWorks(preferred=selectedId){
+  function updateWorks(preferred=workCarousel.current()){
     const cards=works(),visible=filtered();
-    selectedId=(visible.find(card=>card.dataset.showcaseId===preferred)||visible[0])?.dataset.showcaseId||null;
     for(const card of cards)card.hidden=!visible.includes(card);
-    const empty=doc.querySelector('[data-public-works-filter-empty]');if(empty)empty.hidden=cards.length===0||visible.length>0;
-    if(grid){grid.dataset.galleryReady='true';grid.setAttribute('aria-roledescription','作品画廊');}
+    workCarousel.update(preferred);
     syncPreview();
   }
-  function scrollToWork(id){
-    const card=works().find(row=>row.dataset.showcaseId===id);
-    if(card&&grid){grid.scrollTo({left:grid.scrollLeft+card.getBoundingClientRect().left-grid.getBoundingClientRect().left,behavior:'instant'});selectedId=id;}
-  }
-  filter?.addEventListener('change',()=>{updateWorks();if(grid)grid.scrollLeft=0;});
-  grid?.addEventListener('keydown',event=>{
-    if(event.target!==grid||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
-    const cards=filtered(),left=grid.getBoundingClientRect().left;
-    const index=cards.reduce((best,card,i)=>Math.abs(card.getBoundingClientRect().left-left)<Math.abs(cards[best].getBoundingClientRect().left-left)?i:best,0);
-    const next=event.key==='Home'?0:event.key==='End'?cards.length-1:Math.max(0,Math.min(cards.length-1,index+(event.key==='ArrowRight'?1:-1)));
-    if(cards[next]){event.preventDefault();scrollToWork(cards[next].dataset.showcaseId);}
-  });
-  grid?.addEventListener('scroll',()=>{
-    const left=grid.getBoundingClientRect().left;
-    selectedId=filtered().reduce((best,card)=>!best||Math.abs(card.getBoundingClientRect().left-left)<Math.abs(best.getBoundingClientRect().left-left)?card:best,null)?.dataset.showcaseId??null;
-  },{passive:true});
+  filter?.addEventListener('change',()=>{workCarousel.prepare();updateWorks();});
   const guestButtons=()=>[...doc.querySelectorAll('[data-public-guests] [data-guest-toggle]')];
   function updateGuest(button,wanted){
     if(!button)return;
@@ -119,7 +105,7 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
     if(target.matches('[data-showcase-id]')){
       if(filter&&['student','indie'].includes(filter.value)&&target.dataset.workKind!==filter.value)filter.value='all';
       updateWorks(target.dataset.showcaseId);
-      scrollToWork(target.dataset.showcaseId);
+      workCarousel.select(target.dataset.showcaseId);
     }
     for(let parent=target.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;
     if(target.matches('[data-organization-id]'))target.dispatchEvent(new CustomEvent('artdico:organization-reveal',{bubbles:true,detail:{id:target.id}}));
@@ -130,11 +116,11 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
   function capture(){
     const active=doc.activeElement,card=active?.closest?.('[data-guest-id],[data-showcase-id],[data-organization-id],[id^="program-"]');
     const focus=card?{id:card.id,self:card===active,index:[...card.querySelectorAll('a,button,summary,[tabindex]')].indexOf(active),href:active.getAttribute('href'),key:active.dataset.focusKey}:null;
-    return {workId:selectedId,workScroll:grid?.scrollLeft??0,open:guestButtons().filter(button=>guestRequests.get(button)).map(button=>button.closest('[data-guest-id]').id),focus,active,scrollX:win.scrollX,scrollY:win.scrollY};
+    return {workId:workCarousel.current(),open:guestButtons().filter(button=>guestRequests.get(button)).map(button=>button.closest('[data-guest-id]').id),focus,active,scrollX:win.scrollX,scrollY:win.scrollY};
   }
   function restore(state){
     updateWorks(state?.workId);
-    if(state&&grid){const card=works().find(row=>row.dataset.showcaseId===state.workId);if(card)scrollToWork(state.workId);else grid.scrollLeft=state.workScroll??0;}
+    if(state?.workId)workCarousel.select(state.workId);
     for(const id of state?.open||[])openGuest(doc.getElementById(id)?.querySelector('[data-guest-toggle]'));
     if(state?.focus&&!state.active.isConnected){
       const card=doc.getElementById(state.focus.id),controls=card?[...card.querySelectorAll('a,button,summary,[tabindex]')]:[];
@@ -155,5 +141,5 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
       win.requestAnimationFrame(()=>win.scrollTo(position));
     }
   }
-  return {capture,restore,updateWorks,reveal,focusWorks:()=>heading('students-heading')};
+  return {capture,restore,updateWorks,prepareWorks:workCarousel.prepare,reveal,focusWorks:()=>heading('students-heading')};
 }

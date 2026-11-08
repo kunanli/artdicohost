@@ -363,11 +363,13 @@ function renderShowcases(content, sourceUrl) {
     dialog?.querySelector('img')?.removeAttribute('src');
   }
   const controls=document.querySelector('[data-public-works-controls]');if(controls)controls.hidden=!hasWorks;
+  collections.prepareWorks();
   grid.replaceChildren();
   for (const work of cards) {
     const card = element('li', undefined, 'ah-showcase-card');
     card.id='work-'+work.id;card.dataset.showcaseId=work.id;card.dataset.workKind=work.kind;
     card.dataset.coverState=work.coverUrl?'available':'missing';
+    const cardContent=element('div',undefined,'ah-showcase-card-content');
     const poster=element('div',undefined,'ah-showcase-poster');
     const fallback=element('p','作品图片尚未公布','ah-showcase-cover-empty');
     fallback.hidden=Boolean(work.coverUrl);
@@ -386,7 +388,7 @@ function renderShowcases(content, sourceUrl) {
     }
     const caption=element('div',undefined,'ah-showcase-caption');
     caption.append(element('span',SHOWCASE_KIND_LABELS[work.kind],'ah-showcase-category'),element('h3',work.title),element('p',work.teamName,'ah-showcase-team'));
-    poster.append(caption,fallback);card.append(poster);
+    poster.append(caption,fallback);cardContent.append(poster);
     const detail = element('div', undefined, 'ah-showcase-card-body');
     if(work.responseStatus==='declined')detail.append(element('p','已回复不参加','ah-showcase-status'));
     const organization=organizations.get(work.organizationId);
@@ -400,7 +402,8 @@ function renderShowcases(content, sourceUrl) {
       link.addEventListener('click',()=>{const agenda=document.querySelector('[data-agenda]'),period=agenda?.querySelector('[data-program-period]');if(period){period.value='all';period.dispatchEvent(new Event('change'));}agenda?.querySelector('[data-zone="'+session.zone+'"]')?.click();});arrangement.append(reveal(link));
     }
     if(arrangement.childElementCount)detail.append(arrangement);
-    if(detail.childElementCount)card.append(detail);
+    if(detail.childElementCount)cardContent.append(detail);
+    card.append(cardContent);
     grid.append(card);
   }
   grid.hidden=!hasWorks;

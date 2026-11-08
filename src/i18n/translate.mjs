@@ -54,6 +54,7 @@ export function translate(value, language) {
     if ((match=/^暂不可用（HTTP (\d+)），请保留原申请后重试。$/u.exec(reason))) return `${stage} is unavailable (HTTP ${match[1]}). Keep the original application and retry.`;
   }
   if ((match=/^([ABC]) 区(?: · (.*))?$/u.exec(key))) return `Zone ${match[1]}${match[2] ? ' · '+translate(match[2],language) : ''}`;
+  if ((match=/^居中查看(.+)的作品$/u.exec(key))) return 'Center project: '+match[1];
   if ((match=/^查看(.+)的作品大图$/u.exec(key))) return 'View image: '+match[1];
   if ((match=/^(.+)的作品图$/u.exec(key))) return 'Project image: '+match[1];
   if ((match=/^(.+)的组织图片$/u.exec(key))) return 'Organization image: '+match[1];

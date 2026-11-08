@@ -35,6 +35,19 @@ async function main() {
   const mime = file => ({ html: 'text/html; charset=utf-8', js: 'text/javascript', mjs: 'text/javascript', css: 'text/css', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', avif: 'image/avif', svg: 'image/svg+xml', woff2: 'font/woff2', ico: 'image/x-icon' })[extname(file).slice(1)] || 'application/octet-stream';
   let failure = null;
 
+  async function hierarchy(page){
+    const sizes=await page.evaluate(()=>{
+      const font=node=>parseFloat(getComputedStyle(node).fontSize),visible=node=>node.getClientRects().length&&!node.closest('[hidden]');
+      const root=document.querySelector('#artdico-host');
+      return {body:font(root),sections:[...root.querySelectorAll('main h2')].filter(visible).map(font),subtitles:[...root.querySelectorAll('.ah-program-title,.ah-recruitment-grid h3,.ah-countdown-label')].filter(visible).map(font),paragraphs:[...root.querySelectorAll('.ah-about .ah-program-card p,.ah-recruitment-grid p,.ah-faq-answer')].filter(visible).map(font),actions:[...root.querySelectorAll('.ah-hero-actions .ah-primary,.ah-hero-actions .ah-text-action,.ah-recruitment-grid .ah-secondary')].filter(visible).map(font)};
+    });
+    assert.ok(sizes.sections.length>=5&&sizes.sections.every(size=>Math.abs(size-sizes.sections[0])<.02),'all public section titles share one responsive heading size');
+    assert.ok(sizes.subtitles.length>=4&&sizes.subtitles.every(size=>Math.abs(size-sizes.subtitles[0])<.02),'content subtitles use one level across program and recruitment cards');
+    assert.ok(sizes.paragraphs.length>=4&&sizes.paragraphs.every(size=>Math.abs(size-sizes.body)<.02),'body copy uses one reading size across sections');
+    assert.ok(sizes.sections[0]>sizes.subtitles[0]&&sizes.subtitles[0]>sizes.body&&sizes.body>=16);
+    assert.ok(sizes.actions.every(size=>size===16),'primary and secondary actions use the same readable role');
+    return sizes;
+  }
   async function measure(page, phase) {
     stage = phase + '-typography';
     const measurements = await page.locator('[data-registration-form]').evaluate((form, minimum) => {
@@ -129,14 +142,14 @@ async function main() {
           pointCenterY: row.getBoundingClientRect().y + parseFloat(point.top) + parseFloat(point.height) / 2 };
       }));
       assert.ok(metrics.length > 0, 'each venue has a documented synthetic session');
-      const timeSize = Math.max(16, Math.min(32, width * .0167));
-      const categorySize = Math.max(14, Math.min(25, width * .013));
-      const titleSize = Math.max(20, Math.min(40, width * .0208));
+      const timeSize = Math.max(16, Math.min(20, width * .0105));
+      const categorySize = 14;
+      const titleSize = Math.max(20, Math.min(24, width * .013));
       for (const row of metrics) {
         numericMetrics = { agendaWidth: width, zone, ...row };
-        assert.ok(Math.abs(row.time.font - timeSize) < .02, 'timeline time uses its reference-scaled display role');
+        assert.ok(Math.abs(row.time.font - timeSize) < .02, 'timeline time uses its shared time role');
         assert.ok(Math.abs(row.category.font - categorySize) < .02, 'venue badge uses its own readable display role');
-        assert.ok(Math.abs(row.title.font - titleSize) < .02, 'session title preserves the original larger hierarchy');
+        assert.ok(Math.abs(row.title.font - titleSize) < .02, 'session title uses the shared content-heading role');
         assert.ok(row.title.font / row.time.font >= 1.2 && row.title.font / row.time.font <= 1.35, 'session title remains larger than the time');
         assert.equal(row.timeLines, 1, 'the complete time range stays on one line');
         assert.ok(row.category.y >= row.time.bottom + 4, 'the venue badge stays below the complete time line');
@@ -191,6 +204,7 @@ async function main() {
         const page = await context.newPage(); activePage = page; page.setDefaultTimeout(12000);
         page.on('pageerror', error => pageErrors.push(error.message)); await page.clock.setFixedTime(new Date('2026-10-21T09:00:00.000Z'));
         stage = 'open-form'; await page.goto(SITE + '/#registration', { waitUntil: 'networkidle' }); await page.evaluate(() => document.fonts.ready);
+        await hierarchy(page);
         const form = page.locator('[data-registration-form]'); await form.locator('[data-submit]:enabled').waitFor(); assert.equal(await form.getAttribute('data-registration-mode'), 'production');
         const agenda = await measureAgenda(page, width); stage = 'form-keyboard';
         assert.equal(await page.locator('#about .ah-program-detail').count(), 0, 'organizer instructions no longer interrupt the visual bubbles');
@@ -199,7 +213,7 @@ async function main() {
         assert.ok(await organizer.evaluate(node => parseFloat(getComputedStyle(node).fontSize)) >= 16, 'Q&A explanations use the readable body role');
         const noteMetrics = await page.locator('.ah-home-fact-bubble small').evaluateAll(nodes => nodes.map(node => ({font:parseFloat(getComputedStyle(node).fontSize),width:node.clientWidth,scrollWidth:node.scrollWidth,height:node.clientHeight,scrollHeight:node.scrollHeight})));
         assert.equal(noteMetrics.length, 4);
-        for (const note of noteMetrics) { assert.ok(note.font >= (width >= 768 ? 16 : 14)); assert.ok(note.scrollWidth <= note.width + 1 && note.scrollHeight <= note.height + 1, 'larger bubble notes stay readable without clipping'); }
+        for (const note of noteMetrics) { assert.ok(note.font === 14); assert.ok(note.scrollWidth <= note.width + 1 && note.scrollHeight <= note.height + 1, 'larger bubble notes stay readable without clipping'); }
         await form.locator('.ah-general-extra > summary').focus(); await page.keyboard.press('Enter'); assert.equal(await form.locator('.ah-general-extra').evaluate(node => node.open), true);
         assert.equal(await form.locator('[data-proposal-toggle]').count(),0,'the speaker form has no general attendance toggle');assert.equal(await form.locator('[data-speaker-proposal]').isVisible(),true);
         await form.locator('[name="speaker.topic"]').focus();assert.equal(await form.locator('[name="speaker.topic"]').evaluate(node=>document.activeElement===node),true);

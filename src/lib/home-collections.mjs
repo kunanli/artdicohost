@@ -1,7 +1,7 @@
 import { createGuestPhotoRotation } from './guest-photo-rotation.mjs';
 import { createWorkCarousel } from './work-carousel.mjs';
 
-// Homepage interactions; only the photo playback preference is stored locally.
+// Public homepage interactions only; no playback preference or business storage.
 export function createHomeCollections({document:doc=globalThis.document,window:win=globalThis.window}={}) {
   if(!doc||!win)return {capture:()=>null,restore:()=>{},updateWorks:()=>{},prepareWorks:()=>{},reveal:()=>{},focusWorks:()=>{}};
   const grid=doc.querySelector('[data-public-showcases]'),filter=doc.querySelector('[data-public-works-filter]');
@@ -100,7 +100,7 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
   guestRotation=createGuestPhotoRotation({document:doc,window:win,buttons:guestButtons,manual:button=>guestRequests.get(button),render:(button,wanted)=>updateGuest(button,wanted,true)});
   function openGuest(button){
     if(!button)return;
-    guestRotation.clear();
+    guestRotation.exclude(button);
     for(const other of guestButtons())updateGuest(other,other===button);
   }
   doc.addEventListener('artdico:guest-photo-change',event=>{
@@ -126,7 +126,7 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
   doc.addEventListener('click',event=>{
     const guest=event.target.closest?.('[data-public-guests] [data-guest-toggle]');
     if(guest&&guest.getAttribute('aria-disabled')!=='true'){
-      if(guest.getAttribute('aria-pressed')==='true'){guestRotation.clear();updateGuest(guest,false);}else openGuest(guest);
+      if(guest.getAttribute('aria-pressed')==='true'){guestRotation.exclude(guest);updateGuest(guest,false);}else openGuest(guest);
     }
     if(!event.target.closest?.('[data-public-guests]'))for(const button of guestButtons())updateGuest(button,false);
     const button=event.target.closest?.('[data-work-preview]');if(!button||button.disabled||!dialog)return;

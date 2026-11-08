@@ -33,9 +33,16 @@ export function createFactBubbleMotion(root) {
       geometryDirty = false;
     }
     for (const bubble of bubbles) {
-      const { element, top, left, width, height } = bubble, y = frame.top + top;
+      const { element, top, left, width, height } = bubble;
+      const dragX = parseFloat(element.style.getPropertyValue('--ah-drag-x')) || 0, dragY = parseFloat(element.style.getPropertyValue('--ah-drag-y')) || 0;
+      const y = frame.top + top + dragY;
       if (!width || y + height < 0 || y > innerHeight) { mark(element, 'paused'); continue; }
       mark(element, 'active');
+      if (element.matches('[data-bubble-dragging],[data-bubble-settling],:focus-within')) {
+        const float = parseFloat(element.style.getPropertyValue('--ah-fact-float')) || 0, drift = parseFloat(element.style.getPropertyValue('--ah-fact-scroll')) || 0;
+        detail.spheres.push({ x: frame.left + left + width / 2 + dragX, y: y + height / 2 + float + drift, rx: width / 2, ry: height / 2 });
+        continue;
+      }
       bubble.phase += elapsed / bubble.period * Math.PI * 2;
       const float = Math.sin(bubble.phase) * (compact ? 4 : 8);
       bubble.impulse = clamp(bubble.impulse + scrollDelta * .025, compact ? 2 : 4) * Math.pow(.86, step);
@@ -45,7 +52,7 @@ export function createFactBubbleMotion(root) {
       element.style.setProperty('--ah-fact-float', float.toFixed(2) + 'px');
       element.style.setProperty('--ah-fact-scroll', drift.toFixed(2) + 'px');
       // Exclude the complete moving circle from background stars, including text.
-      detail.spheres.push({ x: frame.left + left + width / 2, y: y + height / 2 + float + drift, rx: width / 2, ry: height / 2 });
+      detail.spheres.push({ x: frame.left + left + width / 2 + dragX, y: y + height / 2 + float + drift, rx: width / 2, ry: height / 2 });
     }
   });
 }

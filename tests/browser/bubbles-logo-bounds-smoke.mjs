@@ -334,8 +334,8 @@ async function guestText(f, { profiles = guests, allowLongFields = false, requir
     }
     nonoverlap(measured.text.map(text => text.box), 'name, organization and GGJ identity rectangles cannot overlap');
     if (!allowLongFields && (requireUnclippedNameAndRole||actualSpellingBoundaryIds.includes(guest.id))) for (const text of measured.text.filter(item => item.className !== 'ah-guest-affiliation')) assert.ok(text.scrollHeight <= text.clientHeight + 1, 'selected actual or explicitly synthetic reference spelling must fit without an inner scroll');
-    assert.ok(measured.text[0].font >= (f.width >= 1800 ? 30 : f.width >= 1000 ? 24 : 18), 'names are enlarged at usable responsive sizes');
-    if (expected) assert.ok(measured.text.find(text => text.className === 'ah-guest-subtitle').font >= (f.width >= 1800 ? 19 : f.width >= 1000 ? 16 : 14));
+    assert.ok(measured.text[0].font >= (f.width > 820 ? 24 : 18), 'names use the shared responsive guest heading role');
+    if (expected) assert.ok(measured.text.find(text => text.className === 'ah-guest-subtitle').font >= (f.width > 820 ? 16 : 14));
     result.push({ id: guest.id, attendance:guest.attendance, affiliationSource: affiliation ? 'company' : 'none', subtitleSource: kind, metrics: measured });
   }
   return result;
@@ -420,7 +420,7 @@ async function circlePhoto(f, guest, { expectPhoto = Boolean(guest.portraitUrl),
     await page.keyboard.press('Escape');
     if(f.width < 600){await touchCircle(toggle);assert.equal(await toggle.getAttribute('aria-pressed'),'true');await touchCircle(toggle);assert.equal(await toggle.getAttribute('aria-pressed'),'false','touch toggles the image without adding a panel');}
     else {
-      await page.locator('#guests-heading').focus();
+      await page.locator('#guests-heading').evaluate(node=>node.focus({preventScroll:true}));
       const aim=await toggle.boundingBox();await page.mouse.move(aim.x+aim.width/2,aim.y+aim.height/2);
       await page.waitForFunction(id=>document.querySelector('#guest-'+id+' [data-guest-toggle]')?.getAttribute('aria-pressed')==='true',guest.id);
       await page.mouse.move(0,0);
@@ -475,7 +475,7 @@ async function animationState(page, id) {
 async function motion(f) {
   stage = 'actual-waapi-motion';
   const { page } = f, target = page.locator('#guest-' + motionGuest.id), toggle = target.locator('[data-guest-toggle]');
-  await page.mouse.move(0, 0); await page.locator('#guests-heading').focus(); await target.evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
+  await page.mouse.move(0, 0); await page.locator('#guests-heading').evaluate(node=>node.focus({preventScroll:true})); await target.evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' }));
   await page.waitForFunction(id => document.getElementById('guest-' + id)?.getAnimations().some(animation => animation.playState === 'running'), motionGuest.id);
   const moving = await animationState(page, motionGuest.id); await page.waitForTimeout(650); const later = await animationState(page, motionGuest.id);
   await page.waitForTimeout(650); const third = await animationState(page, motionGuest.id);
@@ -493,9 +493,9 @@ async function motion(f) {
   const aim = await toggle.boundingBox(); await page.mouse.move(aim.x + aim.width / 2, aim.y + aim.height / 2); await paused('hover/open');
   if(motionGuest.portraitUrl)assert.equal(await toggle.getAttribute('aria-pressed'), 'true', 'fine-pointer hover reveals the decoded photo inside its circle');
   assert.equal(await target.locator('.ah-guest-detail-body,details').count(), 0, 'hover creates no rectangle or extra disclosure');
-  await page.keyboard.press('Escape'); await page.mouse.move(0, 0); await page.locator('#guests-heading').focus(); await resumed();
+  await page.keyboard.press('Escape'); await page.mouse.move(0, 0); await page.locator('#guests-heading').evaluate(node=>node.focus({preventScroll:true})); await resumed();
   await toggle.focus(); await paused('keyboard focus'); await page.keyboard.press('Enter'); await paused('photo switch');
-  await page.keyboard.press('Escape'); await page.locator('#guests-heading').focus(); await resumed();
+  await page.keyboard.press('Escape'); await page.locator('#guests-heading').evaluate(node=>node.focus({preventScroll:true})); await resumed();
   await page.locator('.ah-footer').evaluate(node => node.scrollIntoView({ block: 'start', behavior: 'instant' })); await paused('actual offscreen intersection');
   await target.evaluate(node => node.scrollIntoView({ block: 'center', behavior: 'instant' })); await resumed();
   // Playwright forces page visibility in headless Chromium. This explicitly
@@ -514,7 +514,7 @@ async function motion(f) {
 }
 async function shots(f, prefix) {
   if (![390, 1920].includes(f.width)) return [];
-  await f.page.mouse.move(0, 0); await f.page.keyboard.press('Escape'); await f.page.locator('#guests-heading').focus(); await f.page.emulateMedia({ reducedMotion: 'reduce' });
+  await f.page.mouse.move(0, 0); await f.page.keyboard.press('Escape'); await f.page.locator('#guests-heading').evaluate(node=>node.focus({preventScroll:true})); await f.page.emulateMedia({ reducedMotion: 'reduce' });
   await f.page.evaluate(async () => { for (let y = 0; y < document.documentElement.scrollHeight; y += innerHeight * .75) { scrollTo({ top: y, behavior: 'instant' }); await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))); } });
   await f.page.waitForLoadState('networkidle'); const paths = [];
   for (const [name, selector] of [['guests', '#guests'], ['organizations', '#booths']]) { const path = resolve(evidence, prefix + '-' + name + '-' + f.width + '.png'); await f.page.locator(selector).screenshot({ path }); paths.push(path); }
@@ -524,10 +524,10 @@ let failure;
 try {
   for (const width of [1920, 1440, 390, 320]) {
     currentWidth = width; currentMode = 'actual'; stage = 'navigate';
-    const f = await fixture(width, { holdLogos: true });
+    const f = await fixture(width, { holdLogos: true, reducedMotion:'reduce' });
     try {
       await f.page.goto(SITE + '/', { waitUntil: 'domcontentloaded' }); await f.page.locator('[data-organization-id]').first().waitFor();
-      await f.page.locator('[data-guest-photo-rotation]').uncheck();
+      assert.equal(await f.page.locator('[data-guest-photo-rotation],.ah-guest-photo-switch').count(),0,'photo rotation is automatic without a switch');
       const before = await organizationBounds(f, { loaded: false }); await loadLogos(f); const after = await organizationBounds(f);
       assert.equal(after.filter(row => /^\/_astro\/organization-[^/]+\.(?:png|webp)$/u.test(new URL(row.src, SITE).pathname)).length, 7, 'all seven current captured logo identities use the approved white variants');
       assert.equal(after.filter(row=>row.artwork==='reference').length,7,'the seven reviewed variants remain unchanged');
@@ -552,17 +552,17 @@ try {
       const collage=await workMosaic(f);
       const text = await guestText(f), portraits = [];
       for (const guest of guests) portraits.push(await circlePhoto(f, guest, { screenshot:guest.id===motionGuest.id }));
+      if(width===1920)await f.page.emulateMedia({reducedMotion:'no-preference'});
       const animation = width === 1920 ? await motion(f) : null; await noOverflow(f);
       let automaticPortraits=false;
       if(width===1920){
         stage='actual-photo-rotation';
-        const control=f.page.locator('[data-guest-photo-rotation]');
-        await control.check();await f.page.mouse.move(0,0);await f.page.locator('#guests-heading').focus();
+        await f.page.emulateMedia({reducedMotion:'no-preference'});await f.page.mouse.move(0,0);await f.page.locator('#guests-heading').evaluate(node=>node.focus({preventScroll:true}));
         await f.page.locator('#guest-'+motionGuest.id).evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
-        await f.page.waitForFunction(()=>document.querySelectorAll('[data-guest-toggle][aria-pressed=true]').length>0,null,{timeout:6500});
-        const playing=await f.page.locator('[data-guest-toggle][aria-pressed=true]').count();assert.ok(playing>0&&playing<=2);
+        await f.page.waitForFunction(()=>document.querySelectorAll('[data-guest-toggle][aria-pressed=true]').length>=3,null,{timeout:5000});
+        const playing=await f.page.locator('[data-guest-toggle][aria-pressed=true]').count();assert.ok(playing>=3,'a larger visible group of actual portraits appears automatically');
         assert.equal(await f.page.locator('[data-guest-toggle][aria-pressed=true]:not([data-photo-ready=true])').count(),0,'automatic portraits use decoded actual captured images only');
-        await control.uncheck();assert.equal(await f.page.locator('[data-guest-toggle][aria-pressed=true]').count(),0);automaticPortraits=true;
+        await f.page.emulateMedia({reducedMotion:'reduce'});await f.page.waitForFunction(()=>document.querySelectorAll('[data-guest-toggle][aria-pressed=true]').length===0);automaticPortraits=true;
       }
       const renderedGuestIds=await f.page.locator('[data-guest-id]').evaluateAll(nodes=>nodes.map(node=>node.dataset.guestId));
       const renderedAttendance=await f.page.locator('[data-guest-id]').evaluateAll(nodes=>({attending:nodes.filter(node=>node.dataset.guestAttendance==='attending').length,pending:nodes.filter(node=>node.dataset.guestAttendance==='pending').length}));
@@ -685,7 +685,7 @@ finally {
     syntheticImageVariants: synthetic.map(({ kind, width, height, id }) => ({ kind, width, height, id })), reports, pageErrors, ...(failure ? { failure } : {}) };
   await writeFile(resolve(evidence, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   const summary = { ok: report.ok, cases: report.passedCases, expectedCases: 13, actualFixture: true, publicHtmlSha256: report.publicHtmlSha256, snapshotSha256: report.capture.snapshotSha256,
-    sourceCommit: report.gitHeadAtRun, captureSourceCommit: manifest.sourceCommit, actualRawLogosTested:report.actualRawLogosRendered,actualRawPortraitsTested:report.actualRawPortraitsRendered,actualRawCoversTested:report.actualRawCoversRendered,actualCollageCases:actualReports.filter(item=>item.collage).length,actualDecodedCoverChecks:actualReports.reduce((sum,item)=>sum+(item.collage?.decodedCovers||0),0),actualPhotoSwitchChecked:actualReports.some(item=>item.automaticPortraits), defaultReferenceLogosRendered,
+    sourceCommit: report.gitHeadAtRun, captureSourceCommit: manifest.sourceCommit, actualRawLogosTested:report.actualRawLogosRendered,actualRawPortraitsTested:report.actualRawPortraitsRendered,actualRawCoversTested:report.actualRawCoversRendered,actualCollageCases:actualReports.filter(item=>item.collage).length,actualDecodedCoverChecks:actualReports.reduce((sum,item)=>sum+(item.collage?.decodedCovers||0),0),actualAutomaticPortraitsChecked:actualReports.some(item=>item.automaticPortraits), defaultReferenceLogosRendered,
     guestCount:rawGuestCount,rawGuestCount,visibleGuestCount,actualGuestCardsChecked:actualReports.reduce((total,item)=>total+item.text.length,0),actualReferenceSpellingsChecked:actualSpellingBoundaryIds.length,attendanceProof,organizationCount: snapshot.content.organizations.length, pageErrorCount: pageErrors.length,
     actualFieldCoverage,
     actualHanGlyphInk: { cases: glyphInkChecks.filter(item => item.exactCapturedSnapshot).length, checkedGlyphs: glyphInkChecks.filter(item => item.exactCapturedSnapshot).reduce((total, item) => total + item.checkedGlyphs, 0), blankGlyphs: glyphInkChecks.reduce((total, item) => total + item.blankGlyphs, 0), missingMarkerGlyphs: glyphInkChecks.reduce((total, item) => total + item.missingMarkerGlyphs, 0), negativeControls: glyphInkChecks.reduce((total, item) => total + item.negativeControls, 0) },

@@ -96,6 +96,35 @@ async function fixture(width,{javascript=true,reducedMotion='no-preference',defe
  return {context,page,width,calls,refresh,releaseInitialContent,get raw(){return raw;}};
 }
 
+async function bubbleDrag(page,selector,{touch=false}={}){
+ const circle=page.locator(selector).first();await circle.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
+ await page.mouse.move(0,0);await circle.focus();
+ const node=()=>circle.evaluate(el=>{const n=el.closest('[data-guest-float]')||el;return{x:parseFloat(n.style.getPropertyValue('--ah-drag-x'))||0,y:parseFloat(n.style.getPropertyValue('--ah-drag-y'))||0,drag:n.hasAttribute('data-bubble-dragging'),settling:n.hasAttribute('data-bubble-settling')};});
+ await page.evaluate(()=>{window.__bubbleClicks=0;document.addEventListener('click',event=>{if(event.target.closest('.ah-guest-bubble,.ah-home-fact-bubble'))window.__bubbleClicks++;});});
+ const box=await circle.boundingBox(),x=box.x+box.width/2,y=box.y+box.height/2;
+ await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+Math.min(38,box.width*.2),y-12,{steps:8});
+ const dragged=await node();assert.equal(dragged.drag,true);assert.ok(Math.hypot(dragged.x,dragged.y)>5,'pointer dragging moves the real bubble');
+ await page.mouse.up();assert.equal(await page.evaluate(()=>window.__bubbleClicks),0,'drag release never activates the photo click action');
+ await page.waitForFunction(selector=>{const el=document.querySelector(selector),n=el.closest('[data-guest-float]')||el;return !n.hasAttribute('data-bubble-settling')&&Math.abs(parseFloat(n.style.getPropertyValue('--ah-drag-x'))||0)<.2&&Math.abs(parseFloat(n.style.getPropertyValue('--ah-drag-y'))||0)<.2;},selector,{timeout:5000});
+ await circle.focus();await page.keyboard.press('ArrowRight');assert.ok(Math.abs((await node()).x)>1,'keyboard users can nudge a bubble');await page.keyboard.press('Escape');assert.equal((await node()).x,0);
+ if(touch){
+  const session=await page.context().newCDPSession(page);const b=await circle.boundingBox(),cx=b.x+b.width/2,cy=b.y+b.height/2,before=await page.evaluate(()=>scrollY);
+  try{
+   await page.evaluate(()=>{window.__bubblePointerTrace=[];for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])document.addEventListener(type,e=>window.__bubblePointerTrace.push({type,id:e.pointerId,primary:e.isPrimary,kind:e.pointerType,x:e.clientX,y:e.clientY,button:e.button,target:Boolean(e.target.closest('.ah-guest-bubble,.ah-home-fact-bubble'))}),true);});
+   await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:cx,y:cy}]});
+   for(let i=1;i<=6;i++){await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cx+i*6,y:cy}]});await page.waitForTimeout(20);}
+   if(!(await node()).drag)console.log('Touch pointer diagnostics: '+JSON.stringify(await page.evaluate(()=>({events:window.__bubblePointerTrace,hit:document.elementFromPoint(innerWidth/2,innerHeight/2)?.tagName,action:getComputedStyle(document.querySelector('.ah-guest-bubble')).touchAction,scroll:scrollY}))));
+   assert.equal((await node()).drag,true,'horizontal touch begins a real bubble drag');
+   await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+   await page.keyboard.press('Escape');await circle.evaluate(node=>node.blur());
+   await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:cx,y:cy}]});
+   for(let i=1;i<=6;i++){await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cx,y:cy-i*15}]});await page.waitForTimeout(20);}
+   await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+   await page.waitForFunction(y=>scrollY>y+20,before);assert.equal((await node()).drag,false,'vertical touch remains native page scrolling');
+  }finally{await session.detach();}
+ }
+ return {realPointerDrag:true,inertialReturn:true,dragClickSuppressed:true,keyboardAndEscape:true,touchAndNativePan:touch};
+}
 await mkdir(evidence,{recursive:true});
 try {
  for(const width of [320,390,1440,1920]) {
@@ -124,7 +153,8 @@ try {
    }
    assert.equal(await page.locator('.ah-student-actions').count(),0,'obsolete full-day schedule CTA is removed');
    assert.equal(await page.locator('[data-work-thumbnail]').count(),3,'all published works appear in the collage without pagination');
-   assert.equal(await page.locator('[data-guest-photo-rotation]').isChecked(),false,'reduced motion defaults photo rotation to off');
+   assert.equal(await page.locator('[data-guest-photo-rotation],.ah-guest-photo-switch').count(),0,'photo rotation has no opt-in switch');
+   assert.equal(await page.locator('[data-guest-toggle][aria-pressed=true]').count(),0,'reduced motion keeps automatic photos still');
    const rail=page.locator('[data-public-showcases]'),stage=page.locator('.ah-work-stage');
    const selected=async(id)=>{
     await page.waitForFunction(expected=>{
@@ -229,18 +259,16 @@ try {
     await page.emulateMedia({reducedMotion:'reduce'});await stays('mid-session reduced motion stops autoplay');
     await page.emulateMedia({reducedMotion:'no-preference'});
     await f.refresh(raw=>{raw.guests=[guest(IDs.guest,{portraitId:coverId}),guest(IDs.secondGuest,{portraitId:coverId}),guest(IDs.unproved,{portraitId:missingId})];});
-    const switcher=page.locator('[data-guest-photo-rotation]');
     await page.locator('[data-public-guests]').evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));await page.locator('#guests-heading').focus();await page.mouse.move(0,0);
-    assert.equal(await switcher.isChecked(),true);
-    await page.waitForFunction(()=>document.querySelectorAll('[data-guest-toggle][aria-pressed=true]').length>0,null,{timeout:6000});
-    assert.ok(await page.locator('[data-guest-toggle][aria-pressed=true]').count()<=2,'only a few decoded guest portraits appear at once');
+    assert.equal(await page.locator('[data-guest-photo-rotation],.ah-guest-photo-switch').count(),0);
+    await page.waitForFunction(()=>document.querySelectorAll('[data-guest-toggle][aria-pressed=true]').length>=2,null,{timeout:4000});
     assert.equal(await page.locator('[data-guest-toggle][aria-pressed=true]:not([data-photo-ready=true])').count(),0,'loading and broken images never replace identity text');
-    await switcher.uncheck();assert.equal(await page.locator('[data-guest-toggle][aria-pressed=true]').count(),0);
-    await page.waitForTimeout(4200);assert.equal(await page.locator('[data-guest-toggle][aria-pressed=true]').count(),0,'photo switch stays off');
-    assert.equal(await page.evaluate(()=>localStorage.getItem('artdico_guest_photo_rotation')),'false');
-    await switcher.check();await page.mouse.move(0,0);await page.locator('#guests-heading').focus();
-    await page.waitForFunction(()=>document.querySelectorAll('[data-guest-toggle][aria-pressed=true]').length>0,null,{timeout:6000});
-    await page.emulateMedia({reducedMotion:'reduce'});await page.waitForFunction(()=>document.querySelector('[data-guest-photo-rotation]').disabled);assert.equal(await switcher.isDisabled(),true);assert.equal(await page.locator('[data-guest-toggle][aria-pressed=true]').count(),0);
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.waitForFunction(()=>document.querySelectorAll('[data-guest-toggle][aria-pressed=true]').length===0);
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    await page.waitForFunction(()=>document.querySelectorAll('[data-guest-toggle][aria-pressed=true]').length>=2,null,{timeout:4000});
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.waitForFunction(()=>document.querySelectorAll('[data-guest-toggle][aria-pressed=true]').length===0);
    }
    await f.refresh(raw=>{raw.showcases=[...rawFixture().showcases,...Array.from({length:10},(_,i)=>work('synthetic-mosaic-'+i,'indie',{coverId}))];});
    assert.equal(await page.locator('[data-work-thumbnail]').count(),13,'large publication keeps every work available without paging');
@@ -249,9 +277,13 @@ try {
    await f.refresh(raw=>{raw.showcases.reverse();});
    assert.equal(await page.evaluate(()=>document.activeElement?.dataset.workThumbnail),'synthetic-mosaic-9','collage publication refresh preserves stable focused work');
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+   await page.emulateMedia({reducedMotion:'no-preference'});
+   const guestPhysics=await bubbleDrag(page,'.ah-guest-bubble',{touch:width<600});
+   const factPhysics=await bubbleDrag(page,'.ah-home-fact-exchange');
+   await page.emulateMedia({reducedMotion:'reduce'});
    const screenshots=[];
    for(const id of ['booths','students','agenda']){const path=resolve(evidence,id+'-'+width+'.png');await page.locator('#'+id).screenshot({path,animations:'disabled'});screenshots.push(path);}
-   reports.push({width,organizations:13,singleComposition:true,unobstructedCaption:true,centeredCarousel:true,sidePreviews:true,mouseOrTouchDrag:true,wheelAndKeyboardLoop:true,sideClickCentresFirst:true,missingSingleEmpty:true,keyboardPreview:true,refreshPreserved:true,bilingualReviewCopy:true,allWorksMosaic:true,autoplayAndGuestSwitch:width===1440,noBusinessWrites:true,screenshots});
+   reports.push({width,organizations:13,singleComposition:true,unobstructedCaption:true,centeredCarousel:true,sidePreviews:true,mouseOrTouchDrag:true,wheelAndKeyboardLoop:true,sideClickCentresFirst:true,missingSingleEmpty:true,keyboardPreview:true,refreshPreserved:true,bilingualReviewCopy:true,allWorksMosaic:true,guestPhysics,factPhysics,autoplayAndAutomaticGuestPhotos:width===1440,noBusinessWrites:true,screenshots});
   }finally{await f.context.close();}
  }
  assert.equal(pageErrors.length,0);

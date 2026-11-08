@@ -1,5 +1,7 @@
+import { createFactBubbleMotion } from '../lib/fact-bubble-motion.mjs';
 // Guest floating is independent of the page's scroll decoration.
 const root = document.querySelector('#artdico-host.ah-cosmos');
+createFactBubbleMotion(root);
 // Guest motion belongs to the wrapper so text and its circle portrait stay still
 // together. Nothing is hidden while waiting for an observer or an animation.
 if(root&&typeof matchMedia==='function'&&typeof IntersectionObserver==='function'){

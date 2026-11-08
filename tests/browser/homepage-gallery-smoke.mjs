@@ -137,8 +137,8 @@ try {
    const geometry=await first.evaluate(node=>{const image=node.querySelector('img').getBoundingClientRect(),caption=node.querySelector('.ah-showcase-caption');return{imageBottom:image.bottom,captionTop:caption.getBoundingClientRect().top,background:getComputedStyle(caption).backgroundColor};});
    assert.ok(geometry.captionTop>=geometry.imageBottom);assert.equal(geometry.background,'rgba(0, 0, 0, 0)');
    assert.equal(await first.locator('[data-work-preview] span').count(),0,'no small overlay icon');
-   const sidePreview=await stage.evaluate(node=>{const b=node.getBoundingClientRect(),active=node.querySelector('[data-work-active=true]').getBoundingClientRect();const others=[...node.querySelectorAll('[data-showcase-id]')].filter(card=>card.dataset.workActive!=='true').map(card=>card.getBoundingClientRect());return{ratio:active.width/b.width,left:others.some(a=>a.left<b.left&&a.right>b.left+1),right:others.some(a=>a.left<b.right-1&&a.right>b.right)};});
-   assert.ok(sidePreview.ratio>.7&&sidePreview.ratio<.9,'central artwork remains large');assert.ok(sidePreview.left&&sidePreview.right,'both adjacent records peek into the viewport');
+   const sidePreview=await stage.evaluate(node=>{const b=node.getBoundingClientRect(),active=node.querySelector('[data-work-active=true]').getBoundingClientRect();const others=[...node.querySelectorAll('[data-showcase-id]')].filter(card=>card.dataset.workActive!=='true').map(card=>card.querySelector('.ah-work-preview img').getBoundingClientRect());return{ratio:active.width/b.width,left:others.some(a=>a.left<b.left&&a.right>b.left+8),right:others.some(a=>a.left<b.right-8&&a.right>b.right)};});
+   assert.ok(sidePreview.ratio>.7&&sidePreview.ratio<.9,'central artwork remains large');assert.ok(sidePreview.left&&sidePreview.right,'both adjacent image elements expose at least 8px inside the viewport');
    await first.evaluate(node=>window.scrollTo({top:node.getBoundingClientRect().top+scrollY-180,behavior:'instant'}));
    const box=await first.locator('[data-work-preview]').boundingBox(),y=box.y+Math.min(90,box.height/2);
    if(width<600){

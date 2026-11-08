@@ -47,6 +47,7 @@
 #artdico-host.ah-festival.ah-cosmos :is([id^="work-"],[id^="guest-"],[id^="organization-"],[id^="booth-"],[id^="program-"]){scroll-margin-top:100px}
 @media(max-width:700px){
  #artdico-host.ah-festival.ah-cosmos .ah-work-stage{--ah-work-size:84%}
+ #artdico-host.ah-festival.ah-cosmos .ah-showcase-grid{gap:8px}
  #artdico-host.ah-festival.ah-cosmos .ah-showcase-caption{padding:16px 0 0}
  #artdico-host.ah-festival.ah-cosmos .ah-showcase-caption h3{font-size:16px}
  #artdico-host.ah-festival.ah-cosmos .ah-showcase-caption .ah-showcase-team,#artdico-host.ah-festival.ah-cosmos .ah-showcase-category{font-size:12px}

@@ -11,7 +11,7 @@ export function createWorkCarousel({ grid, window: win = globalThis.window } = {
   function playback() {
     win.clearTimeout(autoplay); autoplay = null;
     if (!carousel || slides.length < 2 || reduced.matches || doc.hidden || !visible() || dragging || wheelLocked ||
-        stage.matches(':hover') || stage.contains(doc.activeElement) || doc.querySelector('[data-work-lightbox][open]')) return;
+        (win.matchMedia('(hover:hover) and (pointer:fine)').matches && stage.matches(':hover')) || stage.contains(doc.activeElement) || doc.querySelector('[data-work-lightbox][open]')) return;
     autoplay = win.setTimeout(() => {
       autoplay = null;
       if (carousel.canScrollNext()) carousel.scrollNext(); else carousel.scrollTo(0);

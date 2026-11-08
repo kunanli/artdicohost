@@ -167,6 +167,12 @@ try {
     await page.keyboard.press('ArrowRight');await page.waitForTimeout(50);
     assert.ok(await stage.evaluate(node=>{const card=node.querySelector('[data-work-active=true]').getBoundingClientRect(),frame=node.getBoundingClientRect();return Math.abs(card.x+card.width/2-frame.x-frame.width/2)>1;}),'normal navigation visibly animates towards the centre');
     await page.emulateMedia({reducedMotion:'reduce'});await selected(IDs.indie);
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    await stage.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
+    await page.locator('#students-heading').focus();await stage.hover();
+    assert.equal(await page.evaluate(()=>matchMedia('(hover:hover) and (pointer:fine)').matches),false,'touch viewport has no persistent mouse hover');
+    await page.waitForFunction(id=>document.querySelector('[data-public-showcases]').dataset.currentWork!==id,IDs.indie,{timeout:3500});
+    await page.emulateMedia({reducedMotion:'reduce'});
     await rail.focus();await page.keyboard.press('End');await selected(IDs.legacy);
    }
    await f.refresh(raw=>{raw.showcases.reverse();raw.showcases.find(item=>item.id===IDs.legacy).title='合成更新后的作品';});await selected(IDs.legacy);

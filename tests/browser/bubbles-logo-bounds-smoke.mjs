@@ -50,12 +50,13 @@ for(const key of referenceKeys){
 const logoPaths = new Set(snapshot.content.organizations.map(item => item.logoUrl).filter(Boolean));
 assert.equal(logoPaths.size,organizationCount,'each currently published organization has its exact captured logo');
 const portraitPaths = new Set(snapshot.content.guests.map(item => item.portraitUrl).filter(Boolean));
-const capturedPaths = new Set([...logoPaths, ...portraitPaths]);
-assert.equal(manifest.media.length, capturedPaths.size, 'the current capture contains every referenced public logo and guest portrait');
+const coverPaths = new Set(snapshot.content.showcases.map(item=>item.coverUrl).filter(Boolean));
+const capturedPaths = new Set([...logoPaths, ...portraitPaths, ...coverPaths]);
+assert.equal(manifest.media.length, capturedPaths.size, 'the current capture contains every referenced public logo, guest portrait and work cover');
 const actualMedia = new Map();
 for (const item of manifest.media) {
   assert.match(item.file, /^media\/[a-f0-9]{64}\.(?:png|jpg|webp)$/u);
-  assert.equal(item.path, '/api/public/portraits/' + item.file.slice(6)); assert.ok(capturedPaths.has(item.path), 'captured bytes belong to an exact public logo or guest portrait');
+  assert.equal(item.path, '/api/public/portraits/' + item.file.slice(6)); assert.ok(capturedPaths.has(item.path), 'captured bytes belong to an exact public logo, guest portrait or work cover');
   const bytes = await readFile(resolve(capture, item.file));
   assert.equal(bytes.length, item.bytes); assert.equal(sha(bytes), item.sha256); assert.equal(item.sha256, item.file.slice(6, 70));
   actualMedia.set(item.path, { bytes, contentType: item.contentType });
@@ -344,6 +345,34 @@ async function touchCircle(toggle){
   const point=await toggle.boundingBox();assert.ok(point);
   await toggle.page().touchscreen.tap(point.x+point.width/2,point.y+point.height/2);
 }
+async function workMosaic(f){
+  stage='actual-work-mosaic';
+  const {page}=f, expected=snapshot.content.showcases;
+  assert.deepEqual(await page.locator('[data-work-thumbnail]').evaluateAll(nodes=>nodes.map(node=>node.dataset.workThumbnail)),expected.map(item=>item.id),'every actual public work appears once, in publication order');
+  if(!expected.length)return {works:0,decodedCovers:0};
+  await page.locator('[data-public-showcases]').focus();
+  const bounds=[];let decodedCovers=0;
+  for(const work of expected){
+    const button=page.locator('[data-work-thumbnail="'+work.id+'"]');
+    await button.scrollIntoViewIfNeeded();
+    assert.equal(await button.getAttribute('aria-label'),work.title,'complete work identity remains accessible');
+    if(work.coverUrl){
+      const image=button.locator('img');await image.evaluate(node=>{node.loading='eager';return node.decode();});
+      assert.equal(new URL(await image.getAttribute('src'),API).pathname,work.coverUrl,'collage thumbnail uses its own captured original cover');
+      const metrics=await image.evaluate(node=>({decoded:node.complete&&node.naturalWidth>0,box:node.getBoundingClientRect().toJSON()}));
+      assert.equal(metrics.decoded,true);contained(metrics.box,await button.boundingBox(),'actual thumbnail remains inside its button');decodedCovers++;
+    }
+    const rect=await button.boundingBox();assert.ok(rect.width>=44&&rect.height>=44);assert.ok(rect.x>=-1&&rect.x+rect.width<=f.width+1);
+    // Convert scrolling viewport rectangles into page coordinates before comparisons.
+    bounds.push({...rect,y:rect.y+await page.evaluate(()=>scrollY)});
+  }
+  nonoverlap(bounds,'actual collage thumbnail buttons never overlap');
+  await page.locator('[data-work-thumbnail]').last().click();
+  await page.waitForFunction(id=>document.querySelector('[data-public-showcases]').dataset.currentWork===id,expected.at(-1).id);
+  const path=resolve(evidence,'actual-work-mosaic-'+f.width+'.png');await page.locator('[data-work-overview]').screenshot({path,animations:'disabled'});
+  return {works:expected.length,decodedCovers,allVisibleWithoutPagination:true,clickSelectsMainImage:true,screenshot:path};
+}
+
 async function circlePhoto(f, guest, { expectPhoto = Boolean(guest.portraitUrl), screenshot = false } = {}) {
   stage = expectPhoto ? 'actual-circle-portrait' : 'text-circle-without-photo';
   const { page } = f, card = page.locator('#guest-' + guest.id), toggle = card.locator('[data-guest-toggle]');
@@ -498,6 +527,7 @@ try {
     const f = await fixture(width, { holdLogos: true });
     try {
       await f.page.goto(SITE + '/', { waitUntil: 'domcontentloaded' }); await f.page.locator('[data-organization-id]').first().waitFor();
+      await f.page.locator('[data-guest-photo-rotation]').uncheck();
       const before = await organizationBounds(f, { loaded: false }); await loadLogos(f); const after = await organizationBounds(f);
       assert.equal(after.filter(row => /^\/_astro\/organization-[^/]+\.(?:png|webp)$/u.test(new URL(row.src, SITE).pathname)).length, 7, 'all seven current captured logo identities use the approved white variants');
       assert.equal(after.filter(row=>row.artwork==='reference').length,7,'the seven reviewed variants remain unchanged');
@@ -519,15 +549,27 @@ try {
       }
       defaultReferenceLogosRendered = 7;
       before.forEach((row, index) => { assert.ok(Math.abs(row.slot.width - after[index].slot.width) <= 1 && Math.abs(row.slot.height - after[index].slot.height) <= 1, 'image intrinsic size cannot resize its independent slot'); });
+      const collage=await workMosaic(f);
       const text = await guestText(f), portraits = [];
       for (const guest of guests) portraits.push(await circlePhoto(f, guest, { screenshot:guest.id===motionGuest.id }));
       const animation = width === 1920 ? await motion(f) : null; await noOverflow(f);
+      let automaticPortraits=false;
+      if(width===1920){
+        stage='actual-photo-rotation';
+        const control=f.page.locator('[data-guest-photo-rotation]');
+        await control.check();await f.page.mouse.move(0,0);await f.page.locator('#guests-heading').focus();
+        await f.page.locator('#guest-'+motionGuest.id).evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
+        await f.page.waitForFunction(()=>document.querySelectorAll('[data-guest-toggle][aria-pressed=true]').length>0,null,{timeout:6500});
+        const playing=await f.page.locator('[data-guest-toggle][aria-pressed=true]').count();assert.ok(playing>0&&playing<=2);
+        assert.equal(await f.page.locator('[data-guest-toggle][aria-pressed=true]:not([data-photo-ready=true])').count(),0,'automatic portraits use decoded actual captured images only');
+        await control.uncheck();assert.equal(await f.page.locator('[data-guest-toggle][aria-pressed=true]').count(),0);automaticPortraits=true;
+      }
       const renderedGuestIds=await f.page.locator('[data-guest-id]').evaluateAll(nodes=>nodes.map(node=>node.dataset.guestId));
       const renderedAttendance=await f.page.locator('[data-guest-id]').evaluateAll(nodes=>({attending:nodes.filter(node=>node.dataset.guestAttendance==='attending').length,pending:nodes.filter(node=>node.dataset.guestAttendance==='pending').length}));
       assert.deepEqual(renderedGuestIds,safePublicIds,'each actual viewport retains the complete safe captured guest ID collection');
       assert.deepEqual(renderedAttendance,{attending:attendanceProof.displayedAttending,pending:attendanceProof.displayedPending},'actual DOM attendance counts come only from the original captured proof');
       reports.push({ name: 'actual-public-' + width, width, exactCapturedSnapshot: true, exactRawImageHashesVerified: true, renderedGuestIds,
-        guestAttendance:{source:'unchanged captured proof',...renderedAttendance},bounds: after, text, portraits, animation, screenshots: await shots(f, 'actual') });
+        guestAttendance:{source:'unchanged captured proof',...renderedAttendance},bounds: after, collage, text, portraits, animation, automaticPortraits, screenshots: await shots(f, 'actual') });
     } finally { f.releaseLogos(); await f.context.close(); }
   }
   for (const mode of ['raw-generic', 'adversarial']) for (const width of [1920, 1440, 390, 320]) {
@@ -618,7 +660,7 @@ try {
     assert.equal((await animationState(f.page, motionGuest.id)).animations.length, 0, 'initial real reduced-motion preference creates no float');
     reports.push({ name: 'long-circle-fallbacks-and-initial-reduced-motion' , width: 320, explicitlySyntheticTextVariant:true,syntheticReferenceSpellingBoundaries:spellingBoundaryProfiles.length,actualAttendanceProofUnchanged:true,profileStatusUnchanged:true,emptyCompanyFieldTested:empty.company==='',emptyPositionAndRoleFieldsTested:true,fullAccessibleIdentityRetained:true,companyJobTitlesExcluded:true,organizationAndGgjIdentityOnly:true,emptyFields:true,missingPhotoKeepsText:true,brokenPhotoKeepsText:true,delayedPhotoKeepsTextUntilDecode:true,photoControlLanguage, text, result });
   } finally { await f.context.close(); }
-  assert.equal(rawImageRequests.size, actualMedia.size, 'every captured public logo and guest portrait was requested by actual page rendering'); assert.deepEqual(pageErrors, []);
+  assert.equal(rawImageRequests.size, actualMedia.size, 'every captured public logo, guest portrait and work cover was requested by actual page rendering'); assert.deepEqual(pageErrors, []);
   assert.equal(reports.length, 13, 'all actual, raw-upload, adversarial and long-text scenarios must complete');
 } catch (error) { failure = { message: error.message, stack: error.stack }; }
 finally {
@@ -638,12 +680,12 @@ finally {
     source, dist, testScriptSha256, gitHeadAtRun: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), htmlMtime: info.mtime.toISOString(), publicHtmlSha256: sha(html),
     capture: { directory: capture, capturedAt: manifest.capturedAt, anonymous: true, source: manifest.source, sourceCommit: manifest.sourceCommit, snapshotSha256: manifest.snapshot.sha256,
       revision:snapshot.revision,guestCount:rawGuestCount,rawGuestCount,visibleGuestCount,attendanceProof,organizationCount: snapshot.content.organizations.length, mediaHashes: manifest.media.map(item => item.sha256) },
-    servedAssets: Object.fromEntries([...servedAssets].sort()), actualRawImagesRendered: rawImageRequests.size, actualRawLogosRendered:[...rawImageRequests].filter(path=>logoPaths.has(path)).length,actualRawPortraitsRendered:[...rawImageRequests].filter(path=>portraitPaths.has(path)).length, defaultReferenceLogosRendered, actualFieldCoverage, glyphInkChecks,
-    uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequestCount,uncapturedPublicMediaUniquePathsStubbed:uncapturedMediaRequests.size, actualMediaScope: 'Every safe public guest profile receives four-width name/organization/GGJ identity checks and its own captured portrait is decoded and switched inside the original circle. Company job titles and outside panels are absent. Attendance remains bound to the unchanged captured proof. Every referenced logo and guest portrait is captured; only uncaptured work media and explicitly synthetic failed images receive intercepted 404s.',
+    servedAssets: Object.fromEntries([...servedAssets].sort()), actualRawImagesRendered: rawImageRequests.size, actualRawLogosRendered:[...rawImageRequests].filter(path=>logoPaths.has(path)).length,actualRawPortraitsRendered:[...rawImageRequests].filter(path=>portraitPaths.has(path)).length,actualRawCoversRendered:[...rawImageRequests].filter(path=>coverPaths.has(path)).length, defaultReferenceLogosRendered, actualFieldCoverage, glyphInkChecks,
+    uncapturedPublicMediaRequestsStubbed: uncapturedMediaRequestCount,uncapturedPublicMediaUniquePathsStubbed:uncapturedMediaRequests.size, actualMediaScope: 'Every safe public guest profile receives four-width name/organization/GGJ identity checks and its own captured portrait is decoded and switched inside the original circle. Company job titles and outside panels are absent. Attendance remains bound to the unchanged captured proof. Every referenced logo, guest portrait and work cover is captured; explicitly synthetic failed images receive intercepted 404s.',
     syntheticImageVariants: synthetic.map(({ kind, width, height, id }) => ({ kind, width, height, id })), reports, pageErrors, ...(failure ? { failure } : {}) };
   await writeFile(resolve(evidence, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   const summary = { ok: report.ok, cases: report.passedCases, expectedCases: 13, actualFixture: true, publicHtmlSha256: report.publicHtmlSha256, snapshotSha256: report.capture.snapshotSha256,
-    sourceCommit: report.gitHeadAtRun, captureSourceCommit: manifest.sourceCommit, actualRawLogosTested:report.actualRawLogosRendered,actualRawPortraitsTested:report.actualRawPortraitsRendered, defaultReferenceLogosRendered,
+    sourceCommit: report.gitHeadAtRun, captureSourceCommit: manifest.sourceCommit, actualRawLogosTested:report.actualRawLogosRendered,actualRawPortraitsTested:report.actualRawPortraitsRendered,actualRawCoversTested:report.actualRawCoversRendered,actualCollageCases:actualReports.filter(item=>item.collage).length,actualDecodedCoverChecks:actualReports.reduce((sum,item)=>sum+(item.collage?.decodedCovers||0),0),actualPhotoSwitchChecked:actualReports.some(item=>item.automaticPortraits), defaultReferenceLogosRendered,
     guestCount:rawGuestCount,rawGuestCount,visibleGuestCount,actualGuestCardsChecked:actualReports.reduce((total,item)=>total+item.text.length,0),actualReferenceSpellingsChecked:actualSpellingBoundaryIds.length,attendanceProof,organizationCount: snapshot.content.organizations.length, pageErrorCount: pageErrors.length,
     actualFieldCoverage,
     actualHanGlyphInk: { cases: glyphInkChecks.filter(item => item.exactCapturedSnapshot).length, checkedGlyphs: glyphInkChecks.filter(item => item.exactCapturedSnapshot).reduce((total, item) => total + item.checkedGlyphs, 0), blankGlyphs: glyphInkChecks.reduce((total, item) => total + item.blankGlyphs, 0), missingMarkerGlyphs: glyphInkChecks.reduce((total, item) => total + item.missingMarkerGlyphs, 0), negativeControls: glyphInkChecks.reduce((total, item) => total + item.negativeControls, 0) },

@@ -12,6 +12,7 @@ const period = (start: string) => start < '12:00' ? 'morning' : 'afternoon';
       <span class="ah-program-date" data-public-agenda-date>{eventConfig.date.label}</span>
     </div>
     <div class="ah-program-controls" data-program-controls hidden>
+      <p class="ah-zone-hint">点击场地，切换日程</p>
       <div class="ah-zone-tabs" role="tablist" aria-label="选择场地日程" aria-orientation="horizontal">
         {zones.map((zone, index) => <button type="button" id={`tab-${zone.id}`} data-zone={zone.id} role="tab" aria-selected={index === 0 ? 'true' : 'false'} aria-controls={`agenda-${zone.id}`} tabindex={index === 0 ? 0 : -1}><span class="ah-zone-swatch" aria-hidden="true"></span><span class="ah-zone-label"><b>{zone.id} 区</b><span class="ah-zone-name">{zone.name}</span></span><span class="ah-sr-only">{zone.description}</span></button>)}
       </div>

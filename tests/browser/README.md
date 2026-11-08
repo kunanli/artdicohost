@@ -244,3 +244,5 @@ ARTDICO_PLAYWRIGHT_MODULE=/absolute/path/to/playwright-core/index.mjs ARTDICO_CH
 `ARTDICO_CHROMIUM_BINARY=/usr/bin/chromium node tests/browser/language-smoke.mjs`：10 案包含四寬度、瀏覽器語言、自訂偏好、重載、儲存封鎖、無 JS、切換保留表單值、動態狀態與本地錯誤翻譯。全部請求攔截，僅合成資料與 GET，不向正式平台提交。報告及截圖在 `.local-data/browser-evidence/language/`。
 
 既有中文畫面斷言的 CI runner 明確設 `locale: 'zh-CN'`；新語言測試獨立使用 en-US／zh-TW／其他語言，不靠 Playwright 預設值。
+
+2026-11-08追加：homepage-gallery四寬含2.5秒自動輪播、hover／focus／大圖／離屏／合成hidden／途中減少動態暫停、13作品拼貼與刷新焦點、嘉賓照片開關。正式素材13案另驗全部作品縮圖的實際封面bytes／decode／包含與不重疊；1920案開啟隨機照片後核對最多兩張成功decode照片、再關閉。原有逐人文字／手動操作／漂浮驗證先明確關閉自動照片，不弱化原斷言。擷取保留Logo／照片30張8MiB原上限，作品封面另30張24MiB上限；每張仍2MiB，全部共用60秒期限。

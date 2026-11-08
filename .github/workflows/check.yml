@@ -51,7 +51,8 @@ jobs:
 
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Timed autoplay/pauses and captured work covers add bounded browser checks.
+    timeout-minutes: 20
     env:
       ASTRO_TELEMETRY_DISABLED: "1"
       PUBLIC_API_BASE: "https://api.artdico.host"

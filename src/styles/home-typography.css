@@ -167,3 +167,9 @@
 }
 #artdico-host.ah-festival.ah-cosmos .ah-language-switch button{font-size:var(--ah-type-control);line-height:var(--ah-leading-ui)}
 #artdico-host.ah-festival.ah-cosmos .ah-language-note{font-size:var(--ah-type-meta);line-height:var(--ah-leading-reading)}
+
+#artdico-host.ah-festival.ah-cosmos :is(.ah-guest-photo-switch,.ah-work-mosaic button){font-size:var(--ah-type-label);line-height:var(--ah-leading-ui)}
+#artdico-host.ah-festival.ah-cosmos :is(.ah-zone-hint,.ah-work-overview>p){font-size:var(--ah-type-meta);line-height:var(--ah-leading-reading)}
+#artdico-host.ah-festival.ah-cosmos .ah-work-overview h3{font-size:var(--ah-type-panel-title);line-height:var(--ah-leading-ui)}
+
+#artdico-host.ah-festival.ah-cosmos .ah-program .ah-zone-tabs .ah-zone-name{font-size:var(--ah-type-meta)}

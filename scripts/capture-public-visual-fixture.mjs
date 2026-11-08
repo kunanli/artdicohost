@@ -74,7 +74,7 @@ async function mediaBytes(path, fetchFn, maximum, timeoutMs) {
 }
 
 /** Capture only a validated public publication and its explicitly referenced
- * organization logos and guest portraits. Both use the same bounded public
+ * organization logos, guest portraits and work covers. All use the bounded public
  * content-addressed image route; injectable I/O exists only for tests. */
 export async function capturePublicVisualFixture({ fetchFn = fetch, outputDirectory = PUBLIC_VISUAL_FIXTURE_DIRECTORY,
   timeoutMs = 15_000, sourceCommit = process.env.GITHUB_SHA ?? null, clock = Date.now } = {}) {
@@ -106,11 +106,19 @@ export async function capturePublicVisualFixture({ fetchFn = fetch, outputDirect
     const snapshot = observed.bytes, data = JSON.parse(snapshot.toString('utf8'));
     const logoPaths = (data.content.organizations ?? []).map(item => item.logoUrl).filter(Boolean);
     const portraitPaths = data.content.guests.map(item => item.portraitUrl).filter(Boolean);
-    const paths = [...new Set([...logoPaths, ...portraitPaths])];
-    if (paths.length > MAX_MEDIA || paths.some(path => typeof path !== 'string' || !MEDIA_PATH.test(path))) throw failure('MEDIA_LIMIT');
-    const media = []; let totalBytes = 0;
+    const basePaths = [...new Set([...logoPaths, ...portraitPaths])];
+    const coverPaths = [...new Set(data.content.showcases.map(item => item.coverUrl).filter(Boolean))];
+    if (basePaths.length > MAX_MEDIA || coverPaths.length > MAX_MEDIA) throw failure('MEDIA_LIMIT');
+    const paths = [...new Set([...basePaths, ...coverPaths])];
+    if (paths.some(path => typeof path !== 'string' || !MEDIA_PATH.test(path))) throw failure('MEDIA_LIMIT');
+    const media = []; let totalBytes = 0, baseBytes = 0, coverBytes = 0;
     for (const path of paths) {
-      const image = await mediaBytes(path, fetchFn, Math.min(MAX_MEDIA_BYTES, MAX_TOTAL_MEDIA_BYTES - totalBytes), remaining());
+      const base = basePaths.includes(path);
+      // Preserve the original 8 MiB logo/portrait budget; covers have their own
+      // bounded 24 MiB budget and share the same total 60-second deadline.
+      const remainingBytes = base ? MAX_TOTAL_MEDIA_BYTES - baseBytes : 24 * 1024 * 1024 - coverBytes;
+      const image = await mediaBytes(path, fetchFn, Math.min(MAX_MEDIA_BYTES, remainingBytes), remaining());
+      if (base) baseBytes += image.bytes.length; else coverBytes += image.bytes.length;
       totalBytes += image.bytes.length;
       media.push({ file: 'media/' + path.split('/').at(-1), path, sha256: sha256(image.bytes), bytes: image.bytes.length,
         contentType: image.contentType, data: image.bytes });
@@ -140,11 +148,10 @@ export async function capturePublicVisualFixture({ fetchFn = fetch, outputDirect
     const guestPortraitCoverage = { total: data.content.guests.length, withPortrait: portraitPaths.length,
       withoutPortrait: data.content.guests.length - portraitPaths.length, uniqueImages: new Set(portraitPaths).size,
       capturedImages: new Set(portraitPaths).size };
-    // Work covers remain outside this capture. A published cover reference is
-    // distinct from fetching/decoding that image.
+    // Cover references and successfully captured cover images are counted separately.
     const showcases = data.content.showcases;
     const withCoverId = showcases.filter(work => hasPublicText(work, 'coverId')).length;
-    const showcaseCoverCoverage = { total: showcases.length, withCoverId, withoutCoverId: showcases.length - withCoverId };
+    const showcaseCoverCoverage = { total: showcases.length, withCoverId, withoutCoverId: showcases.length - withCoverId, capturedImages: coverPaths.length };
     complete = true;
     return { captured: true, revision: verified.revision, snapshotSha256: manifest.snapshot.sha256, snapshotBytes: snapshot.length,
       organizations: verified.counts.organizations, media: media.length, mediaBytes: totalBytes, referenceLogoSources, guestCaptionCoverage, guestAffiliationCoverage, guestPortraitCoverage, showcaseCoverCoverage };

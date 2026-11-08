@@ -9,8 +9,10 @@ import '../styles/students-showcase.css';
   <div class="ah-work-stage">
     <ul class="ah-showcase-grid" data-public-showcases aria-label="已公布的游戏与作品，可横向滚动" tabindex="0" hidden></ul>
   </div>
-  <div class="ah-student-actions">
-    <a href="#agenda" class="ah-text-action">查看全天日程 <span aria-hidden="true">↗</span></a>
+  <div class="ah-work-overview" data-work-overview hidden>
+    <h3>参展作品一览</h3>
+    <p>点选作品，回到大图细看。</p>
+    <ul class="ah-work-mosaic" data-work-mosaic></ul>
   </div>
   <dialog class="ah-work-lightbox" data-work-lightbox aria-labelledby="work-lightbox-title">
     <div class="ah-work-lightbox-bar"><h3 id="work-lightbox-title" data-work-lightbox-title>作品图</h3><button type="button" data-work-lightbox-close aria-label="关闭作品大图">关闭 ×</button></div>

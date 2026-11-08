@@ -1,13 +1,15 @@
+import { createGuestPhotoRotation } from './guest-photo-rotation.mjs';
 import { createWorkCarousel } from './work-carousel.mjs';
 
-// Homepage interactions only: no storage, registration state or network access.
+// Homepage interactions; only the photo playback preference is stored locally.
 export function createHomeCollections({document:doc=globalThis.document,window:win=globalThis.window}={}) {
   if(!doc||!win)return {capture:()=>null,restore:()=>{},updateWorks:()=>{},prepareWorks:()=>{},reveal:()=>{},focusWorks:()=>{}};
   const grid=doc.querySelector('[data-public-showcases]'),filter=doc.querySelector('[data-public-works-filter]');
   const dialog=doc.querySelector('[data-work-lightbox]');
   const workCarousel=createWorkCarousel({grid,window:win});
   let previewId=null,previewTrigger=null;
-  const guestRequests=new WeakMap();
+  const guestRequests=new WeakMap(),automaticPhotos=new WeakSet();
+  let guestRotation;
   const visibleFocusTarget=node=>node?.isConnected&&!node.disabled&&!node.closest('[hidden],[inert]')&&node.getClientRects().length;
   const works=()=>[...doc.querySelectorAll('[data-public-showcases] [data-showcase-id]')];
   const filtered=()=>works().filter(card=>!['student','indie'].includes(filter?.value)||card.dataset.workKind===filter.value);
@@ -48,19 +50,57 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
     for(const card of cards)card.hidden=!visible.includes(card);
     workCarousel.update(preferred);
     syncPreview();
+    renderMosaic(visible);
   }
+  const mosaic=doc.querySelector('[data-work-mosaic]');
+  function renderMosaic(cards){
+    if(!mosaic)return;
+    // Reconcile by stable work ID so publication refreshes retain keyboard focus.
+    const focused=mosaic.contains(doc.activeElement)?doc.activeElement:null;
+    const existing=new Map([...mosaic.children].map(node=>[node.dataset.mosaicId,node]));
+    for(const card of cards){
+      const id=card.dataset.showcaseId,title=card.querySelector('h3')?.textContent||'',photo=card.querySelector('[data-work-preview] img:not([hidden])');
+      let item=existing.get(id);
+      if(!item){item=doc.createElement('li');item.dataset.mosaicId=id;const button=doc.createElement('button');button.type='button';button.dataset.workThumbnail=id;item.append(button);}
+      existing.delete(id);
+      const button=item.firstElementChild;
+      let image=button.querySelector('img'),caption=button.querySelector('span');
+      if(photo){
+        if(!image){image=doc.createElement('img');image.alt='';image.loading='lazy';image.referrerPolicy='no-referrer';image.crossOrigin='anonymous';image.addEventListener('error',()=>{image.hidden=true;});button.prepend(image);}
+        if(image.getAttribute('src')!==photo.getAttribute('src')){image.hidden=false;image.src=photo.src;}
+      }else image?.remove();
+      if(!caption){caption=doc.createElement('span');button.append(caption);}
+      if(caption.textContent!==title)caption.textContent=title;
+      button.setAttribute('aria-label',title);
+      const position=cards.indexOf(card);
+      if(mosaic.children[position]!==item)mosaic.insertBefore(item,mosaic.children[position]??null);
+    }
+    for(const item of existing.values())item.remove();
+    if(focused?.isConnected&&doc.activeElement!==focused)focused.focus({preventScroll:true});
+    mosaic.closest('[data-work-overview]').hidden=cards.length===0;
+  }
+  mosaic?.addEventListener('click',event=>{
+    const button=event.target.closest('[data-work-thumbnail]');if(!button)return;
+    workCarousel.select(button.dataset.workThumbnail,false);
+    grid.focus({preventScroll:true});
+    grid.closest('.ah-work-stage').scrollIntoView({block:'center',behavior:win.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+  });
   filter?.addEventListener('change',()=>{workCarousel.prepare();updateWorks();});
   const guestButtons=()=>[...doc.querySelectorAll('[data-public-guests] [data-guest-toggle]')];
-  function updateGuest(button,wanted){
+  function updateGuest(button,wanted,automatic=false){
     if(!button)return;
-    guestRequests.set(button,Boolean(wanted));
-    const shown=Boolean(wanted)&&button.dataset.photoReady==='true';
+    if(automatic){if(wanted)automaticPhotos.add(button);else automaticPhotos.delete(button);}
+    else guestRequests.set(button,Boolean(wanted));
+    const shown=Boolean(guestRequests.get(button)||automaticPhotos.has(button))&&button.dataset.photoReady==='true';
     button.setAttribute('aria-pressed',String(shown));
     button.setAttribute('aria-label',button.dataset.guestIdentity+(button.dataset.photoState==='unavailable'?'':shown?'，显示文字':'，查看照片'));
     button.dispatchEvent(new CustomEvent('artdico:guest-photo-state',{bubbles:true}));
+    if(!automatic)guestRotation?.refresh();
   }
+  guestRotation=createGuestPhotoRotation({document:doc,window:win,buttons:guestButtons,manual:button=>guestRequests.get(button),render:(button,wanted)=>updateGuest(button,wanted,true)});
   function openGuest(button){
     if(!button)return;
+    guestRotation.clear();
     for(const other of guestButtons())updateGuest(other,other===button);
   }
   doc.addEventListener('artdico:guest-photo-change',event=>{
@@ -86,7 +126,7 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
   doc.addEventListener('click',event=>{
     const guest=event.target.closest?.('[data-public-guests] [data-guest-toggle]');
     if(guest&&guest.getAttribute('aria-disabled')!=='true'){
-      if(guestRequests.get(guest))updateGuest(guest,false);else openGuest(guest);
+      if(guest.getAttribute('aria-pressed')==='true'){guestRotation.clear();updateGuest(guest,false);}else openGuest(guest);
     }
     if(!event.target.closest?.('[data-public-guests]'))for(const button of guestButtons())updateGuest(button,false);
     const button=event.target.closest?.('[data-work-preview]');if(!button||button.disabled||!dialog)return;

@@ -69,7 +69,7 @@ test('one validated anonymous response supplies exact bytes and deduplicates a s
   assert.deepEqual(report.guestCaptionCoverage, { title: 0, role: 0, company: 0, empty: 1 }, 'company alone does not become a position');
   assert.deepEqual(report.guestAffiliationCoverage, { company: 1, empty: 0 });
   assert.deepEqual(report.guestPortraitCoverage, { total: 1, withPortrait: 1, withoutPortrait: 0, uniqueImages: 1, capturedImages: 1 });
-  assert.deepEqual(report.showcaseCoverCoverage, { total: 0, withCoverId: 0, withoutCoverId: 0 });
+  assert.deepEqual(report.showcaseCoverCoverage, { total: 0, withCoverId: 0, withoutCoverId: 0, capturedImages: 0 });
   assert.equal(Object.hasOwn(manifest, 'guestAffiliationCoverage'), false, 'diagnostic counts do not change the captured fixture format');
   assert.equal(Object.hasOwn(manifest, 'showcaseCoverCoverage'), false);
   assert.equal(JSON.stringify(f.data), before); assert.doesNotMatch(JSON.stringify({ manifest, report }), /SYNTHETIC_PUBLIC_NAME|SYNTHETIC_PRIVATE|contactId|receiptToken|internalNotes/u);
@@ -183,7 +183,7 @@ test('safe capture summary exposes only validated public organization IDs, refer
     { ...original, id: 'synthetic-company', title: '', ggjRole: '', company: PUBLIC_NAME },
     { ...original, id: 'synthetic-empty', status: 'pending', title: '', ggjRole: '', company: '' },
   ];
-  f.data.content.showcases = [sha(png) + '.png', 'b'.repeat(64) + '.png', ''].map((coverId, index) => ({
+  f.data.content.showcases = [sha(images[0]) + '.png', sha(images[1]) + '.png', ''].map((coverId, index) => ({
     id: 'synthetic-work-' + index, title: PUBLIC_NAME, teamName: PUBLIC_NAME, summary: PUBLIC_NAME, coverId,
     kind: 'indie', status: 'pending', responseStatus: 'pending', publicConsent: false, memberCount: 1,
   }));
@@ -195,7 +195,7 @@ test('safe capture summary exposes only validated public organization IDs, refer
   assert.ok(report.referenceLogoSources.every(row => Object.keys(row).sort().join(',') === 'key,organizationId,sha256'));
   assert.deepEqual(report.guestCaptionCoverage, { title: 1, role: 1, company: 0, empty: 2 });
   assert.deepEqual(report.guestAffiliationCoverage, { company: 3, empty: 1 }, 'title and role records also count their independent company field');
-  assert.deepEqual(report.showcaseCoverCoverage, { total: 3, withCoverId: 2, withoutCoverId: 1 }, 'public cover references are counted without treating them as captured images');
+  assert.deepEqual(report.showcaseCoverCoverage, { total: 3, withCoverId: 2, withoutCoverId: 1, capturedImages: 2 }, 'public covers are captured from their exact validated public references');
   assert.equal(report.media, 8, 'unknown public logos are captured safely without guessing their reference identity');
   assert.equal(f.calls.length, 8, 'only logo fetches use the fixture transport; the validated snapshot request remains the single explicit override');
   assert.doesNotMatch(JSON.stringify(report), /SYNTHETIC_PUBLIC_NAME|synthetic-title|synthetic-work-|Bournemouth|深圳大学|提赛德|ggjRole|content|base64/u);
@@ -287,4 +287,23 @@ test('CLI rejects arbitrary URL or output arguments without printing input or st
   const child = spawnSync(process.execPath, [script, '--url=https://foreign.invalid/' + PRIVATE], { encoding: 'utf8', env: {} });
   assert.equal(child.status, 1); assert.equal(child.stdout, ''); assert.match(child.stderr, /INVALID_ARGUMENTS/u);
   assert.doesNotMatch(child.stderr, /SYNTHETIC_PRIVATE|foreign\.invalid|Error:| at /u);
+});
+
+
+test('work covers use exact anonymous content-addressed bytes and deduplicate across public media roles', async t => {
+  const f = await fixture(t), cover = Buffer.concat([png, Buffer.from('synthetic-work-cover')]);
+  const path = '/api/public/portraits/' + sha(cover) + '.png';
+  f.media.set(path, cover);
+  f.data.content.showcases = [png, cover, cover].map((bytes, index) => ({
+    id: 'synthetic-cover-' + index, title: PUBLIC_NAME, teamName: PUBLIC_NAME, summary: '', coverId: sha(bytes) + '.png',
+    kind: 'indie', status: 'pending', responseStatus: 'pending', publicConsent: false, memberCount: 1,
+  }));
+  f.data.content = toPublicContent(f.data.content);
+  const report = await f.capture({fetchFn: (...args) => args[0] === PUBLIC_CONTENT_URL
+    ? new Response(JSON.stringify(f.data), {headers: publicHeaders}) : f.fetchFn(...args)});
+  assert.equal(report.media, 2);
+  assert.equal(report.showcaseCoverCoverage.capturedImages, 2);
+  assert.equal(f.calls.length, 2, 'shared covers, logos and portraits are fetched only once');
+  assert.deepEqual(await readFile(resolve(f.outputDirectory, 'media', sha(cover) + '.png')), cover);
+  for(const call of f.calls){assert.equal(call.options.method,'GET');assert.equal(call.options.credentials,'omit');assert.equal(call.options.redirect,'error');}
 });

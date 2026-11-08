@@ -122,6 +122,9 @@ try {
    assert.ok(identityOverflow.shortCentred,'short guest identities remain centred in the original circle');
    assert.equal(identityOverflow.cases,240);assert.ok(identityOverflow.max<=1,'long centred guest identities do not overflow while clamped at '+width+' overflow '+identityOverflow.max);
    }
+   assert.equal(await page.locator('.ah-student-actions').count(),0,'obsolete full-day schedule CTA is removed');
+   assert.equal(await page.locator('[data-work-thumbnail]').count(),3,'all published works appear in the collage without pagination');
+   assert.equal(await page.locator('[data-guest-photo-rotation]').isChecked(),false,'reduced motion defaults photo rotation to off');
    const rail=page.locator('[data-public-showcases]'),stage=page.locator('.ah-work-stage');
    const selected=async(id)=>{
     await page.waitForFunction(expected=>{
@@ -155,6 +158,8 @@ try {
    assert.equal(await page.locator('[data-work-lightbox]').evaluate(node=>node.open),false,'dragging never opens the image viewer');
    await rail.focus();await page.keyboard.press('Home');await selected(IDs.student);
    await first.locator('[data-work-preview]').hover();await page.mouse.wheel(await stage.evaluate(node=>node.clientWidth),0);await selected(IDs.indie);
+   await page.locator('[data-work-thumbnail="'+IDs.legacy+'"]').click();await selected(IDs.legacy);
+   assert.equal(await rail.evaluate(node=>document.activeElement===node),true,'thumbnail selection transfers keyboard control to the main gallery');
    await rail.focus();await page.keyboard.press('End');await selected(IDs.legacy);
    await page.keyboard.press('ArrowRight');await selected(IDs.student);await page.keyboard.press('ArrowLeft');await selected(IDs.legacy);
    if(width===390){
@@ -184,16 +189,63 @@ try {
    assert.equal(await page.locator('[data-public-content-status]').textContent(),'');
    assert.doesNotMatch(await page.locator('#agenda').innerText(),/讲者与.*陆续公布|北京时间|UTC\+8|浏览时段/u);
    assert.match(await page.locator('#faq-site-official').innerText(),/现场可进行 GGJ 站点审核/u);
-   await page.locator('#tab-B').click();assert.equal(await page.locator('[data-agenda-panel=B]').isVisible(),true);
+   await page.locator('#tab-B').click();
+   assert.equal(await page.locator('#tab-B').getAttribute('aria-selected'),'true');
+   await page.keyboard.press('ArrowRight');assert.equal(await page.locator('[data-agenda-panel=C]').isVisible(),true);
+   await page.keyboard.press('ArrowLeft');
+   assert.equal(await page.locator('[data-agenda-panel=B]').isVisible(),true);
    await page.locator('[data-language=en]').click();
    await page.waitForFunction(()=>document.documentElement.lang==='en');
    assert.match(await page.locator('#faq-site-official').innerText(),/jam-site reviews are available on site/i);
    await page.locator('[data-language=zh-CN]').click();
    await page.waitForFunction(()=>document.documentElement.lang==='zh-CN');
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+   if(width===1440){
+    console.log('Gallery autoplay and guest photo rotation');
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    await rail.focus();await page.keyboard.press('Home');await selected(IDs.student);
+    await stage.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));
+    await page.mouse.move(0,0);await page.locator('#students-heading').focus();
+    await page.evaluate(()=>{window.__galleryChanges=[];new MutationObserver(()=>window.__galleryChanges.push(performance.now())).observe(document.querySelector('[data-public-showcases]'),{attributes:true,attributeFilter:['data-current-work']});});
+    await page.waitForFunction(()=>window.__galleryChanges.length>=2,null,{timeout:7000});
+    const cadence=await page.evaluate(()=>window.__galleryChanges[1]-window.__galleryChanges[0]);assert.ok(cadence>=2300&&cadence<=2900,'automatic transitions occur every 2–3 seconds');
+    const current=()=>rail.getAttribute('data-current-work');
+    async function stays(label){const id=await current();await page.waitForTimeout(2800);assert.equal(await current(),id,label);}
+    await stage.hover();await stays('pointer hover pauses autoplay');
+    await rail.focus();await page.mouse.move(0,0);await stays('keyboard focus pauses autoplay');
+    await page.locator('#students-heading').focus();
+    await page.locator('[data-work-active=true] [data-work-preview]').click();await page.mouse.move(0,0);await stays('open image dialog pauses autoplay');await page.keyboard.press('Escape');
+    await page.locator('#agenda-heading').evaluate(node=>node.scrollIntoView({block:'start',behavior:'instant'}));await page.locator('#agenda-heading').focus();await stays('offscreen gallery pauses autoplay');
+    await stage.evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));await page.locator('#students-heading').focus();
+    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
+    await stays('synthetic hidden-page signal pauses autoplay');
+    await page.evaluate(()=>{delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));});
+    await page.emulateMedia({reducedMotion:'reduce'});await stays('mid-session reduced motion stops autoplay');
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    await f.refresh(raw=>{raw.guests=[guest(IDs.guest,{portraitId:coverId}),guest(IDs.secondGuest,{portraitId:coverId}),guest(IDs.unproved,{portraitId:missingId})];});
+    const switcher=page.locator('[data-guest-photo-rotation]');
+    await page.locator('[data-public-guests]').evaluate(node=>node.scrollIntoView({block:'center',behavior:'instant'}));await page.locator('#guests-heading').focus();await page.mouse.move(0,0);
+    assert.equal(await switcher.isChecked(),true);
+    await page.waitForFunction(()=>document.querySelectorAll('[data-guest-toggle][aria-pressed=true]').length>0,null,{timeout:6000});
+    assert.ok(await page.locator('[data-guest-toggle][aria-pressed=true]').count()<=2,'only a few decoded guest portraits appear at once');
+    assert.equal(await page.locator('[data-guest-toggle][aria-pressed=true]:not([data-photo-ready=true])').count(),0,'loading and broken images never replace identity text');
+    await switcher.uncheck();assert.equal(await page.locator('[data-guest-toggle][aria-pressed=true]').count(),0);
+    await page.waitForTimeout(4200);assert.equal(await page.locator('[data-guest-toggle][aria-pressed=true]').count(),0,'photo switch stays off');
+    assert.equal(await page.evaluate(()=>localStorage.getItem('artdico_guest_photo_rotation')),'false');
+    await switcher.check();await page.mouse.move(0,0);await page.locator('#guests-heading').focus();
+    await page.waitForFunction(()=>document.querySelectorAll('[data-guest-toggle][aria-pressed=true]').length>0,null,{timeout:6000});
+    await page.emulateMedia({reducedMotion:'reduce'});await page.waitForFunction(()=>document.querySelector('[data-guest-photo-rotation]').disabled);assert.equal(await switcher.isDisabled(),true);assert.equal(await page.locator('[data-guest-toggle][aria-pressed=true]').count(),0);
+   }
+   await f.refresh(raw=>{raw.showcases=[...rawFixture().showcases,...Array.from({length:10},(_,i)=>work('synthetic-mosaic-'+i,'indie',{coverId}))];});
+   assert.equal(await page.locator('[data-work-thumbnail]').count(),13,'large publication keeps every work available without paging');
+   const mosaicButtons=page.locator('[data-work-thumbnail]');
+   await mosaicButtons.last().focus();
+   await f.refresh(raw=>{raw.showcases.reverse();});
+   assert.equal(await page.evaluate(()=>document.activeElement?.dataset.workThumbnail),'synthetic-mosaic-9','collage publication refresh preserves stable focused work');
+   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
    const screenshots=[];
    for(const id of ['booths','students','agenda']){const path=resolve(evidence,id+'-'+width+'.png');await page.locator('#'+id).screenshot({path,animations:'disabled'});screenshots.push(path);}
-   reports.push({width,organizations:13,singleComposition:true,unobstructedCaption:true,centeredCarousel:true,sidePreviews:true,mouseOrTouchDrag:true,wheelAndKeyboardLoop:true,sideClickCentresFirst:true,missingSingleEmpty:true,keyboardPreview:true,refreshPreserved:true,bilingualReviewCopy:true,noBusinessWrites:true,screenshots});
+   reports.push({width,organizations:13,singleComposition:true,unobstructedCaption:true,centeredCarousel:true,sidePreviews:true,mouseOrTouchDrag:true,wheelAndKeyboardLoop:true,sideClickCentresFirst:true,missingSingleEmpty:true,keyboardPreview:true,refreshPreserved:true,bilingualReviewCopy:true,allWorksMosaic:true,autoplayAndGuestSwitch:width===1440,noBusinessWrites:true,screenshots});
   }finally{await f.context.close();}
  }
  assert.equal(pageErrors.length,0);

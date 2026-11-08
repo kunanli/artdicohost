@@ -5,6 +5,19 @@ export function createWorkCarousel({ grid, window: win = globalThis.window } = {
   const stage = grid?.closest('.ah-work-stage');
   if (!grid || !stage || !win) return { prepare() {}, update() {}, select() {}, current: () => null };
   const reduced = win.matchMedia('(prefers-reduced-motion: reduce)');
+  const doc = grid.ownerDocument;
+  let autoplay = null, dragging = false;
+  const visible = () => { const r = stage.getBoundingClientRect(); return r.width > 0 && r.bottom > 0 && r.top < win.innerHeight; };
+  function playback() {
+    win.clearTimeout(autoplay); autoplay = null;
+    if (!carousel || slides.length < 2 || reduced.matches || doc.hidden || !visible() || dragging || wheelLocked ||
+        stage.matches(':hover') || stage.contains(doc.activeElement) || doc.querySelector('[data-work-lightbox][open]')) return;
+    autoplay = win.setTimeout(() => {
+      autoplay = null;
+      if (carousel.canScrollNext()) carousel.scrollNext(); else carousel.scrollTo(0);
+      playback();
+    }, 2500);
+  }
   let carousel = null, slides = [], selectedId = null, wheel = 0, wheelLocked = false, wheelTimer = null;
   const originalTabindex = new WeakMap();
   const cards = () => [...grid.querySelectorAll(':scope > [data-showcase-id]')].filter(card => !card.hidden);
@@ -34,6 +47,7 @@ export function createWorkCarousel({ grid, window: win = globalThis.window } = {
       grid.scrollTo({ left: grid.scrollLeft + card.x + card.width / 2 - frame.x - frame.width / 2, behavior: 'instant' });
     }
     markActive();
+    playback();
   }
   function sideClick(event) {
     // Embla suppresses the synthetic click following a drag before this handler.
@@ -43,6 +57,7 @@ export function createWorkCarousel({ grid, window: win = globalThis.window } = {
     event.preventDefault(); event.stopPropagation(); select(card.dataset.showcaseId, false);
   }
   function prepare() {
+    win.clearTimeout(autoplay); autoplay = null; dragging = false;
     if (carousel) selectedId = slides[carousel.selectedScrollSnap()]?.dataset.showcaseId ?? selectedId;
     carousel?.destroy(); carousel = null; slides = [];
     stage.removeEventListener('click', sideClick, true);
@@ -62,8 +77,12 @@ export function createWorkCarousel({ grid, window: win = globalThis.window } = {
       try {
         carousel = EmblaCarousel(stage, { container: grid, align: 'center', containScroll: false,
           loop: next.length > 2, startIndex: index, duration: 28, watchDrag: next.length > 1, watchSlides: false });
-        carousel.on('select', markActive).on('reInit', markActive).on('pointerUp', () => {
+        carousel.on('select', markActive).on('reInit', () => { markActive(); playback(); }).on('pointerDown', () => {
+          dragging = true; playback();
+        }).on('pointerUp', () => {
+          dragging = false;
           if (reduced.matches && carousel) carousel.scrollTo(carousel.selectedScrollSnap(), true);
+          playback();
         });
         stage.addEventListener('click', sideClick, true);
       } catch {
@@ -71,6 +90,7 @@ export function createWorkCarousel({ grid, window: win = globalThis.window } = {
       }
     }
     markActive();
+    playback();
   }
   grid.addEventListener('keydown', event => {
     if (event.target !== grid || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
@@ -83,7 +103,8 @@ export function createWorkCarousel({ grid, window: win = globalThis.window } = {
     const delta = event.shiftKey && !event.deltaX ? event.deltaY : event.deltaX;
     if (!carousel || slides.length < 2 || !delta || !event.shiftKey && Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
     event.preventDefault();
-    win.clearTimeout(wheelTimer); wheelTimer = win.setTimeout(() => { wheel = 0; wheelLocked = false; }, 180);
+    win.clearTimeout(wheelTimer); wheelTimer = win.setTimeout(() => { wheel = 0; wheelLocked = false; playback(); }, 180);
+    win.clearTimeout(autoplay); autoplay = null;
     if (wheelLocked) return;
     wheel += delta * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? stage.clientWidth : 1);
     if (Math.abs(wheel) < 60) return;
@@ -99,6 +120,15 @@ export function createWorkCarousel({ grid, window: win = globalThis.window } = {
     }, null)?.dataset.showcaseId ?? null;
     markActive();
   }, { passive: true });
-  reduced.addEventListener('change', () => { if (reduced.matches && carousel) carousel.scrollTo(carousel.selectedScrollSnap(), true); });
+  for (const event of ['pointerenter', 'pointerleave', 'focusin']) stage.addEventListener(event, playback);
+  stage.addEventListener('focusout', () => win.queueMicrotask(playback));
+  doc.addEventListener('visibilitychange', playback);
+  win.addEventListener('pagehide', () => { win.clearTimeout(autoplay); autoplay = null; });
+  win.addEventListener('pageshow', playback);
+  if (win.IntersectionObserver) new win.IntersectionObserver(playback).observe(stage);
+  else { win.addEventListener('scroll', playback, { passive: true }); win.addEventListener('resize', playback); }
+  const lightbox = doc.querySelector('[data-work-lightbox]');
+  if (lightbox && win.MutationObserver) new win.MutationObserver(playback).observe(lightbox, { attributes: true, attributeFilter: ['open'] });
+  reduced.addEventListener('change', () => { if (reduced.matches && carousel) carousel.scrollTo(carousel.selectedScrollSnap(), true); playback(); });
   return { prepare, update, select, current: () => selectedId };
 }

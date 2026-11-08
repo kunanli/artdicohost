@@ -1,5 +1,10 @@
 # ARTDiCO HOST 改版執行總覽
 
+2026-11-08本輪：使用者已選B中央大圖。作品主圖置中、兩側相鄰作品預覽，固定Embla8.6.0提供拖曳／吸附／循環，沒有箭頭及自動播放；資訊留圖下，保留大圖、鍵盤與公開刷新位置。範圍與驗證見[執行台帳](../implementation-plan.md#2026-11-08b-中央大圖輪播)，PR及正式回執待本輪完成。
+
+最近已驗證發布：[PR82](https://github.com/kunanli/artdicohost/pull/82)，main890c085，組織單球、作品圖下資訊、日程精簡及現場站點審核中英文已交付。[正式流程42371308958](https://github.com/kunanli/artdicohost/actions/runs/42371308958)五工作成功，1971項Node、新圖廊4案／實際素材13案、14個後台及67個公開HTTPS物件通過，2026-11-07 12:28:40 UTC完成入口三項回讀。下方更早輪次保留作歷史。
+
+
 本輪：[嘉賓圓內照片切換](guest-circle-portrait-release.md)。原圓文字採姓名／組織社群／GGJ身分，移除公司職稱及方形浮框，hover在同一圓內換照片；手機與鍵盤可切換，缺圖／破圖保留文字。驗證與正式發布回執待本輪完成。
 
 最新已發布：[PR79場次發布入口與前台日程排序](session-publication-order-release.md)，main `82daf5a8316e37ae9647ca8d7c84ec5020de35d8`。場次頁提供就近發布與逐場公開進度；同區、同上午／下午內上移／下移後先保存，再明確發布，舊快照維持時間排序。[PR檢查41624929578](https://github.com/kunanli/artdicohost/actions/runs/41624929578)與[main流程41626550368](https://github.com/kunanli/artdicohost/actions/runs/41626550368)均通過1961項Node及13組89案瀏覽器。正式五工作、137檔候選離線、私有OSS、14後台及68公開HTTPS均成功，11:36:03 UTC完成入場路徑三項核對。業務草稿仍由主辦方明確發布。

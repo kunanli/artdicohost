@@ -32,6 +32,7 @@ function rawFixture(){
  content.showcases=[work(IDs.student,'student',{coverId,participationForms:['booth','share'],sessionId:IDs.share}),work(IDs.indie,'indie',{coverId:missingId,status:'pending',responseStatus:'pending'}),work(IDs.legacy,'team')];
  content.organizations=Array.from({length:13},(_,index)=>({id:'synthetic-gallery-org-'+index,name:'合成组织 '+index,logoId:coverId,website:'https://example.invalid/organization-'+index,participation:'exhibitor',status:'confirmed',publicConsent:false,internalNotes:PRIVATE}));
  content.faqs=[{id:'site-official',question:'新站点现场咨询代表已通过申请吗？',answer:'合成旧咨询说明'}];
+ content.showcases.forEach(item=>{item.coverId=coverId;});
  return content;
 }
 function projected(raw){
@@ -98,6 +99,7 @@ async function fixture(width,{javascript=true,reducedMotion='no-preference',defe
 await mkdir(evidence,{recursive:true});
 try {
  for(const width of [320,390,1440,1920]) {
+  console.log('Centred gallery viewport: '+width);
   const f=await fixture(width,{reducedMotion:'reduce'}),{page}=f;
   try {
    await page.goto(SITE+'/',{waitUntil:'networkidle'});
@@ -120,36 +122,65 @@ try {
    assert.ok(identityOverflow.shortCentred,'short guest identities remain centred in the original circle');
    assert.equal(identityOverflow.cases,240);assert.ok(identityOverflow.max<=1,'long centred guest identities do not overflow while clamped at '+width+' overflow '+identityOverflow.max);
    }
-   const rail=page.locator('[data-public-showcases]');
-   assert.equal(await page.locator('[data-showcase-id]:visible').count(),3,'every work is in the native scroll rail');
+   const rail=page.locator('[data-public-showcases]'),stage=page.locator('.ah-work-stage');
+   const selected=async(id)=>{
+    await page.waitForFunction(expected=>{
+     const rail=document.querySelector('[data-public-showcases]'),stage=rail.closest('.ah-work-stage'),card=rail.querySelector('[data-work-active="true"]');
+     if(!card||expected&&card.dataset.showcaseId!==expected)return false;
+     const a=card.getBoundingClientRect(),b=stage.getBoundingClientRect();return Math.abs(a.x+a.width/2-b.x-b.width/2)<1;
+    },id??null);
+   };
+   await page.waitForSelector('.ah-work-stage[data-carousel-ready]');
+   assert.equal(await page.locator('[data-showcase-id]').count(),3,'real records retain a single DOM entry per stable ID');
    const first=page.locator('#work-'+IDs.student);await first.scrollIntoViewIfNeeded();
-   await first.locator('img').evaluate(image=>image.decode());
+   await rail.locator('img').evaluateAll(images=>Promise.all(images.map(image=>{image.loading='eager';return image.decode();})));await page.evaluate(()=>document.fonts.ready);await selected(IDs.student);
    const geometry=await first.evaluate(node=>{const image=node.querySelector('img').getBoundingClientRect(),caption=node.querySelector('.ah-showcase-caption');return{imageBottom:image.bottom,captionTop:caption.getBoundingClientRect().top,background:getComputedStyle(caption).backgroundColor};});
    assert.ok(geometry.captionTop>=geometry.imageBottom);assert.equal(geometry.background,'rgba(0, 0, 0, 0)');
    assert.equal(await first.locator('[data-work-preview] span').count(),0,'no small overlay icon');
+   const sidePreview=await stage.evaluate(node=>{const b=node.getBoundingClientRect(),active=node.querySelector('[data-work-active=true]').getBoundingClientRect();const others=[...node.querySelectorAll('[data-showcase-id]')].filter(card=>card.dataset.workActive!=='true').map(card=>card.getBoundingClientRect());return{ratio:active.width/b.width,left:others.some(a=>a.left<b.left&&a.right>b.left+1),right:others.some(a=>a.left<b.right-1&&a.right>b.right)};});
+   assert.ok(sidePreview.ratio>.7&&sidePreview.ratio<.9,'central artwork remains large');assert.ok(sidePreview.left&&sidePreview.right,'both adjacent records peek into the viewport');
    await first.evaluate(node=>window.scrollTo({top:node.getBoundingClientRect().top+scrollY-180,behavior:'instant'}));
+   const box=await first.locator('[data-work-preview]').boundingBox(),y=box.y+Math.min(90,box.height/2);
    if(width<600){
-    const box=await first.locator('[data-work-preview]').boundingBox(),cdp=await f.context.newCDPSession(page),y=box.y+Math.min(60,box.height/2);
+    const cdp=await f.context.newCDPSession(page);
     try{
-     await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:box.x+box.width*.95,y}]});
-     for(let step=1;step<=8;step++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:box.x+box.width*(.95-step*.11),y}]});
+     await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:box.x+box.width*.85,y}]});
+     for(let step=1;step<=8;step++){await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:box.x+box.width*(.85-step*.08),y}]});await page.waitForTimeout(20);}
      await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
     }finally{await cdp.detach();}
-   }else{await rail.hover();await page.mouse.wheel(await rail.evaluate(node=>node.clientWidth),0);}
-   await page.waitForTimeout(350);
-   assert.ok(await rail.evaluate(node=>node.scrollLeft>0),'native touch or horizontal wheel scrolls the gallery at '+width);
-   await rail.evaluate(node=>node.scrollTo({left:0,behavior:'instant'}));
-   await rail.focus();await page.keyboard.press('ArrowRight');await page.waitForTimeout(350);
-   assert.ok(await rail.evaluate(node=>node.scrollLeft>0),'the rail supports native keyboard scrolling');
-   const target=page.locator('#work-'+IDs.legacy);
-   await target.evaluate(node=>node.scrollIntoView({inline:'start',block:'nearest',behavior:'instant'}));
-   assert.ok(await rail.evaluate(node=>node.scrollLeft>node.clientWidth*.5));
-   await f.refresh(raw=>{raw.showcases.find(item=>item.id===IDs.legacy).title='合成更新后的作品';});
-   assert.ok(await rail.evaluate(node=>node.scrollLeft>node.clientWidth*.5),'public refresh preserves the horizontal reading position');
-   await first.evaluate(node=>node.scrollIntoView({inline:'start',block:'nearest',behavior:'instant'}));
+   }else{
+    await page.mouse.move(box.x+box.width*.7,y);await page.mouse.down();await page.mouse.move(box.x+box.width*.7-box.width*.62,y,{steps:12});await page.waitForTimeout(20);await page.mouse.up();
+   }
+   await page.waitForFunction(id=>document.querySelector('[data-public-showcases]').dataset.currentWork!==id,IDs.student);await selected();
+   assert.equal(await page.locator('[data-work-lightbox]').evaluate(node=>node.open),false,'dragging never opens the image viewer');
+   await rail.focus();await page.keyboard.press('Home');await selected(IDs.student);
+   await first.locator('[data-work-preview]').hover();await page.mouse.wheel(await stage.evaluate(node=>node.clientWidth),0);await selected(IDs.indie);
+   await rail.focus();await page.keyboard.press('End');await selected(IDs.legacy);
+   await page.keyboard.press('ArrowRight');await selected(IDs.student);await page.keyboard.press('ArrowLeft');await selected(IDs.legacy);
+   if(width===390){
+    await page.emulateMedia({reducedMotion:'no-preference'});await rail.focus();await page.keyboard.press('Home');await selected(IDs.student);
+    await page.keyboard.press('ArrowRight');await page.waitForTimeout(50);
+    assert.ok(await stage.evaluate(node=>{const card=node.querySelector('[data-work-active=true]').getBoundingClientRect(),frame=node.getBoundingClientRect();return Math.abs(card.x+card.width/2-frame.x-frame.width/2)>1;}),'normal navigation visibly animates towards the centre');
+    await page.emulateMedia({reducedMotion:'reduce'});await selected(IDs.indie);
+    await rail.focus();await page.keyboard.press('End');await selected(IDs.legacy);
+   }
+   await f.refresh(raw=>{raw.showcases.reverse();raw.showcases.find(item=>item.id===IDs.legacy).title='合成更新后的作品';});await selected(IDs.legacy);
+   assert.deepEqual(await rail.locator('[data-showcase-id]').evaluateAll(nodes=>nodes.map(n=>n.dataset.showcaseId)),[IDs.legacy,IDs.indie,IDs.student],'refresh preserves public order without clones');
+   await first.evaluate(node=>window.scrollTo({top:node.getBoundingClientRect().top+scrollY-180,behavior:'instant'}));
+   const frame=await stage.boundingBox(),side=await first.locator('[data-work-preview]').boundingBox();
+   await page.mouse.click((Math.max(frame.x,side.x)+Math.min(frame.x+frame.width,side.x+side.width))/2,side.y+Math.min(70,side.height/2));await selected(IDs.student);
+   assert.equal(await page.locator('[data-work-lightbox]').evaluate(node=>node.open),false,'the first side-card click centres the project');
    await first.locator('[data-work-preview]').focus();await page.keyboard.press('Enter');
    assert.equal(await page.locator('[data-work-lightbox]').evaluate(node=>node.open),true);await page.keyboard.press('Escape');
    assert.equal(await first.locator('[data-work-preview]').evaluate(node=>document.activeElement===node),true);
+   await f.refresh(raw=>{raw.showcases.find(item=>item.id===IDs.indie).coverId=missingId;raw.showcases.find(item=>item.id===IDs.legacy).coverId='';});await selected(IDs.student);
+   await rail.focus();await page.keyboard.press('ArrowLeft');await selected(IDs.indie);
+   await page.locator('#work-'+IDs.indie+' [data-work-preview]').waitFor({state:'hidden'});
+   assert.equal(await page.locator('#work-'+IDs.indie+' .ah-showcase-cover-empty').isVisible(),true);
+   await f.refresh(raw=>{raw.showcases=raw.showcases.filter(item=>item.id===IDs.student);});await selected(IDs.student);
+   assert.equal(await rail.locator('[data-showcase-id]').count(),1);
+   await f.refresh(raw=>{raw.showcases=[];});assert.equal(await page.locator('#students').isVisible(),false);
+   await f.refresh(raw=>{raw.showcases=rawFixture().showcases;});await selected(IDs.student);
    assert.equal(await page.locator('[data-public-content-status]').textContent(),'');
    assert.doesNotMatch(await page.locator('#agenda').innerText(),/讲者与.*陆续公布|北京时间|UTC\+8|浏览时段/u);
    assert.match(await page.locator('#faq-site-official').innerText(),/现场可进行 GGJ 站点审核/u);
@@ -162,7 +193,7 @@ try {
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
    const screenshots=[];
    for(const id of ['booths','students','agenda']){const path=resolve(evidence,id+'-'+width+'.png');await page.locator('#'+id).screenshot({path,animations:'disabled'});screenshots.push(path);}
-   reports.push({width,organizations:13,singleComposition:true,unobstructedCaption:true,nativeScroll:true,keyboardPreview:true,refreshPreserved:true,bilingualReviewCopy:true,noBusinessWrites:true,screenshots});
+   reports.push({width,organizations:13,singleComposition:true,unobstructedCaption:true,centeredCarousel:true,sidePreviews:true,mouseOrTouchDrag:true,wheelAndKeyboardLoop:true,sideClickCentresFirst:true,missingSingleEmpty:true,keyboardPreview:true,refreshPreserved:true,bilingualReviewCopy:true,noBusinessWrites:true,screenshots});
   }finally{await f.context.close();}
  }
  assert.equal(pageErrors.length,0);

@@ -84,6 +84,7 @@ export const highlights = [
 ];
 
 export const faqItems = [
+  {id:'wallet-card',question:'如何申请 Apple Wallet 电子纪念入场卡？',answer:'完成活动行报名后，可在本页「电子纪念卡申请」填写报名编号、姓名、邮箱与微信号。工作人员核对报名并确认卡片上的入场身份后，将通过邮箱发送领取指引；请保留活动行原电子票。'},
   { id: 'registration-status', question: '现在可以报名吗？', answer: '普通参会请前往活动行报名，开放状态、报名结果与参会凭证以活动行页面为准。讲者分享提案在本站提交，由筹备团队另行联系；提案开放情况请查看本站表单。' },
   { id: 'audience', question: '不是 GGJ 组织者也能参加吗？', answer: '可以，欢迎学生、开发者、高校、行业与生态伙伴参加。' },
   { id: 'site-role', question: '已经是站点负责人，或想建立新站点，怎么登记？', answer: '现任或曾任 GGJ 站点负责人（SO / RO），以及筹备新站点的朋友，均可通过活动行报名参会。新站点筹备或站点交流需求，可通过 '+PUBLIC_CONTACT_EMAIL+' 留言，筹备团队会联系了解支持需求。\n'+eventConfig.siteRegistration.notice+'请准备本地负责人、组织团队与场地，再通过 GGJ 官网 Start a Jam Site 申请，开放时间以官方信息为准。' },

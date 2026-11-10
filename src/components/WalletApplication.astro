@@ -1,0 +1,31 @@
+---
+import FormField from './FormField.astro';
+import { PUBLIC_REGISTRATION_URL } from '../config/event.mjs';
+const apiOrigin=import.meta.env.PUBLIC_API_BASE||'';
+if(apiOrigin&&apiOrigin!=='https://api.artdico.host')throw new Error('纪念卡 API 必须使用指定的 HTTPS 来源。');
+const fields=[
+ {name:'huodongxingReference',label:'活动行报名编号',type:'text',required:true,maxLength:160,hint:'可填写本场活动的报名号、订单号或票号，供工作人员核对。'},
+ {name:'name',label:'姓名',type:'text',required:true,minLength:2,maxLength:80,hint:'请与活动行报名姓名一致。'},
+ {name:'email',label:'Email',type:'email',required:true,maxLength:254,hint:'用于接收电子纪念卡与参会指南。'},
+ {name:'wechat',label:'微信号',type:'text',required:true,maxLength:100},
+];
+---
+<section class="ah-registration ah-section" id="wallet-card-application" aria-labelledby="wallet-card-heading" data-wallet-api-origin={apiOrigin||undefined}>
+ <div class="ah-register-intro"><h2 id="wallet-card-heading">电子纪念卡申请</h2><p>已在活动行报名？可申请 Apple Wallet 电子纪念入场卡。工作人员核对报名并确认入场身份后，将通过邮箱发送领取指引。</p><a class="ah-text-action" href={PUBLIC_REGISTRATION_URL} data-general-registration>尚未报名？前往活动行 <span aria-hidden="true">↗</span></a></div>
+ <div class="ah-registration-preview ah-general-application"><div class="ah-form-card">
+  <div class="ah-form-top"><strong>Apple Wallet 电子纪念卡</strong></div>
+  <form data-wallet-form method="post" novalidate autocomplete="off">
+   <p class="ah-form-hint">带 * 为必填。入场身份由工作人员确认，无需自行选择。</p>
+   <p class="ah-form-hint" data-wallet-draft-status role="status" aria-live="polite"></p><button type="button" class="ah-text-action" data-wallet-draft-restore hidden>恢复本机申请</button>
+   <p class="ah-form-error" data-wallet-error role="alert" tabindex="-1" hidden></p>
+   <div class="ah-fields-grid">{fields.map(field=><FormField field={field} prefix="wallet" />)}</div>
+   <details class="ah-general-extra"><summary>电话与学校／机构（选填）</summary><div class="ah-fields-grid">{[{name:'phone',label:'电话',type:'tel',required:false,maxLength:150},{name:'organization',label:'学校／机构／团队',type:'text',required:false,maxLength:160}].map(field=><FormField field={field} prefix="wallet" />)}</div></details>
+   <div class="ah-consent-field"><label class="ah-demo-consent" for="wallet-consent"><input type="checkbox" id="wallet-consent" name="wallet.consentAccepted" required /><span>我已阅读并同意<a href="#privacy">隐私说明</a>。</span></label></div>
+   <button type="submit" data-wallet-submit class="ah-primary ah-full" disabled>正在确认申请服务…</button>
+   <p class="ah-form-disclaimer">申请用于核对报名与制作纪念卡；提交不代表已获发卡片。请保留活动行原电子票。</p>
+  </form>
+  <div data-wallet-result role="status" aria-live="polite" tabindex="-1" hidden></div>
+  <noscript><p class="ah-form-disclaimer">纪念卡申请需要启用 JavaScript。</p></noscript>
+ </div></div>
+</section>
+<script>import '../scripts/wallet-application.mjs';</script>

@@ -1,4 +1,4 @@
-import { isSpeakerApplicationFields } from '../../shared/general-application.mjs';
+import { isSpeakerApplicationFields, isWalletApplicationFields } from '../../shared/general-application.mjs';
 import { admissionSummary, registrationReceiptState } from './admission-view.mjs';
 import { savedConfirmation } from './confirmation-client.mjs';
 import { applicationPendingValue } from './application-draft.mjs';
@@ -71,8 +71,8 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
       const previousUnknown=pending.uncertain;busy=true;
       try{
         const eventId=JSON.parse(pending.json).eventId;
-        const issued=await request('/api/admin/registration/token',{eventId,idempotencyKey:pending.key,...(isSpeakerApplicationFields(JSON.parse(pending.json).fields)?{speakerApplication:true}:{})});const token=issued.value;
-        if(issued.status!==200){const external=config?.publicRegistrationMode==='speaker_only'&&!isSpeakerApplicationFields(JSON.parse(pending.json).fields);throw Object.assign(failure(issued.status===429?'RATE_LIMITED':'TOKEN_UNAVAILABLE',external?'本站一般报名已改为活动行。原申请尚未确认，请保留记录并联系筹备团队核对；此处不会改为新的讲者申请。':'提交验证暂不可用（HTTP '+issued.status+'），请保留原申请后重试。',pending.sent),{stage:'token',reason:'HTTP_STATUS'});}
+        const issued=await request('/api/admin/registration/token',{eventId,idempotencyKey:pending.key,...(isSpeakerApplicationFields(JSON.parse(pending.json).fields)?{speakerApplication:true}:isWalletApplicationFields(JSON.parse(pending.json).fields)?{walletApplication:true}:{})});const token=issued.value;
+        if(issued.status!==200){const external=config?.publicRegistrationMode==='speaker_only'&&!isSpeakerApplicationFields(JSON.parse(pending.json).fields)&&!isWalletApplicationFields(JSON.parse(pending.json).fields);throw Object.assign(failure(issued.status===429?'RATE_LIMITED':'TOKEN_UNAVAILABLE',external?'本站一般报名已改为活动行。原申请尚未确认，请保留记录并联系筹备团队核对；此处不会改为新的讲者申请。':'提交验证暂不可用（HTTP '+issued.status+'），请保留原申请后重试。',pending.sent),{stage:'token',reason:'HTTP_STATUS'});}
         if(issued.status!==200||token?.eventId!==eventId||typeof token.submissionToken!=='string'||token.submissionToken.length>4096||!TOKEN.test(token.submissionToken)||!timestamp(token.expiresAt)||Date.parse(token.expiresAt)<=clock())throw failure('TOKEN_UNAVAILABLE','暂时无法核对，请保留原申请后重试。',pending.sent);
         pending.sent=true;await persist('update');
         const result=await request('/api/admin/registration/submit',JSON.parse(pending.json),{'Idempotency-Key':pending.key,'X-Registration-Token':token.submissionToken});
@@ -109,7 +109,7 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
         && !/demo|frontend|mock/iu.test(value.privacy.version);
       const summary = admissionSummary(value?.admissions);
       const metadata = complete ? {eventId:value.eventId,opensAt:value.opensAt,closesAt:value.closesAt,capacity:value.capacity,privacy:Object.fromEntries(PRIVACY_KEYS.map(key=>[key,value.privacy[key]])), ...(summary ? {admissions:summary} : {}), ...(typeof value.attendeeReviewRequired==='boolean'?{attendeeReviewRequired:value.attendeeReviewRequired}:{}), ...(typeof value.speakerApplicationsEnabled==='boolean'?{speakerApplicationsEnabled:value.speakerApplicationsEnabled}:{}), ...(['legacy','speaker_only'].includes(value.publicRegistrationMode)?{publicRegistrationMode:value.publicRegistrationMode}:{})} : {};
-      const speakerReady = applicationKind === 'speaker' && complete && value.enabled === false && value.speakerApplicationsEnabled === true;
+      const speakerReady = ['speaker','wallet'].includes(applicationKind) && complete && value.enabled === false && value.speakerApplicationsEnabled === true;
       if (value?.enabled === false && !speakerReady) { config = null; return {enabled:false,reason:value.reason==='closed'?'closed':'unavailable',...metadata}; }
       if (value?.enabled !== true && !speakerReady) throw failure('CONFIG_INVALID','正式报名配置尚未完整，请稍后再来。');
       if (!complete || value.speakerApplicationsEnabled !== undefined && typeof value.speakerApplicationsEnabled !== 'boolean' || value.publicRegistrationMode !== undefined && !['legacy','speaker_only'].includes(value.publicRegistrationMode)) throw failure('CONFIG_INVALID','正式报名配置尚未完整，请稍后再来。');
@@ -119,6 +119,7 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
     async submit(fields) {
       if(busy||preparing)throw failure('BUSY','正在确认申请结果，请稍候。');
       if(pending){if(JSON.stringify(JSON.parse(pending.json).fields)!==JSON.stringify(fields))throw failure('PENDING','请先核对原申请，不能更换内容重复提交。',true);return sendPending();}
+      if(applicationKind==='wallet'&&!isWalletApplicationFields(fields))throw failure('INVALID','请提交电子纪念卡申请。');
       if (applicationKind === 'speaker' && !isSpeakerApplicationFields(fields)) throw failure('INVALID','请提交讲者主题申请；一般报名请前往活动行。');
       if (!available || !config) throw failure('NOT_READY','本站正式报名暂未开放，请勿填写真实资料。');
       if (busy) throw failure('BUSY','正在确认报名结果，请稍候。');

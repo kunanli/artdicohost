@@ -1,3 +1,7 @@
+# 2026-11-10：電子紀念卡申請
+
+`wallet-application-smoke.mjs`獨立6案：四寬的公開表單位置／必要Q&A錨點、講者與紀念卡獨立IndexedDB草稿、原生隱私勾選、中英文值保留與最終computed字級、私有後台真實PATCH保存卡面身分；1440案另明確核准並核對供Wallet使用的受信身分投影。390案遺失已保存回覆後重整、關閉仍同key／原正文核對，320初始關閉零POST。所有頁面、auth、審核及名額均為同份本地產物／隔離記憶體服務；零真寄信、正式業務寫入與未攔截網路。成功prefix `Wallet application browser verified:`；報告包含來源、乾淨工作樹資格、公開HTML／script SHA及6個完整reports，新增既有CI必要步驟與一天證據artifact。它不代替實際素材13案或真iPhone加入Wallet。
+
 # 2026-11-08最新：預設多照片、雙組氣泡拖曳與統一字級
 
 本輪取代下方歷史照片開關／最多兩張與預設不自動播放規則。主作品仍每2.5秒播放；嘉賓無開關，正常動態時自動顯示約65%可見成功decode照片，每2.8秒交替，保護正在操作的圓。`homepage-gallery-smoke.mjs`四寬驗兩組氣泡的真實pointer拖曳／彈簧歸位／click抑制／方向鍵與Escape，320及390另驗真實CDP橫向起手與直向native pan；`public-typography-smoke.mjs`四寬新增全頁h2、內容副標、正文與操作的computed同級層次。體驗球輔助統一14px。

@@ -1,4 +1,5 @@
 ---
+import { WALLET_IDENTITIES } from '../../../../shared/general-application.mjs';
 import StaffNavigation from '../../../components/StaffNavigation.astro';
 import PersonConfirmation from '../../../components/PersonConfirmation.astro';
 import PeopleViews from '../../../components/PeopleViews.astro';
@@ -55,6 +56,7 @@ const accommodation=[['not_requested','未申请'],['requested','已申请'],['p
     <section class="review-basics"><h3>基本资料</h3><dl data-review-summary></dl></section>
     <details class="review-original"><summary>原始报名资料与问卷</summary><dl data-review-details></dl></details>
     <form data-review-form>
+      <div class="ah-admin-field"><label for="decision-wallet-identity">纪念卡入场身份</label><select id="decision-wallet-identity" name="walletIdentity"><option value="">待确认</option>{WALLET_IDENTITIES.map(item=><option value={item.value}>{item.label}</option>)}</select><a class="ah-admin-button" data-review-wallet-primary hidden>到主名额设置纪念卡身份</a><small>先核对活动行报名与既有名额；重复资料请先关联同一人。保存卡面身份后，再按当前名额发送参会指南。</small></div>
       <details class="review-detail-group"><summary>内部跟进与备注</summary>
       <div class="ah-admin-field"><label for="decision-owner">负责同事</label><input id="decision-owner" name="assignedTo" maxlength="120" /></div>
       <div class="ah-admin-field"><label for="decision-notes">核验与内部备注</label><textarea id="decision-notes" name="internalNotes" maxlength="4000" rows="4"></textarea></div>

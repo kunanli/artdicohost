@@ -104,6 +104,7 @@ export function personWorkspaceView(value, selection) {
       || !plain(value.availability) || !['contact', 'registration', 'admission', 'arrangements', 'invitations', 'confirmations', 'publicProfile'].every(key => STATES.has(value.availability[key]))
       || !plain(value.revisions) || !['contacts', 'content', 'invitations', 'registration', 'admission', 'confirmations'].every(key => value.revisions[key] === null || integer(value.revisions[key]))) return null;
     const { contact, registration, admission, arrangements, communications, publicProfile } = value;
+    if(registration?.fields?.intake==='wallet-v1'&&(!text(registration.fields.huodongxingReference,160)||!registration.fields.huodongxingReference))return null;
     if(Object.hasOwn(value,'attendance')&&!validPersonAttendanceStage(value.attendance))return null;
     if (value.availability.contact === 'available') {
       if (!plain(contact) || !CONTACT.test(contact.id ?? '') || !lines(contact.profile, ['name', 'displayName', 'organization', 'position', 'city', 'email', 'wechat', 'phone', 'contactConsent'])

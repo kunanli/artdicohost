@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { RegistrationAdminError, isRegistrationAdminError } from './errors.mjs';
-import { validateGeneralApplicationFields } from '../../shared/general-application.mjs';
+import { validateGeneralApplicationFields, isWalletApplicationFields, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
 
 export const REVIEW_STATUSES = Object.freeze(['new', 'in_review', 'awaiting_maria', 'approved', 'discussion', 'not_this_time', 'withdrawn']);
 export const ACCOMMODATION_STATUSES = Object.freeze(['not_requested', 'requested', 'pending', 'approved', 'declined']);
@@ -14,7 +14,7 @@ const RECORD_ID = /^[A-Za-z0-9_-]{43}$/u;
 const EVENT = /^[a-z0-9][a-z0-9-]{0,79}$/u;
 const FILTER_NAMES = ['query', 'category', 'status', 'accommodation', 'city', 'attendance'];
 const TEXT_LIMITS = { proposedRole: 240, internalNotes: 4000, assignedTo: 120, nextStep: 1000, mariaFeedback: 2000 };
-const REVIEW_KEYS = ['status', 'accommodationStatus', 'recommendation', ...Object.keys(TEXT_LIMITS), 'lastContactDate', 'mariaReviewDate', 'mariaDecision', 'invitationStatus'];
+const REVIEW_KEYS = ['status', 'accommodationStatus', 'recommendation', ...Object.keys(TEXT_LIMITS), 'lastContactDate', 'mariaReviewDate', 'mariaDecision', 'invitationStatus', 'walletIdentity'];
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && [Object.prototype, null].includes(Object.getPrototypeOf(value));
 const clone = value => structuredClone(value);
 const fail = code => { throw new RegistrationAdminError(code); };
@@ -67,7 +67,7 @@ export function validateRegistrationReview(value, registration) {
 }
 
 function editableReview(value) {
-  if (!ownValues(value) || Reflect.ownKeys(value).some(key => !REVIEW_KEYS.includes(key)) || REVIEW_KEYS.some(key => !Object.hasOwn(value, key))) fail('INVALID_REVIEW');
+  if (!ownValues(value) || Reflect.ownKeys(value).some(key => !REVIEW_KEYS.includes(key)) || REVIEW_KEYS.filter(key=>key!=='walletIdentity').some(key => !Object.hasOwn(value, key))) fail('INVALID_REVIEW');
   const result = {
     status: enumValue(value.status, REVIEW_STATUSES), accommodationStatus: enumValue(value.accommodationStatus, ACCOMMODATION_STATUSES),
     recommendation: enumValue(value.recommendation, RECOMMENDATIONS), proposedRole: safeText(value.proposedRole, TEXT_LIMITS.proposedRole),
@@ -75,6 +75,7 @@ function editableReview(value) {
     lastContactDate: date(value.lastContactDate), nextStep: safeText(value.nextStep, TEXT_LIMITS.nextStep), mariaReviewDate: date(value.mariaReviewDate),
     mariaFeedback: safeText(value.mariaFeedback, TEXT_LIMITS.mariaFeedback), mariaDecision: enumValue(value.mariaDecision, MARIA_DECISIONS), invitationStatus: enumValue(value.invitationStatus, INVITATION_STATUSES),
   };
+  if(Object.hasOwn(value,'walletIdentity'))result.walletIdentity=enumValue(value.walletIdentity,['',...WALLET_IDENTITIES.map(item=>item.value)]);
   return result;
 }
 
@@ -167,7 +168,7 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, load
       || stored.cursor?.version !== state.revision
       || Buffer.byteLength(JSON.stringify(state)) > 1024 * 1024) fail('STORAGE_UNAVAILABLE');
     for (const [id, review] of Object.entries(state.reviews)) {
-      if (!RECORD_ID.test(id) || !ownValues(review) || Object.keys(review).sort().join(',') !== [...REVIEW_KEYS, 'deletionRequested'].sort().join(',')) fail('STORAGE_UNAVAILABLE');
+      if (!RECORD_ID.test(id) || !ownValues(review) || Object.keys(review).sort().join(',') !== [...REVIEW_KEYS.filter(key=>key!=='walletIdentity'||Object.hasOwn(review,key)), 'deletionRequested'].sort().join(',')) fail('STORAGE_UNAVAILABLE');
       try { const editable = { ...review }; delete editable.deletionRequested; editableReview(editable); } catch { fail('STORAGE_UNAVAILABLE'); }
       if (review.deletionRequested !== null && (!ownValues(review.deletionRequested) || Object.keys(review.deletionRequested).sort().join(',') !== 'reason,requestedAt,requestedBy,status'
         || !['request', 'retention', 'duplicate', 'other'].includes(review.deletionRequested.reason) || review.deletionRequested.status !== 'pending'
@@ -323,7 +324,7 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, load
     async projectRegistration(record, primaryId = record?.id, relatedIds = [primaryId]) { return guarded(async () => {
       if (!RECORD_ID.test(record?.id ?? '') || !RECORD_ID.test(primaryId ?? '') || !Array.isArray(relatedIds) || relatedIds.length > 100 || !relatedIds.includes(primaryId) || new Set(relatedIds).size !== relatedIds.length || relatedIds.some(id => !RECORD_ID.test(id ?? '')) || !ownValues(record.fields)) fail('INVALID_REQUEST');
       const state = await checkedProfileState(relatedIds), correction = state.profileCorrections?.[primaryId];
-      return { ...clone(record), fields: { ...clone(record.fields), ...(correction?.fields ?? {}) }, accessRevision: accessTotal(state, relatedIds),
+      return { ...clone(record), ...(isWalletApplicationFields(record.fields)?{walletRequested:true}:{}), ...(state.reviews[primaryId]?.walletIdentity?{walletIdentity:state.reviews[primaryId].walletIdentity}:{}), fields: { ...clone(record.fields), ...(correction?.fields ?? {}) }, accessRevision: accessTotal(state, relatedIds),
         reviewWithdrawn: Boolean(state.reviews[record.id] && (state.reviews[record.id].status === 'withdrawn' || state.reviews[record.id].deletionRequested !== null)),
         ...(correction ? { profileCorrection: { accessRevision: correction.accessRevision, revision: correction.revision } } : {}) };
     }); },
@@ -383,7 +384,7 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, load
     async saveReview(id, expectedRevision, value, actor) { return guarded(() => mutation(expectedRevision, actor, (current, next) => {
       const item = current.registrations.find(record => record.id === id);
       if (!item) fail('NOT_FOUND');
-      const review = { ...validateRegistrationReview(value, item), deletionRequested: item.review.deletionRequested };
+      const review = { ...(Object.hasOwn(item.review,'walletIdentity')?{walletIdentity:item.review.walletIdentity}:{}), ...validateRegistrationReview(value, item), deletionRequested: item.review.deletionRequested };
       const changedFields = REVIEW_KEYS.filter(key => review[key] !== item.review[key]);
       next.reviews[id] = review;
       return { action: 'update_review', registrationId: id, metadata: { changedFields }, value: { review } };

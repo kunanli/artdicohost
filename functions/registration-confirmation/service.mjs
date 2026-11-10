@@ -146,7 +146,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
   function trustedProjection(registrationId, loaded) {
     const { record, admission, entry } = loaded, hidden = admission.status === 'withdrawn';
     return { registrationId, referenceCode: registrationId, admissionStatus: admission.status, admissionKind: admission.kind,
-      admissionRevision: admission.revision, accessRevision: record.accessRevision ?? 0, name: hidden ? '' : record.fields.name, organization: hidden ? '' : record.fields.organization ?? '',
+      admissionRevision: admission.revision, accessRevision: record.accessRevision ?? 0, ...(record.walletRequested?{walletRequested:true}:{}), ...(record.walletIdentity?{walletIdentity:record.walletIdentity}:{}), name: hidden ? '' : record.fields.name, organization: hidden ? '' : record.fields.organization ?? '',
       event: { ...eventFacts }, submittedAt: entry.committedAt, hasEmail: typeof record.fields.email === 'string' && Boolean(record.fields.email) };
   }
   async function authorizedRegistration(registrationId) { return trustedProjection(registrationId, await loadRegistration(registrationId)); }
@@ -390,7 +390,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       } catch { /* Optional current QR only. */ }
     }
     const wallet = value.admissionStatus === 'confirmed'
-      ? currentFacts.ready ? await walletState() : { ready: false, reason: currentFacts.reason }
+      ? value.walletRequested&&!value.walletIdentity?{ready:false,reason:'WALLET_IDENTITY_PENDING'}:currentFacts.ready ? await walletState() : { ready: false, reason: currentFacts.reason }
       : { ready: false, reason: 'ADMISSION_NOT_CONFIRMED' };
     if (['EVENT_FACTS_MISMATCH', 'EVENT_FACTS_UNAVAILABLE'].includes(wallet.reason)) {
       currentFacts = { ready: false, reason: wallet.reason, revision: null, key: null };

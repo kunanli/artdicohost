@@ -1,4 +1,4 @@
-import { validateGeneralApplicationFields, GENERAL_APPLICATION_INTAKE } from '../../shared/general-application.mjs';
+import { validateGeneralApplicationFields, GENERAL_APPLICATION_INTAKE, WALLET_APPLICATION_INTAKE, isWalletApplicationFields } from '../../shared/general-application.mjs';
 
 const EVENT=/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u,KEY=/^[a-f0-9]{64}$/u;
 const plain=value=>value!==null&&typeof value==='object'&&!Array.isArray(value)&&[Object.prototype,null].includes(Object.getPrototypeOf(value));
@@ -6,13 +6,16 @@ const exact=(value,keys)=>plain(value)&&Reflect.ownKeys(value).length===keys.len
 const fail=()=>{const error=new Error('本机恢复记录无法核对，请保留当前页面。');error.code='DRAFT_INVALID';throw error;};
 const formed=value=>{for(const character of value){const point=character.codePointAt(0);if(point>=0xd800&&point<=0xdfff)return false;}return true;};
 export const APPLICATION_DRAFT_KEYS=Object.freeze(['intake','name','email','category','organization','city','wechat','phone','proposal','topic','summary']);
+const WALLET_DRAFT_KEYS=Object.freeze([...APPLICATION_DRAFT_KEYS,'huodongxingReference']);
 const LEGACY_APPLICATION_DRAFT_KEYS=Object.freeze(APPLICATION_DRAFT_KEYS.filter(key=>key!=='phone'));
 export function applicationDraftValue(value){
   // Older editing snapshots omit phone. Validation never upgrades the stored
   // snapshot or the separate immutable pending payload while restoring it.
-  if(!(exact(value,APPLICATION_DRAFT_KEYS)||exact(value,LEGACY_APPLICATION_DRAFT_KEYS))||value.intake!==GENERAL_APPLICATION_INTAKE||typeof value.proposal!=='boolean')fail();
-  const result={intake:GENERAL_APPLICATION_INTAKE};
+  const wallet=isWalletApplicationFields(value);
+  if(!(wallet?exact(value,WALLET_DRAFT_KEYS):exact(value,APPLICATION_DRAFT_KEYS)||exact(value,LEGACY_APPLICATION_DRAFT_KEYS))||![GENERAL_APPLICATION_INTAKE,WALLET_APPLICATION_INTAKE].includes(value.intake)||typeof value.proposal!=='boolean'||wallet&&value.proposal)fail();
+  const result={intake:value.intake};
   for(const[key,max]of[['name',80],['email',254],['category',80],['organization',160],['city',100],['wechat',100],['phone',150],['topic',200],['summary',1500]]){const text=value[key];if(key==='phone'&&!Object.hasOwn(value,key))continue;if(typeof text!=='string'||text.length>max*2||[...text].length>max||!formed(text)||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)||key!=='summary'&&/[\r\n\t]/u.test(text))fail();result[key]=text;}
+  if(wallet){const ref=value.huodongxingReference;if(typeof ref!=='string'||ref.length>320||[...ref].length>160||!formed(ref)||/[\u0000-\u001f\u007f]/u.test(ref))fail();result.huodongxingReference=ref;}
   result.proposal=value.proposal;return result;
 }
 export function applicationPendingValue(value,eventId){
@@ -22,15 +25,15 @@ export function applicationPendingValue(value,eventId){
   return{eventId:value.eventId,idempotencyKey:value.idempotencyKey,payloadJson:value.payloadJson,attempted:value.attempted,uncertain:value.uncertain};
 }
 export function applicationDraftFromFields(fields){
-  return applicationDraftValue({intake:GENERAL_APPLICATION_INTAKE,name:fields.name??'',email:fields.email??'',category:fields.categories?.[0]??'',organization:fields.organization??'',city:fields.city??'',wechat:fields.wechat??'',phone:fields.phone??'',proposal:fields.participationInterests?.includes('talk')===true,topic:fields.speaker?.topic??'',summary:fields.speaker?.summary??''});
+  return applicationDraftValue({intake:isWalletApplicationFields(fields)?WALLET_APPLICATION_INTAKE:GENERAL_APPLICATION_INTAKE,...(isWalletApplicationFields(fields)?{huodongxingReference:fields.huodongxingReference??''}:{}),name:fields.name??'',email:fields.email??'',category:fields.categories?.[0]??'',organization:fields.organization??'',city:fields.city??'',wechat:fields.wechat??'',phone:fields.phone??'',proposal:fields.participationInterests?.includes('talk')===true,topic:fields.speaker?.topic??'',summary:fields.speaker?.summary??''});
 }
-export function applicationDraftScope(eventId){if(!EVENT.test(eventId))fail();return{actorId:'public',eventId,page:'application',entityId:GENERAL_APPLICATION_INTAKE};}
-export const applicationDraftPolicy=Object.freeze({fields:[...new Set([...APPLICATION_DRAFT_KEYS,'eventId','idempotencyKey','payloadJson','attempted','uncertain'])],pendingFields:['idempotencyKey','payloadJson'],jsonFields:['payloadJson'],rejectPending(value){try{const original=applicationPendingValue(value);if(!original.attempted||original.uncertain)return false;return applicationDraftFromFields(JSON.parse(original.payloadJson).fields);}catch{return false;}},validate(value,{kind}){try{if(kind==='editing')applicationDraftValue(value);else if(kind==='pending_submission')applicationPendingValue(value);else return false;return true;}catch{return false;}}});
+export function applicationDraftScope(eventId,intake=GENERAL_APPLICATION_INTAKE){if(!EVENT.test(eventId)||![GENERAL_APPLICATION_INTAKE,WALLET_APPLICATION_INTAKE].includes(intake))fail();return{actorId:'public',eventId,page:'application',entityId:intake};}
+export const applicationDraftPolicy=Object.freeze({fields:[...new Set([...WALLET_DRAFT_KEYS,'eventId','idempotencyKey','payloadJson','attempted','uncertain'])],pendingFields:['idempotencyKey','payloadJson'],jsonFields:['payloadJson'],rejectPending(value){try{const original=applicationPendingValue(value);if(!original.attempted||original.uncertain)return false;return applicationDraftFromFields(JSON.parse(original.payloadJson).fields);}catch{return false;}},validate(value,{kind}){try{if(kind==='editing')applicationDraftValue(value);else if(kind==='pending_submission')applicationPendingValue(value);else return false;return true;}catch{return false;}}});
 /** CAS wrapper. Reads and cache writes never send an application. */
-export function createApplicationDraft({store,eventId}={}){
+export function createApplicationDraft({store,eventId,intake=GENERAL_APPLICATION_INTAKE}={}){
   if(!store||!['read','write','remove','rejectPending','subscribe'].every(key=>typeof store[key]==='function'))fail();
-  const scope=applicationDraftScope(eventId);let snapshot=null;
-  const remember=value=>{if(!value||!Number.isSafeInteger(value.revision)||value.revision<0||!Number.isSafeInteger(value.actorEpoch)||value.actorEpoch<0||value.record!==null&&!plain(value.record))fail();if(value.record){if(value.record.kind==='editing')applicationDraftValue(value.record.value);else if(value.record.kind==='pending_submission')applicationPendingValue(value.record.value,eventId);else fail();}if(snapshot&&(value.actorEpoch<snapshot.actorEpoch||value.actorEpoch===snapshot.actorEpoch&&value.revision<snapshot.revision))return structuredClone(snapshot);snapshot=value;return structuredClone(value);};
+  const scope=applicationDraftScope(eventId,intake);let snapshot=null;
+  const remember=value=>{if(!value||!Number.isSafeInteger(value.revision)||value.revision<0||!Number.isSafeInteger(value.actorEpoch)||value.actorEpoch<0||value.record!==null&&!plain(value.record))fail();if(value.record){if(value.record.kind==='editing')applicationDraftValue(value.record.value);else if(value.record.kind==='pending_submission')applicationPendingValue(value.record.value,eventId);else fail();}if(value.record){const kind=value.record.kind==='editing'?value.record.value.intake:JSON.parse(value.record.value.payloadJson).fields.intake;if(kind!==intake)fail();}if(snapshot&&(value.actorEpoch<snapshot.actorEpoch||value.actorEpoch===snapshot.actorEpoch&&value.revision<snapshot.revision))return structuredClone(snapshot);snapshot=value;return structuredClone(value);};
   const loaded=()=>{if(!snapshot)fail();return snapshot;};
   const samePending=value=>snapshot?.record?.kind==='pending_submission'&&snapshot.record.value.idempotencyKey===value.idempotencyKey&&snapshot.record.value.payloadJson===value.payloadJson;
   async function write(kind,value){const current=loaded();return remember(await store.write(scope,{expectedRevision:current.revision,actorEpoch:current.actorEpoch,kind,baseRevision:null,value},applicationDraftPolicy));}

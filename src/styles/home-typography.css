@@ -211,3 +211,7 @@ html[lang="en"] #artdico-host.ah-festival.ah-cosmos .ah-home-fact-bubble strong{
 @media(max-width:820px){html[lang="en"] #artdico-host.ah-festival.ah-cosmos{--ah-display-fact-en:18px}}
 
 #artdico-host.ah-festival.ah-cosmos .ah-program-date{font-size:var(--ah-type-subtitle);line-height:1.4}
+
+#artdico-host.ah-festival.ah-cosmos [data-wallet-result] h3{font-size:var(--ah-type-subtitle);line-height:1.4}
+#artdico-host.ah-festival.ah-cosmos [data-wallet-result] code{overflow-wrap:anywhere;font-size:var(--ah-type-meta)}
+#artdico-host.ah-festival.ah-cosmos .ah-registration [data-wallet-form][hidden]{display:none}

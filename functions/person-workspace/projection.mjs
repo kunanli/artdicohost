@@ -1,3 +1,4 @@
+import { isWalletApplicationFields, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
 import {personGroupFor} from '../registration-api/admissions.mjs';
 import { PARTICIPATION_FORMS, SESSION_ROLES, validateStoredContact } from '../../shared/contacts-schema.mjs';
 import { GUEST_PUBLIC_ROLES, PORTRAIT_ID_PATTERN, isContentVisible, contentSchema, normalizeGuestAttendance } from '../../shared/content-schema.mjs';
@@ -103,6 +104,7 @@ export function registrationSource(value, expectedId) {
   if (!fields.name) fail();
   fields.categories = strings(record.fields.categories, 30);
   fields.participationInterests = strings(record.fields.participationInterests, 30);
+  if(isWalletApplicationFields(record.fields)){fields.intake='wallet-v1';fields.huodongxingReference=text(record.fields.huodongxingReference,160);if(!fields.huodongxingReference)fail();}
   const kind = oneOf(record.provenance.kind, ['public', 'staff_assisted', 'staff_entry']);
   if (kind === 'staff_assisted' && (typeof record.provenance.sourceContactId !== 'string' || !CONTACT_ID.test(record.provenance.sourceContactId))) fail();
   const review = { status: oneOf(value.review.status, ['new', 'in_review', 'awaiting_maria', 'approved', 'discussion', 'not_this_time', 'withdrawn']),
@@ -110,6 +112,8 @@ export function registrationSource(value, expectedId) {
     assignedTo: text(value.review.assignedTo, 120), nextStep: text(value.review.nextStep, 1000),
     invitationStatus: oneOf(value.review.invitationStatus, ['not_sent', 'to_send', 'sent', 'declined']),
     deletionRequested: value.review.deletionRequested !== null && value.review.deletionRequested !== undefined };
+  const walletIdentity=record.walletIdentity??value.review.walletIdentity;
+  if(walletIdentity!==undefined){if(!['',...WALLET_IDENTITIES.map(item=>item.value)].includes(walletIdentity))fail();review.walletIdentity=walletIdentity;}
   const registration = { id: expectedId, referenceCode: text(record.referenceCode, 128, expectedId),
     submittedAt: timestamp(record.submittedAt, false), provenance: { kind }, fields, review };
   if (record.profileTargetId !== undefined) { if (!REGISTRATION_ID.test(record.profileTargetId ?? '')) fail(); registration.profileTargetId = record.profileTargetId; }

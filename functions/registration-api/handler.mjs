@@ -190,8 +190,8 @@ export function createRegistrationApi({ allowedOrigins, submissionService, allow
           || ![null, 'identity'].includes(request.headers.get('content-encoding'))) return failure('UNSUPPORTED_MEDIA_TYPE');
         const payload = await readPayload(request);
         const keys = Object.keys(payload).sort().join(',');
-        if (!['eventId,idempotencyKey','eventId,idempotencyKey,speakerApplication'].includes(keys) || keys.endsWith(',speakerApplication') && own(payload,'speakerApplication') !== true || !KEY_PATTERN.test(own(payload, 'idempotencyKey') ?? '')) return failure('INVALID_HEADERS');
-        const value = await issueToken({ eventId: own(payload, 'eventId'), idempotencyKey: own(payload, 'idempotencyKey'), origin, ...(own(payload,'speakerApplication') === true ? {speakerApplication:true} : {}) });
+        if (!['eventId,idempotencyKey','eventId,idempotencyKey,speakerApplication','eventId,idempotencyKey,walletApplication'].includes(keys) || keys.endsWith(',speakerApplication') && own(payload,'speakerApplication') !== true || keys.endsWith(',walletApplication') && own(payload,'walletApplication') !== true || !KEY_PATTERN.test(own(payload, 'idempotencyKey') ?? '')) return failure('INVALID_HEADERS');
+        const value = await issueToken({ eventId: own(payload, 'eventId'), idempotencyKey: own(payload, 'idempotencyKey'), origin, ...(own(payload,'speakerApplication') === true ? {speakerApplication:true} : {}), ...(own(payload,'walletApplication')===true?{walletApplication:true}:{}) });
         if (request.signal.aborted) return failure('UNAVAILABLE');
         if (own(value, 'outcome') !== 'issued') {
           if (own(value, 'outcome') === 'rate_limited' && Number.isSafeInteger(own(value, 'retryAfter')) && own(value, 'retryAfter') >= 1 && own(value, 'retryAfter') <= 86400) headers['retry-after'] = String(own(value, 'retryAfter'));

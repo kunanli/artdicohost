@@ -1,4 +1,4 @@
-import { isSpeakerApplicationFields } from '../../shared/general-application.mjs';
+import { isSpeakerApplicationFields, isWalletApplicationFields } from '../../shared/general-application.mjs';
 import { createHash } from 'node:crypto';
 import { clockTime, own, plainObject, validateRegistrationPolicy } from './policy.mjs';
 import { validateRegistrationSubmission, validateStaffRegistrationFields } from './validation.mjs';
@@ -80,7 +80,7 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
     },
     async issueToken(input) {
       try {
-        const origin = own(input, 'origin'), idempotencyKey = own(input, 'idempotencyKey'), speakerApplication = own(input, 'speakerApplication') === true;
+        const origin = own(input, 'origin'), idempotencyKey = own(input, 'idempotencyKey'), speakerApplication = own(input, 'speakerApplication') === true || own(input,'walletApplication') === true;
         if (!origins.has(origin) || own(input, 'eventId') !== eventId || !KEY.test(idempotencyKey ?? '')) return result('forbidden');
         const now = current(), checked = policyAt(now);
         const state = await repository.readIndex();
@@ -112,7 +112,7 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         if (!budget.allowed) return { outcome: 'rate_limited', retryAfter: budget.retryAfter };
         const validation = validateRegistrationSubmission(payload, { policy: configured, now });
         if (!validation.valid) return result('invalid');
-        if (publicRegistrationMode === 'speaker_only' && !isSpeakerApplicationFields(validation.value.fields)) return result('closed');
+        if (publicRegistrationMode === 'speaker_only' && !isSpeakerApplicationFields(validation.value.fields) && !isWalletApplicationFields(validation.value.fields)) return result('closed');
         return await decorate(await repository.accept({ value: { ...validation.value, provenance: { kind: 'public' } }, keyHash, payloadHash, capacity, getExcluded: admissions.getExcluded(),
           beforeCommit: () => { const at = current(); return policyAt(at).valid && tokens.verify({ token: submissionToken, origin, idempotencyKey, now: at }); } }), origin);
       } catch { return result('unavailable'); }

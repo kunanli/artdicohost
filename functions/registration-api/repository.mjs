@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { isSpeakerApplicationFields } from '../../shared/general-application.mjs';
+import { isSpeakerApplicationFields, isWalletApplicationFields } from '../../shared/general-application.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { own, plainObject, parseTimestamp } from './policy.mjs';
 import { validStaffRegistrationPhone } from './validation.mjs';
@@ -274,7 +274,7 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
           if (previous.payloadHash !== payloadHash) return { outcome: 'conflict' };
           return saved(current.value, previous, 'replayed', operationId);
         }
-        if (record.provenance.kind === 'public' && publicRegistrationMode === 'speaker_only' && !isSpeakerApplicationFields(record.fields)) return { outcome: 'closed' };
+        if (record.provenance.kind === 'public' && publicRegistrationMode === 'speaker_only' && !isSpeakerApplicationFields(record.fields) && !isWalletApplicationFields(record.fields)) return { outcome: 'closed' };
         const next = admissionView(current.value, { ...defaults, capacity });
         if (operationId !== null && (!validAdmissionOperation(operationId) || next.admissions.audit.some(item => item.operationId === operationId))) return { outcome: 'conflict' };
         if (expectedRevision !== undefined && expectedRevision !== current.value.revision) return { outcome: 'conflict' };
@@ -282,7 +282,7 @@ export function createRegistrationRepository({ objects, journalFor, eventId, cap
         const changedAt = new Date(Math.max(parseTimestamp(submittedAt), parseTimestamp(next.admissions.audit.at(-1)?.at) ?? -Infinity)).toISOString();
         // The service-owned intake policy affects only this new record.
         // Saved keys are resolved above; switching policy never approves old applications.
-        const reviewRequired = record.provenance.kind === 'public' && (attendeeReviewRequired || isSpeakerApplicationFields(record.fields));
+        const reviewRequired = record.provenance.kind === 'public' && (attendeeReviewRequired || isSpeakerApplicationFields(record.fields) || isWalletApplicationFields(record.fields));
         const automaticPublic = record.provenance.kind === 'public' && !reviewRequired;
         // Confirmed-only staff intake never changes other people's admissions.
         // Capacity is checked on this same CAS candidate, after every conflict reread.

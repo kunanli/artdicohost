@@ -1,6 +1,17 @@
 import { createGuestPhotoRotation } from './guest-photo-rotation.mjs';
 import { createWorkCarousel } from './work-carousel.mjs';
 
+/** One shuffle per newly encountered batch; live refreshes retain this page's order. */
+export function createMosaicOrder(random=Math.random){
+  let order=[];
+  return (allIds,visibleIds=allIds)=>{
+    const current=new Set(allIds);order=order.filter(id=>current.has(id));
+    const known=new Set(order),added=allIds.filter(id=>!known.has(id));
+    for(let i=added.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[added[i],added[j]]=[added[j],added[i]];}
+    order.push(...added);const visible=new Set(visibleIds);return order.filter(id=>visible.has(id));
+  };
+}
+
 // Public homepage interactions only; no playback preference or business storage.
 export function createHomeCollections({document:doc=globalThis.document,window:win=globalThis.window}={}) {
   if(!doc||!win)return {capture:()=>null,restore:()=>{},updateWorks:()=>{},prepareWorks:()=>{},reveal:()=>{},focusWorks:()=>{}};
@@ -52,14 +63,16 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
     syncPreview();
     renderMosaic(visible);
   }
-  const mosaic=doc.querySelector('[data-work-mosaic]');
+  const mosaic=doc.querySelector('[data-work-mosaic]'),mosaicOrder=createMosaicOrder();
   function renderMosaic(cards){
     if(!mosaic)return;
     // Reconcile by stable work ID so publication refreshes retain keyboard focus.
     const focused=mosaic.contains(doc.activeElement)?doc.activeElement:null;
     const existing=new Map([...mosaic.children].map(node=>[node.dataset.mosaicId,node]));
-    for(const card of cards){
-      const id=card.dataset.showcaseId,title=card.querySelector('h3')?.textContent||'',photo=card.querySelector('[data-work-preview] img:not([hidden])');
+    const byId=new Map(cards.map(card=>[card.dataset.showcaseId,card]));
+    const ordered=mosaicOrder(works().map(card=>card.dataset.showcaseId),[...byId.keys()]);
+    for(const [position,id] of ordered.entries()){
+      const card=byId.get(id),title=card.querySelector('h3')?.textContent||'',photo=card.querySelector('[data-work-preview] img:not([hidden])');
       let item=existing.get(id);
       if(!item){item=doc.createElement('li');item.dataset.mosaicId=id;const button=doc.createElement('button');button.type='button';button.dataset.workThumbnail=id;item.append(button);}
       existing.delete(id);
@@ -72,7 +85,6 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
       if(!caption){caption=doc.createElement('span');button.append(caption);}
       if(caption.textContent!==title)caption.textContent=title;
       button.setAttribute('aria-label',title);
-      const position=cards.indexOf(card);
       if(mosaic.children[position]!==item)mosaic.insertBefore(item,mosaic.children[position]??null);
     }
     for(const item of existing.values())item.remove();

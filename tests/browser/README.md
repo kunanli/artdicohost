@@ -1,3 +1,9 @@
+# 2026-11-10：作品隨機、頁尾精簡與體檢
+
+作品拼貼按 stable ID 做一次 Fisher–Yates 洗牌；每個新頁面重新抽序，篩選及發布刷新保留本頁順序與焦點，輪播本身仍沿用發布順序。`mosaic-order.test.mjs`驗線性抽樣次數、不同頁面、篩選及增刪；四寬gallery及實際素材13案改驗完整集合、同頁順序與對應作品跳轉，不再誤把拼貼順序當發布順序。
+
+頁尾資料與隱私區塊及連結已移除；兩表單的告知連結開啟同一原生dialog，維持當前政策、手動勾選及Escape／關閉後焦點返回。字級四案另量開啟dialog的實際對比與手機邊界；Wallet六案覆蓋兩端真實保存、無關住宿／空歷史隱藏。WAAPI停態量測先等待`animation.ready`並斷言`pending=false`，保留原220ms觀察與小於2ms差值，避免把尚待下一幀落定的暫停誤判為持續播放。
+
 # 2026-11-10：電子紀念卡申請
 
 `wallet-application-smoke.mjs`獨立6案：四寬的公開表單位置／必要Q&A錨點、講者與紀念卡獨立IndexedDB草稿、原生隱私勾選、中英文值保留與最終computed字級、私有後台真實PATCH保存卡面身分；1440案另明確核准並核對供Wallet使用的受信身分投影。390案遺失已保存回覆後重整、關閉仍同key／原正文核對，320初始關閉零POST。所有頁面、auth、審核及名額均為同份本地產物／隔離記憶體服務；零真寄信、正式業務寫入與未攔截網路。成功prefix `Wallet application browser verified:`；報告包含來源、乾淨工作樹資格、公開HTML／script SHA及6個完整reports，新增既有CI必要步驟與一天證據artifact。它不代替實際素材13案或真iPhone加入Wallet。

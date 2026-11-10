@@ -48,6 +48,7 @@ async function staffIdentity(f,id){
  const headers=await f.runtime.login('owner'),[name,...rest]=headers.Cookie.split('=');await f.context.addCookies([{name,value:rest.join('='),domain:'api.artdico.host',path:'/',secure:true,httpOnly:true}]);
  await f.page.goto(API+'/admin/registrations/#registration='+id,{waitUntil:'networkidle'});await f.page.locator('[data-review-dialog][open]').waitFor();
  assert.match(await f.page.locator('[data-review-summary]').innerText(),/000012345678901234567890/u);
+ assert.doesNotMatch(await f.page.locator('[data-review-summary]').innerText(),/其他来宾/u);assert.equal(await f.page.locator('[data-review-accommodation]').isVisible(),false);assert.equal(await f.page.locator('[data-review-legacy-records]').isVisible(),false);
  await f.page.locator('[name=walletIdentity]').selectOption('guest');await f.page.locator('[data-review-save]:enabled').waitFor();
  const response=f.page.waitForResponse(r=>r.url().endsWith('/'+id+'/review')&&r.request().method()==='PATCH');await f.page.locator('[data-review-save]').click();assert.equal((await response).status(),200);
  await f.page.locator('[data-review-save]:disabled').waitFor();const detail=await f.app.reviewStore.detail(id);assert.equal(detail.review.walletIdentity,'guest');
@@ -70,6 +71,7 @@ try{
    await f.page.waitForFunction(()=>document.querySelector('[data-wallet-draft-status]').textContent==='纪念卡申请已暂存于本机。');
    const before=await drafts(f.page);assert.equal(before.filter(row=>row.kind==='editing'&&row.value?.intake==='wallet-v1').length,1);assert.equal(before.filter(row=>row.kind==='editing'&&row.value?.intake==='general-v2').length,1);
    await f.page.locator('[data-wallet-submit]').click();assert.equal(f.calls.filter(call=>call.path.endsWith('/registration/submit')).length,0,'unchecked consent sends nothing');
+   const walletNotice=form(f.page).locator('a[href="#privacy"]');await walletNotice.click();await f.page.locator('[data-privacy-dialog][open]').waitFor();assert.equal(await f.page.locator('#wallet-consent').isChecked(),false);await f.page.locator('[data-privacy-close]').click();assert.equal(await walletNotice.evaluate(node=>document.activeElement===node),true);
    await f.page.locator('#wallet-consent').check();assert.equal(await f.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
    await f.page.waitForTimeout(250);await screenshot(f.page,'form-'+width);
    await f.page.locator('[data-language=en]').click();await f.page.waitForFunction(()=>document.querySelector('#wallet-card-heading').textContent==='Commemorative card application');

@@ -280,13 +280,13 @@ function renderRegistration(view) {
   const item = view.registration, list = facts();
   fact(list, '报名编号', item.referenceCode); fact(list, '报名姓名', item.fields.name); fact(list, '保存时间', dateLabel(item.submittedAt));
   fact(list, '报名来源', { public: '本人公开报名', staff_assisted: '根据既有意向代登记', staff_entry: '工作人员受托逐人登记' }[item.provenance.kind] ?? '来源待核对');
-  fact(list, '审核状态', reviewLabels[item.review.status] ?? '待核对'); fact(list, '住宿审核', accommodationLabels[item.review.accommodationStatus] ?? '待核对');
-  fact(list, '审核负责人', item.review.assignedTo || '尚未分配'); fact(list, '核查下一步', item.review.nextStep || '尚未填写');
-  fact(list, '报名身份', item.fields.categories.map(value => registrationIdentityLabels.get(value) ?? value).join('、'));
+  fact(list, '审核状态', reviewLabels[item.review.status] ?? '待核对'); if(item.review.accommodationStatus!=='not_requested')fact(list, '住宿审核', accommodationLabels[item.review.accommodationStatus] ?? '待核对');
+  fact(list, '审核负责人', item.review.assignedTo || ''); fact(list, '核查下一步', item.review.nextStep || '');
+  if(item.fields.intake!=='wallet-v1')fact(list, '报名身份', item.fields.categories.map(value => registrationIdentityLabels.get(value) ?? value).join('、'));
   if(item.fields.intake==='wallet-v1'){fact(list,'申请类型','电子纪念卡申请');fact(list,'活动行报名编号',item.fields.huodongxingReference);fact(list,'纪念卡入场身份',WALLET_IDENTITIES.find(role=>role.value===item.review.walletIdentity)?.label||'待工作人员确认');}
-  fact(list, '报名参与意向', item.fields.participationInterests.map(value => registrationInterestLabels.get(value) ?? value).join('、'));
-  fact(list, '原始出席意向', ({ expected: '预计可到场', uncertain: '尚待确定', unavailable: '暂无法出席' })[item.fields.attendance] || '待核对');
-  fact(list, '原始住宿申请', ({ needed: '申请住宿，需单独审核', not_needed: '不需要', uncertain: '尚不确定' })[item.fields.accommodationChoice] || '待核对');
+  if(item.fields.intake!=='wallet-v1')fact(list, '报名参与意向', item.fields.participationInterests.map(value => registrationInterestLabels.get(value) ?? value).join('、'));
+  if(item.fields.attendance)fact(list, '原始出席意向', ({ expected: '预计可到场', uncertain: '尚待确定', unavailable: '暂无法出席' })[item.fields.attendance] || '待核对');
+  if(item.fields.accommodationChoice)fact(list, '原始住宿申请', ({ needed: '申请住宿，需单独审核', not_needed: '不需要', uncertain: '尚不确定' })[item.fields.accommodationChoice] || '待核对');
   if (item.review.deletionRequested) fact(list, '资料维护', '已登记删除申请，尚未宣称完成擦除');
   output.append(list);
   if(item.fields.intake==='wallet-v1'){const link=node('a','设置纪念卡身份','ah-admin-button');link.href='/admin/registrations/#registration='+encodeURIComponent(item.profileTargetId??item.id);output.append(link);}

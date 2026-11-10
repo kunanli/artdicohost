@@ -348,7 +348,8 @@ async function touchCircle(toggle){
 async function workMosaic(f){
   stage='actual-work-mosaic';
   const {page}=f, expected=snapshot.content.showcases;
-  assert.deepEqual(await page.locator('[data-work-thumbnail]').evaluateAll(nodes=>nodes.map(node=>node.dataset.workThumbnail)),expected.map(item=>item.id),'every actual public work appears once, in publication order');
+  const shownOrder=await page.locator('[data-work-thumbnail]').evaluateAll(nodes=>nodes.map(node=>node.dataset.workThumbnail));
+  assert.deepEqual([...shownOrder].sort(),expected.map(item=>item.id).sort(),'every actual public work appears exactly once in this page shuffle');
   if(!expected.length)return {works:0,decodedCovers:0};
   await page.locator('[data-public-showcases]').focus();
   const bounds=[];let decodedCovers=0;
@@ -368,7 +369,7 @@ async function workMosaic(f){
   }
   nonoverlap(bounds,'actual collage thumbnail buttons never overlap');
   await page.locator('[data-work-thumbnail]').last().click();
-  await page.waitForFunction(id=>document.querySelector('[data-public-showcases]').dataset.currentWork===id,expected.at(-1).id);
+  await page.waitForFunction(id=>document.querySelector('[data-public-showcases]').dataset.currentWork===id,shownOrder.at(-1));
   const path=resolve(evidence,'actual-work-mosaic-'+f.width+'.png');await page.locator('[data-work-overview]').screenshot({path,animations:'disabled'});
   return {works:expected.length,decodedCovers,allVisibleWithoutPagination:true,clickSelectsMainImage:true,screenshot:path};
 }
@@ -469,7 +470,7 @@ async function photoControlLanguages(f,guest){
 }
 async function animationState(page, id) {
   return page.locator('#guest-' + id).evaluate(node => ({ visible: document.visibilityState, rect: node.getBoundingClientRect().toJSON(),
-    animations: node.getAnimations().map(animation => ({ state: animation.playState, time: animation.currentTime, duration: animation.effect.getTiming().duration,
+    animations: node.getAnimations().map(animation => ({ state: animation.playState, pending: animation.pending, time: animation.currentTime, duration: animation.effect.getTiming().duration,
       iterations: animation.effect.getTiming().iterations === Infinity ? 'infinite' : animation.effect.getTiming().iterations, transform: getComputedStyle(node).transform })) }));
 }
 async function motion(f) {
@@ -486,8 +487,11 @@ async function motion(f) {
   assert.ok(travel > .05 && travel <= 12, 'real bubble positions change gently, not just an unused animation timer');
   async function paused(reason) {
     await page.waitForFunction(id => document.getElementById('guest-' + id)?.getAnimations().every(animation => animation.playState !== 'running'), motionGuest.id);
+    // playState changes before the queued WAAPI pause commits its hold time.
+    await target.evaluate(async node=>{await Promise.all(node.getAnimations().map(animation=>animation.ready));});
     const a = await animationState(page, motionGuest.id); await page.waitForTimeout(220); const b = await animationState(page, motionGuest.id);
-    assert.equal(a.animations.length, 1); assert.equal(b.animations[0].state, 'paused'); assert.ok(Math.abs(b.animations[0].time - a.animations[0].time) < 2, reason + ' freezes real WAAPI time');
+    lastNumericMetrics={reason,a,b};
+    assert.equal(a.animations.length, 1); assert.equal(a.animations[0].pending,false);assert.equal(b.animations[0].pending,false);assert.equal(b.animations[0].state, 'paused'); assert.ok(Math.abs(b.animations[0].time - a.animations[0].time) < 2, reason + ' freezes real WAAPI time');
   }
   async function resumed() { await page.waitForFunction(id => document.getElementById('guest-' + id)?.getAnimations().some(animation => animation.playState === 'running'), motionGuest.id); }
   const aim = await toggle.boundingBox(); await page.mouse.move(aim.x + aim.width / 2, aim.y + aim.height / 2); await paused('hover/open');

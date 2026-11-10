@@ -284,24 +284,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
         link={...link,confirmationUrl:ticket.confirmationUrl};
       } catch { try{return await recordResult(notice,'rejected',actorId,{code:'DELIVERY_GUARD_UNAVAILABLE',transportStarted:false});}catch{return{status:'unknown'};} }
     }
-    const locale=record.fields.locale==='en'?'en':'zh-CN';
-    let subject = eventFacts.title + (kind === 'application_received' ? '｜申请已收到，待审核' : kind === 'pre_event_reminder' ? '｜行前提醒' : '｜参会名额已确认');
-    let text = kind === 'application_received' ? [record.fields.name + '，你好：', '', '你的申请已收到，待主办方人工审核。',
-      '目前尚未确认参会名额；这封邮件不是正式邀请。', '登记编号：' + registrationId,
-      '保存私人查询链接，核对后续审核结果：', link.confirmationUrl,
-      '请保管此私人链接，无需重复申请。需要协助请联系 '+PUBLIC_CONTACT_EMAIL+'。'].join('\n')
-      : kind === 'pre_event_reminder' ? reminderMessage(link.confirmationUrl, record.fields.name, registrationId).text
-      : confirmationMessage(link.confirmationUrl, record.fields.name, registrationId).text;
-    if(locale==='en'){
-      subject=eventFacts.title+(kind==='application_received'?' | Application received':kind==='pre_event_reminder'?' | Event reminder':' | Attendance confirmed');
-      text=[record.fields.name+',', '',kind==='application_received'?'We have received your application. Your attendance has not yet been confirmed.':kind==='pre_event_reminder'?'We look forward to seeing you. Please check your current attendance details before travelling.':'Your attendance is confirmed.',
-        'Reference: '+registrationId,'Date: '+eventFacts.date,'Time: '+eventFacts.time+' (UTC+8)','Check-in: '+eventFacts.checkIn,'Venue: '+eventFacts.venue,
-        'Your private attendance page:',link.confirmationUrl,
-        ...(kind==='application_received'?[]:['On iPhone, open this page in Safari to add your pass to Apple Wallet.','Show the admission QR code below to staff on arrival.']),
-        'Keep this link and your QR code private. For help, contact '+PUBLIC_CONTACT_EMAIL+'.'].join('\n');
-    }
     let result,presentation,walletReady=false;
-    if(kind!=='application_received'){
+    if(kind!=='application_received'&&(!record.walletRequested||record.walletIdentity)){
       try{walletReady=(await beforeDeadline(()=>walletState())).ready;}
       catch{
         // A slow signer check is not evidence that Wallet is unconfigured.
@@ -310,6 +294,25 @@ export function createRegistrationConfirmationService({ registrationService, jou
         try{await recordResult(notice,'rejected',actorId,{code:'DELIVERY_WINDOW_EXPIRED',transportStarted:false});return{status:'not_attempted'};}
         catch{return{status:'unknown'};}
       }
+    }
+    // Preserve legacy notice copy; new card requests advertise Wallet only
+    // after both this recipient's identity and signer readiness are checked.
+    const walletInstructions=walletReady||!record.walletRequested;
+    const locale=record.fields.locale==='en'?'en':'zh-CN';
+    let subject = eventFacts.title + (kind === 'application_received' ? '｜申请已收到，待审核' : kind === 'pre_event_reminder' ? '｜行前提醒' : '｜参会名额已确认');
+    let text = kind === 'application_received' ? [record.fields.name + '，你好：', '', '你的申请已收到，待主办方人工审核。',
+      '目前尚未确认参会名额；这封邮件不是正式邀请。', '登记编号：' + registrationId,
+      '保存私人查询链接，核对后续审核结果：', link.confirmationUrl,
+      '请保管此私人链接，无需重复申请。需要协助请联系 '+PUBLIC_CONTACT_EMAIL+'。'].join('\n')
+      : kind === 'pre_event_reminder' ? reminderMessage(link.confirmationUrl, record.fields.name, registrationId).text
+      : confirmationMessage(link.confirmationUrl, record.fields.name, registrationId, walletInstructions).text;
+    if(locale==='en'){
+      subject=eventFacts.title+(kind==='application_received'?' | Application received':kind==='pre_event_reminder'?' | Event reminder':' | Attendance confirmed');
+      text=[record.fields.name+',', '',kind==='application_received'?'We have received your application. Your attendance has not yet been confirmed.':kind==='pre_event_reminder'?'We look forward to seeing you. Please check your current attendance details before travelling.':'Your attendance is confirmed.',
+        'Reference: '+registrationId,'Date: '+eventFacts.date,'Time: '+eventFacts.time+' (UTC+8)','Check-in: '+eventFacts.checkIn,'Venue: '+eventFacts.venue,
+        'Your private attendance page:',link.confirmationUrl,
+        ...(kind==='application_received'?[]:[...(walletInstructions?['On iPhone, open this page in Safari to add your pass to Apple Wallet.']:[]),'Show the admission QR code below to staff on arrival.']),
+        'Keep this link and your QR code private. For help, contact '+PUBLIC_CONTACT_EMAIL+'.'].join('\n');
     }
     try { presentation=confirmationEmailPresentation({locale,kind,subject,confirmationUrl:link.confirmationUrl,ticket,walletReady}); }
     catch { try{return await recordResult(notice,'rejected',actorId,{code:'DELIVERY_GUARD_UNAVAILABLE',transportStarted:false});}catch{return{status:'unknown'};} }
@@ -538,13 +541,13 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!operation || operation.action !== 'dispatch' || operation.actorId !== actor.id) failure('CONFIRMATION_NOT_FOUND', 404);
     return { ...operationView(operation, current.value.revision), kind: 'registration', checkedAt: new Date(clock()).toISOString() };
   }
-  function confirmationMessage(url = '[私人参会页链接]', name = '[称呼]', reference = '[登记编号]') {
+  function confirmationMessage(url = '[私人参会页链接]', name = '[称呼]', reference = '[登记编号]', walletReady = true) {
     return { subject: eventFacts.title + '｜参会名额已确认', privateUrlPlaceholder: '[私人参会页链接]',
       text: [name + '，你好：', '', '你的参会名额已确认。',
         '登记编号：' + reference, '日期：' + eventFacts.date, '活动时间：' + eventFacts.time + '（UTC+8）',
         '签到：' + eventFacts.checkIn, '地点：' + eventFacts.venue,
-        '查看私人确认页、加入 Apple Wallet 或打印参会凭证：', url,
-        'iPhone 用户请在 Safari 打开上述链接，点击「加入 Apple Wallet」。',
+        walletReady?'查看私人确认页、加入 Apple Wallet 或打印参会凭证：':'查看私人确认页与参会凭证：', url,
+        ...(walletReady?['iPhone 用户请在 Safari 打开上述链接，点击「加入 Apple Wallet」。']:[]),
         '请保管此私人链接，不要转发；确认页始终以当前名额状态为准。',
         '住宿、讲者、展位与其他职责分别确认。需要更正或取消，请通过原联系渠道联系筹备团队。'].join('\n') };
   }

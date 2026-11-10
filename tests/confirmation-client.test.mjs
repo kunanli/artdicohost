@@ -204,3 +204,11 @@ test('frontstage email language separates uncertain delivery from a confirmed ad
   assert.match(confirmationEmailMessage('confirmed','rejected'),/未能发出.*名额不受影响/u);
   assert.notEqual(confirmationEmailMessage('confirmed','disabled'),confirmationEmailMessage('confirmed','not_configured'));
 });
+
+test('private card identity pending reason stays allowlisted and provides a distinct next step without changing admission',()=>{
+ const source=value();source.wallet={ready:false,reason:'WALLET_IDENTITY_PENDING'};
+ const view=confirmationView(source,now);assert.equal(view.admission.status,'confirmed');assert.deepEqual(view.wallet,{ready:false,reason:'WALLET_IDENTITY_PENDING'});
+ const hint=confirmationWalletGuidance({userAgent:'iPhone Safari/605',walletReady:view.wallet.ready,walletReason:view.wallet.reason});assert.equal(hint.showWallet,false);assert.equal(hint.action,'none');assert.match(hint.message,/身份待工作人员确认.*私人链接/u);
+ for(const wallet of [{ready:false,reason:'PRIVATE_UNKNOWN_DIAGNOSTIC'},{ready:true,reason:'WALLET_IDENTITY_PENDING'}])assert.equal(Object.hasOwn(confirmationView({...source,wallet},now).wallet,'reason'),false);
+ const pending=confirmationView({...source,admission:{...source.admission,status:'pending_review'}},now);assert.deepEqual(pending.wallet,{ready:false});
+});

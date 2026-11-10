@@ -49,14 +49,24 @@ async function staffIdentity(f,id){
  await f.page.goto(API+'/admin/registrations/#registration='+id,{waitUntil:'networkidle'});await f.page.locator('[data-review-dialog][open]').waitFor();
  assert.match(await f.page.locator('[data-review-summary]').innerText(),/000012345678901234567890/u);
  assert.doesNotMatch(await f.page.locator('[data-review-summary]').innerText(),/其他来宾/u);assert.equal(await f.page.locator('[data-review-accommodation]').isVisible(),false);assert.equal(await f.page.locator('[data-review-legacy-records]').isVisible(),false);
+ async function saveIdentity(value){await f.page.locator('[name=walletIdentity]').selectOption(value);await f.page.locator('[data-review-save]:enabled').waitFor();const response=f.page.waitForResponse(r=>r.url().endsWith('/'+id+'/review')&&r.request().method()==='PATCH');await f.page.locator('[data-review-save]').click();assert.equal((await response).status(),200);await f.page.locator('[data-review-form] [data-save-state=saved]').waitFor();assert.equal((await f.app.reviewStore.detail(id)).review.walletIdentity,value);}
  await f.page.locator('[name=walletIdentity]').selectOption('guest');await f.page.locator('[data-review-save]:enabled').waitFor();
  const response=f.page.waitForResponse(r=>r.url().endsWith('/'+id+'/review')&&r.request().method()==='PATCH');await f.page.locator('[data-review-save]').click();assert.equal((await response).status(),200);
  await f.page.locator('[data-review-save]:disabled').waitFor();const detail=await f.app.reviewStore.detail(id);assert.equal(detail.review.walletIdentity,'guest');
  assert.equal((await f.app.registrationService.getAdmissionStatus(id)).status,'pending_review');
  await screenshot(f.page,'staff-identity-'+f.page.viewportSize().width);
- if(f.page.viewportSize().width===1440){
+ {
   await f.page.locator('[data-review-approve]:enabled').waitFor();const approved=f.page.waitForResponse(r=>r.url().endsWith('/api/admin/admissions/approve')&&r.request().method()==='POST');await f.page.locator('[data-review-approve]').click();assert.equal((await approved).status(),200);
   const trusted=await f.app.confirmationService.authorizedRegistration(id);assert.equal(trusted.admissionStatus,'confirmed');assert.equal(trusted.walletRequested,true);assert.equal(trusted.walletIdentity,'guest');
+  // Identity can be filled after admission: the actual private page explains
+  // that state instead of offering a Wallet download or changing the seat.
+  await saveIdentity('');
+  await f.page.locator('[data-review-confirmation-prepare]:enabled').click();await f.page.locator('[data-review-confirmation-result]:not([hidden])').waitFor();
+  const privateUrl=await f.page.locator('[data-review-confirmation-open]').getAttribute('href');await f.page.goto(privateUrl,{waitUntil:'networkidle'});
+  await f.page.locator('[data-confirmation-content]:not([hidden])').waitFor();assert.match(await f.page.locator('[data-confirmation-device]').innerText(),/身份待工作人员确认/u);assert.equal(await f.page.locator('[data-confirmation-wallet]').isVisible(),false);
+  assert.equal((await f.app.registrationService.getAdmissionStatus(id)).status,'confirmed');assert.equal(f.calls.some(call=>call.path.endsWith('/registration/wallet')),false,'pending identity never downloads a pass');await f.page.locator('[data-confirmation-device]').scrollIntoViewIfNeeded();await screenshot(f.page,'identity-pending-private-page-'+f.page.viewportSize().width);
+  await f.page.goto(API+'/admin/registrations/#registration='+id,{waitUntil:'networkidle'});await f.page.locator('[data-review-dialog][open]').waitFor();await saveIdentity('guest');
+  await f.page.goto(privateUrl,{waitUntil:'networkidle'});await f.page.locator('[data-confirmation-content]:not([hidden])').waitFor();assert.doesNotMatch(await f.page.locator('[data-confirmation-device]').innerText(),/身份待工作人员确认/u);assert.equal(f.runtime.messages.length,0,'identity update never sends a new notice');
  }
  assert.equal(f.runtime.messages.length,0,'staff review never sends without a separate explicit send');
 }
@@ -81,7 +91,7 @@ try{
    await screenshot(f.page,'form-en-'+width);await f.page.locator('[data-language="zh-CN"]').click();await f.page.waitForFunction(()=>document.documentElement.lang==='zh-CN');
    await f.page.locator('[data-wallet-submit]').click();const id=await receipt(f);
    assert.equal(f.calls.filter(call=>call.path.endsWith('/registration/submit')).length,1);assert.equal((await drafts(f.page)).some(row=>row.kind==='pending_submission'&&JSON.parse(row.value.payloadJson).fields.intake==='wallet-v1'),false);
-   await staffIdentity(f,id);reports.push({width,normal:true,independentDrafts:true,bilingualValuesAndTypography:true,consent:true,staffIdentity:true,pendingBeforeApproval:true,noRealMail:true});
+   await staffIdentity(f,id);reports.push({width,normal:true,independentDrafts:true,bilingualValuesAndTypography:true,consent:true,staffIdentity:true,privateIdentityPendingGuidance:true,pendingBeforeApproval:true,noRealMail:true});
   }finally{await f.context.close();}
  }
  {

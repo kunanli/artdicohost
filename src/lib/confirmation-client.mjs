@@ -19,11 +19,12 @@ export const CONFIRMATION_CONTACT_EMAIL = PUBLIC_CONTACT_EMAIL;
 export const CONFIRMATION_GROUP_UNAVAILABLE = '群码待更新，请重新读取或联系主办方';
 
 /** Device hints describe the next user action, never whether a pass was installed. */
-export function confirmationWalletGuidance({ userAgent = '', maxTouchPoints = 0, walletReady = false, invitationReady = false } = {}) {
+export function confirmationWalletGuidance({ userAgent = '', maxTouchPoints = 0, walletReady = false, walletReason = '', invitationReady = false } = {}) {
   const ios = /iPhone|iPad|iPod/iu.test(userAgent) || /Macintosh/iu.test(userAgent) && maxTouchPoints > 1;
   const android = /Android/iu.test(userAgent), wechat = /MicroMessenger/iu.test(userAgent);
   const safari = ios && /Safari/iu.test(userAgent) && !/CriOS|FxiOS|EdgiOS|MicroMessenger/iu.test(userAgent);
   const unavailable=message=>({showWallet:false,action:'none',label:'',wechat:false,message});
+  if(!walletReady&&walletReason==='WALLET_IDENTITY_PENDING')return unavailable('纪念卡入场身份待工作人员确认，请先保存私人链接。');
   if (android) return unavailable('请复制私人链接留存；也可在「更多保存方式」' + (invitationReady ? '下载 PNG 或' : '') + '打印为 PDF。');
   if (!walletReady) return unavailable('Apple Wallet 暂未就绪，请先复制私人链接留存。');
   if (ios && !safari) return {showWallet:true,action:'guide',label:'查看 Safari 添加指引',wechat,
@@ -147,7 +148,7 @@ export function confirmationView(value, now = Date.now()) {
     event: Object.fromEntries(eventKeys.map(key => [key,value.event[key]])), referenceCode: value.referenceCode, submittedAt: value.submittedAt,
     admission: { status: value.admission.status, kind: value.admission.kind, revision: value.admission.revision },
     attendee: withdrawn ? { name: '', organization: '' } : { name: value.attendee.name, organization: value.attendee.organization ?? '' },
-    email: { status: ['pending_review','rejected'].includes(value.admission.status) ? 'not_applicable' : value.email.status }, wallet: { ready: confirmed && value.wallet.ready && facts?.ready !== false },
+    email: { status: ['pending_review','rejected'].includes(value.admission.status) ? 'not_applicable' : value.email.status }, wallet: { ready: confirmed && value.wallet.ready && facts?.ready !== false, ...(confirmed&&!value.wallet.ready&&value.wallet.reason==='WALLET_IDENTITY_PENDING'?{reason:'WALLET_IDENTITY_PENDING'}:{}) },
     ...(facts ? { eventFacts: facts } : {}),
     ...(Object.hasOwn(value, 'notifications') ? { notifications: notificationHistory(value.notifications) } : {}),
     groupInvite: confirmed ? groupInvite(value.groupInvite,now) : null,

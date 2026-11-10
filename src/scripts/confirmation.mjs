@@ -22,7 +22,7 @@ if (root) {
   }
   walletBadge?.addEventListener('load',()=>{walletBadgeReady=walletBadge.naturalWidth>0;syncWalletBadge();});
   walletBadge?.addEventListener('error',()=>{walletBadgeReady=false;syncWalletBadge();});
-  const walletGuidance=()=>confirmationWalletGuidance({userAgent:navigator.userAgent,maxTouchPoints:navigator.maxTouchPoints,walletReady:state?.wallet.ready===true,invitationReady:state?.invitation.ready===true});
+  const walletGuidance=()=>confirmationWalletGuidance({userAgent:navigator.userAgent,maxTouchPoints:navigator.maxTouchPoints,walletReady:state?.wallet.ready===true,walletReason:state?.wallet.reason,invitationReady:state?.invitation.ready===true});
   function hideSafariGuide(){ $('[data-confirmation-safari-guide]').hidden=true;$('[data-confirmation-wechat-step]').hidden=true; }
   function releaseWallet() { if (walletUrl) URL.revokeObjectURL(walletUrl); walletUrl = null; }
   function clearInvitation(){

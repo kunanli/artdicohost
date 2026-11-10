@@ -1,5 +1,7 @@
 # ARTDiCO HOST 改版執行總覽
 
+2026-11-10接續體檢：[紀念卡資格提示一致性](wallet-eligibility-guidance.md)。修正新紀念卡未設定入場身分卻收到Wallet徽章／添加指引的落差；私人頁明確說明身分待確認，保存身分與讀頁不補寄。上一輪作品隨機／頁尾精簡已由[PR89](https://github.com/kunanli/artdicohost/pull/89)部署main `b1493283ca8c5ad9e28fb8aa1f571b7a2c023444`，[正式流程42743278614](https://github.com/kunanli/artdicohost/actions/runs/42743278614)五工作成功，1985測試／109瀏覽器案、14後台與69公開HTTPS，台北2026-11-10 10:50:30完成入口三項回讀。本輪準確發布另驗。
+
 2026-11-10最新：[作品隨機、頁尾精簡與前後端體檢](public-shuffle-admin-health.md)。使用者要求每次開頁隨機作品拼貼、移除頁尾隱私塊及檢查前後端／多餘後台資訊。本輪採一次洗牌與原位刷新、表單按需告知、隱藏不適用／空白核查欄，保留原始資料與審計。上一輪電子卡申請已由[PR88](https://github.com/kunanli/artdicohost/pull/88)部署main `eb0c15652ab32593a70c8ad9ea786651bc949216`，台北2026-11-10 09:40:38完成HTTPS入口核對；本輪準確發布另驗。
 
 2026-11-10接續：[Apple Wallet電子紀念卡申請](wallet-card-application-release.md)。依使用者要求在講者申請下方收活動行編號、姓名、Email與微信，工作人員設定卡面入場身分；獨立草稿、待核對不自動占席、原正文冪等恢復與既有主名額沿用。PR87前輪視覺發布獨立核對；本輪範圍、相容回退及測試見紀錄，正式回執待完成。

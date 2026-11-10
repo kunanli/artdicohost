@@ -54,7 +54,7 @@ function fixture(patch = {}) {
   return { remote, state, objects, journalFor, service, confirmation };
 }
 async function register(f, value = fields, approve = true) {
-  const idempotencyKey = operationId(), issued = await f.service.issueToken({ eventId: EVENT, origin: SITE, idempotencyKey });
+  const idempotencyKey = operationId(), issued = await f.service.issueToken({ eventId: EVENT, origin: SITE, idempotencyKey, ...(value.intake==='wallet-v1'?{walletApplication:true}:{}) });
   const input = { origin: SITE, idempotencyKey, submissionToken: issued.submissionToken,
     payload: { eventId: EVENT, fields: value, consent: { accepted: true, version: policy.privacy.version } } };
   let saved = await f.service.submit(input); assert.equal(saved.outcome, 'created');
@@ -817,4 +817,26 @@ test('failed or malformed short-ticket issuance is recorded as known not started
     const f=fixture(),{saved}=await register(f),c=f.confirmation({emailTicketProvider});const result=await c.forSavedReceipt({receipt:saved.receipt});assert.equal(result.email.status,'rejected');assert.equal(f.state.messages.length,0);
     const journal=await createConfirmationRepository({journal:f.journalFor(c.prefix),eventId:EVENT}).read();assert.equal(journal.value.notices[0].diagnostic.code,'DELIVERY_GUARD_UNAVAILABLE');assert.equal(journal.value.notices[0].diagnostic.transportStarted,false);
   }
+});
+
+test('commemorative-card mail and private page use the same trusted identity without resending after staff update',async()=>{
+ for(const locale of ['zh-CN','en']){
+  const f=fixture();let walletIdentity='',readinessReads=0;
+  const {saved}=await register(f,{intake:'wallet-v1',locale,categories:['other'],participationInterests:['attend'],huodongxingReference:'00001234567890',name:'合成纪念卡来宾',email:'synthetic.card-gate@example.invalid',wechat:'synthetic_card_gate'});
+  const c=f.confirmation({currentRegistration:async record=>({...record,walletRequested:true,walletIdentity}),walletReadiness:async()=>{readinessReads++;return{ready:true,reason:'WALLET_CONFIGURED'};}});
+  const receipt=await c.forSavedReceipt({receipt:saved.receipt});assert.equal(receipt.email.status,'provider_accepted');assert.equal(f.state.messages.length,1);
+  const sent=f.state.messages[0];assert.doesNotMatch(sent.templateVariables.confirmation_actions,/add-to-apple-wallet-/u);assert.doesNotMatch(sent.text,/Apple Wallet|Apple 钱包/u);
+  assert.match(sent.text,locale==='en'?/attendance.*confirmed/iu:/参会名额已确认/u);
+  const pending=await c.confirmation({receiptToken:receipt.receiptToken});assert.deepEqual(pending.wallet,{ready:false,reason:'WALLET_IDENTITY_PENDING'});assert.equal(readinessReads,0,'known pending identity needs no signer read');
+  walletIdentity='guest';const ready=await c.confirmation({receiptToken:receipt.receiptToken});assert.equal(ready.wallet.ready,true);
+  await c.forSavedReceipt({receipt:saved.receipt});assert.equal(f.state.messages.length,1,'setting identity and reading never resend an accepted notice');
+ }
+});
+test('commemorative-card mail retains the locale-specific Wallet badge when staff identity is ready',async()=>{
+ for(const locale of ['zh-CN','en']){
+  const f=fixture(),{saved}=await register(f,{intake:'wallet-v1',locale,categories:['other'],participationInterests:['attend'],huodongxingReference:'00001234567890',name:'合成已核对来宾',email:'synthetic.ready-card@example.invalid',wechat:'synthetic_ready_card'});
+  const c=f.confirmation({currentRegistration:async record=>({...record,walletRequested:true,walletIdentity:'guest'})});
+  const receipt=await c.forSavedReceipt({receipt:saved.receipt});assert.equal(receipt.email.status,'provider_accepted');assert.equal((await c.confirmation({receiptToken:receipt.receiptToken})).wallet.ready,true);
+  assert.ok(f.state.messages[0].templateVariables.confirmation_actions.includes('add-to-apple-wallet-'+(locale==='en'?'en':'cn')+'.png'));assert.match(f.state.messages[0].text,/Apple Wallet/u);
+ }
 });

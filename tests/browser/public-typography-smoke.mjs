@@ -115,7 +115,7 @@ async function main() {
     }
     assert.ok(measurements.paragraphs.length > 0);
     for (const paragraph of measurements.paragraphs) assert.ok(Number.isFinite(paragraph.ratio) && paragraph.ratio >= minimum.paragraphLineRatio - .001, 'explanatory paragraphs have readable line spacing');
-    assert.ok(measurements.panels.some(panel => panel.kind === (phase === 'recovery' ? 'recovery' : 'policy')), 'the on-demand footer privacy or recovery surface is measured');
+    if(['policy','recovery'].includes(phase))assert.ok(measurements.panels.some(panel=>panel.kind===(phase==='recovery'?'recovery':'policy')),'the explicit dialog or recovery surface is measured');
     for (const panel of measurements.panels) {
       assert.equal(panel.unresolvedImage, false, 'contrast is computed over resolved solid surfaces, not guessed through imagery');
       assert.ok(panel.backgroundLuminance <= .1, 'policy and recovery use the requested dark surface');
@@ -219,14 +219,17 @@ async function main() {
         await form.locator('[name="speaker.topic"]').focus();assert.equal(await form.locator('[name="speaker.topic"]').evaluate(node=>document.activeElement===node),true);
         for(const name of ['speaker.topic','speaker.summary'])assert.notEqual(await form.locator('[name="'+name+'"]').getAttribute('required'),null);
         assert.equal(await form.locator('[data-registration-policy],[data-registration-email-policy],[data-registration-email-notice]').count(), 0, 'the form omits the two detailed notices and duplicate email explanation');
-        assert.equal(await page.locator('#privacy > details').evaluate(node => node.open), false, 'privacy details start collapsed');
+        assert.equal(await page.locator('.ah-privacy.ah-section,footer a[href="#privacy"]').count(),0,'the footer notice block and link are removed');
+        assert.equal(await page.locator('[data-privacy-dialog]').evaluate(node=>node.open),false,'form notice dialog starts closed');
         await form.locator('a[href="#privacy"]').focus(); await page.keyboard.press('Enter');
-        assert.equal(await page.locator('#privacy > details').evaluate(node => node.open), true, 'the consent link opens the existing footer privacy disclosure');
-        assert.equal(await page.locator('#privacy > details > summary').evaluate(node => document.activeElement === node), true, 'reading continues at the opened disclosure');
+        assert.equal(await page.locator('[data-privacy-dialog]').evaluate(node=>node.open),true,'the form opens its notice without a footer disclosure');
+        assert.equal(await page.locator('#privacy-dialog-title').evaluate(node=>document.activeElement===node),true,'keyboard reading starts at the dialog title');
         assert.equal(await form.locator('[name=consentAccepted]').isChecked(), false, 'reading the notice never consents on the visitor’s behalf');
         const privacyText = await page.locator('[data-public-privacy]').textContent();
         for (const [key,value] of Object.entries(config.privacy)) assert.ok(privacyText.includes(key === 'contactEmail' ? 'kunan@globalgamejam.org' : value), 'the linked notice preserves the current policy with the approved public support contact');
         assert.match(privacyText, /EmailJS/u);
+        const policy=await measure(page,'policy');const policyShot=resolve(evidence,'policy-dialog-'+width+'.png');await page.locator('[data-privacy-dialog]').screenshot({path:policyShot});
+        await page.keyboard.press('Escape');assert.equal(await page.locator('[data-privacy-dialog]').evaluate(node=>node.open),false);assert.equal(await form.locator('a[href="#privacy"]').evaluate(node=>document.activeElement===node),true,'closing returns to the originating form link');
         await form.locator('[name=name]').focus(); await page.keyboard.press('Tab'); assert.equal(await form.locator('[name=email]').evaluate(node => document.activeElement === node), true);
         const focus = await form.locator('[name=email]').evaluate(node => { const style = getComputedStyle(node); return { outline: parseFloat(style.outlineWidth), outlineStyle: style.outlineStyle, shadow: style.boxShadow }; });
         assert.ok(focus.outline >= 2 && focus.outlineStyle !== 'none' || focus.shadow !== 'none', 'keyboard focus has a visible indicator');
@@ -259,7 +262,7 @@ async function main() {
         assert.deepEqual(stored, pending, 'rendering unknown recovery preserves the exact original local request');
         const recoveryShot = resolve(evidence, 'recovery-' + width + '.png'); await page.locator('#registration').screenshot({ path: recoveryShot });
         assert.equal((await runtime.app.registrationService.repository.list()).registrations.length, 0); assert.equal(runtime.messages.length, 0);
-        reports.push({ width, keyboardAndConsent: true, optionalAndProposal: true, clientErrorsWithoutSubmission: true, unknownRecoveryFromBrowserDraft: true, originalPendingUnchanged: true, applicationRecords: 0, providerCalls: 0, agenda, open, invalid, recovery, screenshots: [applicationShot, recoveryShot] });
+        reports.push({ width, keyboardAndConsent: true, optionalAndProposal: true, clientErrorsWithoutSubmission: true, unknownRecoveryFromBrowserDraft: true, originalPendingUnchanged: true, applicationRecords: 0, providerCalls: 0, agenda, policy, open, invalid, recovery, screenshots: [applicationShot, recoveryShot,policyShot] });
       } catch (error) {
         await activePage?.screenshot({ path: resolve(evidence, 'failure-' + width + '.png'), fullPage: true }).catch(() => {});
         throw error;
@@ -275,7 +278,7 @@ async function main() {
     const report = { ok: !failure, cases: reports.length, expectedCases: 4, syntheticOnly: true, source, dist, scriptSha256, sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: source, encoding: 'utf8' }).trim(), publicHtmlSha256: sha(html), htmlMtime: htmlInfo.mtime.toISOString(), minimum,
       realNetworkRequests: 0, businessPostRequests: 0, mailRequests: 0, requests, servedAssets: Object.fromEntries([...servedAssets].sort()), reports, pageErrors, ...(failure ? { failure } : {}) };
     await writeFile(resolve(evidence, 'report.json'), JSON.stringify(report, null, 2) + '\n');
-    const contrasts = reports.flatMap(item => [item.open, item.invalid, item.recovery].flatMap(state => state.panels.flatMap(panel => panel.text.map(text => text.ratio))));
+    const contrasts = reports.flatMap(item => [item.policy,item.open, item.invalid, item.recovery].flatMap(state => state.panels.flatMap(panel => panel.text.map(text => text.ratio))));
     const summary = { ok: report.ok, cases: reports.length, expectedCases: 4, syntheticOnly: true, publicHtmlSha256: report.publicHtmlSha256, sourceCommit: report.sourceCommit, scriptSha256, pageErrorCount: pageErrors.length, businessPostRequests: 0, mailRequests: 0, minimumContrast: contrasts.length ? Math.min(...contrasts) : null,
       ...(failure ? { failure: { code: 'PUBLIC_TYPOGRAPHY_ASSERTION_FAILED', stage, width: currentWidth, location: /public-typography-smoke\.mjs:\d+:\d+/u.exec(failure.stack)?.[0] ?? null }, numericMetrics } : {}) };
     process.stdout.write((report.ok ? 'Public typography browser verified: ' : 'Public typography browser failed: ') + JSON.stringify(summary) + '\n');

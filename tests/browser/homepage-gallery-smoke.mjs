@@ -273,9 +273,11 @@ try {
    await f.refresh(raw=>{raw.showcases=[...rawFixture().showcases,...Array.from({length:10},(_,i)=>work('synthetic-mosaic-'+i,'indie',{coverId}))];});
    assert.equal(await page.locator('[data-work-thumbnail]').count(),13,'large publication keeps every work available without paging');
    const mosaicButtons=page.locator('[data-work-thumbnail]');
-   await mosaicButtons.last().focus();
+   const sessionOrder=await mosaicButtons.evaluateAll(nodes=>nodes.map(node=>node.dataset.workThumbnail));
+   await mosaicButtons.last().focus();const mosaicFocus=await mosaicButtons.last().getAttribute('data-work-thumbnail');
    await f.refresh(raw=>{raw.showcases.reverse();});
-   assert.equal(await page.evaluate(()=>document.activeElement?.dataset.workThumbnail),'synthetic-mosaic-9','collage publication refresh preserves stable focused work');
+   assert.deepEqual(await mosaicButtons.evaluateAll(nodes=>nodes.map(node=>node.dataset.workThumbnail)),sessionOrder,'refresh keeps this page shuffle stable');
+   assert.equal(await page.evaluate(()=>document.activeElement?.dataset.workThumbnail),mosaicFocus,'collage publication refresh preserves stable focused work');
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
    await page.emulateMedia({reducedMotion:'no-preference'});
    const guestPhysics=await bubbleDrag(page,'.ah-guest-bubble',{touch:width<600});

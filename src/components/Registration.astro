@@ -38,6 +38,10 @@ if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('申�
   </div>
   <RegistrationSuccess />
 </section>
+<dialog id="privacy" class="ah-privacy-dialog" data-privacy-dialog aria-labelledby="privacy-dialog-title">
+  <div class="ah-privacy-dialog-header"><h3 id="privacy-dialog-title" tabindex="-1">隐私说明</h3><button type="button" class="ah-text-action" data-privacy-close>关闭 ×</button></div>
+  <div data-public-privacy><p>申请服务就绪后，可在此阅读本次资料处理说明。</p></div>
+</dialog>
 <script>
   import '../scripts/registration.mjs';
   import '../scripts/registration-production.mjs';

@@ -19,7 +19,7 @@ const json = (value, status = 200, headers = {}) => ({ status, contentType: 'app
 
 async function fixture({ width = 390, capacity = 3, mail = true, username = 'owner', submitAckLost = false, approvalAckLost = false } = {}) {
   const runtime = await peopleRuntimeFixture({ capacity, mail }), headers = await runtime.login(username);
-  const context = await browser.newContext({ viewport: { width, height: 900 }, acceptDownloads: true });
+  const context = await browser.newContext({ locale: 'zh-CN', viewport: { width, height: 900 }, acceptDownloads: true });
   const [name, ...value] = headers.Cookie.split('=');
   await context.addCookies([{ domain: new URL(API).hostname, path: '/api/admin', name, value: value.join('='), httpOnly: true, secure: true, sameSite: 'Strict' }]);
   const page = await context.newPage(); page.setDefaultTimeout(10000);

@@ -40,8 +40,9 @@ function renderLegacyReview(){
   const output=$('[data-review-legacy]');output.replaceChildren();
   const labels={recommendation:{priority:'优先',consider:'考虑',follow_up:'需跟进'},mariaDecision:{approved:'已确认',discussion:'待讨论',not_this_time:'本次不邀请'},invitationStatus:{not_sent:'尚未通知',to_send:'准备通知',sent:'已人工通知',declined:'对方婉拒'}};
   for(const[name,label]of[['status','内部核查意见'],['recommendation','内部推荐'],['proposedRole','建议参与角色 / 安排'],['lastContactDate','上次联系日期'],['mariaReviewDate','Maria 审阅日期'],['mariaDecision','Maria 审阅结果'],['mariaFeedback','Maria 审阅反馈'],['invitationStatus','人工正式通知']]){
-    const value=legacyReview[name];pair(output,label,(name==='status'?statuses[value]:labels[name]?.[value])??value);
+    const value=legacyReview[name];if(!value||name==='status'&&value==='new'||name==='invitationStatus'&&value==='not_sent')continue;pair(output,label,(name==='status'?statuses[value]:labels[name]?.[value])??value);
   }
+  $('[data-review-legacy-records]').hidden=!output.children.length&&!restoredLegacyReview;
   $('[data-review-legacy-note]').textContent=restoredLegacyReview?'包含尚未保存的旧审阅填写，参会名额以上方状态为准。':'仅供查阅，参会名额以上方状态为准。';
 }
 function reviewInactive(review){return review?.status==='withdrawn'||Boolean(review?.deletionRequested);}
@@ -178,11 +179,11 @@ function pair(output,label,value){if(value===undefined||value===null||value===''
 function renderDetails(record){
   const output=$('[data-review-details]');output.replaceChildren();const fields=record.fields??{};
   const summary=$('[data-review-summary]');summary.replaceChildren();
-  for(const[label,value]of[['姓名',fields.name],['Email',fields.email],['学校 / 机构',fields.organization],['城市',fields.city],['参与身份',(fields.categories??[]).map(value=>categories[value]??value)]])pair(summary,label,value);
-  pair(summary,'申请类型',fields.intake==='wallet-v1'?'电子纪念卡申请':fields.intake==='general-v2'?'讲者／参会申请':'报名资料');pair(summary,'活动行报名编号',fields.huodongxingReference);pair(summary,'微信号',fields.wechat);
+  for(const[label,value]of[['姓名',fields.name],['Email',fields.email],['学校 / 机构',fields.organization],['城市',fields.city],['参与身份',fields.intake==='wallet-v1'?'':(fields.categories??[]).map(value=>categories[value]??value)]])pair(summary,label,value);
+  pair(summary,'申请类型',fields.intake==='wallet-v1'?'电子纪念卡申请':fields.intake==='general-v2'?'讲者／参会申请':'报名资料');pair(summary,'活动行报名编号',fields.huodongxingReference);pair(summary,'微信号',fields.wechat);pair(summary,'电话',fields.phone);
   pair(output,'报名编号',record.referenceCode);pair(output,'受理时间',record.submittedAt);
   for(const field of registrationSchema.baseFields){
-    if(field.name==='consentAccepted')continue;
+    if(field.name==='consentAccepted'||fields.intake==='wallet-v1'&&['categories','participationInterests'].includes(field.name))continue;
     let value=fields[field.name];
     if(field.options){const labels=Object.fromEntries(field.options.map(item=>[item.value,item.label]));value=Array.isArray(value)?value.map(item=>labels[item]??item):labels[value]??value;}
     pair(output,field.label,value);
@@ -207,6 +208,7 @@ function adoptRecord(result,id){
   $('[data-review-detail-title]').textContent=(selected.fields?.name||'报名资料')+' · 参会管理';renderDetails(selected);
   $('[data-review-provenance]').textContent=['staff_assisted','staff_entry'].includes(selected.provenance?.kind)?(selected.provenance.kind==='staff_entry'?'工作人员根据已核定许可逐人登记。':'工作人员根据既有意向资料代登记。')+'此记录不代表本人完成网站隐私同意；原始来源与联络许可须分别核对。':'申请人通过正式表单提交，隐私同意版本与时间随原始报名保存。';
   legacyReview=Object.fromEntries(legacyReviewFields.map(name=>[name,review[name]??'']));restoredLegacyReview=false;renderLegacyReview();
+  $('[data-review-accommodation]').hidden=selected.fields?.intake==='wallet-v1'&&review.accommodationStatus==='not_requested';
   const form=$('[data-review-form]');for(const name of editableReviewFields)form.elements.namedItem(name).value=review[name]??'';
   const walletPrimary=$('[data-review-wallet-primary]');walletPrimary.hidden=!selected.walletIdentityTargetId||selected.walletIdentityTargetId===id;walletPrimary.href='/admin/registrations/#registration='+encodeURIComponent(selected.walletIdentityTargetId??id);
   reviewSaveState.set('idle','修改后点击保存，只保存当前核查意见。');operationsFieldErrors(form);

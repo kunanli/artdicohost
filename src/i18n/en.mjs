@@ -1,6 +1,7 @@
 // Exact source copy is the key. Unknown editorial copy stays in its original
 // language; never guess translations of people's names or published facts.
 export const english = new Map([
+['申请服务就绪后，可在此阅读本次资料处理说明。','The information-handling notice will be available here when the application service is ready.'],
 ['活动行报名编号','Huodongxing reference'],['可填写本场活动的报名号、订单号或票号，供工作人员核对。','Enter your booking, order or ticket reference for this event so staff can verify it.'],
 ["电子纪念卡申请","Commemorative card application"],
 ["Apple Wallet 电子纪念卡","Apple Wallet commemorative card"],

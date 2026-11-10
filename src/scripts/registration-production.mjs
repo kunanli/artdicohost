@@ -14,16 +14,20 @@ function renderPublicPrivacy(){
   const output=document.querySelector('[data-public-privacy]');
   if(output&&currentPublicPrivacy){output.replaceChildren();const labels={processor:'处理者',contactEmail:'联络邮箱',purpose:'用途',storageRegion:'存储地区',retention:'保留期限',rightsRequest:'查阅、更正、撤回及删除',sharing:'分享范围',version:'告知版本'};for(const[key,label]of Object.entries(labels))output.append(node('p',label+'：'+(key==='contactEmail'?PUBLIC_CONTACT_EMAIL:currentPublicPrivacy[key])));output.append(node('p','主办方使用 EmailJS 发送必要活动通知，向该服务提供发送所需的姓名、邮箱与通知内容（包括活动安排及私人查询入口）。请妥善保存私人链接。'));}
 }
+const privacyDialog=document.querySelector('[data-privacy-dialog]');let privacyTrigger=null;
+function openPrivacy(trigger){
+  if(!privacyDialog)return;
+  privacyTrigger=trigger??null;if(!privacyDialog.open)privacyDialog.showModal();
+  privacyDialog.querySelector('h3')?.focus({preventScroll:true});
+}
 document.addEventListener('click',event=>{
-  if(!(event.target instanceof Element)||!event.target.closest('a[href="#privacy"]'))return;
-  const disclosure=document.querySelector('#privacy > details');
-  if(disclosure){
-    event.preventDefault();disclosure.open=true;
-    if(location.hash!=='#privacy')history.pushState(null,'','#privacy');
-    disclosure.scrollIntoView({block:'start',behavior:'instant'});
-    disclosure.querySelector('summary')?.focus({preventScroll:true});
-  }
+  if(!(event.target instanceof Element))return;
+  const trigger=event.target.closest('a[href="#privacy"]');
+  if(trigger&&privacyDialog){event.preventDefault();openPrivacy(trigger);}
 });
+privacyDialog?.querySelector('[data-privacy-close]')?.addEventListener('click',()=>privacyDialog.close());
+privacyDialog?.addEventListener('close',()=>{if(privacyTrigger?.isConnected)privacyTrigger.focus({preventScroll:true});privacyTrigger=null;});
+if(location.hash==='#privacy')openPrivacy();
 document.addEventListener('artdico:registration-ready',event=>{currentPublicPrivacy=event.detail?.privacy??null;renderPublicPrivacy();});
 document.addEventListener('artdico:registration-policy',event=>{currentPublicPrivacy=event.detail?.privacy??null;renderPublicPrivacy();});
 document.addEventListener('artdico:public-content-updated',renderPublicPrivacy);

@@ -118,9 +118,14 @@ export function createRegistrationAdminApi({ enabled = false, auth, store, canEx
       const route = url.pathname.match(/^\/api\/admin\/registrations\/([A-Za-z0-9_-]{43})(?:\/(review|deletion-request))?$/u);
       if (!route) failure('NOT_FOUND');
       const [, id, action] = route;
-      if (!action && request.method === 'GET') return json(await store.detail(id));
+      if (!action && request.method === 'GET') {
+        const detail=await store.detail(id),target=profileTarget?await profileTarget(id):id;
+        if(typeof target!=='string'||!/^[A-Za-z0-9_-]{43}$/u.test(target))failure('STORAGE_UNAVAILABLE');
+        return json({...detail,...(target!==id?{walletIdentityTargetId:target}:{})});
+      }
       if (action === 'review' && request.method === 'PATCH') {
         const input = await body(request); keys(input, ['expectedRevision', 'review'], ['expectedRevision', 'review']);
+        if(Object.hasOwn(input.review??{},'walletIdentity')&&profileTarget&&await profileTarget(id)!==id)failure('REVISION_CONFLICT');
         return json(await afterCommit(await store.saveReview(id, input.expectedRevision, input.review, session.user.id), id, session.user));
       }
       if (action === 'deletion-request' && request.method === 'POST') {

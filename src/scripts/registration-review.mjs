@@ -11,8 +11,8 @@ const $=selector=>document.querySelector(selector);
 const statuses={new:'新报名',in_review:'核查中',awaiting_maria:'待 Maria 审阅',approved:'内部建议通过（不授予名额）',discussion:'待讨论',not_this_time:'本次不邀请',withdrawn:'已撤回'};
 const accommodations={not_requested:'未申请',requested:'已申请',pending:'待核对',approved:'已批准',declined:'未批准'};
 const categories=Object.fromEntries(registrationSchema.identityOptions.map(item=>[item.value,item.label]));
-const reviewFields=['status','accommodationStatus','recommendation','proposedRole','internalNotes','assignedTo','lastContactDate','nextStep','mariaReviewDate','mariaFeedback','mariaDecision','invitationStatus'];
-const editableReviewFields=['accommodationStatus','internalNotes','assignedTo','nextStep'];
+const reviewFields=['status','accommodationStatus','recommendation','proposedRole','internalNotes','assignedTo','lastContactDate','nextStep','mariaReviewDate','mariaFeedback','mariaDecision','invitationStatus','walletIdentity'];
+const editableReviewFields=['walletIdentity','accommodationStatus','internalNotes','assignedTo','nextStep'];
 const legacyReviewFields=reviewFields.filter(name=>!editableReviewFields.includes(name));
 let legacyReview={},restoredLegacyReview=false,reviewRelease=null;
 let user=null,csrfToken='',revision=0,nextCursor=null,selected=null,busy=false,dirty=false;
@@ -26,7 +26,7 @@ const reviewSaveState=createOperationsSaveState({form:$('[data-review-form]'),bu
 reviewSaveState.set('idle','修改后保存本条报名的核查意见。');
 function captureReviewFields(form){
   const editable=captureDraftFields(form,editableReviewFields);
-  return Object.fromEntries(reviewFields.map(name=>[name,Object.hasOwn(editable,name)?editable[name]:legacyReview[name]??'']));
+  return Object.fromEntries(reviewFields.filter(name=>name!=='walletIdentity'||!selected?.walletIdentityTargetId||selected.walletIdentityTargetId===selected.id).map(name=>[name,Object.hasOwn(editable,name)?editable[name]:legacyReview[name]??'']));
 }
 function applyReviewFields(form,fields){
   if(!validDraftFields(fields)||Object.entries(fields).some(([name,value])=>!reviewFields.includes(name)||typeof value!=='string'))throw new Error('本机草稿字段无法核对。');
@@ -81,6 +81,7 @@ function lock(){
   for(const field of $('[data-review-form]').elements)field.disabled=busy||!allowed()||Boolean(reviewDraft?.blocked)||Boolean(reviewPending);
   // Draft recovery controls remain usable while the cloud-save controls are locked.
   for(const field of $('[data-review-form]').querySelectorAll('.operations-local-draft button'))field.disabled=busy||!allowed();
+  if(selected?.walletIdentityTargetId&&selected.walletIdentityTargetId!==selected.id)$('[name=walletIdentity]').disabled=true;
   $('[data-review-save]').disabled=busy||!allowed()||!dirty||Boolean(reviewDraft?.blocked)||Boolean(reviewPending);
   $('[data-review-withdraw]').disabled=busy||!allowed()||!selected||dirty||Boolean(reviewDraft?.blocked)||Boolean(reviewPending)||legacyReview.status==='withdrawn';
   $('[data-review-release-open]').disabled=busy||!allowed()||Boolean(reviewPending);
@@ -178,6 +179,7 @@ function renderDetails(record){
   const output=$('[data-review-details]');output.replaceChildren();const fields=record.fields??{};
   const summary=$('[data-review-summary]');summary.replaceChildren();
   for(const[label,value]of[['姓名',fields.name],['Email',fields.email],['学校 / 机构',fields.organization],['城市',fields.city],['参与身份',(fields.categories??[]).map(value=>categories[value]??value)]])pair(summary,label,value);
+  pair(summary,'申请类型',fields.intake==='wallet-v1'?'电子纪念卡申请':fields.intake==='general-v2'?'讲者／参会申请':'报名资料');pair(summary,'活动行报名编号',fields.huodongxingReference);pair(summary,'微信号',fields.wechat);
   pair(output,'报名编号',record.referenceCode);pair(output,'受理时间',record.submittedAt);
   for(const field of registrationSchema.baseFields){
     if(field.name==='consentAccepted')continue;
@@ -199,13 +201,14 @@ function adoptRecord(result,id){
   if(!result.registration||result.registration.id!==id||!Number.isSafeInteger(result.revision))throw new Error('报名详情结果无效。');
   const changedPerson=selected?.id!==id;
   if(changedPerson)reviewRelease=null;
-  const review=result.review??result.registration.review??{};selected={...result.registration,review,revision:result.revision};revision=result.revision;dirty=false;
+  const review=result.review??result.registration.review??{};selected={...result.registration,review,revision:result.revision,...(result.walletIdentityTargetId?{walletIdentityTargetId:result.walletIdentityTargetId}:{})};revision=result.revision;dirty=false;
   clearConfirmationLink();
   if(changedPerson)for(const details of $('[data-review-dialog]').querySelectorAll('details'))details.open=false;
   $('[data-review-detail-title]').textContent=(selected.fields?.name||'报名资料')+' · 参会管理';renderDetails(selected);
   $('[data-review-provenance]').textContent=['staff_assisted','staff_entry'].includes(selected.provenance?.kind)?(selected.provenance.kind==='staff_entry'?'工作人员根据已核定许可逐人登记。':'工作人员根据既有意向资料代登记。')+'此记录不代表本人完成网站隐私同意；原始来源与联络许可须分别核对。':'申请人通过正式表单提交，隐私同意版本与时间随原始报名保存。';
   legacyReview=Object.fromEntries(legacyReviewFields.map(name=>[name,review[name]??'']));restoredLegacyReview=false;renderLegacyReview();
   const form=$('[data-review-form]');for(const name of editableReviewFields)form.elements.namedItem(name).value=review[name]??'';
+  const walletPrimary=$('[data-review-wallet-primary]');walletPrimary.hidden=!selected.walletIdentityTargetId||selected.walletIdentityTargetId===id;walletPrimary.href='/admin/registrations/#registration='+encodeURIComponent(selected.walletIdentityTargetId??id);
   reviewSaveState.set('idle','修改后点击保存，只保存当前核查意见。');operationsFieldErrors(form);
   $('[data-review-deletion-state]').textContent=review.deletionRequested?'已登记删除申请；尚未宣称完成数据擦除，后续须按受控维护流程处理。':'';
   $('[data-review-detail-error]').hidden=true;

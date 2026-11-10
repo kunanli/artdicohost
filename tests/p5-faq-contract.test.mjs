@@ -19,7 +19,7 @@ const housing = '本次活动提供少量外地来宾住宿支持。有需要的
 const clock = () => Date.parse('2026-11-01T07:00:00.000Z');
 function legacyContent() {
   const content = createInitialContent();
-  content.event.presentation.faqItems = faqItems.map(({ question, answer }) => ({ question, answer }));
+  content.event.presentation.faqItems = faqItems.filter(item=>item.id!=='wallet-card').map(({ question, answer }) => ({ question, answer }));
   return content;
 }
 
@@ -99,16 +99,16 @@ test('approved external attendance route cannot be replaced by editorial URLs or
     assert.match(entry.answer, /普通参会请前往活动行报名/u);
     assert.match(entry.answer, /讲者分享提案在本站提交/u);
     assert.doesNotMatch(entry.answer, /即刻出票|立即.*Wallet|本站即|服务暂时无法/u);
-    assert.deepEqual(rows.filter(item => item.registrationUrl).map(item => item.id), ['registration-status', 'site-role']);
+    assert.deepEqual(rows.filter(item => item.registrationUrl===PUBLIC_REGISTRATION_URL).map(item => item.id), ['registration-status', 'site-role']);
   }
 });
 
 test('empty or twenty custom FAQs keep all custom questions plus bounded required service entries', () => {
-  assert.deepEqual(publicFaqItems([]).map(item => item.id), ['registration-status', 'data-rights', 'lodging-support', 'site-role']);
+  assert.deepEqual(publicFaqItems([]).map(item => item.id), ['registration-status', 'data-rights', 'lodging-support', 'site-role', 'wallet-card']);
   const custom = Array.from({ length: 20 }, (_, index) => ({ id: 'custom-' + index, question: '合成问题' + index, answer: '合成回答' }));
-  const rows = publicFaqItems(custom); assert.equal(rows.length, 24); assert.equal(rows.filter(item => item.id.startsWith('custom-')).length, 20);
+  const rows = publicFaqItems(custom); assert.equal(rows.length, 25); assert.equal(rows.filter(item => item.id.startsWith('custom-')).length, 20);
   const legacy = [{ question: '合成同题', answer: '合成回答' }, { question: '合成同题', answer: '合成回答' }];
-  assert.equal(new Set(publicFaqItems(legacy).map(item => item.id)).size, 6);
+  assert.equal(new Set(publicFaqItems(legacy).map(item => item.id)).size, 7);
 });
 
 async function fixture(mode, t, initialContent) {
@@ -151,4 +151,10 @@ test('old published on-site guidance uses the organizer-confirmed review copy wi
  const before=JSON.stringify(old),row=publicFaqItems([old]).find(item=>item.id==='site-official');
  assert.equal(row.question,'现场可以进行 GGJ 站点审核吗？');assert.match(row.answer,/现场可进行 GGJ 站点审核/u);
  assert.equal(JSON.stringify(old),before);
+});
+
+
+test('commemorative card FAQ is always available with the fixed local form and does not promise automatic issuing',()=>{
+ const supplied=[{id:'wallet-card',question:'合成旧问题',answer:'合成立即发卡',registrationUrl:'https://unapproved.example.invalid/'}],before=JSON.stringify(supplied);
+ const card=publicFaqItems(supplied).find(item=>item.id==='wallet-card');assert.equal(card.registrationUrl,'#wallet-card-application');assert.match(card.answer,/工作人员核对报名/u);assert.match(card.answer,/入场身份/u);assert.doesNotMatch(card.answer,/立即发卡/u);assert.equal(JSON.stringify(supplied),before);
 });

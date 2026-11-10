@@ -189,3 +189,22 @@ test('new Wallet passes use the same dedicated short staff check-in capability a
   assert.equal((await service({ authorize: async () => ({ ...record, admissionStatus: 'withdrawn' }), admissionUrlProvider: async () => { calls++; return { admissionUrl }; } }).download({ receiptToken: token })).outcome, 'inactive');
   assert.equal(calls, 0);
 });
+
+test('commemorative requests require a staff card identity and sign the selected identity into the pass', async () => {
+  const pendingIdentity={...record,walletRequested:true};
+  const waiting=service({authorize:async()=>pendingIdentity,authorizedRegistration:async()=>pendingIdentity});
+  assert.equal((await waiting.download({receiptToken:token})).outcome,'inactive');
+  const selected={...pendingIdentity,walletIdentity:'guest'};
+  const issued=await service({authorize:async()=>selected,authorizedRegistration:async()=>selected}).download({receiptToken:token});
+  assert.equal(issued.outcome,'issued');
+  const pass=JSON.parse(passFiles(issued.data).get('pass.json'));
+  assert.deepEqual(pass.eventTicket.headerFields,[{key:'identity',label:'入场身份',value:'嘉宾'}]);
+  assert.equal(pass.eventTicket.secondaryFields[0].value,record.name);
+  assert.equal(pass.barcodes[0].format,'PKBarcodeFormatQR');
+});
+
+test('a changed staff card identity during signing prevents returning a stale pass',async()=>{
+  const selected={...record,walletRequested:true,walletIdentity:'speaker'};
+  const result=await service({authorize:async()=>selected,authorizedRegistration:async()=>({...selected,walletIdentity:'attendee'})}).download({receiptToken:token});
+  assert.equal(result.outcome,'inactive');
+});

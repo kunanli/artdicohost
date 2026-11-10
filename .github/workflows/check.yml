@@ -209,6 +209,24 @@ jobs:
           path: .local-data/browser-evidence/registration-auto-ui/
           if-no-files-found: warn
           retention-days: 1
+      - name: Check commemorative card requests and staff identity selection
+        id: wallet_application_browser
+        timeout-minutes: 4
+        env:
+          ARTDICO_PLAYWRIGHT_MODULE: playwright-core
+          ARTDICO_DIST_DIRECTORY: dist
+          ARTDICO_EVIDENCE_DIRECTORY: .local-data/browser-evidence/wallet-application
+        run: |
+          artdico_browser_path="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium)"
+          ARTDICO_CHROMIUM_BINARY="$artdico_browser_path" node tests/browser/wallet-application-smoke.mjs
+      - name: Retain commemorative card application browser evidence for one day
+        if: ${{ !cancelled() && (steps.wallet_application_browser.outcome == 'success' || steps.wallet_application_browser.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wallet-application-evidence
+          path: .local-data/browser-evidence/wallet-application/
+          if-no-files-found: warn
+          retention-days: 1
       - name: Check admin display ordering and publication
         id: admin_display_order_browser
         timeout-minutes: 4

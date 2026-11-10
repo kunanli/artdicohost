@@ -1,3 +1,4 @@
+import { WALLET_IDENTITIES } from '../../shared/general-application.mjs';
 import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { APPLE_ROOT_FINGERPRINTS, buildAppleWalletPass, validateSigningIdentity, WalletSigningError } from './pkpass.mjs';
 import { readEventFactsReadiness, unchangedEventFacts } from '../../src/config/event.mjs';
@@ -99,7 +100,7 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
       try {
         const attendee = await authorize({ receiptToken });
         if (!validRecord(attendee)) return fixed('invalid');
-        if (attendee.admissionStatus !== 'confirmed') return fixed('inactive');
+        if (attendee.admissionStatus !== 'confirmed' || attendee.walletRequested&&!WALLET_IDENTITIES.some(role=>role.value===attendee.walletIdentity)) return fixed('inactive');
         const checkedFacts = await readEventFactsReadiness(eventFactsReadiness);
         if (!checkedFacts.ready) return fixed('event_unverified');
         if (!enabled) return fixed('not_ready');
@@ -114,7 +115,7 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
         const data = buildAppleWalletPass({ ...config, attendee, verificationUrl, now });
         const latest = await authorizedRegistration(attendee.registrationId);
         if (!validRecord(latest) || latest.registrationId !== attendee.registrationId || latest.event.id !== attendee.event.id
-          || latest.admissionStatus !== 'confirmed' || accessRevision(latest) !== accessRevision(attendee)) return fixed('inactive');
+          || latest.admissionStatus !== 'confirmed' || latest.walletIdentity!==attendee.walletIdentity || accessRevision(latest) !== accessRevision(attendee)) return fixed('inactive');
         if (!unchangedEventFacts(checkedFacts, await readEventFactsReadiness(eventFactsReadiness))) return fixed('event_unverified');
         if (Date.parse(config.identity.expiresAt) <= current()) return fixed('not_ready');
         return { outcome: 'issued', data, contentType: 'application/vnd.apple.pkpass', filename: 'artdico-' + attendee.registrationId.slice(-12) + '.pkpass' };

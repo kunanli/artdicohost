@@ -2,7 +2,7 @@ import { faqItems as defaults, PUBLIC_CONTACT_EMAIL, PUBLIC_REGISTRATION_URL } f
 import { legacyFaqId } from '../../shared/content-schema.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
-const REQUIRED = ['registration-status', 'data-rights', 'lodging-support', 'site-role'];
+const REQUIRED = ['registration-status', 'data-rights', 'lodging-support', 'site-role', 'wallet-card'];
 const CONTACT = PUBLIC_CONTACT_EMAIL;
 const line = (value, max) => typeof value === 'string' && value.length > 0 && value.length <= max && value.isWellFormed()
   && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value);
@@ -34,6 +34,7 @@ export function publicFaqItems(items = defaults, { privacy = null } = {}) {
   return rows.map(item => {
     // General attendance belongs to the external platform. The onsite proposal
     // service must never override that route with its own availability or status.
+    if(item.id==='wallet-card')return{...defaults.find(row=>row.id===item.id),contactEmail:null,registrationUrl:'#wallet-card-application'};
     if (item.id === 'registration-status') return { ...item, answer: defaults.find(row => row.id === item.id).answer, registrationUrl: PUBLIC_REGISTRATION_URL };
     if (item.id === 'data-rights') return { ...item, answer: line(privacy?.rightsRequest, 4000) ? privacy.rightsRequest : defaults.find(row => row.id === item.id).answer,
       contactEmail: CONTACT };
@@ -76,6 +77,7 @@ function renderFaqs() {
       let link = registration.querySelector('a');
       if (!link) { link = node('a', '前往活动行报名', 'ah-text-action'); link.dataset.generalRegistration = ''; registration.append(link); }
       link.href = item.registrationUrl;
+      if(item.id==='wallet-card'){link.textContent='申请电子纪念卡';delete link.dataset.generalRegistration;}else{link.textContent='前往活动行报名';link.dataset.generalRegistration='';}
     } else registration?.remove();
     let contact = row.querySelector('.ah-faq-contact');
     if (item.contactEmail) {

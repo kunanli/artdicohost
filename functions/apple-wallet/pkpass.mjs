@@ -1,3 +1,4 @@
+import { WALLET_IDENTITIES } from '../../shared/general-application.mjs';
 import { createHash, createPrivateKey, X509Certificate } from 'node:crypto';
 import { derChildren, oid, signManifest } from './der.mjs';
 
@@ -93,7 +94,8 @@ export function createPassArchive(files, now) {
 }
 
 export function buildAppleWalletPass({ identity, attendee, organizationName, verificationUrl, now = Date.now() } = {}) {
-  const event = attendee?.event;
+  const event = attendee?.event, walletIdentity=WALLET_IDENTITIES.find(item=>item.value===attendee?.walletIdentity);
+  if(attendee?.walletIdentity!==undefined&&!walletIdentity)fail('WALLET_PASS_INPUT_INVALID');
   if (!identity?.privateKey || attendee?.admissionStatus !== 'confirmed' || !/^[A-Za-z0-9_-]{43}$/u.test(attendee.registrationId ?? '')
     || attendee.referenceCode !== attendee.registrationId
     || !line(attendee.name, 160) || !line(organizationName, 80) || !line(event?.id, 80) || !line(event?.title, 300)
@@ -115,7 +117,7 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
     preferredStyleSchemes: ['posterEventTicket', 'eventTicket'],
     semantics: { eventName: event.title, eventStartDate: relevantDate, eventType: 'PKEventTypeGeneric', venueName: event.venue },
     eventTicket: {
-      headerFields: [{ key: 'status', label: '参会名额', value: '已确认' }],
+      headerFields: walletIdentity?[{key:'identity',label:'入场身份',value:walletIdentity.label}]:[{ key: 'status', label: '参会名额', value: '已确认' }],
       primaryFields: [{ key: 'event', label: '活动', value: event.title }],
       secondaryFields: [{ key: 'name', label: '参加人', value: attendee.name, semantics: { attendeeName: attendee.name } }],
       auxiliaryFields: [{ key: 'date', label: '日期', value: event.date }, { key: 'time', label: '时间', value: event.time }],

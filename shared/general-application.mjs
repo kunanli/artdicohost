@@ -1,6 +1,14 @@
 import { identityOptions } from './registration-schema.mjs';
 
 export const GENERAL_APPLICATION_INTAKE = 'general-v2';
+export const WALLET_APPLICATION_INTAKE = 'wallet-v1';
+export const WALLET_IDENTITIES = Object.freeze([
+  {value:'attendee',label:'一般来宾'},{value:'guest',label:'嘉宾'},{value:'speaker',label:'讲者'},
+  {value:'exhibitor',label:'参展者'},{value:'organizer',label:'GGJ 组织者'},{value:'student',label:'学生'},
+  {value:'staff',label:'工作人员'},{value:'volunteer',label:'志愿者'},
+]);
+export const isWalletApplicationFields = fields => own(fields,'intake')===WALLET_APPLICATION_INTAKE;
+
 export const GENERAL_APPLICATION_FIELDS = Object.freeze(['intake','locale','name','email','categories','participationInterests','organization','city','wechat','phone','speaker']);
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value) && [Object.prototype,null].includes(Object.getPrototypeOf(value));
 const own = (value,key) => Object.getOwnPropertyDescriptor(value ?? {},key)?.value;
@@ -16,6 +24,7 @@ export const isSpeakerApplicationFields = fields => own(fields,'intake')===GENER
 
 /** New public intake stays sparse; unasked historic questions are never synthesized. */
 export function validateGeneralApplicationFields(input){
+  if(isWalletApplicationFields(input))return validateWalletApplicationFields(input);
   const errors={};if(!safeObject(input)||Reflect.ownKeys(input).some(key=>!GENERAL_APPLICATION_FIELDS.includes(key)))return{valid:false,errors:{fields:'申请字段无效，请使用当前简表。'},value:null};
   if(own(input,'intake')!==GENERAL_APPLICATION_INTAKE)errors.intake='申请版本无效。';
   const value={intake:GENERAL_APPLICATION_INTAKE,name:string(input,'name',80,errors,{required:true,min:2}),email:string(input,'email',254,errors,{required:true}),categories:[],participationInterests:[]};
@@ -28,5 +37,19 @@ export function validateGeneralApplicationFields(input){
   const speaker=own(input,'speaker');
   if(proposal){if(!safeObject(speaker)||Reflect.ownKeys(speaker).length!==2||!Object.hasOwn(speaker,'topic')||!Object.hasOwn(speaker,'summary'))errors.speaker='请填写分享主题和简介。';else{const branchErrors={};value.speaker={topic:string(speaker,'topic',200,branchErrors,{required:true}),summary:string(speaker,'summary',1500,branchErrors,{required:true,multiline:true})};for(const [key,message]of Object.entries(branchErrors))errors['speaker.'+key]=message;}}
   else if(Object.hasOwn(input,'speaker'))errors.speaker='未选择分享主题时，请勿提交隐藏的提案资料。';
+  return{valid:Object.keys(errors).length===0,errors,value};
+}
+
+/** An unverified request for a commemorative pass, never external ticket proof. */
+export function validateWalletApplicationFields(input){
+  const keys=['intake','locale','name','email','wechat','phone','organization','huodongxingReference','categories','participationInterests'];
+  const errors={};
+  if(!safeObject(input)||Reflect.ownKeys(input).some(key=>!keys.includes(key)))return{valid:false,errors:{fields:'纪念卡申请字段无效。'},value:null};
+  const value={intake:WALLET_APPLICATION_INTAKE,name:string(input,'name',80,errors,{required:true,min:2}),email:string(input,'email',254,errors,{required:true}),wechat:string(input,'wechat',100,errors,{required:true}),huodongxingReference:string(input,'huodongxingReference',160,errors,{required:true}),categories:['other'],participationInterests:['attend']};
+  if(own(input,'intake')!==WALLET_APPLICATION_INTAKE)errors.intake='申请版本无效。';
+  if(value.email&&!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(value.email))errors.email='请填写有效邮箱。';
+  for(const[key,expected]of[['categories','other'],['participationInterests','attend']]){const list=own(input,key);if(!safeList(list,1)||list.length!==1||list[0]!==expected)errors[key]='纪念卡身份由工作人员确认。';}
+  if(Object.hasOwn(input,'locale')){if(!['zh-CN','en'].includes(own(input,'locale')))errors.locale='请选择有效的申请语言。';else value.locale=own(input,'locale');}
+  for(const[key,max]of[['phone',150],['organization',160]]){const text=string(input,key,max,errors);if(text)value[key]=text;}
   return{valid:Object.keys(errors).length===0,errors,value};
 }

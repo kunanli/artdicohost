@@ -28,11 +28,11 @@ export function confirmationEmailPresentation({ locale, kind, subject, confirmat
     }
   }
   const blocks=[];
-  const action = kind === 'card_jpeg' ? (en ? 'Download your JPEG card' : '领取 JPEG 纪念卡')
-    : kind === 'card_wallet' ? (en ? 'Get your Apple Wallet card' : '领取 Apple Wallet 纪念卡')
+  const card = kind === 'card_jpeg' || kind === 'card_wallet';
+  const action = card ? (en ? 'Get your commemorative card' : '领取电子纪念卡')
     : (en ? 'View your attendance details' : '查看参会信息');
   blocks.push('<p style="margin:20px 0;font-size:16px;line-height:1.7;"><a href="'+escape(confirmationUrl)+'" style="color:#6540df;">'+action+'</a></p>');
-  if(confirmed && walletReady){
+  if(confirmed && walletReady && !card){
     const badge = SITE+'/wallet/add-to-apple-wallet-'+(en?'en':'cn')+'.png';
     blocks.push('<p style="margin:20px 0 8px;"><a href="'+escape(confirmationUrl)+'"><img src="'+badge+'" alt="'+(en?'Add to Apple Wallet':'添加到 Apple 钱包')+'" height="44" style="display:block;height:44px;width:auto;border:0;"></a></p><p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#52617a;">'+(en?'On iPhone, open your attendance page in Safari to add your pass.':'iPhone 请在 Safari 打开参会页，再添加至 Apple 钱包。')+'</p>');
   }

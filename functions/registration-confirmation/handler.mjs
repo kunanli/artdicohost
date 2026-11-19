@@ -77,8 +77,9 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
           'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'Content-Type', 'access-control-max-age': '600' } });
         if (request.method !== 'POST') reject('METHOD_NOT_ALLOWED', 405);
         if (typeof service?.confirmation !== 'function') reject('CONFIRMATION_UNAVAILABLE', 503);
-        const input = await body(request); keys(input, ['receiptToken'], ['receiptToken']);
-        if (typeof input.receiptToken !== 'string' || input.receiptToken.length > 4096) reject();
+        const input = await body(request); keys(input, ['receiptToken', 'includeCardFormats'], ['receiptToken']);
+        if (typeof input.receiptToken !== 'string' || input.receiptToken.length > 4096
+          || Object.hasOwn(input, 'includeCardFormats') && input.includeCardFormats !== true) reject();
         if (request.signal.aborted) reject();
         return json(await service.confirmation(input));
       }

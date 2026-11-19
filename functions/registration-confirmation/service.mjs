@@ -165,9 +165,9 @@ export function createRegistrationConfirmationService({ registrationService, jou
   }
   async function authorize(input) {
     const { registrationId, loaded, cardFormat } = await authorizedContext(input);
-    if (cardFormat === 'jpeg' || cardFormat === 'wallet' && !(await deliveryPermission(loaded.record)).eligible) return null;
+    if (cardFormat && !(await deliveryPermission(loaded.record)).eligible) return null;
     const projected = trustedProjection(registrationId, loaded);
-    return cardFormat === 'wallet' ? { ...projected, walletRequested: true } : projected;
+    return cardFormat ? { ...projected, walletRequested: true } : projected;
   }
   /** Explicit, single-person staff read. No new registration, notice, or email. */
   async function staffConfirmationLink({ actor, registrationId } = {}) {
@@ -346,10 +346,9 @@ export function createRegistrationConfirmationService({ registrationService, jou
         try { return await recordResult(notice, 'rejected', actorId, { code: 'DELIVERY_GUARD_BLOCKED', transportStarted: false }); }
         catch { return { status: 'unknown' }; }
       }
-      const label = card.format === 'jpeg' ? 'JPEG' : 'Apple Wallet';
-      subject = eventFacts.title + (locale === 'en' ? ' | Commemorative card · ' : '｜电子纪念卡 · ') + label;
-      text = locale === 'en' ? [record.fields.name + ',', '', 'Your ' + label + ' commemorative card is ready.', link.confirmationUrl,
-        'Keep this private link and your original Huodongxing ticket.'].join('\n') : [record.fields.name + '，你好：', '', '你的 ' + label + ' 纪念卡已可领取。', link.confirmationUrl,
+      subject = eventFacts.title + (locale === 'en' ? ' | Your commemorative card' : '｜你的电子纪念卡');
+      text = locale === 'en' ? [record.fields.name + ',', '', 'Open your private card page to download the JPEG or add the card to Apple Wallet on iPhone.', link.confirmationUrl,
+        'Keep this private link and your original Huodongxing ticket.'].join('\n') : [record.fields.name + '，你好：', '', '打开私人领取页，即可下载 JPEG 图片，或在 iPhone 上加入 Apple Wallet。', link.confirmationUrl,
         '请保管此私人链接，并保留活动行原电子票。'].join('\n');
     }
     try { presentation=confirmationEmailPresentation({locale,kind,subject,confirmationUrl:link.confirmationUrl,ticket,walletReady}); }
@@ -417,25 +416,32 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (cardFormat) {
       const identity = WALLET_IDENTITIES.find(item => item.value === value.walletIdentity);
       if (value.admissionStatus !== 'confirmed' || !identity || !(await deliveryPermission(loaded.record)).eligible) failure('CONFIRMATION_NOT_FOUND', 404);
-      const wallet = cardFormat === 'wallet' && currentFacts.ready ? await walletState() : { ready: false };
+      const both = own(input, 'includeCardFormats') === true;
+      const walletPromise = (both || cardFormat === 'wallet') && currentFacts.ready ? walletState() : { ready: false };
       let entryQr = null;
-      const needsEntryQr = cardFormat === 'jpeg' && clock() < entryExpiry;
+      const needsEntryQr = (both || cardFormat === 'jpeg') && clock() < entryExpiry;
       if (needsEntryQr && currentFacts.ready) {
         try {
-          const result = await cardEntry.image({ registrationId, accessRevision: value.accessRevision });
+          const scope = { registrationId, accessRevision: value.accessRevision };
+          const result = await cardEntry.image(scope).catch(async error => {
+            // Previously issued Wallet links may not have a stored entry code.
+            if (cardFormat !== 'wallet' || error.code !== 'ENTRY_NOT_FOUND') throw error;
+            await cardEntry.prepare(scope);
+            return cardEntry.image(scope);
+          });
           if (result?.contentType === 'image/png' && result.data instanceof Uint8Array && result.data.byteLength > 8 && result.data.byteLength <= 16000) {
             entryQr = Buffer.from(result.data).toString('base64');
           }
         } catch { /* An unreadable entry QR must not be drawn as a valid card. */ }
       }
-      const latest = await authorizedContext(input);
+      const [latest, wallet] = await Promise.all([authorizedContext(input), walletPromise]);
       if (latest.loaded.admission.status !== 'confirmed' || latest.loaded.record.walletIdentity !== value.walletIdentity
         || latest.loaded.record.fields.name !== value.name || !unchangedEventFacts(currentFacts, await currentEventFacts()) && currentFacts.ready) failure();
       return { event: value.event, referenceCode: value.referenceCode, submittedAt: value.submittedAt,
         attendee: { name: value.name, organization: '' }, admission: { status: 'confirmed', kind: value.admissionKind, revision: value.admissionRevision },
         email: { status: 'not_applicable' }, wallet, groupInvite: null, invitation: { ready: false },
-        card: { format: cardFormat, identity: identity.label,
-          ready: currentFacts.ready && (cardFormat === 'wallet' ? wallet.ready : !needsEntryQr || Boolean(entryQr)),
+        card: { format: both ? 'both' : cardFormat, identity: identity.label,
+          ready: currentFacts.ready && (!both && cardFormat === 'wallet' ? wallet.ready : !needsEntryQr || Boolean(entryQr)),
           ...(entryQr ? { entryQr } : {}) } };
     }
     let noticeSnapshot = null, savedAliases = null;

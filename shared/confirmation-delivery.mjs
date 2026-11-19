@@ -1,6 +1,7 @@
 /** Safe public vocabulary only. Provider responses and configuration values must
  * never enter a staff response or a durable diagnostic. */
 export const CONFIRMATION_EMAIL_CONFIGURATION_FIELDS = Object.freeze(['EMAILJS_SERVICE_ID','EMAILJS_CONFIRMATION_TEMPLATE_ID','EMAILJS_PUBLIC_KEY','EMAILJS_PRIVATE_KEY','EMAIL_FROM_ADDRESS','EMAIL_FROM_NAME']);
+export const CARD_FORMATS_ACCEPT = 'application/json; profile=commemorative-card-formats';
 export const CONFIRMATION_EMAIL_REASONS = Object.freeze(['CONFIGURED_PROVIDER_NOT_DELIVERY_PROOF','EMAIL_NOT_READY','EMAIL_DISABLED','EMAIL_CONFIGURATION_MISSING','EMAIL_CONFIGURATION_INVALID','EMAIL_CONFIGURATION_UNAVAILABLE']);
 const NOT_STARTED = new Set(['EMAIL_DISABLED','EMAIL_CONFIGURATION_MISSING','EMAIL_CONFIGURATION_INVALID','EMAIL_CONFIGURATION_UNAVAILABLE','INVALID_EMAIL_INPUT','DELIVERY_GUARD_BLOCKED','DELIVERY_GUARD_UNAVAILABLE','DELIVERY_WINDOW_EXPIRED','EMAIL_CONFIGURATION_CHANGED']);
 const own = (value,key) => {const d=Object.getOwnPropertyDescriptor(value,key);return d?.enumerable&&Object.hasOwn(d,'value')?d.value:undefined;};

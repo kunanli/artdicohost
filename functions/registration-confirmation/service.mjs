@@ -419,7 +419,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
       const both = own(input, 'includeCardFormats') === true;
       const walletPromise = (both || cardFormat === 'wallet') && currentFacts.ready ? walletState() : { ready: false };
       let entryQr = null;
-      const needsEntryQr = (both || cardFormat === 'jpeg') && clock() < entryExpiry;
+      const jpegRequested = both || cardFormat === 'jpeg';
+      const needsEntryQr = jpegRequested && clock() < entryExpiry;
       if (needsEntryQr && currentFacts.ready) {
         try {
           const scope = { registrationId, accessRevision: value.accessRevision };
@@ -441,7 +442,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
         attendee: { name: value.name, organization: '' }, admission: { status: 'confirmed', kind: value.admissionKind, revision: value.admissionRevision },
         email: { status: 'not_applicable' }, wallet, groupInvite: null, invitation: { ready: false },
         card: { format: both ? 'both' : cardFormat, identity: identity.label,
-          ready: currentFacts.ready && (!both && cardFormat === 'wallet' ? wallet.ready : !needsEntryQr || Boolean(entryQr)),
+          ready: currentFacts.ready && (jpegRequested ? !needsEntryQr || Boolean(entryQr) : wallet.ready),
           ...(entryQr ? { entryQr } : {}) } };
     }
     let noticeSnapshot = null, savedAliases = null;

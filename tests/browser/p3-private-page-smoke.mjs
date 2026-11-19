@@ -13,8 +13,8 @@ await mkdir(evidence, { recursive: true });
 const htmlPath = resolve(dist, 'registration/confirmation/index.html'), html = await readFile(htmlPath);
 assert.match(html.toString(), /https:\/\/api\.artdico\.host/u, 'build with the existing public API setting first');
 assert.match(html.toString(), /noindex,nofollow,noarchive/u);
-const badgeArtwork=await readFile(resolve(dist,'wallet/add-to-apple-wallet.svg'));
-assert.deepEqual(badgeArtwork,await readFile(resolve(project,'public/wallet/add-to-apple-wallet.svg')),'the published badge preserves the supplied official SVG bytes');
+const badgeArtwork=await readFile(resolve(dist,'wallet/add-to-apple-wallet-cn.svg'));
+assert.deepEqual(badgeArtwork,await readFile(resolve(project,'public/wallet/add-to-apple-wallet-cn.svg')),'the published badge preserves the supplied official SVG bytes');
 const badgeViewBox=/\bviewBox=["']([^"']+)["']/u.exec(badgeArtwork.toString('utf8'))?.[1].trim().split(/\s+/u).map(Number);
 assert.ok(badgeViewBox?.length===4&&badgeViewBox.every(Number.isFinite)&&badgeViewBox[2]>0&&badgeViewBox[3]>0,'the actual local official badge has a measurable viewBox');
 const badgeAspectRatio=badgeViewBox[2]/badgeViewBox[3];
@@ -55,7 +55,7 @@ async function fixture({ width = 390, userAgent = ios, status = 'confirmed', gro
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin === SITE) {
-      if(badgeFailure&&url.pathname==='/wallet/add-to-apple-wallet.svg')return route.fulfill({status:404,body:''});
+      if(badgeFailure&&url.pathname==='/wallet/add-to-apple-wallet-cn.svg')return route.fulfill({status:404,body:''});
       const file = resolve(dist, '.' + (url.pathname.endsWith('/') ? url.pathname + 'index.html' : url.pathname));
       assert.ok(file.startsWith(dist + '/'));
       try { return route.fulfill({ status: 200, body: await readFile(file), contentType: ({ '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' })[extname(file)] || 'application/octet-stream' }); }

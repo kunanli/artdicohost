@@ -175,7 +175,19 @@ if (root) {
     }
     if(!['add','download'].includes(guidance.action))return;
     const current=generation;busy=true;controller=new AbortController();const signal=controller.signal;controls();releaseWallet();$('[data-confirmation-action-status]').textContent='正在准备 Wallet 票券…';
-    try{const blob=await client.wallet(token,{signal});if(current!==generation)return;walletUrl=URL.createObjectURL(blob);const link=document.createElement('a');link.href=walletUrl;link.download='artdico-host.pkpass';document.body.append(link);link.click();link.remove();$('[data-confirmation-action-status]').textContent=guidance.action==='add'?'请按 iPhone 的系统提示确认添加。':'票券已准备，请在 iPhone 上打开。';}
+    try {
+      const blob = await client.wallet(token,{signal});
+      if (current !== generation) return;
+      walletUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = walletUrl;
+      link.download = 'artdico-host.pkpass';
+      document.body.append(link);
+      link.click();
+      link.remove();
+      const prompt = guidance.action === 'add' ? '请按 iPhone 的系统提示确认添加。' : '票券已准备，请在 iPhone 上打开。';
+      $('[data-confirmation-action-status]').textContent = state.card ? prompt : '票券文件已准备。请在支持 Apple Wallet 的设备上打开。';
+    }
     catch(error){
       if(current!==generation||error.cancelled)return;
       if(state?.card)$('[data-confirmation-action-status]').textContent='暂时无法取得 Apple Wallet 纪念卡，请重试。';

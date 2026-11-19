@@ -8,6 +8,7 @@ import { createAppleWalletService } from '../functions/apple-wallet/service.mjs'
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
 import { createWalletFixture, passFiles } from './apple-wallet-fixture.mjs';
 import { confirmationView } from '../src/lib/confirmation-client.mjs';
+import { CARD_FORMATS_ACCEPT } from '../shared/confirmation-delivery.mjs';
 
 const root = '/api/admin/registration-confirmation/cards';
 const operationId = () => randomBytes(32).toString('base64url');
@@ -88,7 +89,7 @@ test('staff send one commemorative card email and recipients can still save the 
   assert.match(template.invitation_text, /JPEG.*Apple Wallet/u);
   assert.doesNotMatch(template.confirmation_actions, /add-to-apple-wallet|entry-links/u);
   const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(template.invitation_text)[1];
-  const publicCall = (path, extra) => f.app.handle(f.request(path, { method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken, ...extra } }));
+  const publicCall = (path, headers) => f.app.handle(f.request(path, { method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken }, headers }));
   const offer = await publicCall('/api/admin/registration/confirmation');
   assert.equal(offer.status, 200);
   const view = confirmationView(await offer.json());
@@ -96,7 +97,7 @@ test('staff send one commemorative card email and recipients can still save the 
   assert.deepEqual(card, { format: 'jpeg', identity: '嘉宾', ready: true });
   assert.deepEqual([...Buffer.from(entryQr, 'base64').subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
   const before = f.objects.calls.length;
-  const both = confirmationView(await (await publicCall('/api/admin/registration/confirmation', { includeCardFormats: true })).json());
+  const both = confirmationView(await (await publicCall('/api/admin/registration/confirmation', { Accept: CARD_FORMATS_ACCEPT })).json());
   assert.ok(f.objects.calls.slice(before).every(call => call.operation === 'get'), 'redemption only reads the existing QR');
   assert.deepEqual(both.card, { ...view.card, format: 'both' });
   assert.equal(both.wallet.ready, false);

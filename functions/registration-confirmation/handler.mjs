@@ -3,6 +3,7 @@ import { CloudContentError } from '../cloud-content/errors.mjs';
 import { plainObject } from '../registration-api/policy.mjs';
 import { ConfirmationError } from './service.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
+import { CARD_FORMATS_ACCEPT } from '../../shared/confirmation-delivery.mjs';
 
 const SECURITY = { 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
 const MAX_BODY = 16 * 1024;
@@ -72,15 +73,16 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
       const cards = /^\/api\/admin\/registration-confirmation\/cards(?:\/([A-Za-z0-9_-]{43})(\/approve)?)?$/u.exec(url.pathname);
       if (PUBLIC_PATHS.includes(url.pathname)) {
         if (!origins.has(origin)) reject('ORIGIN_REJECTED', 403);
-        cors = { 'access-control-allow-origin': origin, vary: 'Origin' };
+        cors = { 'access-control-allow-origin': origin, vary: 'Origin, Accept' };
         if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...SECURITY, ...cors,
           'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'Content-Type', 'access-control-max-age': '600' } });
         if (request.method !== 'POST') reject('METHOD_NOT_ALLOWED', 405);
         if (typeof service?.confirmation !== 'function') reject('CONFIRMATION_UNAVAILABLE', 503);
-        const input = await body(request); keys(input, ['receiptToken', 'includeCardFormats'], ['receiptToken']);
-        if (typeof input.receiptToken !== 'string' || input.receiptToken.length > 4096
-          || Object.hasOwn(input, 'includeCardFormats') && input.includeCardFormats !== true) reject();
+        const input = await body(request); keys(input, ['receiptToken'], ['receiptToken']);
+        if (typeof input.receiptToken !== 'string' || input.receiptToken.length > 4096) reject();
         if (request.signal.aborted) reject();
+        // Older cached pages expect the original single-format response.
+        if (request.headers.get('accept') === CARD_FORMATS_ACCEPT) input.includeCardFormats = true;
         return json(await service.confirmation(input));
       }
       if (![SETTINGS, DISPATCH, CONFIRMATION_PREVIEW, REMINDER_PREVIEW, REMINDER_DISPATCH].includes(url.pathname) && !staffLink && !deliveryRead && !deliverySend && !reminderOperation && !confirmationOperation && !cards) reject('NOT_FOUND', 404);

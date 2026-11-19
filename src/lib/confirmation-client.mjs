@@ -1,4 +1,5 @@
 import { PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
+import { CARD_FORMATS_ACCEPT } from '../../shared/confirmation-delivery.mjs';
 
 const API = 'https://api.artdico.host';
 const SITE = 'https://artdico.host';
@@ -227,8 +228,8 @@ export function createConfirmationClient({ apiOrigin, pageOrigin, fetchFn = glob
     try {
       if(controller.signal.aborted)throw new Error();
       const response = await fetchFn(API + path, { method: 'POST', credentials: 'omit', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer',
-        headers: { 'Content-Type': 'application/json', Accept: mime },
-        body: JSON.stringify({ receiptToken, ...(includeCardFormats ? { includeCardFormats: true } : {}) }), signal: controller.signal });
+        headers: { 'Content-Type': 'application/json', Accept: includeCardFormats ? CARD_FORMATS_ACCEPT : mime },
+        body: JSON.stringify({ receiptToken }), signal: controller.signal });
       if (!response || response.redirected || response.url && response.url !== API + path) throw new Error();
       if ([401,403,404,410].includes(response.status)) throw Object.assign(new Error('这个确认链接已失效或不可用，请通过原联系渠道向筹备团队核对。'), { known: true });
       if (response.status !== 200 || response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== mime) throw new Error();

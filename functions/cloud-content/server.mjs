@@ -4,14 +4,14 @@ import { createHash } from 'node:crypto';
 import { dirname, parse, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCloudContentRuntime } from './runtime.mjs';
-import { createCloudContentServer, isCloudAdminAssetUrl } from './http-server.mjs';
+import { createCloudContentServer, isCloudAdminAssetUrl, MAX_CLOUD_ADMIN_ASSETS } from './http-server.mjs';
 import { startCloudAcceptance } from './acceptance.mjs';
 
 const MiB = 1024 * 1024;
 const NODE = Object.freeze({ version: 'v24.19.0', platform: 'linux', arch: 'x64', sha256: 'bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12' });
-// The 137-file candidate includes release.json; its own file map contains 136.
-export const MAX_CLOUD_RELEASE_FILES = 136;
-const REQUIRED = ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/', '/invitations/template-blank.png', '/invitations/ggj2026-poster-v2.webp'];
+// The candidate file limit adds release.json to this manifest's file map.
+export const MAX_CLOUD_RELEASE_FILES = 138;
+const REQUIRED = ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/', '/admin/cards/', '/invitations/template-blank.png', '/invitations/ggj2026-poster-v2.webp'];
 const failure = () => new Error('Cloud content package verification failed.');
 const exactKeys = (value, keys) => value !== null && typeof value === 'object' && !Array.isArray(value)
   && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
@@ -54,6 +54,7 @@ function assetPath(url) {
   if (url === '/admin/person/') return 'admin-assets/admin/person/index.html';
   if (url === '/admin/volunteers/') return 'admin-assets/admin/volunteers/index.html';
   if (url === '/admin/checkin/') return 'admin-assets/admin/checkin/index.html';
+  if (url === '/admin/cards/') return 'admin-assets/admin/cards/index.html';
   return 'admin-assets' + url;
 }
 
@@ -68,7 +69,7 @@ export async function loadCloudContentRelease({ codeDirectory } = {}) {
       || !exactKeys(release.node, Object.keys(NODE)) || Object.keys(NODE).some(key => release.node[key] !== NODE[key])
       || !Array.isArray(release.files) || release.files.length > MAX_CLOUD_RELEASE_FILES || !release.files.every(validRecord)
       || new Set(release.files.map(file => file.path)).size !== release.files.length
-      || !Array.isArray(release.assets) || release.assets.length > 42 || release.assets.length < REQUIRED.length) throw failure();
+      || !Array.isArray(release.assets) || release.assets.length > MAX_CLOUD_ADMIN_ASSETS || release.assets.length < REQUIRED.length) throw failure();
     const records = new Map(release.files.map(file => [file.path, file]));
     const assets = new Map(); let total = 0;
     for (const asset of release.assets) {

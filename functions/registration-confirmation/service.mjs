@@ -3,7 +3,8 @@ import { performance } from 'node:perf_hooks';
 import { plainObject, own, parseTimestamp } from '../registration-api/policy.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { createConfirmationTokens } from './tokens.mjs';
-import { createConfirmationRepository, canonicalConfirmationKind, formalConfirmationKind, confirmationNoticeId, confirmationRequestHash, validConfirmationOperation, MAX_CONFIRMATION_BATCH } from './repository.mjs';
+import { createConfirmationRepository, canonicalConfirmationKind, formalConfirmationKind, commemorativeCardKind, confirmationNoticeId, confirmationRequestHash, validConfirmationOperation, MAX_CONFIRMATION_BATCH } from './repository.mjs';
+import { CARD_FORMATS, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 import { buildPosterInvitationSettings } from '../../shared/organizer-progress.mjs';
 import { confirmationEmailPresentation } from './presentation.mjs';
@@ -40,7 +41,7 @@ const noticeEmail = notice => ({ status: stateOf(notice), noticeType: notice.kin
 
 /** Durable receipts, independent email issuance and read-only attendee confirmation. */
 export function createRegistrationConfirmationService({ registrationService, journalFor, tokenSecret, event = eventConfig,
-  emailProvider, currentRegistration, currentProfiles, staffDeliveryPermission, personDeliveryPermission, deliveryAliases, noticePreviewSource, eventFactsReadiness, walletReadiness = () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }), groupInviteProvider, emailTicketProvider,
+  emailProvider, currentRegistration, currentProfiles, staffDeliveryPermission, personDeliveryPermission, deliveryAliases, noticePreviewSource, eventFactsReadiness, walletReadiness = () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }), groupInviteProvider, emailTicketProvider, cardEntry, cardApplications, cardPermissions, saveCardIdentity,
   clock = Date.now, expiresAt, batchTimeoutMs = 20_000, monotonicNow = () => performance.now() } = {}) {
   if (currentProfiles !== undefined && typeof currentProfiles !== 'function' || currentRegistration !== undefined && typeof currentRegistration !== 'function' || typeof registrationService?.repository?.readIndex !== 'function' || typeof registrationService.repository.readRecord !== 'function'
     || typeof registrationService.getAdmissionStatus !== 'function' || typeof journalFor !== 'function' || typeof clock !== 'function'
@@ -53,11 +54,14 @@ export function createRegistrationConfirmationService({ registrationService, jou
     || eventFactsReadiness !== undefined && typeof eventFactsReadiness !== 'function'
     || !Number.isSafeInteger(batchTimeoutMs) || batchTimeoutMs < 1 || batchTimeoutMs > 30_000 || typeof monotonicNow !== 'function') throw new TypeError('Trusted confirmation dependencies required.');
   const eventFacts = facts(event), eventId = eventFacts.id;
-  const expiry = expiresAt ?? Date.parse(eventFacts.date + 'T23:59:59.000+08:00') + 90 * 24 * 60 * 60 * 1000;
+  const entryExpiry = Date.parse(eventFacts.date + 'T23:59:59.000+08:00');
+  const expiry = expiresAt ?? entryExpiry + 90 * 24 * 60 * 60 * 1000;
   const tokens = createConfirmationTokens({ tokenSecret, eventId, expiresAt: expiry, clock });
   const prefix = 'cms/v1/registration-confirmations/' + eventId;
-  let repository;
-  const target = () => repository ??= createConfirmationRepository({ journal: journalFor(prefix), eventId, clock });
+  let repository, cardsRepository;
+  const target = (kind) => commemorativeCardKind(kind)
+    ? cardsRepository ??= createConfirmationRepository({ journal: journalFor('cms/v1/commemorative-cards/' + eventId), eventId, clock, cards: true })
+    : repository ??= createConfirmationRepository({ journal: journalFor(prefix), eventId, clock });
   const currentEventFacts = () => readEventFactsReadiness(eventFactsReadiness);
   async function deliveryPermission(record) {
     if(personDeliveryPermission){try{const permission=await personDeliveryPermission(structuredClone(record));if(permission?.eligible!==true)return{eligible:false,reason:permission?.reason==='CONTACT_DECLINED'?'CONTACT_DECLINED':'PERMISSION_UNAVAILABLE'};}catch{return{eligible:false,reason:'PERMISSION_UNAVAILABLE'};}}
@@ -114,7 +118,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
   const sameScope = (notice, scope) => (notice.accessRevision ?? 0) === scope.accessRevision && (scope.accessRevision === 0 || notice.recipientDigest === scope.recipientDigest);
   function relatedNotices(state, aliases, kind, scope) {
     return state.notices.filter(item => aliases.registrationIds.includes(item.registrationId)
-      && (formalConfirmationKind(kind) ? formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' : item.kind === kind)
+      && (commemorativeCardKind(kind) ? commemorativeCardKind(item.kind)
+        : formalConfirmationKind(kind) ? formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' : item.kind === kind)
       && (!scope || sameScope(item, scope)));
   }
   function strongestNotice(notices) {
@@ -155,11 +160,14 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!claims) failure('CONFIRMATION_NOT_FOUND', 404);
     const loaded = await loadRegistration(claims.registrationId);
     if ((claims.accessRevision ?? 0) !== (loaded.record.accessRevision ?? 0)) failure('CONFIRMATION_NOT_FOUND', 404);
-    return { registrationId: claims.registrationId, loaded };
+    if (claims.cardFormat && (await aliasesFor(loaded)).primaryRegistrationId !== claims.registrationId) failure('CONFIRMATION_NOT_FOUND', 404);
+    return { registrationId: claims.registrationId, loaded, cardFormat: claims.cardFormat };
   }
   async function authorize(input) {
-    const { registrationId, loaded } = await authorizedContext(input);
-    return trustedProjection(registrationId, loaded);
+    const { registrationId, loaded, cardFormat } = await authorizedContext(input);
+    if (cardFormat === 'jpeg' || cardFormat === 'wallet' && !(await deliveryPermission(loaded.record)).eligible) return null;
+    const projected = trustedProjection(registrationId, loaded);
+    return cardFormat === 'wallet' ? { ...projected, walletRequested: true } : projected;
   }
   /** Explicit, single-person staff read. No new registration, notice, or email. */
   async function staffConfirmationLink({ actor, registrationId } = {}) {
@@ -179,8 +187,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     try { return { ready: true, settings: buildPosterInvitationSettings(record.fields.name, event) }; }
     catch { return { ready: false }; }
   }
-  function capability(registrationId, accessRevision = 0) {
-    const signed = tokens.issue(registrationId, accessRevision);
+  function capability(registrationId, accessRevision = 0, cardFormat) {
+    const signed = tokens.issue(registrationId, accessRevision, cardFormat);
     return { ...signed, confirmationUrl: SITE + '/registration/confirmation/#r=' + signed.receiptToken };
   }
   async function readEmail(registrationId, hasEmail, admissionStatus, loaded, noticeSnapshot, savedAliases) {
@@ -197,49 +205,54 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!current.value.settings.enabled) return { status: 'disabled' };
     return { status: (await providerState()).ready ? 'pending' : 'not_configured' };
   }
-  async function reserve(registrationId, admission, actorId, retryRejected, deadline, requestedKind, loaded) {
+  async function reserve(registrationId, admission, actorId, retryRejected, deadline, requestedKind, loaded, expectedRevision) {
+    const storage = target(requestedKind);
     for (let tries = 0; tries < 4; tries++) {
       if (monotonicNow() >= deadline) return { status: 'not_attempted' };
       const aliases = await aliasesFor(deliveryAliases ? loaded : { ...loaded, index: (await registrationService.repository.readIndex()).value });
       if (aliases.primaryRegistrationId !== registrationId || !applicable(loaded, requestedKind)) return { status: 'not_applicable' };
-      const current = await target().read(), kind = formalConfirmationKind(requestedKind)
+      const current = await storage.read(), kind = formalConfirmationKind(requestedKind)
         ? canonicalConfirmationKind(current.value, registrationId, admission.status) : requestedKind;
       const scope = scopeOf(loaded), allRelated = relatedNotices(current.value, aliases, kind), related = allRelated.filter(item => sameScope(item, scope)), previous = strongestNotice(related);
       if (historicalUncertainty(current.value, aliases, kind, scope)) return { status: 'unknown' };
       if (allRelated.reduce((total, item) => total + item.attempt, 0) >= 5 && (!previous || retryRejected)) return { status: 'not_attempted' };
       if (!current.value.settings.enabled) return { status: 'disabled' };
       if (previous && (!retryRejected || previous.status !== 'rejected' || related.reduce((total, item) => total + item.attempt, 0) >= 5)) return { notice: previous, owned: false };
+      if (expectedRevision !== undefined && current.value.revision !== expectedRevision) failure('REVISION_CONFLICT', 409);
+      if (requestedKind === 'card_wallet' && !(await walletState()).ready) return { status: 'not_configured' };
       if (monotonicNow() >= deadline) return { status: 'not_attempted' };
       const checkedFacts = await currentEventFacts();
       if (!checkedFacts.ready || monotonicNow() >= deadline) return { status: 'not_attempted' };
       try {
-        const saved = await target().append(current, 'reserve', { registrationId, kind, admissionStatus: admission.status, admissionRevision: admission.revision, retryRejected, ...(scope.accessRevision > 0 ? scope : {}) }, actorId);
+        const saved = await storage.append(current, 'reserve', { registrationId, kind, admissionStatus: admission.status, admissionRevision: admission.revision, retryRejected, ...(scope.accessRevision > 0 ? scope : {}) }, actorId);
         return { notice: saved.value.notices.find(item => item.id === confirmationNoticeId(eventId, registrationId, kind, scope.accessRevision, scope.recipientDigest)), owned: true, checkedFacts };
       } catch (error) { if (!conflict(error)) throw error; }
     }
     failure();
   }
   async function recordResult(notice, status, actorId, diagnostic) {
+    const storage = target(notice.kind);
     for (let tries = 0; tries < 4; tries++) {
-      const current = await target().read(), item = current.value.notices.find(value => value.id === notice.id);
+      const current = await storage.read(), item = current.value.notices.find(value => value.id === notice.id);
       if (!item || item.attempt !== notice.attempt || item.status !== 'reserved' || item.actorId !== actorId) failure();
-      try { const saved = await target().append(current, 'result', { noticeId: notice.id, status, attempt: notice.attempt, ...(diagnostic ? { diagnostic } : {}) }, actorId); return noticeEmail(saved.value.notices.find(value => value.id === notice.id)); }
+      try { const saved = await storage.append(current, 'result', { noticeId: notice.id, status, attempt: notice.attempt, ...(diagnostic ? { diagnostic } : {}) }, actorId); return noticeEmail(saved.value.notices.find(value => value.id === notice.id)); }
       catch (error) { if (!conflict(error)) throw error; }
     }
     failure();
   }
   async function notify(registrationId, { kind = 'registration', actorId = automaticActor, retryRejected = false,
-    deadline = monotonicNow() + batchTimeoutMs, expectedScope, recovery } = {}) {
+    deadline = monotonicNow() + batchTimeoutMs, expectedScope, recovery, card } = {}) {
     if (!recovery && !(await providerState()).ready) return { status: 'not_configured' };
     if (!recovery && monotonicNow() >= deadline) return { status: 'not_attempted' };
     const loaded = recovery?.loaded ?? await loadRegistration(registrationId), { record, admission } = loaded;
     if (!recovery && expectedScope && !sameScope(scopeOf(loaded), expectedScope)) return { status: 'not_attempted' };
     if ((record.accessRevision ?? 0) > 0 && actorId === automaticActor) return { status: 'not_applicable' };
+    if (card && record.walletIdentity !== card.identity) return { status: 'not_attempted' };
     if (!recovery && !(await deliveryPermission(record)).eligible) return { status: 'not_public' };
     if (admission.status === 'withdrawn') return { status: 'withdrawn' };
     if (!applicable(loaded, kind)) return { status: 'not_applicable' };
     if (typeof record.fields.email !== 'string' || !record.fields.email) return { status: 'not_applicable' };
-    const reserved = recovery ?? await reserve(registrationId, admission, actorId, retryRejected, deadline, kind, loaded);
+    const reserved = recovery ?? await reserve(registrationId, admission, actorId, retryRejected, deadline, kind, loaded, card?.expectedRevision);
     if (reserved.status) return reserved;
     if (!reserved.owned) return noticeEmail(reserved.notice);
     const notice = reserved.notice, checkedFacts = reserved.checkedFacts;
@@ -250,12 +263,15 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const canStart = async ({ signal } = {}) => {
       if (signal?.aborted || monotonicNow() >= deadline) { guardUnattempted = true; guardCode = 'DELIVERY_WINDOW_EXPIRED'; return false; }
       const latest = await loadRegistration(registrationId), aliases = await aliasesFor(latest);
+      if (card && (latest.record.walletIdentity !== card.identity || !aliases.registrationIds.includes(card.applicationId)
+        || card.applicationId !== registrationId && (await loadRegistration(card.applicationId)).record.reviewWithdrawn)) return false;
       if (recovery && aliases.registrationIds.slice().sort().join(',') !== recovery.relatedRegistrationIds.join(',')) return false;
       if (recovery && await configurationIdentity() !== recovery.configurationIdentity) { guardCode = 'EMAIL_CONFIGURATION_CHANGED'; return false; }
       if (recovery && latest.admission.revision !== admission.revision) return false;
       if (aliases.primaryRegistrationId !== registrationId || !applicable(latest, kind)
         || (latest.record.accessRevision ?? 0) !== (record.accessRevision ?? 0) || latest.record.fields.email !== record.fields.email || !(await deliveryPermission(latest.record)).eligible) return false;
-      const delivery = await target().read(), ownNotice = delivery.value.notices.find(item => item.id === notice.id);
+      const delivery = await target(kind).read(), ownNotice = delivery.value.notices.find(item => item.id === notice.id);
+      if (card && !(await target().read()).value.settings.enabled) return false;
       if (recovery && (delivery.value.notices.some(item => item.id !== notice.id && aliases.registrationIds.includes(item.registrationId)
         && formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' && ['reserved', 'unknown', 'provider_accepted'].includes(item.status))
         || delivery.value.operations.some(op => op.operationId !== recovery.operationId && op.action === 'dispatch'
@@ -277,15 +293,26 @@ export function createRegistrationConfirmationService({ registrationService, jou
       if(duration<1)throw new Error('Confirmation preparation deadline.');
       let timer;try{return await Promise.race([Promise.resolve().then(work),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Confirmation preparation deadline.')),duration);timer.unref?.();})]);}finally{clearTimeout(timer);}
     }
-    let link = capability(registrationId, loaded.record.accessRevision ?? 0), ticket;
-    if (emailTicketProvider && kind !== 'application_received') {
+    let link, ticket;
+    try {
+      link = capability(registrationId, loaded.record.accessRevision ?? 0, card?.format);
+      if (card?.format === 'jpeg' && clock() < entryExpiry) {
+        await beforeDeadline(() => cardEntry.prepare({ registrationId, accessRevision: record.accessRevision ?? 0 }));
+      }
+    }
+    catch (error) {
+      if (!card) throw error;
+      try { return await recordResult(notice, 'rejected', actorId, { code: 'DELIVERY_GUARD_UNAVAILABLE', transportStarted: false }); }
+      catch { return { status: 'unknown' }; }
+    }
+    if (emailTicketProvider && kind !== 'application_received' && !card) {
       try { ticket=await beforeDeadline(()=>emailTicketProvider({ registrationId, accessRevision:record.accessRevision ?? 0 }));
         if(!plainObject(ticket)||typeof ticket.confirmationUrl!=='string')throw new Error('Ticket unavailable.');
         link={...link,confirmationUrl:ticket.confirmationUrl};
       } catch { try{return await recordResult(notice,'rejected',actorId,{code:'DELIVERY_GUARD_UNAVAILABLE',transportStarted:false});}catch{return{status:'unknown'};} }
     }
     let result,presentation,walletReady=false;
-    if(kind!=='application_received'&&(!record.walletRequested||record.walletIdentity)){
+    if(kind!=='application_received'&&(!card||card.format==='wallet')&&(!record.walletRequested||record.walletIdentity)){
       try{walletReady=(await beforeDeadline(()=>walletState())).ready;}
       catch{
         // A slow signer check is not evidence that Wallet is unconfigured.
@@ -313,6 +340,17 @@ export function createRegistrationConfirmationService({ registrationService, jou
         'Your private attendance page:',link.confirmationUrl,
         ...(kind==='application_received'?[]:[...(walletInstructions?['On iPhone, open this page in Safari to add your pass to Apple Wallet.']:[]),'Show the admission QR code below to staff on arrival.']),
         'Keep this link and your QR code private. For help, contact '+PUBLIC_CONTACT_EMAIL+'.'].join('\n');
+    }
+    if (card) {
+      if (card.format === 'wallet' && !walletReady) {
+        try { return await recordResult(notice, 'rejected', actorId, { code: 'DELIVERY_GUARD_BLOCKED', transportStarted: false }); }
+        catch { return { status: 'unknown' }; }
+      }
+      const label = card.format === 'jpeg' ? 'JPEG' : 'Apple Wallet';
+      subject = eventFacts.title + (locale === 'en' ? ' | Commemorative card · ' : '｜电子纪念卡 · ') + label;
+      text = locale === 'en' ? [record.fields.name + ',', '', 'Your ' + label + ' commemorative card is ready.', link.confirmationUrl,
+        'Keep this private link and your original Huodongxing ticket.'].join('\n') : [record.fields.name + '，你好：', '', '你的 ' + label + ' 纪念卡已可领取。', link.confirmationUrl,
+        '请保管此私人链接，并保留活动行原电子票。'].join('\n');
     }
     try { presentation=confirmationEmailPresentation({locale,kind,subject,confirmationUrl:link.confirmationUrl,ticket,walletReady}); }
     catch { try{return await recordResult(notice,'rejected',actorId,{code:'DELIVERY_GUARD_UNAVAILABLE',transportStarted:false});}catch{return{status:'unknown'};} }
@@ -374,8 +412,32 @@ export function createRegistrationConfirmationService({ registrationService, jou
     } catch { return { applicationReceived: { status: 'unknown' }, preEventReminder: { status: 'unknown' } }; }
   }
   async function confirmation(input) {
-    const { registrationId, loaded } = await authorizedContext(input), value = trustedProjection(registrationId, loaded);
+    const { registrationId, loaded, cardFormat } = await authorizedContext(input), value = trustedProjection(registrationId, loaded);
     let currentFacts = await currentEventFacts();
+    if (cardFormat) {
+      const identity = WALLET_IDENTITIES.find(item => item.value === value.walletIdentity);
+      if (value.admissionStatus !== 'confirmed' || !identity || !(await deliveryPermission(loaded.record)).eligible) failure('CONFIRMATION_NOT_FOUND', 404);
+      const wallet = cardFormat === 'wallet' && currentFacts.ready ? await walletState() : { ready: false };
+      let entryQr = null;
+      const needsEntryQr = cardFormat === 'jpeg' && clock() < entryExpiry;
+      if (needsEntryQr && currentFacts.ready) {
+        try {
+          const result = await cardEntry.image({ registrationId, accessRevision: value.accessRevision });
+          if (result?.contentType === 'image/png' && result.data instanceof Uint8Array && result.data.byteLength > 8 && result.data.byteLength <= 16000) {
+            entryQr = Buffer.from(result.data).toString('base64');
+          }
+        } catch { /* An unreadable entry QR must not be drawn as a valid card. */ }
+      }
+      const latest = await authorizedContext(input);
+      if (latest.loaded.admission.status !== 'confirmed' || latest.loaded.record.walletIdentity !== value.walletIdentity
+        || latest.loaded.record.fields.name !== value.name || !unchangedEventFacts(currentFacts, await currentEventFacts()) && currentFacts.ready) failure();
+      return { event: value.event, referenceCode: value.referenceCode, submittedAt: value.submittedAt,
+        attendee: { name: value.name, organization: '' }, admission: { status: 'confirmed', kind: value.admissionKind, revision: value.admissionRevision },
+        email: { status: 'not_applicable' }, wallet, groupInvite: null, invitation: { ready: false },
+        card: { format: cardFormat, identity: identity.label,
+          ready: currentFacts.ready && (cardFormat === 'wallet' ? wallet.ready : !needsEntryQr || Boolean(entryQr)),
+          ...(entryQr ? { entryQr } : {}) } };
+    }
     let noticeSnapshot = null, savedAliases = null;
     if (value.hasEmail) try { noticeSnapshot = await target().read(); savedAliases = await aliasesFor(loaded); } catch { /* Histories fail closed independently of admission. */ }
     let email;
@@ -714,7 +776,124 @@ export function createRegistrationConfirmationService({ registrationService, jou
       ...(canRecover ? { canRecover: true } : {}), ...(confirmationDiagnostic(notice?.diagnostic) ? { diagnostic: confirmationDiagnostic(notice.diagnostic) } : {}),
       recipient: admission.status === 'withdrawn' ? '' : record.fields.email ?? '' };
   }
+  async function cardContext(registrationId) {
+    const application = await loadRegistration(registrationId);
+    if (!application.record.walletRequested || application.record.reviewWithdrawn) failure('CONFIRMATION_NOT_FOUND', 404);
+    const aliases = await aliasesFor(application);
+    const primary = aliases.primaryRegistrationId === registrationId ? application : await loadRegistration(aliases.primaryRegistrationId);
+    const verified = await aliasesFor(primary);
+    if (verified.primaryRegistrationId !== primary.record.id || !verified.registrationIds.includes(registrationId)) failure('REVISION_CONFLICT', 409);
+    return { application, primary, aliases: verified };
+  }
+  function cardDelivery(related, record) {
+    const scope = scopeOf({ record });
+    const notice = strongestNotice(related.filter(item => sameScope(item, scope) || ['reserved', 'unknown'].includes(item.status)));
+    return { status: stateOf(notice) ?? 'not_sent', format: notice?.kind.slice(5) ?? null,
+      sentAt: notice?.status === 'provider_accepted' ? notice.updatedAt : null,
+      atRetryLimit: related.reduce((count, item) => count + item.attempt, 0) >= 5 };
+  }
+  function cardStage(admissionStatus, identity, delivery, reason = '') {
+    if (delivery.status === 'unknown') return 'check_delivery';
+    if (admissionStatus !== 'confirmed') return admissionStatus;
+    if (delivery.status === 'provider_accepted') return 'submitted';
+    if (!identity) return 'set_identity';
+    if (reason) return 'blocked';
+    return delivery.status === 'rejected' ? 'retry_delivery' : 'send';
+  }
+  async function cardMailReason(actor) {
+    if (!actorValid(actor)) return 'PERMISSION_REQUIRED';
+    const [settings, provider, facts] = await Promise.all([target().read().catch(() => null), providerState(), currentEventFacts()]);
+    if (!settings?.value.settings.enabled || !provider.ready) return 'EMAIL_UNAVAILABLE';
+    return facts.ready ? '' : facts.reason;
+  }
+  const cardBlockingReason = (record, delivery, mailReason, permission) => mailReason === 'PERMISSION_REQUIRED' ? mailReason
+    : permission?.eligible === false ? permission.reason : !record.fields.email ? 'EMAIL_MISSING'
+    : mailReason || (delivery.atRetryLimit ? 'RETRY_LIMIT' : '');
+  const cardMaySend = stage => stage === 'send' || stage === 'retry_delivery';
+  async function staffCardDirectory({ actor } = {}) {
+    if (!readerValid(actor)) failure('FORBIDDEN', 403);
+    const [admissions, delivery] = await Promise.all([registrationService.repository.getAdmissions(), target('card_jpeg').read()]);
+    let rows;
+    try { rows = await cardApplications(admissions); }
+    catch (error) { if (error.code === 'REVISION_CONFLICT') failure('REVISION_CONFLICT', 409); throw error; }
+    const notices = new Map();
+    for (const notice of delivery.value.notices) {
+      if (!notices.has(notice.registrationId)) notices.set(notice.registrationId, []);
+      notices.get(notice.registrationId).push(notice);
+    }
+    const projected = rows.map(row => {
+      const { record, admissionStatus, aliases } = row;
+      const related = aliases.registrationIds.flatMap(id => notices.get(id) ?? []);
+      const state = cardDelivery(related, record);
+      return { ...row, state, stage: cardStage(admissionStatus, record.walletIdentity, state) };
+    });
+    const sendable = projected.filter(row => cardMaySend(row.stage));
+    const mailReason = sendable.length ? await cardMailReason(actor) : '';
+    const permissionRows = mailReason === 'PERMISSION_REQUIRED' ? [] : sendable.filter(row => row.record.fields.email);
+    const permissions = permissionRows.length ? await cardPermissions(permissionRows, admissions) : new Map();
+    return { applications: projected.map(({ record, admissionStatus, sources, state, stage }) => {
+      const source = sources.find(item => item.id === record.id) ?? sources[0];
+      const reason = cardMaySend(stage) ? cardBlockingReason(record, state, mailReason, permissions.get(record.id)) : '';
+      return { id: source.id, name: record.fields.name, bookingReference: source.bookingReference, submittedAt: source.submittedAt,
+        sources: sources.map(({ id, name, bookingReference }) => ({ id, name, bookingReference })), status: state.status,
+        stage: cardStage(admissionStatus, record.walletIdentity, state, reason), format: state.format, sentAt: state.sentAt };
+    }) };
+  }
+  async function staffCardDetails({ actor, registrationId } = {}) {
+    if (!readerValid(actor)) failure('FORBIDDEN', 403);
+    const { application, primary, aliases } = await cardContext(registrationId);
+    const { record, admission } = primary;
+    const delivery = await target('card_jpeg').read();
+    const state = cardDelivery(relatedNotices(delivery.value, aliases, 'card_jpeg'), record);
+    const maySend = cardMaySend(cardStage(admission.status, record.walletIdentity, state));
+    const [mailReason, permission, wallet] = maySend ? await Promise.all([cardMailReason(actor), deliveryPermission(record), walletState()]) : ['', null, { ready: false }];
+    const reason = maySend ? cardBlockingReason(record, state, mailReason, permission) : '';
+    const recipient = admission.status === 'withdrawn' ? '' : record.fields.email ?? '';
+    return { registrationId, primaryId: record.id, name: record.fields.name,
+      bookingReference: application.record.fields.huodongxingReference, recipient, identity: record.walletIdentity ?? '',
+      admissionStatus: admission.status, admissionRevision: admission.revision, reviewRevision: record.reviewRevision, accessRevision: record.accessRevision ?? 0,
+      deliveryRevision: delivery.value.revision, status: state.status, format: state.format, sentAt: state.sentAt,
+      stage: cardStage(admission.status, record.walletIdentity, state, reason), reason, walletReady: wallet.ready };
+  }
+  async function staffCardSaveIdentity({ actor, registrationId, primaryId, expectedRevision, identity } = {}) {
+    if (!readerValid(actor)) failure('FORBIDDEN', 403);
+    if (!ID.test(primaryId ?? '') || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || !WALLET_IDENTITIES.some(item => item.value === identity)) failure('INVALID_REQUEST', 400);
+    const { primary, application } = await cardContext(registrationId);
+    if (primary.record.id !== primaryId || primary.admission.status !== 'confirmed') failure('REVISION_CONFLICT', 409);
+    try {
+      return await saveCardIdentity(primaryId, expectedRevision, identity, actor.id, async () => {
+        const latest = await cardContext(application.record.id);
+        return latest.primary.record.id === primaryId && latest.primary.admission.status === 'confirmed';
+      });
+    } catch (error) { if (error.code === 'REVISION_CONFLICT') failure('REVISION_CONFLICT', 409); throw error; }
+  }
+  async function staffCardApprove({ actor, registrationId, primaryId, expectedRevision, operationId } = {}) {
+    if (!readerValid(actor)) failure('FORBIDDEN', 403);
+    if (!ID.test(primaryId ?? '') || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
+      || !validConfirmationOperation(operationId)) failure('INVALID_REQUEST', 400);
+    const { primary } = await cardContext(registrationId);
+    if (primary.record.id !== primaryId) failure('REVISION_CONFLICT', 409);
+    const saved = await registrationService.approveApplication({ actor, registrationId: primaryId, expectedRevision, operationId });
+    if (['conflict', 'capacity_conflict', 'closed'].includes(saved.outcome)) failure('REVISION_CONFLICT', 409);
+    const operation = saved.operation;
+    const status = saved.people?.find(item => item.registrationId === primaryId)?.status;
+    if (!['updated', 'replayed'].includes(saved.outcome) || operation?.operationId !== operationId || operation?.registrationId !== primaryId
+      || operation.action !== 'approve' || operation.revision !== expectedRevision + 1 || !STATUS.includes(status)) failure();
+    return { status };
+  }
+  async function staffSendCard({ actor, registrationId, primaryId, expectedRevision, expectedAccessRevision, identity, format } = {}) {
+    if (!actorValid(actor)) failure('FORBIDDEN', 403);
+    if (!ID.test(primaryId ?? '') || ![expectedRevision, expectedAccessRevision].every(value => Number.isSafeInteger(value) && value >= 0)
+      || !CARD_FORMATS.includes(format) || !WALLET_IDENTITIES.some(item => item.value === identity)) failure('INVALID_REQUEST', 400);
+    const { primary } = await cardContext(registrationId);
+    const scope = scopeOf(primary);
+    if (primaryId !== primary.record.id || scope.accessRevision !== expectedAccessRevision || primary.record.walletIdentity !== identity) failure('REVISION_CONFLICT', 409);
+    if (!(await target().read()).value.settings.enabled) return { status: 'disabled' };
+    const card = { applicationId: registrationId, expectedRevision, identity, format };
+    return notify(primaryId, { kind: 'card_' + format, actorId: actor.id, retryRejected: true, expectedScope: scope, card });
+  }
   return Object.freeze({ prefix, forSavedReceipt, notifyApplicationReceived, authorize, authorizedRegistration, confirmation, staffConfirmationLink, settings, setSettings, dispatch,
+    staffCardDirectory, staffCardDetails, staffCardSaveIdentity, staffCardApprove, staffSendCard,
     staffConfirmationPreview: input => staffNoticePreview(input, 'registration'), confirmationOperation,
     staffReminderPreview: input => staffNoticePreview(input, 'pre_event_reminder'), dispatchReminder: input => dispatch(input, 'pre_event_reminder'), reminderOperation,
     notifyApproved: input => notifyBatch(input, 'registration'), notifyPromoted: input => notifyBatch(input, 'promotion'), staffHistory, staffDirectory, staffDeliveryState });

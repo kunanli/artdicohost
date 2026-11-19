@@ -8,7 +8,7 @@ import { CANDIDATE_ARCHIVE, CANDIDATE_KIND, CANDIDATE_NODE, candidateBytes, cand
 import { assertFcCodeRequestFits, MAX_FC_ZIP_BYTES } from './fc-upload-limits.mjs';
 
 export const CLOUD_ADMIN_ORIGIN = 'https://api.artdico.host';
-export const VERIFIED_ADMIN_PAGES = Object.freeze([...CLOUD_ADMIN_PAGE_ALIASES, ['/admin/checkin/', '/admin/checkin/']]);
+export const VERIFIED_ADMIN_PAGES = Object.freeze([...CLOUD_ADMIN_PAGE_ALIASES, ['/admin/checkin/', '/admin/checkin/'], ['/admin/cards/', '/admin/cards/']]);
 const HTML_LIMIT = 2 * 1024 * 1024;
 const failed = () => new Error('Cloud admin page verification failed.');
 const decode = bytes => JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));

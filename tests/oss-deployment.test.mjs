@@ -46,7 +46,7 @@ async function fixture(t) {
 test('publication selects reachable public assets and replaces local admin with notices', async t => {
   const { dist, output } = await fixture(t);
   const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
-  assert.equal(manifest.files.length, 36);
+  assert.equal(manifest.files.length, 37);
   const receipt = JSON.parse(await readFile(resolve(output, 'release.json'), 'utf8'));
   assert.equal(receipt.commit, commit);
   assert.deepEqual(receipt.files, manifest.files.filter(item => item.path !== 'release.json'));

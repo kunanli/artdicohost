@@ -16,20 +16,22 @@ export const CLOUD_ADMIN_PAGE_ALIASES = Object.freeze([
 ]);
 const PAGE_ALIASES = new Map(CLOUD_ADMIN_PAGE_ALIASES);
 const PAGE_REDIRECTS = new Map([
-  '/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/',
+  '/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/', '/admin/cards/',
   ...PAGE_ALIASES.keys(),
 ].map(path => [path.slice(0, -1), path]));
 
 export function isCloudAdminAssetUrl(path) {
-  return ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/', '/invitations/template-blank.png', '/invitations/ggj2026-poster-v2.webp'].includes(path)
+  return ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/', '/admin/cards/', '/invitations/template-blank.png', '/invitations/ggj2026-poster-v2.webp'].includes(path)
     || typeof path === 'string' && /^\/_astro\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,200}\.(?:css|js|mjs|woff|woff2)$/u.test(path) && !path.includes('..');
 }
 
+export const MAX_CLOUD_ADMIN_ASSETS = 44;
+
 function staticAssets(input) {
-  if (!(input instanceof Map) || input.size > 42) throw new TypeError('后台静态资源清单无效。');
+  if (!(input instanceof Map) || input.size > MAX_CLOUD_ADMIN_ASSETS) throw new TypeError('后台静态资源清单无效。');
   const result = new Map(); let total = 0;
   for (const [path, bytes] of input) {
-    const html = ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/'].includes(path);
+    const html = ['/admin/', '/admin/contacts/', '/admin/registrations/', '/admin/tasks/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/', '/admin/cards/'].includes(path);
     const invitation = path === '/invitations/template-blank.png' ? 'image/png' : path === '/invitations/ggj2026-poster-v2.webp' ? 'image/webp' : null;
     const suffix = typeof path === 'string' ? /\.[a-z0-9]+$/u.exec(path)?.[0] : null;
     if (!isCloudAdminAssetUrl(path)) throw new TypeError('后台静态资源路径无效。');
@@ -103,7 +105,7 @@ export function createCloudContentServer({ runtime, sourceCommit = null, assets 
               : ['/api/registration/confirmation', '/api/admin/registration/confirmation', '/api/admin/registration-confirmation/settings', '/api/admin/registration-confirmation/dispatch',
                 '/api/admin/registration-confirmation/preview', '/api/admin/registration-confirmation/reminder-preview', '/api/admin/registration-confirmation/reminder-dispatch',
                 '/api/admin/registrations/export.xlsx', '/api/admin/contacts/export.xlsx'].includes(url.pathname)
-                || url.pathname==='/api/admin/people/resolve' || /^\/api\/admin\/registration-confirmation\/send\/[A-Za-z0-9_-]{43}$/u.test(url.pathname) ? 16 * 1024 : MAX_CLOUD_BODY_BYTES;
+                || url.pathname.startsWith('/api/admin/registration-confirmation/cards/') || url.pathname==='/api/admin/people/resolve' || /^\/api\/admin\/registration-confirmation\/send\/[A-Za-z0-9_-]{43}$/u.test(url.pathname) ? 16 * 1024 : MAX_CLOUD_BODY_BYTES;
       if (rawLength !== null && (!/^\d+$/u.test(rawLength) || !Number.isSafeInteger(Number(rawLength)) || Number(rawLength) > bodyLimit)) return fixedError(outgoing, 413, 'BODY_TOO_LARGE', '请求内容过大。');
       const parts = []; let length = 0;
       if (!['GET', 'HEAD'].includes(method)) for await (const chunk of incoming) {

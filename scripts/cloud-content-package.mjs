@@ -4,14 +4,14 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { crc32, inflateRawSync } from 'node:zlib';
 import { dirname, parse, posix, resolve, sep } from 'node:path';
+import { MAX_CLOUD_ADMIN_ASSETS } from '../functions/cloud-content/http-server.mjs';
+import { MAX_CLOUD_RELEASE_FILES } from '../functions/cloud-content/server.mjs';
 import { verifyNodeBytes } from './prepare-fc-bootstrap.mjs';
 import { assertFcCodeRequestFits, MAX_FC_ZIP_BYTES } from './fc-upload-limits.mjs';
 
 export const CANDIDATE_KIND = 'fc-cloud-content-candidate';
 export const CANDIDATE_ARCHIVE = 'artdicohost-cloud-content-candidate.zip';
-// Entry ticket modules, MIT QR source/license and one staff page extend the fixed
-// package. Byte, inflation, source-path and FC request limits remain unchanged.
-export const MAX_CANDIDATE_FILES = 137;
+export const MAX_CANDIDATE_FILES = MAX_CLOUD_RELEASE_FILES + 1;
 export const CANDIDATE_NODE = Object.freeze({ version: 'v24.19.0', platform: 'linux', arch: 'x64', sha256: 'bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12' });
 const MiB = 1024 * 1024;
 const BUILD_SCOPES = ['src', 'shared', 'public', 'astro.config.mjs', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json'];
@@ -38,7 +38,7 @@ const FIXED_ASSETS = Object.freeze([
   ['/admin/', 'admin/index.html'], ['/admin/contacts/', 'admin/contacts/index.html'],
   ['/admin/registrations/', 'admin/registrations/index.html'], ['/admin/tasks/', 'admin/tasks/index.html'],
   ['/admin/settings/', 'admin/settings/index.html'], ['/admin/person/', 'admin/person/index.html'],
-  ['/admin/volunteers/', 'admin/volunteers/index.html'], ['/admin/checkin/', 'admin/checkin/index.html'],
+  ['/admin/volunteers/', 'admin/volunteers/index.html'], ['/admin/checkin/', 'admin/checkin/index.html'], ['/admin/cards/', 'admin/cards/index.html'],
   ['/invitations/template-blank.png', 'invitations/template-blank.png'],
   ['/invitations/ggj2026-poster-v2.webp', 'invitations/ggj2026-poster-v2.webp'],
 ]);
@@ -177,7 +177,7 @@ async function buildAssets({ repository, sourceCommit, output, nodeBinary, execu
     if (selected.has(url)) continue;
     const path = candidateAssetPath(url).slice('admin-assets/'.length);
     const bytes = await candidateBytes(resolve(dist, path), 2 * MiB);
-    if (selected.size >= 42 || (capacity += bytes.length) > 8 * MiB) fail('Candidate static asset capacity exceeded');
+    if (selected.size >= MAX_CLOUD_ADMIN_ASSETS || (capacity += bytes.length) > 8 * MiB) fail('Candidate static asset capacity exceeded');
     if (/-----BEGIN [A-Z ]*PRIVATE KEY-----|github_pat_[A-Za-z0-9_]{30,}|ghp_[A-Za-z0-9]{30,}/u.test(bytes.toString('utf8'))) fail('Possible secret in candidate static output');
     selected.set(url, bytes);
     if (url.endsWith('/') || /\.(?:css|m?js)$/u.test(url)) pending.push(...candidateReferences(bytes, url));
@@ -295,7 +295,7 @@ export function candidateZipEntries(bytes, records) {
 }
 
 export function validateCandidateAssets(release, contents) {
-  if (!Array.isArray(release.assets) || release.assets.length < FIXED_ASSETS.length || release.assets.length > 42) fail('Invalid candidate asset map');
+  if (!Array.isArray(release.assets) || release.assets.length < FIXED_ASSETS.length || release.assets.length > MAX_CLOUD_ADMIN_ASSETS) fail('Invalid candidate asset map');
   const urls = new Set(), paths = new Set(); let total = 0;
   for (const item of release.assets) {
     exactKeys(item, ['url', 'path', 'bytes', 'sha256', 'mode'], 'asset');

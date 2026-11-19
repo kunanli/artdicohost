@@ -252,7 +252,7 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, load
     }
     return state;
   }
-  async function mutation(expectedRevision, actor, action) {
+  async function mutation(expectedRevision, actor, action, verifyTarget) {
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || typeof actor !== 'string' || !ID.test(actor)) fail('INVALID_REQUEST');
     const current = await snapshot();
     if (current.state.revision !== expectedRevision) fail('REVISION_CONFLICT');
@@ -263,11 +263,46 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, load
     next.revision++;
     next.audit.push({ revision: next.revision, actor, at: timestamp, action: result.action, registrationId: result.registrationId ?? null, metadata: result.metadata ?? {} });
     if (Buffer.byteLength(JSON.stringify(next)) > 1024 * 1024) fail('CAPACITY_REACHED');
+    if (verifyTarget && await verifyTarget() !== true) fail('REVISION_CONFLICT');
     const committed = await journal.commit(current.cursor, next);
     if (!committed || committed.value?.revision !== next.revision || hash(JSON.stringify(committed.value)) !== hash(JSON.stringify(next))) fail('STORAGE_UNAVAILABLE');
     return { ...result.value, revision: next.revision };
   }
   return Object.freeze({
+    async walletCardApplications(admissions) { return guarded(async () => {
+      const current = await snapshot();
+      if (current.applicationRevision !== admissions.revision) fail('REVISION_CONFLICT');
+      const byId = new Map(current.registrations.map(item => [item.id, item]));
+      const statuses = new Map(admissions.people.map(person => [person.registrationId, person.status]));
+      const groups = new Map((admissions.personGroups ?? []).flatMap(group => group.registrationIds.map(id => [id, group])));
+      const result = new Map();
+      for (const item of current.registrations) {
+        if (!isWalletApplicationFields(item.originalFields ?? item.fields) || item.review.deletionRequested !== null || item.review.status === 'withdrawn') continue;
+        const group = groups.get(item.id), primaryId = group?.primaryRegistrationId ?? item.id;
+        const source = { id: item.id, name: item.fields.name, bookingReference: item.fields.huodongxingReference, submittedAt: item.submittedAt };
+        let row = result.get(primaryId);
+        if (!row) {
+          const primary = byId.get(primaryId), status = statuses.get(primaryId);
+          if (!primary || !status) fail('STORAGE_UNAVAILABLE');
+          const registrationIds = group?.registrationIds ?? [primaryId];
+          const { id, fields, provenance, profileCorrection, review } = primary;
+          const record = { id, fields: { name: fields.name, email: fields.email ?? '' }, provenance, profileCorrection,
+            walletIdentity: review.walletIdentity ?? '', accessRevision: accessTotal(current.state, registrationIds) };
+          const admissionStatus = review.status === 'withdrawn' || review.deletionRequested !== null ? 'withdrawn' : status;
+          row = { record, admissionStatus, aliases: { registrationIds }, group, sources: [] };
+          result.set(primaryId, row);
+        }
+        row.sources.push(source);
+      }
+      return [...result.values()];
+    }); },
+    async saveWalletIdentity(id, expectedRevision, walletIdentity, actor, verifyTarget) { return guarded(() => mutation(expectedRevision, actor, (current, next) => {
+      const item = current.registrations.find(record => record.id === id);
+      if (!item || item.review.status === 'withdrawn' || item.review.deletionRequested !== null) fail('NOT_FOUND');
+      enumValue(walletIdentity, WALLET_IDENTITIES.map(identity => identity.value));
+      next.reviews[id] = { ...item.review, walletIdentity };
+      return { action: 'update_review', registrationId: id, metadata: { changedFields: ['walletIdentity'] }, value: { walletIdentity } };
+    }, verifyTarget)); },
     /** Private task aggregation reads the validated review journal once, without application data. */
     async inactiveRegistrationIds() { return guarded(async () => {
       const state = reviewState(await journal.read());
@@ -324,7 +359,7 @@ export function createRegistrationReviewStore({ journal, loadRegistrations, load
     async projectRegistration(record, primaryId = record?.id, relatedIds = [primaryId]) { return guarded(async () => {
       if (!RECORD_ID.test(record?.id ?? '') || !RECORD_ID.test(primaryId ?? '') || !Array.isArray(relatedIds) || relatedIds.length > 100 || !relatedIds.includes(primaryId) || new Set(relatedIds).size !== relatedIds.length || relatedIds.some(id => !RECORD_ID.test(id ?? '')) || !ownValues(record.fields)) fail('INVALID_REQUEST');
       const state = await checkedProfileState(relatedIds), correction = state.profileCorrections?.[primaryId];
-      return { ...clone(record), ...(isWalletApplicationFields(record.fields)?{walletRequested:true}:{}), ...(state.reviews[primaryId]?.walletIdentity?{walletIdentity:state.reviews[primaryId].walletIdentity}:{}), fields: { ...clone(record.fields), ...(correction?.fields ?? {}) }, accessRevision: accessTotal(state, relatedIds),
+      return { ...clone(record), ...(isWalletApplicationFields(record.fields)?{walletRequested:true}:{}), ...(state.reviews[primaryId]?.walletIdentity?{walletIdentity:state.reviews[primaryId].walletIdentity}:{}), fields: { ...clone(record.fields), ...(correction?.fields ?? {}) }, accessRevision: accessTotal(state, relatedIds), reviewRevision: state.revision,
         reviewWithdrawn: Boolean(state.reviews[record.id] && (state.reviews[record.id].status === 'withdrawn' || state.reviews[record.id].deletionRequested !== null)),
         ...(correction ? { profileCorrection: { accessRevision: correction.accessRevision, revision: correction.revision } } : {}) };
     }); },

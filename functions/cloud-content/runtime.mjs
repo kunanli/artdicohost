@@ -261,6 +261,30 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       loadSigningBundle: ({ bundleId }) => loadEncryptedSigningBundle({ objects, secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId }) });
     confirmationService = createRegistrationConfirmationService({ registrationService, journalFor, eventFactsReadiness, currentRegistration,
       emailTicketProvider: input => entryService.issue(input), currentProfiles: () => reviewStore.profileScopes(),
+      cardEntry: { prepare: input => entryService.issueEntry(input), image: input => entryService.cardEntryImage(input) },
+      cardApplications: admissions => reviewStore.walletCardApplications(admissions),
+      cardPermissions: async (rows, admissions) => {
+        const roster = rows.some(({ group, record }) => group?.contactIds.length || record.provenance.kind === 'staff_assisted')
+          ? await contactsStore.read().catch(() => null) : { contacts: [] };
+        const permissions = new Map();
+        let next = 0;
+        await Promise.all(Array.from({ length: Math.min(8, rows.length) }, async () => {
+          while (next < rows.length) {
+            const { record, group } = rows[next++];
+            const unavailable = { eligible: false, reason: 'PERMISSION_UNAVAILABLE' };
+            if (!roster && (group?.contactIds.length || record.provenance.kind === 'staff_assisted')) {
+              permissions.set(record.id, unavailable);
+              continue;
+            }
+            const person = personMailPermission(record, { admissions }, roster ?? { contacts: [] });
+            const permission = person.eligible !== true ? { ...unavailable, ...person }
+              : record.provenance.kind === 'public' ? person : await staffMailPermission(record, roster).catch(() => unavailable);
+            permissions.set(record.id, permission);
+          }
+        }));
+        return permissions;
+      },
+      saveCardIdentity: (...input) => reviewStore.saveWalletIdentity(...input),
       tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now, batchTimeoutMs: 5000,
       deliveryAliases: async record => {
         const { value } = await registrationService.repository.readIndex();
@@ -426,14 +450,14 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     audit: createMaintenanceAuditStore({ journal: journalFor('cms/v1/maintenance'), clock: now }),
     journalPrefixes: [HUODONGXING_JOURNAL_PREFIX, 'cms/v1/content', 'cms/v1/contacts', 'cms/v1/intent-invitations', 'cms/v1/maintenance',
       `cms/v1/registrations/${eventId}/index`, `cms/v1/registration-reviews/${eventId}`, `cms/v1/registration-confirmations/${eventId}`,
-      `cms/v1/volunteers/${eventId}`, `cms/v1/group-invites/${eventId}/state`] });
+      `cms/v1/volunteers/${eventId}`, `cms/v1/group-invites/${eventId}/state`, `cms/v1/commemorative-cards/${eventId}`] });
   const registrationEnabled = Boolean(policy?.enabled);
   const handle = async request => {
     const url = new URL(request.url);
     if (url.origin !== CLOUD_API_ORIGIN || url.username || url.password) return contentHandle(request);
     if (['/api/registration/confirmation', '/api/admin/registration/confirmation', '/api/admin/registration-confirmation/settings', '/api/admin/registration-confirmation/dispatch',
-      '/api/admin/registration-confirmation/preview', '/api/admin/registration-confirmation/reminder-preview', '/api/admin/registration-confirmation/reminder-dispatch'].includes(url.pathname)
-      || ['/link/', '/delivery/', '/send/', '/operation/', '/reminder-operation/'].some(suffix => url.pathname.startsWith('/api/admin/registration-confirmation' + suffix))) return confirmationHandle(request);
+      '/api/admin/registration-confirmation/preview', '/api/admin/registration-confirmation/reminder-preview', '/api/admin/registration-confirmation/reminder-dispatch', '/api/admin/registration-confirmation/cards'].includes(url.pathname)
+      || ['/link/', '/delivery/', '/send/', '/operation/', '/reminder-operation/', '/cards/'].some(suffix => url.pathname.startsWith('/api/admin/registration-confirmation' + suffix))) return confirmationHandle(request);
     if (isEntryTicketPath(url.pathname)) return entryHandle ? entryHandle(request) : new Response(JSON.stringify({ error: { code: 'ENTRY_UNAVAILABLE', message: '票券暂不可用。' } }), { status: 503, headers: { 'content-type': 'application/json', 'cache-control': 'private, no-store' } });
     if (isAppleWalletPath(url.pathname)) return walletHandle(request);
     if (url.pathname === '/api/admin/registrations/export.xlsx') return registrationXlsxHandle(request);

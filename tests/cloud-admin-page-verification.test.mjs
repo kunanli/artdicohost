@@ -41,6 +41,7 @@ async function fixture(t, { mutateManifest = () => {}, mutateRelease = () => {} 
   items.push({ path: 'runtime/node/bin/node.xz', mode: '0644', data: Buffer.from('synthetic runtime bytes; never executed') });
   const sources = [
     ['/admin/checkin/', 'admin/checkin/index.html', settingsHtml],
+    ['/admin/cards/', 'admin/cards/index.html', settingsHtml],
     ['/admin/', 'admin/index.html', rootHtml],
     ['/admin/contacts/', 'admin/contacts/index.html', Buffer.from('<html>contacts</html>')],
     ['/admin/registrations/', 'admin/registrations/index.html', Buffer.from('<html>registrations</html>')],
@@ -77,12 +78,12 @@ async function rejects(promise) {
   await assert.rejects(promise, error => error.message === 'Cloud admin page verification failed.' && !error.cause && !error.stack.includes(PRIVATE));
 }
 
-test('all14 HTTPS pages match the exact checked canonical bytes, SHA, MIME and inline CSP anonymously', async t => {
+test('all 15 HTTPS pages match the exact checked canonical bytes, SHA, MIME and inline CSP anonymously', async t => {
   const f = await fixture(t), reports = [];
   const result = await verifyCloudAdminPages({ directory: f.directory, commit, fetchFn: f.fetchFn, report: line => reports.push(line) });
-  assert.deepEqual(result, { verified: true, origin: CLOUD_ADMIN_ORIGIN, commit, pages: 14 });
+  assert.deepEqual(result, { verified: true, origin: CLOUD_ADMIN_ORIGIN, commit, pages: 15 });
   assert.deepEqual(f.calls.map(({ url }) => new URL(url).pathname), VERIFIED_ADMIN_PAGES.map(([path]) => path));
-  assert.equal(reports.length, 14);
+  assert.equal(reports.length, 15);
   for (const { url, settings } of f.calls) {
     const target = new URL(url);
     assert.equal(target.origin, 'https://api.artdico.host'); assert.equal(target.search, ''); assert.equal(target.hash, '');

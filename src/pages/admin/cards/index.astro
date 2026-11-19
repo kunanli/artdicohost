@@ -1,0 +1,104 @@
+---
+import SiteLayout from '../../../layouts/SiteLayout.astro';
+import StaffNavigation from '../../../components/StaffNavigation.astro';
+import { WALLET_IDENTITIES } from '../../../../shared/general-application.mjs';
+import '../../../styles/admin.css';
+---
+<SiteLayout title="纪念卡｜ARTDiCO HOST" description="核对纪念卡申请并寄送 JPEG 或 Apple Wallet。">
+  <div class="ah-admin" data-card-admin>
+    <header class="ah-admin-header">
+      <a class="ah-admin-brand" href="/admin/">ARTDiCO <span>HOST</span></a>
+      <button class="ah-admin-text-button" type="button" data-card-logout hidden>退出登录</button>
+    </header>
+    <main class="ah-admin-main" id="main-content">
+      <p class="ah-admin-alert" data-card-error role="alert" hidden></p>
+      <section class="ah-admin-login-card" data-card-login-panel>
+        <h1>纪念卡</h1>
+        <p>请使用工作人员账号登录。</p>
+        <form method="post" data-card-login>
+          <div class="ah-admin-field"><label for="card-user">用户名或邮箱</label><input id="card-user" name="username" autocomplete="username" maxlength="160" required /></div>
+          <div class="ah-admin-field"><label for="card-password">密码</label><input id="card-password" name="password" type="password" autocomplete="current-password" maxlength="1024" required /></div>
+          <button class="ah-admin-button ah-admin-primary" type="submit" disabled>登录</button>
+        </form>
+      </section>
+      <section class="ah-admin-workspace-layout" data-card-workspace hidden>
+        <StaffNavigation current="cards" />
+        <div class="ah-admin-workspace-content">
+          <div class="ah-admin-page-heading"><h1>纪念卡</h1><button class="ah-admin-button" type="button" data-card-refresh>刷新申请</button></div>
+          <div class="card-workspace">
+            <section class="ah-admin-panel card-panel" aria-labelledby="card-list-title">
+              <h2 id="card-list-title">申请名单</h2>
+              <div class="card-filters" role="group" aria-label="处理进度">
+                <button type="button" data-card-filter="todo" aria-pressed="true">待处理 <span></span></button>
+                <button type="button" data-card-filter="submitted" aria-pressed="false">已提交 <span></span></button>
+                <button type="button" data-card-filter="all" aria-pressed="false">全部 <span></span></button>
+              </div>
+              <div class="ah-admin-field"><label for="card-search">搜索姓名或活动行编号</label><input id="card-search" type="search" maxlength="200" data-card-search /></div>
+              <p class="card-muted" data-card-empty hidden></p>
+              <ul class="card-applications" data-card-list></ul>
+            </section>
+            <section class="ah-admin-panel card-panel card-detail-panel" aria-label="发卡">
+              <p data-card-placeholder class="card-muted">请选择一份申请。</p>
+              <div data-card-details hidden>
+                <h2 data-card-name tabindex="-1"></h2>
+                <dl class="card-facts">
+                  <dt>活动行编号</dt><dd data-card-reference></dd>
+                  <dt>收件邮箱</dt><dd data-card-recipient></dd>
+                  <dt data-card-identity-label hidden>卡面身份</dt><dd data-card-identity-value hidden><span></span> <button class="ah-admin-text-button" type="button" data-card-edit>修改</button></dd>
+                </dl>
+                <details class="card-linked" data-card-linked hidden><summary>其他活动行编号</summary><ul></ul></details>
+                <p class="card-state" data-card-state></p>
+                <p class="card-muted" data-card-sent-at hidden></p>
+                <a class="ah-admin-button" data-card-correct-email hidden>查看人员资料</a>
+                <div data-card-verification hidden>
+                  <p class="card-muted">请先核对活动行报名和已有人员记录。</p>
+                  <button class="ah-admin-button ah-admin-primary" type="button" data-card-approve>核对无误，确认报名</button>
+                </div>
+                <form data-card-identity-form hidden>
+                  <div class="ah-admin-field"><label for="card-identity">卡面身份</label><select id="card-identity" required><option value="">选择身份</option>{WALLET_IDENTITIES.map(item => <option value={item.value}>{item.label}</option>)}</select></div>
+                  <button class="ah-admin-button ah-admin-primary" type="submit">保存身份</button>
+                </form>
+                <form data-card-delivery hidden>
+                  <div class="ah-admin-field"><label for="card-format">寄送格式</label><select id="card-format" required><option value="">选择格式</option><option value="jpeg">JPEG 图片</option><option value="wallet">Apple Wallet</option></select></div>
+                  <p class="card-muted">邮件会寄到上方邮箱，内含私人领取链接。</p>
+                  <button class="ah-admin-button ah-admin-primary" type="submit">寄送纪念卡</button>
+                </form>
+                <button class="ah-admin-button" type="button" data-card-check hidden>核对结果</button>
+              </div>
+              <p class="ah-admin-status" data-card-message role="status" aria-live="polite"></p>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>import '../../../scripts/commemorative-cards.mjs';</script>
+</SiteLayout>
+<style>
+  .card-workspace { display: grid; grid-template-columns: minmax(250px, .9fr) minmax(0, 1.3fr); gap: 20px; align-items: start; }
+  .card-panel { margin-top: 14px; padding: clamp(16px, 2.5vw, 26px); }
+  .card-panel h2 { margin: 0 0 16px; font-size: 20px; overflow-wrap: anywhere; }
+  .card-panel p { margin: 0 0 16px; }
+  .card-panel p:last-child { margin-bottom: 0; }
+  .card-filters { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 16px; padding-bottom: 10px; border-bottom: 1px solid var(--admin-line); }
+  .card-filters button { min-height: 40px; border: 0; border-radius: 5px; padding: 6px 8px; background: transparent; color: var(--admin-muted); font: inherit; font-size: 14px; }
+  .card-filters button[aria-pressed="true"] { background: var(--admin-pale); color: var(--admin-blue); font-weight: 600; }
+  .card-filters span { margin-inline-start: 3px; font-variant-numeric: tabular-nums; }
+  .card-applications { list-style: none; padding: 0; margin: 0; }
+  .card-applications :global(li + li) { border-top: 1px solid var(--admin-line); }
+  .card-applications :global(button) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; width: 100%; min-height: 60px; padding: 10px 8px; text-align: start; font: inherit; background: transparent; border: 0; border-radius: 5px; overflow-wrap: anywhere; color: inherit; }
+  .card-applications :global(button:hover), .card-applications :global(button[aria-pressed="true"]) { background: var(--admin-pale); }
+  .card-applications :global(button span) { grid-column: 1; font-size: 14px; color: var(--admin-muted); }
+  .card-applications :global(button small) { grid-area: 1 / 2 / 3; align-self: center; color: var(--admin-muted); }
+  .card-applications :global(button[data-stage="check_delivery"] small), .card-state[data-stage="check_delivery"] { color: #87520c; }
+  .card-muted { color: var(--admin-muted); font-size: 14px; }
+  .card-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin: 0 0 18px; }
+  .card-facts dt { color: var(--admin-muted); }
+  .card-facts dd { margin: 0; overflow-wrap: anywhere; }
+  .card-state { padding: 10px 12px; border-radius: 5px; background: #eef2fa; font-weight: 600; }
+  .card-linked { margin-bottom: 16px; font-size: 14px; color: var(--admin-muted); overflow-wrap: anywhere; }
+  .card-panel .ah-admin-status { margin-top: 12px; }
+  .card-panel [data-card-edit] { margin-inline-start: 8px; }
+  @media (min-width: 851px) { .card-detail-panel { position: sticky; top: 16px; } }
+  @media (max-width: 850px) { .card-workspace { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+</style>

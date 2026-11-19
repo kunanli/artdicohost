@@ -2,6 +2,7 @@ import { identityOptions } from './registration-schema.mjs';
 
 export const GENERAL_APPLICATION_INTAKE = 'general-v2';
 export const WALLET_APPLICATION_INTAKE = 'wallet-v1';
+export const CARD_FORMATS = Object.freeze(['jpeg', 'wallet']);
 export const WALLET_IDENTITIES = Object.freeze([
   {value:'attendee',label:'一般来宾'},{value:'guest',label:'嘉宾'},{value:'speaker',label:'讲者'},
   {value:'exhibitor',label:'参展者'},{value:'organizer',label:'GGJ 组织者'},{value:'student',label:'学生'},

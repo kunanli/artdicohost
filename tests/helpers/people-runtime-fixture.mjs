@@ -63,6 +63,16 @@ export async function peopleRuntimeFixture({capacity=3,mail=false,mailResult='ac
             background:PEOPLE_FIXTURE_PRIVATE,attendance:'expected',accommodationChoice:'not_needed',cooperationInterest:'none',...fields},consent:{accepted:true,version:policy.privacy.version}}}));
     assert.equal(response.status,201,'synthetic public registration');return response.json();
   }
+  async function seedWallet(fields={}) {
+    const idempotencyKey=randomBytes(32).toString('base64url'), origin=PEOPLE_FIXTURE_PUBLIC;
+    const token=await app.registrationService.issueToken({eventId:PEOPLE_FIXTURE_EVENT,origin,idempotencyKey,walletApplication:true});
+    const saved=await app.registrationService.submit({idempotencyKey,origin,submissionToken:token.submissionToken,
+      payload:{eventId:PEOPLE_FIXTURE_EVENT,fields:{intake:'wallet-v1',name:'合成纪念卡申请人',
+        huodongxingReference:'0000001234',email:'card-test@example.invalid',wechat:'card_test_synthetic',
+        categories:['other'],participationInterests:['attend'],...fields},consent:{accepted:true,version:policy.privacy.version}}});
+    assert.equal(saved.receipt?.admissionStatus,'pending_review');
+    return saved.receipt.registrationId;
+  }
   async function approvePublic(registrationId,{headers,expectedRevision,operationId=randomBytes(32).toString('base64url')}={}){
     headers??=await login();
     expectedRevision??=(await app.registrationService.getAdmissions({actor:users[0]})).revision;
@@ -71,5 +81,5 @@ export async function peopleRuntimeFixture({capacity=3,mail=false,mailResult='ac
     assert.equal(value.operation?.operationId,operationId);assert.equal(value.operation?.registrationId,registrationId);
     return value;
   }
-  return {app,make,objects,messages,users,request,login,createContact,seedPublic,approvePublic};
+  return {app,make,objects,messages,users,request,login,createContact,seedPublic,seedWallet,approvePublic};
 }

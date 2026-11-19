@@ -143,13 +143,20 @@ export function confirmationView(value, now = Date.now()) {
   const withdrawn = value.admission.status === 'withdrawn';
   if (!withdrawn && (!text(value.attendee?.name, 400) || [...value.attendee.name].length>200 || !text(value.attendee?.organization ?? '', 500, true))) return null;
   const confirmed = value.admission.status === 'confirmed';
+  const card = value.card;
+  const hasQr = plain(card) && Object.hasOwn(card, 'entryQr');
+  if (card !== undefined && (!confirmed || !exact(card, ['format', 'identity', 'ready', ...(hasQr ? ['entryQr'] : [])]) || !['jpeg','wallet'].includes(card.format)
+    || !text(card.identity, 100) || typeof card.ready !== 'boolean' || card.format === 'jpeg' && value.wallet.ready
+    || hasQr && (card.format !== 'jpeg' || !card.ready || typeof card.entryQr !== 'string' || card.entryQr.length > 21336
+      || !/^iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$/u.test(card.entryQr))
+    || card.format === 'wallet' && card.ready !== value.wallet.ready)) return null;
   const facts = Object.hasOwn(value, 'eventFacts') ? eventFactsState(value.eventFacts) : null;
   return {
     event: Object.fromEntries(eventKeys.map(key => [key,value.event[key]])), referenceCode: value.referenceCode, submittedAt: value.submittedAt,
     admission: { status: value.admission.status, kind: value.admission.kind, revision: value.admission.revision },
     attendee: withdrawn ? { name: '', organization: '' } : { name: value.attendee.name, organization: value.attendee.organization ?? '' },
     email: { status: ['pending_review','rejected'].includes(value.admission.status) ? 'not_applicable' : value.email.status }, wallet: { ready: confirmed && value.wallet.ready && facts?.ready !== false, ...(confirmed&&!value.wallet.ready&&value.wallet.reason==='WALLET_IDENTITY_PENDING'?{reason:'WALLET_IDENTITY_PENDING'}:{}) },
-    ...(facts ? { eventFacts: facts } : {}),
+    ...(facts ? { eventFacts: facts } : {}), ...(card ? { card: { ...card } } : {}),
     ...(Object.hasOwn(value, 'notifications') ? { notifications: notificationHistory(value.notifications) } : {}),
     groupInvite: confirmed ? groupInvite(value.groupInvite,now) : null,
     invitation: facts?.ready === false ? { ready: false } : confirmationInvitation(value.invitation,value.admission.status,value.attendee?.name),

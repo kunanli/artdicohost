@@ -1,18 +1,22 @@
 import { renderInvitation, invitationPngBlob } from '../lib/invitation-renderer.mjs';
 import { confirmationToken, confirmationLink, confirmationEmailMessage, confirmationNotificationMessage, confirmationStatusLabels, createConfirmationClient, confirmationInvitationFacts, prepareConfirmationInvitation, confirmationWalletGuidance, CONFIRMATION_INVITATION_FILENAME, CONFIRMATION_CONTACT_EMAIL, CONFIRMATION_GROUP_UNAVAILABLE } from '../lib/confirmation-client.mjs';
 
+import { renderCommemorativeJpeg } from '../lib/commemorative-card-image.mjs';
+
 const root = document.querySelector('[data-confirmation-page]');
 if (root) {
   const $ = selector => root.querySelector(selector);
   $('.confirmation-skip').addEventListener('click',event=>{event.preventDefault();$('#confirmation-main').focus();});
   let token = confirmationToken(location.hash);
   const client = createConfirmationClient({apiOrigin:root.dataset.confirmationApi,pageOrigin:location.origin});
-  let state = null, busy = false, generation = 0, walletUrl = null, printUrl = null, printRegistrationOpen = null, invitationUrl = null, controller = null;
+  let state = null, busy = false, generation = 0, walletUrl = null, printUrl = null, printRegistrationOpen = null, invitationUrl = null, jpegUrl = null, controller = null;
   let groupTimer = null, groupCooldownTimer = null, groupNextReadAt = 0;
   const canvases=new Set();
   const contactButtons=[...root.querySelectorAll('[data-confirmation-contact-copy]')];
   const contactLabels=new Map(contactButtons.map(button=>[button,button.textContent]));
   const walletButton=$('[data-confirmation-wallet]'),walletBadge=$('[data-confirmation-wallet-badge]'),walletLabel=$('[data-confirmation-wallet-label]');
+  const copyButton = $('[data-confirmation-copy]');
+  const jpegDownload = $('[data-confirmation-jpeg-download]');
   let walletBadgeReady=Boolean(walletBadge?.complete&&walletBadge.naturalWidth>0);
   function syncWalletBadge(){
     const showBadge=walletBadgeReady&&!walletButton.hidden&&walletButton.dataset.walletAction==='add';
@@ -25,6 +29,16 @@ if (root) {
   const walletGuidance=()=>confirmationWalletGuidance({userAgent:navigator.userAgent,maxTouchPoints:navigator.maxTouchPoints,walletReady:state?.wallet.ready===true,walletReason:state?.wallet.reason,invitationReady:state?.invitation.ready===true});
   function hideSafariGuide(){ $('[data-confirmation-safari-guide]').hidden=true;$('[data-confirmation-wechat-step]').hidden=true; }
   function releaseWallet() { if (walletUrl) URL.revokeObjectURL(walletUrl); walletUrl = null; }
+  function clearJpeg() {
+    if (jpegUrl) URL.revokeObjectURL(jpegUrl);
+    jpegUrl = null;
+    $('[data-confirmation-jpeg-image]').removeAttribute('src');
+    jpegDownload.removeAttribute('href');
+    jpegDownload.hidden = true;
+    $('[data-confirmation-jpeg-preview]').hidden = true;
+    if (root.dataset.cardFormat) copyButton.parentElement.prepend(copyButton);
+    delete root.dataset.cardFormat;
+  }
   function clearInvitation(){
     if(invitationUrl)URL.revokeObjectURL(invitationUrl);invitationUrl=null;
     $('[data-confirmation-invitation-image]').removeAttribute('src');$('[data-confirmation-invitation-download]').removeAttribute('href');
@@ -34,6 +48,7 @@ if (root) {
   function clearGroupImage() { clearTimeout(groupTimer);groupTimer=null;const output=$('[data-confirmation-group-image]');for(const img of output.querySelectorAll('img'))img.removeAttribute('src');output.replaceChildren(); }
   function clearGroup() { clearGroupImage();$('[data-confirmation-group-status]').textContent='';$('[data-confirmation-group]').hidden=true; }
   function clearPrivateView(){
+    clearJpeg();
     for(const key of ['name','organization','event','date','time','venue','reference','email','application-received','pre-event-reminder'])$('[data-confirmation-'+key+']').textContent='';
     $('[data-confirmation-notifications]').hidden=true;$('[data-confirmation-private-link]').value='';$('[data-confirmation-copy-fallback]').hidden=true;
     walletButton.hidden=true;delete walletButton.dataset.walletAction;walletButton.removeAttribute('aria-label');walletButton.removeAttribute('aria-busy');if(walletLabel)walletLabel.textContent='加入 Apple Wallet';syncWalletBadge();
@@ -83,7 +98,18 @@ if (root) {
     if(walletLabel)walletLabel.textContent=guidance.label;else walletButton.textContent=guidance.label;
     walletButton.dataset.walletAction=guidance.action;walletButton.setAttribute('aria-label',guidance.label);syncWalletBadge();
     $('[data-confirmation-device]').textContent=value.admission.status==='confirmed'?guidance.message:'';$('[data-confirmation-device]').hidden=value.admission.status!=='confirmed';
-    renderGroup(value);
+    if (value.card) {
+      root.dataset.cardFormat = value.card.format;
+      copyButton.parentElement.append(copyButton);
+      const label = value.card.format === 'jpeg' ? 'JPEG' : 'Apple Wallet';
+      $('[data-confirmation-state]').textContent = '电子纪念卡';
+      $('[data-confirmation-heading]').textContent = label + ' 纪念卡';
+      $('[data-confirmation-intro]').textContent = value.card.ready ? '领取你的电子纪念卡，请保留活动行原电子票。' : '纪念卡暂时无法领取，请稍后重新读取。';
+      $('[data-confirmation-organization]').textContent = value.card.identity;
+      $('[data-confirmation-save-heading]').textContent = '领取纪念卡';
+      $('[data-confirmation-device]').hidden = value.card.format !== 'wallet';
+      document.title = label + ' 纪念卡 · ARTDiCO HOST';
+    } else renderGroup(value);
     $('[data-confirmation-content]').hidden=false;$('[data-confirmation-error]').hidden=true;controls();
   }
   function showReadError(error){
@@ -91,11 +117,28 @@ if (root) {
     document.title='私人参会页 · ARTDiCO HOST';$('[data-confirmation-state]').textContent='私人参会页';$('[data-confirmation-heading]').textContent='暂时无法读取报名状态';$('[data-confirmation-intro]').textContent='请保留原查询链接，无需重复报名。';
     $('[data-confirmation-error]').textContent=error.message||'请稍后重新读取。';$('[data-confirmation-error]').hidden=false;
   }
+  async function showJpeg(value, current) {
+    const status = $('[data-confirmation-action-status]');
+    status.textContent = '正在准备纪念卡图片…';
+    try {
+      const blob = await renderCommemorativeJpeg(value);
+      if (current !== generation) return;
+      jpegUrl = URL.createObjectURL(blob);
+      $('[data-confirmation-jpeg-image]').src = jpegUrl;
+      $('[data-confirmation-jpeg-preview]').hidden = false;
+      jpegDownload.href = jpegUrl;
+      jpegDownload.hidden = false;
+      status.textContent = '';
+    } catch {
+      if (current === generation) status.textContent = '暂时无法准备图片，请点「重新读取」再试。';
+    }
+  }
   async function load() {
     invalidate();const current=generation;busy=true;controller=new AbortController();const signal=controller.signal;controls();$('[data-confirmation-state]').textContent='私人参会页';$('[data-confirmation-heading]').textContent='正在读取报名状态…';$('[data-confirmation-intro]').textContent='正在核对最新状态，请稍候。';
     try {
       if(!token)throw new Error('请从报名完成后的确认链接或确认邮件打开本页。');
       const value=await client.read(token,{signal});if(current!==generation)return;render(value);
+      if (value.card?.format === 'jpeg' && value.card.ready) await showJpeg(value, current);
     } catch(error) {if(current===generation&&!error.cancelled)showReadError(error);}
     finally {if(current===generation){busy=false;controller=null;controls();}}
   }

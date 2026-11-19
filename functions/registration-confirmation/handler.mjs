@@ -69,6 +69,7 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
       const deliverySend = /^\/api\/admin\/registration-confirmation\/send\/([A-Za-z0-9_-]{43})$/u.exec(url.pathname);
       const reminderOperation = /^\/api\/admin\/registration-confirmation\/reminder-operation\/([A-Za-z0-9_-]{32,128})$/u.exec(url.pathname);
       const confirmationOperation = /^\/api\/admin\/registration-confirmation\/operation\/([A-Za-z0-9_-]{32,128})$/u.exec(url.pathname);
+      const cards = /^\/api\/admin\/registration-confirmation\/cards(?:\/([A-Za-z0-9_-]{43})(\/approve)?)?$/u.exec(url.pathname);
       if (PUBLIC_PATHS.includes(url.pathname)) {
         if (!origins.has(origin)) reject('ORIGIN_REJECTED', 403);
         cors = { 'access-control-allow-origin': origin, vary: 'Origin' };
@@ -81,7 +82,7 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         if (request.signal.aborted) reject();
         return json(await service.confirmation(input));
       }
-      if (![SETTINGS, DISPATCH, CONFIRMATION_PREVIEW, REMINDER_PREVIEW, REMINDER_DISPATCH].includes(url.pathname) && !staffLink && !deliveryRead && !deliverySend && !reminderOperation && !confirmationOperation) reject('NOT_FOUND', 404);
+      if (![SETTINGS, DISPATCH, CONFIRMATION_PREVIEW, REMINDER_PREVIEW, REMINDER_DISPATCH].includes(url.pathname) && !staffLink && !deliveryRead && !deliverySend && !reminderOperation && !confirmationOperation && !cards) reject('NOT_FOUND', 404);
       cors = { vary: 'Cookie, Origin' };
       if (origin !== null && origin !== apiOrigin) reject('ORIGIN_REJECTED', 403);
       if (url.pathname === SETTINGS && !['GET', 'PUT'].includes(request.method) || url.pathname === DISPATCH && request.method !== 'POST') reject('METHOD_NOT_ALLOWED', 405);
@@ -92,6 +93,22 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
       if (typeof auth?.authenticate !== 'function' || !service) reject('CONFIRMATION_UNAVAILABLE', 503);
       const session = await auth.authenticate(request);
       if (!session?.user) reject('AUTH_REQUIRED', 401);
+      if (cards) {
+        const [, registrationId, approve] = cards, actor = session.user;
+        if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['reviewer', 'superadmin'].includes(role))) reject('FORBIDDEN', 403);
+        const methods = approve ? ['POST'] : registrationId ? ['GET', 'PATCH', 'POST'] : ['GET'];
+        if (!methods.includes(request.method)) reject('METHOD_NOT_ALLOWED', 405);
+        if (request.method === 'GET') return json(registrationId ? await service.staffCardDetails({ actor, registrationId }) : await service.staffCardDirectory({ actor }));
+        if (!approve && request.method === 'POST' && !canManageEventOperations(actor)) reject('FORBIDDEN', 403);
+        if (origin !== apiOrigin || !equalToken(request.headers.get('x-csrf-token'), session.csrfToken)) reject('CSRF_REJECTED', 403);
+        const input = await body(request);
+        if (request.signal.aborted) reject();
+        const required = approve ? ['primaryId', 'expectedRevision', 'operationId'] : request.method === 'PATCH' ? ['primaryId', 'expectedRevision', 'identity']
+          : ['primaryId', 'expectedRevision', 'expectedAccessRevision', 'identity', 'format'];
+        keys(input, required, required);
+        const method = approve ? 'staffCardApprove' : request.method === 'PATCH' ? 'staffCardSaveIdentity' : 'staffSendCard';
+        return json(await service[method]({ ...input, actor, registrationId }));
+      }
       if (staffLink || deliveryRead) {
         if (!Array.isArray(session.user.roles) || !session.user.roles.some(role => ['reviewer', 'superadmin'].includes(role))) reject('FORBIDDEN', 403);
         if (deliveryRead) {

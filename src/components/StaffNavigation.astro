@@ -1,10 +1,11 @@
 ---
 import { CONTENT_PAGES, SETTINGS_PAGES, resolveContentPage, resolveSettingsPage } from '../lib/admin-sections.mjs';
-interface Props { current: 'content' | 'tasks' | 'contacts' | 'registrations' | 'settings' | 'person' | 'volunteers' }
+interface Props { current: 'content' | 'tasks' | 'contacts' | 'registrations' | 'settings' | 'person' | 'volunteers' | 'cards' }
 const { current } = Astro.props;
 const pages = [
   { key: 'tasks', href: '/admin/tasks/', label: '今日待办' },
   { key: 'contacts', href: '/admin/contacts/', label: '人员与报名' },
+  { key: 'cards', href: '/admin/cards/', label: '纪念卡' },
   { key: 'checkin', href: '/admin/checkin/', label: '入场签到' },
   { key: 'volunteers', href: '/admin/volunteers/', label: '志愿者与分工' },
   { key: 'content', href: '/admin/', label: '活动与内容' },

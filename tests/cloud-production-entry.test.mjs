@@ -23,6 +23,7 @@ const syntheticAssets = [
   { url: '/admin/person/', path: 'admin-assets/admin/person/index.html', data: '<!doctype html><p>synthetic person workspace</p>' },
   { url: '/admin/volunteers/', path: 'admin-assets/admin/volunteers/index.html', data: '<!doctype html><p>synthetic volunteer workspace</p>' },
   { url: '/admin/checkin/', path: 'admin-assets/admin/checkin/index.html', data: '<!doctype html><p>synthetic staff entry check-in</p>' },
+  { url: '/admin/cards/', path: 'admin-assets/admin/cards/index.html', data: '<!doctype html><p>synthetic staff card issuance</p>' },
   { url: '/invitations/template-blank.png', path: 'admin-assets/invitations/template-blank.png', data: 'synthetic blank image' },
   { url: '/invitations/ggj2026-poster-v2.webp', path: 'admin-assets/invitations/ggj2026-poster-v2.webp', data: 'synthetic blank image' },
   { url: '/_astro/staff-test.js', path: 'admin-assets/_astro/staff-test.js', data: 'export const synthetic=true;' },
@@ -85,7 +86,7 @@ test('entry reads only explicit hashed static assets and ignores unlisted privat
   assert.equal([...loaded.assets.values()].some(bytes => bytes.includes(Buffer.from('PRIVATE-'))), false);
 });
 
-test('the actual runtime accepts the exact 136-record release map and rejects an extra record', async t => {
+test('the actual runtime accepts the exact 138-record release map and rejects an extra record', async t => {
   assert.equal(MAX_CLOUD_RELEASE_FILES, MAX_CANDIDATE_FILES - 1);
   const f=await fixture(t);
   while(f.release.files.length<MAX_CLOUD_RELEASE_FILES)f.release.files.push({path:'functions/synthetic-'+f.release.files.length+'.mjs',bytes:1,sha256:'a'.repeat(64),mode:'0644'});
@@ -166,7 +167,7 @@ test('closed production factory preserves exact process health while serving no 
   const health = await send(port, '/healthz', { host: 'synthetic-fc-signature-gateway.invalid' });
   assert.equal(health.status, 200);
   assert.deepEqual(JSON.parse(health.text), { status: 'ok', scope: 'process-only', sourceCommit: SOURCE });
-  for (const path of ['/admin/', '/admin/contacts/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/', '/invitations/template-blank.png', '/api/admin/environment', '/api/admin/session', '/api/registrations']) {
+  for (const path of ['/admin/cards/', '/admin/', '/admin/contacts/', '/admin/settings/', '/admin/person/', '/admin/volunteers/', '/admin/checkin/', '/invitations/template-blank.png', '/api/admin/environment', '/api/admin/session', '/api/registrations']) {
     const result = await send(port, path);
     assert.equal(result.status, 503, path);
     assert.equal(result.headers['cache-control'], 'no-store');

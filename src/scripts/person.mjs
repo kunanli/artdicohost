@@ -289,7 +289,7 @@ function renderRegistration(view) {
   if(item.fields.accommodationChoice)fact(list, '原始住宿申请', ({ needed: '申请住宿，需单独审核', not_needed: '不需要', uncertain: '尚不确定' })[item.fields.accommodationChoice] || '待核对');
   if (item.review.deletionRequested) fact(list, '资料维护', '已登记删除申请，尚未宣称完成擦除');
   output.append(list);
-  if(item.fields.intake==='wallet-v1'){const link=node('a','设置纪念卡身份','ah-admin-button');link.href='/admin/registrations/#registration='+encodeURIComponent(item.profileTargetId??item.id);output.append(link);}
+  if(item.fields.intake==='wallet-v1'){const link=node('a','打开纪念卡申请','ah-admin-button');link.href='/admin/cards/#application='+encodeURIComponent(item.id);output.append(link);}
   if (item.provenance.kind !== 'public') output.append(node('p', '工作人员代登记保留原始来源，不代表本人完成网站隐私同意。', 'person-note'));
 }
 function renderArrangements(view) {

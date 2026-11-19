@@ -143,17 +143,35 @@ test('a missing or invalid distinct portrait fails the whole capture and removes
   }
 });
 
-test('portrait and logo media share the unchanged thirty-image and eight-MiB limits', async t => {
+test('distinct logo and portrait groups share the original byte budget and fit the overall image count', async t => {
   const logos = Array.from({ length: 15 }, (_, index) => Buffer.concat([png, Buffer.from('synthetic-logo-' + index)]));
   const photos = Array.from({ length: 16 }, (_, index) => Buffer.concat([png, Buffer.from('synthetic-photo-' + index)]));
   const many = await fixture(t, logos, photos);
-  await rejected(many.capture(), 'MEDIA_LIMIT'); assert.equal(many.calls.length, 1); await absent(many.outputDirectory);
+  assert.equal((await many.capture()).media, 31);
+  assert.equal(many.calls.length, 32);
   const maximumLogos = Array.from({ length: 4 }, (_, index) => { const bytes = Buffer.alloc(2 * 1024 * 1024, index); png.copy(bytes); return bytes; });
   const total = await fixture(t, maximumLogos, [png]);
   await rejected(total.capture(), 'MEDIA_BODY'); assert.equal(total.calls.length, 6); await absent(total.outputDirectory);
   const largePhoto = Buffer.alloc(2 * 1024 * 1024 + 1); png.copy(largePhoto);
   const individual = await fixture(t, [png], [largePhoto]);
   await rejected(individual.capture(), 'MEDIA_BODY'); assert.equal(individual.calls.length, 3); await absent(individual.outputDirectory);
+});
+
+test('the combined public fixture cannot exceed sixty media requests even across three categories', async t => {
+  const logos = Array.from({ length: 30 }, (_, index) => Buffer.from('synthetic-logo-' + index));
+  const photos = Array.from({ length: 30 }, (_, index) => Buffer.from('synthetic-photo-' + index));
+  const f = await fixture(t, logos, photos);
+  const { content } = f.data;
+  content.showcases = [{ id: 'synthetic-work', title: PUBLIC_NAME, teamName: PUBLIC_NAME, summary: PUBLIC_NAME,
+    coverId: sha(Buffer.from('synthetic-cover')) + '.png', kind: 'indie', status: 'pending', responseStatus: 'pending', publicConsent: false, memberCount: 1 }];
+  const snapshot = { ...f.data, content: toPublicContent(content) };
+  await rejected(f.capture({ fetchFn: async (url, options) => {
+    f.calls.push({ url, options });
+    assert.equal(url, PUBLIC_CONTENT_URL);
+    return new Response(JSON.stringify(snapshot), { headers: publicHeaders });
+  } }), 'MEDIA_LIMIT');
+  assert.equal(f.calls.length, 1);
+  await absent(f.outputDirectory);
 });
 
 test('unpublished, private, malformed or foreign-logo snapshots never start a media request and leave no output', async t => {

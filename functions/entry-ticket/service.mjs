@@ -88,6 +88,16 @@ export function createEntryTicketService({ objects, journalFor, tokenSecret, eve
       || offered.platform !== 'wechat' || !timestamp(offered.expiresAt) || Date.parse(offered.expiresAt) <= now()) fail();
     return offered;
   }
+  async function entryImageForRegistration(registrationId, accessRevision) {
+    if (now() >= entryExpiresAt) fail('ENTRY_NOT_FOUND');
+    const entryCode = codeFor(mapping(registrationId, accessRevision, 'entry'));
+    const { record } = await readMapping(entryCode, 'entry');
+    if (record.admissionStatus !== 'confirmed') fail('ENTRY_NOT_FOUND');
+    const data = encodeQrPng(API + '/admin/checkin/#ticket=' + entryCode);
+    const latest = await load(registrationId, accessRevision);
+    if (latest.admissionStatus !== 'confirmed') fail('ENTRY_NOT_FOUND');
+    return { data, contentType: 'image/png' };
+  }
   const journal = id => journalFor(prefix + '/checkins/r-' + id);
   function checkedState(state, registrationId) {
     if (!state || !revision(state.cursor?.version)) fail();
@@ -152,14 +162,12 @@ export function createEntryTicketService({ objects, journalFor, tokenSecret, eve
     },
     async entryImage({ code } = {}) {
       const value = await readMapping(code, 'receipt');
-      if (value.record.admissionStatus !== 'confirmed' || now() >= entryExpiresAt) fail('ENTRY_NOT_FOUND');
-      const entry = mapping(value.mapping.registrationId, value.mapping.accessRevision, 'entry'), entryCode = codeFor(entry);
-      // Image reads do not mint mappings or check-ins. Issuance must already have saved the entry.
-      await readMapping(entryCode, 'entry');
-      const data = await encodeQrPng(API + '/admin/checkin/#ticket=' + entryCode);
-      const latest = await load(entry.registrationId, entry.accessRevision);
-      if (latest.admissionStatus !== 'confirmed') fail('ENTRY_NOT_FOUND');
-      return { data, contentType: 'image/png' };
+      if (value.record.admissionStatus !== 'confirmed') fail('ENTRY_NOT_FOUND');
+      return entryImageForRegistration(value.mapping.registrationId, value.mapping.accessRevision);
+    },
+    async cardEntryImage({ registrationId, accessRevision = 0 } = {}) {
+      if (!ID.test(registrationId ?? '') || !revision(accessRevision)) fail('INVALID_REQUEST');
+      return entryImageForRegistration(registrationId, accessRevision);
     },
     async groupImage({ code } = {}) {
       const value = await readMapping(code, 'receipt');

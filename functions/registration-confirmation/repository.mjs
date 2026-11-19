@@ -20,6 +20,7 @@ export const confirmationNoticeId = (eventId, registrationId, kind = 'registrati
 export const confirmationRequestHash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const validConfirmationOperation = value => typeof value === 'string' && OP.test(value);
 export const formalConfirmationKind = kind => ['registration', 'promotion'].includes(kind);
+export const commemorativeCardKind = kind => kind === 'card_jpeg' || kind === 'card_wallet';
 const scopeKeys = ['accessRevision', 'recipientDigest'];
 const validScope = value => exact(value, scopeKeys) && Number.isSafeInteger(value.accessRevision) && value.accessRevision >= 0 && HASH.test(value.recipientDigest ?? '');
 const additionalKind = kind => ['application_received', 'pre_event_reminder'].includes(kind);
@@ -34,7 +35,7 @@ export function canonicalConfirmationKind(state, registrationId, admissionStatus
 }
 
 function initial(eventId) { return { schemaVersion: 1, eventId, revision: 0, settings: { enabled: true }, notices: [], operations: [], audit: [] }; }
-function apply(state, audit) {
+function apply(state, audit, cards) {
   const d = audit.details;
   if (audit.action === 'reserve' || audit.action === 'recovery_reserved') {
     const recovery = audit.action === 'recovery_reserved';
@@ -54,8 +55,8 @@ function apply(state, audit) {
         || state.operations.some(op => op.action === 'dispatch' && op.status !== 'completed' && op.registrationIds.some(id => d.relatedRegistrationIds.includes(id)))) fail();
     }
     if (!(recovery || exact(d, reserveKeys) || exact(d, [...reserveKeys, ...scopeKeys]) && validScope({ accessRevision: d.accessRevision, recipientDigest: d.recipientDigest })) || !ID.test(d.registrationId ?? '')
-      || !formalConfirmationKind(d.kind) && !additionalKind(d.kind)
-      || !(d.kind === 'application_received' ? ['pending_review'] : d.kind === 'pre_event_reminder' ? ['confirmed'] : ['confirmed', 'waitlisted']).includes(d.admissionStatus)
+      || !(cards ? commemorativeCardKind(d.kind) : formalConfirmationKind(d.kind) || additionalKind(d.kind))
+      || !(d.kind === 'application_received' ? ['pending_review'] : cards || d.kind === 'pre_event_reminder' ? ['confirmed'] : ['confirmed', 'waitlisted']).includes(d.admissionStatus)
       || !Number.isSafeInteger(d.admissionRevision) || d.admissionRevision < 0 || typeof d.retryRejected !== 'boolean') fail();
     if (formalConfirmationKind(d.kind) && d.kind !== canonicalConfirmationKind(state, d.registrationId, d.admissionStatus)) fail();
     const id = confirmationNoticeId(state.eventId, d.registrationId, d.kind, d.accessRevision ?? 0, d.recipientDigest), existing = state.notices.find(n => n.id === id);
@@ -63,7 +64,8 @@ function apply(state, audit) {
     if (formalConfirmationKind(d.kind) && d.admissionStatus === 'confirmed' && state.notices.some(item => item.registrationId === d.registrationId
       && formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' && (item.accessRevision ?? 0) === (d.accessRevision ?? 0) && item.id !== id)) fail();
     if (!existing && state.notices.length >= 2000) fail();
-    const priorAttempts = state.notices.filter(item => item.registrationId === d.registrationId && (formalConfirmationKind(d.kind) ? formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' : item.kind === d.kind)).reduce((total, item) => total + item.attempt, 0);
+    if (cards && state.notices.some(item => item.registrationId === d.registrationId && ['reserved', 'unknown'].includes(item.status))) fail();
+    const priorAttempts = state.notices.filter(item => item.registrationId === d.registrationId && (cards || (formalConfirmationKind(d.kind) ? formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' : item.kind === d.kind))).reduce((total, item) => total + item.attempt, 0);
     if (!recovery && priorAttempts >= 5 || recovery && (!existing || existing.status !== 'rejected')) fail();
     const notice = { id, registrationId: d.registrationId, kind: d.kind, status: 'reserved', admissionStatus: d.admissionStatus,
       admissionRevision: d.admissionRevision, createdAt: existing?.createdAt ?? audit.at, updatedAt: audit.at,
@@ -84,7 +86,8 @@ function apply(state, audit) {
     if (!notice || notice.status !== 'reserved' || notice.actorId !== audit.actorId || Object.hasOwn(d, 'attempt') && notice.attempt !== d.attempt) fail();
     notice.status = d.status; notice.updatedAt = audit.at;
     if (d.diagnostic) notice.diagnostic = structuredClone(d.diagnostic);
-  } else if (audit.action === 'settings') {
+  } else if (cards) fail();
+  else if (audit.action === 'settings') {
     if (!exact(d, ['operationId', 'requestHash', 'enabled']) || !OP.test(d.operationId ?? '') || !HASH.test(d.requestHash ?? '')
       || typeof d.enabled !== 'boolean' || state.operations.some(op => op.operationId === d.operationId)) fail();
     state.settings.enabled = d.enabled;
@@ -108,7 +111,7 @@ function apply(state, audit) {
     operation.status = 'completed'; operation.results = structuredClone(d.results);
   } else fail();
 }
-function validate(value, eventId, cursor) {
+function validate(value, eventId, cursor, cards) {
   if (value === null) { if (cursor?.version !== 0 || cursor.position !== 0 || cursor.hash !== null) fail(); return initial(eventId); }
   if (!exact(value, ['schemaVersion', 'eventId', 'revision', 'settings', 'notices', 'operations', 'audit']) || value.schemaVersion !== 1
     || value.eventId !== eventId || !Number.isSafeInteger(value.revision) || value.revision < 0 || value.revision !== cursor?.version
@@ -118,7 +121,7 @@ function validate(value, eventId, cursor) {
     if (!exact(item, ['revision', 'action', 'actorId', 'at', 'details']) || item.revision !== i + 1 || !ACTOR.test(item.actorId ?? '')
       || !at(item.at) || Date.parse(item.at) < previous) fail();
     // Reservation ownership must also hold during journal replay.
-    apply(expected, item); expected.audit.push(structuredClone(item)); previous = Date.parse(item.at);
+    apply(expected, item, cards); expected.audit.push(structuredClone(item)); previous = Date.parse(item.at);
   }
   expected.revision = value.revision;
   if (!isDeepStrictEqual(expected, value)) fail();
@@ -126,18 +129,18 @@ function validate(value, eventId, cursor) {
 }
 
 /** One private journal; every mutable fact is reconstructed from its bounded audit. */
-export function createConfirmationRepository({ journal, eventId, clock = Date.now } = {}) {
+export function createConfirmationRepository({ journal, eventId, clock = Date.now, cards = false } = {}) {
   if (!journal || typeof journal.read !== 'function' || typeof journal.commit !== 'function' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(eventId ?? '')
     || typeof clock !== 'function') throw new TypeError('Explicit confirmation journal required.');
-  async function read() { try { const current = await journal.read(); return { value: validate(current.value, eventId, current.cursor), cursor: current.cursor }; } catch { throw new ConfirmationStorageError(); } }
+  async function read() { try { const current = await journal.read(); return { value: validate(current.value, eventId, current.cursor, cards), cursor: current.cursor }; } catch { throw new ConfirmationStorageError(); } }
   async function append(current, action, details, actorId) {
     try {
       const next = structuredClone(current.value), when = new Date(clock()).toISOString();
       if (next.audit.length >= MAX_CONFIRMATION_AUDIT || !ACTOR.test(actorId ?? '') || !at(when)
         || next.audit.length && when < next.audit.at(-1).at) fail();
       const audit = { revision: next.revision + 1, action, actorId, at: when, details: structuredClone(details) };
-      apply(next, audit); next.revision++; next.audit.push(audit);
-      validate(next, eventId, { version: next.revision });
+      apply(next, audit, cards); next.revision++; next.audit.push(audit);
+      validate(next, eventId, { version: next.revision }, cards);
       if (Buffer.byteLength(JSON.stringify(next)) > 1024 * 1024) fail();
       const ack = await journal.commit(current.cursor, next);
       if (ack?.cursor?.version !== next.revision || !isDeepStrictEqual(ack?.value, next)) fail();

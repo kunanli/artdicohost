@@ -7,7 +7,7 @@ import { organizationReferenceKey } from '../shared/organization-display.mjs';
 
 export const PUBLIC_VISUAL_FIXTURE_DIRECTORY = fileURLToPath(new URL('../.local-data/public-visual-fixture', import.meta.url));
 const MAX_SNAPSHOT_BYTES = 1024 * 1024, MAX_MEDIA_BYTES = 2 * 1024 * 1024, MAX_TOTAL_MEDIA_BYTES = 8 * 1024 * 1024;
-const MAX_MEDIA = 30, TOTAL_TIMEOUT_MS = 60_000;
+const MAX_MEDIA_PER_KIND = 30, MAX_MEDIA = 60, TOTAL_TIMEOUT_MS = 60_000;
 const MEDIA_PATH = /^\/api\/public\/portraits\/([a-f0-9]{64})\.(png|jpg|webp)$/u;
 const TYPES = Object.freeze({ png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' });
 const MESSAGE = 'Public visual fixture capture failed.';
@@ -19,9 +19,10 @@ function hasPublicText(profile, key) {
   const descriptor = Object.getOwnPropertyDescriptor(profile, key);
   return descriptor && Object.hasOwn(descriptor, 'value') && typeof descriptor.value === 'string' && Boolean(descriptor.value.trim());
 }
-function failure(code) {
+function failure(code, mediaCounts) {
   const error = new Error(MESSAGE);
   Object.defineProperty(error, 'code', { value: CODES.has(code) ? code : 'PUBLIC_CONTENT_UNAVAILABLE', enumerable: true });
+  if (mediaCounts) Object.defineProperty(error, 'mediaCounts', { value: mediaCounts });
   failures.add(error); return error;
 }
 function cancel(response) { try { response?.body?.cancel().catch(() => {}); } catch { /* Fixed diagnostics only. */ } }
@@ -104,16 +105,19 @@ export async function capturePublicVisualFixture({ fetchFn = fetch, outputDirect
     const observed = await captured;
     if (!observed?.bytes) throw failures.has(observed?.error) ? observed.error : failure('SNAPSHOT_UNAVAILABLE');
     const snapshot = observed.bytes, data = JSON.parse(snapshot.toString('utf8'));
-    const logoPaths = (data.content.organizations ?? []).map(item => item.logoUrl).filter(Boolean);
+    const logoPaths = new Set((data.content.organizations ?? []).map(item => item.logoUrl).filter(Boolean));
     const portraitPaths = data.content.guests.map(item => item.portraitUrl).filter(Boolean);
-    const basePaths = [...new Set([...logoPaths, ...portraitPaths])];
-    const coverPaths = [...new Set(data.content.showcases.map(item => item.coverUrl).filter(Boolean))];
-    if (basePaths.length > MAX_MEDIA || coverPaths.length > MAX_MEDIA) throw failure('MEDIA_LIMIT');
+    const uniquePortraits = new Set(portraitPaths);
+    const basePaths = new Set([...logoPaths, ...uniquePortraits]);
+    const coverPaths = new Set(data.content.showcases.map(item => item.coverUrl).filter(Boolean));
     const paths = [...new Set([...basePaths, ...coverPaths])];
-    if (paths.some(path => typeof path !== 'string' || !MEDIA_PATH.test(path))) throw failure('MEDIA_LIMIT');
+    const invalidReferences = paths.filter(path => typeof path !== 'string' || !MEDIA_PATH.test(path)).length;
+    if (paths.length > MAX_MEDIA || [logoPaths, uniquePortraits, coverPaths].some(kind => kind.size > MAX_MEDIA_PER_KIND) || invalidReferences) {
+      throw failure('MEDIA_LIMIT', { logos: logoPaths.size, portraits: uniquePortraits.size, covers: coverPaths.size, invalidReferences });
+    }
     const media = []; let totalBytes = 0, baseBytes = 0, coverBytes = 0;
     for (const path of paths) {
-      const base = basePaths.includes(path);
+      const base = basePaths.has(path);
       // Preserve the original 8 MiB logo/portrait budget; covers have their own
       // bounded 24 MiB budget and share the same total 60-second deadline.
       const remainingBytes = base ? MAX_TOTAL_MEDIA_BYTES - baseBytes : 24 * 1024 * 1024 - coverBytes;
@@ -146,12 +150,12 @@ export async function capturePublicVisualFixture({ fetchFn = fetch, outputDirect
       guestAffiliationCoverage[hasPublicText(guest, 'company') ? 'company' : 'empty']++;
     }
     const guestPortraitCoverage = { total: data.content.guests.length, withPortrait: portraitPaths.length,
-      withoutPortrait: data.content.guests.length - portraitPaths.length, uniqueImages: new Set(portraitPaths).size,
-      capturedImages: new Set(portraitPaths).size };
+      withoutPortrait: data.content.guests.length - portraitPaths.length, uniqueImages: uniquePortraits.size,
+      capturedImages: uniquePortraits.size };
     // Cover references and successfully captured cover images are counted separately.
     const showcases = data.content.showcases;
     const withCoverId = showcases.filter(work => hasPublicText(work, 'coverId')).length;
-    const showcaseCoverCoverage = { total: showcases.length, withCoverId, withoutCoverId: showcases.length - withCoverId, capturedImages: coverPaths.length };
+    const showcaseCoverCoverage = { total: showcases.length, withCoverId, withoutCoverId: showcases.length - withCoverId, capturedImages: coverPaths.size };
     complete = true;
     return { captured: true, revision: verified.revision, snapshotSha256: manifest.snapshot.sha256, snapshotBytes: snapshot.length,
       organizations: verified.counts.organizations, media: media.length, mediaBytes: totalBytes, referenceLogoSources, guestCaptionCoverage, guestAffiliationCoverage, guestPortraitCoverage, showcaseCoverCoverage };
@@ -167,7 +171,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (process.argv.length !== 2) throw failure('INVALID_ARGUMENTS');
     console.log('Public visual fixture captured: ' + JSON.stringify(await capturePublicVisualFixture()));
   } catch (error) {
-    console.error(MESSAGE + ' ' + JSON.stringify({ captured: false, failure: failures.has(error) ? error.code : 'PUBLIC_CONTENT_UNAVAILABLE' }));
+    console.error(MESSAGE + ' ' + JSON.stringify({ captured: false, failure: failures.has(error) ? error.code : 'PUBLIC_CONTENT_UNAVAILABLE',
+      ...(failures.has(error) && error.mediaCounts ? { mediaCounts: error.mediaCounts } : {}) }));
     process.exitCode = 1;
   }
 }

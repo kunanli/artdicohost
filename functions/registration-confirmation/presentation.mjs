@@ -8,7 +8,7 @@ const escape = value => value.replaceAll('&','&amp;').replaceAll('"','&quot;').r
 const line = value => typeof value === 'string' && value.length > 0 && value.length <= 500 && !/[\u0000-\u001f\u007f]/u.test(value);
 export const CONFIRMATION_PRESENTATION_KEYS = Object.freeze(['email_subject','email_language','confirmation_actions']);
 export function confirmationEmailPresentation({ locale, kind, subject, confirmationUrl, ticket, walletReady = false } = {}) {
-  if (!line(subject) || !['registration','promotion','application_received','pre_event_reminder'].includes(kind)
+  if (!line(subject) || !['registration','promotion','application_received','pre_event_reminder','card_jpeg','card_wallet'].includes(kind)
     || typeof confirmationUrl !== 'string' || !(SHORT.test(confirmationUrl) || LEGACY.test(confirmationUrl))) throw new TypeError('Invalid confirmation presentation.');
   const language = locale === 'en' ? 'en' : 'zh-CN', en = language === 'en';
   const confirmed = kind !== 'application_received';
@@ -28,7 +28,10 @@ export function confirmationEmailPresentation({ locale, kind, subject, confirmat
     }
   }
   const blocks=[];
-  blocks.push('<p style="margin:20px 0;font-size:16px;line-height:1.7;"><a href="'+escape(confirmationUrl)+'" style="color:#6540df;">'+(en?'View your attendance details':'查看参会信息')+'</a></p>');
+  const action = kind === 'card_jpeg' ? (en ? 'Download your JPEG card' : '领取 JPEG 纪念卡')
+    : kind === 'card_wallet' ? (en ? 'Get your Apple Wallet card' : '领取 Apple Wallet 纪念卡')
+    : (en ? 'View your attendance details' : '查看参会信息');
+  blocks.push('<p style="margin:20px 0;font-size:16px;line-height:1.7;"><a href="'+escape(confirmationUrl)+'" style="color:#6540df;">'+action+'</a></p>');
   if(confirmed && walletReady){
     const badge = SITE+'/wallet/add-to-apple-wallet-'+(en?'en':'cn')+'.png';
     blocks.push('<p style="margin:20px 0 8px;"><a href="'+escape(confirmationUrl)+'"><img src="'+badge+'" alt="'+(en?'Add to Apple Wallet':'添加到 Apple 钱包')+'" height="44" style="display:block;height:44px;width:auto;border:0;"></a></p><p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#52617a;">'+(en?'On iPhone, open your attendance page in Safari to add your pass.':'iPhone 请在 Safari 打开参会页，再添加至 Apple 钱包。')+'</p>');

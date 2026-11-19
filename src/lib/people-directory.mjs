@@ -76,6 +76,7 @@ const SOURCE_LABELS={linked:'邀约与报名已关联',contact:'邀约名单',pu
 const INVITATION_LABELS={not_started:'尚未准备邀请',prepared:'邀请已准备',issuing:'寄送结果待核对',provider_accepted:'邀请：邮件服务已接收',unknown:'邀请结果待核对',rejected:'邀请未发出',manually_sent:'已记录人工发出',not_applicable:''};
 const VIEWS={unassigned:['待分流','核对身份后继续处理。'],attendees:['一般参会者','参会名额与本人回复分别核对。'],all:['人员','先处理需要跟进的人。'],speakers:['讲者','按已保存的讲者职责显示。'],guests:['受邀嘉宾','出席与名额分别核对。'],exhibitors:['参展商','按公司／团队核对安排。']};
 const RESPONSE_LABELS={pending:'待回复',attending:'已答应出席',declined:'不出席'};
+const recordedAtFormat=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Taipei',dateStyle:'medium',timeStyle:'short',hourCycle:'h23'});
 
 const NAV_KEY='artdico:people-navigation:v1',NAV_TTL=30*60*1000;
 const NAV_FIELDS=['schemaVersion','actorId','roles','eventId','view','query','work','attendance','cursor','trail','revision','ids','selected','focus','scrollY','capturedAt'];
@@ -129,9 +130,9 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
   function personRow(item){
     const row=node('tr');row.dataset.directoryPerson=item.personKey??item.key;
     const identity=node('td'),status=node('td'),actions=node('td');
-    identity.append(node('div',item.name,'people-directory-name'),node('small',item.organization||'机构未填写'));
-    const recorded=node('time',item.recordedAt?'录入：'+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Taipei',dateStyle:'medium',timeStyle:'short',hourCycle:'h23'}).format(new Date(item.recordedAt)):'录入时间未记录','people-recorded-at');if(item.recordedAt)recorded.dateTime=item.recordedAt;identity.append(recorded);
-    if(item.contactId||item.owner){const owner=ownerTagPresentation(item.owner),tag=node('span',owner.label,'ah-owner-tag');tag.dataset.ownerTone=owner.tone;identity.append(tag);}
+    identity.append(node('div',item.name,'people-directory-name'));
+    if(item.organization)identity.append(node('small',item.organization));
+    if(item.owner){const owner=ownerTagPresentation(item.owner),tag=node('span',owner.label,'ah-owner-tag');tag.dataset.ownerTone=owner.tone;identity.append(tag);}
     const next=item.nextAction;
     const progress=item.attendance??personAttendanceStage({responseStatus:item.responseStatus,admissionStatus:item.admissionStatus,deliveryStatus:item.deliveryStatus,invitationStatus:item.invitationStatus,historicalDeliveryUnknown:item.deliveryHistoryUnknown===true});
     const primaryStatus=badge(progress.label,progress.key);primaryStatus.dataset.directoryAttendanceStage=progress.key;status.append(primaryStatus);
@@ -143,6 +144,7 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
     else if(item.profileId&&getUser()?.roles?.some(role=>['editor','superadmin'].includes(role)))actions.append(link('核对人物资料','/admin/content/guests/#guest='+encodeURIComponent(item.profileId),'people-directory-action'));
     else actions.append(node('small','交由活动编辑核对'));
     const menu=node('details',undefined,'people-row-menu');menu.append(node('summary','更多'));const options=node('div');
+    if(item.recordedAt){const recorded=node('time','录入：'+recordedAtFormat.format(new Date(item.recordedAt)),'people-recorded-at');recorded.dateTime=item.recordedAt;options.append(recorded);}
     if(item.sourceCount>1)options.append(node('small','已关联 '+item.sourceCount+' 项来源'));
     if(SOURCE_LABELS[item.source])options.append(node('small',SOURCE_LABELS[item.source]));
     if(item.roles.length)options.append(node('small',item.roles.map(role=>ROLE_LABELS[role]).join(' / ')));

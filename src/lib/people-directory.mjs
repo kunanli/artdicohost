@@ -144,7 +144,7 @@ export function createPeopleDirectory({root,request,getUser,onContact,onProfile,
     else if(item.profileId&&getUser()?.roles?.some(role=>['editor','superadmin'].includes(role)))actions.append(link('核对人物资料','/admin/content/guests/#guest='+encodeURIComponent(item.profileId),'people-directory-action'));
     else actions.append(node('small','交由活动编辑核对'));
     const menu=node('details',undefined,'people-row-menu');menu.append(node('summary','更多'));const options=node('div');
-    if(item.recordedAt){const recorded=node('time','录入 '+recordedAtFormat.format(new Date(item.recordedAt)),'people-recorded-at');recorded.dateTime=item.recordedAt;options.append(recorded);}
+    if(item.recordedAt){const recorded=node('time','录入：'+recordedAtFormat.format(new Date(item.recordedAt)),'people-recorded-at');recorded.dateTime=item.recordedAt;options.append(recorded);}
     if(item.sourceCount>1)options.append(node('small','已关联 '+item.sourceCount+' 项来源'));
     if(SOURCE_LABELS[item.source])options.append(node('small',SOURCE_LABELS[item.source]));
     if(item.roles.length)options.append(node('small',item.roles.map(role=>ROLE_LABELS[role]).join(' / ')));

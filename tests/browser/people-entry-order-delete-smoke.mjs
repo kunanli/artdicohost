@@ -42,8 +42,9 @@ try{
       assert.equal(await rows.nth(0).getAttribute('data-directory-person'),'contact:'+latest.contact.id);
       assert.equal(await rows.nth(1).getAttribute('data-directory-person'),'contact:'+first.contact.id);
       assert.equal(await rows.nth(2).getAttribute('data-directory-person'),'registration:'+registration.reference_code);
-      assert.equal(await rows.nth(0).locator('time').getAttribute('datetime'),latest.contact.createdAt);assert.match(await rows.nth(0).locator('time').textContent(),/录入：/u);
-      await rows.nth(0).locator('summary').click();await rows.nth(0).getByRole('button',{name:'删除',exact:true}).click();
+      const recorded=rows.nth(0).locator('time');assert.equal(await recorded.getAttribute('datetime'),latest.contact.createdAt);assert.equal(await recorded.isVisible(),false);
+      await rows.nth(0).locator('summary').click();assert.equal(await recorded.isVisible(),true);assert.match(await recorded.textContent(),/录入：/u);
+      await rows.nth(0).getByRole('button',{name:'删除',exact:true}).click();
       await page.locator('[data-directory-status]').filter({hasText:width===390?'已核对删除结果':'已从名单删除'}).waitFor();assert.equal(await rows.count(),2);
       assert.equal(calls.filter(row=>row.method==='POST'&&row.path.endsWith('/archive')).length,1,'lost ACK is resolved with a read, never a duplicate write');
       const retained=(await f.app.contactsStore.read()).contacts.find(row=>row.id===latest.contact.id);assert.ok(retained.archivedAt);assert.deepEqual(retained.source,latest.contact.source);

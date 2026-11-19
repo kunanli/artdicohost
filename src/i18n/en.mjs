@@ -6,7 +6,7 @@ export const english = new Map([
 ["电子纪念卡申请","Commemorative card application"],
 ["电子纪念卡","Digital commemorative card"],
 ["如何申请电子纪念卡？","How can I request a digital commemorative card?"],
-["完成活动行报名后，在本页填写报名编号、姓名、邮箱与微信号。工作人员核对后会寄出领取链接。打开即可下载 JPEG，也可在 iPhone 上加入 Apple Wallet。请保留活动行原电子票。","After registering on Huodongxing, enter your booking reference, name, email, and WeChat ID here. Staff will verify your booking and email a link. Use it to download the JPEG and add the card to Apple Wallet on iPhone. Keep your original Huodongxing ticket."],
+["完成活动行报名后，在本页填写报名编号、姓名、邮箱与微信号。工作人员核对报名并确认入场身份后，会寄出领取链接。打开即可下载 JPEG，也可在 iPhone 上加入 Apple Wallet。请保留活动行原电子票。","After registering on Huodongxing, enter your booking reference, name, email, and WeChat ID here. Staff will verify your booking and confirm the role on your card, then email a link. Use it to download the JPEG and add the card to Apple Wallet on iPhone. Keep your original Huodongxing ticket."],
 ["已在活动行报名？工作人员核对申请后会寄出领取链接。打开即可下载 JPEG，也可在 iPhone 上加入 Apple Wallet。","Already registered on Huodongxing? Staff will review your request and email a link. Use it to download the JPEG and add the card to Apple Wallet on iPhone."],
 ["尚未报名？前往活动行","Not registered? Go to Huodongxing"],
 ["申请电子纪念卡","Request a commemorative card"],

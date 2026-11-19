@@ -13,11 +13,12 @@ const reports = [];
 await mkdir(output, { recursive: true });
 
 try {
-  for (const [width, outcome] of [[390, 'accepted'], [1440, 'unknown']]) {
+  for (const [width, outcome] of [[320, 'accepted'], [390, 'accepted'], [1440, 'unknown']]) {
     const isCard = message => /电子纪念卡/u.test(message.template_params.email_subject);
     const fixture = await peopleRuntimeFixture({ mail: true, mailResult: message => isCard(message) ? outcome : 'accepted' });
     const context = await browser.newContext({ viewport: { width, height: 840 }, locale: 'zh-CN' });
     const errors = [];
+    let privateReads = 0, staleIdentity = width === 320;
     try {
       await context.route('**/*', async route => {
         const request = route.request(), url = new URL(request.url());
@@ -25,6 +26,11 @@ try {
           assert.ok([SITE, API].includes(url.origin));
           if (url.origin === API && url.pathname.startsWith('/api/')) {
             const method = request.method();
+            if (method === 'POST' && url.pathname === '/api/admin/registration/confirmation') privateReads++;
+            if (staleIdentity && method === 'PATCH' && url.pathname.startsWith('/api/admin/registration-confirmation/cards/')) {
+              staleIdentity = false;
+              return route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":{"message":"资料已更新，请核对后再保存。"}}' });
+            }
             const response = await fixture.app.handle(new Request(url.href, { method, headers: await request.allHeaders(),
               ...(['GET', 'HEAD'].includes(method) ? {} : { body: request.postData() }) }));
             return route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: Buffer.from(await response.arrayBuffer()) });
@@ -63,12 +69,27 @@ try {
       assert.equal(await page.locator('[data-card-filter="todo"] span').textContent(), '2');
       assert.equal(await page.locator('[data-card-list] small').textContent(), '核对报名');
       assert.equal(await page.locator('[data-card-recipient]').innerText(), recipient);
+      const selectedUrl = page.url();
+      assert.match(selectedUrl, /#application=[A-Za-z0-9_-]{43}$/u);
+      await page.reload();
+      await page.locator('[data-card-details]:not([hidden])').waitFor();
+      assert.equal(page.url(), selectedUrl);
+      assert.equal(await page.locator('[data-card-recipient]').innerText(), recipient);
+      await page.locator('[data-card-search]').fill('0000000420');
       const cardMessages = () => fixture.messages.filter(isCard);
       assert.equal(cardMessages().length, 0);
       await page.locator('[data-card-approve]').click();
       await page.locator('#card-identity').selectOption('guest');
       assert.equal(await page.locator('[data-card-list] small').textContent(), '设置卡面身份');
       await page.locator('[data-card-identity-form] button').click();
+      if (width === 320) {
+        await page.getByRole('alert').filter({ hasText: '资料已更新，请核对后再保存。' }).waitFor();
+        assert.equal(await page.locator('[data-card-detail-error]').isVisible(), true);
+        assert.equal(await page.locator('[data-card-error]').isVisible(), false);
+        assert.equal(page.url(), selectedUrl);
+        await page.locator('#card-identity').selectOption('guest');
+        await page.locator('[data-card-identity-form] button').click();
+      }
       await page.locator('#card-format').selectOption('jpeg');
       assert.equal(await page.locator('#card-format option[value=wallet]').isDisabled(), true);
       assert.equal(await page.locator('[data-card-identity-value] span').innerText(), '嘉宾');
@@ -83,6 +104,7 @@ try {
         await page.locator('[data-card-search]').fill('');
         assert.equal(await page.locator('[data-card-list] small').first().textContent(), '核对寄送结果');
         await page.locator('[data-card-check]').click();
+        await page.getByRole('status').filter({ hasText: '已重新核对，寄送结果仍待确认。' }).waitFor();
         await page.locator('[data-card-check]:enabled').waitFor();
         assert.equal(cardMessages().length, 1);
       } else {
@@ -94,23 +116,27 @@ try {
         await page.locator('[data-card-filter="submitted"]').click();
         assert.equal(await page.locator('[data-card-list] small').textContent(), 'JPEG 已提交');
         const link = /https:\/\/artdico\.host\/registration\/confirmation\/#r=[A-Za-z0-9_.-]+/u.exec(cardMessages()[0].template_params.invitation_text)[0];
+        const readsBefore = privateReads;
         await page.goto(link);
-        await page.locator('[data-confirmation-jpeg]').click();
+        const downloadButton = page.getByRole('link', { name: '下载 JPEG 纪念卡' });
+        await downloadButton.waitFor();
+        assert.equal(await downloadButton.evaluate(button => button.getBoundingClientRect().bottom <= innerHeight), true);
         const image = page.locator('[data-confirmation-jpeg-image]');
         await page.waitForFunction(node => node.complete && node.naturalWidth === 1030 && node.naturalHeight === 1510, await image.elementHandle());
         assert.equal(await page.locator('[data-confirmation-wallet]').isVisible(), false);
         await page.screenshot({ path: resolve(output, 'recipient-jpeg-' + width + '.png'), fullPage: true });
         const pending = page.waitForEvent('download');
-        await page.locator('[data-confirmation-jpeg-download]').click();
+        await downloadButton.click();
         const download = await pending;
         assert.equal(download.suggestedFilename(), 'artdico-host-card.jpg');
         const jpeg = await readFile(await download.path());
         assert.deepEqual([...jpeg.subarray(0, 3)], [0xff, 0xd8, 0xff]);
         assert.deepEqual([...jpeg.subarray(-2)], [0xff, 0xd9]);
+        assert.equal(privateReads - readsBefore, 1, 'the first private read makes the JPEG ready to download');
         await writeFile(resolve(output, 'sample-commemorative-card.jpg'), jpeg);
       }
       assert.deepEqual(errors, []);
-      reports.push({ width, outcome, mailedOnce: true });
+      reports.push({ width, outcome, mailedOnce: true, selectedAfterReload: true, inlineError: width === 320, directJpeg: outcome === 'accepted' });
     } finally { await context.close(); }
   }
 } finally { await browser.close(); }

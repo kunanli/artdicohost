@@ -35,9 +35,9 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
           <section class="confirmation-save" aria-labelledby="confirmation-save-heading">
             <h2 id="confirmation-save-heading" data-confirmation-save-heading>保存参会信息</h2>
             <div class="confirmation-actions">
+              <a data-confirmation-jpeg-download download="artdico-host-card.jpg" hidden>下载 JPEG 纪念卡</a>
               <button type="button" data-confirmation-copy>复制私人链接</button>
               <button type="button" data-confirmation-wallet hidden><img src="/wallet/add-to-apple-wallet.svg" alt="添加到 Apple 钱包" data-confirmation-wallet-badge decoding="async" referrerpolicy="no-referrer" hidden /><span data-confirmation-wallet-label>加入 Apple Wallet</span></button>
-              <button type="button" data-confirmation-jpeg hidden>生成 JPEG 纪念卡</button>
             </div>
             <p class="confirmation-device" data-confirmation-device hidden></p>
             <section class="confirmation-safari-guide" data-confirmation-safari-guide hidden aria-labelledby="confirmation-safari-heading">
@@ -48,7 +48,6 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
             <p class="confirmation-action-status" data-confirmation-action-status role="status" aria-live="polite"></p>
             <div class="confirmation-invitation" data-confirmation-jpeg-preview hidden>
               <img data-confirmation-jpeg-image alt="你的电子纪念卡" width={CARD_IMAGE.width} height={CARD_IMAGE.height} decoding="async" />
-              <a data-confirmation-jpeg-download download="artdico-host-card.jpg">下载 JPEG 纪念卡</a>
               <p>手机可长按图片保存。</p>
             </div>
             <div class="confirmation-copy-fallback" data-confirmation-copy-fallback hidden><label for="confirmation-private-link">复制并私下保存此链接</label><input id="confirmation-private-link" data-confirmation-private-link readonly autocomplete="off" /></div>

@@ -59,12 +59,13 @@ import '../../../styles/admin.css';
                   <button class="ah-admin-button ah-admin-primary" type="submit">保存身份</button>
                 </form>
                 <form data-card-delivery hidden>
-                  <div class="ah-admin-field"><label for="card-format">寄送格式</label><select id="card-format" required><option value="">选择格式</option><option value="jpeg">JPEG 图片</option><option value="wallet">Apple Wallet</option></select></div>
+                  <div class="ah-admin-field"><label for="card-format">寄送格式</label><select id="card-format" required><option value="">选择格式</option><option value="jpeg">JPEG 图片</option><option value="wallet">Apple Wallet（iPhone）</option></select></div>
                   <p class="card-muted">邮件会寄到上方邮箱，内含私人领取链接。</p>
                   <button class="ah-admin-button ah-admin-primary" type="submit">寄送纪念卡</button>
                 </form>
                 <button class="ah-admin-button" type="button" data-card-check hidden>核对结果</button>
               </div>
+              <p class="ah-admin-alert" data-card-detail-error role="alert" hidden></p>
               <p class="ah-admin-status" data-card-message role="status" aria-live="polite"></p>
             </section>
           </div>

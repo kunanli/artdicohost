@@ -36,6 +36,7 @@ const format = $('#card-format');
 const approve = $('[data-card-approve]');
 const check = $('[data-card-check]');
 const errorBox = $('[data-card-error]');
+const detailError = $('[data-card-detail-error]');
 const message = $('[data-card-message]');
 const placeholder = $('[data-card-placeholder]');
 
@@ -43,9 +44,15 @@ let csrf = '', rows = [], filter = 'todo', activeId = '', current = null, busy =
 const pendingApprovals = new Map();
 const rowFor = id => rows.find(row => row.sources.some(source => source.id === id));
 
-function showError(text = '') {
-  errorBox.textContent = text;
-  errorBox.hidden = !text;
+function showError(text = '', target = errorBox) {
+  for (const box of [errorBox, detailError]) {
+    box.textContent = box === target ? text : '';
+    box.hidden = !box.textContent;
+  }
+}
+function rememberApplication(id) {
+  const hash = id ? '#application=' + id : '';
+  if (hash !== location.hash) history.replaceState(history.state, '', location.pathname + location.search + hash);
 }
 async function request(path, method = 'GET', body) {
   const reply = await fetch(path, {
@@ -181,21 +188,26 @@ function renderActions() {
   if (!value.walletReady && format.value === 'wallet') format.value = '';
   const wallet = format.querySelector('[value="wallet"]');
   wallet.disabled = !value.walletReady;
-  wallet.textContent = value.walletReady ? 'Apple Wallet' : 'Apple Wallet（暂不可用）';
+  wallet.textContent = value.walletReady ? 'Apple Wallet（iPhone）' : 'Apple Wallet（暂不可用）';
   check.hidden = !uncertain;
 }
-async function work(task) {
+async function work(task, nearApplication = false) {
   if (busy) return;
   busy = true;
   showError();
+  if (nearApplication) message.textContent = '';
   root.setAttribute('aria-busy', 'true');
+  const focused = document.activeElement;
   const controls = [...root.querySelectorAll('button, select, input')].filter(node => !node.disabled && node !== logout);
   controls.forEach(node => { node.disabled = true; });
-  try { await task(); } catch (error) { showError(error.message || '暂时无法核对，请稍后重试。'); }
+  try { await task(); } catch (error) { showError(error.message || '暂时无法核对，请稍后重试。', nearApplication && !workspace.hidden ? detailError : errorBox); }
   finally {
     controls.forEach(node => { node.disabled = false; });
     busy = false;
     root.removeAttribute('aria-busy');
+    if (nearApplication && document.activeElement === document.body && !detail.hidden && detail.contains(focused)) {
+      (focused.getClientRects().length ? focused : heading).focus({ preventScroll: true });
+    }
   }
 }
 async function open(id, focus = false) {
@@ -215,6 +227,7 @@ async function open(id, focus = false) {
   if (selected) Object.assign(selected, { name: value.name, status: value.status, stage: value.stage, format: value.format, sentAt: value.sentAt });
   renderList();
   setView(value);
+  rememberApplication(id);
   if (focus) heading.focus();
 }
 async function refresh() {
@@ -226,7 +239,12 @@ async function refresh() {
   if (!activeId && selected && !todo.has(selected.stage)) filter = selected.stage === 'submitted' ? 'submitted' : 'all';
   renderList();
   if (selected) await open(id);
-  else { activeId = ''; setView(null); placeholder.textContent = '请选择一份申请。'; }
+  else {
+    activeId = '';
+    setView(null);
+    if (id) rememberApplication('');
+    placeholder.textContent = id ? '这份申请已不在当前名单。' : '请选择一份申请。';
+  }
 }
 async function start(session) {
   if (!session.user?.roles?.some(role => role === 'reviewer' || role === 'superadmin')) throw new Error('当前账号没有查看纪念卡申请的权限。');
@@ -246,7 +264,7 @@ login.addEventListener('submit', event => {
   });
 });
 logout.addEventListener('click', async () => {
-  try { await request('/api/admin/logout', 'POST'); clear(); showError(); }
+  try { await request('/api/admin/logout', 'POST'); clear(); rememberApplication(''); showError(); }
   catch (error) { showError(error.message); }
 });
 list.addEventListener('click', event => {
@@ -256,7 +274,10 @@ list.addEventListener('click', event => {
 search.addEventListener('input', renderList);
 for (const button of filters) button.addEventListener('click', () => { filter = button.dataset.cardFilter; renderList(); });
 $('[data-card-refresh]').addEventListener('click', () => work(refresh));
-check.addEventListener('click', () => work(() => open(activeId)));
+check.addEventListener('click', () => work(async () => {
+  await open(activeId);
+  if (current?.stage === 'check_delivery') message.textContent = '已重新核对，寄送结果仍待确认。';
+}, true));
 $('[data-card-edit]').addEventListener('click', () => { editingIdentity = true; renderActions(); identity.focus(); });
 
 approve.addEventListener('click', () => work(async () => {
@@ -275,7 +296,7 @@ approve.addEventListener('click', () => work(async () => {
   }
   pendingApprovals.delete(id);
   if (csrf) await open(id);
-}));
+}, true));
 identityForm.addEventListener('submit', event => {
   event.preventDefault();
   void work(async () => {
@@ -284,7 +305,7 @@ identityForm.addEventListener('submit', event => {
     try { await request(api + '/' + view.registrationId, 'PATCH', { primaryId: view.primaryId, expectedRevision: view.reviewRevision, identity: identity.value }); }
     catch (error) { if (csrf) await open(view.registrationId); throw error; }
     if (csrf) { await open(view.registrationId); message.textContent = '卡面身份已保存。'; }
-  });
+  }, true);
 });
 deliveryForm.addEventListener('submit', event => {
   event.preventDefault();
@@ -309,7 +330,7 @@ deliveryForm.addEventListener('submit', event => {
     if (!csrf) return;
     await open(view.registrationId);
     message.textContent = ['provider_accepted', 'unknown', 'rejected'].includes(receipt.status) ? '' : '这次未能寄送，请核对当前状态。';
-  });
+  }, true);
 });
 
 login.querySelector('[type="submit"]').disabled = false;

@@ -6,6 +6,7 @@ import { createConfirmationTokens } from '../functions/registration-confirmation
 import { createRegistrationConfirmationService } from '../functions/registration-confirmation/service.mjs';
 import { createAppleWalletService } from '../functions/apple-wallet/service.mjs';
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
+import { createConfirmationRepository } from '../functions/registration-confirmation/repository.mjs';
 import { createWalletFixture, passFiles } from './apple-wallet-fixture.mjs';
 import { confirmationView } from '../src/lib/confirmation-client.mjs';
 import { CARD_FORMATS_ACCEPT } from '../shared/confirmation-delivery.mjs';
@@ -13,9 +14,11 @@ import { CARD_FORMATS_ACCEPT } from '../shared/confirmation-delivery.mjs';
 const root = '/api/admin/registration-confirmation/cards';
 const operationId = () => randomBytes(32).toString('base64url');
 
-async function setup({ mailResult = 'accepted' } = {}) {
-  const f = await peopleRuntimeFixture({ mail: true, mailResult: message =>
-    /电子纪念卡/u.test(message.template_params.email_subject) ? mailResult : 'accepted' });
+async function setup({ mailResult = 'accepted', clock } = {}) {
+  const f = await peopleRuntimeFixture({ clock, mail: true, mailResult: message => {
+    if (!/电子纪念卡/u.test(message.template_params.email_subject)) return 'accepted';
+    return typeof mailResult === 'function' ? mailResult() : mailResult;
+  } });
   const cardMessages = () => f.messages.filter(message => /电子纪念卡/u.test(message.template_params.email_subject));
   const headers = await f.login();
   const fields = {
@@ -108,20 +111,75 @@ test('staff send one commemorative card email and recipients can still save the 
   assert.equal(f.cardMessages().length, 1);
 });
 
-test('an unknown provider acknowledgement blocks both card formats after reload', async () => {
-  const f = await setup({ mailResult: 'unknown' });
+test('an uncertain send can be explicitly resent to the current address, without a second send from stale tabs', async () => {
+  let outcome = 'unknown';
+  const f = await setup({ mailResult: () => outcome });
   const body = await f.prepare();
   const sent = await f.call('POST', body);
   assert.equal(sent.status, 200);
   assert.equal((await sent.json()).status, 'unknown');
   const persisted = await f.read();
+  assert.equal(persisted.canResend, true);
   const retried = await f.call('POST', { ...body, expectedRevision: persisted.deliveryRevision, format: 'wallet' }, f.make());
   assert.equal(retried.status, 200);
   assert.equal((await retried.json()).status, 'unknown');
   assert.equal(f.cardMessages().length, 1);
   await changeEmail(f);
-  assert.equal((await f.read()).stage, 'check_delivery');
+  const updated = await f.read();
+  assert.equal(updated.stage, 'check_delivery');
   assert.equal((await f.directory())[0].stage, 'check_delivery');
+  outcome = 'accepted';
+  const resend = { ...body, expectedRevision: updated.deliveryRevision, expectedAccessRevision: updated.accessRevision, resend: true };
+  const responses = await Promise.all([f.call('POST', resend), f.call('POST', resend, f.make())]);
+  assert.deepEqual(responses.map(response => response.status).sort(), [200, 409]);
+  assert.equal((await responses.find(response => response.ok).json()).status, 'provider_accepted');
+  assert.equal(f.cardMessages().length, 2);
+  assert.equal(f.cardMessages().at(-1).template_params.to_email, updated.recipient);
+  assert.equal((await f.read()).stage, 'submitted');
+  assert.equal((await f.directory())[0].stage, 'submitted');
+});
+
+test('submitted cards can be explicitly resent with a fresh reservation and respect the existing attempt limit', async () => {
+  const f = await setup();
+  const body = await f.prepare();
+  assert.equal((await (await f.call('POST', body)).json()).status, 'provider_accepted');
+  for (let count = 1; count < 5; count++) {
+    const state = await f.read();
+    assert.equal(state.canResend, true);
+    const resend = { ...body, expectedRevision: state.deliveryRevision, resend: true };
+    assert.equal((await (await f.call('POST', resend)).json()).status, 'provider_accepted');
+    assert.equal((await f.call('POST', resend, f.make())).status, 409);
+    assert.equal(f.cardMessages().length, count + 1);
+  }
+  const state = await f.read();
+  assert.equal(state.canResend, false);
+  assert.equal(state.reason, 'RETRY_LIMIT');
+  assert.equal((await (await f.call('POST', { ...body, expectedRevision: state.deliveryRevision, resend: true })).json()).status, 'not_attempted');
+  assert.equal(f.cardMessages().length, 5);
+});
+
+test('a recent reservation blocks overlap, while an abandoned reservation can be explicitly recovered', async () => {
+  let now = Date.parse('2026-10-21T09:00:00.000Z');
+  const clock = () => now;
+  const f = await setup({ clock });
+  const body = await f.prepare(), state = await f.read();
+  const repository = createConfirmationRepository({ cards: true, eventId: PEOPLE_FIXTURE_EVENT, clock,
+    journal: createObjectJournal({ objects: f.objects, prefix: 'cms/v1/commemorative-cards/' + PEOPLE_FIXTURE_EVENT }) });
+  const original = await repository.append(await repository.read(), 'reserve', {
+    registrationId: f.id, kind: 'card_jpeg', admissionStatus: 'confirmed', admissionRevision: state.admissionRevision, retryRejected: true,
+  }, f.users[0].id);
+  const resend = { ...body, expectedRevision: original.value.revision, resend: true };
+  assert.equal((await f.read()).sendInProgress, true);
+  assert.equal((await f.read()).canResend, false);
+  assert.equal((await (await f.call('POST', resend)).json()).status, 'not_attempted');
+  assert.equal(f.cardMessages().length, 0);
+  now += 60_000;
+  assert.equal((await f.read()).canResend, true);
+  assert.equal((await (await f.call('POST', resend)).json()).status, 'provider_accepted');
+  assert.equal(f.cardMessages().length, 1);
+  const saved = await repository.read();
+  assert.equal(saved.value.notices[0].attempt, 2);
+  assert.deepEqual(saved.value.audit.map(item => item.action), ['reserve', 'card_resend', 'result']);
 });
 
 async function changeEmail(f) {

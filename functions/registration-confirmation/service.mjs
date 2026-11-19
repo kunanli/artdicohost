@@ -3,7 +3,8 @@ import { performance } from 'node:perf_hooks';
 import { plainObject, own, parseTimestamp } from '../registration-api/policy.mjs';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { createConfirmationTokens } from './tokens.mjs';
-import { createConfirmationRepository, canonicalConfirmationKind, formalConfirmationKind, commemorativeCardKind, confirmationNoticeId, confirmationRequestHash, validConfirmationOperation, MAX_CONFIRMATION_BATCH } from './repository.mjs';
+import { createConfirmationRepository, canonicalConfirmationKind, formalConfirmationKind, commemorativeCardKind, confirmationNoticeId, confirmationRequestHash,
+  validConfirmationOperation, MAX_CONFIRMATION_BATCH, sameConfirmationScope as sameScope, cardResendCandidates, cardSendInProgress } from './repository.mjs';
 import { CARD_FORMATS, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 import { buildPosterInvitationSettings } from '../../shared/organizer-progress.mjs';
@@ -115,7 +116,6 @@ export function createRegistrationConfirmationService({ registrationService, jou
     return value;
   }
   const scopeOf = loaded => ({ accessRevision: loaded.record.accessRevision ?? 0, recipientDigest: confirmationRequestHash(loaded.record.fields.email ?? '') });
-  const sameScope = (notice, scope) => (notice.accessRevision ?? 0) === scope.accessRevision && (scope.accessRevision === 0 || notice.recipientDigest === scope.recipientDigest);
   function relatedNotices(state, aliases, kind, scope) {
     return state.notices.filter(item => aliases.registrationIds.includes(item.registrationId)
       && (commemorativeCardKind(kind) ? commemorativeCardKind(item.kind)
@@ -135,7 +135,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       && operation.status !== 'completed' && operation.registrationIds.some(id => registrationIds.includes(id) && (!scope || sameScope(operation.recipientScopes?.[id] ?? {}, scope)))) ? 'unknown' : status;
   }
   function historicalUncertainty(state, aliases, kind, scope) {
-    return relatedNotices(state, aliases, kind).some(notice => !sameScope(notice, scope) && ['reserved', 'unknown'].includes(notice.status))
+    return relatedNotices(state, aliases, kind).some(notice => !notice.superseded && !sameScope(notice, scope) && ['reserved', 'unknown'].includes(notice.status))
       || state.operations.some(op => op.action === (kind === 'pre_event_reminder' ? 'reminder_dispatch' : 'dispatch') && op.status !== 'completed'
         && op.registrationIds.some(id => aliases.registrationIds.includes(id) && !sameScope(op.recipientScopes?.[id] ?? {}, scope)));
   }
@@ -205,26 +205,34 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!current.value.settings.enabled) return { status: 'disabled' };
     return { status: (await providerState()).ready ? 'pending' : 'not_configured' };
   }
-  async function reserve(registrationId, admission, actorId, retryRejected, deadline, requestedKind, loaded, expectedRevision) {
+  async function reserve(registrationId, admission, actorId, retryRejected, deadline, requestedKind, loaded, card) {
     const storage = target(requestedKind);
+    const expectedRevision = card?.expectedRevision, resend = card?.resend === true;
     for (let tries = 0; tries < 4; tries++) {
       if (monotonicNow() >= deadline) return { status: 'not_attempted' };
       const aliases = await aliasesFor(deliveryAliases ? loaded : { ...loaded, index: (await registrationService.repository.readIndex()).value });
       if (aliases.primaryRegistrationId !== registrationId || !applicable(loaded, requestedKind)) return { status: 'not_applicable' };
       const current = await storage.read(), kind = formalConfirmationKind(requestedKind)
         ? canonicalConfirmationKind(current.value, registrationId, admission.status) : requestedKind;
-      const scope = scopeOf(loaded), allRelated = relatedNotices(current.value, aliases, kind), related = allRelated.filter(item => sameScope(item, scope)), previous = strongestNotice(related);
-      if (historicalUncertainty(current.value, aliases, kind, scope)) return { status: 'unknown' };
+      const scope = scopeOf(loaded), allRelated = relatedNotices(current.value, aliases, kind);
+      const related = allRelated.filter(item => !item.superseded && sameScope(item, scope)), previous = strongestNotice(related);
+      if (resend && current.value.revision !== expectedRevision) failure('REVISION_CONFLICT', 409);
+      if (resend && (!cardResendCandidates(allRelated, scope).length || cardSendInProgress(allRelated, clock()))) return { status: 'not_attempted' };
+      if (!resend && historicalUncertainty(current.value, aliases, kind, scope)) return { status: 'unknown' };
       if (allRelated.reduce((total, item) => total + item.attempt, 0) >= 5 && (!previous || retryRejected)) return { status: 'not_attempted' };
       if (!current.value.settings.enabled) return { status: 'disabled' };
-      if (previous && (!retryRejected || previous.status !== 'rejected' || related.reduce((total, item) => total + item.attempt, 0) >= 5)) return { notice: previous, owned: false };
+      if (!resend && previous && (!retryRejected || previous.status !== 'rejected' || related.reduce((total, item) => total + item.attempt, 0) >= 5)) return { notice: previous, owned: false };
       if (expectedRevision !== undefined && current.value.revision !== expectedRevision) failure('REVISION_CONFLICT', 409);
       if (requestedKind === 'card_wallet' && !(await walletState()).ready) return { status: 'not_configured' };
       if (monotonicNow() >= deadline) return { status: 'not_attempted' };
       const checkedFacts = await currentEventFacts();
       if (!checkedFacts.ready || monotonicNow() >= deadline) return { status: 'not_attempted' };
       try {
-        const saved = await storage.append(current, 'reserve', { registrationId, kind, admissionStatus: admission.status, admissionRevision: admission.revision, retryRejected, ...(scope.accessRevision > 0 ? scope : {}) }, actorId);
+        const saved = await storage.append(current, resend ? 'card_resend' : 'reserve', {
+          registrationId, kind, admissionStatus: admission.status, admissionRevision: admission.revision, retryRejected,
+          ...(resend || scope.accessRevision > 0 ? scope : {}),
+          ...(resend ? { relatedRegistrationIds: [...aliases.registrationIds].sort() } : {}),
+        }, actorId);
         return { notice: saved.value.notices.find(item => item.id === confirmationNoticeId(eventId, registrationId, kind, scope.accessRevision, scope.recipientDigest)), owned: true, checkedFacts };
       } catch (error) { if (!conflict(error)) throw error; }
     }
@@ -234,7 +242,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const storage = target(notice.kind);
     for (let tries = 0; tries < 4; tries++) {
       const current = await storage.read(), item = current.value.notices.find(value => value.id === notice.id);
-      if (!item || item.attempt !== notice.attempt || item.status !== 'reserved' || item.actorId !== actorId) failure();
+      if (!item || item.superseded || item.attempt !== notice.attempt || item.status !== 'reserved' || item.actorId !== actorId) failure();
       try { const saved = await storage.append(current, 'result', { noticeId: notice.id, status, attempt: notice.attempt, ...(diagnostic ? { diagnostic } : {}) }, actorId); return noticeEmail(saved.value.notices.find(value => value.id === notice.id)); }
       catch (error) { if (!conflict(error)) throw error; }
     }
@@ -252,7 +260,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (admission.status === 'withdrawn') return { status: 'withdrawn' };
     if (!applicable(loaded, kind)) return { status: 'not_applicable' };
     if (typeof record.fields.email !== 'string' || !record.fields.email) return { status: 'not_applicable' };
-    const reserved = recovery ?? await reserve(registrationId, admission, actorId, retryRejected, deadline, kind, loaded, card?.expectedRevision);
+    const reserved = recovery ?? await reserve(registrationId, admission, actorId, retryRejected, deadline, kind, loaded, card);
     if (reserved.status) return reserved;
     if (!reserved.owned) return noticeEmail(reserved.notice);
     const notice = reserved.notice, checkedFacts = reserved.checkedFacts;
@@ -276,8 +284,10 @@ export function createRegistrationConfirmationService({ registrationService, jou
         && formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' && ['reserved', 'unknown', 'provider_accepted'].includes(item.status))
         || delivery.value.operations.some(op => op.operationId !== recovery.operationId && op.action === 'dispatch'
           && op.status !== 'completed' && op.registrationIds.some(id => aliases.registrationIds.includes(id))))) return false;
-      if (historicalUncertainty(delivery.value, aliases, kind, scopeOf(loaded)) || !delivery.value.settings.enabled || ownNotice?.status !== 'reserved' || ownNotice.attempt !== notice.attempt
-        || relatedNotices(delivery.value, aliases, kind, scopeOf(loaded)).some(item => item.id !== notice.id && ['reserved', 'unknown', 'provider_accepted'].includes(item.status))) return false;
+      if (historicalUncertainty(delivery.value, aliases, kind, scopeOf(loaded)) || !delivery.value.settings.enabled || ownNotice?.status !== 'reserved'
+        || ownNotice.superseded || ownNotice.attempt !== notice.attempt
+        || relatedNotices(delivery.value, aliases, kind, scopeOf(loaded)).some(item => item.id !== notice.id && !item.superseded
+          && ['reserved', 'unknown', 'provider_accepted'].includes(item.status))) return false;
       const unchanged = unchangedEventFacts(checkedFacts, await currentEventFacts());
       if (!unchanged || signal?.aborted || monotonicNow() >= deadline) { guardUnattempted = true; return false; }
       return true;
@@ -794,7 +804,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
   }
   function cardDelivery(related, record) {
     const scope = scopeOf({ record });
-    const notice = strongestNotice(related.filter(item => sameScope(item, scope) || ['reserved', 'unknown'].includes(item.status)));
+    const notice = strongestNotice(related.filter(item => !item.superseded && (sameScope(item, scope) || ['reserved', 'unknown'].includes(item.status))));
     return { status: stateOf(notice) ?? 'not_sent', format: notice?.kind.slice(5) ?? null,
       sentAt: notice?.status === 'provider_accepted' ? notice.updatedAt : null,
       atRetryLimit: related.reduce((count, item) => count + item.attempt, 0) >= 5 };
@@ -851,8 +861,10 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const { application, primary, aliases } = await cardContext(registrationId);
     const { record, admission } = primary;
     const delivery = await target('card_jpeg').read();
-    const state = cardDelivery(relatedNotices(delivery.value, aliases, 'card_jpeg'), record);
-    const maySend = cardMaySend(cardStage(admission.status, record.walletIdentity, state));
+    const related = relatedNotices(delivery.value, aliases, 'card_jpeg'), state = cardDelivery(related, record);
+    const sendInProgress = cardSendInProgress(related, clock());
+    const mayResend = admission.status === 'confirmed' && record.walletIdentity && ['unknown', 'provider_accepted'].includes(state.status);
+    const maySend = mayResend || cardMaySend(cardStage(admission.status, record.walletIdentity, state));
     const [mailReason, permission, wallet] = maySend ? await Promise.all([cardMailReason(actor), deliveryPermission(record), walletState()]) : ['', null, { ready: false }];
     const reason = maySend ? cardBlockingReason(record, state, mailReason, permission) : '';
     const recipient = admission.status === 'withdrawn' ? '' : record.fields.email ?? '';
@@ -860,7 +872,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
       bookingReference: application.record.fields.huodongxingReference, recipient, identity: record.walletIdentity ?? '',
       admissionStatus: admission.status, admissionRevision: admission.revision, reviewRevision: record.reviewRevision, accessRevision: record.accessRevision ?? 0,
       deliveryRevision: delivery.value.revision, status: state.status, format: state.format, sentAt: state.sentAt,
-      stage: cardStage(admission.status, record.walletIdentity, state, reason), reason, walletReady: wallet.ready };
+      stage: cardStage(admission.status, record.walletIdentity, state, reason), reason, walletReady: wallet.ready,
+      canResend: Boolean(mayResend && !sendInProgress && !reason), sendInProgress };
   }
   async function staffCardSaveIdentity({ actor, registrationId, primaryId, expectedRevision, identity } = {}) {
     if (!readerValid(actor)) failure('FORBIDDEN', 403);
@@ -888,15 +901,15 @@ export function createRegistrationConfirmationService({ registrationService, jou
       || operation.action !== 'approve' || operation.revision !== expectedRevision + 1 || !STATUS.includes(status)) failure();
     return { status };
   }
-  async function staffSendCard({ actor, registrationId, primaryId, expectedRevision, expectedAccessRevision, identity, format } = {}) {
+  async function staffSendCard({ actor, registrationId, primaryId, expectedRevision, expectedAccessRevision, identity, format, resend = false } = {}) {
     if (!actorValid(actor)) failure('FORBIDDEN', 403);
     if (!ID.test(primaryId ?? '') || ![expectedRevision, expectedAccessRevision].every(value => Number.isSafeInteger(value) && value >= 0)
-      || !CARD_FORMATS.includes(format) || !WALLET_IDENTITIES.some(item => item.value === identity)) failure('INVALID_REQUEST', 400);
+      || typeof resend !== 'boolean' || !CARD_FORMATS.includes(format) || !WALLET_IDENTITIES.some(item => item.value === identity)) failure('INVALID_REQUEST', 400);
     const { primary } = await cardContext(registrationId);
     const scope = scopeOf(primary);
     if (primaryId !== primary.record.id || scope.accessRevision !== expectedAccessRevision || primary.record.walletIdentity !== identity) failure('REVISION_CONFLICT', 409);
     if (!(await target().read()).value.settings.enabled) return { status: 'disabled' };
-    const card = { applicationId: registrationId, expectedRevision, identity, format };
+    const card = { applicationId: registrationId, expectedRevision, identity, format, resend };
     return notify(primaryId, { kind: 'card_' + format, actorId: actor.id, retryRejected: true, expectedScope: scope, card });
   }
   return Object.freeze({ prefix, forSavedReceipt, notifyApplicationReceived, authorize, authorizedRegistration, confirmation, staffConfirmationLink, settings, setSettings, dispatch,

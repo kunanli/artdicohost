@@ -4,7 +4,7 @@ const api = '/api/admin/registration-confirmation/cards';
 const idPattern = /^[A-Za-z0-9_-]{43}$/u;
 const draftId = () => /^#application=([A-Za-z0-9_-]{43})$/u.exec(location.hash)?.[1] ?? '';
 const stages = {
-  check_delivery: '核对寄送结果', pending_review: '核对报名', set_identity: '设置卡面身份',
+  check_delivery: '寄送结果未确认', pending_review: '核对报名', set_identity: '设置卡面身份',
   retry_delivery: '可重新寄送', send: '待寄送', blocked: '暂不可寄送',
   submitted: '已提交发送', waitlisted: '候补中', rejected: '报名未通过', withdrawn: '报名已取消',
 };
@@ -157,8 +157,9 @@ function renderActions() {
   if (!value) return;
   const verified = value.admissionStatus === 'confirmed';
   const sent = value.stage === 'submitted', uncertain = value.stage === 'check_delivery';
-  const canSend = value.stage === 'send' || value.stage === 'retry_delivery';
-  const reason = value.stage === 'blocked' && (reasons[value.reason] ?? '收件权限暂无法核对。');
+  const resend = value.canResend === true;
+  const canSend = value.stage === 'send' || value.stage === 'retry_delivery' || resend;
+  const reason = value.reason && (reasons[value.reason] ?? '收件权限暂无法核对。');
   const pending = pendingApprovals.has(value.registrationId);
   const identityValue = $('[data-card-identity-value]');
   identityValue.hidden = $('[data-card-identity-label]').hidden = !value.identity || !verified;
@@ -166,24 +167,30 @@ function renderActions() {
   $('[data-card-edit]').hidden = !verified || uncertain || sent || editingIdentity;
   const state = $('[data-card-state]');
   state.dataset.stage = value.stage;
-  state.textContent = uncertain ? '寄送结果待核对，请勿重复寄送。'
+  state.textContent = value.sendInProgress ? '纪念卡正在发送。'
+    : uncertain ? '上次寄送结果未确认。'
     : sent ? '纪念卡邮件已提交发送'
     : reason || (value.stage === 'retry_delivery' ? '发送失败，可再次寄送。' : stages[value.stage]);
   const submittedAt = $('[data-card-sent-at]');
   submittedAt.hidden = !sent || !value.sentAt;
   submittedAt.textContent = submittedAt.hidden ? '' : '提交时间 ' + sentTime.format(new Date(value.sentAt));
   const correction = $('[data-card-correct-email]');
-  correction.hidden = value.stage !== 'blocked' || value.reason !== 'EMAIL_MISSING';
+  correction.hidden = value.reason !== 'EMAIL_MISSING';
   if (!correction.hidden) correction.href = '/admin/person/#registration=' + encodeURIComponent(value.primaryId);
   else correction.removeAttribute('href');
   $('[data-card-verification]').hidden = value.stage !== 'pending_review';
   approve.textContent = pending ? '核对报名确认结果' : '核对无误，确认报名';
   identityForm.hidden = !verified || uncertain || sent || Boolean(value.identity && !editingIdentity);
   deliveryForm.hidden = !canSend || editingIdentity;
-  deliveryForm.querySelector('[type="submit"]').textContent = value.stage === 'retry_delivery' ? '重新寄送纪念卡' : '寄送纪念卡';
-  $('[data-card-delivery-formats]').textContent = value.walletReady
+  deliveryForm.querySelector('[type="submit"]').textContent = resend || value.stage === 'retry_delivery' ? '重新发送纪念卡' : '发送纪念卡';
+  $('[data-card-delivery-formats]').textContent = uncertain && resend
+    ? '重新发送可能让收件人收到两封纪念卡邮件。'
+    : value.walletReady
     ? '一封邮件可领取 JPEG 和 Apple Wallet。' : '可先寄送 JPEG。Apple Wallet 就绪后可用同一链接领取。';
-  check.hidden = !uncertain;
+  const deliveryBlock = $('[data-card-delivery-block]');
+  deliveryBlock.hidden = !(uncertain || sent) || !reason || value.reason === 'EMAIL_MISSING';
+  deliveryBlock.textContent = deliveryBlock.hidden ? '' : reason;
+  check.hidden = !value.sendInProgress;
 }
 async function work(task, nearApplication = false) {
   if (busy) return;
@@ -268,10 +275,7 @@ list.addEventListener('click', event => {
 search.addEventListener('input', renderList);
 for (const button of filters) button.addEventListener('click', () => { filter = button.dataset.cardFilter; renderList(); });
 $('[data-card-refresh]').addEventListener('click', () => work(refresh));
-check.addEventListener('click', () => work(async () => {
-  await open(activeId);
-  if (current?.stage === 'check_delivery') message.textContent = '已重新核对，寄送结果仍待确认。';
-}, true));
+check.addEventListener('click', () => work(() => open(activeId), true));
 $('[data-card-edit]').addEventListener('click', () => { editingIdentity = true; renderActions(); identity.focus(); });
 
 approve.addEventListener('click', () => work(async () => {
@@ -305,13 +309,13 @@ deliveryForm.addEventListener('submit', event => {
   event.preventDefault();
   void work(async () => {
     const view = current;
-    if (!view) return;
-    message.textContent = '正在寄送…';
+    if (!view || !['send', 'retry_delivery'].includes(view.stage) && !view.canResend) return;
+    message.textContent = '正在发送…';
     let receipt;
     try {
       receipt = await request(api + '/' + view.registrationId, 'POST', {
         primaryId: view.primaryId, expectedRevision: view.deliveryRevision, expectedAccessRevision: view.accessRevision,
-        identity: view.identity, format: 'jpeg',
+        identity: view.identity, format: 'jpeg', ...(view.canResend ? { resend: true } : {}),
       });
     } catch (error) {
       if (csrf) {
@@ -323,7 +327,8 @@ deliveryForm.addEventListener('submit', event => {
     }
     if (!csrf) return;
     await open(view.registrationId);
-    message.textContent = ['provider_accepted', 'unknown', 'rejected'].includes(receipt.status) ? '' : '这次未能寄送，请核对当前状态。';
+    if (view.canResend && receipt.status === 'provider_accepted') message.textContent = '已重新提交纪念卡邮件。';
+    else message.textContent = ['provider_accepted', 'unknown', 'rejected'].includes(receipt.status) ? '' : '这次未能发送，请查看当前状态。';
   }, true);
 });
 

@@ -19,7 +19,8 @@ await mkdir(output, { recursive: true });
 try {
   for (const [width, outcome] of [[320, 'accepted'], [390, 'accepted'], [1440, 'unknown']]) {
     const isCard = message => /电子纪念卡/u.test(message.template_params.email_subject);
-    const fixture = await peopleRuntimeFixture({ mail: true, mailResult: message => isCard(message) ? outcome : 'accepted' });
+    let attempts = 0;
+    const fixture = await peopleRuntimeFixture({ mail: true, mailResult: message => isCard(message) && ++attempts === 1 ? outcome : 'accepted' });
     const walletAvailable = width === 390;
     const wallet = createAppleWalletService({ env: signing.env, tokenSecret: 'synthetic-browser-card-signing-token-secret',
       clock: () => signing.now, trustedRootFingerprints: signing.fields.trustedRootFingerprints,
@@ -115,18 +116,23 @@ try {
       await page.screenshot({ path: resolve(output, 'staff-' + width + '.png'), fullPage: true });
       await page.locator('[data-card-delivery] button').click();
 
+      const resend = page.getByRole('button', { name: '重新发送纪念卡' });
+      await resend.waitFor();
+      assert.equal(cardMessages().length, 1);
       if (outcome === 'unknown') {
-        await page.locator('[data-card-check]').waitFor();
-        assert.equal(await page.locator('[data-card-delivery]').isVisible(), false);
-        await page.locator('[data-card-search]').fill('');
-        assert.equal(await page.locator('[data-card-list] small').first().textContent(), '核对寄送结果');
-        await page.locator('[data-card-check]').click();
-        await page.getByRole('status').filter({ hasText: '已重新核对，寄送结果仍待确认。' }).waitFor();
-        await page.locator('[data-card-check]:enabled').waitFor();
-        assert.equal(cardMessages().length, 1);
-      } else {
-        await page.waitForFunction(() => document.querySelector('[data-card-state]').textContent === '纪念卡邮件已提交发送');
-        assert.equal(cardMessages().length, 1);
+        assert.equal(await page.locator('[data-card-check]').isVisible(), false);
+        assert.equal(await page.locator('[data-card-list] small').first().textContent(), '寄送结果未确认');
+        assert.match(await page.locator('[data-card-delivery-formats]').textContent(), /两封/u);
+        await page.reload();
+        await resend.waitFor();
+        assert.equal(cardMessages().length, 1, 'reading an uncertain delivery never resends it');
+      }
+      await resend.click();
+      await page.getByRole('status').filter({ hasText: '已重新提交纪念卡邮件。' }).waitFor();
+      assert.equal(cardMessages().length, 2);
+      assert.equal(await page.locator('[data-card-state]').textContent(), '纪念卡邮件已提交发送');
+      assert.equal(await page.locator('[data-card-name]').textContent(), '合成纪念卡申请人');
+      if (outcome === 'accepted') {
         assert.equal(await page.locator('[data-card-name]').textContent(), '合成纪念卡申请人');
         assert.equal(await page.locator('[data-card-filter="todo"] span').textContent(), '1');
         assert.equal(await page.locator('[data-card-filter="submitted"] span').textContent(), '1');
@@ -164,7 +170,8 @@ try {
         await writeFile(resolve(output, 'sample-commemorative-card.jpg'), jpeg);
       }
       assert.deepEqual(errors, []);
-      reports.push({ width, outcome, mailedOnce: true, selectedAfterReload: true, inlineError: width === 320, directJpeg: outcome === 'accepted', wallet: walletAvailable });
+      reports.push({ width, outcome, oneMailPerClick: true, explicitResend: true, selectedAfterReload: true,
+        inlineError: width === 320, directJpeg: outcome === 'accepted', wallet: walletAvailable });
     } finally { await context.close(); }
   }
 } finally { signing.cleanup(); await browser.close(); }

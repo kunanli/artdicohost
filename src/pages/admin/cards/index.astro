@@ -49,6 +49,7 @@ import '../../../styles/admin.css';
                 <details class="card-linked" data-card-linked hidden><summary>其他活动行编号</summary><ul></ul></details>
                 <p class="card-state" data-card-state></p>
                 <p class="card-muted" data-card-sent-at hidden></p>
+                <p class="card-muted" data-card-delivery-block hidden></p>
                 <a class="ah-admin-button" data-card-correct-email hidden>查看人员资料</a>
                 <div data-card-verification hidden>
                   <p class="card-muted">请先核对活动行报名和已有人员记录。</p>
@@ -60,9 +61,9 @@ import '../../../styles/admin.css';
                 </form>
                 <form data-card-delivery hidden>
                   <p class="card-muted" data-card-delivery-formats>一封邮件可领取 JPEG 和 Apple Wallet。</p>
-                  <button class="ah-admin-button ah-admin-primary" type="submit">寄送纪念卡</button>
+                  <button class="ah-admin-button ah-admin-primary" type="submit">发送纪念卡</button>
                 </form>
-                <button class="ah-admin-button" type="button" data-card-check hidden>核对结果</button>
+                <button class="ah-admin-button" type="button" data-card-check hidden>刷新发送状态</button>
               </div>
               <p class="ah-admin-alert" data-card-detail-error role="alert" hidden></p>
               <p class="ah-admin-status" data-card-message role="status" aria-live="polite"></p>

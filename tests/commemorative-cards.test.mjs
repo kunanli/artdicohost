@@ -8,6 +8,7 @@ import { createAppleWalletService } from '../functions/apple-wallet/service.mjs'
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
 import { createWalletFixture, passFiles } from './apple-wallet-fixture.mjs';
 import { confirmationView } from '../src/lib/confirmation-client.mjs';
+import { CARD_FORMATS_ACCEPT } from '../shared/confirmation-delivery.mjs';
 
 const root = '/api/admin/registration-confirmation/cards';
 const operationId = () => randomBytes(32).toString('base64url');
@@ -53,7 +54,7 @@ async function setup({ mailResult = 'accepted' } = {}) {
   return { ...f, cardMessages, fields, headers, id, path, call, read, directory, prepare };
 }
 
-test('staff read minimal wallet applications, explicitly send JPEG once, and the private link exposes that format', async () => {
+test('staff send one commemorative card email and recipients can still save the JPEG when Wallet is unavailable', async () => {
   const f = await setup();
   await f.seedPublic();
   assert.equal((await f.app.handle(f.request(root))).status, 401);
@@ -83,11 +84,12 @@ test('staff read minimal wallet applications, explicitly send JPEG once, and the
   assert.equal(submitted.sentAt, state.sentAt);
   const template = f.cardMessages()[0].template_params;
   assert.equal(template.to_email, f.fields.email);
-  assert.match(template.email_subject, /JPEG/u);
-  assert.match(template.confirmation_actions, /领取 JPEG 纪念卡/u);
+  assert.match(template.email_subject, /电子纪念卡/u);
+  assert.match(template.confirmation_actions, /领取电子纪念卡/u);
+  assert.match(template.invitation_text, /JPEG.*Apple Wallet/u);
   assert.doesNotMatch(template.confirmation_actions, /add-to-apple-wallet|entry-links/u);
   const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(template.invitation_text)[1];
-  const publicCall = path => f.app.handle(f.request(path, { method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken } }));
+  const publicCall = (path, headers) => f.app.handle(f.request(path, { method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken }, headers }));
   const offer = await publicCall('/api/admin/registration/confirmation');
   assert.equal(offer.status, 200);
   const view = confirmationView(await offer.json());
@@ -95,10 +97,12 @@ test('staff read minimal wallet applications, explicitly send JPEG once, and the
   assert.deepEqual(card, { format: 'jpeg', identity: '嘉宾', ready: true });
   assert.deepEqual([...Buffer.from(entryQr, 'base64').subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
   const before = f.objects.calls.length;
-  await publicCall('/api/admin/registration/confirmation');
+  const both = confirmationView(await (await publicCall('/api/admin/registration/confirmation', { Accept: CARD_FORMATS_ACCEPT })).json());
   assert.ok(f.objects.calls.slice(before).every(call => call.operation === 'get'), 'redemption only reads the existing QR');
+  assert.deepEqual(both.card, { ...view.card, format: 'both' });
+  assert.equal(both.wallet.ready, false);
   assert.equal(view.wallet.ready, false);
-  assert.equal((await publicCall('/api/admin/registration/wallet')).status, 404);
+  assert.equal((await publicCall('/api/admin/registration/wallet')).status, 503);
   assert.equal((await f.read()).status, 'provider_accepted');
   await f.call('POST', { ...body, format: 'wallet' }, f.make());
   assert.equal(f.cardMessages().length, 1);
@@ -171,16 +175,18 @@ test('a card capability authenticates its selected format while existing receipt
   assert.equal(tokens.verify([version, alternative, signature].join('.')), null);
 });
 
-test('the Wallet mail redeems the selected format as a signed pass with the saved card identity', async t => {
+test('an existing Wallet link and a JPEG link both redeem the same two formats and saved identity', async t => {
   const f = await setup(), body = await f.prepare();
   const signing = await createWalletFixture();
   t.after(signing.cleanup);
   const messages = [], tokenSecret = 'synthetic-wallet-card-signing-test-token-secret';
+  const expiresAt = Date.parse('2027-01-01T00:00:00Z');
   const service = createRegistrationConfirmationService({ registrationService: f.app.registrationService, tokenSecret,
-    clock: () => Date.parse('2026-10-21T09:00:00Z'),
+    clock: () => Date.parse('2026-10-21T09:00:00Z'), expiresAt,
     journalFor: prefix => createObjectJournal({ objects: f.objects, prefix }),
     currentRegistration: record => f.app.reviewStore.projectRegistration(record),
     walletReadiness: () => wallet.readiness(),
+    cardEntry: { image: input => f.app.entryService.cardEntryImage(input), prepare: input => f.app.entryService.issueEntry(input) },
     emailProvider: { readiness: () => ({ ready: true }), send: async message => { messages.push(message); return { status: 'provider_accepted' }; } },
   });
   const wallet = createAppleWalletService({ env: signing.env, tokenSecret, clock: () => signing.now,
@@ -188,12 +194,24 @@ test('the Wallet mail redeems the selected format as a signed pass with the save
   const result = await service.staffSendCard({ ...body, actor: f.users[0], registrationId: f.id, format: 'wallet' });
   assert.equal(result.status, 'provider_accepted');
   assert.equal(messages.length, 1);
-  assert.match(messages[0].templateVariables.confirmation_actions, /领取 Apple Wallet 纪念卡/u);
+  assert.match(messages[0].templateVariables.confirmation_actions, /领取电子纪念卡/u);
   const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(messages[0].text)[1];
   assert.deepEqual(confirmationView(await service.confirmation({ receiptToken })).card, { format: 'wallet', identity: '嘉宾', ready: true });
-  const pass = await wallet.download({ receiptToken });
-  assert.equal(pass.outcome, 'issued');
-  const files = passFiles(pass.data);
-  assert.ok(files.get('signature').length > 1024);
-  assert.match(files.get('pass.json').toString(), /嘉宾/u);
+  const first = confirmationView(await service.confirmation({ receiptToken, includeCardFormats: true }));
+  assert.equal(first.card.format, 'both');
+  assert.equal(first.card.ready, true);
+  assert.equal(first.wallet.ready, true);
+  assert.ok(first.card.entryQr);
+  const tokens = createConfirmationTokens({ tokenSecret, eventId: PEOPLE_FIXTURE_EVENT, clock: () => Date.parse('2026-10-21T09:00:00Z'),
+    expiresAt });
+  for (const token of [receiptToken, tokens.issue(f.id, 0, 'jpeg').receiptToken]) {
+    const view = confirmationView(await service.confirmation({ receiptToken: token, includeCardFormats: true }));
+    assert.deepEqual(view.card, first.card);
+    assert.equal(view.wallet.ready, true);
+    const pass = await wallet.download({ receiptToken: token });
+    assert.equal(pass.outcome, 'issued');
+    const files = passFiles(pass.data);
+    assert.ok(files.get('signature').length > 1024);
+    assert.match(files.get('pass.json').toString(), /嘉宾/u);
+  }
 });

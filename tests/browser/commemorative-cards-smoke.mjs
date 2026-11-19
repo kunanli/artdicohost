@@ -3,6 +3,9 @@ import { createHash } from 'node:crypto';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import { chromium } from 'playwright-core';
+import { createAppleWalletApi } from '../../functions/apple-wallet/handler.mjs';
+import { createAppleWalletService } from '../../functions/apple-wallet/service.mjs';
+import { createWalletFixture, passFiles } from '../apple-wallet-fixture.mjs';
 import { peopleRuntimeFixture, PEOPLE_FIXTURE_API as API, PEOPLE_FIXTURE_PUBLIC as SITE, PEOPLE_FIXTURE_PASSWORD } from '../helpers/people-runtime-fixture.mjs';
 
 const dist = resolve(process.env.ARTDICO_DIST_DIRECTORY ?? 'dist');
@@ -10,13 +13,20 @@ const output = resolve(process.env.ARTDICO_EVIDENCE_DIRECTORY ?? '.local-data/br
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp' };
 const browser = await chromium.launch({ executablePath: process.env.ARTDICO_CHROMIUM_BINARY || '/usr/bin/chromium', args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 const reports = [];
+const signing = await createWalletFixture();
 await mkdir(output, { recursive: true });
 
 try {
   for (const [width, outcome] of [[320, 'accepted'], [390, 'accepted'], [1440, 'unknown']]) {
     const isCard = message => /电子纪念卡/u.test(message.template_params.email_subject);
     const fixture = await peopleRuntimeFixture({ mail: true, mailResult: message => isCard(message) ? outcome : 'accepted' });
-    const context = await browser.newContext({ viewport: { width, height: 840 }, locale: 'zh-CN' });
+    const walletAvailable = width === 390;
+    const wallet = createAppleWalletService({ env: signing.env, tokenSecret: 'synthetic-browser-card-signing-token-secret',
+      clock: () => signing.now, trustedRootFingerprints: signing.fields.trustedRootFingerprints,
+      authorize: fixture.app.confirmationService.authorize, authorizedRegistration: fixture.app.confirmationService.authorizedRegistration });
+    const walletApi = createAppleWalletApi({ service: wallet });
+    const context = await browser.newContext({ viewport: { width, height: 840 }, locale: 'zh-CN',
+      ...(walletAvailable ? { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1' } : {}) });
     const errors = [];
     let privateReads = 0, staleIdentity = width === 320;
     try {
@@ -31,8 +41,14 @@ try {
               staleIdentity = false;
               return route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":{"message":"资料已更新，请核对后再保存。"}}' });
             }
-            const response = await fixture.app.handle(new Request(url.href, { method, headers: await request.allHeaders(),
-              ...(['GET', 'HEAD'].includes(method) ? {} : { body: request.postData() }) }));
+            const input = new Request(url.href, { method, headers: await request.allHeaders(),
+              ...(['GET', 'HEAD'].includes(method) ? {} : { body: request.postData() }) });
+            const response = await (walletAvailable && url.pathname === '/api/admin/registration/wallet' ? walletApi(input) : fixture.app.handle(input));
+            if (walletAvailable && url.pathname === '/api/admin/registration/confirmation' && method === 'POST' && response.ok) {
+              const data = await response.json();
+              if (data.card) data.wallet = await wallet.readiness();
+              return route.fulfill({ status: 200, headers: Object.fromEntries(response.headers), json: data });
+            }
             return route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: Buffer.from(await response.arrayBuffer()) });
           }
           const path = resolve(dist, '.' + url.pathname + (url.pathname.endsWith('/') ? 'index.html' : ''));
@@ -90,8 +106,9 @@ try {
         await page.locator('#card-identity').selectOption('guest');
         await page.locator('[data-card-identity-form] button').click();
       }
-      await page.locator('#card-format').selectOption('jpeg');
-      assert.equal(await page.locator('#card-format option[value=wallet]').isDisabled(), true);
+      assert.equal(await page.locator('#card-format').count(), 0);
+      await page.locator('[data-card-delivery]:visible').waitFor();
+      assert.match(await page.locator('[data-card-delivery-formats]').textContent(), /同一链接领取/u);
       assert.equal(await page.locator('[data-card-identity-value] span').innerText(), '嘉宾');
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
       assert.equal(cardMessages().length, 0);
@@ -108,13 +125,13 @@ try {
         await page.locator('[data-card-check]:enabled').waitFor();
         assert.equal(cardMessages().length, 1);
       } else {
-        await page.waitForFunction(() => document.querySelector('[data-card-state]').textContent === 'JPEG 邮件已提交发送');
+        await page.waitForFunction(() => document.querySelector('[data-card-state]').textContent === '纪念卡邮件已提交发送');
         assert.equal(cardMessages().length, 1);
         assert.equal(await page.locator('[data-card-name]').textContent(), '合成纪念卡申请人');
         assert.equal(await page.locator('[data-card-filter="todo"] span').textContent(), '1');
         assert.equal(await page.locator('[data-card-filter="submitted"] span').textContent(), '1');
         await page.locator('[data-card-filter="submitted"]').click();
-        assert.equal(await page.locator('[data-card-list] small').textContent(), 'JPEG 已提交');
+        assert.equal(await page.locator('[data-card-list] small').textContent(), '已提交发送');
         const link = /https:\/\/artdico\.host\/registration\/confirmation\/#r=[A-Za-z0-9_.-]+/u.exec(cardMessages()[0].template_params.invitation_text)[0];
         const readsBefore = privateReads;
         await page.goto(link);
@@ -123,7 +140,18 @@ try {
         assert.equal(await downloadButton.evaluate(button => button.getBoundingClientRect().bottom <= innerHeight), true);
         const image = page.locator('[data-confirmation-jpeg-image]');
         await page.waitForFunction(node => node.complete && node.naturalWidth === 1030 && node.naturalHeight === 1510, await image.elementHandle());
-        assert.equal(await page.locator('[data-confirmation-wallet]').isVisible(), false);
+        const walletButton = page.locator('[data-confirmation-wallet]');
+        assert.equal(await walletButton.isVisible(), walletAvailable);
+        if (walletAvailable) {
+          assert.equal(await walletButton.getAttribute('data-wallet-action'), 'add');
+          assert.equal(await walletButton.evaluate(button => button.getBoundingClientRect().bottom <= innerHeight), true);
+          const walletDownload = page.waitForEvent('download');
+          await walletButton.click();
+          const pass = await walletDownload;
+          assert.equal(pass.suggestedFilename(), 'artdico-host.pkpass');
+          const files = passFiles(await readFile(await pass.path()));
+          assert.match(files.get('pass.json').toString(), /嘉宾/u);
+        }
         await page.screenshot({ path: resolve(output, 'recipient-jpeg-' + width + '.png'), fullPage: true });
         const pending = page.waitForEvent('download');
         await downloadButton.click();
@@ -136,10 +164,10 @@ try {
         await writeFile(resolve(output, 'sample-commemorative-card.jpg'), jpeg);
       }
       assert.deepEqual(errors, []);
-      reports.push({ width, outcome, mailedOnce: true, selectedAfterReload: true, inlineError: width === 320, directJpeg: outcome === 'accepted' });
+      reports.push({ width, outcome, mailedOnce: true, selectedAfterReload: true, inlineError: width === 320, directJpeg: outcome === 'accepted', wallet: walletAvailable });
     } finally { await context.close(); }
   }
-} finally { await browser.close(); }
+} finally { signing.cleanup(); await browser.close(); }
 
 const sha256 = async path => createHash('sha256').update(await readFile(resolve(dist, path))).digest('hex');
 const result = { reports, adminHtmlSha256: await sha256('admin/cards/index.html'), confirmationHtmlSha256: await sha256('registration/confirmation/index.html') };

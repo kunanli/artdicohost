@@ -15,7 +15,6 @@ if (root) {
   const contactButtons=[...root.querySelectorAll('[data-confirmation-contact-copy]')];
   const contactLabels=new Map(contactButtons.map(button=>[button,button.textContent]));
   const walletButton=$('[data-confirmation-wallet]'),walletBadge=$('[data-confirmation-wallet-badge]'),walletLabel=$('[data-confirmation-wallet-label]');
-  const copyButton = $('[data-confirmation-copy]');
   const jpegDownload = $('[data-confirmation-jpeg-download]');
   let walletBadgeReady=Boolean(walletBadge?.complete&&walletBadge.naturalWidth>0);
   function syncWalletBadge(){
@@ -36,7 +35,6 @@ if (root) {
     jpegDownload.removeAttribute('href');
     jpegDownload.hidden = true;
     $('[data-confirmation-jpeg-preview]').hidden = true;
-    if (root.dataset.cardFormat) copyButton.parentElement.prepend(copyButton);
     delete root.dataset.cardFormat;
   }
   function clearInvitation(){
@@ -100,15 +98,17 @@ if (root) {
     $('[data-confirmation-device]').textContent=value.admission.status==='confirmed'?guidance.message:'';$('[data-confirmation-device]').hidden=value.admission.status!=='confirmed';
     if (value.card) {
       root.dataset.cardFormat = value.card.format;
-      copyButton.parentElement.append(copyButton);
-      const label = value.card.format === 'jpeg' ? 'JPEG' : 'Apple Wallet';
       $('[data-confirmation-state]').textContent = '电子纪念卡';
-      $('[data-confirmation-heading]').textContent = label + ' 纪念卡';
-      $('[data-confirmation-intro]').textContent = value.card.ready ? '领取你的电子纪念卡，请保留活动行原电子票。' : '纪念卡暂时无法领取，请稍后重新读取。';
+      $('[data-confirmation-heading]').textContent = '电子纪念卡';
+      $('[data-confirmation-intro]').textContent = value.card.ready || value.wallet.ready ? '请保留活动行原电子票。' : '纪念卡暂时无法领取，请稍后重新读取。';
       $('[data-confirmation-organization]').textContent = value.card.identity;
       $('[data-confirmation-save-heading]').textContent = '领取纪念卡';
-      $('[data-confirmation-device]').hidden = value.card.format !== 'wallet';
-      document.title = label + ' 纪念卡 · ARTDiCO HOST';
+      const device = $('[data-confirmation-device]');
+      device.textContent = guidance.action === 'guide' ? '请在 Safari 打开本页以加入 Apple Wallet。'
+        : !value.wallet.ready && value.card.ready && !/Android/iu.test(navigator.userAgent) ? 'Apple Wallet 暂不可用，可先保存 JPEG。'
+        : value.wallet.ready && !value.card.ready && value.card.format === 'both' ? 'JPEG 暂不可用，请稍后重新读取。' : '';
+      device.hidden = !device.textContent;
+      document.title = '电子纪念卡 · ARTDiCO HOST';
     } else renderGroup(value);
     $('[data-confirmation-content]').hidden=false;$('[data-confirmation-error]').hidden=true;controls();
   }
@@ -137,8 +137,8 @@ if (root) {
     invalidate();const current=generation;busy=true;controller=new AbortController();const signal=controller.signal;controls();$('[data-confirmation-state]').textContent='私人参会页';$('[data-confirmation-heading]').textContent='正在读取报名状态…';$('[data-confirmation-intro]').textContent='正在核对最新状态，请稍候。';
     try {
       if(!token)throw new Error('请从报名完成后的确认链接或确认邮件打开本页。');
-      const value=await client.read(token,{signal});if(current!==generation)return;render(value);
-      if (value.card?.format === 'jpeg' && value.card.ready) await showJpeg(value, current);
+      const value=await client.read(token,{signal,includeCardFormats:true});if(current!==generation)return;render(value);
+      if (value.card?.ready && value.card.format !== 'wallet') await showJpeg(value, current);
     } catch(error) {if(current===generation&&!error.cancelled)showReadError(error);}
     finally {if(current===generation){busy=false;controller=null;controls();}}
   }
@@ -175,8 +175,24 @@ if (root) {
     }
     if(!['add','download'].includes(guidance.action))return;
     const current=generation;busy=true;controller=new AbortController();const signal=controller.signal;controls();releaseWallet();$('[data-confirmation-action-status]').textContent='正在准备 Wallet 票券…';
-    try{const blob=await client.wallet(token,{signal});if(current!==generation)return;walletUrl=URL.createObjectURL(blob);const link=document.createElement('a');link.href=walletUrl;link.download='artdico-host.pkpass';document.body.append(link);link.click();link.remove();$('[data-confirmation-action-status]').textContent='票券文件已准备。请在支持 Apple Wallet 的设备上打开。';}
-    catch(error){if(current===generation&&!error.cancelled)showReadError(error);}
+    try {
+      const blob = await client.wallet(token,{signal});
+      if (current !== generation) return;
+      walletUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = walletUrl;
+      link.download = 'artdico-host.pkpass';
+      document.body.append(link);
+      link.click();
+      link.remove();
+      const prompt = guidance.action === 'add' ? '请按 iPhone 的系统提示确认添加。' : '票券已准备，请在 iPhone 上打开。';
+      $('[data-confirmation-action-status]').textContent = state.card ? prompt : '票券文件已准备。请在支持 Apple Wallet 的设备上打开。';
+    }
+    catch(error){
+      if(current!==generation||error.cancelled)return;
+      if(state?.card)$('[data-confirmation-action-status]').textContent='暂时无法取得 Apple Wallet 纪念卡，请重试。';
+      else showReadError(error);
+    }
     finally{if(current===generation){busy=false;controller=null;controls();}}
   });
   $('[data-confirmation-invitation]').addEventListener('click',async()=>{

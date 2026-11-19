@@ -3,7 +3,6 @@ const $ = selector => root.querySelector(selector);
 const api = '/api/admin/registration-confirmation/cards';
 const idPattern = /^[A-Za-z0-9_-]{43}$/u;
 const draftId = () => /^#application=([A-Za-z0-9_-]{43})$/u.exec(location.hash)?.[1] ?? '';
-const formats = { jpeg: 'JPEG', wallet: 'Apple Wallet' };
 const stages = {
   check_delivery: '核对寄送结果', pending_review: '核对报名', set_identity: '设置卡面身份',
   retry_delivery: '可重新寄送', send: '待寄送', blocked: '暂不可寄送',
@@ -32,7 +31,6 @@ const heading = $('[data-card-name]');
 const identityForm = $('[data-card-identity-form]');
 const identity = $('#card-identity');
 const deliveryForm = $('[data-card-delivery]');
-const format = $('#card-format');
 const approve = $('[data-card-approve]');
 const check = $('[data-card-check]');
 const errorBox = $('[data-card-error]');
@@ -120,7 +118,7 @@ function renderList() {
     name.textContent = row.name;
     reference.className = 'card-muted';
     reference.textContent = row.bookingReference;
-    status.textContent = row.stage === 'submitted' && formats[row.format] ? formats[row.format] + ' 已提交' : stages[row.stage];
+    status.textContent = stages[row.stage];
     button.append(name, reference, status);
     li.append(button);
     return li;
@@ -136,7 +134,6 @@ function setView(value) {
     $('[data-card-linked] ul').replaceChildren();
     $('[data-card-correct-email]').removeAttribute('href');
     identity.value = '';
-    format.value = '';
     return;
   }
   heading.textContent = value.name;
@@ -163,7 +160,6 @@ function renderActions() {
   const canSend = value.stage === 'send' || value.stage === 'retry_delivery';
   const reason = value.stage === 'blocked' && (reasons[value.reason] ?? '收件权限暂无法核对。');
   const pending = pendingApprovals.has(value.registrationId);
-  const label = formats[value.format];
   const identityValue = $('[data-card-identity-value]');
   identityValue.hidden = $('[data-card-identity-label]').hidden = !value.identity || !verified;
   identityValue.querySelector('span').textContent = value.identity ? identity.selectedOptions[0]?.textContent : '';
@@ -171,7 +167,7 @@ function renderActions() {
   const state = $('[data-card-state]');
   state.dataset.stage = value.stage;
   state.textContent = uncertain ? '寄送结果待核对，请勿重复寄送。'
-    : sent ? label + ' 邮件已提交发送'
+    : sent ? '纪念卡邮件已提交发送'
     : reason || (value.stage === 'retry_delivery' ? '发送失败，可再次寄送。' : stages[value.stage]);
   const submittedAt = $('[data-card-sent-at]');
   submittedAt.hidden = !sent || !value.sentAt;
@@ -185,10 +181,8 @@ function renderActions() {
   identityForm.hidden = !verified || uncertain || sent || Boolean(value.identity && !editingIdentity);
   deliveryForm.hidden = !canSend || editingIdentity;
   deliveryForm.querySelector('[type="submit"]').textContent = value.stage === 'retry_delivery' ? '重新寄送纪念卡' : '寄送纪念卡';
-  if (!value.walletReady && format.value === 'wallet') format.value = '';
-  const wallet = format.querySelector('[value="wallet"]');
-  wallet.disabled = !value.walletReady;
-  wallet.textContent = value.walletReady ? 'Apple Wallet（iPhone）' : 'Apple Wallet（暂不可用）';
+  $('[data-card-delivery-formats]').textContent = value.walletReady
+    ? '一封邮件可领取 JPEG 和 Apple Wallet。' : '可先寄送 JPEG。Apple Wallet 就绪后可用同一链接领取。';
   check.hidden = !uncertain;
 }
 async function work(task, nearApplication = false) {
@@ -310,14 +304,14 @@ identityForm.addEventListener('submit', event => {
 deliveryForm.addEventListener('submit', event => {
   event.preventDefault();
   void work(async () => {
-    const view = current, chosen = format.value;
-    if (!view || !formats[chosen]) return;
+    const view = current;
+    if (!view) return;
     message.textContent = '正在寄送…';
     let receipt;
     try {
       receipt = await request(api + '/' + view.registrationId, 'POST', {
         primaryId: view.primaryId, expectedRevision: view.deliveryRevision, expectedAccessRevision: view.accessRevision,
-        identity: view.identity, format: chosen,
+        identity: view.identity, format: 'jpeg',
       });
     } catch (error) {
       if (csrf) {

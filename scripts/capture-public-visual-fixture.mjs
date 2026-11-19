@@ -19,9 +19,10 @@ function hasPublicText(profile, key) {
   const descriptor = Object.getOwnPropertyDescriptor(profile, key);
   return descriptor && Object.hasOwn(descriptor, 'value') && typeof descriptor.value === 'string' && Boolean(descriptor.value.trim());
 }
-function failure(code) {
+function failure(code, mediaCounts) {
   const error = new Error(MESSAGE);
   Object.defineProperty(error, 'code', { value: CODES.has(code) ? code : 'PUBLIC_CONTENT_UNAVAILABLE', enumerable: true });
+  if (mediaCounts) Object.defineProperty(error, 'mediaCounts', { value: mediaCounts });
   failures.add(error); return error;
 }
 function cancel(response) { try { response?.body?.cancel().catch(() => {}); } catch { /* Fixed diagnostics only. */ } }
@@ -108,9 +109,12 @@ export async function capturePublicVisualFixture({ fetchFn = fetch, outputDirect
     const portraitPaths = data.content.guests.map(item => item.portraitUrl).filter(Boolean);
     const basePaths = [...new Set([...logoPaths, ...portraitPaths])];
     const coverPaths = [...new Set(data.content.showcases.map(item => item.coverUrl).filter(Boolean))];
-    if (basePaths.length > MAX_MEDIA || coverPaths.length > MAX_MEDIA) throw failure('MEDIA_LIMIT');
+    if (basePaths.length > MAX_MEDIA || coverPaths.length > MAX_MEDIA) {
+      throw failure('MEDIA_LIMIT', { base: basePaths.length, covers: coverPaths.length, invalidReferences: 0 });
+    }
     const paths = [...new Set([...basePaths, ...coverPaths])];
-    if (paths.some(path => typeof path !== 'string' || !MEDIA_PATH.test(path))) throw failure('MEDIA_LIMIT');
+    const invalidReferences = paths.filter(path => typeof path !== 'string' || !MEDIA_PATH.test(path)).length;
+    if (invalidReferences) throw failure('MEDIA_LIMIT', { base: basePaths.length, covers: coverPaths.length, invalidReferences });
     const media = []; let totalBytes = 0, baseBytes = 0, coverBytes = 0;
     for (const path of paths) {
       const base = basePaths.includes(path);
@@ -167,7 +171,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (process.argv.length !== 2) throw failure('INVALID_ARGUMENTS');
     console.log('Public visual fixture captured: ' + JSON.stringify(await capturePublicVisualFixture()));
   } catch (error) {
-    console.error(MESSAGE + ' ' + JSON.stringify({ captured: false, failure: failures.has(error) ? error.code : 'PUBLIC_CONTENT_UNAVAILABLE' }));
+    console.error(MESSAGE + ' ' + JSON.stringify({ captured: false, failure: failures.has(error) ? error.code : 'PUBLIC_CONTENT_UNAVAILABLE',
+      ...(failures.has(error) && error.mediaCounts ? { mediaCounts: error.mediaCounts } : {}) }));
     process.exitCode = 1;
   }
 }

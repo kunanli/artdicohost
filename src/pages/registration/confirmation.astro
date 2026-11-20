@@ -1,6 +1,6 @@
 ---
 import '../../styles/confirmation.css';
-import { PUBLIC_CONTACT_EMAIL } from '../../config/event.mjs';
+import { PUBLIC_AGENDA_URL, PUBLIC_CONTACT_EMAIL, PUBLIC_SHOWCASE_URL } from '../../config/event.mjs';
 import { CARD_IMAGE } from '../../lib/commemorative-card-image.mjs';
 const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
 ---
@@ -64,6 +64,15 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
               </section>
             </details>
           </section>
+          <nav class="confirmation-event-guide" data-confirmation-event-guide aria-labelledby="confirmation-event-guide-heading" hidden>
+            <h2 id="confirmation-event-guide-heading">活动指南</h2>
+            <p data-confirmation-map-address hidden></p>
+            <ul>
+              <li data-confirmation-map-item hidden><a data-confirmation-map>Apple 地图导航</a></li>
+              <li><a href={PUBLIC_AGENDA_URL}>讲座与活动日程</a></li>
+              <li><a href={PUBLIC_SHOWCASE_URL}>参展游戏与作品</a></li>
+            </ul>
+          </nav>
           <section class="confirmation-group" data-confirmation-group hidden aria-labelledby="confirmation-group-heading">
             <h2 id="confirmation-group-heading">加入活动微信群</h2>
             <div data-confirmation-group-image></div>

@@ -2,6 +2,12 @@ import { INVITATION_POSTER_FACTS } from '../../shared/organizer-progress.mjs';
 // The organizer's public contact is independent of staff account identities.
 export const PUBLIC_CONTACT_EMAIL = 'kunan@globalgamejam.org';
 export const PUBLIC_REGISTRATION_URL = 'https://9525102647817.huodongxing.com/event/8884819113200';
+export const PUBLIC_AGENDA_URL = 'https://artdico.host/#agenda';
+export const PUBLIC_SHOWCASE_URL = 'https://artdico.host/#students';
+
+export function appleMapsDirectionsUrl(address) {
+  return 'https://maps.apple.com/directions?destination=' + encodeURIComponent(address);
+}
 
 /** Public event content only; contains no private allocation or attendee data. */
 export const eventConfig = {

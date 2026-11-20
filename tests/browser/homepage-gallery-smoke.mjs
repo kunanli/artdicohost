@@ -51,9 +51,11 @@ const mime=file=>({html:'text/html; charset=utf-8',js:'text/javascript',mjs:'tex
 const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright-core');
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const pageErrors=[],reports=[];
-async function fixture(width,{javascript=true,reducedMotion='no-preference',deferContent=false}={}){
+async function fixture(width,{javascript=true,reducedMotion='no-preference',deferContent=false,hasWorks=true}={}){
  const context=await browser.newContext({locale:'zh-CN',viewport:{width,height:960},isMobile:width<600,hasTouch:width<600,javaScriptEnabled:javascript,reducedMotion});
- const page=await context.newPage(),calls=[];let raw=rawFixture(),revision=1,content=projected(raw),failure=false;
+ const page=await context.newPage(),calls=[];let raw=rawFixture(),revision=1,failure=false;
+ if(!hasWorks)raw.showcases=[];
+ let content=projected(raw);
  let releaseInitialContent;const initialContentGate=new Promise(resolve=>{releaseInitialContent=resolve;});
  page.setDefaultTimeout(10000);page.on('pageerror',error=>pageErrors.push({width,message:error.message}));
  await context.addCookies([{name:'synthetic_staff',value:PRIVATE,domain:new URL(API).hostname,path:'/',httpOnly:true,secure:true,sameSite:'Strict'}]);
@@ -287,6 +289,19 @@ try {
    for(const id of ['booths','students','agenda']){const path=resolve(evidence,id+'-'+width+'.png');await page.locator('#'+id).screenshot({path,animations:'disabled'});screenshots.push(path);}
    reports.push({width,organizations:13,singleComposition:true,unobstructedCaption:true,centeredCarousel:true,sidePreviews:true,mouseOrTouchDrag:true,wheelAndKeyboardLoop:true,sideClickCentresFirst:true,missingSingleEmpty:true,keyboardPreview:true,refreshPreserved:true,bilingualReviewCopy:true,allWorksMosaic:true,guestPhysics,factPhysics,autoplayAndAutomaticGuestPhotos:width===1440,noBusinessWrites:true,screenshots});
   }finally{await f.context.close();}
+ }
+ for(const hasWorks of [true,false]){
+  const f=await fixture(390,{deferContent:true,hasWorks,reducedMotion:'reduce'});
+  try{
+   await f.page.goto(SITE+'/#students',{waitUntil:'domcontentloaded'});
+   assert.equal(await f.page.locator('#students').isVisible(),false);
+   f.releaseInitialContent();
+   await f.page.waitForFunction(id=>{
+    const top=document.getElementById(id)?.getBoundingClientRect().top;
+    return scrollY>100&&top>=-1&&top<=250;
+   },hasWorks?'students':'booths');
+   assert.equal(await f.page.locator('#students').isVisible(),hasWorks);
+  }finally{f.releaseInitialContent();await f.context.close();}
  }
  assert.equal(pageErrors.length,0);
  const report={ok:true,syntheticOnly:true,sourceCommit:process.env.GITHUB_SHA||null,htmlSha256:createHash('sha256').update(await readFile(resolve(dist,'index.html'))).digest('hex'),scriptSha256:createHash('sha256').update(await readFile(fileURLToPath(import.meta.url))).digest('hex'),cases:reports.length,reports,pageErrors};

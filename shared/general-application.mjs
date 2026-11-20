@@ -21,6 +21,23 @@ export const WALLET_IDENTITIES = Object.freeze([
   {value:'exhibitor',label:'参展者'},{value:'organizer',label:'GGJ 组织者'},{value:'student',label:'学生'},
   {value:'staff',label:'工作人员'},{value:'volunteer',label:'志愿者'},
 ]);
+export const WALLET_PREFERENCE_FIELDS = Object.freeze(['requestedWalletIdentity', 'ggjSite', 'ggjRole']);
+export function walletApplicationPreferences(input) {
+  if (!plain(input)) return null;
+  const identity = own(input, 'requestedWalletIdentity');
+  if (identity !== undefined && identity !== '' && !WALLET_IDENTITIES.some(option => option.value === identity)) return null;
+  const community = cardCommunityFields({
+    site: Object.hasOwn(input, 'ggjSite') ? own(input, 'ggjSite') : '',
+    role: Object.hasOwn(input, 'ggjRole') ? own(input, 'ggjRole') : '',
+  });
+  if (!community) return null;
+  return {
+    ...(identity ? { requestedWalletIdentity: identity } : {}),
+    ...(community.site ? { ggjSite: community.site } : {}),
+    ...(community.role ? { ggjRole: community.role } : {}),
+  };
+}
+export const commemorativeCardVenue = venue => venue === '深圳市前海合作区梦海大道5188号前海5号楼' ? '深圳市南山区前海5号楼' : venue;
 export const isWalletApplicationFields = fields => own(fields,'intake')===WALLET_APPLICATION_INTAKE;
 
 export const GENERAL_APPLICATION_FIELDS = Object.freeze(['intake','locale','name','email','categories','participationInterests','organization','city','wechat','phone','speaker']);
@@ -56,7 +73,7 @@ export function validateGeneralApplicationFields(input){
 
 /** An unverified request for a commemorative pass, never external ticket proof. */
 export function validateWalletApplicationFields(input){
-  const keys=['intake','locale','name','email','wechat','phone','organization','huodongxingReference','categories','participationInterests'];
+  const keys=['intake','locale','name','email','wechat','phone','organization','huodongxingReference','categories','participationInterests',...WALLET_PREFERENCE_FIELDS];
   const errors={};
   if(!safeObject(input)||Reflect.ownKeys(input).some(key=>!keys.includes(key)))return{valid:false,errors:{fields:'纪念卡申请字段无效。'},value:null};
   const value={intake:WALLET_APPLICATION_INTAKE,name:string(input,'name',80,errors,{required:true,min:2}),email:string(input,'email',254,errors,{required:true}),wechat:string(input,'wechat',100,errors,{required:true}),huodongxingReference:string(input,'huodongxingReference',160,errors,{required:true}),categories:['other'],participationInterests:['attend']};
@@ -65,5 +82,8 @@ export function validateWalletApplicationFields(input){
   for(const[key,expected]of[['categories','other'],['participationInterests','attend']]){const list=own(input,key);if(!safeList(list,1)||list.length!==1||list[0]!==expected)errors[key]='纪念卡身份由工作人员确认。';}
   if(Object.hasOwn(input,'locale')){if(!['zh-CN','en'].includes(own(input,'locale')))errors.locale='请选择有效的申请语言。';else value.locale=own(input,'locale');}
   for(const[key,max]of[['phone',150],['organization',160]]){const text=string(input,key,max,errors);if(text)value[key]=text;}
+  const preferences = walletApplicationPreferences(input);
+  if (!preferences) errors.preferences = '请核对入场身份与 GGJ 社群资料。';
+  else Object.assign(value, preferences);
   return{valid:Object.keys(errors).length===0,errors,value};
 }

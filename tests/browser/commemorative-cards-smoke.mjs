@@ -73,6 +73,12 @@ try {
       for (const [name, value] of Object.entries({ huodongxingReference: '0000000420', name: '合成纪念卡申请人', email: recipient, wechat: 'synthetic_card_user' })) {
         await application.locator('[name="wallet.' + name + '"]').fill(value);
       }
+      if (device === 'safari') {
+        await application.locator('[name="wallet.requestedWalletIdentity"]').selectOption('organizer');
+        await application.locator('[data-wallet-community] summary').click();
+        await application.locator('[name="wallet.ggjSite"]').fill('GGJ 合成站');
+        await application.locator('[name="wallet.ggjRole"]').fill('站点组织者');
+      }
       await page.locator('#wallet-consent').check();
       await page.locator('[data-wallet-submit]').click();
       await page.locator('[data-wallet-result]:not([hidden])').waitFor();
@@ -90,6 +96,10 @@ try {
       assert.equal(await page.locator('[data-card-filter="todo"] span').textContent(), '2');
       assert.equal(await page.locator('[data-card-list] small').textContent(), '核对报名');
       assert.equal(await page.locator('[data-card-recipient]').innerText(), recipient);
+      if (device === 'safari') {
+        assert.match(await page.locator('[data-card-requested-identity]').innerText(), /组织者/u);
+        assert.equal(await page.locator('#card-identity').inputValue(), 'organizer');
+      }
       const selectedUrl = page.url();
       assert.match(selectedUrl, /#application=[A-Za-z0-9_-]{43}$/u);
       await page.reload();
@@ -118,8 +128,9 @@ try {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
       if (device === 'safari') {
         await page.locator('[data-card-community-summary]').click();
-        await page.getByLabel('GGJ 站点').fill('GGJ 合成站');
-        await page.getByLabel('社群角色').fill('站点组织者');
+        assert.match(await page.locator('[data-card-requested-community]').innerText(), /GGJ 合成站 · 站点组织者/u);
+        assert.equal(await page.getByLabel('GGJ 站点').inputValue(), 'GGJ 合成站');
+        assert.equal(await page.getByLabel('社群角色').inputValue(), '站点组织者');
         await page.getByRole('button', { name: '保存 GGJ 社群' }).click();
         await page.getByRole('status').filter({ hasText: 'GGJ 社群已保存。' }).waitFor();
         assert.match(await page.locator('[data-card-community-summary]').textContent(), /GGJ 合成站 · 站点组织者/u);
@@ -191,7 +202,10 @@ try {
           assert.equal(pass.suggestedFilename(), 'artdico-host.pkpass');
           const files = passFiles(await readFile(await pass.path()));
           const walletPass = JSON.parse(files.get('pass.json'));
+          assert.deepEqual(walletPass.preferredStyleSchemes, ['eventTicket']);
           assert.equal(walletPass.semantics.admissionLevel, '嘉宾');
+          assert.equal(walletPass.eventTicket.primaryFields[0].value, '合成纪念卡申请人');
+          assert.deepEqual(walletPass.eventTicket.auxiliaryFields.map(field => field.key), ['date', 'time', 'venue-short', 'ggj-community-short']);
           assert.equal(walletPass.eventTicket.backFields.find(field => field.key === 'ggj-community').value, 'GGJ 合成站 · 站点组织者');
         } else if (device === 'chrome') {
           assert.equal(await walletButton.getAttribute('data-wallet-action'), 'guide');

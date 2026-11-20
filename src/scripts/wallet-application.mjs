@@ -1,7 +1,7 @@
 import { createRegistrationClient } from '../lib/registration-client.mjs';
 import { createBrowserDraftStore } from '../lib/browser-drafts.mjs';
 import { createApplicationDraft, applicationDraftFromFields } from '../lib/application-draft.mjs';
-import { validateWalletApplicationFields, WALLET_APPLICATION_INTAKE } from '../../shared/general-application.mjs';
+import { validateWalletApplicationFields, WALLET_APPLICATION_INTAKE, WALLET_PREFERENCE_FIELDS } from '../../shared/general-application.mjs';
 import { eventConfig } from '../config/event.mjs';
 
 for(const section of document.querySelectorAll('[data-wallet-api-origin]')){
@@ -9,9 +9,14 @@ for(const section of document.querySelectorAll('[data-wallet-api-origin]')){
  let draft,config=null,blocked=false,busy=false,done=false,loaded=false,timer=null,writing=Promise.resolve(),editing=0,savedEditing=0,revision=0;
  const client=createRegistrationClient({apiOrigin:section.dataset.walletApiOrigin,pageOrigin:location.origin,applicationKind:'wallet',pendingStore:{prepare:value=>draft.pendingStore.prepare(value),update:value=>draft.pendingStore.update(value),clear:value=>draft.pendingStore.clear(value),reject:value=>draft.pendingStore.reject(value)}});
  const control=name=>form.elements.namedItem('wallet.'+name);
+ const fieldNames=['name','email','wechat','huodongxingReference','phone','organization',...WALLET_PREFERENCE_FIELDS];
  const text=(node,value)=>{node.textContent=value;};
- function fields(){return{intake:WALLET_APPLICATION_INTAKE,locale:document.documentElement.lang.startsWith('en')?'en':'zh-CN',...Object.fromEntries(['name','email','wechat','huodongxingReference','phone','organization'].map(name=>[name,control(name).value])),categories:['other'],participationInterests:['attend']};}
- function apply(value){for(const name of ['name','email','wechat','huodongxingReference','phone','organization'])control(name).value=value[name]??'';control('consentAccepted').checked=false;}
+ function fields(){return{intake:WALLET_APPLICATION_INTAKE,locale:document.documentElement.lang.startsWith('en')?'en':'zh-CN',...Object.fromEntries(fieldNames.map(name=>[name,control(name).value])),categories:['other'],participationInterests:['attend']};}
+ function apply(value){
+  for(const name of fieldNames)control(name).value=value[name]??'';
+  if(value.ggjSite||value.ggjRole)form.querySelector('[data-wallet-community]').open=true;
+  control('consentAccepted').checked=false;
+ }
  function lock(){
   for(const input of form.querySelectorAll('input,select,textarea'))input.disabled=busy||done||client.pending||!config;
   button.disabled=busy||done||!loaded||blocked||!client.pending&&!config;
@@ -56,7 +61,7 @@ for(const section of document.querySelectorAll('[data-wallet-api-origin]')){
   event.preventDefault();if(busy||done||blocked||!loaded||!client.pending&&!config)return;
   if(!client.pending&&!form.reportValidity())return;
   let value;
-  if(!client.pending){const checked=validateWalletApplicationFields(fields());if(!checked.valid){announce('请核对活动行报名资料、姓名、邮箱与微信号。');return;}value=checked.value;}
+  if(!client.pending){const checked=validateWalletApplicationFields(fields());if(!checked.valid){announce(checked.errors.preferences??'请核对活动行报名资料、姓名、邮箱与微信号。');return;}value=checked.value;}
   clearTimeout(timer);timer=null;busy=true;error.hidden=true;lock();
   try{
    await writing.catch(()=>{});if(blocked)throw new Error('请先恢复核对本机申请。');

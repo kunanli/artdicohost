@@ -1,4 +1,4 @@
-import { cardCommunityLabel } from '../../shared/general-application.mjs';
+import { cardCommunityLabel, commemorativeCardVenue } from '../../shared/general-application.mjs';
 
 // Coordinates follow the organizer-provided portrait card. The sample name
 // and sample QR are never part of the template.
@@ -93,7 +93,7 @@ export async function renderCommemorativeJpeg(view) {
   line(context, '时间', 64, 956, 29);
   line(context, view.event.time.replace(/\s*[–—-]\s*/u, ' - '), 64, 999, 29);
   line(context, '地点', 962, 852, 29, { align: 'right' });
-  const venue = view.event.venue === '深圳市前海合作区梦海大道5188号前海5号楼' ? '深圳市南山区前海5号楼' : view.event.venue;
+  const venue = commemorativeCardVenue(view.event.venue);
   line(context, venue, 962, 894, 29, { maxWidth: 540, align: 'right' });
   if (qr) {
     context.fillStyle = '#fff';

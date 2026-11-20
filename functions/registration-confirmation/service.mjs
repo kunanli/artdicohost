@@ -6,7 +6,7 @@ import { createConfirmationTokens } from './tokens.mjs';
 import { createConfirmationRepository, canonicalConfirmationKind, formalConfirmationKind, commemorativeCardKind, confirmationNoticeId, confirmationRequestHash,
   validConfirmationOperation, MAX_CONFIRMATION_BATCH, sameConfirmationScope as sameScope, cardResendCandidates, cardSendInProgress,
   cardCommunityPrefix, createCardCommunityRepository } from './repository.mjs';
-import { CARD_FORMATS, WALLET_IDENTITIES, cardCommunityFields } from '../../shared/general-application.mjs';
+import { CARD_FORMATS, WALLET_IDENTITIES, cardCommunityFields, walletApplicationPreferences } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 import { buildPosterInvitationSettings } from '../../shared/organizer-progress.mjs';
 import { confirmationEmailPresentation } from './presentation.mjs';
@@ -887,7 +887,9 @@ export function createRegistrationConfirmationService({ registrationService, jou
       deliveryRevision: delivery.value.revision, status: state.status, format: state.format, sentAt: state.sentAt,
       stage: cardStage(admission.status, record.walletIdentity, state, reason), reason, walletReady: wallet.ready,
       canResend: Boolean(mayResend && !sendInProgress && !reason), sendInProgress,
-      cardCommunity: communityFor(community, record.id), communityRevision: community.cursor.version };
+      cardCommunity: communityFor(community, record.id), communityRevision: community.cursor.version,
+      cardCommunitySaved: Object.hasOwn(community.entries, record.id),
+      applicationPreferences: walletApplicationPreferences(application.record.fields) ?? {} };
   }
   async function staffCardSaveCommunity({ actor, registrationId, primaryId, expectedCommunityRevision, cardCommunity } = {}) {
     if (!readerValid(actor)) failure('FORBIDDEN', 403);

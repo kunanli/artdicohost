@@ -1,4 +1,4 @@
-import { cardCommunityLabel } from '../../shared/general-application.mjs';
+import { cardCommunityLabel, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
 
 const root = document.querySelector('[data-card-admin]');
 const $ = selector => root.querySelector(selector);
@@ -158,13 +158,24 @@ function setView(value) {
   }));
   $('[data-card-reference]').textContent = value.bookingReference;
   $('[data-card-recipient]').textContent = value.recipient || '未填写';
-  identity.value = value.identity;
+  const preferences = value.applicationPreferences ?? {};
+  const requestedIdentity = WALLET_IDENTITIES.find(option => option.value === preferences.requestedWalletIdentity);
+  identity.value = value.identity || requestedIdentity?.value || '';
+  const requestedIdentityText = $('[data-card-requested-identity]');
+  requestedIdentityText.hidden = !requestedIdentity;
+  requestedIdentityText.textContent = requestedIdentity ? '申请人所选身份：' + requestedIdentity.label : '';
   if (!stayOnApplication) communityDetails.open = false;
   communityDetails.hidden = value.admissionStatus !== 'confirmed' || !Number.isSafeInteger(value.communityRevision);
-  communitySite.value = value.cardCommunity?.site ?? '';
-  communityRole.value = value.cardCommunity?.role ?? '';
+  const suggestedCommunity = { site: preferences.ggjSite ?? '', role: preferences.ggjRole ?? '' };
+  const communityInput = value.cardCommunitySaved ? value.cardCommunity : suggestedCommunity;
+  communitySite.value = communityInput?.site ?? '';
+  communityRole.value = communityInput?.role ?? '';
+  const proposed = cardCommunityLabel(suggestedCommunity), proposalText = $('[data-card-requested-community]');
+  proposalText.hidden = !proposed;
+  proposalText.textContent = proposed ? '申请人填写：' + proposed : '';
   const community = cardCommunityLabel(value.cardCommunity);
-  $('[data-card-community-summary]').textContent = community ? 'GGJ 社群 · ' + community : 'GGJ 社群（选填）';
+  $('[data-card-community-summary]').textContent = community ? 'GGJ 社群 · ' + community
+    : proposed && !value.cardCommunitySaved ? 'GGJ 社群（申请人已填写）' : 'GGJ 社群（选填）';
   renderActions();
 }
 function renderActions() {

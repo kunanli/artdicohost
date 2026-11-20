@@ -40,7 +40,13 @@ async function fixture(width,{lost=false,closed=false}={}){
  if(!closed)await page.locator('[data-wallet-submit]:enabled').waitFor();
  return{page,context,calls,runtime,get app(){return current;},closeIntake(){disabled=true;current=app();}};
 }
-async function fill(page){for(const[name,value]of Object.entries({huodongxingReference:'000012345678901234567890',name:'合成纪念卡申请人',email:'synthetic.card@example.invalid',wechat:'synthetic_wechat_001'}))await form(page).locator('[name="wallet.'+name+'"]').fill(value);}
+async function fill(page){
+ for(const[name,value]of Object.entries({huodongxingReference:'000012345678901234567890',name:'合成纪念卡申请人',email:'synthetic.card@example.invalid',wechat:'synthetic_wechat_001'}))await form(page).locator('[name="wallet.'+name+'"]').fill(value);
+ await form(page).locator('[name="wallet.requestedWalletIdentity"]').selectOption('staff');
+ await page.locator('[data-wallet-community] summary').click();
+ await form(page).locator('[name="wallet.ggjSite"]').fill('GGJ 合成站');
+ await form(page).locator('[name="wallet.ggjRole"]').fill('站点组织者');
+}
 async function drafts(page){return page.evaluate(()=>new Promise((yes,no)=>{const request=indexedDB.open('artdico-browser-drafts-v1',1);request.onerror=()=>no(request.error);request.onsuccess=()=>{const db=request.result,tx=db.transaction('drafts','readonly'),query=tx.objectStore('drafts').getAll();query.onsuccess=()=>yes(query.result);query.onerror=()=>no(query.error);tx.oncomplete=()=>db.close();};}));}
 async function screenshot(page,name){await page.screenshot({path:resolve(evidence,name+'.png'),fullPage:false,animations:'disabled'});}
 async function receipt(f){try{await f.page.locator('[data-wallet-result]:not([hidden])').waitFor();}catch(error){console.log('Synthetic wallet failure: '+JSON.stringify({error:await f.page.locator('[data-wallet-error]').textContent(),status:await f.page.locator('[data-wallet-draft-status]').textContent(),calls:f.calls.filter(call=>/registration\/(token|submit)$/.test(call.path)).map(({path,method,status})=>({path,method,status}))}));await screenshot(f.page,'failure');throw error;}assert.equal(await form(f.page).isVisible(),false);const records=(await f.app.registrationService.repository.list()).registrations;assert.equal(records.length,1);assert.equal(records[0].fields.intake,'wallet-v1');assert.equal(records[0].fields.huodongxingReference,'000012345678901234567890');assert.equal((await f.app.registrationService.getAdmissionStatus(records[0].id)).status,'pending_review');assert.equal(f.runtime.messages.length,0);return records[0].id;}
@@ -76,7 +82,7 @@ try{
   try{
    assert.equal(await f.page.locator('#wallet-card-application').evaluate(node=>{let previous=node.previousElementSibling;while(previous&&!previous.matches('section.ah-section'))previous=previous.previousElementSibling;return previous?.id;}),'registration');
    assert.equal(await f.page.locator('#faq-wallet-card a[href="#wallet-card-application"]').count(),1);
-   assert.equal(await form(f.page).locator('select').count(),0,'applicants cannot choose a card identity');
+   assert.equal(await form(f.page).locator('[name="wallet.requestedWalletIdentity"]').inputValue(),'');
    await f.page.locator('[data-registration-form] [name=name]').fill('独立合成讲者草稿');await fill(f.page);
    await f.page.waitForFunction(()=>document.querySelector('[data-wallet-draft-status]').textContent==='纪念卡申请已暂存于本机。');
    const before=await drafts(f.page);assert.equal(before.filter(row=>row.kind==='editing'&&row.value?.intake==='wallet-v1').length,1);assert.equal(before.filter(row=>row.kind==='editing'&&row.value?.intake==='general-v2').length,1);
@@ -87,9 +93,15 @@ try{
    await f.page.locator('[data-language=en]').click();await f.page.waitForFunction(()=>document.querySelector('#wallet-card-heading').textContent==='Commemorative card application');
    assert.equal(await form(f.page).locator('[name="wallet.name"]').inputValue(),'合成纪念卡申请人');
    assert.equal(await form(f.page).locator('[name="wallet.huodongxingReference"]').inputValue(),'000012345678901234567890');
+   assert.equal(await form(f.page).locator('[name="wallet.requestedWalletIdentity"]').inputValue(),'staff');
    const readable=await form(f.page).evaluate(node=>[...node.querySelectorAll('.ah-field>label,input:not([type=checkbox]),[data-wallet-submit]')].every(field=>parseFloat(getComputedStyle(field).fontSize)>=16)&&[...node.querySelectorAll('.ah-field-hint,.ah-form-hint,.ah-form-disclaimer')].every(field=>parseFloat(getComputedStyle(field).fontSize)>=14));assert.equal(readable,true);
    await screenshot(f.page,'form-en-'+width);await f.page.locator('[data-language="zh-CN"]').click();await f.page.waitForFunction(()=>document.documentElement.lang==='zh-CN');
    await f.page.locator('[data-wallet-submit]').click();const id=await receipt(f);
+   const [{fields}]=(await f.app.registrationService.repository.list()).registrations;
+   assert.equal(fields.requestedWalletIdentity,'staff');
+   assert.equal(fields.ggjSite,'GGJ 合成站');
+   assert.equal(fields.ggjRole,'站点组织者');
+   assert.equal(fields.walletIdentity,undefined);
    assert.equal(f.calls.filter(call=>call.path.endsWith('/registration/submit')).length,1);assert.equal((await drafts(f.page)).some(row=>row.kind==='pending_submission'&&JSON.parse(row.value.payloadJson).fields.intake==='wallet-v1'),false);
    await staffIdentity(f,id);reports.push({width,normal:true,independentDrafts:true,bilingualValuesAndTypography:true,consent:true,staffIdentity:true,privateIdentityPendingGuidance:true,pendingBeforeApproval:true,noRealMail:true});
   }finally{await f.context.close();}
@@ -100,6 +112,8 @@ try{
    const original=f.calls.find(call=>call.path.endsWith('/registration/submit'));assert.equal((await f.app.registrationService.repository.list()).registrations.length,1);
    f.closeIntake();await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-wallet-submit]:enabled').waitFor();assert.equal(f.calls.filter(call=>call.path.endsWith('/registration/submit')).length,1,'reloading never automatically POSTs a pending request');
    assert.equal(await form(f.page).locator('[name="wallet.huodongxingReference"]').inputValue(),'000012345678901234567890');assert.equal(await form(f.page).locator('[name="wallet.huodongxingReference"]').isDisabled(),true);
+   assert.equal(await form(f.page).locator('[name="wallet.requestedWalletIdentity"]').inputValue(),'staff');
+   assert.equal(await form(f.page).locator('[name="wallet.ggjRole"]').inputValue(),'站点组织者');
    await f.page.locator('[data-wallet-submit]').click();await receipt(f);const retry=f.calls.filter(call=>call.path.endsWith('/registration/submit')).at(-1);assert.equal(retry.body,original.body);assert.equal(retry.key,original.key);
    reports.push({width:390,lostResponse:true,originalBodyAndKey:true,recoveryAfterClosure:true});
   }finally{await f.context.close();}

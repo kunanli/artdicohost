@@ -10,6 +10,7 @@ export function approvedRegistrationPolicy({ enabled = true } = {}) {
     capacity: 300,
     attendeeReviewRequired: false,
     publicRegistrationMode: 'speaker_only',
+    speakerApplicationsEnabled: false,
     privacy: {
       version: 'artdico-registration-2026-10-20-v1',
       processor: 'ARTDiCO HOST 活动筹备团队',

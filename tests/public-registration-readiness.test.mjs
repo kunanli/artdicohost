@@ -33,6 +33,16 @@ test('predeployment observation reports the current legacy or speaker policy wit
     assert.equal(result.verified,true);assert.equal(result.publicRegistrationMode,mode??'legacy');assert.deepEqual(methods,['GET','OPTIONS','OPTIONS']);
   }
 });
+test('release verification requires speaker closure and a live card intake separately',async()=>{
+  for (const walletApplicationsEnabled of [true,false,undefined]) {
+    const result=await observePublicRegistration({expectedPublicRegistrationMode:'speaker_only',expectedSpeakerApplicationsEnabled:false,
+      fetchFn:async(_url,options)=>options.method==='GET' ? response({...config,speakerApplicationsEnabled:false,walletApplicationsEnabled})
+        : response(null,204,{'access-control-allow-methods':'POST','access-control-allow-headers':options.headers['Access-Control-Request-Headers']})});
+    assert.equal(result.verified,walletApplicationsEnabled===true);
+    if(result.verified)assert.equal(result.walletApplicationsEnabled,true);
+    else assert.equal(result.failure,'REGISTRATION_MODE');
+  }
+});
 test('observation suppresses provider text and reports a rejected browser preflight',async()=>{
   const result=await observePublicRegistration({fetchFn:async(url,options)=>options.method==='GET'?response(config):response({private:'PRIVATE_PROVIDER_DETAIL'},403)});
   assert.equal(result.verified,false);assert.equal(result.stage,'token_preflight');assert.equal(result.status,403);

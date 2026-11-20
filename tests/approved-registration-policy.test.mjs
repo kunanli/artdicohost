@@ -13,6 +13,7 @@ test('approved policy preserves event terms and uses public contact independentl
   assert.equal(policy.capacity, 300);
   assert.equal(policy.attendeeReviewRequired, false);
   assert.equal(policy.publicRegistrationMode, 'speaker_only');
+  assert.equal(validateRegistrationPolicy(policy, { now: policy.opensAt }).value.speakerApplicationsEnabled, false);
   assert.equal(validateRegistrationPolicy(policy, { now: policy.opensAt }).value.publicRegistrationMode, 'speaker_only');
   assert.equal(validateRegistrationPolicy(policy, { now: policy.opensAt }).value.attendeeReviewRequired, false);
   assert.equal(Date.parse(policy.closesAt), Date.parse('2026-12-05T04:00:00Z'));

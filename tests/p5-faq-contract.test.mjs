@@ -97,7 +97,7 @@ test('approved external attendance route cannot be replaced by editorial URLs or
     const entry = rows.find(item => item.id === 'registration-status');
     assert.equal(entry.registrationUrl, PUBLIC_REGISTRATION_URL);
     assert.match(entry.answer, /普通参会请前往活动行报名/u);
-    assert.match(entry.answer, /讲者分享提案在本站提交/u);
+    assert.doesNotMatch(entry.answer, /讲者分享提案在本站提交/u);
     assert.doesNotMatch(entry.answer, /即刻出票|立即.*Wallet|本站即|服务暂时无法/u);
     assert.deepEqual(rows.filter(item => item.registrationUrl===PUBLIC_REGISTRATION_URL).map(item => item.id), ['registration-status', 'site-role']);
   }

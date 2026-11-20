@@ -69,6 +69,7 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
   window.addEventListener('pagehide',captureDraft);
   function unavailable(reason) {
     const closed=reason==='closed';
+    section.hidden=!client.pending;
     form.dataset.registrationMode=client.pending?'recovery':closed?'closed':'unavailable';
     submit.disabled=!client.pending;
     submit.textContent=client.pending?'核对原申请结果':closed?'讲者申请已关闭':'讲者申请暂不可用';
@@ -146,6 +147,8 @@ for (const section of document.querySelectorAll('[data-registration-api-origin]'
     if (!value || value.enabled !== true) { unavailable(value?.reason??'unavailable'); return; }
     if(value.eventId!==eventConfig.id){unavailable('unavailable');return;}
     config = value;
+    section.hidden = false;
+    for (const item of document.querySelectorAll('[data-speaker-recruitment]')) item.hidden = false;
     const copy = {title:'讲者申请',notice:'提交分享主题，由筹备团队另行联系。申请不代表确认讲者或入场资格。',openLabel:'讲者申请',modeLabel:'讲者申请',disclaimer:'提交成功仅表示已收到讲者申请；一般报名请前往活动行。',emailHint:'用于接收讲者申请的联系与通知。',submitLabel:'提交讲者申请',availability:'一般报名请前往活动行'};
     section.querySelector('[data-registration-heading]').textContent=copy.title;
     section.querySelector('[data-registration-notice]').textContent=copy.notice;

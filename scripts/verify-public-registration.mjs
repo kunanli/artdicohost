@@ -8,11 +8,13 @@ const API='https://api.artdico.host',SITE='https://artdico.host';
 const ROUTES=['/api/admin/registration/config','/api/admin/registration/token','/api/admin/registration/submit'];
 
 /** Anonymous GET + OPTIONS only. No token issuance, application, or staff cookie. */
-export async function observePublicRegistration({fetchFn=fetch,timeoutMs=15000,expectedPublicRegistrationMode=null}={}) {
+export async function observePublicRegistration({fetchFn=fetch,timeoutMs=15000,expectedPublicRegistrationMode=null,
+  expectedSpeakerApplicationsEnabled=expectedPublicRegistrationMode==='speaker_only'?true:null}={}) {
   let stage='config',status,verificationFailure;
   const fail=code=>{verificationFailure=code;throw new Error('Public registration read verification failed.');};
   try {
-    if(typeof fetchFn!=='function'||!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>15000||![null,'legacy','speaker_only'].includes(expectedPublicRegistrationMode))fail('INVALID_ARGUMENTS');
+    if(typeof fetchFn!=='function'||!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>15000||![null,'legacy','speaker_only'].includes(expectedPublicRegistrationMode)
+      ||![null,true,false].includes(expectedSpeakerApplicationsEnabled))fail('INVALID_ARGUMENTS');
     async function read(url,options={}) {
       status=undefined;
       if(!ROUTES.some(path=>url===API+path)||!['GET','OPTIONS'].includes(options.method))fail('READ_ONLY_BOUNDARY');
@@ -27,8 +29,9 @@ export async function observePublicRegistration({fetchFn=fetch,timeoutMs=15000,e
     const client=createRegistrationClient({apiOrigin:API,pageOrigin:SITE,fetchFn:read});
     const config=await client.configure();
     if(config?.eventId!==eventConfig.id||typeof config.enabled!=='boolean')fail('EVENT_CONFIGURATION');
-    if(expectedPublicRegistrationMode!==null&&((config.publicRegistrationMode??'legacy')!==expectedPublicRegistrationMode
-      ||expectedPublicRegistrationMode==='speaker_only'&&(config.enabled!==true||config.speakerApplicationsEnabled!==true)))fail('REGISTRATION_MODE');
+    if(expectedPublicRegistrationMode!==null&&(config.publicRegistrationMode??'legacy')!==expectedPublicRegistrationMode
+      ||expectedSpeakerApplicationsEnabled!==null&&(config.enabled!==true||config.speakerApplicationsEnabled!==expectedSpeakerApplicationsEnabled)
+      ||expectedSpeakerApplicationsEnabled===false&&config.walletApplicationsEnabled!==true)fail('REGISTRATION_MODE');
     const preflights={};
     for(const [name,path,headers] of [['token',ROUTES[1],['content-type']],['submit',ROUTES[2],['content-type','idempotency-key','x-registration-token']]]) {
       stage=name+'_preflight';
@@ -41,7 +44,8 @@ export async function observePublicRegistration({fetchFn=fetch,timeoutMs=15000,e
     }
     return {verified:true,eventId:config.eventId,enabled:config.enabled,
       attendeeReviewRequired:typeof config.attendeeReviewRequired==='boolean'?config.attendeeReviewRequired:null,
-      publicRegistrationMode:config.publicRegistrationMode??'legacy',speakerApplicationsEnabled:typeof config.speakerApplicationsEnabled==='boolean'?config.speakerApplicationsEnabled:null,preflights};
+      publicRegistrationMode:config.publicRegistrationMode??'legacy',speakerApplicationsEnabled:typeof config.speakerApplicationsEnabled==='boolean'?config.speakerApplicationsEnabled:null,
+      ...(typeof config.walletApplicationsEnabled==='boolean'?{walletApplicationsEnabled:config.walletApplicationsEnabled}:{}),preflights};
   } catch(error) {
     const allowed=new Set(['INVALID_ARGUMENTS','READ_ONLY_BOUNDARY','RESPONSE_URL','CORS_ORIGIN','EVENT_CONFIGURATION','CORS_PREFLIGHT','REGISTRATION_MODE']);
     return {verified:false,stage,...(Number.isInteger(status)&&status>=100&&status<=599?{status}:{}),
@@ -53,7 +57,9 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   const args=process.argv.slice(2),approved=args.length===1&&args[0]==='--expect-approved-mode';
   if(args.length&&!approved){console.log('Anonymous registration GET/OPTIONS verification: '+JSON.stringify({verified:false,failure:'INVALID_ARGUMENTS'}));process.exitCode=1;}
   else {
-    const result=await observePublicRegistration(approved?{expectedPublicRegistrationMode:approvedRegistrationPolicy().publicRegistrationMode??'legacy'}:{});
+    const policy=approvedRegistrationPolicy();
+    const result=await observePublicRegistration(approved?{expectedPublicRegistrationMode:policy.publicRegistrationMode??'legacy',
+      expectedSpeakerApplicationsEnabled:policy.speakerApplicationsEnabled!==false}:{});
     console.log('Anonymous registration GET/OPTIONS verification: '+JSON.stringify(result));
     if(!result.verified)process.exitCode=1;
   }

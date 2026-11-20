@@ -108,11 +108,24 @@ export function createRegistrationClient({ apiOrigin, pageOrigin, fetchFn = glob
         && PRIVACY_KEYS.every(key => typeof value.privacy?.[key] === 'string' && value.privacy[key].trim().length > 0 && value.privacy[key].length <= 4000)
         && !/demo|frontend|mock/iu.test(value.privacy.version);
       const summary = admissionSummary(value?.admissions);
-      const metadata = complete ? {eventId:value.eventId,opensAt:value.opensAt,closesAt:value.closesAt,capacity:value.capacity,privacy:Object.fromEntries(PRIVACY_KEYS.map(key=>[key,value.privacy[key]])), ...(summary ? {admissions:summary} : {}), ...(typeof value.attendeeReviewRequired==='boolean'?{attendeeReviewRequired:value.attendeeReviewRequired}:{}), ...(typeof value.speakerApplicationsEnabled==='boolean'?{speakerApplicationsEnabled:value.speakerApplicationsEnabled}:{}), ...(['legacy','speaker_only'].includes(value.publicRegistrationMode)?{publicRegistrationMode:value.publicRegistrationMode}:{})} : {};
-      const speakerReady = ['speaker','wallet'].includes(applicationKind) && complete && value.enabled === false && value.speakerApplicationsEnabled === true;
-      if (value?.enabled === false && !speakerReady) { config = null; return {enabled:false,reason:value.reason==='closed'?'closed':'unavailable',...metadata}; }
-      if (value?.enabled !== true && !speakerReady) throw failure('CONFIG_INVALID','正式报名配置尚未完整，请稍后再来。');
-      if (!complete || value.speakerApplicationsEnabled !== undefined && typeof value.speakerApplicationsEnabled !== 'boolean' || value.publicRegistrationMode !== undefined && !['legacy','speaker_only'].includes(value.publicRegistrationMode)) throw failure('CONFIG_INVALID','正式报名配置尚未完整，请稍后再来。');
+      const intakeFlags = ['speakerApplicationsEnabled', 'walletApplicationsEnabled'];
+      const intakeMetadata = complete ? Object.fromEntries(intakeFlags.filter(key => typeof value[key] === 'boolean').map(key => [key, value[key]])) : {};
+      const metadata = complete ? {
+        eventId: value.eventId, opensAt: value.opensAt, closesAt: value.closesAt, capacity: value.capacity,
+        privacy: Object.fromEntries(PRIVACY_KEYS.map(key => [key, value.privacy[key]])),
+        ...(summary ? { admissions: summary } : {}),
+        ...(typeof value.attendeeReviewRequired === 'boolean' ? { attendeeReviewRequired: value.attendeeReviewRequired } : {}),
+        ...intakeMetadata,
+        ...(['legacy','speaker_only'].includes(value.publicRegistrationMode) ? { publicRegistrationMode: value.publicRegistrationMode } : {}),
+      } : {};
+      const intakeOpen = applicationKind === 'speaker' ? value?.speakerApplicationsEnabled
+        : applicationKind === 'wallet' ? value?.walletApplicationsEnabled ?? (value?.speakerApplicationsEnabled === true ? true : undefined) : undefined;
+      if ((complete && intakeOpen === false) || (value?.enabled === false && !(complete && intakeOpen === true))) {
+        config = null;
+        return {enabled:false,reason:intakeOpen===false||value.reason==='closed'?'closed':'unavailable',...metadata};
+      }
+      if (!complete || value.enabled !== true && !(value.enabled === false && intakeOpen === true)
+        || intakeFlags.some(key=>value[key]!==undefined&&typeof value[key]!=='boolean') || value.publicRegistrationMode !== undefined && !['legacy','speaker_only'].includes(value.publicRegistrationMode)) throw failure('CONFIG_INVALID','正式报名配置尚未完整，请稍后再来。');
       config = structuredClone({enabled:true,...metadata});
       return structuredClone(config);
     },

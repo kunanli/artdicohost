@@ -15,10 +15,23 @@
 #artdico-host.ah-festival.ah-cosmos .ah-home-header .ah-site-menu nav>a[aria-current="location"]{
  color:var(--ah-text-link,#d8c1ff);text-decoration:underline;text-underline-offset:6px;text-decoration-thickness:1px;
 }
+#artdico-host.ah-festival.ah-cosmos .ah-home-header nav>a.ah-home-nav-card{
+ padding-inline:14px;border:1px solid #d8c1ff;border-radius:10px;
+ background:#d8c1ff;color:#20112f;font-weight:700;
+}
+#artdico-host.ah-festival.ah-cosmos .ah-home-header nav>a.ah-home-nav-card:hover{
+ background:#eee3ff;color:#20112f;
+}
+#artdico-host.ah-festival.ah-cosmos .ah-home-header nav>a.ah-home-nav-card[aria-current="location"]{color:#20112f}
+#artdico-host.ah-festival.ah-cosmos .ah-home-header .ah-site-menu nav>a.ah-home-nav-card{margin-top:6px}
 #artdico-host.ah-festival.ah-cosmos .ah-header.ah-home-header .ah-site-menu>nav{
  max-height:min(460px,calc(100vh - var(--ah-header-height,76px) - 24px));
  max-height:min(460px,calc(100dvh - var(--ah-header-height,76px) - 24px));
 }
 @media(prefers-reduced-motion:reduce){
  #artdico-host.ah-festival.ah-cosmos .ah-header.ah-home-header{transition:none}
+}
+@media(max-width:960px){
+ #artdico-host.ah-festival.ah-cosmos .ah-home-header .ah-home-desktop-nav{display:none}
+ #artdico-host.ah-festival.ah-cosmos .ah-home-header>.ah-site-menu{display:block}
 }

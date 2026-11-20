@@ -65,7 +65,7 @@ async function fixture(width, mode = 'ready', lostAck = false) {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(SITE + '/#faq', { waitUntil: 'networkidle' });
   await page.locator('[data-faq-id="custom-experience"]').waitFor();
-  await page.locator('[data-registration-form][data-registration-mode="' + (mode === 'ready' ? 'production' : mode) + '"]').waitFor();
+  await page.locator('[data-registration-form][data-registration-mode="' + (mode === 'ready' ? 'production' : mode) + '"]').waitFor({state: mode === 'ready' ? 'visible' : 'attached'});
   return { runtime, context, page, calls, width, mode, async refresh() {
     revision++; now += 2000; await page.clock.setFixedTime(new Date(now));
     const response = page.waitForResponse(response => new URL(response.url()).pathname === '/api/public/content');

@@ -16,6 +16,7 @@ const links = [
   <nav class="ah-home-desktop-nav" aria-label="页面导航">
     {links.map(link => <a href={link.href}>{link.label}</a>)}
     <a href={PUBLIC_REGISTRATION_URL} class="ah-home-nav-apply" data-general-registration>活动行报名</a>
+    <a href="#wallet-card-application" class="ah-home-nav-card" data-card-navigation>电子纪念卡</a>
   </nav>
   <div class="ah-language-switch" data-language-switch role="group" aria-label="Language / 语言" hidden>
     <button type="button" data-language="zh-CN" lang="zh-CN" aria-pressed="true">中文</button>
@@ -27,6 +28,7 @@ const links = [
       {links.map(link => <a href={link.href}>{link.label}<span aria-hidden="true">↗</span></a>)}
       <a href="#venue">地点与常见问题<span aria-hidden="true">↗</span></a>
       <a href={PUBLIC_REGISTRATION_URL} class="ah-menu-action" data-general-registration>活动行报名<span aria-hidden="true">↗</span></a>
+      <a href="#wallet-card-application" class="ah-home-nav-card" data-card-navigation>电子纪念卡<span aria-hidden="true">↓</span></a>
     </nav>
   </details>
 </header>

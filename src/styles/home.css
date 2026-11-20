@@ -142,6 +142,8 @@ html:has(#artdico-host.ah-cosmos){scroll-padding-top:32px}
 #artdico-host.ah-festival.ah-cosmos .ah-recruitment>.ah-highlights-detail{margin:35px 0 0;border:0;}
 #artdico-host.ah-festival.ah-cosmos .ah-recruitment-note{color:#a89ab9;}
 #artdico-host.ah-festival.ah-cosmos .ah-registration{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:60px;background:radial-gradient(ellipse at 0 45%,#1e1038,transparent 60%);align-items:start}
+#artdico-host.ah-festival.ah-cosmos :is(.ah-registration,[data-speaker-recruitment])[hidden]{display:none}
+#artdico-host.ah-festival.ah-cosmos .ah-recruitment-grid:has(> [data-speaker-recruitment][hidden]){grid-template-columns:1fr}
 #artdico-host.ah-festival.ah-cosmos .ah-register-intro{padding-top:22px;min-width:0}
 #artdico-host.ah-festival.ah-cosmos .ah-register-intro p{color:var(--ah-muted);max-width:250px}
 #artdico-host.ah-festival.ah-cosmos .ah-registration-preview{background:#110d17;border:1px solid #665178;border-radius:14px;overflow:hidden;min-width:0}

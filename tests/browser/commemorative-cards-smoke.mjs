@@ -202,7 +202,10 @@ try {
           assert.equal(pass.suggestedFilename(), 'artdico-host.pkpass');
           const files = passFiles(await readFile(await pass.path()));
           const walletPass = JSON.parse(files.get('pass.json'));
-          assert.deepEqual(walletPass.preferredStyleSchemes, ['eventTicket']);
+          assert.deepEqual(walletPass.preferredStyleSchemes, ['posterEventTicket', 'eventTicket']);
+          assert.equal(files.has('logo.png'), false);
+          assert.equal(files.has('artwork@2x.png'), true);
+          assert.equal(walletPass.eventTicket.additionalInfoFields.find(field => field.key === 'poster-ggj-community').value, 'GGJ 合成站 · 站点组织者');
           assert.equal(walletPass.semantics.admissionLevel, '嘉宾');
           assert.equal(walletPass.eventTicket.primaryFields[0].value, '合成纪念卡申请人');
           assert.deepEqual(walletPass.eventTicket.auxiliaryFields.map(field => field.key), ['date', 'time', 'venue-short', 'ggj-community-short']);

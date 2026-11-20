@@ -26,10 +26,10 @@ body[data-admission=waitlisted] .confirmation-state{color:#83581f}body[data-admi
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 @page{size:A4;margin:18mm}
 @media print{:root,body{background:#fff;color:#000;font-family:Arial,"PingFang SC","Microsoft YaHei",sans-serif;font-size:11pt}.confirmation-header,.confirmation-actions,.confirmation-secondary,.confirmation-private,.confirmation-action-status,.confirmation-copy-fallback,.confirmation-skip,.confirmation-group,.confirmation-invitation,.confirmation-save,.confirmation-support,.confirmation-notice-records,.confirmation-contact button,.confirmation-registration>summary,noscript{display:none!important}.confirmation-card{width:100%;max-width:none;margin:0;padding:0;border:0;border-radius:0;break-inside:avoid}.confirmation-state,.confirmation-intro,.confirmation-details dt,.confirmation-note,.confirmation-email{color:#333}.confirmation-card h1{font-size:25pt}.confirmation-details{border-color:#999}.confirmation-printed{display:block;color:#555;margin-top:22pt;font-size:10pt}.confirmation-reference{font-size:9pt}.confirmation-error{border:1px solid #999;background:#fff;color:#000}}
-[data-card-format] :is([data-confirmation-more], [data-confirmation-registration], [data-confirmation-notice-records], [data-confirmation-copy], .confirmation-printed) { display: none; }
+[data-card-flow] :is([data-confirmation-more], [data-confirmation-registration], [data-confirmation-notice-records], [data-confirmation-group], [data-confirmation-copy], [data-confirmation-agenda], .confirmation-printed) { display: none; }
 
-[data-card-format] .confirmation-details{display:none}
-[data-card-format] .confirmation-card{width:min(590px,calc(100% - 24px));padding:clamp(16px,4vw,28px)}
+[data-card-flow] .confirmation-details{display:none}
+[data-card-flow] .confirmation-card{width:min(590px,calc(100% - 24px));padding:clamp(16px,4vw,28px)}
 [data-card-format] .confirmation-save{margin-top:0;padding-top:0}
 [data-card-format] .confirmation-actions{flex-flow:row wrap;align-items:center;gap:8px 12px}
 [data-card-format] .confirmation-actions button{width:auto}

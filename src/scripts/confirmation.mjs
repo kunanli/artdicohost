@@ -65,6 +65,7 @@ if (root) {
     $('[data-confirmation-action-status]').textContent='';$('[data-confirmation-contact-status]').textContent='';
     for(const button of contactButtons)button.textContent=contactLabels.get(button);
     hideSafariGuide();
+    delete root.dataset.cardFlow;
   }
   function invalidate(){generation++;controller?.abort();controller=null;printRegistrationOpen=null;releaseWallet();clearInvitation();clearGroup();clearPrivateView();$('[data-confirmation-content]').hidden=true;state=null;busy=false;delete root.dataset.admission;}
   function controls() {
@@ -90,6 +91,9 @@ if (root) {
   }
   function render(value) {
     clearInvitation();state=value;root.dataset.admission=value.admission.status;
+    const cardFlow = Boolean(value.card || value.cardRequest);
+    root.toggleAttribute('data-card-flow', cardFlow);
+    $('[data-confirmation-save]').hidden = value.cardRequest === true;
     const labels=confirmationStatusLabels[value.admission.status];
     $('[data-confirmation-state]').textContent=labels[0];$('[data-confirmation-heading]').textContent=labels[1];$('[data-confirmation-intro]').textContent=labels[2];
     for(const[key,text]of Object.entries({name:value.attendee.name,organization:value.attendee.organization,event:value.event.title,date:value.event.date,time:value.event.time+'（UTC+8）'+(value.admission.status==='confirmed'?'，'+value.event.checkIn+' 开始签到':''),venue:value.event.venue,reference:value.referenceCode,email:confirmationEmailMessage(value.admission.status,value.email.status)}))$('[data-confirmation-'+key+']').textContent=text;
@@ -130,12 +134,24 @@ if (root) {
         : value.wallet.ready && !guidance.showWallet ? 'Apple Wallet 适用于 iPhone。' : '';
       device.hidden = !device.textContent;
       document.title = '电子纪念卡 · ARTDiCO HOST';
+    } else if (value.cardRequest) {
+      const status = value.admission.status;
+      const title = {
+        pending_review: '纪念卡申请已收到', waitlisted: '纪念卡待核对', confirmed: '纪念卡待发放',
+        rejected: '纪念卡暂无法领取', withdrawn: '纪念卡申请已撤回',
+      }[status];
+      $('[data-confirmation-state]').textContent = '电子纪念卡';
+      $('[data-confirmation-heading]').textContent = title;
+      $('[data-confirmation-intro]').textContent = ['rejected', 'withdrawn'].includes(status)
+        ? '如需核对纪念卡申请，请联系主办方。'
+        : '工作人员核对活动行报名后，会把纪念卡领取链接寄到申请邮箱。';
+      document.title = title + ' · ARTDiCO HOST';
     } else renderGroup(value);
     $('[data-confirmation-content]').hidden=false;$('[data-confirmation-error]').hidden=true;controls();
   }
   function showReadError(error){
     releaseWallet();clearInvitation();clearGroup();clearPrivateView();state=null;delete root.dataset.admission;$('[data-confirmation-content]').hidden=true;
-    document.title='私人参会页 · ARTDiCO HOST';$('[data-confirmation-state]').textContent='私人参会页';$('[data-confirmation-heading]').textContent='暂时无法读取报名状态';$('[data-confirmation-intro]').textContent='请保留原查询链接，无需重复报名。';
+    document.title='ARTDiCO HOST';$('[data-confirmation-state]').textContent='ARTDiCO HOST';$('[data-confirmation-heading]').textContent='暂时无法打开私人链接';$('[data-confirmation-intro]').textContent='请保留原链接。';
     $('[data-confirmation-error]').textContent=error.message||'请稍后重新读取。';$('[data-confirmation-error]').hidden=false;
   }
   async function showJpeg(value, current) {
@@ -158,9 +174,9 @@ if (root) {
     }
   }
   async function load() {
-    invalidate();const current=generation;busy=true;controller=new AbortController();const signal=controller.signal;controls();$('[data-confirmation-state]').textContent='私人参会页';$('[data-confirmation-heading]').textContent='正在读取报名状态…';$('[data-confirmation-intro]').textContent='正在核对最新状态，请稍候。';
+    invalidate();const current=generation;busy=true;controller=new AbortController();const signal=controller.signal;controls();$('[data-confirmation-state]').textContent='ARTDiCO HOST';$('[data-confirmation-heading]').textContent='正在打开私人页面…';$('[data-confirmation-intro]').textContent='请稍候。';
     try {
-      if(!token)throw new Error('请从报名完成后的确认链接或确认邮件打开本页。');
+      if(!token)throw new Error('请使用主办方提供的私人链接打开本页。');
       const value=await client.read(token,{signal,includeCardFormats:true});if(current!==generation)return;render(value);
       if (value.card?.ready && value.card.format !== 'wallet') await showJpeg(value, current);
     } catch(error) {if(current===generation&&!error.cancelled)showReadError(error);}

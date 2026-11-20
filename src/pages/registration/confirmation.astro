@@ -12,16 +12,16 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
     <meta name="robots" content="noindex,nofollow,noarchive" />
     <meta name="referrer" content="no-referrer" />
     <meta name="theme-color" content="#ffffff" />
-    <title>私人参会页 · ARTDiCO HOST</title>
+    <title>ARTDiCO HOST</title>
   </head>
   <body class="confirmation-page" data-confirmation-page data-confirmation-api={apiOrigin}>
-    <a class="confirmation-skip" href="#confirmation-main">跳到报名状态</a>
-    <header class="confirmation-header"><a href="/">ARTDiCO HOST</a><a href="/#agenda">活动日程</a></header>
+    <a class="confirmation-skip" href="#confirmation-main">跳到主要内容</a>
+    <header class="confirmation-header"><a href="/">ARTDiCO HOST</a><a href="/#agenda" data-confirmation-agenda>活动日程</a></header>
     <main id="confirmation-main" tabindex="-1">
       <section class="confirmation-card">
-        <p class="confirmation-state" data-confirmation-state aria-hidden="true">私人参会页</p>
-        <h1 data-confirmation-heading tabindex="-1">正在读取报名状态…</h1>
-        <p class="confirmation-intro" data-confirmation-intro>请稍候，我们正在核对这份报名的最新状态。</p>
+        <p class="confirmation-state" data-confirmation-state aria-hidden="true">ARTDiCO HOST</p>
+        <h1 data-confirmation-heading tabindex="-1">正在打开私人页面…</h1>
+        <p class="confirmation-intro" data-confirmation-intro>请稍候。</p>
         <p class="confirmation-error" data-confirmation-error role="alert" hidden></p>
         <div data-confirmation-content hidden>
           <div class="confirmation-person"><strong data-confirmation-name></strong><span data-confirmation-organization></span></div>
@@ -33,7 +33,7 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
             <dt>时间</dt><dd data-confirmation-time></dd>
             <dt>地点</dt><dd data-confirmation-venue></dd>
           </dl>
-          <section class="confirmation-save" aria-labelledby="confirmation-save-heading">
+          <section class="confirmation-save" data-confirmation-save aria-labelledby="confirmation-save-heading">
             <h2 id="confirmation-save-heading" data-confirmation-save-heading>保存参会信息</h2>
             <div class="confirmation-actions">
               <a data-confirmation-jpeg-download download="artdico-host-card.jpg" hidden>下载 JPEG 纪念卡</a>
@@ -90,7 +90,7 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
         <details class="confirmation-support"><summary>遗失链接或需要帮助？</summary><p>请联系 <a href={'mailto:'+PUBLIC_CONTACT_EMAIL}>{PUBLIC_CONTACT_EMAIL}</a>。主办方核对本人后，会私下交付查询链接。<button type="button" data-confirmation-contact-copy>复制邮箱</button></p><p data-confirmation-contact-status role="status" aria-live="polite"></p></details>
       </section>
     </main>
-    <noscript><p class="confirmation-noscript">请启用 JavaScript 以核对报名状态，或通过原联系渠道联络筹备团队。</p></noscript>
+    <noscript><p class="confirmation-noscript">请启用 JavaScript 打开私人页面，或通过原联系渠道联络筹备团队。</p></noscript>
   </body>
 </html>
 <script>

@@ -6,7 +6,7 @@ import { createConfirmationTokens } from './tokens.mjs';
 import { createConfirmationRepository, canonicalConfirmationKind, formalConfirmationKind, commemorativeCardKind, confirmationNoticeId, confirmationRequestHash,
   validConfirmationOperation, MAX_CONFIRMATION_BATCH, sameConfirmationScope as sameScope, cardResendCandidates, cardSendInProgress,
   cardCommunityPrefix, createCardCommunityRepository } from './repository.mjs';
-import { CARD_FORMATS, WALLET_IDENTITIES, cardCommunityFields, walletApplicationPreferences } from '../../shared/general-application.mjs';
+import { CARD_FORMATS, WALLET_IDENTITIES, cardCommunityFields, isWalletApplicationFields, walletApplicationPreferences } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 import { buildPosterInvitationSettings } from '../../shared/organizer-progress.mjs';
 import { confirmationEmailPresentation } from './presentation.mjs';
@@ -143,9 +143,14 @@ export function createRegistrationConfirmationService({ registrationService, jou
         && op.registrationIds.some(id => aliases.registrationIds.includes(id) && !sameScope(op.recipientScopes?.[id] ?? {}, scope)));
   }
   const reminderOpen = () => clock() < Date.parse(eventFacts.date + 'T' + eventFacts.checkIn + ':00+08:00');
-  const applicable = (loaded, kind) => kind === 'application_received'
-    ? loaded.record.provenance.kind === 'public' && loaded.record.consent?.accepted === true && loaded.admission.status === 'pending_review'
-    : loaded.admission.status === 'confirmed' && (kind !== 'pre_event_reminder' || reminderOpen());
+  const isCardRequest = record => record.walletRequested === true || isWalletApplicationFields(record.fields);
+  function applicable(loaded, kind) {
+    if (isCardRequest(loaded.record) && !commemorativeCardKind(kind)) return false;
+    if (kind === 'application_received') {
+      return loaded.record.provenance.kind === 'public' && loaded.record.consent?.accepted === true && loaded.admission.status === 'pending_review';
+    }
+    return loaded.admission.status === 'confirmed' && (kind !== 'pre_event_reminder' || reminderOpen());
+  }
   const countNotices = notices => {
     const counts = { total: notices.length, providerAccepted: 0, rejected: 0, unknown: 0 };
     for (const notice of notices) counts[notice.status === 'provider_accepted' ? 'providerAccepted' : notice.status === 'rejected' ? 'rejected' : 'unknown']++;
@@ -154,7 +159,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
   function trustedProjection(registrationId, loaded) {
     const { record, admission, entry } = loaded, hidden = admission.status === 'withdrawn';
     return { registrationId, referenceCode: registrationId, admissionStatus: admission.status, admissionKind: admission.kind,
-      admissionRevision: admission.revision, accessRevision: record.accessRevision ?? 0, ...(record.walletRequested?{walletRequested:true}:{}), ...(record.walletIdentity?{walletIdentity:record.walletIdentity}:{}), name: hidden ? '' : record.fields.name, organization: hidden ? '' : record.fields.organization ?? '',
+      admissionRevision: admission.revision, accessRevision: record.accessRevision ?? 0, ...(isCardRequest(record)?{walletRequested:true}:{}), ...(record.walletIdentity?{walletIdentity:record.walletIdentity}:{}), name: hidden ? '' : record.fields.name, organization: hidden ? '' : record.fields.organization ?? '',
       event: { ...eventFacts }, submittedAt: entry.committedAt, hasEmail: typeof record.fields.email === 'string' && Boolean(record.fields.email) };
   }
   async function authorizedRegistration(registrationId, { includeCardCommunity = false } = {}) {
@@ -174,11 +179,17 @@ export function createRegistrationConfirmationService({ registrationService, jou
   }
   async function authorize(input) {
     const { registrationId, loaded, cardFormat } = await authorizedContext(input);
-    if (cardFormat && !(await deliveryPermission(loaded.record)).eligible) return null;
     const projected = trustedProjection(registrationId, loaded);
-    if (!cardFormat) return projected;
+    if (!cardFormat && !projected.walletRequested) return projected;
+    if (!await cardIdentity(loaded, projected)) return null;
     return { ...projected, walletRequested: true,
-      ...(projected.admissionStatus === 'confirmed' ? { cardCommunity: communityFor(await communities().read(), registrationId) } : {}) };
+      cardCommunity: communityFor(await communities().read(), registrationId) };
+  }
+  async function cardIdentity(loaded, projection) {
+    if (projection.admissionStatus !== 'confirmed') return null;
+    const identity = WALLET_IDENTITIES.find(item => item.value === projection.walletIdentity);
+    if (!identity || (await aliasesFor(loaded)).primaryRegistrationId !== projection.registrationId) return null;
+    return (await deliveryPermission(loaded.record)).eligible ? identity : null;
   }
   /** Explicit, single-person staff read. No new registration, notice, or email. */
   async function staffConfirmationLink({ actor, registrationId } = {}) {
@@ -433,21 +444,28 @@ export function createRegistrationConfirmationService({ registrationService, jou
   }
   async function confirmation(input) {
     const { registrationId, loaded, cardFormat } = await authorizedContext(input), value = trustedProjection(registrationId, loaded);
-    let currentFacts = await currentEventFacts();
-    if (cardFormat) {
-      const identity = WALLET_IDENTITIES.find(item => item.value === value.walletIdentity);
-      if (value.admissionStatus !== 'confirmed' || !identity || !(await deliveryPermission(loaded.record)).eligible) failure('CONFIRMATION_NOT_FOUND', 404);
-      const both = own(input, 'includeCardFormats') === true;
+    if (cardFormat || value.walletRequested) {
+      const identity = await cardIdentity(loaded, value);
+      const cardView = { event: value.event, referenceCode: value.referenceCode, submittedAt: value.submittedAt,
+        attendee: { name: value.name, organization: '' },
+        admission: { status: value.admissionStatus, kind: value.admissionKind, revision: value.admissionRevision },
+        email: { status: 'not_applicable' }, groupInvite: null, invitation: { ready: false } };
+      if (!identity) {
+        if (cardFormat) failure('CONFIRMATION_NOT_FOUND', 404);
+        return { ...cardView, cardRequest: true, wallet: { ready: false } };
+      }
+      const currentFacts = await currentEventFacts();
+      const both = !cardFormat || own(input, 'includeCardFormats') === true;
       const walletPromise = (both || cardFormat === 'wallet') && currentFacts.ready ? walletState() : { ready: false };
       let entryQr = null;
       const jpegRequested = both || cardFormat === 'jpeg';
       const needsEntryQr = jpegRequested && clock() < entryExpiry;
-      if (needsEntryQr && currentFacts.ready) {
+      if (needsEntryQr && currentFacts.ready && cardEntry) {
         try {
           const scope = { registrationId, accessRevision: value.accessRevision };
           const result = await cardEntry.image(scope).catch(async error => {
             // Previously issued Wallet links may not have a stored entry code.
-            if (cardFormat !== 'wallet' || error.code !== 'ENTRY_NOT_FOUND') throw error;
+            if (cardFormat === 'jpeg' || error.code !== 'ENTRY_NOT_FOUND') throw error;
             await cardEntry.prepare(scope);
             return cardEntry.image(scope);
           });
@@ -457,18 +475,17 @@ export function createRegistrationConfirmationService({ registrationService, jou
         } catch { /* An unreadable entry QR must not be drawn as a valid card. */ }
       }
       const [latest, wallet, community] = await Promise.all([authorizedContext(input), walletPromise, communities().read()]);
-      if (latest.loaded.admission.status !== 'confirmed' || latest.loaded.record.walletIdentity !== value.walletIdentity
+      const latestIdentity = await cardIdentity(latest.loaded, trustedProjection(registrationId, latest.loaded));
+      if (latestIdentity?.value !== identity.value
         || latest.loaded.record.fields.name !== value.name || !unchangedEventFacts(currentFacts, await currentEventFacts()) && currentFacts.ready) failure();
       const cardCommunity = communityFor(community, registrationId);
-      return { event: value.event, referenceCode: value.referenceCode, submittedAt: value.submittedAt,
-        attendee: { name: value.name, organization: '' }, admission: { status: 'confirmed', kind: value.admissionKind, revision: value.admissionRevision },
-        email: { status: 'not_applicable' }, wallet, groupInvite: null, invitation: { ready: false },
+      return { ...cardView, wallet,
         ...(cardCommunity.site || cardCommunity.role ? { cardCommunity } : {}),
         card: { format: both ? 'both' : cardFormat, identity: identity.label,
           ready: currentFacts.ready && (jpegRequested ? !needsEntryQr || Boolean(entryQr) : wallet.ready),
           ...(entryQr ? { entryQr } : {}) } };
     }
-    let noticeSnapshot = null, savedAliases = null;
+    let currentFacts = await currentEventFacts(), noticeSnapshot = null, savedAliases = null;
     if (value.hasEmail) try { noticeSnapshot = await target().read(); savedAliases = await aliasesFor(loaded); } catch { /* Histories fail closed independently of admission. */ }
     let email;
     if (['pending_review', 'rejected'].includes(value.admissionStatus)) email = { status: 'not_applicable' };
@@ -485,7 +502,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       } catch { /* Optional current QR only. */ }
     }
     const wallet = value.admissionStatus === 'confirmed'
-      ? value.walletRequested&&!value.walletIdentity?{ready:false,reason:'WALLET_IDENTITY_PENDING'}:currentFacts.ready ? await walletState() : { ready: false, reason: currentFacts.reason }
+      ? currentFacts.ready ? await walletState() : { ready: false, reason: currentFacts.reason }
       : { ready: false, reason: 'ADMISSION_NOT_CONFIRMED' };
     if (['EVENT_FACTS_MISMATCH', 'EVENT_FACTS_UNAVAILABLE'].includes(wallet.reason)) {
       currentFacts = { ready: false, reason: wallet.reason, revision: null, key: null };

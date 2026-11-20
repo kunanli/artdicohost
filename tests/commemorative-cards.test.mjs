@@ -26,6 +26,7 @@ async function setup({ mailResult = 'accepted', clock } = {}) {
     name: '合成电子纪念卡申请人', huodongxingReference: '0000001234', email: 'card-test@example.invalid',
   };
   const id = await f.seedWallet(fields), path = root + '/' + id;
+  assert.equal(f.messages.length, 0, 'new commemorative card applications never send general receipt mail');
   const call = (method, body, app = f.app) => app.handle(f.request(path, { method, headers, body }));
   const read = async () => {
     const response = await call('GET');
@@ -91,6 +92,7 @@ test('staff send one commemorative card email and recipients can still save the 
   assert.match(template.email_subject, /电子纪念卡/u);
   assert.match(template.confirmation_actions, /领取电子纪念卡/u);
   assert.match(template.invitation_text, /JPEG.*Apple Wallet/u);
+  assert.doesNotMatch(template.invitation_text, /参会名额已确认|登记编号|微信/u);
   assert.doesNotMatch(template.confirmation_actions, /add-to-apple-wallet|entry-links/u);
   const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(template.invitation_text)[1];
   const publicCall = (path, headers) => f.app.handle(f.request(path, { method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken }, headers }));

@@ -819,24 +819,31 @@ test('failed or malformed short-ticket issuance is recorded as known not started
   }
 });
 
-test('commemorative-card mail and private page use the same trusted identity without resending after staff update',async()=>{
+test('commemorative card receipts use the card page before and after staff verification, without generic mail',async()=>{
  for(const locale of ['zh-CN','en']){
-  const f=fixture();let walletIdentity='',readinessReads=0;
-  const {saved}=await register(f,{intake:'wallet-v1',locale,categories:['other'],participationInterests:['attend'],huodongxingReference:'00001234567890',name:'合成纪念卡来宾',email:'synthetic.card-gate@example.invalid',wechat:'synthetic_card_gate'});
-  const c=f.confirmation({currentRegistration:async record=>({...record,walletRequested:true,walletIdentity}),walletReadiness:async()=>{readinessReads++;return{ready:true,reason:'WALLET_CONFIGURED'};}});
-  const receipt=await c.forSavedReceipt({receipt:saved.receipt});assert.equal(receipt.email.status,'provider_accepted');assert.equal(f.state.messages.length,1);
-  const sent=f.state.messages[0];assert.doesNotMatch(sent.templateVariables.confirmation_actions,/add-to-apple-wallet-/u);assert.doesNotMatch(sent.text,/Apple Wallet|Apple 钱包/u);
-  assert.match(sent.text,locale==='en'?/attendance.*confirmed/iu:/参会名额已确认/u);
-  const pending=await c.confirmation({receiptToken:receipt.receiptToken});assert.deepEqual(pending.wallet,{ready:false,reason:'WALLET_IDENTITY_PENDING'});assert.equal(readinessReads,0,'known pending identity needs no signer read');
-  walletIdentity='guest';const ready=await c.confirmation({receiptToken:receipt.receiptToken});assert.equal(ready.wallet.ready,true);
-  await c.forSavedReceipt({receipt:saved.receipt});assert.equal(f.state.messages.length,1,'setting identity and reading never resend an accepted notice');
- }
-});
-test('commemorative-card mail retains the locale-specific Wallet badge when staff identity is ready',async()=>{
- for(const locale of ['zh-CN','en']){
-  const f=fixture(),{saved}=await register(f,{intake:'wallet-v1',locale,categories:['other'],participationInterests:['attend'],huodongxingReference:'00001234567890',name:'合成已核对来宾',email:'synthetic.ready-card@example.invalid',wechat:'synthetic_ready_card'});
-  const c=f.confirmation({currentRegistration:async record=>({...record,walletRequested:true,walletIdentity:'guest'})});
-  const receipt=await c.forSavedReceipt({receipt:saved.receipt});assert.equal(receipt.email.status,'provider_accepted');assert.equal((await c.confirmation({receiptToken:receipt.receiptToken})).wallet.ready,true);
-  assert.ok(f.state.messages[0].templateVariables.confirmation_actions.includes('add-to-apple-wallet-'+(locale==='en'?'en':'cn')+'.png'));assert.match(f.state.messages[0].text,/Apple Wallet/u);
+  const f=fixture();let walletIdentity='',readinessReads=0,groupReads=0;
+  const {saved}=await register(f,{intake:'wallet-v1',locale,categories:['other'],participationInterests:['attend'],huodongxingReference:'00001234567890',name:'合成纪念卡来宾',email:'synthetic.card-gate@example.invalid',wechat:'synthetic_card_gate'},false);
+  const c=f.confirmation({currentRegistration:async record=>({...record,walletIdentity}),groupInviteProvider:async()=>{groupReads++;},
+    walletReadiness:async()=>{readinessReads++;return{ready:true,reason:'WALLET_CONFIGURED'};}});
+  const receipt=await c.forSavedReceipt({receipt:saved.receipt});
+  assert.equal((await c.notifyApplicationReceived({receipt:saved.receipt,outcome:'created'})).status,'not_applicable');
+  const pending=await c.confirmation({receiptToken:receipt.receiptToken});
+  assert.equal(pending.cardRequest,true);
+  assert.equal(pending.admission.status,'pending_review');
+  assert.deepEqual(pending.wallet,{ready:false});
+  assert.equal(readinessReads,0);
+  const current=await f.service.getAdmissions({actor});
+  const decision=await f.service.approveApplication({actor,registrationId:saved.receipt.registrationId,expectedRevision:current.revision,operationId:operationId()});
+  assert.equal(decision.outcome,'updated');
+  walletIdentity='guest';
+  const ready=await c.confirmation({receiptToken:receipt.receiptToken});
+  assert.equal(ready.card.identity,'嘉宾');
+  assert.equal(ready.wallet.ready,true);
+  assert.equal(ready.groupInvite,null);
+  assert.equal(ready.notifications,undefined);
+  assert.equal(groupReads,0);
+  const approved={...saved.receipt,admissionStatus:'confirmed',admissionRevision:decision.revision};
+  assert.equal((await c.forSavedReceipt({receipt:approved})).email.status,'not_applicable');
+  assert.equal(f.state.messages.length,0);
  }
 });

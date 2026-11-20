@@ -190,7 +190,7 @@ test('new Wallet passes use the same dedicated short staff check-in capability a
   assert.equal(calls, 0);
 });
 
-test('commemorative requests require a staff identity and sign the full card fields into a native ticket', async () => {
+test('commemorative requests require a staff identity and sign poster artwork and full card fields', async () => {
   const pendingIdentity={...record,walletRequested:true};
   const waiting=service({authorize:async()=>pendingIdentity,authorizedRegistration:async()=>pendingIdentity});
   assert.equal((await waiting.download({receiptToken:token})).outcome,'inactive');
@@ -199,20 +199,24 @@ test('commemorative requests require a staff identity and sign the full card fie
   assert.equal(issued.outcome,'issued');
   const files=passFiles(issued.data),pass=JSON.parse(files.get('pass.json'));
   const manifest=JSON.parse(files.get('manifest.json'));
-  assert.deepEqual(pass.preferredStyleSchemes,['eventTicket']);
+  assert.deepEqual(pass.preferredStyleSchemes,['posterEventTicket','eventTicket']);
   assert.deepEqual(pass.eventTicket.headerFields,[{key:'identity',label:'入场身份',value:'嘉宾'}]);
   assert.equal(pass.eventTicket.primaryFields[0].value,record.name);
   assert.equal(pass.eventTicket.secondaryFields[0].value,record.event.title);
   assert.deepEqual(pass.eventTicket.auxiliaryFields.map(({value})=>value),[record.event.date,record.event.time,record.event.venue]);
   assert.equal(pass.eventTicket.backFields.find(field=>field.key==='venue').value,record.event.venue);
+  assert.deepEqual(pass.eventTicket.additionalInfoFields.map(({value})=>value),[record.name,'嘉宾',record.event.title,record.event.date,record.event.time,record.event.venue]);
+  const keys=Object.values(pass.eventTicket).flat().map(field=>field.key);
+  assert.equal(new Set(keys).size,keys.length);
   assert.equal(pass.semantics.attendeeName, record.name);
   assert.equal(pass.semantics.admissionLevel, '嘉宾');
   assert.equal(pass.barcodes[0].format,'PKBarcodeFormatQR');
-  for (const [scale,suffix] of [[1,''],[2,'@2x'],[3,'@3x']]) {
-    const path='logo'+suffix+'.png',logo=files.get(path);
-    assert.equal(logo.readUInt32BE(16),128*scale);
-    assert.equal(logo.readUInt32BE(20),50*scale);
-    assert.equal(manifest[path],createHash('sha1').update(logo).digest('hex'));
+  assert.equal(files.has('logo.png'),false);
+  for (const path of ['artwork.png','artwork@2x.png']) {
+    const artwork=files.get(path);
+    assert.equal(artwork.readUInt32BE(16),750);
+    assert.equal(artwork.readUInt32BE(20),1000);
+    assert.equal(manifest[path],createHash('sha1').update(artwork).digest('hex'));
   }
 });
 

@@ -57,6 +57,12 @@ try{
         const visibleText=await page.locator('body').innerText();
         assert.match(visibleText,/合成纪念卡申请人/u);
         assert.match(visibleText,/GGJ 合成站/u);
+        const name = page.getByText(scenario.locale === 'en' ? 'Name' : '参会人', { exact: true });
+        const role = page.getByText(scenario.locale === 'en' ? 'Card role' : '卡面身份', { exact: true });
+        const [nameBox, roleBox] = await Promise.all([name.boundingBox(), role.boundingBox()]);
+        assert.equal(nameBox.y, roleBox.y);
+        assert.ok(roleBox.x > nameBox.x);
+        assert.equal(await page.getByText('请按 iPhone 的系统提示确认添加。').count(), scenario.locale === 'zh-CN' && scenario.wallet ? 1 : 0);
         assert.doesNotMatch(visibleText,/https?:\/\/|入场二维码|活动微信群/u);
         const screenshot=resolve(evidence,'card-mail-'+scenario.locale+'-'+scenario.width+'.png');
         await page.screenshot({path:screenshot,fullPage:true});

@@ -14,24 +14,28 @@ function cardActions({ card, en, walletReady, confirmationUrl }) {
     || (card.community && !line(card.community))) throw new TypeError('Invalid commemorative email details.');
   const link = escape(confirmationUrl);
   const badge = SITE + '/wallet/add-to-apple-wallet-' + (en ? 'en' : 'cn') + '.png';
-  const title = en ? 'Digital commemorative card' : '电子纪念卡';
-  const info = (label, value) => '<div style="margin:0 0 9px;"><span style="color:#ddd5e9;">' + label + '</span> ' + escape(value) + '</div>';
+  const field = (label, value) => '<div style="margin:0 0 8px;">'
+    + '<div style="color:#ddd5e9;font-size:12px;">' + label + '</div><div>' + escape(value) + '</div></div>';
   return '<p style="margin:18px 0 6px;">'
     + '<a href="' + link + '" style="display:inline-block;vertical-align:middle;margin:0 8px 8px 0;padding:12px 14px;background:#234e9b;color:#fff;border-radius:6px;text-decoration:none;font-size:15px;font-weight:bold;">'
-    + (en ? 'Collect JPEG' : '领取 JPEG 纪念卡') + '</a>'
+    + (en ? 'Download JPEG' : '下载 JPEG 纪念卡') + '</a>'
     + (walletReady ? '<a href="' + link + '" style="display:inline-block;vertical-align:middle;margin:0 0 8px;"><img src="' + badge
       + '" alt="' + (en ? 'Add to Apple Wallet' : '添加到 Apple 钱包') + '" height="44" style="display:block;height:44px;width:auto;border:0;"></a>' : '')
-    + '</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#121212;color:#fff;">'
+    + '</p>'
+    + (walletReady ? '<p style="margin:0 0 12px;font-size:13px;line-height:1.5;color:#315445;">'
+      + (en ? 'Follow the iPhone prompt to add the card.' : '请按 iPhone 的系统提示确认添加。') + '</p>' : '')
+    + '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#121212" style="max-width:600px;background:#121212;color:#fff;">'
     + '<tr><td><img src="' + SITE + '/wallet/host-card-banner.png" alt="HOST" width="384" height="150" style="display:block;width:100%;height:auto;border:0;"></td></tr>'
-    + '<tr><td style="padding:20px;font-size:14px;line-height:1.55;overflow-wrap:anywhere;">'
-    + '<div style="margin:0 0 14px;font-size:18px;font-weight:bold;">' + escape(card.event) + '</div>'
-    + info(en ? 'Name' : '参会人', card.name)
-    + info(en ? 'Card role' : '卡面身份', card.identity)
-    + (card.community ? '<div style="margin:0 0 12px;color:#d9c7ff;">' + escape(card.community) + '</div>' : '')
-    + info(en ? 'Date' : '日期', card.date)
-    + info(en ? 'Time' : '时间', card.time)
-    + info(en ? 'Venue' : '地点', card.venue)
-    + '<div style="margin-top:18px;padding-top:12px;border-top:1px solid #5b5b5b;color:#ddd5e9;">' + title + '</div></td></tr></table>'
+    + '<tr><td style="padding:14px 16px 20px;color:#fff;font-size:14px;line-height:1.45;word-wrap:break-word;overflow-wrap:anywhere;">'
+    + '<div style="margin:0;padding:0 0 12px;border-bottom:1px solid #505050;font-size:16px;">' + escape(card.event) + '</div>'
+    + '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="table-layout:fixed;color:#fff;font:inherit;">'
+    + '<tr><td width="60%" valign="top" style="padding:12px 4px 0 0;word-wrap:break-word;">' + field(en ? 'Name' : '参会人', card.name) + '</td>'
+    + '<td width="40%" valign="top" align="right" style="padding:12px 0 0 4px;word-wrap:break-word;">' + field(en ? 'Card role' : '卡面身份', card.identity) + '</td></tr>'
+    + (card.community ? '<tr><td colspan="2" style="padding:0 0 10px;color:#d9c7ff;word-wrap:break-word;">' + escape(card.community) + '</td></tr>' : '')
+    + '<tr><td valign="top" style="padding:12px 4px 0 0;border-top:1px solid #505050;word-wrap:break-word;">'
+    + field(en ? 'Date' : '日期', card.date) + field(en ? 'Time' : '时间', card.time) + '</td>'
+    + '<td valign="top" align="right" style="padding:12px 0 0 4px;border-top:1px solid #505050;word-wrap:break-word;">'
+    + field(en ? 'Venue' : '地点', card.venue) + '</td></tr></table></td></tr></table>'
     + '<p style="margin:14px 0 0;font-size:14px;line-height:1.6;color:#52617a;">'
     + (en ? 'Open the private page to save your card. Keep this email private.' : '打开私人领取页保存纪念卡。请保管此邮件。') + '</p>';
 }

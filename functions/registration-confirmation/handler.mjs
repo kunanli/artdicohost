@@ -108,7 +108,8 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         if (request.signal.aborted) reject();
         const required = approve ? ['primaryId', 'expectedRevision', 'operationId'] : request.method === 'PATCH' ? ['primaryId', 'expectedRevision', 'identity']
           : ['primaryId', 'expectedRevision', 'expectedAccessRevision', 'identity', 'format'];
-        keys(input, required, required);
+        const sendingCard = !approve && request.method === 'POST';
+        keys(input, sendingCard ? [...required, 'resend'] : required, required);
         const method = approve ? 'staffCardApprove' : request.method === 'PATCH' ? 'staffCardSaveIdentity' : 'staffSendCard';
         return json(await service[method]({ ...input, actor, registrationId }));
       }

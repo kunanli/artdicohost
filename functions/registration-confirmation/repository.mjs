@@ -21,6 +21,14 @@ export const confirmationRequestHash = value => createHash('sha256').update(JSON
 export const validConfirmationOperation = value => typeof value === 'string' && OP.test(value);
 export const formalConfirmationKind = kind => ['registration', 'promotion'].includes(kind);
 export const commemorativeCardKind = kind => kind === 'card_jpeg' || kind === 'card_wallet';
+export const sameConfirmationScope = (notice, scope) => (notice.accessRevision ?? 0) === scope.accessRevision
+  && (scope.accessRevision === 0 || notice.recipientDigest === scope.recipientDigest);
+export const cardResendCandidates = (notices, scope) => notices.filter(notice => !notice.superseded
+  && (['reserved', 'unknown'].includes(notice.status) || notice.status === 'provider_accepted' && sameConfirmationScope(notice, scope)));
+// The batch can spend up to 30 seconds preparing the send and the provider
+// has a 10-second deadline. Allow recovery after an abandoned reservation.
+export const cardSendInProgress = (notices, now) => notices.some(notice => !notice.superseded
+  && notice.status === 'reserved' && now < Date.parse(notice.updatedAt) + 60_000);
 const scopeKeys = ['accessRevision', 'recipientDigest'];
 const validScope = value => exact(value, scopeKeys) && Number.isSafeInteger(value.accessRevision) && value.accessRevision >= 0 && HASH.test(value.recipientDigest ?? '');
 const additionalKind = kind => ['application_received', 'pre_event_reminder'].includes(kind);
@@ -37,8 +45,9 @@ export function canonicalConfirmationKind(state, registrationId, admissionStatus
 function initial(eventId) { return { schemaVersion: 1, eventId, revision: 0, settings: { enabled: true }, notices: [], operations: [], audit: [] }; }
 function apply(state, audit, cards) {
   const d = audit.details;
-  if (audit.action === 'reserve' || audit.action === 'recovery_reserved') {
+  if (['reserve', 'recovery_reserved', 'card_resend'].includes(audit.action)) {
     const recovery = audit.action === 'recovery_reserved';
+    const resend = audit.action === 'card_resend';
     const reserveKeys = ['registrationId', 'kind', 'admissionStatus', 'admissionRevision', 'retryRejected'];
     if (recovery) {
       if (!exact(d, [...reserveKeys, ...scopeKeys, 'operationId', 'requestHash', 'relatedRegistrationIds', 'configurationIdentity'])
@@ -54,17 +63,28 @@ function apply(state, audit, cards) {
         || family.reduce((total, item) => total + item.attempt, 0) < 5
         || state.operations.some(op => op.action === 'dispatch' && op.status !== 'completed' && op.registrationIds.some(id => d.relatedRegistrationIds.includes(id)))) fail();
     }
-    if (!(recovery || exact(d, reserveKeys) || exact(d, [...reserveKeys, ...scopeKeys]) && validScope({ accessRevision: d.accessRevision, recipientDigest: d.recipientDigest })) || !ID.test(d.registrationId ?? '')
+    const scope = { accessRevision: d.accessRevision, recipientDigest: d.recipientDigest };
+    if (resend && (!cards || !exact(d, [...reserveKeys, ...scopeKeys, 'relatedRegistrationIds']) || !validScope(scope)
+      || !Array.isArray(d.relatedRegistrationIds) || d.relatedRegistrationIds.length < 1 || d.relatedRegistrationIds.length > MAX_CONFIRMATION_BATCH
+      || d.relatedRegistrationIds.some(id => !ID.test(id)) || new Set(d.relatedRegistrationIds).size !== d.relatedRegistrationIds.length
+      || !d.relatedRegistrationIds.includes(d.registrationId) || d.retryRejected !== true || !state.settings.enabled)) fail();
+    if (!(recovery || resend || exact(d, reserveKeys) || exact(d, [...reserveKeys, ...scopeKeys]) && validScope(scope)) || !ID.test(d.registrationId ?? '')
       || !(cards ? commemorativeCardKind(d.kind) : formalConfirmationKind(d.kind) || additionalKind(d.kind))
       || !(d.kind === 'application_received' ? ['pending_review'] : cards || d.kind === 'pre_event_reminder' ? ['confirmed'] : ['confirmed', 'waitlisted']).includes(d.admissionStatus)
       || !Number.isSafeInteger(d.admissionRevision) || d.admissionRevision < 0 || typeof d.retryRejected !== 'boolean') fail();
     if (formalConfirmationKind(d.kind) && d.kind !== canonicalConfirmationKind(state, d.registrationId, d.admissionStatus)) fail();
     const id = confirmationNoticeId(state.eventId, d.registrationId, d.kind, d.accessRevision ?? 0, d.recipientDigest), existing = state.notices.find(n => n.id === id);
-    if (existing && (!d.retryRejected || existing.status !== 'rejected' || !recovery && existing.attempt >= 5 || existing.admissionStatus !== d.admissionStatus)) fail();
+    if (existing && (!d.retryRejected || !resend && !existing.superseded && existing.status !== 'rejected'
+      || !recovery && existing.attempt >= 5 || existing.admissionStatus !== d.admissionStatus)) fail();
     if (formalConfirmationKind(d.kind) && d.admissionStatus === 'confirmed' && state.notices.some(item => item.registrationId === d.registrationId
       && formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' && (item.accessRevision ?? 0) === (d.accessRevision ?? 0) && item.id !== id)) fail();
     if (!existing && state.notices.length >= 2000) fail();
-    if (cards && state.notices.some(item => item.registrationId === d.registrationId && ['reserved', 'unknown'].includes(item.status))) fail();
+    if (resend) {
+      const related = state.notices.filter(item => d.relatedRegistrationIds.includes(item.registrationId));
+      const previous = cardResendCandidates(related, scope);
+      if (!previous.length || cardSendInProgress(related, Date.parse(audit.at)) || related.reduce((total, item) => total + item.attempt, 0) >= 5) fail();
+      for (const item of previous) if (item.id !== id) item.superseded = true;
+    } else if (cards && state.notices.some(item => item.registrationId === d.registrationId && !item.superseded && ['reserved', 'unknown'].includes(item.status))) fail();
     const priorAttempts = state.notices.filter(item => item.registrationId === d.registrationId && (cards || (formalConfirmationKind(d.kind) ? formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' : item.kind === d.kind))).reduce((total, item) => total + item.attempt, 0);
     if (!recovery && priorAttempts >= 5 || recovery && (!existing || existing.status !== 'rejected')) fail();
     const notice = { id, registrationId: d.registrationId, kind: d.kind, status: 'reserved', admissionStatus: d.admissionStatus,
@@ -80,10 +100,10 @@ function apply(state, audit, cards) {
       || !EMAIL_STATUSES.slice(1).includes(d.status) || Object.hasOwn(d, 'attempt') && (!Number.isSafeInteger(d.attempt) || d.attempt < 1)
       || Object.hasOwn(d, 'diagnostic') && (!validConfirmationDiagnostic(d.diagnostic) || (d.diagnostic.code === 'DELIVERY_UNKNOWN' ? d.status !== 'unknown' : d.status !== 'rejected'))) fail();
     const notice = state.notices.find(n => n.id === d.noticeId);
-    const reservation = state.audit.findLast(item => ['reserve', 'recovery_reserved'].includes(item.action)
+    const reservation = state.audit.findLast(item => ['reserve', 'recovery_reserved', 'card_resend'].includes(item.action)
       && confirmationNoticeId(state.eventId, item.details.registrationId, item.details.kind, item.details.accessRevision ?? 0, item.details.recipientDigest) === d.noticeId);
-    if (reservation?.action === 'recovery_reserved' && !Object.hasOwn(d, 'attempt')) fail();
-    if (!notice || notice.status !== 'reserved' || notice.actorId !== audit.actorId || Object.hasOwn(d, 'attempt') && notice.attempt !== d.attempt) fail();
+    if (['recovery_reserved', 'card_resend'].includes(reservation?.action) && !Object.hasOwn(d, 'attempt')) fail();
+    if (!notice || notice.superseded || notice.status !== 'reserved' || notice.actorId !== audit.actorId || Object.hasOwn(d, 'attempt') && notice.attempt !== d.attempt) fail();
     notice.status = d.status; notice.updatedAt = audit.at;
     if (d.diagnostic) notice.diagnostic = structuredClone(d.diagnostic);
   } else if (cards) fail();

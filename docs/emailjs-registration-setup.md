@@ -2,9 +2,9 @@
 
 ## 電子紀念卡郵件
 
-Web 與 API 部署含紀念卡郵件的版本後，將既有 EmailJS 確認模板的 Content 更新為 [完整 HTML](templates/emailjs-registration-confirmation.html)，Subject 設為 `{{email_subject}}`。沿用目前的 Template ID、收件人與寄件設定。
+已包含 `{{{confirmation_actions}}}` 的 EmailJS 確認模板會直接接收新版紀念卡，沿用目前的 Template ID、收件人與寄件設定。若較早的模板還沒有這個欄位，將 Content 更新為 [完整 HTML](templates/emailjs-registration-confirmation.html)，Subject 可設為 `{{email_subject}}`。
 
-`{{email_heading}}` 與 `{{email_summary}}` 使用雙大括號轉義。只有 `{{{confirmation_actions}}}` 輸出由伺服器生成的 HTML，當中含固定 HOST 橫幅、個人卡片資料與兩個私人領取入口。JPEG 入口隨卡片提供，Apple 錢包入口需簽發服務就緒。卡片個人資料在郵件正文中呈現，載入 HOST 橫幅只會請求固定的公開圖片。
+`{{event_title}}` 與 `{{invitation_text}}` 使用雙大括號轉義。紀念卡傳入短標題與使用說明。`{{{confirmation_actions}}}` 輸出由伺服器生成的卡面和按鈕，當中有私人領取連結。JPEG 入口隨卡片提供，Apple 錢包入口需簽發服務就緒。卡片個人資料在郵件正文中呈現，載入 HOST 橫幅只會請求固定的公開圖片。
 
 ## 2026-11-03：收到的信缺少 Wallet 圖標
 

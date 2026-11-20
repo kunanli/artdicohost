@@ -90,15 +90,13 @@ test('staff send one commemorative card email and recipients can still save the 
   const template = f.cardMessages()[0].template_params;
   assert.equal(template.to_email, f.fields.email);
   assert.match(template.email_subject, /电子纪念卡/u);
-  assert.equal(template.email_heading, '电子纪念卡');
-  assert.doesNotMatch(template.email_summary, /https?:/u);
+  assert.equal(template.event_title, '电子纪念卡');
+  assert.equal(template.invitation_text, '纪念卡供长期收藏。现场签到请使用活动行原电子票。');
   assert.match(template.confirmation_actions, /下载 JPEG 纪念卡/u);
   assert.ok(template.confirmation_actions.includes('/wallet/host-card-banner.png'));
   assert.ok(template.confirmation_actions.includes(f.fields.name));
-  assert.match(template.invitation_text, /下载 JPEG/u);
-  assert.doesNotMatch(template.invitation_text, /Apple Wallet|参会名额已确认|登记编号|微信/u);
   assert.doesNotMatch(template.confirmation_actions, /add-to-apple-wallet|entry-links/u);
-  const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(template.invitation_text)[1];
+  const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(template.confirmation_actions)[1];
   const publicCall = (path, headers) => f.app.handle(f.request(path, { method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken }, headers }));
   const offer = await publicCall('/api/admin/registration/confirmation');
   assert.equal(offer.status, 200);
@@ -122,7 +120,7 @@ test('staff can update or clear the optional GGJ role on an already issued card 
   const f = await setup();
   const send = await f.prepare();
   assert.equal((await (await f.call('POST', send)).json()).status, 'provider_accepted');
-  const token = /#r=([A-Za-z0-9_.-]+)/u.exec(f.cardMessages()[0].template_params.invitation_text)[1];
+  const token = /#r=([A-Za-z0-9_.-]+)/u.exec(f.cardMessages()[0].template_params.confirmation_actions)[1];
   const readCard = async () => {
     const response = await f.app.handle(f.request('/api/registration/confirmation', {
       method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken: token },
@@ -297,8 +295,8 @@ test('existing Wallet and JPEG links can redeem both keepsake formats after the 
   assert.equal(messages.length, 1);
   assert.match(messages[0].templateVariables.confirmation_actions, /下载 JPEG 纪念卡/u);
   assert.match(messages[0].templateVariables.confirmation_actions, /add-to-apple-wallet-cn\.png/u);
-  assert.match(messages[0].text, /JPEG.*Apple Wallet/u);
-  const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(messages[0].text)[1];
+  assert.doesNotMatch(messages[0].text, /https?:\/\//u);
+  const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(messages[0].templateVariables.confirmation_actions)[1];
   assert.deepEqual(confirmationView(await service.confirmation({ receiptToken })).card, { format: 'wallet', identity: '嘉宾', ready: true });
   const first = confirmationView(await service.confirmation({ receiptToken, includeCardFormats: true }));
   assert.equal(first.card.format, 'both');

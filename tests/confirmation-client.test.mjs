@@ -212,3 +212,8 @@ test('private card identity pending reason stays allowlisted and provides a dist
  for(const wallet of [{ready:false,reason:'PRIVATE_UNKNOWN_DIAGNOSTIC'},{ready:true,reason:'WALLET_IDENTITY_PENDING'}])assert.equal(Object.hasOwn(confirmationView({...source,wallet},now).wallet,'reason'),false);
  const pending=confirmationView({...source,admission:{...source.admission,status:'pending_review'}},now);assert.deepEqual(pending.wallet,{ready:false});
 });
+
+test('a legacy commemorative card response still resolves without passing an entry code to the renderer',()=>{
+ const source=value();source.card={format:'both',identity:'嘉宾',ready:true,entryQr:'iVBORw0KGgoAAAAA'};
+ assert.deepEqual(confirmationView(source,now).card,{format:'both',identity:'嘉宾',ready:true});
+});

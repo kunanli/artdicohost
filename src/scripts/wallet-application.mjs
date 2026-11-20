@@ -69,7 +69,7 @@ for(const section of document.querySelectorAll('[data-wallet-api-origin]')){
    const result=client.pending?await client.resume():await client.submit(value);
    done=true;savedEditing=editing;
    const output=section.querySelector('[data-wallet-result]');output.replaceChildren();
-   for(const[tag,copy]of [['h3','纪念卡申请已收到'],['p','工作人员将核对活动行报名并确认入场身份，领取指引将发送至你的邮箱。'],['p','申请编号：']]){const node=document.createElement(tag);node.textContent=copy;if(tag==='p'&&copy==='申请编号：'){const code=document.createElement('code');code.textContent=result.body.reference_code;node.append(code);}output.append(node);}
+   for(const[tag,copy]of [['h3','纪念卡申请已收到'],['p','工作人员将核对活动行报名并确认卡面身份，领取链接将发送至你的邮箱。'],['p','申请编号：']]){const node=document.createElement(tag);node.textContent=copy;if(tag==='p'&&copy==='申请编号：'){const code=document.createElement('code');code.textContent=result.body.reference_code;node.append(code);}output.append(node);}
    output.hidden=false;form.hidden=true;output.focus();
   }catch(cause){
    if(client.pending)text(status,'上次纪念卡申请结果待核对，请点击下方按钮核对原申请。');

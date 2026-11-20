@@ -94,6 +94,7 @@ if (root) {
     const cardFlow = Boolean(value.card || value.cardRequest);
     root.toggleAttribute('data-card-flow', cardFlow);
     $('[data-confirmation-save]').hidden = value.cardRequest === true;
+    $('.confirmation-private').textContent = cardFlow ? '请下载保存。私人领取链接有时效，请勿转发。' : '此链接可查看你的最新状态，请私下保存，不要转发。';
     const labels=confirmationStatusLabels[value.admission.status];
     $('[data-confirmation-state]').textContent=labels[0];$('[data-confirmation-heading]').textContent=labels[1];$('[data-confirmation-intro]').textContent=labels[2];
     for(const[key,text]of Object.entries({name:value.attendee.name,organization:value.attendee.organization,event:value.event.title,date:value.event.date,time:value.event.time+'（UTC+8）'+(value.admission.status==='confirmed'?'，'+value.event.checkIn+' 开始签到':''),venue:value.event.venue,reference:value.referenceCode,email:confirmationEmailMessage(value.admission.status,value.email.status)}))$('[data-confirmation-'+key+']').textContent=text;
@@ -121,7 +122,7 @@ if (root) {
       root.dataset.cardFormat = value.card.format;
       $('[data-confirmation-state]').textContent = '电子纪念卡';
       $('[data-confirmation-heading]').textContent = '电子纪念卡';
-      $('[data-confirmation-intro]').textContent = value.card.ready || value.wallet.ready ? '请保留活动行原电子票。' : '纪念卡暂时无法领取，请稍后重新读取。';
+      $('[data-confirmation-intro]').textContent = value.card.ready || value.wallet.ready ? '纪念卡供长期收藏。现场签到请使用活动行原电子票。' : '纪念卡暂时无法领取，请稍后重新读取。';
       $('[data-confirmation-organization]').textContent = value.card.identity;
       const community = cardCommunityLabel(value.cardCommunity), communityText = $('[data-confirmation-community]');
       communityText.textContent = community;
@@ -162,7 +163,7 @@ if (root) {
       if (current !== generation) return;
       jpegUrl = URL.createObjectURL(blob);
       const image = $('[data-confirmation-jpeg-image]');
-      image.alt = ['电子纪念卡', value.attendee.name, '入场身份：' + value.card.identity, cardCommunityLabel(value.cardCommunity)].filter(Boolean).join('，');
+      image.alt = ['电子纪念卡', value.attendee.name, '卡面身份：' + value.card.identity, cardCommunityLabel(value.cardCommunity)].filter(Boolean).join('，');
       image.src = jpegUrl;
       root.dataset.cardPreview = '';
       $('[data-confirmation-jpeg-preview]').hidden = false;

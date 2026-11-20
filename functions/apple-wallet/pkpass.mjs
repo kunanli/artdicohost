@@ -1,4 +1,5 @@
 import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, commemorativeCardVenue } from '../../shared/general-application.mjs';
+import { eventConfig } from '../../src/config/event.mjs';
 import { createHash, createPrivateKey, X509Certificate } from 'node:crypto';
 import { derChildren, oid, signManifest } from './der.mjs';
 
@@ -98,17 +99,20 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
   const richCard = attendee?.walletRequested === true && Boolean(walletIdentity);
   const community = walletIdentity && cardCommunityLabel(cardCommunityFields(attendee?.cardCommunity));
   const communityFields = community ? [{ key: 'ggj-community', label: 'GGJ 社群', value: community }] : [];
-  if(attendee?.walletIdentity!==undefined&&!walletIdentity)fail('WALLET_PASS_INPUT_INVALID');
+  if ((attendee?.walletRequested === true || attendee?.walletIdentity !== undefined) && !walletIdentity) fail('WALLET_PASS_INPUT_INVALID');
   if (!identity?.privateKey || attendee?.admissionStatus !== 'confirmed' || !/^[A-Za-z0-9_-]{43}$/u.test(attendee.registrationId ?? '')
     || attendee.referenceCode !== attendee.registrationId
     || !line(attendee.name, 160) || !line(organizationName, 80) || !line(event?.id, 80) || !line(event?.title, 300)
     || !/^\d{4}-\d{2}-\d{2}$/u.test(event?.date ?? '') || !line(event?.time, 100) || !line(event?.venue, 500)
-    || !['Asia/Shanghai', 'Asia/Taipei', 'Asia/Hong_Kong'].includes(event?.timezone) || !line(verificationUrl, 2048)) fail('WALLET_PASS_INPUT_INVALID');
-  let url;
-  try { url = new URL(verificationUrl); } catch { fail('WALLET_PASS_INPUT_INVALID'); }
-  const legacyVerification = ['/api/registration/wallet/verify/', '/api/admin/registration/wallet/verify/'].some(prefix => url.pathname.startsWith(prefix)) && !url.hash;
-  const staffEntry = url.pathname === '/admin/checkin/' && /^#ticket=[A-Za-z0-9_-]{22}$/u.test(url.hash);
-  if (url.origin !== 'https://api.artdico.host' || !(legacyVerification || staffEntry) || url.search || url.username || url.password) fail('WALLET_PASS_INPUT_INVALID');
+    || !['Asia/Shanghai', 'Asia/Taipei', 'Asia/Hong_Kong'].includes(event?.timezone)) fail('WALLET_PASS_INPUT_INVALID');
+  if (!richCard) {
+    if (!line(verificationUrl, 2048)) fail('WALLET_PASS_INPUT_INVALID');
+    let url;
+    try { url = new URL(verificationUrl); } catch { fail('WALLET_PASS_INPUT_INVALID'); }
+    const legacyVerification = ['/api/registration/wallet/verify/', '/api/admin/registration/wallet/verify/'].some(prefix => url.pathname.startsWith(prefix)) && !url.hash;
+    const staffEntry = url.pathname === '/admin/checkin/' && /^#ticket=[A-Za-z0-9_-]{22}$/u.test(url.hash);
+    if (url.origin !== 'https://api.artdico.host' || !(legacyVerification || staffEntry) || url.search || url.username || url.password) fail('WALLET_PASS_INPUT_INVALID');
+  }
   const start = /^([01]\d|2[0-3]):[0-5]\d/u.exec(event.time)?.[0]; if (!start) fail('WALLET_PASS_INPUT_INVALID');
   const relevantDate = event.date + 'T' + start + ':00+08:00';
   if (!Number.isFinite(Date.parse(relevantDate)) || new Date(Date.parse(event.date + 'T00:00:00Z')).toISOString().slice(0, 10) !== event.date) fail('WALLET_PASS_INPUT_INVALID');
@@ -120,29 +124,32 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
   const compactCommunity = community && [...community].length > 20 ? [...community].slice(0, 19).join('') + '…' : community;
   const cardPlace = { ...venue, key: 'venue-short', value: commemorativeCardVenue(event.venue), row: 1 };
   const cardCommunity = community ? [{ key: 'ggj-community-short', label: 'GGJ 社群', value: compactCommunity, row: 1 }] : [];
+  const identityField = walletIdentity ? { key: 'identity', label: richCard ? '卡面身份' : '入场身份', value: walletIdentity.label } : null;
   const fullCardDetails = richCard ? [
-    { ...person, key: 'details-name' }, { key: 'details-identity', label: '入场身份', value: walletIdentity.label },
+    { ...person, key: 'details-name' }, { ...identityField, key: 'details-identity' },
     { ...title, key: 'details-event' }, { ...date, key: 'details-date' }, { ...time, key: 'details-time' },
   ] : [];
+  const posterVenue = richCard && event.id === eventConfig.id && event.venue === eventConfig.venue.address ? eventConfig.venue : null;
   const pass = { formatVersion: 1, passTypeIdentifier: identity.passTypeIdentifier, serialNumber: event.id + '-' + attendee.registrationId,
     teamIdentifier: identity.teamId, organizationName, description: event.title + (richCard ? '电子纪念卡' : '参会凭证'), logoText: organizationName,
-    foregroundColor: 'rgb(255,255,255)', backgroundColor: 'rgb(18,18,18)', labelColor: 'rgb(238,238,238)', relevantDate,
-    expirationDate: event.date + 'T23:59:59+08:00', sharingProhibited: true,
-    barcodes: [{ format: 'PKBarcodeFormatQR', message: verificationUrl, messageEncoding: 'iso-8859-1' }],
+    foregroundColor: 'rgb(255,255,255)', backgroundColor: 'rgb(18,18,18)', labelColor: 'rgb(238,238,238)', sharingProhibited: true,
+    ...(!richCard ? { relevantDate, expirationDate: event.date + 'T23:59:59+08:00',
+      barcodes: [{ format: 'PKBarcodeFormatQR', message: verificationUrl, messageEncoding: 'iso-8859-1' }] } : {}),
     preferredStyleSchemes: ['posterEventTicket', 'eventTicket'],
     semantics: { eventName: event.title, eventStartDate: relevantDate, eventType: 'PKEventTypeGeneric', venueName: event.venue,
-      ...(walletIdentity ? { attendeeName: attendee.name, admissionLevel: walletIdentity.label } : {}) },
+      ...(posterVenue ? { venueRegionName: posterVenue.city, venueRoom: posterVenue.name } : {}),
+      ...(walletIdentity ? { attendeeName: attendee.name, ...(!richCard ? { admissionLevel: walletIdentity.label } : {}) } : {}) },
     eventTicket: {
-      headerFields: walletIdentity?[{key:'identity',label:'入场身份',value:walletIdentity.label}]:[{ key: 'status', label: '参会名额', value: '已确认' }],
+      headerFields: [identityField ?? { key: 'status', label: '参会名额', value: '已确认' }],
       primaryFields: [richCard ? person : title],
       secondaryFields: [richCard ? title : { ...person, label: '参加人' }],
       auxiliaryFields: richCard ? [date, time, cardPlace, ...cardCommunity] : [date, time],
-      ...(richCard ? { additionalInfoFields: [person, { key: 'identity', label: '入场身份', value: walletIdentity.label }, title, date, time, venue, ...communityFields]
+      ...(richCard ? { additionalInfoFields: [person, identityField, title, date, time, venue, ...communityFields]
         .map(({ key, label, value }) => ({ key: 'poster-' + key, label, value })) }
         : communityFields.length ? { additionalInfoFields: communityFields } : {}),
-      backFields: [...fullCardDetails, venue, { key: 'reference', label: '报名编号', value: attendee.referenceCode },
+      backFields: [...fullCardDetails, venue, ...(!richCard ? [{ key: 'reference', label: '报名编号', value: attendee.referenceCode }] : []),
         ...communityFields,
-        { key: 'notice', label: '说明', value: '此凭证仅表示参会名额。讲者、展位及住宿另行确认；请以在线核对结果为准。' }],
+        { key: 'notice', label: '说明', value: richCard ? '本卡用于纪念收藏。现场签到请使用活动行原电子票。' : '此凭证仅表示参会名额。讲者、展位及住宿另行确认；请以在线核对结果为准。' }],
     } };
   const artwork = [
     { name: 'background.png', data: BRAND_IMAGES.background }, { name: 'background@2x.png', data: BRAND_IMAGES.background },

@@ -43,7 +43,7 @@ const noticeEmail = notice => ({ status: stateOf(notice), noticeType: notice.kin
 
 /** Durable receipts, independent email issuance and read-only attendee confirmation. */
 export function createRegistrationConfirmationService({ registrationService, journalFor, tokenSecret, event = eventConfig,
-  emailProvider, currentRegistration, currentProfiles, staffDeliveryPermission, personDeliveryPermission, deliveryAliases, noticePreviewSource, eventFactsReadiness, walletReadiness = () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }), groupInviteProvider, emailTicketProvider, cardEntry, cardApplications, cardPermissions, saveCardIdentity,
+  emailProvider, currentRegistration, currentProfiles, staffDeliveryPermission, personDeliveryPermission, deliveryAliases, noticePreviewSource, eventFactsReadiness, walletReadiness = () => ({ ready: false, reason: 'WALLET_NOT_CONFIGURED' }), groupInviteProvider, emailTicketProvider, cardApplications, cardPermissions, saveCardIdentity,
   clock = Date.now, expiresAt, batchTimeoutMs = 20_000, monotonicNow = () => performance.now() } = {}) {
   if (currentProfiles !== undefined && typeof currentProfiles !== 'function' || currentRegistration !== undefined && typeof currentRegistration !== 'function' || typeof registrationService?.repository?.readIndex !== 'function' || typeof registrationService.repository.readRecord !== 'function'
     || typeof registrationService.getAdmissionStatus !== 'function' || typeof journalFor !== 'function' || typeof clock !== 'function'
@@ -56,8 +56,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     || eventFactsReadiness !== undefined && typeof eventFactsReadiness !== 'function'
     || !Number.isSafeInteger(batchTimeoutMs) || batchTimeoutMs < 1 || batchTimeoutMs > 30_000 || typeof monotonicNow !== 'function') throw new TypeError('Trusted confirmation dependencies required.');
   const eventFacts = facts(event), eventId = eventFacts.id;
-  const entryExpiry = Date.parse(eventFacts.date + 'T23:59:59.000+08:00');
-  const expiry = expiresAt ?? entryExpiry + 90 * 24 * 60 * 60 * 1000;
+  const expiry = expiresAt ?? Date.parse(eventFacts.date + 'T23:59:59.000+08:00') + 90 * 24 * 60 * 60 * 1000;
   const tokens = createConfirmationTokens({ tokenSecret, eventId, expiresAt: expiry, clock });
   const prefix = 'cms/v1/registration-confirmations/' + eventId;
   let repository, cardsRepository, communityRepository;
@@ -328,9 +327,6 @@ export function createRegistrationConfirmationService({ registrationService, jou
     let link, ticket;
     try {
       link = capability(registrationId, loaded.record.accessRevision ?? 0, card?.format);
-      if (card?.format === 'jpeg' && clock() < entryExpiry) {
-        await beforeDeadline(() => cardEntry.prepare({ registrationId, accessRevision: record.accessRevision ?? 0 }));
-      }
     }
     catch (error) {
       if (!card) throw error;
@@ -380,8 +376,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
       }
       subject = eventFacts.title + (locale === 'en' ? ' | Your commemorative card' : '｜你的电子纪念卡');
       text = locale === 'en' ? [record.fields.name + ',', '', 'Open your private card page to download the JPEG or add the card to Apple Wallet on iPhone.', link.confirmationUrl,
-        'Keep this private link and your original Huodongxing ticket.'].join('\n') : [record.fields.name + '，你好：', '', '打开私人领取页，即可下载 JPEG 图片，或在 iPhone 上加入 Apple Wallet。', link.confirmationUrl,
-        '请保管此私人链接，并保留活动行原电子票。'].join('\n');
+        'Save either format as a keepsake. Use your original Huodongxing ticket for check-in.'].join('\n') : [record.fields.name + '，你好：', '', '打开私人领取页，即可下载 JPEG 图片，或在 iPhone 上加入 Apple Wallet。', link.confirmationUrl,
+        '请下载或加入 Wallet 收藏。现场签到请使用活动行原电子票。'].join('\n');
     }
     try { presentation=confirmationEmailPresentation({locale,kind,subject,confirmationUrl:link.confirmationUrl,ticket,walletReady}); }
     catch { try{return await recordResult(notice,'rejected',actorId,{code:'DELIVERY_GUARD_UNAVAILABLE',transportStarted:false});}catch{return{status:'unknown'};} }
@@ -457,23 +453,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       const currentFacts = await currentEventFacts();
       const both = !cardFormat || own(input, 'includeCardFormats') === true;
       const walletPromise = (both || cardFormat === 'wallet') && currentFacts.ready ? walletState() : { ready: false };
-      let entryQr = null;
       const jpegRequested = both || cardFormat === 'jpeg';
-      const needsEntryQr = jpegRequested && clock() < entryExpiry;
-      if (needsEntryQr && currentFacts.ready && cardEntry) {
-        try {
-          const scope = { registrationId, accessRevision: value.accessRevision };
-          const result = await cardEntry.image(scope).catch(async error => {
-            // Previously issued Wallet links may not have a stored entry code.
-            if (cardFormat === 'jpeg' || error.code !== 'ENTRY_NOT_FOUND') throw error;
-            await cardEntry.prepare(scope);
-            return cardEntry.image(scope);
-          });
-          if (result?.contentType === 'image/png' && result.data instanceof Uint8Array && result.data.byteLength > 8 && result.data.byteLength <= 16000) {
-            entryQr = Buffer.from(result.data).toString('base64');
-          }
-        } catch { /* An unreadable entry QR must not be drawn as a valid card. */ }
-      }
       const [latest, wallet, community] = await Promise.all([authorizedContext(input), walletPromise, communities().read()]);
       const latestIdentity = await cardIdentity(latest.loaded, trustedProjection(registrationId, latest.loaded));
       if (latestIdentity?.value !== identity.value
@@ -482,8 +462,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       return { ...cardView, wallet,
         ...(cardCommunity.site || cardCommunity.role ? { cardCommunity } : {}),
         card: { format: both ? 'both' : cardFormat, identity: identity.label,
-          ready: currentFacts.ready && (jpegRequested ? !needsEntryQr || Boolean(entryQr) : wallet.ready),
-          ...(entryQr ? { entryQr } : {}) } };
+          ready: currentFacts.ready && (jpegRequested || wallet.ready) } };
     }
     let currentFacts = await currentEventFacts(), noticeSnapshot = null, savedAliases = null;
     if (value.hasEmail) try { noticeSnapshot = await target().read(); savedAliases = await aliasesFor(loaded); } catch { /* Histories fail closed independently of admission. */ }

@@ -105,13 +105,15 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
         if (!checkedFacts.ready) return fixed('event_unverified');
         if (!enabled) return fixed('not_ready');
         const config = await signing(); if (config.missing.length) return fixed('not_ready');
-        const now = current();
+        const now = current(), commemorative = attendee.walletRequested === true;
         let verificationUrl;
-        if (admissionUrlProvider) {
-          const issued = await admissionUrlProvider({ registrationId: attendee.registrationId, accessRevision: accessRevision(attendee) });
-          if (typeof issued?.admissionUrl !== 'string' || !/^https:\/\/api\.artdico\.host\/admin\/checkin\/#ticket=[A-Za-z0-9_-]{22}$/u.test(issued.admissionUrl)) return fixed('unavailable');
-          verificationUrl = issued.admissionUrl;
-        } else verificationUrl = API + '/api/admin/registration/wallet/verify/' + verificationToken(attendee, now);
+        if (!commemorative) {
+          if (admissionUrlProvider) {
+            const issued = await admissionUrlProvider({ registrationId: attendee.registrationId, accessRevision: accessRevision(attendee) });
+            if (typeof issued?.admissionUrl !== 'string' || !/^https:\/\/api\.artdico\.host\/admin\/checkin\/#ticket=[A-Za-z0-9_-]{22}$/u.test(issued.admissionUrl)) return fixed('unavailable');
+            verificationUrl = issued.admissionUrl;
+          } else verificationUrl = API + '/api/admin/registration/wallet/verify/' + verificationToken(attendee, now);
+        }
         const data = buildAppleWalletPass({ ...config, attendee, verificationUrl, now });
         const latest = await authorizedRegistration(attendee.registrationId, { includeCardCommunity: Boolean(attendee.cardCommunity) });
         if (!validRecord(latest) || latest.registrationId !== attendee.registrationId || latest.event.id !== attendee.event.id

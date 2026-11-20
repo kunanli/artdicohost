@@ -18,7 +18,7 @@ export const PUBLIC_ADMIN_PAGE_ALIASES = Object.freeze([
 export function validatePublicPath(path) {
   if (!path || path.includes('\\') || path.startsWith('/') || path.split('/').some(part => !part || part.startsWith('.') || /[\u0000-\u001f]/u.test(part))) throw new Error('Unsafe public path');
   if (path === 'release.json') return path;
-  const walletAsset = /^wallet\/add-to-apple-wallet-(?:cn|en)\.(?:png|svg)$/u.test(path);
+  const walletAsset = path === 'wallet/host-card-banner.png' || /^wallet\/add-to-apple-wallet-(?:cn|en)\.(?:png|svg)$/u.test(path);
   const namedRoute = ['index.html', '404.html', 'invitation/index.html', 'registration/confirmation/index.html', 'r/index.html', 'admin/checkin/index.html', 'admin/cards/index.html', 'admin/index.html', 'admin/contacts/index.html', 'admin/registrations/index.html', 'admin/tasks/index.html', 'admin/settings/index.html', 'admin/person/index.html', 'admin/volunteers/index.html', 'invitations/template-blank.png', 'invitations/ggj2026-poster-v2.webp'].includes(path)
     || PUBLIC_ADMIN_PAGE_ALIASES.some(route => path === route.slice(1) + 'index.html');
   if (!allowedExtensions.has(extname(path).toLowerCase()) || (!namedRoute && !walletAsset && !/^_astro\/[A-Za-z0-9_.\/-]+$/.test(path))) throw new Error('Unexpected public file: ' + path);
@@ -78,6 +78,7 @@ export async function prepareOssSite({ distDirectory = resolve(root, 'dist'), ou
   }
   selected.set('invitations/template-blank.png', await checkedPublicRead(distDirectory, 'invitations/template-blank.png'));
   selected.set('invitations/ggj2026-poster-v2.webp', await checkedPublicRead(distDirectory, 'invitations/ggj2026-poster-v2.webp'));
+  selected.set('wallet/host-card-banner.png', await checkedPublicRead(distDirectory, 'wallet/host-card-banner.png'));
   for (const locale of ['cn', 'en']) for (const extension of ['png', 'svg']) {
     const path = 'wallet/add-to-apple-wallet-' + locale + '.' + extension;
     selected.set(path, await checkedPublicRead(distDirectory, path));

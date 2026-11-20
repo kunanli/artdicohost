@@ -19,15 +19,23 @@ const qr=encodeQrPng('https://api.artdico.host/admin/checkin/#ticket='+'e'.repea
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const reports=[],pageErrors=[],assetHashes=new Map();await mkdir(evidence,{recursive:true});
 try{
-  for(const scenario of [{width:320,locale:'zh-CN',group:'current'},{width:600,locale:'zh-CN',group:'current'},{width:320,locale:'en',group:'current'},{width:600,locale:'en',group:'current'},{width:320,locale:'zh-CN',group:'missing'},{width:600,locale:'en',group:'expired'}]){
+  const cardLink = 'https://artdico.host/registration/confirmation/#r=c1.synthetic.signature';
+  const card = { name: '合成纪念卡申请人', identity: '嘉宾', community: 'GGJ 合成站 · 站点组织者',
+    event: '2026 Global Game Jam 中国组织者交流会 × ARTDiCO HOST 学生嘉年华', date: '2026-12-05', time: '10:00–18:00', venue: '深圳市南山区前海5号楼' };
+  for(const scenario of [{width:320,locale:'zh-CN',group:'current'},{width:600,locale:'zh-CN',group:'current'},{width:320,locale:'en',group:'current'},{width:600,locale:'en',group:'current'},{width:320,locale:'zh-CN',group:'missing'},{width:600,locale:'en',group:'expired'},
+    {width:320,locale:'zh-CN',card:true,wallet:true},{width:390,locale:'zh-CN',card:true,wallet:true},{width:320,locale:'en',card:true,wallet:false}]){
     const context=await browser.newContext({locale:'zh-CN',viewport:{width:scenario.width,height:1000}}),requests=[];
     const ticket={confirmationUrl:short,admissionQrImageUrl:entry,...(scenario.group==='current'?{groupQrImageUrl:group,groupExpiresAt:'2026-11-05T04:00:00.000Z'}:{})};
-    const variables={event_title:'ARTDiCO HOST · Synthetic Event',invitation_text:scenario.locale==='en'?'Synthetic attendee,\n\nYour attendance is confirmed.\nDate: 2026-12-05\nTime: 10:00–18:00 (UTC+8)\nYour private attendance page:\n'+short:'合成参会者，你好：\n\n你的参会名额已确认。\n日期：2026-12-05\n时间：10:00–18:00（UTC+8）\n私人参会页：\n'+short,...confirmationEmailPresentation({locale:scenario.locale,kind:'registration',subject:'Synthetic attendance confirmation',confirmationUrl:short,ticket,walletReady:true})};
+    const variables=confirmationEmailPresentation(scenario.card
+      ? { locale:scenario.locale,kind:'card_jpeg',subject:'Synthetic commemorative card',heading:scenario.locale==='en'?'Digital commemorative card':'电子纪念卡',
+        summary:scenario.locale==='en'?'Use your original ticket for check-in.':'纪念卡供长期收藏。现场签到请使用活动行原电子票。',confirmationUrl:cardLink,card,walletReady:scenario.wallet }
+      : { locale:scenario.locale,kind:'registration',subject:'Synthetic attendance confirmation',heading:'ARTDiCO HOST · Synthetic Event',
+        summary:scenario.locale==='en'?'Synthetic attendee,\n\nYour attendance is confirmed.\nDate: 2026-12-05\nTime: 10:00–18:00 (UTC+8)\nYour private attendance page:\n'+short:'合成参会者，你好：\n\n你的参会名额已确认。\n日期：2026-12-05\n时间：10:00–18:00（UTC+8）\n私人参会页：\n'+short,confirmationUrl:short,ticket,walletReady:true });
     const rendered=template.replaceAll('{{{confirmation_actions}}}',variables.confirmation_actions).replace(/\{\{([a-z_]+)\}\}/gu,(_,key)=>escape(variables[key]??''));
     assert.doesNotMatch(rendered,/\{\{[a-z_]+\}\}/u);
     await context.route('**/*',async route=>{
       const request=route.request(),url=new URL(request.url());assert.equal(request.method(),'GET');requests.push({origin:url.origin,path:url.pathname});
-      if(url.origin==='https://artdico.host'&&/^\/wallet\/add-to-apple-wallet-(?:cn|en)\.png$/u.test(url.pathname)){
+      if(url.origin==='https://artdico.host'&&/^\/wallet\/(?:add-to-apple-wallet-(?:cn|en)|host-card-banner)\.png$/u.test(url.pathname)){
         const bytes=await readFile(resolve(dist,'.'+url.pathname));assetHashes.set(url.pathname,sha(bytes));return route.fulfill({status:200,contentType:'image/png',body:bytes});
       }
       assert.equal(url.origin,'https://api.artdico.host');assert.ok([entry,group].includes(url.href));return route.fulfill({status:200,contentType:'image/png',headers:{'cache-control':'private, no-store'},body:qr});
@@ -36,9 +44,32 @@ try{
     try{
       await page.setContent(rendered,{waitUntil:'networkidle'});await page.locator('img').evaluateAll(async images=>Promise.all(images.map(image=>image.decode())));
       const images=await page.locator('img').evaluateAll(elements=>elements.map(image=>{const rect=image.getBoundingClientRect();return{alt:image.alt,src:image.getAttribute('src'),x:rect.x,right:rect.right,width:rect.width,height:rect.height,naturalWidth:image.naturalWidth,naturalHeight:image.naturalHeight};}));
-      assert.equal(await page.locator('div[lang]').first().getAttribute('lang'),scenario.locale);assert.equal(images.length,scenario.group==='current'?3:2);const badge=images[0];assert.ok(badge.src.endsWith('wallet-'+(scenario.locale==='en'?'en':'cn')+'.png'));assert.equal(badge.height,44);assert.ok(Math.abs(badge.width/badge.height-badge.naturalWidth/badge.naturalHeight)<0.01);
+      assert.equal(await page.locator('div[lang]').first().getAttribute('lang'),scenario.locale);
+      const badge=images.find(image=>image.src.includes('add-to-apple-wallet'));
+      if (badge) {assert.ok(badge.src.endsWith('wallet-'+(scenario.locale==='en'?'en':'cn')+'.png'));assert.equal(badge.height,44);assert.ok(Math.abs(badge.width/badge.height-badge.naturalWidth/badge.naturalHeight)<0.01);}
       for(const image of images){assert.ok(image.x>=0&&image.right<=scenario.width+1);assert.ok(image.naturalWidth>0&&image.naturalHeight>0);}
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+      if (scenario.card) {
+        assert.equal(images.length,scenario.wallet?2:1);
+        assert.ok(images.some(image=>image.src.endsWith('/host-card-banner.png')));
+        assert.equal(await page.locator('a[href="'+cardLink+'"]').count(),scenario.wallet?2:1);
+        assert.equal(requests.filter(request=>request.origin==='https://api.artdico.host').length,0);
+        const visibleText=await page.locator('body').innerText();
+        assert.match(visibleText,/合成纪念卡申请人/u);
+        assert.match(visibleText,/GGJ 合成站/u);
+        const name = page.getByText(scenario.locale === 'en' ? 'Name' : '参会人', { exact: true });
+        const role = page.getByText(scenario.locale === 'en' ? 'Card role' : '卡面身份', { exact: true });
+        const [nameBox, roleBox] = await Promise.all([name.boundingBox(), role.boundingBox()]);
+        assert.equal(nameBox.y, roleBox.y);
+        assert.ok(roleBox.x > nameBox.x);
+        assert.equal(await page.getByText('请按 iPhone 的系统提示确认添加。').count(), scenario.locale === 'zh-CN' && scenario.wallet ? 1 : 0);
+        assert.doesNotMatch(visibleText,/https?:\/\/|入场二维码|活动微信群/u);
+        const screenshot=resolve(evidence,'card-mail-'+scenario.locale+'-'+scenario.width+'.png');
+        await page.screenshot({path:screenshot,fullPage:true});
+        reports.push({...scenario,imageCount:images.length,privateQrRequests:0,groupOmitted:true,horizontalOverflow:false,smtpRequests:0,businessWrites:0,renderedSha256:sha(rendered),screenshot});
+        continue;
+      }
+      assert.equal(images.length,scenario.group==='current'?3:2);assert.ok(badge);
       assert.equal(await page.locator('a[href="'+short+'"]').count(),2);assert.equal(await page.locator('img[src="'+group+'"]').count(),scenario.group==='current'?1:0);
       assert.equal(requests.filter(request=>request.origin==='https://api.artdico.host').length,scenario.group==='current'?2:1);
       if(scenario.group!=='current')assert.doesNotMatch(await page.locator('body').innerText(),/加入活动微信群|Join the event WeChat group/u);

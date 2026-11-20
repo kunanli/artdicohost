@@ -1,14 +1,14 @@
 <!-- EmailJS Content: paste this HTML into the existing confirmation template.
      Subject: {{email_subject}} | To: {{to_email}}
-     invitation_text is escaped. ONLY confirmation_actions uses triple braces:
+     email_heading and email_summary are escaped. ONLY confirmation_actions uses triple braces:
      the server produces this fixed fragment from validated first-party URLs,
      official badge images and a fixed supported-language vocabulary. Never
      replace it with participant/event free text or use a raw invitation_text. -->
 <div lang="{{email_language}}" style="margin:0;padding:28px 20px;background:#ffffff;color:#14233b;font-family:Arial,'Microsoft YaHei',sans-serif;">
   <div style="max-width:600px;margin:0 auto;">
     <p style="margin:0 0 24px;color:#6540df;font-size:18px;font-weight:700;">ARTDiCO HOST</p>
-    <h1 style="margin:0 0 24px;font-size:24px;line-height:1.4;">{{event_title}}</h1>
-    <div style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;line-height:1.8;">{{invitation_text}}</div>
+    <h1 style="margin:0 0 16px;font-size:24px;line-height:1.4;">{{email_heading}}</h1>
+    <div style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;line-height:1.7;">{{email_summary}}</div>
     {{{confirmation_actions}}}
     <div style="margin-top:28px;padding-top:20px;border-top:1px solid #e0e5ed;font-size:14px;line-height:1.8;color:#52617a;">
       <p style="margin:0;">ARTDiCO HOST</p>

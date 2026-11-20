@@ -90,9 +90,13 @@ test('staff send one commemorative card email and recipients can still save the 
   const template = f.cardMessages()[0].template_params;
   assert.equal(template.to_email, f.fields.email);
   assert.match(template.email_subject, /电子纪念卡/u);
-  assert.match(template.confirmation_actions, /领取电子纪念卡/u);
-  assert.match(template.invitation_text, /JPEG.*Apple Wallet/u);
-  assert.doesNotMatch(template.invitation_text, /参会名额已确认|登记编号|微信/u);
+  assert.equal(template.email_heading, '电子纪念卡');
+  assert.doesNotMatch(template.email_summary, /https?:/u);
+  assert.match(template.confirmation_actions, /下载 JPEG 纪念卡/u);
+  assert.ok(template.confirmation_actions.includes('/wallet/host-card-banner.png'));
+  assert.ok(template.confirmation_actions.includes(f.fields.name));
+  assert.match(template.invitation_text, /下载 JPEG/u);
+  assert.doesNotMatch(template.invitation_text, /Apple Wallet|参会名额已确认|登记编号|微信/u);
   assert.doesNotMatch(template.confirmation_actions, /add-to-apple-wallet|entry-links/u);
   const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(template.invitation_text)[1];
   const publicCall = (path, headers) => f.app.handle(f.request(path, { method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken }, headers }));
@@ -291,7 +295,9 @@ test('existing Wallet and JPEG links can redeem both keepsake formats after the 
   const result = await service.staffSendCard({ ...body, actor: f.users[0], registrationId: f.id, format: 'wallet' });
   assert.equal(result.status, 'provider_accepted');
   assert.equal(messages.length, 1);
-  assert.match(messages[0].templateVariables.confirmation_actions, /领取电子纪念卡/u);
+  assert.match(messages[0].templateVariables.confirmation_actions, /下载 JPEG 纪念卡/u);
+  assert.match(messages[0].templateVariables.confirmation_actions, /add-to-apple-wallet-cn\.png/u);
+  assert.match(messages[0].text, /JPEG.*Apple Wallet/u);
   const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(messages[0].text)[1];
   assert.deepEqual(confirmationView(await service.confirmation({ receiptToken })).card, { format: 'wallet', identity: '嘉宾', ready: true });
   const first = confirmationView(await service.confirmation({ receiptToken, includeCardFormats: true }));

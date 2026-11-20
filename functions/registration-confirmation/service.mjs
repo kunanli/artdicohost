@@ -6,7 +6,7 @@ import { createConfirmationTokens } from './tokens.mjs';
 import { createConfirmationRepository, canonicalConfirmationKind, formalConfirmationKind, commemorativeCardKind, confirmationNoticeId, confirmationRequestHash,
   validConfirmationOperation, MAX_CONFIRMATION_BATCH, sameConfirmationScope as sameScope, cardResendCandidates, cardSendInProgress,
   cardCommunityPrefix, createCardCommunityRepository } from './repository.mjs';
-import { CARD_FORMATS, WALLET_IDENTITIES, cardCommunityFields, isWalletApplicationFields, walletApplicationPreferences } from '../../shared/general-application.mjs';
+import { CARD_FORMATS, WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, commemorativeCardVenue, isWalletApplicationFields, walletApplicationPreferences } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 import { buildPosterInvitationSettings } from '../../shared/organizer-progress.mjs';
 import { confirmationEmailPresentation } from './presentation.mjs';
@@ -340,7 +340,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       } catch { try{return await recordResult(notice,'rejected',actorId,{code:'DELIVERY_GUARD_UNAVAILABLE',transportStarted:false});}catch{return{status:'unknown'};} }
     }
     let result,presentation,walletReady=false;
-    if(kind!=='application_received'&&(!card||card.format==='wallet')&&(!record.walletRequested||record.walletIdentity)){
+    if(kind!=='application_received'&&(!record.walletRequested||record.walletIdentity)){
       try{walletReady=(await beforeDeadline(()=>walletState())).ready;}
       catch{
         // A slow signer check is not evidence that Wallet is unconfigured.
@@ -369,17 +369,26 @@ export function createRegistrationConfirmationService({ registrationService, jou
         ...(kind==='application_received'?[]:[...(walletInstructions?['On iPhone, open this page in Safari to add your pass to Apple Wallet.']:[]),'Show the admission QR code below to staff on arrival.']),
         'Keep this link and your QR code private. For help, contact '+PUBLIC_CONTACT_EMAIL+'.'].join('\n');
     }
+    let heading = eventFacts.title, summary = text, cardEmail;
     if (card) {
       if (card.format === 'wallet' && !walletReady) {
         try { return await recordResult(notice, 'rejected', actorId, { code: 'DELIVERY_GUARD_BLOCKED', transportStarted: false }); }
         catch { return { status: 'unknown' }; }
       }
-      subject = eventFacts.title + (locale === 'en' ? ' | Your commemorative card' : '｜你的电子纪念卡');
-      text = locale === 'en' ? [record.fields.name + ',', '', 'Open your private card page to download the JPEG or add the card to Apple Wallet on iPhone.', link.confirmationUrl,
-        'Save either format as a keepsake. Use your original Huodongxing ticket for check-in.'].join('\n') : [record.fields.name + '，你好：', '', '打开私人领取页，即可下载 JPEG 图片，或在 iPhone 上加入 Apple Wallet。', link.confirmationUrl,
-        '请下载或加入 Wallet 收藏。现场签到请使用活动行原电子票。'].join('\n');
+      subject = (locale === 'en' ? 'Your commemorative card | ' : '你的电子纪念卡｜') + eventFacts.title;
+      heading = locale === 'en' ? 'Your commemorative card' : '电子纪念卡';
+      summary = locale === 'en' ? 'Save your card as a keepsake. Use your original Huodongxing ticket for check-in.' : '纪念卡供长期收藏。现场签到请使用活动行原电子票。';
+      const instructions = locale === 'en'
+        ? 'Open your private card page to download the JPEG' + (walletReady ? ' or add the card to Apple Wallet on iPhone.' : '.')
+        : '打开私人领取页，即可下载 JPEG 图片' + (walletReady ? '，或在 iPhone 上加入 Apple Wallet。' : '。');
+      text = [record.fields.name + (locale === 'en' ? ',' : '，你好：'), '', instructions, link.confirmationUrl, summary].join('\n');
+      // Optional card copy must not consume the delivery window on a slow read.
+      const savedCommunity = await beforeDeadline(() => communities().read(), 1_000).catch(() => null);
+      cardEmail = { name: record.fields.name, identity: WALLET_IDENTITIES.find(item => item.value === card.identity)?.label,
+        event: eventFacts.title, date: eventFacts.date, time: eventFacts.time, venue: commemorativeCardVenue(eventFacts.venue),
+        community: savedCommunity ? cardCommunityLabel(communityFor(savedCommunity, registrationId)) : '' };
     }
-    try { presentation=confirmationEmailPresentation({locale,kind,subject,confirmationUrl:link.confirmationUrl,ticket,walletReady}); }
+    try { presentation=confirmationEmailPresentation({locale,kind,subject,heading,summary,card:cardEmail,confirmationUrl:link.confirmationUrl,ticket,walletReady}); }
     catch { try{return await recordResult(notice,'rejected',actorId,{code:'DELIVERY_GUARD_UNAVAILABLE',transportStarted:false});}catch{return{status:'unknown'};} }
     try {
       result = await emailProvider.send({ recipient: record.fields.email, subject, text, canStart,

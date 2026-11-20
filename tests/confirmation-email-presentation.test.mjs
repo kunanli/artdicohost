@@ -39,7 +39,7 @@ test('email badge PNGs are bounded rasterizations of the exact official uploaded
   }
 });
 
-test('only the confirmation adapter enables the exact three presentation variables on the audited transport',async()=>{
+test('only the confirmation adapter enables the presentation variables on the audited transport',async()=>{
   const {createInvitationEmailProvider}=await import('../functions/intent-invitations/email-provider.mjs');
   const env={ARTDICO_INVITATION_EMAIL_ENABLED:'true',EMAILJS_SERVICE_ID:'synthetic_service',EMAILJS_TEMPLATE_ID:'synthetic_template',EMAILJS_PUBLIC_KEY:'SYNTHETIC-PUBLIC',EMAILJS_PRIVATE_KEY:'SYNTHETIC-PRIVATE',EMAIL_FROM_ADDRESS:'synthetic@artdico.co',EMAIL_FROM_NAME:'Synthetic'};
   const subject='合成确认',text='合成正文',base={recipient:'synthetic@example.invalid',subject,text,idempotencyKey:'synthetic_presentation',templateVariables:{to_name:'合成人',to_email:'synthetic@example.invalid',event_title:'合成活动',event_date:'2026-12-05',event_time:'10:00–18:00',event_venue:'合成地点',reference_code:'synthetic',invitation_text:text,...confirmationEmailPresentation({...input,subject})}};
@@ -48,4 +48,20 @@ test('only the confirmation adapter enables the exact three presentation variabl
   const confirmation=createInvitationEmailProvider({env,fetchFn,confirmationPresentation:true});assert.equal((await confirmation.send(base)).status,'provider_accepted');assert.equal(calls,1);assert.equal(body.template_params.email_language,'zh-CN');assert.equal(body.template_params.confirmation_actions,base.templateVariables.confirmation_actions);
   for(const change of [value=>{delete value.templateVariables.email_language;},value=>{value.templateVariables.email_language='future';},value=>{value.templateVariables.email_subject='different';},value=>{value.templateVariables.arbitrary_html='<script>x</script>';}]){const bad=structuredClone(base);change(bad);assert.equal((await confirmation.send(bad)).status,'rejected');}
   assert.equal(calls,1);
+});
+
+test('the keepsake email preview escapes recipient details and uses only public images',()=>{
+  const link = 'https://artdico.host/registration/confirmation/#r=c1.synthetic.signature';
+  const card = { name: '<img src=x onerror=x>', identity: '嘉宾', event: '合成活动', date: '2026-12-05',
+    time: '10:00–18:00', venue: '合成地点', community: 'GGJ & 合成站' };
+  const options = { kind: 'card_jpeg', subject: '电子纪念卡', heading: '电子纪念卡',
+    summary: '现场签到请使用活动行原电子票。', confirmationUrl: link, card };
+  const value = confirmationEmailPresentation({ ...options, walletReady: true });
+  assert.doesNotMatch(value.email_summary, /https?:/u);
+  assert.match(value.confirmation_actions, /&lt;img src=x onerror=x&gt;/u);
+  assert.match(value.confirmation_actions, /GGJ &amp; 合成站/u);
+  assert.doesNotMatch(value.confirmation_actions, /<img src=x|\/api\/|group\.png/u);
+  assert.equal(value.confirmation_actions.split('href="' + link + '"').length - 1, 2);
+  assert.doesNotMatch(confirmationEmailPresentation(options).confirmation_actions, /add-to-apple-wallet/u);
+  assert.throws(()=>confirmationEmailPresentation({ ...options, ticket }),TypeError);
 });

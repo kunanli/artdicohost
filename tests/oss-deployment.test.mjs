@@ -39,6 +39,7 @@ async function fixture(t) {
   await writeFile(resolve(dist, 'invitations/ggj2026-poster-v2.webp'), 'synthetic-test-image');
   await writeFile(resolve(dist, 'r/index.html'), '<h1>私人链接</h1>');
   for (const locale of ['cn','en']) for (const ext of ['png','svg']) await writeFile(resolve(dist, 'wallet/add-to-apple-wallet-'+locale+'.'+ext), 'SYNTHETIC-OFFICIAL-BADGE');
+  await writeFile(resolve(dist, 'wallet/host-card-banner.png'), 'synthetic-public-card-art');
   await writeFile(resolve(dist, 'contacts.json'), 'synthetic-private-contact');
   return { directory, dist, output };
 }
@@ -46,7 +47,8 @@ async function fixture(t) {
 test('publication selects reachable public assets and replaces local admin with notices', async t => {
   const { dist, output } = await fixture(t);
   const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
-  assert.equal(manifest.files.length, 37);
+  assert.equal(manifest.files.length, 38);
+  assert.ok(manifest.files.some(file => file.path === 'wallet/host-card-banner.png'));
   const receipt = JSON.parse(await readFile(resolve(output, 'release.json'), 'utf8'));
   assert.equal(receipt.commit, commit);
   assert.deepEqual(receipt.files, manifest.files.filter(item => item.path !== 'release.json'));

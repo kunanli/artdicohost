@@ -105,7 +105,8 @@ export function createPassArchive(files, now) {
 export function buildAppleWalletPass({ identity, attendee, organizationName, verificationUrl, now = Date.now() } = {}) {
   const event = attendee?.event, walletIdentity=WALLET_IDENTITIES.find(item=>item.value===attendee?.walletIdentity);
   const richCard = attendee?.walletRequested === true && Boolean(walletIdentity);
-  const community = walletIdentity && cardCommunityLabel(cardCommunityFields(attendee?.cardCommunity));
+  const siteIdentity = walletIdentity ? cardCommunityFields(attendee?.cardCommunity) : null;
+  const community = cardCommunityLabel(siteIdentity);
   const communityFields = community ? [{ key: 'ggj-community', label: 'GGJ 社群', value: community }] : [];
   if ((attendee?.walletRequested === true || attendee?.walletIdentity !== undefined) && !walletIdentity) fail('WALLET_PASS_INPUT_INVALID');
   if (!identity?.privateKey || attendee?.admissionStatus !== 'confirmed' || !/^[A-Za-z0-9_-]{43}$/u.test(attendee.registrationId ?? '')
@@ -129,17 +130,22 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
   const date = { key: 'date', label: '日期', value: event.date };
   const time = { key: 'time', label: '时间', value: event.time };
   const venue = { key: 'venue', label: '地点', value: event.venue };
-  const compactCommunity = community && [...community].length > 20 ? [...community].slice(0, 19).join('') + '…' : community;
-  const cardPlace = { ...venue, key: 'venue-short', value: commemorativeCardVenue(event.venue), row: 1 };
-  const cardCommunity = community ? [{ key: 'ggj-community-short', label: 'GGJ 社群', value: compactCommunity, row: 1 }] : [];
+  const siteDisplay = [siteIdentity?.role, siteIdentity?.site].filter(Boolean).join(' · ');
+  const siteCharacters = [...siteDisplay];
+  const compactSite = siteCharacters.length > 20 ? siteCharacters.slice(0, 19).join('') + '…' : siteDisplay;
+  const cardCommunity = compactSite ? [{ key: 'ggj-community-short', label: siteIdentity.role ? 'GGJ 站点身份' : 'GGJ 站点', value: compactSite, row: 1 }] : [];
+  const place = compactSite && event.venue === eventConfig.venue.address ? '前海5号楼' : commemorativeCardVenue(event.venue);
+  const cardPlace = { ...venue, key: 'venue-short', value: place, row: 1 };
   const identityField = walletIdentity ? { key: 'identity', label: richCard ? '卡面身份' : '入场身份', value: walletIdentity.label } : null;
   const fullCardDetails = richCard ? [
     { ...person, key: 'details-name' }, { ...identityField, key: 'details-identity' },
     { ...title, key: 'details-event' }, { ...date, key: 'details-date' }, { ...time, key: 'details-time' },
   ] : [];
-  const logoText = richCard && event.id === eventConfig.id ? 'GGJ 2026 × ARTDiCO HOST' : organizationName;
+  const cardTitle = richCard && event.id === eventConfig.id ? 'GGJ China Meetup 2026 x ARTDiCO HOST' : null;
+  const mapUrl = 'https://maps.apple.com/directions?destination=' + encodeURIComponent(event.venue);
   const pass = { formatVersion: 1, passTypeIdentifier: identity.passTypeIdentifier, serialNumber: event.id + '-' + attendee.registrationId,
-    teamIdentifier: identity.teamId, organizationName, description: event.title + (richCard ? '电子纪念卡' : '参会凭证'), logoText,
+    teamIdentifier: identity.teamId, organizationName, description: (cardTitle ?? event.title) + (richCard ? ' 电子纪念卡' : '参会凭证'),
+    logoText: cardTitle ?? organizationName,
     foregroundColor: 'rgb(255,255,255)', backgroundColor: 'rgb(18,18,18)', labelColor: 'rgb(238,238,238)', sharingProhibited: true,
     ...(!richCard ? { relevantDate, expirationDate: event.date + 'T23:59:59+08:00',
       barcodes: [{ format: 'PKBarcodeFormatQR', message: verificationUrl, messageEncoding: 'iso-8859-1' }] } : {}),
@@ -149,7 +155,7 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
     eventTicket: {
       ...(richCard ? {
         secondaryFields: [person, identityField],
-        auxiliaryFields: [date, time, cardPlace, ...cardCommunity],
+        auxiliaryFields: [date, time, ...cardCommunity, cardPlace],
       } : {
         headerFields: [identityField ?? { key: 'status', label: '参会名额', value: '已确认' }],
         primaryFields: [title],
@@ -159,7 +165,9 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
       }),
       backFields: [...fullCardDetails, venue, ...(!richCard ? [{ key: 'reference', label: '报名编号', value: attendee.referenceCode }] : []),
         ...communityFields,
-        { key: 'notice', label: '说明', value: richCard ? '本卡用于纪念收藏。现场签到请使用活动行原电子票。' : '此凭证仅表示参会名额。讲者、展位及住宿另行确认；请以在线核对结果为准。' }],
+        { key: 'notice', label: '说明', value: richCard ? '本卡用于纪念收藏。现场签到请使用活动行原电子票。' : '此凭证仅表示参会名额。讲者、展位及住宿另行确认；请以在线核对结果为准。' },
+        ...(richCard ? [{ key: 'directions', label: '地图指引', value: mapUrl,
+          attributedValue: '<a href="' + mapUrl + '">在 Apple 地图中查看路线</a>' }] : [])],
     } };
   const artwork = richCard ? KEEPSAKE_STRIPS : [
     { name: 'background.png', data: BRAND_IMAGES.background }, { name: 'background@2x.png', data: BRAND_IMAGES.background },

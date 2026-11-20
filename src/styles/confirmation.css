@@ -29,6 +29,14 @@ body[data-admission=waitlisted] .confirmation-state{color:#83581f}body[data-admi
 [data-card-format] :is([data-confirmation-more], [data-confirmation-registration], [data-confirmation-notice-records], [data-confirmation-copy], .confirmation-printed) { display: none; }
 
 [data-card-format] .confirmation-details{display:none}
-[data-card-format] .confirmation-save{margin-top:0;padding-top:16px}
+[data-card-format] .confirmation-card{width:min(590px,calc(100% - 24px));padding:clamp(16px,4vw,28px)}
+[data-card-format] .confirmation-save{margin-top:0;padding-top:0}
+[data-card-format] .confirmation-actions{flex-flow:row wrap;align-items:center;gap:8px 12px}
+[data-card-format] .confirmation-actions button{width:auto}
+[data-card-format] [data-confirmation-save-heading],
+[data-card-preview] .confirmation-person{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.confirmation-jpeg-preview{margin-top:16px}
+.confirmation-jpeg-preview img{display:block;width:100%;height:auto}
+.confirmation-jpeg-preview p{margin:8px 0 0;font-size:14px;color:#52617a}
 [data-confirmation-jpeg-download]{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:11px 16px;border:1px solid #2555a4;border-radius:6px;background:#2555a4;color:#fff;text-decoration:none;font-size:14px;font-weight:600}
 [data-confirmation-jpeg-download]:hover{filter:brightness(.95)}

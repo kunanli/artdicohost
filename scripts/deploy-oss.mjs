@@ -7,6 +7,8 @@ import { sha256, validatePublicPath, MAX_FILE_BYTES, PUBLIC_ADMIN_PAGE_ALIASES }
 export const OSS_BUCKET = 'artdicohost-web-hk';
 export const OSS_ENDPOINT = 'https://oss-cn-hongkong.aliyuncs.com';
 export const OSS_REGION = 'cn-hongkong';
+export const PRIVATE_CONFIRMATION_PAGE = 'registration/confirmation/index.html';
+export const publicObjectCachePolicy = path => path === PRIVATE_CONFIRMATION_PAGE ? 'private,no-store' : 'public,no-cache';
 
 export function requireDeploymentContext(env) {
   if (env.GITHUB_ACTIONS !== 'true' || env.GITHUB_EVENT_NAME !== 'push' || env.GITHUB_REF !== 'refs/heads/main' || env.GITHUB_REPOSITORY !== 'kunanli/artdicohost' || !/^[a-f0-9]{40}$/.test(env.GITHUB_SHA ?? '')) throw new Error('Only a main push in kunanli/artdicohost may deploy');
@@ -51,7 +53,7 @@ export async function verifyPublication(directory, expectedCommit) {
 }
 
 export function putObjectArgs(directory, item) {
-  return ['api', 'put-object', '--bucket', OSS_BUCKET, '--key', item.path, '--body', 'file://' + resolve(directory, item.path), '--content-type', contentType(item.path), '--cache-control', 'public,no-cache', '--region', OSS_REGION, '--endpoint', OSS_ENDPOINT];
+  return ['api', 'put-object', '--bucket', OSS_BUCKET, '--key', item.path, '--body', 'file://' + resolve(directory, item.path), '--content-type', contentType(item.path), '--cache-control', publicObjectCachePolicy(item.path), '--region', OSS_REGION, '--endpoint', OSS_ENDPOINT];
 }
 
 export async function assertCurrentMainHead(env, fetchHead = fetch) {

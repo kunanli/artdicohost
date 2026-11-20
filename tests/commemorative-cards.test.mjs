@@ -101,6 +101,8 @@ test('staff send one commemorative card email and recipients can still save the 
   assert.deepEqual([...Buffer.from(entryQr, 'base64').subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
   const before = f.objects.calls.length;
   const both = confirmationView(await (await publicCall('/api/admin/registration/confirmation', { Accept: CARD_FORMATS_ACCEPT })).json());
+  const canonical = confirmationView(await (await publicCall('/api/registration/confirmation')).json());
+  assert.deepEqual(canonical, both, 'the canonical route combines formats even if the browser omits the profile');
   assert.ok(f.objects.calls.slice(before).every(call => call.operation === 'get'), 'redemption only reads the existing QR');
   assert.deepEqual(both.card, { ...view.card, format: 'both' });
   assert.equal(both.wallet.ready, false);

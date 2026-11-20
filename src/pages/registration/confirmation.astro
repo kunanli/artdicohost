@@ -40,13 +40,13 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
               <button type="button" data-confirmation-wallet hidden><img src="/wallet/add-to-apple-wallet-cn.svg" alt="添加到 Apple 钱包" data-confirmation-wallet-badge decoding="async" referrerpolicy="no-referrer" hidden /><span data-confirmation-wallet-label>加入 Apple Wallet</span></button>
             </div>
             <p class="confirmation-device" data-confirmation-device hidden></p>
-            <section class="confirmation-safari-guide" data-confirmation-safari-guide hidden aria-labelledby="confirmation-safari-heading">
+            <section id="confirmation-safari-guide" class="confirmation-safari-guide" data-confirmation-safari-guide hidden aria-labelledby="confirmation-safari-heading">
               <h3 id="confirmation-safari-heading" tabindex="-1">在 Safari 中添加票券</h3>
               <ol><li data-confirmation-wechat-step hidden>点微信右上角「…」，查看是否有「在浏览器打开」选项。</li><li>复制私人链接，粘贴到 Safari 地址栏打开。</li><li>在 Safari 中点「加入 Apple Wallet」，再按系统提示确认。</li></ol>
               <div class="confirmation-small-actions"><button type="button" data-confirmation-safari-copy>复制私人链接</button><button type="button" data-confirmation-safari-close>收起指引</button></div>
             </section>
             <p class="confirmation-action-status" data-confirmation-action-status role="status" aria-live="polite"></p>
-            <div class="confirmation-invitation" data-confirmation-jpeg-preview hidden>
+            <div class="confirmation-jpeg-preview" data-confirmation-jpeg-preview hidden>
               <img data-confirmation-jpeg-image alt="你的电子纪念卡" width={CARD_IMAGE.width} height={CARD_IMAGE.height} decoding="async" />
               <p>手机可长按图片保存。</p>
             </div>

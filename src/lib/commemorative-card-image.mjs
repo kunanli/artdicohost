@@ -79,7 +79,9 @@ export async function renderCommemorativeJpeg(view) {
   context.fillRect(67, 597, 895, 1);
   context.fillRect(67, 781, 895, 1);
   line(context, '参会人', 64, 680, 38);
-  line(context, view.attendee.name, 64, 735, 43);
+  line(context, view.attendee.name, 64, 735, 43, { maxWidth: 580 });
+  line(context, '入场身份', 962, 680, 38, { align: 'right' });
+  line(context, view.card.identity, 962, 735, 43, { maxWidth: 265, align: 'right' });
   line(context, '日期', 64, 852, 29);
   line(context, view.event.date.replaceAll('-', ' - '), 64, 894, 29);
   line(context, '时间', 64, 956, 29);

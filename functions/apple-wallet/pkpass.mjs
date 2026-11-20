@@ -115,7 +115,8 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
     expirationDate: event.date + 'T23:59:59+08:00', sharingProhibited: true,
     barcodes: [{ format: 'PKBarcodeFormatQR', message: verificationUrl, messageEncoding: 'iso-8859-1' }],
     preferredStyleSchemes: ['posterEventTicket', 'eventTicket'],
-    semantics: { eventName: event.title, eventStartDate: relevantDate, eventType: 'PKEventTypeGeneric', venueName: event.venue },
+    semantics: { eventName: event.title, eventStartDate: relevantDate, eventType: 'PKEventTypeGeneric', venueName: event.venue,
+      ...(walletIdentity ? { attendeeName: attendee.name, admissionLevel: walletIdentity.label } : {}) },
     eventTicket: {
       headerFields: walletIdentity?[{key:'identity',label:'入场身份',value:walletIdentity.label}]:[{ key: 'status', label: '参会名额', value: '已确认' }],
       primaryFields: [{ key: 'event', label: '活动', value: event.title }],

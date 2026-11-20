@@ -17,17 +17,18 @@ const signing = await createWalletFixture();
 await mkdir(output, { recursive: true });
 
 try {
-  for (const [width, outcome] of [[320, 'accepted'], [390, 'accepted'], [1440, 'unknown']]) {
+  for (const [width, outcome, device] of [[320, 'accepted', 'other'], [390, 'accepted', 'safari'], [390, 'accepted', 'chrome'], [1440, 'unknown', 'other']]) {
     const isCard = message => /电子纪念卡/u.test(message.template_params.email_subject);
     let attempts = 0;
     const fixture = await peopleRuntimeFixture({ mail: true, mailResult: message => isCard(message) && ++attempts === 1 ? outcome : 'accepted' });
-    const walletAvailable = width === 390;
+    const walletAvailable = device !== 'other';
     const wallet = createAppleWalletService({ env: signing.env, tokenSecret: 'synthetic-browser-card-signing-token-secret',
       clock: () => signing.now, trustedRootFingerprints: signing.fields.trustedRootFingerprints,
       authorize: fixture.app.confirmationService.authorize, authorizedRegistration: fixture.app.confirmationService.authorizedRegistration });
     const walletApi = createAppleWalletApi({ service: wallet });
+    const iosAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 ';
     const context = await browser.newContext({ viewport: { width, height: 840 }, locale: 'zh-CN',
-      ...(walletAvailable ? { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1' } : {}) });
+      ...(walletAvailable ? { userAgent: iosAgent + (device === 'safari' ? 'Version/18.0' : 'CriOS/131.0') + ' Mobile/15E148 Safari/604.1' } : {}) });
     const errors = [];
     let privateReads = 0, staleIdentity = width === 320;
     try {
@@ -37,17 +38,20 @@ try {
           assert.ok([SITE, API].includes(url.origin));
           if (url.origin === API && url.pathname.startsWith('/api/')) {
             const method = request.method();
-            if (method === 'POST' && url.pathname === '/api/admin/registration/confirmation') privateReads++;
+            const privateRead = method === 'POST' && ['/api/admin/registration/confirmation', '/api/registration/confirmation'].includes(url.pathname);
+            if (privateRead) privateReads++;
             if (staleIdentity && method === 'PATCH' && url.pathname.startsWith('/api/admin/registration-confirmation/cards/')) {
               staleIdentity = false;
               return route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":{"message":"资料已更新，请核对后再保存。"}}' });
             }
-            const input = new Request(url.href, { method, headers: await request.allHeaders(),
+            const headers = new Headers(await request.allHeaders());
+            if (device === 'chrome' && url.pathname === '/api/admin/registration/confirmation') headers.set('accept', 'application/json');
+            const input = new Request(url.href, { method, headers,
               ...(['GET', 'HEAD'].includes(method) ? {} : { body: request.postData() }) });
             const response = await (walletAvailable && url.pathname === '/api/admin/registration/wallet' ? walletApi(input) : fixture.app.handle(input));
-            if (walletAvailable && url.pathname === '/api/admin/registration/confirmation' && method === 'POST' && response.ok) {
+            if (walletAvailable && privateRead && response.ok) {
               const data = await response.json();
-              if (data.card) data.wallet = await wallet.readiness();
+              if (data.card?.format === 'both') data.wallet = await wallet.readiness();
               return route.fulfill({ status: 200, headers: Object.fromEntries(response.headers), json: data });
             }
             return route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: Buffer.from(await response.arrayBuffer()) });
@@ -146,19 +150,44 @@ try {
         assert.equal(await downloadButton.evaluate(button => button.getBoundingClientRect().bottom <= innerHeight), true);
         const image = page.locator('[data-confirmation-jpeg-image]');
         await page.waitForFunction(node => node.complete && node.naturalWidth === 1030 && node.naturalHeight === 1510, await image.elementHandle());
+        assert.match(await image.getAttribute('alt'), /入场身份：嘉宾/u);
+        assert.equal(await image.evaluate(node => node.clientWidth === node.closest('.confirmation-save').clientWidth), true);
+        assert.equal(await image.evaluate(node => {
+          const canvas = document.createElement('canvas');
+          canvas.width = node.naturalWidth;
+          canvas.height = node.naturalHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(node, 0, 0);
+          const { data } = ctx.getImageData(675, 696, 285, 47);
+          return data.some((value, index) => index % 4 === 0 && value > 200);
+        }), true, 'the downloadable artwork shows the identity value in its own column');
         const walletButton = page.locator('[data-confirmation-wallet]');
         assert.equal(await walletButton.isVisible(), walletAvailable);
         if (walletAvailable) {
-          assert.equal(await walletButton.getAttribute('data-wallet-action'), 'add');
+          await page.locator('[data-confirmation-wallet-badge]').waitFor();
+          assert.equal(await page.locator('[data-confirmation-wallet-badge]').getAttribute('src'), '/wallet/add-to-apple-wallet-cn.svg');
+          assert.equal(await walletButton.getAttribute('aria-label'), '加入 Apple Wallet');
           assert.equal(await walletButton.evaluate(button => button.getBoundingClientRect().bottom <= innerHeight), true);
+        }
+        if (device === 'safari') {
+          assert.equal(await walletButton.getAttribute('data-wallet-action'), 'add');
           const walletDownload = page.waitForEvent('download');
           await walletButton.click();
           const pass = await walletDownload;
           assert.equal(pass.suggestedFilename(), 'artdico-host.pkpass');
           const files = passFiles(await readFile(await pass.path()));
-          assert.match(files.get('pass.json').toString(), /嘉宾/u);
+          assert.equal(JSON.parse(files.get('pass.json')).semantics.admissionLevel, '嘉宾');
+        } else if (device === 'chrome') {
+          assert.equal(await walletButton.getAttribute('data-wallet-action'), 'guide');
+          assert.equal(await page.locator('[data-confirmation-safari-guide]').isVisible(), false);
+          await walletButton.click();
+          await page.locator('[data-confirmation-safari-guide]').waitFor();
+          assert.equal(await walletButton.getAttribute('aria-expanded'), 'true');
+          assert.equal(await image.isVisible(), true);
+          await page.locator('[data-confirmation-safari-close]').click();
+          assert.equal(await walletButton.getAttribute('aria-expanded'), 'false');
         }
-        await page.screenshot({ path: resolve(output, 'recipient-jpeg-' + width + '.png'), fullPage: true });
+        await page.screenshot({ path: resolve(output, 'recipient-jpeg-' + width + '-' + device + '.png'), fullPage: true });
         const pending = page.waitForEvent('download');
         await downloadButton.click();
         const download = await pending;
@@ -166,11 +195,11 @@ try {
         const jpeg = await readFile(await download.path());
         assert.deepEqual([...jpeg.subarray(0, 3)], [0xff, 0xd8, 0xff]);
         assert.deepEqual([...jpeg.subarray(-2)], [0xff, 0xd9]);
-        assert.equal(privateReads - readsBefore, 1, 'the first private read makes the JPEG ready to download');
+        assert.equal(privateReads - readsBefore, device === 'chrome' ? 2 : 1, 'the legacy response is upgraded with one canonical read');
         await writeFile(resolve(output, 'sample-commemorative-card.jpg'), jpeg);
       }
       assert.deepEqual(errors, []);
-      reports.push({ width, outcome, oneMailPerClick: true, explicitResend: true, selectedAfterReload: true,
+      reports.push({ width, outcome, device, oneMailPerClick: true, explicitResend: true, selectedAfterReload: true,
         inlineError: width === 320, directJpeg: outcome === 'accepted', wallet: walletAvailable });
     } finally { await context.close(); }
   }

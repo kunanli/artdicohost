@@ -200,6 +200,8 @@ test('commemorative requests require a staff card identity and sign the selected
   const pass=JSON.parse(passFiles(issued.data).get('pass.json'));
   assert.deepEqual(pass.eventTicket.headerFields,[{key:'identity',label:'入场身份',value:'嘉宾'}]);
   assert.equal(pass.eventTicket.secondaryFields[0].value,record.name);
+  assert.equal(pass.semantics.attendeeName, record.name);
+  assert.equal(pass.semantics.admissionLevel, '嘉宾');
   assert.equal(pass.barcodes[0].format,'PKBarcodeFormatQR');
 });
 

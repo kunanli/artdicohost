@@ -18,7 +18,7 @@ if (root) {
   const jpegDownload = $('[data-confirmation-jpeg-download]');
   let walletBadgeReady=Boolean(walletBadge?.complete&&walletBadge.naturalWidth>0);
   function syncWalletBadge(){
-    const showBadge=walletBadgeReady&&!walletButton.hidden&&walletButton.dataset.walletAction==='add';
+    const showBadge=walletBadgeReady&&!walletButton.hidden&&(Boolean(state?.card)||walletButton.dataset.walletAction==='add');
     if(walletBadge)walletBadge.hidden=!showBadge;
     if(walletLabel)walletLabel.hidden=showBadge;
     walletButton.classList.toggle('confirmation-wallet-badge',showBadge);
@@ -26,16 +26,22 @@ if (root) {
   walletBadge?.addEventListener('load',()=>{walletBadgeReady=walletBadge.naturalWidth>0;syncWalletBadge();});
   walletBadge?.addEventListener('error',()=>{walletBadgeReady=false;syncWalletBadge();});
   const walletGuidance=()=>confirmationWalletGuidance({userAgent:navigator.userAgent,maxTouchPoints:navigator.maxTouchPoints,walletReady:state?.wallet.ready===true,walletReason:state?.wallet.reason,invitationReady:state?.invitation.ready===true});
-  function hideSafariGuide(){ $('[data-confirmation-safari-guide]').hidden=true;$('[data-confirmation-wechat-step]').hidden=true; }
+  function hideSafariGuide(){
+    $('[data-confirmation-safari-guide]').hidden=true;$('[data-confirmation-wechat-step]').hidden=true;
+    if (walletButton.hasAttribute('aria-expanded')) walletButton.setAttribute('aria-expanded', 'false');
+  }
   function releaseWallet() { if (walletUrl) URL.revokeObjectURL(walletUrl); walletUrl = null; }
   function clearJpeg() {
     if (jpegUrl) URL.revokeObjectURL(jpegUrl);
     jpegUrl = null;
-    $('[data-confirmation-jpeg-image]').removeAttribute('src');
+    const image = $('[data-confirmation-jpeg-image]');
+    image.removeAttribute('src');
+    image.alt = '你的电子纪念卡';
     jpegDownload.removeAttribute('href');
     jpegDownload.hidden = true;
     $('[data-confirmation-jpeg-preview]').hidden = true;
     delete root.dataset.cardFormat;
+    delete root.dataset.cardPreview;
   }
   function clearInvitation(){
     if(invitationUrl)URL.revokeObjectURL(invitationUrl);invitationUrl=null;
@@ -93,8 +99,16 @@ if (root) {
     $('[data-confirmation-facts-warning]').hidden=value.eventFacts?.ready!==false;
     const guidance=walletGuidance();hideSafariGuide();
     walletButton.hidden=value.admission.status!=='confirmed'||!guidance.showWallet;
-    if(walletLabel)walletLabel.textContent=guidance.label;else walletButton.textContent=guidance.label;
-    walletButton.dataset.walletAction=guidance.action;walletButton.setAttribute('aria-label',guidance.label);syncWalletBadge();
+    const walletActionLabel = value.card && guidance.showWallet ? '加入 Apple Wallet' : guidance.label;
+    if(walletLabel)walletLabel.textContent=walletActionLabel;else walletButton.textContent=walletActionLabel;
+    walletButton.dataset.walletAction=guidance.action;walletButton.setAttribute('aria-label',walletActionLabel);syncWalletBadge();
+    if (guidance.action === 'guide') {
+      walletButton.setAttribute('aria-controls', 'confirmation-safari-guide');
+      walletButton.setAttribute('aria-expanded', 'false');
+    } else {
+      walletButton.removeAttribute('aria-controls');
+      walletButton.removeAttribute('aria-expanded');
+    }
     $('[data-confirmation-device]').textContent=value.admission.status==='confirmed'?guidance.message:'';$('[data-confirmation-device]').hidden=value.admission.status!=='confirmed';
     if (value.card) {
       root.dataset.cardFormat = value.card.format;
@@ -104,9 +118,10 @@ if (root) {
       $('[data-confirmation-organization]').textContent = value.card.identity;
       $('[data-confirmation-save-heading]').textContent = '领取纪念卡';
       const device = $('[data-confirmation-device]');
-      device.textContent = guidance.action === 'guide' ? '请在 Safari 打开本页以加入 Apple Wallet。'
-        : !value.wallet.ready && value.card.ready && !/Android/iu.test(navigator.userAgent) ? 'Apple Wallet 暂不可用，可先保存 JPEG。'
-        : value.wallet.ready && !value.card.ready && value.card.format === 'both' ? 'JPEG 暂不可用，请稍后重新读取。' : '';
+      const jpegReady = value.card.format !== 'wallet' && value.card.ready;
+      device.textContent = !value.wallet.ready && jpegReady ? 'Apple Wallet 暂不可用，可先保存 JPEG。'
+        : value.wallet.ready && !jpegReady ? 'JPEG 暂不可用，请稍后重新读取。'
+        : value.wallet.ready && !guidance.showWallet ? 'Apple Wallet 适用于 iPhone。' : '';
       device.hidden = !device.textContent;
       document.title = '电子纪念卡 · ARTDiCO HOST';
     } else renderGroup(value);
@@ -124,7 +139,10 @@ if (root) {
       const blob = await renderCommemorativeJpeg(value);
       if (current !== generation) return;
       jpegUrl = URL.createObjectURL(blob);
-      $('[data-confirmation-jpeg-image]').src = jpegUrl;
+      const image = $('[data-confirmation-jpeg-image]');
+      image.alt = '电子纪念卡，' + value.attendee.name + '，入场身份：' + value.card.identity;
+      image.src = jpegUrl;
+      root.dataset.cardPreview = '';
       $('[data-confirmation-jpeg-preview]').hidden = false;
       jpegDownload.href = jpegUrl;
       jpegDownload.hidden = false;
@@ -171,6 +189,7 @@ if (root) {
     const guidance=walletGuidance();
     if(guidance.action==='guide'){
       releaseWallet();$('[data-confirmation-wechat-step]').hidden=!guidance.wechat;$('[data-confirmation-safari-guide]').hidden=false;
+      walletButton.setAttribute('aria-expanded', 'true');
       $('#confirmation-safari-heading').focus();return;
     }
     if(!['add','download'].includes(guidance.action))return;

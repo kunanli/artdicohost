@@ -8,6 +8,7 @@ import { contentType } from '../scripts/deploy-oss.mjs';
 import { verifyPublicDomain, PUBLIC_SITE_ORIGIN } from '../scripts/verify-public-domain.mjs';
 
 const commit = 'a'.repeat(40), PRIVATE = 'PRIVATE-SYNTHETIC-RESPONSE';
+const PRIVATE_PAGE = '/registration/confirmation/';
 // The previous synthetic release had 28 exact objects. This stage adds precisely
 // the short entry page, four official-badge variants, and the public check-in notice.
 const ENTRY_PUBLIC_OBJECTS = Object.freeze(['r/index.html', 'wallet/add-to-apple-wallet-cn.png', 'wallet/add-to-apple-wallet-cn.svg',
@@ -32,8 +33,11 @@ async function fixture(t) {
   const calls = [];
   const fetchFn = async (url, settings) => {
     calls.push({ url, settings });
-    const path = decodeURIComponent(new URL(url).pathname.slice(1)), bytes = await readFile(resolve(output, path));
-    return new Response(bytes, { headers: { 'content-type': contentType(path), 'content-length': String(bytes.length), 'cache-control': 'public,no-cache' } });
+    const pathname = new URL(url).pathname;
+    const path = pathname === PRIVATE_PAGE ? 'registration/confirmation/index.html' : decodeURIComponent(pathname.slice(1));
+    const bytes = await readFile(resolve(output, path));
+    return new Response(bytes, { headers: { 'content-type': contentType(path), 'content-length': String(bytes.length),
+      'cache-control': pathname === PRIVATE_PAGE ? 'private,no-store' : 'public,no-cache' } });
   };
   return { output, manifest, fetchFn, calls };
 }
@@ -53,8 +57,10 @@ test('real-domain verification validates publication then reads every exact obje
   for (const route of PUBLIC_ADMIN_PAGE_ALIASES) {
     assert.ok(f.calls.some(({ url }) => new URL(url).pathname === route + 'index.html'), route);
   }
+  assert.equal(f.calls.filter(({ url }) => url === PUBLIC_SITE_ORIGIN + PRIVATE_PAGE).length, 1);
   for (const { url, settings } of f.calls) {
-    assert.equal(new URL(url).origin, 'https://artdico.host'); assert.equal(new URL(url).search, '?release=' + commit);
+    const parsed = new URL(url);
+    assert.equal(parsed.origin, 'https://artdico.host'); assert.equal(parsed.search, parsed.pathname === PRIVATE_PAGE ? '' : '?release=' + commit);
     assert.equal(settings.credentials, 'omit'); assert.equal(settings.redirect, 'error'); assert.equal(settings.cache, 'no-store');
     assert.equal(settings.headers['accept-encoding'], 'identity'); assert.equal(Object.hasOwn(settings.headers, 'authorization'), false); assert.equal(Object.hasOwn(settings.headers, 'cookie'), false);
     assert.equal(settings.signal.aborted, true);
@@ -74,7 +80,9 @@ test('reviewed public cache policy tolerates directive order, case and whitespac
   const f = await fixture(t);
   for (const value of ['PUBLIC, NO-CACHE', 'no-cache,public', ' public , no-cache ']) {
     const result = await verifyPublicDomain({ directory: f.output, commit, fetchFn: async (...args) => {
-      const response = await f.fetchFn(...args); response.headers.set('cache-control', value); return response;
+      const response = await f.fetchFn(...args);
+      response.headers.set('cache-control', new URL(args[0]).pathname === PRIVATE_PAGE ? 'NO-STORE, Private' : value);
+      return response;
     } });
     assert.equal(result.files, f.manifest.files.length);
   }
@@ -92,6 +100,11 @@ test('missing, unexpected or contradictory cache policy cannot verify exact matc
     } }));
     assert.deepEqual(reports, [], 'incorrect cache policy is rejected before reporting the first object as verified');
   }
+  await reject(verifyPublicDomain({ directory: f.output, commit, fetchFn: async (...args) => {
+    const response = await f.fetchFn(...args);
+    if (new URL(args[0]).pathname === PRIVATE_PAGE) response.headers.set('cache-control', 'public,no-cache');
+    return response;
+  } }));
 });
 
 test('wrong bytes, HTML type, attachment, response encoding, redirects and oversized declarations never verify', async t => {

@@ -135,6 +135,7 @@ test('direct PutObject arguments pin destination, content type, cache and avoid 
   assert.deepEqual(args.slice(0, 5), ['api', 'put-object', '--bucket', 'artdicohost-web-hk', '--key']);
   assert.ok(args.includes('text/javascript; charset=utf-8'));
   assert.ok(args.includes('public,no-cache'));
+  assert.ok(putObjectArgs('/publication', { path: 'registration/confirmation/index.html' }).includes('private,no-store'));
   assert.equal(args.some(item => /--acl|delete|sync|test-secret|access-key/.test(item)), false);
   assert.equal(contentType('font.woff2'), 'font/woff2');
   assert.equal(contentType('release.json'), 'application/json; charset=utf-8');

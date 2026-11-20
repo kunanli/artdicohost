@@ -251,12 +251,23 @@ export function createConfirmationClient({ apiOrigin, pageOrigin, fetchFn = glob
       throw new Error('暂时无法核对最新报名状态，请稍后按「重新读取」。无需重复报名。');
     } finally { clearTimeout(timer);signal?.removeEventListener('abort',abort); controller.abort(); }
   }
+  async function readView(path, receiptToken, signal, includeCardFormats) {
+    const bytes = await request(path, receiptToken, 'application/json', 64 * 1024, signal, includeCardFormats);
+    let value;
+    try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); }
+    catch { throw new Error('报名状态未通过核对，请稍后重新读取。'); }
+    const view = confirmationView(value);
+    if (!view) throw new Error('报名状态未通过核对，请稍后重新读取。');
+    return view;
+  }
   return Object.freeze({
     get available() { return available; },
     async read(receiptToken,{signal,includeCardFormats=false}={}) {
-      const bytes = await request('/api/admin/registration/confirmation',receiptToken,'application/json',64 * 1024,signal,includeCardFormats);
-      let value; try { value = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)); } catch { throw new Error('报名状态未通过核对，请稍后重新读取。'); }
-      const view = confirmationView(value); if (!view) throw new Error('报名状态未通过核对，请稍后重新读取。'); return view;
+      const view = await readView('/api/admin/registration/confirmation', receiptToken, signal, includeCardFormats);
+      if (includeCardFormats && view.card && view.card.format !== 'both') {
+        return readView('/api/registration/confirmation', receiptToken, signal, includeCardFormats);
+      }
+      return view;
     },
     async wallet(receiptToken,{signal}={}) {
       const bytes = await request('/api/admin/registration/wallet',receiptToken,'application/vnd.apple.pkpass',2 * 1024 * 1024,signal);

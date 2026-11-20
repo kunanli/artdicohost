@@ -81,8 +81,9 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         const input = await body(request); keys(input, ['receiptToken'], ['receiptToken']);
         if (typeof input.receiptToken !== 'string' || input.receiptToken.length > 4096) reject();
         if (request.signal.aborted) reject();
-        // Older cached pages expect the original single-format response.
-        if (request.headers.get('accept') === CARD_FORMATS_ACCEPT) input.includeCardFormats = true;
+        // The canonical receipt route always returns both card formats. The
+        // older route still negotiates for cached single-format clients.
+        if (url.pathname === PUBLIC_PATHS[0] || request.headers.get('accept') === CARD_FORMATS_ACCEPT) input.includeCardFormats = true;
         return json(await service.confirmation(input));
       }
       if (![SETTINGS, DISPATCH, CONFIRMATION_PREVIEW, REMINDER_PREVIEW, REMINDER_DISPATCH].includes(url.pathname) && !staffLink && !deliveryRead && !deliverySend && !reminderOperation && !confirmationOperation && !cards) reject('NOT_FOUND', 404);

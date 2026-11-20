@@ -113,9 +113,10 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
           verificationUrl = issued.admissionUrl;
         } else verificationUrl = API + '/api/admin/registration/wallet/verify/' + verificationToken(attendee, now);
         const data = buildAppleWalletPass({ ...config, attendee, verificationUrl, now });
-        const latest = await authorizedRegistration(attendee.registrationId);
+        const latest = await authorizedRegistration(attendee.registrationId, { includeCardCommunity: Boolean(attendee.cardCommunity) });
         if (!validRecord(latest) || latest.registrationId !== attendee.registrationId || latest.event.id !== attendee.event.id
-          || latest.admissionStatus !== 'confirmed' || latest.walletIdentity!==attendee.walletIdentity || accessRevision(latest) !== accessRevision(attendee)) return fixed('inactive');
+          || latest.admissionStatus !== 'confirmed' || latest.walletIdentity!==attendee.walletIdentity || accessRevision(latest) !== accessRevision(attendee)
+          || attendee.cardCommunity && (attendee.cardCommunity.site !== latest.cardCommunity?.site || attendee.cardCommunity.role !== latest.cardCommunity?.role)) return fixed('inactive');
         if (!unchangedEventFacts(checkedFacts, await readEventFactsReadiness(eventFactsReadiness))) return fixed('event_unverified');
         if (Date.parse(config.identity.expiresAt) <= current()) return fixed('not_ready');
         return { outcome: 'issued', data, contentType: 'application/vnd.apple.pkpass', filename: 'artdico-' + attendee.registrationId.slice(-12) + '.pkpass' };

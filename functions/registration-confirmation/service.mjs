@@ -4,8 +4,9 @@ import { plainObject, own, parseTimestamp } from '../registration-api/policy.mjs
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { createConfirmationTokens } from './tokens.mjs';
 import { createConfirmationRepository, canonicalConfirmationKind, formalConfirmationKind, commemorativeCardKind, confirmationNoticeId, confirmationRequestHash,
-  validConfirmationOperation, MAX_CONFIRMATION_BATCH, sameConfirmationScope as sameScope, cardResendCandidates, cardSendInProgress } from './repository.mjs';
-import { CARD_FORMATS, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
+  validConfirmationOperation, MAX_CONFIRMATION_BATCH, sameConfirmationScope as sameScope, cardResendCandidates, cardSendInProgress,
+  cardCommunityPrefix, createCardCommunityRepository } from './repository.mjs';
+import { CARD_FORMATS, WALLET_IDENTITIES, cardCommunityFields } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 import { buildPosterInvitationSettings } from '../../shared/organizer-progress.mjs';
 import { confirmationEmailPresentation } from './presentation.mjs';
@@ -59,10 +60,12 @@ export function createRegistrationConfirmationService({ registrationService, jou
   const expiry = expiresAt ?? entryExpiry + 90 * 24 * 60 * 60 * 1000;
   const tokens = createConfirmationTokens({ tokenSecret, eventId, expiresAt: expiry, clock });
   const prefix = 'cms/v1/registration-confirmations/' + eventId;
-  let repository, cardsRepository;
+  let repository, cardsRepository, communityRepository;
   const target = (kind) => commemorativeCardKind(kind)
     ? cardsRepository ??= createConfirmationRepository({ journal: journalFor('cms/v1/commemorative-cards/' + eventId), eventId, clock, cards: true })
     : repository ??= createConfirmationRepository({ journal: journalFor(prefix), eventId, clock });
+  const communities = () => communityRepository ??= createCardCommunityRepository({ journal: journalFor(cardCommunityPrefix(eventId)), eventId, clock });
+  const communityFor = (state, id) => state.entries[id]?.community ?? { site: '', role: '' };
   const currentEventFacts = () => readEventFactsReadiness(eventFactsReadiness);
   async function deliveryPermission(record) {
     if(personDeliveryPermission){try{const permission=await personDeliveryPermission(structuredClone(record));if(permission?.eligible!==true)return{eligible:false,reason:permission?.reason==='CONTACT_DECLINED'?'CONTACT_DECLINED':'PERMISSION_UNAVAILABLE'};}catch{return{eligible:false,reason:'PERMISSION_UNAVAILABLE'};}}
@@ -154,7 +157,13 @@ export function createRegistrationConfirmationService({ registrationService, jou
       admissionRevision: admission.revision, accessRevision: record.accessRevision ?? 0, ...(record.walletRequested?{walletRequested:true}:{}), ...(record.walletIdentity?{walletIdentity:record.walletIdentity}:{}), name: hidden ? '' : record.fields.name, organization: hidden ? '' : record.fields.organization ?? '',
       event: { ...eventFacts }, submittedAt: entry.committedAt, hasEmail: typeof record.fields.email === 'string' && Boolean(record.fields.email) };
   }
-  async function authorizedRegistration(registrationId) { return trustedProjection(registrationId, await loadRegistration(registrationId)); }
+  async function authorizedRegistration(registrationId, { includeCardCommunity = false } = {}) {
+    const value = trustedProjection(registrationId, await loadRegistration(registrationId));
+    if (includeCardCommunity && value.admissionStatus === 'confirmed') {
+      return { ...value, cardCommunity: communityFor(await communities().read(), registrationId) };
+    }
+    return value;
+  }
   async function authorizedContext(input) {
     const claims = tokens.verify(own(input, 'receiptToken'));
     if (!claims) failure('CONFIRMATION_NOT_FOUND', 404);
@@ -167,7 +176,9 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const { registrationId, loaded, cardFormat } = await authorizedContext(input);
     if (cardFormat && !(await deliveryPermission(loaded.record)).eligible) return null;
     const projected = trustedProjection(registrationId, loaded);
-    return cardFormat ? { ...projected, walletRequested: true } : projected;
+    if (!cardFormat) return projected;
+    return { ...projected, walletRequested: true,
+      ...(projected.admissionStatus === 'confirmed' ? { cardCommunity: communityFor(await communities().read(), registrationId) } : {}) };
   }
   /** Explicit, single-person staff read. No new registration, notice, or email. */
   async function staffConfirmationLink({ actor, registrationId } = {}) {
@@ -445,12 +456,14 @@ export function createRegistrationConfirmationService({ registrationService, jou
           }
         } catch { /* An unreadable entry QR must not be drawn as a valid card. */ }
       }
-      const [latest, wallet] = await Promise.all([authorizedContext(input), walletPromise]);
+      const [latest, wallet, community] = await Promise.all([authorizedContext(input), walletPromise, communities().read()]);
       if (latest.loaded.admission.status !== 'confirmed' || latest.loaded.record.walletIdentity !== value.walletIdentity
         || latest.loaded.record.fields.name !== value.name || !unchangedEventFacts(currentFacts, await currentEventFacts()) && currentFacts.ready) failure();
+      const cardCommunity = communityFor(community, registrationId);
       return { event: value.event, referenceCode: value.referenceCode, submittedAt: value.submittedAt,
         attendee: { name: value.name, organization: '' }, admission: { status: 'confirmed', kind: value.admissionKind, revision: value.admissionRevision },
         email: { status: 'not_applicable' }, wallet, groupInvite: null, invitation: { ready: false },
+        ...(cardCommunity.site || cardCommunity.role ? { cardCommunity } : {}),
         card: { format: both ? 'both' : cardFormat, identity: identity.label,
           ready: currentFacts.ready && (jpegRequested ? !needsEntryQr || Boolean(entryQr) : wallet.ready),
           ...(entryQr ? { entryQr } : {}) } };
@@ -860,7 +873,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!readerValid(actor)) failure('FORBIDDEN', 403);
     const { application, primary, aliases } = await cardContext(registrationId);
     const { record, admission } = primary;
-    const delivery = await target('card_jpeg').read();
+    const [delivery, community] = await Promise.all([target('card_jpeg').read(), communities().read()]);
     const related = relatedNotices(delivery.value, aliases, 'card_jpeg'), state = cardDelivery(related, record);
     const sendInProgress = cardSendInProgress(related, clock());
     const mayResend = admission.status === 'confirmed' && record.walletIdentity && ['unknown', 'provider_accepted'].includes(state.status);
@@ -873,7 +886,21 @@ export function createRegistrationConfirmationService({ registrationService, jou
       admissionStatus: admission.status, admissionRevision: admission.revision, reviewRevision: record.reviewRevision, accessRevision: record.accessRevision ?? 0,
       deliveryRevision: delivery.value.revision, status: state.status, format: state.format, sentAt: state.sentAt,
       stage: cardStage(admission.status, record.walletIdentity, state, reason), reason, walletReady: wallet.ready,
-      canResend: Boolean(mayResend && !sendInProgress && !reason), sendInProgress };
+      canResend: Boolean(mayResend && !sendInProgress && !reason), sendInProgress,
+      cardCommunity: communityFor(community, record.id), communityRevision: community.cursor.version };
+  }
+  async function staffCardSaveCommunity({ actor, registrationId, primaryId, expectedCommunityRevision, cardCommunity } = {}) {
+    if (!readerValid(actor)) failure('FORBIDDEN', 403);
+    const community = cardCommunityFields(cardCommunity);
+    if (!ID.test(primaryId ?? '') || !Number.isSafeInteger(expectedCommunityRevision) || expectedCommunityRevision < 0 || !community) {
+      failure('INVALID_REQUEST', 400);
+    }
+    const current = await communities().read(), { primary } = await cardContext(registrationId);
+    if (current.cursor.version !== expectedCommunityRevision || primary.record.id !== primaryId || primary.admission.status !== 'confirmed') {
+      failure('REVISION_CONFLICT', 409);
+    }
+    try { return await communities().save(current, { registrationId: primaryId, community, actorId: actor.id }); }
+    catch (error) { if (conflict(error)) failure('REVISION_CONFLICT', 409); throw error; }
   }
   async function staffCardSaveIdentity({ actor, registrationId, primaryId, expectedRevision, identity } = {}) {
     if (!readerValid(actor)) failure('FORBIDDEN', 403);
@@ -913,7 +940,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     return notify(primaryId, { kind: 'card_' + format, actorId: actor.id, retryRejected: true, expectedScope: scope, card });
   }
   return Object.freeze({ prefix, forSavedReceipt, notifyApplicationReceived, authorize, authorizedRegistration, confirmation, staffConfirmationLink, settings, setSettings, dispatch,
-    staffCardDirectory, staffCardDetails, staffCardSaveIdentity, staffCardApprove, staffSendCard,
+    staffCardDirectory, staffCardDetails, staffCardSaveIdentity, staffCardSaveCommunity, staffCardApprove, staffSendCard,
     staffConfirmationPreview: input => staffNoticePreview(input, 'registration'), confirmationOperation,
     staffReminderPreview: input => staffNoticePreview(input, 'pre_event_reminder'), dispatchReminder: input => dispatch(input, 'pre_event_reminder'), reminderOperation,
     notifyApproved: input => notifyBatch(input, 'registration'), notifyPromoted: input => notifyBatch(input, 'promotion'), staffHistory, staffDirectory, staffDeliveryState });

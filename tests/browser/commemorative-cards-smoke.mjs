@@ -116,6 +116,14 @@ try {
       assert.match(await page.locator('[data-card-delivery-formats]').textContent(), /同一链接领取/u);
       assert.equal(await page.locator('[data-card-identity-value] span').innerText(), '嘉宾');
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+      if (device === 'safari') {
+        await page.locator('[data-card-community-summary]').click();
+        await page.getByLabel('GGJ 站点').fill('GGJ 合成站');
+        await page.getByLabel('社群角色').fill('站点组织者');
+        await page.getByRole('button', { name: '保存 GGJ 社群' }).click();
+        await page.getByRole('status').filter({ hasText: 'GGJ 社群已保存。' }).waitFor();
+        assert.match(await page.locator('[data-card-community-summary]').textContent(), /GGJ 合成站 · 站点组织者/u);
+      }
       assert.equal(cardMessages().length, 0);
       await page.screenshot({ path: resolve(output, 'staff-' + width + '.png'), fullPage: true });
       await page.locator('[data-card-delivery] button').click();
@@ -151,6 +159,12 @@ try {
         const image = page.locator('[data-confirmation-jpeg-image]');
         await page.waitForFunction(node => node.complete && node.naturalWidth === 1030 && node.naturalHeight === 1510, await image.elementHandle());
         assert.match(await image.getAttribute('alt'), /入场身份：嘉宾/u);
+        if (device === 'safari') {
+          assert.equal(await page.locator('[data-confirmation-community]').innerText(), 'GGJ 合成站 · 站点组织者');
+          assert.match(await image.getAttribute('alt'), /GGJ 合成站 · 站点组织者/u);
+        } else {
+          assert.equal(await page.locator('[data-confirmation-community]').isVisible(), false);
+        }
         assert.equal(await image.evaluate(node => node.clientWidth === node.closest('.confirmation-save').clientWidth), true);
         assert.equal(await image.evaluate(node => {
           const canvas = document.createElement('canvas');
@@ -176,7 +190,9 @@ try {
           const pass = await walletDownload;
           assert.equal(pass.suggestedFilename(), 'artdico-host.pkpass');
           const files = passFiles(await readFile(await pass.path()));
-          assert.equal(JSON.parse(files.get('pass.json')).semantics.admissionLevel, '嘉宾');
+          const walletPass = JSON.parse(files.get('pass.json'));
+          assert.equal(walletPass.semantics.admissionLevel, '嘉宾');
+          assert.equal(walletPass.eventTicket.backFields.find(field => field.key === 'ggj-community').value, 'GGJ 合成站 · 站点组织者');
         } else if (device === 'chrome') {
           assert.equal(await walletButton.getAttribute('data-wallet-action'), 'guide');
           assert.equal(await page.locator('[data-confirmation-safari-guide]').isVisible(), false);

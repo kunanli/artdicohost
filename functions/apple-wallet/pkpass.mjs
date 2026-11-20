@@ -1,4 +1,4 @@
-import { WALLET_IDENTITIES } from '../../shared/general-application.mjs';
+import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel } from '../../shared/general-application.mjs';
 import { createHash, createPrivateKey, X509Certificate } from 'node:crypto';
 import { derChildren, oid, signManifest } from './der.mjs';
 
@@ -95,6 +95,8 @@ export function createPassArchive(files, now) {
 
 export function buildAppleWalletPass({ identity, attendee, organizationName, verificationUrl, now = Date.now() } = {}) {
   const event = attendee?.event, walletIdentity=WALLET_IDENTITIES.find(item=>item.value===attendee?.walletIdentity);
+  const community = walletIdentity && cardCommunityLabel(cardCommunityFields(attendee?.cardCommunity));
+  const communityFields = community ? [{ key: 'ggj-community', label: 'GGJ 社群', value: community }] : [];
   if(attendee?.walletIdentity!==undefined&&!walletIdentity)fail('WALLET_PASS_INPUT_INVALID');
   if (!identity?.privateKey || attendee?.admissionStatus !== 'confirmed' || !/^[A-Za-z0-9_-]{43}$/u.test(attendee.registrationId ?? '')
     || attendee.referenceCode !== attendee.registrationId
@@ -122,7 +124,9 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
       primaryFields: [{ key: 'event', label: '活动', value: event.title }],
       secondaryFields: [{ key: 'name', label: '参加人', value: attendee.name, semantics: { attendeeName: attendee.name } }],
       auxiliaryFields: [{ key: 'date', label: '日期', value: event.date }, { key: 'time', label: '时间', value: event.time }],
+      ...(communityFields.length ? { additionalInfoFields: communityFields } : {}),
       backFields: [{ key: 'venue', label: '地点', value: event.venue }, { key: 'reference', label: '报名编号', value: attendee.referenceCode },
+        ...communityFields,
         { key: 'notice', label: '说明', value: '此凭证仅表示参会名额。讲者、展位及住宿另行确认；请以在线核对结果为准。' }],
     } };
   const files = [{ name: 'pass.json', data: Buffer.from(JSON.stringify(pass)) },

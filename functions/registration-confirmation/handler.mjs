@@ -107,11 +107,15 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         if (origin !== apiOrigin || !equalToken(request.headers.get('x-csrf-token'), session.csrfToken)) reject('CSRF_REJECTED', 403);
         const input = await body(request);
         if (request.signal.aborted) reject();
-        const required = approve ? ['primaryId', 'expectedRevision', 'operationId'] : request.method === 'PATCH' ? ['primaryId', 'expectedRevision', 'identity']
-          : ['primaryId', 'expectedRevision', 'expectedAccessRevision', 'identity', 'format'];
-        const sendingCard = !approve && request.method === 'POST';
-        keys(input, sendingCard ? [...required, 'resend'] : required, required);
-        const method = approve ? 'staffCardApprove' : request.method === 'PATCH' ? 'staffCardSaveIdentity' : 'staffSendCard';
+        const patchMethod = Object.hasOwn(input, 'cardCommunity') ? 'staffCardSaveCommunity' : 'staffCardSaveIdentity';
+        const method = approve ? 'staffCardApprove' : request.method === 'PATCH' ? patchMethod : 'staffSendCard';
+        const required = {
+          staffCardApprove: ['primaryId', 'expectedRevision', 'operationId'],
+          staffCardSaveIdentity: ['primaryId', 'expectedRevision', 'identity'],
+          staffCardSaveCommunity: ['primaryId', 'expectedCommunityRevision', 'cardCommunity'],
+          staffSendCard: ['primaryId', 'expectedRevision', 'expectedAccessRevision', 'identity', 'format'],
+        }[method];
+        keys(input, method === 'staffSendCard' ? [...required, 'resend'] : required, required);
         return json(await service[method]({ ...input, actor, registrationId }));
       }
       if (staffLink || deliveryRead) {

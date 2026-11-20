@@ -3,6 +3,19 @@ import { identityOptions } from './registration-schema.mjs';
 export const GENERAL_APPLICATION_INTAKE = 'general-v2';
 export const WALLET_APPLICATION_INTAKE = 'wallet-v1';
 export const CARD_FORMATS = Object.freeze(['jpeg', 'wallet']);
+export const CARD_COMMUNITY_FIELD_LENGTH = 36;
+export function cardCommunityFields(value) {
+  if (!plain(value) || Object.keys(value).length !== 2) return null;
+  const normalize = field => {
+    if (typeof field !== 'string' || field.length > CARD_COMMUNITY_FIELD_LENGTH * 2 || !field.isWellFormed()
+      || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(field)) return null;
+    const result = field.normalize('NFC').trim();
+    return [...result].length <= CARD_COMMUNITY_FIELD_LENGTH ? result : null;
+  };
+  const site = normalize(own(value, 'site')), role = normalize(own(value, 'role'));
+  return site === null || role === null ? null : { site, role };
+}
+export const cardCommunityLabel = community => community ? [community.site, community.role].filter(Boolean).join(' · ') : '';
 export const WALLET_IDENTITIES = Object.freeze([
   {value:'attendee',label:'一般来宾'},{value:'guest',label:'嘉宾'},{value:'speaker',label:'讲者'},
   {value:'exhibitor',label:'参展者'},{value:'organizer',label:'GGJ 组织者'},{value:'student',label:'学生'},

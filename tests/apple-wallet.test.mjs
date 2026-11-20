@@ -210,6 +210,12 @@ test('commemorative passes sign a clear native strip with card details below it'
   assert.deepEqual(pass.eventTicket.auxiliaryFields.map(({value})=>value),[record.event.date,record.event.time,record.event.venue]);
   assert.equal(pass.eventTicket.backFields.find(field=>field.key==='venue').value,record.event.venue);
   assert.deepEqual(pass.eventTicket.backFields.slice(0, 6).map(({value})=>value), [record.name,'嘉宾',record.event.title,record.event.date,record.event.time,record.event.venue]);
+  const directions = pass.eventTicket.backFields.at(-1), map = new URL(directions.value);
+  assert.equal(directions.key, 'directions');
+  assert.equal(map.origin, 'https://maps.apple.com');
+  assert.equal(map.pathname, '/directions');
+  assert.deepEqual([...map.searchParams], [['destination', record.event.venue]]);
+  assert.equal(directions.attributedValue, `<a href="${map.href}">在 Apple 地图中查看路线</a>`);
   const keys=Object.values(pass.eventTicket).flat().map(field=>field.key);
   assert.equal(new Set(keys).size,keys.length);
   assert.equal(pass.semantics.attendeeName, record.name);

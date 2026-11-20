@@ -214,13 +214,18 @@ try {
           assert.equal(files.has('strip@2x.png'), true);
           assert.equal(files.has('background.png'), false);
           assert.equal(files.has('artwork.png'), false);
-          assert.equal(walletPass.logoText, 'GGJ 2026 × ARTDiCO HOST');
+          assert.equal(walletPass.logoText, 'GGJ China Meetup 2026 x ARTDiCO HOST');
           assert.equal(walletPass.barcodes, undefined);
           assert.equal(walletPass.expirationDate, undefined);
           assert.equal(walletPass.eventTicket.primaryFields, undefined);
           assert.deepEqual(walletPass.eventTicket.secondaryFields.map(field => field.value), ['合成纪念卡申请人', '嘉宾']);
-          assert.deepEqual(walletPass.eventTicket.auxiliaryFields.map(field => field.key), ['date', 'time', 'venue-short', 'ggj-community-short']);
+          assert.deepEqual(walletPass.eventTicket.auxiliaryFields.map(field => field.key), ['date', 'time', 'ggj-community-short', 'venue-short']);
+          assert.deepEqual(walletPass.eventTicket.auxiliaryFields[2], {
+            key: 'ggj-community-short', label: 'GGJ 站点身份', value: '站点组织者 · GGJ 合成站', row: 1,
+          });
           assert.equal(walletPass.eventTicket.backFields.find(field => field.key === 'ggj-community').value, 'GGJ 合成站 · 站点组织者');
+          assert.equal(new URL(walletPass.eventTicket.backFields.at(-1).value).searchParams.get('destination'),
+            '深圳市前海合作区梦海大道5188号前海5号楼');
         } else if (device === 'chrome') {
           assert.equal(await walletButton.getAttribute('data-wallet-action'), 'guide');
           assert.equal(await page.locator('[data-confirmation-safari-guide]').isVisible(), false);

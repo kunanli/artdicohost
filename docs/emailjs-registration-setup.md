@@ -1,5 +1,11 @@
 # support@artdico.co 報名確認信設定
 
+## 電子紀念卡郵件
+
+Web 與 API 部署含紀念卡郵件的版本後，將既有 EmailJS 確認模板的 Content 更新為 [完整 HTML](templates/emailjs-registration-confirmation.html)，Subject 設為 `{{email_subject}}`。沿用目前的 Template ID、收件人與寄件設定。
+
+`{{email_heading}}` 與 `{{email_summary}}` 使用雙大括號轉義。只有 `{{{confirmation_actions}}}` 輸出由伺服器生成的 HTML，當中含固定 HOST 橫幅、個人卡片資料與兩個私人領取入口。JPEG 入口隨卡片提供，Apple 錢包入口需簽發服務就緒。卡片個人資料在郵件正文中呈現，載入 HOST 橫幅只會請求固定的公開圖片。
+
 ## 2026-11-03：收到的信缺少 Wallet 圖標
 
 先分開核對三層：官方PNG是否仍在、服務端實際`confirmation_actions`是否包含`<img>`、EmailJS目前Content是否用`{{{confirmation_actions}}}`輸出原HTML。Repo範本存在、API接受及版型預覽都不能證明實際收件已含圖標。官方圖片網址為`https://artdico.host/wallet/add-to-apple-wallet-cn.png`及`https://artdico.host/wallet/add-to-apple-wallet-en.png`；無需重新上傳或繪製。
@@ -51,7 +57,7 @@
 | Subject | `{{email_subject}}` |
 | CC／BCC | 留空 |
 
-4. Content 的 HTML 原始碼使用 [可貼上的模板](templates/emailjs-registration-confirmation.html)。保留 **`{{invitation_text}}`** 的雙大括號 escaping 和 **`{{{confirmation_actions}}}`** 的領取按鈕。紀念卡通知與其他活動通知共用這份模板，主旨和正文由伺服器依寄送用途設定。上線驗收時核對 EmailJS 控制台實際配置的主旨也為 `{{email_subject}}`。
+4. 將 Content 的 HTML 原始碼更新為 [完整 HTML](templates/emailjs-registration-confirmation.html)，並依上方紀念卡郵件步驟和 Web／API 部署版本同步。
 5. 這份模板由活動後端明確呼叫一次；不再串接 EmailJS 的額外 Auto-Reply 模板，以免一份報名收到重複通知。沒有新增附件或付費需求。
 6. 在 Account 找到現有 Public Key／Private Key；依帳戶目前 Security 設定核對服務端 API 的授權。活動後端會傳 `accessToken`，目前程式要求兩種 key 都存在。不要因新增此站而輪替 Deck 共用 key，或直接改變可能影響原站的帳戶級限制。
 

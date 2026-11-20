@@ -9,10 +9,9 @@ import { verifyPublicDomain, PUBLIC_SITE_ORIGIN } from '../scripts/verify-public
 
 const commit = 'a'.repeat(40), PRIVATE = 'PRIVATE-SYNTHETIC-RESPONSE';
 const PRIVATE_PAGE = '/registration/confirmation/';
-// The previous synthetic release had 28 exact objects. This stage adds precisely
-// the short entry page, four official-badge variants, and the public check-in notice.
 const ENTRY_PUBLIC_OBJECTS = Object.freeze(['r/index.html', 'wallet/add-to-apple-wallet-cn.png', 'wallet/add-to-apple-wallet-cn.svg',
-  'wallet/add-to-apple-wallet-en.png', 'wallet/add-to-apple-wallet-en.svg', 'admin/checkin/index.html', 'admin/cards/index.html']);
+  'wallet/add-to-apple-wallet-en.png', 'wallet/add-to-apple-wallet-en.svg', 'wallet/host-card-banner.png',
+  'admin/checkin/index.html', 'admin/cards/index.html']);
 async function fixture(t) {
   const directory = await mkdtemp(resolve(tmpdir(), 'artdico-domain-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -26,6 +25,7 @@ async function fixture(t) {
     await writeFile(resolve(dist, 'wallet/add-to-apple-wallet-' + locale + '.png'), Buffer.from([137, 80, 78, 71, locale === 'cn' ? 1 : 2]));
     await writeFile(resolve(dist, 'wallet/add-to-apple-wallet-' + locale + '.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><title>synthetic ' + locale + ' badge</title></svg>');
   }
+  await writeFile(resolve(dist, 'wallet/host-card-banner.png'), 'synthetic-public-card-art');
   await writeFile(resolve(dist, 'invitations/template-blank.png'), Buffer.from([0, 1, 2, 255]));
   await writeFile(resolve(dist, 'invitations/ggj2026-poster-v2.webp'), Buffer.from([0, 1, 2, 255]));
   await writeFile(resolve(dist, '_astro/public.js'), '/* synthetic public script */');
@@ -47,7 +47,7 @@ test('real-domain verification validates publication then reads every exact obje
   const f = await fixture(t), reports = [];
   const result = await verifyPublicDomain({ directory: f.output, commit, fetchFn: f.fetchFn, report: line => reports.push(line) });
   assert.deepEqual(result, { verified: true, origin: PUBLIC_SITE_ORIGIN, commit, files: f.manifest.files.length });
-  assert.equal(f.manifest.files.length, 28 + 7, 'the fixture adds exactly seven reviewed public objects');
+  assert.equal(f.manifest.files.length, 28 + ENTRY_PUBLIC_OBJECTS.length);
   assert.equal(f.calls.length, f.manifest.files.length); assert.equal(reports.length, f.manifest.files.length);
   for (const path of ENTRY_PUBLIC_OBJECTS) {
     assert.equal(f.manifest.files.filter(item => item.path === path).length, 1, path);

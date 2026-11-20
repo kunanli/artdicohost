@@ -190,7 +190,7 @@ test('new Wallet passes use the same dedicated short staff check-in capability a
   assert.equal(calls, 0);
 });
 
-test('commemorative requests require a staff identity and sign poster artwork and full card fields', async () => {
+test('commemorative passes sign a clear native strip with card details below it', async () => {
   const pendingIdentity={...record,walletRequested:true};
   const waiting=service({authorize:async()=>pendingIdentity,authorizedRegistration:async()=>pendingIdentity});
   assert.equal((await waiting.download({receiptToken:token})).outcome,'inactive');
@@ -203,25 +203,26 @@ test('commemorative requests require a staff identity and sign poster artwork an
   assert.equal(entryRequests,0);
   const files=passFiles(issued.data),pass=JSON.parse(files.get('pass.json'));
   const manifest=JSON.parse(files.get('manifest.json'));
-  assert.deepEqual(pass.preferredStyleSchemes,['posterEventTicket','eventTicket']);
-  assert.deepEqual(pass.eventTicket.headerFields,[{key:'identity',label:'卡面身份',value:'嘉宾'}]);
-  assert.equal(pass.eventTicket.primaryFields[0].value,record.name);
-  assert.equal(pass.eventTicket.secondaryFields[0].value,record.event.title);
+  assert.deepEqual(pass.preferredStyleSchemes,['eventTicket']);
+  assert.equal(pass.serialNumber, record.event.id + '-' + record.registrationId);
+  assert.equal(pass.eventTicket.primaryFields, undefined, 'primary fields would overlap the strip');
+  assert.deepEqual(pass.eventTicket.secondaryFields.map(({value})=>value), [record.name, '嘉宾']);
   assert.deepEqual(pass.eventTicket.auxiliaryFields.map(({value})=>value),[record.event.date,record.event.time,record.event.venue]);
   assert.equal(pass.eventTicket.backFields.find(field=>field.key==='venue').value,record.event.venue);
-  assert.deepEqual(pass.eventTicket.additionalInfoFields.map(({value})=>value),[record.name,'嘉宾',record.event.title,record.event.date,record.event.time,record.event.venue]);
+  assert.deepEqual(pass.eventTicket.backFields.slice(0, 6).map(({value})=>value), [record.name,'嘉宾',record.event.title,record.event.date,record.event.time,record.event.venue]);
   const keys=Object.values(pass.eventTicket).flat().map(field=>field.key);
   assert.equal(new Set(keys).size,keys.length);
   assert.equal(pass.semantics.attendeeName, record.name);
   assert.equal(pass.semantics.admissionLevel, undefined);
   for (const field of ['barcode','barcodes','expirationDate','relevantDate']) assert.equal(Object.hasOwn(pass,field),false);
   assert.match(pass.eventTicket.backFields.find(field=>field.key==='notice').value,/现场签到请使用活动行原电子票/u);
-  assert.equal(files.has('logo.png'),false);
-  for (const path of ['artwork.png','artwork@2x.png']) {
-    const artwork=files.get(path);
-    assert.equal(artwork.readUInt32BE(16),750);
-    assert.equal(artwork.readUInt32BE(20),1000);
-    assert.equal(manifest[path],createHash('sha1').update(artwork).digest('hex'));
+  assert.deepEqual([...files.keys()].sort(), ['icon.png','icon@2x.png','strip.png','strip@2x.png','strip@3x.png','pass.json','manifest.json','signature'].sort());
+  for (const scale of [1, 2, 3]) {
+    const path = scale === 1 ? 'strip.png' : 'strip@' + scale + 'x.png';
+    const strip = files.get(path);
+    assert.equal(strip.readUInt32BE(16), 375 * scale);
+    assert.equal(strip.readUInt32BE(20), 98 * scale);
+    assert.equal(manifest[path], createHash('sha1').update(strip).digest('hex'));
   }
 });
 

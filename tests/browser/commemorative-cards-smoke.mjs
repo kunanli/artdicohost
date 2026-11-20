@@ -209,15 +209,16 @@ try {
           assert.equal(pass.suggestedFilename(), 'artdico-host.pkpass');
           const files = passFiles(await readFile(await pass.path()));
           const walletPass = JSON.parse(files.get('pass.json'));
-          assert.deepEqual(walletPass.preferredStyleSchemes, ['posterEventTicket', 'eventTicket']);
+          assert.deepEqual(walletPass.preferredStyleSchemes, ['eventTicket']);
           assert.equal(files.has('logo.png'), false);
-          assert.equal(files.has('artwork@2x.png'), true);
-          assert.equal(walletPass.eventTicket.additionalInfoFields.find(field => field.key === 'poster-ggj-community').value, 'GGJ 合成站 · 站点组织者');
-          assert.equal(walletPass.eventTicket.headerFields[0].value, '嘉宾');
+          assert.equal(files.has('strip@2x.png'), true);
+          assert.equal(files.has('background.png'), false);
+          assert.equal(files.has('artwork.png'), false);
+          assert.equal(walletPass.logoText, 'GGJ 2026 × ARTDiCO HOST');
           assert.equal(walletPass.barcodes, undefined);
           assert.equal(walletPass.expirationDate, undefined);
-          assert.equal(walletPass.semantics.venueRegionName, '深圳');
-          assert.equal(walletPass.eventTicket.primaryFields[0].value, '合成纪念卡申请人');
+          assert.equal(walletPass.eventTicket.primaryFields, undefined);
+          assert.deepEqual(walletPass.eventTicket.secondaryFields.map(field => field.value), ['合成纪念卡申请人', '嘉宾']);
           assert.deepEqual(walletPass.eventTicket.auxiliaryFields.map(field => field.key), ['date', 'time', 'venue-short', 'ggj-community-short']);
           assert.equal(walletPass.eventTicket.backFields.find(field => field.key === 'ggj-community').value, 'GGJ 合成站 · 站点组织者');
         } else if (device === 'chrome') {

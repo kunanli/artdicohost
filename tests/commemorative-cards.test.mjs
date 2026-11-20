@@ -311,7 +311,7 @@ test('existing Wallet and JPEG links can redeem both keepsake formats after the 
     const files = passFiles(pass.data);
     assert.ok(files.get('signature').length > 1024);
     const passJson = JSON.parse(files.get('pass.json'));
-    assert.equal(passJson.eventTicket.headerFields[0].value, '嘉宾');
+    assert.equal(passJson.eventTicket.secondaryFields.find(field => field.key === 'identity').value, '嘉宾');
     assert.equal(passJson.barcodes, undefined);
     assert.equal(passJson.expirationDate, undefined);
   }

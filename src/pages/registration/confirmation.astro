@@ -25,6 +25,7 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
         <p class="confirmation-error" data-confirmation-error role="alert" hidden></p>
         <div data-confirmation-content hidden>
           <div class="confirmation-person"><strong data-confirmation-name></strong><span data-confirmation-organization></span></div>
+          <p class="confirmation-community" data-confirmation-community hidden></p>
           <p class="confirmation-contact" data-confirmation-outcome-contact hidden>如需核对，请联系 <a href={'mailto:'+PUBLIC_CONTACT_EMAIL}>{PUBLIC_CONTACT_EMAIL}</a>。<button type="button" data-confirmation-contact-copy>复制邮箱</button></p>
           <p class="confirmation-facts-warning" data-confirmation-facts-warning role="status" hidden>活动资料待核对，请稍后重新读取。</p>
           <dl class="confirmation-details">

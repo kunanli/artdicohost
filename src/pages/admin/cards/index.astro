@@ -1,7 +1,7 @@
 ---
 import SiteLayout from '../../../layouts/SiteLayout.astro';
 import StaffNavigation from '../../../components/StaffNavigation.astro';
-import { WALLET_IDENTITIES } from '../../../../shared/general-application.mjs';
+import { CARD_COMMUNITY_FIELD_LENGTH, WALLET_IDENTITIES } from '../../../../shared/general-application.mjs';
 import '../../../styles/admin.css';
 ---
 <SiteLayout title="纪念卡｜ARTDiCO HOST" description="核对纪念卡申请并寄送 JPEG 或 Apple Wallet。">
@@ -46,7 +46,17 @@ import '../../../styles/admin.css';
                   <dt>收件邮箱</dt><dd data-card-recipient></dd>
                   <dt data-card-identity-label hidden>卡面身份</dt><dd data-card-identity-value hidden><span></span> <button class="ah-admin-text-button" type="button" data-card-edit>修改</button></dd>
                 </dl>
+                <p class="card-muted" data-card-requested-identity hidden></p>
                 <details class="card-linked" data-card-linked hidden><summary>其他活动行编号</summary><ul></ul></details>
+                <details class="card-linked" data-card-community hidden>
+                  <summary data-card-community-summary>GGJ 社群（选填）</summary>
+                  <form data-card-community-form>
+                    <p class="card-muted" data-card-requested-community hidden></p>
+                    <div class="ah-admin-field"><label for="card-community-site">GGJ 站点</label><input id="card-community-site" name="site" maxlength={CARD_COMMUNITY_FIELD_LENGTH} /></div>
+                    <div class="ah-admin-field"><label for="card-community-role">社群角色</label><input id="card-community-role" name="role" maxlength={CARD_COMMUNITY_FIELD_LENGTH} /></div>
+                    <button class="ah-admin-button" type="submit">保存 GGJ 社群</button>
+                  </form>
+                </details>
                 <p class="card-state" data-card-state></p>
                 <p class="card-muted" data-card-sent-at hidden></p>
                 <p class="card-muted" data-card-delivery-block hidden></p>

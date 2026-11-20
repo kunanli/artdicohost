@@ -1,3 +1,5 @@
+import { cardCommunityLabel, commemorativeCardVenue } from '../../shared/general-application.mjs';
+
 // Coordinates follow the organizer-provided portrait card. The sample name
 // and sample QR are never part of the template.
 export const CARD_IMAGE = Object.freeze({ width: 1030, height: 1510 });
@@ -52,9 +54,9 @@ function drawWordmark(context) {
   context.fill();
 }
 
-function line(context, text, x, y, size, { maxWidth = 900, align = 'left' } = {}) {
-  context.fillStyle = '#fff';
-  context.font = '400 ' + size + 'px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+function line(context, text, x, y, size, { maxWidth = 900, align = 'left', color = '#fff', weight = 400 } = {}) {
+  context.fillStyle = color;
+  context.font = weight + ' ' + size + 'px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
   context.textAlign = align;
   context.fillText(text, x, y, maxWidth);
 }
@@ -78,16 +80,20 @@ export async function renderCommemorativeJpeg(view) {
   context.fillStyle = '#5b5b5b';
   context.fillRect(67, 597, 895, 1);
   context.fillRect(67, 781, 895, 1);
-  line(context, '参会人', 64, 680, 38);
-  line(context, view.attendee.name, 64, 735, 43, { maxWidth: 580 });
-  line(context, '入场身份', 962, 680, 38, { align: 'right' });
-  line(context, view.card.identity, 962, 735, 43, { maxWidth: 265, align: 'right' });
+  const community = cardCommunityLabel(view.cardCommunity);
+  const labelY = community ? 653 : 680;
+  const nameY = community ? 709 : 735;
+  line(context, '参会人', 64, labelY, 38);
+  line(context, view.attendee.name, 64, nameY, 43, { maxWidth: 580 });
+  if (community) line(context, community, 64, 758, 34, { maxWidth: 895, color: '#d9c7ff', weight: 600 });
+  line(context, '入场身份', 962, labelY, 38, { align: 'right' });
+  line(context, view.card.identity, 962, nameY, 43, { maxWidth: 265, align: 'right' });
   line(context, '日期', 64, 852, 29);
   line(context, view.event.date.replaceAll('-', ' - '), 64, 894, 29);
   line(context, '时间', 64, 956, 29);
   line(context, view.event.time.replace(/\s*[–—-]\s*/u, ' - '), 64, 999, 29);
   line(context, '地点', 962, 852, 29, { align: 'right' });
-  const venue = view.event.venue === '深圳市前海合作区梦海大道5188号前海5号楼' ? '深圳市南山区前海5号楼' : view.event.venue;
+  const venue = commemorativeCardVenue(view.event.venue);
   line(context, venue, 962, 894, 29, { maxWidth: 540, align: 'right' });
   if (qr) {
     context.fillStyle = '#fff';

@@ -6,7 +6,8 @@ import { createConfirmationTokens } from '../functions/registration-confirmation
 import { createRegistrationConfirmationService } from '../functions/registration-confirmation/service.mjs';
 import { createAppleWalletService } from '../functions/apple-wallet/service.mjs';
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
-import { createConfirmationRepository } from '../functions/registration-confirmation/repository.mjs';
+import { cardCommunityPrefix, createConfirmationRepository } from '../functions/registration-confirmation/repository.mjs';
+import { collectJournalBackupKeys } from '../functions/registration-admin/maintenance.mjs';
 import { createWalletFixture, passFiles } from './apple-wallet-fixture.mjs';
 import { confirmationView } from '../src/lib/confirmation-client.mjs';
 import { CARD_FORMATS_ACCEPT } from '../shared/confirmation-delivery.mjs';
@@ -110,6 +111,42 @@ test('staff send one commemorative card email and recipients can still save the 
   assert.equal((await publicCall('/api/admin/registration/wallet')).status, 503);
   assert.equal((await f.read()).status, 'provider_accepted');
   await f.call('POST', { ...body, format: 'wallet' }, f.make());
+  assert.equal(f.cardMessages().length, 1);
+});
+
+test('staff can update or clear the optional GGJ role on an already issued card without resending mail', async () => {
+  const f = await setup();
+  const send = await f.prepare();
+  assert.equal((await (await f.call('POST', send)).json()).status, 'provider_accepted');
+  const token = /#r=([A-Za-z0-9_.-]+)/u.exec(f.cardMessages()[0].template_params.invitation_text)[1];
+  const readCard = async () => {
+    const response = await f.app.handle(f.request('/api/registration/confirmation', {
+      method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken: token },
+    }));
+    assert.equal(response.status, 200);
+    return confirmationView(await response.json());
+  };
+  const original = await f.read();
+  assert.equal((await readCard()).cardCommunity, undefined);
+  const body = { primaryId: f.id, expectedCommunityRevision: original.communityRevision,
+    cardCommunity: { site: ' GGJ 合成站 ', role: '站点组织者' } };
+  const editor = await f.login('editor');
+  assert.equal((await f.app.handle(f.request(f.path, { method: 'PATCH', headers: editor, body }))).status, 403);
+  assert.equal((await f.call('PATCH', { ...body, cardCommunity: { ...body.cardCommunity, role: 'a\nb' } })).status, 400);
+  const patched = await f.call('PATCH', body);
+  assert.equal(patched.status, 200);
+  const saved = await patched.json();
+  assert.deepEqual(saved.cardCommunity, { site: 'GGJ 合成站', role: '站点组织者' });
+  assert.deepEqual((await f.read()).cardCommunity, saved.cardCommunity);
+  const latest = await readCard();
+  assert.equal(latest.card.identity, '嘉宾');
+  assert.deepEqual(latest.cardCommunity, saved.cardCommunity);
+  const prefix = cardCommunityPrefix(PEOPLE_FIXTURE_EVENT);
+  const backup = await collectJournalBackupKeys({ objects: f.objects, journalPrefixes: [prefix] });
+  assert.ok(backup.includes(prefix + '/commits.jsonl') && backup.some(key => key.startsWith(prefix + '/blobs/')));
+  assert.equal((await f.call('PATCH', body, f.make())).status, 409);
+  assert.equal((await f.call('PATCH', { ...body, expectedCommunityRevision: saved.communityRevision, cardCommunity: { site: '', role: '' } })).status, 200);
+  assert.equal((await readCard()).cardCommunity, undefined);
   assert.equal(f.cardMessages().length, 1);
 });
 

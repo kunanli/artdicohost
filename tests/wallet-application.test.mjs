@@ -37,10 +37,13 @@ function clientFixture(service,store,{lostResponse=false}={}){
  }});return{client,calls,api};
 }
 
-test('wallet requests keep private ticket references and contact text without accepting a self-selected identity',()=>{
+test('wallet requests accept preferences while reserving confirmed identities for staff',()=>{
  const value=fields();value.name='  合成申请人  ';value.huodongxingReference=' 000001234567890123456789 ';value.phone='+852 0012 3456';
+ Object.assign(value,{requestedWalletIdentity:'staff',ggjSite:'  GGJ 合成站  ',ggjRole:'  站点组织者  '});
  const checked=validateGeneralApplicationFields(value);assert.equal(checked.valid,true);assert.equal(checked.value.huodongxingReference,'000001234567890123456789');assert.equal(checked.value.phone,'+852 0012 3456');assert.equal(checked.value.name,'合成申请人');
- for(const patch of [{walletIdentity:'staff'},{admissionStatus:'confirmed'},{speaker:{}},{categories:['industry']},{participationInterests:['talk']},{huodongxingReference:123},{locale:'fr'},{email:'invalid'}])assert.equal(validateWalletApplicationFields({...fields(),...patch}).valid,false);
+ assert.deepEqual([checked.value.requestedWalletIdentity,checked.value.ggjSite,checked.value.ggjRole],['staff','GGJ 合成站','站点组织者']);
+ assert.equal(checked.value.walletIdentity,undefined);
+ for(const patch of [{walletIdentity:'staff'},{requestedWalletIdentity:'invalid'},{ggjRole:'站'.repeat(37)},{admissionStatus:'confirmed'},{speaker:{}},{categories:['industry']},{participationInterests:['talk']},{huodongxingReference:123},{locale:'fr'},{email:'invalid'}])assert.equal(validateWalletApplicationFields({...fields(),...patch}).valid,false);
  for(const name of ['name','email','wechat','huodongxingReference']){const missing=fields();delete missing[name];assert.equal(validateWalletApplicationFields(missing).valid,false);}
  let invoked=false;const accessor={...fields()};Object.defineProperty(accessor,'email',{enumerable:true,get(){invoked=true;return'private';}});assert.equal(validateWalletApplicationFields(accessor).valid,false);assert.equal(invoked,false);
 });
@@ -48,7 +51,7 @@ test('wallet requests keep private ticket references and contact text without ac
 test('wallet requests stay pending at full capacity and do not reserve, promote or automatically confirm a place',async()=>{
  const f=fixture(),legacy=f.make({publicRegistrationMode:'legacy'}),ordinary={intake:'general-v2',name:'合成一般来宾',email:'ordinary@example.invalid',categories:['other'],participationInterests:['attend']};
  const first=await legacy.submit(await input(legacy,ordinary,{}));assert.equal(first.receipt.admissionStatus,'confirmed');
- const service=f.make(),before=await service.getAdmissions({actor}),saved=await service.submit(await input(service));assert.equal(saved.outcome,'created');assert.equal(saved.receipt.admissionStatus,'pending_review');
+ const service=f.make(),before=await service.getAdmissions({actor}),saved=await service.submit(await input(service,{...fields(),requestedWalletIdentity:'staff'}));assert.equal(saved.outcome,'created');assert.equal(saved.receipt.admissionStatus,'pending_review');
  const after=await service.getAdmissions({actor});assert.equal(after.summary.confirmedCount,before.summary.confirmedCount);assert.equal(after.summary.waitlistCount,0);assert.equal(after.summary.pendingReviewCount,1);assert.equal(f.state.callbacks.at(-1).notify,false);assert.deepEqual(f.state.callbacks.at(-1).promotedIds,[]);
 });
 

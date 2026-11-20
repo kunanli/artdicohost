@@ -1,3 +1,5 @@
+import { cardCommunityLabel, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
+
 const root = document.querySelector('[data-card-admin]');
 const $ = selector => root.querySelector(selector);
 const api = '/api/admin/registration-confirmation/cards';
@@ -30,6 +32,10 @@ const detail = $('[data-card-details]');
 const heading = $('[data-card-name]');
 const identityForm = $('[data-card-identity-form]');
 const identity = $('#card-identity');
+const communityDetails = $('[data-card-community]');
+const communityForm = $('[data-card-community-form]');
+const communitySite = $('#card-community-site');
+const communityRole = $('#card-community-role');
 const deliveryForm = $('[data-card-delivery]');
 const approve = $('[data-card-approve]');
 const check = $('[data-card-check]');
@@ -126,6 +132,7 @@ function renderList() {
   if (focused) [...list.querySelectorAll('[data-application]')].find(button => button.dataset.application === focused)?.focus({ preventScroll: true });
 }
 function setView(value) {
+  const stayOnApplication = current?.registrationId === value?.registrationId;
   current = value;
   detail.hidden = !value;
   placeholder.hidden = Boolean(value);
@@ -134,6 +141,8 @@ function setView(value) {
     $('[data-card-linked] ul').replaceChildren();
     $('[data-card-correct-email]').removeAttribute('href');
     identity.value = '';
+    communityDetails.open = false;
+    communityForm.reset();
     return;
   }
   heading.textContent = value.name;
@@ -149,7 +158,24 @@ function setView(value) {
   }));
   $('[data-card-reference]').textContent = value.bookingReference;
   $('[data-card-recipient]').textContent = value.recipient || '未填写';
-  identity.value = value.identity;
+  const preferences = value.applicationPreferences ?? {};
+  const requestedIdentity = WALLET_IDENTITIES.find(option => option.value === preferences.requestedWalletIdentity);
+  identity.value = value.identity || requestedIdentity?.value || '';
+  const requestedIdentityText = $('[data-card-requested-identity]');
+  requestedIdentityText.hidden = !requestedIdentity;
+  requestedIdentityText.textContent = requestedIdentity ? '申请人所选身份：' + requestedIdentity.label : '';
+  if (!stayOnApplication) communityDetails.open = false;
+  communityDetails.hidden = value.admissionStatus !== 'confirmed' || !Number.isSafeInteger(value.communityRevision);
+  const suggestedCommunity = { site: preferences.ggjSite ?? '', role: preferences.ggjRole ?? '' };
+  const communityInput = value.cardCommunitySaved ? value.cardCommunity : suggestedCommunity;
+  communitySite.value = communityInput?.site ?? '';
+  communityRole.value = communityInput?.role ?? '';
+  const proposed = cardCommunityLabel(suggestedCommunity), proposalText = $('[data-card-requested-community]');
+  proposalText.hidden = !proposed;
+  proposalText.textContent = proposed ? '申请人填写：' + proposed : '';
+  const community = cardCommunityLabel(value.cardCommunity);
+  $('[data-card-community-summary]').textContent = community ? 'GGJ 社群 · ' + community
+    : proposed && !value.cardCommunitySaved ? 'GGJ 社群（申请人已填写）' : 'GGJ 社群（选填）';
   renderActions();
 }
 function renderActions() {
@@ -303,6 +329,24 @@ identityForm.addEventListener('submit', event => {
     try { await request(api + '/' + view.registrationId, 'PATCH', { primaryId: view.primaryId, expectedRevision: view.reviewRevision, identity: identity.value }); }
     catch (error) { if (csrf) await open(view.registrationId); throw error; }
     if (csrf) { await open(view.registrationId); message.textContent = '卡面身份已保存。'; }
+  }, true);
+});
+communityForm.addEventListener('submit', event => {
+  event.preventDefault();
+  void work(async () => {
+    const view = current;
+    if (!view || view.admissionStatus !== 'confirmed' || !Number.isSafeInteger(view.communityRevision)) return;
+    try {
+      await request(api + '/' + view.registrationId, 'PATCH', {
+        primaryId: view.primaryId,
+        expectedCommunityRevision: view.communityRevision,
+        cardCommunity: { site: communitySite.value, role: communityRole.value },
+      });
+    } catch (error) {
+      if (csrf) await open(view.registrationId);
+      throw error;
+    }
+    if (csrf) { await open(view.registrationId); message.textContent = 'GGJ 社群已保存。'; }
   }, true);
 });
 deliveryForm.addEventListener('submit', event => {

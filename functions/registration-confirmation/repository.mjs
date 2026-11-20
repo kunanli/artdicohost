@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { parseTimestamp } from '../registration-api/policy.mjs';
 import { validConfirmationDiagnostic } from '../../shared/confirmation-delivery.mjs';
+import { cardCommunityFields } from '../../shared/general-application.mjs';
 
 export const MAX_CONFIRMATION_AUDIT = 4000;
 export const MAX_CONFIRMATION_BATCH = 100;
@@ -21,6 +22,37 @@ export const confirmationRequestHash = value => createHash('sha256').update(JSON
 export const validConfirmationOperation = value => typeof value === 'string' && OP.test(value);
 export const formalConfirmationKind = kind => ['registration', 'promotion'].includes(kind);
 export const commemorativeCardKind = kind => kind === 'card_jpeg' || kind === 'card_wallet';
+
+export const cardCommunityPrefix = eventId => 'cms/v1/commemorative-cards/' + eventId + '/community';
+
+/** Isolate optional card copy from the admission, review, and mail journals. */
+export function createCardCommunityRepository({ journal, eventId, clock }) {
+  async function read() {
+    const { value, cursor } = await journal.read();
+    if (value === null && cursor?.version === 0) return { entries: {}, cursor };
+    if (!Number.isSafeInteger(cursor?.version) || cursor.version < 1
+      || !exact(value, ['schemaVersion', 'eventId', 'entries']) || value.schemaVersion !== 1 || value.eventId !== eventId
+      || !value.entries || Object.getPrototypeOf(value.entries) !== Object.prototype || Object.keys(value.entries).length > 1000) fail();
+    for (const [id, entry] of Object.entries(value.entries)) {
+      if (!ID.test(id) || !exact(entry, ['community', 'updatedAt', 'updatedBy'])
+        || !entry.community || !isDeepStrictEqual(cardCommunityFields(entry.community), entry.community)
+        || !at(entry.updatedAt) || !ACTOR.test(entry.updatedBy ?? '')) fail();
+    }
+    return { entries: value.entries, cursor };
+  }
+  async function save(current, { registrationId, community, actorId }) {
+    const updatedAt = new Date(clock()).toISOString();
+    if (!ID.test(registrationId) || typeof actorId !== 'string' || !ACTOR.test(actorId) || !at(updatedAt)
+      || !community || !isDeepStrictEqual(cardCommunityFields(community), community)) fail();
+    const entries = { ...current.entries, [registrationId]: { community, updatedAt, updatedBy: actorId } };
+    if (Object.keys(entries).length > 1000) fail();
+    const value = { schemaVersion: 1, eventId, entries };
+    const saved = await journal.commit(current.cursor, value);
+    if (saved?.cursor?.version !== current.cursor.version + 1 || !isDeepStrictEqual(saved.value, value)) fail();
+    return { cardCommunity: community, communityRevision: saved.cursor.version };
+  }
+  return { read, save };
+}
 export const sameConfirmationScope = (notice, scope) => (notice.accessRevision ?? 0) === scope.accessRevision
   && (scope.accessRevision === 0 || notice.recipientDigest === scope.recipientDigest);
 export const cardResendCandidates = (notices, scope) => notices.filter(notice => !notice.superseded

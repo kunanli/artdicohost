@@ -2,6 +2,7 @@ import { renderInvitation, invitationPngBlob } from '../lib/invitation-renderer.
 import { confirmationToken, confirmationLink, confirmationEmailMessage, confirmationNotificationMessage, confirmationStatusLabels, createConfirmationClient, confirmationInvitationFacts, prepareConfirmationInvitation, confirmationWalletGuidance, CONFIRMATION_INVITATION_FILENAME, CONFIRMATION_CONTACT_EMAIL, CONFIRMATION_GROUP_UNAVAILABLE } from '../lib/confirmation-client.mjs';
 
 import { renderCommemorativeJpeg } from '../lib/commemorative-card-image.mjs';
+import { cardCommunityLabel } from '../../shared/general-application.mjs';
 
 const root = document.querySelector('[data-confirmation-page]');
 if (root) {
@@ -53,6 +54,8 @@ if (root) {
   function clearGroup() { clearGroupImage();$('[data-confirmation-group-status]').textContent='';$('[data-confirmation-group]').hidden=true; }
   function clearPrivateView(){
     clearJpeg();
+    $('[data-confirmation-community]').textContent = '';
+    $('[data-confirmation-community]').hidden = true;
     for(const key of ['name','organization','event','date','time','venue','reference','email','application-received','pre-event-reminder'])$('[data-confirmation-'+key+']').textContent='';
     $('[data-confirmation-notifications]').hidden=true;$('[data-confirmation-private-link]').value='';$('[data-confirmation-copy-fallback]').hidden=true;
     walletButton.hidden=true;delete walletButton.dataset.walletAction;walletButton.removeAttribute('aria-label');walletButton.removeAttribute('aria-busy');if(walletLabel)walletLabel.textContent='加入 Apple Wallet';syncWalletBadge();
@@ -116,6 +119,9 @@ if (root) {
       $('[data-confirmation-heading]').textContent = '电子纪念卡';
       $('[data-confirmation-intro]').textContent = value.card.ready || value.wallet.ready ? '请保留活动行原电子票。' : '纪念卡暂时无法领取，请稍后重新读取。';
       $('[data-confirmation-organization]').textContent = value.card.identity;
+      const community = cardCommunityLabel(value.cardCommunity), communityText = $('[data-confirmation-community]');
+      communityText.textContent = community;
+      communityText.hidden = !community;
       $('[data-confirmation-save-heading]').textContent = '领取纪念卡';
       const device = $('[data-confirmation-device]');
       const jpegReady = value.card.format !== 'wallet' && value.card.ready;
@@ -140,7 +146,7 @@ if (root) {
       if (current !== generation) return;
       jpegUrl = URL.createObjectURL(blob);
       const image = $('[data-confirmation-jpeg-image]');
-      image.alt = '电子纪念卡，' + value.attendee.name + '，入场身份：' + value.card.identity;
+      image.alt = ['电子纪念卡', value.attendee.name, '入场身份：' + value.card.identity, cardCommunityLabel(value.cardCommunity)].filter(Boolean).join('，');
       image.src = jpegUrl;
       root.dataset.cardPreview = '';
       $('[data-confirmation-jpeg-preview]').hidden = false;

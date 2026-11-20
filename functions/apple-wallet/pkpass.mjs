@@ -1,5 +1,5 @@
 import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, commemorativeCardVenue } from '../../shared/general-application.mjs';
-import { eventConfig } from '../../src/config/event.mjs';
+import { eventConfig, PUBLIC_AGENDA_URL, PUBLIC_SHOWCASE_URL, appleMapsDirectionsUrl } from '../../src/config/event.mjs';
 import { createHash, createPrivateKey, X509Certificate } from 'node:crypto';
 import { derChildren, oid, signManifest } from './der.mjs';
 
@@ -141,8 +141,12 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
     { ...person, key: 'details-name' }, { ...identityField, key: 'details-identity' },
     { ...title, key: 'details-event' }, { ...date, key: 'details-date' }, { ...time, key: 'details-time' },
   ] : [];
-  const cardTitle = richCard && event.id === eventConfig.id ? 'GGJ China Meetup 2026 x ARTDiCO HOST' : null;
-  const mapUrl = 'https://maps.apple.com/directions?destination=' + encodeURIComponent(event.venue);
+  const meetupCard = richCard && event.id === eventConfig.id;
+  const cardTitle = meetupCard ? 'GGJ China Meetup 2026 x ARTDiCO HOST' : null;
+  const cardGuides = [];
+  if (meetupCard) cardGuides.push(['agenda', '讲座日程', PUBLIC_AGENDA_URL, '查看最新讲座与活动日程'],
+    ['showcase', '参展游戏', PUBLIC_SHOWCASE_URL, '浏览已公布的游戏与作品']);
+  if (richCard) cardGuides.push(['directions', '地图指引', appleMapsDirectionsUrl(event.venue), '在 Apple 地图中查看路线']);
   const pass = { formatVersion: 1, passTypeIdentifier: identity.passTypeIdentifier, serialNumber: event.id + '-' + attendee.registrationId,
     teamIdentifier: identity.teamId, organizationName, description: (cardTitle ?? event.title) + (richCard ? ' 电子纪念卡' : '参会凭证'),
     logoText: cardTitle ?? organizationName,
@@ -166,8 +170,8 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
       backFields: [...fullCardDetails, venue, ...(!richCard ? [{ key: 'reference', label: '报名编号', value: attendee.referenceCode }] : []),
         ...communityFields,
         { key: 'notice', label: '说明', value: richCard ? '本卡用于纪念收藏。现场签到请使用活动行原电子票。' : '此凭证仅表示参会名额。讲者、展位及住宿另行确认；请以在线核对结果为准。' },
-        ...(richCard ? [{ key: 'directions', label: '地图指引', value: mapUrl,
-          attributedValue: '<a href="' + mapUrl + '">在 Apple 地图中查看路线</a>' }] : [])],
+        ...cardGuides.map(([key, label, value, linkText]) => ({ key, label, value,
+          attributedValue: '<a href="' + value + '">' + linkText + '</a>' }))],
     } };
   const artwork = richCard ? KEEPSAKE_STRIPS : [
     { name: 'background.png', data: BRAND_IMAGES.background }, { name: 'background@2x.png', data: BRAND_IMAGES.background },

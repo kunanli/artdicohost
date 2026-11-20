@@ -3,6 +3,7 @@ import { confirmationToken, confirmationLink, confirmationEmailMessage, confirma
 
 import { renderCommemorativeJpeg } from '../lib/commemorative-card-image.mjs';
 import { cardCommunityLabel } from '../../shared/general-application.mjs';
+import { appleMapsDirectionsUrl } from '../config/event.mjs';
 
 const root = document.querySelector('[data-confirmation-page]');
 if (root) {
@@ -17,6 +18,10 @@ if (root) {
   const contactLabels=new Map(contactButtons.map(button=>[button,button.textContent]));
   const walletButton=$('[data-confirmation-wallet]'),walletBadge=$('[data-confirmation-wallet-badge]'),walletLabel=$('[data-confirmation-wallet-label]');
   const jpegDownload = $('[data-confirmation-jpeg-download]');
+  const eventGuide = $('[data-confirmation-event-guide]');
+  const guideMap = $('[data-confirmation-map]');
+  const guideMapItem = $('[data-confirmation-map-item]');
+  const guideAddress = $('[data-confirmation-map-address]');
   let walletBadgeReady=Boolean(walletBadge?.complete&&walletBadge.naturalWidth>0);
   function syncWalletBadge(){
     const showBadge=walletBadgeReady&&!walletButton.hidden&&(Boolean(state?.card)||walletButton.dataset.walletAction==='add');
@@ -56,6 +61,11 @@ if (root) {
     clearJpeg();
     $('[data-confirmation-community]').textContent = '';
     $('[data-confirmation-community]').hidden = true;
+    eventGuide.hidden = true;
+    guideMap.removeAttribute('href');
+    guideMapItem.hidden = true;
+    guideAddress.textContent = '';
+    guideAddress.hidden = true;
     for(const key of ['name','organization','event','date','time','venue','reference','email','application-received','pre-event-reminder'])$('[data-confirmation-'+key+']').textContent='';
     $('[data-confirmation-notifications]').hidden=true;$('[data-confirmation-private-link]').value='';$('[data-confirmation-copy-fallback]').hidden=true;
     walletButton.hidden=true;delete walletButton.dataset.walletAction;walletButton.removeAttribute('aria-label');walletButton.removeAttribute('aria-busy');if(walletLabel)walletLabel.textContent='加入 Apple Wallet';syncWalletBadge();
@@ -119,6 +129,13 @@ if (root) {
     }
     $('[data-confirmation-device]').textContent=value.admission.status==='confirmed'?guidance.message:'';$('[data-confirmation-device]').hidden=value.admission.status!=='confirmed';
     if (value.card) {
+      eventGuide.hidden = false;
+      if (value.eventFacts?.ready !== false) {
+        guideMap.href = appleMapsDirectionsUrl(value.event.venue);
+        guideMapItem.hidden = false;
+        guideAddress.textContent = value.event.venue;
+        guideAddress.hidden = false;
+      }
       root.dataset.cardFormat = value.card.format;
       $('[data-confirmation-state]').textContent = '电子纪念卡';
       $('[data-confirmation-heading]').textContent = '电子纪念卡';

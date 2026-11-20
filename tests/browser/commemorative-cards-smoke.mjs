@@ -171,6 +171,14 @@ try {
         await page.waitForFunction(node => node.complete && node.naturalWidth === 1030 && node.naturalHeight === 1510, await image.elementHandle());
         assert.match(await image.getAttribute('alt'), /卡面身份：嘉宾/u);
         assert.match(await page.locator('[data-confirmation-intro]').textContent(), /长期收藏.*活动行原电子票/u);
+        const guide = page.getByRole('navigation', { name: '活动指南' });
+        const venue = '深圳市前海合作区梦海大道5188号前海5号楼';
+        assert.equal(await guide.locator('[data-confirmation-map-address]').innerText(), venue);
+        const guideMap = new URL(await guide.getByRole('link', { name: 'Apple 地图导航' }).getAttribute('href'));
+        assert.equal(guideMap.origin, 'https://maps.apple.com');
+        assert.deepEqual([...guideMap.searchParams], [['destination', venue]]);
+        assert.equal(await guide.getByRole('link', { name: '讲座与活动日程' }).getAttribute('href'), SITE + '/#agenda');
+        assert.equal(await guide.getByRole('link', { name: '参展游戏与作品' }).getAttribute('href'), SITE + '/#students');
         if (device === 'safari') {
           assert.equal(await page.locator('[data-confirmation-community]').innerText(), 'GGJ 合成站 · 站点组织者');
           assert.match(await image.getAttribute('alt'), /GGJ 合成站 · 站点组织者/u);
@@ -224,6 +232,9 @@ try {
             key: 'ggj-community-short', label: 'GGJ 站点身份', value: '站点组织者 · GGJ 合成站', row: 1,
           });
           assert.equal(walletPass.eventTicket.backFields.find(field => field.key === 'ggj-community').value, 'GGJ 合成站 · 站点组织者');
+          assert.deepEqual(walletPass.eventTicket.backFields.slice(-3).map(({ key, value }) => [key, value]), [
+            ['agenda', SITE + '/#agenda'], ['showcase', SITE + '/#students'], ['directions', guideMap.href],
+          ]);
           assert.equal(new URL(walletPass.eventTicket.backFields.at(-1).value).searchParams.get('destination'),
             '深圳市前海合作区梦海大道5188号前海5号楼');
         } else if (device === 'chrome') {

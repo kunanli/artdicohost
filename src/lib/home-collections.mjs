@@ -184,7 +184,10 @@ export function createHomeCollections({document:doc=globalThis.document,window:w
     // Do not reselect an old hash over the visitor's later carousel choice.
     if(!state){
       const id=win.location.hash.slice(1),target=doc.getElementById(id);
-      if(reveal(id)&&target?.matches('[data-showcase-id],[data-guest-id],[data-organization-id]'))win.requestAnimationFrame(()=>target.scrollIntoView({block:'start',behavior:'instant'}));
+      if(id==='students'&&target){
+        const destination=target.hidden?doc.getElementById('booths'):target;
+        win.requestAnimationFrame(()=>destination?.scrollIntoView({block:'start',behavior:'instant'}));
+      }else if(reveal(id)&&target?.matches('[data-showcase-id],[data-guest-id],[data-organization-id]'))win.requestAnimationFrame(()=>target.scrollIntoView({block:'start',behavior:'instant'}));
     }
     if(state){
       const position={left:state.scrollX,top:state.scrollY,behavior:'instant'};

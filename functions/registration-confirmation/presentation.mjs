@@ -6,8 +6,7 @@ const LEGACY = /^https:\/\/artdico\.host\/registration\/confirmation\/#r=[A-Za-z
 const QR = /^https:\/\/api\.artdico\.host\/api\/admin\/registration\/entry-links\/([A-Za-z0-9_-]{22})\/(entry|group)\.png$/u;
 const escape = value => value.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll("'",'&#39;');
 const line = value => typeof value === 'string' && value.length > 0 && value.length <= 500 && !/[\u0000-\u001f\u007f]/u.test(value);
-const paragraph = value => typeof value === 'string' && value.length <= 16_000 && value.isWellFormed() && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value);
-export const CONFIRMATION_PRESENTATION_KEYS = Object.freeze(['email_subject','email_language','email_heading','email_summary','confirmation_actions']);
+export const CONFIRMATION_PRESENTATION_KEYS = Object.freeze(['email_subject','email_language','confirmation_actions']);
 
 function cardActions({ card, en, walletReady, confirmationUrl }) {
   if (!card || [card.name, card.identity, card.event, card.date, card.time, card.venue].some(value => !line(value))
@@ -40,15 +39,13 @@ function cardActions({ card, en, walletReady, confirmationUrl }) {
     + (en ? 'Open the private page to save your card. Keep this email private.' : '打开私人领取页保存纪念卡。请保管此邮件。') + '</p>';
 }
 
-export function confirmationEmailPresentation({ locale, kind, subject, confirmationUrl, ticket, walletReady = false,
-  heading = subject, summary = '', card } = {}) {
+export function confirmationEmailPresentation({ locale, kind, subject, confirmationUrl, ticket, walletReady = false, card } = {}) {
   if (!line(subject) || !['registration','promotion','application_received','pre_event_reminder','card_jpeg','card_wallet'].includes(kind)
-    || !line(heading) || !paragraph(summary)
     || typeof confirmationUrl !== 'string' || !(SHORT.test(confirmationUrl) || LEGACY.test(confirmationUrl))) throw new TypeError('Invalid confirmation presentation.');
   const language = locale === 'en' ? 'en' : 'zh-CN', en = language === 'en';
   const pack = html => {
     if (Buffer.byteLength(html) > 16_000) throw new TypeError('Confirmation presentation too large.');
-    return {email_subject:subject,email_language:language,email_heading:heading,email_summary:summary,confirmation_actions:html};
+    return {email_subject:subject,email_language:language,confirmation_actions:html};
   };
   if (kind === 'card_jpeg' || kind === 'card_wallet') {
     if (ticket != null) throw new TypeError('Invalid commemorative email link.');
@@ -88,7 +85,6 @@ export function confirmationEmailPresentation({ locale, kind, subject, confirmat
 export function validConfirmationPresentationVariables(value){
   if(!value||typeof value!=='object'||CONFIRMATION_PRESENTATION_KEYS.some(key=>!Object.hasOwn(value,key)))return false;
   return line(value.email_subject)&&['zh-CN','en'].includes(value.email_language)
-    &&line(value.email_heading)&&paragraph(value.email_summary)
     &&typeof value.confirmation_actions==='string'&&value.confirmation_actions.length<=16_000&&value.confirmation_actions.isWellFormed()
     &&!/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value.confirmation_actions);
 }

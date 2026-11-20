@@ -26,11 +26,14 @@ try{
     {width:320,locale:'zh-CN',card:true,wallet:true},{width:390,locale:'zh-CN',card:true,wallet:true},{width:320,locale:'en',card:true,wallet:false}]){
     const context=await browser.newContext({locale:'zh-CN',viewport:{width:scenario.width,height:1000}}),requests=[];
     const ticket={confirmationUrl:short,admissionQrImageUrl:entry,...(scenario.group==='current'?{groupQrImageUrl:group,groupExpiresAt:'2026-11-05T04:00:00.000Z'}:{})};
-    const variables=confirmationEmailPresentation(scenario.card
-      ? { locale:scenario.locale,kind:'card_jpeg',subject:'Synthetic commemorative card',heading:scenario.locale==='en'?'Digital commemorative card':'电子纪念卡',
-        summary:scenario.locale==='en'?'Use your original ticket for check-in.':'纪念卡供长期收藏。现场签到请使用活动行原电子票。',confirmationUrl:cardLink,card,walletReady:scenario.wallet }
-      : { locale:scenario.locale,kind:'registration',subject:'Synthetic attendance confirmation',heading:'ARTDiCO HOST · Synthetic Event',
-        summary:scenario.locale==='en'?'Synthetic attendee,\n\nYour attendance is confirmed.\nDate: 2026-12-05\nTime: 10:00–18:00 (UTC+8)\nYour private attendance page:\n'+short:'合成参会者，你好：\n\n你的参会名额已确认。\n日期：2026-12-05\n时间：10:00–18:00（UTC+8）\n私人参会页：\n'+short,confirmationUrl:short,ticket,walletReady:true });
+    const en = scenario.locale === 'en';
+    const heading = scenario.card ? (en ? 'Your commemorative card' : '电子纪念卡') : 'ARTDiCO HOST · Synthetic Event';
+    const text = scenario.card
+      ? (en ? 'Save your card as a keepsake. Use your original Huodongxing ticket for check-in.' : '纪念卡供长期收藏。现场签到请使用活动行原电子票。')
+      : (en ? 'Your attendance is confirmed.\nYour private attendance page:\n' : '你的参会名额已确认。\n私人参会页：\n') + short;
+    const variables = { event_title: heading, invitation_text: text, ...confirmationEmailPresentation(scenario.card
+      ? { locale:scenario.locale,kind:'card_jpeg',subject:'Synthetic commemorative card',confirmationUrl:cardLink,card,walletReady:scenario.wallet }
+      : { locale:scenario.locale,kind:'registration',subject:'Synthetic attendance confirmation',confirmationUrl:short,ticket,walletReady:true }) };
     const rendered=template.replaceAll('{{{confirmation_actions}}}',variables.confirmation_actions).replace(/\{\{([a-z_]+)\}\}/gu,(_,key)=>escape(variables[key]??''));
     assert.doesNotMatch(rendered,/\{\{[a-z_]+\}\}/u);
     await context.route('**/*',async route=>{
@@ -50,6 +53,7 @@ try{
       for(const image of images){assert.ok(image.x>=0&&image.right<=scenario.width+1);assert.ok(image.naturalWidth>0&&image.naturalHeight>0);}
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
       if (scenario.card) {
+        assert.equal(await page.locator('h1').innerText(), heading);
         assert.equal(images.length,scenario.wallet?2:1);
         assert.ok(images.some(image=>image.src.endsWith('/host-card-banner.png')));
         assert.equal(await page.locator('a[href="'+cardLink+'"]').count(),scenario.wallet?2:1);

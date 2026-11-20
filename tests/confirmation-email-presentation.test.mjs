@@ -54,10 +54,8 @@ test('the keepsake email preview escapes recipient details and uses only public 
   const link = 'https://artdico.host/registration/confirmation/#r=c1.synthetic.signature';
   const card = { name: '<img src=x onerror=x>', identity: '嘉宾', event: '合成活动', date: '2026-12-05',
     time: '10:00–18:00', venue: '合成地点', community: 'GGJ & 合成站' };
-  const options = { kind: 'card_jpeg', subject: '电子纪念卡', heading: '电子纪念卡',
-    summary: '现场签到请使用活动行原电子票。', confirmationUrl: link, card };
+  const options = { kind: 'card_jpeg', subject: '电子纪念卡', confirmationUrl: link, card };
   const value = confirmationEmailPresentation({ ...options, walletReady: true });
-  assert.doesNotMatch(value.email_summary, /https?:/u);
   assert.match(value.confirmation_actions, /&lt;img src=x onerror=x&gt;/u);
   assert.match(value.confirmation_actions, /GGJ &amp; 合成站/u);
   assert.doesNotMatch(value.confirmation_actions, /<img src=x|\/api\/|group\.png/u);

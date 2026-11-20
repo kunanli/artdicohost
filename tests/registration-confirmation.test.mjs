@@ -237,9 +237,8 @@ test('future confirmation email links to personal downloads while durable identi
   assert.match(message.text,/Safari/u);
   assert.ok(message.text.includes('地点：' + posterEvent.venue.address), 'email keeps its original event facts');
   assert.equal(message.templateVariables.invitation_text, message.text);
-  assert.deepEqual(Object.keys(message.templateVariables).sort(), ['to_name', 'to_email', 'event_title', 'event_date', 'event_time', 'event_venue', 'reference_code', 'invitation_text', 'email_subject', 'email_language', 'email_heading', 'email_summary', 'confirmation_actions'].sort());
-  assert.equal(message.templateVariables.email_heading, posterEvent.title);
-  assert.equal(message.templateVariables.email_summary, message.text);
+  assert.deepEqual(Object.keys(message.templateVariables).sort(), ['to_name', 'to_email', 'event_title', 'event_date', 'event_time', 'event_venue', 'reference_code', 'invitation_text', 'email_subject', 'email_language', 'confirmation_actions'].sort());
+  assert.equal(message.templateVariables.event_title, posterEvent.title);
   const stored = await createConfirmationRepository({ journal: f.journalFor(c.prefix), eventId: EVENT }).read();
   assert.equal(stored.value.notices.length, 1); assert.equal(stored.value.notices[0].kind, 'registration');
   assert.doesNotMatch(JSON.stringify(stored.value), /ggj2026-poster-v2|PRIVATE-SYNTHETIC|receiptToken|confirmationUrl/u);

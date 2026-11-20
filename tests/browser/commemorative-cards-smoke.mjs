@@ -161,7 +161,7 @@ try {
         assert.equal(await page.locator('[data-card-filter="submitted"] span').textContent(), '1');
         await page.locator('[data-card-filter="submitted"]').click();
         assert.equal(await page.locator('[data-card-list] small').textContent(), '已提交发送');
-        const link = /https:\/\/artdico\.host\/registration\/confirmation\/#r=[A-Za-z0-9_.-]+/u.exec(cardMessages()[0].template_params.invitation_text)[0];
+        const link = /https:\/\/artdico\.host\/registration\/confirmation\/#r=[A-Za-z0-9_.-]+/u.exec(cardMessages()[0].template_params.confirmation_actions)[0];
         const readsBefore = privateReads;
         await page.goto(link);
         const downloadButton = page.getByRole('link', { name: '下载 JPEG 纪念卡' });

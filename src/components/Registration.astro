@@ -13,7 +13,7 @@ const field = (name: string) => {
 const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
 if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('申请 API 必须使用指定的 HTTPS 来源。');
 ---
-<section class="ah-registration ah-section" id="registration" aria-labelledby="registration-heading" data-registration-api-origin={apiOrigin || undefined}>
+<section class="ah-registration ah-section" id="registration" aria-labelledby="registration-heading" data-registration-api-origin={apiOrigin || undefined} hidden>
   <div class="ah-register-intro" data-registration-intro><h2 id="registration-heading" data-registration-heading>讲者申请</h2><p data-registration-notice>提交分享主题，由筹备团队另行联系。申请不代表确认讲者或入场资格。</p><a class="ah-text-action" href={PUBLIC_REGISTRATION_URL} data-general-registration>一般参会请前往活动行报名 <span aria-hidden="true">↗</span></a></div>
   <div class="ah-registration-preview ah-general-application" data-registration-preview>
     <div class="ah-form-card">

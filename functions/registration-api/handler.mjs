@@ -176,9 +176,14 @@ export function createRegistrationApi({ allowedOrigins, submissionService, allow
           const reviewRequired = own(value, 'attendeeReviewRequired');
           if (reviewRequired !== undefined && typeof reviewRequired !== 'boolean') return failure('UNAVAILABLE');
           checked.attendeeReviewRequired = reviewRequired !== false;
-          const publicRegistrationMode = own(value, 'publicRegistrationMode'), speakerApplicationsEnabled = own(value, 'speakerApplicationsEnabled');
+          const publicRegistrationMode = own(value, 'publicRegistrationMode');
           if (publicRegistrationMode !== undefined) { if (!['legacy','speaker_only'].includes(publicRegistrationMode)) return failure('UNAVAILABLE'); checked.publicRegistrationMode = publicRegistrationMode; }
-          if (speakerApplicationsEnabled !== undefined) { if (typeof speakerApplicationsEnabled !== 'boolean') return failure('UNAVAILABLE'); checked.speakerApplicationsEnabled = speakerApplicationsEnabled; }
+          for (const key of ['speakerApplicationsEnabled', 'walletApplicationsEnabled']) {
+            const intake = own(value, key);
+            if (intake === undefined) continue;
+            if (typeof intake !== 'boolean') return failure('UNAVAILABLE');
+            checked[key] = intake;
+          }
           if (own(value, 'admissions') !== undefined) {
             checked.admissions = publicAdmissions(own(value, 'admissions'), checked.capacity);
             if (!checked.admissions) return failure('UNAVAILABLE');

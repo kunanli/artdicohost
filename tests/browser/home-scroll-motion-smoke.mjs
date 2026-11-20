@@ -243,7 +243,7 @@ async function main() {
     return value;
   }
   async function essentialContent(page) {
-    for (const selector of ['#hero-heading', '#about-heading', '#guests-heading', '#agenda-heading', '#registration-heading']) {
+    for (const selector of ['#hero-heading', '#about-heading', '#guests-heading', '#agenda-heading', '#wallet-card-heading']) {
       const value = await page.locator(selector).evaluate(node => { const s = getComputedStyle(node), b = node.getBoundingClientRect(); return { display: s.display, visibility: s.visibility, opacity: Number(s.opacity), width: b.width, height: b.height }; });
       assert.ok(value.display !== 'none' && value.visibility === 'visible' && value.opacity > 0 && value.width > 0 && value.height > 0, 'meaningful information never waits hidden for an animation engine');
     }
@@ -538,7 +538,7 @@ async function main() {
   }
   async function backgroundCompositing(page) {
     const reports = [];
-    for (const id of ['agenda', 'students', 'registration']) {
+    for (const id of ['agenda', 'students', 'wallet-card-application']) {
       await page.locator('#' + id).evaluate(node => node.scrollIntoView({ block: 'start', behavior: 'instant' })); await settled(page); await page.waitForTimeout(1000);
       const sample = await page.evaluate(id => {
         const section = document.getElementById(id), rect = section.getBoundingClientRect(), canvas = document.querySelector('[data-hero-particles]').getBoundingClientRect();

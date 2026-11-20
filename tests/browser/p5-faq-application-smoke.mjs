@@ -36,7 +36,7 @@ function publication(revision) {
   return { revision, publishedAt: new Date(initialTime + revision * 1000).toISOString(), content: toPublicContent(content) };
 }
 async function fixture(width, mode = 'ready', lostAck = false) {
-  const runtime = await peopleRuntimeFixture({ capacity: 300, mail: false }), calls = [], context = await browser.newContext({ viewport: { width, height: 940 } });
+  const runtime = await peopleRuntimeFixture({ capacity: 300, mail: false }), calls = [], context = await browser.newContext({ locale: 'zh-CN', viewport: { width, height: 940 } });
   let revision = 1, lose = lostAck, now = initialTime;
   await context.addInitScript(() => {
     window.syntheticFaqEmails = [];
@@ -65,7 +65,7 @@ async function fixture(width, mode = 'ready', lostAck = false) {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(SITE + '/#faq', { waitUntil: 'networkidle' });
   await page.locator('[data-faq-id="custom-experience"]').waitFor();
-  await page.locator('[data-registration-form][data-registration-mode="' + (mode === 'ready' ? 'production' : mode) + '"]').waitFor();
+  await page.locator('[data-registration-form][data-registration-mode="' + (mode === 'ready' ? 'production' : mode) + '"]').waitFor({state: mode === 'ready' ? 'visible' : 'attached'});
   return { runtime, context, page, calls, width, mode, async refresh() {
     revision++; now += 2000; await page.clock.setFixedTime(new Date(now));
     const response = page.waitForResponse(response => new URL(response.url()).pathname === '/api/public/content');
@@ -86,7 +86,7 @@ async function fill(page, name = '合成申请人') {
   await form(page).locator('[name="speaker.topic"]').fill('合成分享主题');await form(page).locator('[name="speaker.summary"]').fill('合成主题简介');
 }
 async function legacyStaffRecovery(mode) {
-  const runtime = await peopleRuntimeFixture({ capacity: 300, mail: false }), context = await browser.newContext({ viewport: { width: 390, height: 940 } });
+  const runtime = await peopleRuntimeFixture({ capacity: 300, mail: false }), context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 390, height: 940 } });
   const initial = (await runtime.app.store.read()).draft.content;
   initial.event.presentation.faqItems = [{ id: 'faq-original-stable', question: '合成旧编辑器问题', answer: '合成原答案' }];
   const base = await runtime.app.store.save(0, initial, runtime.users[0].id), pendingContent = structuredClone(base.content);

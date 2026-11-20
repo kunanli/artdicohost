@@ -58,6 +58,28 @@ test('an old uncommitted ordinary pending body cannot obtain a new seat after sw
   assert.equal(JSON.stringify(old.payload),original);assert.equal((await current.repository.list()).registrations.length,0);assert.equal(f.state.callbacks.length,0);
 });
 
+test('closing speaker proposals preserves recorded receipts and keeps new card applications open',async()=>{
+  const f=fixture(),open=f.make({publicRegistrationMode:'speaker_only'});
+  const accepted=await input(open),pending=await input(open);
+  assert.equal((await submit(open,accepted)).outcome,'created');
+  const closed=f.make({publicRegistrationMode:'speaker_only',speakerApplicationsEnabled:false}),metadata=await closed.metadata();
+  assert.equal(metadata.speakerApplicationsEnabled,false);
+  assert.equal(metadata.walletApplicationsEnabled,true);
+  assert.equal((await closed.issueToken({eventId:EVENT,origin:ORIGIN,idempotencyKey:key(),speakerApplication:true})).outcome,'closed');
+  assert.equal((await submit(closed,pending)).outcome,'closed');
+  const renewed=await closed.issueToken({eventId:EVENT,origin:ORIGIN,idempotencyKey:accepted.idempotencyKey,speakerApplication:true});
+  assert.equal(renewed.outcome,'issued');
+  assert.equal((await submit(closed,{...accepted,submissionToken:renewed.submissionToken})).outcome,'replayed');
+
+  const walletKey=key(),walletToken=await closed.issueToken({eventId:EVENT,origin:ORIGIN,idempotencyKey:walletKey,walletApplication:true});
+  assert.equal(walletToken.outcome,'issued');
+  const walletFields={intake:'wallet-v1',name:'合成纪念卡申请人',email:'card@example.invalid',wechat:'synthetic-card',huodongxingReference:'000018',categories:['other'],participationInterests:['attend']};
+  const walletRequest={origin:ORIGIN,idempotencyKey:walletKey,submissionToken:walletToken.submissionToken,payload:{...pending.payload,fields:walletFields}};
+  assert.equal((await submit(closed,{...walletRequest,payload:pending.payload})).outcome,'closed');
+  assert.equal((await submit(closed,walletRequest)).receipt.admissionStatus,'pending_review');
+  assert.equal((await closed.repository.list()).registrations.length,2);
+});
+
 test('speaker proposals racing the last ordinary seat remain pending and never compete in the admission queue',async()=>{
   const f=fixture({waitlistEnabled:true}),service=f.make(),submissions=await Promise.all([input(service,fields(false)),input(service),input(service)]);
   const results=await Promise.all(submissions.map(value=>submit(f.make(),value)));

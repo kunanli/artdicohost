@@ -109,7 +109,8 @@ export async function verifyPublicRegistrationAlias(fetchFn, policy, externalSig
       || value.opensAt !== new Date(policy.opensAt).toISOString() || value.closesAt !== new Date(policy.closesAt).toISOString()
       || !isDeepStrictEqual(value.privacy, policy.privacy)) throw failure('PUBLIC_REGISTRATION_NOT_VERIFIED');
     if ((value.publicRegistrationMode ?? 'legacy') !== (policy.publicRegistrationMode ?? 'legacy')
-      || policy.publicRegistrationMode === 'speaker_only' && value.speakerApplicationsEnabled !== true) throw failure('PUBLIC_REGISTRATION_NOT_VERIFIED');
+      || policy.publicRegistrationMode === 'speaker_only' && value.speakerApplicationsEnabled !== (policy.speakerApplicationsEnabled !== false)
+      || policy.speakerApplicationsEnabled === false && value.walletApplicationsEnabled !== true) throw failure('PUBLIC_REGISTRATION_NOT_VERIFIED');
     if (value.admissions !== undefined) {
       const summary = value.admissions;
       const applicationCounts = ['waitlistCount', 'pendingReviewCount', 'rejectedCount'];

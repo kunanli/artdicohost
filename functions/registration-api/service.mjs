@@ -32,6 +32,12 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
   const eventId = own(configured, 'eventId'), origins = new Set(allowedOrigins);
   const attendeeReviewRequired = own(configured, 'attendeeReviewRequired') !== false;
   const publicRegistrationMode = own(configured, 'publicRegistrationMode') ?? 'legacy';
+  const speakerApplicationsEnabled = own(configured, 'speakerApplicationsEnabled') !== false;
+  const intakes = open => ({
+    speakerApplicationsEnabled: open && speakerApplicationsEnabled,
+    // Older policies advertised both application types through the speaker flag.
+    ...(!speakerApplicationsEnabled ? { walletApplicationsEnabled: open } : {}),
+  });
   const repository = createRegistrationRepository({ objects, journalFor, eventId, capacity, waitlistEnabled, staffReserve, attendeeReviewRequired, publicRegistrationMode });
   const tokens = createRegistrationTokens({ secret: tokenSecret, eventId });
   const budgets = createRegistrationRateLimit({ journalFor, eventId, tokenLimit, submissionLimit });
@@ -72,22 +78,24 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
       try {
         const checked = policyAt(current());
         const snapshot = await repository.getAdmissions(), summary = snapshot.summary;
-        if (!checked.valid) return { ...publicNotice, admissions: summary, speakerApplicationsEnabled: false, enabled: false, reason: Object.keys(checked.errors).some(key => !['enabled', 'window'].includes(key)) ? 'unavailable' : 'closed' };
-        if (summary.totalRegistered >= MAX_REGISTRATIONS) return { ...publicNotice, admissions: summary, speakerApplicationsEnabled: false, enabled: false, reason: 'closed' };
-        if (publicRegistrationMode !== 'speaker_only' && !attendeeReviewRequired && !summary.waitlistEnabled && summary.remainingPublic === 0) return { ...publicNotice, admissions: summary, speakerApplicationsEnabled: true, enabled: false, reason: 'closed' };
-        return { ...checked.value, capacity, attendeeReviewRequired, publicRegistrationMode, speakerApplicationsEnabled: true, admissions: summary };
+        if (!checked.valid) return { ...publicNotice, admissions: summary, ...intakes(false), enabled: false, reason: Object.keys(checked.errors).some(key => !['enabled', 'window'].includes(key)) ? 'unavailable' : 'closed' };
+        if (summary.totalRegistered >= MAX_REGISTRATIONS) return { ...publicNotice, admissions: summary, ...intakes(false), enabled: false, reason: 'closed' };
+        if (publicRegistrationMode !== 'speaker_only' && !attendeeReviewRequired && !summary.waitlistEnabled && summary.remainingPublic === 0) return { ...publicNotice, admissions: summary, ...intakes(true), enabled: false, reason: 'closed' };
+        return { ...checked.value, capacity, attendeeReviewRequired, publicRegistrationMode, ...intakes(true), admissions: summary };
       } catch { return { ...publicNotice, enabled: false, reason: 'unavailable' }; }
     },
     async issueToken(input) {
       try {
-        const origin = own(input, 'origin'), idempotencyKey = own(input, 'idempotencyKey'), speakerApplication = own(input, 'speakerApplication') === true || own(input,'walletApplication') === true;
+        const origin = own(input, 'origin'), idempotencyKey = own(input, 'idempotencyKey');
+        const speakerApplication = own(input, 'speakerApplication') === true, walletApplication = own(input, 'walletApplication') === true;
         if (!origins.has(origin) || own(input, 'eventId') !== eventId || !KEY.test(idempotencyKey ?? '')) return result('forbidden');
         const now = current(), checked = policyAt(now);
         const state = await repository.readIndex();
         const previous = state.value.entries.some(entry => entry.keyHash === digest('public\0' + eventId + '\0' + idempotencyKey));
         const summary = (await repository.getAdmissions()).summary;
         if (!previous && (!checked.valid || summary.totalRegistered >= MAX_REGISTRATIONS
-          || !speakerApplication && (publicRegistrationMode === 'speaker_only' || !attendeeReviewRequired && !summary.waitlistEnabled && summary.remainingPublic === 0))) return result('closed');
+          || speakerApplication && !speakerApplicationsEnabled
+          || !speakerApplication && !walletApplication && (publicRegistrationMode === 'speaker_only' || !attendeeReviewRequired && !summary.waitlistEnabled && summary.remainingPublic === 0))) return result('closed');
         const budget = await budgets.consume('tokens', now);
         if (!budget.allowed) return { outcome: 'rate_limited', retryAfter: budget.retryAfter };
         return { outcome: 'issued', ...tokens.issue({ origin, idempotencyKey, now }) };
@@ -112,7 +120,9 @@ export function createRegistrationService({ objects, journalFor, policy, capacit
         if (!budget.allowed) return { outcome: 'rate_limited', retryAfter: budget.retryAfter };
         const validation = validateRegistrationSubmission(payload, { policy: configured, now });
         if (!validation.valid) return result('invalid');
-        if (publicRegistrationMode === 'speaker_only' && !isSpeakerApplicationFields(validation.value.fields) && !isWalletApplicationFields(validation.value.fields)) return result('closed');
+        const speakerApplication = isSpeakerApplicationFields(validation.value.fields);
+        if (speakerApplication && !speakerApplicationsEnabled
+          || publicRegistrationMode === 'speaker_only' && !speakerApplication && !isWalletApplicationFields(validation.value.fields)) return result('closed');
         return await decorate(await repository.accept({ value: { ...validation.value, provenance: { kind: 'public' } }, keyHash, payloadHash, capacity, getExcluded: admissions.getExcluded(),
           beforeCommit: () => { const at = current(); return policyAt(at).valid && tokens.verify({ token: submissionToken, origin, idempotencyKey, now: at }); } }), origin);
       } catch { return result('unavailable'); }

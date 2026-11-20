@@ -5,8 +5,8 @@ for (const pair of registrationEnglish) english.set(...pair);
 // changes fall back to their new original text rather than an outdated translation.
 for (const pair of [
   [
-    "普通参会请前往活动行报名，开放状态、报名结果与参会凭证以活动行页面为准。讲者分享提案在本站提交，由筹备团队另行联系；提案开放情况请查看本站表单。",
-    "Register for general admission on Huodongxing. Availability, results and admission credentials are shown there. Submit speaker proposals on this website; the organizing team will follow up. Check the form here for proposal availability."
+    "普通参会请前往活动行报名，开放状态、报名结果与参会凭证以活动行页面为准。",
+    "Register for general admission on Huodongxing. Availability, results and admission credentials are shown there."
   ],
   [
     "现任或曾任 GGJ 站点负责人（SO / RO），以及筹备新站点的朋友，均可通过活动行报名参会。新站点筹备或站点交流需求，可通过 kunan@globalgamejam.org 留言，筹备团队会联系了解支持需求。\n现场可进行 GGJ 站点审核，请提前准备本地负责人、组织团队与场地资料。请准备本地负责人、组织团队与场地，再通过 GGJ 官网 Start a Jam Site 申请，开放时间以官方信息为准。",
@@ -23,6 +23,7 @@ for (const pair of [
 ]) english.set(...pair);
 
 for (const pair of [
+ ['GGJ 站点说明','GGJ jam-site information'],
  ['现场可以进行 GGJ 站点审核吗？','Can GGJ jam sites be reviewed on site?'],
  ['可以。现场可进行 GGJ 站点审核，请准备本地负责人、组织团队与场地资料，并提前联系筹备团队了解安排。','Yes. GGJ jam-site reviews are available on site. Prepare details of your local organizer, team and venue, and contact the organizing team in advance to discuss arrangements.'],
  ['现场可进行 GGJ 站点审核。请准备本地负责人、组织团队与场地资料，申请要求请查看 GGJ 官方指引。','GGJ jam-site reviews are available on site. Prepare details of your local organizer, team and venue. See the official GGJ guide for application requirements.'],

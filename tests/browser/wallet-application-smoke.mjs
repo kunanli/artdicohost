@@ -17,9 +17,9 @@ const mime=path=>({'.html':'text/html','.js':'text/javascript','.mjs':'text/java
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 await mkdir(evidence,{recursive:true});
 const form=page=>page.locator('[data-wallet-form]');
-async function fixture(width,{lost=false,closed=false}={}){
+async function fixture(width,{lost=false,closed=false,speakerClosed=false}={}){
  const runtime=await peopleRuntimeFixture({mail:false,attendeeReviewRequired:false});let disabled=closed,lose=lost;
- const app=()=>runtime.make({policyOverride:{publicRegistrationMode:'speaker_only',...(disabled?{closesAt:'2026-10-21T08:59:00Z'}:{})}});
+ const app=()=>runtime.make({policyOverride:{publicRegistrationMode:'speaker_only',speakerApplicationsEnabled:!speakerClosed,...(disabled?{closesAt:'2026-10-21T08:59:00Z'}:{})}});
  let current=app();const calls=[],context=await browser.newContext({locale:'zh-CN',viewport:{width,height:940},reducedMotion:'reduce'});
  await context.route('**/*',async route=>{
   try{
@@ -49,6 +49,19 @@ async function fill(page){
 }
 async function drafts(page){return page.evaluate(()=>new Promise((yes,no)=>{const request=indexedDB.open('artdico-browser-drafts-v1',1);request.onerror=()=>no(request.error);request.onsuccess=()=>{const db=request.result,tx=db.transaction('drafts','readonly'),query=tx.objectStore('drafts').getAll();query.onsuccess=()=>yes(query.result);query.onerror=()=>no(query.error);tx.oncomplete=()=>db.close();};}));}
 async function screenshot(page,name){await page.screenshot({path:resolve(evidence,name+'.png'),fullPage:false,animations:'disabled'});}
+async function verifyHeader(page,width){
+ await page.evaluate(()=>{location.hash='top';});
+ const menu=page.locator('[data-site-menu]'),mobile=width<=960;
+ if(mobile)await menu.locator('summary').click();
+ const nav=mobile?menu:page.locator('.ah-home-desktop-nav');
+ const cardLink=nav.getByRole('link',{name:'电子纪念卡',exact:true});
+ assert.equal(await cardLink.evaluate(node=>node.previousElementSibling?.hasAttribute('data-general-registration')),true);
+ const box=await cardLink.boundingBox();
+ assert.ok(box&&box.x>=0&&box.x+box.width<=width+1&&box.height>=44);
+ await cardLink.press('Enter');
+ await page.waitForURL(SITE+'/#wallet-card-application');
+ if(mobile)assert.equal(await menu.getAttribute('open'),null);
+}
 async function receipt(f){try{await f.page.locator('[data-wallet-result]:not([hidden])').waitFor();}catch(error){console.log('Synthetic wallet failure: '+JSON.stringify({error:await f.page.locator('[data-wallet-error]').textContent(),status:await f.page.locator('[data-wallet-draft-status]').textContent(),calls:f.calls.filter(call=>/registration\/(token|submit)$/.test(call.path)).map(({path,method,status})=>({path,method,status}))}));await screenshot(f.page,'failure');throw error;}assert.equal(await form(f.page).isVisible(),false);const records=(await f.app.registrationService.repository.list()).registrations;assert.equal(records.length,1);assert.equal(records[0].fields.intake,'wallet-v1');assert.equal(records[0].fields.huodongxingReference,'000012345678901234567890');assert.equal((await f.app.registrationService.getAdmissionStatus(records[0].id)).status,'pending_review');assert.equal(f.runtime.messages.length,0);return records[0].id;}
 async function staffIdentity(f,id){
  const headers=await f.runtime.login('owner'),[name,...rest]=headers.Cookie.split('=');await f.context.addCookies([{name,value:rest.join('='),domain:'api.artdico.host',path:'/',secure:true,httpOnly:true}]);
@@ -82,6 +95,7 @@ try{
   try{
    assert.equal(await f.page.locator('#wallet-card-application').evaluate(node=>{let previous=node.previousElementSibling;while(previous&&!previous.matches('section.ah-section'))previous=previous.previousElementSibling;return previous?.id;}),'registration');
    assert.equal(await f.page.locator('#faq-wallet-card a[href="#wallet-card-application"]').count(),1);
+   await verifyHeader(f.page,width);
    assert.equal(await form(f.page).locator('[name="wallet.requestedWalletIdentity"]').inputValue(),'');
    await f.page.locator('[data-registration-form] [name=name]').fill('独立合成讲者草稿');await fill(f.page);
    await f.page.waitForFunction(()=>document.querySelector('[data-wallet-draft-status]').textContent==='纪念卡申请已暂存于本机。');
@@ -119,12 +133,24 @@ try{
   }finally{await f.context.close();}
  }
  {
+  const f=await fixture(390,{speakerClosed:true});try{
+   assert.equal(await f.page.locator('#registration').isVisible(),false);
+   assert.equal(await f.page.locator('#speaker-recruitment').isVisible(),false);
+   assert.equal(await f.page.locator('#site-guidance').isVisible(),true);
+   assert.equal(await f.page.locator('[data-speaker-recruitment]:visible').count(),0);
+   await verifyHeader(f.page,390);
+   await fill(f.page);await f.page.locator('#wallet-consent').check();await f.page.locator('[data-wallet-submit]').click();
+   await receipt(f);
+   reports.push({width:390,speakerHiddenAndCardIntakeOpen:true,noRealMail:true});
+  }finally{await f.context.close();}
+ }
+ {
   const f=await fixture(320,{closed:true});try{
    assert.equal(await form(f.page).locator('[name="wallet.email"]').isDisabled(),true);assert.equal(await f.page.locator('[data-wallet-submit]').isDisabled(),true);assert.equal(f.calls.filter(call=>call.method==='POST').length,0);
    assert.equal(await f.page.locator('#faq-wallet-card a').getAttribute('href'),'#wallet-card-application');reports.push({width:320,closed:true,noPublicWrite:true});
   }finally{await f.context.close();}
  }
- assert.equal(reports.length,6);assert.deepEqual(errors,[]);assert.deepEqual(routeErrors,[]);
- const result={ok:true,cases:reports.length,expectedCases:6,sourceCommit,sourceTreeClean,sourceQualification:sourceTreeClean?'clean-checkout':'local-working-tree-not-exact-commit-proof',publicHtmlSha256:htmlSha256,scriptSha256,reports,pageErrors:errors,routeErrors,realBusinessWrites:0,realMail:0,uninterceptedNetwork:0};
+ assert.equal(reports.length,7);assert.deepEqual(errors,[]);assert.deepEqual(routeErrors,[]);
+ const result={ok:true,cases:reports.length,expectedCases:7,sourceCommit,sourceTreeClean,sourceQualification:sourceTreeClean?'clean-checkout':'local-working-tree-not-exact-commit-proof',publicHtmlSha256:htmlSha256,scriptSha256,reports,pageErrors:errors,routeErrors,realBusinessWrites:0,realMail:0,uninterceptedNetwork:0};
  await writeFile(resolve(evidence,'result.json'),JSON.stringify({...result,assets:[...served.values()]},null,2));console.log('Wallet application browser verified: '+JSON.stringify(result));
 }finally{await browser.close();}

@@ -169,7 +169,8 @@ try {
         assert.equal(await downloadButton.evaluate(button => button.getBoundingClientRect().bottom <= innerHeight), true);
         const image = page.locator('[data-confirmation-jpeg-image]');
         await page.waitForFunction(node => node.complete && node.naturalWidth === 1030 && node.naturalHeight === 1510, await image.elementHandle());
-        assert.match(await image.getAttribute('alt'), /入场身份：嘉宾/u);
+        assert.match(await image.getAttribute('alt'), /卡面身份：嘉宾/u);
+        assert.match(await page.locator('[data-confirmation-intro]').textContent(), /长期收藏.*活动行原电子票/u);
         if (device === 'safari') {
           assert.equal(await page.locator('[data-confirmation-community]').innerText(), 'GGJ 合成站 · 站点组织者');
           assert.match(await image.getAttribute('alt'), /GGJ 合成站 · 站点组织者/u);
@@ -186,6 +187,12 @@ try {
           const { data } = ctx.getImageData(675, 696, 285, 47);
           return data.some((value, index) => index % 4 === 0 && value > 200);
         }), true, 'the downloadable artwork shows the identity value in its own column');
+        assert.equal(await image.evaluate(node => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(node, 334, 1092, 1, 1, 0, 0, 1, 1);
+          return Array.from(ctx.getImageData(0, 0, 1, 1).data.subarray(0, 3)).every(channel => channel < 40);
+        }), true, 'the old QR position on the JPEG is clear');
         const walletButton = page.locator('[data-confirmation-wallet]');
         assert.equal(await walletButton.isVisible(), walletAvailable);
         if (walletAvailable) {
@@ -202,8 +209,14 @@ try {
           assert.equal(pass.suggestedFilename(), 'artdico-host.pkpass');
           const files = passFiles(await readFile(await pass.path()));
           const walletPass = JSON.parse(files.get('pass.json'));
-          assert.deepEqual(walletPass.preferredStyleSchemes, ['eventTicket']);
-          assert.equal(walletPass.semantics.admissionLevel, '嘉宾');
+          assert.deepEqual(walletPass.preferredStyleSchemes, ['posterEventTicket', 'eventTicket']);
+          assert.equal(files.has('logo.png'), false);
+          assert.equal(files.has('artwork@2x.png'), true);
+          assert.equal(walletPass.eventTicket.additionalInfoFields.find(field => field.key === 'poster-ggj-community').value, 'GGJ 合成站 · 站点组织者');
+          assert.equal(walletPass.eventTicket.headerFields[0].value, '嘉宾');
+          assert.equal(walletPass.barcodes, undefined);
+          assert.equal(walletPass.expirationDate, undefined);
+          assert.equal(walletPass.semantics.venueRegionName, '深圳');
           assert.equal(walletPass.eventTicket.primaryFields[0].value, '合成纪念卡申请人');
           assert.deepEqual(walletPass.eventTicket.auxiliaryFields.map(field => field.key), ['date', 'time', 'venue-short', 'ggj-community-short']);
           assert.equal(walletPass.eventTicket.backFields.find(field => field.key === 'ggj-community').value, 'GGJ 合成站 · 站点组织者');

@@ -13,6 +13,8 @@
 
 图片嵌入既有 `functions/apple-wallet/pkpass.mjs`，无外部图片请求、新依赖、公开凭证或新增 FC 文件。`artwork.png` / `artwork@2x.png` 供支持 posterEventTicket 的系统使用，`background.png` / `background@2x.png` 与原有 eventTicket 字段提供兼容样式。包含可信事件语义，但不虚构座位。所有图片的 SHA-1 都包含在 manifest，并由同一证书身份生成 detached CMS 签章。
 
+纪念卡使用彩色 HOST 海报供长期收藏。新版纪念卡包内无签到码和活动日到期字段，保留原活动日期供识别。现场签到使用活动行原电子票。下载并存入 Wallet 的纪念卡与有限期的私人领取链接分开，已加入旧卡的收件人可从有效的原链接重新下载。
+
 每个文件仍限 256 KiB，整张 pass 限 1 MiB、顶层 ZIP 条目限 12 个；不开放任意文件名、SVG、远程图或路径。证书、私钥、签章 bundle 与 FC 环境变量沿用既有私有配置。原稿仅存文档，不进入静态站 dist 或 FC 发布包。
 
 ## 验证边界

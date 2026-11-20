@@ -1,7 +1,6 @@
 import { cardCommunityLabel, commemorativeCardVenue } from '../../shared/general-application.mjs';
 
-// Coordinates follow the organizer-provided portrait card. The sample name
-// and sample QR are never part of the template.
+// Coordinates follow the organizer-provided portrait card.
 export const CARD_IMAGE = Object.freeze({ width: 1030, height: 1510 });
 
 const faces = [
@@ -67,11 +66,6 @@ export async function renderCommemorativeJpeg(view) {
   canvas.height = CARD_IMAGE.height;
   const context = canvas.getContext('2d');
   if (!context) throw new Error('此浏览器无法生成纪念卡图片。');
-  const qr = view.card.entryQr ? new Image() : null;
-  if (qr) {
-    qr.src = 'data:image/png;base64,' + view.card.entryQr;
-    await qr.decode();
-  }
   context.fillStyle = '#121212';
   context.fillRect(0, 0, canvas.width, canvas.height);
   drawWordmark(context);
@@ -86,7 +80,7 @@ export async function renderCommemorativeJpeg(view) {
   line(context, '参会人', 64, labelY, 38);
   line(context, view.attendee.name, 64, nameY, 43, { maxWidth: 580 });
   if (community) line(context, community, 64, 758, 34, { maxWidth: 895, color: '#d9c7ff', weight: 600 });
-  line(context, '入场身份', 962, labelY, 38, { align: 'right' });
+  line(context, '卡面身份', 962, labelY, 38, { align: 'right' });
   line(context, view.card.identity, 962, nameY, 43, { maxWidth: 265, align: 'right' });
   line(context, '日期', 64, 852, 29);
   line(context, view.event.date.replaceAll('-', ' - '), 64, 894, 29);
@@ -95,15 +89,10 @@ export async function renderCommemorativeJpeg(view) {
   line(context, '地点', 962, 852, 29, { align: 'right' });
   const venue = commemorativeCardVenue(view.event.venue);
   line(context, venue, 962, 894, 29, { maxWidth: 540, align: 'right' });
-  if (qr) {
-    context.fillStyle = '#fff';
-    context.beginPath();
-    if (typeof context.roundRect === 'function') context.roundRect(324, 1087, 382, 382, 10);
-    else context.rect(324, 1087, 382, 382);
-    context.fill();
-    context.imageSmoothingEnabled = false;
-    context.drawImage(qr, 331, 1094, 368, 368);
-  }
+  context.fillStyle = '#5b5b5b';
+  context.fillRect(67, 1328, 895, 1);
+  line(context, '电子纪念卡', 64, 1387, 29);
+  line(context, '现场签到请使用活动行原电子票', 64, 1431, 25, { color: '#c5c0cb' });
   return new Promise((resolve, reject) => {
     canvas.toBlob(blob => {
       canvas.width = 0;

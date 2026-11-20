@@ -262,7 +262,6 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       loadSigningBundle: ({ bundleId }) => loadEncryptedSigningBundle({ objects, secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId }) });
     confirmationService = createRegistrationConfirmationService({ registrationService, journalFor, eventFactsReadiness, currentRegistration,
       emailTicketProvider: input => entryService.issue(input), currentProfiles: () => reviewStore.profileScopes(),
-      cardEntry: { prepare: input => entryService.issueEntry(input), image: input => entryService.cardEntryImage(input) },
       cardApplications: admissions => reviewStore.walletCardApplications(admissions),
       cardPermissions: async (rows, admissions) => {
         const roster = rows.some(({ group, record }) => group?.contactIds.length || record.provenance.kind === 'staff_assisted')

@@ -83,7 +83,7 @@ export function validateWalletApplicationFields(input){
   if(Object.hasOwn(input,'locale')){if(!['zh-CN','en'].includes(own(input,'locale')))errors.locale='请选择有效的申请语言。';else value.locale=own(input,'locale');}
   for(const[key,max]of[['phone',150],['organization',160]]){const text=string(input,key,max,errors);if(text)value[key]=text;}
   const preferences = walletApplicationPreferences(input);
-  if (!preferences) errors.preferences = '请核对入场身份与 GGJ 社群资料。';
+  if (!preferences) errors.preferences = '请核对卡面身份与 GGJ 社群资料。';
   else Object.assign(value, preferences);
   return{valid:Object.keys(errors).length===0,errors,value};
 }

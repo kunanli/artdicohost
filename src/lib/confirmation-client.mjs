@@ -145,7 +145,10 @@ export function confirmationView(value, now = Date.now()) {
   const withdrawn = value.admission.status === 'withdrawn';
   if (!withdrawn && (!text(value.attendee?.name, 400) || [...value.attendee.name].length>200 || !text(value.attendee?.organization ?? '', 500, true))) return null;
   const confirmed = value.admission.status === 'confirmed';
+  const cardRequest = value.cardRequest === true;
+  if (value.cardRequest !== undefined && (!cardRequest || value.wallet.ready || value.card !== undefined)) return null;
   const card = value.card;
+  // Accept old response shapes during a rolling update without rendering their entry code.
   const hasQr = plain(card) && Object.hasOwn(card, 'entryQr');
   if (card !== undefined && (!confirmed || !exact(card, ['format', 'identity', 'ready', ...(hasQr ? ['entryQr'] : [])]) || !['jpeg','wallet','both'].includes(card.format)
     || !text(card.identity, 100) || typeof card.ready !== 'boolean' || card.format === 'jpeg' && value.wallet.ready
@@ -160,7 +163,8 @@ export function confirmationView(value, now = Date.now()) {
     admission: { status: value.admission.status, kind: value.admission.kind, revision: value.admission.revision },
     attendee: withdrawn ? { name: '', organization: '' } : { name: value.attendee.name, organization: value.attendee.organization ?? '' },
     email: { status: ['pending_review','rejected'].includes(value.admission.status) ? 'not_applicable' : value.email.status }, wallet: { ready: confirmed && value.wallet.ready && facts?.ready !== false, ...(confirmed&&!value.wallet.ready&&value.wallet.reason==='WALLET_IDENTITY_PENDING'?{reason:'WALLET_IDENTITY_PENDING'}:{}) },
-    ...(facts ? { eventFacts: facts } : {}), ...(card ? { card: { ...card } } : {}),
+    ...(facts ? { eventFacts: facts } : {}), ...(card ? { card: { format: card.format, identity: card.identity, ready: card.ready } } : {}),
+    ...(cardRequest ? { cardRequest: true } : {}),
     ...(cardCommunity ? { cardCommunity } : {}),
     ...(Object.hasOwn(value, 'notifications') ? { notifications: notificationHistory(value.notifications) } : {}),
     groupInvite: confirmed ? groupInvite(value.groupInvite,now) : null,

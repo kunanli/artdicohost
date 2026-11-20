@@ -156,5 +156,5 @@ test('old published on-site guidance uses the organizer-confirmed review copy wi
 
 test('commemorative card FAQ is always available with the fixed local form and does not promise automatic issuing',()=>{
  const supplied=[{id:'wallet-card',question:'合成旧问题',answer:'合成立即发卡',registrationUrl:'https://unapproved.example.invalid/'}],before=JSON.stringify(supplied);
- const card=publicFaqItems(supplied).find(item=>item.id==='wallet-card');assert.equal(card.registrationUrl,'#wallet-card-application');assert.match(card.answer,/工作人员核对报名/u);assert.match(card.answer,/入场身份/u);assert.doesNotMatch(card.answer,/立即发卡/u);assert.equal(JSON.stringify(supplied),before);
+ const card=publicFaqItems(supplied).find(item=>item.id==='wallet-card');assert.equal(card.registrationUrl,'#wallet-card-application');assert.match(card.answer,/工作人员核对报名/u);assert.match(card.answer,/卡面身份/u);assert.match(card.answer,/现场签到请使用活动行原电子票/u);assert.doesNotMatch(card.answer,/立即发卡/u);assert.equal(JSON.stringify(supplied),before);
 });

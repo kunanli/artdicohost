@@ -26,6 +26,7 @@ async function setup({ mailResult = 'accepted', clock } = {}) {
     name: '合成电子纪念卡申请人', huodongxingReference: '0000001234', email: 'card-test@example.invalid',
   };
   const id = await f.seedWallet(fields), path = root + '/' + id;
+  assert.equal(f.messages.length, 0, 'new commemorative card applications never send general receipt mail');
   const call = (method, body, app = f.app) => app.handle(f.request(path, { method, headers, body }));
   const read = async () => {
     const response = await call('GET');
@@ -91,20 +92,19 @@ test('staff send one commemorative card email and recipients can still save the 
   assert.match(template.email_subject, /电子纪念卡/u);
   assert.match(template.confirmation_actions, /领取电子纪念卡/u);
   assert.match(template.invitation_text, /JPEG.*Apple Wallet/u);
+  assert.doesNotMatch(template.invitation_text, /参会名额已确认|登记编号|微信/u);
   assert.doesNotMatch(template.confirmation_actions, /add-to-apple-wallet|entry-links/u);
   const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(template.invitation_text)[1];
   const publicCall = (path, headers) => f.app.handle(f.request(path, { method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken }, headers }));
   const offer = await publicCall('/api/admin/registration/confirmation');
   assert.equal(offer.status, 200);
   const view = confirmationView(await offer.json());
-  const { entryQr, ...card } = view.card;
-  assert.deepEqual(card, { format: 'jpeg', identity: '嘉宾', ready: true });
-  assert.deepEqual([...Buffer.from(entryQr, 'base64').subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.deepEqual(view.card, { format: 'jpeg', identity: '嘉宾', ready: true });
   const before = f.objects.calls.length;
   const both = confirmationView(await (await publicCall('/api/admin/registration/confirmation', { Accept: CARD_FORMATS_ACCEPT })).json());
   const canonical = confirmationView(await (await publicCall('/api/registration/confirmation')).json());
   assert.deepEqual(canonical, both, 'the canonical route combines formats even if the browser omits the profile');
-  assert.ok(f.objects.calls.slice(before).every(call => call.operation === 'get'), 'redemption only reads the existing QR');
+  assert.ok(f.objects.calls.slice(before).every(call => call.operation === 'get'), 'redemption does not write entry credentials');
   assert.deepEqual(both.card, { ...view.card, format: 'both' });
   assert.equal(both.wallet.ready, false);
   assert.equal(view.wallet.ready, false);
@@ -272,21 +272,21 @@ test('a card capability authenticates its selected format while existing receipt
   assert.equal(tokens.verify([version, alternative, signature].join('.')), null);
 });
 
-test('an existing Wallet link and a JPEG link both redeem the same two formats and saved identity', async t => {
+test('existing Wallet and JPEG links can redeem both keepsake formats after the event', async t => {
   const f = await setup(), body = await f.prepare();
   const signing = await createWalletFixture();
   t.after(signing.cleanup);
   const messages = [], tokenSecret = 'synthetic-wallet-card-signing-test-token-secret';
   const expiresAt = Date.parse('2027-01-01T00:00:00Z');
+  let current = Date.parse('2026-10-21T09:00:00Z');
   const service = createRegistrationConfirmationService({ registrationService: f.app.registrationService, tokenSecret,
-    clock: () => Date.parse('2026-10-21T09:00:00Z'), expiresAt,
+    clock: () => current, expiresAt,
     journalFor: prefix => createObjectJournal({ objects: f.objects, prefix }),
     currentRegistration: record => f.app.reviewStore.projectRegistration(record),
     walletReadiness: () => wallet.readiness(),
-    cardEntry: { image: input => f.app.entryService.cardEntryImage(input), prepare: input => f.app.entryService.issueEntry(input) },
     emailProvider: { readiness: () => ({ ready: true }), send: async message => { messages.push(message); return { status: 'provider_accepted' }; } },
   });
-  const wallet = createAppleWalletService({ env: signing.env, tokenSecret, clock: () => signing.now,
+  const wallet = createAppleWalletService({ env: signing.env, tokenSecret, clock: () => Math.max(signing.now, current),
     trustedRootFingerprints: signing.fields.trustedRootFingerprints, authorize: service.authorize, authorizedRegistration: service.authorizedRegistration });
   const result = await service.staffSendCard({ ...body, actor: f.users[0], registrationId: f.id, format: 'wallet' });
   assert.equal(result.status, 'provider_accepted');
@@ -298,9 +298,10 @@ test('an existing Wallet link and a JPEG link both redeem the same two formats a
   assert.equal(first.card.format, 'both');
   assert.equal(first.card.ready, true);
   assert.equal(first.wallet.ready, true);
-  assert.ok(first.card.entryQr);
+  assert.equal(first.card.entryQr, undefined);
   const tokens = createConfirmationTokens({ tokenSecret, eventId: PEOPLE_FIXTURE_EVENT, clock: () => Date.parse('2026-10-21T09:00:00Z'),
     expiresAt });
+  current = Date.parse('2026-12-06T00:00:00Z');
   for (const token of [receiptToken, tokens.issue(f.id, 0, 'jpeg').receiptToken]) {
     const view = confirmationView(await service.confirmation({ receiptToken: token, includeCardFormats: true }));
     assert.deepEqual(view.card, first.card);
@@ -309,6 +310,9 @@ test('an existing Wallet link and a JPEG link both redeem the same two formats a
     assert.equal(pass.outcome, 'issued');
     const files = passFiles(pass.data);
     assert.ok(files.get('signature').length > 1024);
-    assert.match(files.get('pass.json').toString(), /嘉宾/u);
+    const passJson = JSON.parse(files.get('pass.json'));
+    assert.equal(passJson.eventTicket.headerFields[0].value, '嘉宾');
+    assert.equal(passJson.barcodes, undefined);
+    assert.equal(passJson.expirationDate, undefined);
   }
 });

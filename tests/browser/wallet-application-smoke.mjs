@@ -82,10 +82,11 @@ async function staffIdentity(f,id){
   await saveIdentity('');
   await f.page.locator('[data-review-confirmation-prepare]:enabled').click();await f.page.locator('[data-review-confirmation-result]:not([hidden])').waitFor();
   const privateUrl=await f.page.locator('[data-review-confirmation-open]').getAttribute('href');await f.page.goto(privateUrl,{waitUntil:'networkidle'});
-  await f.page.locator('[data-confirmation-content]:not([hidden])').waitFor();assert.match(await f.page.locator('[data-confirmation-device]').innerText(),/身份待工作人员确认/u);assert.equal(await f.page.locator('[data-confirmation-wallet]').isVisible(),false);
-  assert.equal((await f.app.registrationService.getAdmissionStatus(id)).status,'confirmed');assert.equal(f.calls.some(call=>call.path.endsWith('/registration/wallet')),false,'pending identity never downloads a pass');await f.page.locator('[data-confirmation-device]').scrollIntoViewIfNeeded();await screenshot(f.page,'identity-pending-private-page-'+f.page.viewportSize().width);
+  await f.page.locator('[data-confirmation-content]:not([hidden])').waitFor();assert.equal(await f.page.locator('[data-confirmation-heading]').innerText(),'纪念卡待发放');assert.equal(await f.page.locator('[data-confirmation-wallet]').isVisible(),false);
+  for(const name of ['group','registration','notice-records','save'])assert.equal(await f.page.locator('[data-confirmation-'+name+']').isVisible(),false);
+  assert.equal((await f.app.registrationService.getAdmissionStatus(id)).status,'confirmed');assert.equal(f.calls.some(call=>call.path.endsWith('/registration/wallet')),false,'pending identity never downloads a pass');await screenshot(f.page,'identity-pending-private-page-'+f.page.viewportSize().width);
   await f.page.goto(API+'/admin/registrations/#registration='+id,{waitUntil:'networkidle'});await f.page.locator('[data-review-dialog][open]').waitFor();await saveIdentity('guest');
-  await f.page.goto(privateUrl,{waitUntil:'networkidle'});await f.page.locator('[data-confirmation-content]:not([hidden])').waitFor();assert.doesNotMatch(await f.page.locator('[data-confirmation-device]').innerText(),/身份待工作人员确认/u);assert.equal(f.runtime.messages.length,0,'identity update never sends a new notice');
+  await f.page.goto(privateUrl,{waitUntil:'networkidle'});await f.page.locator('[data-confirmation-jpeg-download]').waitFor();assert.equal(await f.page.locator('[data-confirmation-heading]').innerText(),'电子纪念卡');assert.equal(f.runtime.messages.length,0,'identity update never sends a new notice');
  }
  assert.equal(f.runtime.messages.length,0,'staff review never sends without a separate explicit send');
 }

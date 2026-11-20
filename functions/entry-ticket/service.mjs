@@ -165,10 +165,6 @@ export function createEntryTicketService({ objects, journalFor, tokenSecret, eve
       if (value.record.admissionStatus !== 'confirmed') fail('ENTRY_NOT_FOUND');
       return entryImageForRegistration(value.mapping.registrationId, value.mapping.accessRevision);
     },
-    async cardEntryImage({ registrationId, accessRevision = 0 } = {}) {
-      if (!ID.test(registrationId ?? '') || !revision(accessRevision)) fail('INVALID_REQUEST');
-      return entryImageForRegistration(registrationId, accessRevision);
-    },
     async groupImage({ code } = {}) {
       const value = await readMapping(code, 'receipt');
       if (value.record.admissionStatus !== 'confirmed' || !groupImageProvider) fail('ENTRY_NOT_FOUND');

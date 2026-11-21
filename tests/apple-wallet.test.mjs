@@ -194,7 +194,7 @@ test('commemorative passes sign a clear native strip with card details below it'
   const pendingIdentity={...record,walletRequested:true};
   const waiting=service({authorize:async()=>pendingIdentity,authorizedRegistration:async()=>pendingIdentity});
   assert.equal((await waiting.download({receiptToken:token})).outcome,'inactive');
-  const selected={...pendingIdentity,walletIdentity:'guest'};
+  const selected={...pendingIdentity,walletIdentity:'guest',event:{...record.event,id:'ggj-cn-2026'}};
   const afterEvent = Date.parse(record.event.date + 'T23:59:59+08:00') + 60_000;
   let entryRequests = 0;
   const issued=await service({authorize:async()=>selected,authorizedRegistration:async()=>selected,clock:()=>afterEvent,
@@ -204,12 +204,14 @@ test('commemorative passes sign a clear native strip with card details below it'
   const files=passFiles(issued.data),pass=JSON.parse(files.get('pass.json'));
   const manifest=JSON.parse(files.get('manifest.json'));
   assert.deepEqual(pass.preferredStyleSchemes,['eventTicket']);
-  assert.equal(pass.serialNumber, record.event.id + '-' + record.registrationId);
+  assert.equal(pass.serialNumber, selected.event.id + '-' + record.registrationId);
+  assert.equal(pass.logoText, undefined);
+  assert.equal(pass.eventTicket.backFields[0].value, 'GGJ China Meetup 2026 x ARTDiCO HOST');
   assert.equal(pass.eventTicket.primaryFields, undefined, 'primary fields would overlap the strip');
   assert.deepEqual(pass.eventTicket.secondaryFields.map(({value})=>value), [record.name, '嘉宾']);
   assert.deepEqual(pass.eventTicket.auxiliaryFields.map(({value})=>value),[record.event.date,record.event.time,record.event.venue]);
   assert.equal(pass.eventTicket.backFields.find(field=>field.key==='venue').value,record.event.venue);
-  assert.deepEqual(pass.eventTicket.backFields.slice(0, 6).map(({value})=>value), [record.name,'嘉宾',record.event.title,record.event.date,record.event.time,record.event.venue]);
+  assert.deepEqual(pass.eventTicket.backFields.slice(1, 7).map(({value})=>value), [record.name,'嘉宾',record.event.title,record.event.date,record.event.time,record.event.venue]);
   const directions = pass.eventTicket.backFields.at(-1), map = new URL(directions.value);
   assert.equal(directions.key, 'directions');
   assert.equal(map.origin, 'https://maps.apple.com');
@@ -222,13 +224,16 @@ test('commemorative passes sign a clear native strip with card details below it'
   assert.equal(pass.semantics.admissionLevel, undefined);
   for (const field of ['barcode','barcodes','expirationDate','relevantDate']) assert.equal(Object.hasOwn(pass,field),false);
   assert.match(pass.eventTicket.backFields.find(field=>field.key==='notice').value,/现场签到请使用活动行原电子票/u);
-  assert.deepEqual([...files.keys()].sort(), ['icon.png','icon@2x.png','strip.png','strip@2x.png','strip@3x.png','pass.json','manifest.json','signature'].sort());
-  for (const scale of [1, 2, 3]) {
-    const path = scale === 1 ? 'strip.png' : 'strip@' + scale + 'x.png';
-    const strip = files.get(path);
-    assert.equal(strip.readUInt32BE(16), 375 * scale);
-    assert.equal(strip.readUInt32BE(20), 98 * scale);
-    assert.equal(manifest[path], createHash('sha1').update(strip).digest('hex'));
+  assert.deepEqual([...files.keys()].sort(), ['icon.png','icon@2x.png','logo.png','logo@2x.png','logo@3x.png',
+    'strip.png','strip@2x.png','strip@3x.png','pass.json','manifest.json','signature'].sort());
+  for (const [name, width, height] of [['strip', 375, 98], ['logo', 160, 50]]) {
+    for (const scale of [1, 2, 3]) {
+      const path = name + (scale === 1 ? '' : '@' + scale + 'x') + '.png';
+      const image = files.get(path);
+      assert.equal(image.readUInt32BE(16), width * scale);
+      assert.equal(image.readUInt32BE(20), height * scale);
+      assert.equal(manifest[path], createHash('sha1').update(image).digest('hex'));
+    }
   }
 });
 

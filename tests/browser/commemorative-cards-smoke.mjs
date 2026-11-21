@@ -161,8 +161,10 @@ try {
       assert.equal(cardMessages().length, 1);
       if (outcome === 'unknown') {
         assert.equal(await page.locator('[data-card-check]').isVisible(), false);
-        assert.equal(await page.locator('[data-card-list] small').first().textContent(), '寄送结果未确认');
-        assert.match(await page.locator('[data-card-delivery-formats]').textContent(), /可能已经寄出/u);
+        assert.equal(await page.locator('[data-card-list] [data-stage="check_delivery"]').count(), 1);
+        assert.equal(await page.locator('[data-card-list] [data-stage="check_delivery"] small').count(), 0);
+        assert.equal(await page.locator('[data-card-state]').textContent(), '未收到邮件服务回执，重寄可能重复。');
+        assert.equal(await page.locator('[data-card-delivery-formats]').isVisible(), false);
         await page.reload();
         await resend.waitFor();
         assert.equal(cardMessages().length, 1, 'reading an uncertain delivery never resends it');

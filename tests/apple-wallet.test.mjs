@@ -192,7 +192,7 @@ test('new Wallet passes use the same dedicated short staff check-in capability a
   assert.equal(calls, 0);
 });
 
-test('commemorative passes sign a clear native strip with card details below it', async () => {
+test('commemorative passes sign the full poster and a compatible native strip without a barcode', async () => {
   const pendingIdentity={...record,walletRequested:true};
   const waiting=service({authorize:async()=>pendingIdentity,authorizedRegistration:async()=>pendingIdentity});
   assert.equal((await waiting.download({receiptToken:token})).outcome,'inactive');
@@ -205,7 +205,12 @@ test('commemorative passes sign a clear native strip with card details below it'
   assert.equal(entryRequests,0);
   const files=passFiles(issued.data),pass=JSON.parse(files.get('pass.json'));
   const manifest=JSON.parse(files.get('manifest.json'));
-  assert.deepEqual(pass.preferredStyleSchemes,['eventTicket']);
+  assert.equal(pass.preferredStyleSchemes, undefined, 'Wallet selects the supported style from the two dictionaries');
+  assert.deepEqual(pass.posterGeneric.primaryFields.map(({ value }) => value), [record.name, '嘉宾']);
+  assert.equal(pass.posterGeneric.footerFields[0].label, '讲座与游戏展 · UTC+8');
+  assert.equal(pass.posterGeneric.footerFields[0].value, [record.event.date, record.event.time, record.event.venue].join(' · '));
+  assert.deepEqual(pass.posterGeneric.additionalInfoFields.map(({ value }) => value),
+    [record.event.date, record.event.time, record.event.venue, '讲座与游戏展']);
   assert.equal(pass.serialNumber, selected.event.id + '-' + record.registrationId);
   assert.equal(pass.logoText, undefined);
   assert.equal(pass.eventTicket.backFields[0].value, 'GGJ China Meetup 2026 x ARTDiCO HOST');
@@ -218,21 +223,27 @@ test('commemorative passes sign a clear native strip with card details below it'
   assert.deepEqual(pass.eventTicket.backFields.slice(3, 6).map(({ value }) => value), [PUBLIC_AGENDA_URL, PUBLIC_SHOWCASE_URL, PUBLIC_REGISTRATION_URL]);
   assert.deepEqual(pass.featuredActions, [{ identifier: 'event-details', type: 'viewSchedule', url: PUBLIC_EVENT_DETAILS_URL }]);
   assert.equal(pass.eventTicket.backFields.find(({ key }) => key === 'event-details').value, PUBLIC_EVENT_DETAILS_URL);
+  assert.deepEqual(pass.posterGeneric.backFields.map(({ key, ...field }) => ({ key: key.slice('poster-details-'.length), ...field })),
+    pass.eventTicket.backFields);
   const directions = pass.eventTicket.backFields.find(({ key }) => key === 'directions'), map = new URL(directions.value);
   assert.equal(map.origin, 'https://maps.apple.com');
   assert.equal(map.pathname, '/directions');
   assert.deepEqual([...map.searchParams], [['destination', record.event.venue]]);
   assert.equal(directions.attributedValue, `<a href="${map.href}">在 Apple 地图中查看路线</a>`);
-  const keys=Object.values(pass.eventTicket).flat().map(field=>field.key);
+  const keys = [...Object.values(pass.eventTicket), ...Object.values(pass.posterGeneric)].flat().map(field => field.key);
   assert.equal(new Set(keys).size,keys.length);
   assert.equal(pass.semantics.attendeeName, record.name);
   assert.equal(pass.semantics.admissionLevel, undefined);
   for (const field of ['barcode','barcodes','expirationDate','relevantDate']) assert.equal(Object.hasOwn(pass,field),false);
   assert.match(pass.eventTicket.backFields.find(field=>field.key==='notice').value,/现场签到请使用活动行原电子票/u);
   assert.deepEqual([...files.keys()].sort(), ['icon.png','icon@2x.png','logo.png','logo@2x.png','logo@3x.png',
-    'strip.png','strip@2x.png','strip@3x.png','pass.json','manifest.json','signature'].sort());
-  for (const [name, width, height] of [['strip', 375, 98], ['logo', 160, 50]]) {
-    for (const scale of [1, 2, 3]) {
+    'strip.png','strip@2x.png','strip@3x.png','artwork@2x.png','artwork@3x.png','primaryLogo@2x.png','primaryLogo@3x.png',
+    'pass.json','manifest.json','signature'].sort());
+  for (const [name, width, height, scales] of [
+    ['strip', 375, 98, [1, 2, 3]], ['logo', 160, 50, [1, 2, 3]],
+    ['artwork', 358, 448, [2, 3]], ['primaryLogo', 126, 30, [2, 3]],
+  ]) {
+    for (const scale of scales) {
       const path = name + (scale === 1 ? '' : '@' + scale + 'x') + '.png';
       const image = files.get(path);
       assert.equal(image.readUInt32BE(16), width * scale);
@@ -240,6 +251,11 @@ test('commemorative passes sign a clear native strip with card details below it'
       assert.equal(manifest[path], createHash('sha1').update(image).digest('hex'));
     }
   }
+  assert.deepEqual(Object.keys(manifest).sort(), [...files.keys()].filter(name => name !== 'manifest.json' && name !== 'signature').sort());
+  await writeFile(resolve(fixture.directory, 'poster-manifest.json'), files.get('manifest.json'));
+  await writeFile(resolve(fixture.directory, 'poster-signature'), files.get('signature'));
+  assert.doesNotThrow(() => fixture.run(['cms', '-verify', '-binary', '-inform', 'DER', '-in', 'poster-signature',
+    '-content', 'poster-manifest.json', '-CAfile', 'root.pem', '-purpose', 'any', '-out', 'verified-poster-manifest.json']));
 });
 
 test('keepsake reissues show each saved GGJ field independently and keep full values in details', async () => {
@@ -260,8 +276,12 @@ test('keepsake reissues show each saved GGJ field independently and keep full va
     assert.equal(pass.semantics.venueRegionName, eventConfig.venue.city);
     const { headerFields, auxiliaryFields, backFields } = pass.eventTicket;
     assert.deepEqual(headerFields?.map(({ value }) => value), values.site || values.role ? ['前海5号楼'] : undefined);
+    const posterCommunity = pass.posterGeneric.primaryFields.find(({ key }) => key === 'poster-community');
+    const expectedCommunity = [values.site && [...site].slice(0, 13).join('') + '…', values.role].filter(Boolean).join(' · ');
+    assert.equal(posterCommunity?.value, expectedCommunity || undefined);
     for (const [key, value] of [['ggj-site', values.site], ['ggj-role', values.role]]) {
       assert.equal(backFields.find(field => field.key === key)?.value, value || undefined);
+      assert.equal(pass.posterGeneric.additionalInfoFields.find(field => field.key === 'poster-info-' + key)?.value, value || undefined);
       const shortened = auxiliaryFields.find(field => field.key === key + '-short');
       assert.equal(shortened?.value, value === site ? [...site].slice(0, 13).join('') + '…' : value || undefined);
       if (shortened) assert.equal(shortened.row, 1);

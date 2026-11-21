@@ -7,7 +7,7 @@ const api = '/api/admin/registration-confirmation/cards';
 const idPattern = /^[A-Za-z0-9_-]{43}$/u;
 const draftId = () => /^#application=([A-Za-z0-9_-]{43})$/u.exec(location.hash)?.[1] ?? '';
 const stages = {
-  check_delivery: '寄送结果未确认', pending_review: '核对报名', set_identity: '设置卡面身份',
+  check_delivery: '', pending_review: '核对报名', set_identity: '设置卡面身份',
   retry_delivery: '可重新寄送', send: '待寄送', blocked: '暂不可寄送',
   submitted: '已提交发送', waitlisted: '候补中', rejected: '报名未通过', withdrawn: '报名已取消',
 };
@@ -135,12 +135,16 @@ function renderList() {
     button.dataset.application = row.id;
     button.dataset.stage = row.stage;
     button.setAttribute('aria-pressed', String(selected === row));
-    const name = document.createElement('strong'), reference = document.createElement('span'), status = document.createElement('small');
+    const name = document.createElement('strong'), reference = document.createElement('span');
     name.textContent = row.name;
     reference.className = 'card-muted';
     reference.textContent = row.bookingReference;
-    status.textContent = stages[row.stage];
-    button.append(name, reference, status);
+    button.append(name, reference);
+    if (stages[row.stage]) {
+      const status = document.createElement('small');
+      status.textContent = stages[row.stage];
+      button.append(status);
+    }
     li.append(button);
     return li;
   }));
@@ -214,7 +218,7 @@ function renderActions() {
   const state = $('[data-card-state]');
   state.dataset.stage = value.stage;
   state.textContent = value.sendInProgress ? '纪念卡正在发送。'
-    : uncertain ? '上次寄送结果未确认。'
+    : uncertain ? (resend ? '未收到邮件服务回执，重寄可能重复。' : '未收到邮件服务回执。')
     : sent ? '纪念卡邮件已提交发送'
     : reason || (value.stage === 'retry_delivery' ? '发送失败，可再次寄送。' : stages[value.stage]);
   const submittedAt = $('[data-card-sent-at]');
@@ -229,9 +233,9 @@ function renderActions() {
   identityForm.hidden = !verified || uncertain || sent || Boolean(value.identity && !editingIdentity);
   deliveryForm.hidden = !canSend || editingIdentity;
   deliveryForm.querySelector('[type="submit"]').textContent = resend || value.stage === 'retry_delivery' ? '重新发送纪念卡' : '发送纪念卡';
-  $('[data-card-delivery-formats]').textContent = uncertain && resend
-    ? '上次邮件可能已经寄出。重寄可能会收到多封邮件。'
-    : value.walletReady
+  const formats = $('[data-card-delivery-formats]');
+  formats.hidden = uncertain;
+  formats.textContent = value.walletReady
     ? '一封邮件可领取 JPEG 和 Apple Wallet。' : '可先寄送 JPEG。Apple Wallet 就绪后可用同一链接领取。';
   const deliveryBlock = $('[data-card-delivery-block]');
   deliveryBlock.hidden = !(uncertain || sent) || !reason || value.reason === 'EMAIL_MISSING';

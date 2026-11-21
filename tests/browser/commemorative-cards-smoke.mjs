@@ -161,8 +161,10 @@ try {
       assert.equal(cardMessages().length, 1);
       if (outcome === 'unknown') {
         assert.equal(await page.locator('[data-card-check]').isVisible(), false);
-        assert.equal(await page.locator('[data-card-list] small').first().textContent(), '寄送结果未确认');
-        assert.match(await page.locator('[data-card-delivery-formats]').textContent(), /可能已经寄出/u);
+        assert.equal(await page.locator('[data-card-list] [data-stage="check_delivery"]').count(), 1);
+        assert.equal(await page.locator('[data-card-list] [data-stage="check_delivery"] small').count(), 0);
+        assert.equal(await page.locator('[data-card-state]').textContent(), '未收到邮件服务回执，重寄可能重复。');
+        assert.equal(await page.locator('[data-card-delivery-formats]').isVisible(), false);
         await page.reload();
         await resend.waitFor();
         assert.equal(cardMessages().length, 1, 'reading an uncertain delivery never resends it');
@@ -240,11 +242,16 @@ try {
           await page.getByRole('status').filter({ hasText: '进入票券详情' }).waitFor();
           const files = passFiles(await readFile(await pass.path()));
           const walletPass = JSON.parse(files.get('pass.json'));
-          assert.deepEqual(walletPass.preferredStyleSchemes, ['eventTicket']);
+          assert.deepEqual(walletPass.posterGeneric.primaryFields.map(({ value }) => value),
+            ['合成纪念卡申请人', '嘉宾', 'GGJ 合成站 · 站点组织者', organization]);
+          assert.equal(walletPass.posterGeneric.footerFields[0].value, '2026-12-05 · 10:00–18:00 · 前海5号楼');
+          assert.equal(walletPass.posterGeneric.backFields.find(({ key }) => key === 'poster-details-venue').value, venue);
+          assert.equal(walletPass.posterGeneric.backFields.find(({ key }) => key === 'poster-details-phone').value, phone);
+          assert.equal(walletPass.posterGeneric.backFields.find(({ key }) => key === 'poster-details-event-details').value, PUBLIC_EVENT_DETAILS_URL);
           assert.ok(['logo.png', 'logo@2x.png', 'logo@3x.png'].every(name => files.has(name)));
           assert.equal(files.has('strip@2x.png'), true);
           assert.equal(files.has('background.png'), false);
-          assert.equal(files.has('artwork.png'), false);
+          for (const name of ['artwork@2x.png', 'artwork@3x.png', 'primaryLogo@2x.png', 'primaryLogo@3x.png']) assert.ok(files.has(name));
           assert.equal(walletPass.logoText, undefined);
           assert.equal(walletPass.eventTicket.backFields.find(field => field.key === 'co-brand-title').value,
             'GGJ China Meetup 2026 x ARTDiCO HOST');

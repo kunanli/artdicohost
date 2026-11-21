@@ -213,8 +213,17 @@ test('commemorative passes sign the full poster and a compatible native strip wi
   assert.deepEqual(program.map(({ label }) => label), ['GGJ 中国交流聚会', 'ARTDiCO HOST 学生嘉年华']);
   assert.match(program[0].value, /Maria Burns Ortiz.+主题演讲.+专题研讨、圆桌交流与 GGJ 站点咨询。$/u);
   assert.match(program[1].value, /学生作品、独立游戏试玩和产品展示.+面对面交流.+招募与预录取机会。$/u);
-  assert.deepEqual(pass.posterGeneric.additionalInfoFields.slice(2).map(({ value }) => value),
+  assert.deepEqual(pass.posterGeneric.additionalInfoFields.slice(2, 5).map(({ value }) => value),
     [record.event.date, record.event.time, record.event.venue]);
+  const schedule = pass.posterGeneric.additionalInfoFields.slice(5);
+  assert.deepEqual(schedule.map(({ label }) => label), ['A 区 · 阶梯展示厅｜上午', 'A 区 · 阶梯展示厅｜下午',
+    'B 区 · 咖啡厅', 'C 区 · 外围展位', 'C-10 至 C-15 · 独立游戏试玩']);
+  assert.match(schedule[0].value, /10:15–11:00　主题演讲/u);
+  assert.match(schedule[1].value, /15:40–17:00　ARTDiCO 学生展示/u);
+  assert.match(schedule[2].value, /15:40–16:40　圆桌会议/u);
+  assert.match(schedule[3].value, /09:30–18:00　共 16 个展位/u);
+  assert.match(schedule[4].value, /妖殿奇谭.+人是不能飞的/u);
+  assert.ok(schedule.every(field => !Object.hasOwn(field, 'attributedValue') && !field.value.includes('https://')));
   assert.equal(pass.serialNumber, selected.event.id + '-' + record.registrationId);
   assert.equal(pass.logoText, undefined);
   assert.equal(pass.eventTicket.backFields[0].value, 'GGJ China Meetup 2026 x ARTDiCO HOST');
@@ -227,7 +236,9 @@ test('commemorative passes sign the full poster and a compatible native strip wi
   assert.deepEqual(pass.eventTicket.backFields.filter(({key})=>key.startsWith('details-')).map(({value})=>value), [record.name,'嘉宾',record.event.title,record.event.date,record.event.time]);
   assert.deepEqual(pass.eventTicket.backFields.slice(1, 6).map(({ key }) => key), ['venue', 'directions', 'agenda', 'showcase', 'huodongxing']);
   assert.deepEqual(pass.eventTicket.backFields.slice(3, 6).map(({ value }) => value), [PUBLIC_AGENDA_URL, PUBLIC_SHOWCASE_URL, PUBLIC_REGISTRATION_URL]);
-  assert.deepEqual(pass.featuredActions, [{ identifier: 'event-details', type: 'viewSchedule', url: PUBLIC_EVENT_DETAILS_URL }]);
+  assert.equal(pass.featuredActions, undefined);
+  assert.deepEqual(pass.eventTicket.backFields.filter(({ key }) => key.startsWith('schedule-')).map(({ label, value }) => [label, value]),
+    schedule.map(({ label, value }) => [label, value]));
   assert.equal(pass.eventTicket.backFields.find(({ key }) => key === 'event-details').value, PUBLIC_EVENT_DETAILS_URL);
   assert.deepEqual(pass.posterGeneric.backFields.map(({ key, ...field }) => ({ key: key.slice('poster-details-'.length), ...field })),
     pass.eventTicket.backFields);
@@ -287,7 +298,7 @@ test('keepsake reissues show each saved GGJ field independently and keep full va
     for (const [key, value] of [['ggj-site', values.site], ['ggj-role', values.role]]) {
       assert.equal(backFields.find(field => field.key === key)?.value, value || undefined);
       assert.equal(pass.posterGeneric.primaryFields.find(field => field.key === 'poster-' + key + '-short')?.label,
-        value ? (key === 'ggj-site' ? 'GGJ 站点' : '社群角色') : undefined);
+        value ? (key === 'ggj-site' ? 'GGJ 站点' : '社群角色／分工') : undefined);
       assert.equal(pass.posterGeneric.additionalInfoFields.find(field => field.key === 'poster-info-' + key)?.value, value || undefined);
       const shortened = auxiliaryFields.find(field => field.key === key + '-short');
       assert.equal(shortened?.value, value === site ? [...site].slice(0, 13).join('') + '…' : value || undefined);

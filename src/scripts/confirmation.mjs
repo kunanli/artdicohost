@@ -22,6 +22,16 @@ if (root) {
   const guideMap = $('[data-confirmation-map]');
   const guideMapItem = $('[data-confirmation-map-item]');
   const guideAddress = $('[data-confirmation-map-address]');
+  const profileDetails = $('[data-confirmation-card-profile]');
+  function renderCardProfile(profile) {
+    profileDetails.hidden = !profile?.organization && !profile?.phone;
+    if (profileDetails.hidden) profileDetails.open = false;
+    for (const key of ['organization', 'phone']) {
+      const row = $('[data-confirmation-card-' + key + ']');
+      row.hidden = !profile?.[key];
+      row.querySelector('dd').textContent = profile?.[key] ?? '';
+    }
+  }
   let walletBadgeReady=Boolean(walletBadge?.complete&&walletBadge.naturalWidth>0);
   function syncWalletBadge(){
     const showBadge=walletBadgeReady&&!walletButton.hidden&&(Boolean(state?.card)||walletButton.dataset.walletAction==='add');
@@ -61,6 +71,7 @@ if (root) {
     clearJpeg();
     $('[data-confirmation-community]').textContent = '';
     $('[data-confirmation-community]').hidden = true;
+    renderCardProfile(null);
     eventGuide.hidden = true;
     guideMap.removeAttribute('href');
     guideMapItem.hidden = true;
@@ -144,6 +155,7 @@ if (root) {
       const community = cardCommunityLabel(value.cardCommunity), communityText = $('[data-confirmation-community]');
       communityText.textContent = community;
       communityText.hidden = !community;
+      renderCardProfile(value.cardProfile);
       $('[data-confirmation-save-heading]').textContent = '领取纪念卡';
       const device = $('[data-confirmation-device]');
       const jpegReady = value.card.format !== 'wallet' && value.card.ready;
@@ -180,7 +192,7 @@ if (root) {
       if (current !== generation) return;
       jpegUrl = URL.createObjectURL(blob);
       const image = $('[data-confirmation-jpeg-image]');
-      image.alt = ['电子纪念卡', value.attendee.name, '卡面身份：' + value.card.identity, cardCommunityLabel(value.cardCommunity)].filter(Boolean).join('，');
+      image.alt = ['电子纪念卡', value.attendee.name, '卡面身份：' + value.card.identity, cardCommunityLabel(value.cardCommunity), value.cardProfile?.organization].filter(Boolean).join('，');
       image.src = jpegUrl;
       root.dataset.cardPreview = '';
       $('[data-confirmation-jpeg-preview]').hidden = false;

@@ -6,7 +6,7 @@ import { createConfirmationTokens } from './tokens.mjs';
 import { createConfirmationRepository, canonicalConfirmationKind, formalConfirmationKind, commemorativeCardKind, confirmationNoticeId, confirmationRequestHash,
   validConfirmationOperation, MAX_CONFIRMATION_BATCH, sameConfirmationScope as sameScope, cardResendCandidates, cardSendInProgress,
   cardCommunityPrefix, createCardCommunityRepository, cardManagementPrefix, createCardManagementRepository, cardTestFields } from './repository.mjs';
-import { CARD_FORMATS, WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, commemorativeCardVenue, isWalletApplicationFields, walletApplicationPreferences } from '../../shared/general-application.mjs';
+import { CARD_FORMATS, WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, cardProfileFields, commemorativeCardVenue, isWalletApplicationFields, walletApplicationPreferences } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 import { buildPosterInvitationSettings } from '../../shared/organizer-progress.mjs';
 import { confirmationEmailPresentation } from './presentation.mjs';
@@ -68,6 +68,10 @@ export function createRegistrationConfirmationService({ registrationService, jou
   const communities = () => communityRepository ??= createCardCommunityRepository({ journal: journalFor(cardCommunityPrefix(eventId)), eventId, clock });
   const management = () => managementRepository ??= createCardManagementRepository({ journal: journalFor(cardManagementPrefix(eventId)), eventId, clock });
   const communityFor = (state, id) => state.entries[id]?.community ?? { site: '', role: '' };
+  const profileFor = (state, id) => {
+    const profile = state.entries[id]?.profile;
+    return profile?.organization || profile?.phone ? { cardProfile: profile } : {};
+  };
   const currentEventFacts = () => readEventFactsReadiness(eventFactsReadiness);
   async function deliveryPermission(record) {
     if (isTestCard(record)) return { eligible: true, reason: 'ELIGIBLE' };
@@ -186,7 +190,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const value = trustedProjection(registrationId, loaded);
     if (includeCardCommunity && value.admissionStatus === 'confirmed') {
       if ((await aliasesFor(loaded)).registrationIds.some(id => state.removed[id])) failure('CONFIRMATION_NOT_FOUND', 404);
-      return { ...value, cardCommunity: communityFor(await communities().read(), registrationId) };
+      const saved = await communities().read();
+      return { ...value, cardCommunity: communityFor(saved, registrationId), ...profileFor(saved, registrationId) };
     }
     return value;
   }
@@ -207,8 +212,9 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const projected = trustedProjection(registrationId, loaded);
     if (!cardFormat && !projected.walletRequested) return projected;
     if (!await cardIdentity(loaded, projected)) return null;
+    const saved = await communities().read();
     return { ...projected, walletRequested: true,
-      cardCommunity: communityFor(await communities().read(), registrationId) };
+      cardCommunity: communityFor(saved, registrationId), ...profileFor(saved, registrationId) };
   }
   async function cardIdentity(loaded, projection) {
     if (projection.admissionStatus !== 'confirmed') return null;
@@ -495,6 +501,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       const cardCommunity = communityFor(community, registrationId);
       return { ...cardView, wallet,
         ...(cardCommunity.site || cardCommunity.role ? { cardCommunity } : {}),
+        ...profileFor(community, registrationId),
         card: { format: both ? 'both' : cardFormat, identity: identity.label,
           ready: currentFacts.ready && (jpegRequested || wallet.ready) } };
     }
@@ -927,6 +934,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
       test: isTestCard(record), canRemove: actorValid(actor),
       cardCommunity: communityFor(community, record.id), communityRevision: community.cursor.version,
       cardCommunitySaved: Object.hasOwn(community.entries, record.id),
+      cardProfile: community.entries[record.id]?.profile ?? null,
+      suggestedCardProfile: cardProfileFields({ organization: application.record.fields.organization ?? '', phone: application.record.fields.phone ?? '' }),
       applicationPreferences: walletApplicationPreferences(application.record.fields) ?? {} };
   }
   async function staffCardAddTest({ actor, name, email, identity, operationId } = {}) {
@@ -956,17 +965,18 @@ export function createRegistrationConfirmationService({ registrationService, jou
     catch (error) { if (conflict(error)) failure('REVISION_CONFLICT', 409); throw error; }
     return { removed: true };
   }
-  async function staffCardSaveCommunity({ actor, registrationId, primaryId, expectedCommunityRevision, cardCommunity } = {}) {
+  async function staffCardSaveCommunity({ actor, registrationId, primaryId, expectedCommunityRevision, cardCommunity, cardProfile } = {}) {
     if (!readerValid(actor)) failure('FORBIDDEN', 403);
     const community = cardCommunityFields(cardCommunity);
-    if (!ID.test(primaryId ?? '') || !Number.isSafeInteger(expectedCommunityRevision) || expectedCommunityRevision < 0 || !community) {
+    const profile = cardProfile === undefined ? undefined : cardProfileFields(cardProfile);
+    if (!ID.test(primaryId ?? '') || !Number.isSafeInteger(expectedCommunityRevision) || expectedCommunityRevision < 0 || !community || profile === null) {
       failure('INVALID_REQUEST', 400);
     }
     const current = await communities().read(), { primary } = await cardContext(registrationId);
     if (current.cursor.version !== expectedCommunityRevision || primary.record.id !== primaryId || primary.admission.status !== 'confirmed') {
       failure('REVISION_CONFLICT', 409);
     }
-    try { return await communities().save(current, { registrationId: primaryId, community, actorId: actor.id }); }
+    try { return await communities().save(current, { registrationId: primaryId, community, profile, actorId: actor.id }); }
     catch (error) { if (conflict(error)) failure('REVISION_CONFLICT', 409); throw error; }
   }
   async function staffCardSaveIdentity({ actor, registrationId, primaryId, expectedRevision, identity } = {}) {

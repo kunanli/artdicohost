@@ -116,7 +116,7 @@ test('staff send one commemorative card email and recipients can still save the 
   assert.equal(f.cardMessages().length, 1);
 });
 
-test('staff can update or clear the optional GGJ role on an already issued card without resending mail', async () => {
+test('staff can update or clear optional card details on an already issued card without resending mail', async () => {
   const f = await setup();
   const send = await f.prepare();
   assert.equal((await (await f.call('POST', send)).json()).status, 'provider_accepted');
@@ -130,6 +130,7 @@ test('staff can update or clear the optional GGJ role on an already issued card 
   };
   const original = await f.read();
   assert.equal((await readCard()).cardCommunity, undefined);
+  assert.equal((await readCard()).cardProfile, undefined);
   const body = { primaryId: f.id, expectedCommunityRevision: original.communityRevision,
     cardCommunity: { site: ' GGJ 合成站 ', role: '站点组织者' } };
   const editor = await f.login('editor');
@@ -143,12 +144,22 @@ test('staff can update or clear the optional GGJ role on an already issued card 
   const latest = await readCard();
   assert.equal(latest.card.identity, '嘉宾');
   assert.deepEqual(latest.cardCommunity, saved.cardCommunity);
+  const cardProfile = { organization: '合成院校', phone: '+86 010 0000 0000' };
+  const update = { ...body, expectedCommunityRevision: saved.communityRevision, cardProfile };
+  assert.equal((await f.call('PATCH', { ...update, cardProfile: { ...cardProfile, email: 'not-a-card-field@example.invalid' } })).status, 400);
+  const withProfile = await (await f.call('PATCH', update)).json();
+  assert.deepEqual(withProfile.cardProfile, cardProfile);
+  assert.deepEqual((await readCard()).cardProfile, cardProfile);
   const prefix = cardCommunityPrefix(PEOPLE_FIXTURE_EVENT);
   const backup = await collectJournalBackupKeys({ objects: f.objects, journalPrefixes: [prefix] });
   assert.ok(backup.includes(prefix + '/commits.jsonl') && backup.some(key => key.startsWith(prefix + '/blobs/')));
   assert.equal((await f.call('PATCH', body, f.make())).status, 409);
-  assert.equal((await f.call('PATCH', { ...body, expectedCommunityRevision: saved.communityRevision, cardCommunity: { site: '', role: '' } })).status, 200);
+  assert.equal((await f.call('PATCH', { ...body, expectedCommunityRevision: withProfile.communityRevision, cardCommunity: { site: '', role: '' } })).status, 200);
   assert.equal((await readCard()).cardCommunity, undefined);
+  assert.deepEqual((await readCard()).cardProfile, cardProfile, 'an older client preserves saved personal details');
+  const cleared = await f.read();
+  assert.equal((await f.call('PATCH', { ...body, expectedCommunityRevision: cleared.communityRevision, cardProfile: { organization: '', phone: '' } })).status, 200);
+  assert.equal((await readCard()).cardProfile, undefined);
   assert.equal(f.cardMessages().length, 1);
 });
 

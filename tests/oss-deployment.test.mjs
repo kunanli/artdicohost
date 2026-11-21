@@ -19,7 +19,7 @@ async function fixture(t) {
   });
   const dist = resolve(directory, 'dist');
   const output = resolve(directory, 'publication');
-  for (const part of ['_astro', 'invitation', 'invitations', 'registration/confirmation', 'admin/contacts', 'admin/settings', 'admin/person', 'admin/volunteers', 'r', 'wallet']) await mkdir(resolve(dist, part), { recursive: true });
+  for (const part of ['_astro', 'event', 'invitation', 'invitations', 'registration/confirmation', 'admin/contacts', 'admin/settings', 'admin/person', 'admin/volunteers', 'r', 'wallet']) await mkdir(resolve(dist, part), { recursive: true });
   await writeFile(resolve(dist, 'index.html'), '<script type="module" src="/_astro/public.hash.js"></script><a href="/admin/">后台</a>');
   await writeFile(resolve(dist, '_astro/public.hash.js'), 'import "./shared.hash.js";');
   await writeFile(resolve(dist, '_astro/shared.hash.js'), 'console.log("public-only");');
@@ -33,6 +33,7 @@ async function fixture(t) {
     await writeFile(resolve(dist, route.slice(1), 'index.html'), '<form>PRIVATE-SYNTHETIC-ADMIN-SUBPAGE</form><script src="/_astro/private.hash.js"></script>');
   }
   await writeFile(resolve(dist, 'invitation/index.html'), '<h1>图片邀请函</h1>');
+  await writeFile(resolve(dist, 'event/index.html'), '<h1>活动详情</h1>');
   await writeFile(resolve(dist, 'registration/confirmation/index.html'), '<h1>报名确认</h1><script type="module" src="/_astro/receipt.hash.js"></script>');
   await writeFile(resolve(dist, '_astro/receipt.hash.js'), '/* Synthetic empty receipt controller; no participant data. */');
   await writeFile(resolve(dist, 'invitations/template-blank.png'), 'synthetic-test-image');
@@ -47,7 +48,8 @@ async function fixture(t) {
 test('publication selects reachable public assets and replaces local admin with notices', async t => {
   const { dist, output } = await fixture(t);
   const manifest = await prepareOssSite({ distDirectory: dist, outputDirectory: output, commit });
-  assert.equal(manifest.files.length, 38);
+  assert.equal(manifest.files.length, 39);
+  assert.ok(manifest.files.some(item => item.path === 'event/index.html'));
   assert.ok(manifest.files.some(file => file.path === 'wallet/host-card-banner.png'));
   const receipt = JSON.parse(await readFile(resolve(output, 'release.json'), 'utf8'));
   assert.equal(receipt.commit, commit);

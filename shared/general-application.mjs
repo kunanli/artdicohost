@@ -4,6 +4,20 @@ export const GENERAL_APPLICATION_INTAKE = 'general-v2';
 export const WALLET_APPLICATION_INTAKE = 'wallet-v1';
 export const CARD_FORMATS = Object.freeze(['jpeg', 'wallet']);
 export const CARD_COMMUNITY_FIELD_LENGTH = 36;
+export const CARD_PROFILE_FIELD_LENGTHS = Object.freeze({ organization: 160, phone: 150 });
+export function cardProfileFields(input) {
+  if (!plain(input) || Object.keys(input).length !== 2) return null;
+  const profile = {};
+  for (const [key, limit] of Object.entries(CARD_PROFILE_FIELD_LENGTHS)) {
+    const raw = own(input, key);
+    if (typeof raw !== 'string' || raw.length > limit * 2 || !raw.isWellFormed()
+      || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(raw)) return null;
+    const value = raw.normalize('NFC').trim();
+    if ([...value].length > limit) return null;
+    profile[key] = value;
+  }
+  return profile;
+}
 export function cardCommunityFields(value) {
   if (!plain(value) || Object.keys(value).length !== 2) return null;
   const normalize = field => {

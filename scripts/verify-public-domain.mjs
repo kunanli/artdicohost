@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { contentType, PRIVATE_CONFIRMATION_PAGE, publicObjectCachePolicy, verifyPublication } from './deploy-oss.mjs';
+import { EVENT_DETAILS_PAGE } from './prepare-oss-site.mjs';
 
 export const PUBLIC_SITE_ORIGIN = 'https://artdico.host';
 const failed = () => new Error('Public domain release verification failed.');
@@ -19,6 +20,7 @@ export async function verifyPublicDomain({ directory, commit = process.env.GITHU
     for (const item of manifest.files) {
       const url = PUBLIC_SITE_ORIGIN + (item.path === PRIVATE_CONFIRMATION_PAGE
         ? '/registration/confirmation/'
+        : item.path === EVENT_DETAILS_PAGE ? '/event/'
         : '/' + item.path.split('/').map(encodeURIComponent).join('/') + '?release=' + commit);
       const controller = new AbortController();
       let rejectTimeout, response, reader;

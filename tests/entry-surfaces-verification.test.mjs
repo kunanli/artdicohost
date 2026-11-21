@@ -14,8 +14,8 @@ async function fixture(t) {
   const root = await mkdtemp(resolve(tmpdir(), 'artdico-entry-surfaces-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const dist = resolve(root, 'dist'), directory = resolve(root, 'publication');
-  for (const name of ['invitation', 'invitations', 'registration/confirmation', 'r', 'wallet']) await mkdir(resolve(dist, name), { recursive: true });
-  for (const name of ['index.html', 'invitation/index.html', 'registration/confirmation/index.html', 'r/index.html']) await writeFile(resolve(dist, name), '<html>合成公开入口 ' + name + '</html>');
+  for (const name of ['event', 'invitation', 'invitations', 'registration/confirmation', 'r', 'wallet']) await mkdir(resolve(dist, name), { recursive: true });
+  for (const name of ['index.html', 'event/index.html', 'invitation/index.html', 'registration/confirmation/index.html', 'r/index.html']) await writeFile(resolve(dist, name), '<html>合成公开入口 ' + name + '</html>');
   for (const name of ['invitations/template-blank.png', 'invitations/ggj2026-poster-v2.webp', 'wallet/host-card-banner.png']) await writeFile(resolve(dist, name), 'synthetic-public-image');
   for (const locale of ['cn', 'en']) for (const extension of ['png', 'svg']) await writeFile(resolve(dist, 'wallet/add-to-apple-wallet-' + locale + '.' + extension), 'synthetic-public-badge');
   await prepareOssSite({ distDirectory: dist, outputDirectory: directory, commit });

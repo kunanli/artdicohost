@@ -1,6 +1,6 @@
 import { PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
 import { CARD_FORMATS_ACCEPT } from '../../shared/confirmation-delivery.mjs';
-import { cardCommunityFields } from '../../shared/general-application.mjs';
+import { cardCommunityFields, cardProfileFields } from '../../shared/general-application.mjs';
 
 const API = 'https://api.artdico.host';
 const SITE = 'https://artdico.host';
@@ -157,7 +157,8 @@ export function confirmationView(value, now = Date.now()) {
     || card.format === 'wallet' && card.ready !== value.wallet.ready)) return null;
   const facts = Object.hasOwn(value, 'eventFacts') ? eventFactsState(value.eventFacts) : null;
   const cardCommunity = card && cardCommunityFields(value.cardCommunity);
-  if (Object.hasOwn(value, 'cardCommunity') && !cardCommunity) return null;
+  const cardProfile = card && cardProfileFields(value.cardProfile);
+  if (Object.hasOwn(value, 'cardCommunity') && !cardCommunity || Object.hasOwn(value, 'cardProfile') && !cardProfile) return null;
   return {
     event: Object.fromEntries(eventKeys.map(key => [key,value.event[key]])), referenceCode: value.referenceCode, submittedAt: value.submittedAt,
     admission: { status: value.admission.status, kind: value.admission.kind, revision: value.admission.revision },
@@ -166,6 +167,7 @@ export function confirmationView(value, now = Date.now()) {
     ...(facts ? { eventFacts: facts } : {}), ...(card ? { card: { format: card.format, identity: card.identity, ready: card.ready } } : {}),
     ...(cardRequest ? { cardRequest: true } : {}),
     ...(cardCommunity ? { cardCommunity } : {}),
+    ...(cardProfile ? { cardProfile } : {}),
     ...(Object.hasOwn(value, 'notifications') ? { notifications: notificationHistory(value.notifications) } : {}),
     groupInvite: confirmed ? groupInvite(value.groupInvite,now) : null,
     invitation: facts?.ready === false ? { ready: false } : confirmationInvitation(value.invitation,value.admission.status,value.attendee?.name),

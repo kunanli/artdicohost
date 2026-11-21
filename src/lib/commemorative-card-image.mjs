@@ -89,6 +89,16 @@ export async function renderCommemorativeJpeg(view) {
   line(context, '地点', 962, 852, 29, { align: 'right' });
   const venue = commemorativeCardVenue(view.event.venue);
   line(context, venue, 962, 894, 29, { maxWidth: 540, align: 'right' });
+  const profile = view.cardProfile;
+  if (profile?.organization) {
+    line(context, '学校／机构', 64, 1078, 29);
+    line(context, profile.organization, 64, 1120, 29, { maxWidth: 895 });
+  }
+  if (profile?.phone) {
+    const y = profile.organization ? 1190 : 1078;
+    line(context, '电话', 64, y, 29);
+    line(context, profile.phone, 64, y + 42, 29, { maxWidth: 895 });
+  }
   context.fillStyle = '#5b5b5b';
   context.fillRect(67, 1328, 895, 1);
   line(context, '电子纪念卡', 64, 1387, 29);

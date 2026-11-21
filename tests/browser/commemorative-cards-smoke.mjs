@@ -218,11 +218,13 @@ try {
           const files = passFiles(await readFile(await pass.path()));
           const walletPass = JSON.parse(files.get('pass.json'));
           assert.deepEqual(walletPass.preferredStyleSchemes, ['eventTicket']);
-          assert.equal(files.has('logo.png'), false);
+          assert.ok(['logo.png', 'logo@2x.png', 'logo@3x.png'].every(name => files.has(name)));
           assert.equal(files.has('strip@2x.png'), true);
           assert.equal(files.has('background.png'), false);
           assert.equal(files.has('artwork.png'), false);
-          assert.equal(walletPass.logoText, 'GGJ China Meetup 2026 x ARTDiCO HOST');
+          assert.equal(walletPass.logoText, undefined);
+          assert.equal(walletPass.eventTicket.backFields.find(field => field.key === 'co-brand-title').value,
+            'GGJ China Meetup 2026 x ARTDiCO HOST');
           assert.equal(walletPass.barcodes, undefined);
           assert.equal(walletPass.expirationDate, undefined);
           assert.equal(walletPass.eventTicket.primaryFields, undefined);

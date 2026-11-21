@@ -2,7 +2,7 @@ import { renderInvitation, invitationPngBlob } from '../lib/invitation-renderer.
 import { confirmationToken, confirmationLink, confirmationEmailMessage, confirmationNotificationMessage, confirmationStatusLabels, createConfirmationClient, confirmationInvitationFacts, prepareConfirmationInvitation, confirmationWalletGuidance, CONFIRMATION_INVITATION_FILENAME, CONFIRMATION_CONTACT_EMAIL, CONFIRMATION_GROUP_UNAVAILABLE } from '../lib/confirmation-client.mjs';
 
 import { renderCommemorativeJpeg } from '../lib/commemorative-card-image.mjs';
-import { cardCommunityLabel } from '../../shared/general-application.mjs';
+import { cardCommunityLabel, cardIdentityHeadline } from '../../shared/general-application.mjs';
 import { appleMapsDirectionsUrl } from '../config/event.mjs';
 
 const root = document.querySelector('[data-confirmation-page]');
@@ -192,7 +192,8 @@ if (root) {
       if (current !== generation) return;
       jpegUrl = URL.createObjectURL(blob);
       const image = $('[data-confirmation-jpeg-image]');
-      image.alt = ['电子纪念卡', value.attendee.name, '卡面身份：' + value.card.identity, cardCommunityLabel(value.cardCommunity), value.cardProfile?.organization].filter(Boolean).join('，');
+      const headline = cardIdentityHeadline(value.card.identity, value.cardCommunity);
+      image.alt = ['电子纪念卡', headline.site, headline.identity, value.attendee.name, value.cardProfile?.organization].filter(Boolean).join('，');
       image.src = jpegUrl;
       root.dataset.cardPreview = '';
       $('[data-confirmation-jpeg-preview]').hidden = false;

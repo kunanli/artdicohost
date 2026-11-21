@@ -1,4 +1,4 @@
-import { cardCommunityLabel, commemorativeCardVenue } from '../../shared/general-application.mjs';
+import { cardIdentityHeadline, commemorativeCardVenue } from '../../shared/general-application.mjs';
 
 // Coordinates follow the organizer-provided portrait card.
 export const CARD_IMAGE = Object.freeze({ width: 1030, height: 1510 });
@@ -74,14 +74,11 @@ export async function renderCommemorativeJpeg(view) {
   context.fillStyle = '#5b5b5b';
   context.fillRect(67, 597, 895, 1);
   context.fillRect(67, 781, 895, 1);
-  const community = cardCommunityLabel(view.cardCommunity);
-  const labelY = community ? 653 : 680;
-  const nameY = community ? 709 : 735;
-  line(context, '参会人', 64, labelY, 38);
-  line(context, view.attendee.name, 64, nameY, 43, { maxWidth: 580 });
-  if (community) line(context, community, 64, 758, 34, { maxWidth: 895, color: '#d9c7ff', weight: 600 });
-  line(context, '卡面身份', 962, labelY, 38, { align: 'right' });
-  line(context, view.card.identity, 962, nameY, 43, { maxWidth: 265, align: 'right' });
+  const headline = cardIdentityHeadline(view.card.identity, view.cardCommunity);
+  const identityY = headline.site ? 725 : 711;
+  if (headline.site) line(context, headline.site, 64, 665, 34, { maxWidth: 580, color: '#d9c7ff', weight: 600 });
+  line(context, headline.identity, 64, identityY, 43, { maxWidth: 580, weight: 600 });
+  line(context, view.attendee.name, 962, identityY, 43, { maxWidth: 280, align: 'right' });
   line(context, '日期', 64, 852, 29);
   line(context, view.event.date.replaceAll('-', ' - '), 64, 894, 29);
   line(context, '时间', 64, 956, 29);

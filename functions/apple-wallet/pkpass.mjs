@@ -1,4 +1,4 @@
-import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, cardProfileFields, commemorativeCardVenue } from '../../shared/general-application.mjs';
+import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, cardIdentityHeadline, cardProfileFields, commemorativeCardVenue } from '../../shared/general-application.mjs';
 import { eventConfig, PUBLIC_AGENDA_URL, PUBLIC_EVENT_DETAILS_URL, PUBLIC_MEETUP_TITLE, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL, appleMapsDirectionsUrl } from '../../src/config/event.mjs';
 import { createHash, createPrivateKey, X509Certificate } from 'node:crypto';
 import { derChildren, oid, signManifest } from './der.mjs';
@@ -198,12 +198,6 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
       value: characters.length > maxAffiliationLength ? characters.slice(0, maxAffiliationLength - 1).join('') + '…' : field.value };
   });
   const faceIdentity = walletIdentity ? { key: 'identity', value: walletIdentity.label } : null;
-  const site = siteIdentity?.site;
-  const organizer = walletIdentity?.value === 'organizer';
-  const headlineIdentity = site && organizer ? '组织者' : faceIdentity?.value;
-  const responsibilities = (siteIdentity?.role ?? '').split(/\s*[・·、]\s*/u).filter(role => role
-    && role !== faceIdentity?.value && !(organizer && /^(?:GGJ\s+)?(?:站[点點])?[组組][织織]者$/iu.test(role)));
-  const identityHeadline = [headlineIdentity, ...new Set(responsibilities)].filter(Boolean).join(' · ');
   const identityField = faceIdentity ? { ...faceIdentity, label: meetupCard ? '身份' : richCard ? '卡面身份' : '入场身份' } : null;
   const fullCardDetails = richCard ? [
     { ...person, key: 'details-name' }, { ...identityField, key: 'details-identity' },
@@ -230,9 +224,9 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
       attributedValue: '<a href="' + PUBLIC_EVENT_DETAILS_URL + '">查看活动详情</a>' }] : []),
     ...(!richCard ? [{ key: 'reference', label: '报名编号', value: attendee.referenceCode }, ...communityFields] : []),
     { key: 'notice', label: '说明', value: richCard ? '本卡用于纪念收藏。现场签到请使用活动行原电子票。' : '此凭证仅表示参会名额。讲者、展位及住宿另行确认；请以在线核对结果为准。' }];
-  const posterGeneric = meetupCard ? {
-    primaryFields: [{ key: 'poster-identity', value: identityHeadline,
-      ...(site ? { label: /^GGJ(?:\s|$)/iu.test(site) ? site : 'GGJ ' + site } : {}) },
+  const headline = meetupCard ? cardIdentityHeadline(faceIdentity.value, siteIdentity) : null;
+  const posterGeneric = headline ? {
+    primaryFields: [{ key: 'poster-identity', value: headline.identity, ...(headline.site ? { label: headline.site } : {}) },
     { ...faceName, key: 'poster-name' }],
     footerFields: [{
       key: 'poster-event-summary', label: '活动时间与地点 · UTC+8',

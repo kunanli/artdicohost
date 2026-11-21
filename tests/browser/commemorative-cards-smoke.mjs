@@ -242,9 +242,12 @@ try {
           await page.getByRole('status').filter({ hasText: '进入票券详情' }).waitFor();
           const files = passFiles(await readFile(await pass.path()));
           const walletPass = JSON.parse(files.get('pass.json'));
-          assert.deepEqual(walletPass.posterGeneric.primaryFields.map(({ value }) => value),
-            ['合成纪念卡申请人', '嘉宾', 'GGJ 合成站 · 站点组织者', organization]);
+          assert.deepEqual(walletPass.posterGeneric.primaryFields.map(({ label, value }) => [label, value]),
+            [[undefined, '嘉宾'], [undefined, '合成纪念卡申请人'], ['GGJ 站点', 'GGJ 合成站'], ['社群角色', '站点组织者']]);
           assert.equal(walletPass.posterGeneric.footerFields[0].value, '2026-12-05 · 10:00–18:00 · 前海5号楼');
+          assert.deepEqual(walletPass.posterGeneric.additionalInfoFields.slice(0, 2).map(({ label }) => label),
+            ['GGJ 中国交流聚会', 'ARTDiCO HOST 学生嘉年华']);
+          assert.equal(walletPass.posterGeneric.additionalInfoFields.find(({ key }) => key === 'poster-info-organization').value, organization);
           assert.equal(walletPass.posterGeneric.backFields.find(({ key }) => key === 'poster-details-venue').value, venue);
           assert.equal(walletPass.posterGeneric.backFields.find(({ key }) => key === 'poster-details-phone').value, phone);
           assert.equal(walletPass.posterGeneric.backFields.find(({ key }) => key === 'poster-details-event-details').value, PUBLIC_EVENT_DETAILS_URL);
@@ -258,7 +261,8 @@ try {
           assert.equal(walletPass.barcodes, undefined);
           assert.equal(walletPass.expirationDate, undefined);
           assert.equal(walletPass.eventTicket.primaryFields, undefined);
-          assert.deepEqual(walletPass.eventTicket.secondaryFields.map(field => field.value), ['合成纪念卡申请人', '嘉宾']);
+          assert.deepEqual(walletPass.eventTicket.secondaryFields.map(({ label, value }) => [label, value]),
+            [[undefined, '嘉宾'], [undefined, '合成纪念卡申请人']]);
           assert.deepEqual(walletPass.eventTicket.headerFields.map(({ value }) => value), ['前海5号楼']);
           assert.deepEqual(walletPass.eventTicket.auxiliaryFields.map(field => field.key), ['date', 'time', 'activities', 'ggj-site-short', 'ggj-role-short', 'organization-short']);
           assert.deepEqual(walletPass.eventTicket.auxiliaryFields.slice(3), [

@@ -10,10 +10,10 @@ const fields=[
  {name:'email',label:'Email',type:'email',required:true,maxLength:254,hint:'用于接收电子纪念卡领取链接。'},
  {name:'wechat',label:'微信号',type:'text',required:true,maxLength:100},
  {name:'requestedWalletIdentity',label:'申请的卡面身份',type:'select',required:false,options:[...WALLET_IDENTITIES]},
-];
-const communityFields = [
-  {name:'ggjSite',label:'GGJ 站点',type:'text',required:false,maxLength:CARD_COMMUNITY_FIELD_LENGTH},
-  {name:'ggjRole',label:'GGJ 社群角色',type:'text',required:false,maxLength:CARD_COMMUNITY_FIELD_LENGTH},
+ {name:'ggjSite',label:'所属 GGJ 站点',type:'text',required:false,maxLength:CARD_COMMUNITY_FIELD_LENGTH},
+ {name:'ggjRole',label:'社群角色／游戏开发分工',type:'text',required:false,maxLength:CARD_COMMUNITY_FIELD_LENGTH,
+  suggestions:['程序','美术','策划','音频','制作人','测试','叙事设计','站点组织者','Jammer','志愿者'],
+  hint:'可填程序、美术、策划等，也可并列填写，例如「站点组织者・美术」。'},
 ];
 ---
 <section class="ah-registration ah-section" id="wallet-card-application" aria-labelledby="wallet-card-heading" data-wallet-api-origin={apiOrigin||undefined}>
@@ -21,11 +21,10 @@ const communityFields = [
  <div class="ah-registration-preview ah-general-application"><div class="ah-form-card">
   <div class="ah-form-top"><strong>电子纪念卡</strong></div>
   <form data-wallet-form method="post" novalidate autocomplete="off">
-   <p class="ah-form-hint">带 * 为必填。可选填卡面身份，工作人员核对后写入纪念卡。</p>
+   <p class="ah-form-hint">带 * 为必填。卡面身份、站点和分工经工作人员核对后写入纪念卡。</p>
    <p class="ah-form-hint" data-wallet-draft-status role="status" aria-live="polite"></p><button type="button" class="ah-text-action" data-wallet-draft-restore hidden>恢复本机申请</button>
    <p class="ah-form-error" data-wallet-error role="alert" tabindex="-1" hidden></p>
    <div class="ah-fields-grid">{fields.map(field=><FormField field={field} prefix="wallet" />)}</div>
-   <details class="ah-general-extra" data-wallet-community><summary>GGJ 站点与社群角色（选填）</summary><div class="ah-fields-grid">{communityFields.map(field=><FormField field={field} prefix="wallet" />)}</div></details>
    <details class="ah-general-extra"><summary>电话与学校／机构（选填）</summary><div class="ah-fields-grid">{[{name:'phone',label:'电话',type:'tel',required:false,maxLength:CARD_PROFILE_FIELD_LENGTHS.phone,hint:'经核对后会显示在 Wallet 票券详情及 JPEG。'},{name:'organization',label:'学校／机构／团队',type:'text',required:false,maxLength:CARD_PROFILE_FIELD_LENGTHS.organization,hint:'经核对后会显示在纪念卡上。'}].map(field=><FormField field={field} prefix="wallet" />)}</div></details>
    <div class="ah-consent-field"><label class="ah-demo-consent" for="wallet-consent"><input type="checkbox" id="wallet-consent" name="wallet.consentAccepted" required /><span>我已阅读并同意<a href="#privacy">隐私说明</a>。</span></label></div>
    <button type="submit" data-wallet-submit class="ah-primary ah-full" disabled>正在确认申请服务…</button>

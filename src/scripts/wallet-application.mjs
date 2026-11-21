@@ -14,7 +14,6 @@ for(const section of document.querySelectorAll('[data-wallet-api-origin]')){
  function fields(){return{intake:WALLET_APPLICATION_INTAKE,locale:document.documentElement.lang.startsWith('en')?'en':'zh-CN',...Object.fromEntries(fieldNames.map(name=>[name,control(name).value])),categories:['other'],participationInterests:['attend']};}
  function apply(value){
   for(const name of fieldNames)control(name).value=value[name]??'';
-  if(value.ggjSite||value.ggjRole)form.querySelector('[data-wallet-community]').open=true;
   control('consentAccepted').checked=false;
  }
  function lock(){

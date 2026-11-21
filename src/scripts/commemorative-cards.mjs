@@ -1,4 +1,5 @@
 import { cardCommunityLabel, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
+import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 
 const root = document.querySelector('[data-card-admin]');
 const $ = selector => root.querySelector(selector);
@@ -17,7 +18,6 @@ const reasons = {
   PERMISSION_REQUIRED: '请由有寄送权限的工作人员发卡。',
   EMAIL_MISSING: '请在人员资料中补齐收件邮箱。',
   EMAIL_UNAVAILABLE: '邮件寄送暂不可用。',
-  RETRY_LIMIT: '已达重试次数，请交由管理员核对。',
   EVENT_FACTS_MISMATCH: '请先核对已发布的活动信息。',
   EVENT_FACTS_UNAVAILABLE: '活动信息暂无法核对。',
 };
@@ -43,8 +43,13 @@ const errorBox = $('[data-card-error]');
 const detailError = $('[data-card-detail-error]');
 const message = $('[data-card-message]');
 const placeholder = $('[data-card-placeholder]');
+const add = $('[data-card-add]');
+const createPanel = $('#card-create');
+const createForm = $('[data-card-create]');
+const remove = $('[data-card-remove]');
 
 let csrf = '', rows = [], filter = 'todo', activeId = '', current = null, busy = false, editingIdentity = false, version = 0;
+let pendingTest = null;
 const pendingApprovals = new Map();
 const rowFor = id => rows.find(row => row.sources.some(source => source.id === id));
 
@@ -80,11 +85,19 @@ function clear() {
   list.replaceChildren();
   for (const button of filters) button.querySelector('span').textContent = '';
   pendingApprovals.clear();
+  pendingTest = null;
+  createForm.reset();
+  setCreateOpen(false);
+  add.hidden = true;
   loginPanel.hidden = false;
   logout.hidden = true;
   workspace.hidden = true;
   setView(null);
   message.textContent = '';
+}
+function setCreateOpen(open) {
+  createPanel.hidden = !open;
+  add.setAttribute('aria-expanded', String(open));
 }
 function renderList() {
   const query = search.value.normalize('NFKC').trim().toLocaleLowerCase();
@@ -146,6 +159,7 @@ function setView(value) {
     return;
   }
   heading.textContent = value.name;
+  $('[data-card-reference-label]').textContent = value.test ? '类型' : '活动行编号';
   const linked = $('[data-card-linked]');
   const otherReferences = [...new Set((rowFor(value.registrationId)?.sources ?? []).map(source => source.bookingReference))]
     .filter(reference => reference !== value.bookingReference);
@@ -190,7 +204,7 @@ function renderActions() {
   const identityValue = $('[data-card-identity-value]');
   identityValue.hidden = $('[data-card-identity-label]').hidden = !value.identity || !verified;
   identityValue.querySelector('span').textContent = value.identity ? identity.selectedOptions[0]?.textContent : '';
-  $('[data-card-edit]').hidden = !verified || uncertain || sent || editingIdentity;
+  $('[data-card-edit]').hidden = value.test || !verified || uncertain || sent || editingIdentity;
   const state = $('[data-card-state]');
   state.dataset.stage = value.stage;
   state.textContent = value.sendInProgress ? '纪念卡正在发送。'
@@ -210,13 +224,15 @@ function renderActions() {
   deliveryForm.hidden = !canSend || editingIdentity;
   deliveryForm.querySelector('[type="submit"]').textContent = resend || value.stage === 'retry_delivery' ? '重新发送纪念卡' : '发送纪念卡';
   $('[data-card-delivery-formats]').textContent = uncertain && resend
-    ? '重新发送可能让收件人收到两封纪念卡邮件。'
+    ? '上次邮件可能已经寄出。重寄可能会收到多封邮件。'
     : value.walletReady
     ? '一封邮件可领取 JPEG 和 Apple Wallet。' : '可先寄送 JPEG。Apple Wallet 就绪后可用同一链接领取。';
   const deliveryBlock = $('[data-card-delivery-block]');
   deliveryBlock.hidden = !(uncertain || sent) || !reason || value.reason === 'EMAIL_MISSING';
   deliveryBlock.textContent = deliveryBlock.hidden ? '' : reason;
   check.hidden = !value.sendInProgress;
+  $('[data-card-remove-panel]').hidden = !value.canRemove;
+  remove.textContent = value.test ? '移除测试卡' : '移除纪念卡';
 }
 async function work(task, nearApplication = false) {
   if (busy) return;
@@ -279,6 +295,7 @@ async function start(session) {
   loginPanel.hidden = true;
   logout.hidden = false;
   workspace.hidden = false;
+  add.hidden = !canManageEventOperations(session.user);
   await refresh();
 }
 login.addEventListener('submit', event => {
@@ -301,6 +318,47 @@ list.addEventListener('click', event => {
 search.addEventListener('input', renderList);
 for (const button of filters) button.addEventListener('click', () => { filter = button.dataset.cardFilter; renderList(); });
 $('[data-card-refresh]').addEventListener('click', () => work(refresh));
+add.addEventListener('click', () => {
+  const open = createPanel.hidden;
+  setCreateOpen(open);
+  if (open) createForm.elements.namedItem('name').focus();
+});
+$('[data-card-cancel-create]').addEventListener('click', () => { setCreateOpen(false); add.focus(); });
+createForm.addEventListener('submit', event => {
+  event.preventDefault();
+  const fields = Object.fromEntries(new FormData(createForm));
+  void work(async () => {
+    const key = JSON.stringify(fields);
+    if (pendingTest?.key !== key) pendingTest = { key, operationId: crypto.randomUUID() };
+    const { registrationId } = await request(api, 'POST', { ...fields, operationId: pendingTest.operationId });
+    if (!idPattern.test(registrationId ?? '')) throw new Error('暂时无法核对这张测试卡。');
+    filter = 'all';
+    search.value = '';
+    activeId = registrationId;
+    await refresh();
+    if (!csrf || current?.registrationId !== registrationId) throw new Error('暂时无法核对这张测试卡。');
+    pendingTest = null;
+    createForm.reset();
+    setCreateOpen(false);
+    message.textContent = '测试卡已保存，可以发送测试邮件。';
+    heading.focus();
+  });
+});
+remove.addEventListener('click', () => {
+  const view = current;
+  if (busy || !view?.canRemove || !window.confirm('移除「' + view.name + '」的纪念卡？这张卡的线上领取链接将失效。')) return;
+  void work(async () => {
+    try {
+      await request(api + '/' + view.registrationId, 'DELETE', { primaryId: view.primaryId });
+      if (csrf) await refresh();
+    }
+    catch (error) {
+      if (csrf) await refresh();
+      if (!csrf || rowFor(view.registrationId)) throw error;
+    }
+    if (csrf) message.textContent = '纪念卡已移除。';
+  }, true);
+});
 check.addEventListener('click', () => work(() => open(activeId), true));
 $('[data-card-edit]').addEventListener('click', () => { editingIdentity = true; renderActions(); identity.focus(); });
 

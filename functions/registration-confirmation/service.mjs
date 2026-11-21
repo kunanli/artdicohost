@@ -5,7 +5,7 @@ import { CloudContentError } from '../cloud-content/errors.mjs';
 import { createConfirmationTokens } from './tokens.mjs';
 import { createConfirmationRepository, canonicalConfirmationKind, formalConfirmationKind, commemorativeCardKind, confirmationNoticeId, confirmationRequestHash,
   validConfirmationOperation, MAX_CONFIRMATION_BATCH, sameConfirmationScope as sameScope, cardResendCandidates, cardSendInProgress,
-  cardCommunityPrefix, createCardCommunityRepository } from './repository.mjs';
+  cardCommunityPrefix, createCardCommunityRepository, cardManagementPrefix, createCardManagementRepository, cardTestFields } from './repository.mjs';
 import { CARD_FORMATS, WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, commemorativeCardVenue, isWalletApplicationFields, walletApplicationPreferences } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 import { buildPosterInvitationSettings } from '../../shared/organizer-progress.mjs';
@@ -20,6 +20,8 @@ const actorValid = actor => typeof own(actor, 'id') === 'string' && /^[A-Za-z0-9
 const readerValid = actor => typeof own(actor, 'id') === 'string' && /^[A-Za-z0-9_-]{1,80}$/u.test(actor.id)
   && Array.isArray(own(actor, 'roles')) && actor.roles.some(role => ['reviewer', 'superadmin'].includes(role));
 const automaticActor = 'system-confirmation';
+const isTestCard = record => record.provenance.kind === 'card_test';
+const testCardReference = '测试卡';
 const stateOf = notice => notice?.status === 'reserved' ? 'unknown' : notice?.status;
 const conflict = error => error instanceof CloudContentError && error.code === 'WRITE_CONFLICT' && error.status === 409;
 const ERRORS = { CONFIRMATION_UNAVAILABLE: 503, CONFIRMATION_NOT_FOUND: 404, FORBIDDEN: 403, AUTH_REQUIRED: 401,
@@ -59,14 +61,16 @@ export function createRegistrationConfirmationService({ registrationService, jou
   const expiry = expiresAt ?? Date.parse(eventFacts.date + 'T23:59:59.000+08:00') + 90 * 24 * 60 * 60 * 1000;
   const tokens = createConfirmationTokens({ tokenSecret, eventId, expiresAt: expiry, clock });
   const prefix = 'cms/v1/registration-confirmations/' + eventId;
-  let repository, cardsRepository, communityRepository;
+  let repository, cardsRepository, communityRepository, managementRepository;
   const target = (kind) => commemorativeCardKind(kind)
     ? cardsRepository ??= createConfirmationRepository({ journal: journalFor('cms/v1/commemorative-cards/' + eventId), eventId, clock, cards: true })
     : repository ??= createConfirmationRepository({ journal: journalFor(prefix), eventId, clock });
   const communities = () => communityRepository ??= createCardCommunityRepository({ journal: journalFor(cardCommunityPrefix(eventId)), eventId, clock });
+  const management = () => managementRepository ??= createCardManagementRepository({ journal: journalFor(cardManagementPrefix(eventId)), eventId, clock });
   const communityFor = (state, id) => state.entries[id]?.community ?? { site: '', role: '' };
   const currentEventFacts = () => readEventFactsReadiness(eventFactsReadiness);
   async function deliveryPermission(record) {
+    if (isTestCard(record)) return { eligible: true, reason: 'ELIGIBLE' };
     if(personDeliveryPermission){try{const permission=await personDeliveryPermission(structuredClone(record));if(permission?.eligible!==true)return{eligible:false,reason:permission?.reason==='CONTACT_DECLINED'?'CONTACT_DECLINED':'PERMISSION_UNAVAILABLE'};}catch{return{eligible:false,reason:'PERMISSION_UNAVAILABLE'};}}
     if (record.provenance.kind === 'public') return { eligible: true, reason: 'ELIGIBLE' };
     if (!staffDeliveryPermission) return { eligible: false, reason: 'STAFF_PERMISSION_REQUIRED' };
@@ -108,7 +112,22 @@ export function createRegistrationConfirmationService({ registrationService, jou
       return { record, admission, entry, index: value };
     } catch (error) { if (error instanceof ConfirmationError) throw error; failure(); }
   }
+  function testCard(registrationId, { recipient, at }) {
+    const { name, email, identity } = recipient;
+    return {
+      record: { id: registrationId, eventId, fields: { name, email, huodongxingReference: testCardReference },
+        provenance: { kind: 'card_test' }, walletRequested: true, walletIdentity: identity },
+      // Reuse the card eligibility flow without creating a registration or admission entry.
+      admission: { status: 'confirmed', kind: 'attendee', revision: 0 }, entry: { committedAt: at },
+    };
+  }
+  async function loadCardRegistration(registrationId, state) {
+    state ??= (await management().read()).value;
+    if (state.removed[registrationId]) failure('CONFIRMATION_NOT_FOUND', 404);
+    return state.tests[registrationId] ? testCard(registrationId, state.tests[registrationId]) : loadRegistration(registrationId);
+  }
   async function aliasesFor(loaded) {
+    if (isTestCard(loaded.record)) return { primaryRegistrationId: loaded.record.id, registrationIds: [loaded.record.id] };
     const group = loaded.index.admissions?.personGroups?.find(item => item.registrationIds.includes(loaded.record.id));
     const value = deliveryAliases ? await deliveryAliases(structuredClone(loaded.record)) : {
       registrationIds: group?.registrationIds ?? [loaded.record.id], primaryRegistrationId: group?.primaryRegistrationId ?? loaded.record.id };
@@ -162,8 +181,11 @@ export function createRegistrationConfirmationService({ registrationService, jou
       event: { ...eventFacts }, submittedAt: entry.committedAt, hasEmail: typeof record.fields.email === 'string' && Boolean(record.fields.email) };
   }
   async function authorizedRegistration(registrationId, { includeCardCommunity = false } = {}) {
-    const value = trustedProjection(registrationId, await loadRegistration(registrationId));
+    const state = includeCardCommunity ? (await management().read()).value : null;
+    const loaded = state ? await loadCardRegistration(registrationId, state) : await loadRegistration(registrationId);
+    const value = trustedProjection(registrationId, loaded);
     if (includeCardCommunity && value.admissionStatus === 'confirmed') {
+      if ((await aliasesFor(loaded)).registrationIds.some(id => state.removed[id])) failure('CONFIRMATION_NOT_FOUND', 404);
       return { ...value, cardCommunity: communityFor(await communities().read(), registrationId) };
     }
     return value;
@@ -171,9 +193,13 @@ export function createRegistrationConfirmationService({ registrationService, jou
   async function authorizedContext(input) {
     const claims = tokens.verify(own(input, 'receiptToken'));
     if (!claims) failure('CONFIRMATION_NOT_FOUND', 404);
-    const loaded = await loadRegistration(claims.registrationId);
+    const state = claims.cardFormat ? (await management().read()).value : null;
+    const loaded = state ? await loadCardRegistration(claims.registrationId, state) : await loadRegistration(claims.registrationId);
     if ((claims.accessRevision ?? 0) !== (loaded.record.accessRevision ?? 0)) failure('CONFIRMATION_NOT_FOUND', 404);
-    if (claims.cardFormat && (await aliasesFor(loaded)).primaryRegistrationId !== claims.registrationId) failure('CONFIRMATION_NOT_FOUND', 404);
+    if (claims.cardFormat || isCardRequest(loaded.record)) {
+      const aliases = await aliasesFor(loaded), value = state ?? (await management().read()).value;
+      if (aliases.registrationIds.some(id => value.removed[id]) || claims.cardFormat && aliases.primaryRegistrationId !== claims.registrationId) failure('CONFIRMATION_NOT_FOUND', 404);
+    }
     return { registrationId: claims.registrationId, loaded, cardFormat: claims.cardFormat };
   }
   async function authorize(input) {
@@ -231,7 +257,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const expectedRevision = card?.expectedRevision, resend = card?.resend === true;
     for (let tries = 0; tries < 4; tries++) {
       if (monotonicNow() >= deadline) return { status: 'not_attempted' };
-      const aliases = await aliasesFor(deliveryAliases ? loaded : { ...loaded, index: (await registrationService.repository.readIndex()).value });
+      const aliases = await aliasesFor(deliveryAliases || isTestCard(loaded.record) ? loaded : { ...loaded, index: (await registrationService.repository.readIndex()).value });
       if (aliases.primaryRegistrationId !== registrationId || !applicable(loaded, requestedKind)) return { status: 'not_applicable' };
       const current = await storage.read(), kind = formalConfirmationKind(requestedKind)
         ? canonicalConfirmationKind(current.value, registrationId, admission.status) : requestedKind;
@@ -240,9 +266,9 @@ export function createRegistrationConfirmationService({ registrationService, jou
       if (resend && current.value.revision !== expectedRevision) failure('REVISION_CONFLICT', 409);
       if (resend && (!cardResendCandidates(allRelated, scope).length || cardSendInProgress(allRelated, clock()))) return { status: 'not_attempted' };
       if (!resend && historicalUncertainty(current.value, aliases, kind, scope)) return { status: 'unknown' };
-      if (allRelated.reduce((total, item) => total + item.attempt, 0) >= 5 && (!previous || retryRejected)) return { status: 'not_attempted' };
+      if (!card && allRelated.reduce((total, item) => total + item.attempt, 0) >= 5 && (!previous || retryRejected)) return { status: 'not_attempted' };
       if (!current.value.settings.enabled) return { status: 'disabled' };
-      if (!resend && previous && (!retryRejected || previous.status !== 'rejected' || related.reduce((total, item) => total + item.attempt, 0) >= 5)) return { notice: previous, owned: false };
+      if (!resend && previous && (!retryRejected || previous.status !== 'rejected' || !card && related.reduce((total, item) => total + item.attempt, 0) >= 5)) return { notice: previous, owned: false };
       if (expectedRevision !== undefined && current.value.revision !== expectedRevision) failure('REVISION_CONFLICT', 409);
       if (requestedKind === 'card_wallet' && !(await walletState()).ready) return { status: 'not_configured' };
       if (monotonicNow() >= deadline) return { status: 'not_attempted' };
@@ -273,7 +299,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     deadline = monotonicNow() + batchTimeoutMs, expectedScope, recovery, card } = {}) {
     if (!recovery && !(await providerState()).ready) return { status: 'not_configured' };
     if (!recovery && monotonicNow() >= deadline) return { status: 'not_attempted' };
-    const loaded = recovery?.loaded ?? await loadRegistration(registrationId), { record, admission } = loaded;
+    const loaded = recovery?.loaded ?? (card ? await loadCardRegistration(registrationId) : await loadRegistration(registrationId));
+    const { record, admission } = loaded;
     if (!recovery && expectedScope && !sameScope(scopeOf(loaded), expectedScope)) return { status: 'not_attempted' };
     if ((record.accessRevision ?? 0) > 0 && actorId === automaticActor) return { status: 'not_applicable' };
     if (card && record.walletIdentity !== card.identity) return { status: 'not_attempted' };
@@ -291,9 +318,10 @@ export function createRegistrationConfirmationService({ registrationService, jou
     let guardUnattempted = false, guardCode = 'DELIVERY_GUARD_BLOCKED';
     const canStart = async ({ signal } = {}) => {
       if (signal?.aborted || monotonicNow() >= deadline) { guardUnattempted = true; guardCode = 'DELIVERY_WINDOW_EXPIRED'; return false; }
-      const latest = await loadRegistration(registrationId), aliases = await aliasesFor(latest);
-      if (card && (latest.record.walletIdentity !== card.identity || !aliases.registrationIds.includes(card.applicationId)
-        || card.applicationId !== registrationId && (await loadRegistration(card.applicationId)).record.reviewWithdrawn)) return false;
+      const cardSnapshot = card ? await cardContext(card.applicationId) : null;
+      const latest = cardSnapshot?.primary ?? await loadRegistration(registrationId);
+      const aliases = cardSnapshot?.aliases ?? await aliasesFor(latest);
+      if (card && latest.record.walletIdentity !== card.identity) return false;
       if (recovery && aliases.registrationIds.slice().sort().join(',') !== recovery.relatedRegistrationIds.join(',')) return false;
       if (recovery && await configurationIdentity() !== recovery.configurationIdentity) { guardCode = 'EMAIL_CONFIGURATION_CHANGED'; return false; }
       if (recovery && latest.admission.revision !== admission.revision) return false;
@@ -377,6 +405,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       }
       subject = (locale === 'en' ? 'Your commemorative card | ' : '你的电子纪念卡｜') + eventFacts.title;
       heading = locale === 'en' ? 'Your commemorative card' : '电子纪念卡';
+      if (isTestCard(record)) { subject = '【测试】' + subject; heading = '测试纪念卡'; }
       text = locale === 'en' ? 'Save your card as a keepsake. Use your original Huodongxing ticket for check-in.' : '纪念卡供长期收藏。现场签到请使用活动行原电子票。';
       // Optional card copy must not consume the delivery window on a slow read.
       const savedCommunity = await beforeDeadline(() => communities().read(), 1_000).catch(() => null);
@@ -807,21 +836,22 @@ export function createRegistrationConfirmationService({ registrationService, jou
       ...(canRecover ? { canRecover: true } : {}), ...(confirmationDiagnostic(notice?.diagnostic) ? { diagnostic: confirmationDiagnostic(notice.diagnostic) } : {}),
       recipient: admission.status === 'withdrawn' ? '' : record.fields.email ?? '' };
   }
-  async function cardContext(registrationId) {
-    const application = await loadRegistration(registrationId);
+  async function cardContext(registrationId, state) {
+    state ??= (await management().read()).value;
+    const application = await loadCardRegistration(registrationId, state);
     if (!application.record.walletRequested || application.record.reviewWithdrawn) failure('CONFIRMATION_NOT_FOUND', 404);
     const aliases = await aliasesFor(application);
-    const primary = aliases.primaryRegistrationId === registrationId ? application : await loadRegistration(aliases.primaryRegistrationId);
+    const primary = aliases.primaryRegistrationId === registrationId ? application : await loadCardRegistration(aliases.primaryRegistrationId, state);
     const verified = await aliasesFor(primary);
     if (verified.primaryRegistrationId !== primary.record.id || !verified.registrationIds.includes(registrationId)) failure('REVISION_CONFLICT', 409);
+    if (verified.registrationIds.some(id => state.removed[id])) failure('CONFIRMATION_NOT_FOUND', 404);
     return { application, primary, aliases: verified };
   }
   function cardDelivery(related, record) {
     const scope = scopeOf({ record });
     const notice = strongestNotice(related.filter(item => !item.superseded && (sameScope(item, scope) || ['reserved', 'unknown'].includes(item.status))));
     return { status: stateOf(notice) ?? 'not_sent', format: notice?.kind.slice(5) ?? null,
-      sentAt: notice?.status === 'provider_accepted' ? notice.updatedAt : null,
-      atRetryLimit: related.reduce((count, item) => count + item.attempt, 0) >= 5 };
+      sentAt: notice?.status === 'provider_accepted' ? notice.updatedAt : null };
   }
   function cardStage(admissionStatus, identity, delivery, reason = '') {
     if (delivery.status === 'unknown') return 'check_delivery';
@@ -837,16 +867,22 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!settings?.value.settings.enabled || !provider.ready) return 'EMAIL_UNAVAILABLE';
     return facts.ready ? '' : facts.reason;
   }
-  const cardBlockingReason = (record, delivery, mailReason, permission) => mailReason === 'PERMISSION_REQUIRED' ? mailReason
+  const cardBlockingReason = (record, mailReason, permission) => mailReason === 'PERMISSION_REQUIRED' ? mailReason
     : permission?.eligible === false ? permission.reason : !record.fields.email ? 'EMAIL_MISSING'
-    : mailReason || (delivery.atRetryLimit ? 'RETRY_LIMIT' : '');
+    : mailReason;
   const cardMaySend = stage => stage === 'send' || stage === 'retry_delivery';
   async function staffCardDirectory({ actor } = {}) {
     if (!readerValid(actor)) failure('FORBIDDEN', 403);
-    const [admissions, delivery] = await Promise.all([registrationService.repository.getAdmissions(), target('card_jpeg').read()]);
+    const [admissions, delivery, { value }] = await Promise.all([registrationService.repository.getAdmissions(), target('card_jpeg').read(), management().read()]);
     let rows;
     try { rows = await cardApplications(admissions); }
     catch (error) { if (error.code === 'REVISION_CONFLICT') failure('REVISION_CONFLICT', 409); throw error; }
+    rows = rows.filter(row => !row.aliases.registrationIds.some(id => value.removed[id]));
+    for (const [id, entry] of Object.entries(value.tests)) {
+      const { record, admission } = testCard(id, entry);
+      rows.push({ record, admissionStatus: admission.status, aliases: { registrationIds: [id] },
+        sources: [{ id, name: record.fields.name, bookingReference: testCardReference, submittedAt: entry.at }] });
+    }
     const notices = new Map();
     for (const notice of delivery.value.notices) {
       if (!notices.has(notice.registrationId)) notices.set(notice.registrationId, []);
@@ -860,11 +896,11 @@ export function createRegistrationConfirmationService({ registrationService, jou
     });
     const sendable = projected.filter(row => cardMaySend(row.stage));
     const mailReason = sendable.length ? await cardMailReason(actor) : '';
-    const permissionRows = mailReason === 'PERMISSION_REQUIRED' ? [] : sendable.filter(row => row.record.fields.email);
+    const permissionRows = mailReason === 'PERMISSION_REQUIRED' ? [] : sendable.filter(row => row.record.fields.email && !isTestCard(row.record));
     const permissions = permissionRows.length ? await cardPermissions(permissionRows, admissions) : new Map();
     return { applications: projected.map(({ record, admissionStatus, sources, state, stage }) => {
       const source = sources.find(item => item.id === record.id) ?? sources[0];
-      const reason = cardMaySend(stage) ? cardBlockingReason(record, state, mailReason, permissions.get(record.id)) : '';
+      const reason = cardMaySend(stage) ? cardBlockingReason(record, mailReason, permissions.get(record.id)) : '';
       return { id: source.id, name: record.fields.name, bookingReference: source.bookingReference, submittedAt: source.submittedAt,
         sources: sources.map(({ id, name, bookingReference }) => ({ id, name, bookingReference })), status: state.status,
         stage: cardStage(admissionStatus, record.walletIdentity, state, reason), format: state.format, sentAt: state.sentAt };
@@ -880,7 +916,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const mayResend = admission.status === 'confirmed' && record.walletIdentity && ['unknown', 'provider_accepted'].includes(state.status);
     const maySend = mayResend || cardMaySend(cardStage(admission.status, record.walletIdentity, state));
     const [mailReason, permission, wallet] = maySend ? await Promise.all([cardMailReason(actor), deliveryPermission(record), walletState()]) : ['', null, { ready: false }];
-    const reason = maySend ? cardBlockingReason(record, state, mailReason, permission) : '';
+    const reason = maySend ? cardBlockingReason(record, mailReason, permission) : '';
     const recipient = admission.status === 'withdrawn' ? '' : record.fields.email ?? '';
     return { registrationId, primaryId: record.id, name: record.fields.name,
       bookingReference: application.record.fields.huodongxingReference, recipient, identity: record.walletIdentity ?? '',
@@ -888,9 +924,37 @@ export function createRegistrationConfirmationService({ registrationService, jou
       deliveryRevision: delivery.value.revision, status: state.status, format: state.format, sentAt: state.sentAt,
       stage: cardStage(admission.status, record.walletIdentity, state, reason), reason, walletReady: wallet.ready,
       canResend: Boolean(mayResend && !sendInProgress && !reason), sendInProgress,
+      test: isTestCard(record), canRemove: actorValid(actor),
       cardCommunity: communityFor(community, record.id), communityRevision: community.cursor.version,
       cardCommunitySaved: Object.hasOwn(community.entries, record.id),
       applicationPreferences: walletApplicationPreferences(application.record.fields) ?? {} };
+  }
+  async function staffCardAddTest({ actor, name, email, identity, operationId } = {}) {
+    if (!actorValid(actor)) failure('FORBIDDEN', 403);
+    const recipient = cardTestFields({ name, email, identity });
+    if (!recipient || !validConfirmationOperation(operationId)) failure('INVALID_REQUEST', 400);
+    const registrationId = Buffer.from(confirmationRequestHash(['card_test', eventId, actor.id, operationId]), 'hex').toString('base64url');
+    const current = await management().read();
+    if (current.value.removed[registrationId]) failure('REVISION_CONFLICT', 409);
+    const previous = current.value.tests[registrationId];
+    if (previous) {
+      if (confirmationRequestHash(previous.recipient) !== confirmationRequestHash(recipient)) failure('REVISION_CONFLICT', 409);
+    } else {
+      try { await management().save(current, { registrationId, recipient, actorId: actor.id }); }
+      catch (error) { if (conflict(error)) failure('REVISION_CONFLICT', 409); throw error; }
+    }
+    return { registrationId };
+  }
+  async function staffCardRemove({ actor, registrationId, primaryId } = {}) {
+    if (!actorValid(actor)) failure('FORBIDDEN', 403);
+    if (!ID.test(registrationId ?? '') || !ID.test(primaryId ?? '')) failure('INVALID_REQUEST', 400);
+    const current = await management().read();
+    if (current.value.removed[registrationId]) return { removed: true };
+    const { primary, aliases } = await cardContext(registrationId, current.value);
+    if (primary.record.id !== primaryId) failure('REVISION_CONFLICT', 409);
+    try { await management().save(current, { registrationId, relatedIds: aliases.registrationIds, actorId: actor.id }); }
+    catch (error) { if (conflict(error)) failure('REVISION_CONFLICT', 409); throw error; }
+    return { removed: true };
   }
   async function staffCardSaveCommunity({ actor, registrationId, primaryId, expectedCommunityRevision, cardCommunity } = {}) {
     if (!readerValid(actor)) failure('FORBIDDEN', 403);
@@ -909,7 +973,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!readerValid(actor)) failure('FORBIDDEN', 403);
     if (!ID.test(primaryId ?? '') || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || !WALLET_IDENTITIES.some(item => item.value === identity)) failure('INVALID_REQUEST', 400);
     const { primary, application } = await cardContext(registrationId);
-    if (primary.record.id !== primaryId || primary.admission.status !== 'confirmed') failure('REVISION_CONFLICT', 409);
+    if (isTestCard(primary.record) || primary.record.id !== primaryId || primary.admission.status !== 'confirmed') failure('REVISION_CONFLICT', 409);
     try {
       return await saveCardIdentity(primaryId, expectedRevision, identity, actor.id, async () => {
         const latest = await cardContext(application.record.id);
@@ -922,7 +986,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!ID.test(primaryId ?? '') || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
       || !validConfirmationOperation(operationId)) failure('INVALID_REQUEST', 400);
     const { primary } = await cardContext(registrationId);
-    if (primary.record.id !== primaryId) failure('REVISION_CONFLICT', 409);
+    if (isTestCard(primary.record) || primary.record.id !== primaryId) failure('REVISION_CONFLICT', 409);
     const saved = await registrationService.approveApplication({ actor, registrationId: primaryId, expectedRevision, operationId });
     if (['conflict', 'capacity_conflict', 'closed'].includes(saved.outcome)) failure('REVISION_CONFLICT', 409);
     const operation = saved.operation;
@@ -943,7 +1007,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     return notify(primaryId, { kind: 'card_' + format, actorId: actor.id, retryRejected: true, expectedScope: scope, card });
   }
   return Object.freeze({ prefix, forSavedReceipt, notifyApplicationReceived, authorize, authorizedRegistration, confirmation, staffConfirmationLink, settings, setSettings, dispatch,
-    staffCardDirectory, staffCardDetails, staffCardSaveIdentity, staffCardSaveCommunity, staffCardApprove, staffSendCard,
+    staffCardDirectory, staffCardDetails, staffCardAddTest, staffCardRemove, staffCardSaveIdentity, staffCardSaveCommunity, staffCardApprove, staffSendCard,
     staffConfirmationPreview: input => staffNoticePreview(input, 'registration'), confirmationOperation,
     staffReminderPreview: input => staffNoticePreview(input, 'pre_event_reminder'), dispatchReminder: input => dispatch(input, 'pre_event_reminder'), reminderOperation,
     notifyApproved: input => notifyBatch(input, 'registration'), notifyPromoted: input => notifyBatch(input, 'promotion'), staffHistory, staffDirectory, staffDeliveryState });

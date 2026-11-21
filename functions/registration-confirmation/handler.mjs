@@ -100,17 +100,20 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
       if (cards) {
         const [, registrationId, approve] = cards, actor = session.user;
         if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['reviewer', 'superadmin'].includes(role))) reject('FORBIDDEN', 403);
-        const methods = approve ? ['POST'] : registrationId ? ['GET', 'PATCH', 'POST'] : ['GET'];
+        const methods = approve ? ['POST'] : registrationId ? ['GET', 'PATCH', 'POST', 'DELETE'] : ['GET', 'POST'];
         if (!methods.includes(request.method)) reject('METHOD_NOT_ALLOWED', 405);
         if (request.method === 'GET') return json(registrationId ? await service.staffCardDetails({ actor, registrationId }) : await service.staffCardDirectory({ actor }));
-        if (!approve && request.method === 'POST' && !canManageEventOperations(actor)) reject('FORBIDDEN', 403);
+        if (!approve && ['POST', 'DELETE'].includes(request.method) && !canManageEventOperations(actor)) reject('FORBIDDEN', 403);
         if (origin !== apiOrigin || !equalToken(request.headers.get('x-csrf-token'), session.csrfToken)) reject('CSRF_REJECTED', 403);
         const input = await body(request);
         if (request.signal.aborted) reject();
         const patchMethod = Object.hasOwn(input, 'cardCommunity') ? 'staffCardSaveCommunity' : 'staffCardSaveIdentity';
-        const method = approve ? 'staffCardApprove' : request.method === 'PATCH' ? patchMethod : 'staffSendCard';
+        const method = approve ? 'staffCardApprove' : !registrationId ? 'staffCardAddTest'
+          : request.method === 'PATCH' ? patchMethod : request.method === 'DELETE' ? 'staffCardRemove' : 'staffSendCard';
         const required = {
           staffCardApprove: ['primaryId', 'expectedRevision', 'operationId'],
+          staffCardAddTest: ['name', 'email', 'identity', 'operationId'],
+          staffCardRemove: ['primaryId'],
           staffCardSaveIdentity: ['primaryId', 'expectedRevision', 'identity'],
           staffCardSaveCommunity: ['primaryId', 'expectedCommunityRevision', 'cardCommunity'],
           staffSendCard: ['primaryId', 'expectedRevision', 'expectedAccessRevision', 'identity', 'format'],

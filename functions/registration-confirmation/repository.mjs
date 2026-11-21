@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { parseTimestamp } from '../registration-api/policy.mjs';
 import { validConfirmationDiagnostic } from '../../shared/confirmation-delivery.mjs';
-import { cardCommunityFields } from '../../shared/general-application.mjs';
+import { cardCommunityFields, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
 
 export const MAX_CONFIRMATION_AUDIT = 4000;
 export const MAX_CONFIRMATION_BATCH = 100;
@@ -24,6 +24,51 @@ export const formalConfirmationKind = kind => ['registration', 'promotion'].incl
 export const commemorativeCardKind = kind => kind === 'card_jpeg' || kind === 'card_wallet';
 
 export const cardCommunityPrefix = eventId => 'cms/v1/commemorative-cards/' + eventId + '/community';
+export const cardManagementPrefix = eventId => 'cms/v1/commemorative-cards/' + eventId + '/management';
+
+export function cardTestFields({ name, email, identity }) {
+  if (typeof name !== 'string' || typeof email !== 'string' || /[\u0000-\u001f\u007f]/u.test(name + email)) return null;
+  const displayName = name.normalize('NFC').trim(), recipient = email.trim();
+  if (!displayName || displayName.length > 80 || recipient.length > 254 || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(recipient)
+    || !WALLET_IDENTITIES.some(item => item.value === identity)) return null;
+  return { name: displayName, email: recipient, identity };
+}
+
+/** Test recipients and removal markers never enter the registration index. */
+export function createCardManagementRepository({ journal, eventId, clock }) {
+  function validate(value) {
+    if (!exact(value, ['schemaVersion', 'eventId', 'tests', 'removed']) || value.schemaVersion !== 1 || value.eventId !== eventId) fail();
+    for (const entries of [value.tests, value.removed]) {
+      if (!entries || Object.getPrototypeOf(entries) !== Object.prototype || Object.keys(entries).length > 2000) fail();
+      if (Object.keys(entries).some(id => !ID.test(id))) fail();
+    }
+    for (const entry of Object.values(value.tests)) {
+      if (!exact(entry, ['recipient', 'at', 'actorId']) || !isDeepStrictEqual(cardTestFields(entry.recipient ?? {}), entry.recipient)
+        || !entry.recipient || !at(entry.at) || !ACTOR.test(entry.actorId ?? '')) fail();
+    }
+    for (const entry of Object.values(value.removed)) {
+      if (!exact(entry, ['at', 'actorId']) || !at(entry.at) || !ACTOR.test(entry.actorId ?? '')) fail();
+    }
+    return value;
+  }
+  async function read() {
+    const { value, cursor } = await journal.read();
+    const initial = { schemaVersion: 1, eventId, tests: {}, removed: {} };
+    return { value: value === null && cursor?.version === 0 ? initial : validate(value), cursor };
+  }
+  async function save(current, { registrationId, recipient, relatedIds = [registrationId], actorId }) {
+    const value = structuredClone(current.value), entry = { at: new Date(clock()).toISOString(), actorId };
+    if (recipient) value.tests[registrationId] = { recipient, ...entry };
+    else {
+      delete value.tests[registrationId];
+      for (const id of relatedIds) value.removed[id] ??= entry;
+    }
+    validate(value);
+    const saved = await journal.commit(current.cursor, value);
+    if (saved?.cursor?.version !== current.cursor.version + 1 || !isDeepStrictEqual(saved.value, value)) fail();
+  }
+  return { read, save };
+}
 
 /** Isolate optional card copy from the admission, review, and mail journals. */
 export function createCardCommunityRepository({ journal, eventId, clock }) {
@@ -107,17 +152,17 @@ function apply(state, audit, cards) {
     if (formalConfirmationKind(d.kind) && d.kind !== canonicalConfirmationKind(state, d.registrationId, d.admissionStatus)) fail();
     const id = confirmationNoticeId(state.eventId, d.registrationId, d.kind, d.accessRevision ?? 0, d.recipientDigest), existing = state.notices.find(n => n.id === id);
     if (existing && (!d.retryRejected || !resend && !existing.superseded && existing.status !== 'rejected'
-      || !recovery && existing.attempt >= 5 || existing.admissionStatus !== d.admissionStatus)) fail();
+      || !cards && !recovery && existing.attempt >= 5 || existing.admissionStatus !== d.admissionStatus)) fail();
     if (formalConfirmationKind(d.kind) && d.admissionStatus === 'confirmed' && state.notices.some(item => item.registrationId === d.registrationId
       && formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' && (item.accessRevision ?? 0) === (d.accessRevision ?? 0) && item.id !== id)) fail();
     if (!existing && state.notices.length >= 2000) fail();
     if (resend) {
       const related = state.notices.filter(item => d.relatedRegistrationIds.includes(item.registrationId));
       const previous = cardResendCandidates(related, scope);
-      if (!previous.length || cardSendInProgress(related, Date.parse(audit.at)) || related.reduce((total, item) => total + item.attempt, 0) >= 5) fail();
+      if (!previous.length || cardSendInProgress(related, Date.parse(audit.at))) fail();
       for (const item of previous) if (item.id !== id) item.superseded = true;
     } else if (cards && state.notices.some(item => item.registrationId === d.registrationId && !item.superseded && ['reserved', 'unknown'].includes(item.status))) fail();
-    const priorAttempts = state.notices.filter(item => item.registrationId === d.registrationId && (cards || (formalConfirmationKind(d.kind) ? formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' : item.kind === d.kind))).reduce((total, item) => total + item.attempt, 0);
+    const priorAttempts = cards ? 0 : state.notices.filter(item => item.registrationId === d.registrationId && (formalConfirmationKind(d.kind) ? formalConfirmationKind(item.kind) && item.admissionStatus === 'confirmed' : item.kind === d.kind)).reduce((total, item) => total + item.attempt, 0);
     if (!recovery && priorAttempts >= 5 || recovery && (!existing || existing.status !== 'rejected')) fail();
     const notice = { id, registrationId: d.registrationId, kind: d.kind, status: 'reserved', admissionStatus: d.admissionStatus,
       admissionRevision: d.admissionRevision, createdAt: existing?.createdAt ?? audit.at, updatedAt: audit.at,

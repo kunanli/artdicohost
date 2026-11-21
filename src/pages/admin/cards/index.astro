@@ -24,7 +24,28 @@ import '../../../styles/admin.css';
       <section class="ah-admin-workspace-layout" data-card-workspace hidden>
         <StaffNavigation current="cards" />
         <div class="ah-admin-workspace-content">
-          <div class="ah-admin-page-heading"><h1>纪念卡</h1><button class="ah-admin-button" type="button" data-card-refresh>刷新申请</button></div>
+          <div class="ah-admin-page-heading">
+            <h1>纪念卡</h1>
+            <div class="card-actions">
+              <button class="ah-admin-button" type="button" data-card-refresh>刷新申请</button>
+              <button class="ah-admin-button ah-admin-primary" type="button" data-card-add aria-expanded="false" aria-controls="card-create" hidden>新增测试卡</button>
+            </div>
+          </div>
+          <section class="ah-admin-panel card-panel" id="card-create" aria-labelledby="card-create-title" hidden>
+            <h2 id="card-create-title">新增测试卡</h2>
+            <p class="card-muted">使用你的测试邮箱。保存后可在名单里发送和重寄测试邮件。</p>
+            <form data-card-create>
+              <div class="card-create-fields">
+                <div class="ah-admin-field"><label for="card-test-name">卡面姓名</label><input id="card-test-name" name="name" maxlength="80" autocomplete="off" required /></div>
+                <div class="ah-admin-field"><label for="card-test-email">收件邮箱</label><input id="card-test-email" type="email" name="email" maxlength="254" autocomplete="off" required /></div>
+                <div class="ah-admin-field"><label for="card-test-identity">卡面身份</label><select id="card-test-identity" name="identity" required><option value="">选择身份</option>{WALLET_IDENTITIES.map(item => <option value={item.value}>{item.label}</option>)}</select></div>
+              </div>
+              <div class="card-actions">
+                <button class="ah-admin-button ah-admin-primary" type="submit">保存测试卡</button>
+                <button class="ah-admin-button" type="button" data-card-cancel-create>取消</button>
+              </div>
+            </form>
+          </section>
           <div class="card-workspace">
             <section class="ah-admin-panel card-panel" aria-labelledby="card-list-title">
               <h2 id="card-list-title">申请名单</h2>
@@ -42,7 +63,7 @@ import '../../../styles/admin.css';
               <div data-card-details hidden>
                 <h2 data-card-name tabindex="-1"></h2>
                 <dl class="card-facts">
-                  <dt>活动行编号</dt><dd data-card-reference></dd>
+                  <dt data-card-reference-label>活动行编号</dt><dd data-card-reference></dd>
                   <dt>收件邮箱</dt><dd data-card-recipient></dd>
                   <dt data-card-identity-label hidden>卡面身份</dt><dd data-card-identity-value hidden><span></span> <button class="ah-admin-text-button" type="button" data-card-edit>修改</button></dd>
                 </dl>
@@ -74,6 +95,9 @@ import '../../../styles/admin.css';
                   <button class="ah-admin-button ah-admin-primary" type="submit">发送纪念卡</button>
                 </form>
                 <button class="ah-admin-button" type="button" data-card-check hidden>刷新发送状态</button>
+                <div class="card-remove" data-card-remove-panel hidden>
+                  <button class="ah-admin-text-button" type="button" data-card-remove>移除纪念卡</button>
+                </div>
               </div>
               <p class="ah-admin-alert" data-card-detail-error role="alert" hidden></p>
               <p class="ah-admin-status" data-card-message role="status" aria-live="polite"></p>
@@ -89,6 +113,8 @@ import '../../../styles/admin.css';
   .card-workspace { display: grid; grid-template-columns: minmax(250px, .9fr) minmax(0, 1.3fr); gap: 20px; align-items: start; }
   .card-panel { margin-top: 14px; padding: clamp(16px, 2.5vw, 26px); }
   .card-panel h2 { margin: 0 0 16px; font-size: 20px; overflow-wrap: anywhere; }
+  .card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .card-create-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px; }
   .card-panel p { margin: 0 0 16px; }
   .card-panel p:last-child { margin-bottom: 0; }
   .card-filters { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 16px; padding-bottom: 10px; border-bottom: 1px solid var(--admin-line); }
@@ -110,6 +136,8 @@ import '../../../styles/admin.css';
   .card-linked { margin-bottom: 16px; font-size: 14px; color: var(--admin-muted); overflow-wrap: anywhere; }
   .card-panel .ah-admin-status { margin-top: 12px; }
   .card-panel [data-card-edit] { margin-inline-start: 8px; }
+  .card-remove { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--admin-line); }
+  .card-remove button { color: #982c35; min-height: 40px; }
   @media (min-width: 851px) { .card-detail-panel { position: sticky; top: 16px; } }
   @media (max-width: 850px) { .card-workspace { grid-template-columns: minmax(0, 1fr); gap: 0; } }
 </style>

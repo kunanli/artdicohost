@@ -1,6 +1,6 @@
 ---
 import '../../styles/confirmation.css';
-import { PUBLIC_AGENDA_URL, PUBLIC_CONTACT_EMAIL, PUBLIC_SHOWCASE_URL } from '../../config/event.mjs';
+import { PUBLIC_AGENDA_URL, PUBLIC_CONTACT_EMAIL, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL } from '../../config/event.mjs';
 import { CARD_IMAGE } from '../../lib/commemorative-card-image.mjs';
 const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
 ---
@@ -71,6 +71,7 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
               <li data-confirmation-map-item hidden><a data-confirmation-map>Apple 地图导航</a></li>
               <li><a href={PUBLIC_AGENDA_URL}>讲座与活动日程</a></li>
               <li><a href={PUBLIC_SHOWCASE_URL}>参展游戏与作品</a></li>
+              <li><a href={PUBLIC_REGISTRATION_URL}>活动行活动页</a></li>
             </ul>
           </nav>
           <section class="confirmation-group" data-confirmation-group hidden aria-labelledby="confirmation-group-heading">

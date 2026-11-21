@@ -244,7 +244,9 @@ if (root) {
       document.body.append(link);
       link.click();
       link.remove();
-      const prompt = guidance.action === 'add' ? '请按 iPhone 的系统提示确认添加。' : '票券已准备，请在 iPhone 上打开。';
+      const prompt = guidance.action === 'add'
+        ? '请按系统提示添加。打开钱包里的纪念卡，点「…」进入票券详情即可查看导航、日程和参展作品。'
+        : '票券已准备，请在 iPhone 上打开。';
       $('[data-confirmation-action-status]').textContent = state.card ? prompt : '票券文件已准备。请在支持 Apple Wallet 的设备上打开。';
     }
     catch(error){

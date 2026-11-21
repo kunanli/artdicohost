@@ -13,11 +13,11 @@
 
 图片嵌入既有 `functions/apple-wallet/pkpass.mjs`，无外部图片请求、新依赖、公开凭证或新增 FC 文件。`artwork.png` / `artwork@2x.png` 供支持 posterEventTicket 的系统使用，`background.png` / `background@2x.png` 与原有 eventTicket 字段提供兼容样式。包含可信事件语义，但不虚构座位。所有图片的 SHA-1 都包含在 manifest，并由同一证书身份生成 detached CMS 签章。
 
-iOS 27 起使用 `posterGeneric` 纪念卡。358 × 448 pt 黑底海报上的 HOST 字样等比宽 290 pt，两侧各留 34 pt。在按实机画面估算的 320 pt 居中裁切内，字样占可视宽度约 91%。合成检查另覆盖 300 pt 居中裁切。海报以静态 `artwork@2x.png` 与 `artwork@3x.png` 打包，3x 版本 SHA-256 为 `2369cee87c4979a43b6419fc59252377dcc39a7400f48f217dfbde76572081bf`。图下直接显示实际身份与姓名。已保存的 GGJ 站点和角色／分工各自占一栏。底栏显示日期、时间及地点简称。iOS 决定卡框、留白和栏位位置。
+iOS 27 起使用 `posterGeneric` 纪念卡。358 × 448 pt 黑底海报上的 HOST 字样等比宽 290 pt，两侧各留 34 pt。在按实机画面估算的 320 pt 居中裁切内，字样占可视宽度约 91%。合成检查另覆盖 300 pt 居中裁切。海报以静态 `artwork@2x.png` 与 `artwork@3x.png` 打包，3x 版本 SHA-256 为 `2369cee87c4979a43b6419fc59252377dcc39a7400f48f217dfbde76572081bf`。站名与「身份 · 分工」合在第一栏，姓名在第二栏。底栏显示日期、时间及地点简称。iOS 决定卡框、留白和栏位位置，完整站名与分工也随附加资料保存。
 
 较早的 iOS 使用同一签章文件的 `eventTicket` 版型及 `strip.png` 横幅。横幅按 375 × 98 pt 输出为 1x、2x、3x PNG。姓名与身份使用次栏位，日期、时间和社群资料使用辅助栏位。有社群资料时，地点简称移至卡面顶部。参见 [Apple Poster Generic](https://developer.apple.com/documentation/walletpasses/creating-a-poster-generic-pass)。
 
-Wallet 的「附加资料」显示两句简介、完整地址、A 区上午与下午时段、B 区日程、C 区展位及独立游戏。行程来自主办方提供的三张行程图，作为发行时文字随签章包保存，打开附加资料即可直接查看。较早 iOS 可从票券详情查看同一份行程。票券更多详情可另开地图或活动网站。申请表直接提供选填的所属站点及角色／游戏开发分工，经工作人员保存后用于卡片。经工作人员写入的电话显示在票券详情及 JPEG。
+Wallet 的「附加资料」显示两句简介、完整地址、A 区上午与下午时段、B 区日程、C 区展位及独立游戏。行程来自主办方提供的三张行程图，作为发行时文字随签章包保存，打开附加资料即可直接查看。较早 iOS 可从票券详情查看同一份行程。票券更多详情可另开地图或活动网站。身份核定后沿用同一笔申请所填的站点和分工，工作人员保存的值优先，含明确留空。经工作人员写入的电话显示在票券详情及 JPEG。
 
 本场联名标题的第一行为 `GGJ China Meetup 2026`，第二行为 `x ARTDiCO HOST`。新版版型使用 126 × 30 pt 的 `primaryLogo`，兼容版使用 160 × 50 pt 的 `logo`。两个版本都使用 Liberation Sans Bold，完整名称在票券详情保留为文字。
 

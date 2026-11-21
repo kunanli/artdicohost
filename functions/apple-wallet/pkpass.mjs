@@ -198,6 +198,12 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
       value: characters.length > maxAffiliationLength ? characters.slice(0, maxAffiliationLength - 1).join('') + '…' : field.value };
   });
   const faceIdentity = walletIdentity ? { key: 'identity', value: walletIdentity.label } : null;
+  const site = siteIdentity?.site;
+  const organizer = walletIdentity?.value === 'organizer';
+  const headlineIdentity = site && organizer ? '组织者' : faceIdentity?.value;
+  const responsibilities = (siteIdentity?.role ?? '').split(/\s*[・·、]\s*/u).filter(role => role
+    && role !== faceIdentity?.value && !(organizer && /^(?:GGJ\s+)?(?:站[点點])?[组組][织織]者$/iu.test(role)));
+  const identityHeadline = [headlineIdentity, ...new Set(responsibilities)].filter(Boolean).join(' · ');
   const identityField = faceIdentity ? { ...faceIdentity, label: meetupCard ? '身份' : richCard ? '卡面身份' : '入场身份' } : null;
   const fullCardDetails = richCard ? [
     { ...person, key: 'details-name' }, { ...identityField, key: 'details-identity' },
@@ -225,13 +231,14 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
     ...(!richCard ? [{ key: 'reference', label: '报名编号', value: attendee.referenceCode }, ...communityFields] : []),
     { key: 'notice', label: '说明', value: richCard ? '本卡用于纪念收藏。现场签到请使用活动行原电子票。' : '此凭证仅表示参会名额。讲者、展位及住宿另行确认；请以在线核对结果为准。' }];
   const posterGeneric = meetupCard ? {
-    primaryFields: [{ ...faceIdentity, key: 'poster-identity' }, { ...faceName, key: 'poster-name' },
-      ...affiliations.slice(0, 2).map(({ key, label, value }) => ({ key: 'poster-' + key, label, value }))],
+    primaryFields: [{ key: 'poster-identity', value: identityHeadline,
+      ...(site ? { label: /^GGJ(?:\s|$)/iu.test(site) ? site : 'GGJ ' + site } : {}) },
+    { ...faceName, key: 'poster-name' }],
     footerFields: [{
       key: 'poster-event-summary', label: '活动时间与地点 · UTC+8',
       value: [event.date, event.time, confirmedVenue ? '前海5号楼' : cardPlace.value].join(' · '),
     }],
-    additionalInfoFields: [...programFields, date, { ...time, label: '时间 · UTC+8' }, venue, ...scheduleFields, ...cardAffiliations]
+    additionalInfoFields: [...programFields, ...cardAffiliations, date, { ...time, label: '时间 · UTC+8' }, venue, ...scheduleFields]
       .map(field => ({ ...field, key: 'poster-info-' + field.key })),
     backFields: backFields.map(field => ({ ...field, key: 'poster-details-' + field.key })),
   } : null;

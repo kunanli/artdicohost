@@ -242,7 +242,8 @@ try {
           const files = passFiles(await readFile(await pass.path()));
           const walletPass = JSON.parse(files.get('pass.json'));
           assert.deepEqual(walletPass.posterGeneric.primaryFields.map(({ label, value }) => [label, value]),
-            [[undefined, '嘉宾'], [undefined, '合成纪念卡申请人'], ['GGJ 站点', 'GGJ 合成站'], ['社群角色／分工', communityRole]]);
+            [['GGJ 合成站', '嘉宾 · 站点组织者 · 美术'], [undefined, '合成纪念卡申请人']]);
+          assert.equal(walletPass.posterGeneric.additionalInfoFields.find(({ key }) => key === 'poster-info-ggj-role').value, communityRole);
           assert.equal(walletPass.posterGeneric.footerFields[0].value, '2026-12-05 · 10:00–18:00 · 前海5号楼');
           assert.deepEqual(walletPass.posterGeneric.additionalInfoFields.slice(0, 2).map(({ label }) => label),
             ['GGJ 中国交流聚会', 'ARTDiCO HOST 学生嘉年华']);

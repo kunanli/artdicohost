@@ -293,12 +293,13 @@ test('keepsake reissues show each saved GGJ field independently and keep full va
     assert.equal(pass.semantics.venueRegionName, eventConfig.venue.city);
     const { headerFields, auxiliaryFields, backFields } = pass.eventTicket;
     assert.deepEqual(headerFields?.map(({ value }) => value), values.site || values.role ? ['前海5号楼'] : undefined);
-    assert.deepEqual(pass.posterGeneric.primaryFields.map(({ value }) => value),
-      ['GGJ 组织者', record.name, values.site && [...site].slice(0, 13).join('') + '…', values.role].filter(Boolean));
+    const [headline, name] = pass.posterGeneric.primaryFields;
+    assert.equal(pass.posterGeneric.primaryFields.length, 2);
+    assert.equal(headline.label, values.site ? 'GGJ ' + values.site : undefined);
+    assert.equal(headline.value, values.site ? '组织者' : 'GGJ 组织者');
+    assert.equal(name.value, record.name);
     for (const [key, value] of [['ggj-site', values.site], ['ggj-role', values.role]]) {
       assert.equal(backFields.find(field => field.key === key)?.value, value || undefined);
-      assert.equal(pass.posterGeneric.primaryFields.find(field => field.key === 'poster-' + key + '-short')?.label,
-        value ? (key === 'ggj-site' ? 'GGJ 站点' : '社群角色／分工') : undefined);
       assert.equal(pass.posterGeneric.additionalInfoFields.find(field => field.key === 'poster-info-' + key)?.value, value || undefined);
       const shortened = auxiliaryFields.find(field => field.key === key + '-short');
       assert.equal(shortened?.value, value === site ? [...site].slice(0, 13).join('') + '…' : value || undefined);

@@ -145,7 +145,7 @@ try {
       if (outcome === 'unknown') {
         assert.equal(await page.locator('[data-card-check]').isVisible(), false);
         assert.equal(await page.locator('[data-card-list] small').first().textContent(), '寄送结果未确认');
-        assert.match(await page.locator('[data-card-delivery-formats]').textContent(), /两封/u);
+        assert.match(await page.locator('[data-card-delivery-formats]').textContent(), /可能已经寄出/u);
         await page.reload();
         await resend.waitFor();
         assert.equal(cardMessages().length, 1, 'reading an uncertain delivery never resends it');
@@ -260,9 +260,40 @@ try {
         assert.equal(privateReads - readsBefore, device === 'chrome' ? 2 : 1, 'the legacy response is upgraded with one canonical read');
         await writeFile(resolve(output, 'sample-commemorative-card.jpg'), jpeg);
       }
+      if (width === 320 || width === 1440) {
+        await page.goto(API + '/admin/cards/');
+        const add = page.getByRole('button', { name: '新增测试卡' });
+        await add.click();
+        const create = page.locator('[data-card-create]');
+        await create.getByLabel('卡面姓名').fill('合成后台测试卡');
+        await create.getByLabel('收件邮箱').fill('synthetic.staff.test@example.invalid');
+        await create.getByLabel('卡面身份').selectOption('guest');
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+        await create.getByRole('button', { name: '保存测试卡' }).click();
+        await page.getByRole('status').filter({ hasText: '测试卡已保存，可以发送测试邮件。' }).waitFor();
+        assert.equal(await page.locator('[data-card-name]').innerText(), '合成后台测试卡');
+        assert.equal(await page.locator('[data-card-reference]').innerText(), '测试卡');
+        assert.equal(cardMessages().length, 2);
+        await page.getByRole('button', { name: '发送纪念卡', exact: true }).click();
+        await resend.waitFor();
+        assert.equal(cardMessages().length, 3);
+        await resend.click();
+        await page.getByRole('status').filter({ hasText: '已重新提交纪念卡邮件。' }).waitFor();
+        assert.equal(cardMessages().length, 4);
+        const remove = page.getByRole('button', { name: '移除测试卡' });
+        page.once('dialog', dialog => dialog.dismiss());
+        await remove.click();
+        await remove.waitFor();
+        page.once('dialog', dialog => dialog.accept());
+        await remove.click();
+        await page.getByRole('status').filter({ hasText: '纪念卡已移除。' }).waitFor();
+        assert.equal(await page.locator('[data-card-details]').isVisible(), false);
+        assert.equal(await page.getByRole('button', { name: /合成后台测试卡/u }).count(), 0);
+        assert.equal(await page.getByRole('button', { name: /合成纪念卡申请人/u }).count(), 1);
+      }
       assert.deepEqual(errors, []);
       reports.push({ width, outcome, device, oneMailPerClick: true, explicitResend: true, selectedAfterReload: true,
-        inlineError: width === 320, directJpeg: outcome === 'accepted', wallet: walletAvailable });
+        inlineError: width === 320, directJpeg: outcome === 'accepted', wallet: walletAvailable, testCardManagement: width === 320 || width === 1440 });
     } finally { await context.close(); }
   }
 } finally { signing.cleanup(); await browser.close(); }

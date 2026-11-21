@@ -6,7 +6,7 @@ import { createConfirmationTokens } from '../functions/registration-confirmation
 import { createRegistrationConfirmationService } from '../functions/registration-confirmation/service.mjs';
 import { createAppleWalletService } from '../functions/apple-wallet/service.mjs';
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
-import { cardCommunityPrefix, createConfirmationRepository } from '../functions/registration-confirmation/repository.mjs';
+import { cardCommunityPrefix, cardManagementPrefix, createConfirmationRepository } from '../functions/registration-confirmation/repository.mjs';
 import { collectJournalBackupKeys } from '../functions/registration-admin/maintenance.mjs';
 import { createWalletFixture, passFiles } from './apple-wallet-fixture.mjs';
 import { confirmationView } from '../src/lib/confirmation-client.mjs';
@@ -180,23 +180,101 @@ test('an uncertain send can be explicitly resent to the current address, without
   assert.equal((await f.directory())[0].stage, 'submitted');
 });
 
-test('submitted cards can be explicitly resent with a fresh reservation and respect the existing attempt limit', async () => {
-  const f = await setup();
+test('explicit card resends stay available past five attempts, including after an uncertain result', async () => {
+  let outcome = 'accepted';
+  const f = await setup({ mailResult: () => outcome });
   const body = await f.prepare();
   assert.equal((await (await f.call('POST', body)).json()).status, 'provider_accepted');
-  for (let count = 1; count < 5; count++) {
+  for (let count = 1; count < 7; count++) {
     const state = await f.read();
     assert.equal(state.canResend, true);
     const resend = { ...body, expectedRevision: state.deliveryRevision, resend: true };
-    assert.equal((await (await f.call('POST', resend)).json()).status, 'provider_accepted');
+    outcome = count === 4 ? 'unknown' : 'accepted';
+    assert.equal((await (await f.call('POST', resend)).json()).status, outcome === 'unknown' ? 'unknown' : 'provider_accepted');
     assert.equal((await f.call('POST', resend, f.make())).status, 409);
     assert.equal(f.cardMessages().length, count + 1);
   }
   const state = await f.read();
-  assert.equal(state.canResend, false);
-  assert.equal(state.reason, 'RETRY_LIMIT');
-  assert.equal((await (await f.call('POST', { ...body, expectedRevision: state.deliveryRevision, resend: true })).json()).status, 'not_attempted');
-  assert.equal(f.cardMessages().length, 5);
+  assert.equal(state.canResend, true);
+  assert.equal(state.reason, '');
+});
+
+test('staff can add, send and remove a test card independently of formal registrations', async t => {
+  const f = await setup();
+  const snapshot = await f.app.registrationService.repository.readIndex();
+  const reviewer = await f.login('reviewer');
+  const body = { name: ' 测试卡合成姓名 ', email: 'test-recipient@example.invalid', identity: 'organizer', operationId: operationId() };
+  const add = (fields, headers = f.headers, app = f.app) => app.handle(f.request(root, { method: 'POST', body: fields, headers }));
+  assert.equal((await add(body, reviewer)).status, 403);
+  assert.equal((await add(body, { Cookie: f.headers.Cookie })).status, 403);
+  assert.equal((await add({ ...body, email: 'a@example.invalid\r\nb@example.invalid' })).status, 400);
+  const created = await add(body);
+  assert.equal(created.status, 200);
+  const { registrationId } = await created.json();
+  assert.deepEqual(await (await add(body, f.headers, f.make())).json(), { registrationId });
+  assert.equal((await add({ ...body, email: 'different@example.invalid' })).status, 409);
+  assert.equal(f.cardMessages().length, 0);
+  const call = (method, body, headers = f.headers) => f.app.handle(f.request(root + '/' + registrationId, { method, body, headers }));
+  const view = await (await call('GET')).json();
+  assert.equal(view.test, true);
+  assert.equal(view.name, body.name.trim());
+  assert.equal(view.stage, 'send');
+  assert.equal(view.canRemove, true);
+  assert.equal((await (await call('GET', undefined, reviewer)).json()).canRemove, false);
+  assert.equal((await f.directory()).find(item => item.id === registrationId).bookingReference, '测试卡');
+  assert.equal((await (await call('POST', { primaryId: registrationId, expectedRevision: view.deliveryRevision,
+    expectedAccessRevision: view.accessRevision, identity: view.identity, format: 'jpeg' })).json()).status, 'provider_accepted');
+  const message = f.cardMessages()[0].template_params;
+  assert.match(message.email_subject, /^【测试】/u);
+  assert.equal(message.to_email, body.email);
+  const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(message.confirmation_actions)[1];
+  const privatePage = () => f.app.handle(f.request('/api/registration/confirmation', {
+    method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken },
+  }));
+  assert.equal(confirmationView(await (await privatePage()).json()).card.format, 'both');
+  const signing = await createWalletFixture();
+  t.after(signing.cleanup);
+  const wallet = createAppleWalletService({ env: signing.env, tokenSecret: 'synthetic-test-card-signing-secret', clock: () => signing.now,
+    trustedRootFingerprints: signing.fields.trustedRootFingerprints,
+    authorize: f.app.confirmationService.authorize, authorizedRegistration: f.app.confirmationService.authorizedRegistration });
+  const pass = await wallet.download({ receiptToken });
+  assert.equal(pass.outcome, 'issued');
+  assert.equal(JSON.parse(passFiles(pass.data).get('pass.json')).barcodes, undefined);
+  assert.equal((await call('DELETE', { primaryId: registrationId }, reviewer)).status, 403);
+  assert.equal((await call('DELETE', { primaryId: f.id })).status, 409);
+  for (let count = 0; count < 2; count++) {
+    assert.deepEqual(await (await call('DELETE', { primaryId: registrationId })).json(), { removed: true });
+  }
+  assert.equal((await privatePage()).status, 404);
+  assert.notEqual((await wallet.download({ receiptToken })).outcome, 'issued');
+  assert.equal((await call('GET')).status, 404);
+  assert.equal((await add(body)).status, 409);
+  assert.equal((await f.directory()).some(item => item.id === registrationId), false);
+  assert.deepEqual(await f.app.registrationService.repository.readIndex(), snapshot);
+  const prefix = cardManagementPrefix(PEOPLE_FIXTURE_EVENT);
+  const journal = createObjectJournal({ objects: f.objects, prefix });
+  const { value } = await journal.read();
+  assert.equal(value.tests[registrationId], undefined);
+  assert.equal(value.removed[registrationId].actorId, f.users[0].id);
+  const backup = await collectJournalBackupKeys({ objects: f.objects, journalPrefixes: [prefix] });
+  assert.ok(backup.includes(prefix + '/commits.jsonl') && backup.some(key => key.startsWith(prefix + '/blobs/')));
+});
+
+test('removing an issued application revokes its keepsake link and preserves its confirmed registration', async () => {
+  const f = await setup();
+  const send = await f.prepare();
+  assert.equal((await (await f.call('POST', send)).json()).status, 'provider_accepted');
+  const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(f.cardMessages()[0].template_params.confirmation_actions)[1];
+  const snapshot = await f.app.registrationService.repository.readIndex();
+  assert.equal((await f.call('DELETE', { primaryId: f.id })).status, 200);
+  assert.equal((await f.directory()).length, 0);
+  assert.equal((await f.call('POST', send)).status, 404);
+  const link = await f.app.handle(f.request('/api/registration/confirmation', {
+    method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken },
+  }));
+  assert.equal(link.status, 404);
+  assert.deepEqual(await f.app.registrationService.repository.readIndex(), snapshot);
+  assert.equal((await f.app.registrationService.getAdmissionStatus(f.id)).status, 'confirmed');
 });
 
 test('a recent reservation blocks overlap, while an abandoned reservation can be explicitly recovered', async () => {

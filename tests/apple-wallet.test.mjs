@@ -8,6 +8,7 @@ import { createAppleWalletService, WALLET_CONFIG_FIELDS } from '../functions/app
 import { createAppleWalletApi } from '../functions/apple-wallet/handler.mjs';
 import { derChildren } from '../functions/apple-wallet/der.mjs';
 import { createWalletFixture, passFiles } from './apple-wallet-fixture.mjs';
+import { eventConfig, PUBLIC_AGENDA_URL, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL } from '../src/config/event.mjs';
 
 const fixture = await createWalletFixture(); after(() => fixture.cleanup());
 const id = 'a'.repeat(43), token = 'synthetic.receipt.' + 'b'.repeat(43), secret = 'SYNTHETIC_INDEPENDENT_REGISTRATION_SECRET_1234567890';
@@ -45,6 +46,7 @@ test('real pkpass contains bounded ZIP, exact manifest hashes and a detached CMS
   assert.equal(pass.passTypeIdentifier, fixture.fields.passTypeIdentifier); assert.equal(pass.teamIdentifier, fixture.fields.teamId);
   assert.equal(pass.eventTicket.secondaryFields[0].value, record.name); assert.equal(pass.eventTicket.headerFields[0].value, '已确认');
   assert.deepEqual(pass.preferredStyleSchemes,['posterEventTicket','eventTicket']);
+  assert.equal(pass.featuredActions, undefined);
   assert.equal(pass.semantics.eventName,record.event.title);assert.equal(pass.semantics.venueName,record.event.venue);
   assert.equal(pass.semantics.seats,undefined,'no invented seat entitlement');
   assert.equal(files.get('artwork@2x.png').readUInt32BE(16),750);assert.equal(files.get('artwork@2x.png').readUInt32BE(20),1000);
@@ -211,9 +213,11 @@ test('commemorative passes sign a clear native strip with card details below it'
   assert.deepEqual(pass.eventTicket.secondaryFields.map(({value})=>value), [record.name, '嘉宾']);
   assert.deepEqual(pass.eventTicket.auxiliaryFields.map(({value})=>value),[record.event.date,record.event.time,record.event.venue]);
   assert.equal(pass.eventTicket.backFields.find(field=>field.key==='venue').value,record.event.venue);
-  assert.deepEqual(pass.eventTicket.backFields.slice(1, 7).map(({value})=>value), [record.name,'嘉宾',record.event.title,record.event.date,record.event.time,record.event.venue]);
-  const directions = pass.eventTicket.backFields.at(-1), map = new URL(directions.value);
-  assert.equal(directions.key, 'directions');
+  assert.deepEqual(pass.eventTicket.backFields.filter(({key})=>key.startsWith('details-')).map(({value})=>value), [record.name,'嘉宾',record.event.title,record.event.date,record.event.time]);
+  assert.deepEqual(pass.eventTicket.backFields.slice(1, 6).map(({ key }) => key), ['venue', 'directions', 'agenda', 'showcase', 'huodongxing']);
+  assert.deepEqual(pass.eventTicket.backFields.slice(3, 6).map(({ value }) => value), [PUBLIC_AGENDA_URL, PUBLIC_SHOWCASE_URL, PUBLIC_REGISTRATION_URL]);
+  assert.deepEqual(pass.featuredActions, [{ identifier: 'agenda', type: 'viewSchedule', url: PUBLIC_AGENDA_URL }]);
+  const directions = pass.eventTicket.backFields.find(({ key }) => key === 'directions'), map = new URL(directions.value);
   assert.equal(map.origin, 'https://maps.apple.com');
   assert.equal(map.pathname, '/directions');
   assert.deepEqual([...map.searchParams], [['destination', record.event.venue]]);
@@ -233,6 +237,33 @@ test('commemorative passes sign a clear native strip with card details below it'
       assert.equal(image.readUInt32BE(16), width * scale);
       assert.equal(image.readUInt32BE(20), height * scale);
       assert.equal(manifest[path], createHash('sha1').update(image).digest('hex'));
+    }
+  }
+});
+
+test('keepsake reissues show each saved GGJ field independently and keep full values in details', async () => {
+  const selected = { ...record, walletRequested: true, walletIdentity: 'organizer', event: { ...record.event, id: eventConfig.id, venue: eventConfig.venue.address } };
+  const site = '很长的合成站点名称'.repeat(4), role = '站点组织者';
+  let cardCommunity = { site: '', role: '' };
+  const load = async () => ({ ...selected, cardCommunity });
+  const wallet = service({ authorize: load, authorizedRegistration: load });
+  let serial;
+  for (const values of [{ site: '', role: '' }, { site, role: '' }, { site: '', role }, { site, role }]) {
+    cardCommunity = values;
+    const result = await wallet.download({ receiptToken: token });
+    assert.equal(result.outcome, 'issued');
+    const pass = JSON.parse(passFiles(result.data).get('pass.json'));
+    serial ??= pass.serialNumber;
+    assert.equal(pass.serialNumber, serial);
+    assert.equal(pass.semantics.venueName, eventConfig.venue.name);
+    assert.equal(pass.semantics.venueRegionName, eventConfig.venue.city);
+    const { headerFields, auxiliaryFields, backFields } = pass.eventTicket;
+    assert.deepEqual(headerFields?.map(({ value }) => value), values.site || values.role ? ['前海5号楼'] : undefined);
+    for (const [key, value] of [['ggj-site', values.site], ['ggj-role', values.role]]) {
+      assert.equal(backFields.find(field => field.key === key)?.value, value || undefined);
+      const shortened = auxiliaryFields.find(field => field.key === key + '-short');
+      assert.equal(shortened?.value, value === site ? [...site].slice(0, 13).join('') + '…' : value || undefined);
+      if (shortened) assert.equal(shortened.row, 1);
     }
   }
 });

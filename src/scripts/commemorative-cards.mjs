@@ -188,8 +188,8 @@ function setView(value) {
   proposalText.hidden = !proposed;
   proposalText.textContent = proposed ? '申请人填写：' + proposed : '';
   const community = cardCommunityLabel(value.cardCommunity);
-  $('[data-card-community-summary]').textContent = community ? 'GGJ 社群 · ' + community
-    : proposed && !value.cardCommunitySaved ? 'GGJ 社群（申请人已填写）' : 'GGJ 社群（选填）';
+  $('[data-card-community-summary]').textContent = community ? 'GGJ 卡面资料 · ' + community
+    : proposed && !value.cardCommunitySaved ? 'GGJ 卡面资料（待保存）' : 'GGJ 卡面资料（选填）';
   renderActions();
 }
 function renderActions() {
@@ -404,7 +404,7 @@ communityForm.addEventListener('submit', event => {
       if (csrf) await open(view.registrationId);
       throw error;
     }
-    if (csrf) { await open(view.registrationId); message.textContent = 'GGJ 社群已保存。'; }
+    if (csrf) { await open(view.registrationId); message.textContent = 'GGJ 卡面资料已保存。'; }
   }, true);
 });
 deliveryForm.addEventListener('submit', event => {

@@ -16,9 +16,10 @@ async function fixture(t) {
   const directory = await mkdtemp(resolve(tmpdir(), 'artdico-domain-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const dist = resolve(directory, 'dist'), output = resolve(directory, 'publication');
-  for (const name of ['invitation', 'invitations', 'registration/confirmation', 'r', 'wallet', '_astro']) await mkdir(resolve(dist, name), { recursive: true });
+  for (const name of ['event', 'invitation', 'invitations', 'registration/confirmation', 'r', 'wallet', '_astro']) await mkdir(resolve(dist, name), { recursive: true });
   await writeFile(resolve(dist, 'index.html'), '<html><script src="/_astro/public.js"></script></html>');
   await writeFile(resolve(dist, 'invitation/index.html'), '<html>合成邀请</html>');
+  await writeFile(resolve(dist, 'event/index.html'), '<html>合成活动详情</html>');
   await writeFile(resolve(dist, 'registration/confirmation/index.html'), '<html>合成确认页；无参会资料</html>');
   await writeFile(resolve(dist, 'r/index.html'), '<html>合成短链接入口；无票码或参会资料</html>');
   for (const locale of ['cn', 'en']) {
@@ -34,7 +35,7 @@ async function fixture(t) {
   const fetchFn = async (url, settings) => {
     calls.push({ url, settings });
     const pathname = new URL(url).pathname;
-    const path = pathname === PRIVATE_PAGE ? 'registration/confirmation/index.html' : decodeURIComponent(pathname.slice(1));
+    const path = pathname === PRIVATE_PAGE ? 'registration/confirmation/index.html' : pathname === '/event/' ? 'event/index.html' : decodeURIComponent(pathname.slice(1));
     const bytes = await readFile(resolve(output, path));
     return new Response(bytes, { headers: { 'content-type': contentType(path), 'content-length': String(bytes.length),
       'cache-control': pathname === PRIVATE_PAGE ? 'private,no-store' : 'public,no-cache' } });
@@ -47,7 +48,7 @@ test('real-domain verification validates publication then reads every exact obje
   const f = await fixture(t), reports = [];
   const result = await verifyPublicDomain({ directory: f.output, commit, fetchFn: f.fetchFn, report: line => reports.push(line) });
   assert.deepEqual(result, { verified: true, origin: PUBLIC_SITE_ORIGIN, commit, files: f.manifest.files.length });
-  assert.equal(f.manifest.files.length, 28 + ENTRY_PUBLIC_OBJECTS.length);
+  assert.equal(f.manifest.files.length, 29 + ENTRY_PUBLIC_OBJECTS.length);
   assert.equal(f.calls.length, f.manifest.files.length); assert.equal(reports.length, f.manifest.files.length);
   for (const path of ENTRY_PUBLIC_OBJECTS) {
     assert.equal(f.manifest.files.filter(item => item.path === path).length, 1, path);
@@ -58,9 +59,10 @@ test('real-domain verification validates publication then reads every exact obje
     assert.ok(f.calls.some(({ url }) => new URL(url).pathname === route + 'index.html'), route);
   }
   assert.equal(f.calls.filter(({ url }) => url === PUBLIC_SITE_ORIGIN + PRIVATE_PAGE).length, 1);
+  assert.equal(f.calls.filter(({ url }) => url === PUBLIC_SITE_ORIGIN + '/event/').length, 1);
   for (const { url, settings } of f.calls) {
     const parsed = new URL(url);
-    assert.equal(parsed.origin, 'https://artdico.host'); assert.equal(parsed.search, parsed.pathname === PRIVATE_PAGE ? '' : '?release=' + commit);
+    assert.equal(parsed.origin, 'https://artdico.host'); assert.equal(parsed.search, [PRIVATE_PAGE, '/event/'].includes(parsed.pathname) ? '' : '?release=' + commit);
     assert.equal(settings.credentials, 'omit'); assert.equal(settings.redirect, 'error'); assert.equal(settings.cache, 'no-store');
     assert.equal(settings.headers['accept-encoding'], 'identity'); assert.equal(Object.hasOwn(settings.headers, 'authorization'), false); assert.equal(Object.hasOwn(settings.headers, 'cookie'), false);
     assert.equal(settings.signal.aborted, true);

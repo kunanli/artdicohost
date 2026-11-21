@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const allowedExtensions = new Set(['.html', '.css', '.js', '.mjs', '.png', '.svg', '.jpg', '.jpeg', '.webp', '.avif', '.woff', '.woff2', '.ico']);
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
+export const EVENT_DETAILS_PAGE = 'event/index.html';
 export const sha256 = (data) => createHash('sha256').update(data).digest('hex');
 // Public entry notices are a fixed list, independent of generated admin forms.
 // Each notice links to its corresponding cloud portal.
@@ -19,7 +20,7 @@ export function validatePublicPath(path) {
   if (!path || path.includes('\\') || path.startsWith('/') || path.split('/').some(part => !part || part.startsWith('.') || /[\u0000-\u001f]/u.test(part))) throw new Error('Unsafe public path');
   if (path === 'release.json') return path;
   const walletAsset = path === 'wallet/host-card-banner.png' || /^wallet\/add-to-apple-wallet-(?:cn|en)\.(?:png|svg)$/u.test(path);
-  const namedRoute = ['index.html', '404.html', 'invitation/index.html', 'registration/confirmation/index.html', 'r/index.html', 'admin/checkin/index.html', 'admin/cards/index.html', 'admin/index.html', 'admin/contacts/index.html', 'admin/registrations/index.html', 'admin/tasks/index.html', 'admin/settings/index.html', 'admin/person/index.html', 'admin/volunteers/index.html', 'invitations/template-blank.png', 'invitations/ggj2026-poster-v2.webp'].includes(path)
+  const namedRoute = ['index.html', '404.html', 'invitation/index.html', 'registration/confirmation/index.html', EVENT_DETAILS_PAGE, 'r/index.html', 'admin/checkin/index.html', 'admin/cards/index.html', 'admin/index.html', 'admin/contacts/index.html', 'admin/registrations/index.html', 'admin/tasks/index.html', 'admin/settings/index.html', 'admin/person/index.html', 'admin/volunteers/index.html', 'invitations/template-blank.png', 'invitations/ggj2026-poster-v2.webp'].includes(path)
     || PUBLIC_ADMIN_PAGE_ALIASES.some(route => path === route.slice(1) + 'index.html');
   if (!allowedExtensions.has(extname(path).toLowerCase()) || (!namedRoute && !walletAsset && !/^_astro\/[A-Za-z0-9_.\/-]+$/.test(path))) throw new Error('Unexpected public file: ' + path);
   return path;
@@ -64,7 +65,7 @@ export async function prepareOssSite({ distDirectory = resolve(root, 'dist'), ou
   await mkdir(outputDirectory, { recursive: true });
   if ((await readdir(outputDirectory)).length) throw new Error('Publication directory must be empty');
   const selected = new Map();
-  const pending = ['index.html', 'invitation/index.html', 'registration/confirmation/index.html', 'r/index.html'];
+  const pending = ['index.html', 'invitation/index.html', 'registration/confirmation/index.html', EVENT_DETAILS_PAGE, 'r/index.html'];
   while (pending.length) {
     const path = validatePublicPath(pending.pop());
     if (selected.has(path)) continue;

@@ -7,7 +7,8 @@ import { createAppleWalletApi } from '../../functions/apple-wallet/handler.mjs';
 import { createAppleWalletService } from '../../functions/apple-wallet/service.mjs';
 import { createWalletFixture, passFiles } from '../apple-wallet-fixture.mjs';
 import { peopleRuntimeFixture, PEOPLE_FIXTURE_API as API, PEOPLE_FIXTURE_PUBLIC as SITE, PEOPLE_FIXTURE_PASSWORD } from '../helpers/people-runtime-fixture.mjs';
-import { PUBLIC_REGISTRATION_URL } from '../../src/config/event.mjs';
+import { PUBLIC_EVENT_DETAILS_URL, PUBLIC_REGISTRATION_URL } from '../../src/config/event.mjs';
+import { toPublicContent } from '../../shared/content-schema.mjs';
 
 const dist = resolve(process.env.ARTDICO_DIST_DIRECTORY ?? 'dist');
 const output = resolve(process.env.ARTDICO_EVIDENCE_DIRECTORY ?? '.local-data/browser-evidence/commemorative-cards');
@@ -31,6 +32,8 @@ try {
     const context = await browser.newContext({ viewport: { width, height: 840 }, locale: 'zh-CN',
       ...(walletAvailable ? { userAgent: iosAgent + (device === 'safari' ? 'Version/18.0' : 'CriOS/131.0') + ' Mobile/15E148 Safari/604.1' } : {}) });
     const errors = [];
+    const phone = '+86 010 0000 0000', organization = '合成院校';
+    let publicDetails = null;
     let privateReads = 0, staleIdentity = width === 320;
     try {
       await context.route('**/*', async route => {
@@ -39,6 +42,13 @@ try {
           assert.ok([SITE, API].includes(url.origin));
           if (url.origin === API && url.pathname.startsWith('/api/')) {
             const method = request.method();
+            if (publicDetails && url.pathname === '/api/public/content') {
+              assert.equal(method, 'GET');
+              const headers = await request.allHeaders();
+              assert.equal(headers.cookie, undefined);
+              assert.equal(headers.authorization, undefined);
+              return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': SITE }, json: publicDetails });
+            }
             const privateRead = method === 'POST' && ['/api/admin/registration/confirmation', '/api/registration/confirmation'].includes(url.pathname);
             if (privateRead) privateReads++;
             if (staleIdentity && method === 'PATCH' && url.pathname.startsWith('/api/admin/registration-confirmation/cards/')) {
@@ -79,6 +89,9 @@ try {
         await application.locator('[data-wallet-community] summary').click();
         await application.locator('[name="wallet.ggjSite"]').fill('GGJ 合成站');
         await application.locator('[name="wallet.ggjRole"]').fill('站点组织者');
+        await application.getByText('电话与学校／机构（选填）', { exact: true }).click();
+        await application.locator('[name="wallet.phone"]').fill(phone);
+        await application.locator('[name="wallet.organization"]').fill(organization);
       }
       await page.locator('#wallet-consent').check();
       await page.locator('[data-wallet-submit]').click();
@@ -133,8 +146,10 @@ try {
         assert.match(await page.locator('[data-card-requested-community]').innerText(), /GGJ 合成站 · 站点组织者/u);
         assert.equal(await page.getByLabel('GGJ 站点').inputValue(), 'GGJ 合成站');
         assert.equal(await page.getByLabel('社群角色').inputValue(), '站点组织者');
+        assert.equal(await page.getByLabel('学校／机构／团队').inputValue(), organization);
+        assert.equal(await page.getByLabel('纪念卡电话').inputValue(), phone);
         await page.getByRole('button', { name: '保存到纪念卡' }).click();
-        await page.getByRole('status').filter({ hasText: 'GGJ 卡面资料已保存。' }).waitFor();
+        await page.getByRole('status').filter({ hasText: '纪念卡资料已保存。' }).waitFor();
         assert.match(await page.locator('[data-card-community-summary]').textContent(), /GGJ 合成站 · 站点组织者/u);
       }
       assert.equal(cardMessages().length, 0);
@@ -174,6 +189,7 @@ try {
         assert.match(await image.getAttribute('alt'), /卡面身份：嘉宾/u);
         assert.match(await page.locator('[data-confirmation-intro]').textContent(), /长期收藏.*活动行原电子票/u);
         const guide = page.getByRole('navigation', { name: '活动指南' });
+        assert.equal(await guide.getByRole('link', { name: '活动详情' }).getAttribute('href'), PUBLIC_EVENT_DETAILS_URL);
         const venue = '深圳市前海合作区梦海大道5188号前海5号楼';
         assert.equal(await guide.locator('[data-confirmation-map-address]').innerText(), venue);
         const guideMap = new URL(await guide.getByRole('link', { name: 'Apple 地图导航' }).getAttribute('href'));
@@ -184,6 +200,9 @@ try {
         assert.equal(await guide.getByRole('link', { name: '参展游戏与作品' }).getAttribute('href'), SITE + '/#students');
         if (device === 'safari') {
           assert.equal(await page.locator('[data-confirmation-community]').innerText(), 'GGJ 合成站 · 站点组织者');
+          await page.getByText('纪念卡个人资料', { exact: true }).click();
+          assert.equal(await page.locator('[data-confirmation-card-organization] dd').innerText(), organization);
+          assert.equal(await page.locator('[data-confirmation-card-phone] dd').innerText(), phone);
           assert.match(await image.getAttribute('alt'), /GGJ 合成站 · 站点组织者/u);
         } else {
           assert.equal(await page.locator('[data-confirmation-community]').isVisible(), false);
@@ -234,16 +253,18 @@ try {
           assert.equal(walletPass.eventTicket.primaryFields, undefined);
           assert.deepEqual(walletPass.eventTicket.secondaryFields.map(field => field.value), ['合成纪念卡申请人', '嘉宾']);
           assert.deepEqual(walletPass.eventTicket.headerFields.map(({ value }) => value), ['前海5号楼']);
-          assert.deepEqual(walletPass.eventTicket.auxiliaryFields.map(field => field.key), ['date', 'time', 'ggj-site-short', 'ggj-role-short']);
-          assert.deepEqual(walletPass.eventTicket.auxiliaryFields.slice(2), [
+          assert.deepEqual(walletPass.eventTicket.auxiliaryFields.map(field => field.key), ['date', 'time', 'activities', 'ggj-site-short', 'ggj-role-short', 'organization-short']);
+          assert.deepEqual(walletPass.eventTicket.auxiliaryFields.slice(3), [
             { key: 'ggj-site-short', label: 'GGJ 站点', value: 'GGJ 合成站', row: 1 },
             { key: 'ggj-role-short', label: '社群角色', value: '站点组织者', row: 1 },
+            { key: 'organization-short', label: '学校／机构', value: organization, row: 1 },
           ]);
           assert.deepEqual(walletPass.eventTicket.backFields.slice(1, 8).map(({ key, value }) => [key, value]), [
             ['venue', venue], ['directions', guideMap.href], ['agenda', SITE + '/#agenda'], ['showcase', SITE + '/#students'],
             ['huodongxing', PUBLIC_REGISTRATION_URL], ['ggj-site', 'GGJ 合成站'], ['ggj-role', '站点组织者'],
           ]);
-          assert.deepEqual(walletPass.featuredActions, [{ identifier: 'agenda', type: 'viewSchedule', url: SITE + '/#agenda' }]);
+          assert.equal(walletPass.eventTicket.backFields.find(field => field.key === 'phone').value, phone);
+          assert.deepEqual(walletPass.featuredActions, [{ identifier: 'event-details', type: 'viewSchedule', url: PUBLIC_EVENT_DETAILS_URL }]);
         } else if (device === 'chrome') {
           assert.equal(await walletButton.getAttribute('data-wallet-action'), 'guide');
           assert.equal(await page.locator('[data-confirmation-safari-guide]').isVisible(), false);
@@ -264,6 +285,33 @@ try {
         assert.deepEqual([...jpeg.subarray(-2)], [0xff, 0xd9]);
         assert.equal(privateReads - readsBefore, device === 'chrome' ? 2 : 1, 'the legacy response is upgraded with one canonical read');
         await writeFile(resolve(output, 'sample-commemorative-card.jpg'), jpeg);
+      }
+      if (device === 'safari' || width === 1440) {
+        const content = (await fixture.app.store.read()).draft.content;
+        content.sessions = [{ id: 'synthetic-talk', start: '10:00', end: '10:30', zone: 'A', title: '合成已公布讲座',
+          guestId: '', speakerName: '合成已确认讲者', speakerStatus: 'confirmed', status: 'scheduled', format: 'talk', internalNotes: 'SYNTHETIC_PRIVATE' }];
+        content.guests = [];
+        content.booths = [];
+        content.showcases = [{ id: 'synthetic-work', title: '合成已公布游戏', teamName: '合成队伍', summary: '已公布的作品说明',
+          school: '', contactName: '', email: '', wechat: '', memberCount: 2, participationForms: ['share'], responseStatus: 'attending',
+          materialLinks: '', coverId: '', status: 'confirmed', publicConsent: true, sessionId: 'synthetic-talk', boothId: '', internalNotes: 'SYNTHETIC_PRIVATE' }];
+        publicDetails = { revision: 1, publishedAt: '2026-10-21T09:00:00.000Z', content: toPublicContent(content) };
+        await page.goto(PUBLIC_EVENT_DETAILS_URL);
+        await page.getByText('合成已公布讲座', { exact: true }).waitFor();
+        await page.getByRole('heading', { name: '合成已公布游戏' }).waitFor();
+        assert.ok(await page.getByText('合成已确认讲者', { exact: true }).isVisible());
+        assert.equal(await page.getByText(phone, { exact: true }).count(), 0);
+        assert.equal(await page.getByText('SYNTHETIC_PRIVATE', { exact: true }).count(), 0);
+        assert.ok(new URL(await page.getByRole('link', { name: 'Apple 地图导航' }).getAttribute('href')).searchParams.get('destination').includes('前海5号楼'));
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+        await page.screenshot({ path: resolve(output, 'event-details-' + width + '.png'), fullPage: true });
+        if (width === 1440) {
+          publicDetails = { ...publicDetails, revision: 2, content: toPublicContent({ ...content, event: { ...content.event, status: 'cancelled' } }) };
+          await page.reload();
+          await page.getByRole('status').filter({ hasText: '本次活动已取消。' }).waitFor();
+          assert.equal(await page.getByRole('link', { name: 'Apple 地图导航' }).isVisible(), false);
+          assert.equal(await page.getByRole('link', { name: '活动行活动页' }).isVisible(), false);
+        }
       }
       if (width === 320 || width === 1440) {
         await page.goto(API + '/admin/cards/');
@@ -298,12 +346,14 @@ try {
       }
       assert.deepEqual(errors, []);
       reports.push({ width, outcome, device, oneMailPerClick: true, explicitResend: true, selectedAfterReload: true,
-        inlineError: width === 320, directJpeg: outcome === 'accepted', wallet: walletAvailable, testCardManagement: width === 320 || width === 1440 });
+        inlineError: width === 320, directJpeg: outcome === 'accepted', wallet: walletAvailable, testCardManagement: width === 320 || width === 1440,
+        publicEventDetails: device === 'safari' || width === 1440, savedCardProfile: device === 'safari' });
     } finally { await context.close(); }
   }
 } finally { signing.cleanup(); await browser.close(); }
 
 const sha256 = async path => createHash('sha256').update(await readFile(resolve(dist, path))).digest('hex');
-const result = { reports, adminHtmlSha256: await sha256('admin/cards/index.html'), confirmationHtmlSha256: await sha256('registration/confirmation/index.html') };
+const result = { reports, adminHtmlSha256: await sha256('admin/cards/index.html'), confirmationHtmlSha256: await sha256('registration/confirmation/index.html'),
+  eventDetailsHtmlSha256: await sha256('event/index.html') };
 await writeFile(resolve(output, 'result.json'), JSON.stringify(result, null, 2));
 console.log(JSON.stringify(result));

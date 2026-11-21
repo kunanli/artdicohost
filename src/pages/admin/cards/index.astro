@@ -1,7 +1,7 @@
 ---
 import SiteLayout from '../../../layouts/SiteLayout.astro';
 import StaffNavigation from '../../../components/StaffNavigation.astro';
-import { CARD_COMMUNITY_FIELD_LENGTH, WALLET_IDENTITIES } from '../../../../shared/general-application.mjs';
+import { CARD_COMMUNITY_FIELD_LENGTH, CARD_PROFILE_FIELD_LENGTHS, WALLET_IDENTITIES } from '../../../../shared/general-application.mjs';
 import '../../../styles/admin.css';
 ---
 <SiteLayout title="纪念卡｜ARTDiCO HOST" description="核对纪念卡申请并寄送 JPEG 或 Apple Wallet。">
@@ -70,12 +70,14 @@ import '../../../styles/admin.css';
                 <p class="card-muted" data-card-requested-identity hidden></p>
                 <details class="card-linked" data-card-linked hidden><summary>其他活动行编号</summary><ul></ul></details>
                 <details class="card-linked" data-card-community hidden>
-                  <summary data-card-community-summary>GGJ 社群（选填）</summary>
+                  <summary data-card-community-summary>纪念卡补充资料</summary>
                   <form data-card-community-form>
                     <p class="card-muted" data-card-requested-community hidden></p>
                     <div class="ah-admin-field"><label for="card-community-site">GGJ 站点</label><input id="card-community-site" name="site" maxlength={CARD_COMMUNITY_FIELD_LENGTH} /></div>
                     <div class="ah-admin-field"><label for="card-community-role">社群角色</label><input id="card-community-role" name="role" maxlength={CARD_COMMUNITY_FIELD_LENGTH} /></div>
-                    <p class="card-muted">保存后，打开原领取链接就能取得新版纪念卡。</p>
+                    <div class="ah-admin-field"><label for="card-organization">学校／机构／团队</label><input id="card-organization" name="organization" maxlength={CARD_PROFILE_FIELD_LENGTHS.organization} /></div>
+                    <div class="ah-admin-field"><label for="card-phone">纪念卡电话</label><input id="card-phone" name="phone" type="tel" maxlength={CARD_PROFILE_FIELD_LENGTHS.phone} /></div>
+                    <p class="card-muted">电话会显示在 Wallet 票券详情及 JPEG。保存后可用原链接领取新版。</p>
                     <button class="ah-admin-button" type="submit">保存到纪念卡</button>
                   </form>
                 </details>

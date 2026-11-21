@@ -1,0 +1,108 @@
+---
+import SiteLayout from '../../layouts/SiteLayout.astro';
+import { agenda, appleMapsDirectionsUrl, eventConfig, PUBLIC_MEETUP_TITLE, PUBLIC_REGISTRATION_URL, zones } from '../../config/event.mjs';
+const [meetup, host] = PUBLIC_MEETUP_TITLE.split(' x ');
+---
+<SiteLayout title={`活动详情｜${PUBLIC_MEETUP_TITLE}`} description={`${eventConfig.subtitle}。活动日程、场地导航及参展游戏。`} themeColor="#131217">
+  <header class="event-header">
+    <div class="event-width event-header-inner"><a href="/">ARTDiCO HOST</a><a href="/">活动首页 <span aria-hidden="true">↗</span></a></div>
+  </header>
+  <main id="main-content" data-event-details>
+    <section class="event-hero" aria-labelledby="event-title">
+      <div class="event-width event-hero-inner">
+        <div>
+          <p class="event-kicker">活动详情</p>
+          <h1 id="event-title">{meetup}<br />x {host}</h1>
+          <p class="event-subtitle">{eventConfig.subtitle}</p>
+        </div>
+        <img src="/wallet/host-card-banner.png" alt="" width="384" height="150" />
+      </div>
+    </section>
+    <div class="event-width event-body">
+      <nav class="event-nav" aria-label="活动详情导航">
+        <a href="#venue">场地导航</a><a href="#agenda">讲座与日程</a><a href="#games">参展游戏</a>
+      </nav>
+      <p class="event-status" data-event-status role="status" hidden></p>
+      <section id="venue" aria-labelledby="event-venue-heading" class="event-venue">
+        <h2 id="event-venue-heading">时间与地点</h2>
+        <dl class="event-facts">
+          <div><dt>日期</dt><dd><time datetime={eventConfig.date.value} data-event-date>{eventConfig.date.label}</time></dd></div>
+          <div><dt>活动时间</dt><dd data-event-hours>{eventConfig.time.label}（北京时间）</dd></div>
+          <div><dt>场地</dt><dd data-event-venue>{eventConfig.venue.name}</dd><dd data-event-address>{eventConfig.venue.address}</dd></div>
+        </dl>
+        <div class="event-actions">
+          <a class="event-button" data-event-map href={appleMapsDirectionsUrl(eventConfig.venue.address)}>Apple 地图导航 <span aria-hidden="true">↗</span></a>
+          <a class="event-button event-button-outline" data-event-registration href={PUBLIC_REGISTRATION_URL}>活动行活动页 <span aria-hidden="true">↗</span></a>
+        </div>
+      </section>
+      <section id="agenda" aria-labelledby="event-agenda-heading" class="event-section">
+        <h2 id="event-agenda-heading">讲座与活动日程</h2>
+        <p class="event-note" data-event-agenda-note>以下为暂定日程。</p>
+        {zones.map((zone, index) => (
+          <details class="event-zone" open={index === 0}>
+            <summary>{zone.id} 区 · {zone.name}</summary>
+            <ul class="event-list" data-event-zone={zone.id}>
+              {agenda.filter(item => item[zone.id as 'A' | 'B' | 'C'] !== '—').map(item => (
+                <li class="event-session"><time datetime={item.start}>{item.time}</time><p>{item[zone.id as 'A' | 'B' | 'C']}</p></li>
+              ))}
+            </ul>
+            <p class="event-note event-empty" data-event-empty-zone hidden>此区暂无已公布场次。</p>
+          </details>
+        ))}
+      </section>
+      <section id="games" aria-labelledby="event-games-heading" class="event-section">
+        <h2 id="event-games-heading">参展游戏与作品</h2>
+        <p class="event-note" data-event-games-note>正在读取已公布的作品。</p>
+        <ul class="event-games" data-event-games></ul>
+        <noscript><p><a href="/#students">前往活动首页查看游戏与作品</a></p></noscript>
+      </section>
+    </div>
+  </main>
+</SiteLayout>
+
+<script>import '../../scripts/event-details.mjs';</script>
+
+<style>
+  .event-width { width: min(940px, calc(100% - 36px)); margin-inline: auto; }
+  .event-header, [data-event-details] { font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; color: #202437; background: #f7f7fa; line-height: 1.6; }
+  .event-header-inner { min-height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .event-header a { color: inherit; text-decoration: none; padding-block: 10px; }
+  .event-header a:first-child { font-weight: 800; }
+  .event-header a:last-child, .event-kicker, .event-note { font-size: .9rem; }
+  .event-hero { background: #131217; color: #fff; }
+  .event-hero-inner { min-height: 214px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, .58fr); align-items: center; gap: clamp(16px, 4vw, 48px); padding-block: clamp(28px, 5vw, 54px); }
+  .event-hero img { width: 100%; height: auto; max-width: 290px; justify-self: end; }
+  .event-kicker { margin: 0 0 10px; color: #d5c7ff; font-weight: 700; }
+  h1 { font-size: clamp(1.65rem, 5vw, 3rem); line-height: 1.13; margin: 0; letter-spacing: -.025em; }
+  .event-subtitle { color: #dfdce9; margin: 14px 0 0; }
+  .event-body { padding-bottom: 64px; }
+  .event-nav { display: flex; flex-wrap: wrap; gap: 8px 20px; padding-block: 12px; margin-bottom: 12px; }
+  .event-nav a { color: #344a9c; padding-block: 10px; text-underline-offset: 4px; }
+  .event-venue { background: #fff; border: 1px solid #dedfeb; border-radius: 12px; padding: clamp(18px, 4vw, 32px); }
+  h2 { margin: 0 0 12px; font-size: clamp(1.25rem, 3vw, 1.5rem); line-height: 1.25; }
+  .event-facts { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1fr) minmax(0, 1.55fr); gap: 14px 20px; margin: 16px 0 20px; }
+  dt, .event-note, [data-event-address] { color: #51576d; }
+  dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+  .event-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .event-button { width: fit-content; min-height: 44px; display: inline-flex; align-items: center; gap: .6em; background: #344a9c; color: #fff; padding: 8px 14px; border-radius: 6px; border: 1px solid #344a9c; font-weight: 650; text-decoration: none; }
+  .event-button-outline { background: #fff; color: #344a9c; }
+  .event-status { margin: 0 0 16px; color: #713716; }
+  .event-section { margin-top: 38px; }
+  .event-zone { border-top: 1px solid #dedfeb; }
+  .event-zone:last-child { border-bottom: 1px solid #dedfeb; }
+  summary { min-height: 48px; padding-block: 12px; font-weight: 650; cursor: pointer; }
+  .event-list, .event-games { margin: 0; padding: 0; list-style: none; }
+  :global(.event-session) { display: grid; grid-template-columns: 7em minmax(0, 1fr); gap: 10px; padding: 10px 0; border-top: 1px solid #e7e7ef; }
+  :global(.event-session time) { color: #51576d; font-variant-numeric: tabular-nums; font-size: .9rem; }
+  :global(.event-session p), :global(.event-game p) { margin: 0; overflow-wrap: anywhere; }
+  :global(.event-session small), :global(.event-game small) { display: block; margin-top: 2px; color: #51576d; font-size: .87rem; }
+  .event-games { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 14px; }
+  :global(.event-game) { background: #fff; border: 1px solid #dedfeb; padding: 16px; border-radius: 8px; overflow-wrap: anywhere; }
+  :global(.event-game img) { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; margin-bottom: 12px; border-radius: 5px; }
+  :global(.event-game h3) { margin: 0; font-size: 1.1rem; }
+  :global(.event-game p) { margin-top: 8px; }
+  [data-event-details] [hidden] { display: none !important; }
+  a:focus-visible, summary:focus-visible { outline: 3px solid #7861d9; outline-offset: 3px; }
+  @media (max-width: 610px) { .event-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } .event-facts > :last-child { grid-column: 1 / -1; } }
+  @media (max-width: 440px) { .event-hero-inner { grid-template-columns: 1fr; gap: 16px; } .event-hero img { width: min(56%, 175px); justify-self: start; } }
+</style>

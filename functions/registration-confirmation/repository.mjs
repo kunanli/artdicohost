@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { parseTimestamp } from '../registration-api/policy.mjs';
 import { validConfirmationDiagnostic } from '../../shared/confirmation-delivery.mjs';
-import { cardCommunityFields, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
+import { cardCommunityFields, cardProfileFields, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
 
 export const MAX_CONFIRMATION_AUDIT = 4000;
 export const MAX_CONFIRMATION_BATCH = 100;
@@ -79,22 +79,25 @@ export function createCardCommunityRepository({ journal, eventId, clock }) {
       || !exact(value, ['schemaVersion', 'eventId', 'entries']) || value.schemaVersion !== 1 || value.eventId !== eventId
       || !value.entries || Object.getPrototypeOf(value.entries) !== Object.prototype || Object.keys(value.entries).length > 1000) fail();
     for (const [id, entry] of Object.entries(value.entries)) {
-      if (!ID.test(id) || !exact(entry, ['community', 'updatedAt', 'updatedBy'])
+      const hasProfile = entry && Object.hasOwn(entry, 'profile');
+      if (!ID.test(id) || !exact(entry, ['community', 'updatedAt', 'updatedBy', ...(hasProfile ? ['profile'] : [])])
         || !entry.community || !isDeepStrictEqual(cardCommunityFields(entry.community), entry.community)
+        || hasProfile && (!entry.profile || !isDeepStrictEqual(cardProfileFields(entry.profile), entry.profile))
         || !at(entry.updatedAt) || !ACTOR.test(entry.updatedBy ?? '')) fail();
     }
     return { entries: value.entries, cursor };
   }
-  async function save(current, { registrationId, community, actorId }) {
+  async function save(current, { registrationId, community, profile = current.entries[registrationId]?.profile, actorId }) {
     const updatedAt = new Date(clock()).toISOString();
     if (!ID.test(registrationId) || typeof actorId !== 'string' || !ACTOR.test(actorId) || !at(updatedAt)
-      || !community || !isDeepStrictEqual(cardCommunityFields(community), community)) fail();
-    const entries = { ...current.entries, [registrationId]: { community, updatedAt, updatedBy: actorId } };
+      || !community || !isDeepStrictEqual(cardCommunityFields(community), community)
+      || profile !== undefined && (!profile || !isDeepStrictEqual(cardProfileFields(profile), profile))) fail();
+    const entries = { ...current.entries, [registrationId]: { community, ...(profile ? { profile } : {}), updatedAt, updatedBy: actorId } };
     if (Object.keys(entries).length > 1000) fail();
     const value = { schemaVersion: 1, eventId, entries };
     const saved = await journal.commit(current.cursor, value);
     if (saved?.cursor?.version !== current.cursor.version + 1 || !isDeepStrictEqual(saved.value, value)) fail();
-    return { cardCommunity: community, communityRevision: saved.cursor.version };
+    return { cardCommunity: community, ...(profile ? { cardProfile: profile } : {}), communityRevision: saved.cursor.version };
   }
   return { read, save };
 }

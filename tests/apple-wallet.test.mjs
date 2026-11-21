@@ -8,7 +8,7 @@ import { createAppleWalletService, WALLET_CONFIG_FIELDS } from '../functions/app
 import { createAppleWalletApi } from '../functions/apple-wallet/handler.mjs';
 import { derChildren } from '../functions/apple-wallet/der.mjs';
 import { createWalletFixture, passFiles } from './apple-wallet-fixture.mjs';
-import { eventConfig, PUBLIC_AGENDA_URL, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL } from '../src/config/event.mjs';
+import { eventConfig, PUBLIC_AGENDA_URL, PUBLIC_EVENT_DETAILS_URL, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL } from '../src/config/event.mjs';
 
 const fixture = await createWalletFixture(); after(() => fixture.cleanup());
 const id = 'a'.repeat(43), token = 'synthetic.receipt.' + 'b'.repeat(43), secret = 'SYNTHETIC_INDEPENDENT_REGISTRATION_SECRET_1234567890';
@@ -211,12 +211,13 @@ test('commemorative passes sign a clear native strip with card details below it'
   assert.equal(pass.eventTicket.backFields[0].value, 'GGJ China Meetup 2026 x ARTDiCO HOST');
   assert.equal(pass.eventTicket.primaryFields, undefined, 'primary fields would overlap the strip');
   assert.deepEqual(pass.eventTicket.secondaryFields.map(({value})=>value), [record.name, '嘉宾']);
-  assert.deepEqual(pass.eventTicket.auxiliaryFields.map(({value})=>value),[record.event.date,record.event.time,record.event.venue]);
+  assert.deepEqual(pass.eventTicket.auxiliaryFields.map(({value})=>value),[record.event.date,record.event.time,'讲座与游戏展',record.event.venue]);
   assert.equal(pass.eventTicket.backFields.find(field=>field.key==='venue').value,record.event.venue);
   assert.deepEqual(pass.eventTicket.backFields.filter(({key})=>key.startsWith('details-')).map(({value})=>value), [record.name,'嘉宾',record.event.title,record.event.date,record.event.time]);
   assert.deepEqual(pass.eventTicket.backFields.slice(1, 6).map(({ key }) => key), ['venue', 'directions', 'agenda', 'showcase', 'huodongxing']);
   assert.deepEqual(pass.eventTicket.backFields.slice(3, 6).map(({ value }) => value), [PUBLIC_AGENDA_URL, PUBLIC_SHOWCASE_URL, PUBLIC_REGISTRATION_URL]);
-  assert.deepEqual(pass.featuredActions, [{ identifier: 'agenda', type: 'viewSchedule', url: PUBLIC_AGENDA_URL }]);
+  assert.deepEqual(pass.featuredActions, [{ identifier: 'event-details', type: 'viewSchedule', url: PUBLIC_EVENT_DETAILS_URL }]);
+  assert.equal(pass.eventTicket.backFields.find(({ key }) => key === 'event-details').value, PUBLIC_EVENT_DETAILS_URL);
   const directions = pass.eventTicket.backFields.find(({ key }) => key === 'directions'), map = new URL(directions.value);
   assert.equal(map.origin, 'https://maps.apple.com');
   assert.equal(map.pathname, '/directions');
@@ -272,4 +273,21 @@ test('a changed staff card identity during signing prevents returning a stale pa
   const selected={...record,walletRequested:true,walletIdentity:'speaker'};
   const result=await service({authorize:async()=>selected,authorizedRegistration:async()=>({...selected,walletIdentity:'attendee'})}).download({receiptToken:token});
   assert.equal(result.outcome,'inactive');
+});
+
+test('the signed keepsake presents a saved organization and detail phone without copying email or WeChat', async () => {
+  const cardProfile = { organization: '合成的学校', phone: '+86 010 0000 0000' };
+  const selected = { ...record, walletRequested: true, walletIdentity: 'student', cardProfile,
+    cardCommunity: { site: '合成站', role: '组织者' }, email: 'excluded@example.invalid', wechat: 'excluded-wechat' };
+  const wallet = service({ authorize: async () => selected, authorizedRegistration: async () => selected });
+  const result = await wallet.download({ receiptToken: token });
+  assert.equal(result.outcome, 'issued');
+  const bytes = passFiles(result.data).get('pass.json').toString();
+  const { auxiliaryFields, backFields } = JSON.parse(bytes).eventTicket;
+  assert.ok(auxiliaryFields.some(field => field.key === 'organization-short' && field.value === cardProfile.organization));
+  assert.ok(backFields.some(field => field.key === 'phone' && field.value === cardProfile.phone));
+  assert.equal(auxiliaryFields.some(field => field.key === 'phone'), false);
+  assert.doesNotMatch(bytes, /excluded@example|excluded-wechat/u);
+  const changed = service({ authorize: async () => selected, authorizedRegistration: async () => ({ ...selected, cardProfile: undefined }) });
+  assert.equal((await changed.download({ receiptToken: token })).outcome, 'inactive');
 });

@@ -15,7 +15,7 @@
 
 纪念卡使用 `eventTicket` 的独立 `strip.png` 横幅和黑色卡面。横幅按 375 × 98 pt 输出为 1x、2x、3x PNG，沿用原彩色 HOST 字样及其比例。纪念卡不打包 `background.png` 或 `artwork.png`，没有覆盖横幅的主字段。姓名与身分使用次字段。日期、时间及经工作人员保存的 GGJ 站点、社群角色使用辅助字段。有社群资料时，地点简称移至卡面顶部。较长的站点与角色保留完整内容于票券详情。iOS 决定卡框、留白和字段位置。
 
-票券详情先显示完整地址与 Apple 地图导航，并链接活动日程、参展游戏、活动行活动页。支持 Featured Actions 的 iOS 27 可在卡片下方显示日程快捷入口。地址导航沿用已核实的场地地址。卡片加入后，通过右上角菜单打开票券详情即可查看链接。参见 [Apple Wallet Featured Actions](https://developer.apple.com/videos/play/wwdc2026/209/?time=267)。
+票券详情先显示完整地址与 Apple 地图导航，并链接活动详情、日程、参展游戏及活动行活动页。支持 Featured Actions 的 iOS 27 在卡片下方以系统的 View Schedule 入口打开公开 `/event/`，同页读取已发布讲座与参展作品。地址导航沿用已核实的场地地址。卡面补充讲座与游戏展、时区及已保存的学校／机构。经工作人员写入的电话显示在票券详情及 JPEG。参见 [Apple Wallet Featured Actions](https://developer.apple.com/videos/play/wwdc2026/209/?time=267)。
 
 本场联名标题使用 `logo.png` 的两行透明文字图，第一行为 `GGJ China Meetup 2026`，第二行为 `x ARTDiCO HOST`。按 160 × 50 pt 输出 1x、2x、3x，使用 Liberation Sans Bold。完整名称在票券详情中保留为文字。3x PNG SHA-256 为 `4627fb5120725d6226edc234ce20f753cd00f5308d391405752e5225b3b43c8b`。彩色 HOST 横幅继续使用独立的 `strip.png`。
 

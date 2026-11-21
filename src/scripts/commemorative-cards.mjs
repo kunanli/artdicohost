@@ -36,6 +36,8 @@ const communityDetails = $('[data-card-community]');
 const communityForm = $('[data-card-community-form]');
 const communitySite = $('#card-community-site');
 const communityRole = $('#card-community-role');
+const organization = $('#card-organization');
+const phone = $('#card-phone');
 const deliveryForm = $('[data-card-delivery]');
 const approve = $('[data-card-approve]');
 const check = $('[data-card-check]');
@@ -184,12 +186,16 @@ function setView(value) {
   const communityInput = value.cardCommunitySaved ? value.cardCommunity : suggestedCommunity;
   communitySite.value = communityInput?.site ?? '';
   communityRole.value = communityInput?.role ?? '';
+  const profile = value.cardProfile ?? value.suggestedCardProfile;
+  organization.value = profile?.organization ?? '';
+  phone.value = profile?.phone ?? '';
   const proposed = cardCommunityLabel(suggestedCommunity), proposalText = $('[data-card-requested-community]');
   proposalText.hidden = !proposed;
   proposalText.textContent = proposed ? '申请人填写：' + proposed : '';
   const community = cardCommunityLabel(value.cardCommunity);
-  $('[data-card-community-summary]').textContent = community ? 'GGJ 卡面资料 · ' + community
-    : proposed && !value.cardCommunitySaved ? 'GGJ 卡面资料（待保存）' : 'GGJ 卡面资料（选填）';
+  const saved = [community, value.cardProfile?.organization].filter(Boolean).join(' · ');
+  const pending = proposed && !value.cardCommunitySaved || !value.cardProfile && (profile?.organization || profile?.phone);
+  $('[data-card-community-summary]').textContent = '纪念卡补充资料' + (pending ? '（待保存）' : saved ? ' · ' + saved : '');
   renderActions();
 }
 function renderActions() {
@@ -399,12 +405,13 @@ communityForm.addEventListener('submit', event => {
         primaryId: view.primaryId,
         expectedCommunityRevision: view.communityRevision,
         cardCommunity: { site: communitySite.value, role: communityRole.value },
+        cardProfile: { organization: organization.value, phone: phone.value },
       });
     } catch (error) {
       if (csrf) await open(view.registrationId);
       throw error;
     }
-    if (csrf) { await open(view.registrationId); message.textContent = 'GGJ 卡面资料已保存。'; }
+    if (csrf) { await open(view.registrationId); message.textContent = '纪念卡资料已保存。'; }
   }, true);
 });
 deliveryForm.addEventListener('submit', event => {

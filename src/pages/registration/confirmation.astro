@@ -1,6 +1,6 @@
 ---
 import '../../styles/confirmation.css';
-import { PUBLIC_AGENDA_URL, PUBLIC_CONTACT_EMAIL, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL } from '../../config/event.mjs';
+import { PUBLIC_AGENDA_URL, PUBLIC_CONTACT_EMAIL, PUBLIC_EVENT_DETAILS_URL, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL } from '../../config/event.mjs';
 import { CARD_IMAGE } from '../../lib/commemorative-card-image.mjs';
 const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
 ---
@@ -64,10 +64,18 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
               </section>
             </details>
           </section>
+          <details class="confirmation-card-profile" data-confirmation-card-profile hidden>
+            <summary>纪念卡个人资料</summary>
+            <dl>
+              <div data-confirmation-card-organization><dt>学校／机构</dt><dd></dd></div>
+              <div data-confirmation-card-phone><dt>电话</dt><dd></dd></div>
+            </dl>
+          </details>
           <nav class="confirmation-event-guide" data-confirmation-event-guide aria-labelledby="confirmation-event-guide-heading" hidden>
             <h2 id="confirmation-event-guide-heading">活动指南</h2>
             <p data-confirmation-map-address hidden></p>
             <ul>
+              <li><a href={PUBLIC_EVENT_DETAILS_URL}>活动详情</a></li>
               <li data-confirmation-map-item hidden><a data-confirmation-map>Apple 地图导航</a></li>
               <li><a href={PUBLIC_AGENDA_URL}>讲座与活动日程</a></li>
               <li><a href={PUBLIC_SHOWCASE_URL}>参展游戏与作品</a></li>

@@ -187,7 +187,7 @@ try {
         assert.equal(await downloadButton.evaluate(button => button.getBoundingClientRect().bottom <= innerHeight), true);
         const image = page.locator('[data-confirmation-jpeg-image]');
         await page.waitForFunction(node => node.complete && node.naturalWidth === 1030 && node.naturalHeight === 1510, await image.elementHandle());
-        assert.match(await image.getAttribute('alt'), /卡面身份：嘉宾/u);
+        assert.match(await image.getAttribute('alt'), /嘉宾/u);
         assert.match(await page.locator('[data-confirmation-intro]').textContent(), /长期收藏.*活动行原电子票/u);
         const guide = page.getByRole('navigation', { name: '活动指南' });
         assert.equal(await guide.getByRole('link', { name: '活动详情' }).getAttribute('href'), PUBLIC_EVENT_DETAILS_URL);
@@ -204,20 +204,29 @@ try {
           await page.getByText('纪念卡个人资料', { exact: true }).click();
           assert.equal(await page.locator('[data-confirmation-card-organization] dd').innerText(), organization);
           assert.equal(await page.locator('[data-confirmation-card-phone] dd').innerText(), phone);
-          assert.match(await image.getAttribute('alt'), /GGJ 合成站 · 站点组织者・美术/u);
+          assert.match(await image.getAttribute('alt'), /GGJ 合成站，嘉宾 · 站点组织者 · 美术/u);
         } else {
           assert.equal(await page.locator('[data-confirmation-community]').isVisible(), false);
         }
         assert.equal(await image.evaluate(node => node.clientWidth === node.closest('.confirmation-save').clientWidth), true);
-        assert.equal(await image.evaluate(node => {
+        const jpegHeadline = await image.evaluate(node => {
           const canvas = document.createElement('canvas');
           canvas.width = node.naturalWidth;
           canvas.height = node.naturalHeight;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(node, 0, 0);
-          const { data } = ctx.getImageData(675, 696, 285, 47);
-          return data.some((value, index) => index % 4 === 0 && value > 200);
-        }), true, 'the downloadable artwork shows the identity value in its own column');
+          const identity = ctx.getImageData(64, 681, 580, 49).data;
+          const site = ctx.getImageData(64, 623, 580, 48).data;
+          const name = ctx.getImageData(682, 681, 280, 49).data;
+          const hasWhiteText = pixels => pixels.some((value, index) => index % 4 === 0 && value > 200);
+          return {
+            identity: hasWhiteText(identity),
+            name: hasWhiteText(name),
+            site: site.some((value, index) => index % 4 === 0 && value >= 150 && site[index + 2] - site[index + 1] > 22),
+          };
+        });
+        assert.deepEqual(jpegHeadline, { identity: true, name: true, site: device === 'safari' },
+          'the downloadable JPEG shows the site above the identity and the name on the right');
         assert.equal(await image.evaluate(node => {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
@@ -242,7 +251,8 @@ try {
           const files = passFiles(await readFile(await pass.path()));
           const walletPass = JSON.parse(files.get('pass.json'));
           assert.deepEqual(walletPass.posterGeneric.primaryFields.map(({ label, value }) => [label, value]),
-            [[undefined, '嘉宾'], [undefined, '合成纪念卡申请人'], ['GGJ 站点', 'GGJ 合成站'], ['社群角色／分工', communityRole]]);
+            [['GGJ 合成站', '嘉宾 · 站点组织者 · 美术'], [undefined, '合成纪念卡申请人']]);
+          assert.equal(walletPass.posterGeneric.additionalInfoFields.find(({ key }) => key === 'poster-info-ggj-role').value, communityRole);
           assert.equal(walletPass.posterGeneric.footerFields[0].value, '2026-12-05 · 10:00–18:00 · 前海5号楼');
           assert.deepEqual(walletPass.posterGeneric.additionalInfoFields.slice(0, 2).map(({ label }) => label),
             ['GGJ 中国交流聚会', 'ARTDiCO HOST 学生嘉年华']);

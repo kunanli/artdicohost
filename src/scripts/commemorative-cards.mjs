@@ -187,7 +187,8 @@ function setView(value) {
   if (!stayOnApplication) communityDetails.open = false;
   communityDetails.hidden = value.admissionStatus !== 'confirmed' || !Number.isSafeInteger(value.communityRevision);
   const suggestedCommunity = { site: preferences.ggjSite ?? '', role: preferences.ggjRole ?? '' };
-  const communityInput = value.cardCommunitySaved ? value.cardCommunity : suggestedCommunity;
+  const community = cardCommunityLabel(value.cardCommunity);
+  const communityInput = value.cardCommunitySaved || community ? value.cardCommunity : suggestedCommunity;
   communitySite.value = communityInput?.site ?? '';
   communityRole.value = communityInput?.role ?? '';
   const profile = value.cardProfile ?? value.suggestedCardProfile;
@@ -196,10 +197,9 @@ function setView(value) {
   const proposed = cardCommunityLabel(suggestedCommunity), proposalText = $('[data-card-requested-community]');
   proposalText.hidden = !proposed;
   proposalText.textContent = proposed ? '申请人填写：' + proposed : '';
-  const community = cardCommunityLabel(value.cardCommunity);
   const saved = [community, value.cardProfile?.organization].filter(Boolean).join(' · ');
-  const pending = proposed && !value.cardCommunitySaved || !value.cardProfile && (profile?.organization || profile?.phone);
-  $('[data-card-community-summary]').textContent = '纪念卡补充资料' + (pending ? '（待保存）' : saved ? ' · ' + saved : '');
+  const pending = proposed && !value.cardCommunitySaved && !community || !value.cardProfile && (profile?.organization || profile?.phone);
+  $('[data-card-community-summary]').textContent = '纪念卡补充资料' + (saved ? ' · ' + saved : '') + (pending ? '（待保存）' : '');
   renderActions();
 }
 function renderActions() {

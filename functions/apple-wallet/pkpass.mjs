@@ -1,4 +1,4 @@
-import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, cardProfileFields, commemorativeCardVenue } from '../../shared/general-application.mjs';
+import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, cardIdentityHeadline, cardProfileFields, commemorativeCardVenue } from '../../shared/general-application.mjs';
 import { eventConfig, PUBLIC_AGENDA_URL, PUBLIC_EVENT_DETAILS_URL, PUBLIC_MEETUP_TITLE, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL, appleMapsDirectionsUrl } from '../../src/config/event.mjs';
 import { createHash, createPrivateKey, X509Certificate } from 'node:crypto';
 import { derChildren, oid, signManifest } from './der.mjs';
@@ -224,14 +224,15 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
       attributedValue: '<a href="' + PUBLIC_EVENT_DETAILS_URL + '">查看活动详情</a>' }] : []),
     ...(!richCard ? [{ key: 'reference', label: '报名编号', value: attendee.referenceCode }, ...communityFields] : []),
     { key: 'notice', label: '说明', value: richCard ? '本卡用于纪念收藏。现场签到请使用活动行原电子票。' : '此凭证仅表示参会名额。讲者、展位及住宿另行确认；请以在线核对结果为准。' }];
-  const posterGeneric = meetupCard ? {
-    primaryFields: [{ ...faceIdentity, key: 'poster-identity' }, { ...faceName, key: 'poster-name' },
-      ...affiliations.slice(0, 2).map(({ key, label, value }) => ({ key: 'poster-' + key, label, value }))],
+  const headline = meetupCard ? cardIdentityHeadline(faceIdentity.value, siteIdentity) : null;
+  const posterGeneric = headline ? {
+    primaryFields: [{ key: 'poster-identity', value: headline.identity, ...(headline.site ? { label: headline.site } : {}) },
+    { ...faceName, key: 'poster-name' }],
     footerFields: [{
       key: 'poster-event-summary', label: '活动时间与地点 · UTC+8',
       value: [event.date, event.time, confirmedVenue ? '前海5号楼' : cardPlace.value].join(' · '),
     }],
-    additionalInfoFields: [...programFields, date, { ...time, label: '时间 · UTC+8' }, venue, ...scheduleFields, ...cardAffiliations]
+    additionalInfoFields: [...programFields, ...cardAffiliations, date, { ...time, label: '时间 · UTC+8' }, venue, ...scheduleFields]
       .map(field => ({ ...field, key: 'poster-info-' + field.key })),
     backFields: backFields.map(field => ({ ...field, key: 'poster-details-' + field.key })),
   } : null;

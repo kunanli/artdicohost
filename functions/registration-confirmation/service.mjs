@@ -67,7 +67,12 @@ export function createRegistrationConfirmationService({ registrationService, jou
     : repository ??= createConfirmationRepository({ journal: journalFor(prefix), eventId, clock });
   const communities = () => communityRepository ??= createCardCommunityRepository({ journal: journalFor(cardCommunityPrefix(eventId)), eventId, clock });
   const management = () => managementRepository ??= createCardManagementRepository({ journal: journalFor(cardManagementPrefix(eventId)), eventId, clock });
-  const communityFor = (state, id) => state.entries[id]?.community ?? { site: '', role: '' };
+  function communityFor(state, id, approvedFields) {
+    const saved = state.entries[id];
+    if (saved) return saved.community;
+    const preferences = isWalletApplicationFields(approvedFields) ? walletApplicationPreferences(approvedFields) : null;
+    return { site: preferences?.ggjSite ?? '', role: preferences?.ggjRole ?? '' };
+  }
   const profileFor = (state, id) => {
     const profile = state.entries[id]?.profile;
     return profile?.organization || profile?.phone ? { cardProfile: profile } : {};
@@ -191,7 +196,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (includeCardCommunity && value.admissionStatus === 'confirmed') {
       if ((await aliasesFor(loaded)).registrationIds.some(id => state.removed[id])) failure('CONFIRMATION_NOT_FOUND', 404);
       const saved = await communities().read();
-      return { ...value, cardCommunity: communityFor(saved, registrationId), ...profileFor(saved, registrationId) };
+      return { ...value, cardCommunity: communityFor(saved, registrationId, value.walletIdentity ? loaded.record.fields : undefined),
+        ...profileFor(saved, registrationId) };
     }
     return value;
   }
@@ -214,7 +220,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!await cardIdentity(loaded, projected)) return null;
     const saved = await communities().read();
     return { ...projected, walletRequested: true,
-      cardCommunity: communityFor(saved, registrationId), ...profileFor(saved, registrationId) };
+      cardCommunity: communityFor(saved, registrationId, loaded.record.fields), ...profileFor(saved, registrationId) };
   }
   async function cardIdentity(loaded, projection) {
     if (projection.admissionStatus !== 'confirmed') return null;
@@ -417,7 +423,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       const savedCommunity = await beforeDeadline(() => communities().read(), 1_000).catch(() => null);
       cardEmail = { name: record.fields.name, identity: WALLET_IDENTITIES.find(item => item.value === card.identity)?.label,
         event: eventFacts.title, date: eventFacts.date, time: eventFacts.time, venue: commemorativeCardVenue(eventFacts.venue),
-        community: savedCommunity ? cardCommunityLabel(communityFor(savedCommunity, registrationId)) : '' };
+        community: savedCommunity ? cardCommunityLabel(communityFor(savedCommunity, registrationId, record.fields)) : '' };
     }
     try { presentation=confirmationEmailPresentation({locale,kind,subject,card:cardEmail,confirmationUrl:link.confirmationUrl,ticket,walletReady}); }
     catch { try{return await recordResult(notice,'rejected',actorId,{code:'DELIVERY_GUARD_UNAVAILABLE',transportStarted:false});}catch{return{status:'unknown'};} }
@@ -498,7 +504,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       const latestIdentity = await cardIdentity(latest.loaded, trustedProjection(registrationId, latest.loaded));
       if (latestIdentity?.value !== identity.value
         || latest.loaded.record.fields.name !== value.name || !unchangedEventFacts(currentFacts, await currentEventFacts()) && currentFacts.ready) failure();
-      const cardCommunity = communityFor(community, registrationId);
+      const cardCommunity = communityFor(community, registrationId, latest.loaded.record.fields);
       return { ...cardView, wallet,
         ...(cardCommunity.site || cardCommunity.role ? { cardCommunity } : {}),
         ...profileFor(community, registrationId),
@@ -932,7 +938,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
       stage: cardStage(admission.status, record.walletIdentity, state, reason), reason, walletReady: wallet.ready,
       canResend: Boolean(mayResend && !sendInProgress && !reason), sendInProgress,
       test: isTestCard(record), canRemove: actorValid(actor),
-      cardCommunity: communityFor(community, record.id), communityRevision: community.cursor.version,
+      cardCommunity: communityFor(community, record.id, admission.status === 'confirmed' && record.walletIdentity ? record.fields : undefined),
+      communityRevision: community.cursor.version,
       cardCommunitySaved: Object.hasOwn(community.entries, record.id),
       cardProfile: community.entries[record.id]?.profile ?? null,
       suggestedCardProfile: cardProfileFields({ organization: application.record.fields.organization ?? '', phone: application.record.fields.phone ?? '' }),

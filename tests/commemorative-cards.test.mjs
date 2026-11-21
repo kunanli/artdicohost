@@ -15,7 +15,7 @@ import { CARD_FORMATS_ACCEPT } from '../shared/confirmation-delivery.mjs';
 const root = '/api/admin/registration-confirmation/cards';
 const operationId = () => randomBytes(32).toString('base64url');
 
-async function setup({ mailResult = 'accepted', clock } = {}) {
+async function setup({ mailResult = 'accepted', clock, preferences = {} } = {}) {
   const f = await peopleRuntimeFixture({ clock, mail: true, mailResult: message => {
     if (!/电子纪念卡/u.test(message.template_params.email_subject)) return 'accepted';
     return typeof mailResult === 'function' ? mailResult() : mailResult;
@@ -25,7 +25,7 @@ async function setup({ mailResult = 'accepted', clock } = {}) {
   const fields = {
     name: '合成电子纪念卡申请人', huodongxingReference: '0000001234', email: 'card-test@example.invalid',
   };
-  const id = await f.seedWallet(fields), path = root + '/' + id;
+  const id = await f.seedWallet({ ...fields, ...preferences }), path = root + '/' + id;
   assert.equal(f.messages.length, 0, 'new commemorative card applications never send general receipt mail');
   const call = (method, body, app = f.app) => app.handle(f.request(path, { method, headers, body }));
   const read = async () => {
@@ -38,7 +38,7 @@ async function setup({ mailResult = 'accepted', clock } = {}) {
     assert.equal(response.status, 200);
     return (await response.json()).applications;
   };
-  async function prepare() {
+  async function prepare(selectedIdentity = 'guest') {
     const before = await read();
     const approval = { primaryId: id, expectedRevision: before.admissionRevision, operationId: operationId() };
     for (let repetition = 0; repetition < 2; repetition++) {
@@ -47,10 +47,10 @@ async function setup({ mailResult = 'accepted', clock } = {}) {
       assert.equal((await response.json()).status, 'confirmed');
     }
     const view = await read();
-    const identity = await call('PATCH', { primaryId: id, expectedRevision: view.reviewRevision, identity: 'guest' });
+    const identity = await call('PATCH', { primaryId: id, expectedRevision: view.reviewRevision, identity: selectedIdentity });
     assert.equal(identity.status, 200);
     const identitySaved = await read();
-    assert.equal(identitySaved.identity, 'guest');
+    assert.equal(identitySaved.identity, selectedIdentity);
     assert.equal(identitySaved.stage, 'send');
     assert.equal(cardMessages().length, 0, 'confirmation and identity do not send a card');
     const latest = await read();
@@ -113,6 +113,51 @@ test('staff send one commemorative card email and recipients can still save the 
   assert.equal((await publicCall('/api/admin/registration/wallet')).status, 503);
   assert.equal((await f.read()).status, 'provider_accepted');
   await f.call('POST', { ...body, format: 'wallet' }, f.make());
+  assert.equal(f.cardMessages().length, 1);
+});
+
+test('an issued card displays its application site and discipline until staff replace or clear them', async t => {
+  const f = await setup({ preferences: { ggjSite: 'ARTDiCO 站点', ggjRole: '站点组织者・程序' } });
+  const send = await f.prepare('organizer');
+  const initial = await f.read();
+  assert.equal(initial.cardCommunitySaved, false);
+  assert.deepEqual(initial.cardCommunity, { site: 'ARTDiCO 站点', role: '站点组织者・程序' });
+  assert.equal((await (await f.call('POST', send)).json()).status, 'provider_accepted');
+  const email = f.cardMessages()[0].template_params.confirmation_actions;
+  assert.match(email, /ARTDiCO 站点 · 站点组织者・程序/u);
+  const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(email)[1];
+  const service = f.app.confirmationService;
+  const readCard = async () => confirmationView(await (await f.app.handle(f.request('/api/registration/confirmation', {
+    method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken },
+  }))).json());
+  const signing = await createWalletFixture();
+  t.after(signing.cleanup);
+  const wallet = createAppleWalletService({ env: signing.env, tokenSecret: 'synthetic-card-community-signing-secret',
+    clock: () => signing.now, trustedRootFingerprints: signing.fields.trustedRootFingerprints,
+    authorize: service.authorize, authorizedRegistration: service.authorizedRegistration });
+  const readPass = async () => {
+    const issued = await wallet.download({ receiptToken });
+    assert.equal(issued.outcome, 'issued');
+    return JSON.parse(passFiles(issued.data).get('pass.json'));
+  };
+  const firstPass = await readPass();
+  assert.deepEqual(firstPass.posterGeneric.primaryFields[0],
+    { key: 'poster-identity', label: 'GGJ ARTDiCO 站点', value: '组织者 · 程序' });
+  assert.deepEqual((await readCard()).cardCommunity, initial.cardCommunity);
+  const revised = { site: 'GGJ 复核站', role: '美术' };
+  const saveCommunity = (revision, cardCommunity) => f.call('PATCH', {
+    primaryId: f.id, expectedCommunityRevision: revision, cardCommunity,
+  });
+  const update = await saveCommunity(initial.communityRevision, revised);
+  assert.equal(update.status, 200);
+  const pass = await readPass();
+  assert.equal(pass.serialNumber, firstPass.serialNumber);
+  assert.deepEqual(pass.posterGeneric.primaryFields[0],
+    { key: 'poster-identity', label: 'GGJ 复核站', value: '组织者 · 美术' });
+  assert.deepEqual((await readCard()).cardCommunity, revised);
+  assert.equal((await saveCommunity((await update.json()).communityRevision, { site: '', role: '' })).status, 200);
+  assert.equal((await readCard()).cardCommunity, undefined);
+  assert.deepEqual((await readPass()).posterGeneric.primaryFields[0], { key: 'poster-identity', value: 'GGJ 组织者' });
   assert.equal(f.cardMessages().length, 1);
 });
 

@@ -30,6 +30,16 @@ export function cardCommunityFields(value) {
   return site === null || role === null ? null : { site, role };
 }
 export const cardCommunityLabel = community => community ? [community.site, community.role].filter(Boolean).join(' · ') : '';
+export function cardIdentityHeadline(identity, community) {
+  const site = community?.site || '';
+  const organizer = identity === 'GGJ 组织者';
+  const responsibilities = (community?.role ?? '').split(/\s*[・·、]\s*/u).filter(role => role
+    && role !== identity && !(organizer && /^(?:GGJ\s+)?(?:站[点點])?[组組][织織]者$/iu.test(role)));
+  return {
+    site: site && !/^GGJ(?:\s|$)/iu.test(site) ? 'GGJ ' + site : site,
+    identity: [site && organizer ? '组织者' : identity, ...new Set(responsibilities)].join(' · '),
+  };
+}
 export const WALLET_IDENTITIES = Object.freeze([
   {value:'attendee',label:'一般来宾'},{value:'guest',label:'嘉宾'},{value:'speaker',label:'讲者'},
   {value:'exhibitor',label:'参展者'},{value:'organizer',label:'GGJ 组织者'},{value:'student',label:'学生'},

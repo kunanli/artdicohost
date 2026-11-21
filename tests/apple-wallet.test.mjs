@@ -206,17 +206,23 @@ test('commemorative passes sign the full poster and a compatible native strip wi
   const files=passFiles(issued.data),pass=JSON.parse(files.get('pass.json'));
   const manifest=JSON.parse(files.get('manifest.json'));
   assert.equal(pass.preferredStyleSchemes, undefined, 'Wallet selects the supported style from the two dictionaries');
-  assert.deepEqual(pass.posterGeneric.primaryFields.map(({ value }) => value), [record.name, '嘉宾']);
-  assert.equal(pass.posterGeneric.footerFields[0].label, '讲座与游戏展 · UTC+8');
+  assert.deepEqual(pass.posterGeneric.primaryFields.map(({ label, value }) => [label, value]), [[undefined, '嘉宾'], [undefined, record.name]]);
+  assert.equal(pass.posterGeneric.footerFields[0].label, '活动时间与地点 · UTC+8');
   assert.equal(pass.posterGeneric.footerFields[0].value, [record.event.date, record.event.time, record.event.venue].join(' · '));
-  assert.deepEqual(pass.posterGeneric.additionalInfoFields.map(({ value }) => value),
-    [record.event.date, record.event.time, record.event.venue, '讲座与游戏展']);
+  const program = pass.posterGeneric.additionalInfoFields.slice(0, 2);
+  assert.deepEqual(program.map(({ label }) => label), ['GGJ 中国交流聚会', 'ARTDiCO HOST 学生嘉年华']);
+  assert.match(program[0].value, /Maria Burns Ortiz.+主题演讲.+专题研讨、圆桌交流与 GGJ 站点咨询。$/u);
+  assert.match(program[1].value, /学生作品、独立游戏试玩和产品展示.+面对面交流.+招募与预录取机会。$/u);
+  assert.deepEqual(pass.posterGeneric.additionalInfoFields.slice(2).map(({ value }) => value),
+    [record.event.date, record.event.time, record.event.venue]);
   assert.equal(pass.serialNumber, selected.event.id + '-' + record.registrationId);
   assert.equal(pass.logoText, undefined);
   assert.equal(pass.eventTicket.backFields[0].value, 'GGJ China Meetup 2026 x ARTDiCO HOST');
   assert.equal(pass.eventTicket.primaryFields, undefined, 'primary fields would overlap the strip');
-  assert.deepEqual(pass.eventTicket.secondaryFields.map(({value})=>value), [record.name, '嘉宾']);
-  assert.deepEqual(pass.eventTicket.auxiliaryFields.map(({value})=>value),[record.event.date,record.event.time,'讲座与游戏展',record.event.venue]);
+  assert.deepEqual(pass.eventTicket.secondaryFields.map(({ label, value }) => [label, value]), [[undefined, '嘉宾'], [undefined, record.name]]);
+  assert.deepEqual(pass.eventTicket.auxiliaryFields.map(({value})=>value),[record.event.date,record.event.time,'讲座・站点交流・游戏展',record.event.venue]);
+  assert.deepEqual(pass.eventTicket.backFields.filter(({ key }) => key.endsWith('-program')).map(({ label, value }) => [label, value]),
+    program.map(({ label, value }) => [label, value]));
   assert.equal(pass.eventTicket.backFields.find(field=>field.key==='venue').value,record.event.venue);
   assert.deepEqual(pass.eventTicket.backFields.filter(({key})=>key.startsWith('details-')).map(({value})=>value), [record.name,'嘉宾',record.event.title,record.event.date,record.event.time]);
   assert.deepEqual(pass.eventTicket.backFields.slice(1, 6).map(({ key }) => key), ['venue', 'directions', 'agenda', 'showcase', 'huodongxing']);
@@ -276,11 +282,12 @@ test('keepsake reissues show each saved GGJ field independently and keep full va
     assert.equal(pass.semantics.venueRegionName, eventConfig.venue.city);
     const { headerFields, auxiliaryFields, backFields } = pass.eventTicket;
     assert.deepEqual(headerFields?.map(({ value }) => value), values.site || values.role ? ['前海5号楼'] : undefined);
-    const posterCommunity = pass.posterGeneric.primaryFields.find(({ key }) => key === 'poster-community');
-    const expectedCommunity = [values.site && [...site].slice(0, 13).join('') + '…', values.role].filter(Boolean).join(' · ');
-    assert.equal(posterCommunity?.value, expectedCommunity || undefined);
+    assert.deepEqual(pass.posterGeneric.primaryFields.map(({ value }) => value),
+      ['GGJ 组织者', record.name, values.site && [...site].slice(0, 13).join('') + '…', values.role].filter(Boolean));
     for (const [key, value] of [['ggj-site', values.site], ['ggj-role', values.role]]) {
       assert.equal(backFields.find(field => field.key === key)?.value, value || undefined);
+      assert.equal(pass.posterGeneric.primaryFields.find(field => field.key === 'poster-' + key + '-short')?.label,
+        value ? (key === 'ggj-site' ? 'GGJ 站点' : '社群角色') : undefined);
       assert.equal(pass.posterGeneric.additionalInfoFields.find(field => field.key === 'poster-info-' + key)?.value, value || undefined);
       const shortened = auxiliaryFields.find(field => field.key === key + '-short');
       assert.equal(shortened?.value, value === site ? [...site].slice(0, 13).join('') + '…' : value || undefined);

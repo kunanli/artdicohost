@@ -1,6 +1,6 @@
 # Apple Wallet 视觉与发行
 
-本次活动使用深海军蓝、钴蓝与铂金的抽象建筑主视觉。姓名、日期、活动与二维码由 Wallet 原生字段显示，不把参加人的资料烘焙进图片，不添加未经确认的 VIP、座位或住宿权益。
+本场电子纪念卡使用黑底和彩色 HOST 字样。姓名、身份、日期与活动内容由 Wallet 原生字段显示。独立参会凭证使用下文的抽象建筑主视觉与签到码。
 
 ## 可维护的原稿
 
@@ -13,15 +13,17 @@
 
 图片嵌入既有 `functions/apple-wallet/pkpass.mjs`，无外部图片请求、新依赖、公开凭证或新增 FC 文件。`artwork.png` / `artwork@2x.png` 供支持 posterEventTicket 的系统使用，`background.png` / `background@2x.png` 与原有 eventTicket 字段提供兼容样式。包含可信事件语义，但不虚构座位。所有图片的 SHA-1 都包含在 manifest，并由同一证书身份生成 detached CMS 签章。
 
-纪念卡使用 `eventTicket` 的独立 `strip.png` 横幅和黑色卡面。横幅按 375 × 98 pt 输出为 1x、2x、3x PNG，沿用原彩色 HOST 字样及其比例。纪念卡不打包 `background.png` 或 `artwork.png`，没有覆盖横幅的主字段。姓名与身分使用次字段。日期、时间及经工作人员保存的 GGJ 站点、社群角色使用辅助字段。有社群资料时，地点简称移至卡面顶部。较长的站点与角色保留完整内容于票券详情。iOS 决定卡框、留白和字段位置。
+iOS 27 起使用 `posterGeneric` 纪念卡。由原横幅裁出 HOST 字样并等比放大，在 358 × 448 pt 的黑底海报上占约 97% 的宽度。海报以 `artwork@2x.png` 与 `artwork@3x.png` 打包，3x 版本 SHA-256 为 `caf09dfedc8d74ff378d8139cd1eeabc7503bbdcb2f81a3551e6183ae810d21b`。图下的原生栏位显示姓名、卡面身份、已保存的站点／社群角色和学校／机构。底栏显示日期、时间、地点简称及活动内容，票券详情保留完整值。iOS 决定卡框、留白和栏位位置。
+
+较早的 iOS 使用同一签章文件的 `eventTicket` 版型及 `strip.png` 横幅。横幅按 375 × 98 pt 输出为 1x、2x、3x PNG。姓名与身份使用次栏位，日期、时间和社群资料使用辅助栏位。有社群资料时，地点简称移至卡面顶部。参见 [Apple Poster Generic](https://developer.apple.com/documentation/walletpasses/creating-a-poster-generic-pass)。
 
 票券详情先显示完整地址与 Apple 地图导航，并链接活动详情、日程、参展游戏及活动行活动页。支持 Featured Actions 的 iOS 27 在卡片下方以系统的 View Schedule 入口打开公开 `/event/`，同页读取已发布讲座与参展作品。地址导航沿用已核实的场地地址。卡面补充讲座与游戏展、时区及已保存的学校／机构。经工作人员写入的电话显示在票券详情及 JPEG。参见 [Apple Wallet Featured Actions](https://developer.apple.com/videos/play/wwdc2026/209/?time=267)。
 
-本场联名标题使用 `logo.png` 的两行透明文字图，第一行为 `GGJ China Meetup 2026`，第二行为 `x ARTDiCO HOST`。按 160 × 50 pt 输出 1x、2x、3x，使用 Liberation Sans Bold。完整名称在票券详情中保留为文字。3x PNG SHA-256 为 `4627fb5120725d6226edc234ce20f753cd00f5308d391405752e5225b3b43c8b`。彩色 HOST 横幅继续使用独立的 `strip.png`。
+本场联名标题的第一行为 `GGJ China Meetup 2026`，第二行为 `x ARTDiCO HOST`。新版版型使用 126 × 30 pt 的 `primaryLogo`，兼容版使用 160 × 50 pt 的 `logo`。两个版本都使用 Liberation Sans Bold，完整名称在票券详情保留为文字。
 
 纪念卡包内无签到码和活动日到期字段，保留原活动日期供识别。现场签到使用活动行原电子票。已加入旧卡的收件人可从有效的原链接重新下载，沿用相同票券序号。
 
-每个文件仍限 256 KiB，整张 pass 限 1 MiB、顶层 ZIP 条目限 12 个；不开放任意文件名、SVG、远程图或路径。证书、私钥、签章 bundle 与 FC 环境变量沿用既有私有配置。原稿仅存文档，不进入静态站 dist 或 FC 发布包。
+每个文件限 256 KiB，整张 pass 限 1 MiB，顶层 ZIP 条目限 15 个。只接受已知票券文件名。证书、私钥、签章 bundle 与 FC 环境变量沿用既有私有配置。原稿仅存文档。
 
 ## 验证边界
 

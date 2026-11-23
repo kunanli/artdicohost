@@ -1,4 +1,4 @@
-import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, cardIdentityHeadline, cardProfileFields, commemorativeCardVenue } from '../../shared/general-application.mjs';
+import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, cardEventIdentityLabel, cardIdentityHeadline, cardProfileFields, commemorativeCardVenue } from '../../shared/general-application.mjs';
 import { eventConfig, PUBLIC_AGENDA_URL, PUBLIC_EVENT_DETAILS_URL, PUBLIC_MEETUP_TITLE, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL, appleMapsDirectionsUrl } from '../../src/config/event.mjs';
 import { createHash, createPrivateKey, X509Certificate } from 'node:crypto';
 import { derChildren, oid, signManifest } from './der.mjs';
@@ -180,16 +180,20 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
   const relevantDate = event.date + 'T' + start + ':00+08:00';
   if (!Number.isFinite(Date.parse(relevantDate)) || new Date(Date.parse(event.date + 'T00:00:00Z')).toISOString().slice(0, 10) !== event.date) fail('WALLET_PASS_INPUT_INVALID');
   const meetupCard = richCard && event.id === eventConfig.id;
+  const english = meetupCard && attendee.cardLocale === 'en';
+  const cardTitle = meetupCard ? PUBLIC_MEETUP_TITLE : null;
+  const confirmedVenue = meetupCard && event.venue === eventConfig.venue.address;
   const faceName = { key: 'name', value: attendee.name, semantics: { attendeeName: attendee.name } };
-  const person = { ...faceName, label: meetupCard ? '姓名' : '参会人' };
-  const title = { key: 'event', label: '活动', value: event.title };
-  const date = { key: 'date', label: '日期', value: event.date };
-  const time = { key: 'time', label: '时间', value: event.time };
-  const venue = { key: 'venue', label: '地点', value: event.venue };
+  const person = { ...faceName, label: english ? 'Name' : meetupCard ? '姓名' : '参会人' };
+  const title = { key: 'event', label: english ? 'Event' : '活动', value: english ? cardTitle : event.title };
+  const date = { key: 'date', label: english ? 'Date' : '日期', value: event.date };
+  const time = { key: 'time', label: english ? 'Time' : '时间', value: event.time };
+  const localTime = { ...time, label: time.label + ' · UTC+8' };
+  const venue = { key: 'venue', label: english ? 'Venue' : '地点', value: english && confirmedVenue ? eventConfig.venue.addressEnglish : event.venue };
   const cardAffiliations = richCard ? [
-    { key: 'ggj-site', label: 'GGJ 站点', value: siteIdentity?.site },
-    { key: 'ggj-role', label: '社群角色／分工', value: siteIdentity?.role },
-    { key: 'organization', label: '学校／机构', value: profile?.organization },
+    { key: 'ggj-site', label: english ? 'GGJ Site or Community' : 'GGJ 站点或社群', value: siteIdentity?.site },
+    { key: 'ggj-role', label: english ? 'GGJ Involvement' : 'GGJ 参与经历', value: siteIdentity?.role },
+    { key: 'organization', label: english ? 'School or Organization' : '学校／机构', value: profile?.organization },
   ].filter(field => field.value) : [];
   const maxAffiliationLength = cardAffiliations.length > 2 ? 9 : 14;
   const affiliations = cardAffiliations.map(field => {
@@ -197,17 +201,17 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
     return { ...field, key: field.key + '-short', row: 1,
       value: characters.length > maxAffiliationLength ? characters.slice(0, maxAffiliationLength - 1).join('') + '…' : field.value };
   });
-  const faceIdentity = walletIdentity ? { key: 'identity', value: walletIdentity.label } : null;
-  const identityField = faceIdentity ? { ...faceIdentity, label: meetupCard ? '身份' : richCard ? '卡面身份' : '入场身份' } : null;
+  const faceIdentity = walletIdentity ? { key: 'identity', value: cardEventIdentityLabel(walletIdentity.label, english ? 'en' : 'zh-CN') } : null;
+  const identityField = faceIdentity ? { ...faceIdentity, label: english ? 'Role at This Event' : meetupCard ? '本次活动身份' : richCard ? '卡面身份' : '入场身份' } : null;
   const fullCardDetails = richCard ? [
     { ...person, key: 'details-name' }, { ...identityField, key: 'details-identity' },
     { ...title, key: 'details-event' }, { ...date, key: 'details-date' }, { ...time, key: 'details-time' },
   ] : [];
-  const cardTitle = meetupCard ? PUBLIC_MEETUP_TITLE : null;
-  const confirmedVenue = meetupCard && event.venue === eventConfig.venue.address;
   const separateVenue = affiliations.length > 0;
-  const cardPlace = { ...venue, key: 'venue-short', value: confirmedVenue && separateVenue ? '前海5号楼' : commemorativeCardVenue(event.venue) };
-  const activities = meetupCard ? [{ key: 'activities', label: '活动内容', value: '讲座・站点交流・游戏展' }] : [];
+  const shortVenue = english ? 'Qianhai Block V' : '前海5号楼';
+  const cardPlace = { ...venue, key: 'venue-short', value: confirmedVenue && (english || separateVenue) ? shortVenue : commemorativeCardVenue(event.venue) };
+  const activities = meetupCard ? [{ key: 'activities', label: english ? 'Program' : '活动内容',
+    value: english ? 'Talks · Site Meetups · Games' : '讲座・站点交流・游戏展' }] : [];
   const programFields = meetupCard ? MEETUP_PROGRAM_FIELDS : [];
   const scheduleFields = meetupCard ? MEETUP_SCHEDULE_FIELDS : [];
   const cardGuides = [];
@@ -224,20 +228,20 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
       attributedValue: '<a href="' + PUBLIC_EVENT_DETAILS_URL + '">查看活动详情</a>' }] : []),
     ...(!richCard ? [{ key: 'reference', label: '报名编号', value: attendee.referenceCode }, ...communityFields] : []),
     { key: 'notice', label: '说明', value: richCard ? '本卡用于纪念收藏。现场签到请使用活动行原电子票。' : '此凭证仅表示参会名额。讲者、展位及住宿另行确认；请以在线核对结果为准。' }];
-  const headline = meetupCard ? cardIdentityHeadline(faceIdentity.value, siteIdentity) : null;
+  const headline = meetupCard ? cardIdentityHeadline(walletIdentity.label, siteIdentity, attendee.cardLocale) : null;
   const posterGeneric = headline ? {
-    primaryFields: [{ key: 'poster-identity', value: headline.identity, ...(headline.site ? { label: headline.site } : {}) },
+    primaryFields: [{ key: 'poster-identity', value: headline.identity, ...(headline.label ? { label: headline.label } : {}) },
     { ...faceName, key: 'poster-name' }],
     footerFields: [{
-      key: 'poster-event-summary', label: '活动时间与地点 · UTC+8',
-      value: [event.date, event.time, confirmedVenue ? '前海5号楼' : cardPlace.value].join(' · '),
+      key: 'poster-event-summary', label: english ? 'Event Time and Venue · UTC+8' : '活动时间与地点 · UTC+8',
+      value: [event.date, event.time, confirmedVenue ? shortVenue : cardPlace.value].join(' · '),
     }],
-    additionalInfoFields: [...programFields, ...cardAffiliations, date, { ...time, label: '时间 · UTC+8' }, venue, ...scheduleFields]
+    additionalInfoFields: [...programFields, ...cardAffiliations, ...(headline.label ? [identityField] : []), date, localTime, venue, ...scheduleFields]
       .map(field => ({ ...field, key: 'poster-info-' + field.key })),
     backFields: backFields.map(field => ({ ...field, key: 'poster-details-' + field.key })),
   } : null;
   const pass = { formatVersion: 1, passTypeIdentifier: identity.passTypeIdentifier, serialNumber: event.id + '-' + attendee.registrationId,
-    teamIdentifier: identity.teamId, organizationName, description: (cardTitle ?? event.title) + (richCard ? ' 电子纪念卡' : '参会凭证'),
+    teamIdentifier: identity.teamId, organizationName, description: (cardTitle ?? event.title) + (english ? ' Keepsake' : richCard ? ' 电子纪念卡' : '参会凭证'),
     ...(!meetupCard ? { logoText: organizationName } : {}),
     foregroundColor: 'rgb(255,255,255)', backgroundColor: 'rgb(18,18,18)', labelColor: 'rgb(238,238,238)', sharingProhibited: true,
     ...(!richCard ? { relevantDate, expirationDate: event.date + 'T23:59:59+08:00',
@@ -251,8 +255,9 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
     eventTicket: {
       ...(richCard ? {
         ...(separateVenue ? { headerFields: [cardPlace] } : {}),
-        secondaryFields: meetupCard ? [faceIdentity, faceName] : [person, identityField],
-        auxiliaryFields: [date, { ...time, label: meetupCard ? '时间 · UTC+8' : time.label }, ...activities, ...affiliations,
+        secondaryFields: headline ? [{ ...faceIdentity, value: headline.identity, ...(headline.label ? { label: headline.label } : {}) }, faceName]
+          : [person, identityField],
+        auxiliaryFields: [date, meetupCard ? localTime : time, ...activities, ...affiliations,
           ...(separateVenue ? [] : [{ ...cardPlace, row: 1 }])],
       } : {
         headerFields: [identityField ?? { key: 'status', label: '参会名额', value: '已确认' }],

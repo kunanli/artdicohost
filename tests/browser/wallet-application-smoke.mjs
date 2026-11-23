@@ -46,9 +46,10 @@ async function fill(page){
  const site=form(page).locator('[name="wallet.ggjSite"]'),role=form(page).locator('[name="wallet.ggjRole"]');
  assert.equal(await site.isVisible(),true);
  assert.equal(await role.isVisible(),true);
- assert.deepEqual((await role.evaluate(input=>Array.from(input.list.options,option=>option.value))).slice(0,3),['程序','美术','策划']);
+ const suggestions=await role.evaluate(input=>Array.from(input.list.options,option=>option.value));
+ for(const value of ['站点组织者','Jammer','导师','志愿者','评审','教育工作者','社群伙伴','活动运营','程序','美术','策划']) assert.ok(suggestions.includes(value));
  await site.fill('GGJ 合成站');
- await role.fill('程序・策划');
+ await role.fill('导师 · 2024');
 }
 async function drafts(page){return page.evaluate(()=>new Promise((yes,no)=>{const request=indexedDB.open('artdico-browser-drafts-v1',1);request.onerror=()=>no(request.error);request.onsuccess=()=>{const db=request.result,tx=db.transaction('drafts','readonly'),query=tx.objectStore('drafts').getAll();query.onsuccess=()=>yes(query.result);query.onerror=()=>no(query.error);tx.oncomplete=()=>db.close();};}));}
 async function screenshot(page,name){await page.screenshot({path:resolve(evidence,name+'.png'),fullPage:false,animations:'disabled'});}
@@ -112,13 +113,21 @@ try{
    assert.equal(await form(f.page).locator('[name="wallet.name"]').inputValue(),'合成纪念卡申请人');
    assert.equal(await form(f.page).locator('[name="wallet.huodongxingReference"]').inputValue(),'000012345678901234567890');
    assert.equal(await form(f.page).locator('[name="wallet.requestedWalletIdentity"]').inputValue(),'staff');
+   assert.match(await form(f.page).locator('[data-field="wallet.ggjSite"] label').innerText(),/^GGJ site or community/u);
+   assert.match(await form(f.page).locator('[data-field="wallet.ggjRole"] label').innerText(),/^GGJ involvement/u);
+   const role=form(f.page).locator('[name="wallet.ggjRole"]');
+   assert.equal(await role.inputValue(),'导师 · 2024');
+   const suggestions=await role.evaluate(input=>Array.from(input.list.options,option=>option.value));
+   for(const value of ['Site Organizer','Jammer','Mentor','Volunteer','Jury Member','Educator','Community partner','Event Operations','Programmer','Artist','Game Designer']) assert.ok(suggestions.includes(value));
    const readable=await form(f.page).evaluate(node=>[...node.querySelectorAll('.ah-field>label,input:not([type=checkbox]),[data-wallet-submit]')].every(field=>parseFloat(getComputedStyle(field).fontSize)>=16)&&[...node.querySelectorAll('.ah-field-hint,.ah-form-hint,.ah-form-disclaimer')].every(field=>parseFloat(getComputedStyle(field).fontSize)>=14));assert.equal(readable,true);
    await screenshot(f.page,'form-en-'+width);await f.page.locator('[data-language="zh-CN"]').click();await f.page.waitForFunction(()=>document.documentElement.lang==='zh-CN');
+   assert.equal(await role.inputValue(),'导师 · 2024');
+   assert.equal(await role.evaluate(input=>input.list.options[2].value),'导师');
    await f.page.locator('[data-wallet-submit]').click();const id=await receipt(f);
    const [{fields}]=(await f.app.registrationService.repository.list()).registrations;
    assert.equal(fields.requestedWalletIdentity,'staff');
    assert.equal(fields.ggjSite,'GGJ 合成站');
-   assert.equal(fields.ggjRole,'程序・策划');
+   assert.equal(fields.ggjRole,'导师 · 2024');
    assert.equal(fields.walletIdentity,undefined);
    assert.equal(f.calls.filter(call=>call.path.endsWith('/registration/submit')).length,1);assert.equal((await drafts(f.page)).some(row=>row.kind==='pending_submission'&&JSON.parse(row.value.payloadJson).fields.intake==='wallet-v1'),false);
    await staffIdentity(f,id);reports.push({width,normal:true,independentDrafts:true,bilingualValuesAndTypography:true,consent:true,staffIdentity:true,privateIdentityPendingGuidance:true,pendingBeforeApproval:true,noRealMail:true});
@@ -131,7 +140,7 @@ try{
    f.closeIntake();await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-wallet-submit]:enabled').waitFor();assert.equal(f.calls.filter(call=>call.path.endsWith('/registration/submit')).length,1,'reloading never automatically POSTs a pending request');
    assert.equal(await form(f.page).locator('[name="wallet.huodongxingReference"]').inputValue(),'000012345678901234567890');assert.equal(await form(f.page).locator('[name="wallet.huodongxingReference"]').isDisabled(),true);
    assert.equal(await form(f.page).locator('[name="wallet.requestedWalletIdentity"]').inputValue(),'staff');
-   assert.equal(await form(f.page).locator('[name="wallet.ggjRole"]').inputValue(),'程序・策划');
+   assert.equal(await form(f.page).locator('[name="wallet.ggjRole"]').inputValue(),'导师 · 2024');
    await f.page.locator('[data-wallet-submit]').click();await receipt(f);const retry=f.calls.filter(call=>call.path.endsWith('/registration/submit')).at(-1);assert.equal(retry.body,original.body);assert.equal(retry.key,original.key);
    reports.push({width:390,lostResponse:true,originalBodyAndKey:true,recoveryAfterClosure:true});
   }finally{await f.context.close();}

@@ -168,6 +168,7 @@ export function confirmationView(value, now = Date.now()) {
     ...(cardRequest ? { cardRequest: true } : {}),
     ...(cardCommunity ? { cardCommunity } : {}),
     ...(cardProfile ? { cardProfile } : {}),
+    ...(card && value.cardLocale === 'en' ? { cardLocale: 'en' } : {}),
     ...(Object.hasOwn(value, 'notifications') ? { notifications: notificationHistory(value.notifications) } : {}),
     groupInvite: confirmed ? groupInvite(value.groupInvite,now) : null,
     invitation: facts?.ready === false ? { ready: false } : confirmationInvitation(value.invitation,value.admission.status,value.attendee?.name),

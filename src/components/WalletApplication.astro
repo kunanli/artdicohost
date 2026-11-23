@@ -9,11 +9,12 @@ const fields=[
  {name:'name',label:'姓名',type:'text',required:true,minLength:2,maxLength:80,hint:'请与活动行报名姓名一致。'},
  {name:'email',label:'Email',type:'email',required:true,maxLength:254,hint:'用于接收电子纪念卡领取链接。'},
  {name:'wechat',label:'微信号',type:'text',required:true,maxLength:100},
- {name:'requestedWalletIdentity',label:'申请的卡面身份',type:'select',required:false,options:[...WALLET_IDENTITIES]},
- {name:'ggjSite',label:'所属 GGJ 站点',type:'text',required:false,maxLength:CARD_COMMUNITY_FIELD_LENGTH},
- {name:'ggjRole',label:'社群角色／游戏开发分工',type:'text',required:false,maxLength:CARD_COMMUNITY_FIELD_LENGTH,
-  suggestions:['程序','美术','策划','音频','制作人','测试','叙事设计','站点组织者','Jammer','志愿者'],
-  hint:'可填程序、美术、策划等，也可并列填写，例如「站点组织者・美术」。'},
+ {name:'requestedWalletIdentity',label:'本次活动身份',type:'select',required:false,options:[...WALLET_IDENTITIES]},
+ {name:'ggjSite',label:'GGJ 站点或社群',type:'text',required:false,maxLength:CARD_COMMUNITY_FIELD_LENGTH,
+  hint:'可填写曾参与的 GGJ 站点或社群。'},
+ {name:'ggjRole',label:'GGJ 参与经历',type:'text',required:false,maxLength:CARD_COMMUNITY_FIELD_LENGTH,
+  suggestions:['站点组织者','Jammer','导师','志愿者','评审','教育工作者','社群伙伴','活动运营','程序','美术','策划','音频','制作人','测试','叙事设计'],
+  hint:'可填写你在 GGJ 的角色、贡献或参与年份，例如「导师 · 2024」。'},
 ];
 ---
 <section class="ah-registration ah-section" id="wallet-card-application" aria-labelledby="wallet-card-heading" data-wallet-api-origin={apiOrigin||undefined}>
@@ -21,7 +22,7 @@ const fields=[
  <div class="ah-registration-preview ah-general-application"><div class="ah-form-card">
   <div class="ah-form-top"><strong>电子纪念卡</strong></div>
   <form data-wallet-form method="post" novalidate autocomplete="off">
-   <p class="ah-form-hint">带 * 为必填。卡面身份、站点和分工经工作人员核对后写入纪念卡。</p>
+   <p class="ah-form-hint">带 * 为必填。工作人员将核对本次活动身份和你填写的 GGJ 资料。</p>
    <p class="ah-form-hint" data-wallet-draft-status role="status" aria-live="polite"></p><button type="button" class="ah-text-action" data-wallet-draft-restore hidden>恢复本机申请</button>
    <p class="ah-form-error" data-wallet-error role="alert" tabindex="-1" hidden></p>
    <div class="ah-fields-grid">{fields.map(field=><FormField field={field} prefix="wallet" />)}</div>

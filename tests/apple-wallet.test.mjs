@@ -296,7 +296,7 @@ test('keepsake reissues show each saved GGJ field independently and keep full va
     const [headline, name] = pass.posterGeneric.primaryFields;
     assert.equal(pass.posterGeneric.primaryFields.length, 2);
     assert.equal(headline.label, values.site ? 'GGJ ' + values.site : undefined);
-    assert.equal(headline.value, values.site ? '组织者' : 'GGJ 组织者');
+    assert.equal(headline.value, values.role ? '站点组织者' : values.site ? '组织者' : 'GGJ 组织者');
     assert.equal(name.value, record.name);
     for (const [key, value] of [['ggj-site', values.site], ['ggj-role', values.role]]) {
       assert.equal(backFields.find(field => field.key === key)?.value, value || undefined);

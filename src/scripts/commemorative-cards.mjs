@@ -1,6 +1,5 @@
-import { cardCommunityLabel, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
+import { cardCommunityLabel, cardJammerOption, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
-import { bindJammerOption } from '../lib/ggj-jammer-option.mjs';
 
 const root = document.querySelector('[data-card-admin]');
 const $ = selector => root.querySelector(selector);
@@ -37,7 +36,7 @@ const communityDetails = $('[data-card-community]');
 const communityForm = $('[data-card-community-form]');
 const communitySite = $('#card-community-site');
 const communityRole = $('#card-community-role');
-const syncJammer = bindJammerOption(communityRole, $('[data-ggj-jammer]'));
+const jammer = $('[data-ggj-jammer]');
 const organization = $('#card-organization');
 const phone = $('#card-phone');
 const deliveryForm = $('[data-card-delivery]');
@@ -56,6 +55,17 @@ let csrf = '', rows = [], filter = 'todo', activeId = '', current = null, busy =
 let pendingTest = null;
 const pendingApprovals = new Map();
 const rowFor = id => rows.find(row => row.sources.some(source => source.id === id));
+
+function syncJammer() {
+  const option = cardJammerOption(communityRole.value);
+  jammer.checked = option.selected;
+  jammer.disabled = communityRole.disabled || !option.canToggle;
+}
+communityRole.addEventListener('input', syncJammer);
+jammer.addEventListener('change', () => {
+  communityRole.value = cardJammerOption(communityRole.value).toggleValue;
+  syncJammer();
+});
 
 function showError(text = '', target = errorBox) {
   for (const box of [errorBox, detailError]) {

@@ -63,6 +63,10 @@ try {
             if (walletAvailable && privateRead && response.ok) {
               const data = await response.json();
               if (data.card?.format === 'both') data.wallet = await wallet.readiness();
+              if (device === 'chrome' && data.card) {
+                data.cardLocale = 'en';
+                data.cardProfile = { organization: 'Synthetic School', phone };
+              }
               return route.fulfill({ status: 200, headers: Object.fromEntries(response.headers), json: data });
             }
             return route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: Buffer.from(await response.arrayBuffer()) });
@@ -143,8 +147,8 @@ try {
         assert.match(await page.locator('[data-card-community-summary]').innerText(), /待保存/u);
         await page.locator('[data-card-community-summary]').click();
         assert.match(await page.locator('[data-card-requested-community]').innerText(), /GGJ 合成站 · 站点组织者・美术/u);
-        assert.equal(await page.getByLabel('GGJ 站点').inputValue(), 'GGJ 合成站');
-        assert.equal(await page.getByLabel('社群角色').inputValue(), communityRole);
+        assert.equal(await page.locator('#card-community-site').inputValue(), 'GGJ 合成站');
+        assert.equal(await page.locator('#card-community-role').inputValue(), communityRole);
         assert.equal(await page.getByLabel('学校／机构／团队').inputValue(), organization);
         assert.equal(await page.getByLabel('纪念卡电话').inputValue(), phone);
         await page.getByRole('button', { name: '保存到纪念卡' }).click();
@@ -181,13 +185,34 @@ try {
         assert.equal(await page.locator('[data-card-list] small').textContent(), '已提交发送');
         const link = /https:\/\/artdico\.host\/registration\/confirmation\/#r=[A-Za-z0-9_.-]+/u.exec(cardMessages()[0].template_params.confirmation_actions)[0];
         const readsBefore = privateReads;
+        if (device === 'chrome') {
+          await page.addInitScript(() => {
+            const fillText = CanvasRenderingContext2D.prototype.fillText;
+            globalThis.syntheticJpegText = [];
+            CanvasRenderingContext2D.prototype.fillText = function (text, ...args) {
+              if (this.canvas.width === 1030 && this.canvas.height === 1510) globalThis.syntheticJpegText.push(text);
+              return fillText.call(this, text, ...args);
+            };
+          });
+        }
         await page.goto(link);
         const downloadButton = page.getByRole('link', { name: '下载 JPEG 纪念卡' });
         await downloadButton.waitFor();
         assert.equal(await downloadButton.evaluate(button => button.getBoundingClientRect().bottom <= innerHeight), true);
         const image = page.locator('[data-confirmation-jpeg-image]');
         await page.waitForFunction(node => node.complete && node.naturalWidth === 1030 && node.naturalHeight === 1510, await image.elementHandle());
-        assert.match(await image.getAttribute('alt'), /嘉宾/u);
+        const imageAlt = await image.getAttribute('alt');
+        if (device === 'chrome') {
+          assert.match(imageAlt, /Guest/u);
+          const englishText = await page.evaluate(() => globalThis.syntheticJpegText);
+          for (const phrase of ['GGJ China Meetup 2026', 'Guest', 'Date', '5 December 2026', 'Time', 'Venue',
+            'Qianhai Block V, No. 5188 Menhai Avenue, Qianhai, Shenzhen', 'Keepsake card',
+            'Use your original Huodongxing e-ticket to check in.', 'School / organization', 'Phone']) {
+            assert.ok(englishText.includes(phrase), `English JPEG contains ${phrase}`);
+          }
+        } else if (device !== 'safari') {
+          assert.match(imageAlt, /嘉宾/u);
+        }
         assert.match(await page.locator('[data-confirmation-intro]').textContent(), /长期收藏.*活动行原电子票/u);
         const guide = page.getByRole('navigation', { name: '活动指南' });
         assert.equal(await guide.getByRole('link', { name: '活动详情' }).getAttribute('href'), PUBLIC_EVENT_DETAILS_URL);
@@ -204,7 +229,8 @@ try {
           await page.getByText('纪念卡个人资料', { exact: true }).click();
           assert.equal(await page.locator('[data-confirmation-card-organization] dd').innerText(), organization);
           assert.equal(await page.locator('[data-confirmation-card-phone] dd').innerText(), phone);
-          assert.match(await image.getAttribute('alt'), /GGJ 合成站，嘉宾 · 站点组织者 · 美术/u);
+          assert.match(imageAlt, /GGJ 合成站，站点组织者 · 美术/u);
+          assert.doesNotMatch(imageAlt, /嘉宾/u);
         } else {
           assert.equal(await page.locator('[data-confirmation-community]').isVisible(), false);
         }
@@ -251,7 +277,7 @@ try {
           const files = passFiles(await readFile(await pass.path()));
           const walletPass = JSON.parse(files.get('pass.json'));
           assert.deepEqual(walletPass.posterGeneric.primaryFields.map(({ label, value }) => [label, value]),
-            [['GGJ 合成站', '嘉宾 · 站点组织者 · 美术'], [undefined, '合成纪念卡申请人']]);
+            [['GGJ 合成站', '站点组织者 · 美术'], [undefined, '合成纪念卡申请人']]);
           assert.equal(walletPass.posterGeneric.additionalInfoFields.find(({ key }) => key === 'poster-info-ggj-role').value, communityRole);
           assert.equal(walletPass.posterGeneric.footerFields[0].value, '2026-12-05 · 10:00–18:00 · 前海5号楼');
           assert.deepEqual(walletPass.posterGeneric.additionalInfoFields.slice(0, 2).map(({ label }) => label),
@@ -297,12 +323,12 @@ try {
           assert.equal(walletPass.expirationDate, undefined);
           assert.equal(walletPass.eventTicket.primaryFields, undefined);
           assert.deepEqual(walletPass.eventTicket.secondaryFields.map(({ label, value }) => [label, value]),
-            [[undefined, '嘉宾'], [undefined, '合成纪念卡申请人']]);
+            [['GGJ 合成站', '站点组织者 · 美术'], [undefined, '合成纪念卡申请人']]);
           assert.deepEqual(walletPass.eventTicket.headerFields.map(({ value }) => value), ['前海5号楼']);
           assert.deepEqual(walletPass.eventTicket.auxiliaryFields.map(field => field.key), ['date', 'time', 'activities', 'ggj-site-short', 'ggj-role-short', 'organization-short']);
           assert.deepEqual(walletPass.eventTicket.auxiliaryFields.slice(3), [
-            { key: 'ggj-site-short', label: 'GGJ 站点', value: 'GGJ 合成站', row: 1 },
-            { key: 'ggj-role-short', label: '社群角色／分工', value: communityRole, row: 1 },
+            { key: 'ggj-site-short', label: 'GGJ 站点或社群', value: 'GGJ 合成站', row: 1 },
+            { key: 'ggj-role-short', label: 'GGJ 参与经历', value: communityRole, row: 1 },
             { key: 'organization-short', label: '学校／机构', value: organization, row: 1 },
           ]);
           assert.deepEqual(walletPass.eventTicket.backFields.slice(1, 8).map(({ key, value }) => [key, value]), [

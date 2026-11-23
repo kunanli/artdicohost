@@ -30,21 +30,71 @@ export function cardCommunityFields(value) {
   return site === null || role === null ? null : { site, role };
 }
 export const cardCommunityLabel = community => community ? [community.site, community.role].filter(Boolean).join(' · ') : '';
-export function cardIdentityHeadline(identity, community) {
-  const site = community?.site || '';
-  const organizer = identity === 'GGJ 组织者';
-  const responsibilities = (community?.role ?? '').split(/\s*[・·、]\s*/u).filter(role => role
-    && role !== identity && !(organizer && /^(?:GGJ\s+)?(?:站[点點])?[组組][织織]者$/iu.test(role)));
-  return {
-    site: site && !/^GGJ(?:\s|$)/iu.test(site) ? 'GGJ ' + site : site,
-    identity: [site && organizer ? '组织者' : identity, ...new Set(responsibilities)].join(' · '),
-  };
-}
 export const WALLET_IDENTITIES = Object.freeze([
   {value:'attendee',label:'一般来宾'},{value:'guest',label:'嘉宾'},{value:'speaker',label:'讲者'},
   {value:'exhibitor',label:'参展者'},{value:'organizer',label:'GGJ 组织者'},{value:'student',label:'学生'},
   {value:'staff',label:'工作人员'},{value:'volunteer',label:'志愿者'},
 ]);
+const ENGLISH_CARD_IDENTITIES = new Map([
+  ['一般来宾', 'Attendee'], ['嘉宾', 'Guest'], ['讲者', 'Speaker'], ['参展者', 'Exhibitor'],
+  ['GGJ 组织者', 'GGJ Organizer'], ['学生', 'Student'], ['工作人员', 'Event Staff'], ['志愿者', 'Volunteer'],
+]);
+const GGJ_INVOLVEMENT_TERMS = [
+  ['站点组织者', 'Site Organizer', '站點組織者'],
+  ['区域组织者', 'Regional Organizer', '區域組織者'],
+  ['组织者', 'Organizer', 'GGJ 组织者', 'GGJ 組織者', '組織者', 'GGJ Organizer'],
+  ['Jammer', 'Jammer'],
+  ['参与者', 'Participant', '參與者'],
+  ['导师', 'Mentor', '導師'],
+  ['志愿者', 'Volunteer', '志工', '志願者'],
+  ['评审', 'Juror', '評審', '评委', '評委', 'Judge', 'Jury Member'],
+  ['社群伙伴', 'Community Partner', '社群夥伴'],
+  ['教育工作者', 'Educator', '教育'],
+  ['活动运营', 'Event Operations', '活動營運', '活动支援', '活動支援'],
+  ['无障碍倡导', 'Accessibility Advocate', '無障礙倡導'],
+  ['程序', 'Programming', '程式', '程序开发', '程式開發', 'Programmer'],
+  ['美术', 'Art', '美術', 'Artist'],
+  ['游戏策划', 'Game Design', '策划', '策劃', '遊戲策劃', 'Game Designer'],
+  ['制作人', 'Producer', '製作人'],
+  ['音频', 'Audio', '音頻', 'Audio Design'],
+  ['测试', 'QA', '測試', 'Testing'],
+  ['叙事设计', 'Narrative Design', '敘事設計'],
+];
+const GGJ_INVOLVEMENT_LABELS = new Map(GGJ_INVOLVEMENT_TERMS.flatMap(([zh, en, ...aliases]) =>
+  [zh, en, ...aliases].map(term => [term.toLowerCase(), { zh, en }])));
+
+export function cardEventIdentityLabel(identity, locale = 'zh-CN') {
+  return locale === 'en' ? ENGLISH_CARD_IDENTITIES.get(identity) ?? identity : identity;
+}
+
+export function cardIdentityHeadline(identity, community, locale = 'zh-CN') {
+  const en = locale === 'en';
+  const siteName = (community?.site ?? '').replace(/(?<![A-Za-z0-9])(?:GGJ|ARTDICO)(?![A-Za-z0-9])/gi, word => word.toUpperCase());
+  const site = siteName && !/^GGJ(?:$|[^A-Za-z0-9])/u.test(siteName) ? 'GGJ ' + siteName : siteName;
+  const organizer = identity === 'GGJ 组织者';
+  const terms = (community?.role ?? '').split(/\s*[・·、；;]\s*/u).filter(Boolean);
+  const contributions = terms.map(term => {
+    const known = GGJ_INVOLVEMENT_LABELS.get(term.toLowerCase());
+    return known?.[en ? 'en' : 'zh'] ?? term;
+  });
+  const siteOrganizer = en ? 'Site Organizer' : '站点组织者';
+  const regionalOrganizer = en ? 'Regional Organizer' : '区域组织者';
+  const organizerLabel = en ? 'Organizer' : '组织者';
+  const eventIdentity = cardEventIdentityLabel(identity, locale);
+  if (organizer) {
+    const role = contributions.find(contribution => contribution === siteOrganizer || contribution === regionalOrganizer)
+      ?? (site ? organizerLabel : eventIdentity);
+    const remaining = contributions.filter(contribution => contribution !== role && contribution !== organizerLabel);
+    return { site, label: site, identity: [role, ...new Set(remaining)].join(' · ') };
+  }
+  if (contributions.length) {
+    return { site, label: site || (en ? 'GGJ Involvement' : 'GGJ 参与经历'), identity: [...new Set(contributions)].join(' · ') };
+  }
+  const eventRole = identity === '学生' ? (en ? 'Student Attendee' : '学生参会者')
+    : en ? (identity === '工作人员' ? eventIdentity : 'Event ' + eventIdentity)
+      : '活动' + (identity === '一般来宾' ? '参与者' : eventIdentity);
+  return { site, label: site, identity: site ? eventRole : eventIdentity };
+}
 export const WALLET_PREFERENCE_FIELDS = Object.freeze(['requestedWalletIdentity', 'ggjSite', 'ggjRole']);
 export function walletApplicationPreferences(input) {
   if (!plain(input)) return null;

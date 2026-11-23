@@ -11,16 +11,18 @@ import { collectJournalBackupKeys } from '../functions/registration-admin/mainte
 import { createWalletFixture, passFiles } from './apple-wallet-fixture.mjs';
 import { confirmationView } from '../src/lib/confirmation-client.mjs';
 import { CARD_FORMATS_ACCEPT } from '../shared/confirmation-delivery.mjs';
+import { cardIdentityHeadline } from '../shared/general-application.mjs';
 
 const root = '/api/admin/registration-confirmation/cards';
 const operationId = () => randomBytes(32).toString('base64url');
 
 async function setup({ mailResult = 'accepted', clock, preferences = {} } = {}) {
+  const isCardEmail = message => /电子纪念卡|Your commemorative card/u.test(message.template_params.email_subject);
   const f = await peopleRuntimeFixture({ clock, mail: true, mailResult: message => {
-    if (!/电子纪念卡/u.test(message.template_params.email_subject)) return 'accepted';
+    if (!isCardEmail(message)) return 'accepted';
     return typeof mailResult === 'function' ? mailResult() : mailResult;
   } });
-  const cardMessages = () => f.messages.filter(message => /电子纪念卡/u.test(message.template_params.email_subject));
+  const cardMessages = () => f.messages.filter(isCardEmail);
   const headers = await f.login();
   const fields = {
     name: '合成电子纪念卡申请人', huodongxingReference: '0000001234', email: 'card-test@example.invalid',
@@ -117,14 +119,14 @@ test('staff send one commemorative card email and recipients can still save the 
 });
 
 test('an issued card displays its application site and discipline until staff replace or clear them', async t => {
-  const f = await setup({ preferences: { ggjSite: 'ARTDiCO 站点', ggjRole: '站点组织者・程序' } });
+  const f = await setup({ preferences: { locale: 'en', ggjSite: 'Ggj Artdico', ggjRole: '站点组织者・程序' } });
   const send = await f.prepare('organizer');
   const initial = await f.read();
   assert.equal(initial.cardCommunitySaved, false);
-  assert.deepEqual(initial.cardCommunity, { site: 'ARTDiCO 站点', role: '站点组织者・程序' });
+  assert.deepEqual(initial.cardCommunity, { site: 'Ggj Artdico', role: '站点组织者・程序' });
   assert.equal((await (await f.call('POST', send)).json()).status, 'provider_accepted');
   const email = f.cardMessages()[0].template_params.confirmation_actions;
-  assert.match(email, /ARTDiCO 站点 · 站点组织者・程序/u);
+  assert.match(email, /Ggj Artdico · 站点组织者・程序/u);
   const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(email)[1];
   const service = f.app.confirmationService;
   const readCard = async () => confirmationView(await (await f.app.handle(f.request('/api/registration/confirmation', {
@@ -142,8 +144,12 @@ test('an issued card displays its application site and discipline until staff re
   };
   const firstPass = await readPass();
   assert.deepEqual(firstPass.posterGeneric.primaryFields[0],
-    { key: 'poster-identity', label: 'GGJ ARTDiCO 站点', value: '组织者 · 程序' });
-  assert.deepEqual((await readCard()).cardCommunity, initial.cardCommunity);
+    { key: 'poster-identity', label: 'GGJ ARTDICO', value: 'Site Organizer · Programming' });
+  const firstCard = await readCard();
+  assert.equal(firstCard.cardLocale, 'en');
+  assert.deepEqual(firstCard.cardCommunity, initial.cardCommunity);
+  assert.deepEqual(firstPass.posterGeneric.backFields.find(field => field.key === 'poster-details-details-identity'),
+    { key: 'poster-details-details-identity', label: 'Role at This Event', value: 'GGJ Organizer' });
   const revised = { site: 'GGJ 复核站', role: '美术' };
   const saveCommunity = (revision, cardCommunity) => f.call('PATCH', {
     primaryId: f.id, expectedCommunityRevision: revision, cardCommunity,
@@ -153,12 +159,27 @@ test('an issued card displays its application site and discipline until staff re
   const pass = await readPass();
   assert.equal(pass.serialNumber, firstPass.serialNumber);
   assert.deepEqual(pass.posterGeneric.primaryFields[0],
-    { key: 'poster-identity', label: 'GGJ 复核站', value: '组织者 · 美术' });
+    { key: 'poster-identity', label: 'GGJ 复核站', value: 'Organizer · Art' });
   assert.deepEqual((await readCard()).cardCommunity, revised);
   assert.equal((await saveCommunity((await update.json()).communityRevision, { site: '', role: '' })).status, 200);
   assert.equal((await readCard()).cardCommunity, undefined);
-  assert.deepEqual((await readPass()).posterGeneric.primaryFields[0], { key: 'poster-identity', value: 'GGJ 组织者' });
+  assert.deepEqual((await readPass()).posterGeneric.primaryFields[0], { key: 'poster-identity', value: 'GGJ Organizer' });
   assert.equal(f.cardMessages().length, 1);
+});
+
+test('card headlines prioritize GGJ involvement and keep free text and event-only roles meaningful in both languages', () => {
+  const supported = { site: 'GGJ São Paulo', role: '導師・評審・社群夥伴' };
+  assert.deepEqual(cardIdentityHeadline('嘉宾', supported, 'en'),
+    { site: 'GGJ São Paulo', label: 'GGJ São Paulo', identity: 'Mentor · Juror · Community Partner' });
+  assert.deepEqual(cardIdentityHeadline('嘉宾', { site: '', role: 'Volunteer・Audio outreach, 2024' }),
+    { site: '', label: 'GGJ 参与经历', identity: '志愿者 · Audio outreach, 2024' });
+  assert.deepEqual(cardIdentityHeadline('志愿者', { site: 'Ggj Artdico', role: '' }, 'en'),
+    { site: 'GGJ ARTDICO', label: 'GGJ ARTDICO', identity: 'Event Volunteer' });
+  assert.deepEqual(cardIdentityHeadline('GGJ 组织者', { site: 'GGJ China Community', role: 'Regional Organizer' }, 'en'),
+    { site: 'GGJ China Community', label: 'GGJ China Community', identity: 'Regional Organizer' });
+  assert.equal(cardIdentityHeadline('嘉宾', { site: '', role: '参与者' }, 'en').identity, 'Participant');
+  assert.deepEqual(cardIdentityHeadline('一般来宾', undefined, 'en'),
+    { site: '', label: '', identity: 'Attendee' });
 });
 
 test('staff can update or clear optional card details on an already issued card without resending mail', async () => {

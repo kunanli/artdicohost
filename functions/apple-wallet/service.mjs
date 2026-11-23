@@ -119,7 +119,7 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
         if (!validRecord(latest) || latest.registrationId !== attendee.registrationId || latest.event.id !== attendee.event.id
           || latest.admissionStatus !== 'confirmed' || latest.walletIdentity!==attendee.walletIdentity || accessRevision(latest) !== accessRevision(attendee)
           || attendee.cardCommunity && (attendee.cardCommunity.site !== latest.cardCommunity?.site || attendee.cardCommunity.role !== latest.cardCommunity?.role)
-          || commemorative && (attendee.cardProfile?.organization !== latest.cardProfile?.organization
+          || commemorative && (attendee.cardLocale !== latest.cardLocale || attendee.cardProfile?.organization !== latest.cardProfile?.organization
             || attendee.cardProfile?.phone !== latest.cardProfile?.phone)) return fixed('inactive');
         if (!unchangedEventFacts(checkedFacts, await readEventFactsReadiness(eventFactsReadiness))) return fixed('event_unverified');
         if (Date.parse(config.identity.expiresAt) <= current()) return fixed('not_ready');

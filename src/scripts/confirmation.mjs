@@ -192,8 +192,10 @@ if (root) {
       if (current !== generation) return;
       jpegUrl = URL.createObjectURL(blob);
       const image = $('[data-confirmation-jpeg-image]');
-      const headline = cardIdentityHeadline(value.card.identity, value.cardCommunity);
-      image.alt = ['电子纪念卡', headline.site, headline.identity, value.attendee.name, value.cardProfile?.organization].filter(Boolean).join('，');
+      const english = value.cardLocale === 'en';
+      const headline = cardIdentityHeadline(value.card.identity, value.cardCommunity, value.cardLocale);
+      image.alt = [english ? 'Commemorative card' : '电子纪念卡', headline.label, headline.identity, value.attendee.name, value.cardProfile?.organization]
+        .filter(Boolean).join(english ? ', ' : '，');
       image.src = jpegUrl;
       root.dataset.cardPreview = '';
       $('[data-confirmation-jpeg-preview]').hidden = false;

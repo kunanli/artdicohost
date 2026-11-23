@@ -1,7 +1,24 @@
 import { cardIdentityHeadline, commemorativeCardVenue } from '../../shared/general-application.mjs';
+import { eventConfig } from '../config/event.mjs';
 
 // Coordinates follow the organizer-provided portrait card.
 export const CARD_IMAGE = Object.freeze({ width: 1030, height: 1510 });
+
+const CARD_COPY = {
+  'zh-CN': {
+    title: '2026 Global Game Jam 中国组织者交流会',
+    subtitle: '×  ARTDiCO HOST 学生嘉年华',
+    date: '日期', time: '时间', venue: '地点', school: '学校／机构', phone: '电话',
+    keepsake: '电子纪念卡', checkIn: '现场签到请使用活动行原电子票',
+  },
+  en: {
+    title: 'GGJ China Meetup 2026',
+    subtitle: '×  ARTDiCO HOST Student Festival',
+    date: 'Date', time: 'Time', venue: 'Venue', school: 'School / organization', phone: 'Phone',
+    keepsake: 'Keepsake card', checkIn: 'Use your original Huodongxing e-ticket to check in.',
+  },
+};
+const englishDate = new Intl.DateTimeFormat('en-GB', { dateStyle: 'long', timeZone: 'UTC' });
 
 const faces = [
   'M3 2 H88 V157 H117 V2 H201 V397 H117 V241 H88 V397 H3 Z',
@@ -61,6 +78,8 @@ function line(context, text, x, y, size, { maxWidth = 900, align = 'left', color
 }
 
 export async function renderCommemorativeJpeg(view) {
+  const locale = view.cardLocale === 'en' ? 'en' : 'zh-CN';
+  const copy = CARD_COPY[locale];
   const canvas = document.createElement('canvas');
   canvas.width = CARD_IMAGE.width;
   canvas.height = CARD_IMAGE.height;
@@ -69,37 +88,43 @@ export async function renderCommemorativeJpeg(view) {
   context.fillStyle = '#121212';
   context.fillRect(0, 0, canvas.width, canvas.height);
   drawWordmark(context);
-  line(context, '2026 Global Game Jam 中国组织者交流会', 65, 500, 47);
-  line(context, '×  ARTDiCO HOST 学生嘉年华', 65, 560, 47);
+  line(context, copy.title, 65, 500, 47);
+  line(context, copy.subtitle, 65, 560, 47);
   context.fillStyle = '#5b5b5b';
   context.fillRect(67, 597, 895, 1);
   context.fillRect(67, 781, 895, 1);
-  const headline = cardIdentityHeadline(view.card.identity, view.cardCommunity);
-  const identityY = headline.site ? 725 : 711;
-  if (headline.site) line(context, headline.site, 64, 665, 34, { maxWidth: 580, color: '#d9c7ff', weight: 600 });
+  const headline = cardIdentityHeadline(view.card.identity, view.cardCommunity, locale);
+  const headlineLabel = headline.label || headline.site;
+  const identityY = headlineLabel ? 725 : 711;
+  if (headlineLabel) line(context, headlineLabel, 64, 665, 34, { maxWidth: 580, color: '#d9c7ff', weight: 600 });
   line(context, headline.identity, 64, identityY, 43, { maxWidth: 580, weight: 600 });
   line(context, view.attendee.name, 962, identityY, 43, { maxWidth: 280, align: 'right' });
-  line(context, '日期', 64, 852, 29);
-  line(context, view.event.date.replaceAll('-', ' - '), 64, 894, 29);
-  line(context, '时间', 64, 956, 29);
-  line(context, view.event.time.replace(/\s*[–—-]\s*/u, ' - '), 64, 999, 29);
-  line(context, '地点', 962, 852, 29, { align: 'right' });
-  const venue = commemorativeCardVenue(view.event.venue);
+  const instant = Date.parse(view.event.date + 'T00:00:00Z');
+  const date = locale === 'en' && Number.isFinite(instant) ? englishDate.format(instant) : view.event.date.replaceAll('-', ' - ');
+  const time = locale === 'en' ? view.event.time + (view.event.timezone === 'Asia/Shanghai' ? ' (UTC+8)' : '')
+    : view.event.time.replace(/\s*[–—-]\s*/u, ' - ');
+  const venue = locale === 'en' && view.event.venue === eventConfig.venue.address ? eventConfig.venue.addressEnglish
+    : commemorativeCardVenue(view.event.venue);
+  line(context, copy.date, 64, 852, 29);
+  line(context, date, 64, 894, 29);
+  line(context, copy.time, 64, 956, 29);
+  line(context, time, 64, 999, 29);
+  line(context, copy.venue, 962, 852, 29, { align: 'right' });
   line(context, venue, 962, 894, 29, { maxWidth: 540, align: 'right' });
   const profile = view.cardProfile;
   if (profile?.organization) {
-    line(context, '学校／机构', 64, 1078, 29);
+    line(context, copy.school, 64, 1078, 29);
     line(context, profile.organization, 64, 1120, 29, { maxWidth: 895 });
   }
   if (profile?.phone) {
     const y = profile.organization ? 1190 : 1078;
-    line(context, '电话', 64, y, 29);
+    line(context, copy.phone, 64, y, 29);
     line(context, profile.phone, 64, y + 42, 29, { maxWidth: 895 });
   }
   context.fillStyle = '#5b5b5b';
   context.fillRect(67, 1328, 895, 1);
-  line(context, '电子纪念卡', 64, 1387, 29);
-  line(context, '现场签到请使用活动行原电子票', 64, 1431, 25, { color: '#c5c0cb' });
+  line(context, copy.keepsake, 64, 1387, 29);
+  line(context, copy.checkIn, 64, 1431, 25, { color: '#c5c0cb' });
   return new Promise((resolve, reject) => {
     canvas.toBlob(blob => {
       canvas.width = 0;

@@ -73,6 +73,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const preferences = isWalletApplicationFields(approvedFields) ? walletApplicationPreferences(approvedFields) : null;
     return { site: preferences?.ggjSite ?? '', role: preferences?.ggjRole ?? '' };
   }
+  const cardLanguage = fields => fields.locale === 'en' ? { cardLocale: 'en' } : {};
   const profileFor = (state, id) => {
     const profile = state.entries[id]?.profile;
     return profile?.organization || profile?.phone ? { cardProfile: profile } : {};
@@ -197,7 +198,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       if ((await aliasesFor(loaded)).registrationIds.some(id => state.removed[id])) failure('CONFIRMATION_NOT_FOUND', 404);
       const saved = await communities().read();
       return { ...value, cardCommunity: communityFor(saved, registrationId, value.walletIdentity ? loaded.record.fields : undefined),
-        ...profileFor(saved, registrationId) };
+        ...profileFor(saved, registrationId), ...cardLanguage(loaded.record.fields) };
     }
     return value;
   }
@@ -220,7 +221,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (!await cardIdentity(loaded, projected)) return null;
     const saved = await communities().read();
     return { ...projected, walletRequested: true,
-      cardCommunity: communityFor(saved, registrationId, loaded.record.fields), ...profileFor(saved, registrationId) };
+      cardCommunity: communityFor(saved, registrationId, loaded.record.fields), ...profileFor(saved, registrationId),
+      ...cardLanguage(loaded.record.fields) };
   }
   async function cardIdentity(loaded, projection) {
     if (projection.admissionStatus !== 'confirmed') return null;
@@ -505,7 +507,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       if (latestIdentity?.value !== identity.value
         || latest.loaded.record.fields.name !== value.name || !unchangedEventFacts(currentFacts, await currentEventFacts()) && currentFacts.ready) failure();
       const cardCommunity = communityFor(community, registrationId, latest.loaded.record.fields);
-      return { ...cardView, wallet,
+      return { ...cardView, wallet, ...cardLanguage(latest.loaded.record.fields),
         ...(cardCommunity.site || cardCommunity.role ? { cardCommunity } : {}),
         ...profileFor(community, registrationId),
         card: { format: both ? 'both' : cardFormat, identity: identity.label,

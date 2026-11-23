@@ -30,6 +30,14 @@ export function cardCommunityFields(value) {
   return site === null || role === null ? null : { site, role };
 }
 export const cardCommunityLabel = community => community ? [community.site, community.role].filter(Boolean).join(' · ') : '';
+const cardCommunityRoleTerms = role => role.split(/[・·、；;]/u).map(term => term.trim()).filter(Boolean);
+export function cardJammerOption(role) {
+  const terms = cardCommunityRoleTerms(role);
+  const otherTerms = terms.filter(term => term.toLowerCase() !== 'jammer');
+  const selected = otherTerms.length !== terms.length;
+  const toggleValue = selected ? otherTerms.join(' · ') : [role.trim(), 'Jammer'].filter(Boolean).join(' · ');
+  return { selected, toggleValue, canToggle: selected || toggleValue.length <= CARD_COMMUNITY_FIELD_LENGTH };
+}
 export const WALLET_IDENTITIES = Object.freeze([
   {value:'attendee',label:'一般来宾'},{value:'guest',label:'嘉宾'},{value:'speaker',label:'讲者'},
   {value:'exhibitor',label:'参展者'},{value:'organizer',label:'GGJ 组织者'},{value:'student',label:'学生'},
@@ -72,7 +80,7 @@ export function cardIdentityHeadline(identity, community, locale = 'zh-CN') {
   const siteName = (community?.site ?? '').replace(/(?<![A-Za-z0-9])(?:GGJ|ARTDICO)(?![A-Za-z0-9])/gi, word => word.toUpperCase());
   const site = siteName && !/^GGJ(?:$|[^A-Za-z0-9])/u.test(siteName) ? 'GGJ ' + siteName : siteName;
   const organizer = identity === 'GGJ 组织者';
-  const terms = (community?.role ?? '').split(/\s*[・·、；;]\s*/u).filter(Boolean);
+  const terms = cardCommunityRoleTerms(community?.role ?? '');
   const contributions = terms.map(term => {
     const known = GGJ_INVOLVEMENT_LABELS.get(term.toLowerCase());
     return known?.[en ? 'en' : 'zh'] ?? term;

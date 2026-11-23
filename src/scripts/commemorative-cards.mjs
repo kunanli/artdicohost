@@ -1,4 +1,4 @@
-import { cardCommunityLabel, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
+import { cardCommunityLabel, cardJammerOption, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 
 const root = document.querySelector('[data-card-admin]');
@@ -36,6 +36,7 @@ const communityDetails = $('[data-card-community]');
 const communityForm = $('[data-card-community-form]');
 const communitySite = $('#card-community-site');
 const communityRole = $('#card-community-role');
+const jammer = $('[data-ggj-jammer]');
 const organization = $('#card-organization');
 const phone = $('#card-phone');
 const deliveryForm = $('[data-card-delivery]');
@@ -54,6 +55,17 @@ let csrf = '', rows = [], filter = 'todo', activeId = '', current = null, busy =
 let pendingTest = null;
 const pendingApprovals = new Map();
 const rowFor = id => rows.find(row => row.sources.some(source => source.id === id));
+
+function syncJammer() {
+  const option = cardJammerOption(communityRole.value);
+  jammer.checked = option.selected;
+  jammer.disabled = communityRole.disabled || !option.canToggle;
+}
+communityRole.addEventListener('input', syncJammer);
+jammer.addEventListener('change', () => {
+  communityRole.value = cardJammerOption(communityRole.value).toggleValue;
+  syncJammer();
+});
 
 function showError(text = '', target = errorBox) {
   for (const box of [errorBox, detailError]) {
@@ -162,6 +174,7 @@ function setView(value) {
     identity.value = '';
     communityDetails.open = false;
     communityForm.reset();
+    syncJammer();
     return;
   }
   heading.textContent = value.name;
@@ -191,6 +204,7 @@ function setView(value) {
   const communityInput = value.cardCommunitySaved || community ? value.cardCommunity : suggestedCommunity;
   communitySite.value = communityInput?.site ?? '';
   communityRole.value = communityInput?.role ?? '';
+  syncJammer();
   const profile = value.cardProfile ?? value.suggestedCardProfile;
   organization.value = profile?.organization ?? '';
   phone.value = profile?.phone ?? '';
@@ -256,6 +270,7 @@ async function work(task, nearApplication = false) {
   try { await task(); } catch (error) { showError(error.message || '暂时无法核对，请稍后重试。', nearApplication && !workspace.hidden ? detailError : errorBox); }
   finally {
     controls.forEach(node => { node.disabled = false; });
+    syncJammer();
     busy = false;
     root.removeAttribute('aria-busy');
     if (nearApplication && document.activeElement === document.body && !detail.hidden && detail.contains(focused)) {

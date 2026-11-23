@@ -17,6 +17,8 @@ const mime=path=>({'.html':'text/html','.js':'text/javascript','.mjs':'text/java
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 await mkdir(evidence,{recursive:true});
 const form=page=>page.locator('[data-wallet-form]');
+const chineseJammer=page=>form(page).getByRole('checkbox',{name:'Jammer（参加过 Game Jam）',exact:true});
+const involvement='导师 · 2024',involvementWithJammer=involvement+' · Jammer';
 async function fixture(width,{lost=false,closed=false,speakerClosed=false}={}){
  const runtime=await peopleRuntimeFixture({mail:false,attendeeReviewRequired:false});let disabled=closed,lose=lost;
  const app=()=>runtime.make({policyOverride:{publicRegistrationMode:'speaker_only',speakerApplicationsEnabled:!speakerClosed,...(disabled?{closesAt:'2026-10-21T08:59:00Z'}:{})}});
@@ -49,7 +51,12 @@ async function fill(page){
  const suggestions=await role.evaluate(input=>Array.from(input.list.options,option=>option.value));
  for(const value of ['站点组织者','Jammer','导师','志愿者','评审','教育工作者','社群伙伴','活动运营','程序','美术','策划']) assert.ok(suggestions.includes(value));
  await site.fill('GGJ 合成站');
- await role.fill('导师 · 2024');
+ await role.fill(involvement);
+ const jammer=chineseJammer(page);
+ assert.equal(await jammer.isChecked(),false);
+ assert.equal(await jammer.getAttribute('required'),null);
+ await jammer.check();
+ assert.equal(await role.inputValue(),involvementWithJammer);
 }
 async function drafts(page){return page.evaluate(()=>new Promise((yes,no)=>{const request=indexedDB.open('artdico-browser-drafts-v1',1);request.onerror=()=>no(request.error);request.onsuccess=()=>{const db=request.result,tx=db.transaction('drafts','readonly'),query=tx.objectStore('drafts').getAll();query.onsuccess=()=>yes(query.result);query.onerror=()=>no(query.error);tx.oncomplete=()=>db.close();};}));}
 async function screenshot(page,name){await page.screenshot({path:resolve(evidence,name+'.png'),fullPage:false,animations:'disabled'});}
@@ -105,6 +112,13 @@ try{
    await f.page.locator('[data-registration-form] [name=name]').fill('独立合成讲者草稿');await fill(f.page);
    await f.page.waitForFunction(()=>document.querySelector('[data-wallet-draft-status]').textContent==='纪念卡申请已暂存于本机。');
    const before=await drafts(f.page);assert.equal(before.filter(row=>row.kind==='editing'&&row.value?.intake==='wallet-v1').length,1);assert.equal(before.filter(row=>row.kind==='editing'&&row.value?.intake==='general-v2').length,1);
+   const role=form(f.page).locator('[name="wallet.ggjRole"]');
+   if(width===390){
+    await f.page.reload({waitUntil:'networkidle'});
+    await f.page.locator('[data-wallet-submit]:enabled').waitFor();
+    assert.equal(await role.inputValue(),involvementWithJammer);
+    assert.equal(await chineseJammer(f.page).isChecked(),true);
+   }
    await f.page.locator('[data-wallet-submit]').click();assert.equal(f.calls.filter(call=>call.path.endsWith('/registration/submit')).length,0,'unchecked consent sends nothing');
    const walletNotice=form(f.page).locator('a[href="#privacy"]');await walletNotice.click();await f.page.locator('[data-privacy-dialog][open]').waitFor();assert.equal(await f.page.locator('#wallet-consent').isChecked(),false);await f.page.locator('[data-privacy-close]').click();assert.equal(await walletNotice.evaluate(node=>document.activeElement===node),true);
    await f.page.locator('#wallet-consent').check();assert.equal(await f.page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
@@ -115,19 +129,24 @@ try{
    assert.equal(await form(f.page).locator('[name="wallet.requestedWalletIdentity"]').inputValue(),'staff');
    assert.match(await form(f.page).locator('[data-field="wallet.ggjSite"] label').innerText(),/^GGJ site or community/u);
    assert.match(await form(f.page).locator('[data-field="wallet.ggjRole"] label').innerText(),/^GGJ involvement/u);
-   const role=form(f.page).locator('[name="wallet.ggjRole"]');
-   assert.equal(await role.inputValue(),'导师 · 2024');
+   const englishJammer=form(f.page).getByRole('checkbox',{name:'Jammer (participated in a Game Jam)',exact:true});
+   assert.equal(await englishJammer.isChecked(),true);
+   await englishJammer.uncheck();
+   assert.equal(await role.inputValue(),involvement);
+   await englishJammer.check();
+   assert.equal(await role.inputValue(),involvementWithJammer);
    const suggestions=await role.evaluate(input=>Array.from(input.list.options,option=>option.value));
    for(const value of ['Site Organizer','Jammer','Mentor','Volunteer','Jury Member','Educator','Community partner','Event Operations','Programmer','Artist','Game Designer']) assert.ok(suggestions.includes(value));
    const readable=await form(f.page).evaluate(node=>[...node.querySelectorAll('.ah-field>label,input:not([type=checkbox]),[data-wallet-submit]')].every(field=>parseFloat(getComputedStyle(field).fontSize)>=16)&&[...node.querySelectorAll('.ah-field-hint,.ah-form-hint,.ah-form-disclaimer')].every(field=>parseFloat(getComputedStyle(field).fontSize)>=14));assert.equal(readable,true);
    await screenshot(f.page,'form-en-'+width);await f.page.locator('[data-language="zh-CN"]').click();await f.page.waitForFunction(()=>document.documentElement.lang==='zh-CN');
-   assert.equal(await role.inputValue(),'导师 · 2024');
+   assert.equal(await role.inputValue(),involvementWithJammer);
+   assert.equal(await chineseJammer(f.page).isChecked(),true);
    assert.equal(await role.evaluate(input=>input.list.options[2].value),'导师');
    await f.page.locator('[data-wallet-submit]').click();const id=await receipt(f);
    const [{fields}]=(await f.app.registrationService.repository.list()).registrations;
    assert.equal(fields.requestedWalletIdentity,'staff');
    assert.equal(fields.ggjSite,'GGJ 合成站');
-   assert.equal(fields.ggjRole,'导师 · 2024');
+   assert.equal(fields.ggjRole,involvementWithJammer);
    assert.equal(fields.walletIdentity,undefined);
    assert.equal(f.calls.filter(call=>call.path.endsWith('/registration/submit')).length,1);assert.equal((await drafts(f.page)).some(row=>row.kind==='pending_submission'&&JSON.parse(row.value.payloadJson).fields.intake==='wallet-v1'),false);
    await staffIdentity(f,id);reports.push({width,normal:true,independentDrafts:true,bilingualValuesAndTypography:true,consent:true,staffIdentity:true,privateIdentityPendingGuidance:true,pendingBeforeApproval:true,noRealMail:true});
@@ -140,7 +159,9 @@ try{
    f.closeIntake();await f.page.reload({waitUntil:'networkidle'});await f.page.locator('[data-wallet-submit]:enabled').waitFor();assert.equal(f.calls.filter(call=>call.path.endsWith('/registration/submit')).length,1,'reloading never automatically POSTs a pending request');
    assert.equal(await form(f.page).locator('[name="wallet.huodongxingReference"]').inputValue(),'000012345678901234567890');assert.equal(await form(f.page).locator('[name="wallet.huodongxingReference"]').isDisabled(),true);
    assert.equal(await form(f.page).locator('[name="wallet.requestedWalletIdentity"]').inputValue(),'staff');
-   assert.equal(await form(f.page).locator('[name="wallet.ggjRole"]').inputValue(),'导师 · 2024');
+   assert.equal(await form(f.page).locator('[name="wallet.ggjRole"]').inputValue(),involvementWithJammer);
+   assert.equal(await chineseJammer(f.page).isChecked(),true);
+   assert.equal(await chineseJammer(f.page).isDisabled(),true);
    await f.page.locator('[data-wallet-submit]').click();await receipt(f);const retry=f.calls.filter(call=>call.path.endsWith('/registration/submit')).at(-1);assert.equal(retry.body,original.body);assert.equal(retry.key,original.key);
    reports.push({width:390,lostResponse:true,originalBodyAndKey:true,recoveryAfterClosure:true});
   }finally{await f.context.close();}

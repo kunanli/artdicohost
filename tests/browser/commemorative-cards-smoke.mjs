@@ -32,7 +32,8 @@ try {
     const context = await browser.newContext({ viewport: { width, height: 840 }, locale: 'zh-CN',
       ...(walletAvailable ? { userAgent: iosAgent + (device === 'safari' ? 'Version/18.0' : 'CriOS/131.0') + ' Mobile/15E148 Safari/604.1' } : {}) });
     const errors = [];
-    const phone = '+86 010 0000 0000', organization = '合成院校', communityRole = '站点组织者・美术';
+    const phone = '+86 010 0000 0000', organization = '合成院校', communityRole = '站点组织者 · 美术';
+    const jammerRole = communityRole + ' · Jammer';
     let publicDetails = null;
     let privateReads = 0, staleIdentity = width === 320;
     try {
@@ -91,7 +92,16 @@ try {
       if (device === 'safari') {
         await application.locator('[name="wallet.requestedWalletIdentity"]').selectOption('organizer');
         await application.locator('[name="wallet.ggjSite"]').fill('GGJ 合成站');
-        await application.locator('[name="wallet.ggjRole"]').fill(communityRole);
+        const role = application.locator('[name="wallet.ggjRole"]');
+        const jammer = application.getByRole('checkbox', { name: 'Jammer（参加过 Game Jam）' });
+        assert.notEqual(await jammer.getAttribute('data-ggj-jammer'), null);
+        await role.fill(communityRole);
+        assert.equal(await jammer.isChecked(), false);
+        await jammer.check();
+        assert.equal(await role.inputValue(), jammerRole);
+        await jammer.uncheck();
+        assert.equal(await role.inputValue(), communityRole);
+        await jammer.check();
         await application.getByText('电话与学校／机构（选填）', { exact: true }).click();
         await application.locator('[name="wallet.phone"]').fill(phone);
         await application.locator('[name="wallet.organization"]').fill(organization);
@@ -146,14 +156,22 @@ try {
       if (device === 'safari') {
         assert.match(await page.locator('[data-card-community-summary]').innerText(), /待保存/u);
         await page.locator('[data-card-community-summary]').click();
-        assert.match(await page.locator('[data-card-requested-community]').innerText(), /GGJ 合成站 · 站点组织者・美术/u);
+        assert.ok((await page.locator('[data-card-requested-community]').innerText()).includes('GGJ 合成站 · ' + jammerRole));
         assert.equal(await page.locator('#card-community-site').inputValue(), 'GGJ 合成站');
-        assert.equal(await page.locator('#card-community-role').inputValue(), communityRole);
+        const role = page.locator('#card-community-role');
+        const jammer = page.getByRole('checkbox', { name: 'Jammer（参加过 Game Jam）' });
+        assert.notEqual(await jammer.getAttribute('data-ggj-jammer'), null);
+        assert.equal(await jammer.isChecked(), true);
+        assert.equal(await role.inputValue(), jammerRole);
+        await jammer.uncheck();
+        assert.equal(await role.inputValue(), communityRole);
+        await jammer.check();
+        assert.equal(await role.inputValue(), jammerRole);
         assert.equal(await page.getByLabel('学校／机构／团队').inputValue(), organization);
         assert.equal(await page.getByLabel('纪念卡电话').inputValue(), phone);
         await page.getByRole('button', { name: '保存到纪念卡' }).click();
         await page.getByRole('status').filter({ hasText: '纪念卡资料已保存。' }).waitFor();
-        assert.match(await page.locator('[data-card-community-summary]').textContent(), /GGJ 合成站 · 站点组织者・美术/u);
+        assert.ok((await page.locator('[data-card-community-summary]').textContent()).includes('GGJ 合成站 · ' + jammerRole));
       }
       assert.equal(cardMessages().length, 0);
       await page.screenshot({ path: resolve(output, 'staff-' + width + '.png'), fullPage: true });
@@ -185,7 +203,7 @@ try {
         assert.equal(await page.locator('[data-card-list] small').textContent(), '已提交发送');
         const link = /https:\/\/artdico\.host\/registration\/confirmation\/#r=[A-Za-z0-9_.-]+/u.exec(cardMessages()[0].template_params.confirmation_actions)[0];
         const readsBefore = privateReads;
-        if (device === 'chrome') {
+        if (walletAvailable) {
           await page.addInitScript(() => {
             const fillText = CanvasRenderingContext2D.prototype.fillText;
             globalThis.syntheticJpegText = [];
@@ -225,12 +243,14 @@ try {
         assert.equal(await guide.getByRole('link', { name: '活动行活动页' }).getAttribute('href'), PUBLIC_REGISTRATION_URL);
         assert.equal(await guide.getByRole('link', { name: '参展游戏与作品' }).getAttribute('href'), SITE + '/#students');
         if (device === 'safari') {
-          assert.equal(await page.locator('[data-confirmation-community]').innerText(), 'GGJ 合成站 · ' + communityRole);
+          assert.equal(await page.locator('[data-confirmation-community]').innerText(), 'GGJ 合成站 · ' + jammerRole);
           await page.getByText('纪念卡个人资料', { exact: true }).click();
           assert.equal(await page.locator('[data-confirmation-card-organization] dd').innerText(), organization);
           assert.equal(await page.locator('[data-confirmation-card-phone] dd').innerText(), phone);
-          assert.match(imageAlt, /GGJ 合成站，站点组织者 · 美术/u);
+          assert.ok(imageAlt.includes('GGJ 合成站，' + jammerRole));
           assert.doesNotMatch(imageAlt, /嘉宾/u);
+          assert.ok((await page.evaluate(() => globalThis.syntheticJpegText)).includes(jammerRole),
+            'the rendered JPEG headline includes the approved Jammer role');
         } else {
           assert.equal(await page.locator('[data-confirmation-community]').isVisible(), false);
         }
@@ -276,9 +296,11 @@ try {
           await page.getByRole('status').filter({ hasText: '进入票券详情' }).waitFor();
           const files = passFiles(await readFile(await pass.path()));
           const walletPass = JSON.parse(files.get('pass.json'));
+          assert.ok(files.get('signature')?.length);
+          assert.equal(JSON.parse(files.get('manifest.json'))['pass.json'], createHash('sha1').update(files.get('pass.json')).digest('hex'));
           assert.deepEqual(walletPass.posterGeneric.primaryFields.map(({ label, value }) => [label, value]),
-            [['GGJ 合成站', '站点组织者 · 美术'], [undefined, '合成纪念卡申请人']]);
-          assert.equal(walletPass.posterGeneric.additionalInfoFields.find(({ key }) => key === 'poster-info-ggj-role').value, communityRole);
+            [['GGJ 合成站', jammerRole], [undefined, '合成纪念卡申请人']]);
+          assert.equal(walletPass.posterGeneric.additionalInfoFields.find(({ key }) => key === 'poster-info-ggj-role').value, jammerRole);
           assert.equal(walletPass.posterGeneric.footerFields[0].value, '2026-12-05 · 10:00–18:00 · 前海5号楼');
           assert.deepEqual(walletPass.posterGeneric.additionalInfoFields.slice(0, 2).map(({ label }) => label),
             ['GGJ 中国交流聚会', 'ARTDiCO HOST 学生嘉年华']);
@@ -323,17 +345,17 @@ try {
           assert.equal(walletPass.expirationDate, undefined);
           assert.equal(walletPass.eventTicket.primaryFields, undefined);
           assert.deepEqual(walletPass.eventTicket.secondaryFields.map(({ label, value }) => [label, value]),
-            [['GGJ 合成站', '站点组织者 · 美术'], [undefined, '合成纪念卡申请人']]);
+            [['GGJ 合成站', jammerRole], [undefined, '合成纪念卡申请人']]);
           assert.deepEqual(walletPass.eventTicket.headerFields.map(({ value }) => value), ['前海5号楼']);
           assert.deepEqual(walletPass.eventTicket.auxiliaryFields.map(field => field.key), ['date', 'time', 'activities', 'ggj-site-short', 'ggj-role-short', 'organization-short']);
           assert.deepEqual(walletPass.eventTicket.auxiliaryFields.slice(3), [
             { key: 'ggj-site-short', label: 'GGJ 站点或社群', value: 'GGJ 合成站', row: 1 },
-            { key: 'ggj-role-short', label: 'GGJ 参与经历', value: communityRole, row: 1 },
+            { key: 'ggj-role-short', label: 'GGJ 参与经历', value: '站点组织者 · …', row: 1 },
             { key: 'organization-short', label: '学校／机构', value: organization, row: 1 },
           ]);
           assert.deepEqual(walletPass.eventTicket.backFields.slice(1, 8).map(({ key, value }) => [key, value]), [
             ['venue', venue], ['directions', guideMap.href], ['agenda', SITE + '/#agenda'], ['showcase', SITE + '/#students'],
-            ['huodongxing', PUBLIC_REGISTRATION_URL], ['ggj-site', 'GGJ 合成站'], ['ggj-role', communityRole],
+            ['huodongxing', PUBLIC_REGISTRATION_URL], ['ggj-site', 'GGJ 合成站'], ['ggj-role', jammerRole],
           ]);
           assert.equal(walletPass.eventTicket.backFields.find(field => field.key === 'phone').value, phone);
           assert.equal(walletPass.featuredActions, undefined);

@@ -1,6 +1,7 @@
 import { createRegistrationClient } from '../lib/registration-client.mjs';
 import { createBrowserDraftStore } from '../lib/browser-drafts.mjs';
 import { createApplicationDraft, applicationDraftFromFields } from '../lib/application-draft.mjs';
+import { bindJammerOption } from '../lib/ggj-jammer-option.mjs';
 import { validateWalletApplicationFields, WALLET_APPLICATION_INTAKE, WALLET_PREFERENCE_FIELDS } from '../../shared/general-application.mjs';
 import { eventConfig } from '../config/event.mjs';
 
@@ -9,15 +10,18 @@ for(const section of document.querySelectorAll('[data-wallet-api-origin]')){
  let draft,config=null,blocked=false,busy=false,done=false,loaded=false,timer=null,writing=Promise.resolve(),editing=0,savedEditing=0,revision=0;
  const client=createRegistrationClient({apiOrigin:section.dataset.walletApiOrigin,pageOrigin:location.origin,applicationKind:'wallet',pendingStore:{prepare:value=>draft.pendingStore.prepare(value),update:value=>draft.pendingStore.update(value),clear:value=>draft.pendingStore.clear(value),reject:value=>draft.pendingStore.reject(value)}});
  const control=name=>form.elements.namedItem('wallet.'+name);
+ const jammer=form.querySelector('[data-ggj-jammer]'),syncJammer=bindJammerOption(control('ggjRole'),jammer);
  const fieldNames=['name','email','wechat','huodongxingReference','phone','organization',...WALLET_PREFERENCE_FIELDS];
  const text=(node,value)=>{node.textContent=value;};
  function fields(){return{intake:WALLET_APPLICATION_INTAKE,locale:document.documentElement.lang.startsWith('en')?'en':'zh-CN',...Object.fromEntries(fieldNames.map(name=>[name,control(name).value])),categories:['other'],participationInterests:['attend']};}
  function apply(value){
   for(const name of fieldNames)control(name).value=value[name]??'';
   control('consentAccepted').checked=false;
+  syncJammer();
  }
  function lock(){
   for(const input of form.querySelectorAll('input,select,textarea'))input.disabled=busy||done||client.pending||!config;
+  syncJammer();
   button.disabled=busy||done||!loaded||blocked||!client.pending&&!config;
   text(button,busy?'正在核对纪念卡申请…':client.pending?'核对原纪念卡申请':config?'提交纪念卡申请':'纪念卡申请暂未开放');
   restore.hidden=!blocked;restore.disabled=busy;
@@ -42,7 +46,7 @@ for(const section of document.querySelectorAll('[data-wallet-api-origin]')){
   });return writing;
  }
  function queue(){if(busy||done||client.pending)return;editing++;clearTimeout(timer);if(loaded&&!blocked)timer=setTimeout(()=>{timer=null;void save().catch(()=>{});},400);}
- form.addEventListener('input',event=>{if(!event.isComposing&&event.target.name!=='wallet.consentAccepted')queue();});
+ form.addEventListener('input',event=>{if(!event.isComposing&&event.target!==jammer&&event.target.name!=='wallet.consentAccepted')queue();});
  form.addEventListener('compositionend',queue);
  restore.addEventListener('click',()=>{if(busy)return;clearTimeout(timer);void writing.catch(()=>{}).then(()=>draft.read()).then(adopt).catch(()=>announce('本机申请暂不可读取，请保留当前输入后重试。'));});
  const initialization=(async()=>{

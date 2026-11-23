@@ -1,5 +1,6 @@
 import { cardCommunityLabel, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
+import { bindJammerOption } from '../lib/ggj-jammer-option.mjs';
 
 const root = document.querySelector('[data-card-admin]');
 const $ = selector => root.querySelector(selector);
@@ -36,6 +37,7 @@ const communityDetails = $('[data-card-community]');
 const communityForm = $('[data-card-community-form]');
 const communitySite = $('#card-community-site');
 const communityRole = $('#card-community-role');
+const syncJammer = bindJammerOption(communityRole, $('[data-ggj-jammer]'));
 const organization = $('#card-organization');
 const phone = $('#card-phone');
 const deliveryForm = $('[data-card-delivery]');
@@ -162,6 +164,7 @@ function setView(value) {
     identity.value = '';
     communityDetails.open = false;
     communityForm.reset();
+    syncJammer();
     return;
   }
   heading.textContent = value.name;
@@ -191,6 +194,7 @@ function setView(value) {
   const communityInput = value.cardCommunitySaved || community ? value.cardCommunity : suggestedCommunity;
   communitySite.value = communityInput?.site ?? '';
   communityRole.value = communityInput?.role ?? '';
+  syncJammer();
   const profile = value.cardProfile ?? value.suggestedCardProfile;
   organization.value = profile?.organization ?? '';
   phone.value = profile?.phone ?? '';
@@ -256,6 +260,7 @@ async function work(task, nearApplication = false) {
   try { await task(); } catch (error) { showError(error.message || '暂时无法核对，请稍后重试。', nearApplication && !workspace.hidden ? detailError : errorBox); }
   finally {
     controls.forEach(node => { node.disabled = false; });
+    syncJammer();
     busy = false;
     root.removeAttribute('aria-busy');
     if (nearApplication && document.activeElement === document.body && !detail.hidden && detail.contains(focused)) {

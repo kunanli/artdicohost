@@ -75,6 +75,7 @@ import '../../../styles/admin.css';
                     <p class="card-muted" data-card-requested-community hidden></p>
                     <div class="ah-admin-field"><label for="card-community-site">GGJ 站点或社群</label><input id="card-community-site" name="site" maxlength={CARD_COMMUNITY_FIELD_LENGTH} /></div>
                     <div class="ah-admin-field"><label for="card-community-role">GGJ 参与经历</label><input id="card-community-role" name="role" maxlength={CARD_COMMUNITY_FIELD_LENGTH} /></div>
+                    <label class="card-ggj-jammer"><input type="checkbox" data-ggj-jammer aria-controls="card-community-role" /><span>Jammer（参加过 Game Jam）</span></label>
                     <div class="ah-admin-field"><label for="card-organization">学校／机构／团队</label><input id="card-organization" name="organization" maxlength={CARD_PROFILE_FIELD_LENGTHS.organization} /></div>
                     <div class="ah-admin-field"><label for="card-phone">纪念卡电话</label><input id="card-phone" name="phone" type="tel" maxlength={CARD_PROFILE_FIELD_LENGTHS.phone} /></div>
                     <p class="card-muted">电话会显示在 Wallet 票券详情及 JPEG。保存后可用原链接领取新版。</p>
@@ -136,6 +137,7 @@ import '../../../styles/admin.css';
   .card-facts dd { margin: 0; overflow-wrap: anywhere; }
   .card-state { padding: 10px 12px; border-radius: 5px; background: #eef2fa; font-weight: 600; }
   .card-linked { margin-bottom: 16px; font-size: 14px; color: var(--admin-muted); overflow-wrap: anywhere; }
+  .card-ggj-jammer { display: flex; gap: 8px; align-items: center; min-height: 44px; margin-bottom: 8px; }
   .card-panel .ah-admin-status { margin-top: 12px; }
   .card-panel [data-card-edit] { margin-inline-start: 8px; }
   .card-remove { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--admin-line); }

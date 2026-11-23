@@ -18,6 +18,7 @@ export const english = new Map([
 ["本次活动身份","Role at this event"],["一般来宾","General attendee"],["参展者","Exhibitor"],
 ["GGJ 组织者","GGJ organizer"],["工作人员","Staff"],["志愿者","Volunteer"],
 ["GGJ 站点","GGJ site"],["GGJ 站点或社群","GGJ site or community"],["GGJ 参与经历","GGJ involvement"],
+["Jammer（参加过 Game Jam）","Jammer (participated in a Game Jam)"],
 ["可填写曾参与的 GGJ 站点或社群。","Enter a GGJ site or community you have been involved with."],
 ["可填写你在 GGJ 的角色、贡献或参与年份，例如「导师 · 2024」。","Enter a GGJ role, contribution or year of participation, for example “Mentor · 2024”."],
 ["站点组织者","Site Organizer"],["评审","Jury Member"],["教育工作者","Educator"],["活动运营","Event Operations"],

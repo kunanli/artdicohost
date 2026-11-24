@@ -299,7 +299,7 @@ try {
           assert.ok(files.get('signature')?.length);
           assert.equal(JSON.parse(files.get('manifest.json'))['pass.json'], createHash('sha1').update(files.get('pass.json')).digest('hex'));
           assert.deepEqual(walletPass.posterGeneric.primaryFields.map(({ label, value }) => [label, value]),
-            [['GGJ 合成站', jammerRole], [undefined, '合成纪念卡申请人']]);
+            [[undefined, 'GGJ 合成站'], [undefined, jammerRole], [undefined, '合成纪念卡申请人']]);
           assert.equal(walletPass.posterGeneric.additionalInfoFields.find(({ key }) => key === 'poster-info-ggj-role').value, jammerRole);
           assert.equal(walletPass.posterGeneric.footerFields[0].value, '2026-12-05 · 10:00–18:00 · 前海5号楼');
           assert.deepEqual(walletPass.posterGeneric.additionalInfoFields.slice(0, 2).map(({ label }) => label),
@@ -345,7 +345,7 @@ try {
           assert.equal(walletPass.expirationDate, undefined);
           assert.equal(walletPass.eventTicket.primaryFields, undefined);
           assert.deepEqual(walletPass.eventTicket.secondaryFields.map(({ label, value }) => [label, value]),
-            [['GGJ 合成站', jammerRole], [undefined, '合成纪念卡申请人']]);
+            [[undefined, jammerRole], [undefined, '合成纪念卡申请人']]);
           assert.deepEqual(walletPass.eventTicket.headerFields.map(({ value }) => value), ['前海5号楼']);
           assert.deepEqual(walletPass.eventTicket.auxiliaryFields.map(field => field.key), ['date', 'time', 'activities', 'ggj-site-short', 'ggj-role-short', 'organization-short']);
           assert.deepEqual(walletPass.eventTicket.auxiliaryFields.slice(3), [

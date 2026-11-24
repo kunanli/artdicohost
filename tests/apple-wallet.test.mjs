@@ -278,11 +278,13 @@ test('commemorative passes sign the full poster and a compatible native strip wi
 test('keepsake reissues show each saved GGJ field independently and keep full values in details', async () => {
   const selected = { ...record, walletRequested: true, walletIdentity: 'organizer', event: { ...record.event, id: eventConfig.id, venue: eventConfig.venue.address } };
   const site = '很长的合成站点名称'.repeat(4), role = '站点组织者';
+  const brand = 'Ggj Artdico';
   let cardCommunity = { site: '', role: '' };
-  const load = async () => ({ ...selected, cardCommunity });
+  const load = async () => ({ ...selected, cardCommunity,
+    ...(cardCommunity.site === brand ? { cardProfile: { organization: '合成机构', phone: '' } } : {}) });
   const wallet = service({ authorize: load, authorizedRegistration: load });
   let serial;
-  for (const values of [{ site: '', role: '' }, { site, role: '' }, { site: '', role }, { site, role }]) {
+  for (const values of [{ site: '', role: '' }, { site, role: '' }, { site: '', role }, { site, role }, { site: brand, role }]) {
     cardCommunity = values;
     const result = await wallet.download({ receiptToken: token });
     assert.equal(result.outcome, 'issued');
@@ -291,14 +293,18 @@ test('keepsake reissues show each saved GGJ field independently and keep full va
     assert.equal(pass.serialNumber, serial);
     assert.equal(pass.semantics.venueName, eventConfig.venue.name);
     assert.equal(pass.semantics.venueRegionName, eventConfig.venue.city);
-    const { headerFields, auxiliaryFields, backFields } = pass.eventTicket;
+    const { headerFields, secondaryFields, auxiliaryFields, backFields } = pass.eventTicket;
     assert.deepEqual(headerFields?.map(({ value }) => value), values.site || values.role ? ['前海5号楼'] : undefined);
-    const [headline, name] = pass.posterGeneric.primaryFields;
-    assert.equal(pass.posterGeneric.primaryFields.length, 2);
-    assert.equal(headline.label, values.site ? 'GGJ ' + values.site : undefined);
-    assert.equal(headline.value, values.role ? '站点组织者' : values.site ? '组织者' : 'GGJ 组织者');
-    assert.equal(name.value, record.name);
-    for (const [key, value] of [['ggj-site', values.site], ['ggj-role', values.role]]) {
+    const siteValue = values.site === brand ? 'GGJ ARTDICO' : values.site;
+    const posterSite = values.site === brand ? siteValue : siteValue && 'GGJ ' + siteValue;
+    const identityValue = values.role ? '站点组织者' : values.site ? '组织者' : 'GGJ 组织者';
+    assert.deepEqual(pass.posterGeneric.primaryFields, [
+      ...(posterSite ? [{ key: 'poster-site', value: posterSite }] : []),
+      { key: 'poster-identity', value: identityValue },
+      { key: 'poster-name', value: record.name, semantics: { attendeeName: record.name } },
+    ]);
+    assert.deepEqual(secondaryFields.map(({ label, value }) => [label, value]), [[undefined, identityValue], [undefined, record.name]]);
+    for (const [key, value] of [['ggj-site', siteValue], ['ggj-role', values.role]]) {
       assert.equal(backFields.find(field => field.key === key)?.value, value || undefined);
       assert.equal(pass.posterGeneric.additionalInfoFields.find(field => field.key === 'poster-info-' + key)?.value, value || undefined);
       const shortened = auxiliaryFields.find(field => field.key === key + '-short');

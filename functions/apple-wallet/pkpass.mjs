@@ -1,4 +1,4 @@
-import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, cardEventIdentityLabel, cardIdentityHeadline, cardProfileFields, commemorativeCardVenue } from '../../shared/general-application.mjs';
+import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, cardEventIdentityLabel, cardIdentityHeadline, cardProfileFields, cardSiteBrand, commemorativeCardVenue } from '../../shared/general-application.mjs';
 import { eventConfig, PUBLIC_AGENDA_URL, PUBLIC_EVENT_DETAILS_URL, PUBLIC_MEETUP_TITLE, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL, appleMapsDirectionsUrl } from '../../src/config/event.mjs';
 import { createHash, createPrivateKey, X509Certificate } from 'node:crypto';
 import { derChildren, oid, signManifest } from './der.mjs';
@@ -190,8 +190,9 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
   const time = { key: 'time', label: english ? 'Time' : '时间', value: event.time };
   const localTime = { ...time, label: time.label + ' · UTC+8' };
   const venue = { key: 'venue', label: english ? 'Venue' : '地点', value: english && confirmedVenue ? eventConfig.venue.addressEnglish : event.venue };
+  const siteValue = meetupCard ? cardSiteBrand(siteIdentity?.site ?? '') : siteIdentity?.site;
   const cardAffiliations = richCard ? [
-    { key: 'ggj-site', label: english ? 'GGJ Site or Community' : 'GGJ 站点或社群', value: siteIdentity?.site },
+    { key: 'ggj-site', label: english ? 'GGJ Site or Community' : 'GGJ 站点或社群', value: siteValue },
     { key: 'ggj-role', label: english ? 'GGJ Involvement' : 'GGJ 参与经历', value: siteIdentity?.role },
     { key: 'organization', label: english ? 'School or Organization' : '学校／机构', value: profile?.organization },
   ].filter(field => field.value) : [];
@@ -199,7 +200,8 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
   const affiliations = cardAffiliations.map(field => {
     const characters = [...field.value];
     return { ...field, key: field.key + '-short', row: 1,
-      value: characters.length > maxAffiliationLength ? characters.slice(0, maxAffiliationLength - 1).join('') + '…' : field.value };
+      value: characters.length > maxAffiliationLength && !(field.key === 'ggj-site' && field.value === 'GGJ ARTDICO')
+        ? characters.slice(0, maxAffiliationLength - 1).join('') + '…' : field.value };
   });
   const faceIdentity = walletIdentity ? { key: 'identity', value: cardEventIdentityLabel(walletIdentity.label, english ? 'en' : 'zh-CN') } : null;
   const identityField = faceIdentity ? { ...faceIdentity, label: english ? 'Role at This Event' : meetupCard ? '本次活动身份' : richCard ? '卡面身份' : '入场身份' } : null;
@@ -230,8 +232,9 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
     { key: 'notice', label: '说明', value: richCard ? '本卡用于纪念收藏。现场签到请使用活动行原电子票。' : '此凭证仅表示参会名额。讲者、展位及住宿另行确认；请以在线核对结果为准。' }];
   const headline = meetupCard ? cardIdentityHeadline(walletIdentity.label, siteIdentity, attendee.cardLocale) : null;
   const posterGeneric = headline ? {
-    primaryFields: [{ key: 'poster-identity', value: headline.identity, ...(headline.label ? { label: headline.label } : {}) },
-    { ...faceName, key: 'poster-name' }],
+    // Wallet styles field labels separately. Keep the site, role and name in native value fields.
+    primaryFields: [...(headline.site ? [{ key: 'poster-site', value: headline.site }] : []),
+      { key: 'poster-identity', value: headline.identity }, { ...faceName, key: 'poster-name' }],
     footerFields: [{
       key: 'poster-event-summary', label: english ? 'Event Time and Venue · UTC+8' : '活动时间与地点 · UTC+8',
       value: [event.date, event.time, confirmedVenue ? shortVenue : cardPlace.value].join(' · '),
@@ -255,7 +258,7 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
     eventTicket: {
       ...(richCard ? {
         ...(separateVenue ? { headerFields: [cardPlace] } : {}),
-        secondaryFields: headline ? [{ ...faceIdentity, value: headline.identity, ...(headline.label ? { label: headline.label } : {}) }, faceName]
+        secondaryFields: headline ? [{ ...faceIdentity, value: headline.identity }, faceName]
           : [person, identityField],
         auxiliaryFields: [date, meetupCard ? localTime : time, ...activities, ...affiliations,
           ...(separateVenue ? [] : [{ ...cardPlace, row: 1 }])],

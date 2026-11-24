@@ -89,7 +89,7 @@ function render(snapshot) {
 
 function showUnavailable(current) {
   const note = find('agenda-note');
-  note.textContent = current ? '暂时无法取得最新安排，以下为上一次公布的版本。' : '暂时无法取得最新安排，以下为暂定日程。';
+  note.textContent = current ? '暂时无法取得最新安排，以下为上一次公布的版本。' : '暂时无法取得更新，以下为本页附带的日程。';
   note.hidden = false;
   if (!current) find('games-note').textContent = '暂时无法读取参展作品。';
 }

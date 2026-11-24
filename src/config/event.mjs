@@ -67,23 +67,64 @@ export const zones = [
   { id: 'C', name: '外围展位区', description: '试玩 / 展示 / 反馈', summary: '全天开放（按活动时段）；15:30–16:30 保留必要值班，16:30–17:00 学生作品体验与反馈。' },
 ];
 
-export const agenda = [
-  { id: 'arrival', start: '09:30', end: '10:00', time: '09:30–10:00', A: '签到入场', B: '自由交流', C: '展位开放', tentative: true },
-  { id: 'opening', start: '10:00', end: '10:15', time: '10:00–10:15', A: '开场介绍', B: '—', C: '展位体验', tentative: true },
-  { id: 'ggj-talk', start: '10:15', end: '11:00', time: '10:15–11:00', A: 'GGJ 主题分享', B: '—', C: '展位体验', tentative: true },
-  { id: 'morning-break', start: '11:00', end: '11:15', time: '11:00–11:15', A: '茶歇交流', B: '咖啡交流', C: '展位体验', tentative: true },
-  { id: 'speaker-one', start: '11:15', end: '12:00', time: '11:15–12:00', A: '讲座分享（一）· 讲者待定', B: 'GGJ 站点经验圆桌会议', C: '展位体验', tentative: true },
-  { id: 'recognition', start: '12:00', end: '12:30', time: '12:00–12:30', A: 'GGJ 服务表彰及合影', B: '暂停研讨', C: '展位体验', tentative: true },
-  { id: 'lunch', start: '12:30', end: '13:30', time: '12:30–13:30', A: '午餐休息', B: '自由交流', C: '展位体验', tentative: true },
-  { id: 'speaker-two', start: '13:30', end: '14:15', time: '13:30–14:15', A: '讲座分享（二）· 讲者待定', B: '专题研讨会 · 嘉宾待定', C: '展位体验', tentative: true },
-  { id: 'afternoon-break', start: '14:15', end: '14:30', time: '14:15–14:30', A: '茶歇交流', B: '咖啡交流', C: '展位体验', tentative: true },
-  { id: 'speaker-three', start: '14:30', end: '15:15', time: '14:30–15:15', A: '讲座分享（三）· 讲者待定', B: 'GGJ 新站点筹备咨询（上半场）', C: '展位体验', tentative: true },
-  { id: 'transition', start: '15:15', end: '15:30', time: '15:15–15:30', A: '茶歇与转场', B: '新站点筹备咨询（下半场）', C: '展位体验', tentative: true },
-  { id: 'student-showcase', start: '15:30', end: '16:30', time: '15:30–16:30', A: 'ARTDiCO HOST 学员作品分享', B: '自由交流', C: '保留必要值班', tentative: true },
-  { id: 'student-feedback', start: '16:30', end: '17:00', time: '16:30–17:00', A: '嘉宾移步展区', B: '嘉宾及学员交流', C: '学生作品体验与反馈', tentative: true },
-  { id: 'ecosystem', start: '17:00', end: '17:45', time: '17:00–17:45', A: 'GGJ 组织者及生态合作交流', B: '合作洽谈', C: '展位交流', tentative: true },
-  { id: 'closing', start: '17:45', end: '18:00', time: '17:45–18:00', A: '闭幕总结及合影', B: '嘉宾集合', C: '展位结束', tentative: true },
-];
+const scheduleByZone = {
+  A: [
+    ['arrival', '09:30', '10:00', '签到入场'],
+    ['opening', '10:00', '10:15', '开场介绍'],
+    ['ggj-talk', '10:15', '11:00', '主题演讲：At the Forefront of the Future: How Jammers Are Leading Innovation', 'talk'],
+    ['morning-break', '11:00', '11:15', '茶歇'],
+    ['speaker-one', '11:15', '12:00', '10 年 GGJ 发展在中国，与中国独立游戏行业的联动与萌芽', 'talk'],
+    ['recognition', '12:00', '12:30', 'GGJ 表彰大会与合影'],
+    ['lunch', '12:30', '13:30', '午餐休息'],
+    ['speaker-two', '13:30', '14:30', 'AI × Houdini：从自然语言到 Unreal Engine 程序化构建', 'talk'],
+    ['university-teesside', '14:30', '14:50', '提赛德大学宣讲', 'talk'],
+    ['university-bournemouth', '14:50', '15:10', '伯恩茅斯大学宣讲', 'talk'],
+    ['student-showcase', '15:10', '17:00', 'ARTDiCO 学生展示', 'showcase'],
+    ['closing', '17:00', '17:10', '闭幕合影'],
+    ['free-visit', '17:10', '18:00', '自由交流、自由参观及离场（无正式议程）'],
+  ],
+  B: [
+    ['arrival', '09:30', '10:00', '签到入场、自由交流'],
+    ['lunch', '12:30', '13:30', '午餐休息'],
+    ['speaker-two', '13:30', '14:00', '亚洲 Games for Change 与新一代创作者'],
+    ['southeast-asia', '14:00', '14:30', '东南亚游戏生态、新平台与合作'],
+    ['speaker-three', '14:30', '15:00', 'GGJ 站点咨询（北方站）'],
+    ['transition', '15:00', '15:30', 'GGJ 站点咨询（南方站）'],
+    ['speaker-one', '15:40', '16:40', '圆桌会议', 'roundtable'],
+    ['free-discussion', '17:05', '17:10', '自由讨论'],
+    ['student-showcase', '17:10', '17:55', '自由交流'],
+  ],
+  C: [
+    ['arrival', '09:30', '10:00', '展位开放'],
+    ['opening', '10:00', '10:15', '展位体验'],
+    ['ggj-talk', '10:15', '11:00', '展位体验'],
+    ['morning-break', '11:00', '11:15', '展位体验'],
+    ['speaker-one', '11:15', '12:00', '展位体验'],
+    ['recognition', '12:00', '12:30', '展位体验'],
+    ['lunch', '12:30', '13:30', '展位体验'],
+    ['speaker-two', '13:30', '14:15', '展位体验'],
+    ['afternoon-break', '14:15', '14:30', '展位体验'],
+    ['speaker-three', '14:30', '15:15', '展位体验'],
+    ['transition', '15:15', '15:30', '展位体验'],
+    ['student-showcase', '15:30', '16:30', '保留必要值班'],
+    ['student-feedback', '16:30', '17:00', '学生作品体验与反馈'],
+    ['ecosystem', '17:00', '17:45', '展位交流'],
+    ['closing', '17:45', '18:00', '展位结束'],
+  ],
+};
+
+/** @typedef {{id:string,zone:'A'|'B'|'C',start:string,end:string,title:string,format:'talk'|'roundtable'|'showcase'|'other'}} AgendaSlot */
+/** @returns {AgendaSlot[]} */
+function zoneSessions(zone /** @type {keyof typeof scheduleByZone} */) {
+  return scheduleByZone[zone].map(([id, start, end, title, format]) => ({
+    id: `session-${id}-${zone.toLowerCase()}`, zone, start, end, title,
+    format: format === 'talk' || format === 'roundtable' || format === 'showcase' ? format : 'other',
+  }));
+}
+
+export const approvedMeetupAgenda = [...zoneSessions('A'), ...zoneSessions('B')];
+export const agenda = [...approvedMeetupAgenda, ...zoneSessions('C')]
+  .sort((left, right) => left.start.localeCompare(right.start) || left.zone.localeCompare(right.zone));
 
 export const highlights = [
   { title: '交换经验', description: 'GGJ 主题分享、组织者圆桌与现场站点审核。' },

@@ -20,16 +20,16 @@ const period = (start: string) => start < '12:00' ? 'morning' : 'afternoon';
     <p class="ah-agenda-caption ah-program-notice" data-public-content-status role="status"></p>
     <div class="ah-agenda-main">
       {zones.map(zone => {
-        const rows = agenda.filter(item => item[zone.id as 'A' | 'B' | 'C'] !== '—');
+        const rows = agenda.filter(item => item.zone === zone.id);
         return <section class="ah-agenda-panel" id={`agenda-${zone.id}`} data-agenda-panel={zone.id} aria-labelledby={`program-heading-${zone.id}`} tabindex="0">
           <h3 class="ah-panel-heading" id={`program-heading-${zone.id}`}>{zone.id} 区 · {zone.name}</h3>
           {zone.id === 'C' && <p class="ah-agenda-caption ah-program-zone-note">展位与作品以已公布安排为准。</p>}
           <div class="ah-agenda-list">
             {rows.map((item, index) => <>
               {(index === 0 || period(item.start) !== period(rows[index - 1].start)) && <h4 class="ah-program-divider" data-program-divider={period(item.start)}>{period(item.start) === 'morning' ? '上午' : '午后'}<span aria-hidden="true">{period(item.start) === 'morning' ? 'MORNING' : 'AFTERNOON'}</span></h4>}
-              <article id={`program-session-${item.id}-${zone.id.toLowerCase()}`} tabindex="-1" class:list={['ah-agenda-row', {'ah-featured': item.id.startsWith('student-')}]} data-agenda-start={item.start}>
-                <time datetime={`${eventConfig.date.value}T${item.start}:00+08:00`}>{item.time}</time>
-                <div class="ah-session-detail"><span class="ah-session-category">{zone.id} 区</span><strong>{item[zone.id as 'A' | 'B' | 'C']}</strong>{item.start === '14:30' && zone.id === 'B' && <small class="ah-session-meta">正式站点资格以 GGJ 流程为准</small>}</div>
+              <article id={`program-${item.id}`} tabindex="-1" class:list={['ah-agenda-row', {'ah-featured': item.id.startsWith('session-student-')}]} data-agenda-start={item.start}>
+                <time datetime={`${eventConfig.date.value}T${item.start}:00+08:00`}>{item.start}–{item.end}</time>
+                <div class="ah-session-detail"><span class="ah-session-category">{zone.id} 区</span><strong>{item.title}</strong>{item.start === '14:30' && zone.id === 'B' && <small class="ah-session-meta">正式站点资格以 GGJ 流程为准</small>}</div>
               </article>
             </>)}
           </div>

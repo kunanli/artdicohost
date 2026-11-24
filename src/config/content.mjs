@@ -34,24 +34,8 @@ export function createInitialContent() {
       venueStatus: eventConfig.venue.confirmed ? 'confirmed' : 'tentative',
       presentation: createInitialPresentation(),
     },
-    sessions: agenda.flatMap((slot) => ['A', 'B', 'C'].flatMap((zone) => {
-      const title = slot[/** @type {'A'|'B'|'C'} */ (zone)];
-      return title === '—' ? [] : [{
-        id: `session-${slot.id}-${zone.toLowerCase()}`,
-        start: slot.start,
-        end: slot.end,
-        zone,
-        title,
-        // Only explicitly documented formats; the remaining slots await classification.
-        format: zone === 'A' && ['ggj-talk', 'speaker-one', 'speaker-two', 'speaker-three'].includes(slot.id) ? 'talk'
-          : zone === 'A' && slot.id === 'student-showcase' ? 'showcase'
-          : zone === 'B' && slot.id === 'speaker-one' ? 'roundtable' : 'other',
-        guestId: '',
-        speakerName: '',
-        speakerStatus: 'pending',
-        status: 'scheduled',
-        internalNotes: '',
-      }];
+    sessions: agenda.map(slot => ({
+      ...slot, guestId: '', speakerName: '', speakerStatus: 'pending', status: 'scheduled', internalNotes: '',
     })),
     booths: [],
     guests: [],

@@ -95,7 +95,7 @@ test('draft edits persist across restart and remain private until explicit autho
   const editor = await login(api);
   const initial = await (await request(api, '/api/admin/content', { session: editor })).json();
   assert.equal(initial.draft.revision, 0);
-  assert.equal(initial.draft.content.sessions.length, 43);
+  assert.equal(initial.draft.content.sessions.length, 37);
   assert.equal(initial.published, null);
   const content = initial.draft.content;
   content.event.title = '合成测试活动';
@@ -117,7 +117,8 @@ test('draft edits persist across restart and remain private until explicit autho
   assert.equal(published.revision, 1);
   assert.equal(published.content.event.title, '合成测试活动');
   assert.equal(published.content.sessions[0].speakerName, '');
-  assert.equal(published.content.sessions.length, 42);
+  assert.equal(published.content.sessions.length, content.sessions.length - 1);
+  assert.equal(published.content.sessions.some(item => item.id === content.sessions[1].id), false);
   assert.equal(published.content.booths.length, 1);
   assert.equal(JSON.stringify(published).includes('internalNotes'), false);
   assert.equal(JSON.stringify(published).includes('尚未确认的合成名字'), false);

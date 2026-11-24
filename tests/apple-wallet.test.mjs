@@ -218,9 +218,17 @@ test('commemorative passes sign the full poster and a compatible native strip wi
   const schedule = pass.posterGeneric.additionalInfoFields.slice(5);
   assert.deepEqual(schedule.map(({ label }) => label), ['A 区 · 阶梯展示厅｜上午', 'A 区 · 阶梯展示厅｜下午',
     'B 区 · 咖啡厅', 'C 区 · 外围展位', 'C-10 至 C-15 · 独立游戏试玩']);
-  assert.match(schedule[0].value, /10:15–11:00　主题演讲/u);
-  assert.match(schedule[1].value, /15:40–17:00　ARTDiCO 学生展示/u);
-  assert.match(schedule[2].value, /15:40–16:40　圆桌会议/u);
+  assert.match(schedule[0].value, /10:15–11:00　主题演讲：At the Forefront of the Future: How Jammers Are Leading Innovation/u);
+  assert.match(schedule[0].value, /12:30–13:30　午餐休息$/u);
+  assert.deepEqual(schedule[1].value.split('\n'), [
+    '13:30–14:30　AI × Houdini：从自然语言到 Unreal Engine 程序化构建',
+    '14:30–14:50　提赛德大学宣讲',
+    '14:50–15:10　伯恩茅斯大学宣讲',
+    '15:10–17:00　ARTDiCO 学生展示',
+    '17:00–17:10　闭幕合影',
+    '17:10–18:00　自由交流、自由参观及离场（无正式议程）',
+  ]);
+  assert.match(schedule[2].value, /15:00–15:30　GGJ 站点咨询（南方站）\n15:40–16:40　圆桌会议/u);
   assert.match(schedule[3].value, /09:30–18:00　共 16 个展位/u);
   assert.match(schedule[4].value, /妖殿奇谭.+人是不能飞的/u);
   assert.ok(schedule.every(field => !Object.hasOwn(field, 'attributedValue') && !field.value.includes('https://')));

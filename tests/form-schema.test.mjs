@@ -132,9 +132,6 @@ test('speaker proposals and official site guidance stay separate from attendance
   assert.match(recruitment.sites.description, /负责人、组织团队与场地.*Start a Jam Site/u);
   assert.match(recruitment.sites.notice, /现场可进行 GGJ 站点审核/u);
   assert.deepEqual(eventConfig.guests.people, []);
-  for (const id of ['speaker-one', 'speaker-two', 'speaker-three']) {
-    assert.match(agenda.find((slot) => slot.id === id)?.A ?? '', /讲者待定/u);
-  }
 });
 
 test('deselecting branches discards stale hidden answers and cannot preserve administrator fields', () => {
@@ -231,18 +228,18 @@ test('public event config confirms date, time and venue while independent arrang
   assert.equal(JSON.stringify(eventConfig).includes('20 间'), false);
 });
 
-test('all 15 agenda slots cover three zones contiguously, retaining student showcase and feedback', () => {
-  assert.equal(agenda.length, 15);
+test('approved A and B sessions use their own times, and C retains its original continuous schedule', () => {
   assert.deepEqual(zones.map((zone) => zone.id), ['A', 'B', 'C']);
-  assert.equal(agenda[0].start, '09:30');
-  assert.equal(agenda.at(-1)?.end, '18:00');
-  for (const [index, slot] of agenda.entries()) {
-    assert.equal(slot.tentative, true);
-    assert.ok(slot.A && slot.B && slot.C);
-    assert.equal(slot.time, `${slot.start}–${slot.end}`);
-    if (index > 0) assert.equal(agenda[index - 1].end, slot.start);
-  }
-  assert.equal(agenda.find((slot) => slot.start === '15:30')?.A, 'ARTDiCO HOST 学员作品分享');
-  assert.equal(agenda.find((slot) => slot.start === '16:30')?.C, '学生作品体验与反馈');
-  assert.equal(agenda.find((slot) => slot.start === '12:00')?.B, '暂停研讨');
+  const { A, B, C } = Object.groupBy(agenda, slot => slot.zone);
+  assert.deepEqual([A.length, B.length, C.length], [13, 9, 15]);
+  assert.equal(A.find(slot => slot.title === 'ARTDiCO 学生展示')?.start, '15:10');
+  assert.deepEqual(A.slice(-2).map(({ start, end, title }) => [start, end, title]), [
+    ['17:00', '17:10', '闭幕合影'], ['17:10', '18:00', '自由交流、自由参观及离场（无正式议程）'],
+  ]);
+  assert.equal(B.find(slot => slot.start === '15:00')?.title, 'GGJ 站点咨询（南方站）');
+  assert.equal(B.find(slot => slot.title === '圆桌会议')?.start, '15:40');
+  assert.equal(C.find(slot => slot.start === '16:30')?.title, '学生作品体验与反馈');
+  assert.equal(C[0].start, '09:30');
+  assert.equal(C.at(-1).end, '18:00');
+  assert.ok(C.slice(1).every((slot, index) => C[index].end === slot.start));
 });

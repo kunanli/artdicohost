@@ -143,8 +143,12 @@ test('an issued card displays its application site and discipline until staff re
     return JSON.parse(passFiles(issued.data).get('pass.json'));
   };
   const firstPass = await readPass();
-  assert.deepEqual(firstPass.posterGeneric.primaryFields[0],
-    { key: 'poster-identity', label: 'GGJ ARTDICO', value: 'Site Organizer · Programming' });
+  assert.deepEqual(firstPass.posterGeneric.primaryFields.slice(0, 2), [
+    { key: 'poster-site', value: 'GGJ ARTDICO' },
+    { key: 'poster-identity', value: 'Site Organizer · Programming' },
+  ]);
+  assert.equal(firstPass.eventTicket.auxiliaryFields.find(field => field.key === 'ggj-site-short').value, 'GGJ ARTDICO');
+  assert.equal(firstPass.posterGeneric.additionalInfoFields.find(field => field.key === 'poster-info-ggj-site').value, 'GGJ ARTDICO');
   const firstCard = await readCard();
   assert.equal(firstCard.cardLocale, 'en');
   assert.deepEqual(firstCard.cardCommunity, initial.cardCommunity);
@@ -158,8 +162,10 @@ test('an issued card displays its application site and discipline until staff re
   assert.equal(update.status, 200);
   const pass = await readPass();
   assert.equal(pass.serialNumber, firstPass.serialNumber);
-  assert.deepEqual(pass.posterGeneric.primaryFields[0],
-    { key: 'poster-identity', label: 'GGJ 复核站', value: 'Organizer · Art' });
+  assert.deepEqual(pass.posterGeneric.primaryFields.slice(0, 2), [
+    { key: 'poster-site', value: 'GGJ 复核站' },
+    { key: 'poster-identity', value: 'Organizer · Art' },
+  ]);
   assert.deepEqual((await readCard()).cardCommunity, revised);
   assert.equal((await saveCommunity((await update.json()).communityRevision, { site: '', role: '' })).status, 200);
   assert.equal((await readCard()).cardCommunity, undefined);

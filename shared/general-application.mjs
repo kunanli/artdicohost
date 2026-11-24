@@ -75,9 +75,11 @@ export function cardEventIdentityLabel(identity, locale = 'zh-CN') {
   return locale === 'en' ? ENGLISH_CARD_IDENTITIES.get(identity) ?? identity : identity;
 }
 
+export const cardSiteBrand = site => site.replace(/(?<![A-Za-z0-9])(?:GGJ|ARTDICO)(?![A-Za-z0-9])/gi, word => word.toUpperCase());
+
 export function cardIdentityHeadline(identity, community, locale = 'zh-CN') {
   const en = locale === 'en';
-  const siteName = (community?.site ?? '').replace(/(?<![A-Za-z0-9])(?:GGJ|ARTDICO)(?![A-Za-z0-9])/gi, word => word.toUpperCase());
+  const siteName = cardSiteBrand(community?.site ?? '');
   const site = siteName && !/^GGJ(?:$|[^A-Za-z0-9])/u.test(siteName) ? 'GGJ ' + siteName : siteName;
   const organizer = identity === 'GGJ 组织者';
   const terms = cardCommunityRoleTerms(community?.role ?? '');

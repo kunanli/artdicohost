@@ -109,6 +109,7 @@ test('detects moved baselines, unexpected A/B and unrelated draft changes before
   for (const [options, failure] of [
     [{ revision: 129 }, 'PUBLIC_BASELINE_CHANGED'],
     [{ changeDraft: value => { value.event.title = '另一项尚未发布的修改'; } }, 'UNRELATED_PUBLIC_CHANGES'],
+    [{ changeDraft: value => { value.sessions.find(row => row.id === 'session-ggj-talk-a').guestId = ''; } }, 'UNRELATED_PUBLIC_CHANGES'],
     [{ changeDraft: value => { value.sessions.find(row => row.zone === 'A').id = 'session-other-a'; } }, 'UNKNOWN_AB_SESSION'],
   ]) {
     const f = fixture(options);

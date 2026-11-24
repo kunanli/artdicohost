@@ -47,6 +47,8 @@ function outsideAgenda({ sessions, guestAttendance, ...content }) {
   } : {}) };
 }
 
+const speakers = row => [row?.guestId ?? '', row?.speakerName ?? '', row?.speakerStatus ?? 'pending', row?.participants ?? []];
+
 function publicProjection(content, state, baseline) {
   const preview = state.attendancePreview;
   if (preview?.status !== 'ready' || preview.contentRevision !== state.draft.revision
@@ -55,6 +57,10 @@ function publicProjection(content, state, baseline) {
   try { projected = toPublicContent(content, { guestAttendance: preview.guestAttendance }); }
   catch { fail('INVALID_PUBLIC_PROJECTION'); }
   if (!isDeepStrictEqual(outsideAgenda(projected), outsideAgenda(baseline.content))) fail('UNRELATED_PUBLIC_CHANGES');
+  const before = new Map(baseline.content.sessions.map(row => [row.id, row]));
+  if (projected.sessions.some(row => isAB(row) && !isDeepStrictEqual(speakers(row), speakers(before.get(row.id))))) {
+    fail('UNRELATED_PUBLIC_CHANGES');
+  }
   if (!matchesAgenda(projected)) fail('INVALID_APPROVED_AGENDA');
   return projected;
 }

@@ -85,7 +85,7 @@ function renderPublishedContent(content,url) {
       row.tabIndex=-1;
       if (/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(item.id)) row.id = 'program-' + item.id;
       row.dataset.agendaStart = item.start;
-      row.classList.toggle('ah-featured', item.start === '15:30' || item.start === '16:30');
+      row.classList.toggle('ah-featured', item.format === 'showcase' || item.start === '15:30' || item.start === '16:30');
       row.append(element('time', item.start + '–' + item.end));
       const detail = element('div');
       detail.append(element('span', item.zone + ' 区', 'ah-session-category'), element('strong', item.title));

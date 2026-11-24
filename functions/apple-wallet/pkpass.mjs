@@ -1,5 +1,5 @@
 import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, cardEventIdentityLabel, cardIdentityHeadline, cardProfileFields, cardSiteBrand, commemorativeCardVenue } from '../../shared/general-application.mjs';
-import { eventConfig, PUBLIC_AGENDA_URL, PUBLIC_EVENT_DETAILS_URL, PUBLIC_MEETUP_TITLE, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL, appleMapsDirectionsUrl } from '../../src/config/event.mjs';
+import { eventConfig, approvedMeetupAgenda, PUBLIC_AGENDA_URL, PUBLIC_EVENT_DETAILS_URL, PUBLIC_MEETUP_TITLE, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL, appleMapsDirectionsUrl } from '../../src/config/event.mjs';
 import { createHash, createPrivateKey, X509Certificate } from 'node:crypto';
 import { derChildren, oid, signManifest } from './der.mjs';
 
@@ -21,35 +21,15 @@ const MEETUP_PROGRAM_FIELDS = [
   { key: 'carnival-program', label: 'ARTDiCO HOST 学生嘉年华',
     value: '学生作品、独立游戏试玩和产品展示汇聚一堂，观众也可与院校、企业及活动组织者面对面交流，了解招募与预录取机会。' },
 ];
+const zoneASchedule = approvedMeetupAgenda.filter(({ zone }) => zone === 'A');
+const scheduleText = rows => rows.map(({ start, end, title }) => `${start}–${end}　${title}`).join('\n');
 const MEETUP_SCHEDULE_FIELDS = [
-  { key: 'schedule-a-morning', label: 'A 区 · 阶梯展示厅｜上午', value: [
-    '09:30–10:00　签到入场',
-    '10:00–10:15　开场介绍',
-    '10:15–11:00　主题演讲 · At the Forefront of the Future: How Jammers Are Leading Innovation',
-    '11:00–11:15　茶歇',
-    '11:15–12:00　10 年 GGJ 发展在中国，与中国独立游戏行业的联动与萌芽',
-    '12:00–12:30　GGJ 表彰大会与合影',
-    '12:30–13:30　午餐休息',
-  ].join('\n') },
-  { key: 'schedule-a-afternoon', label: 'A 区 · 阶梯展示厅｜下午', value: [
-    '13:30–14:30　AI × Houdini · 从自然语言到 Unreal Engine 程序化构建',
-    '14:30–14:40　提赛德大学宣讲',
-    '14:40–15:25　讲座分享（三）',
-    '15:25–15:35　伯恩茅斯大学宣讲',
-    '15:40–17:00　ARTDiCO 学生展示',
-    '17:55–18:00　闭幕合影',
-  ].join('\n') },
-  { key: 'schedule-b', label: 'B 区 · 咖啡厅', value: [
-    '09:30–10:00　签到入场、自由交流',
-    '12:30–13:30　午餐休息',
-    '13:30–14:00　亚洲 Games for Change 与新一代创作者',
-    '14:00–14:30　东南亚游戏生态、新平台与合作',
-    '14:30–15:00　GGJ 站点咨询（北方站）',
-    '15:00–15:30　GGJ 站点资讯（南方站）',
-    '15:40–16:40　圆桌会议',
-    '17:05–17:10　自由讨论',
-    '17:10–17:55　自由交流',
-  ].join('\n') },
+  { key: 'schedule-a-morning', label: 'A 区 · 阶梯展示厅｜上午',
+    value: scheduleText(zoneASchedule.filter(({ start }) => start < '13:00')) },
+  { key: 'schedule-a-afternoon', label: 'A 区 · 阶梯展示厅｜下午',
+    value: scheduleText(zoneASchedule.filter(({ start }) => start >= '13:00')) },
+  { key: 'schedule-b', label: 'B 区 · 咖啡厅',
+    value: scheduleText(approvedMeetupAgenda.filter(({ zone }) => zone === 'B')) },
   { key: 'schedule-c', label: 'C 区 · 外围展位', value: '09:30–18:00　共 16 个展位，涵盖院校交流、学生作品、GGJ 站点咨询、独立游戏试玩和产品展示。' },
   { key: 'schedule-c-games', label: 'C-10 至 C-15 · 独立游戏试玩', value: '妖殿奇谭、猫仙札、一剑、破坏派对、纳林的星野奇旅、人是不能飞的。' },
 ];

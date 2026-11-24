@@ -37,13 +37,13 @@ const [meetup, host] = PUBLIC_MEETUP_TITLE.split(' x ');
       </section>
       <section id="agenda" aria-labelledby="event-agenda-heading" class="event-section">
         <h2 id="event-agenda-heading">讲座与活动日程</h2>
-        <p class="event-note" data-event-agenda-note>以下为暂定日程。</p>
+        <p class="event-note" data-event-agenda-note hidden></p>
         {zones.map((zone, index) => (
           <details class="event-zone" open={index === 0}>
             <summary>{zone.id} 区 · {zone.name}</summary>
             <ul class="event-list" data-event-zone={zone.id}>
-              {agenda.filter(item => item[zone.id as 'A' | 'B' | 'C'] !== '—').map(item => (
-                <li class="event-session"><time datetime={item.start}>{item.time}</time><p>{item[zone.id as 'A' | 'B' | 'C']}</p></li>
+              {agenda.filter(item => item.zone === zone.id).map(item => (
+                <li class="event-session"><time datetime={item.start}>{item.start}–{item.end}</time><p>{item.title}</p></li>
               ))}
             </ul>
             <p class="event-note event-empty" data-event-empty-zone hidden>此区暂无已公布场次。</p>

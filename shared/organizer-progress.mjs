@@ -167,7 +167,7 @@ export const invitationProgressLabels = Object.freeze({ archived: '已归档', e
 
 /** No contact methods or original answers leave this projection. */
 export function buildOrganizerTasks({ contacts = [], contactRevision = 0, content = {}, contentRevision = 0,
-  intent = null, inactiveRegistrationIds = [], admissionStatuses = [], event, now = Date.now() } = {}) {
+  intent = null, inactiveRegistrationIds = [], admissionStatuses = [], event, now = Date.now(), externalRegistrationOnly = false } = {}) {
   const options = { intent, content, inactiveRegistrationIds, admissionStatuses, event, now };
   const activeContacts = list(contacts).filter(contact => !contact.archivedAt);
   const summary = summarizeContactProgress(activeContacts, options), tasks = [];
@@ -182,16 +182,16 @@ export function buildOrganizerTasks({ contacts = [], contactRevision = 0, conten
     const progress = progressById.get(contact.id);
     if (progress.excluded || progress.inactive) continue;
     if (!progress.consented) add(contact, progress, 'verify_consent', '先核对本人联络许可；未核实前不准备或发送邀请。');
-    if (intent && !progress.conversion) add(contact, progress, 'unconverted', '核对原始来源后，可在人员页预览并代登记。');
+    if (!externalRegistrationOnly && intent && !progress.conversion) add(contact, progress, 'unconverted', '核对原始来源后，可在人员页预览并代登记。');
     if (progress.unknown) add(contact, progress, 'invitation_unknown', '服务商结果尚未确认；先人工核对，勿重试发送。');
-    if (progress.admissionPending) {
+    if (!externalRegistrationOnly && progress.admissionPending) {
       add(contact, progress, 'admission_pending', progress.admissionStatus === 'waitlisted'
         ? '已保存候补登记，名额尚未确认；待筹备团队核对并按已获授权的渠道通知。此时不准备正式入场邀请。'
         : progress.admissionStatus === 'pending_review' ? '申请已保存，待工作人员审核，尚无参会名额；审核意见与名额决定分别核对，此时不准备正式入场邀请。'
         : '后台尚未核对名额状态，请刷新或到关联报名核对；确认前不准备正式邀请。');
       continue;
     }
-    if (progress.consented && !progress.contacted && !progress.unknown) add(contact, progress, 'unsent', progress.prepared ? '邀请已准备，实际发出后再记录渠道。' : progress.stale ? '旧版记录不计为当前版已发出，请核对最新资料。' : '先准备并核对邀请内容；下载不等于发出。');
+    if (!progress.admissionPending && progress.consented && !progress.contacted && !progress.unknown) add(contact, progress, 'unsent', progress.prepared ? '邀请已准备，实际发出后再记录渠道。' : progress.stale ? '旧版记录不计为当前版已发出，请核对最新资料。' : '先准备并核对邀请内容；下载不等于发出。');
     if (progress.response === 'pending' && progress.contacted) add(contact, progress, 'unreplied', progress.providerAccepted && !progress.manuallySent ? '邮件服务商仅接受请求，尚无送达或本人回复证明。' : '已记录人工发出，仍需核对本人实际回复。');
     if (progress.response === 'attending' && progress.missingAssignment) add(contact, progress, 'unassigned', [progress.needsSession ? '场次' : '', progress.needsBooth ? '展位' : '', progress.needsShowcase ? '作品分享或展位' : ''].filter(Boolean).join(' / ') + '仍需关联有效安排；普通参会不需要分配场次。');
     if (progress.followUpAt && progress.followUpAt <= date && progress.response === 'pending') add(contact, progress, 'follow_up', '已到下次跟进日期，核对回复后更新下一步。');
@@ -307,11 +307,12 @@ export function personWorkRecommendation(facts = {}) {
   const unknownSend = own(facts,'historicalDeliveryUnknown')===true || ['unknown', 'reserved', 'issuing'].includes(invitation) || ['unknown', 'reserved'].includes(delivery);
   const unavailable = invalid || own(facts, 'sourceUnavailable') === true || registrationState === 'unavailable' || delivery === 'unavailable';
   const duplicate = own(facts, 'duplicateCandidate') === true;
-  const integration = Boolean(contactId && response === 'attending' && !registrationId && !admission
+  const externalRegistrationOnly = own(facts, 'externalRegistrationOnly') === true;
+  const integration = Boolean(!externalRegistrationOnly && contactId && response === 'attending' && !registrationId && !admission
     && ['unlinked', null].includes(registrationState) && consent !== 'declined');
-  const needsReview = admission === 'pending_review' || Boolean(registrationId && registrationState === 'restricted' && !admission);
+  const needsReview = !externalRegistrationOnly && (admission === 'pending_review' || Boolean(registrationId && registrationState === 'restricted' && !admission));
   const reply = Boolean(contactId && !terminal && response === 'pending' && consent !== 'declined');
-  const declinedPlace = response === 'declined' && admission === 'confirmed';
+  const declinedPlace = !externalRegistrationOnly && response === 'declined' && admission === 'confirmed';
   const notification = admission === 'confirmed' && ['not_sent', 'rejected'].includes(delivery)
     && response !== 'declined' && consent !== 'declined';
   const publication = own(facts, 'publicNeedsUpdate') === true;

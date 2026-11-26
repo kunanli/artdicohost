@@ -413,7 +413,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
         reviewStore ? reviewStore.inactiveRegistrationIds() : [],
       ]);
       if (admissions && !Array.isArray(admissions.people)) throw new Error('Admission state is unavailable.');
-      return { contacts: roster.contacts, contactRevision: roster.revision, intent, content: draft.content, contentRevision: draft.revision,
+      return { contacts: roster.contacts, contactRevision: roster.revision, intent, content: draft.content, contentRevision: draft.revision, externalRegistrationOnly,
         inactiveRegistrationIds: withdrawnIds,
         admissionStatuses: (admissions?.people ?? []).map(({ registrationId, status }) => ({ registrationId, status })) };
     } });

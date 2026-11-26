@@ -185,6 +185,9 @@ test('external mode retires onsite routes and staff registration writes while ke
   }
   assert.equal(f.objects.calls.length, before, 'retired routes do not read or write private storage');
   assert.equal(app.entryService, undefined);
+  const historical = await call('/api/admin/registration/confirmation', { method: 'POST', origin: SITE, body: { receiptToken: old.confirmation.receiptToken } });
+  assert.equal(historical.status, 410);
+  assert.equal((await historical.json()).error.code, 'REGISTRATION_EXTERNAL');
   const idempotencyKey = 'w'.repeat(43);
   const tokenRequest = (key, fields) => call('/api/admin/registration/token', {
     method: 'POST', origin: SITE, body: { eventId: PEOPLE_FIXTURE_EVENT, idempotencyKey: key, ...fields },
@@ -212,6 +215,8 @@ test('external mode retires onsite routes and staff registration writes while ke
   assert.equal(admissions.externalRegistrationOnly, true);
   assert.equal(admissions.summary.confirmedCount, 1);
   assert.equal(admissions.people.length, 2, 'contact reply does not add a registration');
+  const queue = await (await call('/api/admin/tasks', { headers })).json();
+  assert.equal(queue.byKind.unconverted, 0, 'legacy staff conversion is also absent from the work queue');
   assert.deepEqual(f.messages, []);
 });
 

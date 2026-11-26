@@ -242,6 +242,7 @@ export function createConfirmationClient({ apiOrigin, pageOrigin, fetchFn = glob
         headers: { 'Content-Type': 'application/json', Accept: includeCardFormats ? CARD_FORMATS_ACCEPT : mime },
         body: JSON.stringify({ receiptToken }), signal: controller.signal });
       if (!response || response.redirected || response.url && response.url !== API + path) throw new Error();
+      if (response.status === 410 && mime === 'application/json') throw Object.assign(new Error('报名与签到请在活动行办理。'), { known: true, external: true });
       if ([401,403,404,410].includes(response.status)) throw Object.assign(new Error('这个确认链接已失效或不可用，请通过原联系渠道向筹备团队核对。'), { known: true });
       if (response.status !== 200 || response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== mime) throw new Error();
       const declared = response.headers.get('content-length');

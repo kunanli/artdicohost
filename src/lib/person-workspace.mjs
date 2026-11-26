@@ -319,6 +319,6 @@ export function personNextAction(view, roles = [], localPending = false) {
     contactConsent: contact?.profile.contactConsent ?? null, pendingResult: pending, sourceUnavailable,
     publicNeedsUpdate, missingArrangement: Boolean(forms.length && arrangementStep && ['review', 'pending'].includes(arrangementStep.state)),
     canReview: current.permissions.registration && (roles.includes('superadmin') || roles.includes('reviewer')),
-    canIntegrate: !current.externalRegistrationOnly && canManageEventOperations({roles}), canEdit: roles.includes('superadmin') || roles.includes('editor'),
+    externalRegistrationOnly: current.externalRegistrationOnly, canIntegrate: canManageEventOperations({roles}), canEdit: roles.includes('superadmin') || roles.includes('editor'),
     canContact: current.permissions.contact && (roles.includes('superadmin') || roles.includes('outreach'))}).nextAction;
 }

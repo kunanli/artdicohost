@@ -24,6 +24,7 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
         <h1 data-confirmation-heading tabindex="-1">正在打开私人页面…</h1>
         <p class="confirmation-intro" data-confirmation-intro>请稍候。</p>
         <p class="confirmation-error" data-confirmation-error role="alert" hidden></p>
+        <p data-confirmation-external hidden><a href={PUBLIC_REGISTRATION_URL} rel="noreferrer">前往活动行活动页</a> · <a href="/#wallet-card-application">申请电子纪念卡</a></p>
         <div data-confirmation-content hidden>
           <div class="confirmation-person"><strong data-confirmation-name data-i18n-preserve></strong><span data-confirmation-organization></span></div>
           <p class="confirmation-community" data-confirmation-community data-i18n-preserve hidden></p>

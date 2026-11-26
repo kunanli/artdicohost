@@ -99,10 +99,11 @@ if (root) {
     hideSafariGuide();
     delete root.dataset.cardFlow;
   }
-  function invalidate(){generation++;controller?.abort();controller=null;printRegistrationOpen=null;releaseWallet();clearInvitation();clearGroup();clearPrivateView();$('[data-confirmation-content]').hidden=true;state=null;busy=false;delete root.dataset.admission;}
+  function invalidate(){generation++;controller?.abort();controller=null;printRegistrationOpen=null;releaseWallet();clearInvitation();clearGroup();clearPrivateView();$('[data-confirmation-content]').hidden=true;$('[data-confirmation-external]').hidden=true;state=null;busy=false;delete root.dataset.admission;}
   function controls() {
     // Refresh explicitly cancels an older read, render or file preparation.
     $('[data-confirmation-refresh]').disabled=!token||!client.available;
+    $('[data-confirmation-refresh]').hidden=!$('[data-confirmation-external]').hidden;
     for(const button of root.querySelectorAll('[data-confirmation-print],[data-confirmation-copy],[data-confirmation-safari-copy],[data-confirmation-wallet]'))button.disabled=busy||!state;
     walletButton.setAttribute('aria-busy',String(busy&&Boolean(state)));
     const groupRefresh=$('[data-confirmation-group-refresh]'),cooling=Date.now()<groupNextReadAt;
@@ -193,6 +194,15 @@ if (root) {
   }
   function showReadError(error){
     releaseWallet();clearInvitation();clearGroup();clearPrivateView();state=null;delete root.dataset.admission;$('[data-confirmation-content]').hidden=true;
+    if (error.external) {
+      history.replaceState(history.state, '', location.pathname);
+      document.title='活动行报名与签到 · ARTDiCO HOST';
+      $('[data-confirmation-heading]').textContent='活动行报名与签到';
+      $('[data-confirmation-intro]').textContent='请在活动行查询报名，现场出示活动行原电子票。';
+      $('[data-confirmation-error]').hidden=true;
+      $('[data-confirmation-external]').hidden=false;
+      return;
+    }
     document.title='ARTDiCO HOST';$('[data-confirmation-state]').textContent='ARTDiCO HOST';$('[data-confirmation-heading]').textContent='暂时无法打开私人链接';$('[data-confirmation-intro]').textContent='请保留原链接。';
     $('[data-confirmation-error]').textContent=error.message||'请稍后重新读取。';$('[data-confirmation-error]').hidden=false;
   }

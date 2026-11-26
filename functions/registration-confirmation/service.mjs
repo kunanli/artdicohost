@@ -25,6 +25,7 @@ const testCardReference = '测试卡';
 const stateOf = notice => notice?.status === 'reserved' ? 'unknown' : notice?.status;
 const conflict = error => error instanceof CloudContentError && error.code === 'WRITE_CONFLICT' && error.status === 409;
 const ERRORS = { CONFIRMATION_UNAVAILABLE: 503, CONFIRMATION_NOT_FOUND: 404, FORBIDDEN: 403, AUTH_REQUIRED: 401,
+  REGISTRATION_EXTERNAL: 410,
   INVALID_REQUEST: 400, ORIGIN_REJECTED: 403, CSRF_REJECTED: 403, UNSUPPORTED_MEDIA_TYPE: 415,
   BODY_TOO_LARGE: 413, REQUEST_TIMEOUT: 408, REVISION_CONFLICT: 409, METHOD_NOT_ALLOWED: 405, NOT_FOUND: 404 };
 export class ConfirmationError extends Error {
@@ -552,6 +553,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
         card: { format: both ? 'both' : cardFormat, identity: identity.label,
           ready: currentFacts.ready && (jpegRequested || wallet.ready) } };
     }
+    if (externalRegistrationOnly) failure('REGISTRATION_EXTERNAL', 410);
     let currentFacts = await currentEventFacts(), noticeSnapshot = null, savedAliases = null;
     if (value.hasEmail) try { noticeSnapshot = await target().read(); savedAliases = await aliasesFor(loaded); } catch { /* Histories fail closed independently of admission. */ }
     let email;
@@ -568,7 +570,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
           && url.href.length <= 4096 && expires !== null && expires > clock()) groupInvite = { platform: 'wechat', qrImageUrl: url.href, expiresAt: new Date(expires).toISOString() };
       } catch { /* Optional current QR only. */ }
     }
-    const wallet = externalRegistrationOnly ? { ready: false, reason: 'WALLET_DISABLED' } : value.admissionStatus === 'confirmed'
+    const wallet = value.admissionStatus === 'confirmed'
       ? currentFacts.ready ? await walletState() : { ready: false, reason: currentFacts.reason }
       : { ready: false, reason: 'ADMISSION_NOT_CONFIRMED' };
     if (['EVENT_FACTS_MISMATCH', 'EVENT_FACTS_UNAVAILABLE'].includes(wallet.reason)) {

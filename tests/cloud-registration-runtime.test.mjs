@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { readSheet } from 'read-excel-file/node';
 import { hashPassword } from '../functions/content-api/auth.mjs';
 import { createCloudContentRuntime, createCloudApplication } from '../functions/cloud-content/runtime.mjs';
+import { createOssObjectClient } from '../functions/cloud-content/oss-client.mjs';
 import { objectFixture, fakeCredentials, fixedClock } from './cloud-oss-fixture.mjs';
 import { memoryObjects } from './helpers/cloud-memory-objects.mjs';
 import { encodeSigningBundle, walletSigningObjectKey } from '../functions/apple-wallet/bundle.mjs';
@@ -29,9 +30,14 @@ const request = (path, { method = 'GET', headers = {}, body, origin } = {}) => n
 const payload = () => ({ eventId: EVENT, fields: { name: '合成报名人', city: '合成城市', organization: '合成团队', position: '开发者', email: 'private.synthetic@example.invalid',
   categories: ['industry'], participationInterests: ['attend'], background: '合成经历', attendance: 'expected', accommodationChoice: 'not_needed', cooperationInterest: 'none' },
 consent: { accepted: true, version: POLICY.privacy.version } });
-function fixture(env = ENV) {
+function fixture(env = ENV, { historical = true } = {}) {
   const remote = objectFixture();
-  const make = override => createCloudContentRuntime({ env: { ...env, ...override }, fetchFn: remote.fetchFn, now: () => fixedClock().getTime() });
+  const make = override => {
+    const deps = { env: { ...env, ...override }, fetchFn: remote.fetchFn, now: () => fixedClock().getTime() };
+    if (!historical) return createCloudContentRuntime(deps);
+    const objects = createOssObjectClient({ credentials: async () => fakeCredentials, fetchFn: remote.fetchFn, clock: fixedClock });
+    return { ...createCloudApplication({ ...deps, objects }), configured: true, storageVerified: false };
+  };
   return { remote, make, first: make(), second: make() };
 }
 async function login(runtime, username = 'synthetic.owner') {
@@ -105,18 +111,34 @@ test('exact public aliases compose the real durable service while protected plur
   assert.equal(f.remote.calls.some(value => value.key.startsWith('cms/v1/registrations/' + EVENT + '/records/')), true);
 });
 
+test('FC runtime keeps card intake and retires onsite registration even with a legacy policy', async () => {
+  const f = fixture(ENV, { historical: false });
+  assert.equal(f.first.configured, true);
+  const config = await f.first.handle(request('/api/admin/registration/config', { origin: PUBLIC }));
+  const policy = await config.json();
+  assert.equal(policy.speakerApplicationsEnabled, false);
+  assert.equal(policy.walletApplicationsEnabled, true);
+  const token = await f.first.handle(request('/api/admin/registration/token', { method: 'POST', origin: PUBLIC, body: { eventId: EVENT, idempotencyKey: 'g'.repeat(43) } }));
+  assert.equal(token.status, 409);
+  const before = f.remote.calls.length;
+  const checkin = await f.first.handle(request('/api/admin/checkin/' + 'A'.repeat(22), { method: 'POST', origin: API }));
+  assert.equal(checkin.status, 410);
+  assert.equal((await checkin.json()).error.code, 'ENTRY_RETIRED');
+  assert.equal(f.remote.calls.length, before);
+});
+
 test('missing, inconsistent or disabled formal configuration cannot open aliases or leak a configured token key', async () => {
   for (const patch of [{ ARTDICO_REGISTRATION_POLICY_JSON: '{' }, { ARTDICO_REGISTRATION_TOKEN_SECRET: '' }, { ARTDICO_REGISTRATION_CAPACITY: '4' },
     { ARTDICO_REGISTRATION_POLICY_JSON: JSON.stringify({ ...POLICY, eventId: 'another-event' }) },
     { ARTDICO_REGISTRATION_POLICY_JSON: JSON.stringify({ ...POLICY, privacy: { ...POLICY.privacy, processor: '' } }) }, { ARTDICO_REGISTRATION_ENABLED: 'TRUE' }, { ARTDICO_REGISTRATION_WAITLIST_ENABLED: 'TRUE' }]) {
-    const f = fixture({ ...ENV, ...patch });
+    const f = fixture({ ...ENV, ...patch }, { historical: false });
     assert.equal(f.first.configured, true); assert.equal(f.first.registrationEnabled, false);
     const config = await f.first.handle(request('/api/admin/registration/config', { origin: PUBLIC }));
     assert.deepEqual(await config.json(), { enabled: false, reason: 'unavailable' });
     assert.equal((await f.first.handle(request('/api/admin/registration/token', { method: 'POST', origin: PUBLIC, body: { eventId: EVENT, idempotencyKey: randomBytes(32).toString('base64url') } }))).status, 503);
     assert.equal(f.remote.calls.length, 0);
   }
-  const disabled = fixture({ ...ENV, ARTDICO_REGISTRATION_ENABLED: 'false', ARTDICO_REGISTRATION_POLICY_JSON: JSON.stringify({ ...POLICY, enabled: false }) });
+  const disabled = fixture({ ...ENV, ARTDICO_REGISTRATION_ENABLED: 'false', ARTDICO_REGISTRATION_POLICY_JSON: JSON.stringify({ ...POLICY, enabled: false }) }, { historical: false });
   assert.equal(disabled.first.registrationEnabled, false);
   const closedNotice = await (await disabled.first.handle(request('/api/admin/registration/config', { origin: PUBLIC }))).json();
   assert.equal(closedNotice.enabled, false); assert.equal(closedNotice.reason, 'closed');

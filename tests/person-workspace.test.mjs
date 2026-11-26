@@ -228,7 +228,7 @@ test('public profile is attributed by exact contact ID and saved guest ID, indep
   assert.deepEqual(body.publicProfile.profiles[0].publicRoles, ['speaker', 'organizer']);
 });
 
-test('stable guest linkage includes existing sessions without inventing roles or matching speaker names', async () => {
+test('stable guest linkage includes recorded program roles without overwriting internal roles or matching speaker names', async () => {
   const f = fixture();
   f.data.content.content.sessions[0].guestId = 'synthetic-guest';
   f.data.content.content.sessions.push({ id: 'guest-only-session', title: '明确嘉宾关联', start: '11:00', end: '12:00', zone: 'A', status: 'draft', guestId: 'synthetic-guest' },
@@ -236,6 +236,7 @@ test('stable guest linkage includes existing sessions without inventing roles or
   const { response, body } = await f.read(); assert.equal(response.status, 200);
   assert.deepEqual(body.arrangements.sessions.map(item => item.id), ['synthetic-session', 'removed-session', 'guest-only-session']);
   assert.deepEqual(body.arrangements.sessions[0].roles, ['speaker']); assert.deepEqual(body.arrangements.sessions[2].roles, []);
+  assert.deepEqual(body.arrangements.sessions[2].programRoles, ['speaker']);
   assert.deepEqual(body.contact.operations.sessionIds, ['synthetic-session', 'removed-session'], 'read aggregate does not backfill saved assignments');
 });
 

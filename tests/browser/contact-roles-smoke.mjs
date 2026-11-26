@@ -7,11 +7,12 @@ import assert from 'node:assert/strict';
 import {readSheet} from 'read-excel-file/node';
 import {createXlsxWorkbook,XLSX_MIME} from '../../shared/xlsx-workbook.mjs';
 const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright-core');
-const project=fileURLToPath(new URL('../../',import.meta.url)),dist=resolve(project,'dist'),errors=[],reports=[];
+const project=fileURLToPath(new URL('../../',import.meta.url)),dist=resolve(process.env.ARTDICO_DIST_DIRECTORY||resolve(project,'dist')),errors=[],reports=[];
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const staff={id:'synthetic-owner',label:'合成工作人员',roles:['editor','outreach','superadmin']},csrf='s'.repeat(43);
 const profile={name:'合成参与者',displayName:'合成参与者',city:'合成城市',organization:'合成机构',position:'合成职务',email:'synthetic@example.invalid',wechat:'synthetic-wechat',phone:'',website:'',caseLinks:'',background:'',needs:'',siteName:'',siteRole:'',siteYears:'',categories:['developer'],interests:['talk'],topics:'',submittedAt:'',contactConsent:'consented'};
-const make=()=>({id:'synthetic-person',profile:structuredClone(profile),source:{key:'manual',rowId:'synthetic-source',digest:'a'.repeat(64)},operations:{owner:'合成同事',priority:'normal',followUpAt:'',notes:'',responseStatus:'pending',participationForms:[],sessionIds:[],boothIds:[],sessionRoles:[]},invitation:{generatedAt:null,sentAt:null,settings:null}});
+const timestamp='2026-11-26T01:00:00.000Z';
+const make=()=>({id:'synthetic-person',profile:structuredClone(profile),source:{key:'manual',rowId:'synthetic-source',digest:'a'.repeat(64),importedAt:timestamp},createdAt:timestamp,updatedAt:timestamp,operations:{owner:'合成同事',priority:'normal',followUpAt:'',notes:'',responseStatus:'pending',participationForms:[],sessionIds:[],boothIds:[],sessionRoles:[]},invitation:{generatedAt:null,sentAt:null,sentGenerationAt:null,channel:null,settings:null}});
 const sessions=[{id:'morning',start:'10:00',end:'11:00',zone:'A',title:'合成主题分享',status:'scheduled'},{id:'afternoon',start:'13:00',end:'14:00',zone:'B',title:'合成研讨会',status:'scheduled'}];
 const json=(value,status=200)=>({status,contentType:'application/json',body:JSON.stringify(value)});
 async function serve(route,path){try{const file=resolve(dist,'.'+(path.endsWith('/')?path+'index.html':path));assert.ok(file.startsWith(dist+'/'));return route.fulfill({status:200,body:await readFile(file),contentType:({html:'text/html',js:'text/javascript',css:'text/css',png:'image/png',webp:'image/webp',woff2:'font/woff2'})[extname(file).slice(1)]||'application/octet-stream'});}catch{return route.fulfill({status:404,body:''});}}
@@ -30,7 +31,7 @@ async function scenario(expired=false){
    assert.equal(body.expectedRevision,revision);assert.deepEqual(body.operations.participationForms,['speaker','organizer']);
    assert.deepEqual(body.operations.sessionRoles,[{sessionId:'morning',roles:['speaker']},{sessionId:'afternoon',roles:['host','organizer']}]);
    assert.equal(body.operations.responseStatus,'pending');assert.equal(Object.hasOwn(body,'profile'),false);assert.equal(Object.hasOwn(body.operations,'publicConsent'),false);
-   person.operations=body.operations;revision++;return route.fulfill(json({revision,contact:person}));
+   person.operations=body.operations;revision++;return route.fulfill(json({revision,contact:person,replySaved:true}));
   }
   if(path==='/api/admin/contacts/export.xlsx'){
    assert.deepEqual(body,{expectedRevision:revision,includeContact:false,includeAnswers:false});
@@ -43,14 +44,16 @@ async function scenario(expired=false){
  try{
   await page.goto('https://api.artdico.host/admin/contacts/',{waitUntil:'networkidle'});
   if(expired){assert.equal(await page.locator('[data-contacts-workspace]').isHidden(),true);assert.equal(await page.locator('[data-contacts-account]').isHidden(),true);assert.equal(await page.locator('[data-contacts-rows]').textContent(),'');assert.equal(await page.locator('[data-contacts-metrics]').textContent(),'');assert.equal(await page.locator('[data-contacts-export-panel]').isHidden(),true);reports.push('late ledger401 does not reopen old private workspace');return;}
+  await page.locator('[data-contacts-legacy-tools]>summary').click();
   await page.locator('[data-contacts-rows] button').filter({hasText:'详情与安排'}).click();
   const form=page.locator('[data-contact-form]');await form.locator('[name=participationForms][value=speaker]').check();await form.locator('[name=participationForms][value=organizer]').check();
   await form.locator('details').first().locator('summary').click();
   for(const id of ['morning','afternoon'])await form.locator('[name=sessionIds][value='+id+']').check();
   await form.locator('[data-session-roles=morning] [value=speaker]').check();await form.locator('[data-session-roles=afternoon] [value=organizer]').check();await form.locator('[data-session-roles=afternoon] [value=host]').check();
   await form.locator('[name=notes]').fill('合成安排备注');await form.locator('[data-contact-save]').click();
-  await page.locator('[data-contacts-status]').filter({hasText:'职责、跟进与安排已保存'}).waitFor();assert.deepEqual(person.profile,profile);assert.equal(person.invitation.generatedAt,null);
+  await page.locator('[data-contacts-status]').filter({hasText:'回复、职责与组织安排已保存'}).waitFor();assert.deepEqual(person.profile,profile);assert.equal(person.invitation.generatedAt,null);
   assert.match(await page.locator('[data-contacts-rows]').textContent(),/本场：讲者/u);assert.match(await page.locator('[data-contacts-rows]').textContent(),/本场：主持、研讨会组织者/u);
+  await page.locator('[data-contact-close]').first().click();
   await page.locator('[data-contacts-search]').fill('不存在的合成筛选');assert.equal(await page.locator('[data-contacts-rows] tr').count(),0);
   const downloaded=page.waitForEvent('download');await page.locator('[data-contacts-export]').click();const download=await downloaded;
   const evidence=resolve(project,'.local-data/browser-evidence');await mkdir(evidence,{recursive:true});const file=resolve(evidence,'synthetic-contact-full-export.xlsx');await download.saveAs(file);

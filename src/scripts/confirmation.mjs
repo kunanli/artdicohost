@@ -34,13 +34,24 @@ if (root) {
   }
   let walletBadgeReady=Boolean(walletBadge?.complete&&walletBadge.naturalWidth>0);
   function syncWalletBadge(){
-    const showBadge=walletBadgeReady&&!walletButton.hidden&&(Boolean(state?.card)||walletButton.dataset.walletAction==='add');
+    const showBadge=walletBadgeReady&&!walletButton.hidden&&walletButton.dataset.walletAction==='add';
     if(walletBadge)walletBadge.hidden=!showBadge;
     if(walletLabel)walletLabel.hidden=showBadge;
     walletButton.classList.toggle('confirmation-wallet-badge',showBadge);
   }
   walletBadge?.addEventListener('load',()=>{walletBadgeReady=walletBadge.naturalWidth>0;syncWalletBadge();});
   walletBadge?.addEventListener('error',()=>{walletBadgeReady=false;syncWalletBadge();});
+  function localizeWalletBadge() {
+    const suffix = document.documentElement.lang === 'en' ? 'en' : 'cn';
+    const src = '/wallet/add-to-apple-wallet-' + suffix + '.svg';
+    if (walletBadge && walletBadge.getAttribute('src') !== src) {
+      walletBadgeReady = false;
+      walletBadge.src = src;
+      syncWalletBadge();
+    }
+  }
+  document.addEventListener('artdico:language-changed', localizeWalletBadge);
+  localizeWalletBadge();
   const walletGuidance=()=>confirmationWalletGuidance({userAgent:navigator.userAgent,maxTouchPoints:navigator.maxTouchPoints,walletReady:state?.wallet.ready===true,walletReason:state?.wallet.reason,invitationReady:state?.invitation.ready===true});
   function hideSafariGuide(){
     $('[data-confirmation-safari-guide]').hidden=true;$('[data-confirmation-wechat-step]').hidden=true;
@@ -88,10 +99,11 @@ if (root) {
     hideSafariGuide();
     delete root.dataset.cardFlow;
   }
-  function invalidate(){generation++;controller?.abort();controller=null;printRegistrationOpen=null;releaseWallet();clearInvitation();clearGroup();clearPrivateView();$('[data-confirmation-content]').hidden=true;state=null;busy=false;delete root.dataset.admission;}
+  function invalidate(){generation++;controller?.abort();controller=null;printRegistrationOpen=null;releaseWallet();clearInvitation();clearGroup();clearPrivateView();$('[data-confirmation-content]').hidden=true;$('[data-confirmation-external]').hidden=true;state=null;busy=false;delete root.dataset.admission;}
   function controls() {
     // Refresh explicitly cancels an older read, render or file preparation.
     $('[data-confirmation-refresh]').disabled=!token||!client.available;
+    $('[data-confirmation-refresh]').hidden=!$('[data-confirmation-external]').hidden;
     for(const button of root.querySelectorAll('[data-confirmation-print],[data-confirmation-copy],[data-confirmation-safari-copy],[data-confirmation-wallet]'))button.disabled=busy||!state;
     walletButton.setAttribute('aria-busy',String(busy&&Boolean(state)));
     const groupRefresh=$('[data-confirmation-group-refresh]'),cooling=Date.now()<groupNextReadAt;
@@ -123,12 +135,14 @@ if (root) {
     for(const[kind,key]of [['applicationReceived','application-received'],['preEventReminder','pre-event-reminder']])$('[data-confirmation-'+key+']').textContent=value.notifications?confirmationNotificationMessage(kind,value.notifications[kind].status):'';
     $('[data-confirmation-print]').textContent=labels[3];$('[data-confirmation-copy]').textContent='复制私人链接';document.title=labels[1]+' · ARTDiCO HOST';
     $('.confirmation-person').hidden=value.admission.status==='withdrawn';
+    $('[data-confirmation-organization]').toggleAttribute('data-i18n-preserve', !value.card);
     $('[data-confirmation-save-heading]').textContent=value.admission.status==='confirmed'?'保存参会信息':'保存查询入口';
     $('[data-confirmation-outcome-contact]').hidden=!['rejected','withdrawn'].includes(value.admission.status);
-    $('[data-confirmation-facts-warning]').hidden=value.eventFacts?.ready!==false;
+    const factsReady = value.eventFacts?.ready ?? (!value.card || value.card.ready || value.wallet.ready);
+    $('[data-confirmation-facts-warning]').hidden=factsReady;
     const guidance=walletGuidance();hideSafariGuide();
     walletButton.hidden=value.admission.status!=='confirmed'||!guidance.showWallet;
-    const walletActionLabel = value.card && guidance.showWallet ? '加入 Apple Wallet' : guidance.label;
+    const walletActionLabel = guidance.label;
     if(walletLabel)walletLabel.textContent=walletActionLabel;else walletButton.textContent=walletActionLabel;
     walletButton.dataset.walletAction=guidance.action;walletButton.setAttribute('aria-label',walletActionLabel);syncWalletBadge();
     if (guidance.action === 'guide') {
@@ -141,7 +155,7 @@ if (root) {
     $('[data-confirmation-device]').textContent=value.admission.status==='confirmed'?guidance.message:'';$('[data-confirmation-device]').hidden=value.admission.status!=='confirmed';
     if (value.card) {
       eventGuide.hidden = false;
-      if (value.eventFacts?.ready !== false) {
+      if (factsReady) {
         guideMap.href = appleMapsDirectionsUrl(value.event.venue);
         guideMapItem.hidden = false;
         guideAddress.textContent = value.event.venue;
@@ -159,9 +173,8 @@ if (root) {
       $('[data-confirmation-save-heading]').textContent = '领取纪念卡';
       const device = $('[data-confirmation-device]');
       const jpegReady = value.card.format !== 'wallet' && value.card.ready;
-      device.textContent = !value.wallet.ready && jpegReady ? 'Apple Wallet 暂不可用，可先保存 JPEG。'
-        : value.wallet.ready && !jpegReady ? 'JPEG 暂不可用，请稍后重新读取。'
-        : value.wallet.ready && !guidance.showWallet ? 'Apple Wallet 适用于 iPhone。' : '';
+      device.textContent = value.wallet.ready ? (guidance.showWallet ? guidance.message : 'Apple Wallet 适用于 iPhone。')
+        : jpegReady ? 'Apple Wallet 暂不可用，可先保存 JPEG。' : '';
       device.hidden = !device.textContent;
       document.title = '电子纪念卡 · ARTDiCO HOST';
     } else if (value.cardRequest) {
@@ -181,6 +194,15 @@ if (root) {
   }
   function showReadError(error){
     releaseWallet();clearInvitation();clearGroup();clearPrivateView();state=null;delete root.dataset.admission;$('[data-confirmation-content]').hidden=true;
+    if (error.external) {
+      history.replaceState(history.state, '', location.pathname);
+      document.title='活动行报名与签到 · ARTDiCO HOST';
+      $('[data-confirmation-heading]').textContent='活动行报名与签到';
+      $('[data-confirmation-intro]').textContent='请在活动行查询报名，现场出示活动行原电子票。';
+      $('[data-confirmation-error]').hidden=true;
+      $('[data-confirmation-external]').hidden=false;
+      return;
+    }
     document.title='ARTDiCO HOST';$('[data-confirmation-state]').textContent='ARTDiCO HOST';$('[data-confirmation-heading]').textContent='暂时无法打开私人链接';$('[data-confirmation-intro]').textContent='请保留原链接。';
     $('[data-confirmation-error]').textContent=error.message||'请稍后重新读取。';$('[data-confirmation-error]').hidden=false;
   }

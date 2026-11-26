@@ -48,7 +48,7 @@ const mime=file=>({html:'text/html; charset=utf-8',js:'text/javascript',mjs:'tex
 const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright-core');
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const pageErrors=[],reports=[];
-async function fixture(width,{javascript=true,reducedMotion='no-preference',deferContent=false}={}){
+async function fixture(width,{javascript=true,reducedMotion='reduce',deferContent=false}={}){
  const context=await browser.newContext({locale:'zh-CN',viewport:{width,height:960},isMobile:width<600,hasTouch:width<600,javaScriptEnabled:javascript,reducedMotion});
  const page=await context.newPage(),calls=[];let raw=rawFixture(),revision=1,content=projected(raw),failure=false;
  let releaseInitialContent;const initialContentGate=new Promise(resolve=>{releaseInitialContent=resolve;});
@@ -143,24 +143,37 @@ async function settledScroll(f){
   requestAnimationFrame(sample);
  }));
 }
-const visibleWork=f=>f.page.locator('[data-showcase-id]:visible');
+const workRail=f=>f.page.locator('[data-public-showcases]');
 async function hiddenWorks(f){
  const section=f.page.locator('#students');
  assert.notEqual(await section.getAttribute('hidden'),null,'zero published works hides the whole section');
  assert.equal(await section.isVisible(),false,'the empty section reserves no visible heading, controls or spacer');
  assert.equal(await f.page.locator('#students-heading').isVisible(),false);
  assert.equal(await f.page.locator('[data-public-showcases-concept],[data-public-showcases-empty]').count(),0,'empty works have no concept or publication-waiting placeholder');
- assert.equal(await f.page.locator('[data-public-works-controls]').isVisible(),false);
- assert.equal(await f.page.locator('[data-public-works-filter-empty]').isVisible(),false);
+ assert.equal(await f.page.locator('[data-work-overview]').isVisible(),false);
  assert.equal(await f.page.locator('[data-showcase-id]').count(),0);
 }
-async function selected(f,id){await f.page.locator('#work-'+id+':visible').waitFor();assert.equal(await visibleWork(f).count(),1,'a manual carousel displays one selected item');}
+async function selected(f,id){
+ await f.page.waitForFunction(expected=>{
+  const card=document.getElementById('work-'+expected),stage=card?.closest('.ah-work-stage');
+  if(card?.getAttribute('aria-current')!=='true'||!stage)return false;
+  const active=card.getBoundingClientRect(),frame=stage.getBoundingClientRect();
+  return Math.abs(active.x+active.width/2-frame.x-frame.width/2)<1;
+ },id);
+ assert.equal(await workRail(f).locator('[data-showcase-id][aria-current="true"]').count(),1,'one work is current while neighbors remain in the rail');
+}
+async function pickWork(f,id){
+ await f.page.locator('[data-work-thumbnail="'+id+'"]').click();
+ await selected(f,id);
+}
+async function workKey(f,key,id){
+ await workRail(f).focus();await f.page.keyboard.press(key);await selected(f,id);
+}
 async function compactWork(f,id,state){
  const card=f.page.locator('#work-'+id);
  await card.scrollIntoViewIfNeeded();
  await f.page.waitForFunction(({id,state})=>document.getElementById('work-'+id)?.dataset.coverState===state,{id,state});
- assert.equal(await f.page.locator('.ah-work-stage').getAttribute('data-work-presentation'),'text','selected missing or failed media has a text layout');
- assert.equal(await f.page.locator('[data-work-peek]').isVisible(),false,'a text work does not reserve a next-image strip');
+ await selected(f,id);
  assert.equal(await card.locator('.ah-showcase-cover-empty').innerText(),'作品图片尚未公布');
  const geometry=await card.evaluate(node=>{
   const rect=element=>{const box=element.getBoundingClientRect();return {x:box.x,y:box.y,width:box.width,height:box.height};};
@@ -178,12 +191,6 @@ async function compactWork(f,id,state){
 }
 async function activeZone(f,zone){assert.equal(await f.page.locator('[data-zone="'+zone+'"]').getAttribute('aria-selected'),'true');assert.equal(await f.page.locator('[data-agenda-panel="'+zone+'"]').isVisible(),true);}
 async function screenshot(f,name){await noOverflow(f);const path=resolve(evidence,name+'-'+f.width+'.png');await f.page.screenshot({path,fullPage:true});return path;}
-async function swipe(f,direction){
- const card=visibleWork(f);await card.scrollIntoViewIfNeeded();const box=await card.boundingBox();assert.ok(box);
- const middle=box.x+box.width/2,y=Math.min(box.y+80,800),offset=Math.min(85,box.width/3);
- const cdp=await f.context.newCDPSession(f.page);
- try{await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:middle-direction*offset,y}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:middle+direction*offset,y}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});}finally{await cdp.detach();}
-}
 await mkdir(evidence,{recursive:true});
 try{
  for(const width of [320,390,1440]){
@@ -201,11 +208,10 @@ try{
    assert.equal(await page.locator('#program-'+IDs.morning+' strong').textContent(),'合成 A 区交流','the activity title remains unchanged');
    assert.equal(await page.locator('#program-'+IDs.morning+' .ah-session-meta').count(),0,'the public activity row has no speaker/host subtitle');
    assert.match(await page.locator('#program-synthetic-cancelled').textContent(),/已取消/u);
-   assert.deepEqual(await page.locator('[data-public-works-filter] option').evaluateAll(options=>options.map(option=>option.value)),['all','student','indie'],'legacy team is readable without a new classification option');
    assert.equal(await page.locator('[data-showcase-id]').count(),3);
-   assert.equal(await page.locator('[data-work-navigation]').isVisible(),true,'multiple actual works expose manual browsing');
+   assert.equal(await page.locator('[data-work-thumbnail]').count(),3,'every work is reachable from the mosaic');
+   assert.equal(await workRail(f).getAttribute('tabindex'),'0','the rail supports keyboard navigation');
    assert.doesNotMatch(await page.locator('#students').textContent(),/资料待确认|参加待确认|展示安排陆续公布|封面、展示形式与安排/u,'public work cards omit editorial pending and missing-arrangement notes');
-   assert.match(await page.locator('[data-public-works-count]').textContent(),/1\s*\/\s*3/u);
    assert.doesNotMatch(await page.locator('#students').textContent(),/我有作品想展示|展位申请|下一个被玩到|展位试玩/u,'art and 3D works are not all labelled playable');
    assert.equal(await page.locator('#booths-heading').textContent(),'参与组织');
    await page.locator('#organization-'+IDs.organization).scrollIntoViewIfNeeded();
@@ -258,21 +264,14 @@ try{
    if(width<600){await guestTouch(alphaToggle);assert.equal(await alphaToggle.getAttribute('aria-pressed'),'true');await guestTouch(alphaToggle);assert.equal(await alphaToggle.getAttribute('aria-pressed'),'false','touch can switch back to text inside the same circle');}
    await page.evaluate(id=>{location.hash='#program-'+id;},IDs.afternoon);await activeZone(f,'B');assert.equal(await page.locator('#program-'+IDs.afternoon).isVisible(),true);
 
-   await page.locator('[data-public-work-next]').click();await selected(f,IDs.indie);
+   await workKey(f,'ArrowRight',IDs.indie);
    const failedCoverGeometry=await compactWork(f,IDs.indie,'unavailable');
-   await page.locator('[data-public-work-next]').click();await selected(f,IDs.legacy);assert.equal(await page.locator('#work-'+IDs.legacy+' .ah-showcase-category').textContent(),'待分类');
+   await workKey(f,'ArrowRight',IDs.legacy);assert.equal(await page.locator('#work-'+IDs.legacy+' .ah-showcase-category').textContent(),'待分类');
    const missingCoverGeometry=await compactWork(f,IDs.legacy,'missing');
-   await page.locator('[data-public-work-prev]').focus();await page.keyboard.press('Enter');await selected(f,IDs.indie);
-   await page.locator('[data-public-works-filter]').selectOption('student');await selected(f,IDs.student);
-   assert.equal(await page.locator('[data-public-work-next]').isDisabled(),true);assert.equal(await page.locator('[data-public-work-prev]').isDisabled(),true,'a single-item subset has no fictitious next item');
-   assert.equal(await page.locator('[data-work-navigation]').isVisible(),false,'single-item filtering hides the redundant counter and arrows');
-   assert.equal(await page.locator('[data-public-works-filter]').isVisible(),true,'category filtering remains available');
-   await page.locator('[data-public-works-filter]').selectOption('all');await selected(f,IDs.student);
-   assert.equal(await page.locator('[data-work-navigation]').isVisible(),true,'restoring all categories restores manual navigation');
-   assert.equal(await page.locator('.ah-work-stage').getAttribute('data-work-presentation'),'image','returning to a valid cover restores image presentation');
-   if(width<600){await swipe(f,-1);await selected(f,IDs.indie);await swipe(f,1);await selected(f,IDs.student);}
-   await page.locator('[data-public-works-filter]').selectOption('student');
+   await workKey(f,'ArrowLeft',IDs.indie);
+   await pickWork(f,IDs.student);
    const preview=page.locator('#work-'+IDs.student+' [data-work-preview]'),lightbox=page.locator('[data-work-lightbox]');
+   assert.equal(await preview.isVisible(),true,'returning to a valid cover restores image preview');
    const sourceCover=await page.locator('#work-'+IDs.student+' img').getAttribute('src');
    await preview.click();await lightbox.waitFor({state:'visible'});assert.equal(await lightbox.locator('img').getAttribute('src'),sourceCover,'preview reuses the same public cover');
    await page.keyboard.press('Escape');await lightbox.waitFor({state:'hidden'});assert.equal(await preview.evaluate(node=>document.activeElement===node),true,'Escape returns focus to the opening cover');
@@ -280,7 +279,7 @@ try{
    await f.refresh(raw=>{raw.showcases.reverse();raw.showcases.find(work=>work.id===IDs.student).title='合成刷新后的学生作品';});
    orderEvidence.worksReordered=await publicArrayOrder(f);
    await lightbox.waitFor({state:'visible'});assert.equal(await lightbox.locator('[data-work-lightbox-close]').evaluate(node=>document.activeElement===node),true,'refresh preserves preview focus');
-   assert.equal(await page.locator('[data-public-works-filter]').inputValue(),'student');await selected(f,IDs.student);
+   await selected(f,IDs.student);
    await lightbox.locator('[data-work-lightbox-close]').click();
 
    await alphaToggle.focus();if(await alphaToggle.getAttribute('aria-pressed')!=='true')await page.keyboard.press('Enter');
@@ -290,10 +289,10 @@ try{
    assert.equal(await page.locator('#guest-'+IDs.guest+' [data-guest-toggle]').evaluate(node=>document.activeElement===node),true,'refresh restores the same guest and keyboard focus after reorder');
    assert.equal(await page.locator('#guest-'+IDs.guest+' .ah-guest-bio').count(),0,'a source biography edit does not reintroduce the removed panel');
    await page.evaluate(id=>{location.hash='#program-'+id;},IDs.afternoon);await activeZone(f,'B');
-   await page.locator('[data-program-period]').selectOption('afternoon');await page.locator('[data-program-period]').focus();
+   await page.locator('[data-zone="B"]').focus();
    const beforeRefreshScroll=(await settledScroll(f)).y;
    await f.refresh(raw=>{raw.sessions.find(session=>session.id===IDs.afternoon).title='合成刷新后的 B 区交流';});
-   await activeZone(f,'B');assert.equal(await page.locator('[data-program-period]').inputValue(),'afternoon');assert.equal(await page.locator('[data-program-period]').evaluate(node=>document.activeElement===node),true);
+   await activeZone(f,'B');assert.equal(await page.locator('[data-zone="B"]').evaluate(node=>document.activeElement===node),true);
    assert.ok(Math.abs(await page.evaluate(()=>scrollY)-beforeRefreshScroll)<=32,'content refresh does not jump the current timetable position');
    await page.locator('[data-zone="B"]').focus();const beforeKeyboardScroll=(await settledScroll(f)).y;
    await page.keyboard.press('ArrowRight');await activeZone(f,'C');assert.equal(await page.locator('[data-zone="C"]').evaluate(node=>document.activeElement===node),true);
@@ -306,13 +305,13 @@ try{
     assert.equal((await page.locator('[data-zone="'+zone+'"]').evaluate(node=>getComputedStyle(node).getPropertyValue('--ah-zone-color'))).trim().toLowerCase(),color,'each area has its documented theme color');
     assert.equal(await page.locator('[data-zone="'+zone+'"] .ah-zone-swatch').evaluate(node=>getComputedStyle(node).backgroundColor),paint,'each area actually paints its source theme color');
    }
-   await page.evaluate(id=>{location.hash='#program-'+id;},IDs.morning);await activeZone(f,'A');assert.equal(await page.locator('[data-program-period]').inputValue(),'all','deep links reveal sessions hidden by a time filter');
+   await page.evaluate(id=>{location.hash='#program-'+id;},IDs.morning);await activeZone(f,'A');
    assert.equal(await page.locator('#program-'+IDs.morning).isVisible(),true);
-   await page.locator('[data-public-works-filter]').selectOption('student');await page.locator('#work-'+IDs.student+' a[href="#program-'+IDs.share+'"]').click();await activeZone(f,'C');assert.equal(await page.locator('#program-'+IDs.share).isVisible(),true);
+   await pickWork(f,IDs.student);await page.locator('#work-'+IDs.student+' a[href="#program-'+IDs.share+'"]').click();await activeZone(f,'C');assert.equal(await page.locator('#program-'+IDs.share).isVisible(),true);
    assert.equal(await page.locator('[data-booth-id],.ah-exhibition-details,a[href^="#booth-"]').count(),0,'front-end booth cards and their navigation are absent');
    await page.locator('#work-'+IDs.student+' a[href="#organization-'+IDs.organization+'"]').click();
    assert.equal(await page.locator('#organization-'+IDs.organization).isVisible(),true,'a work retains its explicit public organization relationship');
-   await page.locator('[data-public-works-filter]').selectOption('all');await page.locator('[data-public-work-prev]').click();await selected(f,IDs.indie);
+   await pickWork(f,IDs.indie);
    const screenshots=[await screenshot(f,'collections')];
 
    // A failed public read preserves the most recently verified cards and selection.
@@ -320,13 +319,12 @@ try{
    await page.locator('#guest-'+IDs.guest+' [data-guest-toggle]').focus();
    await f.refresh(raw=>{raw.guests=raw.guests.filter(guest=>guest.id!==IDs.guest);raw.sessions.forEach(session=>{if(session.guestId===IDs.guest)session.guestId='';});});
    assert.equal(await page.locator('#guest-'+IDs.guest).count(),0);assert.equal(await page.locator('#guests-heading').evaluate(node=>document.activeElement===node),true,'removing the focused guest lands on the guest heading');
-   await page.locator('[data-public-works-filter]').selectOption('student');await page.locator('#work-'+IDs.student+' [data-work-preview]').click();
+   await pickWork(f,IDs.student);await preview.click();
    await f.refresh(raw=>{raw.showcases=raw.showcases.filter(work=>work.id!==IDs.student);});
    assert.equal(await lightbox.isVisible(),false,'withdrawing the previewed work closes the dialog');assert.equal(await page.locator('#students-heading').evaluate(node=>document.activeElement===node),true,'withdrawn work does not strand focus in a removed dialog');
-   assert.equal(await page.locator('#students').isVisible(),true,'an empty selected category keeps the nonempty works section visible');
-   assert.equal(await page.locator('[data-public-works-filter-empty]').isVisible(),true);
-   assert.equal(await page.locator('[data-work-navigation]').isVisible(),false,'an empty filtered subset hides navigation');
-   assert.equal(await page.locator('.ah-work-stage').getAttribute('data-work-presentation'),'empty');
+   assert.equal(await page.locator('#students').isVisible(),true,'other published works keep the section visible');
+   assert.equal(await page.locator('[data-work-thumbnail]').count(),2,'the mosaic loses only the withdrawn work');
+   await selected(f,IDs.legacy);
    await page.locator('#organization-'+IDs.organization+' a.ah-organization-card').focus();
    await f.refresh(raw=>{raw.organizations=raw.organizations.filter(organization=>organization.id!==IDs.organization);raw.showcases.forEach(work=>{delete work.organizationId;});});
    assert.equal(await page.locator('#booths-heading').evaluate(node=>document.activeElement===node),true,'withdrawn organization returns focus to its section heading');
@@ -334,19 +332,12 @@ try{
    assert.equal(await page.locator('[data-showcase-id],[data-guest-id],[data-organization-id],[data-booth-id]').count(),0);await hiddenWorks(f);
    await noOverflow(f);
    await f.refresh(raw=>{raw.showcases=[work('synthetic-only','indie',{participationForms:[],boothId:'',organizationId:''})];});
-   await page.locator('[data-public-works-filter]').selectOption('all');await selected(f,'synthetic-only');assert.equal(await page.locator('[data-public-work-prev]').isDisabled(),true);assert.equal(await page.locator('[data-public-work-next]').isDisabled(),true);
+   await selected(f,'synthetic-only');await workKey(f,'ArrowRight','synthetic-only');
    assert.equal(await page.locator('#students').isVisible(),true,'a later publication reveals the previously empty section');
    const singleCoverGeometry=await compactWork(f,'synthetic-only','missing');
-   assert.equal(await page.locator('[data-work-navigation]').isVisible(),false,'one published work hides previous, next and 1/1');
-   assert.equal(await page.locator('[data-public-works-filter]').isVisible(),true,'one published work still permits category selection');
+   assert.equal(await page.locator('[data-work-thumbnail]').count(),1,'one published work has exactly one mosaic entry');
    assert.equal(await page.locator('#work-synthetic-only .ah-showcase-arrangement').count(),0,'an unallocated work has no arrangement placeholder');
    assert.doesNotMatch(await page.locator('#students').textContent(),/资料待确认|参加待确认|展示安排陆续公布|封面、展示形式与安排/u);
-   await page.locator('[data-public-works-filter]').selectOption('student');
-   assert.equal(await visibleWork(f).count(),0);assert.equal(await page.locator('[data-public-works-filter-empty]').isVisible(),true);
-   assert.equal(await page.locator('#students').isVisible(),true,'a category with no matches does not hide other published works or its filter');
-   assert.equal(await page.locator('[data-work-navigation]').isVisible(),false);
-   await page.locator('[data-public-works-filter]').selectOption('all');await selected(f,'synthetic-only');
-   assert.equal(await page.locator('[data-work-navigation]').isVisible(),false,'restoring a one-item publication does not fabricate a carousel');
    screenshots.push(await screenshot(f,'single-work'));
    await f.refresh(raw=>{raw.showcases[0].responseStatus='declined';});
    assert.match(await page.locator('#work-synthetic-only').textContent(),/已回复不参加/u,'a real declined response remains visible');
@@ -363,30 +354,29 @@ try{
    assert.equal(await page.evaluate(()=>Boolean(document.activeElement?.closest('[hidden],[inert],dialog:not([open])'))),false,'focus is never stranded in the now-hidden works section or closed dialog');
    assert.doesNotMatch(await page.locator('body').textContent(),/SYNTHETIC_P5_PRIVATE|private\.invalid|private@example/u);
    assert.equal(f.calls.some(call=>/\/(?:submit|send|publish|approve|dispatch|token)(?:\/|$)/u.test(call.path)),false);
-   reports.push({width,publicArrayOrder:orderEvidence,publicGuestCardsIndependentOfAttendance:true,guestAttendance,explicitPrivateGuestExcluded:true,referenceCirclePortraitToggle:true,companyJobTitlesRendered:false,organizationNamesAndOptionalLogosOnly:true,manualCarousel:'zero/single/many; filters and legacy retained',emptyWorksSectionHidden:true,publicationRestoresSection:true,emptyCategoryKeepsSection:true,lastWorkRemovalClosesPreviewAndFocusesAgenda:true,compactFallback:{failedCoverGeometry,missingCoverGeometry,singleCoverGeometry},singleNavigationHidden:true,filterRestoresNavigation:true,realDeclineRetained:true,touch:width<600,preview:'same public image; Escape/focus; refresh retained; removal closed',refresh:'stable IDs, photo selection, carousel/filter, time/area and focus',agenda:'initial hash, cross-area links, keyboard and no jump',publicContentReads:f.calls.filter(call=>call.path==='/api/public/content').length,allRequests:f.calls.length,screenshots});
+   reports.push({width,publicArrayOrder:orderEvidence,publicGuestCardsIndependentOfAttendance:true,guestAttendance,explicitPrivateGuestExcluded:true,referenceCirclePortraitToggle:true,companyJobTitlesRendered:false,organizationNamesAndOptionalLogosOnly:true,centeredRailAndMosaic:true,emptyWorksSectionHidden:true,publicationRestoresSection:true,partialWorkWithdrawalKeepsSection:true,lastWorkRemovalClosesPreviewAndFocusesAgenda:true,compactFallback:{failedCoverGeometry,missingCoverGeometry,singleCoverGeometry},singleWorkKeyboardKeepsSelection:true,realDeclineRetained:true,touch:width<600,preview:'same public image; Escape/focus; refresh retained; removal closed',refresh:'stable IDs, photo selection, carousel, agenda area and focus',agenda:'initial hash, cross-area links, keyboard and no jump',publicContentReads:f.calls.filter(call=>call.path==='/api/public/content').length,allRequests:f.calls.length,screenshots});
   }finally{await f.context.close();}
  }
  const reclassified=await fixture(390);
  try{
   const {page}=reclassified;
   await page.goto(SITE+'/',{waitUntil:'networkidle'});await selected(reclassified,IDs.student);
-  await page.locator('[data-public-works-filter]').selectOption('student');
-  await page.locator('#work-'+IDs.student+' [data-work-preview]').click();
+  const preview=page.locator('#work-'+IDs.student+' [data-work-preview]');
+  await preview.click();
   const lightbox=page.locator('[data-work-lightbox]');await lightbox.waitFor({state:'visible'});
   await reclassified.refresh(raw=>{
    raw.showcases.find(work=>work.id===IDs.student).kind='indie';
    raw.showcases.push(work('synthetic-second-student','student'));
   });
-  assert.equal(await page.locator('[data-public-works-filter]').inputValue(),'student');
-  assert.equal(await page.locator('#work-'+IDs.student).isVisible(),false,'reclassification removes the previously viewed work from the current subset');
-  await selected(reclassified,'synthetic-second-student');
-  const previewRetained=await lightbox.isVisible();
-  if(previewRetained)await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#work-'+IDs.student+' .ah-showcase-category').textContent(),'独立游戏');
+  await selected(reclassified,IDs.student);
+  assert.equal(await lightbox.isVisible(),true,'a category correction retains the open preview for the same published work');
+  await page.keyboard.press('Escape');
   assert.equal(await lightbox.isVisible(),false);
-  assert.equal(await page.locator('#students-heading').evaluate(node=>document.activeElement===node),true,'closing a reclassified preview focuses the visible works heading instead of its now-hidden opening card');
+  assert.equal(await preview.evaluate(node=>document.activeElement===node),true,'closing the preview focuses the same work after its category changes');
   assert.equal(await page.evaluate(()=>Boolean(document.activeElement?.closest('[hidden],[inert],dialog:not([open])'))),false,'focus never remains in hidden content or a closed dialog');
   await noOverflow(reclassified);
-  reports.push({width:390,previewReclassifiedOutOfFilter:true,previewRetainedUntilClose:previewRetained,closeFocus:'visible works heading'});
+  reports.push({width:390,reclassificationRetainsSelectedWork:true,previewRetainedUntilClose:true,closeFocus:'same work preview'});
  }finally{await reclassified.context.close();}
  for(const[kind,id]of[['work',IDs.indie],['guest',IDs.guest],['organization',IDs.organization]]){
   const f=await fixture(390,{deferContent:true});
@@ -407,7 +397,7 @@ try{
   }finally{f.releaseInitialContent();await f.context.close();}
  }
  const reduced=await fixture(390,{reducedMotion:'reduce'});
- try{await reduced.page.goto(SITE+'/',{waitUntil:'networkidle'});await selected(reduced,IDs.student);assert.equal(await reduced.page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches),true);await reduced.page.locator('[data-public-work-next]').click();await selected(reduced,IDs.indie);await noOverflow(reduced);reports.push({width:390,reducedMotion:true,coreContentAndManualNavigation:true});}finally{await reduced.context.close();}
+ try{await reduced.page.goto(SITE+'/',{waitUntil:'networkidle'});await selected(reduced,IDs.student);assert.equal(await reduced.page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches),true);await workKey(reduced,'ArrowRight',IDs.indie);await noOverflow(reduced);reports.push({width:390,reducedMotion:true,coreContentAndManualNavigation:true});}finally{await reduced.context.close();}
  const noJs=await fixture(320,{javascript:false});
  try{await noJs.page.goto(SITE+'/',{waitUntil:'networkidle'});for(const id of['guests-heading','booths-heading','agenda-heading'])assert.equal(await noJs.page.locator('#'+id).isVisible(),true,'core section readable without JavaScript: '+id);await hiddenWorks(noJs);assert.equal(await noJs.page.locator('[data-agenda-panel]:visible').count(),3,'the static timetable retains every area without JavaScript');assert.equal(await noJs.page.locator('[data-zone]:visible').count(),0,'inactive JS controls are not presented');assert.equal(await noJs.page.locator('[data-guest-id]').count(),0,'no scripted or invented attendance cards appear');await noOverflow(noJs);reports.push({width:320,javascript:false,emptyWorksSectionHidden:true,otherCoreSectionsAndFullTimetableReadable:true,requests:noJs.calls.length});}finally{await noJs.context.close();}
  assert.deepEqual(pageErrors,[]);

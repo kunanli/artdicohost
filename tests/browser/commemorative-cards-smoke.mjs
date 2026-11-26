@@ -35,6 +35,8 @@ try {
     const phone = '+86 010 0000 0000', organization = '合成院校', communityRole = '站点组织者 · 美术';
     const jammerRole = communityRole + ' · Jammer';
     let publicDetails = null;
+    let publicDetailsGate = null;
+    let unverifiedCardFacts = false;
     let privateReads = 0, staleIdentity = width === 320;
     try {
       await context.route('**/*', async route => {
@@ -48,6 +50,7 @@ try {
               const headers = await request.allHeaders();
               assert.equal(headers.cookie, undefined);
               assert.equal(headers.authorization, undefined);
+              await publicDetailsGate;
               return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': SITE }, json: publicDetails });
             }
             const privateRead = method === 'POST' && ['/api/admin/registration/confirmation', '/api/registration/confirmation'].includes(url.pathname);
@@ -67,6 +70,7 @@ try {
               if (device === 'chrome' && data.card) {
                 data.cardLocale = 'en';
                 data.cardProfile = { organization: 'Synthetic School', phone };
+                if (unverifiedCardFacts) data.eventFacts = { ready: false, reason: 'EVENT_FACTS_MISMATCH', revision: 2 };
               }
               return route.fulfill({ status: 200, headers: Object.fromEntries(response.headers), json: data });
             }
@@ -281,7 +285,7 @@ try {
         }), true, 'the old QR position on the JPEG is clear');
         const walletButton = page.locator('[data-confirmation-wallet]');
         assert.equal(await walletButton.isVisible(), walletAvailable);
-        if (walletAvailable) {
+        if (device === 'safari') {
           await page.locator('[data-confirmation-wallet-badge]').waitFor();
           assert.equal(await page.locator('[data-confirmation-wallet-badge]').getAttribute('src'), '/wallet/add-to-apple-wallet-cn.svg');
           assert.equal(await walletButton.getAttribute('aria-label'), '加入 Apple Wallet');
@@ -361,6 +365,8 @@ try {
           assert.equal(walletPass.featuredActions, undefined);
         } else if (device === 'chrome') {
           assert.equal(await walletButton.getAttribute('data-wallet-action'), 'guide');
+          assert.equal(await walletButton.getAttribute('aria-label'), '查看 Safari 添加指引');
+          assert.equal(await page.locator('[data-confirmation-wallet-badge]').isVisible(), false);
           assert.equal(await page.locator('[data-confirmation-safari-guide]').isVisible(), false);
           await walletButton.click();
           await page.locator('[data-confirmation-safari-guide]').waitFor();
@@ -379,6 +385,17 @@ try {
         assert.deepEqual([...jpeg.subarray(-2)], [0xff, 0xd9]);
         assert.equal(privateReads - readsBefore, device === 'chrome' ? 2 : 1, 'the legacy response is upgraded with one canonical read');
         await writeFile(resolve(output, 'sample-commemorative-card.jpg'), jpeg);
+        if (device === 'chrome') {
+          await page.getByRole('button', { name: 'EN', exact: true }).click();
+          await page.getByRole('heading', { name: 'Digital commemorative card' }).waitFor();
+          assert.equal(await walletButton.getAttribute('aria-label'), 'How to add in Safari');
+          unverifiedCardFacts = true;
+          await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+          await page.getByText('The event details could not be verified. Refresh later to try again.', { exact: true }).waitFor();
+          assert.equal(await page.locator('[data-confirmation-map]').getAttribute('href'), null);
+          assert.equal(await walletButton.isVisible(), false);
+          assert.equal(await downloadButton.isVisible(), false);
+        }
       }
       if (device === 'safari' || width === 1440) {
         const content = (await fixture.app.store.read()).draft.content;
@@ -400,11 +417,42 @@ try {
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
         await page.screenshot({ path: resolve(output, 'event-details-' + width + '.png'), fullPage: true });
         if (width === 1440) {
-          publicDetails = { ...publicDetails, revision: 2, content: toPublicContent({ ...content, event: { ...content.event, status: 'cancelled' } }) };
+          const mapPin = 'https://maps.example.invalid/site#map=17/22.52/113.90';
+          content.event.presentation.mapUrl = mapPin;
+          publicDetails = { ...publicDetails, revision: 2, content: toPublicContent(content) };
+          await page.getByRole('button', { name: 'EN', exact: true }).click();
+          await page.reload();
+          await page.getByRole('heading', { name: 'Talks and schedule' }).waitFor();
+          assert.equal(await page.getByRole('link', { name: 'Open map' }).getAttribute('href'), mapPin);
+          await page.getByRole('button', { name: '中文', exact: true }).click();
+          publicDetails = { ...publicDetails, revision: 3, content: toPublicContent({ ...content, event: { ...content.event, status: 'cancelled' } }) };
           await page.reload();
           await page.getByRole('status').filter({ hasText: '本次活动已取消。' }).waitFor();
           assert.equal(await page.getByRole('link', { name: 'Apple 地图导航' }).isVisible(), false);
           assert.equal(await page.getByRole('link', { name: '活动行活动页' }).isVisible(), false);
+          const session = content.sessions[0];
+          content.sessions.push({ ...session, id: 'synthetic-late-b', title: '合成发布场次', zone: 'B' },
+            { ...session, id: 'synthetic-all-day-c', title: '展位体验', zone: 'C', start: '09:30', end: '18:00' });
+          publicDetails = { ...publicDetails, revision: 4, content: toPublicContent(content) };
+          let releasePublication;
+          publicDetailsGate = new Promise(resolve => { releasePublication = resolve; });
+          try {
+            await page.goto(SITE + '/#program-synthetic-late-b', { waitUntil: 'domcontentloaded' });
+            const tab = page.locator('#tab-C');
+            await tab.click();
+            await tab.focus();
+            await page.keyboard.press('ArrowLeft');
+            await page.keyboard.press('ArrowRight');
+            assert.equal(await page.locator('#agenda-C [data-program-divider]').getAttribute('data-program-divider'), 'all-day');
+            releasePublication();
+            await page.locator('#program-synthetic-late-b').waitFor({ state: 'attached' });
+            assert.equal(await tab.getAttribute('aria-selected'), 'true');
+            assert.equal(await page.evaluate(() => document.activeElement.id), 'tab-C');
+            assert.equal(await page.locator('#agenda-C [data-program-divider]').getAttribute('data-program-divider'), 'all-day');
+          } finally {
+            releasePublication();
+            publicDetailsGate = null;
+          }
         }
       }
       if (width === 320 || width === 1440) {

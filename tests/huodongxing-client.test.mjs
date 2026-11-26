@@ -50,6 +50,32 @@ test('source replacement, malformed server preview and forged candidate values f
   assert.equal(huodongxingPreviewView({...preview(),expectedTicketRevision:'3'}),null);assert.equal(huodongxingPreviewView({...preview(),rows:[{...preview().rows[0],candidates:[{registrationId:'https://bad.invalid',name:'a',organization:'',status:'confirmed'}]}]}),null);
 });
 
+test('a failed replacement preview clears the previous source and requires a fresh successful preview',async()=>{
+  const replacementRow={...row,tid:'replacement-ticket',name:'Synthetic replacement'};
+  const replacementBytes='synthetic replacement workbook';
+  const replacement={...source,rows:[replacementRow],sourceFileBase64:Buffer.from(replacementBytes).toString('base64'),originalSha256:digest(replacementBytes)};
+  let unavailable=true;
+  const f=setup((path,{body})=>{
+    if(!path.endsWith('/preview'))return {...completed(),results:[{...completed().results[0],tid:replacementRow.tid}]};
+    if(JSON.parse(body).originalSha256===source.originalSha256)return preview();
+    if(unavailable)throw Object.assign(Error('Synthetic preview unavailable'),{status:503});
+    return preview({rows:[{...preview().rows[0],tid:replacementRow.tid,name:replacementRow.name}]});
+  });
+  const client=f.make();
+  await client.preview(clone(source));
+  await assert.rejects(client.preview(replacement),/preview unavailable/u);
+  assert.equal(client.currentPreview,null);
+  await assert.rejects(client.commit(selection),/有效预览/u);
+  assert.equal(f.calls.filter(call=>call.path.endsWith('/import')).length,0);
+  unavailable=false;
+  await client.preview(replacement);
+  await assert.rejects(client.commit(selection));
+  await client.commit({...selection,selectedTids:[replacementRow.tid]});
+  const submitted=JSON.parse(f.calls.at(-1).body);
+  assert.equal(submitted.originalSha256,replacement.originalSha256);
+  assert.deepEqual(submitted.rows,replacement.rows);
+});
+
 test('a known absent operation must be explicitly acknowledged before a fresh preview; reserved partial operations keep their original command',async()=>{
   let absent=false;const f=setup((path,options)=>{if(path.endsWith('/preview'))return preview();if(path.includes('/operations/')){if(absent)throw Object.assign(Error('Not found'),{status:404,code:'CONTACT_NOT_FOUND'});return{kind:'huodongxing',operationId:op,status:'partial',finished:false,results:[],registrationIds:[]};}throw Object.assign(Error('stale preview'),{status:409});});
   const client=f.make();await client.preview(clone(source));await assert.rejects(client.commit(selection));await client.lookup();assert.equal(client.canRestart,false);assert.throws(()=>client.resetUnstarted());assert.equal(client.pending,true);absent=true;await assert.rejects(client.lookup());assert.equal(client.canRestart,true);const original=client.resetUnstarted();assert.equal(client.pending,false);assert.equal(original.originalSha256,source.originalSha256);await client.preview(original);assert.equal(f.calls.filter(call=>call.path.endsWith('/import')).length,1);

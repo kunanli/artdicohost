@@ -1,6 +1,5 @@
 ---
-const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
-if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('Unexpected private link API');
+import { PUBLIC_REGISTRATION_URL } from '../../config/event.mjs';
 ---
 <!doctype html>
 <html lang="zh-CN">
@@ -9,13 +8,17 @@ if (apiOrigin && apiOrigin !== 'https://api.artdico.host') throw new Error('Unex
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="referrer" content="no-referrer" />
     <meta name="robots" content="noindex,nofollow,noarchive" />
-    <title>参会信息 · ARTDiCO HOST</title>
-    <style>body{margin:0;background:#f5f7fc;color:#13213d;font:18px/1.7 system-ui,sans-serif}main{max-width:640px;margin:12vh auto;padding:24px}h1{font-size:28px;line-height:1.3}a{color:#3d40ed}button{font:inherit;padding:10px 20px;border:1px solid #c4cbe0;border-radius:8px;background:#fff;color:#13213d}button[hidden]{display:none}</style>
+    <title>活动行报名与签到 · ARTDiCO HOST</title>
+    <style>body{margin:0;background:#f5f7fc;color:#13213d;font:18px/1.7 system-ui,sans-serif}main{max-width:640px;margin:12vh auto;padding:24px}h1{font-size:28px;line-height:1.3}a{color:#3d40ed}</style>
+    <script is:inline>if (location.hash || location.search) history.replaceState(null, '', location.pathname);</script>
   </head>
-  <body data-entry-link-api={apiOrigin}>
-    <main><p>ARTDiCO HOST</p><h1>参会信息</h1><p data-entry-link-status role="status">正在核对私人链接…</p><button data-entry-link-retry hidden>重新读取</button><p><a href="/">返回活动首页</a></p><noscript>请启用 JavaScript 以打开私人参会页。</noscript></main>
+  <body>
+    <main>
+      <p>ARTDiCO HOST</p>
+      <h1>活动行报名与签到</h1>
+      <p>请在活动行报名，现场出示活动行原电子票，工作人员会在活动行核验签到。</p>
+      <p><a href={PUBLIC_REGISTRATION_URL} rel="noreferrer">前往活动行活动页</a></p>
+      <p><a href="/#wallet-card-application">申请电子纪念卡</a> · <a href="/">返回活动首页</a></p>
+    </main>
   </body>
 </html>
-<script>
-  import '../../scripts/entry-link.mjs';
-</script>

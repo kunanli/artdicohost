@@ -29,7 +29,7 @@ export async function peopleRuntimeFixture({capacity=3,mail=false,mailResult='ac
     ARTDICO_REGISTRATION_TOKEN_SECRET:'synthetic-people-registration-token-secret-123456',ARTDICO_CONFIRMATION_EMAIL_ENABLED:mail?'true':'false',
     EMAILJS_SERVICE_ID:'synthetic-service',EMAILJS_CONFIRMATION_TEMPLATE_ID:'synthetic-confirmation-template',EMAILJS_PUBLIC_KEY:'synthetic-public-key',
     EMAILJS_PRIVATE_KEY:'synthetic-private-key-never-project',EMAIL_FROM_ADDRESS:'synthetic@artdico.co',EMAIL_FROM_NAME:'合成筹备团队'};
-  const make=({objects:runtimeObjects=objects,policyOverride}={})=>createCloudApplication({objects:runtimeObjects,
+  const make=({objects:runtimeObjects=objects,policyOverride,externalRegistrationOnly=false}={})=>createCloudApplication({objects:runtimeObjects,externalRegistrationOnly,
     env:policyOverride?{...env,ARTDICO_REGISTRATION_POLICY_JSON:JSON.stringify({...policy,...policyOverride})}:env,now:clock,fetchFn:async(url,options)=>{
     assert.equal(url,'https://api.emailjs.com/api/v1.0/email/send','all fixture mail must remain synthetic');const message=JSON.parse(options.body);messages.push(message);
     const outcome=typeof mailResult==='function'?await mailResult(message):mailResult;

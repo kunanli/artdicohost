@@ -1,4 +1,6 @@
 /** Browser projection: retain only the fields this private workspace displays. */
+import { isActiveSession, isActiveBooth } from '../../shared/organizer-progress.mjs';
+
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const REGISTRATION = /^[A-Za-z0-9_-]{43}$/u;
 const OPERATION = /^[A-Za-z0-9_-]{16,100}$/u;
@@ -27,7 +29,8 @@ export function parseSourceToken(value) { if (typeof value !== 'string') return 
 export function parseVolunteerSelection(hash) { if (typeof hash !== 'string' || hash.length > 200) return null; const match = /^#(contact|registration)=([^&#=]+)$/u.exec(hash); if (!match) return null; try { return sourceValue({ kind: match[1], id: decodeURIComponent(match[2]) }); } catch { return null; } }
 export function personWorkspacePath(source) { const value = sourceValue(source); return '/admin/person/#' + value.kind + '=' + encodeURIComponent(value.id); }
 function person(value, source) { check(plain(value)); const canonicalId = value.canonicalId === null ? null : text(value.canonicalId, 100, true); const contactId = value.contactId === null ? null : id(value.contactId); const registrationId = value.registrationId === null ? null : sourceValue({ kind: 'registration', id: value.registrationId }).id; check(typeof value.eligible === 'boolean');
-  check((source.kind === 'contact' ? contactId : registrationId) === source.id && (canonicalId === null ? !value.eligible : canonicalId === (registrationId ? 'r:' + registrationId : contactId ? 'c:' + contactId : null)));
+  check((source.kind === 'contact' ? contactId === source.id : registrationId !== null)
+    && (canonicalId === null ? !value.eligible : registrationId ? canonicalId === 'r:' + registrationId : contactId !== null && /^c:[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(canonicalId)));
   const admissionStatus = choice(value.admissionStatus, Object.keys(admissionLabels)); check(canonicalId === null || admissionStatus !== 'unavailable');
   return { canonicalId, contactId, registrationId, name: text(value.name, 120, true), organization: text(value.organization, 300), email: text(value.email, 254), wechat: text(value.wechat, 150), phone: text(value.phone, 150), eligible: value.eligible, admissionStatus, issues: issues(value.issues) }; }
 function volunteer(value) { check(plain(value)); const source = sourceValue(value.source); const availability = rows(value.availability, 12, row => { check(plain(row)); const result = { start: time(row.start), end: time(row.end) }; check(result.start < result.end); return result; }, false); for (let index = 1; index < availability.length; index++) check(availability[index - 1].end <= availability[index].start); return { id: id(value.id), source, workflowStatus: choice(value.workflowStatus, Object.keys(workflowLabels)), owner: text(value.owner, 120), followUpAt: date(value.followUpAt), lastContactAt: date(value.lastContactAt), notes: text(value.notes, 2000), availability, person: person(value.person, source), issues: issues(value.issues) }; }
@@ -57,15 +60,18 @@ function validateCoverage({ volunteers, positions, shifts, assignments, summary,
     if (!entry.valid) continue;
     const row = people.get(entry.volunteerId), shift = shiftById.get(entry.shiftId), position = positionById.get(shift.positionId);
     check(row.person.canonicalId !== null && row.person.eligible && active(row) && row.issues.length === 0 && shift.status === 'active' && position.status === 'active' && covered(row.availability, shift));
-    check(!shift.sessionId || planning.sessions.some(item => item.id === shift.sessionId && item.status !== 'cancelled'));
-    check(!shift.boothId || planning.booths.some(item => item.id === shift.boothId && item.status !== 'cancelled'));
+    check(!shift.sessionId || planning.sessions.some(item => item.id === shift.sessionId && isActiveSession(item)));
+    check(!shift.boothId || planning.booths.some(item => item.id === shift.boothId && isActiveBooth(item)));
     if (entry.status === 'confirmed') check(row.workflowStatus === 'confirmed' && row.person.admissionStatus === 'confirmed');
     const prior = reservations.get(row.person.canonicalId) || []; check(prior.every(other => other.end <= shift.start || shift.end <= other.start)); prior.push(shift); reservations.set(row.person.canonicalId, prior); assigned.add(row.person.canonicalId);
   }
   let requiredSlots = 0, proposedSlots = 0, confirmedSlots = 0, gapSlots = 0;
   for (const shift of shifts) {
     const allocations = assignments.filter(entry => entry.shiftId === shift.id && entry.valid), proposed = allocations.filter(entry => entry.status === 'proposed').length, confirmed = allocations.filter(entry => entry.status === 'confirmed').length;
-    const inUse = shift.status === 'active' && positionById.get(shift.positionId).status === 'active', gap = inUse ? Math.max(0, shift.required - confirmed) : 0;
+    const linkInvalid = Boolean(shift.sessionId && !planning.sessions.some(item => item.id === shift.sessionId && isActiveSession(item))
+      || shift.boothId && !planning.booths.some(item => item.id === shift.boothId && isActiveBooth(item)));
+    check(linkInvalid === shift.issues.includes('CONTENT_LINK_INVALID'));
+    const inUse = shift.status === 'active' && positionById.get(shift.positionId).status === 'active' && !linkInvalid, gap = inUse ? Math.max(0, shift.required - confirmed) : 0;
     check(shift.proposedCount === proposed && shift.confirmedCount === confirmed && shift.gap === gap);
     requiredSlots += inUse ? shift.required : 0; proposedSlots += proposed; confirmedSlots += confirmed; gapSlots += gap;
   }
@@ -75,14 +81,24 @@ function validateCoverage({ volunteers, positions, shifts, assignments, summary,
   for (const [key, value] of Object.entries(expected)) check(summary[key] === value);
 }
 export function volunteerSourceView(value) { check(plain(value) && value.schemaVersion === 1); const candidates = rows(value.candidates, 200, row => { check(plain(row)); const source = sourceValue(row.source); return { source, ...person(row, source) }; }, false); check(new Set(candidates.map(row => sourceToken(row.source))).size === candidates.length); const total = integer(value.total, 6000); check(total >= candidates.length && (value.nextCursor === null || typeof value.nextCursor === 'string' && /^[0-9]{1,5}$/u.test(value.nextCursor) && Number(value.nextCursor) < total)); return { candidates, total, nextCursor: value.nextCursor }; }
-export function filterVolunteerRows(view, filters = {}) { const query = String(filters.query ?? '').trim().toLocaleLowerCase('zh-CN'); return view.volunteers.filter(row => { const allocations = view.assignments.filter(item => item.volunteerId === row.id && item.status !== 'cancelled'); return (!query || [row.person.name, row.person.organization, row.owner].some(text => text.toLocaleLowerCase('zh-CN').includes(query))) && (!filters.status || row.workflowStatus === filters.status) && (!filters.assignment || filters.assignment === 'assigned' && allocations.length > 0 || filters.assignment === 'unassigned' && allocations.length === 0 || filters.assignment === 'issues' && (row.issues.length > 0 || row.person.issues.length > 0 || allocations.some(item => !item.valid || item.issues.length))); }); }
+export function filterVolunteerRows(view, filters = {}) { const query = String(filters.query ?? '').trim().toLocaleLowerCase('zh-CN'); return view.volunteers.filter(row => { const allocations = view.assignments.filter(item => item.volunteerId === row.id && item.status !== 'cancelled'), assigned = allocations.some(item => item.valid); return (!query || [row.person.name, row.person.organization, row.owner].some(text => text.toLocaleLowerCase('zh-CN').includes(query))) && (!filters.status || row.workflowStatus === filters.status) && (!filters.assignment || filters.assignment === 'assigned' && assigned || filters.assignment === 'unassigned' && !assigned || filters.assignment === 'issues' && (row.issues.length > 0 || row.person.issues.length > 0 || allocations.some(item => !item.valid || item.issues.length))); }); }
 export function operationReceipt(value, pending) {
   const view=volunteerWorkspaceView(value);
   check(['updated','replayed'].includes(value.outcome)&&plain(value.operation)&&value.operation.operationId===pending.operationId
     &&value.operation.action===pending.action&&Number.isSafeInteger(value.operation.revision)&&value.operation.revision===pending.expectedRevision+1&&value.operation.revision<=view.revision);
   const collection={volunteer_upsert:'volunteers',position_upsert:'positions',shift_upsert:'shifts',assignment_upsert:'assignments'}[pending.action];
   const row=view[collection]?.find(item=>item.id===pending.payload?.id),canonical=part=>JSON.stringify(part,(_,item)=>plain(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
+  // The server matched the original command in the audit. The current row may include later changes.
+  if (value.outcome === 'replayed' && value.operation.revision < view.revision) {
+    check(Boolean(row));
+    return view;
+  }
+  check(value.operation.revision === view.revision);
   check(Boolean(row)&&Object.entries(pending.payload).every(([key,expected])=>canonical(row[key])===canonical(expected)));
   return view;
 }
 export function operationBody({ expectedRevision, operationId, action, payload }) { integer(expectedRevision); check(OPERATION.test(operationId) && ['volunteer_upsert', 'position_upsert', 'shift_upsert', 'assignment_upsert'].includes(action) && plain(payload)); return { expectedRevision, operationId, action, payload: structuredClone(payload) }; }
+export function isStaleExportReceipt(error, pending) {
+  return error.status === 409 && error.code === 'EXPORT_STALE' && plain(error.operation)
+    && error.operation.operationId === pending.operationId && error.operation.revision === pending.expectedRevision + 1;
+}

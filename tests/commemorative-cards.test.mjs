@@ -126,7 +126,9 @@ test('an issued card displays its application site and discipline until staff re
   assert.deepEqual(initial.cardCommunity, { site: 'Ggj Artdico', role: '站点组织者・程序' });
   assert.equal((await (await f.call('POST', send)).json()).status, 'provider_accepted');
   const email = f.cardMessages()[0].template_params.confirmation_actions;
-  assert.match(email, /Ggj Artdico · 站点组织者・程序/u);
+  assert.match(email, /GGJ ARTDICO/u);
+  assert.match(email, /Site Organizer · Programming/u);
+  assert.doesNotMatch(email, /站点组织者・程序/u);
   const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(email)[1];
   const service = f.app.confirmationService;
   const readCard = async () => confirmationView(await (await f.app.handle(f.request('/api/registration/confirmation', {
@@ -343,7 +345,7 @@ test('staff can add, send and remove a test card independently of formal registr
   assert.ok(backup.includes(prefix + '/commits.jsonl') && backup.some(key => key.startsWith(prefix + '/blobs/')));
 });
 
-test('removing an issued application revokes its keepsake link and preserves its confirmed registration', async () => {
+test('removing an issued application revokes its keepsake link and preserves its independent admission', async () => {
   const f = await setup();
   const send = await f.prepare();
   assert.equal((await (await f.call('POST', send)).json()).status, 'provider_accepted');
@@ -357,7 +359,63 @@ test('removing an issued application revokes its keepsake link and preserves its
   }));
   assert.equal(link.status, 404);
   assert.deepEqual(await f.app.registrationService.repository.readIndex(), snapshot);
-  assert.equal((await f.app.registrationService.getAdmissionStatus(f.id)).status, 'confirmed');
+  assert.equal((await f.app.registrationService.getAdmissionStatus(f.id)).status, 'pending_review');
+});
+
+test('souvenir approval can be replayed without changing a full admission ledger', async () => {
+  const f = await peopleRuntimeFixture({ capacity: 1 });
+  const headers = await f.login();
+  const seat = await f.seedPublic();
+  await f.approvePublic(seat.reference_code, { headers });
+  const requests = [await f.seedWallet({ huodongxingReference: '1001' }), await f.seedWallet({ huodongxingReference: '1002' })];
+  const index = await f.app.registrationService.repository.readIndex();
+  for (const id of requests) {
+    const call = (path, method = 'GET', body) => f.app.handle(f.request(root + '/' + id + path, { headers, method, body }));
+    const detail = await (await call('')).json();
+    const approval = { primaryId: id, expectedRevision: detail.admissionRevision, operationId: operationId() };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await call('/approve', 'POST', approval);
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { status: 'confirmed' });
+    }
+    const approved = await (await call('')).json();
+    assert.equal(approved.stage, 'set_identity');
+    assert.equal((await f.app.registrationService.getAdmissionStatus(id)).status, 'pending_review');
+  }
+  assert.deepEqual(await f.app.registrationService.repository.readIndex(), index);
+  assert.equal(f.messages.length, 0);
+});
+
+test('an existing confirmed primary can collect the linked Wallet applicant’s details and saved blanks remain authoritative', async () => {
+  const f = await setup({ preferences: { locale: 'en', ggjSite: 'GGJ ArtDiCO', ggjRole: '导师' } });
+  const primary = (await f.seedPublic()).reference_code;
+  await f.approvePublic(primary, { headers: f.headers });
+  const resolve = body => f.app.handle(f.request('/api/admin/people/resolve', { method: 'POST', headers: f.headers, body }));
+  const preview = await (await resolve({ action: 'preview', keys: [primary, f.id].map(id => 'registration:' + id) })).json();
+  const merge = await resolve({ action: 'merge', keys: preview.keys, primaryKey: 'registration:' + primary, roles: preview.roles,
+    expectedRevision: preview.expectedRevision, expectedContactRevision: preview.expectedContactRevision, operationId: operationId(), confirmSamePerson: true });
+  assert.equal(merge.status, 200);
+  let detail = await f.read();
+  assert.deepEqual(detail.cardCommunity, { site: 'GGJ ArtDiCO', role: '导师' });
+  assert.equal((await f.call('PATCH', { primaryId: primary, expectedRevision: detail.reviewRevision, identity: 'guest' })).status, 200);
+  detail = await f.read();
+  const sent = await f.call('POST', { primaryId: primary, expectedRevision: detail.deliveryRevision,
+    expectedAccessRevision: detail.accessRevision, identity: 'guest', format: 'jpeg' });
+  assert.equal((await sent.json()).status, 'provider_accepted');
+  const email = f.cardMessages()[0].template_params.confirmation_actions;
+  assert.match(email, /Mentor/u);
+  assert.match(email, /GGJ ARTDICO/u);
+  const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(email)[1];
+  const claim = async () => confirmationView(await (await f.app.handle(f.request('/api/registration/confirmation', {
+    method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken },
+  }))).json());
+  const issued = await claim();
+  assert.equal(issued.cardLocale, 'en');
+  assert.deepEqual(issued.cardCommunity, { site: 'GGJ ArtDiCO', role: '导师' });
+  assert.equal((await f.call('PATCH', { primaryId: primary, expectedCommunityRevision: detail.communityRevision,
+    cardCommunity: { site: '', role: '' } })).status, 200);
+  assert.equal((await claim()).cardCommunity, undefined);
+  assert.equal(f.cardMessages().length, 1);
 });
 
 test('a recent reservation blocks overlap, while an abandoned reservation can be explicitly recovered', async () => {
@@ -441,16 +499,23 @@ test('existing Wallet and JPEG links can redeem both keepsake formats after the 
   t.after(signing.cleanup);
   const messages = [], tokenSecret = 'synthetic-wallet-card-signing-test-token-secret';
   const expiresAt = Date.parse('2027-01-01T00:00:00Z');
-  let current = Date.parse('2026-10-21T09:00:00Z');
+  let current = Date.parse('2026-10-21T09:00:00Z'), eventReady = true;
+  let deliveryAllowed = true, revokeDuringSigning = false;
   const service = createRegistrationConfirmationService({ registrationService: f.app.registrationService, tokenSecret,
     clock: () => current, expiresAt,
     journalFor: prefix => createObjectJournal({ objects: f.objects, prefix }),
     currentRegistration: record => f.app.reviewStore.projectRegistration(record),
     walletReadiness: () => wallet.readiness(),
+    eventFactsReadiness: () => ({ ready: eventReady, reason: 'EVENT_FACTS_MISMATCH', revision: 7 }),
+    personDeliveryPermission: () => deliveryAllowed ? { eligible: true } : { eligible: false, reason: 'CONTACT_DECLINED' },
     emailProvider: { readiness: () => ({ ready: true }), send: async message => { messages.push(message); return { status: 'provider_accepted' }; } },
   });
   const wallet = createAppleWalletService({ env: signing.env, tokenSecret, clock: () => Math.max(signing.now, current),
-    trustedRootFingerprints: signing.fields.trustedRootFingerprints, authorize: service.authorize, authorizedRegistration: service.authorizedRegistration });
+    trustedRootFingerprints: signing.fields.trustedRootFingerprints, authorize: service.authorize,
+    authorizedRegistration: (id, settings) => {
+      if (revokeDuringSigning) deliveryAllowed = false;
+      return service.authorizedRegistration(id, settings);
+    } });
   const result = await service.staffSendCard({ ...body, actor: f.users[0], registrationId: f.id, format: 'wallet' });
   assert.equal(result.status, 'provider_accepted');
   assert.equal(messages.length, 1);
@@ -464,6 +529,12 @@ test('existing Wallet and JPEG links can redeem both keepsake formats after the 
   assert.equal(first.card.ready, true);
   assert.equal(first.wallet.ready, true);
   assert.equal(first.card.entryQr, undefined);
+  assert.deepEqual(first.eventFacts, { ready: true, reason: 'EVENT_FACTS_VERIFIED', revision: 7 });
+  eventReady = false;
+  const blocked = confirmationView(await service.confirmation({ receiptToken, includeCardFormats: true }));
+  assert.equal(blocked.card.ready, false);
+  assert.deepEqual(blocked.eventFacts, { ready: false, reason: 'EVENT_FACTS_MISMATCH', revision: 7 });
+  eventReady = true;
   const tokens = createConfirmationTokens({ tokenSecret, eventId: PEOPLE_FIXTURE_EVENT, clock: () => Date.parse('2026-10-21T09:00:00Z'),
     expiresAt });
   current = Date.parse('2026-12-06T00:00:00Z');
@@ -480,4 +551,7 @@ test('existing Wallet and JPEG links can redeem both keepsake formats after the 
     assert.equal(passJson.barcodes, undefined);
     assert.equal(passJson.expirationDate, undefined);
   }
+  revokeDuringSigning = true;
+  assert.deepEqual(await wallet.download({ receiptToken }), { outcome: 'inactive' });
+  assert.deepEqual(await wallet.download({ receiptToken }), { outcome: 'invalid' });
 });

@@ -1,6 +1,6 @@
 import { isContentVisible } from '../../shared/content-schema.mjs';
 import {canManageEventOperations} from '../../shared/staff-permissions.mjs';
-import { personWorkRecommendation, personAttendanceStage, validPersonAttendanceStage } from '../../shared/organizer-progress.mjs';
+import { personWorkRecommendation, personAttendanceStage, validPersonAttendanceStage, isActiveSession, isActiveBooth } from '../../shared/organizer-progress.mjs';
 const CONTACT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const REGISTRATION = /^[A-Za-z0-9_-]{43}$/u;
 const STATES = new Set(['available', 'unlinked', 'restricted', 'unavailable']);
@@ -131,7 +131,9 @@ export function personWorkspaceView(value, selection) {
       if (!plain(admission) || !['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected'].includes(admission.status) || !['attendee', 'crew'].includes(admission.kind) || !integer(admission.revision)) return null;
     } else if (admission !== null) return null;
     if (!plain(arrangements) || !list(arrangements.sessions, 250) || !list(arrangements.booths)
-      || !arrangements.sessions.every(item => lines(item, ['id', 'title', 'start', 'end', 'zone', 'status']) && id(item.id) && strings(item.roles, 10) && typeof item.missing === 'boolean')
+      || !arrangements.sessions.every(item => lines(item, ['id', 'title', 'start', 'end', 'zone', 'status']) && id(item.id) && strings(item.roles, 10)
+        && (item.programRoles === undefined || strings(item.programRoles, 4) && item.programRoles.every(role => ['speaker', 'panelist', 'host', 'organizer'].includes(role)))
+        && typeof item.missing === 'boolean')
       || !arrangements.booths.every(item => lines(item, ['id', 'code', 'organization', 'project', 'status', 'position']) && id(item.id) && typeof item.missing === 'boolean')) return null;
     if (value.availability.arrangements !== 'available' && (arrangements.sessions.length || arrangements.booths.length)) return null;
     if (!plain(communications) || communications.historyLimit !== 200 || !['invitationTotal', 'confirmationTotal', 'timelineTotal'].every(key => integer(communications[key])) || typeof communications.historyTruncated !== 'boolean'
@@ -155,6 +157,7 @@ export function personWorkspaceView(value, selection) {
     if (!volunteering || !organizations) return null;
     // Only the fields below reach the DOM. API additions cannot silently become UI/private links.
     return { schemaVersion: 1, selected: { ...value.selected }, person: { ...value.person }, linkage: { ...value.linkage }, permissions: { ...value.permissions, volunteers: volunteering.permission },
+      ...(value.externalRegistrationOnly === true ? { externalRegistrationOnly: true } : {}),
       availability: { ...value.availability, volunteers: volunteering.state, organizations: organizations.state }, revisions: { ...value.revisions, volunteers: volunteering.revision },
       contact: contact ? { ...contact, sourceCategories: [...(contact.sourceCategories ?? contact.profile.categories)] } : null,
       ...(Object.hasOwn(value,'attendance')?{attendance:{...value.attendance}}:{}),
@@ -225,10 +228,11 @@ export function personWorkspaceSteps(view, roles = []) {
   else {
     const needsSession = forms.some(value => ['speaker', 'panelist', 'host', 'organizer'].includes(value));
     const needsBooth = forms.includes('booth'), needsShowcase = forms.includes('student_showcase');
-    const sessions = view.arrangements.sessions.filter(item => !item.missing && item.status === 'scheduled');
-    const booths = view.arrangements.booths.filter(item => !item.missing && item.status !== 'cancelled');
+    const sessions = view.arrangements.sessions.filter(isActiveSession);
+    const booths = view.arrangements.booths.filter(isActiveBooth);
     const missing = view.arrangements.sessions.some(item => item.missing || item.status === 'cancelled') || view.arrangements.booths.some(item => item.missing || item.status === 'cancelled');
-    const scheduledRoleMissing = forms.filter(value => ['speaker', 'panelist', 'host', 'organizer'].includes(value)).some(role => !sessions.some(item => item.roles.includes(role)));
+    const scheduledRoleMissing = forms.filter(value => ['speaker', 'panelist', 'host', 'organizer'].includes(value))
+      .some(role => !sessions.some(item => item.roles.includes(role) || item.programRoles?.includes(role)));
     const pending = !forms.length || needsSession && (!sessions.length || scheduledRoleMissing) || needsBooth && !booths.length || needsShowcase && !sessions.length && !booths.length;
     const detail = missing ? '已关联的场次或展位有取消／缺失记录，请核对保留的关联。' : !forms.length ? '先确认参与身份，再按需要安排场次或展位。' : !needsSession && !needsBooth && !needsShowcase ? '当前职责不要求讲者场次或展位；参会名额仍需单独核对。' : pending ? '按已选职责关联对应场次、该场职责或展位，确认草稿安排已排期。' : '已关联对应场次职责／展位；可继续核对内容与时段。';
     steps.push(step('arrangements', '安排场次／展位', missing ? 'review' : pending ? 'pending' : 'complete', detail, 'arrangements'));
@@ -311,10 +315,10 @@ export function personNextAction(view, roles = [], localPending = false) {
     || Boolean(contact && ['arrangements', 'publicProfile', 'invitations'].some(key => availability[key] === 'unavailable'));
   return personWorkRecommendation({contactId, registrationId, profileId: profile?.id ?? null,
     responseStatus: current.registration?.externalAttendance==='declined'?'declined':current.registration?.externalAttendance==='verified'&&current.admission?.status==='confirmed'&&contact?.operations.responseStatus!=='declined'?'attending':contact?.operations.responseStatus ?? null, admissionStatus: current.admission?.status ?? null,
-    registrationState: current.linkage.state === 'linked' ? 'available' : current.linkage.state, invitationStatus: invitation, deliveryStatus: delivery,
+    registrationState: current.linkage.state === 'linked' ? 'available' : current.linkage.state, invitationStatus: invitation, deliveryStatus: current.externalRegistrationOnly ? 'not_applicable' : delivery,
     contactConsent: contact?.profile.contactConsent ?? null, pendingResult: pending, sourceUnavailable,
     publicNeedsUpdate, missingArrangement: Boolean(forms.length && arrangementStep && ['review', 'pending'].includes(arrangementStep.state)),
     canReview: current.permissions.registration && (roles.includes('superadmin') || roles.includes('reviewer')),
-    canIntegrate: canManageEventOperations({roles}), canEdit: roles.includes('superadmin') || roles.includes('editor'),
+    externalRegistrationOnly: current.externalRegistrationOnly, canIntegrate: canManageEventOperations({roles}), canEdit: roles.includes('superadmin') || roles.includes('editor'),
     canContact: current.permissions.contact && (roles.includes('superadmin') || roles.includes('outreach'))}).nextAction;
 }

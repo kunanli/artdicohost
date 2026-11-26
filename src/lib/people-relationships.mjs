@@ -76,13 +76,13 @@ export function admissionForContact(contact, intent, receipts = new Map()) {
   if (linked) return { status: ['confirmed','waitlisted','withdrawn','pending_review','rejected'].includes(linked.admissionStatus) ? linked.admissionStatus : 'unavailable', registrationId: linked.registrationId };
   return receipts.get(contact.id) || { status: intent ? 'unlinked' : 'unavailable' };
 }
-export const ADMISSION_LABELS = Object.freeze({ confirmed: '正式名额已确认', waitlisted: '已登记候补，尚无确认名额', withdrawn: '关联报名已撤回，需审核人员处理', requiresReviewer: '回复已保存，名额待审核同事同步', unavailable: '名额暂时无法核对', unlinked: '尚未关联正式报名',pending_review:'网站申请待审核',rejected:'申请未通过' });
+export const ADMISSION_LABELS = Object.freeze({ confirmed: '正式名额已确认', waitlisted: '已登记候补，尚无确认名额', withdrawn: '关联报名已撤回，需审核人员处理', requiresReviewer: '回复已保存，名额待审核同事同步', unavailable: '名额暂时无法核对', unlinked: '尚未关联正式报名',pending_review:'网站申请待审核',rejected:'申请未通过', external: '报名与签到请在活动行核对' });
 export function savedContactReceipt(value, { contactId, expectedRevision, operations } = {}) {
   check(plain(value) && value.replySaved === true && integer(value.revision) === expectedRevision + 1 && validateStoredContact(value.contact) && value.contact.id === contactId && plain(value.contact.operations));
   for (const [key, expected] of Object.entries(operations)) check(JSON.stringify(value.contact.operations[key]) === JSON.stringify(expected));
   let admission = null;
   if (value.contact.operations.responseStatus === 'attending') {
-    check(plain(value.admission)); const status = choice(value.admission.status, ['confirmed','waitlisted','pending_review','requiresReviewer','unavailable']); admission = { status };
+    check(plain(value.admission)); const status = choice(value.admission.status, ['confirmed','waitlisted','pending_review','requiresReviewer','unavailable','external']); admission = { status };
     if (['confirmed','waitlisted','pending_review'].includes(status)) { check(typeof value.admission.registrationId === 'string' && REGISTRATION.test(value.admission.registrationId)&&typeof value.admission.referenceCode==='string'&&REGISTRATION.test(value.admission.referenceCode)); admission.registrationId = value.admission.registrationId; admission.revision = integer(value.admission.revision); admission.referenceCode = value.admission.referenceCode; }
     if (value.admission.confirmationEmail !== undefined) {
       check(status==='confirmed' && plain(value.admission.confirmationEmail));

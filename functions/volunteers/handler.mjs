@@ -13,6 +13,7 @@ const specs = {
   INVALID_REQUEST: [400, '志愿者请求格式无效。'], NOT_FOUND: [404, '志愿者接口不存在。'], METHOD_NOT_ALLOWED: [405, '此接口不接受该方法。'],
   BODY_TOO_LARGE: [413, '请求内容过大。'], UNSUPPORTED_MEDIA_TYPE: [415, '请发送 UTF-8 JSON 请求。'],
   CAPACITY_EXCEEDED: [409, '志愿者记录已达到维护上限，请保留资料并联系管理员。'], CONFLICT: [409, '资料已更新或操作结果待核对，请保留输入并重新载入。'], PLAN_CONFLICT: [422, '安排存在时间、可参与时段或需求人数冲突，请检查后再保存。'],
+  EXPORT_STALE: [409, '原导出已记录，资料已更新，旧文件无法重新提供。请刷新名单后重新导出。'],
   SOURCE_NOT_ELIGIBLE: [422, '来源记录目前不可用于新的参与安排，请先核对同意与出席状态。'],
   DUPLICATE_SOURCE: [409, '此人员已有志愿者记录，请使用原记录调整。'], UNAVAILABLE: [503, '志愿者资料暂不可用，请稍后重新检查。'],
 };
@@ -96,7 +97,7 @@ export function createVolunteersApi({ authenticate, service } = {}) {
       if (error instanceof CloudContentError && error.code === 'AUTH_REQUIRED' && error.status === 401) code = 'AUTH_REQUIRED';
       if (!Object.hasOwn(specs, code)) code = 'UNAVAILABLE';
       const [status, message] = specs[code];
-      return json({ error: { code, message } }, status, allow ? { allow } : {});
+      return json({ error: { code, message, ...(code === 'EXPORT_STALE' ? { operation: error.operation } : {}) } }, status, allow ? { allow } : {});
     }
   };
 }

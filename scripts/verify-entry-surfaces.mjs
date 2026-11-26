@@ -6,6 +6,7 @@ import { validatePublicPath, MAX_FILE_BYTES } from './prepare-oss-site.mjs';
 
 export const PUBLIC_ENTRY_URL = 'https://artdico.host/r/';
 export const ENTRY_API_PREFIX = 'https://api.artdico.host/api/admin/registration/entry-links/';
+const RETIRED_CHECKIN_URL = 'https://api.artdico.host/api/admin/checkin/' + 'A'.repeat(22);
 const SITE = 'https://artdico.host';
 const MAX_ENTRY_BYTES = 1024 * 1024, MAX_ERROR_BYTES = 4096;
 const PUBLIC_RELEASE_URL = SITE + '/release.json';
@@ -16,7 +17,7 @@ const exactKeys = (value, keys) => value && typeof value === 'object' && !Array.
 
 /** These fixed GET/OPTIONS probes cannot resolve a real entry capability:
  * invalid fails route syntax and the synthetic-shaped code is used only for
- * preflight, which returns before authentication, storage or service calls. */
+ * preflight and retired staff path, which return before storage or service calls. */
 export async function verifyEntrySurfaces({ directory, commit = process.env.GITHUB_SHA, fetchFn = fetch, timeoutMs = 20_000, report = () => {} } = {}) {
   try {
     if (typeof directory !== 'string' || !directory || typeof commit !== 'string' || !/^[a-f0-9]{40}$/u.test(commit)
@@ -87,7 +88,16 @@ export async function verifyEntrySurfaces({ directory, commit = process.env.GITH
           || directives(headers.get('cache-control')) !== 'no-store,private') throw failed();
       } });
 
-    const result = { verified: true, publicEntry: true, invalidEntry: true, cors: true, requests: 3, commit };
+    const retiredBytes = await request({ url: RETIRED_CHECKIN_URL, status: 410, maxBytes: MAX_ERROR_BYTES,
+      headers: { accept: 'application/json' }, validate(headers) {
+        if ((headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase() !== 'application/json'
+          || directives(headers.get('cache-control')) !== 'no-store,private') throw failed();
+      } });
+    const retired = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(retiredBytes));
+    if (!exactKeys(retired, ['error']) || !exactKeys(retired.error, ['code', 'message'])
+      || retired.error.code !== 'ENTRY_RETIRED' || typeof retired.error.message !== 'string') throw failed();
+
+    const result = { verified: true, publicEntry: true, invalidEntry: true, cors: true, checkinRetired: true, requests: 4, commit };
     report(result);
     return result;
   } catch { throw failed(); }

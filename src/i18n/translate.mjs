@@ -41,6 +41,16 @@ export function translate(value, language) {
   const key=value.trim(), translated=english.get(key);
   if (translated) return value.replace(key,translated);
   let match;
+  if (key.startsWith('活动详情｜')) return 'Event details | ' + key.slice(5);
+  if (key === '电子纪念卡 · ARTDiCO HOST') return 'Digital commemorative card · ARTDiCO HOST';
+  if ((match=/^(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日$/u.exec(key))) {
+    const [, year, month, day] = match;
+    const date = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T12:00:00Z`);
+    if (Number.isFinite(date.valueOf())) return new Intl.DateTimeFormat('en-GB', { dateStyle: 'long', timeZone: 'UTC' }).format(date);
+  }
+  if ((match=/^(\d{2}:\d{2}–\d{2}:\d{2})（北京时间）$/u.exec(key))) return match[1] + ' (Beijing time)';
+  if ((match=/^(\d{2}:\d{2}–\d{2}:\d{2})（UTC\+8），(\d{2}:\d{2}) 开始签到$/u.exec(key))) return `${match[1]} (UTC+8) · Check-in from ${match[2]}`;
+  if ((match=/^展位 (C-\d{2})$/u.exec(key))) return 'Booth ' + match[1];
   if (key.endsWith('｜活动安排')) return translate(key.slice(0,-5),language)+' | Event schedule';
   if ((match=/^(\d+(?: \/ \d+)?) 件作品$/u.exec(key))) return match[1]+' projects';
   if ((match=/^(提交验证|核对申请回执|读取申请设置)(.+)$/su.exec(key))) {

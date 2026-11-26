@@ -1,7 +1,7 @@
 import { LANGUAGE_KEY, resolveLanguage, SUPPORTED_LANGUAGES } from '../i18n/language.mjs';
 import { translate } from '../i18n/translate.mjs';
 
-const root = document.getElementById('artdico-host');
+const root = document.querySelector('#artdico-host, [data-language-root]');
 if (root) {
   let saved;
   try { saved=localStorage.getItem(LANGUAGE_KEY); } catch { /* Storage can be disabled in private browsers. */ }
@@ -25,7 +25,7 @@ if (root) {
       if(!node.parentElement?.closest(excluded))display(node,'text',node.data,value=>{node.data=value;});
       return;
     }
-    if(!(node instanceof Element)||node.matches(excluded))return;
+    if(!(node instanceof Element)||node.closest(excluded))return;
     for(const attr of attributes)if(node.hasAttribute(attr))display(node,attr,node.getAttribute(attr),value=>node.setAttribute(attr,value));
     for(const child of node.childNodes)scan(child);
   }
@@ -51,6 +51,7 @@ if (root) {
     root.querySelector('[data-language-switch]')?.removeAttribute('hidden');
     const notice=root.querySelector('[data-language-note]');if(notice)notice.hidden=language!=='en';
     observe();
+    document.dispatchEvent(new CustomEvent('artdico:language-changed',{detail:{language}}));
   }
   root.addEventListener('click',event=>{
     const button=event.target.closest?.('[data-language]');
@@ -59,7 +60,6 @@ if (root) {
     saved=language;
     try{localStorage.setItem(LANGUAGE_KEY,language);}catch{/* The choice still applies for this visit. */}
     apply();
-    document.dispatchEvent(new CustomEvent('artdico:language-changed',{detail:{language}}));
   });
   window.addEventListener('languagechange',()=>{
     if(SUPPORTED_LANGUAGES.includes(saved))return;

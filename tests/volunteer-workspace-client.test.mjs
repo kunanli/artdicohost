@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canManageVolunteers, parseVolunteerSelection, sourceToken, parseSourceToken, personWorkspacePath, volunteerWorkspaceView, volunteerSourceView, filterVolunteerRows, operationBody, operationReceipt, issueLabel } from '../src/lib/volunteer-workspace.mjs';
+import { canManageVolunteers, parseVolunteerSelection, sourceToken, parseSourceToken, personWorkspacePath, volunteerWorkspaceView, volunteerSourceView, filterVolunteerRows, operationBody, operationReceipt, isStaleExportReceipt, issueLabel } from '../src/lib/volunteer-workspace.mjs';
 
 const registrationId = 'r'.repeat(43);
 const source = { kind: 'contact', id: 'contact_1' };
@@ -43,11 +43,15 @@ test('missing source is explicit and never inferred as eligible or admitted', ()
   const view = volunteerWorkspaceView(value); assert.equal(view.summary.unverifiableSources, 1); assert.equal(view.volunteers[0].person.admissionStatus, 'unavailable'); assert.match(issueLabel('SOURCE_UNAVAILABLE'), /无法核对/u); assert.equal(issueLabel('FUTURE_SAFE_CODE'), '资料或安排需核对');
 });
 test('canonical identity must match explicit source and linked IDs, including source picker', () => {
-  for (const mutate of [row => { row.person.canonicalId = 'anything'; }, row => { row.person.canonicalId = 'r:' + 'x'.repeat(43); }, row => { row.person.canonicalId = 'c:' + row.person.contactId; }, row => { row.person.contactId = 'someone_else'; }, row => { row.person.canonicalId = null; }, row => { row.source = { kind: 'registration', id: 'x'.repeat(43) }; }]) {
+  for (const mutate of [row => { row.person.canonicalId = 'anything'; }, row => { row.person.canonicalId = 'r:' + 'x'.repeat(43); }, row => { row.person.canonicalId = 'c:' + row.person.contactId; }, row => { row.person.contactId = 'someone_else'; }, row => { row.person.canonicalId = null; }, row => { row.source = { kind: 'registration', id: 'x'.repeat(43) }; row.person.registrationId = null; }]) {
     const value = fixture(); mutate(value.volunteers[0]); assert.throws(() => volunteerWorkspaceView(value));
   }
   const candidate = { source, ...person(), canonicalId: 'c:foreign' };
   assert.throws(() => volunteerSourceView({ schemaVersion: 1, candidates: [candidate], total: 1, nextCursor: null }));
+  const alias = fixture(); alias.volunteers[0].source = { kind: 'registration', id: 'x'.repeat(43) };
+  assert.equal(volunteerWorkspaceView(alias).volunteers[0].person.canonicalId, 'r:' + registrationId);
+  const contactAlias = { source, ...person(), registrationId: null, admissionStatus: 'unlinked', canonicalId: 'c:primary_contact' };
+  assert.equal(volunteerSourceView({ schemaVersion: 1, candidates: [contactAlias], total: 1, nextCursor: null }).candidates[0].canonicalId, 'c:primary_contact');
 });
 test('coverage counts must match valid assignments and active demand, never fabricated totals', () => {
   for (const mutate of [value => { value.summary.confirmedSlots = 999999; }, value => { value.summary.activePeopleCount = 2; }, value => { value.summary.issueCount = 1; }, value => { value.summary.unverifiableSources = 1; }, value => { value.shifts[0].confirmedCount = 2; }, value => { value.shifts[0].gap = 0; }, value => { value.assignments[0].issues = ['TIME_CONFLICT']; }, value => { value.volunteers[0].workflowStatus = 'pending'; }, value => { value.volunteers[0].person.admissionStatus = 'waitlisted'; }, value => { value.volunteers[0].availability = []; }, value => { value.positions[0].status = 'inactive'; }, value => { value.shifts[0].sessionId = 'missing'; }]) {
@@ -61,6 +65,16 @@ test('proposal before admission remains distinct from confirmed coverage', () =>
 test('historical cancelled shift retains its row without counting demand or coverage', () => {
   const input = fixture(); Object.assign(input.shifts[0], { status: 'cancelled', confirmedCount: 0, gap: 0, issues: ['SHIFT_CANCELLED'] }); Object.assign(input.assignments[0], { valid: false, issues: ['SHIFT_CANCELLED'] }); Object.assign(input.summary, { assignedPeopleCount: 0, requiredSlots: 0, confirmedSlots: 0, gapSlots: 0, issueCount: 2 });
   const view = volunteerWorkspaceView(input); assert.equal(view.shifts.length, 1); assert.equal(view.summary.activePeopleCount, 1); assert.equal(view.summary.requiredSlots, 0);
+});
+test('a saved shift linked to a draft stays visible without counting demand or claiming a volunteer', () => {
+  const input = fixture(); input.planning.sessions.push({ id: 'retired', title: '合成退场', start: '09:00', end: '10:00', zone: 'A', status: 'draft' });
+  Object.assign(input.shifts[0], { sessionId: 'retired', confirmedCount: 0, gap: 0, issues: ['CONTENT_LINK_INVALID'] });
+  Object.assign(input.assignments[0], { valid: false, issues: ['CONTENT_LINK_INVALID'] });
+  Object.assign(input.summary, { assignedPeopleCount: 0, requiredSlots: 0, confirmedSlots: 0, gapSlots: 0, issueCount: 2 });
+  const view = volunteerWorkspaceView(input);
+  assert.equal(view.shifts[0].sessionId, 'retired');
+  assert.equal(filterVolunteerRows(view, { assignment: 'assigned' }).length, 0);
+  assert.equal(filterVolunteerRows(view, { assignment: 'issues' }).length, 1);
 });
 test('one known person in adjacent shifts counts once and supplies two person-slots', () => {
   const input = fixture(); input.shifts.push({ ...input.shifts[0], id: 'shift_2', start: '10:00', end: '11:00' }); input.assignments.push({ ...input.assignments[0], id: 'assignment_2', shiftId: 'shift_2' }); Object.assign(input.summary, { requiredSlots: 4, confirmedSlots: 2, gapSlots: 2 });
@@ -82,5 +96,19 @@ test('operation snapshot is detached and only matching original audit receipt cl
   const body = operationBody({ expectedRevision: 6, operationId: 'operation_1234567890', action: 'position_upsert', payload }); payload.name = 'changed'; assert.equal(body.payload.name, '签到');
   const response = { ...fixture(), outcome: 'updated', operation: { operationId: body.operationId, action: body.action, revision: 7 } }; assert.equal(operationReceipt(response, body).revision, 7);
   const replay = structuredClone(response); replay.outcome = 'replayed'; replay.revision = 9; replay.revisions.volunteers = 9; assert.equal(operationReceipt(replay, body).revision, 9);
-  for (const mutate of [value => { delete value.operation; }, value => { value.operation.operationId = 'foreign_1234567890'; }, value => { value.operation.action = 'volunteer_upsert'; }, value => { value.operation.revision = 6; }, value => { value.operation.revision = 9; }, value => { value.outcome = 'sent'; },value=>{value.positions[0].location='其他地点';},value=>{value.positions[0].lead='其他同事';}]) { const value = structuredClone(replay); mutate(value); assert.throws(() => operationReceipt(value, body)); }
+  replay.positions[0].lead = '其他同事';
+  assert.equal(operationReceipt(replay, body).positions[0].lead, '其他同事');
+  for (const mutate of [value => { delete value.operation; }, value => { value.operation.operationId = 'foreign_1234567890'; }, value => { value.operation.action = 'volunteer_upsert'; }, value => { value.operation.revision = 6; }, value => { value.operation.revision = 9; }, value => { value.outcome = 'sent'; }, value => { value.outcome = 'updated'; }]) { const value = structuredClone(replay); mutate(value); assert.throws(() => operationReceipt(value, body)); }
+  response.positions[0].location = '其他地点';
+  assert.throws(() => operationReceipt(response, body));
+});
+
+test('only the matched original export receipt confirms that a stale workbook was recorded', () => {
+  const body = { expectedRevision: 6, operationId: 'export_1234567890' };
+  const response = { status: 409, code: 'EXPORT_STALE', operation: { operationId: body.operationId, revision: 7 } };
+  assert.equal(isStaleExportReceipt(response, body), true);
+  assert.equal(isStaleExportReceipt({ ...response, code: 'CONFLICT' }, body), false);
+  assert.equal(isStaleExportReceipt({ ...response, operation: null }, body), false);
+  assert.equal(isStaleExportReceipt({ ...response, operation: { ...response.operation, revision: 8 } }, body), false);
+  assert.equal(isStaleExportReceipt({ ...response, operation: { ...response.operation, operationId: 'another_operation' } }, body), false);
 });

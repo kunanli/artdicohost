@@ -2,7 +2,7 @@ import {canManageEventOperations} from '../../shared/staff-permissions.mjs';
 const key=value=>typeof value==='string'&&/^(?:contact:[A-Za-z0-9][A-Za-z0-9_-]{0,79}|registration:[A-Za-z0-9_-]{43})$/u.test(value);
 const ROLE=['attendee','guest','speaker','exhibitor'];
 const STATUS={confirmed:'已确认名额',waitlisted:'候补',pending_review:'申请待审核',withdrawn:'已退出',rejected:'申请未通过'};
-export function createPeopleResolution({root,request,getUser,onChanged,onIntegrate}){
+export function createPeopleResolution({root,request,getUser,onChanged,onIntegrate,canIntegrate=()=>true}){
  const $=selector=>root.querySelector(selector),dialog=document.querySelector('[data-resolution-dialog]'),d=selector=>dialog.querySelector(selector);
  const node=(tag,text,cls)=>{const value=document.createElement(tag);if(text!==undefined)value.textContent=text;if(cls)value.className=cls;return value;};
  let sequence=0,keys=[],state=null,busy=false,pending=null,dirty=false,openedActor=null;
@@ -20,9 +20,9 @@ export function createPeopleResolution({root,request,getUser,onChanged,onIntegra
   d('[data-resolution-role-note]').textContent=state.lockedRoles.length?'已有场次或人物资料的身份暂时保留，请在相应安排中调整后再移除。':'';
   d('[data-resolution-confirm-row]').hidden=!merging;d('[name=confirmSamePerson]').checked=false;d('[data-resolution-save]').textContent=merging?'确认同一人并整合':'保存身份';
   const registrations=state.rows.filter(row=>row.kind==='registration'),primary=registrations.find(row=>row.key===state.primaryKey)??registrations.toSorted((a,b)=>({confirmed:0,waitlisted:1,pending_review:2,withdrawn:3,rejected:4})[a.status]-({confirmed:0,waitlisted:1,pending_review:2,withdrawn:3,rejected:4})[b.status])[0],contact=state.rows.find(row=>row.key===state.primaryKey&&row.kind==='contact')??state.rows.find(row=>row.kind==='contact');
-  d('[data-resolution-registration]').hidden=merging;d('[data-resolution-integrate]').hidden=Boolean(primary)||!contact;
+  d('[data-resolution-registration]').hidden=merging;d('[data-resolution-integrate]').hidden=Boolean(primary)||!contact||!canIntegrate();
   d('[data-resolution-registration-link]').hidden=!primary;if(primary)d('[data-resolution-registration-link]').href='/admin/registrations/#registration='+primary.id;
-  d('[data-resolution-registration-status]').textContent=primary?STATUS[primary.status]+'。已沿用现有报名，不另建名额。':contact?.responseStatus==='attending'?'已记录本人答应出席，尚待整合到网站报名。':'保存身份后，可在核实本人确认参加时整合到网站报名。';
+  d('[data-resolution-registration-status]').textContent=primary?STATUS[primary.status]+'。已沿用现有报名，不另建名额。':!canIntegrate()?'正式报名与现场签到请在活动行核对。':contact?.responseStatus==='attending'?'已记录本人答应出席，尚待整合到网站报名。':'保存身份后，可在核实本人确认参加时整合到网站报名。';
   d('[data-resolution-integrate]').textContent=contact?.responseStatus==='attending'?'整合已确认出席者':'确认出席并整合报名';dirty=false;lock();
  }
  async function load(){if(!allowed()||!keys.length||busy)return;const seq=++sequence,actor=getUser().id;openedActor=actor;busy=true;lock();
@@ -50,7 +50,7 @@ export function createPeopleResolution({root,request,getUser,onChanged,onIntegra
    $('[data-resolution-scan-status]').textContent=value.candidates.length?'发现 '+value.candidates.length+' 组疑似重复。共用邮箱也可能是不同人，不会自动合并。'+(value.truncated?'本次最多显示 200 组。':''):'目前没有发现符合规则的重复线索。';
   }catch(error){if(current(seq,actor))$('[data-resolution-scan-status]').textContent=error.message||'重复资料暂时无法核对。';}finally{if(current(seq,actor)){busy=false;lock();}}
  }
- async function integrate(){if(!state||busy||dirty||pending||!allowed())return;const contact=state.rows.find(row=>row.key===state.primaryKey&&row.kind==='contact')??state.rows.find(row=>row.kind==='contact');if(!contact||state.rows.some(row=>row.kind==='registration'))return;
+ async function integrate(){if(!state||busy||dirty||pending||!allowed()||!canIntegrate())return;const contact=state.rows.find(row=>row.key===state.primaryKey&&row.kind==='contact')??state.rows.find(row=>row.kind==='contact');if(!contact||state.rows.some(row=>row.kind==='registration'))return;
   if(!confirm(contact.responseStatus==='attending'?'将这位已确认出席的人整合到网站报名？沿用现有来源，同一人只占一席。':'已核实本人确认参加，并确认名额后处理确认信？身份、展位与住宿仍分别核对。'))return;
   const seq=++sequence,actor=getUser().id;busy=true;lock();try{const message=await onIntegrate(contact.id,state.expectedContactRevision);if(!current(seq,actor))return;busy=false;await onChanged();await load();d('[data-resolution-status]').textContent=message;}
   catch(error){if(current(seq,actor))showError((error.message||'原操作结果待核对。')+' 请重新预览现有来源，核对已保存的出席回复与报名，不要重复建立人员。');}finally{if(current(seq,actor)){busy=false;lock();}}

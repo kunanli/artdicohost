@@ -6,7 +6,7 @@ import { publicOrganizationCards, orderOrganizationCards, organizationReferenceK
 import { PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
 import { organizationArtwork } from '../config/organization-artwork.mjs';
 import { createDefaultOrganizations, organizationLayout } from '../config/exhibiting-partners.mjs';
-import { eventTimeInstant } from '../lib/event-presentation.mjs';
+import { eventTimeInstant, publishedMapUrl } from '../lib/event-presentation.mjs';
 import { createPublicContentRefresh } from '../lib/public-content-refresh.mjs';
 import { createHomeCollections } from '../lib/home-collections.mjs';
 import { setPublicFaqs } from '../lib/public-faq.mjs';
@@ -85,6 +85,7 @@ function renderPublishedContent(content,url) {
       row.tabIndex=-1;
       if (/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u.test(item.id)) row.id = 'program-' + item.id;
       row.dataset.agendaStart = item.start;
+      row.dataset.agendaEnd = item.end;
       row.classList.toggle('ah-featured', item.format === 'showcase' || item.start === '15:30' || item.start === '16:30');
       row.append(element('time', item.start + '–' + item.end));
       const detail = element('div');
@@ -338,7 +339,12 @@ function renderPresentation(event) {
   }
   setPublicFaqs(presentation.faqItems);
   const map=document.querySelector('[data-public-map]');
-  if(map){map.hidden=true;map.removeAttribute('href');try{const url=new URL(presentation.mapUrl);if(url.protocol==='https:'&&!url.username&&!url.password&&!url.hash){map.href=url.href;map.hidden=false;}}catch{}}
+  if (map) {
+    const href = event.status !== 'cancelled' && event.venueStatus === 'confirmed' ? publishedMapUrl(presentation.mapUrl) : null;
+    if (href) map.href = href;
+    else map.removeAttribute('href');
+    map.hidden = !href;
+  }
   const start=eventTimeInstant(event.date,presentation.openingTime,event.timezone);
   const end=eventTimeInstant(event.date,presentation.endTime,event.timezone);
   const confirmed=event.dateStatus==='confirmed'&&event.status!=='cancelled'&&start!==null&&end!==null&&end>start;

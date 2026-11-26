@@ -1,5 +1,6 @@
 import { contentSchema } from './content-schema.mjs';
 import { PARTICIPATION_FORMS, SESSION_ROLES } from './contacts-schema.mjs';
+import { isActiveBooth, isActiveSession } from './organizer-progress.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const PRESENTATIONS = new Set(['talk', 'workshop', 'roundtable', 'showcase']);
@@ -125,6 +126,7 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
     const profile = own(item, 'profile'), operations = own(item, 'operations');
     if (!plain(profile) || !plain(operations)) throw new TypeError('人员显示资料无效。');
     return { id: id(own(item, 'id')), name: text(own(profile, 'displayName'), 120) || text(own(profile, 'name'), 120), organization: text(own(profile, 'organization'), 300),
+      archived: Boolean(own(item, 'archivedAt')),
       responseStatus: status(own(operations, 'responseStatus'), ['pending', 'attending', 'declined']), participationForms: forms(own(operations, 'participationForms')),
       sessionIds: identifiers(own(operations, 'sessionIds')), boothIds: identifiers(own(operations, 'boothIds')),
       sessionRoles: sessionDuties(own(operations, 'sessionRoles'), identifiers(own(operations, 'sessionIds'))) };
@@ -144,6 +146,7 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
       const guest = guestByContact.get(contact.id);
       projectedPeople.set(stable, { id: stable, name: guest?.name || contact.name, organization: guest?.company || contact.organization,
         contactId: contact.id, guestId: guest?.id ?? '', responseStatus: contact.responseStatus, guestStatus: guest?.status ?? null,
+        ...(contact.archived ? { archived: true } : {}),
         participationForms: [...contact.participationForms] });
     }
     return projectedPeople.get(stable);
@@ -168,6 +171,7 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
     if (!existing) { existing = { ...person }; row.people.push(existing); }
     if (rolesInSession.length) existing.rolesInSession = [...new Set([...(existing.rolesInSession ?? []), ...rolesInSession])];
     if (publicRolesInSession.length) existing.publicRolesInSession = [...new Set([...(existing.publicRolesInSession ?? []), ...publicRolesInSession])];
+    if (person.archived) return;
     if (active) activePeople.set(person.id, person);
     if (person.responseStatus === 'declined') warn(row.warnings, 'PERSON_DECLINED', person.id, (person.name || person.id) + '：已回复不出席，仍有安排需要核对。');
     if (person.responseStatus === 'pending') warn(row.warnings, 'PERSON_REPLY_PENDING', person.id, (person.name || person.id) + '：尚待实际出席回复，不代表已确认参加。');
@@ -186,7 +190,9 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
       for (const reference of references) {
         const record = records.get(reference), row = rows.get(reference);
         if (!record) { warn(null, 'MISSING_' + kind + '_REFERENCE', contact.id, (guestByContact.get(contact.id)?.name || contact.name || contact.id) + '：关联的' + (kind === 'SESSION' ? '场次' : '展位') + '已不存在，请重新核对。'); continue; }
-        addPerson(row, contactPerson(contact), record.status !== 'cancelled',kind==='SESSION'?(contact.sessionRoles.find(entry=>entry.sessionId===reference)?.roles??[]):[]);
+        const session = kind === 'SESSION';
+        addPerson(row, contactPerson(contact), session ? isActiveSession(record) : isActiveBooth(record),
+          session ? (contact.sessionRoles.find(entry => entry.sessionId === reference)?.roles ?? []) : []);
         if (record.status === 'cancelled') warn(row.warnings, 'CANCELLED_' + kind + '_ASSIGNMENT', contact.id, '人员仍关联已取消的安排；不计入有效安排人数。');
       }
     }
@@ -198,7 +204,7 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
     if (session.guestId && !primary) warn(row.warnings, 'MISSING_GUEST_REFERENCE', session.id, (session.title || session.id) + '：主要嘉宾记录已不存在，请重新关联。');
     if (primary) {
       const person = guestPerson(primary);
-      addPerson(row, person, session.status !== 'cancelled');
+      addPerson(row, person, isActiveSession(session));
       row.primarySpeaker = { personId: person.id, name: person.name, status: primary.status, source: 'guest' };
     } else if (!session.guestId && session.speakerName) {
       // Saved legacy speaker text is displayed, never synthesized into a person
@@ -210,7 +216,7 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
     for (const participant of session.participants ?? []) {
       const guest = guestById.get(participant.guestId);
       if (!guest) { warn(row.warnings, 'MISSING_GUEST_REFERENCE', session.id, '参与者资料已不存在，请重新核对。'); continue; }
-      addPerson(row, guestPerson(guest), session.status !== 'cancelled', [], participant.roles);
+      addPerson(row, guestPerson(guest), isActiveSession(session), [], participant.roles);
     }
   }
   for (const team of teams) for (const [kind, reference, form, records, rows] of [
@@ -220,18 +226,19 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
     if (!team.participationForms.includes(form)) { warn(null, 'TEAM_FORM_MISMATCH', team.id, '团队关联安排与已选择参与形式不一致，请核对。'); continue; }
     const record = records.get(reference), row = rows.get(reference);
     if (!record) { warn(null, 'MISSING_TEAM_' + kind + '_REFERENCE', team.id, (team.teamName || team.id) + '：关联的' + (kind === 'SESSION' ? '分享场次' : '展位') + '已不存在，请重新核对。'); continue; }
-    addTeam(row, team, record.status !== 'cancelled');
+    addTeam(row, team, kind === 'SESSION' ? isActiveSession(record) : isActiveBooth(record));
     if (record.status === 'cancelled') warn(row.warnings, 'CANCELLED_TEAM_' + kind + '_ASSIGNMENT', team.id, '团队仍关联已取消的安排；不计入有效安排团队数。');
   }
-  for (const row of sessionRows.values()) if (row.status !== 'cancelled' && PRESENTATIONS.has(row.format) && !row.primarySpeaker
+  for (const row of sessionRows.values()) if (isActiveSession(row) && PRESENTATIONS.has(row.format) && !row.primarySpeaker
     && !(row.format === 'showcase' && row.teams.length)) warn(row.warnings, 'MISSING_PRIMARY_SPEAKER', row.id, (row.title || row.id) + '：尚未关联主要讲者／分享人员。');
   // Contacts and direct guest assignments share the same stable person identity.
   // Only scheduled, valid intervals take part; adjacent sessions do not overlap.
   const intervals = new Map();
   for (const row of sessionRows.values()) {
-    const range = row.status === 'scheduled' && timeRange(row);
+    const range = isActiveSession(row) && timeRange(row);
     if (!range) continue;
     for (const person of row.people) {
+      if (person.archived) continue;
       const entries = intervals.get(person.id) ?? [];
       for (const prior of entries) if (range[0] < prior.range[1] && prior.range[0] < range[1]) {
         const message = (person.name || '同一人员') + '有重叠的已安排时段，请核对。';
@@ -255,7 +262,7 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
   const counts = Object.fromEntries(contentSchema.sessionFormats.map(format => [format, { total: 0, draft: 0, scheduled: 0, cancelled: 0, withPrimarySpeaker: 0, missingPrimarySpeaker: 0 }]));
   for (const session of sessions) {
     counts[session.format].total++; counts[session.format][session.status]++;
-    if (session.status === 'scheduled') {
+    if (isActiveSession(session)) {
       const row = sessionRows.get(session.id);
       if (row.primarySpeaker) counts[session.format].withPrimarySpeaker++;
       else if (row.warnings.some(warning => warning.code === 'MISSING_PRIMARY_SPEAKER')) counts[session.format].missingPrimarySpeaker++;
@@ -269,7 +276,7 @@ export function buildArrangementOverview({ content, contacts, contentRevision, c
     summary: {
       booths: { totalRecords: booths.length, activePlaced: positions.length, confirmedPlaced: positions.filter(row => row.booth.status === 'confirmed').length,
         pendingPlaced: positions.filter(row => row.booth.status === 'pending').length, unplacedRecords: unplacedBooths.length },
-      sessions: { total: sessions.length, active: sessions.filter(session => session.status !== 'cancelled').length, byFormat: counts,
+      sessions: { total: sessions.length, active: sessions.filter(isActiveSession).length, byFormat: counts,
         missingPrimarySpeaker: allSessions.filter(row => row.warnings.some(warning => warning.code === 'MISSING_PRIMARY_SPEAKER')).length },
       people: { assignedContacts: assignedContacts.length, attendingContacts: assignedContacts.filter(person => person.responseStatus === 'attending').length,
         pendingContacts: assignedContacts.filter(person => person.responseStatus === 'pending').length, declinedContacts: assignedContacts.filter(person => person.responseStatus === 'declined').length,

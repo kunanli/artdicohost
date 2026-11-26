@@ -48,6 +48,24 @@ export const organizerTaskLabels = Object.freeze({
 export function contactDeclined(contact) {
   return contact?.profile?.contactConsent === 'declined' || contact?.operations?.responseStatus === 'declined';
 }
+
+export const isActiveSession = session => session?.status === 'scheduled';
+export const isActiveBooth = booth => booth?.status === 'confirmed';
+const arrangementStatuses = { draft: '草稿 · 尚未排期', pending: '待确认', cancelled: '已取消' };
+export const arrangementStatusLabel = status => has(arrangementStatuses, status) ? arrangementStatuses[status] : '';
+
+/** Include both staff assignments and saved program links to a person's guest profile. */
+export function contactSessionIds(contact, content) {
+  const ids = new Set(list(contact?.operations?.sessionIds));
+  if (!contact?.id) return [...ids];
+  const guestIds = new Set(list(content?.guests).filter(guest => guest.contactId === contact.id).map(guest => guest.id));
+  for (const session of list(content?.sessions)) {
+    if (list(session.contactIds).includes(contact.id) || guestIds.has(session.guestId)
+      || list(session.participants).some(participant => guestIds.has(participant.guestId))) ids.add(session.id);
+  }
+  return [...ids];
+}
+
 function settingsCurrent(settings, contact, event) {
   if (!settings || settings.confirmed !== true || !event) return false;
   const names = [contact?.profile?.displayName, contact?.profile?.name].map(text).filter(Boolean);
@@ -76,7 +94,7 @@ function latestByChannel(invitations) {
   return [...values.values()];
 }
 export function contactProgress(contact, { intent = null, content = null, event, now = Date.now(), inactiveRegistrationIds = [], admissionStatuses = [] } = {}) {
-  const id = contact.id, excluded = contactDeclined(contact), operations = contact.operations ?? {};
+  const id = contact.id, archived = Boolean(contact.archivedAt), excluded = archived || contactDeclined(contact), operations = contact.operations ?? {};
   const conversion = list(intent?.conversions).find(entry => entry.sourceContactId === id) ?? null;
   const admission = conversion ? list(admissionStatuses).find(entry => entry.registrationId === conversion.registrationId)?.status ?? conversion.admissionStatus ?? 'unknown' : null;
   const admissionStatus = conversion ? (list(inactiveRegistrationIds).includes(conversion.registrationId) ? 'withdrawn' : ['confirmed','waitlisted','withdrawn','pending_review','rejected'].includes(admission) ? admission : 'unknown') : null;
@@ -107,26 +125,26 @@ export function contactProgress(contact, { intent = null, content = null, event,
   const unknown = !excluded && !inactive && linked.some(entry => ['issuing', 'unknown'].includes(entry.status));
   const prepared = !excluded && !inactive && (legacyCurrent || current.some(entry => entry.status === 'prepared'));
   const stale = Boolean(legacy.generatedAt && !legacyCurrent || legacy.sentAt && !legacySent || versions.some(entry => !current.includes(entry)));
-  const sessions = list(content?.sessions).filter(entry => entry.status !== 'cancelled');
-  const booths = list(content?.booths).filter(entry => entry.status !== 'cancelled');
-  const validSessions = list(operations.sessionIds).filter(id => sessions.some(entry => entry.id === id));
-  const validBooths = list(operations.boothIds).filter(id => booths.some(entry => entry.id === id));
+  const sessions = new Set(contactSessionIds(contact, content));
+  const booths = new Set(list(operations.boothIds));
+  const hasActiveSession = !archived && list(content?.sessions).some(item => sessions.has(item.id) && isActiveSession(item));
+  const hasActiveBooth = !archived && list(content?.booths).some(item => booths.has(item.id) && isActiveBooth(item));
   const forms = list(operations.participationForms);
   const needsSession = forms.some(value => ['speaker', 'panelist', 'host', 'organizer'].includes(value));
   const needsBooth = forms.includes('booth');
   const needsShowcase = forms.includes('student_showcase');
-  const missingAssignment = (needsSession && !validSessions.length) || (needsBooth && !validBooths.length)
-    || (needsShowcase && !validSessions.length && !validBooths.length);
-  const state = excluded ? 'excluded' : admissionStatus === 'rejected' ? 'rejected' : inactive ? 'inactive' : admissionStatus === 'pending_review' ? 'pending_review' : admissionStatus === 'waitlisted' ? 'waitlisted' : admissionPending ? 'admission_unknown' : manuallySent ? 'manually_sent' : unknown ? 'unknown'
+  const missingAssignment = !archived && (needsSession && !hasActiveSession || needsBooth && !hasActiveBooth
+    || needsShowcase && !hasActiveSession && !hasActiveBooth);
+  const state = archived ? 'archived' : excluded ? 'excluded' : admissionStatus === 'rejected' ? 'rejected' : inactive ? 'inactive' : admissionStatus === 'pending_review' ? 'pending_review' : admissionStatus === 'waitlisted' ? 'waitlisted' : admissionPending ? 'admission_unknown' : manuallySent ? 'manually_sent' : unknown ? 'unknown'
     : providerAccepted ? 'provider_accepted' : prepared ? 'prepared' : stale ? 'stale' : 'not_prepared';
   return { contactId: id, owner: text(operations.owner), excluded, consented: contact.profile?.contactConsent === 'consented',
     conversion, admissionStatus, admissionPending, inactive, state, manuallySent, providerAccepted, historyManuallySent, historyProviderAccepted, unknown, prepared, stale,
     response: operations.responseStatus ?? 'pending', contacted: manuallySent || providerAccepted || historyManuallySent || historyProviderAccepted,
-    assigned: validSessions.length + validBooths.length > 0, missingAssignment,
+    assigned: hasActiveSession || hasActiveBooth, hasActiveSession, hasActiveBooth, missingAssignment,
     followUpAt: text(operations.followUpAt), needsSession, needsBooth, needsShowcase };
 }
 export function summarizeContactProgress(contacts, options = {}) {
-  const progress = list(contacts).map(contact => contactProgress(contact, options));
+  const progress = list(contacts).filter(contact => !contact.archivedAt).map(contact => contactProgress(contact, options));
   const active = progress.filter(entry => !entry.excluded);
   return { total: progress.length, excluded: progress.length - active.length, actionable: active.length,
     converted: active.filter(entry => entry.conversion).length,
@@ -141,7 +159,7 @@ export function summarizeContactProgress(contacts, options = {}) {
     awaitingReply: active.filter(entry => entry.response === 'pending' && entry.contacted).length,
     progress };
 }
-export const invitationProgressLabels = Object.freeze({ excluded: '已拒绝联络或出席 · 不邀请', inactive: '关联报名已停用 · 请核对',
+export const invitationProgressLabels = Object.freeze({ archived: '已归档', excluded: '已拒绝联络或出席 · 不邀请', inactive: '关联报名已停用 · 请核对',
   pending_review: '申请待审核 · 尚无名额，不准备正式邀请', rejected: '申请未通过 · 不准备正式邀请',
   waitlisted: '已登记候补 · 名额尚未确认', admission_unknown: '名额状态待核对 · 暂不准备正式邀请',
   manually_sent: '当前版已记录人工发出', provider_accepted: '邮件服务已接收 · 未证明送达', unknown: '发送结果不明 · 勿重复发送',
@@ -149,29 +167,31 @@ export const invitationProgressLabels = Object.freeze({ excluded: '已拒绝联�
 
 /** No contact methods or original answers leave this projection. */
 export function buildOrganizerTasks({ contacts = [], contactRevision = 0, content = {}, contentRevision = 0,
-  intent = null, inactiveRegistrationIds = [], admissionStatuses = [], event, now = Date.now() } = {}) {
+  intent = null, inactiveRegistrationIds = [], admissionStatuses = [], event, now = Date.now(), externalRegistrationOnly = false } = {}) {
   const options = { intent, content, inactiveRegistrationIds, admissionStatuses, event, now };
-  const summary = summarizeContactProgress(contacts, options), tasks = [];
+  const activeContacts = list(contacts).filter(contact => !contact.archivedAt);
+  const summary = summarizeContactProgress(activeContacts, options), tasks = [];
+  const progressById = new Map(summary.progress.map(progress => [progress.contactId, progress]));
   const date = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date(now));
   const add = (contact, progress, kind, detail) => tasks.push({ id: kind + ':' + contact.id, kind, label: organizerTaskLabels[kind],
     contactId: contact.id, name: text(contact.profile?.displayName) || text(contact.profile?.name), organization: text(contact.profile?.organization),
     owner: progress.owner, dueAt: progress.followUpAt, detail,
     href: '/admin/contacts/#contact=' + encodeURIComponent(contact.id),
     ...(progress.conversion ? { registrationHref: '/admin/registrations/#registration=' + encodeURIComponent(progress.conversion.registrationId) } : {}) });
-  for (const contact of list(contacts)) {
-    const progress = summary.progress.find(entry => entry.contactId === contact.id);
+  for (const contact of activeContacts) {
+    const progress = progressById.get(contact.id);
     if (progress.excluded || progress.inactive) continue;
     if (!progress.consented) add(contact, progress, 'verify_consent', '先核对本人联络许可；未核实前不准备或发送邀请。');
-    if (intent && !progress.conversion) add(contact, progress, 'unconverted', '核对原始来源后，可在人员页预览并代登记。');
+    if (!externalRegistrationOnly && intent && !progress.conversion) add(contact, progress, 'unconverted', '核对原始来源后，可在人员页预览并代登记。');
     if (progress.unknown) add(contact, progress, 'invitation_unknown', '服务商结果尚未确认；先人工核对，勿重试发送。');
-    if (progress.admissionPending) {
+    if (!externalRegistrationOnly && progress.admissionPending) {
       add(contact, progress, 'admission_pending', progress.admissionStatus === 'waitlisted'
         ? '已保存候补登记，名额尚未确认；待筹备团队核对并按已获授权的渠道通知。此时不准备正式入场邀请。'
         : progress.admissionStatus === 'pending_review' ? '申请已保存，待工作人员审核，尚无参会名额；审核意见与名额决定分别核对，此时不准备正式入场邀请。'
         : '后台尚未核对名额状态，请刷新或到关联报名核对；确认前不准备正式邀请。');
       continue;
     }
-    if (progress.consented && !progress.contacted && !progress.unknown) add(contact, progress, 'unsent', progress.prepared ? '邀请已准备，实际发出后再记录渠道。' : progress.stale ? '旧版记录不计为当前版已发出，请核对最新资料。' : '先准备并核对邀请内容；下载不等于发出。');
+    if (!progress.admissionPending && progress.consented && !progress.contacted && !progress.unknown) add(contact, progress, 'unsent', progress.prepared ? '邀请已准备，实际发出后再记录渠道。' : progress.stale ? '旧版记录不计为当前版已发出，请核对最新资料。' : '先准备并核对邀请内容；下载不等于发出。');
     if (progress.response === 'pending' && progress.contacted) add(contact, progress, 'unreplied', progress.providerAccepted && !progress.manuallySent ? '邮件服务商仅接受请求，尚无送达或本人回复证明。' : '已记录人工发出，仍需核对本人实际回复。');
     if (progress.response === 'attending' && progress.missingAssignment) add(contact, progress, 'unassigned', [progress.needsSession ? '场次' : '', progress.needsBooth ? '展位' : '', progress.needsShowcase ? '作品分享或展位' : ''].filter(Boolean).join(' / ') + '仍需关联有效安排；普通参会不需要分配场次。');
     if (progress.followUpAt && progress.followUpAt <= date && progress.response === 'pending') add(contact, progress, 'follow_up', '已到下次跟进日期，核对回复后更新下一步。');
@@ -188,7 +208,7 @@ export function buildOrganizerTasks({ contacts = [], contactRevision = 0, conten
   const { progress: _privateProgress, ...metrics } = summary;
   return { generatedAt: new Date(now).toISOString(), revisions: { contacts: contactRevision, content: contentRevision, intent: intent?.revision ?? null },
     available: { registrationProgress: intent !== null, invitationLedger: intent !== null }, metrics,
-    owners: [...new Set([...tasks.map(task => task.owner), ...list(contacts).map(contact => text(contact.operations?.owner))].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN')), tasks };
+    owners: [...new Set([...tasks.map(task => task.owner), ...activeContacts.map(contact => text(contact.operations?.owner))].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN')), tasks };
 }
 
 // This policy consumes saved, authorized facts only. It never performs a write,
@@ -287,11 +307,12 @@ export function personWorkRecommendation(facts = {}) {
   const unknownSend = own(facts,'historicalDeliveryUnknown')===true || ['unknown', 'reserved', 'issuing'].includes(invitation) || ['unknown', 'reserved'].includes(delivery);
   const unavailable = invalid || own(facts, 'sourceUnavailable') === true || registrationState === 'unavailable' || delivery === 'unavailable';
   const duplicate = own(facts, 'duplicateCandidate') === true;
-  const integration = Boolean(contactId && response === 'attending' && !registrationId && !admission
+  const externalRegistrationOnly = own(facts, 'externalRegistrationOnly') === true;
+  const integration = Boolean(!externalRegistrationOnly && contactId && response === 'attending' && !registrationId && !admission
     && ['unlinked', null].includes(registrationState) && consent !== 'declined');
-  const needsReview = admission === 'pending_review' || Boolean(registrationId && registrationState === 'restricted' && !admission);
+  const needsReview = !externalRegistrationOnly && (admission === 'pending_review' || Boolean(registrationId && registrationState === 'restricted' && !admission));
   const reply = Boolean(contactId && !terminal && response === 'pending' && consent !== 'declined');
-  const declinedPlace = response === 'declined' && admission === 'confirmed';
+  const declinedPlace = !externalRegistrationOnly && response === 'declined' && admission === 'confirmed';
   const notification = admission === 'confirmed' && ['not_sent', 'rejected'].includes(delivery)
     && response !== 'declined' && consent !== 'declined';
   const publication = own(facts, 'publicNeedsUpdate') === true;

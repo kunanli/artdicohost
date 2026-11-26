@@ -22,3 +22,10 @@ export function eventTimeInstant(date,time,timeZone) {
     return candidates.length===1?candidates[0]:null;
   } catch {return null;}
 }
+export function publishedMapUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:' && !url.username && !url.password) return url.href;
+  } catch { /* A missing or invalid pin uses the page's venue fallback. */ }
+  return null;
+}

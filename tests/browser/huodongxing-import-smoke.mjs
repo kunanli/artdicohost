@@ -217,9 +217,28 @@ try {
     const f = await fixture(browser);
     try {
       await open(f); const row = ticket(41), headers = [...HEADERS]; headers[7] = 'unverified-email-header'; const before = writes(f);
-      await f.page.locator('[data-hdx-file]').setInputFiles(workbook([row], headers)); await f.page.locator('[data-hdx-error]').waitFor({ state: 'visible' }); await idle(f.page); assert.equal(posts(f, PREVIEW).length, 0); assert.equal(writes(f), before);
-      const sameFilePeer = ticket(42, { email: row[7] }); await pick(f, workbook([row, sameFilePeer])); assert.equal(posts(f, PREVIEW).length, 1);
-      const sourcePreview = posts(f, PREVIEW)[0].result; assert.ok(sourcePreview.rows.every(item => item.reason === 'POSSIBLE_DUPLICATE' && item.candidates.length === 0));
+      await pick(f, workbook([row])); await checkbox(f.page, row[0]).check(); await attest(f.page);
+      assert.equal(await f.page.locator('[data-hdx-commit]').isEnabled(), true);
+      const expectDiscarded = async () => {
+        assert.equal(await f.page.locator('[data-hdx-preview]').isVisible(), false);
+        assert.equal(await f.page.locator('[data-hdx-rows] li').count(), 0);
+        for (const selector of ['source-confirm', 'permission-confirm']) assert.equal(await f.page.locator('[data-hdx-' + selector + ']').isChecked(), false);
+        assert.equal(await f.page.locator('[data-hdx-commit]').isDisabled(), true);
+        assert.equal(posts(f, IMPORT).length, 0);
+        assert.equal(writes(f), before);
+      };
+      const invalid = { ...workbook([ticket(43)], headers), name: 'synthetic-invalid.xlsx' };
+      await f.page.locator('[data-hdx-file]').setInputFiles(invalid); await f.page.locator('[data-hdx-error]').waitFor({ state: 'visible' }); await idle(f.page);
+      await expectDiscarded(); assert.equal(posts(f, PREVIEW).length, 1, 'invalid replacements fail before server preview');
+
+      await pick(f, workbook([row])); await checkbox(f.page, row[0]).check(); await attest(f.page);
+      await f.page.route(API + PREVIEW, route => route.fulfill({ status: 503, json: { error: { message: '合成预览暂不可用' } } }), { times: 1 });
+      const unavailable = { ...workbook([ticket(44)]), name: 'synthetic-unavailable.xlsx' };
+      await f.page.locator('[data-hdx-file]').setInputFiles(unavailable); await f.page.locator('[data-hdx-error]').filter({ hasText: '合成预览暂不可用' }).waitFor(); await idle(f.page);
+      await expectDiscarded(); assert.equal(await f.page.locator('[data-hdx-file-name]').textContent(), unavailable.name);
+
+      const sameFilePeer = ticket(42, { email: row[7] }); await pick(f, workbook([row, sameFilePeer])); assert.equal(posts(f, PREVIEW).length, 3);
+      const sourcePreview = posts(f, PREVIEW).at(-1).result; assert.ok(sourcePreview.rows.every(item => item.reason === 'POSSIBLE_DUPLICATE' && item.candidates.length === 0));
       for (const ticketRow of [row, sameFilePeer]) {
         assert.equal(await checkbox(f.page, ticketRow[0]).isDisabled(), true, 'matching source rows require an explicit different-person choice even without existing candidates');
         assert.equal(await rowFor(f.page, ticketRow[0]).locator('select').inputValue(), '');
@@ -228,7 +247,7 @@ try {
       assert.equal(await f.page.locator('[data-hdx-tid]:checked').count(), 0); await f.page.keyboard.press('Escape');
       assert.equal(await f.page.locator('[data-hdx-dialog]').isVisible(), false); assert.equal(await f.page.locator('[data-hdx-rows]').textContent(), ''); assert.equal(await f.page.locator('[data-hdx-file]').inputValue(), '');
       await f.page.locator('[data-hdx-open]').click(); assert.equal(await f.page.locator('[data-hdx-preview]').isVisible(), false); assert.equal(await f.page.locator('[data-hdx-summary]').textContent(), ''); assert.equal(f.runtime.messages.length, 0);
-      reports.push({ case: 'invalid-source-and-escape', width: 390, exactHeadersRequired: true, invalidSourcePosts: 0, previewReadOnly: true, sameFilePeersNeedExplicitChoiceWithoutExistingCandidates: true, escapeClearsPrivateDOM: true, reopenedEmpty: true, mockMessages: 0 });
+      reports.push({ case: 'invalid-source-and-escape', width: 390, exactHeadersRequired: true, invalidSourcePosts: 0, failedReplacementClearsPreviousPreview: true, previewReadOnly: true, sameFilePeersNeedExplicitChoiceWithoutExistingCandidates: true, escapeClearsPrivateDOM: true, reopenedEmpty: true, mockMessages: 0 });
     } finally { await closeFixture(f); }
   }
   assert.equal(reports.length, 7); assert.deepEqual(errors, []);

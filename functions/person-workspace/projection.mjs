@@ -4,7 +4,7 @@ import { PARTICIPATION_FORMS, SESSION_ROLES, validateStoredContact } from '../..
 import { GUEST_PUBLIC_ROLES, PORTRAIT_ID_PATTERN, isContentVisible, contentSchema, normalizeGuestAttendance } from '../../shared/content-schema.mjs';
 import { parseTimestamp } from '../registration-api/policy.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
-import { personWorkRecommendation, personAttendanceStage, contactProgress, PEOPLE_HEALTH_KINDS } from '../../shared/organizer-progress.mjs';
+import { personWorkRecommendation, personAttendanceStage, contactProgress, contactSessionIds, PEOPLE_HEALTH_KINDS } from '../../shared/organizer-progress.mjs';
 import { assessPublishedEventFacts, eventConfig } from '../../src/config/event.mjs';
 
 export const CONTACT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
@@ -205,14 +205,17 @@ export function publicProfileProjection(contactId, source, { responseStatus } = 
   return { state: orphanedPublication ? 'unavailable' : profiles.length ? 'available' : 'unlinked', profiles, publishedRevision, publishedAt };
 }
 export function arrangementsProjection(contact, source) {
-  const linkedGuestIds = records(source.content.guests ?? [], CONTACT_ID, 200).filter(item => item.contactId === contact.id).map(item => item.id);
-  const sessionIds = [...new Set([...contact.operations.sessionIds,
-    ...source.content.sessions.filter(item => linkedGuestIds.includes(item.guestId)
-      || item.participants?.some(participant => linkedGuestIds.includes(participant.guestId))).map(item => item.id)])];
-  const sessions = sessionIds.map(id => {
+  const guests = records(source.content.guests ?? [], CONTACT_ID, 200);
+  const linkedGuestIds = new Set(guests.filter(item => item.contactId === contact.id).map(item => item.id));
+  const sessions = contactSessionIds(contact, source.content).map(id => {
     const item = source.content.sessions.find(entry => entry.id === id), roles = contact.operations.sessionRoles.find(entry => entry.sessionId === id)?.roles ?? [];
+    const programRoles = [...new Set([
+      ...(linkedGuestIds.has(item?.guestId) ? ['speaker'] : []),
+      ...(item?.participants ?? []).filter(participant => linkedGuestIds.has(participant.guestId)).flatMap(participant => participant.roles),
+    ].map(role => role === 'moderator' ? 'host' : role).filter(role => SESSION_ROLES.includes(role)))];
     return { id, title: text(item?.title, 200), start: text(item?.start, 5), end: text(item?.end, 5), zone: text(item?.zone, 1),
-      status: item ? oneOf(item.status, ['draft', 'scheduled', 'cancelled']) : 'missing', roles, missing: !item };
+      status: item ? oneOf(item.status, ['draft', 'scheduled', 'cancelled']) : 'missing', roles, missing: !item,
+      ...(programRoles.length ? { programRoles } : {}) };
   });
   const booths = contact.operations.boothIds.map(id => {
     const item = source.content.booths.find(entry => entry.id === id);

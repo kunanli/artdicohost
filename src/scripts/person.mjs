@@ -9,6 +9,7 @@ import { reviewConfirmationLink } from '../lib/registration-review-selection.mjs
 import { SESSION_ROLE_LABELS, validateContactOperations } from '../../shared/contacts-schema.mjs';
 import { sourceLabels } from '../../shared/contact-import.mjs';
 import { identityOptions, participationOptions } from '../../shared/registration-schema.mjs';
+import { arrangementStatusLabel } from '../../shared/organizer-progress.mjs';
 
 const $ = selector => document.querySelector(selector);
 const profileFields = ['[data-person-profile]', '[data-person-registration]', '[data-person-admission]', '[data-person-arrangements]', '[data-person-organizations]', '[data-person-volunteers]', '[data-person-communications]', '[data-person-actions]', '[data-person-steps]'];
@@ -44,7 +45,7 @@ const personConfirmation = createPersonConfirmation({root: $('[data-person-confi
   draftStore:operationsDraftStore(),onInvalidated:clearPrivateState,onLockChange:confirmationStateChanged,onChecked:checked=>{lastConfirmationCheck={...checked,key:currentKey()};renderConfirmationCheck();},
   isBlocked: () => reading || quickBusy || transportBusy > 0 || quickDirty || Boolean(quickPending) || profileLocked(),isSendBlocked:deliveryUnknown, onChanged: () => { if (!quickDirty && !quickPending && !profileLocked()) void loadPerson({preserve:true}); }});
 const resolution = createPeopleResolution({root: $('[data-people-resolution]'), request, getUser: () => user,
-  onChanged: () => loadPerson({preserve:true}), onIntegrate: integratePerson});
+  onChanged: () => loadPerson({preserve:true}), onIntegrate: integratePerson, canIntegrate: () => !selectedView?.externalRegistrationOnly});
 
 function node(tag, value, className) { const element = document.createElement(tag); if (value !== undefined) element.textContent = value; if (className) element.className = className; return element; }
 function announce(message = '', error = false) {
@@ -302,10 +303,17 @@ function renderArrangements(view) {
   if (view.availability.arrangements !== 'available') { stateMessage(output, view.availability.arrangements); return; }
   output.append(node('h3', '参与场次'));
   const sessions = node('ul', undefined, 'person-list');
-  for (const item of view.arrangements.sessions) { const row = node('li'); row.append(node('strong', item.missing ? '历史场次已不存在' : item.title || '场次待命名'), node('p', item.missing ? '保留原关联，需在人员安排中核对。' : [item.start + '–' + item.end, item.zone ? item.zone + ' 区' : '', item.status === 'cancelled' ? '已取消' : ''].filter(Boolean).join(' · '))); if (item.roles.length) row.append(node('p', '本场职责：' + item.roles.map(value => SESSION_ROLE_LABELS[value] ?? value).join('、'))); sessions.append(row); }
+  for (const item of view.arrangements.sessions) {
+    const row = node('li');
+    row.append(node('strong', item.missing ? '历史场次已不存在' : item.title || '场次待命名'),
+      node('p', item.missing ? '保留原关联，需在人员安排中核对。' : [item.start + '–' + item.end, item.zone ? item.zone + ' 区' : '', arrangementStatusLabel(item.status)].filter(Boolean).join(' · ')));
+    const roles = [...new Set([...item.roles, ...(item.programRoles ?? [])])];
+    if (roles.length) row.append(node('p', '本场职责：' + roles.map(value => SESSION_ROLE_LABELS[value] ?? value).join('、')));
+    sessions.append(row);
+  }
   output.append(sessions.childNodes.length ? sessions : node('p', '尚未关联活动场次。', 'person-muted'), node('h3', '出席展位'));
   const booths = node('ul', undefined, 'person-list');
-  for (const item of view.arrangements.booths) { const row = node('li'); row.append(node('strong', item.missing ? '历史展位已不存在' : [item.code, item.organization || item.project || '资料待完善'].filter(Boolean).join(' · ')), node('p', item.missing ? '保留原关联，需在人员安排中核对。' : [item.position ? '位置 ' + item.position : '', item.project, item.status === 'cancelled' ? '已取消' : ''].filter(Boolean).join(' · '))); booths.append(row); }
+  for (const item of view.arrangements.booths) { const row = node('li'); row.append(node('strong', item.missing ? '历史展位已不存在' : [item.code, item.organization || item.project || '资料待完善'].filter(Boolean).join(' · ')), node('p', item.missing ? '保留原关联，需在人员安排中核对。' : [item.position ? '位置 ' + item.position : '', item.project, arrangementStatusLabel(item.status)].filter(Boolean).join(' · '))); booths.append(row); }
   output.append(booths.childNodes.length ? booths : node('p', '尚未关联出席展位。', 'person-muted'));
   output.append(node('h3', '关联的公开人物资料'));
   if (view.publicProfile.state !== 'available') {const badge=statusBadge(view.publicProfile.state==='unlinked'?'尚未关联人物资料':'公开状态待核对','neutral');badge.dataset.profilePublication='';badge.dataset.publicationState='unknown';output.append(badge);stateMessage(output, view.publicProfile.state);}
@@ -378,7 +386,7 @@ function renderVolunteers(view) {
 function currentKey() { const item = parsePersonSelection(location.hash); return item ? item.kind + ':' + item.id : ''; }
 function viewKey(view = selectedView) { return view ? view.selected.kind + ':' + view.selected.id : ''; }
 function credentialRegistration() {
-  return selectedView?.permissions.registration && selectedView.availability.registration === 'available'
+  return !selectedView?.externalRegistrationOnly && selectedView?.permissions.registration && selectedView.availability.registration === 'available'
     && selectedView.admission?.status === 'confirmed' ? selectedView.registration?.id ?? null : null;
 }
 function legacyDeliveryUnknown() {
@@ -556,7 +564,7 @@ function renderSummary(view) {
   output.append(badge(admission, syncIssue ? undefined : view.admission?.status));
   if(progress.invitationLabel)output.append(node('span',progress.invitationLabel,'person-invitation-evidence'));
   if(progress.warning)output.append(node('span',progress.warning,'person-attendance-warning'));
-  else if(!progress.invitationLabel&&view.admission?.status==='confirmed'&&view.availability.confirmations==='available')output.append(badge('确认信未寄送'));
+  else if(!view.externalRegistrationOnly&&!progress.invitationLabel&&view.admission?.status==='confirmed'&&view.availability.confirmations==='available')output.append(badge('确认信未寄送'));
   if (view.publicProfile.profiles.some(item => item.published && !item.publishedMatchesDraft)) output.append(badge('前台待更新'));
   if (view.contact?.operations.owner) { const owner = ownerTagPresentation(view.contact.operations.owner), tag = node('span', owner.label, 'ah-owner-tag'); tag.dataset.ownerTone = owner.tone; output.append(tag); }
 }
@@ -614,7 +622,8 @@ function showSyncOutcome(receipt) {
   const output = $('[data-person-quick-outcome]'), admission = receipt.admission;
   syncIssue = '';
   let message = '';
-  if (admission?.status === 'requiresReviewer') syncIssue = '回复已保存，名额交由审核人核对。';
+  if (admission?.status === 'external') message = '回复已保存。报名与签到请在活动行核对。';
+  else if (admission?.status === 'requiresReviewer') syncIssue = '回复已保存，名额交由审核人核对。';
   else if (admission?.status === 'unavailable') syncIssue = '回复已保存，名额结果待核对。';
   else if (admission) {
     message = ({confirmed:'名额已确认。',waitlisted:'已登记候补。',pending_review:'申请仍待审核。'})[admission.status] ?? '';
@@ -734,7 +743,7 @@ async function prepareCredential() {
   finally { if (epoch === generation && currentKey() === key) { credentialBusy = false; lock(); } }
 }
 function openServices() {
-  if(profileLocked())return;
+  if(profileLocked()||selectedView?.externalRegistrationOnly)return;
   $('[data-person-service-panel]').hidden = false;
   const id = credentialRegistration(); $('[data-person-credential]').hidden = !id;
   personConfirmation.select(id,{suppress:deliveryUnknown()}); renderNext(); lock();
@@ -786,7 +795,8 @@ function render(view, {preserveQuick = false} = {}) {
     $('[data-person-steps]').append(row);
   }
   personFresh=true;navigationEnd=false;
-  personConfirmation.select(view.registration?.id??null,{activate:false,suppress:deliveryUnknown()});
+  $('[data-person-service-open]').hidden = view.externalRegistrationOnly === true;
+  personConfirmation.select(view.externalRegistrationOnly ? null : view.registration?.id??null,{activate:false,suppress:deliveryUnknown()});
   renderConfirmationCheck();
   renderProfile(view); renderAdmission(view); renderRegistration(view); renderArrangements(view); renderOrganizations(view); renderVolunteers(view); renderCommunications(view);
   const revisions = Object.entries(view.revisions).filter(([, revision]) => revision !== null).map(([key, revision]) => ({ contacts: '人员', content: '活动', invitations: '邀请', registration: '核查', admission: '名额', confirmations: '确认通知', volunteers: '志愿分工' })[key] + '版本 ' + revision);

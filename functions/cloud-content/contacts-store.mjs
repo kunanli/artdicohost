@@ -293,6 +293,7 @@ export function createOssContactsStore({ journal, contentStore, now = () => Date
     }),
     saveOperations: (id, expected, input, actorId) => mutate(expected, actorId, async state => {
       const contact = find(state, id);
+      if (contact.archivedAt) throw new CloudContentError('CONTACT_NOT_FOUND', '此联系人已归档。', 404);
       const previousResponseStatus = contact.operations.responseStatus;
       let content; try { content = (await contentStore.read()).draft.content; } catch { throw unavailable(); }
       const update = preserveContactOperationDefaults(input, contact.operations);

@@ -173,6 +173,7 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         code: error.code, message: error.code === 'AUTH_REQUIRED' ? '请先登录后台。' : '当前账号没有权限。' } }, error.code === 'AUTH_REQUIRED' ? 401 : 403);
       const safe = error instanceof ConfirmationError ? error : new ConfirmationError();
       const messages = { CONFIRMATION_NOT_FOUND: '确认链接无效或已到期，请联系工作人员核对。', AUTH_REQUIRED: '请先登录后台。',
+        REGISTRATION_EXTERNAL: '报名与签到请在活动行办理。',
         FORBIDDEN: '当前账号没有管理确认通知的权限。', ORIGIN_REJECTED: '请求来源不被允许。', CSRF_REJECTED: '安全校验未通过，请重新读取后台。',
         INVALID_REQUEST: '请求格式无效。', UNSUPPORTED_MEDIA_TYPE: '请发送 UTF-8 JSON。', BODY_TOO_LARGE: '请求超过长度限制。',
         REQUEST_TIMEOUT: '请求读取未完成。', REVISION_CONFLICT: '通知记录已变化，请重新读取后核对。', METHOD_NOT_ALLOWED: '此接口不支持该方法。', NOT_FOUND: '接口不存在。' };

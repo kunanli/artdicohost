@@ -1,3 +1,5 @@
+import { agendaPeriod, agendaPeriodLabels } from '../lib/agenda-period.mjs';
+
 for (const root of document.querySelectorAll('[data-agenda]')) {
   const tabs = [...root.querySelectorAll('[data-zone]')];
   const panels = [...root.querySelectorAll('[data-agenda-panel]')];
@@ -9,7 +11,7 @@ for (const root of document.querySelectorAll('[data-agenda]')) {
   let published=false,visitorSelection=false;
   let rendered=false;
   const main=root.querySelector('.ah-agenda-main');
-  const rowPeriod = row => row.dataset.agendaStart < '12:00' ? 'morning' : 'afternoon';
+  const rowPeriod = (row, panel) => agendaPeriod(panel.dataset.agendaPanel, row.dataset.agendaStart, row.dataset.agendaEnd);
 
   // Published content replaces the list with direct article children. Recreate
   // these presentation headings from those new rows rather than stale copies.
@@ -19,15 +21,16 @@ for (const root of document.querySelectorAll('[data-agenda]')) {
     list.querySelectorAll('[data-program-divider]').forEach(heading => heading.remove());
     let previous;
     for (const row of list.querySelectorAll('.ah-agenda-row')) {
-      const current = rowPeriod(row);
+      const current = rowPeriod(row, panel);
       if (current !== previous) {
         const heading = document.createElement('h4');
         heading.className = 'ah-program-divider';
         heading.dataset.programDivider = current;
-        heading.append(document.createTextNode(current === 'morning' ? '上午' : '午后'));
+        const [label, englishLabel] = agendaPeriodLabels[current];
+        heading.append(document.createTextNode(label));
         const english = document.createElement('span');
         english.setAttribute('aria-hidden', 'true');
-        english.textContent = current === 'morning' ? 'MORNING' : 'AFTERNOON';
+        english.textContent = englishLabel;
         heading.append(english);
         list.insertBefore(heading, row);
       }
@@ -48,9 +51,9 @@ for (const root of document.querySelectorAll('[data-agenda]')) {
       panel.setAttribute('role', 'tabpanel');
       panel.setAttribute('aria-labelledby', 'tab-' + panel.dataset.agendaPanel);
       const rows = [...panel.querySelectorAll('.ah-agenda-row')];
-      for (const row of rows) row.hidden = selectedPeriod !== 'all' && rowPeriod(row) !== selectedPeriod;
+      for (const row of rows) row.hidden = selectedPeriod !== 'all' && ![selectedPeriod, 'all-day'].includes(rowPeriod(row, panel));
       for (const heading of panel.querySelectorAll('[data-program-divider]')) {
-        heading.hidden = selectedPeriod !== 'all' && heading.dataset.programDivider !== selectedPeriod;
+        heading.hidden = selectedPeriod !== 'all' && ![selectedPeriod, 'all-day'].includes(heading.dataset.programDivider);
       }
       const empty = panel.querySelector('[data-program-empty]');
       if (empty) empty.hidden = rows.some(row => !row.hidden);
@@ -102,7 +105,7 @@ for (const root of document.querySelectorAll('[data-agenda]')) {
     // A static slot may already have the URL's ID. Reposition it once after the
     // first publication replaces that overview, unless the visitor chose a tab.
     if(!published&&!visitorSelection)initialHashApplied=false;
-    if(!initialHashApplied)activateHash(location.hash,{initial:true});
+    if(!visitorSelection&&!initialHashApplied)activateHash(location.hash,{initial:true});
     published=true;
   });
   panels.forEach(groupRows);

@@ -264,6 +264,7 @@ export function createFileContactsStore({ directory, contentStore, now = () => D
       const state = await load();
       checkRevision(expectedRevision, state.revision);
       const contact = findContact(state, id);
+      if (contact.archivedAt) throw new ContentError('CONTACT_NOT_FOUND', '此联系人已归档。', 404);
       const { draft } = await contentStore.read();
       const inputWithForms = preserveContactOperationDefaults(input, contact.operations);
       const operations = validationError(validateContactOperations(inputWithForms, draft.content), '跟进资料或安排未通过校验。');

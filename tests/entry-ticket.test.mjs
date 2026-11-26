@@ -160,6 +160,66 @@ test('actual composed runtime routes short links and staff check-in; deletion in
   assert.equal(f.messages.length, 0);
 });
 
+test('external mode retires onsite routes and staff registration writes while keeping cards and saved contacts', async () => {
+  const { peopleRuntimeFixture, PEOPLE_FIXTURE_EVENT } = await import('./helpers/people-runtime-fixture.mjs');
+  const f = await peopleRuntimeFixture({ attendeeReviewRequired: false });
+  const old = await f.seedPublic({ intake: 'general-v2' });
+  const entry = await f.app.entryService.issue({ registrationId: old.reference_code });
+  const headers = await f.login();
+  const app = f.make({ externalRegistrationOnly: true });
+  const call = (path, options) => app.handle(f.request(path, options));
+  const before = f.objects.calls.length;
+  for (const [path, method] of [
+    ['/api/admin/registration/entry-links/' + receiptCode(entry), 'GET'],
+    ['/api/admin/registration/entry-links/' + receiptCode(entry) + '/entry.png', 'HEAD'],
+    ['/api/admin/checkin/' + entryCode(entry), 'GET'],
+    ['/api/admin/checkin/' + entryCode(entry), 'POST'],
+    ['/api/admin/checkin/' + entryCode(entry) + '/operation/' + op, 'GET'],
+    ['/api/admin/admissions/approve', 'POST'],
+    ['/api/admin/admissions/staff', 'POST'],
+    ['/api/admin/contacts/convert', 'POST'],
+  ]) {
+    const result = await call(path, { method, headers, ...(path.includes('/entry-links/') ? { origin: SITE } : {}) });
+    assert.equal(result.status, 410, path);
+    if (method !== 'HEAD') assert.match((await result.json()).error.message, /活动行/u);
+  }
+  assert.equal(f.objects.calls.length, before, 'retired routes do not read or write private storage');
+  assert.equal(app.entryService, undefined);
+  const historical = await call('/api/admin/registration/confirmation', { method: 'POST', origin: SITE, body: { receiptToken: old.confirmation.receiptToken } });
+  assert.equal(historical.status, 410);
+  assert.equal((await historical.json()).error.code, 'REGISTRATION_EXTERNAL');
+  const idempotencyKey = 'w'.repeat(43);
+  const tokenRequest = (key, fields) => call('/api/admin/registration/token', {
+    method: 'POST', origin: SITE, body: { eventId: PEOPLE_FIXTURE_EVENT, idempotencyKey: key, ...fields },
+  });
+  assert.equal((await tokenRequest('g'.repeat(43))).status, 409);
+  assert.equal((await tokenRequest('s'.repeat(43), { speakerApplication: true })).status, 409);
+  const token = await tokenRequest(idempotencyKey, { walletApplication: true });
+  assert.equal(token.status, 200);
+  const submissionToken = (await token.json()).submissionToken;
+  const submit = fields => call('/api/admin/registration/submit', {
+    method: 'POST', origin: SITE, headers: { 'Idempotency-Key': idempotencyKey, 'X-Registration-Token': submissionToken },
+    body: { eventId: PEOPLE_FIXTURE_EVENT, fields, consent: { accepted: true, version: 'synthetic-people-notice-v1' } },
+  });
+  const fields = {name:'合成纪念卡申请人',email:'synthetic-wallet@example.invalid',categories:['other'],participationInterests:['attend']};
+  assert.equal((await submit({ ...fields, intake: 'general-v2' })).status, 409, 'a card token cannot open formal registration');
+  const card = await submit({ ...fields, intake: 'wallet-v1', huodongxingReference: '0000001234', wechat: 'synthetic_card' });
+  assert.equal(card.status, 201);
+  assert.equal((await card.json()).admissionStatus, 'pending_review');
+  const contact = await f.createContact();
+  const response = await call('/api/admin/contacts/' + contact.contact.id, { method: 'PUT', headers,
+    body: { expectedRevision: contact.revision, operations: { ...contact.contact.operations, responseStatus: 'attending' } } });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).admission, { status: 'external' });
+  const admissions = await (await call('/api/admin/admissions', { headers })).json();
+  assert.equal(admissions.externalRegistrationOnly, true);
+  assert.equal(admissions.summary.confirmedCount, 1);
+  assert.equal(admissions.people.length, 2, 'contact reply does not add a registration');
+  const queue = await (await call('/api/admin/tasks', { headers })).json();
+  assert.equal(queue.byKind.unconverted, 0, 'legacy staff conversion is also absent from the work queue');
+  assert.deepEqual(f.messages, []);
+});
+
 
 test('concurrent short-link issuance and lost map acknowledgment resolve exact immutable mappings without appending twice', async () => {
   const f = fixture(); f.state.lostAck = true;

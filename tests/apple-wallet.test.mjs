@@ -192,6 +192,21 @@ test('new Wallet passes use the same dedicated short staff check-in capability a
   assert.equal(calls, 0);
 });
 
+test('external registration mode keeps souvenir signing and retires website ticket issuance and verification', async () => {
+  const legacy = await service().download({ receiptToken: token });
+  const oldCode = JSON.parse(passFiles(legacy.data).get('pass.json')).barcodes[0].message.split('/').at(-1);
+  const retired = service({ externalRegistrationOnly: true });
+  assert.equal((await retired.readiness()).ready, true);
+  assert.deepEqual(await retired.download({ receiptToken: token }), { outcome: 'inactive' });
+  assert.deepEqual(await retired.verify({ token: oldCode }), { valid: false });
+
+  const keepsake = { ...record, walletRequested: true, walletIdentity: 'guest' };
+  const wallet = service({ externalRegistrationOnly: true, authorize: async () => keepsake, authorizedRegistration: async () => keepsake });
+  const issued = await wallet.download({ receiptToken: token });
+  assert.equal(issued.outcome, 'issued');
+  assert.equal(JSON.parse(passFiles(issued.data).get('pass.json')).barcodes, undefined);
+});
+
 test('commemorative passes sign the full poster and a compatible native strip without a barcode', async () => {
   const pendingIdentity={...record,walletRequested:true};
   const waiting=service({authorize:async()=>pendingIdentity,authorizedRegistration:async()=>pendingIdentity});
@@ -239,7 +254,7 @@ test('commemorative passes sign the full poster and a compatible native strip wi
     '15:40–16:40　圆桌会议',
   ]);
   assert.match(schedule[3].value, /^09:30–18:00　展位体验\n共 16 个展位/u);
-  assert.match(schedule[4].value, /妖殿奇谭.+人是不能飞的/u);
+  assert.match(schedule[4].value, /妖骰奇谭.+人是不能飞的/u);
   assert.ok(schedule.every(field => !Object.hasOwn(field, 'attributedValue') && !field.value.includes('https://')));
   assert.equal(pass.serialNumber, selected.event.id + '-' + record.registrationId);
   assert.equal(pass.logoText, undefined);
@@ -290,6 +305,17 @@ test('commemorative passes sign the full poster and a compatible native strip wi
   await writeFile(resolve(fixture.directory, 'poster-signature'), files.get('signature'));
   assert.doesNotThrow(() => fixture.run(['cms', '-verify', '-binary', '-inform', 'DER', '-in', 'poster-signature',
     '-content', 'poster-manifest.json', '-CAfile', 'root.pem', '-purpose', 'any', '-out', 'verified-poster-manifest.json']));
+  const englishCard = { ...selected, cardLocale: 'en' };
+  const translated = await service({ authorize: async () => englishCard,
+    authorizedRegistration: async () => englishCard }).download({ receiptToken: token });
+  assert.equal(translated.outcome, 'issued');
+  const englishPass = JSON.parse(passFiles(translated.data).get('pass.json'));
+  const info = new Map(englishPass.posterGeneric.additionalInfoFields.map(field => [field.key, field]));
+  assert.equal(info.get('poster-info-meetup-program').label, 'GGJ China Meetup');
+  assert.match(info.get('poster-info-schedule-a-morning').value, /10:15–11:00  Keynote: At the Forefront of the Future/u);
+  assert.match(info.get('poster-info-schedule-c').value, /^09:30–18:00  Exhibition demos/u);
+  assert.match(info.get('poster-info-schedule-c-games').value, /妖骰奇谭/u);
+  assert.equal(englishPass.eventTicket.backFields.find(({ key }) => key === 'event-details').label, 'Event Details');
 });
 
 test('keepsake reissues show each saved GGJ field independently and keep full values in details', async () => {

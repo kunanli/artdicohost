@@ -228,18 +228,16 @@ test('public event config confirms date, time and venue while independent arrang
   assert.equal(JSON.stringify(eventConfig).includes('20 间'), false);
 });
 
-test('approved A and B sessions use their own times, and C retains its original continuous schedule', () => {
+test('the final agenda shows the confirmed sessions and the all-day zone C exhibition', () => {
   assert.deepEqual(zones.map((zone) => zone.id), ['A', 'B', 'C']);
   const { A, B, C } = Object.groupBy(agenda, slot => slot.zone);
-  assert.deepEqual([A.length, B.length, C.length], [13, 9, 15]);
-  assert.equal(A.find(slot => slot.title === 'ARTDiCO 学生展示')?.start, '15:10');
-  assert.deepEqual(A.slice(-2).map(({ start, end, title }) => [start, end, title]), [
-    ['17:00', '17:10', '闭幕合影'], ['17:10', '18:00', '自由交流、自由参观及离场（无正式议程）'],
+  assert.deepEqual([A.length, B.length, C.length], [9, 5, 1]);
+  assert.deepEqual(A.slice(-4).map(({ start, end, title }) => [start, end, title]), [
+    ['14:35', '14:55', '提赛德大学宣讲'], ['15:00', '15:20', '伯恩茅斯大学宣讲'],
+    ['15:30', '17:00', 'ARTDiCO 学生展示'], ['17:00', '17:10', '闭幕合影'],
   ]);
+  assert.equal(B[0].start, '13:30');
   assert.equal(B.find(slot => slot.start === '15:00')?.title, 'GGJ 站点咨询（南方站）');
   assert.equal(B.find(slot => slot.title === '圆桌会议')?.start, '15:40');
-  assert.equal(C.find(slot => slot.start === '16:30')?.title, '学生作品体验与反馈');
-  assert.equal(C[0].start, '09:30');
-  assert.equal(C.at(-1).end, '18:00');
-  assert.ok(C.slice(1).every((slot, index) => C[index].end === slot.start));
+  assert.deepEqual(C.map(({ start, end, title }) => [start, end, title]), [['09:30', '18:00', '展位体验']]);
 });

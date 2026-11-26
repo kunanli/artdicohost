@@ -10,16 +10,16 @@ const LOGIN = '/api/admin/login', LOGOUT = '/api/admin/logout', DRAFT = '/api/ad
 const PUBLISH = DRAFT + '/publish', PUBLIC = '/api/public/content';
 const COOKIE = '__Secure-artdico_staff_session';
 const SESSION_COOKIE = /^__Secure-artdico_staff_session=([A-Za-z0-9_-]{43}); Path=\/api\/admin; HttpOnly; Secure; SameSite=Strict; Max-Age=([1-9][0-9]{0,4})$/u;
-const BASELINE_REVISION = 128, MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
-const legacySlots = {
-  A: ['arrival', 'opening', 'ggj-talk', 'morning-break', 'speaker-one', 'recognition', 'lunch', 'speaker-two',
+const BASELINE_REVISION = 129, MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const sessionCounts = { A: 9, B: 5, C: 1 };
+const retiredSlots = {
+  A: ['opening', 'morning-break', 'lunch', 'free-visit'],
+  B: ['arrival', 'lunch', 'free-discussion', 'student-showcase'],
+  C: ['opening', 'ggj-talk', 'morning-break', 'speaker-one', 'recognition', 'lunch', 'speaker-two',
     'afternoon-break', 'speaker-three', 'transition', 'student-showcase', 'student-feedback', 'ecosystem', 'closing'],
-  B: ['arrival', 'morning-break', 'speaker-one', 'recognition', 'lunch', 'speaker-two', 'afternoon-break',
-    'speaker-three', 'transition', 'student-showcase', 'student-feedback', 'ecosystem', 'closing'],
 };
-const legacyZones = new Map(Object.entries(legacySlots).flatMap(([zone, slots]) =>
+const retiredZones = new Map(Object.entries(retiredSlots).flatMap(([zone, slots]) =>
   slots.map(slot => [`session-${slot}-${zone.toLowerCase()}`, zone])));
-const isAB = row => row.zone === 'A' || row.zone === 'B';
 const revision = value => Number.isSafeInteger(value) && value >= 0;
 const token = value => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/u.test(value)
   && Buffer.from(value, 'base64url').toString('base64url') === value;
@@ -37,12 +37,12 @@ function currentSchedule(content, zone) {
 }
 
 function matchesAgenda(content) {
-  return ['A', 'B'].every(zone => isDeepStrictEqual(currentSchedule(content, zone),
+  return Object.keys(sessionCounts).every(zone => isDeepStrictEqual(currentSchedule(content, zone),
     approvedMeetupAgenda.filter(row => row.zone === zone).map(row => ({ ...row, status: 'scheduled' }))));
 }
 
 function outsideAgenda({ sessions, guestAttendance, ...content }) {
-  return { ...content, sessions: sessions.filter(row => !isAB(row)), ...(guestAttendance ? {
+  return { ...content, ...(guestAttendance ? {
     guestAttendance: { schemaVersion: guestAttendance.schemaVersion, confirmedGuestIds: guestAttendance.confirmedGuestIds },
   } : {}) };
 }
@@ -58,7 +58,7 @@ function publicProjection(content, state, baseline) {
   catch { fail('INVALID_PUBLIC_PROJECTION'); }
   if (!isDeepStrictEqual(outsideAgenda(projected), outsideAgenda(baseline.content))) fail('UNRELATED_PUBLIC_CHANGES');
   const before = new Map(baseline.content.sessions.map(row => [row.id, row]));
-  if (projected.sessions.some(row => isAB(row) && !isDeepStrictEqual(speakers(row), speakers(before.get(row.id))))) {
+  if (projected.sessions.some(row => !isDeepStrictEqual(speakers(row), speakers(before.get(row.id))))) {
     fail('UNRELATED_PUBLIC_CHANGES');
   }
   if (!matchesAgenda(projected)) fail('INVALID_APPROVED_AGENDA');
@@ -67,21 +67,22 @@ function publicProjection(content, state, baseline) {
 
 function nextDraft(content, baseline) {
   const approved = new Map(approvedMeetupAgenda.map(row => [row.id, row]));
-  if (approved.size !== 22 || approvedMeetupAgenda.length !== 22
-    || approvedMeetupAgenda.filter(row => row.zone === 'A').length !== 13
-    || approvedMeetupAgenda.some(row => !isAB(row) || !/^session-[a-z0-9-]+$/u.test(row.id))) fail('INVALID_APPROVED_AGENDA');
+  if (approved.size !== approvedMeetupAgenda.length
+    || Object.entries(sessionCounts).some(([zone, count]) => approvedMeetupAgenda.filter(row => row.zone === zone).length !== count)
+    || approvedMeetupAgenda.some(row => !Object.hasOwn(sessionCounts, row.zone) || !/^session-[a-z0-9-]+$/u.test(row.id)
+      || retiredZones.has(row.id))) fail('INVALID_APPROVED_AGENDA');
   const old = new Map(content.sessions.map(row => [row.id, row]));
   for (const row of [...content.sessions, ...baseline.content.sessions]) {
     const target = approved.get(row.id);
-    if (target && target.zone !== row.zone || isAB(row) && row.status !== 'draft' && !target && legacyZones.get(row.id) !== row.zone) {
-      fail('UNKNOWN_AB_SESSION');
+    if (target && target.zone !== row.zone || row.status !== 'draft' && !target && retiredZones.get(row.id) !== row.zone) {
+      fail('UNKNOWN_AGENDA_SESSION');
     }
   }
   const replacement = approvedMeetupAgenda.map(row => ({
     ...(old.get(row.id) ?? { guestId: '', speakerName: '', speakerStatus: 'pending', internalNotes: '' }), ...row, status: 'scheduled',
   }));
   const retained = content.sessions.filter(row => !approved.has(row.id))
-    .map(row => isAB(row) && row.status !== 'draft' ? { ...row, status: 'draft' } : row);
+    .map(row => row.status !== 'draft' ? { ...row, status: 'draft' } : row);
   const next = { ...content, sessions: [...retained, ...replacement] };
   const checked = validateContent(next);
   if (!checked.valid || !isDeepStrictEqual(checked.value, next)) fail('INVALID_DRAFT_CHANGE');
@@ -106,8 +107,8 @@ async function readResponse(response, url) {
   return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks, bytes)));
 }
 
-/** Apply the checked A/B schedule once through the existing content API. */
-export async function publishApprovedAbAgenda({ env = process.env, fetchFn = fetch } = {}) {
+/** Apply the approved three-zone schedule once through the existing content API. */
+export async function publishApprovedAgenda({ env = process.env, fetchFn = fetch } = {}) {
   const output = { ok: false, revision: null, draftWrites: 0, publishWrites: 0 };
   let session, failure = 'INVALID_RELEASE_CONTEXT';
   async function request(path, method = 'GET', body) {
@@ -188,7 +189,7 @@ export async function publishApprovedAbAgenda({ env = process.env, fetchFn = fet
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const result = process.argv.length === 2 ? await publishApprovedAbAgenda() : { ok: false, failure: 'INVALID_RELEASE_CONTEXT' };
-  console.log('Approved A/B schedule publication ' + JSON.stringify(result));
+  const result = process.argv.length === 2 ? await publishApprovedAgenda() : { ok: false, failure: 'INVALID_RELEASE_CONTEXT' };
+  console.log('Approved A/B/C schedule publication ' + JSON.stringify(result));
   if (!result.ok) process.exitCode = 1;
 }

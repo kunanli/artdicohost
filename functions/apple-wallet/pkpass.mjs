@@ -30,7 +30,10 @@ const MEETUP_SCHEDULE_FIELDS = [
     value: scheduleText(zoneASchedule.filter(({ start }) => start >= '13:00')) },
   { key: 'schedule-b', label: 'B 区 · 咖啡厅',
     value: scheduleText(approvedMeetupAgenda.filter(({ zone }) => zone === 'B')) },
-  { key: 'schedule-c', label: 'C 区 · 外围展位', value: '09:30–18:00　共 16 个展位，涵盖院校交流、学生作品、GGJ 站点咨询、独立游戏试玩和产品展示。' },
+  { key: 'schedule-c', label: 'C 区 · 外围展位', value: [
+    scheduleText(approvedMeetupAgenda.filter(({ zone }) => zone === 'C')),
+    '共 16 个展位，涵盖院校交流、学生作品、GGJ 站点咨询、独立游戏试玩和产品展示。',
+  ].join('\n') },
   { key: 'schedule-c-games', label: 'C-10 至 C-15 · 独立游戏试玩', value: '妖殿奇谭、猫仙札、一剑、破坏派对、纳林的星野奇旅、人是不能飞的。' },
 ];
 function certificate(value) {

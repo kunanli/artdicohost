@@ -26,10 +26,10 @@ test('seed contains the three-zone agenda, with stable IDs, no empty sessions an
   const result = validateContent(content);
   assert.equal(result.valid, true, JSON.stringify(result.errors));
   assert.equal(content.schemaVersion, CONTENT_SCHEMA_VERSION);
-  assert.equal(content.sessions.length, 37);
-  assert.equal(content.sessions.filter((item) => item.zone === 'A').length, 13);
-  assert.equal(content.sessions.filter((item) => item.zone === 'B').length, 9);
-  assert.equal(content.sessions.filter((item) => item.zone === 'C').length, 15);
+  assert.equal(content.sessions.length, 15);
+  assert.equal(content.sessions.filter((item) => item.zone === 'A').length, 9);
+  assert.equal(content.sessions.filter((item) => item.zone === 'B').length, 5);
+  assert.equal(content.sessions.filter((item) => item.zone === 'C').length, 1);
   assert.ok(content.sessions.every((item) => item.title !== '—' && item.speakerName === '' && item.speakerStatus === 'pending'));
   assert.deepEqual(content.booths, []);
   assert.equal(content.event.status, 'confirmed');
@@ -217,7 +217,7 @@ test('session formats accept only explicit supported choices and never infer wor
   assert.deepEqual(seed.sessions.filter(item => item.format === 'roundtable').map(item => item.id), ['session-speaker-one-b']);
   assert.deepEqual(seed.sessions.filter(item => item.format === 'showcase').map(item => item.id), ['session-student-showcase-a']);
   assert.equal(seed.sessions.filter(item => item.format === 'workshop').length, 0);
-  assert.equal(seed.sessions.filter(item => item.format === 'other').length, 30);
+  assert.equal(seed.sessions.filter(item => item.format === 'other').length, 8);
   assert.deepEqual(seed.booths, [], 'empty physical positions do not create fictional booth records');
 });
 

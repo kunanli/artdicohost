@@ -538,13 +538,13 @@ jobs:
           ARTDICO_ADMIN_USERNAME: ${{ vars.ARTDICO_ADMIN_USERNAME }}
           ARTDICO_ADMIN_PASSWORD: ${{ secrets.ARTDICO_ADMIN_PASSWORD }}
         run: node scripts/observe-confirmation-mail.mjs
-      - name: Publish and verify the approved A and B agenda against revision 128
-        if: ${{ github.event.before == '994d391035fa4f70d99523d32e4181bddf73f0a8' }}
+      - name: Publish and verify the final agenda against revision 129
+        if: ${{ github.event.before == '811165ac96267fbde3a190b439960b3a561d72e9' }}
         timeout-minutes: 3
         env:
           ARTDICO_ADMIN_USERNAME: ${{ vars.ARTDICO_ADMIN_USERNAME }}
           ARTDICO_ADMIN_PASSWORD: ${{ secrets.ARTDICO_ADMIN_PASSWORD }}
-        run: node scripts/publish-approved-ab-agenda.mjs
+        run: node scripts/publish-approved-agenda.mjs
       - name: Verify all fixed admin subpages through the activated HTTPS API domain without credentials
         timeout-minutes: 1
         run: node scripts/verify-cloud-admin-pages.mjs .local-data/cloud-content-publication

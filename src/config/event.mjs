@@ -64,52 +64,30 @@ export const recruitment = {
 export const zones = [
   { id: 'A', name: '阶梯展示厅', description: '分享 / 作品 / 交流' },
   { id: 'B', name: '咖啡厅', description: '圆桌 / 专题 / 咨询' },
-  { id: 'C', name: '外围展位区', description: '试玩 / 展示 / 反馈', summary: '全天开放（按活动时段）；15:30–16:30 保留必要值班，16:30–17:00 学生作品体验与反馈。' },
+  { id: 'C', name: '外围展位区', description: '试玩 / 展示 / 反馈', summary: '09:30–18:00 展位体验。' },
 ];
 
 const scheduleByZone = {
   A: [
     ['arrival', '09:30', '10:00', '签到入场'],
-    ['opening', '10:00', '10:15', '开场介绍'],
     ['ggj-talk', '10:15', '11:00', '主题演讲：At the Forefront of the Future: How Jammers Are Leading Innovation', 'talk'],
-    ['morning-break', '11:00', '11:15', '茶歇'],
-    ['speaker-one', '11:15', '12:00', '10 年 GGJ 发展在中国，与中国独立游戏行业的联动与萌芽', 'talk'],
-    ['recognition', '12:00', '12:30', 'GGJ 表彰大会与合影'],
-    ['lunch', '12:30', '13:30', '午餐休息'],
+    ['speaker-one', '11:15', '12:00', '10年GGJ发展在中国，与中国独立游戏行业的联动与萌芽', 'talk'],
+    ['recognition', '12:00', '12:30', 'GGJ表彰大会及合影'],
     ['speaker-two', '13:30', '14:30', 'AI × Houdini：从自然语言到 Unreal Engine 程序化构建', 'talk'],
-    ['university-teesside', '14:30', '14:50', '提赛德大学宣讲', 'talk'],
-    ['university-bournemouth', '14:50', '15:10', '伯恩茅斯大学宣讲', 'talk'],
-    ['student-showcase', '15:10', '17:00', 'ARTDiCO 学生展示', 'showcase'],
+    ['university-teesside', '14:35', '14:55', '提赛德大学宣讲', 'talk'],
+    ['university-bournemouth', '15:00', '15:20', '伯恩茅斯大学宣讲', 'talk'],
+    ['student-showcase', '15:30', '17:00', 'ARTDiCO 学生展示', 'showcase'],
     ['closing', '17:00', '17:10', '闭幕合影'],
-    ['free-visit', '17:10', '18:00', '自由交流、自由参观及离场（无正式议程）'],
   ],
   B: [
-    ['arrival', '09:30', '10:00', '签到入场、自由交流'],
-    ['lunch', '12:30', '13:30', '午餐休息'],
     ['speaker-two', '13:30', '14:00', '亚洲 Games for Change 与新一代创作者'],
     ['southeast-asia', '14:00', '14:30', '东南亚游戏生态、新平台与合作'],
     ['speaker-three', '14:30', '15:00', 'GGJ 站点咨询（北方站）'],
     ['transition', '15:00', '15:30', 'GGJ 站点咨询（南方站）'],
     ['speaker-one', '15:40', '16:40', '圆桌会议', 'roundtable'],
-    ['free-discussion', '17:05', '17:10', '自由讨论'],
-    ['student-showcase', '17:10', '17:55', '自由交流'],
   ],
   C: [
-    ['arrival', '09:30', '10:00', '展位开放'],
-    ['opening', '10:00', '10:15', '展位体验'],
-    ['ggj-talk', '10:15', '11:00', '展位体验'],
-    ['morning-break', '11:00', '11:15', '展位体验'],
-    ['speaker-one', '11:15', '12:00', '展位体验'],
-    ['recognition', '12:00', '12:30', '展位体验'],
-    ['lunch', '12:30', '13:30', '展位体验'],
-    ['speaker-two', '13:30', '14:15', '展位体验'],
-    ['afternoon-break', '14:15', '14:30', '展位体验'],
-    ['speaker-three', '14:30', '15:15', '展位体验'],
-    ['transition', '15:15', '15:30', '展位体验'],
-    ['student-showcase', '15:30', '16:30', '保留必要值班'],
-    ['student-feedback', '16:30', '17:00', '学生作品体验与反馈'],
-    ['ecosystem', '17:00', '17:45', '展位交流'],
-    ['closing', '17:45', '18:00', '展位结束'],
+    ['arrival', '09:30', '18:00', '展位体验'],
   ],
 };
 
@@ -122,8 +100,8 @@ function zoneSessions(zone /** @type {keyof typeof scheduleByZone} */) {
   }));
 }
 
-export const approvedMeetupAgenda = [...zoneSessions('A'), ...zoneSessions('B')];
-export const agenda = [...approvedMeetupAgenda, ...zoneSessions('C')]
+export const approvedMeetupAgenda = [...zoneSessions('A'), ...zoneSessions('B'), ...zoneSessions('C')];
+export const agenda = [...approvedMeetupAgenda]
   .sort((left, right) => left.start.localeCompare(right.start) || left.zone.localeCompare(right.zone));
 
 export const highlights = [

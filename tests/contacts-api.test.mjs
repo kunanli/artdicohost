@@ -356,11 +356,11 @@ test('manual session and booth assignments validate references and cross-zone do
   const imported = await importOne(api, session);
   const contact = imported.contacts[0];
   const content = (await contentStore.read()).draft.content;
-  const first = content.sessions.find((item) => item.zone === 'A');
-  const conflicting = content.sessions.find((item) => item.zone === 'B' && item.start === first.start);
-  assert.ok(conflicting);
-  const later = content.sessions.find((item) => item.zone === 'A' && item.start === first.end);
-  assert.ok(later);
+  const slot = { title: '合成场次', format: 'other', status: 'scheduled', guestId: '', speakerStatus: 'pending', speakerName: '', internalNotes: '' };
+  const first = { ...slot, id: 'synthetic-first-a', zone: 'A', start: '09:30', end: '10:00' };
+  const conflicting = { ...slot, id: 'synthetic-overlap-b', zone: 'B', start: '09:45', end: '10:15' };
+  const later = { ...slot, id: 'synthetic-later-a', zone: 'A', start: '10:00', end: '10:15' };
+  content.sessions = [first, conflicting, later];
   content.booths.push({ id: 'synthetic-booth-1', code: 'C-01', organization: '', project: '', zone: 'C', status: 'pending', internalNotes: '' });
   content.booths.push({ id: 'synthetic-booth-2', code: 'C-02', organization: '', project: '', zone: 'C', status: 'pending', internalNotes: '' });
   await contentStore.save(0, content, 'test-editor');

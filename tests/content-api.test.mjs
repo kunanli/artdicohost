@@ -95,7 +95,7 @@ test('draft edits persist across restart and remain private until explicit autho
   const editor = await login(api);
   const initial = await (await request(api, '/api/admin/content', { session: editor })).json();
   assert.equal(initial.draft.revision, 0);
-  assert.equal(initial.draft.content.sessions.length, 37);
+  assert.equal(initial.draft.content.sessions.length, 15);
   assert.equal(initial.published, null);
   const content = initial.draft.content;
   content.event.title = '合成测试活动';

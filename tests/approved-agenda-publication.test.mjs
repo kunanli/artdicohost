@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { publishApprovedAbAgenda } from '../scripts/publish-approved-ab-agenda.mjs';
+import { publishApprovedAgenda } from '../scripts/publish-approved-agenda.mjs';
 import { createInitialContent } from '../src/config/content.mjs';
 import { approvedMeetupAgenda } from '../src/config/event.mjs';
 import { toPublicContent, validateContent } from '../shared/content-schema.mjs';
@@ -19,18 +19,22 @@ function fixture(options = {}) {
   const initial = createInitialContent();
   initial.sessionOrder = 'manual';
   initial.guests = [{ id: 'synthetic-guest', name: '合成嘉宾', company: '合成机构', ggjRole: '', portraitId: '', status: 'confirmed',
-    publicConsent: true, internalNotes: privateNote }];
+    publicConsent: true, internalNotes: privateNote }, { id: 'synthetic-panelist', name: '合成参与者', company: '合成机构',
+    status: 'confirmed', publicConsent: true }];
   initial.sessions = [
-    row('session-2000-c', 'C', '14:30', '15:00'),
-    { ...row('session-ggj-talk-a', 'A', '10:15', '11:00'), guestId: 'synthetic-guest' },
-    row('session-morning-break-b', 'B', '11:00', '11:15'),
-    row('session-1000-c', 'C', '12:30', '13:00'),
+    row('session-arrival-c', 'C', '09:30', '10:00'),
+    { ...row('session-ggj-talk-a', 'A', '10:15', '11:00'), guestId: 'synthetic-guest',
+      participants: [{ guestId: 'synthetic-panelist', roles: ['panelist'] }] },
+    row('session-free-discussion-b', 'B', '17:05', '17:10'),
+    row('session-ecosystem-c', 'C', '17:00', '17:45'),
     { ...row('session-private-b', 'B', '11:30', '12:00'), status: 'draft' },
   ];
+  initial.showcases = [{ id: 'synthetic-showcase', title: '合成作品', teamName: '合成团队', status: 'confirmed', publicConsent: true,
+    participationForms: ['share'], sessionId: options.showcaseSession ?? 'session-arrival-c' }];
   const checked = validateContent(initial);
   assert.equal(checked.valid, true, JSON.stringify(checked.errors));
   const attendance = { schemaVersion: 1, sourceRevision: 12, confirmedGuestIds: ['synthetic-guest'] };
-  let published = { revision: options.revision ?? 128, publishedAt: '2026-11-13T08:53:40.455Z',
+  let published = { revision: options.revision ?? 129, publishedAt: '2026-11-24T05:29:55.000Z',
     content: toPublicContent(checked.value, { guestAttendance: attendance }) };
   let draft = { revision: published.revision, content: structuredClone(checked.value) };
   options.changeDraft?.(draft.content);
@@ -73,7 +77,7 @@ function fixture(options = {}) {
       case 'POST /api/admin/content/publish':
         assert.deepEqual(body, { expectedRevision: draft.revision, expectedContactsRevision: attendance.sourceRevision });
         if (options.rejectPublication) return reply({ error: { message: privateNote } }, 503);
-        published = { revision: draft.revision, publishedAt: '2026-11-24T05:00:00.000Z',
+        published = { revision: draft.revision, publishedAt: '2026-11-26T05:00:00.000Z',
           content: toPublicContent(draft.content, { guestAttendance: attendance }) };
         if (options.losePublishResponse) throw new Error(privateNote);
         return reply({ published });
@@ -82,35 +86,41 @@ function fixture(options = {}) {
     }
   };
   return { calls, initial: checked.value, writeCount, fetchFn, get draft() { return draft; }, get published() { return published; },
-    run: () => publishApprovedAbAgenda({ env, fetchFn }) };
+    run: () => publishApprovedAgenda({ env, fetchFn }) };
 }
 
-test('publishes exactly the approved A/B schedule and preserves draft metadata and unrelated public data', async () => {
+test('publishes the approved three-zone schedule and preserves draft metadata and unrelated public data', async () => {
   const f = fixture(), prior = f.published;
-  assert.deepEqual(await f.run(), { ok: true, status: 'published', revision: 129, draftWrites: 1, publishWrites: 1 });
+  assert.deepEqual(await f.run(), { ok: true, status: 'published', revision: 130, draftWrites: 1, publishWrites: 1 });
   assert.deepEqual(f.calls, ['GET /api/public/content', 'POST /api/admin/login', 'GET /api/admin/content', 'PUT /api/admin/content',
     'GET /api/admin/content', 'POST /api/admin/content/publish', 'GET /api/public/content', 'POST /api/admin/logout']);
   const { sessions, ...otherContent } = f.published.content;
   const { sessions: oldSessions, ...oldContent } = prior.content;
   assert.deepEqual(otherContent, oldContent);
-  assert.deepEqual(sessions.filter(row => row.zone === 'C'), oldSessions.filter(row => row.zone === 'C'));
-  assert.deepEqual(sessions.filter(row => row.zone !== 'C').map(({ id, zone, start, end, title, format = 'other' }) =>
+  assert.deepEqual(sessions.map(({ id, zone, start, end, title, format = 'other' }) =>
     ({ id, zone, start, end, title, format })), approvedMeetupAgenda);
-  assert.deepEqual(f.draft.content.sessions.find(row => row.id === 'session-morning-break-b'),
-    { ...f.initial.sessions.find(row => row.id === 'session-morning-break-b'), status: 'draft' });
+  for (const id of ['session-free-discussion-b', 'session-ecosystem-c', 'session-private-b']) {
+    assert.deepEqual(f.draft.content.sessions.find(row => row.id === id),
+      { ...f.initial.sessions.find(row => row.id === id), status: 'draft' });
+  }
+  assert.equal(otherContent.showcases[0].sessionId, 'session-arrival-c');
   assert.equal(f.draft.content.sessions.find(row => row.id === 'session-ggj-talk-a').guestId, 'synthetic-guest');
   assert.equal(f.draft.content.sessions.find(row => row.id === 'session-ggj-talk-a').internalNotes, privateNote);
+  assert.deepEqual(sessions.find(row => row.id === 'session-ggj-talk-a').participants,
+    oldSessions.find(row => row.id === 'session-ggj-talk-a').participants);
   f.calls.length = 0;
-  assert.deepEqual(await f.run(), { ok: true, status: 'already_published', revision: 129, draftWrites: 0, publishWrites: 0 });
+  assert.deepEqual(await f.run(), { ok: true, status: 'already_published', revision: 130, draftWrites: 0, publishWrites: 0 });
   assert.deepEqual(f.calls, ['GET /api/public/content']);
 });
 
-test('detects moved baselines, unexpected A/B and unrelated draft changes before any business write', async () => {
+test('detects moved baselines, unexpected sessions and unrelated draft changes before any business write', async () => {
   for (const [options, failure] of [
-    [{ revision: 129 }, 'PUBLIC_BASELINE_CHANGED'],
+    [{ revision: 130 }, 'PUBLIC_BASELINE_CHANGED'],
     [{ changeDraft: value => { value.event.title = '另一项尚未发布的修改'; } }, 'UNRELATED_PUBLIC_CHANGES'],
     [{ changeDraft: value => { value.sessions.find(row => row.id === 'session-ggj-talk-a').guestId = ''; } }, 'UNRELATED_PUBLIC_CHANGES'],
-    [{ changeDraft: value => { value.sessions.find(row => row.zone === 'A').id = 'session-other-a'; } }, 'UNKNOWN_AB_SESSION'],
+    [{ changeDraft: value => { value.sessions.find(row => row.id === 'session-ggj-talk-a').participants = []; } }, 'UNRELATED_PUBLIC_CHANGES'],
+    [{ showcaseSession: 'session-ecosystem-c' }, 'UNRELATED_PUBLIC_CHANGES'],
+    [{ changeDraft: value => { value.sessions.find(row => row.id === 'session-ecosystem-c').id = 'session-other-c'; } }, 'UNKNOWN_AGENDA_SESSION'],
   ]) {
     const f = fixture(options);
     const result = await f.run();
@@ -120,20 +130,20 @@ test('detects moved baselines, unexpected A/B and unrelated draft changes before
     assert.doesNotMatch(JSON.stringify(result), new RegExp(privateNote, 'u'));
   }
   const f = fixture();
-  assert.equal((await publishApprovedAbAgenda({ env: { ...env, GITHUB_REF: 'refs/heads/other' }, fetchFn: f.fetchFn })).failure,
+  assert.equal((await publishApprovedAgenda({ env: { ...env, GITHUB_REF: 'refs/heads/other' }, fetchFn: f.fetchFn })).failure,
     'INVALID_RELEASE_CONTEXT');
   assert.deepEqual(f.calls, []);
 });
 
 test('recovers lost acknowledgments through reads and resumes a saved draft without repeating the save', async () => {
   const lost = fixture({ loseSaveResponse: true, losePublishResponse: true });
-  assert.deepEqual(await lost.run(), { ok: true, status: 'published', revision: 129, draftWrites: 1, publishWrites: 1 });
+  assert.deepEqual(await lost.run(), { ok: true, status: 'published', revision: 130, draftWrites: 1, publishWrites: 1 });
   assert.equal(lost.writeCount(), 2);
   const options = { rejectPublication: true };
   const delayed = fixture(options);
   assert.equal((await delayed.run()).failure, 'PUBLISH_UNCONFIRMED');
   options.rejectPublication = false;
-  assert.deepEqual(await delayed.run(), { ok: true, status: 'published', revision: 129, draftWrites: 0, publishWrites: 1 });
+  assert.deepEqual(await delayed.run(), { ok: true, status: 'published', revision: 130, draftWrites: 0, publishWrites: 1 });
 });
 
 test('does not repeat a conflicting write or publish if staff attendance changed during save', async () => {
@@ -142,7 +152,7 @@ test('does not repeat a conflicting write or publish if staff attendance changed
     const f = fixture(options);
     assert.equal((await f.run()).failure, failure);
     assert.equal(f.writeCount(), 1);
-    assert.equal(f.published.revision, 128);
+    assert.equal(f.published.revision, 129);
     assert.equal(f.calls.at(-1), 'POST /api/admin/logout');
   }
 });

@@ -24,7 +24,7 @@ async function main() {
   const raw = createInitialContent();
   // Keep only documented seed sessions for a synthetic timeline. Empty public
   // guests/organizations still isolate form readability from live publication.
-  raw.sessions = raw.sessions.filter(item => ['session-arrival-a', 'session-arrival-b', 'session-arrival-c', 'session-speaker-one-b'].includes(item.id));
+  raw.sessions = raw.sessions.filter(item => ['session-arrival-a', 'session-speaker-two-b', 'session-arrival-c', 'session-speaker-one-b'].includes(item.id));
   for (const key of ['guests', 'showcases', 'booths', 'organizations']) raw[key] = [];
   const publication = JSON.stringify({ revision: 1, publishedAt: '2026-10-21T09:00:00.000Z', content: toPublicContent(raw) });
   const { chromium } = await import(process.env.ARTDICO_PLAYWRIGHT_MODULE || 'playwright-core');

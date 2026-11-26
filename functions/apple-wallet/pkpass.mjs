@@ -1,5 +1,4 @@
-import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, cardEventIdentityLabel, cardIdentityHeadline, cardProfileFields, cardSiteBrand, commemorativeCardVenue } from '../../shared/general-application.mjs';
-import { formatCardCollectorNumber } from '../../shared/confirmation-delivery.mjs';
+import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, cardEventIdentityLabel, cardIdentityHeadline, cardProfileFields, cardSiteBrand, commemorativeCardVenue, formatCardCollectorNumber } from '../../shared/general-application.mjs';
 import { eventConfig, approvedMeetupAgenda, approvedMeetupAgendaEnglish, PUBLIC_AGENDA_URL, PUBLIC_EVENT_DETAILS_URL, PUBLIC_MEETUP_TITLE, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL, appleMapsDirectionsUrl } from '../../src/config/event.mjs';
 import { createHash, createPrivateKey, X509Certificate } from 'node:crypto';
 import { derChildren, oid, signManifest } from './der.mjs';

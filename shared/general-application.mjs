@@ -3,6 +3,20 @@ import { identityOptions } from './registration-schema.mjs';
 export const GENERAL_APPLICATION_INTAKE = 'general-v2';
 export const WALLET_APPLICATION_INTAKE = 'wallet-v1';
 export const CARD_FORMATS = Object.freeze(['jpeg', 'wallet']);
+export const MAX_CARD_MANUAL_SEQUENCE = 999_999;
+export function formatCardCollectorNumber(number) {
+  if (!plain(number)) return null;
+  const keys = Reflect.ownKeys(number);
+  if (!keys.includes('sequence') || !keys.includes('test') || keys.some(key => !['sequence', 'test', 'manual'].includes(key))) return null;
+  const sequence = own(number, 'sequence'), test = own(number, 'test'), manual = own(number, 'manual');
+  if (!Number.isSafeInteger(sequence) || sequence < 1 || typeof test !== 'boolean'
+    || keys.includes('manual') && (manual !== true || sequence > MAX_CARD_MANUAL_SEQUENCE)) return null;
+  const identifier = (manual ? 'S' : '') + String(sequence).padStart(4, '0');
+  return {
+    short: (test ? 'TEST ' : '') + 'No. ' + identifier,
+    full: 'GGJ26-HOST-' + (test ? 'TEST-' : '') + identifier,
+  };
+}
 export const CARD_COMMUNITY_FIELD_LENGTH = 36;
 export const CARD_PROFILE_FIELD_LENGTHS = Object.freeze({ organization: 160, phone: 150 });
 export function cardProfileFields(input) {

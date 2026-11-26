@@ -1,5 +1,4 @@
-import { WALLET_IDENTITIES } from '../../shared/general-application.mjs';
-import { formatCardCollectorNumber } from '../../shared/confirmation-delivery.mjs';
+import { WALLET_IDENTITIES, formatCardCollectorNumber } from '../../shared/general-application.mjs';
 import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { APPLE_ROOT_FINGERPRINTS, buildAppleWalletPass, validateSigningIdentity, WalletSigningError } from './pkpass.mjs';
 import { readEventFactsReadiness, unchangedEventFacts } from '../../src/config/event.mjs';

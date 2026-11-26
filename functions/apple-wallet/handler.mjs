@@ -1,4 +1,4 @@
-import { formatCardCollectorNumber } from '../../shared/confirmation-delivery.mjs';
+import { formatCardCollectorNumber } from '../../shared/general-application.mjs';
 
 const API = 'https://api.artdico.host', SITE = 'https://artdico.host';
 const PATHS = ['/api/registration/wallet', '/api/admin/registration/wallet'];

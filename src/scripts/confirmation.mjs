@@ -2,8 +2,7 @@ import { renderInvitation, invitationPngBlob } from '../lib/invitation-renderer.
 import { confirmationToken, confirmationLink, confirmationEmailMessage, confirmationNotificationMessage, confirmationStatusLabels, createConfirmationClient, confirmationInvitationFacts, prepareConfirmationInvitation, confirmationWalletGuidance, CONFIRMATION_INVITATION_FILENAME, CONFIRMATION_CONTACT_EMAIL, CONFIRMATION_GROUP_UNAVAILABLE } from '../lib/confirmation-client.mjs';
 
 import { renderCommemorativeJpeg } from '../lib/commemorative-card-image.mjs';
-import { cardCommunityLabel, cardIdentityHeadline } from '../../shared/general-application.mjs';
-import { formatCardCollectorNumber } from '../../shared/confirmation-delivery.mjs';
+import { cardCommunityLabel, cardIdentityHeadline, formatCardCollectorNumber } from '../../shared/general-application.mjs';
 import { appleMapsDirectionsUrl } from '../config/event.mjs';
 
 const root = document.querySelector('[data-confirmation-page]');

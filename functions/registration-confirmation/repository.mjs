@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { parseTimestamp } from '../registration-api/policy.mjs';
-import { MAX_CARD_MANUAL_SEQUENCE, validConfirmationDiagnostic } from '../../shared/confirmation-delivery.mjs';
-import { cardCommunityFields, cardProfileFields, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
+import { validConfirmationDiagnostic } from '../../shared/confirmation-delivery.mjs';
+import { cardCommunityFields, cardProfileFields, WALLET_IDENTITIES, MAX_CARD_MANUAL_SEQUENCE } from '../../shared/general-application.mjs';
 
 export const MAX_CONFIRMATION_AUDIT = 4000;
 export const MAX_CONFIRMATION_BATCH = 100;

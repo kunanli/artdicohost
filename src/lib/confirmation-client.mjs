@@ -1,6 +1,6 @@
 import { PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
-import { CARD_COLLECTOR_ACCEPT, formatCardCollectorNumber } from '../../shared/confirmation-delivery.mjs';
-import { cardCommunityFields, cardProfileFields } from '../../shared/general-application.mjs';
+import { CARD_COLLECTOR_ACCEPT } from '../../shared/confirmation-delivery.mjs';
+import { cardCommunityFields, cardProfileFields, formatCardCollectorNumber } from '../../shared/general-application.mjs';
 
 const API = 'https://api.artdico.host';
 const SITE = 'https://artdico.host';

@@ -1,6 +1,5 @@
-import { cardCommunityLabel, cardJammerOption, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
+import { cardCommunityLabel, cardJammerOption, WALLET_IDENTITIES, formatCardCollectorNumber, MAX_CARD_MANUAL_SEQUENCE } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
-import { formatCardCollectorNumber, MAX_CARD_MANUAL_SEQUENCE } from '../../shared/confirmation-delivery.mjs';
 import { renderCommemorativeJpeg } from '../lib/commemorative-card-image.mjs';
 
 const root = document.querySelector('[data-card-admin]');

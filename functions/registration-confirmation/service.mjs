@@ -7,11 +7,11 @@ import { createConfirmationRepository, canonicalConfirmationKind, formalConfirma
   validConfirmationOperation, MAX_CONFIRMATION_BATCH, sameConfirmationScope as sameScope, cardResendCandidates, cardSendInProgress,
   cardCommunityPrefix, createCardCommunityRepository, cardManagementPrefix, createCardManagementRepository, cardTestFields,
   cardCollectorPrefix, createCardCollectorRepository } from './repository.mjs';
-import { CARD_FORMATS, WALLET_IDENTITIES, cardCommunityFields, cardIdentityHeadline, cardProfileFields, commemorativeCardVenue, isWalletApplicationFields, walletApplicationPreferences } from '../../shared/general-application.mjs';
+import { CARD_FORMATS, WALLET_IDENTITIES, MAX_CARD_MANUAL_SEQUENCE, cardCommunityFields, cardIdentityHeadline, cardProfileFields, commemorativeCardVenue, isWalletApplicationFields, walletApplicationPreferences } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 import { buildPosterInvitationSettings } from '../../shared/organizer-progress.mjs';
 import { confirmationEmailPresentation } from './presentation.mjs';
-import { CONFIRMATION_EMAIL_CONFIGURATION_FIELDS, CONFIRMATION_EMAIL_REASONS, MAX_CARD_MANUAL_SEQUENCE, confirmationDiagnostic } from '../../shared/confirmation-delivery.mjs';
+import { CONFIRMATION_EMAIL_CONFIGURATION_FIELDS, CONFIRMATION_EMAIL_REASONS, confirmationDiagnostic } from '../../shared/confirmation-delivery.mjs';
 
 const SITE = 'https://artdico.host';
 const ID = /^[A-Za-z0-9_-]{43}$/u;

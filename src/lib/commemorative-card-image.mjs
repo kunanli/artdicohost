@@ -1,5 +1,4 @@
-import { cardIdentityHeadline, commemorativeCardVenue } from '../../shared/general-application.mjs';
-import { formatCardCollectorNumber } from '../../shared/confirmation-delivery.mjs';
+import { cardIdentityHeadline, commemorativeCardVenue, formatCardCollectorNumber } from '../../shared/general-application.mjs';
 import { eventConfig } from '../config/event.mjs';
 
 // Coordinates follow the organizer-provided portrait card.

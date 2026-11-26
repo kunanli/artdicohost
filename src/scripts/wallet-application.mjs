@@ -6,7 +6,9 @@ import { eventConfig } from '../config/event.mjs';
 
 for(const section of document.querySelectorAll('[data-wallet-api-origin]')){
  const form=section.querySelector('[data-wallet-form]'),button=form.querySelector('[data-wallet-submit]'),error=form.querySelector('[data-wallet-error]'),status=form.querySelector('[data-wallet-draft-status]'),restore=form.querySelector('[data-wallet-draft-restore]');
+ const configMessage=form.querySelector('[data-wallet-config-status]'),retry=form.querySelector('[data-wallet-config-retry]');
  let draft,config=null,blocked=false,busy=false,done=false,loaded=false,timer=null,writing=Promise.resolve(),editing=0,savedEditing=0,revision=0;
+ let configState='loading';
  const client=createRegistrationClient({apiOrigin:section.dataset.walletApiOrigin,pageOrigin:location.origin,applicationKind:'wallet',pendingStore:{prepare:value=>draft.pendingStore.prepare(value),update:value=>draft.pendingStore.update(value),clear:value=>draft.pendingStore.clear(value),reject:value=>draft.pendingStore.reject(value)}});
  const control=name=>form.elements.namedItem('wallet.'+name);
  const role=control('ggjRole'),jammer=form.querySelector('[data-ggj-jammer]');
@@ -24,10 +26,15 @@ for(const section of document.querySelectorAll('[data-wallet-api-origin]')){
   syncJammer();
  }
  function lock(){
-  for(const input of form.querySelectorAll('input,select,textarea'))input.disabled=busy||done||client.pending||!config;
+  for(const input of form.querySelectorAll('input,select,textarea'))input.disabled=busy||done||client.pending||!loaded||!config;
   syncJammer();
   button.disabled=busy||done||!loaded||blocked||!client.pending&&!config;
-  text(button,busy?'正在核对纪念卡申请…':client.pending?'核对原纪念卡申请':config?'提交纪念卡申请':'纪念卡申请暂未开放');
+  const serviceLabel={loading:'正在确认申请服务…',unavailable:'申请服务暂时不可用',closed:'纪念卡申请已关闭',open:'提交纪念卡申请'}[configState];
+  text(button,busy?'正在核对纪念卡申请…':client.pending?'核对原纪念卡申请':serviceLabel);
+  const canRetry=!client.pending&&!done&&configState==='unavailable';
+  retry.hidden=!canRetry;
+  const message=canRetry?'请重试连接申请服务。已保存的本机资料会保留。':'';
+  if(configMessage.textContent!==message)text(configMessage,message);
   restore.hidden=!blocked;restore.disabled=busy;
  }
  function announce(message){text(error,message);error.hidden=false;error.focus();}
@@ -63,11 +70,28 @@ for(const section of document.querySelectorAll('[data-wallet-api-origin]')){
    draft.subscribe(()=>{if(busy||done)return;void writing.catch(()=>{}).then(()=>draft.read()).then(snapshot=>{if(snapshot.revision!==revision){blocked=true;text(status,'另一页签已更新纪念卡申请，请先恢复核对。');lock();}}).catch(()=>{blocked=true;lock();});});
   }catch{blocked=true;loaded=false;text(status,'本机暂存不可用，请更换浏览器后申请。');lock();}
  })();
- void client.configure().then(async value=>{
-  await initialization;
-  if(value?.enabled===true&&value.eventId===eventConfig.id){config=value;document.dispatchEvent(new CustomEvent('artdico:registration-policy',{detail:{privacy:value.privacy}}));}
+ async function configure(retrying=false){
+  configState='loading';
   lock();
- }).catch(async()=>{await initialization;lock();});
+  let value;
+  try{value=await client.configure();}catch{value=null;}
+  await initialization;
+  if(value?.enabled===true&&value.eventId===eventConfig.id){
+   config=value;
+   configState='open';
+   document.dispatchEvent(new CustomEvent('artdico:registration-policy',{detail:{privacy:value.privacy}}));
+  }else{
+   config=null;
+   configState=value?.reason==='closed'&&(!value.eventId||value.eventId===eventConfig.id)?'closed':'unavailable';
+  }
+  lock();
+  if(retrying){
+   if(config&&loaded&&!client.pending)control('huodongxingReference').focus();
+   else if(!retry.hidden)retry.focus();
+  }
+ }
+ retry.addEventListener('click',()=>{if(configState==='unavailable')void configure(true);});
+ void configure();
  form.addEventListener('submit',async event=>{
   event.preventDefault();if(busy||done||blocked||!loaded||!client.pending&&!config)return;
   if(!client.pending&&!form.reportValidity())return;
@@ -90,5 +114,4 @@ for(const section of document.querySelectorAll('[data-wallet-api-origin]')){
  });
  window.addEventListener('pagehide',()=>{clearTimeout(timer);if(loaded&&!busy&&!done&&!blocked&&!client.pending&&editing>savedEditing)void save().catch(()=>{});});
  window.addEventListener('beforeunload',event=>{if(!done&&(client.pending||editing>savedEditing)){event.preventDefault();event.returnValue='';}});
- lock();
 }

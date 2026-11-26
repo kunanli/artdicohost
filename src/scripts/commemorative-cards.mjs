@@ -1,22 +1,30 @@
 import { cardCommunityLabel, cardJammerOption, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
+import { renderCommemorativeJpeg } from '../lib/commemorative-card-image.mjs';
 
 const root = document.querySelector('[data-card-admin]');
 const $ = selector => root.querySelector(selector);
 const api = '/api/admin/registration-confirmation/cards';
 const idPattern = /^[A-Za-z0-9_-]{43}$/u;
+const proofPattern = /^[a-f0-9]{64}$/u;
 const draftId = () => /^#application=([A-Za-z0-9_-]{43})$/u.exec(location.hash)?.[1] ?? '';
 const stages = {
-  check_delivery: '', pending_review: '核对报名', set_identity: '设置卡面身份',
+  check_delivery: '寄送待核对', pending_review: '核对活动行报名', set_identity: '设置卡面身份',
   retry_delivery: '可重新寄送', send: '待寄送', blocked: '暂不可寄送',
-  submitted: '已提交发送', waitlisted: '候补中', rejected: '报名未通过', withdrawn: '报名已取消',
+  submitted: '邮件服务已接收', waitlisted: '候补中', rejected: '申请未通过', withdrawn: '领取资格已取消',
 };
 const queueOrder = Object.keys(stages);
 const todo = new Set(queueOrder.slice(0, 6));
+const personReasons = new Set(['EMAIL_MISSING', 'CONTACT_EMAIL_CHANGED', 'CONTACT_CONSENT_REQUIRED', 'CONTACT_DECLINED', 'CONTACT_NOT_FOUND', 'STAFF_PERMISSION_REQUIRED']);
 const sentTime = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Taipei', dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' });
 const reasons = {
   PERMISSION_REQUIRED: '请由有寄送权限的工作人员发卡。',
   EMAIL_MISSING: '请在人员资料中补齐收件邮箱。',
+  CONTACT_EMAIL_CHANGED: '联系人邮箱已变更，请先核对当前收件地址。',
+  CONTACT_CONSENT_REQUIRED: '请先核实当前收件人的联络许可。',
+  CONTACT_DECLINED: '收件人已婉拒或取消联络。',
+  CONTACT_NOT_FOUND: '请先核对关联的人员资料。',
+  STAFF_PERMISSION_REQUIRED: '请先核对代登记对象的寄送许可。',
   EMAIL_UNAVAILABLE: '邮件寄送暂不可用。',
   EVENT_FACTS_MISMATCH: '请先核对已发布的活动信息。',
   EVENT_FACTS_UNAVAILABLE: '活动信息暂无法核对。',
@@ -50,11 +58,54 @@ const add = $('[data-card-add]');
 const createPanel = $('#card-create');
 const createForm = $('[data-card-create]');
 const remove = $('[data-card-remove]');
+const previewButton = $('[data-card-preview-open]');
+const previewPanel = $('[data-card-preview-panel]');
+const previewImage = $('[data-card-preview-image]');
+const savedFields = { identity, site: communitySite, role: communityRole, organization, phone };
 
 let csrf = '', rows = [], filter = 'todo', activeId = '', current = null, busy = false, editingIdentity = false, version = 0;
-let pendingTest = null;
+let pendingTest = null, baseFields = null, reviewedProof = '', staleView = false, contextChanged = false;
 const pendingApprovals = new Map();
+const pendingDeliveries = new Map();
 const rowFor = id => rows.find(row => row.sources.some(source => source.id === id));
+const normalize = value => value.normalize('NFC').trim();
+const searchable = value => value.normalize('NFKC').trim().toLocaleLowerCase();
+
+function draftChanges() {
+  if (!baseFields) return {};
+  return Object.fromEntries(Object.entries(savedFields).filter(([key, input]) => input.value !== baseFields[key])
+    .map(([key, input]) => [key, input.value]));
+}
+function hasDraft() { return Object.keys(draftChanges()).length > 0; }
+function sameCard(left, right) { return left?.primaryId === right?.primaryId && left?.recipient === right?.recipient; }
+function clearPreview() {
+  reviewedProof = '';
+  previewPanel.hidden = true;
+  previewImage.removeAttribute('src');
+  previewButton.setAttribute('aria-expanded', 'false');
+  previewButton.textContent = '预览已保存卡面';
+}
+function editChanged() {
+  if (hasDraft() && reviewedProof) clearPreview();
+  renderActions();
+}
+for (const input of Object.values(savedFields)) input.addEventListener('input', editChanged);
+function leaveDraft(nextId) {
+  return nextId === current?.registrationId || !hasDraft() || window.confirm('当前卡面有未保存的修改。放弃修改并离开？');
+}
+function resetDraft() {
+  if (!baseFields) return;
+  for (const [key, input] of Object.entries(savedFields)) input.value = baseFields[key];
+  editingIdentity = false;
+  contextChanged = false;
+  syncJammer();
+  renderActions();
+}
+function deliveryAdvanced(before, after) {
+  if (!sameCard(before, after) || !/^c_[a-f0-9]{64}$/u.test(after.deliveryReceiptId ?? '') || !Number.isSafeInteger(after.deliveryAttempt)) return false;
+  return after.deliveryReceiptId !== before.deliveryReceiptId || after.deliveryAttempt > before.deliveryAttempt
+    || before.status === 'unknown' && after.status !== 'unknown';
+}
 
 function syncJammer() {
   const option = cardJammerOption(communityRole.value);
@@ -65,6 +116,7 @@ communityRole.addEventListener('input', syncJammer);
 jammer.addEventListener('change', () => {
   communityRole.value = cardJammerOption(communityRole.value).toggleValue;
   syncJammer();
+  editChanged();
 });
 
 function showError(text = '', target = errorBox) {
@@ -86,7 +138,7 @@ async function request(path, method = 'GET', body) {
   });
   if (reply.status === 401 && path !== '/api/admin/login') clear();
   const value = await reply.json();
-  if (!reply.ok) throw Object.assign(new Error(value.error?.message || '暂时无法核对，请稍后重试。'), { status: reply.status });
+  if (!reply.ok) throw Object.assign(new Error(value.error?.message || '暂时无法核对，请稍后重试。'), { status: reply.status, code: value.error?.code });
   return value;
 }
 function clear() {
@@ -99,7 +151,9 @@ function clear() {
   list.replaceChildren();
   for (const button of filters) button.querySelector('span').textContent = '';
   pendingApprovals.clear();
+  pendingDeliveries.clear();
   pendingTest = null;
+  staleView = false;
   createForm.reset();
   setCreateOpen(false);
   add.hidden = true;
@@ -114,9 +168,11 @@ function setCreateOpen(open) {
   add.setAttribute('aria-expanded', String(open));
 }
 function renderList() {
-  const query = search.value.normalize('NFKC').trim().toLocaleLowerCase();
-  const counts = { all: rows.length, todo: 0, submitted: 0 };
+  const query = searchable(search.value);
+  const counts = { all: 0, todo: 0, submitted: 0, test: 0 };
   for (const row of rows) {
+    if (row.test) { counts.test++; continue; }
+    counts.all++;
     if (todo.has(row.stage)) counts.todo++;
     if (row.stage === 'submitted') counts.submitted++;
   }
@@ -124,33 +180,41 @@ function renderList() {
     const key = button.dataset.cardFilter;
     button.setAttribute('aria-pressed', String(filter === key));
     button.querySelector('span').textContent = String(counts[key]);
+    if (key === 'test') button.hidden = !counts.test && add.hidden;
   }
-  const visible = rows.filter(row => (filter === 'all' || filter === 'todo' && todo.has(row.stage) || filter === 'submitted' && row.stage === 'submitted')
-    && (!query || [row.name, ...row.sources.flatMap(({ name, bookingReference }) => [name, bookingReference])]
-      .some(value => value.normalize('NFKC').toLocaleLowerCase().includes(query))))
-    .sort((left, right) => {
+  const visible = [];
+  for (const row of rows) {
+    if (Boolean(row.test) !== (filter === 'test')) continue;
+    if (!query && (filter === 'todo' && !todo.has(row.stage) || filter === 'submitted' && row.stage !== 'submitted')) continue;
+    const match = query && (row.sources.find(source => searchable(source.bookingReference) === query)
+      ?? row.sources.find(source => searchable(source.bookingReference).includes(query))
+      ?? row.sources.find(source => searchable(source.name).includes(query)));
+    if (query && !match && !searchable(row.name).includes(query)) continue;
+    visible.push({ row, match });
+  }
+  visible.sort(({ row: left }, { row: right }) => {
       const stageDifference = queueOrder.indexOf(left.stage) - queueOrder.indexOf(right.stage);
       if (stageDifference) return stageDifference;
       if (left.stage === 'submitted') return (right.sentAt ?? right.submittedAt).localeCompare(left.sentAt ?? left.submittedAt) || left.id.localeCompare(right.id);
       return left.submittedAt.localeCompare(right.submittedAt) || left.id.localeCompare(right.id);
-    });
+  });
   const empty = $('[data-card-empty]');
   empty.hidden = visible.length > 0;
-  empty.textContent = query ? '当前筛选没有匹配的申请。'
+  empty.textContent = query ? '没有匹配的纪念卡申请。' : filter === 'test' ? '目前没有测试卡。'
     : filter === 'todo' ? '目前没有待处理的申请。' : filter === 'submitted' ? '目前没有已提交的纪念卡。' : '目前没有纪念卡申请。';
   const focused = document.activeElement?.dataset.application;
   const selected = rowFor(activeId);
-  list.replaceChildren(...visible.map(row => {
+  list.replaceChildren(...visible.map(({ row, match }) => {
     const li = document.createElement('li');
     const button = document.createElement('button');
     button.type = 'button';
-    button.dataset.application = row.id;
+    button.dataset.application = match?.id ?? (selected === row ? activeId : row.id);
     button.dataset.stage = row.stage;
     button.setAttribute('aria-pressed', String(selected === row));
     const name = document.createElement('strong'), reference = document.createElement('span');
     name.textContent = row.name;
     reference.className = 'card-muted';
-    reference.textContent = row.bookingReference;
+    reference.textContent = match && match.bookingReference !== row.bookingReference ? '匹配编号：' + match.bookingReference : row.bookingReference;
     button.append(name, reference);
     if (stages[row.stage]) {
       const status = document.createElement('small');
@@ -164,6 +228,10 @@ function renderList() {
 }
 function setView(value) {
   const stayOnApplication = current?.registrationId === value?.registrationId;
+  const draft = stayOnApplication ? draftChanges() : {};
+  contextChanged = stayOnApplication && Object.keys(draft).length > 0 && (contextChanged || !sameCard(current, value));
+  editingIdentity = stayOnApplication && editingIdentity;
+  if (!stayOnApplication || contextChanged || reviewedProof !== value?.previewProof) clearPreview();
   current = value;
   detail.hidden = !value;
   placeholder.hidden = Boolean(value);
@@ -174,19 +242,24 @@ function setView(value) {
     identity.value = '';
     communityDetails.open = false;
     communityForm.reset();
+    baseFields = null;
     syncJammer();
     return;
   }
   heading.textContent = value.name;
-  $('[data-card-reference-label]').textContent = value.test ? '类型' : '活动行编号';
+  $('[data-card-reference-label]').textContent = value.test ? '类型' : '当前活动行编号';
   const linked = $('[data-card-linked]');
-  const otherReferences = [...new Set((rowFor(value.registrationId)?.sources ?? []).map(source => source.bookingReference))]
-    .filter(reference => reference !== value.bookingReference);
+  const otherReferences = (rowFor(value.registrationId)?.sources ?? []).filter(source => source.id !== value.registrationId);
   linked.hidden = otherReferences.length === 0;
-  linked.open = false;
-  linked.querySelector('ul').replaceChildren(...otherReferences.map(reference => {
+  if (!stayOnApplication) linked.open = false;
+  linked.querySelector('ul').replaceChildren(...otherReferences.map(source => {
     const item = document.createElement('li');
-    item.textContent = reference;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ah-admin-text-button';
+    button.textContent = source.bookingReference;
+    button.addEventListener('click', () => { if (!busy && leaveDraft(source.id)) void work(() => open(source.id, true), true); });
+    item.append(button);
     return item;
   }));
   $('[data-card-reference]').textContent = value.bookingReference;
@@ -214,6 +287,9 @@ function setView(value) {
   const saved = [community, value.cardProfile?.organization].filter(Boolean).join(' · ');
   const pending = proposed && !value.cardCommunitySaved && !community || !value.cardProfile && (profile?.organization || profile?.phone);
   $('[data-card-community-summary]').textContent = '纪念卡补充资料' + (saved ? ' · ' + saved : '') + (pending ? '（待保存）' : '');
+  baseFields = Object.fromEntries(Object.entries(savedFields).map(([key, input]) => [key, input.value]));
+  for (const [key, input] of Object.entries(draft)) if (normalize(input) !== baseFields[key]) savedFields[key].value = input;
+  syncJammer();
   renderActions();
 }
 function renderActions() {
@@ -221,32 +297,55 @@ function renderActions() {
   if (!value) return;
   const verified = value.admissionStatus === 'confirmed';
   const sent = value.stage === 'submitted', uncertain = value.stage === 'check_delivery';
+  const unconfirmed = pendingDeliveries.has(value.primaryId);
+  const needCheck = uncertain || unconfirmed || value.sendInProgress;
   const resend = value.canResend === true;
   const canSend = value.stage === 'send' || value.stage === 'retry_delivery' || resend;
+  const dirty = hasDraft();
+  const canPreview = verified && value.preview && proofPattern.test(value.previewProof ?? '');
+  const previewReviewed = canPreview && reviewedProof === value.previewProof;
   const reason = value.reason && (reasons[value.reason] ?? '收件权限暂无法核对。');
   const pending = pendingApprovals.has(value.registrationId);
   const identityValue = $('[data-card-identity-value]');
   identityValue.hidden = $('[data-card-identity-label]').hidden = !value.identity || !verified;
-  identityValue.querySelector('span').textContent = value.identity ? identity.selectedOptions[0]?.textContent : '';
-  $('[data-card-edit]').hidden = value.test || !verified || uncertain || sent || editingIdentity;
+  identityValue.querySelector('span').textContent = WALLET_IDENTITIES.find(option => option.value === value.identity)?.label ?? '';
+  $('[data-card-edit]').hidden = value.test || !verified || value.sendInProgress || editingIdentity;
   const state = $('[data-card-state]');
   state.dataset.stage = value.stage;
-  state.textContent = value.sendInProgress ? '纪念卡正在发送。'
-    : uncertain ? (resend ? '未收到邮件服务回执，重寄可能重复。' : '未收到邮件服务回执。')
-    : sent ? '纪念卡邮件已提交发送'
+  state.textContent = staleView ? '申请资料暂未核对，请刷新后继续。' : value.sendInProgress ? '纪念卡正在发送。'
+    : needCheck ? '本次寄送待核对。重寄可能产生重复邮件。'
+    : sent ? '邮件服务已接收'
     : reason || (value.stage === 'retry_delivery' ? '发送失败，可再次寄送。' : stages[value.stage]);
   const submittedAt = $('[data-card-sent-at]');
-  submittedAt.hidden = !sent || !value.sentAt;
+  submittedAt.hidden = !sent || needCheck || !value.sentAt;
   submittedAt.textContent = submittedAt.hidden ? '' : '提交时间 ' + sentTime.format(new Date(value.sentAt));
   const correction = $('[data-card-correct-email]');
-  correction.hidden = value.reason !== 'EMAIL_MISSING';
+  correction.hidden = !personReasons.has(value.reason);
   if (!correction.hidden) correction.href = '/admin/person/#registration=' + encodeURIComponent(value.primaryId);
   else correction.removeAttribute('href');
   $('[data-card-verification]').hidden = value.stage !== 'pending_review';
-  approve.textContent = pending ? '核对报名确认结果' : '核对无误，确认报名';
-  identityForm.hidden = !verified || uncertain || sent || Boolean(value.identity && !editingIdentity);
+  const approval = pendingApprovals.get(value.registrationId);
+  approve.textContent = !pending ? '通过纪念卡申请' : approval.checked ? '重试同一审核' : '核对审核结果';
+  approve.disabled = busy || staleView;
+  identityForm.hidden = !verified || value.sendInProgress || Boolean(value.identity && !editingIdentity);
+  identityForm.querySelector('[type="submit"]').disabled = busy || staleView || contextChanged;
+  communityForm.querySelector('[type="submit"]').disabled = busy || staleView || contextChanged;
+  $('[data-card-cancel-identity]').hidden = !value.identity || !editingIdentity;
+  const draftStatus = $('[data-card-draft-status]');
+  draftStatus.hidden = !dirty;
+  draftStatus.textContent = contextChanged ? '主记录或收件人已变更。请核对当前资料后放弃旧修改。' : '有未保存的卡面修改。';
+  $('[data-card-discard-draft]').hidden = !dirty;
+  $('[data-card-preview]').hidden = !verified || !value.identity;
+  previewButton.disabled = busy || !canPreview || dirty || staleView;
   deliveryForm.hidden = !canSend || editingIdentity;
-  deliveryForm.querySelector('[type="submit"]').textContent = resend || value.stage === 'retry_delivery' ? '重新发送纪念卡' : '发送纪念卡';
+  const dispatch = deliveryForm.querySelector('[type="submit"]');
+  dispatch.textContent = resend || needCheck || value.stage === 'retry_delivery' ? '重新发送纪念卡' : '发送纪念卡';
+  dispatch.classList.toggle('ah-admin-primary', !needCheck && !sent);
+  dispatch.disabled = busy || dirty || staleView || !previewReviewed || value.sendInProgress;
+  const sendHint = $('[data-card-send-hint]');
+  sendHint.textContent = !canPreview ? '暂时无法核对已保存卡面，请刷新后再试。'
+    : dirty ? '请先保存卡面修改。' : !previewReviewed ? '请先预览已保存卡面，再寄送给上方收件人。' : '';
+  sendHint.hidden = !sendHint.textContent;
   const formats = $('[data-card-delivery-formats]');
   formats.hidden = uncertain;
   formats.textContent = value.walletReady
@@ -254,7 +353,7 @@ function renderActions() {
   const deliveryBlock = $('[data-card-delivery-block]');
   deliveryBlock.hidden = !(uncertain || sent) || !reason || value.reason === 'EMAIL_MISSING';
   deliveryBlock.textContent = deliveryBlock.hidden ? '' : reason;
-  check.hidden = !value.sendInProgress;
+  check.hidden = !needCheck;
   $('[data-card-remove-panel]').hidden = !value.canRemove;
   remove.textContent = value.test ? '移除测试卡' : '移除纪念卡';
 }
@@ -270,8 +369,9 @@ async function work(task, nearApplication = false) {
   try { await task(); } catch (error) { showError(error.message || '暂时无法核对，请稍后重试。', nearApplication && !workspace.hidden ? detailError : errorBox); }
   finally {
     controls.forEach(node => { node.disabled = false; });
-    syncJammer();
     busy = false;
+    syncJammer();
+    renderActions();
     root.removeAttribute('aria-busy');
     if (nearApplication && document.activeElement === document.body && !detail.hidden && detail.contains(focused)) {
       (focused.getClientRects().length ? focused : heading).focus({ preventScroll: true });
@@ -280,23 +380,36 @@ async function work(task, nearApplication = false) {
 }
 async function open(id, focus = false) {
   if (!idPattern.test(id)) return;
-  const previous = activeId, readVersion = version;
-  activeId = id;
-  const selected = rowFor(id);
-  for (const entry of list.querySelectorAll('[data-application]')) entry.setAttribute('aria-pressed', String(entry.dataset.application === selected?.id));
-  editingIdentity = false;
-  if (id !== previous) { message.textContent = ''; setView(null); }
+  const readVersion = version;
   placeholder.textContent = '正在核对这份申请…';
   let value;
-  try { value = await request(api + '/' + id); }
-  catch (error) { if (version === readVersion) { setView(null); placeholder.textContent = '暂时无法读取这份申请。'; } throw error; }
-  if (version !== readVersion) return;
-  if (value.registrationId !== id || !idPattern.test(value.primaryId)) throw new Error('申请资料无法核对。');
+  try {
+    value = await request(api + '/' + id);
+    if (value.registrationId !== id || !idPattern.test(value.primaryId)) throw new Error('申请资料无法核对。');
+  } catch (error) {
+    if (version === readVersion) {
+      if (current?.registrationId === id) { staleView = true; clearPreview(); renderActions(); }
+      placeholder.textContent = '暂时无法读取这份申请。';
+    }
+    throw error;
+  }
+  if (version !== readVersion) return null;
+  if (id !== activeId) message.textContent = '';
+  activeId = id;
+  staleView = false;
+  const selected = rowFor(id);
   if (selected) Object.assign(selected, { name: value.name, status: value.status, stage: value.stage, format: value.format, sentAt: value.sentAt });
-  renderList();
+  if (value.admissionStatus === 'confirmed') pendingApprovals.delete(id);
   setView(value);
+  const receipt = pendingDeliveries.get(value.primaryId);
+  if (receipt && deliveryAdvanced(receipt, value) && ['provider_accepted', 'rejected'].includes(value.status)) {
+    pendingDeliveries.delete(value.primaryId);
+    renderActions();
+  }
+  renderList();
   rememberApplication(id);
   if (focus) heading.focus();
+  return value;
 }
 async function refresh() {
   const readVersion = version;
@@ -304,10 +417,17 @@ async function refresh() {
   if (version !== readVersion) return;
   rows = value.applications;
   const id = activeId || draftId(), selected = rowFor(id);
-  if (!activeId && selected && !todo.has(selected.stage)) filter = selected.stage === 'submitted' ? 'submitted' : 'all';
+  if (selected?.test) filter = 'test';
+  else if (!activeId && selected && !todo.has(selected.stage)) filter = selected.stage === 'submitted' ? 'submitted' : 'all';
   renderList();
   if (selected) await open(id);
   else {
+    if (current && hasDraft()) {
+      staleView = true;
+      clearPreview();
+      renderActions();
+      throw new Error('这份申请已不在当前名单。未保存的修改仍留在这里。');
+    }
     activeId = '';
     setView(null);
     if (id) rememberApplication('');
@@ -333,12 +453,12 @@ login.addEventListener('submit', event => {
   });
 });
 logout.addEventListener('click', async () => {
-  try { await request('/api/admin/logout', 'POST'); clear(); rememberApplication(''); showError(); }
-  catch (error) { showError(error.message); }
+  if (busy || !leaveDraft('')) return;
+  await work(async () => { await request('/api/admin/logout', 'POST'); clear(); rememberApplication(''); });
 });
 list.addEventListener('click', event => {
   const button = event.target.closest('[data-application]');
-  if (button) void work(() => open(button.dataset.application, true));
+  if (button && !busy && leaveDraft(button.dataset.application)) void work(() => open(button.dataset.application, true), true);
 });
 search.addEventListener('input', renderList);
 for (const button of filters) button.addEventListener('click', () => { filter = button.dataset.cardFilter; renderList(); });
@@ -351,13 +471,14 @@ add.addEventListener('click', () => {
 $('[data-card-cancel-create]').addEventListener('click', () => { setCreateOpen(false); add.focus(); });
 createForm.addEventListener('submit', event => {
   event.preventDefault();
+  if (!leaveDraft('')) return;
   const fields = Object.fromEntries(new FormData(createForm));
   void work(async () => {
     const key = JSON.stringify(fields);
     if (pendingTest?.key !== key) pendingTest = { key, operationId: crypto.randomUUID() };
     const { registrationId } = await request(api, 'POST', { ...fields, operationId: pendingTest.operationId });
     if (!idPattern.test(registrationId ?? '')) throw new Error('暂时无法核对这张测试卡。');
-    filter = 'all';
+    filter = 'test';
     search.value = '';
     activeId = registrationId;
     await refresh();
@@ -371,7 +492,12 @@ createForm.addEventListener('submit', event => {
 });
 remove.addEventListener('click', () => {
   const view = current;
-  if (busy || !view?.canRemove || !window.confirm('移除「' + view.name + '」的纪念卡？这张卡的线上领取链接将失效。')) return;
+  if (busy || !view?.canRemove) return;
+  const references = [...new Set((rowFor(view.registrationId)?.sources ?? []).map(source => source.bookingReference))];
+  const scope = view.test || !references.length ? '' : ' 关联活动行编号：' + references.join('、') + '。';
+  const unsaved = hasDraft() ? '未保存的卡面修改也将放弃。' : '';
+  if (!window.confirm('移除「' + view.name + '」的纪念卡？线上领取链接将失效。' + scope + unsaved)) return;
+  resetDraft();
   void work(async () => {
     try {
       await request(api + '/' + view.registrationId, 'DELETE', { primaryId: view.primaryId });
@@ -384,79 +510,180 @@ remove.addEventListener('click', () => {
     if (csrf) message.textContent = '纪念卡已移除。';
   }, true);
 });
-check.addEventListener('click', () => work(() => open(activeId), true));
+check.addEventListener('click', () => work(async () => {
+  const result = await open(activeId);
+  if (!result) return;
+  message.textContent = result.sendInProgress ? '寄送仍在处理中，可稍后核对。'
+    : pendingDeliveries.has(result.primaryId) || result.status === 'unknown' ? '目前尚无这次寄送的明确回执。'
+    : result.status === 'provider_accepted' ? '已核对记录：邮件服务已接收。'
+    : result.status === 'rejected' ? '已核对记录：本次邮件发送失败。' : '目前未有寄送记录。';
+}, true));
 $('[data-card-edit]').addEventListener('click', () => { editingIdentity = true; renderActions(); identity.focus(); });
+$('[data-card-cancel-identity]').addEventListener('click', () => {
+  identity.value = baseFields.identity;
+  editingIdentity = false;
+  editChanged();
+  $('[data-card-edit]').focus();
+});
+$('[data-card-discard-draft]').addEventListener('click', () => {
+  if (window.confirm('放弃这份纪念卡未保存的修改？')) resetDraft();
+});
+window.addEventListener('beforeunload', event => {
+  if (!hasDraft()) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
+
+async function previewSavedCard() {
+  const view = current, started = version;
+  if (!view?.preview || !proofPattern.test(view.previewProof ?? '') || hasDraft() || staleView) return;
+  if (!previewPanel.hidden && reviewedProof === view.previewProof) {
+    previewPanel.hidden = true;
+    previewButton.setAttribute('aria-expanded', 'false');
+    previewButton.textContent = '预览已保存卡面';
+    return;
+  }
+  const jpeg = await renderCommemorativeJpeg(view.preview);
+  // A local data URL works with the staff pages’ restrictive image policy.
+  const src = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('暂时无法显示已保存的卡面。'));
+    reader.readAsDataURL(jpeg);
+  });
+  if (started !== version || current !== view || hasDraft()) return;
+  previewImage.src = String(src);
+  previewPanel.hidden = false;
+  previewButton.setAttribute('aria-expanded', 'true');
+  previewButton.textContent = '收起卡面预览';
+  reviewedProof = view.previewProof;
+}
+previewButton.addEventListener('click', () => work(previewSavedCard, true));
 
 approve.addEventListener('click', () => work(async () => {
-  const view = current;
-  if (!view) return;
+  const view = current, started = version;
+  if (!view || staleView) return;
   const id = view.registrationId;
-  const body = pendingApprovals.get(id) ?? {
-    primaryId: view.primaryId, expectedRevision: view.admissionRevision, operationId: crypto.randomUUID(),
-  };
-  pendingApprovals.set(id, body);
-  try { await request(api + '/' + id + '/approve', 'POST', body); }
-  catch (error) {
-    if (error.status && error.status < 500) pendingApprovals.delete(id);
-    if (csrf) await open(id);
-    throw error;
+  let pending = pendingApprovals.get(id);
+  if (pending && !pending.checked) {
+    const fresh = await open(id);
+    if (!fresh) return;
+    if (fresh.admissionStatus === 'confirmed') message.textContent = '已核对：这份纪念卡可以领取。';
+    else if (fresh.stage === 'pending_review' && fresh.primaryId === pending.body.primaryId) {
+      pending.checked = true;
+      message.textContent = '尚未读到审核回执。可重试同一审核。';
+    } else pendingApprovals.delete(id);
+    return;
   }
-  pendingApprovals.delete(id);
-  if (csrf) await open(id);
+  pending ??= { body: { primaryId: view.primaryId, expectedRevision: view.admissionRevision, operationId: crypto.randomUUID() }, checked: false };
+  pendingApprovals.set(id, pending);
+  pending.checked = false;
+  let failure;
+  try { await request(api + '/' + id + '/approve', 'POST', pending.body); }
+  catch (error) {
+    if (started !== version) return;
+    failure = error;
+    if (error.status && error.status < 500) pendingApprovals.delete(id);
+  }
+  if (started !== version) return;
+  const fresh = await open(id);
+  if (fresh?.admissionStatus === 'confirmed' && fresh.primaryId === view.primaryId) {
+    message.textContent = '纪念卡申请已通过。';
+  } else if (failure) throw failure;
+  else message.textContent = '审核已提交，结果待核对。';
 }, true));
+
+async function saveCardFields(view, body, matches, announcement) {
+  const started = version;
+  let failure;
+  try { await request(api + '/' + view.registrationId, 'PATCH', body); }
+  catch (error) { failure = error; }
+  if (started !== version) return;
+  let fresh;
+  try { fresh = await open(view.registrationId); }
+  catch (error) {
+    if (started === version) throw failure ?? new Error('修改已提交，暂时无法核对。请刷新这份申请。');
+    return;
+  }
+  if (!fresh) return;
+  if (!sameCard(view, fresh) || !matches(fresh)) {
+    throw new Error((failure?.message ?? '保存结果待核对。') + (hasDraft() ? ' 未保存的修改仍保留。' : ''));
+  }
+  announcement();
+  clearPreview();
+}
 identityForm.addEventListener('submit', event => {
   event.preventDefault();
   void work(async () => {
     const view = current;
-    if (!view || !identity.value) return;
-    try { await request(api + '/' + view.registrationId, 'PATCH', { primaryId: view.primaryId, expectedRevision: view.reviewRevision, identity: identity.value }); }
-    catch (error) { if (csrf) await open(view.registrationId); throw error; }
-    if (csrf) { await open(view.registrationId); message.textContent = '卡面身份已保存。'; }
+    if (!view || !identity.value || staleView || contextChanged) return;
+    const selected = identity.value;
+    await saveCardFields(view, { primaryId: view.primaryId, expectedRevision: view.reviewRevision, identity: selected },
+      fresh => fresh.identity === selected, () => { editingIdentity = false; message.textContent = '卡面身份已保存。'; });
   }, true);
 });
 communityForm.addEventListener('submit', event => {
   event.preventDefault();
   void work(async () => {
     const view = current;
-    if (!view || view.admissionStatus !== 'confirmed' || !Number.isSafeInteger(view.communityRevision)) return;
-    try {
-      await request(api + '/' + view.registrationId, 'PATCH', {
-        primaryId: view.primaryId,
-        expectedCommunityRevision: view.communityRevision,
-        cardCommunity: { site: communitySite.value, role: communityRole.value },
-        cardProfile: { organization: organization.value, phone: phone.value },
-      });
-    } catch (error) {
-      if (csrf) await open(view.registrationId);
-      throw error;
-    }
-    if (csrf) { await open(view.registrationId); message.textContent = '纪念卡资料已保存。'; }
+    if (!view || view.admissionStatus !== 'confirmed' || !Number.isSafeInteger(view.communityRevision) || staleView || contextChanged) return;
+    const cardCommunity = { site: normalize(communitySite.value), role: normalize(communityRole.value) };
+    const cardProfile = { organization: normalize(organization.value), phone: normalize(phone.value) };
+    await saveCardFields(view, { primaryId: view.primaryId, expectedCommunityRevision: view.communityRevision, cardCommunity, cardProfile },
+      fresh => fresh.cardCommunitySaved && Object.entries(cardCommunity).every(([key, value]) => fresh.cardCommunity?.[key] === value)
+        && Object.entries(cardProfile).every(([key, value]) => fresh.cardProfile?.[key] === value),
+      () => { message.textContent = '纪念卡资料已保存。'; });
   }, true);
 });
 deliveryForm.addEventListener('submit', event => {
   event.preventDefault();
+  const view = current;
+  if (busy || !view || staleView || hasDraft() || !proofPattern.test(view.previewProof ?? '') || reviewedProof !== view.previewProof
+    || !['send', 'retry_delivery'].includes(view.stage) && !view.canResend) return;
+  const repeat = view.canResend || view.stage === 'retry_delivery' || pendingDeliveries.has(view.primaryId);
+  if (repeat && !window.confirm('重新发送纪念卡给 ' + view.recipient + '？收件人可能会收到另一封邮件。')) return;
   void work(async () => {
-    const view = current;
-    if (!view || !['send', 'retry_delivery'].includes(view.stage) && !view.canResend) return;
+    const started = version;
     message.textContent = '正在发送…';
-    let receipt;
+    let receipt, failure;
+    const { primaryId, recipient, status, deliveryReceiptId, deliveryAttempt } = view;
+    pendingDeliveries.set(primaryId, { primaryId, recipient, status, deliveryReceiptId, deliveryAttempt });
     try {
       receipt = await request(api + '/' + view.registrationId, 'POST', {
         primaryId: view.primaryId, expectedRevision: view.deliveryRevision, expectedAccessRevision: view.accessRevision,
-        identity: view.identity, format: 'jpeg', ...(view.canResend ? { resend: true } : {}),
+        expectedPreviewProof: view.previewProof, identity: view.identity, format: 'jpeg', ...(view.canResend ? { resend: true } : {}),
       });
     } catch (error) {
-      if (csrf) {
-        message.textContent = '正在核对寄送结果…';
-        await open(view.registrationId);
-        message.textContent = '';
-      }
-      throw error;
+      if (started !== version) return;
+      failure = error;
+      clearPreview();
+      if (error.status && error.status < 500) pendingDeliveries.delete(view.primaryId);
     }
-    if (!csrf) return;
-    await open(view.registrationId);
-    if (view.canResend && receipt.status === 'provider_accepted') message.textContent = '已重新提交纪念卡邮件。';
-    else message.textContent = ['provider_accepted', 'unknown', 'rejected'].includes(receipt.status) ? '' : '这次未能发送，请查看当前状态。';
+    if (started !== version) return;
+    let fresh;
+    try { fresh = await open(view.registrationId); }
+    catch (error) {
+      if (started !== version) return;
+      if (receipt?.status === 'provider_accepted') message.textContent = '邮件服务已接收。请刷新申请以核对最新状态。';
+      else if (pendingDeliveries.has(view.primaryId)) message.textContent = '寄送结果待核对，请先使用「核对寄送结果」。';
+      else throw failure ?? error;
+      return;
+    }
+    if (!fresh) return;
+    const advanced = deliveryAdvanced(view, fresh);
+    if (receipt?.status === 'provider_accepted' || advanced && fresh.status === 'provider_accepted') {
+      pendingDeliveries.delete(view.primaryId);
+      if (!view.test && filter === 'todo' && fresh.stage === 'submitted') { filter = 'submitted'; renderList(); }
+      message.textContent = repeat ? '已重新提交纪念卡邮件。' : '邮件服务已接收。';
+    } else if (receipt?.status === 'rejected' || advanced && fresh.status === 'rejected') {
+      pendingDeliveries.delete(view.primaryId);
+      message.textContent = '本次邮件未能发送。';
+    } else if (failure && !pendingDeliveries.has(view.primaryId)) throw failure;
+    else if (failure || receipt?.status === 'unknown') message.textContent = '寄送结果待核对，请先使用「核对寄送结果」。';
+    else {
+      pendingDeliveries.delete(view.primaryId);
+      message.textContent = '这次未能发送，请查看当前状态。';
+    }
   }, true);
 });
 

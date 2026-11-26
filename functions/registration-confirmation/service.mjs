@@ -14,6 +14,7 @@ import { CONFIRMATION_EMAIL_CONFIGURATION_FIELDS, CONFIRMATION_EMAIL_REASONS, co
 
 const SITE = 'https://artdico.host';
 const ID = /^[A-Za-z0-9_-]{43}$/u;
+const PREVIEW_PROOF = /^[a-f0-9]{64}$/u;
 const STATUS = ['pending_review', 'confirmed', 'waitlisted', 'rejected', 'withdrawn'];
 const actorValid = actor => typeof own(actor, 'id') === 'string' && /^[A-Za-z0-9_-]{1,80}$/u.test(actor.id)
   && canManageEventOperations(actor);
@@ -109,6 +110,16 @@ export function createRegistrationConfirmationService({ registrationService, jou
     }
     return { ...source, ...(saved ? { cardCommunity: saved.community } : {}),
       ...(saved?.profile?.organization || saved?.profile?.phone ? { cardProfile: saved.profile } : {}) };
+  }
+  function cardPreviewFor({ record, admission }, copy) {
+    const identity = WALLET_IDENTITIES.find(item => item.value === record.walletIdentity);
+    if (admission.status !== 'confirmed' || !identity) return null;
+    const { title, date, time, venue, timezone } = eventFacts;
+    return { attendee: { name: record.fields.name }, event: { title, date, time, venue, timezone },
+      card: { identity: identity.label }, ...copy };
+  }
+  async function readCardPreview(primary, aliases) {
+    return cardPreviewFor(primary, await cardCopyFor(primary, await communities().read(), aliases));
   }
   const currentEventFacts = () => readEventFactsReadiness(eventFactsReadiness);
   async function deliveryPermission(record) {
@@ -384,6 +395,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
         || relatedNotices(delivery.value, aliases, kind, scopeOf(loaded)).some(item => item.id !== notice.id && !item.superseded
           && ['reserved', 'unknown', 'provider_accepted'].includes(item.status))) return false;
       const unchanged = unchangedEventFacts(checkedFacts, await currentEventFacts());
+      if (card?.expectedPreviewProof !== undefined
+        && confirmationRequestHash(await readCardPreview(latest, aliases)) !== card.expectedPreviewProof) return false;
       if (!unchanged || signal?.aborted || monotonicNow() >= deadline) { guardUnattempted = true; return false; }
       return true;
     };
@@ -427,8 +440,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     // Preserve legacy notice copy; new card requests advertise Wallet only
     // after both this recipient's identity and signer readiness are checked.
     const walletInstructions=walletReady||!externalRegistrationOnly&&!record.walletRequested;
-    // Copy is optional for email delivery. The private claim recalculates it on read.
-    const cardCopy = card ? await beforeDeadline(async () => cardCopyFor(loaded, await communities().read()), 1_000).catch(() => null) : null;
+    // Preview-based sends use the reviewed copy. Older clients load it with a bounded read.
+    const cardCopy = card?.preview ?? (card ? await beforeDeadline(async () => cardCopyFor(loaded, await communities().read()), 1_000).catch(() => null) : null);
     const locale = (cardCopy ? cardCopy.cardLocale : record.fields.locale) === 'en' ? 'en' : 'zh-CN';
     let subject = eventFacts.title + (kind === 'application_received' ? '｜申请已收到，待审核' : kind === 'pre_event_reminder' ? '｜行前提醒' : '｜参会名额已确认');
     let text = kind === 'application_received' ? [record.fields.name + '，你好：', '', '你的申请已收到，待主办方人工审核。',
@@ -455,9 +468,9 @@ export function createRegistrationConfirmationService({ registrationService, jou
       heading = locale === 'en' ? 'Your commemorative card' : '电子纪念卡';
       if (isTestCard(record)) { subject = '【测试】' + subject; heading = '测试纪念卡'; }
       text = locale === 'en' ? 'Save your card as a keepsake. Use your original Huodongxing ticket for check-in.' : '纪念卡供长期收藏。现场签到请使用活动行原电子票。';
-      const identity = WALLET_IDENTITIES.find(item => item.value === card.identity)?.label;
+      const identity = card.preview?.card.identity ?? WALLET_IDENTITIES.find(item => item.value === card.identity)?.label;
       const headline = cardIdentityHeadline(identity, cardCopy?.cardCommunity, locale);
-      cardEmail = { name: record.fields.name, identity: headline.identity,
+      cardEmail = { name: card.preview?.attendee.name ?? record.fields.name, identity: headline.identity,
         event: eventFacts.title, date: eventFacts.date, time: eventFacts.time, venue: commemorativeCardVenue(eventFacts.venue),
         community: headline.site };
     }
@@ -908,7 +921,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const scope = scopeOf({ record });
     const notice = strongestNotice(related.filter(item => !item.superseded && (sameScope(item, scope) || ['reserved', 'unknown'].includes(item.status))));
     return { status: stateOf(notice) ?? 'not_sent', format: notice?.kind.slice(5) ?? null,
-      sentAt: notice?.status === 'provider_accepted' ? notice.updatedAt : null };
+      sentAt: notice?.status === 'provider_accepted' ? notice.updatedAt : null,
+      deliveryReceiptId: notice?.id ?? null, deliveryAttempt: notice?.attempt ?? null };
   }
   function cardStage(admissionStatus, identity, delivery, reason = '') {
     if (delivery.status === 'unknown') return 'check_delivery';
@@ -918,9 +932,9 @@ export function createRegistrationConfirmationService({ registrationService, jou
     if (reason) return 'blocked';
     return delivery.status === 'rejected' ? 'retry_delivery' : 'send';
   }
-  async function cardMailReason(actor) {
+  async function cardMailReason(actor, eventRead) {
     if (!actorValid(actor)) return 'PERMISSION_REQUIRED';
-    const [settings, provider, facts] = await Promise.all([target().read().catch(() => null), providerState(), currentEventFacts()]);
+    const [settings, provider, facts] = await Promise.all([target().read().catch(() => null), providerState(), eventRead ?? currentEventFacts()]);
     if (!settings?.value.settings.enabled || !provider.ready) return 'EMAIL_UNAVAILABLE';
     return facts.ready ? '' : facts.reason;
   }
@@ -961,7 +975,8 @@ export function createRegistrationConfirmationService({ registrationService, jou
       const reason = cardMaySend(stage) ? cardBlockingReason(record, mailReason, permissions.get(record.id)) : '';
       return { id: source.id, name: record.fields.name, bookingReference: source.bookingReference, submittedAt: source.submittedAt,
         sources: sources.map(({ id, name, bookingReference }) => ({ id, name, bookingReference })), status: state.status,
-        stage: cardStage(admissionStatus, record.walletIdentity, state, reason), format: state.format, sentAt: state.sentAt };
+        stage: cardStage(admissionStatus, record.walletIdentity, state, reason), format: state.format, sentAt: state.sentAt,
+        ...(isTestCard(record) ? { test: true } : {}) };
     }) };
   }
   async function staffCardDetails({ actor, registrationId } = {}) {
@@ -972,17 +987,21 @@ export function createRegistrationConfirmationService({ registrationService, jou
     const [delivery, community] = await Promise.all([target('card_jpeg').read(), communities().read()]);
     const related = relatedNotices(delivery.value, aliases, 'card_jpeg'), state = cardDelivery(related, record);
     const sendInProgress = cardSendInProgress(related, clock());
-    const mayResend = admission.status === 'confirmed' && record.walletIdentity && ['unknown', 'provider_accepted'].includes(state.status);
+    const verified = admission.status === 'confirmed';
+    const eventRead = verified && record.walletIdentity ? currentEventFacts() : null;
+    const mayResend = verified && record.walletIdentity && ['unknown', 'provider_accepted'].includes(state.status);
     const maySend = mayResend || cardMaySend(cardStage(admission.status, record.walletIdentity, state));
-    const [mailReason, permission, wallet] = maySend ? await Promise.all([cardMailReason(actor), deliveryPermission(record), walletState()]) : ['', null, { ready: false }];
+    const [mailReason, permission, wallet] = maySend ? await Promise.all([cardMailReason(actor, eventRead), deliveryPermission(record), walletState()]) : ['', null, { ready: false }];
     const reason = maySend ? cardBlockingReason(record, mailReason, permission) : '';
     const recipient = admission.status === 'withdrawn' ? '' : record.fields.email ?? '';
-    const cardCommunity = admission.status === 'confirmed' ? (await cardCopyFor(primary, community, aliases)).cardCommunity
-      : community.entries[record.id]?.community ?? { site: '', role: '' };
+    const copy = verified ? await cardCopyFor(primary, community, aliases) : null;
+    const cardCommunity = copy?.cardCommunity ?? community.entries[record.id]?.community ?? { site: '', role: '' };
+    const preview = copy && (await eventRead)?.ready ? cardPreviewFor(primary, copy) : null;
     return { registrationId, primaryId: record.id, name: record.fields.name,
       bookingReference: application.record.fields.huodongxingReference, recipient, identity: record.walletIdentity ?? '',
       admissionStatus: admission.status, admissionRevision: approvalState.cursor.version, reviewRevision: record.reviewRevision, accessRevision: record.accessRevision ?? 0,
       deliveryRevision: delivery.value.revision, status: state.status, format: state.format, sentAt: state.sentAt,
+      deliveryReceiptId: state.deliveryReceiptId, deliveryAttempt: state.deliveryAttempt,
       stage: cardStage(admission.status, record.walletIdentity, state, reason), reason, walletReady: wallet.ready,
       canResend: Boolean(mayResend && !sendInProgress && !reason), sendInProgress,
       test: isTestCard(record), canRemove: actorValid(actor),
@@ -990,6 +1009,7 @@ export function createRegistrationConfirmationService({ registrationService, jou
       communityRevision: community.cursor.version,
       cardCommunitySaved: Object.hasOwn(community.entries, record.id),
       cardProfile: community.entries[record.id]?.profile ?? null,
+      preview, previewProof: preview ? confirmationRequestHash(preview) : null,
       suggestedCardProfile: cardProfileFields({ organization: application.record.fields.organization ?? '', phone: application.record.fields.phone ?? '' }),
       applicationPreferences: walletApplicationPreferences(application.record.fields) ?? {} };
   }
@@ -1065,15 +1085,18 @@ export function createRegistrationConfirmationService({ registrationService, jou
     catch (error) { if (conflict(error)) failure('REVISION_CONFLICT', 409); throw error; }
     return { status: 'confirmed' };
   }
-  async function staffSendCard({ actor, registrationId, primaryId, expectedRevision, expectedAccessRevision, identity, format, resend = false } = {}) {
+  async function staffSendCard({ actor, registrationId, primaryId, expectedRevision, expectedAccessRevision, expectedPreviewProof, identity, format, resend = false } = {}) {
     if (!actorValid(actor)) failure('FORBIDDEN', 403);
     if (!ID.test(primaryId ?? '') || ![expectedRevision, expectedAccessRevision].every(value => Number.isSafeInteger(value) && value >= 0)
+      || expectedPreviewProof !== undefined && (typeof expectedPreviewProof !== 'string' || !PREVIEW_PROOF.test(expectedPreviewProof))
       || typeof resend !== 'boolean' || !CARD_FORMATS.includes(format) || !WALLET_IDENTITIES.some(item => item.value === identity)) failure('INVALID_REQUEST', 400);
-    const { primary } = await cardContext(registrationId);
+    const { primary, aliases } = await cardContext(registrationId);
     const scope = scopeOf(primary);
     if (primaryId !== primary.record.id || scope.accessRevision !== expectedAccessRevision || primary.record.walletIdentity !== identity) failure('REVISION_CONFLICT', 409);
+    const preview = expectedPreviewProof === undefined ? null : await readCardPreview(primary, aliases);
+    if (expectedPreviewProof !== undefined && (!preview || confirmationRequestHash(preview) !== expectedPreviewProof)) failure('REVISION_CONFLICT', 409);
     if (!(await target().read()).value.settings.enabled) return { status: 'disabled' };
-    const card = { applicationId: registrationId, expectedRevision, identity, format, resend };
+    const card = { applicationId: registrationId, expectedRevision, expectedPreviewProof, preview, identity, format, resend };
     return notify(primaryId, { kind: 'card_' + format, actorId: actor.id, retryRejected: true, expectedScope: scope, card });
   }
   return Object.freeze({ prefix, forSavedReceipt, notifyApplicationReceived, authorize, authorizedRegistration, confirmation, staffConfirmationLink, settings, setSettings, dispatch,

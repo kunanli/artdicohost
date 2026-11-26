@@ -67,6 +67,7 @@ if (root) {
     jpegDownload.removeAttribute('href');
     jpegDownload.hidden = true;
     $('[data-confirmation-jpeg-preview]').hidden = true;
+    $('[data-confirmation-jpeg-status]').textContent = '';
     delete root.dataset.cardFormat;
     delete root.dataset.cardPreview;
   }
@@ -207,7 +208,7 @@ if (root) {
     $('[data-confirmation-error]').textContent=error.message||'请稍后重新读取。';$('[data-confirmation-error]').hidden=false;
   }
   async function showJpeg(value, current) {
-    const status = $('[data-confirmation-action-status]');
+    const status = $('[data-confirmation-jpeg-status]');
     status.textContent = '正在准备纪念卡图片…';
     try {
       const blob = await renderCommemorativeJpeg(value);
@@ -233,7 +234,7 @@ if (root) {
     try {
       if(!token)throw new Error('请使用主办方提供的私人链接打开本页。');
       const value=await client.read(token,{signal,includeCardFormats:true});if(current!==generation)return;render(value);
-      if (value.card?.ready && value.card.format !== 'wallet') await showJpeg(value, current);
+      if (value.card?.ready && value.card.format !== 'wallet') void showJpeg(value, current);
     } catch(error) {if(current===generation&&!error.cancelled)showReadError(error);}
     finally {if(current===generation){busy=false;controller=null;controls();}}
   }

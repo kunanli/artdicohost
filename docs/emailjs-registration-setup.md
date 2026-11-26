@@ -4,15 +4,15 @@
 
 已包含 `{{{confirmation_actions}}}` 的 EmailJS 確認模板會直接接收新版紀念卡，沿用目前的 Template ID、收件人與寄件設定。若較早的模板還沒有這個欄位，將 Content 更新為 [完整 HTML](templates/emailjs-registration-confirmation.html)，Subject 可設為 `{{email_subject}}`。
 
-`{{event_title}}` 與 `{{invitation_text}}` 使用雙大括號轉義。紀念卡傳入短標題與使用說明。`{{{confirmation_actions}}}` 輸出由伺服器生成的卡面和按鈕，當中有私人領取連結。JPEG 入口隨卡片提供，Apple 錢包入口需簽發服務就緒。卡片個人資料在郵件正文中呈現，載入 HOST 橫幅只會請求固定的公開圖片。
+`{{event_title}}` 與 `{{invitation_text}}` 使用雙大括號轉義。紀念卡傳入短標題與使用說明。`{{{confirmation_actions}}}` 輸出由伺服器生成的卡面及「打开电子纪念卡」按鈕。按鈕開啟私人領取頁，頁面根據這張卡的設定與目前可用性顯示 JPEG 下載和 Apple 錢包選項。卡片個人資料在郵件正文中呈現，載入 HOST 橫幅只會請求固定的公開圖片。
 
-## 2026-11-03：收到的信缺少 Wallet 圖標
+## 2026-11-03 歷史確認信的 Wallet 圖標
 
 先分開核對三層：官方PNG是否仍在、服務端實際`confirmation_actions`是否包含`<img>`、EmailJS目前Content是否用`{{{confirmation_actions}}}`輸出原HTML。Repo範本存在、API接受及版型預覽都不能證明實際收件已含圖標。官方圖片網址為`https://artdico.host/wallet/add-to-apple-wallet-cn.png`及`https://artdico.host/wallet/add-to-apple-wallet-en.png`；無需重新上傳或繪製。
 
 已知程式缺口為Wallet完整可用性只等250ms，OSS冷讀取稍慢便成功寄出缺圖的確認函。本輪改為沿原通知總期限核對；正常的慢回覆仍附官方圖標，整體準備超時不呼叫EmailJS、記錄已知未開始寄送，可由既有明確重寄流程處理。明確未配置或無效憑證仍不顯示可用Wallet，已確認／待審資格保持原規則。
 
-## 2026-11-03：確認信語言、Wallet 徽章與二維碼
+## 2026-11-03 歷史確認信的語言、Wallet 徽章與二維碼
 
 本階段新增三個固定參數 `email_subject`、`email_language`、`confirmation_actions`，原八個參數保留。新一般報名保存明確 `locale`（`zh-CN`／`en`），缺省舊記錄仍用簡體中文，不由 Email 地址或姓名猜語言。只有新送出的信使用新內容；讀取、部署與舊發信紀錄不補寄。
 

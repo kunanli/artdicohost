@@ -36,6 +36,7 @@ body[data-admission=waitlisted] .confirmation-state{color:#83581f}body[data-admi
 [data-card-format] [data-confirmation-save-heading],
 [data-card-preview] .confirmation-person{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .confirmation-jpeg-preview{margin-top:16px}
+.confirmation-jpeg-status:empty{margin:0}
 .confirmation-jpeg-preview img{display:block;width:100%;height:auto}
 .confirmation-jpeg-preview p{margin:8px 0 0;font-size:14px;color:#52617a}
 .confirmation-community{margin:-6px 0 14px;font-size:14px;color:#52617a}

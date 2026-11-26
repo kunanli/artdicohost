@@ -50,16 +50,22 @@ test('only the confirmation adapter enables the presentation variables on the au
   assert.equal(calls,1);
 });
 
-test('the keepsake email preview escapes recipient details and uses only public images',()=>{
+test('the keepsake email uses one localized claim action and escapes recipient details',()=>{
   const link = 'https://artdico.host/registration/confirmation/#r=c1.synthetic.signature';
   const card = { name: '<img src=x onerror=x>', identity: '嘉宾', event: '合成活动', date: '2026-12-05',
     time: '10:00–18:00', venue: '合成地点', community: 'GGJ & 合成站' };
-  const options = { kind: 'card_jpeg', subject: '电子纪念卡', confirmationUrl: link, card };
-  const value = confirmationEmailPresentation({ ...options, walletReady: true });
-  assert.match(value.confirmation_actions, /&lt;img src=x onerror=x&gt;/u);
-  assert.match(value.confirmation_actions, /GGJ &amp; 合成站/u);
-  assert.doesNotMatch(value.confirmation_actions, /<img src=x|\/api\/|group\.png/u);
-  assert.equal(value.confirmation_actions.split('href="' + link + '"').length - 1, 2);
-  assert.doesNotMatch(confirmationEmailPresentation(options).confirmation_actions, /add-to-apple-wallet/u);
-  assert.throws(()=>confirmationEmailPresentation({ ...options, ticket }),TypeError);
+  const options = { subject: '电子纪念卡', confirmationUrl: link, card };
+  for (const [locale, label] of [['zh-CN', '打开电子纪念卡'], ['en', 'Open your commemorative card']]) {
+    for (const kind of ['card_jpeg', 'card_wallet']) {
+      const input = { ...options, kind, locale };
+      const {confirmation_actions:html}=confirmationEmailPresentation({ ...input, walletReady:true });
+      assert.match(html, /&lt;img src=x onerror=x&gt;/u);
+      assert.match(html, /GGJ &amp; 合成站/u);
+      assert.deepEqual([...html.matchAll(/<a href="([^"]+)"[^>]*>([^<]+)<\/a>/gu)].map(match=>match.slice(1)), [[link,label]]);
+      assert.deepEqual([...html.matchAll(/<img src="([^"]+)"/gu)].map(match=>match[1]), ['https://artdico.host/wallet/host-card-banner.png']);
+      assert.doesNotMatch(html, /<img src=x|\/api\/|group\.png|Download JPEG|下载 JPEG|Add to Apple Wallet|添加到 Apple 钱包/u);
+      assert.equal(confirmationEmailPresentation(input).confirmation_actions,html);
+    }
+  }
+  assert.throws(()=>confirmationEmailPresentation({ ...options, kind:'card_jpeg', ticket }),TypeError);
 });

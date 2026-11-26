@@ -94,10 +94,10 @@ test('staff send one commemorative card email and recipients can still save the 
   assert.match(template.email_subject, /电子纪念卡/u);
   assert.equal(template.event_title, '电子纪念卡');
   assert.equal(template.invitation_text, '纪念卡供长期收藏。现场签到请使用活动行原电子票。');
-  assert.match(template.confirmation_actions, /下载 JPEG 纪念卡/u);
+  assert.match(template.confirmation_actions, /打开电子纪念卡/u);
   assert.ok(template.confirmation_actions.includes('/wallet/host-card-banner.png'));
   assert.ok(template.confirmation_actions.includes(f.fields.name));
-  assert.doesNotMatch(template.confirmation_actions, /add-to-apple-wallet|entry-links/u);
+  assert.doesNotMatch(template.confirmation_actions, /下载 JPEG|add-to-apple-wallet|entry-links/u);
   const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(template.confirmation_actions)[1];
   const publicCall = (path, headers) => f.app.handle(f.request(path, { method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken }, headers }));
   const offer = await publicCall('/api/admin/registration/confirmation');
@@ -173,6 +173,77 @@ test('an issued card displays its application site and discipline until staff re
   assert.equal((await readCard()).cardCommunity, undefined);
   assert.deepEqual((await readPass()).posterGeneric.primaryFields[0], { key: 'poster-identity', value: 'GGJ Organizer' });
   assert.equal(f.cardMessages().length, 1);
+});
+
+test('staff preview the saved card and must reload after a change before sending', async () => {
+  const f = await setup({ preferences: { locale: 'en', ggjSite: 'GGJ ARTDICO', ggjRole: 'Jammer' } });
+  const pending = await f.read();
+  assert.equal(pending.preview, null);
+  assert.equal(pending.previewProof, null);
+  assert.equal(pending.deliveryReceiptId, null);
+  assert.equal(pending.deliveryAttempt, null);
+  const send = await f.prepare('organizer');
+  const before = f.objects.calls.length;
+  const initial = await f.read();
+  assert.ok(f.objects.calls.slice(before).every(call => call.operation === 'get'));
+  assert.match(initial.previewProof, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(initial.preview.attendee, { name: f.fields.name });
+  assert.deepEqual(initial.preview.cardCommunity, { site: 'GGJ ARTDICO', role: 'Jammer' });
+  assert.equal(initial.preview.cardLocale, 'en');
+  assert.equal(initial.preview.cardProfile, undefined);
+  assert.equal(initial.preview.receiptToken, undefined);
+  const cardCommunity = { site: 'GGJ ARTDICO', role: 'Mentor' };
+  const cardProfile = { organization: '合成院校', phone: '+86 010 0000 0000' };
+  assert.equal((await f.call('PATCH', { primaryId: f.id, expectedCommunityRevision: initial.communityRevision,
+    cardCommunity, cardProfile })).status, 200);
+  assert.equal((await f.call('POST', { ...send, expectedPreviewProof: initial.previewProof })).status, 409);
+  assert.equal(f.cardMessages().length, 0);
+  const updated = await f.read();
+  assert.equal(updated.deliveryRevision, initial.deliveryRevision);
+  assert.notEqual(updated.previewProof, initial.previewProof);
+  const checkedSend = { ...send, expectedPreviewProof: updated.previewProof };
+  assert.equal((await (await f.call('POST', checkedSend)).json()).status, 'provider_accepted');
+  const first = await f.read();
+  assert.match(first.deliveryReceiptId, /^c_[a-f0-9]{64}$/u);
+  assert.equal(first.deliveryAttempt, 1);
+  const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(f.cardMessages()[0].template_params.confirmation_actions)[1];
+  const claim = confirmationView(await (await f.app.handle(f.request('/api/registration/confirmation', {
+    method: 'POST', origin: PEOPLE_FIXTURE_PUBLIC, body: { receiptToken },
+  }))).json());
+  const { title, date, time, venue, timezone } = claim.event;
+  assert.deepEqual(updated.preview, { attendee: { name: claim.attendee.name }, event: { title, date, time, venue, timezone },
+    card: { identity: claim.card.identity }, cardCommunity: claim.cardCommunity, cardProfile: claim.cardProfile, cardLocale: claim.cardLocale });
+  assert.equal((await (await f.call('POST', { ...checkedSend, expectedRevision: first.deliveryRevision, resend: true })).json()).status, 'provider_accepted');
+  const second = await f.read();
+  assert.equal(second.sentAt, first.sentAt, 'the synthetic sends share a timestamp');
+  assert.equal(second.deliveryReceiptId, first.deliveryReceiptId);
+  assert.equal(second.deliveryAttempt, 2);
+});
+
+test('card profile changes between preview and transport prevent delivery', async () => {
+  const f = await setup();
+  const send = await f.prepare();
+  const initial = await f.read();
+  let transportChecks = 0;
+  const service = createRegistrationConfirmationService({ registrationService: f.app.registrationService,
+    tokenSecret: 'synthetic-card-preview-test-secret', clock: () => Date.parse('2026-10-21T09:00:00Z'),
+    journalFor: prefix => createObjectJournal({ objects: f.objects, prefix }),
+    currentRegistration: record => f.app.reviewStore.projectRegistration(record),
+    emailProvider: { readiness: () => ({ ready: true }), send: async ({ canStart }) => {
+      transportChecks++;
+      assert.equal((await f.call('PATCH', { primaryId: f.id, expectedCommunityRevision: initial.communityRevision,
+        cardCommunity: { site: 'GGJ ARTDICO', role: 'Mentor' } })).status, 200);
+      assert.equal(await canStart(), false);
+      return { status: 'rejected', diagnostic: { code: 'DELIVERY_GUARD_BLOCKED', transportStarted: false } };
+    } },
+  });
+  const result = await service.staffSendCard({ ...send, actor: f.users[0], registrationId: f.id, expectedPreviewProof: initial.previewProof });
+  assert.equal(transportChecks, 1);
+  assert.equal(result.status, 'rejected');
+  const updated = await f.read();
+  assert.equal(updated.status, 'rejected');
+  assert.notEqual(updated.previewProof, initial.previewProof);
+  assert.equal(f.cardMessages().length, 0);
 });
 
 test('card headlines prioritize GGJ involvement and keep free text and event-only roles meaningful in both languages', () => {
@@ -306,7 +377,9 @@ test('staff can add, send and remove a test card independently of formal registr
   assert.equal(view.stage, 'send');
   assert.equal(view.canRemove, true);
   assert.equal((await (await call('GET', undefined, reviewer)).json()).canRemove, false);
-  assert.equal((await f.directory()).find(item => item.id === registrationId).bookingReference, '测试卡');
+  const directoryEntry = (await f.directory()).find(item => item.id === registrationId);
+  assert.equal(directoryEntry.bookingReference, '测试卡');
+  assert.equal(directoryEntry.test, true);
   assert.equal((await (await call('POST', { primaryId: registrationId, expectedRevision: view.deliveryRevision,
     expectedAccessRevision: view.accessRevision, identity: view.identity, format: 'jpeg' })).json()).status, 'provider_accepted');
   const message = f.cardMessages()[0].template_params;
@@ -519,8 +592,8 @@ test('existing Wallet and JPEG links can redeem both keepsake formats after the 
   const result = await service.staffSendCard({ ...body, actor: f.users[0], registrationId: f.id, format: 'wallet' });
   assert.equal(result.status, 'provider_accepted');
   assert.equal(messages.length, 1);
-  assert.match(messages[0].templateVariables.confirmation_actions, /下载 JPEG 纪念卡/u);
-  assert.match(messages[0].templateVariables.confirmation_actions, /add-to-apple-wallet-cn\.png/u);
+  assert.match(messages[0].templateVariables.confirmation_actions, /打开电子纪念卡/u);
+  assert.doesNotMatch(messages[0].templateVariables.confirmation_actions, /下载 JPEG|add-to-apple-wallet/u);
   assert.doesNotMatch(messages[0].text, /https?:\/\//u);
   const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(messages[0].templateVariables.confirmation_actions)[1];
   assert.deepEqual(confirmationView(await service.confirmation({ receiptToken })).card, { format: 'wallet', identity: '嘉宾', ready: true });

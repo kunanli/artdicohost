@@ -118,7 +118,7 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
           staffCardSaveCommunity: ['primaryId', 'expectedCommunityRevision', 'cardCommunity'],
           staffSendCard: ['primaryId', 'expectedRevision', 'expectedAccessRevision', 'identity', 'format'],
         }[method];
-        const optional = method === 'staffSendCard' ? ['resend'] : method === 'staffCardSaveCommunity' ? ['cardProfile'] : [];
+        const optional = method === 'staffSendCard' ? ['resend', 'expectedPreviewProof'] : method === 'staffCardSaveCommunity' ? ['cardProfile'] : [];
         keys(input, [...required, ...optional], required);
         return json(await service[method]({ ...input, actor, registrationId }));
       }

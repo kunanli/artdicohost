@@ -2,6 +2,7 @@
 import SiteLayout from '../../../layouts/SiteLayout.astro';
 import StaffNavigation from '../../../components/StaffNavigation.astro';
 import { CARD_COMMUNITY_FIELD_LENGTH, CARD_PROFILE_FIELD_LENGTHS, WALLET_IDENTITIES } from '../../../../shared/general-application.mjs';
+import { PUBLIC_REGISTRATION_URL } from '../../../config/event.mjs';
 import '../../../styles/admin.css';
 ---
 <SiteLayout title="纪念卡｜ARTDiCO HOST" description="核对纪念卡申请并寄送 JPEG 或 Apple Wallet。">
@@ -53,6 +54,7 @@ import '../../../styles/admin.css';
                 <button type="button" data-card-filter="todo" aria-pressed="true">待处理 <span></span></button>
                 <button type="button" data-card-filter="submitted" aria-pressed="false">已提交 <span></span></button>
                 <button type="button" data-card-filter="all" aria-pressed="false">全部 <span></span></button>
+                <button type="button" data-card-filter="test" aria-pressed="false" hidden>测试卡 <span></span></button>
               </div>
               <div class="ah-admin-field"><label for="card-search">搜索姓名或活动行编号</label><input id="card-search" type="search" maxlength="200" data-card-search /></div>
               <p class="card-muted" data-card-empty hidden></p>
@@ -68,7 +70,7 @@ import '../../../styles/admin.css';
                   <dt data-card-identity-label hidden>卡面身份</dt><dd data-card-identity-value hidden><span></span> <button class="ah-admin-text-button" type="button" data-card-edit>修改</button></dd>
                 </dl>
                 <p class="card-muted" data-card-requested-identity hidden></p>
-                <details class="card-linked" data-card-linked hidden><summary>其他活动行编号</summary><ul></ul></details>
+                <details class="card-linked" data-card-linked hidden><summary>关联活动行编号</summary><ul></ul></details>
                 <details class="card-linked" data-card-community hidden>
                   <summary data-card-community-summary>纪念卡补充资料</summary>
                   <form data-card-community-form>
@@ -87,18 +89,31 @@ import '../../../styles/admin.css';
                 <p class="card-muted" data-card-delivery-block hidden></p>
                 <a class="ah-admin-button" data-card-correct-email hidden>查看人员资料</a>
                 <div data-card-verification hidden>
-                  <p class="card-muted">请先核对活动行报名和已有人员记录。</p>
-                  <button class="ah-admin-button ah-admin-primary" type="button" data-card-approve>核对无误，确认报名</button>
+                  <p class="card-muted">请用上方的活动行编号核对原报名及姓名，再确认纪念卡领取资格。</p>
+                  <div class="card-actions">
+                    <a class="ah-admin-button" href={PUBLIC_REGISTRATION_URL} target="_blank" rel="noopener noreferrer">打开活动行</a>
+                    <button class="ah-admin-button ah-admin-primary" type="button" data-card-approve>通过纪念卡申请</button>
+                  </div>
                 </div>
                 <form data-card-identity-form hidden>
                   <div class="ah-admin-field"><label for="card-identity">卡面身份</label><select id="card-identity" required><option value="">选择身份</option>{WALLET_IDENTITIES.map(item => <option value={item.value}>{item.label}</option>)}</select></div>
-                  <button class="ah-admin-button ah-admin-primary" type="submit">保存身份</button>
+                  <div class="card-actions"><button class="ah-admin-button ah-admin-primary" type="submit">保存身份</button><button class="ah-admin-button" type="button" data-card-cancel-identity hidden>取消修改</button></div>
                 </form>
+                <p class="card-muted" data-card-draft-status role="status" hidden></p>
+                <button class="ah-admin-text-button" type="button" data-card-discard-draft hidden>放弃未保存修改</button>
+                <section class="card-preview" data-card-preview aria-label="已保存卡面" hidden>
+                  <button class="ah-admin-button" type="button" data-card-preview-open aria-expanded="false" aria-controls="card-preview-image">预览已保存卡面</button>
+                  <figure id="card-preview-image" data-card-preview-panel hidden>
+                    <img alt="已保存的 JPEG 纪念卡预览" data-card-preview-image />
+                    <figcaption class="card-muted">这是领取页提供的 JPEG。iPhone 上的排版由 Apple Wallet 显示。</figcaption>
+                  </figure>
+                </section>
+                <button class="ah-admin-button ah-admin-primary" type="button" data-card-check hidden>核对寄送结果</button>
                 <form data-card-delivery hidden>
                   <p class="card-muted" data-card-delivery-formats>一封邮件可领取 JPEG 和 Apple Wallet。</p>
+                  <p class="card-muted" data-card-send-hint hidden></p>
                   <button class="ah-admin-button ah-admin-primary" type="submit">发送纪念卡</button>
                 </form>
-                <button class="ah-admin-button" type="button" data-card-check hidden>刷新发送状态</button>
                 <div class="card-remove" data-card-remove-panel hidden>
                   <button class="ah-admin-text-button" type="button" data-card-remove>移除纪念卡</button>
                 </div>
@@ -138,6 +153,10 @@ import '../../../styles/admin.css';
   .card-state { padding: 10px 12px; border-radius: 5px; background: #eef2fa; font-weight: 600; }
   .card-linked { margin-bottom: 16px; font-size: 14px; color: var(--admin-muted); overflow-wrap: anywhere; }
   .card-ggj-jammer { display: flex; gap: 8px; align-items: center; min-height: 44px; margin-bottom: 8px; }
+  .card-preview { margin-block: 16px; }
+  .card-preview figure { margin: 12px 0 0; }
+  .card-preview img { display: block; width: min(100%, 320px); height: auto; margin-bottom: 6px; }
+  .card-panel [data-card-check] { margin-bottom: 12px; }
   .card-panel .ah-admin-status { margin-top: 12px; }
   .card-panel [data-card-edit] { margin-inline-start: 8px; }
   .card-remove { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--admin-line); }

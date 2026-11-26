@@ -3,7 +3,7 @@ import { CloudContentError } from '../cloud-content/errors.mjs';
 import { plainObject } from '../registration-api/policy.mjs';
 import { ConfirmationError } from './service.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
-import { CARD_FORMATS_ACCEPT } from '../../shared/confirmation-delivery.mjs';
+import { CARD_COLLECTOR_ACCEPT, CARD_FORMATS_ACCEPT } from '../../shared/confirmation-delivery.mjs';
 
 const SECURITY = { 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' };
 const MAX_BODY = 16 * 1024;
@@ -54,7 +54,7 @@ async function body(request) {
   finally { clearTimeout(timer); signal.removeEventListener('abort', onAbort); reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
-/** Receipt reads never authenticate a staff session or send a message. */
+/** Private receipt reads and explicit card claims never send a message. */
 export function createRegistrationConfirmationApi({ service, auth, apiOrigin = 'https://api.artdico.host', publicOrigins = ['https://artdico.host'] } = {}) {
   if (!originValid(apiOrigin) || !Array.isArray(publicOrigins) || !publicOrigins.length || !publicOrigins.every(originValid)) throw new TypeError('Explicit confirmation origins required.');
   const origins = new Set(publicOrigins);
@@ -78,13 +78,25 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
           'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'Content-Type', 'access-control-max-age': '600' } });
         if (request.method !== 'POST') reject('METHOD_NOT_ALLOWED', 405);
         if (typeof service?.confirmation !== 'function') reject('CONFIRMATION_UNAVAILABLE', 503);
-        const input = await body(request); keys(input, ['receiptToken'], ['receiptToken']);
+        const canonical = url.pathname === PUBLIC_PATHS[0];
+        const input = await body(request); keys(input, canonical ? ['receiptToken', 'claimCard'] : ['receiptToken'], ['receiptToken']);
         if (typeof input.receiptToken !== 'string' || input.receiptToken.length > 4096) reject();
+        if (Object.hasOwn(input, 'claimCard') && input.claimCard !== true) reject();
         if (request.signal.aborted) reject();
         // The canonical receipt route always returns both card formats. The
         // older route still negotiates for cached single-format clients.
-        if (url.pathname === PUBLIC_PATHS[0] || request.headers.get('accept') === CARD_FORMATS_ACCEPT) input.includeCardFormats = true;
-        return json(await service.confirmation(input));
+        const accept = request.headers.get('accept');
+        if (canonical || accept === CARD_FORMATS_ACCEPT || accept === CARD_COLLECTOR_ACCEPT) input.includeCardFormats = true;
+        if (input.claimCard === true) {
+          if (typeof service.claimCard !== 'function') reject('CONFIRMATION_UNAVAILABLE', 503);
+          return json(await service.claimCard(input));
+        }
+        const result = await service.confirmation(input);
+        if (accept !== CARD_COLLECTOR_ACCEPT && result?.card && Object.hasOwn(result.card, 'collectorNumber')) {
+          const { collectorNumber: _collectorNumber, ...card } = result.card;
+          return json({ ...result, card });
+        }
+        return json(result);
       }
       if (![SETTINGS, DISPATCH, CONFIRMATION_PREVIEW, REMINDER_PREVIEW, REMINDER_DISPATCH].includes(url.pathname) && !staffLink && !deliveryRead && !deliverySend && !reminderOperation && !confirmationOperation && !cards) reject('NOT_FOUND', 404);
       cors = { vary: 'Cookie, Origin' };
@@ -107,7 +119,8 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         if (origin !== apiOrigin || !equalToken(request.headers.get('x-csrf-token'), session.csrfToken)) reject('CSRF_REJECTED', 403);
         const input = await body(request);
         if (request.signal.aborted) reject();
-        const patchMethod = Object.hasOwn(input, 'cardCommunity') ? 'staffCardSaveCommunity' : 'staffCardSaveIdentity';
+        const patchMethod = Object.hasOwn(input, 'manualSequence') ? 'staffCardSaveCollector'
+          : Object.hasOwn(input, 'cardCommunity') ? 'staffCardSaveCommunity' : 'staffCardSaveIdentity';
         const method = approve ? 'staffCardApprove' : !registrationId ? 'staffCardAddTest'
           : request.method === 'PATCH' ? patchMethod : request.method === 'DELETE' ? 'staffCardRemove' : 'staffSendCard';
         const required = {
@@ -116,6 +129,7 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
           staffCardRemove: ['primaryId'],
           staffCardSaveIdentity: ['primaryId', 'expectedRevision', 'identity'],
           staffCardSaveCommunity: ['primaryId', 'expectedCommunityRevision', 'cardCommunity'],
+          staffCardSaveCollector: ['primaryId', 'expectedCollectorRevision', 'manualSequence'],
           staffSendCard: ['primaryId', 'expectedRevision', 'expectedAccessRevision', 'identity', 'format'],
         }[method];
         const optional = method === 'staffSendCard' ? ['resend', 'expectedPreviewProof'] : method === 'staffCardSaveCommunity' ? ['cardProfile'] : [];
@@ -176,7 +190,8 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         REGISTRATION_EXTERNAL: '报名与签到请在活动行办理。',
         FORBIDDEN: '当前账号没有管理确认通知的权限。', ORIGIN_REJECTED: '请求来源不被允许。', CSRF_REJECTED: '安全校验未通过，请重新读取后台。',
         INVALID_REQUEST: '请求格式无效。', UNSUPPORTED_MEDIA_TYPE: '请发送 UTF-8 JSON。', BODY_TOO_LARGE: '请求超过长度限制。',
-        REQUEST_TIMEOUT: '请求读取未完成。', REVISION_CONFLICT: '通知记录已变化，请重新读取后核对。', METHOD_NOT_ALLOWED: '此接口不支持该方法。', NOT_FOUND: '接口不存在。' };
+        REQUEST_TIMEOUT: '请求读取未完成。', REVISION_CONFLICT: '记录已变化，请重新读取后核对。', CARD_NUMBER_TAKEN: '此自定义编号已保留，请使用其他编号。',
+        METHOD_NOT_ALLOWED: '此接口不支持该方法。', NOT_FOUND: '接口不存在。' };
       return json({ error: { code: safe.code, message: messages[safe.code] ?? '确认资料暂时无法核对，请稍后重试。' } }, safe.status);
     }
   };

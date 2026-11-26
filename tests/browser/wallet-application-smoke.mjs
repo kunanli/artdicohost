@@ -103,7 +103,12 @@ async function staffIdentity(f,id){
   for(const name of ['group','registration','notice-records','save'])assert.equal(await f.page.locator('[data-confirmation-'+name+']').isVisible(),false);
   assert.equal((await f.app.registrationService.getAdmissionStatus(id)).status,'confirmed');assert.equal(f.calls.some(call=>call.path.endsWith('/registration/wallet')),false,'pending identity never downloads a pass');await screenshot(f.page,'identity-pending-private-page-'+f.page.viewportSize().width);
   await f.page.goto(API+'/admin/registrations/#registration='+id,{waitUntil:'networkidle'});await f.page.locator('[data-review-dialog][open]').waitFor();await saveIdentity('guest');
-  await f.page.goto(privateUrl,{waitUntil:'networkidle'});await f.page.locator('[data-confirmation-jpeg-download]').waitFor();assert.equal(await f.page.locator('[data-confirmation-heading]').innerText(),'电子纪念卡');assert.equal(f.runtime.messages.length,0,'identity update never sends a new notice');
+  await f.page.goto(privateUrl,{waitUntil:'networkidle'});
+  await f.page.locator('#confirmation-card-claim-button').click();
+  await f.page.locator('[data-confirmation-jpeg-download]').waitFor();
+  assert.equal(await f.page.locator('#confirmation-card-collector-number').innerText(),'GGJ26-HOST-0001');
+  assert.equal(await f.page.locator('[data-confirmation-heading]').innerText(),'电子纪念卡');
+  assert.equal(f.runtime.messages.length,0,'identity update and explicit claim never send a new notice');
  }
  assert.equal(f.runtime.messages.length,0,'staff review never sends without a separate explicit send');
 }

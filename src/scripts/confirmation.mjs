@@ -3,6 +3,7 @@ import { confirmationToken, confirmationLink, confirmationEmailMessage, confirma
 
 import { renderCommemorativeJpeg } from '../lib/commemorative-card-image.mjs';
 import { cardCommunityLabel, cardIdentityHeadline } from '../../shared/general-application.mjs';
+import { formatCardCollectorNumber } from '../../shared/confirmation-delivery.mjs';
 import { appleMapsDirectionsUrl } from '../config/event.mjs';
 
 const root = document.querySelector('[data-confirmation-page]');
@@ -18,6 +19,10 @@ if (root) {
   const contactLabels=new Map(contactButtons.map(button=>[button,button.textContent]));
   const walletButton=$('[data-confirmation-wallet]'),walletBadge=$('[data-confirmation-wallet-badge]'),walletLabel=$('[data-confirmation-wallet-label]');
   const jpegDownload = $('[data-confirmation-jpeg-download]');
+  const claimSection = $('#confirmation-card-claim');
+  const claimButton = $('#confirmation-card-claim-button');
+  const claimStatus = $('#confirmation-card-claim-status');
+  const collectorNumber = $('#confirmation-card-collector-number');
   const eventGuide = $('[data-confirmation-event-guide]');
   const guideMap = $('[data-confirmation-map]');
   const guideMapItem = $('[data-confirmation-map-item]');
@@ -65,11 +70,24 @@ if (root) {
     image.removeAttribute('src');
     image.alt = '你的电子纪念卡';
     jpegDownload.removeAttribute('href');
+    jpegDownload.download = 'artdico-host-card.jpg';
     jpegDownload.hidden = true;
     $('[data-confirmation-jpeg-preview]').hidden = true;
     $('[data-confirmation-jpeg-status]').textContent = '';
     delete root.dataset.cardFormat;
     delete root.dataset.cardPreview;
+  }
+  function showClaimStatus(status, message) {
+    if (status) claimStatus.dataset.status = status;
+    else delete claimStatus.dataset.status;
+    claimStatus.textContent = message ?? '';
+  }
+  function renderCardClaim(card) {
+    claimSection.hidden = card?.collectorNumber !== null || !card.ready;
+    showClaimStatus();
+    const number = formatCardCollectorNumber(card?.collectorNumber);
+    collectorNumber.textContent = number?.full ?? '';
+    collectorNumber.parentElement.hidden = !number;
   }
   function clearInvitation(){
     if(invitationUrl)URL.revokeObjectURL(invitationUrl);invitationUrl=null;
@@ -84,6 +102,7 @@ if (root) {
     $('[data-confirmation-community]').textContent = '';
     $('[data-confirmation-community]').hidden = true;
     renderCardProfile(null);
+    renderCardClaim(null);
     eventGuide.hidden = true;
     guideMap.removeAttribute('href');
     guideMapItem.hidden = true;
@@ -105,6 +124,7 @@ if (root) {
     // Refresh explicitly cancels an older read, render or file preparation.
     $('[data-confirmation-refresh]').disabled=!token||!client.available;
     $('[data-confirmation-refresh]').hidden=!$('[data-confirmation-external]').hidden;
+    claimButton.disabled = busy || claimSection.hidden;
     for(const button of root.querySelectorAll('[data-confirmation-print],[data-confirmation-copy],[data-confirmation-safari-copy],[data-confirmation-wallet]'))button.disabled=busy||!state;
     walletButton.setAttribute('aria-busy',String(busy&&Boolean(state)));
     const groupRefresh=$('[data-confirmation-group-refresh]'),cooling=Date.now()<groupNextReadAt;
@@ -141,8 +161,10 @@ if (root) {
     $('[data-confirmation-outcome-contact]').hidden=!['rejected','withdrawn'].includes(value.admission.status);
     const factsReady = value.eventFacts?.ready ?? (!value.card || value.card.ready || value.wallet.ready);
     $('[data-confirmation-facts-warning]').hidden=factsReady;
+    const unclaimed = value.card?.collectorNumber === null;
+    renderCardClaim(value.card);
     const guidance=walletGuidance();hideSafariGuide();
-    walletButton.hidden=value.admission.status!=='confirmed'||!guidance.showWallet;
+    walletButton.hidden=value.admission.status!=='confirmed'||unclaimed||!guidance.showWallet;
     const walletActionLabel = guidance.label;
     if(walletLabel)walletLabel.textContent=walletActionLabel;else walletButton.textContent=walletActionLabel;
     walletButton.dataset.walletAction=guidance.action;walletButton.setAttribute('aria-label',walletActionLabel);syncWalletBadge();
@@ -174,7 +196,7 @@ if (root) {
       $('[data-confirmation-save-heading]').textContent = '领取纪念卡';
       const device = $('[data-confirmation-device]');
       const jpegReady = value.card.format !== 'wallet' && value.card.ready;
-      device.textContent = value.wallet.ready ? (guidance.showWallet ? guidance.message : 'Apple Wallet 适用于 iPhone。')
+      device.textContent = unclaimed ? '' : value.wallet.ready ? (guidance.showWallet ? guidance.message : 'Apple Wallet 适用于 iPhone。')
         : jpegReady ? 'Apple Wallet 暂不可用，可先保存 JPEG。' : '';
       device.hidden = !device.textContent;
       document.title = '电子纪念卡 · ARTDiCO HOST';
@@ -208,6 +230,7 @@ if (root) {
     $('[data-confirmation-error]').textContent=error.message||'请稍后重新读取。';$('[data-confirmation-error]').hidden=false;
   }
   async function showJpeg(value, current) {
+    if (!value.card?.ready || value.card.collectorNumber === null || value.card.format === 'wallet') return;
     const status = $('[data-confirmation-jpeg-status]');
     status.textContent = '正在准备纪念卡图片…';
     try {
@@ -217,12 +240,14 @@ if (root) {
       const image = $('[data-confirmation-jpeg-image]');
       const english = value.cardLocale === 'en';
       const headline = cardIdentityHeadline(value.card.identity, value.cardCommunity, value.cardLocale);
-      image.alt = [english ? 'Commemorative card' : '电子纪念卡', headline.label, headline.identity, value.attendee.name, value.cardProfile?.organization]
+      const number = formatCardCollectorNumber(value.card.collectorNumber);
+      image.alt = [english ? 'Commemorative card' : '电子纪念卡', headline.label, headline.identity, value.attendee.name, value.cardProfile?.organization, number?.full]
         .filter(Boolean).join(english ? ', ' : '，');
       image.src = jpegUrl;
       root.dataset.cardPreview = '';
       $('[data-confirmation-jpeg-preview]').hidden = false;
       jpegDownload.href = jpegUrl;
+      if (number) jpegDownload.download = 'artdico-host-card-' + number.full + '.jpg';
       jpegDownload.hidden = false;
       status.textContent = '';
     } catch {
@@ -234,11 +259,32 @@ if (root) {
     try {
       if(!token)throw new Error('请使用主办方提供的私人链接打开本页。');
       const value=await client.read(token,{signal,includeCardFormats:true});if(current!==generation)return;render(value);
-      if (value.card?.ready && value.card.format !== 'wallet') void showJpeg(value, current);
+      void showJpeg(value, current);
     } catch(error) {if(current===generation&&!error.cancelled)showReadError(error);}
     finally {if(current===generation){busy=false;controller=null;controls();}}
   }
   $('[data-confirmation-refresh]').addEventListener('click',load);
+  claimButton.addEventListener('click', async () => {
+    if (busy || claimSection.hidden) return;
+    const initial = state, current = generation;
+    busy = true;
+    controller = new AbortController();
+    controls();
+    showClaimStatus('working', '正在领取纪念卡…');
+    try {
+      const value = await client.claim(token, { signal: controller.signal });
+      if (current !== generation) return;
+      if (value.referenceCode !== initial.referenceCode || value.event.id !== initial.event.id || value.submittedAt !== initial.submittedAt) throw new Error();
+      const focused = document.activeElement === claimButton || document.activeElement === document.body;
+      render(value);
+      if (focused) collectorNumber.focus({ preventScroll: true });
+      void showJpeg(value, current);
+    } catch (error) {
+      if (current === generation && !error.cancelled) showClaimStatus('error', '暂未确认领取结果。请重新读取，或再次领取。');
+    } finally {
+      if (current === generation) { busy = false; controller = null; controls(); }
+    }
+  });
   $('[data-confirmation-group-refresh]').addEventListener('click',()=>{
     if(busy||!state||Date.now()<groupNextReadAt)return;
     groupNextReadAt=Date.now()+5_000;clearTimeout(groupCooldownTimer);groupCooldownTimer=setTimeout(controls,5_000);void load();
@@ -263,7 +309,7 @@ if (root) {
   window.addEventListener('beforeprint',beforePrint);window.addEventListener('afterprint',afterPrint);
   $('[data-confirmation-print]').addEventListener('click',()=>{if(!state||busy)return;beforePrint();try{window.print();}finally{afterPrint();}});
   $('[data-confirmation-wallet]').addEventListener('click',async()=>{
-    if(!state?.wallet.ready||busy)return;
+    if(!state?.wallet.ready||state.card?.collectorNumber===null||busy)return;
     const guidance=walletGuidance();
     if(guidance.action==='guide'){
       releaseWallet();$('[data-confirmation-wechat-step]').hidden=!guidance.wechat;$('[data-confirmation-safari-guide]').hidden=false;
@@ -273,7 +319,7 @@ if (root) {
     if(!['add','download'].includes(guidance.action))return;
     const current=generation;busy=true;controller=new AbortController();const signal=controller.signal;controls();releaseWallet();$('[data-confirmation-action-status]').textContent='正在准备 Wallet 票券…';
     try {
-      const blob = await client.wallet(token,{signal});
+      const blob = await client.wallet(token, { signal, expectedCollectorNumber: state.card?.collectorNumber });
       if (current !== generation) return;
       walletUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -289,6 +335,12 @@ if (root) {
     }
     catch(error){
       if(current!==generation||error.cancelled)return;
+      if(error.collectorChanged){
+        const refresh = load(), refreshGeneration = generation;
+        await refresh;
+        if(refreshGeneration===generation&&state?.card?.collectorNumber) $('[data-confirmation-action-status]').textContent='纪念卡编号已更新，请核对后再加入 Apple Wallet。';
+        return;
+      }
       if(state?.card)$('[data-confirmation-action-status]').textContent='暂时无法取得 Apple Wallet 纪念卡，请重试。';
       else showReadError(error);
     }

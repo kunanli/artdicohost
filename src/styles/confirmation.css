@@ -33,6 +33,11 @@ body[data-admission=waitlisted] .confirmation-state{color:#83581f}body[data-admi
 [data-card-format] .confirmation-save{margin-top:0;padding-top:0}
 [data-card-format] .confirmation-actions{flex-flow:row wrap;align-items:center;gap:8px 12px}
 [data-card-format] .confirmation-actions button{width:auto}
+[data-card-format] #confirmation-card-claim-button{color:#fff;background:#2555a4;border-color:#2555a4}
+.confirmation-claim-status:empty{margin:0}
+.confirmation-claim-status[data-status="error"]{color:#9c3033}
+.confirmation-collector{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:0 0 12px;font-size:14px;color:#52617a}
+.confirmation-collector strong{color:#1c283a;font-variant-numeric:tabular-nums}
 [data-card-format] [data-confirmation-save-heading],
 [data-card-preview] .confirmation-person{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .confirmation-jpeg-preview{margin-top:16px}

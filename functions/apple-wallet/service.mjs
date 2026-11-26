@@ -1,4 +1,5 @@
 import { WALLET_IDENTITIES } from '../../shared/general-application.mjs';
+import { formatCardCollectorNumber } from '../../shared/confirmation-delivery.mjs';
 import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { APPLE_ROOT_FINGERPRINTS, buildAppleWalletPass, validateSigningIdentity, WalletSigningError } from './pkpass.mjs';
 import { readEventFactsReadiness, unchangedEventFacts } from '../../src/config/event.mjs';
@@ -96,18 +97,23 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
   }
   return Object.freeze({
     readiness,
-    async download({ receiptToken } = {}) {
+    async download({ receiptToken, expectedCollectorNumber } = {}) {
       if (typeof receiptToken !== 'string' || !RECEIPT.test(receiptToken)) return fixed('invalid');
       try {
+        const expectedCollector = formatCardCollectorNumber(expectedCollectorNumber)?.full;
+        if (expectedCollectorNumber !== undefined && !expectedCollector) return fixed('invalid');
         const attendee = await authorize({ receiptToken });
         if (!validRecord(attendee)) return fixed('invalid');
-        if (attendee.admissionStatus !== 'confirmed' || externalRegistrationOnly && attendee.walletRequested !== true
+        const commemorative = attendee.walletRequested === true;
+        if (attendee.admissionStatus !== 'confirmed' || externalRegistrationOnly && !commemorative
           || attendee.walletRequested && !WALLET_IDENTITIES.some(role => role.value === attendee.walletIdentity)) return fixed('inactive');
+        const collectorNumber = commemorative ? formatCardCollectorNumber(attendee.cardCollectorNumber)?.full : undefined;
+        if (expectedCollector && expectedCollector !== collectorNumber) return fixed('collector_changed');
         const checkedFacts = await readEventFactsReadiness(eventFactsReadiness);
         if (!checkedFacts.ready) return fixed('event_unverified');
         if (!enabled) return fixed('not_ready');
         const config = await signing(); if (config.missing.length) return fixed('not_ready');
-        const now = current(), commemorative = attendee.walletRequested === true;
+        const now = current();
         let verificationUrl;
         if (!commemorative) {
           if (admissionUrlProvider) {
@@ -119,8 +125,9 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
         const data = buildAppleWalletPass({ ...config, attendee, verificationUrl, now });
         const latest = await authorizedRegistration(attendee.registrationId, { includeCardCommunity: commemorative });
         if (!validRecord(latest) || latest.registrationId !== attendee.registrationId || latest.event.id !== attendee.event.id
-          || latest.admissionStatus !== 'confirmed' || latest.walletIdentity!==attendee.walletIdentity || accessRevision(latest) !== accessRevision(attendee)
-          || attendee.cardCommunity && (attendee.cardCommunity.site !== latest.cardCommunity?.site || attendee.cardCommunity.role !== latest.cardCommunity?.role)
+          || latest.admissionStatus !== 'confirmed' || latest.walletIdentity!==attendee.walletIdentity || accessRevision(latest) !== accessRevision(attendee)) return fixed('inactive');
+        if (commemorative && collectorNumber !== formatCardCollectorNumber(latest.cardCollectorNumber)?.full) return fixed(expectedCollector ? 'collector_changed' : 'inactive');
+        if (attendee.cardCommunity && (attendee.cardCommunity.site !== latest.cardCommunity?.site || attendee.cardCommunity.role !== latest.cardCommunity?.role)
           || commemorative && (attendee.cardLocale !== latest.cardLocale || attendee.cardProfile?.organization !== latest.cardProfile?.organization
             || attendee.cardProfile?.phone !== latest.cardProfile?.phone)) return fixed('inactive');
         if (!unchangedEventFacts(checkedFacts, await readEventFactsReadiness(eventFactsReadiness))) return fixed('event_unverified');

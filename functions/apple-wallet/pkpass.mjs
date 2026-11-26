@@ -1,4 +1,5 @@
 import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, cardEventIdentityLabel, cardIdentityHeadline, cardProfileFields, cardSiteBrand, commemorativeCardVenue } from '../../shared/general-application.mjs';
+import { formatCardCollectorNumber } from '../../shared/confirmation-delivery.mjs';
 import { eventConfig, approvedMeetupAgenda, approvedMeetupAgendaEnglish, PUBLIC_AGENDA_URL, PUBLIC_EVENT_DETAILS_URL, PUBLIC_MEETUP_TITLE, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL, appleMapsDirectionsUrl } from '../../src/config/event.mjs';
 import { createHash, createPrivateKey, X509Certificate } from 'node:crypto';
 import { derChildren, oid, signManifest } from './der.mjs';
@@ -169,6 +170,8 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
   if (!Number.isFinite(Date.parse(relevantDate)) || new Date(Date.parse(event.date + 'T00:00:00Z')).toISOString().slice(0, 10) !== event.date) fail('WALLET_PASS_INPUT_INVALID');
   const meetupCard = richCard && event.id === eventConfig.id;
   const english = meetupCard && attendee.cardLocale === 'en';
+  const collector = richCard ? formatCardCollectorNumber(attendee.cardCollectorNumber) : null;
+  const collectorDetails = collector ? [{ key: 'collector-number', label: english ? 'Collector Number' : '收藏编号', value: collector.full }] : [];
   const cardTitle = meetupCard ? PUBLIC_MEETUP_TITLE : null;
   const confirmedVenue = meetupCard && event.venue === eventConfig.venue.address;
   const faceName = { key: 'name', value: attendee.name, semantics: { attendeeName: attendee.name } };
@@ -212,7 +215,7 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
   const guideFields = cardGuides.map(([key, label, value, linkText]) => ({ key, label, value,
     attributedValue: '<a href="' + value + '">' + linkText + '</a>' }));
   const backFields = [...(cardTitle ? [{ key: 'co-brand-title', label: english ? 'Event' : '联名活动', value: cardTitle }] : []),
-    venue, ...guideFields, ...cardAffiliations, ...programFields, ...scheduleFields, ...fullCardDetails,
+    venue, ...guideFields, ...cardAffiliations, ...programFields, ...scheduleFields, ...fullCardDetails, ...collectorDetails,
     ...(profile?.phone ? [{ key: 'phone', label: english ? 'Phone' : '电话', value: profile.phone, dataDetectorTypes: ['PKDataDetectorTypePhoneNumber'] }] : []),
     ...(meetupCard ? [{ key: 'event-details', label: english ? 'Event Details' : '活动详情', value: PUBLIC_EVENT_DETAILS_URL,
       attributedValue: '<a href="' + PUBLIC_EVENT_DETAILS_URL + '">' + (english ? 'View event details' : '查看活动详情') + '</a>' }] : []),
@@ -223,12 +226,13 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
   const posterGeneric = headline ? {
     // Wallet styles field labels separately. Keep the site, role and name in native value fields.
     primaryFields: [...(headline.site ? [{ key: 'poster-site', value: headline.site }] : []),
-      { key: 'poster-identity', value: headline.identity }, { ...faceName, key: 'poster-name' }],
+      { key: 'poster-identity', value: headline.identity }, { ...faceName, key: 'poster-name' },
+      ...(collector ? [{ key: 'poster-collector-number-short', value: collector.short }] : [])],
     footerFields: [{
       key: 'poster-event-summary', label: english ? 'Event Time and Venue · UTC+8' : '活动时间与地点 · UTC+8',
       value: [event.date, event.time, confirmedVenue ? shortVenue : cardPlace.value].join(' · '),
     }],
-    additionalInfoFields: [...programFields, ...cardAffiliations, ...(headline.label ? [identityField] : []), date, localTime, venue, ...scheduleFields]
+    additionalInfoFields: [...programFields, ...cardAffiliations, ...(headline.label ? [identityField] : []), ...collectorDetails, date, localTime, venue, ...scheduleFields]
       .map(field => ({ ...field, key: 'poster-info-' + field.key })),
     backFields: backFields.map(field => ({ ...field, key: 'poster-details-' + field.key })),
   } : null;
@@ -250,7 +254,8 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
         secondaryFields: headline ? [{ ...faceIdentity, value: headline.identity }, faceName]
           : [person, identityField],
         auxiliaryFields: [date, meetupCard ? localTime : time, ...activities, ...affiliations,
-          ...(separateVenue ? [] : [{ ...cardPlace, row: 1 }])],
+          ...(separateVenue ? [] : [{ ...cardPlace, row: 1 }]),
+          ...(collector ? [{ key: 'collector-number-short', value: collector.short, row: 1 }] : [])],
       } : {
         headerFields: [identityField ?? { key: 'status', label: '参会名额', value: '已确认' }],
         primaryFields: [title],

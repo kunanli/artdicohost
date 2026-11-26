@@ -56,7 +56,7 @@ import '../../../styles/admin.css';
                 <button type="button" data-card-filter="all" aria-pressed="false">全部 <span></span></button>
                 <button type="button" data-card-filter="test" aria-pressed="false" hidden>测试卡 <span></span></button>
               </div>
-              <div class="ah-admin-field"><label for="card-search">搜索姓名或活动行编号</label><input id="card-search" type="search" maxlength="200" data-card-search /></div>
+              <div class="ah-admin-field"><label for="card-search">搜索姓名、活动行编号或收藏序号</label><input id="card-search" type="search" maxlength="200" data-card-search /></div>
               <p class="card-muted" data-card-empty hidden></p>
               <ul class="card-applications" data-card-list></ul>
             </section>
@@ -68,7 +68,21 @@ import '../../../styles/admin.css';
                   <dt data-card-reference-label>活动行编号</dt><dd data-card-reference></dd>
                   <dt>收件邮箱</dt><dd data-card-recipient></dd>
                   <dt data-card-identity-label hidden>卡面身份</dt><dd data-card-identity-value hidden><span></span> <button class="ah-admin-text-button" type="button" data-card-edit>修改</button></dd>
+                  <dt data-card-collector-number-label hidden>收藏序号</dt><dd data-card-collector-summary hidden><span data-card-collector-number></span> <button class="ah-admin-text-button" type="button" data-card-collector-edit aria-controls="card-collector-editor" aria-expanded="false" hidden>设置序号</button></dd>
+                  <dt data-card-collector-claim-label hidden>首次领取</dt><dd data-card-collector-claim hidden></dd>
                 </dl>
+                <form id="card-collector-editor" class="card-collector-editor" data-card-collector-form hidden>
+                  <div class="ah-admin-field">
+                    <label for="card-collector-sequence">手动收藏序号</label>
+                    <input id="card-collector-sequence" name="manualSequence" type="text" inputmode="numeric" maxlength="6" autocomplete="off" aria-describedby="card-collector-hint" />
+                    <p class="card-muted" id="card-collector-hint">输入 1–999999。手动序号以 S 开头。留空后保存使用按领取顺序生成的序号。</p>
+                  </div>
+                  <div class="card-actions">
+                    <button class="ah-admin-button ah-admin-primary" type="submit" data-card-collector-save>保存序号</button>
+                    <button class="ah-admin-button" type="button" data-card-collector-clear hidden>清除手动序号</button>
+                    <button class="ah-admin-button" type="button" data-card-collector-cancel>取消修改序号</button>
+                  </div>
+                </form>
                 <p class="card-muted" data-card-requested-identity hidden></p>
                 <details class="card-linked" data-card-linked hidden><summary>关联活动行编号</summary><ul></ul></details>
                 <details class="card-linked" data-card-community hidden>
@@ -158,7 +172,10 @@ import '../../../styles/admin.css';
   .card-preview img { display: block; width: min(100%, 320px); height: auto; margin-bottom: 6px; }
   .card-panel [data-card-check] { margin-bottom: 12px; }
   .card-panel .ah-admin-status { margin-top: 12px; }
-  .card-panel [data-card-edit] { margin-inline-start: 8px; }
+  .card-panel [data-card-edit], .card-panel [data-card-collector-edit] { margin-inline-start: 8px; }
+  .card-collector-editor { margin-bottom: 18px; }
+  .card-collector-editor input { max-width: 18ch; }
+  [data-card-collector-number], [data-card-collector-reference] { font-variant-numeric: tabular-nums; }
   .card-remove { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--admin-line); }
   .card-remove button { color: #982c35; min-height: 40px; }
   @media (min-width: 851px) { .card-detail-panel { position: sticky; top: 16px; } }

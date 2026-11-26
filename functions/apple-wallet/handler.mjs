@@ -1,3 +1,5 @@
+import { formatCardCollectorNumber } from '../../shared/confirmation-delivery.mjs';
+
 const API = 'https://api.artdico.host', SITE = 'https://artdico.host';
 const PATHS = ['/api/registration/wallet', '/api/admin/registration/wallet'];
 const VERIFY = PATHS.map(path => path + '/verify/');
@@ -47,8 +49,13 @@ export function createAppleWalletApi({ service, apiOrigin = API, publicOrigins =
       if (length !== null && Number(length) !== size) return json(errorBody('INVALID_INPUT', '票券请求格式无效。'), 400);
       let body;
       try { body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks, size))); } catch { return json(errorBody('INVALID_INPUT', '票券请求格式无效。'), 400); }
-      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1 || typeof body.receiptToken !== 'string') return json(errorBody('INVALID_INPUT', '票券请求格式无效。'), 400);
-      const result = await service.download({ receiptToken: body.receiptToken });
+      const hasCollector = body && Object.hasOwn(body, 'expectedCollectorNumber');
+      if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== (hasCollector ? 2 : 1)
+        || typeof body.receiptToken !== 'string' || hasCollector && !formatCardCollectorNumber(body.expectedCollectorNumber)) {
+        return json(errorBody('INVALID_INPUT', '票券请求格式无效。'), 400);
+      }
+      const result = await service.download({ receiptToken: body.receiptToken,
+        ...(hasCollector ? { expectedCollectorNumber: body.expectedCollectorNumber } : {}) });
       if (result?.outcome === 'issued' && result.data instanceof Uint8Array && result.data.length > 0 && result.data.length <= 1024 * 1024
         && result.contentType === 'application/vnd.apple.pkpass' && /^artdico-[A-Za-z0-9_-]{12}\.pkpass$/u.test(result.filename ?? '')) {
         return new Response(result.data, { status: 200, headers: { ...headers, ...cors, 'content-type': result.contentType,
@@ -56,6 +63,7 @@ export function createAppleWalletApi({ service, apiOrigin = API, publicOrigins =
       }
       if (result?.outcome === 'event_unverified') return json(errorBody('EVENT_FACTS_UNAVAILABLE', '活动资料待核对，请保留原查询链接，稍后重新读取。'), 503);
       if (result?.outcome === 'not_ready') return json(errorBody('WALLET_NOT_READY', 'Apple Wallet 尚未完成设置，请保存或打印报名确认页。'), 503);
+      if (result?.outcome === 'collector_changed') return json(errorBody('CARD_COLLECTOR_CHANGED', '收藏编号已更新，请重新读取领取页后再下载。'), 409);
       if (['invalid', 'inactive'].includes(result?.outcome)) return json(errorBody('WALLET_UNAVAILABLE', '当前登记不能签发参会票券。'), 404);
       return json(errorBody('WALLET_UNAVAILABLE', '票券暂时无法核对，请稍后重试。'), 503);
     } catch { return json(errorBody('WALLET_UNAVAILABLE', '票券暂时无法核对，请稍后重试。'), 503); }

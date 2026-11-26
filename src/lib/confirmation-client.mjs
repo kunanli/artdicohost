@@ -164,7 +164,7 @@ export function confirmationView(value, now = Date.now()) {
     admission: { status: value.admission.status, kind: value.admission.kind, revision: value.admission.revision },
     attendee: withdrawn ? { name: '', organization: '' } : { name: value.attendee.name, organization: value.attendee.organization ?? '' },
     email: { status: ['pending_review','rejected'].includes(value.admission.status) ? 'not_applicable' : value.email.status }, wallet: { ready: confirmed && value.wallet.ready && facts?.ready !== false, ...(confirmed&&!value.wallet.ready&&value.wallet.reason==='WALLET_IDENTITY_PENDING'?{reason:'WALLET_IDENTITY_PENDING'}:{}) },
-    ...(facts ? { eventFacts: facts } : {}), ...(card ? { card: { format: card.format, identity: card.identity, ready: card.ready } } : {}),
+    ...(facts ? { eventFacts: facts } : {}), ...(card ? { card: { format: card.format, identity: card.identity, ready: card.ready && facts?.ready !== false } } : {}),
     ...(cardRequest ? { cardRequest: true } : {}),
     ...(cardCommunity ? { cardCommunity } : {}),
     ...(cardProfile ? { cardProfile } : {}),

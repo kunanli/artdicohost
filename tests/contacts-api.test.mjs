@@ -113,6 +113,11 @@ test('outreach planning is minimal without granting access to private content dr
   const { draft } = await contentStore.read();
   draft.content.sessions[0].speakerName = 'SYNTHETIC_PRIVATE_SPEAKER';
   draft.content.sessions[0].internalNotes = 'SYNTHETIC_PRIVATE_NOTE';
+  draft.content.guests.push({ id: 'synthetic-planning-guest', name: 'SYNTHETIC_PRIVATE_GUEST', company: '合成机构', ggjRole: '', portraitId: '',
+    contactId: 'synthetic-planning-contact', status: 'confirmed', publicConsent: false, internalNotes: 'SYNTHETIC_PRIVATE_GUEST_NOTE' });
+  draft.content.guests.push({ ...draft.content.guests.at(-1), id: 'synthetic-panel-guest', name: 'SYNTHETIC_PRIVATE_PANEL', contactId: 'synthetic-panel-contact' });
+  draft.content.sessions[1].guestId = 'synthetic-planning-guest';
+  draft.content.sessions[1].participants = [{ guestId: 'synthetic-panel-guest', roles: ['panelist'] }];
   draft.content.booths.push({ id: 'synthetic-planning-booth', code: 'C-99', zone: 'C', organization: '合成展位团队', project: '合成作品', status: 'pending', internalNotes: 'SYNTHETIC_PRIVATE_BOOTH' });
   await contentStore.save(0, draft.content, 'test-editor');
   const response = await request(api, '/api/admin/planning', { session });
@@ -120,6 +125,9 @@ test('outreach planning is minimal without granting access to private content dr
   const planning = await response.json();
   assert.deepEqual(planning.features, { contactImport: true, communicationsPreview: true });
   assert.deepEqual(Object.keys(planning.content.sessions[0]).sort(), ['id', 'start', 'end', 'zone', 'title', 'status'].sort());
+  assert.deepEqual(planning.content.sessions[1].contactIds, ['synthetic-planning-contact', 'synthetic-panel-contact']);
+  assert.ok(!Object.hasOwn(planning.content.sessions[1], 'guestId'));
+  assert.ok(!Object.hasOwn(planning.content.sessions[1], 'participants'));
   assert.deepEqual(planning.content.booths[0], { id: 'synthetic-planning-booth', code: 'C-99', zone: 'C', organization: '合成展位团队', project: '合成作品', status: 'pending' });
   assert.equal(JSON.stringify(planning).includes('SYNTHETIC_PRIVATE'), false);
   assert.equal((await request(api, '/api/admin/content', { session })).status, 403);

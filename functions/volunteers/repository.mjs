@@ -22,6 +22,19 @@ function canonicalPayload(value, depth = 0) {
     || Reflect.ownKeys(value).some(key => typeof key !== 'string' || !('value' in Object.getOwnPropertyDescriptor(value, key)))) fail('INVALID_REQUEST', 400);
   return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalPayload(value[key], depth + 1)]));
 }
+function operationFingerprint({ actorId, expectedRevision, action, payload }) {
+  const canonical = canonicalPayload(payload);
+  if (new TextEncoder().encode(JSON.stringify(canonical)).byteLength > 64 * 1024) fail('INVALID_REQUEST', 400);
+  return fingerprint({ actorId, expectedRevision, action, payload: canonical });
+}
+function findReplay(state, { actorId, action, operationId }, digest) {
+  const entry = state.audit.find(item => item.operationId === operationId);
+  if (entry && (entry.actorId !== actorId || entry.fingerprint !== digest || entry.action !== action)) fail('OPERATION_CONFLICT', 409);
+  return entry;
+}
+export function findVolunteerOperation(state, command) {
+  return findReplay(state, command, operationFingerprint(command));
+}
 function cursor(value) {
   return volunteerExactKeys(value, ['position', 'version', 'hash']) && volunteerRevision(value.position) && volunteerRevision(value.version)
     && (value.hash === null || typeof value.hash === 'string' && HASH.test(value.hash));
@@ -63,15 +76,10 @@ export function createVolunteerRepository({ journal, eventId, clock = Date.now }
     async mutate({ actorId, expectedRevision, operationId, action, payload, details } = {}, apply) {
       if (typeof actorId !== 'string' || !ACTOR.test(actorId) || !volunteerRevision(expectedRevision) || typeof operationId !== 'string' || !VOLUNTEER_OPERATION_ID.test(operationId) || !VOLUNTEER_ACTIONS.includes(action)
         || typeof apply !== 'function' || details !== undefined && action !== 'export') fail('INVALID_REQUEST', 400);
-      const canonical = canonicalPayload(payload);
-      if (new TextEncoder().encode(JSON.stringify(canonical)).byteLength > 64 * 1024) fail('INVALID_REQUEST', 400);
-      const digest = fingerprint({ actorId, expectedRevision, action, payload: canonical });
+      const command = { actorId, expectedRevision, action, operationId, payload };
+      const digest = operationFingerprint(command);
       const current = await load(), previous = current.value;
-      const replay = previous.audit.find(entry => entry.operationId === operationId);
-      if (replay) {
-        if (replay.actorId !== actorId || replay.fingerprint !== digest || replay.action !== action) fail('OPERATION_CONFLICT', 409);
-        return { outcome: 'replayed', state: clone(previous) };
-      }
+      if (findReplay(previous, command, digest)) return { outcome: 'replayed', state: clone(previous) };
       if (expectedRevision !== previous.revision) fail('REVISION_CONFLICT', 409);
       if (previous.audit.length >= VOLUNTEER_LIMITS.audit) fail('CAPACITY_EXCEEDED', 409);
       let transformed;
@@ -98,7 +106,11 @@ export function createVolunteerRepository({ journal, eventId, clock = Date.now }
         if (!volunteerExactKeys(ack, ['value', 'cursor']) || !cursor(ack.cursor) || !isDeepStrictEqual(ack.value, next)
           || ack.cursor.version !== next.revision || ack.cursor.position <= current.cursor.position || ack.cursor.hash === null) fail();
       } catch (error) {
-        if (error?.code === 'WRITE_CONFLICT' && error?.status === 409 || error?.code === 'REVISION_CONFLICT' && error?.status === 409) fail('REVISION_CONFLICT', 409);
+        if (error?.status === 409 && ['WRITE_CONFLICT', 'REVISION_CONFLICT'].includes(error.code)) {
+          const latest = (await load()).value;
+          if (findReplay(latest, command, digest)) return { outcome: 'replayed', state: clone(latest) };
+          fail('REVISION_CONFLICT', 409);
+        }
         fail();
       }
       return { outcome: 'updated', state: clone(next) };

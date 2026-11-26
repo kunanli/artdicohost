@@ -283,13 +283,21 @@ test('canceled shifts, inactive positions and invalid content links keep history
     assert.equal(projection.assignments[0].issues.includes(issue), true); assert.equal(after.assignments.length, 1);
   }
   const linked = structuredClone(value); linked.shifts[0].sessionId = 'linked-session'; linked.shifts[0].boothId = 'linked-booth';
-  const sources = context(linked); sources.content = { sessions: [{ id: 'linked-session', status: 'draft' }], booths: [{ id: 'linked-booth', status: 'pending' }] };
+  const sources = context(linked); sources.content = { sessions: [{ id: 'linked-session', status: 'scheduled' }], booths: [{ id: 'linked-booth', status: 'confirmed' }] };
   assert.equal(projectVolunteerCoverage(linked, sources).summary.confirmedSlots, 1);
-  for (const content of [{ sessions: [], booths: sources.content.booths }, { sessions: sources.content.sessions, booths: [{ id: 'linked-booth', status: 'cancelled' }] }]) {
-    const projection = projectVolunteerCoverage(linked, { ...sources, content }); assert.equal(projection.summary.confirmedSlots, 0); assert.equal(projection.summary.unfilledSlots, 1);
+  for (const content of [{ sessions: [], booths: sources.content.booths },
+    { sessions: [{ id: 'linked-session', status: 'draft' }], booths: sources.content.booths },
+    ...['pending', 'cancelled'].map(status => ({ sessions: sources.content.sessions, booths: [{ id: 'linked-booth', status }] }))]) {
+    const projection = projectVolunteerCoverage(linked, { ...sources, content }); assert.equal(projection.summary.confirmedSlots, 0); assert.equal(projection.summary.unfilledSlots, 0);
     assert.equal(projection.shifts[0].issues.includes('CONTENT_LINK_INVALID'), true);
     assert.throws(() => assertVolunteerPlanChange(value, linked, { action: 'shift_upsert', id: 'morning' }, { ...sources, content }), errorCode('PLAN_CONFLICT', 422));
   }
+  const withHistory = state({ shifts: [linked.shifts[0], shift('current', { start: '10:30', end: '11:30' })],
+    assignments: [assignment(), assignment('current-assignment', { shiftId: 'current' })] });
+  const retired = projectVolunteerCoverage(withHistory, { ...sources, content: { ...sources.content, sessions: [{ id: 'linked-session', status: 'draft' }] } });
+  assert.equal(retired.assignments[0].valid, false);
+  assert.equal(retired.assignments[1].valid, true, 'retired shift no longer reserves volunteer time');
+  assert.equal(retired.summary.confirmedSlots, 1);
   const cancelled = structuredClone(value); cancelled.assignments[0].status = 'cancelled';
   assert.equal(assertVolunteerPlanChange(value, cancelled, { action: 'assignment_upsert', id: 'allocation-one' }, { ...context(value), identities: {} }).summary.confirmedSlots, 0);
   assert.throws(() => projectVolunteerCoverage(value, { identities: {} }), errorCode('STORAGE_UNAVAILABLE', 503));

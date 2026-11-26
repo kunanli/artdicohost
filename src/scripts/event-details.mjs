@@ -5,6 +5,7 @@ import { publicShowcaseCards, SHOWCASE_KIND_LABELS } from '../../shared/showcase
 import { INVITATION_POSTER_FACTS } from '../../shared/organizer-progress.mjs';
 import { appleMapsDirectionsUrl, assessPublishedEventFacts, eventConfig } from '../config/event.mjs';
 import { createPublicContentRefresh } from '../lib/public-content-refresh.mjs';
+import { publishedMapUrl } from '../lib/event-presentation.mjs';
 
 const page = document.querySelector('[data-event-details]');
 const find = key => page.querySelector('[data-event-' + key + ']');
@@ -34,8 +35,11 @@ function render(snapshot) {
   const address = find('address');
   address.hidden = !knownVenue || event.venue === eventConfig.venue.address;
   const map = find('map');
-  map.href = appleMapsDirectionsUrl(knownVenue ? eventConfig.venue.address : event.venue);
   map.hidden = cancelled || event.venueStatus !== 'confirmed';
+  const pin = publishedMapUrl(event.presentation?.mapUrl);
+  find('map-label').textContent = pin ? '打开地图' : 'Apple 地图导航';
+  if (map.hidden) map.removeAttribute('href');
+  else map.href = pin ?? appleMapsDirectionsUrl(knownVenue ? eventConfig.venue.address : event.venue);
   find('registration').hidden = cancelled;
   const status = find('status');
   status.textContent = cancelled ? '本次活动已取消。' : '';
@@ -53,7 +57,11 @@ function render(snapshot) {
       description.append(node('p', session.title));
       const names = new Set([session.speakerName, ...(session.participants ?? []).map(({ guestId }) => speakers.get(guestId))].filter(Boolean));
       const subtitle = session.status === 'cancelled' ? '本场已取消' : [...names].join('、');
-      if (subtitle) description.append(node('small', subtitle));
+      if (subtitle) {
+        const caption = node('small', subtitle);
+        if (session.status !== 'cancelled') caption.setAttribute('data-i18n-preserve', '');
+        description.append(caption);
+      }
       row.append(time, description);
       return row;
     }));
@@ -76,8 +84,17 @@ function render(snapshot) {
       image.src = new URL(work.coverUrl, source).href;
       row.append(image);
     }
-    row.append(node('h3', work.title), node('small', [SHOWCASE_KIND_LABELS[work.kind], work.teamName].filter(Boolean).join(' · ')));
-    if (work.summary) row.append(node('p', work.summary));
+    const title = node('h3', work.title);
+    title.setAttribute('data-i18n-preserve', '');
+    const kind = node('small', SHOWCASE_KIND_LABELS[work.kind]);
+    if (work.teamName) kind.append(' · ', node('span', work.teamName));
+    kind.querySelector('span')?.setAttribute('data-i18n-preserve', '');
+    row.append(title, kind);
+    if (work.summary) {
+      const summary = node('p', work.summary);
+      summary.setAttribute('data-i18n-preserve', '');
+      row.append(summary);
+    }
     const booth = publicBooths.get(work.boothId);
     if (booth) row.append(node('small', '展位 ' + booth.code));
     return row;

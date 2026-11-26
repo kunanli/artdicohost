@@ -101,6 +101,23 @@ function zoneSessions(zone /** @type {keyof typeof scheduleByZone} */) {
 }
 
 export const approvedMeetupAgenda = [...zoneSessions('A'), ...zoneSessions('B'), ...zoneSessions('C')];
+export const approvedMeetupAgendaEnglish = new Map([
+  ['签到入场', 'Check-in'],
+  ['主题演讲：At the Forefront of the Future: How Jammers Are Leading Innovation', 'Keynote: At the Forefront of the Future: How Jammers Are Leading Innovation'],
+  ['10年GGJ发展在中国，与中国独立游戏行业的联动与萌芽', 'Ten Years of GGJ in China: Roots and Connections in the Chinese Indie Game Scene'],
+  ['GGJ表彰大会及合影', 'GGJ recognition ceremony & group photo'],
+  ['AI × Houdini：从自然语言到 Unreal Engine 程序化构建', 'AI × Houdini: From Natural Language to Procedural Creation in Unreal Engine'],
+  ['提赛德大学宣讲', 'Teesside University presentation'],
+  ['伯恩茅斯大学宣讲', 'Bournemouth University presentation'],
+  ['ARTDiCO 学生展示', 'ARTDiCO student showcase'],
+  ['闭幕合影', 'Closing group photo'],
+  ['亚洲 Games for Change 与新一代创作者', 'Games for Change in Asia and the Next Generation of Creators'],
+  ['东南亚游戏生态、新平台与合作', 'Southeast Asia’s Games Ecosystem: New Platforms and Collaboration'],
+  ['GGJ 站点咨询（北方站）', 'GGJ jam-site guidance (northern sites)'],
+  ['GGJ 站点咨询（南方站）', 'GGJ jam-site guidance (southern sites)'],
+  ['圆桌会议', 'Roundtable'],
+  ['展位体验', 'Exhibition demos'],
+]);
 export const agenda = [...approvedMeetupAgenda]
   .sort((left, right) => left.start.localeCompare(right.start) || left.zone.localeCompare(right.zone));
 

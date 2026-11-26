@@ -49,5 +49,8 @@ body[data-admission=waitlisted] .confirmation-state{color:#83581f}body[data-admi
 .confirmation-event-guide p{margin:0 0 8px;color:#52617a;font-size:14px}
 .confirmation-event-guide ul{display:flex;flex-wrap:wrap;gap:0 16px;margin:0;padding:0;list-style:none}
 .confirmation-event-guide a{display:inline-flex;align-items:center;min-height:44px;font-size:15px}
+.confirmation-header{flex-wrap:wrap;gap:8px 16px}
+.confirmation-header>a:first-child{margin-inline-end:auto}
+.confirmation-header>[data-confirmation-agenda]{color:#52617a}
 [data-confirmation-jpeg-download]{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:11px 16px;border:1px solid #2555a4;border-radius:6px;background:#2555a4;color:#fff;text-decoration:none;font-size:14px;font-weight:600}
 [data-confirmation-jpeg-download]:hover{filter:brightness(.95)}

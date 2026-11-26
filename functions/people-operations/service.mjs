@@ -67,6 +67,7 @@ export function contactOperationsAcknowledged({ saved, contactId, expectedRevisi
 }
 export function attendanceAdmissionProjection(value) {
   if (!plain(value)) return unavailable('REGISTRATION_UNAVAILABLE');
+  if (value.status === 'external') return { status: 'external' };
   if (['confirmed', 'waitlisted', 'pending_review'].includes(value.status) && typeof value.registrationId === 'string' && REGISTRATION.test(value.registrationId)
     && typeof value.referenceCode === 'string' && REGISTRATION.test(value.referenceCode) && revision(value.revision))
     return { status: value.status, registrationId: value.registrationId, referenceCode: value.referenceCode, revision: value.revision,

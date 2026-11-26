@@ -1,6 +1,7 @@
 import { boothReadiness, prepareContactAssignments, assignmentSaveReceipt } from '../lib/arrangement-planner.mjs';
 import { organizationChoices } from '../lib/content-relationships.mjs';
 import { readContentForm,writeContentForm } from '../lib/content-local-drafts.mjs';
+import { arrangementStatusLabel } from '../../shared/organizer-progress.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u;
 const fields = ['code','organization','project','contactName','contactMethods','description','status'];
@@ -60,7 +61,8 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
         const label = node('label'), box = node('input'); box.type = 'checkbox'; box.name = kind + 'Ids'; box.value = item.id;
         const target = selected?.type === kind && selected.id === item.id;
         box.checked = Boolean(contact?.operations[kind + 'Ids']?.includes(item.id)) || Boolean(contact&&target&&assignmentDirty);
-        label.append(box, node('span', (kind === 'session' ? item.start + '–' + item.end + ' ' + item.title : item.code + ' · ' + (item.organization || '待确认机构')) + (target ? ' · 当前选择' : ''))); output.append(label);
+        const title = kind === 'session' ? item.start + '–' + item.end + ' ' + item.title : item.code + ' · ' + (item.organization || '待确认机构');
+        label.append(box, node('span', [title, arrangementStatusLabel(item.status), target ? '当前选择' : ''].filter(Boolean).join(' · '))); output.append(label);
       }
     }
     const reply = { pending: '待回复', attending: '已回复参加', declined: '已婉拒' }[contact?.operations.responseStatus] ?? '';
@@ -83,6 +85,7 @@ export function createArrangementPlanner({ root, getContext, request, applyBooth
       const select = assignmentForm.elements.namedItem('contactId'); select.replaceChildren();
       const placeholder = node('option', '请选择人员'); placeholder.value = ''; select.append(placeholder);
       for (const contact of people.contacts) {
+        if (contact.archivedAt) continue;
         const option = node('option', contact.profile.displayName || contact.profile.name);
         option.value = contact.id; option.disabled = contact.profile.contactConsent === 'declined' || contact.operations.responseStatus === 'declined';
         if (option.disabled) option.textContent += ' · 已拒绝';

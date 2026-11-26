@@ -1,4 +1,5 @@
 import { isVolunteerPlainObject, validateVolunteerState, volunteerWindowsOverlap, VOLUNTEER_ID } from '../../shared/volunteer-schema.mjs';
+import { isActiveSession, isActiveBooth } from '../../shared/organizer-progress.mjs';
 
 const ACTIVE = new Set(['pending', 'invited', 'confirmed']);
 const ADMISSION = new Set(['confirmed', 'waitlisted', 'withdrawn', 'pending_review', 'rejected', 'unlinked']);
@@ -48,7 +49,7 @@ export function projectVolunteerCoverage(input, context) {
     if (!identity) add(issues, 'SOURCE_UNAVAILABLE');
     else if (!identity.eligible) add(issues, 'SOURCE_INELIGIBLE');
     if (!ACTIVE.has(volunteer.workflowStatus)) add(issues, 'VOLUNTEER_INACTIVE');
-    if (identity && ACTIVE.has(volunteer.workflowStatus)) {
+    if (identity?.eligible && ACTIVE.has(volunteer.workflowStatus)) {
       const group = duplicates.get(identity.canonicalId) ?? []; group.push(volunteer.id); duplicates.set(identity.canonicalId, group);
     }
     people.push({ id: volunteer.id, identityKey: identity?.canonicalId ?? null, eligible: Boolean(identity?.eligible && ACTIVE.has(volunteer.workflowStatus)), issues });
@@ -61,8 +62,8 @@ export function projectVolunteerCoverage(input, context) {
     const issues = [];
     if (shift.status !== 'active') add(issues, 'SHIFT_CANCELLED');
     if (positions.get(shift.positionId).status !== 'active') add(issues, 'POSITION_INACTIVE');
-    if (shift.sessionId && (!sessions.has(shift.sessionId) || sessions.get(shift.sessionId).status === 'cancelled')
-      || shift.boothId && (!booths.has(shift.boothId) || booths.get(shift.boothId).status === 'cancelled')) add(issues, 'CONTENT_LINK_INVALID');
+    if (shift.sessionId && !isActiveSession(sessions.get(shift.sessionId))
+      || shift.boothId && !isActiveBooth(booths.get(shift.boothId))) add(issues, 'CONTENT_LINK_INVALID');
     shiftViews.push({ id: shift.id, required: shift.required, proposedCount: 0, confirmedCount: 0, gap: 0, issues });
   }
   const shiftViewsById = new Map(shiftViews.map(item => [item.id, item]));
@@ -84,8 +85,8 @@ export function projectVolunteerCoverage(input, context) {
   const reservations = new Map();
   for (const allocation of allocations) {
     const person = peopleById.get(allocation.volunteerId), identity = identities.get(person.id), shift = shiftsById.get(allocation.shiftId);
-    if (allocation.status === 'cancelled' || !identity || !ACTIVE.has(person.workflowStatus) || shift.status !== 'active'
-      || positions.get(shift.positionId).status !== 'active') continue;
+    if (allocation.status === 'cancelled' || !identity?.eligible || !ACTIVE.has(person.workflowStatus)
+      || shiftViewsById.get(shift.id).issues.length) continue;
     const previous = reservations.get(identity.canonicalId) ?? [];
     for (const other of previous) if (volunteerWindowsOverlap(shift, shiftsById.get(other.shiftId))) {
       add(allocation.issues, 'TIME_CONFLICT'); add(other.issues, 'TIME_CONFLICT'); allocation.valid = false; other.valid = false;
@@ -101,7 +102,7 @@ export function projectVolunteerCoverage(input, context) {
   let requiredSlots = 0, proposedSlots = 0, confirmedSlots = 0, unfilledSlots = 0;
   for (const shift of shiftViews) {
     if (shift.proposedCount + shift.confirmedCount > shift.required) add(shift.issues, 'SHIFT_OVER_CAPACITY');
-    if (!shift.issues.includes('SHIFT_CANCELLED') && !shift.issues.includes('POSITION_INACTIVE')) {
+    if (!shift.issues.some(code => ['SHIFT_CANCELLED', 'POSITION_INACTIVE', 'CONTENT_LINK_INVALID'].includes(code))) {
       shift.gap = Math.max(0, shift.required - shift.confirmedCount); requiredSlots += shift.required; unfilledSlots += shift.gap;
     }
     proposedSlots += shift.proposedCount; confirmedSlots += shift.confirmedCount;

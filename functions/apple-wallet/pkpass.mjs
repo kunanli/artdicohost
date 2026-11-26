@@ -1,5 +1,5 @@
 import { WALLET_IDENTITIES, cardCommunityFields, cardCommunityLabel, cardEventIdentityLabel, cardIdentityHeadline, cardProfileFields, cardSiteBrand, commemorativeCardVenue } from '../../shared/general-application.mjs';
-import { eventConfig, approvedMeetupAgenda, PUBLIC_AGENDA_URL, PUBLIC_EVENT_DETAILS_URL, PUBLIC_MEETUP_TITLE, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL, appleMapsDirectionsUrl } from '../../src/config/event.mjs';
+import { eventConfig, approvedMeetupAgenda, approvedMeetupAgendaEnglish, PUBLIC_AGENDA_URL, PUBLIC_EVENT_DETAILS_URL, PUBLIC_MEETUP_TITLE, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL, appleMapsDirectionsUrl } from '../../src/config/event.mjs';
 import { createHash, createPrivateKey, X509Certificate } from 'node:crypto';
 import { derChildren, oid, signManifest } from './der.mjs';
 
@@ -15,26 +15,31 @@ export class WalletSigningError extends Error {
 const fail = code => { throw new WalletSigningError(code); };
 const line = (value, max) => typeof value === 'string' && value.length > 0 && value.length <= max && value.isWellFormed() && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value);
 const fingerprint = certificate => createHash('sha256').update(certificate.raw).digest('hex');
-const MEETUP_PROGRAM_FIELDS = [
-  { key: 'meetup-program', label: 'GGJ 中国交流聚会',
-    value: 'GGJ 全球执行总监 Maria Burns Ortiz 将带来主题演讲，现场还有专题研讨、圆桌交流与 GGJ 站点咨询。' },
-  { key: 'carnival-program', label: 'ARTDiCO HOST 学生嘉年华',
-    value: '学生作品、独立游戏试玩和产品展示汇聚一堂，观众也可与院校、企业及活动组织者面对面交流，了解招募与预录取机会。' },
+const programFieldsFor = english => [
+  { key: 'meetup-program', label: english ? 'GGJ China Meetup' : 'GGJ 中国交流聚会',
+    value: english ? 'GGJ Executive Director Maria Burns Ortiz will give the keynote. The program also includes panels, a roundtable and guidance for GGJ jam sites.'
+      : 'GGJ 全球执行总监 Maria Burns Ortiz 将带来主题演讲，现场还有专题研讨、圆桌交流与 GGJ 站点咨询。' },
+  { key: 'carnival-program', label: english ? 'ARTDiCO HOST Student Festival' : 'ARTDiCO HOST 学生嘉年华',
+    value: english ? 'Explore student projects, indie game demos and product showcases. Meet universities, companies and event organizers to learn about recruiting and pre-admission opportunities.'
+      : '学生作品、独立游戏试玩和产品展示汇聚一堂，观众也可与院校、企业及活动组织者面对面交流，了解招募与预录取机会。' },
 ];
 const zoneASchedule = approvedMeetupAgenda.filter(({ zone }) => zone === 'A');
-const scheduleText = rows => rows.map(({ start, end, title }) => `${start}–${end}　${title}`).join('\n');
-const MEETUP_SCHEDULE_FIELDS = [
-  { key: 'schedule-a-morning', label: 'A 区 · 阶梯展示厅｜上午',
-    value: scheduleText(zoneASchedule.filter(({ start }) => start < '13:00')) },
-  { key: 'schedule-a-afternoon', label: 'A 区 · 阶梯展示厅｜下午',
-    value: scheduleText(zoneASchedule.filter(({ start }) => start >= '13:00')) },
-  { key: 'schedule-b', label: 'B 区 · 咖啡厅',
-    value: scheduleText(approvedMeetupAgenda.filter(({ zone }) => zone === 'B')) },
-  { key: 'schedule-c', label: 'C 区 · 外围展位', value: [
-    scheduleText(approvedMeetupAgenda.filter(({ zone }) => zone === 'C')),
-    '共 16 个展位，涵盖院校交流、学生作品、GGJ 站点咨询、独立游戏试玩和产品展示。',
+const scheduleText = (rows, english) => rows.map(({ start, end, title }) =>
+  `${start}–${end}${english ? '  ' + (approvedMeetupAgendaEnglish.get(title) ?? title) : '　' + title}`).join('\n');
+const scheduleFieldsFor = english => [
+  { key: 'schedule-a-morning', label: english ? 'Zone A · Presentation Hall | Morning' : 'A 区 · 阶梯展示厅｜上午',
+    value: scheduleText(zoneASchedule.filter(({ start }) => start < '13:00'), english) },
+  { key: 'schedule-a-afternoon', label: english ? 'Zone A · Presentation Hall | Afternoon' : 'A 区 · 阶梯展示厅｜下午',
+    value: scheduleText(zoneASchedule.filter(({ start }) => start >= '13:00'), english) },
+  { key: 'schedule-b', label: english ? 'Zone B · Café' : 'B 区 · 咖啡厅',
+    value: scheduleText(approvedMeetupAgenda.filter(({ zone }) => zone === 'B'), english) },
+  { key: 'schedule-c', label: english ? 'Zone C · Exhibition Area' : 'C 区 · 外围展位', value: [
+    scheduleText(approvedMeetupAgenda.filter(({ zone }) => zone === 'C'), english),
+    english ? '16 booths featuring universities, student projects, GGJ jam-site guidance, indie game demos and product showcases.'
+      : '共 16 个展位，涵盖院校交流、学生作品、GGJ 站点咨询、独立游戏试玩和产品展示。',
   ].join('\n') },
-  { key: 'schedule-c-games', label: 'C-10 至 C-15 · 独立游戏试玩', value: '妖殿奇谭、猫仙札、一剑、破坏派对、纳林的星野奇旅、人是不能飞的。' },
+  { key: 'schedule-c-games', label: english ? 'C-10 to C-15 · Indie Game Demos' : 'C-10 至 C-15 · 独立游戏试玩',
+    value: '妖骰奇谭、猫仙札、一剑、破坏派对、纳林的星野奇旅、人是不能飞的。' },
 ];
 function certificate(value) {
   if (!(value instanceof Uint8Array) || value.length < 128 || value.length > 24 * 1024) fail('WALLET_CERTIFICATE_INVALID');
@@ -197,22 +202,23 @@ export function buildAppleWalletPass({ identity, attendee, organizationName, ver
   const cardPlace = { ...venue, key: 'venue-short', value: confirmedVenue && (english || separateVenue) ? shortVenue : commemorativeCardVenue(event.venue) };
   const activities = meetupCard ? [{ key: 'activities', label: english ? 'Program' : '活动内容',
     value: english ? 'Talks · Site Meetups · Games' : '讲座・站点交流・游戏展' }] : [];
-  const programFields = meetupCard ? MEETUP_PROGRAM_FIELDS : [];
-  const scheduleFields = meetupCard ? MEETUP_SCHEDULE_FIELDS : [];
+  const programFields = meetupCard ? programFieldsFor(english) : [];
+  const scheduleFields = meetupCard ? scheduleFieldsFor(english) : [];
   const cardGuides = [];
-  if (richCard) cardGuides.push(['directions', '场地导航', appleMapsDirectionsUrl(event.venue), '在 Apple 地图中查看路线']);
-  if (meetupCard) cardGuides.push(['agenda', '讲座日程', PUBLIC_AGENDA_URL, '查看最新讲座与活动日程'],
-    ['showcase', '参展游戏', PUBLIC_SHOWCASE_URL, '浏览已公布的游戏与作品'],
-    ['huodongxing', '活动行', PUBLIC_REGISTRATION_URL, '打开活动行活动页']);
+  if (richCard) cardGuides.push(['directions', english ? 'Directions' : '场地导航', appleMapsDirectionsUrl(event.venue), english ? 'Open directions in Apple Maps' : '在 Apple 地图中查看路线']);
+  if (meetupCard) cardGuides.push(['agenda', english ? 'Schedule' : '讲座日程', PUBLIC_AGENDA_URL, english ? 'View the latest schedule' : '查看最新讲座与活动日程'],
+    ['showcase', english ? 'Games and Projects' : '参展游戏', PUBLIC_SHOWCASE_URL, english ? 'Browse published games and projects' : '浏览已公布的游戏与作品'],
+    ['huodongxing', english ? 'Huodongxing' : '活动行', PUBLIC_REGISTRATION_URL, english ? 'Open the event on Huodongxing' : '打开活动行活动页']);
   const guideFields = cardGuides.map(([key, label, value, linkText]) => ({ key, label, value,
     attributedValue: '<a href="' + value + '">' + linkText + '</a>' }));
-  const backFields = [...(cardTitle ? [{ key: 'co-brand-title', label: '联名活动', value: cardTitle }] : []),
+  const backFields = [...(cardTitle ? [{ key: 'co-brand-title', label: english ? 'Event' : '联名活动', value: cardTitle }] : []),
     venue, ...guideFields, ...cardAffiliations, ...programFields, ...scheduleFields, ...fullCardDetails,
-    ...(profile?.phone ? [{ key: 'phone', label: '电话', value: profile.phone, dataDetectorTypes: ['PKDataDetectorTypePhoneNumber'] }] : []),
-    ...(meetupCard ? [{ key: 'event-details', label: '活动详情', value: PUBLIC_EVENT_DETAILS_URL,
-      attributedValue: '<a href="' + PUBLIC_EVENT_DETAILS_URL + '">查看活动详情</a>' }] : []),
+    ...(profile?.phone ? [{ key: 'phone', label: english ? 'Phone' : '电话', value: profile.phone, dataDetectorTypes: ['PKDataDetectorTypePhoneNumber'] }] : []),
+    ...(meetupCard ? [{ key: 'event-details', label: english ? 'Event Details' : '活动详情', value: PUBLIC_EVENT_DETAILS_URL,
+      attributedValue: '<a href="' + PUBLIC_EVENT_DETAILS_URL + '">' + (english ? 'View event details' : '查看活动详情') + '</a>' }] : []),
     ...(!richCard ? [{ key: 'reference', label: '报名编号', value: attendee.referenceCode }, ...communityFields] : []),
-    { key: 'notice', label: '说明', value: richCard ? '本卡用于纪念收藏。现场签到请使用活动行原电子票。' : '此凭证仅表示参会名额。讲者、展位及住宿另行确认；请以在线核对结果为准。' }];
+    { key: 'notice', label: english ? 'Check-in' : '说明', value: english ? 'Keep this card as a souvenir. Use your original Huodongxing e-ticket to check in.'
+      : richCard ? '本卡用于纪念收藏。现场签到请使用活动行原电子票。' : '此凭证仅表示参会名额。讲者、展位及住宿另行确认；请以在线核对结果为准。' }];
   const headline = meetupCard ? cardIdentityHeadline(walletIdentity.label, siteIdentity, attendee.cardLocale) : null;
   const posterGeneric = headline ? {
     // Wallet styles field labels separately. Keep the site, role and name in native value fields.

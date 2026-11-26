@@ -34,11 +34,13 @@ export function cardTestFields({ name, email, identity }) {
   return { name: displayName, email: recipient, identity };
 }
 
-/** Test recipients and removal markers never enter the registration index. */
+/** Keepsake approvals, test recipients and removal markers stay out of admissions. */
 export function createCardManagementRepository({ journal, eventId, clock }) {
   function validate(value) {
-    if (!exact(value, ['schemaVersion', 'eventId', 'tests', 'removed']) || value.schemaVersion !== 1 || value.eventId !== eventId) fail();
-    for (const entries of [value.tests, value.removed]) {
+    const hasApprovals = value && Object.hasOwn(value, 'approvals');
+    if (!exact(value, ['schemaVersion', 'eventId', 'tests', 'removed', ...(hasApprovals ? ['approvals'] : [])])
+      || value.schemaVersion !== 1 || value.eventId !== eventId) fail();
+    for (const entries of [value.tests, value.removed, ...(hasApprovals ? [value.approvals] : [])]) {
       if (!entries || Object.getPrototypeOf(entries) !== Object.prototype || Object.keys(entries).length > 2000) fail();
       if (Object.keys(entries).some(id => !ID.test(id))) fail();
     }
@@ -49,12 +51,25 @@ export function createCardManagementRepository({ journal, eventId, clock }) {
     for (const entry of Object.values(value.removed)) {
       if (!exact(entry, ['at', 'actorId']) || !at(entry.at) || !ACTOR.test(entry.actorId ?? '')) fail();
     }
+    const operations = new Set();
+    for (const [id, entry] of Object.entries(value.approvals ?? {})) {
+      if (value.tests[id] || !exact(entry, ['registrationId', 'operationId', 'expectedRevision', 'at', 'actorId'])
+        || !ID.test(entry.registrationId ?? '') || !OP.test(entry.operationId ?? '') || operations.has(entry.operationId)
+        || !Number.isSafeInteger(entry.expectedRevision) || entry.expectedRevision < 0
+        || !at(entry.at) || !ACTOR.test(entry.actorId ?? '')) fail();
+      operations.add(entry.operationId);
+    }
     return value;
   }
   async function read() {
     const { value, cursor } = await journal.read();
     const initial = { schemaVersion: 1, eventId, tests: {}, removed: {} };
     return { value: value === null && cursor?.version === 0 ? initial : validate(value), cursor };
+  }
+  async function commit(current, value) {
+    validate(value);
+    const saved = await journal.commit(current.cursor, value);
+    if (saved?.cursor?.version !== current.cursor.version + 1 || !isDeepStrictEqual(saved.value, value)) fail();
   }
   async function save(current, { registrationId, recipient, relatedIds = [registrationId], actorId }) {
     const value = structuredClone(current.value), entry = { at: new Date(clock()).toISOString(), actorId };
@@ -63,11 +78,16 @@ export function createCardManagementRepository({ journal, eventId, clock }) {
       delete value.tests[registrationId];
       for (const id of relatedIds) value.removed[id] ??= entry;
     }
-    validate(value);
-    const saved = await journal.commit(current.cursor, value);
-    if (saved?.cursor?.version !== current.cursor.version + 1 || !isDeepStrictEqual(saved.value, value)) fail();
+    await commit(current, value);
   }
-  return { read, save };
+  async function approve(current, { primaryId, registrationId, operationId, expectedRevision, actorId }) {
+    const value = structuredClone(current.value);
+    value.approvals ??= {};
+    if (current.cursor.version !== expectedRevision || value.approvals[primaryId]) fail();
+    value.approvals[primaryId] = { registrationId, operationId, expectedRevision, at: new Date(clock()).toISOString(), actorId };
+    await commit(current, value);
+  }
+  return { read, save, approve };
 }
 
 /** Isolate optional card copy from the admission, review, and mail journals. */

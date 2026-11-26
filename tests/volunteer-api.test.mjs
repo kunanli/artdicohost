@@ -5,6 +5,7 @@ import { readSheet } from 'read-excel-file/node';
 import { createVolunteerService } from '../functions/volunteers/service.mjs';
 import { createVolunteersApi, isVolunteersPath, MAX_VOLUNTEER_BODY_BYTES } from '../functions/volunteers/handler.mjs';
 import { createVolunteerRepository } from '../functions/volunteers/repository.mjs';
+import { volunteerWorkspaceView } from '../src/lib/volunteer-workspace.mjs';
 import { XLSX_MIME } from '../shared/xlsx-workbook.mjs';
 import { volunteerFixture, fixtureVolunteer, fixturePosition, fixtureShift, VOLUNTEER_FIXTURE_ORIGIN as ORIGIN,
   VOLUNTEER_FIXTURE_REGISTRATION as REGISTRATION, VOLUNTEER_FIXTURE_SECRET as SECRET } from './volunteer-api-fixture.mjs';
@@ -96,6 +97,54 @@ test('mismatched conversion cannot create a canonical volunteer or claim admissi
   assert.equal((await f.repository.read()).revision, 0);
 });
 
+test('a confirmed person merge uses the primary seat for all roster aliases and blocks duplicate shifts', async () => {
+  const f = await seeded(), primary = 'z'.repeat(43);
+  f.sources.registrations.revision++; f.sources.admissions.revision++;
+  f.sources.registrations.registrations.push({ id: primary, fields: { name: '合成合并主报名' }, provenance: { kind: 'public' }, consent: { accepted: true } });
+  f.sources.admissions.people[0].status = 'withdrawn';
+  f.sources.admissions.people.push({ registrationId: primary, status: 'confirmed', kind: 'attendee' });
+  f.sources.admissions.personGroups = [{ contactIds: ['contact_01'], registrationIds: [REGISTRATION, primary], primaryContactId: 'contact_01', primaryRegistrationId: primary }];
+  const view = volunteerWorkspaceView(await f.service.read({ actor: f.actor }));
+  assert.equal(view.volunteers[0].person.canonicalId, 'r:' + primary);
+  assert.equal(view.summary.confirmedSlots, 1);
+  assert.equal((await f.service.sources({ actor: f.actor })).total, 2);
+  for (const id of [REGISTRATION, primary]) {
+    const pick = await f.service.sources({ actor: f.actor, kind: 'registration', id });
+    assert.equal(pick.candidates[0].canonicalId, 'r:' + primary);
+    assert.equal((await f.service.readPerson({ actor: f.actor, registrationId: id })).entries.length, 1);
+    await assert.rejects(f.operate('volunteer_upsert', fixtureVolunteer('duplicate', { kind: 'registration', id })), { code: 'DUPLICATE_SOURCE' });
+  }
+  await f.operate('shift_upsert', { ...fixtureShift('second'), start: '09:30', end: '10:30' });
+  await assert.rejects(f.operate('assignment_upsert', { id: 'overlap', volunteerId: 'volunteer_01', shiftId: 'second', status: 'confirmed' }), { code: 'PLAN_CONFLICT' });
+});
+
+test('a contact-only merge is still one source after a later verified registration', async () => {
+  const f = volunteerFixture();
+  f.sources.admissions.personGroups = [{ contactIds: ['contact_01', 'contact_02'], registrationIds: [], primaryContactId: 'contact_02', primaryRegistrationId: null }];
+  const { candidates } = await f.service.sources({ actor: f.actor });
+  assert.deepEqual(candidates.map(row => row.canonicalId), ['r:' + REGISTRATION]);
+  await f.operate('volunteer_upsert', fixtureVolunteer('volunteer_merge', { kind: 'contact', id: 'contact_02' }));
+  await assert.rejects(f.operate('volunteer_upsert', fixtureVolunteer()), { code: 'DUPLICATE_SOURCE' });
+  assert.equal((await f.service.readPerson({ actor: f.actor, registrationId: REGISTRATION })).entries[0].id, 'volunteer_merge');
+});
+
+test('archiving a contact removes it from selection and active coverage while preserving an independent registration', async () => {
+  const f = await seeded();
+  await f.operate('volunteer_upsert', fixtureVolunteer('standalone', { kind: 'contact', id: 'contact_02' }));
+  for (const contact of f.sources.contacts.contacts) contact.archivedAt = '2026-11-26T00:00:00.000Z';
+  const view = volunteerWorkspaceView(await f.service.read({ actor: f.actor }));
+  const archived = view.volunteers.find(row => row.id === 'standalone'), linked = view.volunteers.find(row => row.id === 'volunteer_01');
+  assert.equal(archived.person.eligible, false);
+  assert.equal(archived.person.email, '');
+  assert.equal(linked.person.admissionStatus, 'confirmed');
+  assert.equal(linked.person.email, 'stale-profile@example.invalid', 'use the independent registration profile');
+  assert.equal(view.summary.activePeopleCount, 1);
+  assert.equal(view.summary.confirmedSlots, 1);
+  const { candidates } = await f.service.sources({ actor: f.actor });
+  assert.deepEqual(candidates.map(row => row.source), [{ kind: 'registration', id: REGISTRATION }]);
+  assert.equal(candidates[0].eligible, true);
+});
+
 test('durable operation receipt, exact replay, canonical duplicate and conflict boundaries', async () => {
   const f = volunteerFixture(), input = command(fixtureVolunteer());
   const first = await (await f.api(request(f, '/operations', { method: 'POST', body: input }))).json();
@@ -119,6 +168,31 @@ test('lost commit ACK remains inspectable and same operation safely replays once
   await errorCode(await f.api(request(f, '/operations', { method: 'POST', body: input })), 503, 'UNAVAILABLE');
   assert.equal((await f.repository.read()).revision, 1);
   const replay = await (await f.api(request(f, '/operations', { method: 'POST', body: input }))).json(); assert.equal(replay.outcome, 'replayed'); assert.equal(replay.operation.revision, 1);
+  assert.equal((await f.repository.read()).audit.length, 1);
+});
+
+test('a lost save receipt remains verifiable after another staff member changes the same row', async () => {
+  const f = volunteerFixture();
+  const first = command(fixtureVolunteer(), 'volunteer_upsert');
+  const saved = await f.service.operate({ ...first, actor: f.actor });
+  const other = { id: 'another_operator', roles: ['superadmin'] };
+  await f.operate('volunteer_upsert', { ...fixtureVolunteer(), owner: '另一个工作人员' }, { actor: other });
+  const replay = await (await f.api(request(f, '/operations', { method: 'POST', body: first }))).json();
+  assert.equal(replay.outcome, 'replayed');
+  assert.deepEqual(replay.operation, saved.operation);
+  assert.equal(replay.revision, 2);
+  assert.equal(replay.volunteers[0].owner, '另一个工作人员');
+  assert.equal((await f.repository.read()).audit.length, 2);
+});
+
+test('concurrent identical saves return the same receipt and append once', async () => {
+  const f = volunteerFixture();
+  const input = command(fixtureVolunteer(), 'volunteer_upsert');
+  const responses = await Promise.all(Array.from({ length: 2 }, () => f.api(request(f, '/operations', { method: 'POST', body: input }))));
+  assert.deepEqual(responses.map(response => response.status), [200, 200]);
+  const operations = await Promise.all(responses.map(response => response.json()));
+  assert.deepEqual(operations.map(value => value.outcome).sort(), ['replayed', 'updated']);
+  assert.deepEqual(operations[0].operation, operations[1].operation);
   assert.equal((await f.repository.read()).audit.length, 1);
 });
 
@@ -149,6 +223,10 @@ test('late explicit linkage duplicates are flagged without auto-merge or double 
   const view = await f.service.read({ actor: f.actor });
   assert.equal(view.volunteers.length, 2); assert.equal(view.summary.activePeopleCount, 1); assert.ok(view.volunteers.every(row => row.issues.includes('DUPLICATE_PERSON')));
   assert.equal((await f.repository.read()).revision, 2, 'read neither merges nor writes');
+  const alias = fixtureVolunteer('volunteer_02', { kind: 'registration', id: REGISTRATION });
+  const resolved = await f.operate('volunteer_upsert', { ...alias, workflowStatus: 'inactive' });
+  assert.ok(resolved.volunteers.every(row => !row.issues.includes('DUPLICATE_PERSON')));
+  await assert.rejects(f.operate('volunteer_upsert', alias), { code: 'DUPLICATE_SOURCE' });
 });
 
 test('new arrangements enforce available hours, confirmed admission and demand', async () => {
@@ -176,8 +254,35 @@ test('XLSX export has explicit contact scope, true strings, audit, receipt and d
   const contactBytes = Buffer.from(await withContact.arrayBuffer()); assert.ok(contactBytes.toString().includes('volunteer-one@example.invalid')); assert.ok(!contactBytes.toString().includes('volunteer-two@example.invalid'));
   const state = await f.repository.read(), audit = state.audit.at(-1); assert.equal(audit.action, 'export'); assert.deepEqual(audit.details.volunteerIds, ['volunteer_01']); assert.equal(audit.details.includeContact, true); assert.equal(audit.actorId, f.actor.id);
   f.sources.contacts.contacts[0].profile.displayName = '新的合成姓名'; f.sources.contacts.revision++;
-  await errorCode(await f.api(request(f, '/export.xlsx', { method: 'POST', body: { ...input, expectedRevision: 6, operationId: 'synthetic_export_contact_0001', includeContact: true } })), 409, 'CONFLICT');
+  const stale = await f.api(request(f, '/export.xlsx', { method: 'POST', body: { ...input, expectedRevision: 6, operationId: 'synthetic_export_contact_0001', includeContact: true } }));
+  assert.equal(stale.status, 409);
+  const staleReceipt = await stale.json();
+  assert.equal(staleReceipt.error.code, 'EXPORT_STALE');
+  assert.deepEqual(staleReceipt.error.operation, { operationId: 'synthetic_export_contact_0001', revision: 7 });
+  assert.ok(!JSON.stringify(staleReceipt).includes('volunteer-one@example.invalid'));
   assert.equal((await f.repository.read()).revision, 7);
+});
+
+test('export receipt survives later staff edits and redownloads only an identical workbook', async () => {
+  const f = await seeded(), input = { expectedRevision: 4, operationId: 'synthetic_export_later_edit_01', volunteerIds: ['volunteer_01'], includeContact: false };
+  const first = await f.api(request(f, '/export.xlsx', { method: 'POST', body: input }));
+  assert.equal(first.status, 200);
+  const savedBytes = Buffer.from(await first.arrayBuffer());
+  const other = { id: 'another_operator', roles: ['superadmin'] };
+  await f.operate('position_upsert', { ...fixturePosition(), id: 'unrelated_position' }, { actor: other });
+  const unchanged = await f.api(request(f, '/export.xlsx', { method: 'POST', body: input }));
+  assert.equal(unchanged.status, 200);
+  assert.equal(unchanged.headers.get('x-volunteer-revision'), '5');
+  assert.deepEqual(Buffer.from(await unchanged.arrayBuffer()), savedBytes);
+  await f.operate('volunteer_upsert', { ...fixtureVolunteer(), owner: '合成的新负责同事' }, { actor: other });
+  const stale = await f.api(request(f, '/export.xlsx', { method: 'POST', body: input }));
+  assert.equal(stale.status, 409);
+  const { error } = await stale.json();
+  assert.equal(error.code, 'EXPORT_STALE');
+  assert.deepEqual(error.operation, { operationId: input.operationId, revision: 5 });
+  await errorCode(await f.api(request(f, '/export.xlsx', { method: 'POST', body: { ...input, includeContact: true } })), 409, 'CONFLICT');
+  await assert.rejects(f.service.exportXlsx({ ...input, actor: other }), { code: 'CONFLICT' });
+  assert.equal((await f.repository.read()).audit.filter(row => row.action === 'export').length, 1);
 });
 
 test('export cannot omit selection/contact scope or bypass role, revision, or body boundaries', async () => {

@@ -1,7 +1,7 @@
 ---
 import { eventConfig, agenda, zones } from '../config/event.mjs';
+import { agendaPeriod, agendaPeriodLabels } from '../lib/agenda-period.mjs';
 import '../styles/program.css';
-const period = (start: string) => start < '12:00' ? 'morning' : 'afternoon';
 ---
 <section class="ah-agenda ah-program ah-section" id="agenda" aria-labelledby="agenda-heading" data-agenda>
   <div class="ah-section-heading">
@@ -25,13 +25,18 @@ const period = (start: string) => start < '12:00' ? 'morning' : 'afternoon';
           <h3 class="ah-panel-heading" id={`program-heading-${zone.id}`}>{zone.id} 区 · {zone.name}</h3>
           {zone.id === 'C' && <p class="ah-agenda-caption ah-program-zone-note">展位与作品以已公布安排为准。</p>}
           <div class="ah-agenda-list">
-            {rows.map((item, index) => <>
-              {(index === 0 || period(item.start) !== period(rows[index - 1].start)) && <h4 class="ah-program-divider" data-program-divider={period(item.start)}>{period(item.start) === 'morning' ? '上午' : '午后'}<span aria-hidden="true">{period(item.start) === 'morning' ? 'MORNING' : 'AFTERNOON'}</span></h4>}
-              <article id={`program-${item.id}`} tabindex="-1" class:list={['ah-agenda-row', {'ah-featured': item.id.startsWith('session-student-')}]} data-agenda-start={item.start}>
+            {rows.map((item, index) => {
+              const period = agendaPeriod(item.zone, item.start, item.end);
+              const previous = rows[index - 1];
+              const [label, english] = agendaPeriodLabels[period];
+              return <>
+              {(!previous || period !== agendaPeriod(previous.zone, previous.start, previous.end)) && <h4 class="ah-program-divider" data-program-divider={period}>{label}<span aria-hidden="true">{english}</span></h4>}
+              <article id={`program-${item.id}`} tabindex="-1" class:list={['ah-agenda-row', {'ah-featured': item.id.startsWith('session-student-')}]} data-agenda-start={item.start} data-agenda-end={item.end}>
                 <time datetime={`${eventConfig.date.value}T${item.start}:00+08:00`}>{item.start}–{item.end}</time>
                 <div class="ah-session-detail"><span class="ah-session-category">{zone.id} 区</span><strong>{item.title}</strong>{item.start === '14:30' && zone.id === 'B' && <small class="ah-session-meta">正式站点资格以 GGJ 流程为准</small>}</div>
               </article>
-            </>)}
+              </>;
+            })}
           </div>
           <p class="ah-agenda-caption ah-program-empty" data-program-empty hidden>此时段暂无已公布场次。</p>
         </section>;

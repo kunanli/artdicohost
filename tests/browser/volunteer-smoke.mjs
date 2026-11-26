@@ -141,6 +141,22 @@ try{
     state=await f.backend.repository.read();assert.equal(state.revision,before.revision+1);assert.equal(state.positions.filter(row=>row.name==='合成回执待确认岗位').length,1);assert.equal(state.audit.length,before.audit.length+1);await f.context.close();reports.push({mode,unknownResultFreezesNewWrites:true,explicitRetryExactOperation:true,noDuplicateWriteOrAudit:true});
   }
 
+  const laterEdit = await fixture({mode:'unknown-committed'});
+  await open(laterEdit);
+  const replayForm = await begin(laterEdit, 'position');
+  await replayForm.locator('[name=name]').fill('回执遗失的岗位');
+  await save(laterEdit, 'position');
+  await laterEdit.page.locator('[data-volunteer-pending]:visible').waitFor();
+  const firstSave = (await laterEdit.backend.repository.read()).positions.find(row=>row.name==='回执遗失的岗位');
+  await laterEdit.backend.operate('position_upsert', {...firstSave, name:'其他工作人员更新后的岗位'}, {actor:staff(['superadmin'])});
+  await laterEdit.page.locator('[data-volunteer-dialog-retry]:visible').click();
+  await laterEdit.page.locator('[data-volunteer-position-dirty]').filter({hasText:'现已显示最新资料'}).waitFor();
+  assert.equal(await replayForm.locator('[name=name]').inputValue(),'其他工作人员更新后的岗位');
+  assert.equal(await replayForm.locator('button[type=submit]').isDisabled(),true);
+  assert.deepEqual(laterEdit.writes[1],laterEdit.writes[0]);
+  await laterEdit.context.close();
+  reports.push({savedOperationRecoversAfterAnotherStaffEdit:true,editorUsesLatestCloudFields:true});
+
   const dirty=await fixture({mode:'dirty'});await open(dirty);const dirtyForm=await begin(dirty,'position');await dirtyForm.locator('[name=name]').fill('合成尚未保存岗位');
   await dirty.page.locator('[data-volunteer-close=position]').first().click();assert.equal(await dirty.page.locator('[data-volunteer-position-dialog]').isVisible(),true);assert.equal(dirty.dialogs.at(-1).type,'confirm');
   await dirty.page.keyboard.press('Escape');assert.equal(await dirty.page.locator('[data-volunteer-position-dialog]').isVisible(),true);assert.equal(dirty.dialogs.at(-1).type,'confirm');
@@ -153,6 +169,26 @@ try{
   await excel.page.locator('[data-volunteer-refresh]').click();await excel.page.locator('[data-volunteer-roster]').filter({hasText:excel.seeded.name}).waitFor();await excel.page.locator('[data-volunteer-export-contact]').check();downloadWait=excel.page.waitForEvent('download');await excel.page.locator('[data-volunteer-export]').click();download=await downloadWait;workbook=await readFile(await download.path());rows=await readSheet(workbook,1);assert.match(JSON.stringify(rows),/@example\.invalid/u);assert.doesNotMatch(JSON.stringify(rows),/SYNTHETIC_RAW_QUESTION_AND_PROVIDER_SECRET_NEVER_EXPOSE/u);
   const exports=(await excel.backend.repository.read()).audit.filter(row=>row.action==='export');assert.equal(exports.length,2);assert.equal(exports[0].details.includeContact,false);assert.equal(exports[1].details.includeContact,true);assert.match(exports[1].details.sha256,/^[a-f0-9]{64}$/u);
   await excel.page.locator('[data-volunteer-logout]').click();await excel.page.locator('[data-volunteer-login-panel]:visible').waitFor();const urls=await excel.page.evaluate(()=>window.privateVolunteerUrls);assert.ok(urls.created.length>=2);assert.ok(urls.created.every(url=>urls.revoked.includes(url)));assert.equal(await excel.page.locator('[data-volunteer-roster]').textContent(),'');assert.equal(await excel.page.locator('[data-volunteer-export-contact]').isChecked(),false);await excel.context.close();reports.push({realOoxmlReadBack:true,contactFieldsExplicitAndAudited:true,rawAnswersExcluded:true,logoutClearsPrivateRosterAndBlobUrls:true});
+
+  const staleExport = await fixture({mode:'unknown-committed'});
+  await open(staleExport);
+  await staleExport.page.locator('[data-volunteer-export]').click();
+  await staleExport.page.locator('[data-volunteer-pending]:visible').waitFor();
+  const staffEdit = (await staleExport.backend.repository.read()).volunteers[0];
+  await staleExport.backend.operate('volunteer_upsert',{...staffEdit,owner:'合成新负责人'},{actor:staff(['superadmin'])});
+  await staleExport.page.locator('[data-volunteer-retry]').click();
+  await staleExport.page.locator('[data-volunteer-error]:visible').filter({hasText:'原导出已记录'}).waitFor();
+  assert.equal(await staleExport.page.locator('[data-volunteer-pending]').isVisible(),false);
+  assert.equal(await staleExport.page.locator('[data-volunteer-refresh]').isEnabled(),true);
+  assert.equal(staleExport.downloads.length,0);
+  assert.deepEqual(staleExport.writes[1],staleExport.writes[0]);
+  await staleExport.page.locator('[data-volunteer-refresh]').click();
+  const refreshed = staleExport.page.waitForEvent('download');
+  await staleExport.page.locator('[data-volunteer-export]').click();
+  assert.ok(await refreshed);
+  assert.equal((await staleExport.backend.repository.read()).audit.filter(row=>row.action==='export').length,2);
+  await staleExport.context.close();
+  reports.push({staleExportReceiptUnlocksBrowser:true,changedWorkbookRequiresFreshDownload:true});
 
   const unavailable=await fixture();await open(unavailable);unavailable.backend.setSourceFailure(true);await unavailable.page.locator('[data-volunteer-refresh]').click();await unavailable.page.locator('[data-volunteer-error]:visible').waitFor();assert.match(await unavailable.page.locator('[data-volunteer-error]').textContent(),/无法核对|暂时/u);assert.equal(await unavailable.page.locator('[data-volunteer-metrics]').textContent(),'','source failure never becomes a successful zero count');assert.equal(await unavailable.page.locator('[data-volunteer-add]').isDisabled(),true);assert.deepEqual(unavailable.writes,[]);assert.equal((await unavailable.page.locator('body').textContent()).includes(VOLUNTEER_FIXTURE_SECRET),false);await unavailable.context.close();reports.push({sourceUnavailableIsNotEmptySuccess:true,sourceErrorNeverExposesProviderDetails:true});
 

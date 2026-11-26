@@ -12,6 +12,7 @@ html[lang="en"] #artdico-host.ah-festival.ah-cosmos .ah-home-title-art .ah-home-
 html[lang="en"] #artdico-host.ah-festival.ah-cosmos .ah-home-title-fallback>span+span{font-family:var(--ah-font-reading);line-height:1.4}
 html[lang="en"] #artdico-host.ah-festival.ah-cosmos .ah-home-fact-bubble{overflow-wrap:anywhere}
 html[lang="en"] #artdico-host.ah-festival.ah-cosmos .ah-program-title strong{white-space:normal}
+html[lang="en"] #artdico-host.ah-festival.ah-cosmos .ah-program-divider>span{display:none}
 @media(min-width:821px) and (max-width:1350px){
  html[lang="en"] #artdico-host.ah-festival.ah-cosmos .ah-home-desktop-nav{display:none}
  html[lang="en"] #artdico-host.ah-festival.ah-cosmos .ah-home-header>.ah-site-menu{display:block}

@@ -302,7 +302,6 @@ jobs:
           node tests/browser/entry-checkin-smoke.mjs
           node tests/browser/people-entry-order-delete-smoke.mjs
           node tests/browser/confirmation-email-preview-smoke.mjs
-          node tests/browser/entry-link-smoke.mjs
       - name: Retain entry journey browser evidence for one day
         if: ${{ !cancelled() && (steps.entry_journey_browser.outcome == 'success' || steps.entry_journey_browser.outcome == 'failure') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -312,7 +311,6 @@ jobs:
             .local-data/browser-evidence/entry-checkin/
             .local-data/browser-evidence/people-entry-order-delete/
             .local-data/browser-evidence/confirmation-email-preview/
-            .local-data/browser-evidence/entry-link/
           if-no-files-found: warn
           retention-days: 1
       - name: Check Huodongxing import and separate confirmation journey

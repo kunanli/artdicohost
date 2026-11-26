@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { validateVolunteer, validateVolunteerPosition, validateVolunteerShift, validateVolunteerAssignment, VOLUNTEER_ISSUE_LABELS, VOLUNTEER_LIMITS } from '../../shared/volunteer-schema.mjs';
 import { projectVolunteerCoverage, assertVolunteerPlanChange } from './planning.mjs';
 import { volunteerWorkbook } from './xlsx.mjs';
+import { findVolunteerOperation } from './repository.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/u, REGISTRATION = /^[A-Za-z0-9_-]{43}$/u;
 const OPERATION = /^[A-Za-z0-9_-]{16,100}$/u;
@@ -71,6 +72,23 @@ export function volunteerSourceProjection(input) {
     admissions.set(entry.registrationId, entry);
   }
   if (admissions.size !== registrations.length) fail();
+  const groups = input.admissions.personGroups ?? [], groupByContact = new Map(), groupByRegistration = new Map();
+  if (!Array.isArray(groups) || groups.length > 1000) fail();
+  for (const group of groups) {
+    if (!plain(group) || !Array.isArray(group.contactIds) || group.contactIds.length > 100 || !Array.isArray(group.registrationIds) || group.registrationIds.length > 100
+      || !group.contactIds.length && !group.registrationIds.length
+      || !(group.contactIds.length ? group.contactIds.includes(group.primaryContactId) : group.primaryContactId === null)
+      || !(group.registrationIds.length ? group.registrationIds.includes(group.primaryRegistrationId) : group.primaryRegistrationId === null)) fail();
+    for (const id of group.contactIds) {
+      if (typeof id !== 'string' || !ID.test(id) || groupByContact.has(id)) fail();
+      groupByContact.set(id, group);
+    }
+    for (const id of group.registrationIds) {
+      if (typeof id !== 'string' || !registrationById.has(id) || groupByRegistration.has(id)
+        || id !== group.primaryRegistrationId && admissions.get(id).status !== 'withdrawn') fail();
+      groupByRegistration.set(id, group);
+    }
+  }
   for (const entry of input.intent.conversions) {
     if (!plain(entry) || !ID.test(entry.sourceContactId ?? '') || !REGISTRATION.test(entry.registrationId ?? '') || conversions.has(entry.sourceContactId) || reverse.has(entry.registrationId)) fail();
     conversions.set(entry.sourceContactId, entry.registrationId); reverse.set(entry.registrationId, entry.sourceContactId);
@@ -89,28 +107,50 @@ export function volunteerSourceProjection(input) {
       brokenContacts.add(contactId); brokenRegistrations.add(registrationId);
     }
   }
+  const groupSeat = new Map(), statusRank = { confirmed: 0, waitlisted: 1, pending_review: 2, rejected: 3, withdrawn: 4 };
+  const rank = id => inactive.has(id) ? 4 : statusRank[admissions.get(id).status];
+  for (const group of groups) {
+    // A contact-only merge may later acquire a verified staff-assisted registration.
+    // Keep the established person linkage when resolving those new source IDs.
+    const derived = group.contactIds.map(id => conversions.get(id)).filter(id => id && !brokenRegistrations.has(id));
+    groupSeat.set(group, group.primaryRegistrationId ?? derived.toSorted((left, right) => rank(left) - rank(right) || left.localeCompare(right))[0] ?? null);
+  }
   const identities = Object.create(null), candidates = [];
-  const build = (kind, id, contact, registration) => {
+  const build = (kind, id, contact, registration, group) => {
     const contactId = contact?.id ?? null, registrationId = registration?.id ?? null;
-    const broken = brokenContacts.has(contactId ?? id) || brokenRegistrations.has(registrationId ?? id);
+    const broken = (kind === 'contact' && brokenContacts.has(id)) || (kind === 'registration' && brokenRegistrations.has(id))
+      || brokenContacts.has(contactId) || brokenRegistrations.has(registrationId);
     const admission = registrationId ? admissions.get(registrationId) : null;
-    const contactProfile = contact ? canonicalContact(contact) : null;
+    const registrationActive = admission && !inactive.has(registrationId) && !['withdrawn', 'rejected'].includes(admission.status);
+    const archived = Boolean(contact?.archivedAt);
+    const contactProfile = contact && !archived ? canonicalContact(contact) : null;
     const registrationProfile = registration ? canonicalRegistration(registration, inactive.has(registrationId), admission) : null;
-    const profile = contactProfile ?? registrationProfile;
-    const issues = [...new Set([...(contactProfile?.issues ?? []), ...(registrationProfile?.issues ?? []), ...(broken ? ['SOURCE_UNAVAILABLE'] : [])])];
-    const value = { canonicalId: broken ? null : registrationId ? 'r:' + registrationId : 'c:' + contactId, contactId, registrationId,
+    const profile = contactProfile ?? registrationProfile ?? { name: '已归档联系人', organization: '', email: '', wechat: '', phone: '' };
+    const issues = [...new Set([...(contactProfile?.issues ?? []), ...(registrationProfile?.issues ?? []),
+      ...(archived && !registrationActive ? ['SOURCE_INELIGIBLE'] : []), ...(broken ? ['SOURCE_UNAVAILABLE'] : [])])];
+    const value = { canonicalId: broken ? null : registrationId ? 'r:' + registrationId : 'c:' + (group?.primaryContactId ?? contactId),
+      contactId, registrationId,
       name: profile.name, organization: profile.organization, email: profile.email, wechat: profile.wechat, phone: profile.phone,
       eligible: !issues.length, admissionStatus: registrationId ? inactive.has(registrationId) ? 'withdrawn' : admission.status : 'unlinked', issues };
     identities[kind + ':' + id] = value;
-    candidates.push({ source: { kind, id }, ...value });
+    if (kind !== 'contact' || !archived) candidates.push({ source: { kind, id }, ...value });
   };
   for (const contact of contacts) {
-    const relatedId = conversions.get(contact.id), related = relatedId && !brokenContacts.has(contact.id) ? registrationById.get(relatedId) : null;
-    build('contact', contact.id, contact, related);
+    const converted = conversions.get(contact.id);
+    const group = groupByContact.get(contact.id) ?? groupByRegistration.get(converted);
+    const relatedId = groupSeat.get(group) ?? converted;
+    const related = relatedId && !brokenContacts.has(contact.id) ? registrationById.get(relatedId) : null;
+    build('contact', contact.id, contact, related, group);
   }
   for (const registration of registrations) {
-    const relatedId = reverse.get(registration.id), related = relatedId && !brokenRegistrations.has(registration.id) ? contactById.get(relatedId) : null;
-    build('registration', registration.id, related, registration);
+    const group = groupByRegistration.get(registration.id) ?? groupByContact.get(reverse.get(registration.id));
+    const primaryId = groupSeat.get(group) ?? registration.id;
+    const relatedId = reverse.get(primaryId) ?? group?.primaryContactId;
+    let related = relatedId && !brokenRegistrations.has(registration.id) ? contactById.get(relatedId) : null;
+    if (group && (!related || related.archivedAt)) {
+      related = group.contactIds.map(id => contactById.get(id)).find(contact => contact && !contact.archivedAt) ?? related;
+    }
+    build('registration', registration.id, related, registrationById.get(primaryId), group);
   }
   return { identities, candidates, event, content: { sessions, booths }, revisions: { contacts: input.contacts.revision, registrations: input.registrations.revision,
     admissions: input.admissions.revision, intent: input.intent.revision, content: input.content.revision } };
@@ -161,12 +201,14 @@ export function createVolunteerService({ repository, getSources, clock = Date.no
       if (typeof query !== 'string' || !query.isWellFormed() || [...query].length > 200 || /[\u0000-\u001f\u007f]/u.test(query) || !['', 'contact', 'registration'].includes(kind)
         || typeof id !== 'string' || id && (!kind || query || !(kind === 'contact' ? ID : REGISTRATION).test(id))
         || !Number.isSafeInteger(cursor) || cursor < 0 || !Number.isInteger(limit) || limit < 1 || limit > 200) fail('INVALID_REQUEST');
-      const loaded = await source(staff), term = query.trim().toLocaleLowerCase('zh-CN'), seen = new Set();
-      const candidates = loaded.candidates.filter(row => {
-        if (kind && row.source.kind !== kind || id && row.source.id !== id || term && ![row.name, row.organization, row.source.id].some(value => value.toLocaleLowerCase('zh-CN').includes(term))) return false;
-        if (!kind && row.canonicalId) { if (seen.has(row.canonicalId)) return false; seen.add(row.canonicalId); }
-        return true;
-      });
+      const loaded = await source(staff), term = query.trim().toLocaleLowerCase('zh-CN'), matching = new Map();
+      for (const row of loaded.candidates) {
+        if (kind && row.source.kind !== kind || id && row.source.id !== id || term && ![row.name, row.organization, row.source.id].some(value => value.toLocaleLowerCase('zh-CN').includes(term))) continue;
+        const key = !kind && row.canonicalId ? row.canonicalId : row.source.kind + ':' + row.source.id;
+        const previous = matching.get(key);
+        if (!previous || row.eligible && !previous.eligible) matching.set(key, row);
+      }
+      const candidates = [...matching.values()];
       const selected = candidates.slice(cursor, cursor + limit);
       return { schemaVersion: 1, candidates: selected, total: candidates.length, nextCursor: cursor + selected.length < candidates.length ? String(cursor + selected.length) : null };
     },
@@ -177,10 +219,15 @@ export function createVolunteerService({ repository, getSources, clock = Date.no
         const [collection] = entityActions[input.action], previous = current[collection].find(row => row.id === entity.id), after = structuredClone(current);
         if (input.action === 'volunteer_upsert') {
           const identity = loaded.identities[entity.source.kind + ':' + entity.source.id];
-          if (!previous && !identity?.eligible || previous && entity.workflowStatus !== previous.workflowStatus && !['declined', 'inactive'].includes(entity.workflowStatus) && !identity?.eligible) fail('SOURCE_NOT_ELIGIBLE');
-          if (!previous && current.volunteers.some(row => {
+          const sourceSelectable = identity?.eligible && loaded.candidates.some(row => row.source.kind === entity.source.kind && row.source.id === entity.source.id);
+          const inactive = row => ['declined', 'inactive'].includes(row.workflowStatus);
+          if (!previous && !sourceSelectable || previous && entity.workflowStatus !== previous.workflowStatus && !inactive(entity) && !identity?.eligible) fail('SOURCE_NOT_ELIGIBLE');
+          const reactivating = previous && inactive(previous) && !inactive(entity);
+          if ((!previous || reactivating) && current.volunteers.some(row => {
+            if (row.id === entity.id || reactivating && inactive(row)) return false;
             const existing = loaded.identities[row.source.kind + ':' + row.source.id];
-            return row.source.kind === entity.source.kind && row.source.id === entity.source.id || identity?.canonicalId && existing?.canonicalId === identity.canonicalId;
+            return row.source.kind === entity.source.kind && row.source.id === entity.source.id
+              || identity.canonicalId && existing?.eligible && existing.canonicalId === identity.canonicalId;
           })) fail('DUPLICATE_SOURCE');
         }
         const index = after[collection].findIndex(row => row.id === entity.id); if (index < 0) after[collection].push(entity); else after[collection][index] = entity;
@@ -198,18 +245,26 @@ export function createVolunteerService({ repository, getSources, clock = Date.no
       const staff = actorValue(actor);
       if (!revision(expectedRevision) || !OPERATION.test(operationId ?? '') || !Array.isArray(volunteerIds) || !volunteerIds.length || volunteerIds.length > 500
         || volunteerIds.some(id => !ID.test(id)) || new Set(volunteerIds).size !== volunteerIds.length || typeof includeContact !== 'boolean') fail('INVALID_REQUEST');
-      const loaded = await readFor(staff), ids = [...volunteerIds].sort(), existingAudit = loaded.state.audit.find(entry => entry.operationId === operationId);
-      if (existingAudit && (existingAudit.action !== 'export' || existingAudit.actorId !== staff.id)) fail('CONFLICT');
-      if (loaded.state.revision !== expectedRevision && !(existingAudit && loaded.state.revision === expectedRevision + 1)) fail('CONFLICT');
+      const loaded = await readFor(staff), ids = [...volunteerIds].sort();
+      const command = { actorId: staff.id, expectedRevision, operationId, action: 'export', payload: { volunteerIds: ids, includeContact } };
+      let receipt = await repositoryCall(() => findVolunteerOperation(loaded.state, command));
+      if (!receipt && loaded.state.revision !== expectedRevision) fail('CONFLICT');
       if (ids.some(id => !loaded.state.volunteers.some(row => row.id === id))) fail('INVALID_REQUEST');
       const view = { ...loaded.view, revision: expectedRevision, revisions: { ...loaded.view.revisions, volunteers: expectedRevision } };
       const workbook = volunteerWorkbook({ view, volunteerIds: ids, includeContact }), sha256 = createHash('sha256').update(workbook).digest('hex');
-      if (existingAudit?.details?.sha256 && existingAudit.details.sha256 !== sha256) fail('CONFLICT');
-      const result = await repositoryCall(() => repository.mutate({ actorId: staff.id, expectedRevision, operationId, action: 'export', payload: { volunteerIds: ids, includeContact },
-        details: { volunteerIds: ids, includeContact, sha256 } }, state => state));
-      const receipt = result.state.audit.find(row => row.operationId === operationId);
-      if (!receipt || receipt.action !== 'export' || receipt.actorId !== staff.id || receipt.details?.sha256 !== sha256) fail();
-      return { workbook, revision: receipt.revision, count: ids.length, sha256, outcome: result.outcome };
+      let outcome = 'replayed';
+      if (!receipt) {
+        const result = await repositoryCall(() => repository.mutate({ ...command, details: { volunteerIds: ids, includeContact, sha256 } }, state => state));
+        receipt = result.state.audit.find(row => row.operationId === operationId);
+        outcome = result.outcome;
+      }
+      if (!receipt || receipt.action !== 'export' || receipt.actorId !== staff.id || receipt.revision !== expectedRevision + 1 || !receipt.details) fail();
+      if (receipt.details.sha256 !== sha256) {
+        const error = volunteerFailure('EXPORT_STALE');
+        error.operation = { operationId: receipt.operationId, revision: receipt.revision };
+        throw error;
+      }
+      return { workbook, revision: receipt.revision, count: ids.length, sha256, outcome };
     },
     async readPerson({ actor, contactId = null, registrationId = null } = {}) {
       const staff = actorValue(actor);

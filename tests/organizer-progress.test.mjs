@@ -142,6 +142,39 @@ test('replies remain authoritative and arrangements are needed only for confirme
   source.content.sessions[0].status = 'scheduled';assert.equal(buildOrganizerTasks(source).tasks.some(task => task.kind === 'unassigned'), false);
 });
 
+test('approved program links satisfy staffing while old drafts and pending booths stay in planning', () => {
+  const draftSpeaker = contact('draft-speaker', { operations: { responseStatus: 'attending', participationForms: ['speaker'], sessionIds: ['draft-session'] } });
+  const primarySpeaker = contact('primary-speaker', { operations: { responseStatus: 'attending', participationForms: ['speaker'] } });
+  const panelist = contact('panelist', { operations: { responseStatus: 'attending', participationForms: ['panelist'] } });
+  const exhibitor = contact('exhibitor', { operations: { responseStatus: 'attending', participationForms: ['booth'], boothIds: ['pending-booth'] } });
+  const guests = [{ id: 'primary-guest', contactId: primarySpeaker.id }, { id: 'panel-guest', contactId: panelist.id }];
+  const content = { guests, booths: [{ id: 'pending-booth', status: 'pending' }], sessions: [
+    { id: 'draft-session', status: 'draft' },
+    { id: 'live-session', status: 'scheduled', guestId: 'primary-guest', participants: [{ guestId: 'panel-guest' }] },
+  ] };
+  const source = { ...options, content, contacts: [draftSpeaker, primarySpeaker, panelist, exhibitor] };
+  assert.deepEqual(buildOrganizerTasks(source).tasks.filter(task => task.kind === 'unassigned').map(task => task.contactId).sort(), ['draft-speaker', 'exhibitor']);
+  assert.equal(contactProgress(draftSpeaker, source).assigned, false);
+  assert.equal(contactProgress(primarySpeaker, source).hasActiveSession, true);
+  assert.equal(contactProgress(panelist, source).hasActiveSession, true);
+  assert.equal(contactProgress(exhibitor, source).hasActiveBooth, false);
+  content.booths[0].status = 'confirmed';
+  assert.equal(contactProgress(exhibitor, source).hasActiveBooth, true);
+});
+
+test('archived contacts leave active contact totals, filters and pending work without cancelling registration', () => {
+  const archived = { ...contact('archived', { operations: { owner: '历史负责人', followUpAt: '2026-10-21' } }), archivedAt: '2026-10-22T01:00:00.000Z' };
+  const active = contact('active');
+  const intent = intentFor(archived, [invitation(archived.id, 'unknown')]);
+  const source = { ...options, contacts: [archived, active], intent };
+  const result = buildOrganizerTasks(source);
+  assert.equal(result.metrics.total, 1);
+  assert.equal(result.metrics.unknown, 0);
+  assert.ok(result.tasks.every(task => task.contactId !== archived.id));
+  assert.deepEqual(result.owners, ['合成同事']);
+  assert.equal(contactProgress(archived, source).admissionStatus, 'confirmed');
+});
+
 test('only real booth records create missing-detail tasks without exposing private contact methods', () => {
   const result = buildOrganizerTasks({ ...options, contacts: [], content: { sessions: [], booths: [{ id: 'synthetic-booth', code: 'C01', slotNumber: 1, status: 'pending', organization: '合成机构', project: '合成项目', contactName: '合成负责人', contactMethods: 'private-synthetic-method' }] } });
   assert.equal(result.tasks.length, 1);assert.equal(result.tasks[0].kind, 'missing_booth_details');

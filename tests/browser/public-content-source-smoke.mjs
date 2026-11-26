@@ -8,6 +8,8 @@ import {createInitialContent} from '../../src/config/content.mjs';
 import {toPublicContent} from '../../shared/content-schema.mjs';
 const {chromium}=await import(process.env.ARTDICO_PLAYWRIGHT_MODULE||'playwright-core');
 const root=resolve(fileURLToPath(new URL('../../',import.meta.url))),SITE='https://public.synthetic.invalid';
+const emblaPath='/synthetic-dependencies/embla-carousel.mjs';
+const emblaModule=await readFile(new URL(import.meta.resolve('embla-carousel')),'utf8');
 const artworkModules=new Set(['gamezone','igda','szdx','bu','pengyou','g4c','teesside'].map(key=>'/src/assets/home/organization-'+key+'.png'));
 const coverId='a'.repeat(64)+'.png';
 const value=createInitialContent();value.sessions=[];
@@ -24,14 +26,15 @@ const html=`<!doctype html><meta charset="utf-8"><meta name="artdico-content-api
 <p data-public-content-status>初始日程</p><section data-agenda><div data-agenda-summary></div><details data-full-program><div data-agenda-panel="A"><div class="ah-agenda-list"></div></div></details></section>
 <ul data-public-guests></ul><p data-public-guests-empty hidden>嘉宾陆续公布</p>
 <section id="booths"><ul data-public-organizations></ul><p data-public-organizations-empty></p></section>
-<section id="students" hidden><div data-public-works-controls hidden><select data-public-works-filter><option value="all">全部</option><option value="student">学生作品</option><option value="indie">独立游戏</option></select><span data-public-works-count role="status"></span></div><ul data-public-showcases></ul><p data-public-works-filter-empty hidden role="status">此分类暂无作品</p></section>
-<a href="#work-synthetic-student" data-synthetic-work-link>合成作品深链接</a><script type="module" src="/src/scripts/public-content.mjs"></script>`;
+<section id="students" hidden><div data-public-works-controls hidden><select data-public-works-filter><option value="all">全部</option><option value="student">学生作品</option><option value="indie">独立游戏</option></select></div><div class="ah-work-stage"><ul data-public-showcases></ul></div></section>
+<a href="#work-synthetic-student" data-synthetic-work-link>合成作品深链接</a><script type="importmap">${JSON.stringify({imports:{'embla-carousel':emblaPath}})}</script><script type="module" src="/src/scripts/public-content.mjs"></script>`;
 const browser=await chromium.launch({executablePath:process.env.ARTDICO_CHROMIUM_BINARY||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
 const context=await browser.newContext(),page=await context.newPage(),errors=[],reads=[];let mode='initial';
 page.on('pageerror',error=>errors.push(error.message));page.setDefaultTimeout(5000);
 await context.route('**/*',async route=>{
   const url=new URL(route.request().url());assert.equal(url.origin,SITE);
   if(artworkModules.has(url.pathname)&&url.search==='?url')return route.fulfill({contentType:'text/javascript',body:'export default '+JSON.stringify(url.pathname)+';'});
+  if(url.pathname===emblaPath)return route.fulfill({contentType:'text/javascript',body:emblaModule});
   if(url.pathname==='/')return route.fulfill({contentType:'text/html; charset=utf-8',body:html});
   if(url.pathname==='/api/public/content'){
     reads.push(mode);assert.equal(route.request().method(),'GET');assert.equal(route.request().headers().cookie,undefined);
@@ -45,24 +48,34 @@ await context.route('**/*',async route=>{
   assert.match(url.pathname,/^\/(?:src|shared)\/.+\.mjs$/u,'only public content, canonical artwork, or source module reads');
   const file=resolve(root,'.'+url.pathname);assert.ok(file.startsWith(root+'/'));return route.fulfill({contentType:'text/javascript',body:await readFile(file,'utf8')});
 });
-async function refresh(next){const count=reads.length;mode=next;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForFunction(()=>document.querySelector('[data-public-content-status]')?.textContent!=='');for(let index=0;index<150&&reads.length===count;index++)await page.waitForTimeout(10);assert.equal(reads.length,count+1);}
+async function refresh(next){
+  const count=reads.length;mode=next;
+  const response=page.waitForResponse(reply=>reply.url()===SITE+'/api/public/content');
+  await page.evaluate(()=>{
+    document.querySelector('[data-public-content-status]').replaceChildren();
+    window.dispatchEvent(new Event('focus'));
+  });
+  await response;
+  assert.equal(reads.length,count+1);
+}
 try{
   await page.goto(SITE);await page.locator('[data-showcase-id=synthetic-student]').waitFor();
   assert.equal(await page.locator('[data-showcase-id]').count(),3);assert.equal(await page.locator('[data-guest-id=synthetic-guest] img').count(),0);
-  assert.equal(await page.locator('[data-guest-id=synthetic-guest] .ah-guest-initial').textContent(),'合');
-  assert.equal(await page.locator('[data-public-works-controls]').isVisible(),true);assert.equal(await page.locator('[data-public-works-count]').textContent(),'1 / 3 件作品');
+  const guest=page.locator('[data-guest-id=synthetic-guest] [data-guest-toggle]');
+  assert.equal(await guest.locator('.ah-guest-name').textContent(),'合成无照片嘉宾');assert.equal(await guest.getAttribute('aria-disabled'),'true');
+  assert.equal(await page.locator('[data-public-works-controls]').isVisible(),true);assert.equal(await page.locator('#work-synthetic-student').getAttribute('aria-current'),'true');
   assert.equal(await page.locator('#work-synthetic-student .ah-showcase-category').textContent(),'学生作品');
   assert.equal(await page.locator('#work-synthetic-indie .ah-showcase-organization').getAttribute('href'),'#organization-synthetic-org');
   assert.equal(await page.locator('#organization-synthetic-org').textContent(),'合成创作者组织','organization cards contain the public name without booth or work details');
   assert.equal(await page.locator('#organization-synthetic-org .ah-showcase-related').count(),0);
   assert.equal(await page.locator('[data-public-booths],[data-booth-id],[data-booth-dialog],#exhibition-details,a[href^="#booth-"]').count(),0,'backend booth records never create public booth UI or work-to-booth links');
-  await page.locator('[data-public-works-filter]').selectOption('indie');assert.equal(await page.locator('[data-showcase-id]:visible').count(),1);assert.equal(await page.locator('[data-public-works-count]').textContent(),'1 / 1 件作品');
+  await page.locator('[data-public-works-filter]').selectOption('indie');assert.equal(await page.locator('[data-showcase-id]:visible').count(),1);assert.equal(await page.locator('#work-synthetic-indie').getAttribute('aria-current'),'true');
   assert.equal(await page.locator('#work-synthetic-indie .ah-showcase-arrangement').count(),0,'booth-only assignment is not shown as a public arrangement');
   await page.locator('#work-synthetic-indie .ah-showcase-organization').click();assert.equal(new URL(page.url()).hash,'#organization-synthetic-org');
   await page.locator('[data-synthetic-work-link]').click();await page.waitForFunction(()=>document.querySelector('[data-public-works-filter]').value==='all');assert.equal(await page.locator('[data-public-works-filter]').inputValue(),'all');assert.equal(await page.locator('#work-synthetic-student').isVisible(),true,'an independent native work deep link still reveals filtered content');
   assert.doesNotMatch(await page.locator('body').textContent(),/PRIVATE_|private\.invalid|private@example/u);
   await refresh('updated');await page.locator('#work-synthetic-indie h3').filter({hasText:'合成更新独立游戏'}).waitFor();assert.equal(await page.locator('[data-showcase-id]').count(),1);assert.equal(await page.locator('[data-guest-id]').count(),0);
-  await page.locator('[data-public-works-filter]').selectOption('student');assert.equal(await page.locator('[data-public-works-filter-empty]').isVisible(),true);assert.equal(await page.locator('[data-showcase-id]:visible').count(),0);
+  await page.locator('[data-public-works-filter]').selectOption('student');assert.equal(await page.locator('[data-showcase-id]:visible').count(),0);assert.equal(await page.locator('[data-public-showcases]').getAttribute('data-current-work'),'');
   for(const mode of ['failure','missing','conflict']){await refresh(mode);await page.locator('[data-public-content-status]').filter({hasText:'仍显示上次核对的发布版本'}).waitFor();assert.equal(await page.locator('#work-synthetic-indie h3').textContent(),'合成更新独立游戏');}
   await refresh('empty');await page.waitForFunction(()=>document.querySelector('#students')?.hidden===true);assert.equal(await page.locator('#students').isVisible(),false);assert.equal(await page.locator('[data-public-showcases-empty]').isVisible(),false);assert.equal(await page.locator('[data-showcase-id],[data-guest-id],[data-organization-id],[data-booth-id]').count(),0);
   assert.equal(await page.locator('[data-public-works-filter-empty]').isVisible(),false);assert.equal(await page.locator('[data-public-showcases-concept]').isVisible(),false);

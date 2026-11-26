@@ -26,12 +26,13 @@ function validRecord(value) {
 
 /** No credentials or personal data are returned by readiness. All callback dependencies are server supplied. */
 export function createAppleWalletService({ env = {}, loadSigningBundle, authorize, authorizedRegistration, tokenSecret, clock = () => Date.now(),
-  trustedRootFingerprints = APPLE_ROOT_FINGERPRINTS, eventFactsReadiness, admissionUrlProvider } = {}) {
+  trustedRootFingerprints = APPLE_ROOT_FINGERPRINTS, eventFactsReadiness, admissionUrlProvider, externalRegistrationOnly = false } = {}) {
   if (typeof authorize !== 'function' || typeof authorizedRegistration !== 'function' || typeof clock !== 'function'
     || typeof tokenSecret !== 'string' || Buffer.byteLength(tokenSecret) < 32 || Buffer.byteLength(tokenSecret) > 4096
     || loadSigningBundle !== undefined && typeof loadSigningBundle !== 'function'
     || eventFactsReadiness !== undefined && typeof eventFactsReadiness !== 'function'
-    || admissionUrlProvider !== undefined && typeof admissionUrlProvider !== 'function') throw new TypeError('Trusted Wallet receipt and signing dependencies required.');
+    || admissionUrlProvider !== undefined && typeof admissionUrlProvider !== 'function'
+    || typeof externalRegistrationOnly !== 'boolean') throw new TypeError('Trusted Wallet receipt and signing dependencies required.');
   const enabled = own(env, 'APPLE_WALLET_ENABLED') === 'true', bundleId = own(env, 'APPLE_WALLET_BUNDLE_ID');
   const direct = Object.fromEntries([...WALLET_CONFIG_FIELDS, 'APPLE_WALLET_KEY_PASSPHRASE'].map(name => [name, own(env, name)]));
   const tokenKey = Buffer.from(hkdfSync('sha256', Buffer.from(tokenSecret), Buffer.alloc(0), Buffer.from('artdico/apple-wallet-verification-v1'), 32));
@@ -100,7 +101,8 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
       try {
         const attendee = await authorize({ receiptToken });
         if (!validRecord(attendee)) return fixed('invalid');
-        if (attendee.admissionStatus !== 'confirmed' || attendee.walletRequested&&!WALLET_IDENTITIES.some(role=>role.value===attendee.walletIdentity)) return fixed('inactive');
+        if (attendee.admissionStatus !== 'confirmed' || externalRegistrationOnly && attendee.walletRequested !== true
+          || attendee.walletRequested && !WALLET_IDENTITIES.some(role => role.value === attendee.walletIdentity)) return fixed('inactive');
         const checkedFacts = await readEventFactsReadiness(eventFactsReadiness);
         if (!checkedFacts.ready) return fixed('event_unverified');
         if (!enabled) return fixed('not_ready');
@@ -115,7 +117,7 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
           } else verificationUrl = API + '/api/admin/registration/wallet/verify/' + verificationToken(attendee, now);
         }
         const data = buildAppleWalletPass({ ...config, attendee, verificationUrl, now });
-        const latest = await authorizedRegistration(attendee.registrationId, { includeCardCommunity: Boolean(attendee.cardCommunity) });
+        const latest = await authorizedRegistration(attendee.registrationId, { includeCardCommunity: commemorative });
         if (!validRecord(latest) || latest.registrationId !== attendee.registrationId || latest.event.id !== attendee.event.id
           || latest.admissionStatus !== 'confirmed' || latest.walletIdentity!==attendee.walletIdentity || accessRevision(latest) !== accessRevision(attendee)
           || attendee.cardCommunity && (attendee.cardCommunity.site !== latest.cardCommunity?.site || attendee.cardCommunity.role !== latest.cardCommunity?.role)
@@ -127,6 +129,7 @@ export function createAppleWalletService({ env = {}, loadSigningBundle, authoriz
       } catch (error) { return fixed(error instanceof WalletSigningError ? 'not_ready' : 'unavailable'); }
     },
     async verify({ token } = {}) {
+      if (externalRegistrationOnly) return { valid: false };
       try {
         const now = current(), claims = verifyClaims(token, now);
         if (!claims) return { valid: false };

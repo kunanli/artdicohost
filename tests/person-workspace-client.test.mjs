@@ -96,10 +96,12 @@ test('ordinary attendees need no speaker session or booth; selected duties requi
   value.contact.operations.participationForms = ['speaker']; assert.equal(steps(value).get('arrangements').state, 'pending');
   value.arrangements.sessions = fixture().arrangements.sessions; assert.equal(steps(value).get('arrangements').state, 'complete');
   value.arrangements.sessions[0].roles = ['attendee']; assert.equal(steps(value).get('arrangements').state, 'pending');
+  value.arrangements.sessions[0].programRoles = ['speaker']; assert.equal(steps(value).get('arrangements').state, 'complete');
   value.arrangements.sessions[0].roles = ['speaker']; value.arrangements.sessions[0].status = 'draft'; assert.equal(steps(value).get('arrangements').state, 'pending');
   value.arrangements.sessions[0].status = 'cancelled'; assert.equal(steps(value).get('arrangements').state, 'review');
   value.contact.operations.participationForms = ['booth']; value.arrangements = { sessions: [], booths: [] }; assert.equal(steps(value).get('arrangements').state, 'pending');
   value.arrangements.booths = fixture().arrangements.booths; assert.equal(steps(value).get('arrangements').state, 'complete');
+  value.arrangements.booths[0].status = 'pending'; assert.equal(steps(value).get('arrangements').state, 'pending');
 });
 
 test('restricted or unavailable sources produce no completed steps from missing facts', () => {

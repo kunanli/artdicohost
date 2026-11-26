@@ -1,5 +1,6 @@
 import {createOperationsFormDraft,createOperationsSaveState,operationsFieldErrors,operationsDraftStore,captureDraftFields,applyDraftFields,removeOperationsDraft} from '../lib/operations-form-draft.mjs';
-import { canManageVolunteers, volunteerWorkspaceView, volunteerSourceView, filterVolunteerRows, parseVolunteerSelection, sourceToken, parseSourceToken, personWorkspacePath, operationBody, operationReceipt, workflowLabels, admissionLabels, assignmentLabels, issueLabel } from '../lib/volunteer-workspace.mjs';
+import { canManageVolunteers, volunteerWorkspaceView, volunteerSourceView, filterVolunteerRows, parseVolunteerSelection, sourceToken, parseSourceToken, personWorkspacePath, operationBody, operationReceipt, isStaleExportReceipt, workflowLabels, admissionLabels, assignmentLabels, issueLabel } from '../lib/volunteer-workspace.mjs';
+import { arrangementStatusLabel, isActiveSession, isActiveBooth } from '../../shared/organizer-progress.mjs';
 
 const $ = suffix => document.querySelector('[data-volunteer-' + suffix + ']');
 const kinds = ['person', 'position', 'shift', 'assignment'];
@@ -15,7 +16,7 @@ function openDraft(kind,record){
   drafts.get(kind)?.close();const generation=epoch,form=dialogs[kind].form,entity=kind+':'+(record?.id||'new'),names=draftNames[kind];dialogs[kind].draftEntity=entity;
   const draft=createOperationsFormDraft({actorId:user.id,roles:user.roles,page:'volunteers',entity,form,baseRevision:()=>dialogs[kind].revision,isCurrent:()=>generation===epoch&&Boolean(user)&&dialogs[kind].element.open,capture:()=>({...captureDraftFields(form,names),...(kind==='person'?{availabilityJson:JSON.stringify([...$('availability').children].map(row=>({start:row.querySelector('[name=start]').value,end:row.querySelector('[name=end]').value})))}:{})}),
     apply:fields=>{const{availabilityJson,...values}=fields;applyDraftFields(form,values,names);if(availabilityJson){const windows=JSON.parse(availabilityJson);if(!Array.isArray(windows)||windows.length>12||windows.some(value=>typeof value.start!=='string'||typeof value.end!=='string'||!/^([0-2][0-9]):[0-5][0-9]$/u.test(value.start)||!/^([0-2][0-9]):[0-5][0-9]$/u.test(value.end)))throw new Error('可服务时段无法核对。');$('availability').replaceChildren();for(const window of windows)availabilityRow(window);}dirty(kind);},
-    onChange:event=>{if(event.error?.code==='STALE_ACTOR'){clearPrivate();return;}if(event.status==='discarded'&&pending?.kind===kind)pending=null;lock();}});
+    onChange:event=>{if(event.error?.code==='STALE_ACTOR'){clearPrivate();return;}lock();}});
   drafts.set(kind,draft);void draft.load().then(async snapshot=>{if(generation!==epoch||!dialogs[kind].element.open||kind!=='person'||record)return;const source=parseSourceToken(snapshot?.record?.value?.fields?.source);if(source)await loadSources({exact:source});}).catch(()=>{});
 }
 const controllers = new Set();
@@ -90,6 +91,8 @@ async function request(path, { method = 'GET', body, generation = epoch, binary 
       if([401,403].includes(response.status)){response.body?.cancel().catch(()=>{});clearPrivate();announce(error.message,true);throw error;}
       if([400,409,413,415,422,429].includes(response.status)&&/^application\/json(?:\s*;|$)/iu.test(response.headers.get('content-type')??'')){
         try{const result=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(await bytes(response,controller,128*1024))),fields=result.error?.fields;
+          error.code = result.error?.code;
+          error.operation = result.error?.operation;
           if(fields&&typeof fields==='object'&&!Array.isArray(fields)&&Object.keys(fields).length<=80&&Object.values(fields).every(value=>typeof value==='string'&&value.length<=1000))error.fields=fields;
         }catch{}
       }else response.body?.cancel().catch(()=>{});
@@ -157,10 +160,10 @@ async function load() {
   finally { if (generation === epoch && sequence === readSequence) { reading = false; lock(); } }
 }
 function option(select, value, label, { disabled = false } = {}) { const element = node('option', label); element.value = value; element.disabled = disabled; select.append(element); }
-function setOptions(select, items, current, emptyLabel) { select.replaceChildren(); if (emptyLabel) option(select, '', emptyLabel); for (const item of items) option(select, item.value, item.label); if (current && !items.some(item => item.value === current)) option(select, current, '历史关联待核对'); select.value = current || ''; }
+function setOptions(select, items, current, emptyLabel) { select.replaceChildren(); if (emptyLabel) option(select, '', emptyLabel); for (const item of items) option(select, item.value, item.label, { disabled: item.disabled && item.value !== current }); if (current && !items.some(item => item.value === current)) option(select, current, '历史关联待核对'); select.value = current || ''; }
 function renderSources(selected = '') {
   const select = dialogs.person.form.elements.source; select.replaceChildren(); option(select, '', '请选择一位已保存人员');
-  for (const item of sources) { const existing = view?.volunteers.find(row => row.person.canonicalId && row.person.canonicalId === item.canonicalId || sourceToken(row.source) === sourceToken(item.source)); const token = sourceToken(item.source); option(select, token, item.name + (item.organization ? ' · ' + item.organization : '') + (existing ? '（已有志愿者记录）' : !item.eligible ? '（来源状态需核对）' : ''), { disabled: !item.eligible || Boolean(existing) }); }
+  for (const item of sources) { const existing = view?.volunteers.find(row => row.person.eligible && row.person.canonicalId && row.person.canonicalId === item.canonicalId || sourceToken(row.source) === sourceToken(item.source)); const token = sourceToken(item.source); option(select, token, item.name + (item.organization ? ' · ' + item.organization : '') + (existing ? '（已有志愿者记录）' : !item.eligible ? '（来源状态需核对）' : ''), { disabled: !item.eligible || Boolean(existing) }); }
   if (selected && !sources.some(item => sourceToken(item.source) === selected)) option(select, selected, '已保存的关联人员'); select.value = selected; $('source-next').hidden = nextCursor === null; lock();
 }
 async function loadSources({ append = false, exact = null } = {}) {
@@ -182,22 +185,34 @@ async function close(kind) { const generation=epoch,state = dialogs[kind]; if (p
 async function open(kind, record = null, preset = {}) {
   if (!allowed() || !view || pending || pendingDraft?.blocked || busy) return;
   const generation=epoch;for (const other of kinds) if (dialogs[other].element.open && !await close(other)) return;if(generation!==epoch||!allowed()||!view)return;
+  populateDialog(kind, record, preset);
+  dialogs[kind].element.showModal();
+  openDraft(kind, record);
+  lock();
+  if (kind === 'person' && !record) void loadSources();
+}
+function populateDialog(kind, record, preset = {}) {
   const state = dialogs[kind]; state.form.reset(); state.revision = view.revision; state.source = kind === 'person' && record ? record.source : null; state.links = kind === 'assignment' && record ? { volunteerId: record.volunteerId, shiftId: record.shiftId } : null; formError(kind); dirty(kind, false);
   const values = record || { id: '', ...preset }; for (const [name, value] of Object.entries(values)) if (state.form.elements[name] && typeof value !== 'object') state.form.elements[name].value = String(value);
   if (kind === 'person') {
     document.getElementById('volunteer-person-title').textContent = record ? '编辑志愿者协作与时间' : '从现有名单添加志愿者'; $('source-picker').hidden = Boolean(record); $('availability').replaceChildren(); for (const window of record?.availability || []) availabilityRow(window);
     sources = record ? [{ source: record.source, ...record.person }] : []; nextCursor = null; sourceQuery = ''; $('source-search').reset(); renderSources(record ? sourceToken(record.source) : ''); $('person-source').textContent = record ? record.person.name + ' · ' + admissionLabels[record.person.admissionStatus] : '先选择来源；保存后沿用同一份人员资料。';
   }
-  if (kind === 'shift') { setOptions(state.form.elements.positionId, view.positions.map(item => ({ value: item.id, label: item.name + (item.status === 'inactive' ? '（已停用）' : '') })), record?.positionId || preset.positionId || '', '请选择岗位'); setOptions(state.form.elements.sessionId, view.planning.sessions.map(item => ({ value: item.id, label: item.title + ' · ' + item.start + '–' + item.end + (item.status === 'cancelled' ? '（已取消）' : '') })), record?.sessionId || '', '不关联场次'); setOptions(state.form.elements.boothId, view.planning.booths.map(item => ({ value: item.id, label: item.code + ' · ' + (item.organization || '组织待定') })), record?.boothId || '', '不关联展位'); if (!record) state.form.elements.required.value = '1'; }
+  if (kind === 'shift') {
+    setOptions(state.form.elements.positionId, view.positions.map(item => ({ value: item.id, label: item.name + (item.status === 'inactive' ? '（已停用）' : '') })), record?.positionId || preset.positionId || '', '请选择岗位');
+    const choices = (items, isActive, description) => items.map(item => ({ value: item.id, disabled: !isActive(item),
+      label: description(item) + (isActive(item) ? '' : '（' + (arrangementStatusLabel(item.status) || '待核对') + '）') }));
+    setOptions(state.form.elements.sessionId, choices(view.planning.sessions, isActiveSession, item => item.title + ' · ' + item.start + '–' + item.end), record?.sessionId || '', '不关联场次');
+    setOptions(state.form.elements.boothId, choices(view.planning.booths, isActiveBooth, item => item.code + ' · ' + (item.organization || '组织待定')), record?.boothId || '', '不关联展位');
+    if (!record) state.form.elements.required.value = '1';
+  }
   if (kind === 'assignment') { setOptions(state.form.elements.volunteerId, view.volunteers.map(item => ({ value: item.id, label: item.person.name + ' · ' + workflowLabels[item.workflowStatus] + ' · ' + admissionLabels[item.person.admissionStatus] })), record?.volunteerId || preset.volunteerId || '', '请选择志愿者'); setOptions(state.form.elements.shiftId, view.shifts.map(item => ({ value: item.id, label: shiftLabel(item) })), record?.shiftId || preset.shiftId || '', '请选择班次'); }
-  state.element.showModal();openDraft(kind,record); lock();
-  if (kind === 'person' && !record) void loadSources();
 }
 function uuid(prefix) { if (!globalThis.crypto?.randomUUID) throw new Error('当前浏览器不能安全建立操作编号，请使用新版浏览器。'); return prefix + '_' + crypto.randomUUID().replaceAll('-', ''); }
 function payload(kind) {
   const form = dialogs[kind].form, value = name => String(form.elements[name].value).normalize('NFC').trim();
   const id = value('id') || uuid(kind === 'person' ? 'volunteer' : kind); form.elements.id.value = id;
-  if (kind === 'person') { const source = dialogs.person.source || parseSourceToken(value('source')); const candidate = sources.find(item => sourceToken(item.source) === value('source')); if (!source || !dialogs.person.source && (!candidate?.eligible || view.volunteers.some(row => row.person.canonicalId && row.person.canonicalId === candidate.canonicalId || sourceToken(row.source) === sourceToken(source)))) throw new Error('请选择尚未加入名单且许可已核对的现有人员。'); const availability = [...$('availability').children].map(row => ({ start: row.querySelector('[name="start"]').value, end: row.querySelector('[name="end"]').value })).sort((a, b) => a.start.localeCompare(b.start)); if (availability.some((window, index) => !window.start || !window.end || window.start >= window.end || index > 0 && availability[index - 1].end > window.start)) throw new Error('请填写有效且互不重叠的可服务时段。'); return { id, source, workflowStatus: value('workflowStatus'), owner: value('owner'), followUpAt: value('followUpAt'), lastContactAt: value('lastContactAt'), notes: value('notes'), availability }; }
+  if (kind === 'person') { const source = dialogs.person.source || parseSourceToken(value('source')); const candidate = sources.find(item => sourceToken(item.source) === value('source')); if (!source || !dialogs.person.source && (!candidate?.eligible || view.volunteers.some(row => row.person.eligible && row.person.canonicalId && row.person.canonicalId === candidate.canonicalId || sourceToken(row.source) === sourceToken(source)))) throw new Error('请选择尚未加入名单且许可已核对的现有人员。'); const availability = [...$('availability').children].map(row => ({ start: row.querySelector('[name="start"]').value, end: row.querySelector('[name="end"]').value })).sort((a, b) => a.start.localeCompare(b.start)); if (availability.some((window, index) => !window.start || !window.end || window.start >= window.end || index > 0 && availability[index - 1].end > window.start)) throw new Error('请填写有效且互不重叠的可服务时段。'); return { id, source, workflowStatus: value('workflowStatus'), owner: value('owner'), followUpAt: value('followUpAt'), lastContactAt: value('lastContactAt'), notes: value('notes'), availability }; }
   if (kind === 'position') return { id, name: value('name'), zone: value('zone'), location: value('location'), lead: value('lead'), description: value('description'), status: value('status') };
   if (kind === 'shift') { if (value('start') >= value('end')) throw new Error('结束时间须晚于同一天的开始时间。'); const required = Number(value('required')); if (!Number.isSafeInteger(required) || required < 1 || required > 300) throw new Error('每班需求须为 1 至 300 的整数。'); return { id, positionId: value('positionId'), start: value('start'), end: value('end'), required, sessionId: value('sessionId'), boothId: value('boothId'), status: value('status') }; }
   const volunteerId = dialogs.assignment.links?.volunteerId || value('volunteerId'), shiftId = dialogs.assignment.links?.shiftId || value('shiftId'); const existing = view.assignments.find(item => item.volunteerId === volunteerId && item.shiftId === shiftId && item.id !== id); if (existing) throw new Error('同一人已有这个班次的安排，请从班次列表调整原记录。'); return { id, volunteerId, shiftId, status: value('status') };
@@ -217,28 +232,59 @@ async function validateFile(result, body) {
 }
 async function confirmPending() {
   if (!pending || !allowed() || busy) return;
-  const current = pending, generation = epoch; busy = true; $('pending-message').textContent = '正在确认这次操作。原内容及操作编号保持不变。'; lock();
+  const current = pending, generation = epoch, pendingStore = pendingDraft;
+  busy = true; $('pending-message').textContent = '正在确认这次操作。原内容及操作编号保持不变。'; lock();
   if(current.kind){dialogs[current.kind].saveState.set('saving');formError(current.kind);}
   try {
     if (current.type === 'mutation') {
-      const result = await request('/api/admin/volunteers/operations', { method: 'POST', body: current.body, generation }); if (generation !== epoch || pending !== current) return;
-      const next = operationReceipt(result, current.body);if(drafts.has(current.kind)&&drafts.get(current.kind).snapshot?.revision===current.draftRevision)await drafts.get(current.kind).acknowledge();else if(current.draftEntity&&current.draftRevision!==null)await removeOperationsDraft({actorId:user.id,roles:user.roles,page:'volunteers',entity:current.draftEntity,expectedRevision:current.draftRevision,isCurrent:()=>generation===epoch});await pendingDraft.acknowledge();drafts.get(current.kind)?.close();drafts.delete(current.kind); pending = null; view = next;
-      const state=dialogs[current.kind],record=next[{person:'volunteers',position:'positions',shift:'shifts',assignment:'assignments'}[current.kind]].find(item=>item.id===current.body.payload.id);
-      state.form.elements.id.value=record.id;state.revision=next.revision;state.source=current.kind==='person'?record.source:null;state.links=current.kind==='assignment'?{volunteerId:record.volunteerId,shiftId:record.shiftId}:null;
-      if(current.kind==='person'){$('source-picker').hidden=true;document.getElementById('volunteer-person-title').textContent='编辑志愿者协作与时间';}
-      dirty(current.kind,false);formError(current.kind);openDraft(current.kind,record);state.saveState.set('saved','已保存到云端。');render();announce('已保存。');
+      const result = await request('/api/admin/volunteers/operations', { method: 'POST', body: current.body, generation });
+      if (generation !== epoch || pending !== current) return;
+      const next = operationReceipt(result, current.body);
+      const draft = drafts.get(current.kind);
+      if (draft && draft.snapshot?.revision === current.draftRevision) await draft.acknowledge();
+      else if (current.draftEntity && current.draftRevision !== null) {
+        await removeOperationsDraft({ actorId: user.id, roles: user.roles, page: 'volunteers', entity: current.draftEntity,
+          expectedRevision: current.draftRevision, isCurrent: () => generation === epoch });
+      }
+      await pendingStore.acknowledge();
+      if (generation !== epoch || pending !== current) return;
+      draft?.close();
+      drafts.delete(current.kind);
+      pending = null;
+      view = next;
+      const state = dialogs[current.kind];
+      const collection = { person: 'volunteers', position: 'positions', shift: 'shifts', assignment: 'assignments' }[current.kind];
+      const record = next[collection].find(item => item.id === current.body.payload.id);
+      populateDialog(current.kind, record);
+      if (state.element.open) openDraft(current.kind, record);
+      const laterRevision = result.operation.revision < next.revision;
+      const message = laterRevision ? '已确认原操作保存成功，现已显示最新资料。' : '已保存到云端。';
+      state.saveState.set('saved', message);
+      render();
+      announce(message);
     } else {
       const result = await request('/api/admin/volunteers/export.xlsx', { method: 'POST', body: current.body, generation, binary: true }); await validateFile(result, current.body); if (generation !== epoch || pending !== current) return;
       const url = URL.createObjectURL(new Blob([result.bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); downloads.add(url); const anchor = node('a'); anchor.href = url; anchor.download = 'artdico-volunteers.xlsx'; document.body.append(anchor); anchor.click(); anchor.remove(); setTimeout(() => { URL.revokeObjectURL(url); downloads.delete(url); }, 1000); pending = null; clearContent(); announce('已生成 Excel 并记录导出。文件下载由浏览器处理；请重新读取最新名单。');
     }
   } catch (error) {
     if (generation !== epoch || pending !== current) return;
-    const rejected = [400, 413, 415, 422, 429].includes(error.status); if (rejected&&!current.uncertain) {await pendingDraft.acknowledge();pending = null;}
-    if(error.status===409&&!current.uncertain){await pendingDraft.acknowledge();pending=null;clearContent();}
-    else if(pending===current)current.uncertain=true;
-    if(current.kind){formError(current.kind,error.message);dialogs[current.kind].saveState.set(pending===current?'unknown':error.status===409?'conflict':'error',error.message);operationsFieldErrors(dialogs[current.kind].form,error.fields);}
-    $('pending-message').textContent = pending===current ? error.message + ' 请点击「再次确认同一操作」。' : '';
-    announce(error.message, true);
+    const expiredExport = current.type === 'export' && isStaleExportReceipt(error, current.body);
+    const conflict = error.status === 409 && ['CONFLICT', 'DUPLICATE_SOURCE', 'CAPACITY_EXCEEDED'].includes(error.code);
+    const rejected = error.status === 422 && ['PLAN_CONFLICT', 'SOURCE_NOT_ELIGIBLE'].includes(error.code)
+      || !current.uncertain && [400, 413, 415, 422, 429].includes(error.status);
+    if (expiredExport || conflict || rejected) {
+      if (current.kind) await pendingStore.acknowledge();
+      if (generation !== epoch || pending !== current) return;
+      pending = null;
+      if (expiredExport || conflict) clearContent();
+    } else {
+      current.uncertain = true;
+      if (current.kind) await pendingStore.markUnknown().catch(() => {});
+    }
+    const message = expiredExport ? '原导出已记录，资料已更新，旧文件无法重新提供。请刷新名单后重新导出。' : error.message;
+    if(current.kind){formError(current.kind,message);dialogs[current.kind].saveState.set(pending===current?'unknown':conflict?'conflict':'error',message);operationsFieldErrors(dialogs[current.kind].form,error.fields);}
+    $('pending-message').textContent = pending===current ? message + ' 请点击「再次确认同一操作」。' : '';
+    announce(message, true);
   } finally { if (generation === epoch) { busy = false; lock(); } }
 }
 async function deepLink() {

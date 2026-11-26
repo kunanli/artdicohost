@@ -378,6 +378,7 @@ test('archived contacts retain immutable source and audit across restart, suppor
   assert.equal((await second.read()).contacts[0].archivedAt,AT);assert.equal(readContactSnapshot(JSON.stringify(journal.snapshot().value)).contacts[0].archivedAt,AT);
   await fails(()=>first.setArchived(id,1,true,'owner'),'REVISION_CONFLICT',409);
   await fails(()=>first.recordGenerated(id,2,settings,'owner'),'CONTACT_NOT_FOUND',404);
+  await fails(()=>first.saveOperations(id,2,archived.contact.operations,'owner'),'CONTACT_NOT_FOUND',404);
   const restored=await second.setArchived(id,2,false,'owner');assert.equal(Object.hasOwn(restored.contact,'archivedAt'),false);assert.equal((await make().read()).revision,3);
   const bad=journal.snapshot().value;bad.contacts[0].archivedAt=AT;journal.corrupt(bad);await fails(()=>make().read(),'CONTACT_STORAGE_ERROR',503);
 });

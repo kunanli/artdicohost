@@ -58,6 +58,11 @@ export function createStaffAdmissions({root,request,openRecord,onChange=async()=
   function personLabel(person){return (labels.get(person.registrationId)||'已登记人员')+' · '+person.registrationId;}
   function render(){
     if(!state||!allowed())return;
+    if (state.externalRegistrationOnly) {
+      root.closest('details').hidden = true;
+      onStateChange();
+      return;
+    }
     const rendered=generation;
     const summary=state.summary,metrics=$('[data-admissions-metrics]');metrics.replaceChildren();
     for(const[label,count]of[['已确认 / 总上限',summary.confirmedCount+' / '+summary.capacity],['一般参会已确认',summary.attendeeConfirmedCount],['工作人员已确认',summary.crewConfirmedCount],['一般剩余名额',summary.remainingPublic],['候补（未确认）',summary.waitlistCount],['工作人员预留',summary.staffReserve],['待审核（不占名额）',summary.pendingReviewCount??0],['审核不通过',summary.rejectedCount??0]]){const card=element('article');card.append(element('span',label),element('strong',String(count)));metrics.append(card);}
@@ -98,7 +103,7 @@ export function createStaffAdmissions({root,request,openRecord,onChange=async()=
     }
     lock();
   }
-  async function load(started){await flushForms();if(!current(started))return false;const sequence=++loadSequence;let result;try{result=await request('/api/admin/admissions');}catch(error){if(!current(started)||sequence!==loadSequence)return false;throw error;}if(!current(started)||sequence!==loadSequence)return false;const next=admissionAdminState(result);if(!next)throw new Error('名额统计未通过核对，请刷新后重试。');if(state&&next.revision<state.revision)return false;state=next;lastReadSequence=sequence;setupDrafts();render();return true;}
+  async function load(started){await flushForms();if(!current(started))return false;const sequence=++loadSequence;let result;try{result=await request('/api/admin/admissions');}catch(error){if(!current(started)||sequence!==loadSequence)return false;throw error;}if(!current(started)||sequence!==loadSequence)return false;const next=admissionAdminState(result);if(!next)throw new Error('名额统计未通过核对，请刷新后重试。');if(state&&next.revision<state.revision)return false;state={...next, externalRegistrationOnly:result.externalRegistrationOnly===true};lastReadSequence=sequence;if(!state.externalRegistrationOnly)setupDrafts();render();return true;}
   async function action(callback){if(busy||externalBusy||!allowed())return;busy=true;lock();const started=generation;try{return await callback(started);}catch(error){if(current(started))status(error.message||'名额操作尚未确认，请保留本页并再次确认。',true);}finally{if(current(started)){busy=false;lock();}}}
   function emailMessage(email){
     if(!email||!['not_configured','pending','completed','not_applicable'].includes(email.status)||!Number.isSafeInteger(email.attemptedCount)||!Number.isSafeInteger(email.pendingCount)||email.attemptedCount<0||email.pendingCount<0)return '通知结果请到发送记录核对。';
@@ -178,6 +183,7 @@ export function createStaffAdmissions({root,request,openRecord,onChange=async()=
   $('[data-admissions-staff-next]').addEventListener('click',()=>{if(!savedStaffId||busy||externalBusy||operations.pending)return;savedStaffId=null;const form=$('[data-admissions-staff]');form.reset();dirtyForms.delete('staff');formConflicts.delete('staff');formBases.set('staff',structuredClone(state));formViews.get('staff')?.set('idle','填写实际下一人的资料后保存。');lock();});
   return Object.freeze({
     get summary(){return allowed()&&state?{...state.summary}:null;},
+    get externalRegistrationOnly(){return state?.externalRegistrationOnly===true;},
     get pending(){return operations.pending||Boolean(pendingDraft?.blocked);},
     person(id){const person=state?.people.find(item=>item.registrationId===id);return allowed()&&person?{registrationId:person.registrationId,status:person.status,kind:person.kind}:null;},
     reviewApplication,
@@ -188,7 +194,7 @@ export function createStaffAdmissions({root,request,openRecord,onChange=async()=
       accountKey=key;user={id:account.id,roles:[...account.roles]};const started=generation;root.hidden=false;
       for(const record of registrations)if(typeof record.id==='string'&&typeof record.fields?.name==='string')labels.set(record.id,record.fields.name);
       const sequence=loadSequence+1;
-      try{await load(started);if(current(started))setupDrafts();}catch(error){if(current(started)&&sequence===loadSequence)status(error.message||'名额功能尚未就绪，请刷新核对。',true);}if(current(started))lock();
+      try{await load(started);if(current(started)&&!state?.externalRegistrationOnly)setupDrafts();}catch(error){if(current(started)&&sequence===loadSequence)status(error.message||'名额功能尚未就绪，请刷新核对。',true);}if(current(started))lock();
     },
     lock(value){externalBusy=value;lock();},
     clear,

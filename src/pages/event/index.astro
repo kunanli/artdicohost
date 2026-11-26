@@ -1,11 +1,13 @@
 ---
 import SiteLayout from '../../layouts/SiteLayout.astro';
+import LanguagePicker from '../../components/LanguagePicker.astro';
 import { agenda, appleMapsDirectionsUrl, eventConfig, PUBLIC_MEETUP_TITLE, PUBLIC_REGISTRATION_URL, zones } from '../../config/event.mjs';
 const [meetup, host] = PUBLIC_MEETUP_TITLE.split(' x ');
 ---
 <SiteLayout title={`活动详情｜${PUBLIC_MEETUP_TITLE}`} description={`${eventConfig.subtitle}。活动日程、场地导航及参展游戏。`} themeColor="#131217">
+  <div data-language-root>
   <header class="event-header">
-    <div class="event-width event-header-inner"><a href="/">ARTDiCO HOST</a><a href="/">活动首页 <span aria-hidden="true">↗</span></a></div>
+    <div class="event-width event-header-inner"><a href="/">ARTDiCO HOST</a><a href="/">活动首页 <span aria-hidden="true">↗</span></a><LanguagePicker /></div>
   </header>
   <main id="main-content" data-event-details>
     <section class="event-hero" aria-labelledby="event-title">
@@ -31,7 +33,7 @@ const [meetup, host] = PUBLIC_MEETUP_TITLE.split(' x ');
           <div><dt>场地</dt><dd data-event-venue>{eventConfig.venue.name}</dd><dd data-event-address>{eventConfig.venue.address}</dd></div>
         </dl>
         <div class="event-actions">
-          <a class="event-button" data-event-map href={appleMapsDirectionsUrl(eventConfig.venue.address)}>Apple 地图导航 <span aria-hidden="true">↗</span></a>
+          <a class="event-button" data-event-map href={appleMapsDirectionsUrl(eventConfig.venue.address)}><span data-event-map-label>Apple 地图导航</span> <span aria-hidden="true">↗</span></a>
           <a class="event-button event-button-outline" data-event-registration href={PUBLIC_REGISTRATION_URL}>活动行活动页 <span aria-hidden="true">↗</span></a>
         </div>
       </section>
@@ -58,17 +60,21 @@ const [meetup, host] = PUBLIC_MEETUP_TITLE.split(' x ');
       </section>
     </div>
   </main>
+  </div>
 </SiteLayout>
 
-<script>import '../../scripts/event-details.mjs';</script>
+<script>
+  import '../../scripts/language.mjs';
+  import '../../scripts/event-details.mjs';
+</script>
 
 <style>
   .event-width { width: min(940px, calc(100% - 36px)); margin-inline: auto; }
   .event-header, [data-event-details] { font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; color: #202437; background: #f7f7fa; line-height: 1.6; }
-  .event-header-inner { min-height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .event-header-inner { min-height: 60px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; }
   .event-header a { color: inherit; text-decoration: none; padding-block: 10px; }
-  .event-header a:first-child { font-weight: 800; }
-  .event-header a:last-child, .event-kicker, .event-note { font-size: .9rem; }
+  .event-header a:first-child { margin-inline-end: auto; font-weight: 800; }
+  .event-header a:nth-child(2), .event-kicker, .event-note { font-size: .9rem; }
   .event-hero { background: #131217; color: #fff; }
   .event-hero-inner { min-height: 214px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, .58fr); align-items: center; gap: clamp(16px, 4vw, 48px); padding-block: clamp(28px, 5vw, 54px); }
   .event-hero img { width: 100%; height: auto; max-width: 290px; justify-self: end; }

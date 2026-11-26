@@ -118,7 +118,7 @@ async function request(path,options={}){
   if(response.status===401){clear();throw new Error(path==='/api/admin/login'?'账号或密码未通过验证。':'会话已结束，请重新登录。');}
   if(response.status===403){clear();const error=new Error('此账号没有相应权限，请重新登录核对。');error.status=403;throw error;}
   if(!response.ok){
-    const messages={403:'此账号没有相应的报名读取、修改或导出权限。',409:'记录版本已改变，你的编辑仍保留在本页。请先核对并保留修改，再刷新最新记录。',422:'请检查核查字段、日期与状态是否完整有效。',429:'请求较多，请稍后重试。',503:'报名服务暂时不可用，请稍后重试。'};
+    const messages={403:'此账号没有相应的报名读取、修改或导出权限。',409:'记录版本已改变，你的编辑仍保留在本页。请先核对并保留修改，再刷新最新记录。',410:'正式报名与签到请在活动行办理。',422:'请检查核查字段、日期与状态是否完整有效。',429:'请求较多，请稍后重试。',503:'报名服务暂时不可用，请稍后重试。'};
     let message=messages[response.status]||'操作尚未完成，请稍后重试。';
     if(response.status===409&&path==='/api/admin/admissions/approve'){
       const detail=await response.json().catch(()=>null);
@@ -224,10 +224,11 @@ function renderAdmissionDecision(){
   const person=selected?staffAdmissions.person(selected.id):null;
   const inactive=reviewInactive(selected?.review),pendingWithdrawal=!inactive&&reviewPending?.review?.status==='withdrawn';
   $('[data-review-admission-status]').textContent=inactive?(selected.review.status==='withdrawn'?'报名已撤回':'已登记删除申请')+'；'+(reviewRelease?.status==='released'?'名额已释放。':'名额释放待核对。'):pendingWithdrawal?'撤回结果待核对，请核对原操作。':person?'当前状态：'+(admissionLabels[person.status]||'需刷新核对')+'。':'实际名额状态尚未核对，请先刷新名额。';
-  const pending=!inactive&&!pendingWithdrawal&&person?.status==='pending_review',confirmed=!inactive&&!pendingWithdrawal&&person?.status==='confirmed';
+  const external=staffAdmissions.externalRegistrationOnly;
+  const pending=!external&&!inactive&&!pendingWithdrawal&&person?.status==='pending_review',confirmed=!external&&!inactive&&!pendingWithdrawal&&person?.status==='confirmed';
   $('[data-review-approval-actions]').hidden=!pending;
-  $('[data-review-admission-help]').textContent=inactive?'私人参会页、群码和新票券已停用，原始资料与通知历史保留。':pendingWithdrawal?'撤回结果尚未确认，暂不提供私人参会页及新票券。':pending?'核准后按剩余名额确认或进入候补；取得名额后才处理正式通知。':confirmed?'名额已确认，无需再次审核。可取得下方参会凭证。':person?.status==='waitlisted'?'已核准候补，转正前暂不提供正式票券。':person?'当前状态不提供正式票券，原始资料与历史继续保留。':'请刷新名额后再操作。';
-  $('[data-review-release-result]').hidden=!inactive;
+  $('[data-review-admission-help]').textContent=external?'正式报名、名额和现场签到请在活动行核对。这里显示已保存的记录。':inactive?'私人参会页、群码和新票券已停用，原始资料与通知历史保留。':pendingWithdrawal?'撤回结果尚未确认，暂不提供私人参会页及新票券。':pending?'核准后按剩余名额确认或进入候补；取得名额后才处理正式通知。':confirmed?'名额已确认，无需再次审核。可取得下方参会凭证。':person?.status==='waitlisted'?'已核准候补，转正前暂不提供正式票券。':person?'当前状态不提供正式票券，原始资料与历史继续保留。':'请刷新名额后再操作。';
+  $('[data-review-release-result]').hidden=external||!inactive;
   $('[data-review-release-status]').textContent=inactive?releaseMessage():'';
   personConfirmation.select(confirmed?selected.id:null);personConfirmation.lock();
   $('[data-review-ticket]').hidden=!confirmed;

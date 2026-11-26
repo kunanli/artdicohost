@@ -9,6 +9,7 @@ import { verifyEntrySurfaces } from '../scripts/verify-entry-surfaces.mjs';
 const commit = 'a'.repeat(40), PRIVATE = 'PRIVATE-SYNTHETIC-RESPONSE';
 const SITE = 'https://artdico.host', API = 'https://api.artdico.host/api/admin/registration/entry-links/';
 const PUBLIC = SITE + '/r/', INVALID = API + 'invalid', PREFLIGHT = API + 'A'.repeat(22);
+const RETIRED = 'https://api.artdico.host/api/admin/checkin/' + 'A'.repeat(22);
 const ERROR = JSON.stringify({ error: { code: 'ENTRY_NOT_FOUND', message: '合成无效入口' } });
 async function fixture(t) {
   const root = await mkdtemp(resolve(tmpdir(), 'artdico-entry-surfaces-test-'));
@@ -25,6 +26,7 @@ async function fixture(t) {
     if (url === PUBLIC) return new Response(bytes, { headers: { 'content-type': 'text/html; charset=utf-8', 'content-length': String(bytes.length), 'cache-control': 'public,no-cache' } });
     if (url === INVALID) return new Response(ERROR, { status: 404, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'private,no-store' } });
     if (url === PREFLIGHT) return new Response(null, { status: 204, headers: { 'access-control-allow-origin': SITE, 'access-control-allow-methods': 'GET, HEAD, OPTIONS', 'access-control-max-age': '0', 'cache-control': 'private,no-store' } });
+    if (url === RETIRED) return Response.json({ error: { code: 'ENTRY_RETIRED', message: '活动行' } }, { status: 410, headers: { 'cache-control': 'private, no-store' } });
     throw new Error(PRIVATE);
   };
   return { directory, bytes, calls, fetchFn };
@@ -36,9 +38,9 @@ async function reject(promise) {
 test('exact directory route and canonical API probes use only fixed credential-free read requests', async t => {
   const f = await fixture(t), reports = [];
   const result = await verifyEntrySurfaces({ directory: f.directory, commit, fetchFn: f.fetchFn, report: value => reports.push(value) });
-  assert.deepEqual(result, { verified: true, publicEntry: true, invalidEntry: true, cors: true, requests: 3, commit });
-  assert.deepEqual(f.calls.map(({ url }) => url), [PUBLIC, INVALID, PREFLIGHT]);
-  assert.deepEqual(f.calls.map(({ settings }) => settings.method), ['GET', 'GET', 'OPTIONS']);
+  assert.deepEqual(result, { verified: true, publicEntry: true, invalidEntry: true, cors: true, checkinRetired: true, requests: 4, commit });
+  assert.deepEqual(f.calls.map(({ url }) => url), [PUBLIC, INVALID, PREFLIGHT, RETIRED]);
+  assert.deepEqual(f.calls.map(({ settings }) => settings.method), ['GET', 'GET', 'OPTIONS', 'GET']);
   for (const { settings } of f.calls) {
     assert.equal(settings.credentials, 'omit'); assert.equal(settings.redirect, 'error'); assert.equal(settings.cache, 'no-store');
     assert.equal(settings.referrerPolicy, 'no-referrer'); assert.equal(settings.body, undefined); assert.equal(settings.signal.aborted, true);
@@ -126,7 +128,7 @@ test('canonical gateway credential metadata does not turn an omit probe into an 
       if(args[0]===PREFLIGHT)response.headers.set('access-control-allow-credentials',value);
       return response;
     }});
-    assert.equal(result.verified,true);assert.equal(f.calls.length,3);
+    assert.equal(result.verified,true);assert.equal(f.calls.length,4);
     for(const {settings}of f.calls){assert.equal(settings.credentials,'omit');const headers=new Headers(settings.headers);assert.equal(headers.has('cookie'),false);assert.equal(headers.has('authorization'),false);}
   }
 });

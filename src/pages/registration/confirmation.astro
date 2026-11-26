@@ -2,6 +2,7 @@
 import '../../styles/confirmation.css';
 import { PUBLIC_AGENDA_URL, PUBLIC_CONTACT_EMAIL, PUBLIC_EVENT_DETAILS_URL, PUBLIC_REGISTRATION_URL, PUBLIC_SHOWCASE_URL } from '../../config/event.mjs';
 import { CARD_IMAGE } from '../../lib/commemorative-card-image.mjs';
+import LanguagePicker from '../../components/LanguagePicker.astro';
 const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
 ---
 <!doctype html>
@@ -14,9 +15,9 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
     <meta name="theme-color" content="#ffffff" />
     <title>ARTDiCO HOST</title>
   </head>
-  <body class="confirmation-page" data-confirmation-page data-confirmation-api={apiOrigin}>
+  <body class="confirmation-page" data-language-root data-confirmation-page data-confirmation-api={apiOrigin}>
     <a class="confirmation-skip" href="#confirmation-main">跳到主要内容</a>
-    <header class="confirmation-header"><a href="/">ARTDiCO HOST</a><a href="/#agenda" data-confirmation-agenda>活动日程</a></header>
+    <header class="confirmation-header"><a href="/">ARTDiCO HOST</a><a href="/#agenda" data-confirmation-agenda>活动日程</a><LanguagePicker /></header>
     <main id="confirmation-main" tabindex="-1">
       <section class="confirmation-card">
         <p class="confirmation-state" data-confirmation-state aria-hidden="true">ARTDiCO HOST</p>
@@ -24,8 +25,8 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
         <p class="confirmation-intro" data-confirmation-intro>请稍候。</p>
         <p class="confirmation-error" data-confirmation-error role="alert" hidden></p>
         <div data-confirmation-content hidden>
-          <div class="confirmation-person"><strong data-confirmation-name></strong><span data-confirmation-organization></span></div>
-          <p class="confirmation-community" data-confirmation-community hidden></p>
+          <div class="confirmation-person"><strong data-confirmation-name data-i18n-preserve></strong><span data-confirmation-organization></span></div>
+          <p class="confirmation-community" data-confirmation-community data-i18n-preserve hidden></p>
           <p class="confirmation-contact" data-confirmation-outcome-contact hidden>如需核对，请联系 <a href={'mailto:'+PUBLIC_CONTACT_EMAIL}>{PUBLIC_CONTACT_EMAIL}</a>。<button type="button" data-confirmation-contact-copy>复制邮箱</button></p>
           <p class="confirmation-facts-warning" data-confirmation-facts-warning role="status" hidden>活动资料待核对，请稍后重新读取。</p>
           <dl class="confirmation-details">
@@ -48,7 +49,7 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
             </section>
             <p class="confirmation-action-status" data-confirmation-action-status role="status" aria-live="polite"></p>
             <div class="confirmation-jpeg-preview" data-confirmation-jpeg-preview hidden>
-              <img data-confirmation-jpeg-image alt="你的电子纪念卡" width={CARD_IMAGE.width} height={CARD_IMAGE.height} decoding="async" />
+              <img data-confirmation-jpeg-image data-i18n-preserve alt="你的电子纪念卡" width={CARD_IMAGE.width} height={CARD_IMAGE.height} decoding="async" />
               <p>手机可长按图片保存。</p>
             </div>
             <div class="confirmation-copy-fallback" data-confirmation-copy-fallback hidden><label for="confirmation-private-link">复制并私下保存此链接</label><input id="confirmation-private-link" data-confirmation-private-link readonly autocomplete="off" /></div>
@@ -67,8 +68,8 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
           <details class="confirmation-card-profile" data-confirmation-card-profile hidden>
             <summary>纪念卡个人资料</summary>
             <dl>
-              <div data-confirmation-card-organization><dt>学校／机构</dt><dd></dd></div>
-              <div data-confirmation-card-phone><dt>电话</dt><dd></dd></div>
+              <div data-confirmation-card-organization><dt>学校／机构</dt><dd data-i18n-preserve></dd></div>
+              <div data-confirmation-card-phone><dt>电话</dt><dd data-i18n-preserve></dd></div>
             </dl>
           </details>
           <nav class="confirmation-event-guide" data-confirmation-event-guide aria-labelledby="confirmation-event-guide-heading" hidden>
@@ -91,7 +92,7 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
           </section>
           <details class="confirmation-registration" data-confirmation-registration>
             <summary>登记信息</summary>
-            <dl class="confirmation-details"><dt>活动</dt><dd data-confirmation-event></dd><dt>登记编号</dt><dd class="confirmation-reference" data-confirmation-reference></dd></dl>
+            <dl class="confirmation-details"><dt>活动</dt><dd data-confirmation-event></dd><dt>登记编号</dt><dd class="confirmation-reference" data-confirmation-reference data-i18n-preserve></dd></dl>
             <p class="confirmation-note">讲者、展位与住宿安排分别确认。</p>
           </details>
           <details class="confirmation-notice-records" data-confirmation-notice-records>
@@ -112,5 +113,6 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
   </body>
 </html>
 <script>
+  import '../../scripts/language.mjs';
   import '../../scripts/confirmation.mjs';
 </script>

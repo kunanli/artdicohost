@@ -32,6 +32,22 @@ test('actual sparse positions above fifteen are sorted, with unplaced and cancel
   assert.equal(overview(content({ booths: [legacy] })).unplacedBooths[0].slotNumber, 0);
 });
 
+test('draft and archived links stay inspectable while effective scheduling counts only active people and plans', () => {
+  const draft = session('retired', { status: 'draft' });
+  const historical = { ...contact('archived', { sessionIds: ['live'], responseStatus: 'attending' }), archivedAt: '2026-10-22T01:00:00.000Z' };
+  const result = overview(content({ sessions: [draft, session('live', { guestId: 'current-guest' })],
+    booths: [booth('pending', { status: 'pending' })], guests: [guest('current-guest', { contactId: 'primary' })],
+    showcases: [team('draft-team', { sessionId: 'retired', boothId: 'pending' })],
+  }), [historical, contact('primary'), contact('draft-person', { sessionIds: ['retired'], boothIds: ['pending'] })]);
+  assert.equal(result.summary.sessions.active, 1);
+  assert.equal(result.summary.people.assignedContacts, 1);
+  assert.equal(result.summary.people.attendingContacts, 0);
+  assert.equal(result.summary.studentTeams.assignedTeams, 0);
+  assert.ok(result.sessions.A.find(row => row.id === 'live').people.some(person => person.contactId === historical.id && person.archived));
+  assert.ok(result.sessions.A.find(row => row.id === 'retired').people.some(person => person.contactId === 'draft-person'));
+  assert.ok(!codes(result.sessions.A.find(row => row.id === 'retired')).includes('MISSING_PRIMARY_SPEAKER'));
+});
+
 test('contact and linked guest are one stable person with guest display data and the separate actual contact reply', () => {
   const result = overview(content({
     sessions: [session('main', { guestId: 'linked' }), session('secondary', { start: '11:00', end: '12:00', zone: 'B', format: 'workshop' }), session('unlinked', { start: '12:00', end: '13:00', guestId: 'standalone' }), session('stale', { start: '13:00', end: '14:00', guestId: 'stale-guest' })],

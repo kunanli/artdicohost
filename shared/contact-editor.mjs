@@ -115,11 +115,15 @@ export function guestPrefillFromContact(contact) {
   return { ...result(errors, value), responseStatus: contact.operations.responseStatus, omittedFields };
 }
 
-/** Scheduling choices for outreach. No guest identities, private notes or event draft envelope. */
+/** Scheduling choices for outreach. Only stable contact links, with no guest profiles or private notes. */
 export function toContactPlanningContent(content) {
   if (!plain(content) || !Array.isArray(content.sessions) || !Array.isArray(content.booths)) throw new TypeError('场次或展位资料不可读取。');
+  const guestContacts = new Map((content.guests ?? []).filter(guest => guest.contactId).map(guest => [guest.id, guest.contactId]));
   return {
-    sessions: content.sessions.map(({ id, start, end, zone, title, status }) => ({ id, start, end, zone, title, status })),
+    sessions: content.sessions.map(({ id, start, end, zone, title, status, guestId, participants }) => {
+      const contactIds = [...new Set([guestId, ...(participants ?? []).map(participant => participant.guestId)].map(id => guestContacts.get(id)).filter(Boolean))];
+      return { id, start, end, zone, title, status, ...(contactIds.length ? { contactIds } : {}) };
+    }),
     booths: content.booths.map(({ id, code, zone, organization, project, status, organizationId }) => ({ id, code, zone, organization, project, status,
       ...(organizationId === undefined ? {} : { organizationId }) })),
     ...(Object.hasOwn(content, 'organizations') ? { organizations: content.organizations.map(({ id, name, participation, status }) => ({ id, name, participation, status })) } : {}),

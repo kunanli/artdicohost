@@ -103,7 +103,7 @@ export function createCloudContentRuntime({ env = process.env, fetchFn, now = ()
       accessKeySecret: env.ALIBABA_CLOUD_ACCESS_KEY_SECRET,
       securityToken: env.ALIBABA_CLOUD_SECURITY_TOKEN,
     }), fetchFn, clock });
-    const application = createCloudApplication({ objects, env, fetchFn, now });
+    const application = createCloudApplication({ objects, env, fetchFn, now, externalRegistrationOnly: true });
     return { handle: application.handle, configured: true, storageVerified: false, registrationEnabled: application.registrationEnabled };
   } catch { return unavailable(); }
 }
@@ -113,7 +113,7 @@ export function createCloudContentRuntime({ env = process.env, fetchFn, now = ()
  * or the private acceptance scope; no HTTP value selects an object store.
  * The production facade returns only handle/readiness, never these components.
  */
-export function createCloudApplication({ objects, env, fetchFn, now = () => Date.now() } = {}) {
+export function createCloudApplication({ objects, env, fetchFn, now = () => Date.now(), externalRegistrationOnly = false } = {}) {
   const portraitStore = createOssPortraitStore({ objects });
   const journalFor = prefix => createObjectJournal({ objects, prefix });
   const store = createOssContentStore({ journal: journalFor('cms/v1/content'), portraitStore, now });
@@ -129,7 +129,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   // acknowledgements remain in the outbox; remaining people require explicit
   // administrator dispatch and must never turn a saved mutation into a failure.
   const notifyPromoted = async (registrationIds, timeoutMs = 5000) => {
-    if (!Array.isArray(registrationIds) || !registrationIds.length) return undefined;
+    if (externalRegistrationOnly || !Array.isArray(registrationIds) || !registrationIds.length) return undefined;
     let result;
     try { result = await confirmationService?.notifyPromoted({ registrationIds: registrationIds.slice(0, 100), timeoutMs }); } catch { /* Saved admissions remain authoritative. */ }
     const attemptedCount = Array.isArray(result?.results) ? result.results.filter(item => !['not_attempted', 'unavailable'].includes(item.status)).length : 0;
@@ -159,6 +159,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     } });
   const contentHandle = createCloudContentApi({ enabled: true, store, portraitStore, auth, contactsStore, beforeContactMutation,
     onContactOperationsCommitted: async input => {
+      if (externalRegistrationOnly) return { status: 'external' };
       const admission = attendanceSynchronizer ? await attendanceSynchronizer(input) : { status: 'unavailable', reason: 'NOT_CONFIGURED' };
       // Only a newly acknowledged attendance decision triggers automatic mail.
       // Imports, reads, batch synchronization and edits to an existing reply do not.
@@ -168,7 +169,10 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     } });
   const genericContactImporter=createIntentContactImporter({contactsStore,now});
   const importHandle=createIntentContactImportApi({importer:{preview:input=>input.kind==='huodongxing'?huodongxingImporter?huodongxingImporter.preview(input):Promise.reject(new Error('Import unavailable')):genericContactImporter.preview(input),commit:input=>input.kind==='huodongxing'?huodongxingImporter?huodongxingImporter.commit(input):Promise.reject(new Error('Import unavailable')):genericContactImporter.commit(input),operation:input=>huodongxingImporter?huodongxingImporter.operation(input):Promise.reject(new Error('Import unavailable'))},authenticate:request=>auth.authenticate(request)});
-  const policy = registrationPolicy(env);
+  const configuredPolicy = registrationPolicy(env);
+  const policy = externalRegistrationOnly && configuredPolicy
+    ? { ...configuredPolicy, publicRegistrationMode: 'speaker_only', speakerApplicationsEnabled: false }
+    : configuredPolicy;
   if (policy) {
     const personMailPermission = (record, index, roster) => {
       const group = index.admissions?.personGroups?.find(item => item.registrationIds.includes(record.id));
@@ -255,13 +259,13 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
         if(related.length!==group.contactIds.length)throw new Error('Person permission unavailable.');
         return !related.some(item=>item.profile.contactConsent==='declined'||item.operations.responseStatus==='declined');
       }}) });
-    walletService = createAppleWalletService({ env, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now, eventFactsReadiness,
+    walletService = createAppleWalletService({ env, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, clock: now, eventFactsReadiness, externalRegistrationOnly,
       authorize: input => confirmationService.authorize(input),
-      admissionUrlProvider: input => entryService.issueEntry(input),
+      ...(externalRegistrationOnly ? {} : { admissionUrlProvider: input => entryService.issueEntry(input) }),
       authorizedRegistration: (id, options) => confirmationService.authorizedRegistration(id, options),
       loadSigningBundle: ({ bundleId }) => loadEncryptedSigningBundle({ objects, secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId }) });
-    confirmationService = createRegistrationConfirmationService({ registrationService, journalFor, eventFactsReadiness, currentRegistration,
-      emailTicketProvider: input => entryService.issue(input), currentProfiles: () => reviewStore.profileScopes(),
+    confirmationService = createRegistrationConfirmationService({ registrationService, journalFor, eventFactsReadiness, currentRegistration, externalRegistrationOnly,
+      ...(externalRegistrationOnly ? {} : { emailTicketProvider: input => entryService.issue(input) }), currentProfiles: () => reviewStore.profileScopes(),
       cardApplications: admissions => reviewStore.walletCardApplications(admissions),
       cardPermissions: async (rows, admissions) => {
         const roster = rows.some(({ group, record }) => group?.contactIds.length || record.provenance.kind === 'staff_assisted')
@@ -337,7 +341,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
         ...(env.ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID ? { loadConfiguration: () => loadEncryptedConfirmationMail({ objects,
           secret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, eventId: policy.eventId, bundleId: env.ARTDICO_CONFIRMATION_EMAIL_BUNDLE_ID }) } : {}) }),
       walletReadiness: () => walletService.readiness(), groupInviteProvider: input => groupService.forReceipt(input) });
-    entryService = createEntryTicketService({ objects, journalFor, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, event: eventConfig, clock: now,
+    if (!externalRegistrationOnly) entryService = createEntryTicketService({ objects, journalFor, tokenSecret: env.ARTDICO_REGISTRATION_TOKEN_SECRET, event: eventConfig, clock: now,
       authorizedRegistration: async id => {
         // A merged person has one entry record, on the same primary as its seat and formal notice.
         const index = (await registrationService.repository.readIndex()).value;
@@ -355,8 +359,8 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
       groupImageProvider: token => groupService.publicImage(token) });
   }
   if(registrationService)huodongxingImporter=createHuodongxingImporter({contactsStore,registrationService,journal:journalFor(HUODONGXING_JOURNAL_PREFIX),now,inactiveRegistrationIds:()=>reviewStore.inactiveRegistrationIds(),currentProfiles:()=>reviewStore.profileScopes(),currentProfileRevision:()=>reviewStore.profileRevision()});
-  if (registrationService && intentService) attendanceSynchronizer = createAttendanceSynchronizer({ intentService, registrationService, contactsStore });
-  const entryHandle = entryService ? createEntryTicketApi({ service: entryService, authenticate: request => auth.authenticate(request) }) : null;
+  if (!externalRegistrationOnly && registrationService && intentService) attendanceSynchronizer = createAttendanceSynchronizer({ intentService, registrationService, contactsStore });
+  const entryHandle = entryService || externalRegistrationOnly ? createEntryTicketApi({ service: entryService, retired: externalRegistrationOnly, authenticate: request => auth.authenticate(request) }) : null;
   const registrationHandle = createRegistrationApi({ allowedOrigins: [PUBLIC_SITE_ORIGIN], submissionService: registrationService, allowedGroupInviteOrigins: [CLOUD_API_ORIGIN], clock: now });
   const confirmationHandle = createRegistrationConfirmationApi({ service: confirmationService, auth, apiOrigin: CLOUD_API_ORIGIN, publicOrigins: [PUBLIC_SITE_ORIGIN] });
   const walletHandle = createAppleWalletApi({ service: walletService ?? { download: async () => ({ outcome: 'not_ready' }), verify: async () => ({ valid: false }) }, apiOrigin: CLOUD_API_ORIGIN, publicOrigins: [PUBLIC_SITE_ORIGIN] });
@@ -369,7 +373,7 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const groupHandle = createGroupInviteApi({ service: groupService, auth, apiOrigin: CLOUD_API_ORIGIN, publicOrigins: [PUBLIC_SITE_ORIGIN] });
   const reviewHandle = createRegistrationAdminApi({ enabled: Boolean(reviewStore), auth, store: reviewStore,
     profileTarget: registrationService ? async id => { const { value } = await registrationService.repository.readIndex(); return value.admissions?.personGroups?.find(group => group.registrationIds.includes(id))?.primaryRegistrationId ?? id; } : undefined,
-    onWithdrawalCommitted: registrationService ? async ({ registrationId, reviewRevision, actor }) => {
+    onWithdrawalCommitted: registrationService && !externalRegistrationOnly ? async ({ registrationId, reviewRevision, actor }) => {
       const current = await registrationService.getAdmissions({ actor });
       if (!Number.isSafeInteger(current.revision)) return { status: 'pending' };
       const operationId = createHash('sha256').update('review-withdraw\0' + registrationId + '\0' + reviewRevision).digest('hex');
@@ -455,6 +459,9 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
   const handle = async request => {
     const url = new URL(request.url);
     if (url.origin !== CLOUD_API_ORIGIN || url.username || url.password) return contentHandle(request);
+    if (externalRegistrationOnly && (url.pathname.startsWith('/api/admin/admissions/') || ['/api/admin/contacts/convert', '/api/admin/contacts/convert/preview'].includes(url.pathname))) {
+      return Response.json({ error: { code: 'REGISTRATION_EXTERNAL', message: '正式报名与现场签到请使用活动行。' } }, { status: 410, headers: { 'cache-control': 'private, no-store' } });
+    }
     if (['/api/registration/confirmation', '/api/admin/registration/confirmation', '/api/admin/registration-confirmation/settings', '/api/admin/registration-confirmation/dispatch',
       '/api/admin/registration-confirmation/preview', '/api/admin/registration-confirmation/reminder-preview', '/api/admin/registration-confirmation/reminder-dispatch', '/api/admin/registration-confirmation/cards'].includes(url.pathname)
       || ['/link/', '/delivery/', '/send/', '/operation/', '/reminder-operation/', '/cards/'].some(suffix => url.pathname.startsWith('/api/admin/registration-confirmation' + suffix))) return confirmationHandle(request);
@@ -471,9 +478,17 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     if (isVolunteersPath(url.pathname)) return volunteerHandle(request);
     if(['/api/admin/people/duplicates','/api/admin/people/resolve'].includes(url.pathname))return resolutionHandle(request);
     if (isPersonRelationshipsPath(url.pathname)) return relationshipsHandle(request);
-    if (url.pathname === '/api/admin/people' || url.pathname.startsWith('/api/admin/people/')) return personHandle(request);
+    if (url.pathname === '/api/admin/people' || url.pathname.startsWith('/api/admin/people/')) {
+      const result = await personHandle(request);
+      return externalRegistrationOnly && result.ok && request.method === 'GET' && /^\/api\/admin\/people\/(?:contacts|registrations)\/[^/]+$/u.test(url.pathname)
+        ? withJson(result, { ...await result.json(), externalRegistrationOnly: true }) : result;
+    }
     if (url.pathname === '/api/admin/tasks') return tasksHandle(request);
-    if (url.pathname === '/api/admin/admissions' || url.pathname.startsWith('/api/admin/admissions/')) return admissionsHandle(request);
+    if (url.pathname === '/api/admin/admissions' || url.pathname.startsWith('/api/admin/admissions/')) {
+      const result = await admissionsHandle(request);
+      return externalRegistrationOnly && result.ok && request.method === 'GET'
+        ? withJson(result, { ...await result.json(), externalRegistrationOnly: true }) : result;
+    }
     if (isIntentContactImportPath(url.pathname)) return importHandle(request);
     if (url.pathname === '/api/admin/maintenance' || url.pathname.startsWith('/api/admin/maintenance/')) return maintenanceHandle(request);
     if (url.pathname === '/api/admin/registrations' || url.pathname.startsWith('/api/admin/registrations/')) return reviewHandle(request);
@@ -492,12 +507,13 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     }
     const result = await contentHandle(request);
     if (result.status === 200 && url.pathname === '/api/admin/environment' && request.method === 'GET' && registrationEnabled) {
-      return withJson(result, { ...await result.json(), registration: 'enabled' });
+      return withJson(result, { ...await result.json(), registration: 'enabled', ...(externalRegistrationOnly ? { registrationProvider: 'huodongxing' } : {}) });
     }
     if (result.status === 200 && url.pathname === '/api/admin/planning' && request.method === 'GET') {
       const value = await result.json();
       return withJson(result, { ...value, features: { ...value.features, contactImport: true, protectedContactImport: true, intentInvitations: Boolean(intentService), batchInvitations: Boolean(intentService),
-        contactXlsxExport: true, registrationXlsxExport: Boolean(reviewStore), registrationConfirmation: Boolean(confirmationService), appleWallet: Boolean(walletService) } });
+        contactXlsxExport: true, registrationXlsxExport: Boolean(reviewStore), registrationConfirmation: Boolean(confirmationService), appleWallet: Boolean(walletService),
+        ...(externalRegistrationOnly ? { externalRegistrationOnly: true } : {}) } });
     }
     return result;
   };

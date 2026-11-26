@@ -27,7 +27,7 @@ export function volunteerFixture({ authenticate, clock = () => Date.parse('2026-
       provenance: { kind: 'staff_assisted', sourceContactId: 'contact_01', permissionReference: VOLUNTEER_FIXTURE_SECRET }, consent: { accepted: false } }] },
     admissions: { revision: 1, people: [{ registrationId: VOLUNTEER_FIXTURE_REGISTRATION, status: 'confirmed', kind: 'attendee' }] },
     content: { revision: 3, content: { schemaVersion: 1, eventId: 'ggj-cn-2026', event: { title: '合成 GGJ 志愿者活动', date: '2026-12-05', timezone: 'Asia/Shanghai' },
-      sessions: [{ id: 'session_01', title: '合成交流', start: '10:00', end: '11:00', zone: 'A', status: 'confirmed', internalNotes: VOLUNTEER_FIXTURE_SECRET }],
+      sessions: [{ id: 'session_01', title: '合成交流', start: '10:00', end: '11:00', zone: 'A', status: 'scheduled', internalNotes: VOLUNTEER_FIXTURE_SECRET }],
       booths: [{ id: 'booth_01', code: 'C-01', organization: '合成展位', status: 'confirmed', slotNumber: 1, contactName: VOLUNTEER_FIXTURE_SECRET }] } },
     inactiveRegistrationIds: [],
   };

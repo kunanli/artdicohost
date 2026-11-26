@@ -219,12 +219,15 @@ jobs:
         run: |
           artdico_browser_path="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium)"
           ARTDICO_CHROMIUM_BINARY="$artdico_browser_path" node tests/browser/wallet-application-smoke.mjs
+          ARTDICO_CHROMIUM_BINARY="$artdico_browser_path" ARTDICO_EVIDENCE_DIRECTORY=.local-data/browser-evidence/commemorative-cards node tests/browser/commemorative-cards-smoke.mjs
       - name: Retain commemorative card application browser evidence for one day
         if: ${{ !cancelled() && (steps.wallet_application_browser.outcome == 'success' || steps.wallet_application_browser.outcome == 'failure') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wallet-application-evidence
-          path: .local-data/browser-evidence/wallet-application/
+          path: |
+            .local-data/browser-evidence/wallet-application/
+            .local-data/browser-evidence/commemorative-cards/
           if-no-files-found: warn
           retention-days: 1
       - name: Check admin display ordering and publication

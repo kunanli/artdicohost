@@ -8,21 +8,15 @@ const escape = value => value.replaceAll('&','&amp;').replaceAll('"','&quot;').r
 const line = value => typeof value === 'string' && value.length > 0 && value.length <= 500 && !/[\u0000-\u001f\u007f]/u.test(value);
 export const CONFIRMATION_PRESENTATION_KEYS = Object.freeze(['email_subject','email_language','confirmation_actions']);
 
-function cardActions({ card, en, walletReady, confirmationUrl }) {
+function cardActions({ card, en, confirmationUrl }) {
   if (!card || [card.name, card.identity, card.event, card.date, card.time, card.venue].some(value => !line(value))
     || (card.community && !line(card.community))) throw new TypeError('Invalid commemorative email details.');
   const link = escape(confirmationUrl);
-  const badge = SITE + '/wallet/add-to-apple-wallet-' + (en ? 'en' : 'cn') + '.png';
   const field = (label, value) => '<div style="margin:0 0 8px;">'
     + '<div style="color:#ddd5e9;font-size:12px;">' + label + '</div><div>' + escape(value) + '</div></div>';
   return '<p style="margin:18px 0 6px;">'
-    + '<a href="' + link + '" style="display:inline-block;vertical-align:middle;margin:0 8px 8px 0;padding:12px 14px;background:#234e9b;color:#fff;border-radius:6px;text-decoration:none;font-size:15px;font-weight:bold;">'
-    + (en ? 'Download JPEG' : '下载 JPEG 纪念卡') + '</a>'
-    + (walletReady ? '<a href="' + link + '" style="display:inline-block;vertical-align:middle;margin:0 0 8px;"><img src="' + badge
-      + '" alt="' + (en ? 'Add to Apple Wallet' : '添加到 Apple 钱包') + '" height="44" style="display:block;height:44px;width:auto;border:0;"></a>' : '')
-    + '</p>'
-    + (walletReady ? '<p style="margin:0 0 12px;font-size:13px;line-height:1.5;color:#315445;">'
-      + (en ? 'Follow the iPhone prompt to add the card.' : '请按 iPhone 的系统提示确认添加。') + '</p>' : '')
+    + '<a href="' + link + '" style="display:inline-block;margin:0 0 8px;padding:12px 14px;background:#234e9b;color:#fff;border-radius:6px;text-decoration:none;font-size:15px;font-weight:bold;">'
+    + (en ? 'Open your commemorative card' : '打开电子纪念卡') + '</a></p>'
     + '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bgcolor="#121212" style="max-width:600px;background:#121212;color:#fff;">'
     + '<tr><td><img src="' + SITE + '/wallet/host-card-banner.png" alt="HOST" width="384" height="150" style="display:block;width:100%;height:auto;border:0;"></td></tr>'
     + '<tr><td style="padding:14px 16px 20px;color:#fff;font-size:14px;line-height:1.45;word-wrap:break-word;overflow-wrap:anywhere;">'
@@ -36,7 +30,7 @@ function cardActions({ card, en, walletReady, confirmationUrl }) {
     + '<td valign="top" align="right" style="padding:12px 0 0 4px;border-top:1px solid #505050;word-wrap:break-word;">'
     + field(en ? 'Venue' : '地点', card.venue) + '</td></tr></table></td></tr></table>'
     + '<p style="margin:14px 0 0;font-size:14px;line-height:1.6;color:#52617a;">'
-    + (en ? 'Open the private page to save your card. Keep this email private.' : '打开私人领取页保存纪念卡。请保管此邮件。') + '</p>';
+    + (en ? 'Keep this email private.' : '请保管此邮件。') + '</p>';
 }
 
 export function confirmationEmailPresentation({ locale, kind, subject, confirmationUrl, ticket, walletReady = false, card } = {}) {
@@ -49,7 +43,7 @@ export function confirmationEmailPresentation({ locale, kind, subject, confirmat
   };
   if (kind === 'card_jpeg' || kind === 'card_wallet') {
     if (ticket != null) throw new TypeError('Invalid commemorative email link.');
-    return pack(cardActions({ card, en, walletReady, confirmationUrl }));
+    return pack(cardActions({ card, en, confirmationUrl }));
   }
   const confirmed = kind !== 'application_received';
   let entry = null, group = null, groupExpiry = null;

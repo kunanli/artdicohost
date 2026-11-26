@@ -19,8 +19,10 @@ await mkdir(evidence,{recursive:true});
 const form=page=>page.locator('[data-wallet-form]');
 const chineseJammer=page=>form(page).getByRole('checkbox',{name:'Jammer（参加过 Game Jam）',exact:true});
 const involvement='导师 · 2024',involvementWithJammer=involvement+' · Jammer';
-async function fixture(width,{lost=false,closed=false,speakerClosed=false}={}){
- const runtime=await peopleRuntimeFixture({mail:false,attendeeReviewRequired:false});let disabled=closed,lose=lost;
+async function fixture(width,{lost=false,closed=false,speakerClosed=false,configOutage=false}={}){
+ const runtime=await peopleRuntimeFixture({mail:false,attendeeReviewRequired:false});let disabled=closed,lose=lost,unavailable=configOutage;
+ let releaseConfig=()=>{};
+ const configGate=configOutage?new Promise(resolve=>{releaseConfig=resolve;}):null;
  const app=()=>runtime.make({policyOverride:{publicRegistrationMode:'speaker_only',speakerApplicationsEnabled:!speakerClosed,...(disabled?{closesAt:'2026-10-21T08:59:00Z'}:{})}});
  let current=app();const calls=[],context=await browser.newContext({locale:'zh-CN',viewport:{width,height:940},reducedMotion:'reduce'});
  await context.route('**/*',async route=>{
@@ -28,6 +30,10 @@ async function fixture(width,{lost=false,closed=false,speakerClosed=false}={}){
    const request=route.request(),url=new URL(request.url());assert.ok([SITE,API].includes(url.origin),'no unapproved network origin');
    if(url.origin===API&&url.pathname.startsWith('/api/')){
     const headers=await request.allHeaders();const call={path:url.pathname,method:request.method(),body:request.postData(),key:headers['idempotency-key']};calls.push(call);
+    if(url.pathname==='/api/admin/registration/config'){
+     await configGate;
+     if(unavailable){call.status=503;return route.fulfill({status:503,headers:{'access-control-allow-origin':SITE},json:{error:{code:'SYNTHETIC_OUTAGE'}}});}
+    }
     const response=await current.handle(new Request(request.url(),{method:request.method(),headers,...(['GET','HEAD'].includes(request.method())?{}:{body:request.postData()})}));
     call.status=response.status;const bytes=Buffer.from(await response.arrayBuffer()),responseHeaders=Object.fromEntries(response.headers);delete responseHeaders['content-length'];
     if(lose&&url.pathname==='/api/admin/registration/submit'){lose=false;return route.fulfill({status:503,headers:responseHeaders,contentType:'application/json',body:JSON.stringify({error:{code:'UNAVAILABLE'}})});}
@@ -38,9 +44,9 @@ async function fixture(width,{lost=false,closed=false,speakerClosed=false}={}){
   }catch(error){routeErrors.push(error.message);return route.fulfill({status:503,contentType:'application/json',body:'{"error":{"code":"SYNTHETIC_ROUTE_FAILURE"}}'});}
  });
  const page=await context.newPage();page.setDefaultTimeout(12000);await page.clock.setFixedTime(new Date(NOW));page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>void dialog.accept());
- await page.goto(SITE+'/#wallet-card-application',{waitUntil:'networkidle'});await page.evaluate(()=>document.fonts.ready);
- if(!closed)await page.locator('[data-wallet-submit]:enabled').waitFor();
- return{page,context,calls,runtime,get app(){return current;},closeIntake(){disabled=true;current=app();}};
+ await page.goto(SITE+'/#wallet-card-application',{waitUntil:configOutage?'domcontentloaded':'networkidle'});await page.evaluate(()=>document.fonts.ready);
+ if(!closed&&!configOutage)await page.locator('[data-wallet-submit]:enabled').waitFor();
+ return{page,context,calls,runtime,releaseConfig,restoreConfig(){unavailable=false;},disconnectConfig(){unavailable=true;},get app(){return current;},closeIntake(){disabled=true;current=app();}};
 }
 async function fill(page){
  for(const[name,value]of Object.entries({huodongxingReference:'000012345678901234567890',name:'合成纪念卡申请人',email:'synthetic.card@example.invalid',wechat:'synthetic_wechat_001'}))await form(page).locator('[name="wallet.'+name+'"]').fill(value);
@@ -114,7 +120,13 @@ try{
    const before=await drafts(f.page);assert.equal(before.filter(row=>row.kind==='editing'&&row.value?.intake==='wallet-v1').length,1);assert.equal(before.filter(row=>row.kind==='editing'&&row.value?.intake==='general-v2').length,1);
    const role=form(f.page).locator('[name="wallet.ggjRole"]');
    if(width===390){
+    f.disconnectConfig();
     await f.page.reload({waitUntil:'networkidle'});
+    await f.page.locator('[data-wallet-config-retry]:visible').waitFor();
+    assert.equal(await role.inputValue(),involvementWithJammer,'the outage preserves the restored draft');
+    assert.equal(await f.page.locator('#wallet-consent').isChecked(),false);
+    f.restoreConfig();
+    await f.page.locator('[data-wallet-config-retry]').click();
     await f.page.locator('[data-wallet-submit]:enabled').waitFor();
     assert.equal(await role.inputValue(),involvementWithJammer);
     assert.equal(await chineseJammer(f.page).isChecked(),true);
@@ -137,6 +149,11 @@ try{
    assert.equal(await role.inputValue(),involvementWithJammer);
    const suggestions=await role.evaluate(input=>Array.from(input.list.options,option=>option.value));
    for(const value of ['Site Organizer','Jammer','Mentor','Volunteer','Jury Member','Educator','Community partner','Event Operations','Programmer','Artist','Game Designer']) assert.ok(suggestions.includes(value));
+   const contactDetails=form(f.page).locator('summary').filter({hasText:'Phone and school / organization (optional)'});
+   await contactDetails.click();
+   assert.match(await f.page.locator('#field-wallet-phone-hint').innerText(),/Wallet pass details and the shareable JPEG/u);
+   assert.match(await f.page.locator('#field-wallet-organization-hint').innerText(),/before it appears on your card/u);
+   await contactDetails.click();
    const readable=await form(f.page).evaluate(node=>[...node.querySelectorAll('.ah-field>label,input:not([type=checkbox]),[data-wallet-submit]')].every(field=>parseFloat(getComputedStyle(field).fontSize)>=16)&&[...node.querySelectorAll('.ah-field-hint,.ah-form-hint,.ah-form-disclaimer')].every(field=>parseFloat(getComputedStyle(field).fontSize)>=14));assert.equal(readable,true);
    await screenshot(f.page,'form-en-'+width);await f.page.locator('[data-language="zh-CN"]').click();await f.page.waitForFunction(()=>document.documentElement.lang==='zh-CN');
    assert.equal(await role.inputValue(),involvementWithJammer);
@@ -179,10 +196,26 @@ try{
   }finally{await f.context.close();}
  }
  {
-  const f=await fixture(320,{closed:true});try{
-   assert.equal(await form(f.page).locator('[name="wallet.email"]').isDisabled(),true);assert.equal(await f.page.locator('[data-wallet-submit]').isDisabled(),true);assert.equal(f.calls.filter(call=>call.method==='POST').length,0);
-   assert.equal(await f.page.locator('#faq-wallet-card a').getAttribute('href'),'#wallet-card-application');reports.push({width:320,closed:true,noPublicWrite:true});
-  }finally{await f.context.close();}
+  const f=await fixture(320,{configOutage:true});try{
+   const submit=f.page.locator('[data-wallet-submit]'),retry=f.page.locator('[data-wallet-config-retry]');
+   await f.page.getByRole('button',{name:'正在确认申请服务…',exact:true}).waitFor();
+   assert.equal(await submit.isDisabled(),true);
+   assert.equal(await retry.isVisible(),false);
+   f.releaseConfig();
+   await retry.waitFor();
+   assert.equal(await submit.textContent(),'申请服务暂时不可用');
+   assert.equal(await f.page.locator('[data-wallet-config-status]').innerText(),'请重试连接申请服务。已保存的本机资料会保留。');
+   f.restoreConfig();
+   await retry.click();
+   await f.page.locator('[data-wallet-submit]:enabled').waitFor();
+   assert.equal(await retry.isVisible(),false);
+   f.closeIntake();
+   await f.page.reload({waitUntil:'networkidle'});
+   assert.equal(await submit.textContent(),'纪念卡申请已关闭');
+   assert.equal(await retry.isVisible(),false);
+   assert.equal(await form(f.page).locator('[name="wallet.email"]').isDisabled(),true);assert.equal(await submit.isDisabled(),true);assert.equal(f.calls.filter(call=>call.method==='POST').length,0);
+   assert.equal(await f.page.locator('#faq-wallet-card a').getAttribute('href'),'#wallet-card-application');reports.push({width:320,loadingOutageRetryAndClosure:true,noPublicWrite:true});
+  }finally{f.releaseConfig();await f.context.close();}
  }
  assert.equal(reports.length,7);assert.deepEqual(errors,[]);assert.deepEqual(routeErrors,[]);
  const result={ok:true,cases:reports.length,expectedCases:7,sourceCommit,sourceTreeClean,sourceQualification:sourceTreeClean?'clean-checkout':'local-working-tree-not-exact-commit-proof',publicHtmlSha256:htmlSha256,scriptSha256,reports,pageErrors:errors,routeErrors,realBusinessWrites:0,realMail:0,uninterceptedNetwork:0};

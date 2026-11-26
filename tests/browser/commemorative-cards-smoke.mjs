@@ -23,10 +23,11 @@ try {
     const isCard = message => /电子纪念卡/u.test(message.template_params.email_subject);
     let attempts = 0;
     const fixture = await peopleRuntimeFixture({ mail: true, mailResult: message => isCard(message) && ++attempts === 1 ? outcome : 'accepted' });
+    const app = fixture.make({ externalRegistrationOnly: true });
     const walletAvailable = device !== 'other';
     const wallet = createAppleWalletService({ env: signing.env, tokenSecret: 'synthetic-browser-card-signing-token-secret',
       clock: () => signing.now, trustedRootFingerprints: signing.fields.trustedRootFingerprints,
-      authorize: fixture.app.confirmationService.authorize, authorizedRegistration: fixture.app.confirmationService.authorizedRegistration });
+      authorize: app.confirmationService.authorize, authorizedRegistration: app.confirmationService.authorizedRegistration });
     const walletApi = createAppleWalletApi({ service: wallet });
     const iosAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 ';
     const context = await browser.newContext({ viewport: { width, height: 840 }, locale: 'zh-CN',
@@ -37,7 +38,9 @@ try {
     let publicDetails = null;
     let publicDetailsGate = null;
     let unverifiedCardFacts = false;
-    let privateReads = 0, staleIdentity = width === 320;
+    let privateReads = 0, staleIdentity = width === 320, staleCommunity = device === 'safari';
+    let loseSendReply = device === 'chrome';
+    const sendRequests = [];
     try {
       await context.route('**/*', async route => {
         const request = route.request(), url = new URL(request.url());
@@ -55,15 +58,26 @@ try {
             }
             const privateRead = method === 'POST' && ['/api/admin/registration/confirmation', '/api/registration/confirmation'].includes(url.pathname);
             if (privateRead) privateReads++;
-            if (staleIdentity && method === 'PATCH' && url.pathname.startsWith('/api/admin/registration-confirmation/cards/')) {
-              staleIdentity = false;
-              return route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":{"message":"资料已更新，请核对后再保存。"}}' });
+            const cardMutation = url.pathname.startsWith('/api/admin/registration-confirmation/cards/');
+            const sending = cardMutation && method === 'POST' && !url.pathname.endsWith('/approve');
+            if (cardMutation) {
+              const data = request.postDataJSON();
+              if (sending) sendRequests.push(data);
+              if (method === 'PATCH' && (staleIdentity || staleCommunity && data?.cardCommunity)) {
+                if (data?.cardCommunity) staleCommunity = false;
+                else staleIdentity = false;
+                return route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":{"message":"资料已更新，请核对后再保存。"}}' });
+              }
             }
             const headers = new Headers(await request.allHeaders());
             if (device === 'chrome' && url.pathname === '/api/admin/registration/confirmation') headers.set('accept', 'application/json');
             const input = new Request(url.href, { method, headers,
               ...(['GET', 'HEAD'].includes(method) ? {} : { body: request.postData() }) });
-            const response = await (walletAvailable && url.pathname === '/api/admin/registration/wallet' ? walletApi(input) : fixture.app.handle(input));
+            const response = await (walletAvailable && url.pathname === '/api/admin/registration/wallet' ? walletApi(input) : app.handle(input));
+            if (sending && loseSendReply && response.ok) {
+              loseSendReply = false;
+              return route.fulfill({ status: 503, json: { error: { message: '合成回执丢失' } } });
+            }
             if (walletAvailable && privateRead && response.ok) {
               const data = await response.json();
               if (data.card?.format === 'both') data.wallet = await wallet.readiness();
@@ -125,7 +139,7 @@ try {
       await page.locator('[data-card-details]:not([hidden])').waitFor();
       assert.equal(await page.locator('[data-card-list] button').count(), 1);
       assert.equal(await page.locator('[data-card-filter="todo"] span').textContent(), '2');
-      assert.equal(await page.locator('[data-card-list] small').textContent(), '核对报名');
+      assert.match(await page.locator('[data-card-list] small').textContent(), /核对.*报名/u);
       assert.equal(await page.locator('[data-card-recipient]').innerText(), recipient);
       if (device === 'safari') {
         assert.match(await page.locator('[data-card-requested-identity]').innerText(), /组织者/u);
@@ -140,23 +154,35 @@ try {
       await page.locator('[data-card-search]').fill('0000000420');
       const cardMessages = () => fixture.messages.filter(isCard);
       assert.equal(cardMessages().length, 0);
+      assert.equal(await page.locator('[data-card-approve]').textContent(), '通过纪念卡申请');
       await page.locator('[data-card-approve]').click();
       await page.locator('#card-identity').selectOption('guest');
       assert.equal(await page.locator('[data-card-list] small').textContent(), '设置卡面身份');
-      await page.locator('[data-card-identity-form] button').click();
+      await page.locator('[data-card-identity-form] button[type="submit"]').click();
       if (width === 320) {
         await page.getByRole('alert').filter({ hasText: '资料已更新，请核对后再保存。' }).waitFor();
         assert.equal(await page.locator('[data-card-detail-error]').isVisible(), true);
         assert.equal(await page.locator('[data-card-error]').isVisible(), false);
         assert.equal(page.url(), selectedUrl);
         await page.locator('#card-identity').selectOption('guest');
-        await page.locator('[data-card-identity-form] button').click();
+        await page.locator('[data-card-identity-form] button[type="submit"]').click();
       }
       assert.equal(await page.locator('#card-format').count(), 0);
       await page.locator('[data-card-delivery]:visible').waitFor();
       assert.match(await page.locator('[data-card-delivery-formats]').textContent(), /同一链接领取/u);
       assert.equal(await page.locator('[data-card-identity-value] span').innerText(), '嘉宾');
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+      const send = page.locator('[data-card-delivery] button[type="submit"]');
+      const previewButton = page.locator('[data-card-preview-open]');
+      const previewImage = page.locator('[data-card-preview-image][src^="data:image/jpeg"]:visible');
+      async function previewSavedCard() {
+        if (!await previewImage.isVisible()) await previewButton.click();
+        await previewImage.waitFor();
+      }
+      assert.equal(await send.isDisabled(), true, 'the operator must first preview the saved card');
+      await previewSavedCard();
+      assert.equal(await send.isEnabled(), true);
+      assert.equal(sendRequests.length, 0, 'preview never submits an email');
       if (device === 'safari') {
         assert.match(await page.locator('[data-card-community-summary]').innerText(), /待保存/u);
         await page.locator('[data-card-community-summary]').click();
@@ -173,52 +199,94 @@ try {
         assert.equal(await role.inputValue(), jammerRole);
         assert.equal(await page.getByLabel('学校／机构／团队').inputValue(), organization);
         assert.equal(await page.getByLabel('纪念卡电话').inputValue(), phone);
+        const school = page.getByLabel('学校／机构／团队');
+        await school.fill(organization + '示例修改');
+        assert.equal(await send.isDisabled(), true, 'draft fields must not send the older card');
+        await page.locator('[data-card-refresh]').click();
+        await page.locator('[data-card-admin][aria-busy="true"]').waitFor({ state: 'hidden' });
+        assert.equal(await school.inputValue(), organization + '示例修改', 'refresh keeps the edited value');
+        await page.getByRole('button', { name: '保存到纪念卡' }).click();
+        await page.getByRole('alert').filter({ hasText: '资料已更新，请核对后再保存。' }).waitFor();
+        assert.equal(await school.inputValue(), organization + '示例修改', 'a revision conflict keeps the edited value');
+        assert.equal(await send.isDisabled(), true);
+        assert.equal(sendRequests.length, 0);
+        await school.fill(organization);
         await page.getByRole('button', { name: '保存到纪念卡' }).click();
         await page.getByRole('status').filter({ hasText: '纪念卡资料已保存。' }).waitFor();
         assert.ok((await page.locator('[data-card-community-summary]').textContent()).includes('GGJ 合成站 · ' + jammerRole));
       }
       assert.equal(cardMessages().length, 0);
+      await previewSavedCard();
       await page.screenshot({ path: resolve(output, 'staff-' + width + '.png'), fullPage: true });
-      await page.locator('[data-card-delivery] button').click();
+      await send.click();
 
       const resend = page.getByRole('button', { name: '重新发送纪念卡' });
       await resend.waitFor();
       assert.equal(cardMessages().length, 1);
+      assert.match(sendRequests[0].expectedPreviewProof, /^[a-f0-9]{64}$/u);
+      if (device === 'chrome') {
+        assert.equal(await page.locator('[data-card-detail-error]').isVisible(), false, 'a current receipt resolves a missing HTTP acknowledgement');
+        assert.match(await page.locator('[data-card-state]').textContent(), /邮件服务.*已接收/u);
+      }
       if (outcome === 'unknown') {
-        assert.equal(await page.locator('[data-card-check]').isVisible(), false);
+        const lookup = page.getByRole('button', { name: '核对寄送结果' });
+        await lookup.waitFor();
         assert.equal(await page.locator('[data-card-list] [data-stage="check_delivery"]').count(), 1);
-        assert.equal(await page.locator('[data-card-list] [data-stage="check_delivery"] small').count(), 0);
-        assert.equal(await page.locator('[data-card-state]').textContent(), '未收到邮件服务回执，重寄可能重复。');
-        assert.equal(await page.locator('[data-card-delivery-formats]').isVisible(), false);
+        assert.equal(await page.locator('[data-card-list] [data-stage="check_delivery"] small').textContent(), '寄送待核对');
+        await lookup.click();
+        assert.equal(sendRequests.length, 1, 'checking an uncertain delivery never posts a send');
         await page.reload();
         await resend.waitFor();
         assert.equal(cardMessages().length, 1, 'reading an uncertain delivery never resends it');
       }
+      await previewSavedCard();
+      if (outcome === 'unknown') {
+        const handled = page.waitForEvent('dialog').then(dialog => dialog.dismiss());
+        await Promise.all([handled, resend.click()]);
+        assert.equal(sendRequests.length, 1, 'cancelling an uncertain resend does not post');
+      }
+      page.once('dialog', dialog => dialog.accept());
       await resend.click();
       await page.getByRole('status').filter({ hasText: '已重新提交纪念卡邮件。' }).waitFor();
       assert.equal(cardMessages().length, 2);
-      assert.equal(await page.locator('[data-card-state]').textContent(), '纪念卡邮件已提交发送');
+      assert.match(await page.locator('[data-card-state]').textContent(), /邮件服务.*已接收/u);
       assert.equal(await page.locator('[data-card-name]').textContent(), '合成纪念卡申请人');
       if (outcome === 'accepted') {
         assert.equal(await page.locator('[data-card-name]').textContent(), '合成纪念卡申请人');
         assert.equal(await page.locator('[data-card-filter="todo"] span').textContent(), '1');
         assert.equal(await page.locator('[data-card-filter="submitted"] span').textContent(), '1');
         await page.locator('[data-card-filter="submitted"]').click();
-        assert.equal(await page.locator('[data-card-list] small').textContent(), '已提交发送');
+        assert.match(await page.locator('[data-card-list] small').textContent(), /邮件服务.*已接收/u);
         const link = /https:\/\/artdico\.host\/registration\/confirmation\/#r=[A-Za-z0-9_.-]+/u.exec(cardMessages()[0].template_params.confirmation_actions)[0];
         const readsBefore = privateReads;
         if (walletAvailable) {
-          await page.addInitScript(() => {
+          await page.addInitScript(holdJpeg => {
             const fillText = CanvasRenderingContext2D.prototype.fillText;
             globalThis.syntheticJpegText = [];
             CanvasRenderingContext2D.prototype.fillText = function (text, ...args) {
               if (this.canvas.width === 1030 && this.canvas.height === 1510) globalThis.syntheticJpegText.push(text);
               return fillText.call(this, text, ...args);
             };
-          });
+            if (holdJpeg) {
+              const toBlob = HTMLCanvasElement.prototype.toBlob;
+              HTMLCanvasElement.prototype.toBlob = function (callback, ...args) {
+                if (this.width === 1030 && this.height === 1510) {
+                  globalThis.releaseSyntheticJpeg = () => toBlob.call(this, callback, ...args);
+                  return;
+                }
+                return toBlob.call(this, callback, ...args);
+              };
+            }
+          }, device === 'safari');
         }
         await page.goto(link);
         const downloadButton = page.getByRole('link', { name: '下载 JPEG 纪念卡' });
+        if (device === 'safari') {
+          await page.waitForFunction(() => typeof globalThis.releaseSyntheticJpeg === 'function');
+          await page.locator('[data-confirmation-wallet]:enabled').waitFor();
+          assert.equal(await downloadButton.isVisible(), false, 'Wallet can be used while JPEG still prepares');
+          await page.evaluate(() => globalThis.releaseSyntheticJpeg());
+        }
         await downloadButton.waitFor();
         assert.equal(await downloadButton.evaluate(button => button.getBoundingClientRect().bottom <= innerHeight), true);
         const image = page.locator('[data-confirmation-jpeg-image]');
@@ -469,9 +537,12 @@ try {
         assert.equal(await page.locator('[data-card-name]').innerText(), '合成后台测试卡');
         assert.equal(await page.locator('[data-card-reference]').innerText(), '测试卡');
         assert.equal(cardMessages().length, 2);
+        assert.equal(await page.locator('[data-card-filter="test"]').getAttribute('aria-pressed'), 'true');
+        await previewSavedCard();
         await page.getByRole('button', { name: '发送纪念卡', exact: true }).click();
         await resend.waitFor();
         assert.equal(cardMessages().length, 3);
+        page.once('dialog', dialog => dialog.accept());
         await resend.click();
         await page.getByRole('status').filter({ hasText: '已重新提交纪念卡邮件。' }).waitFor();
         assert.equal(cardMessages().length, 4);
@@ -484,6 +555,7 @@ try {
         await page.getByRole('status').filter({ hasText: '纪念卡已移除。' }).waitFor();
         assert.equal(await page.locator('[data-card-details]').isVisible(), false);
         assert.equal(await page.getByRole('button', { name: /合成后台测试卡/u }).count(), 0);
+        await page.locator('[data-card-filter="all"]').click();
         assert.equal(await page.getByRole('button', { name: /合成纪念卡申请人/u }).count(), 1);
       }
       assert.deepEqual(errors, []);

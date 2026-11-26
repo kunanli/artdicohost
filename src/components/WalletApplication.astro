@@ -23,6 +23,8 @@ const involvement={name:'ggjRole',label:'GGJ 参与经历',type:'text',required:
   <div class="ah-form-top"><strong>电子纪念卡</strong></div>
   <form data-wallet-form method="post" novalidate autocomplete="off">
    <p class="ah-form-hint">带 * 为必填。工作人员将核对本次活动身份和你填写的 GGJ 资料。</p>
+   <p class="ah-form-hint" data-wallet-config-status role="status" aria-live="polite"></p>
+   <button type="button" class="ah-text-action" data-wallet-config-retry hidden>重试连接</button>
    <p class="ah-form-hint" data-wallet-draft-status role="status" aria-live="polite"></p><button type="button" class="ah-text-action" data-wallet-draft-restore hidden>恢复本机申请</button>
    <p class="ah-form-error" data-wallet-error role="alert" tabindex="-1" hidden></p>
    <div class="ah-fields-grid">

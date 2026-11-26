@@ -1,6 +1,10 @@
 # ARTDiCO HOST · artdico.host
 
-**最新已發布：**[PR79 場次發布入口與前台日程排序](docs/redesign/session-publication-order-release.md)，main `82daf5a8316e37ae9647ca8d7c84ec5020de35d8`。場次頁可就近發布、查看逐場公開進度，並在同區、同上午／下午內上移／下移；保存與明確發布分開。[PR檢查41624929578](https://github.com/kunanli/artdicohost/actions/runs/41624929578)及[main流程41626550368](https://github.com/kunanli/artdicohost/actions/runs/41626550368)均通過1961項Node、13組89案瀏覽器及137檔候選離線啟動。正式五工作成功，私有OSS、14後台及68公開HTTPS物件已核對，2026-11-03 11:36:03 UTC完成入場路徑三項驗證。主辦方仍須明確發布已保存講座；部署沒有代發正式草稿。
+**目前正式版本**為 2026-11-26 的 `ebed563`。活動行負責正式報名、驗票與簽到。官網提供活動資訊及電子紀念卡申請，後台提供活動行名單核對、紀念卡核准與發放、活動內容和人員分工。舊確認連結和舊 QR 入口顯示活動行指引。[活動行活動頁](https://9525102647817.huodongxing.com/event/8884819113200) · [紀念卡後台](https://api.artdico.host/admin/cards/)
+
+本版通過 2,027 項 Node 測試、瀏覽器回歸與正式發布。正式環境核對了 15 個後台頁面、77 個公開 HTTPS 物件及舊簽到 API 的 `410` 回應。[PR #116](https://github.com/kunanli/artdicohost/pull/116) · [正式部署](https://github.com/kunanli/artdicohost/actions/runs/45776935655) · [開發進度](docs/development-status.md)
+
+**歷史發布** [PR79 場次發布入口與前台日程排序](docs/redesign/session-publication-order-release.md)，main `82daf5a8316e37ae9647ca8d7c84ec5020de35d8`。場次頁可就近發布、查看逐場公開進度，並在同區、同上午／下午內上移／下移。保存與明確發布分開。當次通過 1,961 項 Node 測試、13 組 89 案瀏覽器及 137 檔候選離線啟動。[PR 檢查](https://github.com/kunanli/artdicohost/actions/runs/41624929578) · [當時的正式流程](https://github.com/kunanli/artdicohost/actions/runs/41626550368)
 
 **前次已驗證發布（歷史基準）：**[PR78 活動行名單接入Wallet與體檢](docs/redesign/huodongxing-wallet-health.md)，main `3c13de91b8da04a2232b4ad6916cd1cfdffacbd5`。[正式流程41606971922](https://github.com/kunanli/artdicohost/actions/runs/41606971922)五工作成功，1941項Node、81案同來源瀏覽器、137檔候選離線啟動、私有OSS、14後台及68公開HTTPS物件均核對；2026-11-03 09:11:20 UTC完成入場路徑三項驗證。郵件／Wallet配置就緒，先前403及真人收件／iPhone添加仍未實寄驗證。
 
@@ -10,7 +14,7 @@
 
 更早 [PR66：手機圈內組織、全頁星空與報名更正](docs/redesign/mobile-organizations-profile-release.md)，main `c5166922`，保留當次1634測試、13後台及61公開物件HTTPS回執。首頁樣式沿 [CSS／字級規範](docs/frontend-typography.md)。
 
-2026-11-03使用者最新決策：一般報名由官網前往活動行，本站只保留講者提案；客服以三段出席分類查看，寄送異常另列提示。[本輪範圍與驗證](docs/redesign/external-registration-staff-status-release.md)記錄實作及發布進度；[活動行Excel→Wallet轉接與體檢](docs/redesign/huodongxing-wallet-health.md)已由PR78交付；批次同步與寄信不因切換入口自動完成。下方本站自動報名及更早紀錄保留作歷史。
+2026-11-03 曾將一般報名移至活動行，並保留講者提案。講者申請現已關閉。當時的出席分類、匯入與郵件流程保留供追溯。[活動行轉接紀錄](docs/redesign/external-registration-staff-status-release.md) · [歷史匯入體檢](docs/redesign/huodongxing-wallet-health.md)
 
 本次改版執行入口：[分階段總覽](docs/redesign/README.md)、[操作手冊](docs/redesign/02-staff-and-attendee-runbook.md)、[驗收與發布](docs/redesign/03-release-and-acceptance.md)。P1–P6、[UX1 操作／層級](docs/redesign/ux-clarity-release.md) 及 [UX2 具名寄送與連續處理](docs/redesign/ux-workflow-release.md) 均已完成程式交付及正式發布；UX2 main `5ec45815` 的 1586 項測試、私有 OSS、13 個後台頁面及 51 個公開物件核驗通過。四項真人／真實資料驗收仍待主辦方記錄。下方 10 月發布資訊為歷史基準，現況以接續台帳及當輪紀錄為準。
 
@@ -18,21 +22,21 @@
 
 前輪 [氣泡職稱與正式 Logo 邊界修復](docs/redesign/bubbles-logo-release.md) 由 PR #59 發布於 main `bd49a745`，1611 項測試及 60 個公開物件等回執保留為歷史；獨立顯示單位與職位由 [PR #60](docs/redesign/guest-identity-reference-release.md) 交付，後續呈現以頁首最新紀錄為準。
 
-项目：GlobalGameJam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页 `artdico.host`、正式报名与独立香港 FC 工作人员后台已启用。资料保存以服务端已确认回执为准；开发和发布的准确来源、实际验收与未配置项目见[接续台账](docs/session-recovery.md)及[验收清单](docs/morning-acceptance.md)。
+项目为 Global Game Jam 中国交流聚会 × ARTDiCO HOST 学生嘉年华 2026。公开活动页位于 `artdico.host`，工作人员使用 `api.artdico.host` 的香港 FC 后台。资料保存以服务端确认的回执为准。[接续台账](docs/session-recovery.md)
 
 [PR #42](https://github.com/kunanli/artdicohost/pull/42)／[PR #43](https://github.com/kunanli/artdicohost/pull/43) 已实际发布，main **`d9d0dd2cc52eac755aef8deda5de9c91024b741d`**，2026-10-22 **01:05:35（UTC+08）**完成。[正式运行 39639330823](https://github.com/kunanli/artdicohost/actions/runs/39639330823) attempt 1 的 check／deploy-fc／deploy 全成功。 1304项main检查、真实私有OSS／共同300政策、13个API后台路径、46个公开对象HTTPS及匿名公开内容／CORS核对通过。公开／出席红绿状态、前台返回刷新、统一游戏与作品及组织／展位关系、嘉宾照片选填、跟进人固定彩色标签均已上线。[准确证据](docs/games-publication-release-2026-10-21.md)、[操作](docs/publication-games-operations.md)、[新session接续](docs/session-recovery.md)。
 
-**仍需主办方操作：**本次未代建 `zhouyufei`、`wangying`；现有管理员先在[用户管理](https://api.artdico.host/admin/settings/accounts/)核对，未建立才按准备／保存及回执流程创建，快捷预填不是已建立账号。Wallet沿用已配置的受控签章，iPhone真机添加另验；EmailJS必要字段完整、自动寄信已启用，但先前403尚未证明解除，托管範本和真实收件按[本轮记录](docs/redesign/entry-ticket-release.md)另行核对。
+**待实测**为纪念卡邮件实际收件、iPhone 真机加入和显示，以及活动行现场验票。正式配置核对与合成测试的证据见开发台账。[开发与验收进度](docs/development-status.md)
 
 ## 目标
-一页式简体中文活动落地页；展示日程和参与方式；正式报名收集 GGJ SO/RO、新站点、行业嘉宾、机构及生态合作伙伴资料，并支持独立确认讲者、赞助、展位与住宿安排。已确认 2026-12-05、09:30 签到、10:00–18:00 正式活动，场地为深圳前海5号楼；待邀嘉宾、协办署名与其他安排仍按各自确认状态展示。
+以中英文公开页面提供日程、参展作品、交通和活动行入口。参加者可申请 JPEG 和 Apple Wallet 电子纪念卡。2026-12-05 在深圳前海 5 号楼举行，09:30 开始签到，正式活动为 10:00–18:00。
 
 ## 技术决策
-参考私有仓库 `kunanli/igda_shenzhen`（2026-10-18 检查）：Astro、Function Compute、GitHub Actions、静态 OSS 公共站点、私有 OSS JSON 报名。新建独立仓库和独立 OSS/FC 资源；**不要复制旧密钥、成员数据或直接改 IGDA 正式站**。
+Astro 静态前端发布至香港公开 OSS，香港 Function Compute 提供 API 与工作人员后台，私有 OSS 保存内容和业务日志。GitHub Actions 按准确提交检查与发布。活动行管理正式票券，本站在服务端核对纪念卡资格并生成领卡资料。[系统架构和数据](docs/06-architecture-data.md) · [部署与回退](docs/08-deployment.md)
 
 ## 文档入口
 
-历史操作文档：[统一保存](docs/admin-save-workflow.md)、[默认公开](docs/default-public-visibility.md)、[设置回执](docs/settings-save-feedback.md)、[当次验收／发布记录](docs/admin-save-visibility-release-2026-10-22.md)。以下PR42／43等仅供追溯，最新发布状态以页首及接续台账为准。
+日常操作先读工作手册，发布验收以开发台账为准。下表保留历史功能及回执。[工作手册](docs/redesign/02-staff-and-attendee-runbook.md) · [开发台账](docs/development-status.md)
 
 | 主要流程 | 操作说明 | 实际发布证据 |
 | --- | --- | --- |
@@ -72,4 +76,4 @@
 
 ## 范围
 
-已实现活动页、私有报名与审核、人员／组织关系、活动与展位编排、志愿者、通知、邀请图、Excel及后台账号。Wallet 已有签章配置与下载流程，真实 iPhone 加入验收待完成。手机扫描专用入场码、工作人员登录核对并明确确认入场已有软件与隔离验证；真实现场操作另验。支付、邮件营销及自动奖项评定尚未实施。
+本站负责活动内容、电子纪念卡、人员与组织关系、场次与展位、志愿者分工、邀请图、Excel 和后台账号。正式票务和现场签到由活动行处理。工作人员可查阅站内历史记录，并按授权核对活动行导出的名单。[电子纪念卡与活动行边界](docs/redesign/external-registration-wallet.md)

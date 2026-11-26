@@ -1,6 +1,12 @@
 # GitHub 自动更新香港 FC
 
-## 当前发布路径：内容代码与账号配置仍保持关闭
+## 2026-11-26 现行发布路径
+
+main 的正式流程先以准确提交构建并核对站点和 FC 包，再执行香港 FC 的受控发布、私有 OSS 验收和启用。FC 验收成功后才上传 OSS 公共站点。正式版本 `ebed563` 已完成全流程及公开 HTTPS 核对。当前站内业务为内容、后台和电子纪念卡，正式报名与签到在活动行办理。[部署与回退](08-deployment.md) · [正式发布验证](https://github.com/kunanli/artdicohost/actions/runs/45776935655)
+
+以下为 2026-10-20 初期接入记录。代码更新、受控配置和业务关闭状态均属于当时的版本。
+
+## 历史阶段：仅部署内容代码及受控账号配置
 
 2026-10-20 接续：main `3bb438d7425b35cdc723b84a68ce47f0d7ba1ad7` 的 [Actions 39426879176（第 2 次执行）](https://github.com/kunanli/artdicohost/actions/runs/39426879176/attempts/2) 已通过 448 项测试、16 个公开 OSS SHA-256 回读及三次 FC 签名完整源码标记。日常 `deploy-fc` 已永久消费同次检查的独立内容包；发布器仍只更新 code，要求准确专用执行角色、关闭的业务开关和最新 main，保留配置及签名触发器。FC codeChecksum 仍是 CRC64；包 SHA-256 不是远端回读。此前 `b65eb4d`／[39421559983](https://github.com/kunanli/artdicohost/actions/runs/39421559983) 的 413 项检查为切换前历史基线。
 

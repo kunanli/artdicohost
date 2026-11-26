@@ -163,6 +163,48 @@ test('a stalled public body is cancelled within the trusted deadline without rea
   const response = await handle(request); assert.equal(response.status, 503); assert.equal(calls, 0); assert.equal(cancelled, true); assert.doesNotMatch(await response.text(), /PRIVATE_INPUT|timeout|stack/u);
 });
 
+test('Wallet reports a collector conflict only for an authorized request matching the optional number contract', async () => {
+  const collector = { sequence: 42, test: false, manual: true };
+  const selected = { ...record, walletRequested: true, walletIdentity: 'organizer',
+    event: { ...record.event, id: eventConfig.id }, cardCollectorNumber: collector };
+  let authorizeCalls = 0, factsChecks = 0, latest = selected;
+  const wallet = service({
+    authorize: async () => { authorizeCalls++; return selected; },
+    authorizedRegistration: async () => latest,
+    eventFactsReadiness: async () => { factsChecks++; return { ready: true, reason: 'EVENT_FACTS_VERIFIED', revision: 1 }; },
+  });
+  const handle = createAppleWalletApi({ service: wallet });
+  const request = (body, path = '/api/admin/registration/wallet') => new Request('https://api.artdico.host' + path, {
+    method: 'POST', headers: { origin: 'https://artdico.host', 'content-type': 'application/json' },
+    body: JSON.stringify({ receiptToken: token, ...body }),
+  });
+  for (const expectedCollectorNumber of [null, 42, { sequence: 0, test: false },
+    { ...collector, manual: false }, { ...collector, extra: true }]) {
+    assert.equal((await handle(request({ expectedCollectorNumber }))).status, 400);
+  }
+  assert.equal(authorizeCalls, 0);
+  const stale = await handle(request({ expectedCollectorNumber: { sequence: 42, test: false } }));
+  assert.equal(stale.status, 409);
+  assert.equal(stale.headers.get('cache-control'), 'private, no-store');
+  const error = await stale.json();
+  assert.equal(error.error.code, 'CARD_COLLECTOR_CHANGED');
+  assert.doesNotMatch(JSON.stringify(error), /0042|synthetic\.receipt/u);
+  assert.equal(factsChecks, 0, 'a stale number is rejected before preparing the pass');
+
+  const valid = await handle(request({ expectedCollectorNumber: collector }, '/api/registration/wallet'));
+  assert.equal(valid.status, 200);
+  const pass = JSON.parse(passFiles(Buffer.from(await valid.arrayBuffer())).get('pass.json'));
+  assert.equal(pass.posterGeneric.primaryFields.find(field => field.key === 'poster-collector-number-short').value, 'No. S0042');
+
+  latest = { ...selected, cardCollectorNumber: { ...collector, sequence: 43 } };
+  const changed = await handle(request({ expectedCollectorNumber: collector }));
+  assert.equal(changed.status, 409);
+  assert.equal((await changed.json()).error.code, 'CARD_COLLECTOR_CHANGED');
+  assert.equal((await handle(request({}))).status, 404, 'old clients still receive the existing inactive response for a changed number');
+  latest = { ...latest, admissionStatus: 'withdrawn' };
+  assert.equal((await handle(request({ expectedCollectorNumber: collector }))).status, 404, 'revoked access takes precedence over a collector conflict');
+});
+
 test('encoded Wallet requests are rejected before parsing or invoking the signing service', async () => {
   let calls = 0;
   const handle = createAppleWalletApi({ service: { download: async () => { calls++; return { outcome: 'not_ready' }; }, verify: async () => ({ valid: false }) } });
@@ -316,6 +358,54 @@ test('commemorative passes sign the full poster and a compatible native strip wi
   assert.match(info.get('poster-info-schedule-c').value, /^09:30–18:00  Exhibition demos/u);
   assert.match(info.get('poster-info-schedule-c-games').value, /妖骰奇谭/u);
   assert.equal(englishPass.eventTicket.backFields.find(({ key }) => key === 'event-details').label, 'Event Details');
+});
+
+test('collector numbers are signed into both keepsake styles while reissues retain the same internal serial', async () => {
+  const selected = { ...record, walletRequested: true, walletIdentity: 'organizer', cardLocale: 'en',
+    event: { ...record.event, id: eventConfig.id, venue: eventConfig.venue.address },
+    cardCommunity: { site: 'GGJ ARTDICO', role: '站点组织者' }, cardProfile: { organization: 'Synthetic School', phone: '' } };
+  let collector;
+  const read = async () => ({ ...selected, ...(collector ? { cardCollectorNumber: collector } : {}) });
+  const wallet = service({ authorize: read, authorizedRegistration: read });
+  for (const [number, short, full] of [
+    [null, undefined, undefined],
+    [{ sequence: 42, test: false }, 'No. 0042', 'GGJ26-HOST-0042'],
+    [{ sequence: 42, test: false, manual: true }, 'No. S0042', 'GGJ26-HOST-S0042'],
+    [{ sequence: 1, test: true }, 'TEST No. 0001', 'GGJ26-HOST-TEST-0001'],
+  ]) {
+    collector = number;
+    const result = await wallet.download({ receiptToken: token });
+    assert.equal(result.outcome, 'issued');
+    const files = passFiles(result.data), pass = JSON.parse(files.get('pass.json'));
+    assert.equal(pass.serialNumber, `${eventConfig.id}-${id}`);
+    assert.equal(pass.barcodes, undefined);
+    assert.equal(pass.posterGeneric.footerFields[0].value, [record.event.date, record.event.time, 'Qianhai Block V'].join(' · '));
+    const { primaryFields, additionalInfoFields, backFields } = pass.posterGeneric;
+    assert.deepEqual(primaryFields.slice(0, 3).map(field => field.value), ['GGJ ARTDICO', 'Site Organizer', record.name]);
+    assert.equal(primaryFields.find(field => field.key === 'poster-collector-number-short')?.value, short);
+    const legacyCollector = pass.eventTicket.auxiliaryFields.find(field => field.key === 'collector-number-short');
+    assert.deepEqual(legacyCollector, short ? { key: 'collector-number-short', value: short, row: 1 } : undefined);
+    assert.equal(additionalInfoFields.find(field => field.key === 'poster-info-collector-number')?.value, full);
+    assert.equal(backFields.find(field => field.key === 'poster-details-collector-number')?.value, full);
+    assert.equal(pass.eventTicket.backFields.find(field => field.key === 'collector-number')?.value, full);
+    if (number?.manual) {
+      assert.equal(JSON.parse(files.get('manifest.json'))['pass.json'], createHash('sha1').update(files.get('pass.json')).digest('hex'));
+      await writeFile(resolve(fixture.directory, 'collector-manifest.json'), files.get('manifest.json'));
+      await writeFile(resolve(fixture.directory, 'collector-signature'), files.get('signature'));
+      assert.doesNotThrow(() => fixture.run(['cms', '-verify', '-binary', '-inform', 'DER', '-in', 'collector-signature',
+        '-content', 'collector-manifest.json', '-CAfile', 'root.pem', '-purpose', 'any', '-out', 'verified-collector-manifest.json']));
+    }
+  }
+});
+
+test('a changed collector number during Wallet signing returns no stale pass', async () => {
+  const selected = { ...record, walletRequested: true, walletIdentity: 'organizer', event: { ...record.event, id: eventConfig.id } };
+  const claimed = { sequence: 42, test: false };
+  for (const [before, after] of [[null, claimed], [claimed, null], [claimed, { ...claimed, manual: true }]]) {
+    const wallet = service({ authorize: async () => ({ ...selected, cardCollectorNumber: before }),
+      authorizedRegistration: async () => ({ ...selected, cardCollectorNumber: after }) });
+    assert.deepEqual(await wallet.download({ receiptToken: token }), { outcome: 'inactive' });
+  }
 });
 
 test('keepsake reissues show each saved GGJ field independently and keep full values in details', async () => {

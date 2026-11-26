@@ -217,3 +217,54 @@ test('a legacy commemorative card response still resolves without passing an ent
  const source=value();source.card={format:'both',identity:'嘉宾',ready:true,entryQr:'iVBORw0KGgoAAAAA'};
  assert.deepEqual(confirmationView(source,now).card,{format:'both',identity:'嘉宾',ready:true});
 });
+
+test('collector state distinguishes an unclaimed card from a legacy card and rejects invalid numbers', () => {
+  const source = value(), card = { format: 'both', identity: '嘉宾', ready: true };
+  source.wallet.ready = true;
+  const project = fields => confirmationView({ ...source, card: { ...card, ...fields } }, now);
+  assert.equal(project({}).wallet.ready, true);
+  assert.deepEqual(project({ collectorNumber: null }).card, { ...card, collectorNumber: null });
+  assert.equal(project({ collectorNumber: null }).wallet.ready, false);
+  for (const number of [{ sequence: 1, test: false }, { sequence: 24, test: true, manual: true }]) {
+    const assigned = project({ collectorNumber: number });
+    assert.deepEqual(assigned.card.collectorNumber, number);
+    assert.equal(assigned.wallet.ready, true);
+  }
+  for (const invalid of [undefined, 1, { sequence: 0, test: false }, { sequence: 1, test: 'false' },
+    { sequence: 1, test: false, manual: false }, { sequence: 1, test: false, private: true }]) {
+    assert.equal(project({ collectorNumber: invalid }), null);
+  }
+});
+
+test('claim uses an explicit canonical request while a refresh reads the assigned number without claiming again', async () => {
+  const calls = [];
+  const source = value(), card = { format: 'both', identity: '嘉宾', ready: true };
+  const number = { sequence: 1, test: false };
+  let collectorNumber = null;
+  const client = createConfirmationClient({ apiOrigin: api, pageOrigin: site, fetchFn: async (url, options) => {
+    const body = JSON.parse(options.body);
+    calls.push({ url, body });
+    assert.equal(options.credentials, 'omit');
+    assert.equal(options.cache, 'no-store');
+    assert.equal(options.referrerPolicy, 'no-referrer');
+    assert.equal(options.headers.Accept, 'application/json; profile=commemorative-card-collector');
+    if (body.claimCard) {
+      collectorNumber = number;
+      throw new Error('Simulated lost claim acknowledgement');
+    }
+    return json({ ...source, card: { ...card, collectorNumber } });
+  } });
+  assert.equal((await client.read(token, { includeCardFormats: true })).card.collectorNumber, null);
+  await assert.rejects(client.claim(token));
+  assert.deepEqual((await client.read(token, { includeCardFormats: true })).card.collectorNumber, number);
+  assert.deepEqual(calls, [
+    { url: api + '/api/admin/registration/confirmation', body: { receiptToken: token } },
+    { url: api + '/api/registration/confirmation', body: { receiptToken: token, claimCard: true } },
+    { url: api + '/api/admin/registration/confirmation', body: { receiptToken: token } },
+  ]);
+  const result = collectorNumber => createConfirmationClient({ apiOrigin: api, pageOrigin: site,
+    fetchFn: async () => json({ ...source, card: { ...card, collectorNumber } }) });
+  assert.deepEqual((await result(number).claim(token)).card.collectorNumber, number);
+  await assert.rejects(result(null).claim(token), /未确认/u);
+  await assert.rejects(result(undefined).claim(token), /未确认/u);
+});

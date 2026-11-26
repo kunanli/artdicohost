@@ -1,4 +1,4 @@
-import { cardIdentityHeadline, commemorativeCardVenue } from '../../shared/general-application.mjs';
+import { cardIdentityHeadline, commemorativeCardVenue, formatCardCollectorNumber } from '../../shared/general-application.mjs';
 import { eventConfig } from '../config/event.mjs';
 
 // Coordinates follow the organizer-provided portrait card.
@@ -125,6 +125,8 @@ export async function renderCommemorativeJpeg(view) {
   context.fillRect(67, 1328, 895, 1);
   line(context, copy.keepsake, 64, 1387, 29);
   line(context, copy.checkIn, 64, 1431, 25, { color: '#c5c0cb' });
+  const collector = formatCardCollectorNumber(view.card.collectorNumber);
+  if (collector) line(context, collector.short, 962, 1387, 35, { maxWidth: 470, align: 'right', color: '#d9c7ff', weight: 600 });
   return new Promise((resolve, reject) => {
     canvas.toBlob(blob => {
       canvas.width = 0;

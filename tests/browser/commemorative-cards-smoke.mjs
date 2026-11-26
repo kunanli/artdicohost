@@ -38,8 +38,9 @@ try {
     let publicDetails = null;
     let publicDetailsGate = null;
     let unverifiedCardFacts = false;
-    let privateReads = 0, staleIdentity = width === 320, staleCommunity = device === 'safari';
+    let privateReads = 0, claimRequests = 0, staleIdentity = width === 320, staleCommunity = device === 'safari';
     let loseSendReply = device === 'chrome';
+    let loseClaimReply = width === 320;
     const sendRequests = [];
     try {
       await context.route('**/*', async route => {
@@ -57,7 +58,13 @@ try {
               return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': SITE }, json: publicDetails });
             }
             const privateRead = method === 'POST' && ['/api/admin/registration/confirmation', '/api/registration/confirmation'].includes(url.pathname);
-            if (privateRead) privateReads++;
+            const claiming = privateRead && request.postDataJSON()?.claimCard === true;
+            if (privateRead) {
+              if (claiming) {
+                assert.equal(url.pathname, '/api/registration/confirmation');
+                claimRequests++;
+              } else privateReads++;
+            }
             const cardMutation = url.pathname.startsWith('/api/admin/registration-confirmation/cards/');
             const sending = cardMutation && method === 'POST' && !url.pathname.endsWith('/approve');
             if (cardMutation) {
@@ -77,6 +84,10 @@ try {
             if (sending && loseSendReply && response.ok) {
               loseSendReply = false;
               return route.fulfill({ status: 503, json: { error: { message: '合成回执丢失' } } });
+            }
+            if (claiming && loseClaimReply && response.ok) {
+              loseClaimReply = false;
+              return route.fulfill({ status: 503, headers: { 'access-control-allow-origin': SITE }, json: { error: { message: '合成回执丢失' } } });
             }
             if (walletAvailable && privateRead && response.ok) {
               const data = await response.json();
@@ -215,6 +226,18 @@ try {
         await page.getByRole('status').filter({ hasText: '纪念卡资料已保存。' }).waitFor();
         assert.ok((await page.locator('[data-card-community-summary]').textContent()).includes('GGJ 合成站 · ' + jammerRole));
       }
+      const collectorShort = device === 'safari' ? 'No. S0042' : 'No. 0001';
+      const collectorFull = device === 'safari' ? 'GGJ26-HOST-S0042' : 'GGJ26-HOST-0001';
+      if (device === 'safari') {
+        await page.locator('[data-card-collector-edit]').click();
+        await page.locator('#card-collector-sequence').fill('42');
+        assert.equal(await send.isDisabled(), true, 'an unsaved custom number blocks sending');
+        await page.locator('[data-card-collector-save]').click();
+        await page.getByRole('status').filter({ hasText: '收藏序号已保存。' }).waitFor();
+        assert.match(await page.locator('[data-card-collector-number]').innerText(), /GGJ26-HOST-S0042/u);
+        await page.locator('[data-card-search]').fill(collectorFull);
+        assert.equal(await page.locator('[data-card-list] button').count(), 1);
+      }
       assert.equal(cardMessages().length, 0);
       await previewSavedCard();
       await page.screenshot({ path: resolve(output, 'staff-' + width + '.png'), fullPage: true });
@@ -281,6 +304,22 @@ try {
         }
         await page.goto(link);
         const downloadButton = page.getByRole('link', { name: '下载 JPEG 纪念卡' });
+        const claimButton = page.locator('#confirmation-card-claim-button');
+        await claimButton.waitFor();
+        assert.equal(claimRequests, 0, 'opening a valid private link never allocates a number');
+        assert.equal(await downloadButton.isVisible(), false);
+        assert.equal(await page.locator('[data-confirmation-wallet]').isVisible(), false);
+        await claimButton.click();
+        const expectedClaimAttempts = width === 320 ? 2 : 1;
+        if (width === 320) {
+          await page.locator('#confirmation-card-claim-status[data-status="error"]').waitFor();
+          assert.equal(await downloadButton.isVisible(), false);
+          await claimButton.click();
+        }
+        const number = page.locator('#confirmation-card-collector-number');
+        await number.waitFor();
+        assert.match(await number.innerText(), new RegExp(collectorFull, 'u'));
+        assert.equal(claimRequests, expectedClaimAttempts);
         if (device === 'safari') {
           await page.waitForFunction(() => typeof globalThis.releaseSyntheticJpeg === 'function');
           await page.locator('[data-confirmation-wallet]:enabled').waitFor();
@@ -371,7 +410,10 @@ try {
           assert.ok(files.get('signature')?.length);
           assert.equal(JSON.parse(files.get('manifest.json'))['pass.json'], createHash('sha1').update(files.get('pass.json')).digest('hex'));
           assert.deepEqual(walletPass.posterGeneric.primaryFields.map(({ label, value }) => [label, value]),
-            [[undefined, 'GGJ 合成站'], [undefined, jammerRole], [undefined, '合成纪念卡申请人']]);
+            [[undefined, 'GGJ 合成站'], [undefined, jammerRole], [undefined, '合成纪念卡申请人'], [undefined, collectorShort]]);
+          assert.ok(walletPass.posterGeneric.backFields.some(({ value }) => value === collectorFull));
+          assert.ok(walletPass.eventTicket.backFields.some(({ value }) => value === collectorFull));
+          assert.ok(walletPass.eventTicket.auxiliaryFields.some(({ value }) => value === collectorShort));
           assert.equal(walletPass.posterGeneric.additionalInfoFields.find(({ key }) => key === 'poster-info-ggj-role').value, jammerRole);
           assert.equal(walletPass.posterGeneric.footerFields[0].value, '2026-12-05 · 10:00–18:00 · 前海5号楼');
           assert.deepEqual(walletPass.posterGeneric.additionalInfoFields.slice(0, 2).map(({ label }) => label),
@@ -419,8 +461,8 @@ try {
           assert.deepEqual(walletPass.eventTicket.secondaryFields.map(({ label, value }) => [label, value]),
             [[undefined, jammerRole], [undefined, '合成纪念卡申请人']]);
           assert.deepEqual(walletPass.eventTicket.headerFields.map(({ value }) => value), ['前海5号楼']);
-          assert.deepEqual(walletPass.eventTicket.auxiliaryFields.map(field => field.key), ['date', 'time', 'activities', 'ggj-site-short', 'ggj-role-short', 'organization-short']);
-          assert.deepEqual(walletPass.eventTicket.auxiliaryFields.slice(3), [
+          assert.deepEqual(walletPass.eventTicket.auxiliaryFields.map(field => field.key), ['date', 'time', 'activities', 'ggj-site-short', 'ggj-role-short', 'organization-short', 'collector-number-short']);
+          assert.deepEqual(walletPass.eventTicket.auxiliaryFields.slice(3, 6), [
             { key: 'ggj-site-short', label: 'GGJ 站点或社群', value: 'GGJ 合成站', row: 1 },
             { key: 'ggj-role-short', label: 'GGJ 参与经历', value: '站点组织者 · …', row: 1 },
             { key: 'organization-short', label: '学校／机构', value: organization, row: 1 },
@@ -447,11 +489,38 @@ try {
         const pending = page.waitForEvent('download');
         await downloadButton.click();
         const download = await pending;
-        assert.equal(download.suggestedFilename(), 'artdico-host-card.jpg');
+        assert.equal(download.suggestedFilename(), 'artdico-host-card-' + collectorFull + '.jpg');
         const jpeg = await readFile(await download.path());
         assert.deepEqual([...jpeg.subarray(0, 3)], [0xff, 0xd8, 0xff]);
         assert.deepEqual([...jpeg.subarray(-2)], [0xff, 0xd9]);
         assert.equal(privateReads - readsBefore, device === 'chrome' ? 2 : 1, 'the legacy response is upgraded with one canonical read');
+        if (device === 'safari') {
+          const staff = await context.newPage();
+          try {
+            await staff.goto(selectedUrl);
+            await staff.locator('[data-card-collector-edit]').click();
+            await staff.locator('#card-collector-sequence').fill('43');
+            await staff.locator('[data-card-collector-save]').click();
+            await staff.getByRole('status').filter({ hasText: '收藏序号已保存。' }).waitFor();
+            await staff.locator('[data-card-collector-claim]').filter({ hasText: /第\s*1\s*位/u }).waitFor();
+          } finally { await staff.close(); }
+          const conflict = page.waitForResponse(response => response.url() === API + '/api/admin/registration/wallet' && response.status() === 409);
+          await walletButton.click();
+          const blocked = await conflict;
+          assert.deepEqual(blocked.request().postDataJSON().expectedCollectorNumber, { sequence: 42, test: false, manual: true });
+          await page.getByRole('status').filter({ hasText: '纪念卡编号已更新，请核对后再加入 Apple Wallet。' }).waitFor();
+          assert.match(await number.innerText(), /GGJ26-HOST-S0043/u);
+          await page.evaluate(() => globalThis.releaseSyntheticJpeg());
+          await downloadButton.waitFor();
+          assert.equal(await downloadButton.getAttribute('download'), 'artdico-host-card-GGJ26-HOST-S0043.jpg');
+        }
+        if (width === 320) {
+          await page.reload();
+          await number.waitFor();
+          assert.match(await number.innerText(), new RegExp(collectorFull, 'u'));
+          assert.equal(await claimButton.isVisible(), false, 'a returning cardholder can save either format directly');
+          assert.equal(claimRequests, expectedClaimAttempts);
+        }
         await writeFile(resolve(output, 'sample-commemorative-card.jpg'), jpeg);
         if (device === 'chrome') {
           await page.getByRole('button', { name: 'EN', exact: true }).click();
@@ -525,6 +594,12 @@ try {
       }
       if (width === 320 || width === 1440) {
         await page.goto(API + '/admin/cards/');
+        if (width === 320) {
+          await page.locator('[data-card-filter="all"]').click();
+          await page.locator('[data-card-search]').fill(collectorFull);
+          await page.getByRole('button', { name: /合成纪念卡申请人/u }).click();
+          await page.locator('[data-card-collector-claim]').filter({ hasText: /第\s*1\s*位/u }).waitFor();
+        }
         const add = page.getByRole('button', { name: '新增测试卡' });
         await add.click();
         const create = page.locator('[data-card-create]');
@@ -546,6 +621,20 @@ try {
         await resend.click();
         await page.getByRole('status').filter({ hasText: '已重新提交纪念卡邮件。' }).waitFor();
         assert.equal(cardMessages().length, 4);
+        if (width === 320) {
+          const testLink = /https:\/\/artdico\.host\/registration\/confirmation\/#r=[A-Za-z0-9_.-]+/u.exec(cardMessages()[2].template_params.confirmation_actions)[0];
+          const testPage = await context.newPage();
+          try {
+            await testPage.goto(testLink);
+            await testPage.locator('#confirmation-card-claim-button').click();
+            await testPage.locator('#confirmation-card-collector-number').filter({ hasText: 'GGJ26-HOST-TEST-0001' }).waitFor();
+            const jpeg = testPage.locator('[data-confirmation-jpeg-download]:visible');
+            await jpeg.waitFor();
+            assert.equal(await jpeg.getAttribute('download'), 'artdico-host-card-GGJ26-HOST-TEST-0001.jpg');
+          } finally { await testPage.close(); }
+          await page.reload();
+          await page.locator('[data-card-collector-claim]').filter({ hasText: /TEST.*第\s*1\s*位/u }).waitFor();
+        }
         const remove = page.getByRole('button', { name: '移除测试卡' });
         page.once('dialog', dialog => dialog.dismiss());
         await remove.click();
@@ -561,7 +650,7 @@ try {
       assert.deepEqual(errors, []);
       reports.push({ width, outcome, device, oneMailPerClick: true, explicitResend: true, selectedAfterReload: true,
         inlineError: width === 320, directJpeg: outcome === 'accepted', wallet: walletAvailable, testCardManagement: width === 320 || width === 1440,
-        publicEventDetails: device === 'safari' || width === 1440, savedCardProfile: device === 'safari' });
+        publicEventDetails: device === 'safari' || width === 1440, savedCardProfile: device === 'safari', numberedClaim: outcome === 'accepted' });
     } finally { await context.close(); }
   }
 } finally { signing.cleanup(); await browser.close(); }

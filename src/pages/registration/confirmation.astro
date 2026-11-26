@@ -37,6 +37,14 @@ const apiOrigin = import.meta.env.PUBLIC_API_BASE || '';
           </dl>
           <section class="confirmation-save" data-confirmation-save aria-labelledby="confirmation-save-heading">
             <h2 id="confirmation-save-heading" data-confirmation-save-heading>保存参会信息</h2>
+            <div id="confirmation-card-claim" hidden>
+              <div class="confirmation-actions"><button type="button" id="confirmation-card-claim-button" aria-describedby="confirmation-card-claim-status">领取纪念卡</button></div>
+              <p class="confirmation-action-status confirmation-claim-status" id="confirmation-card-claim-status" role="status"></p>
+            </div>
+            <p class="confirmation-collector" hidden>
+              <span id="confirmation-card-collector-label">纪念卡编号</span>
+              <strong id="confirmation-card-collector-number" tabindex="-1" aria-describedby="confirmation-card-collector-label" data-i18n-preserve></strong>
+            </p>
             <div class="confirmation-actions">
               <a data-confirmation-jpeg-download download="artdico-host-card.jpg" hidden>下载 JPEG 纪念卡</a>
               <button type="button" data-confirmation-copy>复制私人链接</button>

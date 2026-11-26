@@ -1,4 +1,4 @@
-import { cardCommunityLabel, cardJammerOption, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
+import { cardCommunityLabel, cardJammerOption, WALLET_IDENTITIES, formatCardCollectorNumber, MAX_CARD_MANUAL_SEQUENCE } from '../../shared/general-application.mjs';
 import { canManageEventOperations } from '../../shared/staff-permissions.mjs';
 import { renderCommemorativeJpeg } from '../lib/commemorative-card-image.mjs';
 
@@ -61,19 +61,45 @@ const remove = $('[data-card-remove]');
 const previewButton = $('[data-card-preview-open]');
 const previewPanel = $('[data-card-preview-panel]');
 const previewImage = $('[data-card-preview-image]');
-const savedFields = { identity, site: communitySite, role: communityRole, organization, phone };
+const collectorForm = $('[data-card-collector-form]');
+const collectorEdit = $('[data-card-collector-edit]');
+const collectorSave = $('[data-card-collector-save]');
+const collectorClear = $('[data-card-collector-clear]');
+const manualSequence = $('#card-collector-sequence');
+const savedFields = { identity, site: communitySite, role: communityRole, organization, phone, manualSequence };
 
 let csrf = '', rows = [], filter = 'todo', activeId = '', current = null, busy = false, editingIdentity = false, version = 0;
-let pendingTest = null, baseFields = null, reviewedProof = '', staleView = false, contextChanged = false;
+let pendingTest = null, baseFields = null, reviewedProof = '', staleView = false, contextChanged = false, editingCollector = false;
 const pendingApprovals = new Map();
 const pendingDeliveries = new Map();
 const rowFor = id => rows.find(row => row.sources.some(source => source.id === id));
 const normalize = value => value.normalize('NFC').trim();
 const searchable = value => value.normalize('NFKC').trim().toLocaleLowerCase();
+const compactSerial = value => searchable(value).replace(/\s+/gu, '');
+
+function parseManualSequence(input) {
+  const value = input.normalize('NFKC').trim();
+  if (!value) return null;
+  if (!/^[0-9]{1,6}$/u.test(value)) return undefined;
+  const number = Number(value);
+  return number >= 1 && number <= MAX_CARD_MANUAL_SEQUENCE ? number : undefined;
+}
+function comparableField(key, value) {
+  if (key !== 'manualSequence') return normalize(value);
+  const sequence = parseManualSequence(value);
+  return sequence === undefined ? value : String(sequence ?? '');
+}
+function matchesCollector(query, number) {
+  const formatted = formatCardCollectorNumber(number);
+  if (!query || !formatted) return false;
+  const serialQuery = compactSerial(query);
+  return /^[0-9]+$/u.test(serialQuery) && Number(serialQuery) === number.sequence
+    || [formatted.short, formatted.full, formatted.full.split('-').at(-1)].some(serial => compactSerial(serial) === serialQuery);
+}
 
 function draftChanges() {
   if (!baseFields) return {};
-  return Object.fromEntries(Object.entries(savedFields).filter(([key, input]) => input.value !== baseFields[key])
+  return Object.fromEntries(Object.entries(savedFields).filter(([key, input]) => comparableField(key, input.value) !== baseFields[key])
     .map(([key, input]) => [key, input.value]));
 }
 function hasDraft() { return Object.keys(draftChanges()).length > 0; }
@@ -97,6 +123,7 @@ function resetDraft() {
   if (!baseFields) return;
   for (const [key, input] of Object.entries(savedFields)) input.value = baseFields[key];
   editingIdentity = false;
+  editingCollector = false;
   contextChanged = false;
   syncJammer();
   renderActions();
@@ -189,7 +216,7 @@ function renderList() {
     const match = query && (row.sources.find(source => searchable(source.bookingReference) === query)
       ?? row.sources.find(source => searchable(source.bookingReference).includes(query))
       ?? row.sources.find(source => searchable(source.name).includes(query)));
-    if (query && !match && !searchable(row.name).includes(query)) continue;
+    if (query && !match && !searchable(row.name).includes(query) && !matchesCollector(query, row.collectorNumber)) continue;
     visible.push({ row, match });
   }
   visible.sort(({ row: left }, { row: right }) => {
@@ -215,6 +242,14 @@ function renderList() {
     name.textContent = row.name;
     reference.className = 'card-muted';
     reference.textContent = match && match.bookingReference !== row.bookingReference ? '匹配编号：' + match.bookingReference : row.bookingReference;
+    const collector = formatCardCollectorNumber(row.collectorNumber);
+    if (collector) {
+      const serial = document.createElement('span');
+      serial.dataset.cardCollectorReference = '';
+      serial.textContent = collector.short;
+      serial.title = collector.full;
+      reference.append(' · ', serial);
+    }
     button.append(name, reference);
     if (stages[row.stage]) {
       const status = document.createElement('small');
@@ -231,6 +266,7 @@ function setView(value) {
   const draft = stayOnApplication ? draftChanges() : {};
   contextChanged = stayOnApplication && Object.keys(draft).length > 0 && (contextChanged || !sameCard(current, value));
   editingIdentity = stayOnApplication && editingIdentity;
+  editingCollector = stayOnApplication && editingCollector;
   if (!stayOnApplication || contextChanged || reviewedProof !== value?.previewProof) clearPreview();
   current = value;
   detail.hidden = !value;
@@ -240,6 +276,7 @@ function setView(value) {
     $('[data-card-linked] ul').replaceChildren();
     $('[data-card-correct-email]').removeAttribute('href');
     identity.value = '';
+    manualSequence.value = '';
     communityDetails.open = false;
     communityForm.reset();
     baseFields = null;
@@ -264,6 +301,7 @@ function setView(value) {
   }));
   $('[data-card-reference]').textContent = value.bookingReference;
   $('[data-card-recipient]').textContent = value.recipient || '未填写';
+  renderCollector(value);
   const preferences = value.applicationPreferences ?? {};
   const requestedIdentity = WALLET_IDENTITIES.find(option => option.value === preferences.requestedWalletIdentity);
   identity.value = value.identity || requestedIdentity?.value || '';
@@ -287,10 +325,25 @@ function setView(value) {
   const saved = [community, value.cardProfile?.organization].filter(Boolean).join(' · ');
   const pending = proposed && !value.cardCommunitySaved && !community || !value.cardProfile && (profile?.organization || profile?.phone);
   $('[data-card-community-summary]').textContent = '纪念卡补充资料' + (saved ? ' · ' + saved : '') + (pending ? '（待保存）' : '');
-  baseFields = Object.fromEntries(Object.entries(savedFields).map(([key, input]) => [key, input.value]));
-  for (const [key, input] of Object.entries(draft)) if (normalize(input) !== baseFields[key]) savedFields[key].value = input;
+  baseFields = Object.fromEntries(Object.entries(savedFields).map(([key, input]) => [key, comparableField(key, input.value)]));
+  for (const [key, input] of Object.entries(draft)) if (comparableField(key, input) !== baseFields[key]) savedFields[key].value = input;
   syncJammer();
   renderActions();
+}
+
+function renderCollector(value) {
+  const collector = value.collector;
+  const show = Number.isSafeInteger(collector?.revision);
+  const serial = formatCardCollectorNumber(collector?.number);
+  const firstClaim = $('[data-card-collector-claim]');
+  const time = Date.parse(collector?.claimedAt ?? '');
+  const order = collector?.sequence;
+  const claimed = Number.isFinite(time) && Number.isSafeInteger(order) && order > 0;
+  $('[data-card-collector-summary]').hidden = $('[data-card-collector-number-label]').hidden = !show;
+  $('[data-card-collector-number]').textContent = serial?.full ?? '尚未生成';
+  firstClaim.hidden = $('[data-card-collector-claim-label]').hidden = !show;
+  firstClaim.textContent = claimed ? (value.test ? 'TEST · ' : '') + '第 ' + order + ' 位 · ' + sentTime.format(time) + '（UTC+8）' : '尚未领取';
+  manualSequence.value = String(collector?.manualSequence ?? '');
 }
 function renderActions() {
   const value = current;
@@ -331,6 +384,14 @@ function renderActions() {
   identityForm.querySelector('[type="submit"]').disabled = busy || staleView || contextChanged;
   communityForm.querySelector('[type="submit"]').disabled = busy || staleView || contextChanged;
   $('[data-card-cancel-identity]').hidden = !value.identity || !editingIdentity;
+  const canEditCollector = value.canEditCollector === true && Number.isSafeInteger(value.collector?.revision);
+  collectorEdit.hidden = !canEditCollector || editingCollector;
+  collectorEdit.textContent = value.collector?.manualSequence == null ? '设置序号' : '修改序号';
+  collectorEdit.setAttribute('aria-expanded', String(canEditCollector && editingCollector));
+  collectorEdit.disabled = busy || staleView || contextChanged;
+  collectorForm.hidden = !canEditCollector || !editingCollector;
+  collectorSave.disabled = busy || staleView || contextChanged || comparableField('manualSequence', manualSequence.value) === baseFields?.manualSequence;
+  collectorClear.hidden = !manualSequence.value.trim();
   const draftStatus = $('[data-card-draft-status]');
   draftStatus.hidden = !dirty;
   draftStatus.textContent = contextChanged ? '主记录或收件人已变更。请核对当前资料后放弃旧修改。' : '有未保存的卡面修改。';
@@ -398,7 +459,8 @@ async function open(id, focus = false) {
   activeId = id;
   staleView = false;
   const selected = rowFor(id);
-  if (selected) Object.assign(selected, { name: value.name, status: value.status, stage: value.stage, format: value.format, sentAt: value.sentAt });
+  if (selected) Object.assign(selected, { name: value.name, status: value.status, stage: value.stage, format: value.format,
+    sentAt: value.sentAt, collectorNumber: value.collector?.number ?? null });
   if (value.admissionStatus === 'confirmed') pendingApprovals.delete(id);
   setView(value);
   const receipt = pendingDeliveries.get(value.primaryId);
@@ -525,6 +587,22 @@ $('[data-card-cancel-identity]').addEventListener('click', () => {
   editChanged();
   $('[data-card-edit]').focus();
 });
+collectorEdit.addEventListener('click', () => {
+  editingCollector = true;
+  renderActions();
+  manualSequence.focus();
+});
+collectorClear.addEventListener('click', () => {
+  manualSequence.value = '';
+  editChanged();
+  manualSequence.focus();
+});
+$('[data-card-collector-cancel]').addEventListener('click', () => {
+  manualSequence.value = baseFields.manualSequence;
+  editingCollector = false;
+  editChanged();
+  collectorEdit.focus();
+});
 $('[data-card-discard-draft]').addEventListener('click', () => {
   if (window.confirm('放弃这份纪念卡未保存的修改？')) resetDraft();
 });
@@ -633,6 +711,21 @@ communityForm.addEventListener('submit', event => {
       fresh => fresh.cardCommunitySaved && Object.entries(cardCommunity).every(([key, value]) => fresh.cardCommunity?.[key] === value)
         && Object.entries(cardProfile).every(([key, value]) => fresh.cardProfile?.[key] === value),
       () => { message.textContent = '纪念卡资料已保存。'; });
+  }, true);
+});
+collectorForm.addEventListener('submit', event => {
+  event.preventDefault();
+  void work(async () => {
+    const view = current;
+    if (!view?.canEditCollector || !Number.isSafeInteger(view.collector?.revision) || staleView || contextChanged) return;
+    const sequence = parseManualSequence(manualSequence.value);
+    if (sequence === undefined) throw new Error('请输入 1–999999 的整数，或留空清除手动序号。');
+    if (sequence === view.collector.manualSequence) return;
+    await saveCardFields(view, { primaryId: view.primaryId, expectedCollectorRevision: view.collector.revision, manualSequence: sequence },
+      fresh => fresh.collector?.manualSequence === sequence, () => {
+        editingCollector = false;
+        message.textContent = sequence === null ? '手动序号已清除。' : '收藏序号已保存。';
+      });
   }, true);
 });
 deliveryForm.addEventListener('submit', event => {

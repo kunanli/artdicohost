@@ -1,6 +1,6 @@
 import { PUBLIC_CONTACT_EMAIL } from '../config/event.mjs';
-import { CARD_FORMATS_ACCEPT } from '../../shared/confirmation-delivery.mjs';
-import { cardCommunityFields, cardProfileFields } from '../../shared/general-application.mjs';
+import { CARD_COLLECTOR_ACCEPT } from '../../shared/confirmation-delivery.mjs';
+import { cardCommunityFields, cardProfileFields, formatCardCollectorNumber } from '../../shared/general-application.mjs';
 
 const API = 'https://api.artdico.host';
 const SITE = 'https://artdico.host';
@@ -150,7 +150,10 @@ export function confirmationView(value, now = Date.now()) {
   const card = value.card;
   // Accept old response shapes during a rolling update without rendering their entry code.
   const hasQr = plain(card) && Object.hasOwn(card, 'entryQr');
-  if (card !== undefined && (!confirmed || !exact(card, ['format', 'identity', 'ready', ...(hasQr ? ['entryQr'] : [])]) || !['jpeg','wallet','both'].includes(card.format)
+  const hasCollector = plain(card) && Object.hasOwn(card, 'collectorNumber');
+  const collector = hasCollector ? card.collectorNumber : null;
+  if (collector !== null && !formatCardCollectorNumber(collector)) return null;
+  if (card !== undefined && (!confirmed || !exact(card, ['format', 'identity', 'ready', ...(hasQr ? ['entryQr'] : []), ...(hasCollector ? ['collectorNumber'] : [])]) || !['jpeg','wallet','both'].includes(card.format)
     || !text(card.identity, 100) || typeof card.ready !== 'boolean' || card.format === 'jpeg' && value.wallet.ready
     || hasQr && (card.format === 'wallet' || !card.ready || typeof card.entryQr !== 'string' || card.entryQr.length > 21336
       || !/^iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$/u.test(card.entryQr))
@@ -163,8 +166,9 @@ export function confirmationView(value, now = Date.now()) {
     event: Object.fromEntries(eventKeys.map(key => [key,value.event[key]])), referenceCode: value.referenceCode, submittedAt: value.submittedAt,
     admission: { status: value.admission.status, kind: value.admission.kind, revision: value.admission.revision },
     attendee: withdrawn ? { name: '', organization: '' } : { name: value.attendee.name, organization: value.attendee.organization ?? '' },
-    email: { status: ['pending_review','rejected'].includes(value.admission.status) ? 'not_applicable' : value.email.status }, wallet: { ready: confirmed && value.wallet.ready && facts?.ready !== false, ...(confirmed&&!value.wallet.ready&&value.wallet.reason==='WALLET_IDENTITY_PENDING'?{reason:'WALLET_IDENTITY_PENDING'}:{}) },
-    ...(facts ? { eventFacts: facts } : {}), ...(card ? { card: { format: card.format, identity: card.identity, ready: card.ready && facts?.ready !== false } } : {}),
+    email: { status: ['pending_review','rejected'].includes(value.admission.status) ? 'not_applicable' : value.email.status }, wallet: { ready: confirmed && value.wallet.ready && facts?.ready !== false && (!hasCollector || collector !== null), ...(confirmed&&!value.wallet.ready&&value.wallet.reason==='WALLET_IDENTITY_PENDING'?{reason:'WALLET_IDENTITY_PENDING'}:{}) },
+    ...(facts ? { eventFacts: facts } : {}), ...(card ? { card: { format: card.format, identity: card.identity, ready: card.ready && facts?.ready !== false,
+      ...(hasCollector ? { collectorNumber: collector && { sequence: collector.sequence, test: collector.test, ...(collector.manual === true ? { manual: true } : {}) } } : {}) } } : {}),
     ...(cardRequest ? { cardRequest: true } : {}),
     ...(cardCommunity ? { cardCommunity } : {}),
     ...(cardProfile ? { cardProfile } : {}),
@@ -232,18 +236,19 @@ export const confirmationStatusLabels = Object.freeze({
 
 export function createConfirmationClient({ apiOrigin, pageOrigin, fetchFn = globalThis.fetch, timeoutMs = 20_000 } = {}) {
   const available = apiOrigin === API && pageOrigin === SITE && typeof fetchFn === 'function';
-  async function request(path, receiptToken, mime, maxBytes, signal, includeCardFormats = false) {
+  async function request(path, receiptToken, mime, maxBytes, signal, { includeCardFormats = false, claimCard = false, expectedCollectorNumber } = {}) {
     if (!available || !confirmationLink(receiptToken)) throw new Error('请从报名完成后的确认链接或确认邮件打开本页。');
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(),timeoutMs);
     const abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
     try {
       if(controller.signal.aborted)throw new Error();
       const response = await fetchFn(API + path, { method: 'POST', credentials: 'omit', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer',
-        headers: { 'Content-Type': 'application/json', Accept: includeCardFormats ? CARD_FORMATS_ACCEPT : mime },
-        body: JSON.stringify({ receiptToken }), signal: controller.signal });
+        headers: { 'Content-Type': 'application/json', Accept: includeCardFormats ? CARD_COLLECTOR_ACCEPT : mime },
+        body: JSON.stringify({ receiptToken, ...(claimCard ? { claimCard: true } : {}), ...(expectedCollectorNumber ? { expectedCollectorNumber } : {}) }), signal: controller.signal });
       if (!response || response.redirected || response.url && response.url !== API + path) throw new Error();
       if (response.status === 410 && mime === 'application/json') throw Object.assign(new Error('报名与签到请在活动行办理。'), { known: true, external: true });
       if ([401,403,404,410].includes(response.status)) throw Object.assign(new Error('这个确认链接已失效或不可用，请通过原联系渠道向筹备团队核对。'), { known: true });
+      if (response.status === 409 && expectedCollectorNumber) throw Object.assign(new Error('纪念卡编号已更新。'), { known: true, collectorChanged: true });
       if (response.status !== 200 || response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== mime) throw new Error();
       const declared = response.headers.get('content-length');
       if (declared !== null && (!/^(?:0|[1-9]\d*)$/u.test(declared) || Number(declared) > maxBytes)) throw new Error();
@@ -263,8 +268,8 @@ export function createConfirmationClient({ apiOrigin, pageOrigin, fetchFn = glob
       throw new Error('暂时无法核对最新报名状态，请稍后按「重新读取」。无需重复报名。');
     } finally { clearTimeout(timer);signal?.removeEventListener('abort',abort); controller.abort(); }
   }
-  async function readView(path, receiptToken, signal, includeCardFormats) {
-    const bytes = await request(path, receiptToken, 'application/json', 64 * 1024, signal, includeCardFormats);
+  async function readView(path, receiptToken, signal, options) {
+    const bytes = await request(path, receiptToken, 'application/json', 64 * 1024, signal, options);
     let value;
     try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); }
     catch { throw new Error('报名状态未通过核对，请稍后重新读取。'); }
@@ -275,14 +280,20 @@ export function createConfirmationClient({ apiOrigin, pageOrigin, fetchFn = glob
   return Object.freeze({
     get available() { return available; },
     async read(receiptToken,{signal,includeCardFormats=false}={}) {
-      const view = await readView('/api/admin/registration/confirmation', receiptToken, signal, includeCardFormats);
+      const view = await readView('/api/admin/registration/confirmation', receiptToken, signal, { includeCardFormats });
       if (includeCardFormats && view.card && view.card.format !== 'both') {
-        return readView('/api/registration/confirmation', receiptToken, signal, includeCardFormats);
+        return readView('/api/registration/confirmation', receiptToken, signal, { includeCardFormats });
       }
       return view;
     },
-    async wallet(receiptToken,{signal}={}) {
-      const bytes = await request('/api/admin/registration/wallet',receiptToken,'application/vnd.apple.pkpass',2 * 1024 * 1024,signal);
+    async claim(receiptToken, { signal } = {}) {
+      const view = await readView('/api/registration/confirmation', receiptToken, signal, { includeCardFormats: true, claimCard: true });
+      if (!view.card?.collectorNumber) throw new Error('纪念卡领取结果未确认。');
+      return view;
+    },
+    async wallet(receiptToken, { signal, expectedCollectorNumber } = {}) {
+      if (expectedCollectorNumber && !formatCardCollectorNumber(expectedCollectorNumber)) throw new Error('纪念卡编号未通过检查。');
+      const bytes = await request('/api/admin/registration/wallet', receiptToken, 'application/vnd.apple.pkpass', 2 * 1024 * 1024, signal, { expectedCollectorNumber });
       if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b || bytes[2] !== 3 || bytes[3] !== 4) throw new Error('票券未通过检查，请稍后再试。');
       return new Blob([bytes],{type:'application/vnd.apple.pkpass'});
     },

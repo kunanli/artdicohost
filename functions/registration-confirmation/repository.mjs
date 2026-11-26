@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { CloudContentError } from '../cloud-content/errors.mjs';
 import { parseTimestamp } from '../registration-api/policy.mjs';
 import { validConfirmationDiagnostic } from '../../shared/confirmation-delivery.mjs';
-import { cardCommunityFields, cardProfileFields, WALLET_IDENTITIES } from '../../shared/general-application.mjs';
+import { cardCommunityFields, cardProfileFields, WALLET_IDENTITIES, MAX_CARD_MANUAL_SEQUENCE } from '../../shared/general-application.mjs';
 
 export const MAX_CONFIRMATION_AUDIT = 4000;
 export const MAX_CONFIRMATION_BATCH = 100;
@@ -25,6 +25,7 @@ export const commemorativeCardKind = kind => kind === 'card_jpeg' || kind === 'c
 
 export const cardCommunityPrefix = eventId => 'cms/v1/commemorative-cards/' + eventId + '/community';
 export const cardManagementPrefix = eventId => 'cms/v1/commemorative-cards/' + eventId + '/management';
+export const cardCollectorPrefix = eventId => 'cms/v1/commemorative-cards/' + eventId + '/collector';
 
 export function cardTestFields({ name, email, identity }) {
   if (typeof name !== 'string' || typeof email !== 'string' || /[\u0000-\u001f\u007f]/u.test(name + email)) return null;
@@ -88,6 +89,92 @@ export function createCardManagementRepository({ journal, eventId, clock }) {
     await commit(current, value);
   }
   return { read, save, approve };
+}
+
+/** The official and test claim orders advance independently of display-number edits. */
+export function createCardCollectorRepository({ journal, eventId, clock }) {
+  const emptySeries = () => ({ claims: {}, manual: {}, reserved: {} });
+
+  function validate(value, revision) {
+    if (!exact(value, ['schemaVersion', 'eventId', 'official', 'test']) || value.schemaVersion !== 1 || value.eventId !== eventId) fail();
+    for (const series of [value.official, value.test]) {
+      if (!exact(series, ['claims', 'manual', 'reserved']) || [series.claims, series.manual, series.reserved]
+        .some(entries => !entries || Object.getPrototypeOf(entries) !== Object.prototype)) fail();
+      const claims = Object.entries(series.claims), sequences = new Set();
+      for (const [id, entry] of claims) {
+        if (!ID.test(id) || !exact(entry, ['sequence', 'claimedAt']) || !Number.isSafeInteger(entry.sequence)
+          || entry.sequence < 1 || entry.sequence > claims.length || sequences.has(entry.sequence) || !at(entry.claimedAt)) fail();
+        sequences.add(entry.sequence);
+      }
+      for (const [number, owner] of Object.entries(series.reserved)) {
+        if (!/^[1-9]\d*$/u.test(number) || Number(number) > MAX_CARD_MANUAL_SEQUENCE || !ID.test(owner ?? '')) fail();
+      }
+      for (const [id, entry] of Object.entries(series.manual)) {
+        if (!ID.test(id) || !exact(entry, ['sequence', 'revision', 'updatedAt', 'actorId'])
+          || entry.sequence !== null && (!Number.isSafeInteger(entry.sequence) || !Object.hasOwn(series.reserved, entry.sequence))
+          || !Number.isSafeInteger(entry.revision) || entry.revision < 1 || entry.revision > revision
+          || !at(entry.updatedAt) || !ACTOR.test(entry.actorId ?? '')) fail();
+      }
+    }
+    return value;
+  }
+
+  async function read() {
+    const { value, cursor } = await journal.read();
+    if (value === null && cursor?.version === 0) return { value: { schemaVersion: 1, eventId, official: emptySeries(), test: emptySeries() }, cursor };
+    if (!Number.isSafeInteger(cursor?.version) || cursor.version < 1) fail();
+    return { value: validate(value, cursor.version), cursor };
+  }
+
+  function get(current, { primaryId, registrationIds, test }) {
+    if (!ID.test(primaryId ?? '') || typeof test !== 'boolean' || !Array.isArray(registrationIds)
+      || registrationIds.length > 100 || !registrationIds.includes(primaryId) || registrationIds.some(id => !ID.test(id ?? ''))) fail();
+    const { claims, manual, reserved } = test ? current.value.test : current.value.official;
+    let firstAliasClaim, latestManual;
+    for (const id of registrationIds) {
+      const claim = claims[id], edit = manual[id];
+      if (claim && (!firstAliasClaim || claim.sequence < firstAliasClaim.sequence)) firstAliasClaim = claim;
+      if (edit && (!latestManual || edit.revision > latestManual.revision)) latestManual = edit;
+    }
+    const claim = claims[primaryId] ?? firstAliasClaim;
+    const manualSequence = latestManual?.sequence != null && registrationIds.includes(reserved[latestManual.sequence]) ? latestManual.sequence : null;
+    const sequence = claim?.sequence ?? null;
+    const number = manualSequence !== null ? { sequence: manualSequence, test, manual: true } : sequence !== null ? { sequence, test } : null;
+    return { sequence, claimedAt: claim?.claimedAt ?? null, manualSequence, revision: current.cursor.version, number };
+  }
+
+  async function save(current, value, scope) {
+    validate(value, current.cursor.version + 1);
+    const saved = await journal.commit(current.cursor, value);
+    if (saved?.cursor?.version !== current.cursor.version + 1 || !isDeepStrictEqual(saved.value, value)) fail();
+    return get(saved, scope);
+  }
+
+  async function claim(current, scope) {
+    const previous = get(current, scope);
+    if (previous.sequence !== null) return previous;
+    const value = structuredClone(current.value), series = scope.test ? value.test : value.official;
+    series.claims[scope.primaryId] = { sequence: Object.keys(series.claims).length + 1, claimedAt: new Date(clock()).toISOString() };
+    return save(current, value, scope);
+  }
+
+  async function saveManual(current, { primaryId, registrationIds, test, manualSequence, expectedCollectorRevision, actorId }) {
+    if (manualSequence !== null && (!Number.isSafeInteger(manualSequence) || manualSequence < 1 || manualSequence > MAX_CARD_MANUAL_SEQUENCE)
+      || !ACTOR.test(actorId ?? '')) fail();
+    const scope = { primaryId, registrationIds, test }, previous = get(current, scope);
+    if (previous.revision !== expectedCollectorRevision) throw new CloudContentError('WRITE_CONFLICT', '编号记录已更新。', 409);
+    if (previous.manualSequence === manualSequence) return previous;
+    const value = structuredClone(current.value), series = test ? value.test : value.official;
+    if (manualSequence !== null) {
+      const owner = series.reserved[manualSequence];
+      if (owner && !registrationIds.includes(owner)) throw new CloudContentError('CARD_NUMBER_TAKEN', '纪念卡编号已被保留。', 409);
+      series.reserved[manualSequence] ??= primaryId;
+    }
+    series.manual[primaryId] = { sequence: manualSequence, revision: current.cursor.version + 1, updatedAt: new Date(clock()).toISOString(), actorId };
+    return save(current, value, scope);
+  }
+
+  return { read, get, claim, saveManual };
 }
 
 /** Isolate optional card copy from the admission, review, and mail journals. */

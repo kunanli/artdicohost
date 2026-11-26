@@ -6,11 +6,11 @@ import { createConfirmationTokens } from '../functions/registration-confirmation
 import { createRegistrationConfirmationService } from '../functions/registration-confirmation/service.mjs';
 import { createAppleWalletService } from '../functions/apple-wallet/service.mjs';
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
-import { cardCommunityPrefix, cardManagementPrefix, createConfirmationRepository } from '../functions/registration-confirmation/repository.mjs';
+import { cardCollectorPrefix, cardCommunityPrefix, cardManagementPrefix, createConfirmationRepository } from '../functions/registration-confirmation/repository.mjs';
 import { collectJournalBackupKeys } from '../functions/registration-admin/maintenance.mjs';
 import { createWalletFixture, passFiles } from './apple-wallet-fixture.mjs';
 import { confirmationView } from '../src/lib/confirmation-client.mjs';
-import { CARD_FORMATS_ACCEPT } from '../shared/confirmation-delivery.mjs';
+import { CARD_COLLECTOR_ACCEPT, CARD_FORMATS_ACCEPT } from '../shared/confirmation-delivery.mjs';
 import { cardIdentityHeadline } from '../shared/general-application.mjs';
 
 const root = '/api/admin/registration-confirmation/cards';
@@ -61,6 +61,32 @@ async function setup({ mailResult = 'accepted', clock, preferences = {} } = {}) 
   return { ...f, cardMessages, fields, headers, id, path, call, read, directory, prepare };
 }
 
+const collectorPath = '/api/registration/confirmation';
+function recipientCard(f, receiptToken, options = {}) {
+  const { app = f.app, claimCard, path = collectorPath, origin = PEOPLE_FIXTURE_PUBLIC } = options;
+  return app.handle(f.request(path, { method: 'POST', origin, headers: { Accept: CARD_COLLECTOR_ACCEPT },
+    body: { receiptToken, ...(claimCard === undefined ? {} : { claimCard }) } }));
+}
+async function sendCollectorFixture(f, id) {
+  const path = root + '/' + id;
+  const call = (method, body, suffix = '') => f.app.handle(f.request(path + suffix, { method, body, headers: f.headers }));
+  let view = await (await call('GET')).json();
+  if (view.admissionStatus === 'pending_review') {
+    assert.equal((await call('POST', { primaryId: id, expectedRevision: view.admissionRevision, operationId: operationId() }, '/approve')).status, 200);
+    view = await (await call('GET')).json();
+  }
+  if (!view.identity) {
+    assert.equal((await call('PATCH', { primaryId: id, expectedRevision: view.reviewRevision, identity: 'guest' })).status, 200);
+    view = await (await call('GET')).json();
+  }
+  const sent = await call('POST', { primaryId: id, expectedRevision: view.deliveryRevision,
+    expectedAccessRevision: view.accessRevision, identity: view.identity, format: 'jpeg' });
+  assert.equal(sent.status, 200);
+  assert.equal((await sent.json()).status, 'provider_accepted');
+  const mail = f.cardMessages().at(-1).template_params;
+  return /#r=([A-Za-z0-9_.-]+)/u.exec(mail.confirmation_actions)[1];
+}
+
 test('staff send one commemorative card email and recipients can still save the JPEG when Wallet is unavailable', async () => {
   const f = await setup();
   await f.seedPublic();
@@ -70,7 +96,7 @@ test('staff send one commemorative card email and recipients can still save the 
   const list = await f.directory();
   const application = { id: f.id, name: f.fields.name, bookingReference: f.fields.huodongxingReference };
   assert.deepEqual(list, [{ ...application, submittedAt: '2026-10-21T09:00:00.000Z', sources: [application],
-    status: 'not_sent', stage: 'pending_review', format: null, sentAt: null }]);
+    status: 'not_sent', stage: 'pending_review', format: null, sentAt: null, collectorNumber: null }]);
   const body = await f.prepare();
   const reviewer = await f.login('reviewer');
   assert.equal((await f.app.handle(f.request(f.path, { method: 'POST', headers: reviewer, body }))).status, 403);
@@ -107,15 +133,152 @@ test('staff send one commemorative card email and recipients can still save the 
   const before = f.objects.calls.length;
   const both = confirmationView(await (await publicCall('/api/admin/registration/confirmation', { Accept: CARD_FORMATS_ACCEPT })).json());
   const canonical = confirmationView(await (await publicCall('/api/registration/confirmation')).json());
+  const numbered = confirmationView(await (await publicCall('/api/registration/confirmation', { Accept: CARD_COLLECTOR_ACCEPT })).json());
   assert.deepEqual(canonical, both, 'the canonical route combines formats even if the browser omits the profile');
   assert.ok(f.objects.calls.slice(before).every(call => call.operation === 'get'), 'redemption does not write entry credentials');
   assert.deepEqual(both.card, { ...view.card, format: 'both' });
+  assert.deepEqual(numbered.card, { ...both.card, collectorNumber: null });
   assert.equal(both.wallet.ready, false);
   assert.equal(view.wallet.ready, false);
   assert.equal((await publicCall('/api/admin/registration/wallet')).status, 503);
   assert.equal((await f.read()).status, 'provider_accepted');
   await f.call('POST', { ...body, format: 'wallet' }, f.make());
   assert.equal(f.cardMessages().length, 1);
+});
+
+test('only the explicit private claim assigns one durable order across retries, lost acknowledgements and concurrent recipients', async () => {
+  const f = await setup();
+  const two = await f.seedWallet({ huodongxingReference: '214' });
+  const three = await f.seedWallet({ huodongxingReference: '307' });
+  const four = await f.seedWallet({ huodongxingReference: '498' });
+  const first = await sendCollectorFixture(f, f.id), second = await sendCollectorFixture(f, two), third = await sendCollectorFixture(f, three);
+  const fourth = await sendCollectorFixture(f, four);
+  const prefix = cardCollectorPrefix(PEOPLE_FIXTURE_EVENT);
+  const before = f.objects.calls.length;
+  const unclaimed = await recipientCard(f, first);
+  assert.equal(unclaimed.status, 200);
+  assert.equal((await unclaimed.json()).card.collectorNumber, null);
+  assert.ok(f.objects.calls.slice(before).every(call => call.operation === 'get'));
+  assert.ok(!f.objects.files.has(prefix + '/commits.jsonl'));
+  const beforeInvalid = f.objects.calls.length;
+  assert.equal((await recipientCard(f, 'invalid', { claimCard: true })).status, 404);
+  assert.equal((await recipientCard(f, first, { claimCard: false })).status, 400);
+  assert.equal((await recipientCard(f, first, { claimCard: true, path: '/api/admin/registration/confirmation' })).status, 400);
+  assert.equal((await recipientCard(f, first, { claimCard: true, origin: 'https://untrusted.example' })).status, 403);
+  assert.equal(f.objects.calls.length, beforeInvalid);
+
+  let lost = false;
+  const lostApp = f.make({ objects: { ...f.objects, append: async (...args) => {
+    const written = await f.objects.append(...args);
+    if (!lost && args[0] === prefix + '/commits.jsonl') {
+      lost = true;
+      throw new Error('Synthetic lost collector append acknowledgement');
+    }
+    return written;
+  } } });
+  const recovered = await recipientCard(f, first, { claimCard: true, app: lostApp });
+  assert.equal(recovered.status, 200);
+  assert.equal(lost, true);
+  const oneView = await recovered.json();
+  assert.deepEqual(oneView.card.collectorNumber, { sequence: 1, test: false });
+  const responses = await Promise.all([
+    recipientCard(f, second, { claimCard: true, app: f.make() }),
+    recipientCard(f, third, { claimCard: true, app: f.make() }),
+    recipientCard(f, second, { claimCard: true, app: f.make() }),
+  ]);
+  for (const response of responses) assert.equal(response.status, 200);
+  const [twoView, threeView, duplicateView] = await Promise.all(responses.map(response => response.json()));
+  assert.deepEqual(twoView.card.collectorNumber, duplicateView.card.collectorNumber);
+  assert.deepEqual([twoView.card.collectorNumber.sequence, threeView.card.collectorNumber.sequence].sort(), [2, 3]);
+  assert.equal(oneView.card.collectorNumber.claimedAt, undefined);
+  assert.equal(f.cardMessages().length, 4);
+  const saved = await f.read();
+  assert.equal(saved.collector.sequence, oneView.card.collectorNumber.sequence);
+  assert.equal(saved.collector.claimedAt, '2026-10-21T09:00:00.000Z');
+  const repeatOffset = f.objects.calls.length;
+  assert.deepEqual((await (await recipientCard(f, first, { claimCard: true })).json()).card.collectorNumber, oneView.card.collectorNumber);
+  assert.ok(f.objects.calls.slice(repeatOffset).every(call => call.operation === 'get'));
+  assert.deepEqual((await f.app.confirmationService.authorize({ receiptToken: first })).cardCollectorNumber, oneView.card.collectorNumber);
+  assert.deepEqual((await f.app.confirmationService.authorizedRegistration(f.id, { includeCardCommunity: true })).cardCollectorNumber, oneView.card.collectorNumber);
+  assert.equal((await f.call('DELETE', { primaryId: f.id })).status, 200);
+  assert.equal((await recipientCard(f, first, { claimCard: true })).status, 404);
+  assert.deepEqual((await (await recipientCard(f, fourth, { claimCard: true })).json()).card.collectorNumber, { sequence: 4, test: false });
+  const backup = await collectJournalBackupKeys({ objects: f.objects, journalPrefixes: [prefix] });
+  assert.ok(backup.includes(prefix + '/commits.jsonl') && backup.some(key => key.startsWith(prefix + '/blobs/')));
+});
+
+test('staff can reserve and clear a custom number while official and test claims retain their own original order', async () => {
+  const f = await setup();
+  const another = await f.seedWallet({ huodongxingReference: '6789' });
+  const added = await f.app.handle(f.request(root, { method: 'POST', headers: f.headers, body: {
+    name: '合成编号测试', email: 'collector-test@example.invalid', identity: 'guest', operationId: operationId(),
+  } }));
+  assert.equal(added.status, 200);
+  const testId = (await added.json()).registrationId;
+  const get = async id => (await f.app.handle(f.request(root + '/' + id, { headers: f.headers }))).json();
+  const edit = (id, manualSequence, expectedCollectorRevision, headers = f.headers) => f.app.handle(f.request(root + '/' + id, {
+    method: 'PATCH', headers, body: { primaryId: id, manualSequence, expectedCollectorRevision },
+  }));
+  const initial = await f.read();
+  assert.deepEqual(initial.collector, { sequence: null, claimedAt: null, manualSequence: null, revision: 0, number: null });
+  assert.equal(initial.canEditCollector, true);
+  assert.equal((await edit(f.id, 42, 0, await f.login('reviewer'))).status, 403);
+  assert.equal((await edit(f.id, 42, 0, { Cookie: f.headers.Cookie })).status, 403);
+  assert.equal((await edit(f.id, 1_000_000, 0)).status, 400);
+  const reserved = await edit(f.id, 42, 0);
+  assert.equal(reserved.status, 200);
+  assert.deepEqual((await reserved.json()).collector, { ...initial.collector, manualSequence: 42, revision: 1,
+    number: { sequence: 42, test: false, manual: true } });
+  assert.equal((await edit(another, 42, 0)).status, 409);
+  const duplicate = await edit(another, 42, (await get(another)).collector.revision);
+  assert.equal(duplicate.status, 409);
+  assert.equal((await duplicate.json()).error.code, 'CARD_NUMBER_TAKEN');
+  const testLink = await sendCollectorFixture(f, testId);
+  assert.deepEqual((await (await recipientCard(f, testLink, { claimCard: true })).json()).card.collectorNumber, { sequence: 1, test: true });
+  const official = await sendCollectorFixture(f, f.id);
+  assert.deepEqual((await f.read()).preview.card.collectorNumber, { sequence: 42, test: false, manual: true });
+  assert.equal((await (await recipientCard(f, official)).json()).card.collectorNumber, null);
+  const claim = await recipientCard(f, official, { claimCard: true });
+  assert.equal(claim.status, 200);
+  assert.deepEqual((await claim.json()).card.collectorNumber, { sequence: 42, test: false, manual: true });
+  const claimed = (await f.read()).collector;
+  assert.equal(claimed.sequence, 1);
+  const cleared = await edit(f.id, null, claimed.revision);
+  assert.equal(cleared.status, 200);
+  assert.deepEqual((await cleared.json()).collector, { ...claimed, manualSequence: null, revision: claimed.revision + 1, number: { sequence: 1, test: false } });
+  assert.deepEqual((await (await recipientCard(f, official)).json()).card.collectorNumber, { sequence: 1, test: false });
+  assert.deepEqual((await f.directory()).find(row => row.id === f.id).collectorNumber, { sequence: 1, test: false });
+  assert.equal((await edit(another, 42, (await get(another)).collector.revision)).status, 409, 'a cleared special number stays reserved');
+  const ledger = await createObjectJournal({ objects: f.objects, prefix: cardCollectorPrefix(PEOPLE_FIXTURE_EVENT) }).read();
+  assert.equal(ledger.value.official.manual[f.id].actorId, f.users[0].id);
+  assert.equal(ledger.value.official.manual[f.id].updatedAt, '2026-10-21T09:00:00.000Z');
+  assert.equal(f.cardMessages().length, 2);
+});
+
+test('a removal observed before allocation stops the claim and a concurrent durable claim stays hidden after removal', async () => {
+  const f = await setup();
+  const secondId = await f.seedWallet({ huodongxingReference: '202' });
+  const lastId = await f.seedWallet({ huodongxingReference: '303' });
+  const before = await sendCollectorFixture(f, f.id), during = await sendCollectorFixture(f, secondId), after = await sendCollectorFixture(f, lastId);
+  const key = cardCollectorPrefix(PEOPLE_FIXTURE_EVENT) + '/commits.jsonl';
+  async function remove(id) {
+    const response = await f.app.handle(f.request(root + '/' + id, { method: 'DELETE', headers: f.headers, body: { primaryId: id } }));
+    assert.equal(response.status, 200);
+  }
+  const removedBeforeWrite = f.make({ objects: { ...f.objects, get: async (name, options) => {
+    if (name === key) await remove(f.id);
+    return f.objects.get(name, options);
+  } } });
+  assert.equal((await recipientCard(f, before, { claimCard: true, app: removedBeforeWrite })).status, 404);
+  assert.equal(f.objects.files.has(key), false);
+  const removedDuringWrite = f.make({ objects: { ...f.objects, append: async (...args) => {
+    const saved = await f.objects.append(...args);
+    if (args[0] === key) await remove(secondId);
+    return saved;
+  } } });
+  assert.equal((await recipientCard(f, during, { claimCard: true, app: removedDuringWrite })).status, 404);
+  assert.equal((await recipientCard(f, during)).status, 404);
+  assert.deepEqual((await (await recipientCard(f, after, { claimCard: true })).json()).card.collectorNumber, { sequence: 2, test: false });
 });
 
 test('an issued card displays its application site and discipline until staff replace or clear them', async t => {
@@ -596,11 +759,13 @@ test('existing Wallet and JPEG links can redeem both keepsake formats after the 
   assert.doesNotMatch(messages[0].templateVariables.confirmation_actions, /下载 JPEG|add-to-apple-wallet/u);
   assert.doesNotMatch(messages[0].text, /https?:\/\//u);
   const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(messages[0].templateVariables.confirmation_actions)[1];
-  assert.deepEqual(confirmationView(await service.confirmation({ receiptToken })).card, { format: 'wallet', identity: '嘉宾', ready: true });
-  const first = confirmationView(await service.confirmation({ receiptToken, includeCardFormats: true }));
+  assert.deepEqual(confirmationView(await service.confirmation({ receiptToken })).card, { format: 'wallet', identity: '嘉宾', ready: true, collectorNumber: null });
+  const beforeClaim = await service.confirmation({ receiptToken, includeCardFormats: true });
+  assert.equal(beforeClaim.wallet.ready, true, 'the signing capability is available to old clients');
+  const first = confirmationView(beforeClaim);
   assert.equal(first.card.format, 'both');
   assert.equal(first.card.ready, true);
-  assert.equal(first.wallet.ready, true);
+  assert.equal(first.wallet.ready, false);
   assert.equal(first.card.entryQr, undefined);
   assert.deepEqual(first.eventFacts, { ready: true, reason: 'EVENT_FACTS_VERIFIED', revision: 7 });
   eventReady = false;
@@ -612,8 +777,8 @@ test('existing Wallet and JPEG links can redeem both keepsake formats after the 
     expiresAt });
   current = Date.parse('2026-12-06T00:00:00Z');
   for (const token of [receiptToken, tokens.issue(f.id, 0, 'jpeg').receiptToken]) {
-    const view = confirmationView(await service.confirmation({ receiptToken: token, includeCardFormats: true }));
-    assert.deepEqual(view.card, first.card);
+    const view = confirmationView(await service.claimCard({ receiptToken: token, includeCardFormats: true }));
+    assert.deepEqual(view.card, { ...first.card, collectorNumber: { sequence: 1, test: false } });
     assert.equal(view.wallet.ready, true);
     const pass = await wallet.download({ receiptToken: token });
     assert.equal(pass.outcome, 'issued');
@@ -621,6 +786,7 @@ test('existing Wallet and JPEG links can redeem both keepsake formats after the 
     assert.ok(files.get('signature').length > 1024);
     const passJson = JSON.parse(files.get('pass.json'));
     assert.equal(passJson.eventTicket.secondaryFields.find(field => field.key === 'identity').value, '嘉宾');
+    assert.equal(passJson.posterGeneric.backFields.find(field => field.key === 'poster-details-collector-number').value, 'GGJ26-HOST-0001');
     assert.equal(passJson.barcodes, undefined);
     assert.equal(passJson.expirationDate, undefined);
   }

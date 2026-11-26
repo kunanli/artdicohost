@@ -19,6 +19,7 @@
 | `cms/v1/registration-reviews/{eventId}` | 工作人员审核、卡面身分和个人资料更正。 |
 | `cms/v1/commemorative-cards/{eventId}/management` | 独立纪念卡核准、测试卡与移除标记。核准以主记录关联所选申请和操作凭据。重核原操作可读取既有结果。 |
 | `cms/v1/commemorative-cards/{eventId}/community` | 已确认的 GGJ 站点／社群、参与经历和可选卡面资料。明确保存的空白优先于申请内容。 |
+| `cms/v1/commemorative-cards/{eventId}/collector` | 首次领取的顺序及时间、自订序号与历史保留。正式和测试两条序列各自递增。 |
 | `cms/v1/commemorative-cards/{eventId}` | 纪念卡邮件预留、寄送结果与审计。历史参会通知另存于 `cms/v1/registration-confirmations/{eventId}`。 |
 
 OSS 日志以不可变的哈希内容及原子追加提交保存。预期修订或追加位置冲突时，以当前状态重新核对。纪念卡核准与移除共用管理日志的条件写入。核准只产生纪念卡资格，既有名额、票证和签到记录保留。首次写入独立核准后，回退版本须能读取新增记录并维持活动行模式。 [日志实现](../functions/cloud-content/object-journal.mjs) · [纪念卡持久化](../functions/registration-confirmation/repository.mjs) · [发布与回退](08-deployment.md)
@@ -32,7 +33,7 @@ OSS 日志以不可变的哈希内容及原子追加提交保存。预期修订�
 | `POST /api/admin/login`、`GET /api/admin/session` | 持久化工作人员会话和 CSRF 凭据。 |
 | `GET /api/admin/admissions`、`GET /api/admin/registrations`、`GET /api/admin/registrations/:id` | 授权查询保留的站内名额和人员资料。 |
 | `/api/admin/registration-confirmation/cards` | 工作人员查看、核准、编辑、测试、发送、重寄与移除纪念卡。 |
-| `POST /api/registration/confirmation`、`POST /api/registration/wallet` | 使用私人 `receiptToken` 读取纪念卡资格与资料、下载签章卡。旧前端使用的对应 `/api/admin/registration/*` 路径仍有兼容入口。 |
+| `POST /api/registration/confirmation`、`POST /api/registration/wallet` | 使用私人 `receiptToken` 读取纪念卡资格与资料、下载签章卡。只有正式领取路径接受显式 `claimCard: true`，首次分配序号，重试读取同一编号。旧 `/api/admin/registration/*` 路径仍有兼容入口。 |
 
 公开配置沿用兼容字段 `publicRegistrationMode: 'speaker_only'`。现行开放状态由 `speakerApplicationsEnabled: false` 和 `walletApplicationsEnabled: true` 表示，后者仍受服务开放时间约束。服务端强制活动行模式。 [正式配置核对](https://github.com/kunanli/artdicohost/actions/runs/45776935655/job/139768424487)
 

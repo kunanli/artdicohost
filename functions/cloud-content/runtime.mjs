@@ -30,7 +30,7 @@ import { createAdmissionsApi } from '../registration-admin/admissions-handler.mj
 import { createOrganizerTasksApi } from '../organizer-tasks/handler.mjs';
 import { createContactAdmissionGuard } from './contact-admission-guard.mjs';
 import { createRegistrationConfirmationService } from '../registration-confirmation/service.mjs';
-import { cardCommunityPrefix, cardManagementPrefix } from '../registration-confirmation/repository.mjs';
+import { cardCollectorPrefix, cardCommunityPrefix, cardManagementPrefix } from '../registration-confirmation/repository.mjs';
 import { createRegistrationConfirmationApi } from '../registration-confirmation/handler.mjs';
 import { createConfirmationEmailProvider } from '../registration-confirmation/email-provider.mjs';
 import { loadEncryptedConfirmationMail, confirmationMailObjectKey } from '../registration-confirmation/config-bundle.mjs';
@@ -454,7 +454,8 @@ export function createCloudApplication({ objects, env, fetchFn, now = () => Date
     audit: createMaintenanceAuditStore({ journal: journalFor('cms/v1/maintenance'), clock: now }),
     journalPrefixes: [HUODONGXING_JOURNAL_PREFIX, 'cms/v1/content', 'cms/v1/contacts', 'cms/v1/intent-invitations', 'cms/v1/maintenance',
       `cms/v1/registrations/${eventId}/index`, `cms/v1/registration-reviews/${eventId}`, `cms/v1/registration-confirmations/${eventId}`,
-      `cms/v1/volunteers/${eventId}`, `cms/v1/group-invites/${eventId}/state`, `cms/v1/commemorative-cards/${eventId}`, cardCommunityPrefix(eventId), cardManagementPrefix(eventId)] });
+      `cms/v1/volunteers/${eventId}`, `cms/v1/group-invites/${eventId}/state`, `cms/v1/commemorative-cards/${eventId}`,
+      cardCommunityPrefix(eventId), cardManagementPrefix(eventId), cardCollectorPrefix(eventId)] });
   const registrationEnabled = Boolean(policy?.enabled);
   const handle = async request => {
     const url = new URL(request.url);

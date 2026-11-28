@@ -115,6 +115,11 @@ import '../../../styles/admin.css';
                 </form>
                 <p class="card-muted" data-card-draft-status role="status" hidden></p>
                 <button class="ah-admin-text-button" type="button" data-card-discard-draft hidden>放弃未保存修改</button>
+                <form data-card-delivery hidden>
+                  <p class="card-muted" data-card-delivery-formats>一封邮件可领取 JPEG 和 Apple Wallet。</p>
+                  <p class="card-muted" data-card-send-hint hidden></p>
+                  <button class="ah-admin-button ah-admin-primary" type="submit">发送纪念卡</button>
+                </form>
                 <section class="card-preview" data-card-preview aria-label="已保存卡面" hidden>
                   <button class="ah-admin-button" type="button" data-card-preview-open aria-expanded="false" aria-controls="card-preview-image">预览已保存卡面</button>
                   <figure id="card-preview-image" data-card-preview-panel hidden>
@@ -122,12 +127,6 @@ import '../../../styles/admin.css';
                     <figcaption class="card-muted">这是领取页提供的 JPEG。iPhone 上的排版由 Apple Wallet 显示。</figcaption>
                   </figure>
                 </section>
-                <button class="ah-admin-button ah-admin-primary" type="button" data-card-check hidden>核对寄送结果</button>
-                <form data-card-delivery hidden>
-                  <p class="card-muted" data-card-delivery-formats>一封邮件可领取 JPEG 和 Apple Wallet。</p>
-                  <p class="card-muted" data-card-send-hint hidden></p>
-                  <button class="ah-admin-button ah-admin-primary" type="submit">发送纪念卡</button>
-                </form>
                 <div class="card-remove" data-card-remove-panel hidden>
                   <button class="ah-admin-text-button" type="button" data-card-remove>移除纪念卡</button>
                 </div>
@@ -170,7 +169,6 @@ import '../../../styles/admin.css';
   .card-preview { margin-block: 16px; }
   .card-preview figure { margin: 12px 0 0; }
   .card-preview img { display: block; width: min(100%, 320px); height: auto; margin-bottom: 6px; }
-  .card-panel [data-card-check] { margin-bottom: 12px; }
   .card-panel .ah-admin-status { margin-top: 12px; }
   .card-panel [data-card-edit] { margin-inline-start: 8px; }
   .card-remove { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--admin-line); }

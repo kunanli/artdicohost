@@ -61,7 +61,7 @@ async function setup({ mailResult = 'accepted', clock, preferences = {} } = {}) 
   return { ...f, cardMessages, fields, headers, id, path, call, read, directory, prepare };
 }
 
-const collectorPath = '/api/registration/confirmation';
+const collectorPath = '/api/admin/registration/confirmation';
 function recipientCard(f, receiptToken, options = {}) {
   const { app = f.app, claimCard, path = collectorPath, origin = PEOPLE_FIXTURE_PUBLIC } = options;
   return app.handle(f.request(path, { method: 'POST', origin, headers: { Accept: CARD_COLLECTOR_ACCEPT },
@@ -163,7 +163,7 @@ test('only the explicit private claim assigns one durable order across retries, 
   const beforeInvalid = f.objects.calls.length;
   assert.equal((await recipientCard(f, 'invalid', { claimCard: true })).status, 404);
   assert.equal((await recipientCard(f, first, { claimCard: false })).status, 400);
-  assert.equal((await recipientCard(f, first, { claimCard: true, path: '/api/admin/registration/confirmation' })).status, 400);
+  assert.equal((await recipientCard(f, 'invalid', { claimCard: true, path: '/api/registration/confirmation' })).status, 404);
   assert.equal((await recipientCard(f, first, { claimCard: true, origin: 'https://untrusted.example' })).status, 403);
   assert.equal(f.objects.calls.length, beforeInvalid);
 
@@ -180,6 +180,7 @@ test('only the explicit private claim assigns one durable order across retries, 
   assert.equal(recovered.status, 200);
   assert.equal(lost, true);
   const oneView = await recovered.json();
+  assert.equal(oneView.card.format, 'both');
   assert.deepEqual(oneView.card.collectorNumber, { sequence: 1, test: false });
   const responses = await Promise.all([
     recipientCard(f, second, { claimCard: true, app: f.make() }),
@@ -197,6 +198,9 @@ test('only the explicit private claim assigns one durable order across retries, 
   assert.equal(saved.collector.claimedAt, '2026-10-21T09:00:00.000Z');
   const repeatOffset = f.objects.calls.length;
   assert.deepEqual((await (await recipientCard(f, first, { claimCard: true })).json()).card.collectorNumber, oneView.card.collectorNumber);
+  const compatible = await recipientCard(f, first, { claimCard: true, path: '/api/registration/confirmation' });
+  assert.equal(compatible.status, 200);
+  assert.deepEqual((await compatible.json()).card, oneView.card);
   assert.ok(f.objects.calls.slice(repeatOffset).every(call => call.operation === 'get'));
   assert.deepEqual((await f.app.confirmationService.authorize({ receiptToken: first })).cardCollectorNumber, oneView.card.collectorNumber);
   assert.deepEqual((await f.app.confirmationService.authorizedRegistration(f.id, { includeCardCommunity: true })).cardCollectorNumber, oneView.card.collectorNumber);
@@ -761,11 +765,11 @@ test('existing Wallet and JPEG links can redeem both keepsake formats after the 
   const receiptToken = /#r=([A-Za-z0-9_.-]+)/u.exec(messages[0].templateVariables.confirmation_actions)[1];
   assert.deepEqual(confirmationView(await service.confirmation({ receiptToken })).card, { format: 'wallet', identity: '嘉宾', ready: true, collectorNumber: null });
   const beforeClaim = await service.confirmation({ receiptToken, includeCardFormats: true });
-  assert.equal(beforeClaim.wallet.ready, true, 'the signing capability is available to old clients');
   const first = confirmationView(beforeClaim);
   assert.equal(first.card.format, 'both');
   assert.equal(first.card.ready, true);
-  assert.equal(first.wallet.ready, false);
+  assert.equal(first.wallet.ready, true, 'Wallet is available as a save action before first claim');
+  assert.equal(first.card.collectorNumber, null);
   assert.equal(first.card.entryQr, undefined);
   assert.deepEqual(first.eventFacts, { ready: true, reason: 'EVENT_FACTS_VERIFIED', revision: 7 });
   eventReady = false;

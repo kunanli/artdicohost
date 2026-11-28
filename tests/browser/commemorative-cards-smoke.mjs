@@ -41,6 +41,7 @@ try {
     let privateReads = 0, claimRequests = 0, staleIdentity = width === 320, staleCommunity = device === 'safari';
     let loseSendReply = device === 'chrome';
     let loseClaimReply = width === 320;
+    let rejectClaimBeforeWrite = device === 'chrome';
     const sendRequests = [];
     try {
       await context.route('**/*', async route => {
@@ -58,10 +59,14 @@ try {
               return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': SITE }, json: publicDetails });
             }
             const privateRead = method === 'POST' && ['/api/admin/registration/confirmation', '/api/registration/confirmation'].includes(url.pathname);
+            if (url.pathname === '/api/registration/confirmation') {
+              errors.push('The browser attempted a route unavailable at the live gateway');
+              return route.fulfill({ status: 404, json: { ErrorCode: 'DomainRouteNotFound' } });
+            }
             const claiming = privateRead && request.postDataJSON()?.claimCard === true;
             if (privateRead) {
               if (claiming) {
-                assert.equal(url.pathname, '/api/registration/confirmation');
+                assert.equal(url.pathname, '/api/admin/registration/confirmation');
                 claimRequests++;
               } else privateReads++;
             }
@@ -77,7 +82,10 @@ try {
               }
             }
             const headers = new Headers(await request.allHeaders());
-            if (device === 'chrome' && url.pathname === '/api/admin/registration/confirmation') headers.set('accept', 'application/json');
+            if (claiming && rejectClaimBeforeWrite) {
+              rejectClaimBeforeWrite = false;
+              return route.fulfill({ status: 503, headers: { 'access-control-allow-origin': SITE }, json: { error: { message: '合成领取暂不可用' } } });
+            }
             const input = new Request(url.href, { method, headers,
               ...(['GET', 'HEAD'].includes(method) ? {} : { body: request.postData() }) });
             const response = await (walletAvailable && url.pathname === '/api/admin/registration/wallet' ? walletApi(input) : app.handle(input));
@@ -190,10 +198,9 @@ try {
         if (!await previewImage.isVisible()) await previewButton.click();
         await previewImage.waitFor();
       }
-      assert.equal(await send.isDisabled(), true, 'the operator must first preview the saved card');
-      await previewSavedCard();
-      assert.equal(await send.isEnabled(), true);
-      assert.equal(sendRequests.length, 0, 'preview never submits an email');
+      await send.waitFor();
+      assert.equal(await send.isEnabled(), true, 'the operator can send without opening the preview');
+      assert.equal(await previewImage.isVisible(), false);
       if (device === 'safari') {
         assert.match(await page.locator('[data-card-community-summary]').innerText(), /待保存/u);
         await page.locator('[data-card-community-summary]').click();
@@ -239,7 +246,12 @@ try {
         assert.equal(await page.locator('[data-card-list] button').count(), 1);
       }
       assert.equal(cardMessages().length, 0);
-      await previewSavedCard();
+      if (device === 'safari') {
+        await previewSavedCard();
+        assert.equal(sendRequests.length, 0, 'preview never submits an email');
+        await previewButton.click();
+      }
+      assert.equal(await previewImage.isVisible(), false);
       await page.screenshot({ path: resolve(output, 'staff-' + width + '.png'), fullPage: true });
       await send.click();
 
@@ -252,25 +264,16 @@ try {
         assert.match(await page.locator('[data-card-state]').textContent(), /邮件服务.*已接收/u);
       }
       if (outcome === 'unknown') {
-        const lookup = page.getByRole('button', { name: '核对寄送结果' });
-        await lookup.waitFor();
+        assert.equal(await page.getByRole('button', { name: '核对寄送结果' }).count(), 0);
         assert.equal(await page.locator('[data-card-list] [data-stage="check_delivery"]').count(), 1);
-        assert.equal(await page.locator('[data-card-list] [data-stage="check_delivery"] small').textContent(), '寄送待核对');
-        await lookup.click();
-        assert.equal(sendRequests.length, 1, 'checking an uncertain delivery never posts a send');
+        assert.equal(await page.locator('[data-card-list] [data-stage="check_delivery"] small').textContent(), '寄送结果不明');
+        assert.equal(await resend.isEnabled(), true);
         await page.reload();
         await resend.waitFor();
         assert.equal(cardMessages().length, 1, 'reading an uncertain delivery never resends it');
       }
-      await previewSavedCard();
-      if (outcome === 'unknown') {
-        const handled = page.waitForEvent('dialog').then(dialog => dialog.dismiss());
-        await Promise.all([handled, resend.click()]);
-        assert.equal(sendRequests.length, 1, 'cancelling an uncertain resend does not post');
-      }
-      page.once('dialog', dialog => dialog.accept());
       await resend.click();
-      await page.getByRole('status').filter({ hasText: '已重新提交纪念卡邮件。' }).waitFor();
+      await page.locator('[data-card-message]').filter({ hasText: '邮件服务已接收。' }).waitFor();
       assert.equal(cardMessages().length, 2);
       assert.match(await page.locator('[data-card-state]').textContent(), /邮件服务.*已接收/u);
       assert.equal(await page.locator('[data-card-name]').textContent(), '合成纪念卡申请人');
@@ -305,15 +308,24 @@ try {
         await page.goto(link);
         const downloadButton = page.getByRole('link', { name: '下载 JPEG 纪念卡' });
         const claimButton = page.locator('#confirmation-card-claim-button');
+        const walletButton = page.locator('[data-confirmation-wallet]');
         await claimButton.waitFor();
         assert.equal(claimRequests, 0, 'opening a valid private link never allocates a number');
         assert.equal(await downloadButton.isVisible(), false);
-        assert.equal(await page.locator('[data-confirmation-wallet]').isVisible(), false);
-        await claimButton.click();
-        const expectedClaimAttempts = width === 320 ? 2 : 1;
-        if (width === 320) {
+        assert.equal(await walletButton.isVisible(), walletAvailable);
+        if (device === 'chrome') {
+          await walletButton.click();
+          await page.locator('[data-confirmation-safari-guide]').waitFor();
+          assert.equal(claimRequests, 0, 'viewing the Safari guide does not claim');
+          await page.locator('[data-confirmation-safari-close]').click();
+        }
+        const firstWalletDownload = device === 'safari' ? page.waitForEvent('download') : null;
+        await (device === 'safari' ? walletButton : claimButton).click();
+        const expectedClaimAttempts = device === 'chrome' ? 2 : 1;
+        if (device === 'chrome') {
           await page.locator('#confirmation-card-claim-status[data-status="error"]').waitFor();
           assert.equal(await downloadButton.isVisible(), false);
+          assert.equal(await walletButton.isVisible(), true, 'Wallet stays discoverable after a failed claim');
           await claimButton.click();
         }
         const number = page.locator('#confirmation-card-collector-number');
@@ -390,7 +402,6 @@ try {
           ctx.drawImage(node, 334, 1092, 1, 1, 0, 0, 1, 1);
           return Array.from(ctx.getImageData(0, 0, 1, 1).data.subarray(0, 3)).every(channel => channel < 40);
         }), true, 'the old QR position on the JPEG is clear');
-        const walletButton = page.locator('[data-confirmation-wallet]');
         assert.equal(await walletButton.isVisible(), walletAvailable);
         if (device === 'safari') {
           await page.locator('[data-confirmation-wallet-badge]').waitFor();
@@ -400,9 +411,7 @@ try {
         }
         if (device === 'safari') {
           assert.equal(await walletButton.getAttribute('data-wallet-action'), 'add');
-          const walletDownload = page.waitForEvent('download');
-          await walletButton.click();
-          const pass = await walletDownload;
+          const pass = await firstWalletDownload;
           assert.equal(pass.suggestedFilename(), 'artdico-host.pkpass');
           await page.getByRole('status').filter({ hasText: '进入票券详情' }).waitFor();
           const files = passFiles(await readFile(await pass.path()));
@@ -493,7 +502,7 @@ try {
         const jpeg = await readFile(await download.path());
         assert.deepEqual([...jpeg.subarray(0, 3)], [0xff, 0xd8, 0xff]);
         assert.deepEqual([...jpeg.subarray(-2)], [0xff, 0xd9]);
-        assert.equal(privateReads - readsBefore, device === 'chrome' ? 2 : 1, 'the legacy response is upgraded with one canonical read');
+        assert.equal(privateReads - readsBefore, device === 'safari' ? 1 : 2, 'only failed acknowledgements require a read-only follow-up');
         if (device === 'safari') {
           const staff = await context.newPage();
           try {
@@ -613,13 +622,12 @@ try {
         assert.equal(await page.locator('[data-card-reference]').innerText(), '测试卡');
         assert.equal(cardMessages().length, 2);
         assert.equal(await page.locator('[data-card-filter="test"]').getAttribute('aria-pressed'), 'true');
-        await previewSavedCard();
+        assert.equal(await previewImage.isVisible(), false);
         await page.getByRole('button', { name: '发送纪念卡', exact: true }).click();
         await resend.waitFor();
         assert.equal(cardMessages().length, 3);
-        page.once('dialog', dialog => dialog.accept());
         await resend.click();
-        await page.getByRole('status').filter({ hasText: '已重新提交纪念卡邮件。' }).waitFor();
+        await page.locator('[data-card-message]').filter({ hasText: '邮件服务已接收。' }).waitFor();
         assert.equal(cardMessages().length, 4);
         if (width === 320) {
           const testLink = /https:\/\/artdico\.host\/registration\/confirmation\/#r=[A-Za-z0-9_.-]+/u.exec(cardMessages()[2].template_params.confirmation_actions)[0];

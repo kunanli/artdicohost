@@ -10,10 +10,10 @@
 
 1. 工作人員至 [後台紀念卡](https://api.artdico.host/admin/cards/) 核對活動行報名及卡面身分。核准以主記錄、原申請、操作者及原操作識別寫入獨立管理日誌。核准和移除共用修訂檢查，重查同一核准操作可讀取原結果。核准只影響紀念卡資格，網站歷史名額帳維持原狀。 [紀念卡服務](../../functions/registration-confirmation/service.mjs) · [管理日誌](../../functions/registration-confirmation/repository.mjs)
 2. 合併記錄由人員主記錄承接卡面及寄送。工作人員保存的 GGJ 站點／社群、參與經歷和可選卡面資料優先，明確清空也保留。其餘資料沿用仍與主記錄關聯的核准申請，或主記錄本身的紀念卡申請。若主記錄是一般舊報名且缺少指定來源，只採用一致的關聯紀念卡資料。英文郵件、JPEG 和 Wallet 共用身分格式。 [GGJ 資料選擇](../../functions/registration-confirmation/service.mjs) · [雙語身分格式](../../shared/general-application.mjs)
-3. 具權限同事明確寄送後，申請人開啟同一私人頁，點「领取纪念卡」取得編號，再下載 JPEG 或在 iPhone Safari 加入 Apple Wallet。再次開啟可直接下載，兩種卡共用收藏編號。現場請出示活動行原電子票。核准和改卡面資料各自保存，寄送由獨立操作啟動。服務商接受、信箱送達及開啟是不同結果。上次寄送待核對時可先查原紀錄，明確重寄可能收到多封。 [郵件與寄送狀態](../registration-confirmation.md) · [領取頁](../../src/pages/registration/confirmation.astro)
+3. 具權限同事儲存資料後可直接寄送或重寄，卡面預覽可按需打開。申請人打開私人頁後可點「领取纪念卡」，也可在 iPhone Safari 直接點「加入 Apple Wallet」取得編號及票券。兩種卡共用編號，現場請出示活動行原電子票。後台顯示郵件服務回覆，重寄可能收到多封。 [郵件與寄送狀態](../registration-confirmation.md) · [領取頁](../../src/pages/registration/confirmation.astro)
 4. 私人連結以限時 `receiptToken` 領取，預設有效至活動日結束後 90 天。系統核對公開站來源、主記錄、核准、活動資料及當前權限。Wallet 於簽章後再次核對。JPEG 可下載保存，Wallet 紀念卡的票面沒有活動日到期設定。移除後舊線上領取連結失效，已收藏檔案保留原版。新版可在原連結有效時重新領取。 [領取憑據](../../functions/registration-confirmation/tokens.mjs) · [簽章驗證](../../functions/apple-wallet/service.mjs)
 
-5. 真機測試至後台「新增测试卡」，使用自己的信箱，保存並預覽後寄送。從 iPhone Safari 開啟郵件連結、領取並加入 Wallet。核對卡面上的 `TEST No. 0001` 類編號及詳情中的完整碼，再比對 JPEG。正式卡和測試卡分別計數。後台可查首次領取時間與順序，並保存有 `S` 前綴的自訂號。已儲存的檔案需重新下載才有新號。 [後台紀念卡](https://api.artdico.host/admin/cards/)
+5. 真機測試至後台「新增测试卡」，使用自己的信箱，保存後寄送。從 iPhone Safari 開啟郵件連結並加入 Wallet。核對卡面上的 `TEST No. 0001` 類編號及詳情中的完整碼，再比對 JPEG。正式卡和測試卡分別計數。後台可查首次領取時間與順序，並保存有 `S` 前綴的自訂號。已儲存的檔案需重新下載才有新號。 [後台紀念卡](https://api.artdico.host/admin/cards/)
 
 正式發佈已核對準確提交 `ebed563a1ebdeb451f910db3aa78a51adf566fb5` 的香港 FC 與公開 OSS，公開 API 讀取活動修訂 130。匿名檢查確認講者已關閉、紀念卡開放及申請預檢可用。郵件與 Wallet 的配置就緒，真人收件和 iPhone 加入仍需各自核對。 [PR #116](https://github.com/kunanli/artdicohost/pull/116) · [正式發布 45776935655](https://github.com/kunanli/artdicohost/actions/runs/45776935655) · [資料與 API](../06-architecture-data.md)
 

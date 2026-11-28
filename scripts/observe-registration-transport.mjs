@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const URL='https://api.artdico.host/api/admin/registration/submit',ORIGIN='https://artdico.host';
+const API_ORIGIN = 'https://api.artdico.host';
 const fakeToken=length=>'a.'+'b'.repeat(length-46)+'.'+'c'.repeat(43);
 const browserHeaders={Accept:'application/json',Origin:ORIGIN,'Content-Type':'application/json',
   'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
@@ -44,8 +45,46 @@ export async function observeRegistrationTransport({fetchFn=fetch,timeoutMs=1000
   return{verified:observations.every(item=>item.contentType==='json'&&item.cors&&(item.probe==='rejected_json_headers'?item.status===400&&item.code==='INVALID_HEADERS':item.bodyBytes>0?item.status===415&&item.code==='UNSUPPORTED_MEDIA_TYPE':item.status===405&&item.code==='METHOD_NOT_ALLOWED')),observations};
 }
 
+/** Empty receipt tokens are rejected before private reads, claims or signing. */
+export async function observeKeepsakeTransport({ fetchFn = fetch, observe = false } = {}) {
+  const probes = [
+    { surface: 'claim', path: '/api/admin/registration/confirmation', code: 'CONFIRMATION_NOT_FOUND', claim: true },
+    { surface: 'wallet', path: '/api/admin/registration/wallet', code: 'WALLET_UNAVAILABLE' },
+    ...(observe ? [{ surface: 'canonical-claim', path: '/api/registration/confirmation', code: 'CONFIRMATION_NOT_FOUND', claim: true }] : []),
+  ];
+  const errorCodes = new Set(['CONFIRMATION_NOT_FOUND', 'WALLET_UNAVAILABLE', 'INVALID_REQUEST', 'DomainRouteNotFound']);
+  const observations = await Promise.all(probes.map(async ({ surface, path, code, claim }) => {
+    const endpoint = API_ORIGIN + path;
+    try {
+      const [preflight, post] = await Promise.all([
+        fetchFn(endpoint, { method: 'OPTIONS', credentials: 'omit', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(8000),
+          headers: { Origin: ORIGIN, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' } }),
+        fetchFn(endpoint, { method: 'POST', credentials: 'omit', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(8000),
+          headers: { Origin: ORIGIN, Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ receiptToken: '', ...(claim ? { claimCard: true } : {}) }) }),
+      ]);
+      const payload = await post.json().catch(() => null);
+      const received = payload?.error?.code ?? payload?.ErrorCode;
+      const cors = [preflight, post].every(response => response.headers.get('access-control-allow-origin') === ORIGIN
+        && !response.redirected && (!response.url || response.url === endpoint))
+        && (preflight.headers.get('access-control-allow-methods') ?? '').toLowerCase().split(',').some(method => method.trim() === 'post')
+        && (preflight.headers.get('access-control-allow-headers') ?? '').toLowerCase().split(',').some(header => header.trim() === 'content-type');
+      const verified = cors && preflight.status === 204 && post.status === 404 && received === code;
+      return { surface, verified, cors, preflight: preflight.status, post: post.status, ...(errorCodes.has(received) ? { code: received } : {}) };
+    } catch { return { surface, verified: false, failure: 'TRANSPORT_UNAVAILABLE' }; }
+  }));
+  return { verified: observations.every(item => item.verified), observations };
+}
+
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  const result=await observeRegistrationTransport();
-  console.log('Read-only registration HTTP transport: '+JSON.stringify(result));
-  if(!result.verified)process.exitCode=1;
+  const mode = process.argv[2];
+  if (mode === '--observe-keepsake' || mode === '--verify-keepsake') {
+    const result = await observeKeepsakeTransport({ observe: mode === '--observe-keepsake' });
+    console.log('Read-only keepsake HTTP transport: ' + JSON.stringify(result));
+    if (mode === '--verify-keepsake' && !result.verified) process.exitCode = 1;
+  } else {
+    const result=await observeRegistrationTransport();
+    console.log('Read-only registration HTTP transport: '+JSON.stringify(result));
+    if(!result.verified)process.exitCode=1;
+  }
 }

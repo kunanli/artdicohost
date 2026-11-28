@@ -1,10 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {request as httpRequest} from 'node:http';
-import {observeRegistrationTransport} from '../scripts/observe-registration-transport.mjs';
+import {observeKeepsakeTransport, observeRegistrationTransport} from '../scripts/observe-registration-transport.mjs';
 import {createRegistrationApi} from '../functions/registration-api/handler.mjs';
 import {createCloudContentServer} from '../functions/cloud-content/http-server.mjs';
 const origin='https://artdico.host';
+test('keepsake observation verifies production aliases with an empty receipt and identifies an unavailable canonical route', async () => {
+  const seen = [];
+  const fetchFn = async (url, options) => {
+    const path = new URL(url).pathname;
+    seen.push([path, options.method]);
+    assert.equal(options.credentials, 'omit');
+    assert.equal(options.headers.Origin, origin);
+    assert.equal(options.headers.Cookie, undefined);
+    const wallet = path.endsWith('/wallet');
+    if (options.method === 'POST') assert.deepEqual(JSON.parse(options.body), wallet ? { receiptToken: '' } : { receiptToken: '', claimCard: true });
+    if (path === '/api/registration/confirmation') return Response.json({ ErrorCode: 'DomainRouteNotFound', detail: 'PRIVATE_SYNTHETIC' }, { status: 404 });
+    const headers = { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true',
+      'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'Content-Type' };
+    return options.method === 'OPTIONS' ? new Response(null, { status: 204, headers })
+      : Response.json({ error: { code: wallet ? 'WALLET_UNAVAILABLE' : 'CONFIRMATION_NOT_FOUND', detail: 'PRIVATE_SYNTHETIC' } }, { status: 404, headers });
+  };
+  const verified = await observeKeepsakeTransport({ fetchFn });
+  assert.equal(verified.verified, true);
+  assert.equal(seen.length, 4);
+  assert.ok(seen.every(([path]) => path.startsWith('/api/admin/registration/')));
+  const observed = await observeKeepsakeTransport({ fetchFn, observe: true });
+  assert.equal(observed.verified, false);
+  assert.deepEqual(observed.observations[2], { surface: 'canonical-claim', verified: false, cors: false, preflight: 404, post: 404, code: 'DomainRouteNotFound' });
+  assert.doesNotMatch(JSON.stringify(observed), /PRIVATE_SYNTHETIC/u);
+});
+
 test('transport observation uses fixed anonymous requests that cannot carry an accepted registration',async()=>{
   const calls=[];
   const result=await observeRegistrationTransport({fetchFn:async(url,options)=>{

@@ -224,7 +224,7 @@ test('collector state distinguishes an unclaimed card from a legacy card and rej
   const project = fields => confirmationView({ ...source, card: { ...card, ...fields } }, now);
   assert.equal(project({}).wallet.ready, true);
   assert.deepEqual(project({ collectorNumber: null }).card, { ...card, collectorNumber: null });
-  assert.equal(project({ collectorNumber: null }).wallet.ready, false);
+  assert.equal(project({ collectorNumber: null }).wallet.ready, true, 'Wallet readiness is independent of claim state');
   for (const number of [{ sequence: 1, test: false }, { sequence: 24, test: true, manual: true }]) {
     const assigned = project({ collectorNumber: number });
     assert.deepEqual(assigned.card.collectorNumber, number);
@@ -236,7 +236,7 @@ test('collector state distinguishes an unclaimed card from a legacy card and rej
   }
 });
 
-test('claim uses an explicit canonical request while a refresh reads the assigned number without claiming again', async () => {
+test('claim uses the deployed confirmation route and a read recovers a lost acknowledgement without a second write', async () => {
   const calls = [];
   const source = value(), card = { format: 'both', identity: '嘉宾', ready: true };
   const number = { sequence: 1, test: false };
@@ -255,11 +255,10 @@ test('claim uses an explicit canonical request while a refresh reads the assigne
     return json({ ...source, card: { ...card, collectorNumber } });
   } });
   assert.equal((await client.read(token, { includeCardFormats: true })).card.collectorNumber, null);
-  await assert.rejects(client.claim(token));
-  assert.deepEqual((await client.read(token, { includeCardFormats: true })).card.collectorNumber, number);
+  assert.deepEqual((await client.claim(token)).card.collectorNumber, number);
   assert.deepEqual(calls, [
     { url: api + '/api/admin/registration/confirmation', body: { receiptToken: token } },
-    { url: api + '/api/registration/confirmation', body: { receiptToken: token, claimCard: true } },
+    { url: api + '/api/admin/registration/confirmation', body: { receiptToken: token, claimCard: true } },
     { url: api + '/api/admin/registration/confirmation', body: { receiptToken: token } },
   ]);
   const result = collectorNumber => createConfirmationClient({ apiOrigin: api, pageOrigin: site,
@@ -267,4 +266,24 @@ test('claim uses an explicit canonical request while a refresh reads the assigne
   assert.deepEqual((await result(number).claim(token)).card.collectorNumber, number);
   await assert.rejects(result(null).claim(token), /未确认/u);
   await assert.rejects(result(undefined).claim(token), /未确认/u);
+});
+
+test('a claim rejection leaves the card unclaimed, and explicit retry can assign it', async () => {
+  const source = value(), card = { format: 'both', identity: '嘉宾', ready: true };
+  const number = { sequence: 7, test: false };
+  let collectorNumber = null, attempts = 0, reads = 0;
+  const client = createConfirmationClient({ apiOrigin: api, pageOrigin: site, fetchFn: async (url, options) => {
+    assert.equal(url, api + '/api/admin/registration/confirmation');
+    if (JSON.parse(options.body).claimCard) {
+      if (++attempts === 1) return new Response(null, { status: 503 });
+      collectorNumber = number;
+    } else reads++;
+    return json({ ...source, card: { ...card, collectorNumber } });
+  } });
+  await assert.rejects(client.claim(token), /未确认/u);
+  assert.equal(attempts, 1);
+  assert.equal(reads, 1);
+  assert.deepEqual((await client.claim(token)).card.collectorNumber, number);
+  assert.equal(attempts, 2);
+  assert.equal(reads, 1);
 });

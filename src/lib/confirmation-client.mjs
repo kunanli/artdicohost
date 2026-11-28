@@ -5,6 +5,7 @@ import { cardCommunityFields, cardProfileFields, formatCardCollectorNumber } fro
 const API = 'https://api.artdico.host';
 const SITE = 'https://artdico.host';
 const PATH = '/registration/confirmation/';
+const CONFIRMATION_API = '/api/admin/registration/confirmation';
 const TOKEN = /^[A-Za-z0-9_.-]{32,4096}$/u;
 const ID = /^[A-Za-z0-9_-]{43}$/u;
 const EMAIL_STATES = ['not_configured','not_applicable','disabled','pending','provider_accepted','rejected','unknown'];
@@ -166,7 +167,7 @@ export function confirmationView(value, now = Date.now()) {
     event: Object.fromEntries(eventKeys.map(key => [key,value.event[key]])), referenceCode: value.referenceCode, submittedAt: value.submittedAt,
     admission: { status: value.admission.status, kind: value.admission.kind, revision: value.admission.revision },
     attendee: withdrawn ? { name: '', organization: '' } : { name: value.attendee.name, organization: value.attendee.organization ?? '' },
-    email: { status: ['pending_review','rejected'].includes(value.admission.status) ? 'not_applicable' : value.email.status }, wallet: { ready: confirmed && value.wallet.ready && facts?.ready !== false && (!hasCollector || collector !== null), ...(confirmed&&!value.wallet.ready&&value.wallet.reason==='WALLET_IDENTITY_PENDING'?{reason:'WALLET_IDENTITY_PENDING'}:{}) },
+    email: { status: ['pending_review','rejected'].includes(value.admission.status) ? 'not_applicable' : value.email.status }, wallet: { ready: confirmed && value.wallet.ready && facts?.ready !== false, ...(confirmed&&!value.wallet.ready&&value.wallet.reason==='WALLET_IDENTITY_PENDING'?{reason:'WALLET_IDENTITY_PENDING'}:{}) },
     ...(facts ? { eventFacts: facts } : {}), ...(card ? { card: { format: card.format, identity: card.identity, ready: card.ready && facts?.ready !== false,
       ...(hasCollector ? { collectorNumber: collector && { sequence: collector.sequence, test: collector.test, ...(collector.manual === true ? { manual: true } : {}) } } : {}) } } : {}),
     ...(cardRequest ? { cardRequest: true } : {}),
@@ -280,14 +281,21 @@ export function createConfirmationClient({ apiOrigin, pageOrigin, fetchFn = glob
   return Object.freeze({
     get available() { return available; },
     async read(receiptToken,{signal,includeCardFormats=false}={}) {
-      const view = await readView('/api/admin/registration/confirmation', receiptToken, signal, { includeCardFormats });
+      const view = await readView(CONFIRMATION_API, receiptToken, signal, { includeCardFormats });
       if (includeCardFormats && view.card && view.card.format !== 'both') {
         return readView('/api/registration/confirmation', receiptToken, signal, { includeCardFormats });
       }
       return view;
     },
     async claim(receiptToken, { signal } = {}) {
-      const view = await readView('/api/registration/confirmation', receiptToken, signal, { includeCardFormats: true, claimCard: true });
+      try {
+        const view = await readView(CONFIRMATION_API, receiptToken, signal, { includeCardFormats: true, claimCard: true });
+        if (view.card?.collectorNumber) return view;
+      } catch (error) {
+        if (error.cancelled || error.known) throw error;
+        // The write can finish after the caller loses the response.
+      }
+      const view = await readView(CONFIRMATION_API, receiptToken, signal, { includeCardFormats: true });
       if (!view.card?.collectorNumber) throw new Error('纪念卡领取结果未确认。');
       return view;
     },

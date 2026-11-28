@@ -31,6 +31,8 @@ jobs:
       - name: Observe method and media-type rejections without a valid registration or token
         continue-on-error: true
         run: node scripts/observe-registration-transport.mjs
+      - name: Observe the existing claim and Wallet transports without a valid receipt
+        run: node scripts/observe-registration-transport.mjs --observe-keepsake
 
   entry-surfaces-observation:
     name: Observe short entry paths without private capabilities
@@ -558,3 +560,6 @@ jobs:
       - name: Verify gateway-compatible registration transport using rejected diagnostic requests
         timeout-minutes: 3
         run: node scripts/observe-registration-transport.mjs
+      - name: Verify the deployed claim and Wallet routes with an empty receipt
+        timeout-minutes: 1
+        run: node scripts/observe-registration-transport.mjs --verify-keepsake

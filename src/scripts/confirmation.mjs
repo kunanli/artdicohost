@@ -81,6 +81,9 @@ if (root) {
     else delete claimStatus.dataset.status;
     claimStatus.textContent = message ?? '';
   }
+  function showClaimError() {
+    showClaimStatus('error', '暂未确认领取结果。请重新读取，或再次领取。');
+  }
   function renderCardClaim(card) {
     claimSection.hidden = card?.collectorNumber !== null || !card.ready;
     showClaimStatus();
@@ -160,10 +163,9 @@ if (root) {
     $('[data-confirmation-outcome-contact]').hidden=!['rejected','withdrawn'].includes(value.admission.status);
     const factsReady = value.eventFacts?.ready ?? (!value.card || value.card.ready || value.wallet.ready);
     $('[data-confirmation-facts-warning]').hidden=factsReady;
-    const unclaimed = value.card?.collectorNumber === null;
     renderCardClaim(value.card);
     const guidance=walletGuidance();hideSafariGuide();
-    walletButton.hidden=value.admission.status!=='confirmed'||unclaimed||!guidance.showWallet;
+    walletButton.hidden=value.admission.status!=='confirmed'||!guidance.showWallet;
     const walletActionLabel = guidance.label;
     if(walletLabel)walletLabel.textContent=walletActionLabel;else walletButton.textContent=walletActionLabel;
     walletButton.dataset.walletAction=guidance.action;walletButton.setAttribute('aria-label',walletActionLabel);syncWalletBadge();
@@ -194,8 +196,8 @@ if (root) {
       renderCardProfile(value.cardProfile);
       $('[data-confirmation-save-heading]').textContent = '领取纪念卡';
       const device = $('[data-confirmation-device]');
-      const jpegReady = value.card.format !== 'wallet' && value.card.ready;
-      device.textContent = unclaimed ? '' : value.wallet.ready ? (guidance.showWallet ? guidance.message : 'Apple Wallet 适用于 iPhone。')
+      const jpegReady = value.card.collectorNumber !== null && value.card.format !== 'wallet' && value.card.ready;
+      device.textContent = value.wallet.ready ? (guidance.showWallet ? guidance.message : 'Apple Wallet 适用于 iPhone。')
         : jpegReady ? 'Apple Wallet 暂不可用，可先保存 JPEG。' : '';
       device.hidden = !device.textContent;
       document.title = '电子纪念卡 · ARTDiCO HOST';
@@ -263,23 +265,28 @@ if (root) {
     finally {if(current===generation){busy=false;controller=null;controls();}}
   }
   $('[data-confirmation-refresh]').addEventListener('click',load);
+  async function claimKeepsake(current, signal) {
+    const initial = state;
+    showClaimStatus('working', '正在领取纪念卡…');
+    const value = await client.claim(token, { signal });
+    if (current !== generation) return false;
+    if (value.referenceCode !== initial.referenceCode || value.event.id !== initial.event.id || value.submittedAt !== initial.submittedAt) throw new Error();
+    render(value);
+    void showJpeg(value, current);
+    return true;
+  }
   claimButton.addEventListener('click', async () => {
     if (busy || claimSection.hidden) return;
-    const initial = state, current = generation;
+    const current = generation;
     busy = true;
     controller = new AbortController();
     controls();
-    showClaimStatus('working', '正在领取纪念卡…');
     try {
-      const value = await client.claim(token, { signal: controller.signal });
-      if (current !== generation) return;
-      if (value.referenceCode !== initial.referenceCode || value.event.id !== initial.event.id || value.submittedAt !== initial.submittedAt) throw new Error();
-      const focused = document.activeElement === claimButton || document.activeElement === document.body;
-      render(value);
-      if (focused) collectorNumber.focus({ preventScroll: true });
-      void showJpeg(value, current);
+      if (await claimKeepsake(current, controller.signal) && (document.activeElement === claimButton || document.activeElement === document.body)) {
+        collectorNumber.focus({ preventScroll: true });
+      }
     } catch (error) {
-      if (current === generation && !error.cancelled) showClaimStatus('error', '暂未确认领取结果。请重新读取，或再次领取。');
+      if (current === generation && !error.cancelled) showClaimError();
     } finally {
       if (current === generation) { busy = false; controller = null; controls(); }
     }
@@ -308,7 +315,7 @@ if (root) {
   window.addEventListener('beforeprint',beforePrint);window.addEventListener('afterprint',afterPrint);
   $('[data-confirmation-print]').addEventListener('click',()=>{if(!state||busy)return;beforePrint();try{window.print();}finally{afterPrint();}});
   $('[data-confirmation-wallet]').addEventListener('click',async()=>{
-    if(!state?.wallet.ready||state.card?.collectorNumber===null||busy)return;
+    if(!state?.wallet.ready||busy)return;
     const guidance=walletGuidance();
     if(guidance.action==='guide'){
       releaseWallet();$('[data-confirmation-wechat-step]').hidden=!guidance.wechat;$('[data-confirmation-safari-guide]').hidden=false;
@@ -316,8 +323,16 @@ if (root) {
       $('#confirmation-safari-heading').focus();return;
     }
     if(!['add','download'].includes(guidance.action))return;
-    const current=generation;busy=true;controller=new AbortController();const signal=controller.signal;controls();releaseWallet();$('[data-confirmation-action-status]').textContent='正在准备 Wallet 票券…';
+    const current=generation;busy=true;controller=new AbortController();const signal=controller.signal;controls();releaseWallet();
+    const status = $('[data-confirmation-action-status]');
+    status.textContent = '';
     try {
+      if (state.card?.collectorNumber === null && !await claimKeepsake(current, signal)) return;
+      if (!state.wallet.ready) {
+        status.textContent = '暂时无法取得 Apple Wallet 纪念卡，请重试。';
+        return;
+      }
+      status.textContent = '正在准备 Wallet 票券…';
       const blob = await client.wallet(token, { signal, expectedCollectorNumber: state.card?.collectorNumber });
       if (current !== generation) return;
       walletUrl = URL.createObjectURL(blob);
@@ -330,17 +345,21 @@ if (root) {
       const prompt = guidance.action === 'add'
         ? '请按系统提示添加。打开钱包里的纪念卡，点「…」进入票券详情即可查看导航、日程和参展作品。'
         : '票券已准备，请在 iPhone 上打开。';
-      $('[data-confirmation-action-status]').textContent = state.card ? prompt : '票券文件已准备。请在支持 Apple Wallet 的设备上打开。';
+      status.textContent = state.card ? prompt : '票券文件已准备。请在支持 Apple Wallet 的设备上打开。';
     }
     catch(error){
       if(current!==generation||error.cancelled)return;
+      if (state?.card?.collectorNumber === null) {
+        showClaimError();
+        return;
+      }
       if(error.collectorChanged){
         const refresh = load(), refreshGeneration = generation;
         await refresh;
         if(refreshGeneration===generation&&state?.card?.collectorNumber) $('[data-confirmation-action-status]').textContent='纪念卡编号已更新，请核对后再加入 Apple Wallet。';
         return;
       }
-      if(state?.card)$('[data-confirmation-action-status]').textContent='暂时无法取得 Apple Wallet 纪念卡，请重试。';
+      if(state?.card)status.textContent='暂时无法取得 Apple Wallet 纪念卡，请重试。';
       else showReadError(error);
     }
     finally{if(current===generation){busy=false;controller=null;controls();}}

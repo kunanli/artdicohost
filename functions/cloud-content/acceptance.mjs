@@ -2,7 +2,6 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createOssObjectClient } from './oss-client.mjs';
 import { createObjectJournal } from './object-journal.mjs';
 import { createAcceptanceObjects, ACCEPTANCE_RUN_PATTERN } from './scoped-objects.mjs';
-import { createOssContentStore } from './store.mjs';
 import { CLOUD_API_ORIGIN, PUBLIC_SITE_ORIGIN } from './handler.mjs';
 import { hashPassword } from '../content-api/auth.mjs';
 import { createInitialContent } from '../../src/config/content.mjs';
@@ -11,6 +10,7 @@ import { inspectEncryptedObjectBackup } from '../registration-admin/maintenance.
 import { createMaintenanceAuditStore } from '../registration-admin/maintenance-handler.mjs';
 import { CLOUD_LOGIN_POLICY } from './auth.mjs';
 import { createVolunteerRepository } from '../volunteers/repository.mjs';
+import { cardCollectorPrefix, createCardCollectorRepository } from '../registration-confirmation/repository.mjs';
 
 const DEADLINE_MS = 90_000;
 const REQUEST_LIMIT = 1000;
@@ -241,15 +241,23 @@ export function startCloudAcceptance({ env = process.env, sourceCommit, fetchFn 
           && retainedPortrait.data.equals(Buffer.from(PNG, 'base64')));
       });
       await stage('lost-ack', async () => {
+        // Lose the acknowledgment after committing one synthetic test claim.
         let appends = 0;
         const lost = { ...aObjects, async append(...args) { appends++; await aObjects.append(...args); throw fail(); } };
-        const journal = createObjectJournal({ objects: lost, prefix: 'cms/v1/probes/lost-ack' });
-        const store = createOssContentStore({ journal, now });
+        const collectors = objects => createCardCollectorRepository({ eventId, clock: now,
+          journal: createObjectJournal({ objects, prefix: cardCollectorPrefix(eventId) }) });
+        const issuer = collectors(lost), independent = collectors(bObjects);
+        const cardId = randomBytes(32).toString('base64url');
+        const scope = { primaryId: cardId, registrationIds: [cardId], test: true };
+        const initial = await issuer.read();
+        requireThat(initial.cursor.version === 0 && issuer.get(initial, scope).number === null);
         let rejected = false;
-        try { await store.save(0, createInitialContent(), 'synthetic-owner'); } catch (error) { rejected = error.code === 'STORAGE_ERROR' && error.status === 503; }
+        try { await issuer.claim(initial, scope); } catch (error) { rejected = error.code === 'STORAGE_UNAVAILABLE' && error.status === 503; }
         requireThat(rejected && appends === 1);
-        const observed = await createOssContentStore({ journal: createObjectJournal({ objects: bObjects, prefix: 'cms/v1/probes/lost-ack' }), now }).read();
-        requireThat(observed.draft.revision === 1 && appends === 1);
+        const saved = await independent.read();
+        const observed = independent.get(saved, scope), retry = await independent.claim(saved, scope);
+        requireThat(saved.cursor.version === 1 && observed.number?.sequence === 1 && observed.number.test === true && observed.claimedAt
+          && Object.keys(saved.value.official.claims).length === 0 && JSON.stringify(retry) === JSON.stringify(observed) && appends === 1);
       });
       await stage('registration-intake', async () => {
         const config = await call(first.api, '/api/admin/registration/config', { origin: PUBLIC_SITE_ORIGIN }, 200);

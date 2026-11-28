@@ -9,8 +9,8 @@ const idPattern = /^[A-Za-z0-9_-]{43}$/u;
 const proofPattern = /^[a-f0-9]{64}$/u;
 const draftId = () => /^#application=([A-Za-z0-9_-]{43})$/u.exec(location.hash)?.[1] ?? '';
 const stages = {
-  check_delivery: '寄送待核对', pending_review: '核对活动行报名', set_identity: '设置卡面身份',
-  retry_delivery: '可重新寄送', send: '待寄送', blocked: '暂不可寄送',
+  pending_review: '核对活动行报名', set_identity: '设置卡面身份', send: '待寄送',
+  retry_delivery: '发送失败', blocked: '暂不可寄送', check_delivery: '寄送结果不明',
   submitted: '邮件服务已接收', waitlisted: '候补中', rejected: '申请未通过', withdrawn: '领取资格已取消',
 };
 const queueOrder = Object.keys(stages);
@@ -49,7 +49,6 @@ const organization = $('#card-organization');
 const phone = $('#card-phone');
 const deliveryForm = $('[data-card-delivery]');
 const approve = $('[data-card-approve]');
-const check = $('[data-card-check]');
 const errorBox = $('[data-card-error]');
 const detailError = $('[data-card-detail-error]');
 const message = $('[data-card-message]');
@@ -69,7 +68,7 @@ const manualSequence = $('#card-collector-sequence');
 const savedFields = { identity, site: communitySite, role: communityRole, organization, phone, manualSequence };
 
 let csrf = '', rows = [], filter = 'todo', activeId = '', current = null, busy = false, editingIdentity = false, version = 0;
-let pendingTest = null, baseFields = null, reviewedProof = '', staleView = false, contextChanged = false, editingCollector = false;
+let pendingTest = null, baseFields = null, displayedPreviewProof = '', staleView = false, contextChanged = false, editingCollector = false;
 const pendingApprovals = new Map();
 const pendingDeliveries = new Map();
 const rowFor = id => rows.find(row => row.sources.some(source => source.id === id));
@@ -104,15 +103,16 @@ function draftChanges() {
 }
 function hasDraft() { return Object.keys(draftChanges()).length > 0; }
 function sameCard(left, right) { return left?.primaryId === right?.primaryId && left?.recipient === right?.recipient; }
+function canDispatch(value) { return ['send', 'retry_delivery'].includes(value.stage) || value.canResend === true; }
 function clearPreview() {
-  reviewedProof = '';
+  displayedPreviewProof = '';
   previewPanel.hidden = true;
   previewImage.removeAttribute('src');
   previewButton.setAttribute('aria-expanded', 'false');
   previewButton.textContent = '预览已保存卡面';
 }
 function editChanged() {
-  if (hasDraft() && reviewedProof) clearPreview();
+  if (hasDraft() && displayedPreviewProof) clearPreview();
   renderActions();
 }
 for (const input of Object.values(savedFields)) input.addEventListener('input', editChanged);
@@ -267,7 +267,7 @@ function setView(value) {
   contextChanged = stayOnApplication && Object.keys(draft).length > 0 && (contextChanged || !sameCard(current, value));
   editingIdentity = stayOnApplication && editingIdentity;
   editingCollector = stayOnApplication && editingCollector;
-  if (!stayOnApplication || contextChanged || reviewedProof !== value?.previewProof) clearPreview();
+  if (!stayOnApplication || contextChanged || displayedPreviewProof !== value?.previewProof) clearPreview();
   current = value;
   detail.hidden = !value;
   placeholder.hidden = Boolean(value);
@@ -349,14 +349,11 @@ function renderActions() {
   const value = current;
   if (!value) return;
   const verified = value.admissionStatus === 'confirmed';
-  const sent = value.stage === 'submitted', uncertain = value.stage === 'check_delivery';
-  const unconfirmed = pendingDeliveries.has(value.primaryId);
-  const needCheck = uncertain || unconfirmed || value.sendInProgress;
+  const sent = value.stage === 'submitted';
+  const uncertain = value.stage === 'check_delivery' || pendingDeliveries.has(value.primaryId);
   const resend = value.canResend === true;
-  const canSend = value.stage === 'send' || value.stage === 'retry_delivery' || resend;
   const dirty = hasDraft();
   const canPreview = verified && value.preview && proofPattern.test(value.previewProof ?? '');
-  const previewReviewed = canPreview && reviewedProof === value.previewProof;
   const reason = value.reason && (reasons[value.reason] ?? '收件权限暂无法核对。');
   const pending = pendingApprovals.has(value.registrationId);
   const identityValue = $('[data-card-identity-value]');
@@ -366,11 +363,11 @@ function renderActions() {
   const state = $('[data-card-state]');
   state.dataset.stage = value.stage;
   state.textContent = staleView ? '申请资料暂未核对，请刷新后继续。' : value.sendInProgress ? '纪念卡正在发送。'
-    : needCheck ? '本次寄送待核对。重寄可能产生重复邮件。'
+    : uncertain ? stages.check_delivery
     : sent ? '邮件服务已接收'
-    : reason || (value.stage === 'retry_delivery' ? '发送失败，可再次寄送。' : stages[value.stage]);
+    : reason || stages[value.stage];
   const submittedAt = $('[data-card-sent-at]');
-  submittedAt.hidden = !sent || needCheck || !value.sentAt;
+  submittedAt.hidden = !sent || uncertain || !value.sentAt;
   submittedAt.textContent = submittedAt.hidden ? '' : '提交时间 ' + sentTime.format(new Date(value.sentAt));
   const correction = $('[data-card-correct-email]');
   correction.hidden = !personReasons.has(value.reason);
@@ -398,23 +395,20 @@ function renderActions() {
   $('[data-card-discard-draft]').hidden = !dirty;
   $('[data-card-preview]').hidden = !verified || !value.identity;
   previewButton.disabled = busy || !canPreview || dirty || staleView;
-  deliveryForm.hidden = !canSend || editingIdentity;
+  deliveryForm.hidden = !canDispatch(value) || editingIdentity;
   const dispatch = deliveryForm.querySelector('[type="submit"]');
-  dispatch.textContent = resend || needCheck || value.stage === 'retry_delivery' ? '重新发送纪念卡' : '发送纪念卡';
-  dispatch.classList.toggle('ah-admin-primary', !needCheck && !sent);
-  dispatch.disabled = busy || dirty || staleView || !previewReviewed || value.sendInProgress;
+  dispatch.textContent = resend || uncertain || value.stage === 'retry_delivery' ? '重新发送纪念卡' : '发送纪念卡';
+  dispatch.disabled = busy || dirty || staleView || value.sendInProgress;
   const sendHint = $('[data-card-send-hint]');
-  sendHint.textContent = !canPreview ? '暂时无法核对已保存卡面，请刷新后再试。'
-    : dirty ? '请先保存卡面修改。' : !previewReviewed ? '请先预览已保存卡面，再寄送给上方收件人。' : '';
+  sendHint.textContent = dirty ? '请先保存卡面修改。' : resend || uncertain ? '重发可能产生重复邮件。' : '';
   sendHint.hidden = !sendHint.textContent;
   const formats = $('[data-card-delivery-formats]');
-  formats.hidden = uncertain;
+  formats.hidden = resend || uncertain;
   formats.textContent = value.walletReady
     ? '一封邮件可领取 JPEG 和 Apple Wallet。' : '可先寄送 JPEG。Apple Wallet 就绪后可用同一链接领取。';
   const deliveryBlock = $('[data-card-delivery-block]');
   deliveryBlock.hidden = !(uncertain || sent) || !reason || value.reason === 'EMAIL_MISSING';
   deliveryBlock.textContent = deliveryBlock.hidden ? '' : reason;
-  check.hidden = !needCheck;
   $('[data-card-remove-panel]').hidden = !value.canRemove;
   remove.textContent = value.test ? '移除测试卡' : '移除纪念卡';
 }
@@ -572,14 +566,6 @@ remove.addEventListener('click', () => {
     if (csrf) message.textContent = '纪念卡已移除。';
   }, true);
 });
-check.addEventListener('click', () => work(async () => {
-  const result = await open(activeId);
-  if (!result) return;
-  message.textContent = result.sendInProgress ? '寄送仍在处理中，可稍后核对。'
-    : pendingDeliveries.has(result.primaryId) || result.status === 'unknown' ? '目前尚无这次寄送的明确回执。'
-    : result.status === 'provider_accepted' ? '已核对记录：邮件服务已接收。'
-    : result.status === 'rejected' ? '已核对记录：本次邮件发送失败。' : '目前未有寄送记录。';
-}, true));
 $('[data-card-edit]').addEventListener('click', () => { editingIdentity = true; renderActions(); identity.focus(); });
 $('[data-card-cancel-identity]').addEventListener('click', () => {
   identity.value = baseFields.identity;
@@ -615,7 +601,7 @@ window.addEventListener('beforeunload', event => {
 async function previewSavedCard() {
   const view = current, started = version;
   if (!view?.preview || !proofPattern.test(view.previewProof ?? '') || hasDraft() || staleView) return;
-  if (!previewPanel.hidden && reviewedProof === view.previewProof) {
+  if (!previewPanel.hidden && displayedPreviewProof === view.previewProof) {
     previewPanel.hidden = true;
     previewButton.setAttribute('aria-expanded', 'false');
     previewButton.textContent = '预览已保存卡面';
@@ -634,7 +620,7 @@ async function previewSavedCard() {
   previewPanel.hidden = false;
   previewButton.setAttribute('aria-expanded', 'true');
   previewButton.textContent = '收起卡面预览';
-  reviewedProof = view.previewProof;
+  displayedPreviewProof = view.previewProof;
 }
 previewButton.addEventListener('click', () => work(previewSavedCard, true));
 
@@ -731,10 +717,7 @@ collectorForm.addEventListener('submit', event => {
 deliveryForm.addEventListener('submit', event => {
   event.preventDefault();
   const view = current;
-  if (busy || !view || staleView || hasDraft() || !proofPattern.test(view.previewProof ?? '') || reviewedProof !== view.previewProof
-    || !['send', 'retry_delivery'].includes(view.stage) && !view.canResend) return;
-  const repeat = view.canResend || view.stage === 'retry_delivery' || pendingDeliveries.has(view.primaryId);
-  if (repeat && !window.confirm('重新发送纪念卡给 ' + view.recipient + '？收件人可能会收到另一封邮件。')) return;
+  if (busy || !view || staleView || hasDraft() || editingIdentity || view.sendInProgress || !canDispatch(view)) return;
   void work(async () => {
     const started = version;
     message.textContent = '正在发送…';
@@ -744,8 +727,10 @@ deliveryForm.addEventListener('submit', event => {
     try {
       receipt = await request(api + '/' + view.registrationId, 'POST', {
         primaryId: view.primaryId, expectedRevision: view.deliveryRevision, expectedAccessRevision: view.accessRevision,
-        expectedPreviewProof: view.previewProof, identity: view.identity, format: 'jpeg', ...(view.canResend ? { resend: true } : {}),
+        identity: view.identity, format: 'jpeg', ...(view.canResend ? { resend: true } : {}),
+        ...(proofPattern.test(view.previewProof ?? '') ? { expectedPreviewProof: view.previewProof } : {}),
       });
+      if (receipt?.status && receipt.status !== 'unknown') pendingDeliveries.delete(view.primaryId);
     } catch (error) {
       if (started !== version) return;
       failure = error;
@@ -757,23 +742,25 @@ deliveryForm.addEventListener('submit', event => {
     try { fresh = await open(view.registrationId); }
     catch (error) {
       if (started !== version) return;
-      if (receipt?.status === 'provider_accepted') message.textContent = '邮件服务已接收。请刷新申请以核对最新状态。';
-      else if (pendingDeliveries.has(view.primaryId)) message.textContent = '寄送结果待核对，请先使用「核对寄送结果」。';
+      if (receipt?.status === 'provider_accepted') message.textContent = '邮件服务已接收。';
+      else if (receipt?.status === 'rejected') message.textContent = '本次邮件未能发送。';
+      else if (pendingDeliveries.has(view.primaryId)) message.textContent = '寄送结果不明。';
+      else if (receipt?.status) message.textContent = '这次未能发送。';
       else throw failure ?? error;
       return;
     }
     if (!fresh) return;
+    message.textContent = '';
     const advanced = deliveryAdvanced(view, fresh);
     if (receipt?.status === 'provider_accepted' || advanced && fresh.status === 'provider_accepted') {
       pendingDeliveries.delete(view.primaryId);
       if (!view.test && filter === 'todo' && fresh.stage === 'submitted') { filter = 'submitted'; renderList(); }
-      message.textContent = repeat ? '已重新提交纪念卡邮件。' : '邮件服务已接收。';
+      message.textContent = '邮件服务已接收。';
     } else if (receipt?.status === 'rejected' || advanced && fresh.status === 'rejected') {
       pendingDeliveries.delete(view.primaryId);
       message.textContent = '本次邮件未能发送。';
     } else if (failure && !pendingDeliveries.has(view.primaryId)) throw failure;
-    else if (failure || receipt?.status === 'unknown') message.textContent = '寄送结果待核对，请先使用「核对寄送结果」。';
-    else {
+    else if (!failure && receipt?.status !== 'unknown') {
       pendingDeliveries.delete(view.primaryId);
       message.textContent = '这次未能发送，请查看当前状态。';
     }

@@ -79,14 +79,14 @@ export function createRegistrationConfirmationApi({ service, auth, apiOrigin = '
         if (request.method !== 'POST') reject('METHOD_NOT_ALLOWED', 405);
         if (typeof service?.confirmation !== 'function') reject('CONFIRMATION_UNAVAILABLE', 503);
         const canonical = url.pathname === PUBLIC_PATHS[0];
-        const input = await body(request); keys(input, canonical ? ['receiptToken', 'claimCard'] : ['receiptToken'], ['receiptToken']);
+        const input = await body(request); keys(input, ['receiptToken', 'claimCard'], ['receiptToken']);
         if (typeof input.receiptToken !== 'string' || input.receiptToken.length > 4096) reject();
         if (Object.hasOwn(input, 'claimCard') && input.claimCard !== true) reject();
         if (request.signal.aborted) reject();
-        // The canonical receipt route always returns both card formats. The
-        // older route still negotiates for cached single-format clients.
+        // Both route aliases accept explicit claims. A read over the older
+        // route still negotiates for cached single-format clients.
         const accept = request.headers.get('accept');
-        if (canonical || accept === CARD_FORMATS_ACCEPT || accept === CARD_COLLECTOR_ACCEPT) input.includeCardFormats = true;
+        if (canonical || input.claimCard === true || accept === CARD_FORMATS_ACCEPT || accept === CARD_COLLECTOR_ACCEPT) input.includeCardFormats = true;
         if (input.claimCard === true) {
           if (typeof service.claimCard !== 'function') reject('CONFIRMATION_UNAVAILABLE', 503);
           return json(await service.claimCard(input));

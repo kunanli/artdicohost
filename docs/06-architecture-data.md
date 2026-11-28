@@ -33,7 +33,7 @@ OSS 日志以不可变的哈希内容及原子追加提交保存。预期修订�
 | `POST /api/admin/login`、`GET /api/admin/session` | 持久化工作人员会话和 CSRF 凭据。 |
 | `GET /api/admin/admissions`、`GET /api/admin/registrations`、`GET /api/admin/registrations/:id` | 授权查询保留的站内名额和人员资料。 |
 | `/api/admin/registration-confirmation/cards` | 工作人员查看、核准、编辑、测试、发送、重寄与移除纪念卡。 |
-| `POST /api/registration/confirmation`、`POST /api/registration/wallet` | 使用私人 `receiptToken` 读取纪念卡资格与资料、下载签章卡。只有正式领取路径接受显式 `claimCard: true`，首次分配序号，重试读取同一编号。旧 `/api/admin/registration/*` 路径仍有兼容入口。 |
+| `POST /api/admin/registration/confirmation`、`POST /api/admin/registration/wallet` | 香港网关下浏览器使用的私人领取与签章路径。显式 `claimCard: true` 首次分配序号，重试取回同一编号。应用保留对应的 `/api/registration/*` 路径，两条路径核验公开来源和有效凭据。 |
 
 公开配置沿用兼容字段 `publicRegistrationMode: 'speaker_only'`。现行开放状态由 `speakerApplicationsEnabled: false` 和 `walletApplicationsEnabled: true` 表示，后者仍受服务开放时间约束。服务端强制活动行模式。 [正式配置核对](https://github.com/kunanli/artdicohost/actions/runs/45776935655/job/139768424487)
 

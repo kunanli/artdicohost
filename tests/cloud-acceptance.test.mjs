@@ -11,6 +11,7 @@ import { hashPassword } from '../functions/content-api/auth.mjs';
 import { createObjectJournal } from '../functions/cloud-content/object-journal.mjs';
 import { memoryObjects } from './helpers/cloud-memory-objects.mjs';
 import { createInitialContent } from '../src/config/content.mjs';
+import { cardCollectorPrefix } from '../functions/registration-confirmation/repository.mjs';
 
 const SOURCE = 'a'.repeat(40), RUN = 'r123456-a1-' + 'c'.repeat(16) + '-' + SOURCE, INSTANCE = 'b'.repeat(32);
 const ENV = { NODE_ENV: 'production', ARTDICO_CLOUD_CONTENT_ENABLED: 'false', ARTDICO_CLOUD_ACCEPTANCE_RUN_ID: RUN,
@@ -115,6 +116,15 @@ test('isolated acceptance uses only synthetic settings even when both real-mail 
   assert.ok([...fixture.stored.keys()].every(key => key.startsWith(prefix)));
   assert.ok(fixture.calls.some(call => call.method === 'GET' && call.key === prefix + 'external-registrations/8884819113200/commits.jsonl'),
     'the real maintenance backup checks the external ledger through the isolated acceptance namespace');
+  const numberingPrefix = prefix + cardCollectorPrefix(createInitialContent().eventId).slice('cms/v1/'.length);
+  const numberingLog = numberingPrefix + '/commits.jsonl';
+  assert.equal(fixture.calls.filter(call => call.method === 'POST' && call.key === numberingLog).length, 1,
+    'reading and retrying the same test claim do not add another append');
+  const [numberingCommit] = fixture.stored.get(numberingLog).data.toString('utf8').trimEnd().split('\n').map(line => JSON.parse(line));
+  assert.equal(numberingCommit.version, 1);
+  const numbering = JSON.parse(fixture.stored.get(numberingPrefix + '/blobs/' + numberingCommit.valueHash + '.json').data);
+  assert.deepEqual(numbering.official, { claims: {}, manual: {}, reserved: {} });
+  assert.deepEqual(Object.values(numbering.test.claims), [{ sequence: 1, claimedAt: fixedClock().toISOString() }]);
   const latestSessions = [...fixture.stored].filter(([key]) => key.startsWith(prefix + 'sessions/') && key.endsWith('/commits.jsonl'))
     .map(([key, value]) => { const entry = JSON.parse(value.data.toString('utf8').trimEnd().split('\n').at(-1));
       return JSON.parse(fixture.stored.get(key.slice(0, -'/commits.jsonl'.length) + '/blobs/' + entry.valueHash + '.json').data); });
